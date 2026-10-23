@@ -1,8 +1,8 @@
 """Engineering drawing of the circular flange: a plate with a bolt circle.
 
 Run `python circular_flange.py` first; this script documents the STEP it writes.
-The bolt holes and the bore are called out from the part itself; the constants a
-dimension or note references come from the model module.
+The bolt holes, their pitch circle and the bore are called out from the part
+itself; the constants the script references come from the model module.
 """
 
 import math
@@ -29,7 +29,7 @@ def circular_flange_drawing():
     # A bolt hole off the section line, so its callout and the cutting plane's
     # letter do not share a corner.
     bolt = (BOLT_CIRCLE_DIAMETER / 2 * math.cos(math.radians(60)), BOLT_CIRCLE_DIAMETER / 2 * math.sin(math.radians(60)))
-    top.hole((*bolt, THICKNESS), label=f"EQ SP ON %%c{BOLT_CIRCLE_DIAMETER:g}")  # 6× ⌀6 THRU, from the part
+    top.hole((*bolt, THICKNESS))   # 6× ⌀6 THRU EQ SP ON ⌀60: count and pitch circle read off the part
     top.hole((0, 0, THICKNESS), angle=135)                                          # the bore
     top.diameter((0, 0, THICKNESS), size=OUTER_DIAMETER, angle=-45)
     front.overall(width=False)  # the width is the ⌀80

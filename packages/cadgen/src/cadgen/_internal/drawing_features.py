@@ -21,6 +21,12 @@ The same cylinders give a drawing its centre lines: a turned feature seen from
 the side is drawn with its axis as a chain line, and :func:`axes` returns those
 axes with the length of the part they span.
 
+Two patterns a callout states as one thing are read here too. A slot is two
+concave half cylinders of one radius on parallel axes, open toward each other,
+with air between them: ``8 × 30 SLOT THRU``. A bolt circle is three or more
+identical holes equally spaced on a circle around a turned axis of the part:
+``6× ⌀6 THRU EQ SP ON ⌀60``.
+
 Nothing here imports the kernel at module scope.
 """
 
@@ -29,7 +35,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-__all__ = ["Hole", "Axis", "holes", "axes", "turned_diameters"]
+__all__ = ["Hole", "Axis", "Slot", "BoltCircle", "holes", "axes", "slots", "bolt_circles", "turned_diameters"]
 
 #: Model millimetres two positions on an axis may differ by and still touch. A
 #: counterbore's floor and the bore below it meet at one plane, so their ranges
@@ -83,6 +89,44 @@ class Axis:
     radius: float = 0.0
 
 
+@dataclass(frozen=True)
+class Slot:
+    """An obround slot, as a callout states it.
+
+    ``mouth`` is the slot's centre (midway between its two arc centres) where it
+    opens, ``axis`` the unit direction into the material, ``ends`` the two arc
+    centres at the mouth and ``direction`` the unit vector between them. Sizes are
+    model millimetres; ``length`` is end to end, and ``depth`` is None for a
+    slot through the part.
+    """
+
+    mouth: tuple[float, float, float]
+    axis: tuple[float, float, float]
+    direction: tuple[float, float, float]
+    ends: tuple[tuple[float, float, float], tuple[float, float, float]]
+    width: float
+    length: float
+    thru: bool
+    depth: float | None = None
+    #: From the mouth to the slot's far end, along ``axis``.
+    run: float = 0.0
+
+    def signature(self) -> tuple:
+        r = lambda v: None if v is None else round(v, 3)
+        return ("slot", r(self.width), r(self.length), self.thru, r(self.depth))
+
+
+@dataclass(frozen=True)
+class BoltCircle:
+    """Identical holes equally spaced on a circle: their centre (at the holes'
+    mouths), the holes' common axis, the circle's diameter and the hole mouths."""
+
+    centre: tuple[float, float, float]
+    axis: tuple[float, float, float]
+    diameter: float
+    mouths: tuple[tuple[float, float, float], ...]
+
+
 @dataclass
 class _Segment:
     kind: str  # "cyl" or "cone"
@@ -92,6 +136,9 @@ class _Segment:
     r_hi: float
     concave: bool
     span: float  # angular extent in radians; full is 2*pi
+    #: Unit radial direction from the axis to the middle of the face: which way a
+    #: part cylinder (a slot's end, a fillet) faces.
+    bulge: tuple = (0.0, 0.0, 0.0)
 
 
 def _canonical(direction, point) -> tuple[tuple, tuple]:
@@ -162,7 +209,9 @@ def _surface_segments(shape) -> dict[tuple, tuple[tuple, tuple, list[_Segment]]]
         along = sum(a * b for a, b in zip(rel, d))
         radial = tuple(c - along * k for c, k in zip(rel, d))
         concave = sum(a * b for a, b in zip(radial, (normal.X, normal.Y, normal.Z))) < 0
-        segment = _Segment("cyl" if kind == GeomAbs_Cylinder else "cone", lo, hi, r_lo, r_hi, concave, u1 - u0)
+        reach = math.sqrt(sum(c * c for c in radial)) or 1.0
+        segment = _Segment("cyl" if kind == GeomAbs_Cylinder else "cone", lo, hi, r_lo, r_hi, concave, u1 - u0,
+                           tuple(c / reach for c in radial))
         lines.setdefault(_line_key(d, foot), (d, foot, []))[2].append(segment)
     return lines
 
@@ -179,7 +228,7 @@ def _merge_split_faces(segments: list[_Segment]) -> list[_Segment]:
                 other.span += seg.span
                 break
         else:
-            merged.append(_Segment(seg.kind, seg.lo, seg.hi, seg.r_lo, seg.r_hi, seg.concave, seg.span))
+            merged.append(_Segment(seg.kind, seg.lo, seg.hi, seg.r_lo, seg.r_hi, seg.concave, seg.span, seg.bulge))
     return merged
 
 
@@ -322,6 +371,107 @@ def axes(shape) -> list[Axis]:
                               end=_tidy(tuple(f + hi * c for f, c in zip(foot, d))), radius=round(radius, 9)))
     found.sort(key=lambda a: (a.start, a.end))
     return found
+
+
+def slots(shape) -> list[Slot]:
+    """Every obround slot in ``shape``: two concave half cylinders of one radius,
+    on parallel axes over the same stretch, each open toward the other, with air
+    between them. Through when the solid is air past both ends at the slot's
+    centre; otherwise its depth runs from the open end."""
+    from build123d import Vector
+
+    halves = []
+    for d, foot, segments in _surface_segments(shape).values():
+        for seg in segments:
+            if seg.kind == "cyl" and seg.concave and abs(seg.span - math.pi) < 1e-3:
+                halves.append((d, foot, seg))
+    found: list[Slot] = []
+    used: set[int] = set()
+    for i, (d, foot_a, a) in enumerate(halves):
+        if i in used:
+            continue
+        for j in range(i + 1, len(halves)):
+            d_b, foot_b, b = halves[j]
+            if j in used or any(abs(x - y) > 1e-6 for x, y in zip(d, d_b)):
+                continue
+            if abs(a.r_lo - b.r_lo) > _TOUCH or abs(a.lo - b.lo) > _TOUCH or abs(a.hi - b.hi) > _TOUCH:
+                continue
+            between = tuple(y - x for x, y in zip(foot_a, foot_b))
+            gap = math.sqrt(sum(c * c for c in between))
+            if gap < _TOUCH:
+                continue
+            toward = tuple(c / gap for c in between)
+            # Each end opens toward the other: its face bulges away from it.
+            if sum(x * y for x, y in zip(a.bulge, toward)) > -0.99 or sum(x * y for x, y in zip(b.bulge, toward)) < 0.99:
+                continue
+            middle = tuple((x + y) / 2 for x, y in zip(foot_a, foot_b))
+
+            def at(t: float, middle=middle, d=d):
+                return Vector(*(m + t * c for m, c in zip(middle, d)))
+
+            if shape.is_inside(at((a.lo + a.hi) / 2)):
+                continue  # material between the ends: two notches, not a slot
+            open_lo = not shape.is_inside(at(a.lo - _PROBE))
+            open_hi = not shape.is_inside(at(a.hi + _PROBE))
+            if not (open_lo or open_hi):
+                continue
+            thru = open_lo and open_hi
+            from_hi = open_hi
+            mouth_at = a.hi if from_hi else a.lo
+            axis = tuple(-c for c in d) if from_hi else d
+            ends = tuple(tuple(f + mouth_at * c for f, c in zip(foot, d)) for foot in (foot_a, foot_b))
+            direction = _canonical(toward, (0.0, 0.0, 0.0))[0]
+            used.update((i, j))
+            found.append(Slot(
+                mouth=_tidy(tuple(m + mouth_at * c for m, c in zip(middle, d))), axis=_tidy(axis),
+                direction=_tidy(direction), ends=(_tidy(ends[0]), _tidy(ends[1])), width=2 * a.r_lo,
+                length=gap + 2 * a.r_lo, thru=thru, depth=None if thru else a.hi - a.lo, run=a.hi - a.lo,
+            ))
+            break
+    found.sort(key=lambda sl: (sl.signature(), sl.axis, sl.mouth))
+    return found
+
+
+def bolt_circles(shape, found: list[Hole] | None = None) -> list[BoltCircle]:
+    """Identical holes, three or more, opening the same way, equally spaced on a
+    circle whose centre lies on a turned axis of the part (a bore, a boss, the
+    part's own outside). The turned axis is what makes it a bolt circle rather than
+    a pattern a rectangular plate happens to make: four corner holes on a square
+    are equally spaced too, and are dimensioned as pitches."""
+    found = holes(shape) if found is None else found
+    lines = [(d, foot) for d, foot, segments in _surface_segments(shape).values()
+             if any(s.kind == "cyl" and _full(s) for s in _merge_split_faces(segments))]
+    groups: dict[tuple, list[Hole]] = {}
+    for hole in found:
+        groups.setdefault((hole.signature(), hole.axis), []).append(hole)
+    circles: list[BoltCircle] = []
+    for (_sig, axis), members in groups.items():
+        if len(members) < 3:
+            continue
+        u, v = _perpendicular(axis)
+        centre = tuple(sum(h.mouth[k] for h in members) / len(members) for k in range(3))
+        polar = []
+        for hole in members:
+            rel = tuple(m - c for m, c in zip(hole.mouth, centre))
+            x, y = sum(a * b for a, b in zip(rel, u)), sum(a * b for a, b in zip(rel, v))
+            along = sum(a * b for a, b in zip(rel, axis))
+            polar.append((math.atan2(y, x) % (2 * math.pi), math.hypot(x, y), along))
+        radius = sum(r for _a, r, _z in polar) / len(polar)
+        if radius < _TOUCH or any(abs(r - radius) > 1e-3 or abs(z) > 1e-3 for _a, r, z in polar):
+            continue
+        angles = sorted(a for a, _r, _z in polar)
+        step = 2 * math.pi / len(angles)
+        gaps = [(b - a) for a, b in zip(angles, angles[1:] + [angles[0] + 2 * math.pi])]
+        if any(abs(g - step) > 1e-3 for g in gaps):
+            continue
+        d, foot = _canonical(axis, centre)
+        if not any(all(abs(x - y) < 1e-6 for x, y in zip(d, line_d))
+                   and math.dist(foot, line_foot) < 1e-3 for line_d, line_foot in lines):
+            continue
+        circles.append(BoltCircle(centre=_tidy(centre), axis=axis, diameter=2 * radius,
+                                  mouths=tuple(h.mouth for h in members)))
+    circles.sort(key=lambda c: (round(c.diameter, 3), c.axis, c.centre))
+    return circles
 
 
 def turned_diameters(shape) -> list[float]:

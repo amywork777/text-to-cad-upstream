@@ -240,11 +240,30 @@ class View:
                                angle=float(angle), tol=_tol(tol), fit=fit, hole=spec))
         return self
 
+    def slot(self, center, *, width: float | None = None, length: float | None = None, thru: bool | None = None,
+             depth: float | None = None, count: int | None = None, angle: float = 45.0,
+             label: str | None = None) -> "View":
+        """A slot callout -- ``2× 8 × 30 SLOT THRU`` -- read off the part, in a view
+        that looks down the slot. ``center`` is the slot's centre or the centre of
+        either rounded end. Width, length (end to end), THRU or depth and the count
+        come from the geometry; any given here is checked and a contradiction is
+        refused. ``label`` is appended."""
+        given = {"width": _positive("width", width, allow_none=True),
+                 "length": _positive("length", length, allow_none=True),
+                 "thru": None if thru is None else bool(thru), "depth": _positive("depth", depth, allow_none=True),
+                 "count": None if count is None else _positive("count", count, integer=True)}
+        if thru and depth is not None:
+            raise ValueError("a slot is either THRU or has a depth, not both")
+        self._dims.append(_Dim("slot", _p3(center), None, 0.0, None, None, angle=float(angle),
+                               hole={"given": given, "label": None if label is None else str(label)}))
+        return self
+
     def holes(self, *, angle: float = 45.0) -> "View":
-        """Call out every hole this view looks down, one callout per kind of hole
-        (``4× ⌀5.5 THRU``, ``⌀28 THRU``), each read off the part and placed on
-        the hole nearest the edge of the view so its leader is short. A blind
-        hole that opens on the far side belongs to the opposite view."""
+        """Call out every hole and slot this view looks down, one callout per kind
+        (``4× ⌀5.5 THRU``, ``⌀28 THRU``, ``8 × 30 SLOT THRU``), each read off the
+        part and placed on the one nearest the edge of the view so its leader is
+        short. Holes on a bolt circle say so (``EQ SP ON ⌀60``). A blind hole that
+        opens on the far side belongs to the opposite view."""
         self._dims.append(_Dim("holes", (0.0, 0.0, 0.0), None, 0.0, None, None, angle=float(angle)))
         return self
 
@@ -430,12 +449,19 @@ def hole_callout_text(spec: dict, *, tol=None, fit: str | None = None) -> str:
     parts = []
     # One hole is not "1×": a count prints only when there is something to count.
     lead = f"{spec['count']}× " if (spec.get("count") or 1) > 1 else ""
+    if spec.get("slot"):
+        text = f"{lead}{_fmt(spec['width'])} × {_fmt(spec['length'])} SLOT"
+        text += " THRU" if spec.get("thru") else (f" \u21a7{_fmt(spec['depth'])}" if spec.get("depth") else "")
+        return text + (f"   {spec['label']}" if spec.get("label") else "")
     size = spec["thread"] if spec.get("thread") else f"%%c{_fmt(spec['diameter'])}"
     size += _tol_suffix(tol) + (f" {fit}" if fit else "")
     if spec.get("thru"):
         size += " THRU"
     elif spec.get("depth") is not None:
         size += f" \u21a7{_fmt(spec['depth'])}"
+    if spec.get("pcd"):
+        # The bolt circle: equally spaced on a circle of this diameter.
+        size += f" EQ SP ON %%c{_fmt(spec['pcd'])}"
     parts.append(lead + size)
 
     def same(a, b) -> bool:
@@ -1284,15 +1310,45 @@ def _faces_viewer(hole, look) -> bool:
     return _dot(hole.axis, look) < 0 or (hole.thru and not hole.cbore and not hole.csk)
 
 
-def _hole_spec(hole, count: int, thread: str | None = None, label: str | None = None) -> dict:
+@dataclass
+class _Features:
+    """What a drawing reads off one part, once however many views show it."""
+
+    holes: list
+    slots: list
+    circles: list
+
+    def pcd(self, members) -> float | None:
+        """The bolt circle's diameter when these holes are exactly one bolt circle."""
+        mouths = {tuple(round(c, 6) for c in h.mouth) for h in members}
+        for circle in self.circles:
+            if {tuple(round(c, 6) for c in m) for m in circle.mouths} == mouths:
+                return circle.diameter
+        return None
+
+
+def _hole_spec(hole, count: int, thread: str | None = None, label: str | None = None,
+               pcd: float | None = None) -> dict:
     return {"diameter": hole.diameter, "depth": hole.depth, "thru": hole.thru, "cbore": hole.cbore,
             "csk": hole.csk, "far_cbore": hole.far_cbore, "far_csk": hole.far_csk, "count": count,
-            "thread": thread, "label": label}
+            "thread": thread, "label": label, "pcd": pcd}
+
+
+def _slot_spec(slot, count: int, label: str | None = None) -> dict:
+    return {"slot": True, "width": slot.width, "length": slot.length, "thru": slot.thru, "depth": slot.depth,
+            "count": count, "label": label}
+
+
+def _slot_faces_viewer(slot, look) -> bool:
+    return _dot(slot.axis, look) < 0 or slot.thru
 
 
 def _outer_radius(spec: dict) -> float:
     """Where a callout's leader ends: on the outermost circle the hole shows, so the
-    arrow does not cross a counterbore to reach the bore inside it."""
+    arrow does not cross a counterbore to reach the bore inside it; on a slot,
+    the arc of its end."""
+    if spec.get("slot"):
+        return spec["width"] / 2
     return max(spec["diameter"], (spec.get("cbore") or (0.0,))[0], (spec.get("csk") or (0.0,))[0]) / 2
 
 
@@ -1311,7 +1367,7 @@ def _radii_at(proj, target, *, closed_only: bool) -> list[float]:
 
 
 def _callout_value(dim: "_Dim") -> str:
-    if dim.kind == "hole":
+    if dim.kind in ("hole", "slot"):
         return hole_callout_text(dim.hole, tol=dim.tol, fit=dim.fit)
     if dim.text:
         return dim.text
@@ -1327,7 +1383,7 @@ def _holes_hint(view: View, proj, seen, look) -> str:
     return f"The holes it looks down open at {listed}{' ...' if len(mine) > 6 else ''}; view.holes() calls out every one."
 
 
-def _resolve_view(view: View, proj, bounds, part_holes, warnings: list | None, cut=None) -> list["_Dim"]:
+def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None, cut=None) -> list["_Dim"]:
     """The view's annotation with every size the part decides filled in from the
     part, on copies: a hole callout's diameter, depth, counterbore, countersink and
     count, a diameter or radius callout's value, and ``holes()`` expanded into one
@@ -1335,28 +1391,38 @@ def _resolve_view(view: View, proj, bounds, part_holes, warnings: list | None, c
     import dataclasses
 
     look = VIEW_DIRECTIONS[view.name][0]
-    seen_cache: list | None = None
+    seen_cache: tuple | None = None
 
-    def kept(hole) -> bool:
-        """A section draws only the half beyond its plane: a hole wholly in the
-        half taken away is not on it."""
+    def kept(feature, run: float) -> bool:
+        """A section draws only the half beyond its plane: a hole or slot wholly in
+        the half taken away is not on it."""
         if cut is None:
             return True
-        far = tuple(m + a * hole.length for m, a in zip(hole.mouth, hole.axis))
-        return min(_dot(tuple(e - c for e, c in zip(end, cut[2])), look) for end in (hole.mouth, far)) <= 1e-6
+        far = tuple(m + a * run for m, a in zip(feature.mouth, feature.axis))
+        return min(_dot(tuple(e - c for e, c in zip(end, cut[2])), look) for end in (feature.mouth, far)) <= 1e-6
 
-    def seen() -> list:
+    def seen() -> tuple:
         nonlocal seen_cache
         if seen_cache is None:
-            seen_cache = [h for h in part_holes(view.shape) if abs(_dot(h.axis, look)) > 1 - 1e-6 and kept(h)]
+            features = part_features(view.shape)
+            seen_cache = (
+                [h for h in features.holes if abs(_dot(h.axis, look)) > 1 - 1e-6 and kept(h, h.length)],
+                [sl for sl in features.slots if abs(_dot(sl.axis, look)) > 1 - 1e-6 and kept(sl, sl.run)],
+                features,
+            )
         return seen_cache
 
     out: list[_Dim] = []
     for index, dim in enumerate(view._dims):
         if dim.kind == "hole":
-            resolved = [_resolve_hole(view, proj, dim, seen(), look)]
+            holes, slots, features = seen()
+            resolved = [_resolve_hole(view, proj, dim, holes, look, features, slots)]
+        elif dim.kind == "slot":
+            _holes, slots, _features = seen()
+            resolved = [_resolve_slot(view, proj, bounds, dim, slots, look)]
         elif dim.kind == "holes":
-            resolved = _expand_holes(view, proj, bounds, dim, seen(), look, warnings)
+            holes, slots, features = seen()
+            resolved = _expand_holes(view, proj, bounds, dim, holes, look, warnings, features, slots)
         elif dim.kind in ("diameter", "radius"):
             resolved = [_resolve_round(view, proj, dim)]
         else:
@@ -1367,7 +1433,7 @@ def _resolve_view(view: View, proj, bounds, part_holes, warnings: list | None, c
     return out
 
 
-def _resolve_hole(view: View, proj, dim: "_Dim", seen, look) -> "_Dim":
+def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features=None, slots=()) -> "_Dim":
     import dataclasses
 
     given, thread, label = dim.hole["given"], dim.hole["thread"], dim.hole["label"]
@@ -1375,6 +1441,10 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look) -> "_Dim":
     target = proj.point(dim.p1)
     here = [h for h in seen if _near(proj.point(h.mouth), target)]
     if not here:
+        if given["diameter"] is None and any(_near(proj.point(p), target) for sl in slots
+                                             for p in (sl.mouth, *sl.ends)):
+            raise ValueError(f"{call}: that is a slot, not a hole; call it out with "
+                             f"{view.name}.slot({_where(dim.p1)}).")
         if given["diameter"] is None:
             raise ValueError(f"{call}: no hole runs along the {view.name} view's line of sight there. "
                              + _holes_hint(view, proj, seen, look))
@@ -1419,33 +1489,90 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look) -> "_Dim":
             f"callout was given {', '.join(problems)}. Leave {'it' if len(problems) == 1 else 'them'} unset so "
             "the drawing states the part, or change the model."
         )
-    spec = _hole_spec(hole, len(same), thread, label)
+    spec = _hole_spec(hole, len(same), thread, label, features.pcd(same) if features else None)
     return dataclasses.replace(dim, hole=spec, radius=_outer_radius(spec), feature=hole)
 
 
-def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: list | None) -> list["_Dim"]:
+def _slot_end(proj, bounds, slot) -> tuple:
+    """The end of a slot a callout's leader goes to: the one nearer the view's
+    left or right edge, the short way out."""
+    x0, x1 = bounds[0], bounds[1]
+    return min(slot.ends, key=lambda e: (round(min(proj.point(e)[0] - x0, x1 - proj.point(e)[0]), 6),
+                                         -round(proj.point(e)[1], 6)))
+
+
+def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
+    import dataclasses
+
+    given, label = dim.hole["given"], dim.hole["label"]
+    call = f"{view.name}.slot({_where(dim.p1)})"
+    target = proj.point(dim.p1)
+    here = [sl for sl in seen if any(_near(proj.point(p), target) for p in (sl.mouth, *sl.ends))]
+    if not here:
+        mine = [sl for sl in seen if _slot_faces_viewer(sl, look)]
+        hint = (f"The slots it looks down are centred at {', '.join(_where(sl.mouth) for sl in mine[:6])}."
+                if mine else "This view looks down no slot.")
+        raise ValueError(f"{call}: no slot runs along the {view.name} view's line of sight there. {hint}")
+    slot = here[0]
+    if not _slot_faces_viewer(slot, look):
+        raise ValueError(f"{call}: that slot opens on the far side of the part. Call it out in the "
+                         f"{_OPPOSITE[view.name]} view, which looks into it.")
+    same = [sl for sl in seen if sl.signature() == slot.signature() and _slot_faces_viewer(sl, look)]
+    problems = []
+    for name, value in (("width", slot.width), ("length", slot.length)):
+        if given[name] is not None and abs(given[name] - value) > 0.01:
+            problems.append(f"{name}={_fmt(given[name])}")
+    if given["thru"] is not None and given["thru"] != slot.thru:
+        problems.append(f"thru={given['thru']}")
+    if given["depth"] is not None and (slot.thru or abs(given["depth"] - slot.depth) > 0.01):
+        problems.append(f"depth={_fmt(given['depth'])}")
+    if given["count"] is not None and given["count"] != len(same):
+        problems.append(f"count={given['count']}")
+    if problems:
+        raise ValueError(
+            f"{call}: the part's slot reads {_shown(hole_callout_text(_slot_spec(slot, len(same))))}, but the "
+            f"callout was given {', '.join(problems)}. Leave {'it' if len(problems) == 1 else 'them'} unset so "
+            "the drawing states the part, or change the model."
+        )
+    spec = _slot_spec(slot, len(same), label)
+    end = _slot_end(proj, bounds, slot)
+    return dataclasses.replace(dim, p1=end, hole=spec, radius=slot.width / 2, feature=slot)
+
+
+def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: list | None,
+                  features=None, slots=()) -> list["_Dim"]:
     import dataclasses
 
     groups: dict[tuple, list] = {}
     for hole in seen:
         if _faces_viewer(hole, look):
             groups.setdefault(hole.signature(), []).append(hole)
-    if not groups:
+    slot_groups: dict[tuple, list] = {}
+    for slot in slots:
+        if _slot_faces_viewer(slot, look):
+            slot_groups.setdefault(slot.signature(), []).append(slot)
+    if not groups and not slot_groups:
         if warnings is not None:
-            warnings.append(f"{view.name}.holes(): the {view.name} view looks down no hole, so it calls nothing out.")
+            warnings.append(f"{view.name}.holes(): the {view.name} view looks down no hole or slot, so it calls "
+                            "nothing out.")
         return []
     x0, x1 = bounds[0], bounds[1]
 
-    def short_way_out(hole) -> tuple:
-        p = proj.point(hole.mouth)
+    def short_way_out(point) -> tuple:
+        p = proj.point(point)
         return (round(min(p[0] - x0, x1 - p[0]), 6), -round(p[1], 6))
 
     out = []
     for members in sorted(groups.values(), key=lambda g: (-g[0].diameter, g[0].signature())):
-        hole = min(members, key=short_way_out)
-        spec = _hole_spec(hole, len(members))
+        hole = min(members, key=lambda h: short_way_out(h.mouth))
+        spec = _hole_spec(hole, len(members), pcd=features.pcd(members) if features else None)
         out.append(dataclasses.replace(dim, kind="hole", p1=hole.mouth, hole=spec, radius=_outer_radius(spec),
                                        feature=hole))
+    for members in sorted(slot_groups.values(), key=lambda g: g[0].signature()):
+        slot = min(members, key=lambda sl: short_way_out(_slot_end(proj, bounds, sl)))
+        spec = _slot_spec(slot, len(members))
+        out.append(dataclasses.replace(dim, kind="slot", p1=_slot_end(proj, bounds, slot), hole=spec,
+                                       radius=slot.width / 2, feature=slot))
     return out
 
 
@@ -1522,7 +1649,7 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
     room = {side: (rows_out[side] * _DIM_ROW + th * 1.5) if rows_out[side] else 0.0 for side in _SIDES}
     rowed = dict(room)
     for dim in items:
-        if dim.kind in ("hole", "diameter", "radius"):
+        if dim.kind in ("hole", "slot", "diameter", "radius"):
             # The side a callout prefers is its hole's own half of the view, the
             # short way out, past every dimension row on that side.
             side = "right" if proj.point(dim.p1)[0] > cx + 1e-6 else "left"
@@ -1780,6 +1907,43 @@ def _cut(view: View) -> tuple:
     return kept, faces, point
 
 
+def _merge_centre_lines(msp) -> None:
+    """One chain line where several land on one line and overlap: a row of holes'
+    centre marks, a bore's mark, a cutting plane through them. Overlapping chain
+    lines strike their dashes out of phase and print solid, which reads as an
+    edge."""
+    lines: dict[tuple, list] = {}
+    for entity in list(msp.query("LINE[layer=='CENTER']")):
+        a, b = entity.dxf.start, entity.dxf.end
+        length = math.hypot(b.x - a.x, b.y - a.y)
+        if length < 1e-9:
+            continue
+        ux, uy = (b.x - a.x) / length, (b.y - a.y) / length
+        if ux < -1e-9 or (abs(ux) <= 1e-9 and uy < 0):
+            ux, uy = -ux, -uy
+        offset = -uy * a.x + ux * a.y
+        t0, t1 = sorted((ux * a.x + uy * a.y, ux * b.x + uy * b.y))
+        lines.setdefault((round(ux, 6), round(uy, 6), round(offset, 4)), []).append((t0, t1, entity))
+    for (ux, uy, offset), spans in lines.items():
+        if len(spans) < 2:
+            continue
+        spans.sort(key=lambda s: (s[0], s[1]))
+        merged: list[list] = []
+        for t0, t1, entity in spans:
+            if merged and t0 <= merged[-1][1] + 1e-6:
+                merged[-1][1] = max(merged[-1][1], t1)
+                merged[-1][2].append(entity)
+            else:
+                merged.append([t0, t1, [entity]])
+        for t0, t1, entities in merged:
+            if len(entities) < 2:
+                continue
+            for entity in entities:
+                msp.delete_entity(entity)
+            msp.add_line((ux * t0 - uy * offset, uy * t0 + ux * offset), (ux * t1 - uy * offset, uy * t1 + ux * offset),
+                         dxfattribs={"layer": "CENTER"})
+
+
 def _model_to_sheet(proj, at, centre, scale, point) -> tuple[float, float]:
     """Where a model point lands on the sheet in a placed view."""
     x, y = proj.point(point)
@@ -1853,7 +2017,7 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     import ezdxf
     from ezdxf.enums import TextEntityAlignment
 
-    from cadgen._internal.drawing_features import axes as find_axes, holes as find_holes
+    from cadgen._internal.drawing_features import axes as find_axes, bolt_circles, holes as find_holes, slots as find_slots
 
     doc = ezdxf.new("R2010", setup=True)
     doc.units = ezdxf.units.MM
@@ -1943,13 +2107,14 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     _draw_furniture(msp, sheet, index=index, count=count, label=label, text=text)
 
     # What the part's faces say, read once per part however many views show it.
-    found_holes: dict[int, list] = {}
+    found_features: dict[int, _Features] = {}
     found_axes: dict[int, list] = {}
 
-    def part_holes(shape) -> list:
-        if id(shape) not in found_holes:
-            found_holes[id(shape)] = find_holes(shape)
-        return found_holes[id(shape)]
+    def part_features(shape) -> _Features:
+        if id(shape) not in found_features:
+            holes = find_holes(shape)
+            found_features[id(shape)] = _Features(holes, find_slots(shape), bolt_circles(shape, holes))
+        return found_features[id(shape)]
 
     def part_axes(shape) -> list:
         if id(shape) not in found_axes:
@@ -1985,7 +2150,7 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             centre = ((corners[0] + corners[1]) / 2, (corners[2] + corners[3]) / 2)
         else:
             centre = ((bounds[0] + bounds[1]) / 2, (bounds[2] + bounds[3]) / 2)
-        items = _resolve_view(view, proj, bounds, part_holes, warnings, cut)
+        items = _resolve_view(view, proj, bounds, part_features, warnings, cut)
         work.append((view, proj, bounds, items, _plan_view(view, proj, bounds, items, sheet), centre))
 
     # A standard arrangement is laid out again from the room its views' annotation
@@ -2176,6 +2341,26 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             # shaft's axis, a bore drawn hidden through a plate.
             for a, b in _axis_lines(view, proj, turned, to_sheet):
                 msp.add_line(a, b, dxfattribs={"layer": "CENTER"})
+            # A slot seen end-on: a centre line down its length and one across each
+            # rounded end. A bolt circle: its pitch circle as a chain line.
+            look = VIEW_DIRECTIONS[view.name][0]
+            features = part_features(view.shape)
+            for slot in features.slots:
+                if abs(_dot(slot.axis, look)) < 1 - 1e-6:
+                    continue
+                a, b = to_sheet(proj.point(slot.ends[0])), to_sheet(proj.point(slot.ends[1]))
+                run = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
+                u = ((b[0] - a[0]) / run, (b[1] - a[1]) / run)
+                reach = slot.width / 2 * sv + _CENTRE_OVERSHOOT
+                msp.add_line((a[0] - u[0] * reach, a[1] - u[1] * reach), (b[0] + u[0] * reach, b[1] + u[1] * reach),
+                             dxfattribs={"layer": "CENTER"})
+                for end in (a, b):
+                    msp.add_line((end[0] + u[1] * reach, end[1] - u[0] * reach),
+                                 (end[0] - u[1] * reach, end[1] + u[0] * reach), dxfattribs={"layer": "CENTER"})
+            for circle in features.circles:
+                if abs(_dot(circle.axis, look)) > 1 - 1e-6:
+                    msp.add_circle(to_sheet(proj.point(circle.centre)), circle.diameter / 2 * sv,
+                                   dxfattribs={"layer": "CENTER"})
         vx0, vx1, vy0, vy1 = own_box
         centres = [to_sheet(c) for c, _r in _centres(_circles(proj.visible) + _end_on(view, proj, part_axes(view.shape)))]
 
@@ -2297,7 +2482,7 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
         if "height" in view._overall:
             linear((vx0, vy0), (vx0, vy1), None, "left", plan["overall"]["left"], None, "v")
         for dim in items:
-            if dim.kind not in ("diameter", "radius", "hole"):
+            if dim.kind not in ("diameter", "radius", "hole", "slot"):
                 continue
             # A callout: a radial leader from the circle to a horizontal landing
             # outside the view, past whatever dimensions stand on that side, with
@@ -2348,8 +2533,8 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             if record is not None:
                 # A hole callout states its hole; a diameter callout states a diameter.
                 # A leader's radius is neither, so it is not a stated value.
-                if dim.kind == "hole" and dim.feature is not None:
-                    record["called"].add(_hole_key(dim.feature))
+                if dim.kind in ("hole", "slot") and dim.feature is not None:
+                    record["called"].add(_feature_key(dim.feature))
                 elif dim.kind == "diameter":
                     record["values"].append(2 * dim.radius)
         for dim in items:
@@ -2396,18 +2581,21 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 )
             continue
         _draw_cutting_plane(msp, parent, point, look, letter, text, th)
+    _merge_centre_lines(msp)
     return doc
 
 
-def _hole_key(hole) -> tuple:
-    """Holes one callout covers: the same kind of hole, opening the same way. A
-    plain through hole reads the same from either end; a blind or opened-out one
-    drilled from the other face is a different callout, in the other view."""
+def _feature_key(feature) -> tuple:
+    """Holes or slots one callout covers: the same kind, opening the same way. A
+    plain through hole or slot reads the same from either end; a blind or
+    opened-out one made from the other face is a different callout, in the other
+    view."""
     from cadgen._internal.drawing_features import _canonical
 
-    plain = hole.thru and not (hole.cbore or hole.csk or hole.far_cbore or hole.far_csk)
-    direction = _canonical(hole.axis, (0.0, 0.0, 0.0))[0] if plain else hole.axis
-    return (hole.signature(), tuple(round(c, 4) for c in direction))
+    plain = feature.thru and not any(getattr(feature, name, None)
+                                     for name in ("cbore", "csk", "far_cbore", "far_csk"))
+    direction = _canonical(feature.axis, (0.0, 0.0, 0.0))[0] if plain else feature.axis
+    return (feature.signature(), tuple(round(c, 4) for c in direction))
 
 
 def _unstated(facts: dict) -> list[str]:
@@ -2419,25 +2607,29 @@ def _unstated(facts: dict) -> list[str]:
     is not allowed to look finished when it is not, so each line names the call
     that states the missing fact.
     """
-    from cadgen._internal.drawing_features import holes as find_holes, turned_diameters
+    from cadgen._internal.drawing_features import holes as find_holes, slots as find_slots, turned_diameters
 
     lines: list[str] = []
     for record in facts.values():
         shape, views = record["shape"], record["views"]
         kinds: dict[tuple, list] = {}
-        for hole in find_holes(shape):
-            kinds.setdefault(_hole_key(hole), []).append(hole)
+        for feature in [*find_holes(shape), *find_slots(shape)]:
+            kinds.setdefault(_feature_key(feature), []).append(feature)
         for key, members in kinds.items():
             if key in record["called"]:
                 continue
-            hole = members[0]
-            text = _shown(hole_callout_text(_hole_spec(hole, len(members))))
+            feature = members[0]
+            is_slot = hasattr(feature, "width")
+            text = _shown(hole_callout_text(_slot_spec(feature, len(members)) if is_slot
+                                            else _hole_spec(feature, len(members))))
+            faces = _slot_faces_viewer if is_slot else _faces_viewer
             where = next((name for name in views
-                          if abs(_dot(hole.axis, VIEW_DIRECTIONS[name][0])) > 1 - 1e-6
-                          and _faces_viewer(hole, VIEW_DIRECTIONS[name][0])), None)
-            fix = (f"{where}.hole({_where(hole.mouth)}) states it, or {where}.holes() calls out every hole "
-                   f"the {where} view looks down." if where else
-                   "No view on the drawing looks into it; add the view that sees it as a circle.")
+                          if abs(_dot(feature.axis, VIEW_DIRECTIONS[name][0])) > 1 - 1e-6
+                          and faces(feature, VIEW_DIRECTIONS[name][0])), None)
+            verb = "slot" if is_slot else "hole"
+            fix = (f"{where}.{verb}({_where(feature.mouth)}) states it, or {where}.holes() calls out every hole "
+                   f"and slot the {where} view looks down." if where else
+                   f"No view on the drawing looks into it; add the view that looks down the {verb}.")
             lines.append(f"incomplete: {text} is not called out. {fix}")
         size = shape.bounding_box().size
         turned = turned_diameters(shape)
