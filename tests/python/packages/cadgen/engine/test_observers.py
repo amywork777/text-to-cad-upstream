@@ -17,8 +17,8 @@ import build123d as bd
 from cadgen.engine import stl, xbf
 
 
-@xbf
-@stl
+@xbf("XBF/secret_plate.xbf")
+@stl("secret_plate.stl")
 def secret_plate():
     plate = bd.Box(10, 10, 2)
     plate.label = "plate"
@@ -27,7 +27,7 @@ def secret_plate():
     return bd.Compound(children=[plate, peg], label="secret_plate")
 
 
-@xbf
+@xbf("XBF/secret_broken.xbf")
 def secret_broken():
     raise ValueError("the secret part did not fit")
 """
@@ -54,7 +54,7 @@ class ObserversTest(unittest.TestCase):
         api.export(self.folder / "XBF/secret_plate.xbf", self.folder / "out.step", self.folder / "out.3mf", daemon=False)
         with self.assertRaises(ValueError):  # refused by name
             api.snapshot(self.folder / "missing.xbf", self.folder / "out.png", daemon=False)
-        api.where(self.folder / "XBF/secret_plate.xbf")  # where, serve and status tell nothing
+        api.inspect(self.folder / "XBF/secret_plate.xbf")  # where, serve and status tell nothing
         built, exported, drawn = self.told
         self.assertEqual(len(self.told), 3)
         for facts in self.told:

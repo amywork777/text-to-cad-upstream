@@ -1,4 +1,4 @@
-"""References to geometry: ``select`` and ``cadgen where`` resolve a ref -- a part's label or an
+"""References to geometry: ``select`` and ``cadgen inspect`` resolve a ref -- a part's label or an
 occurrence's path (``hand/finger.2``), and an element's name or ordinal -- by name in the latest
 build, into build123d shapes in world coordinates; a model never reads a file its own build
 writes."""
@@ -31,7 +31,7 @@ import build123d as bd
 from cadgen.engine import xbf
 
 
-@xbf
+@xbf("XBF/plate.xbf")
 def plate():
     body = bd.Box(40, 30, 6)
     relief = {relief}
@@ -43,7 +43,7 @@ import build123d as bd
 from cadgen.engine import xbf
 
 
-@xbf
+@xbf("XBF/hand.xbf")
 def hand():
     palm = bd.Box(30, 20, 5)
     palm.label = "palm"
@@ -244,7 +244,7 @@ class BuildSelectTest(_Folder):
                 from cadgen.engine import select, xbf
 
 
-                @xbf
+                @xbf("XBF/part.xbf")
                 def part():
                     base = bd.Box(40, 30, 6)
                     top = {how}
@@ -270,7 +270,7 @@ class BuildSelectTest(_Folder):
             HERE = Path(__file__).resolve().parent
 
 
-            @xbf
+            @xbf("XBF/clear.xbf")
             def clear():
                 wall = select(HERE / "XBF/plate.xbf", "{WALL}")[0]
                 return bd.Pos(*wall.center(bd.CenterOf.MASS)) * bd.Box(2, 2, 2)
@@ -300,7 +300,7 @@ class BuildSelectTest(_Folder):
             HERE = Path(__file__).resolve().parent
 
 
-            @xbf
+            @xbf("XBF/own.xbf")
             def own():
                 body = bd.Box(10, 10, 10)
                 top = {top}
@@ -324,14 +324,14 @@ class BuildSelectTest(_Folder):
             HERE = Path(__file__).resolve().parent
 
 
-            @xbf
+            @xbf("XBF/plate.xbf")
             def plate():
                 body = bd.Box(40, 30, 6)
                 relief = body - bd.Cylinder(5, 10)
                 return relief
 
 
-            @xbf
+            @xbf("XBF/peg.xbf")
             def peg():
                 wall = select({source}, "{wall}")[0]
                 return bd.Pos(*wall.center(bd.CenterOf.MASS)) * bd.Cylinder(4, 20)
@@ -359,8 +359,8 @@ class ReadAndPlaceTest(_Folder):
             from cadgen.engine import step, xbf
 
 
-            @xbf
-            @step
+            @xbf("XBF/plate.xbf")
+            @step("plate.step")
             def plate():
                 return bd.Box(30, 20, 4)
         """
@@ -372,12 +372,12 @@ class ReadAndPlaceTest(_Folder):
             HERE = Path(__file__).resolve().parent
             {plate}
 
-            @xbf
+            @xbf("XBF/from_xbf.xbf")
             def from_xbf():
                 return read_xbf(HERE / "XBF/plate.xbf"){tail}
 
 
-            @xbf
+            @xbf("XBF/from_step.xbf")
             def from_step():
                 return read_step(HERE / "plate.step"){tail}
         """
@@ -398,12 +398,12 @@ class ReadAndPlaceTest(_Folder):
             from cadgen.engine import xbf
 
 
-            @xbf
+            @xbf("XBF/peg.xbf")
             def peg():
                 return bd.Cylinder(2, 10)
 
 
-            @xbf
+            @xbf("XBF/rack.xbf")
             def rack():
                 first, second = peg(), peg().moved(bd.Location((10, 0, 0)))
                 if abs(second.volume - first.volume) > 1e-6:
@@ -414,7 +414,7 @@ class ReadAndPlaceTest(_Folder):
 
 
 class WhereTest(unittest.TestCase):
-    """``cadgen where`` resolves the same grammar, through a daemon of the test's own."""
+    """``cadgen inspect`` resolves the same grammar, through a daemon of the test's own."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -434,7 +434,7 @@ class WhereTest(unittest.TestCase):
         shutil.rmtree(cls.state, ignore_errors=True)
 
     def where(self, ref: str) -> subprocess.CompletedProcess:
-        return engine_daemon.run([sys.executable, "-m", "cadgen.cli", "where", "XBF/hand.xbf", ref], cwd=self.folder,
+        return engine_daemon.run([sys.executable, "-m", "cadgen.cli", "inspect", "XBF/hand.xbf", ref], cwd=self.folder,
                                  env=self.env)
 
     def test_where_takes_an_occurrence_path(self) -> None:

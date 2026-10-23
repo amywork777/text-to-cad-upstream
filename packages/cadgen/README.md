@@ -11,7 +11,7 @@ from their JavaScript packages and bundled in at build time (the JS *source* nev
 from cadgen import step, xbf
 import build123d as bd
 
-@xbf                      # XBF/arm.xbf beside the script
+@xbf("XBF/arm.xbf")                      # XBF/arm.xbf beside the script
 @step("arm.step")         # and its STEP, a translation of that document
 def arm():
     return bd.Box(10, 20, 30)
@@ -26,7 +26,7 @@ python arm.py                                 # builds it in the engine's warm w
 cadgen export XBF/arm.xbf arm.glb arm.stl     # more translations of the document it wrote
 cadgen snapshot XBF/arm.xbf arm.png           # a still of it, drawn by OCCT
 cadgen serve XBF/arm.xbf                      # the document on a local page
-cadgen where XBF/arm.xbf                      # its build closure
+cadgen inspect XBF/arm.xbf                      # its build closure
 ```
 
 **PURPOSE** — the engine and its command surface: models built in a warm worker whose memo
@@ -55,18 +55,20 @@ the two disagree, the engine's README is right.
 ## The design laws
 
 These are LAWS, not conventions: a change that violates them is wrong even when it works.
-Laws 1 to 13 and 19 to 20 are the engine's; 14 to 18 hold for the whole package.
+Laws 1 to 13 and 19 to 21 are the engine's; 14 to 18 hold for the whole package.
 
 1. **An xbf carries its build closure as pointers and digests** -- script and function,
    modules, data inputs, versions and the key; never source, never lines on elements, never
    input contents, nothing of git's; names remain the per-element tie to code (the engine's
    **Build closure**).
-2. **Nothing to disk.** The engine writes the files a model declares -- the xbf and the exports
+2. **Only requested files to disk.** The engine writes the files a model declares -- the xbf and the exports
    its decorators name, nothing beside them -- and the operating system's coordination for its
    warm process: a socket and a lock in `tempfile.gettempdir()/cadgen-engine`. It writes no
    sidecar, record of a build, cache, index, memo, mesh or parsed document, and no derived file
    beside an input. A restart is cold, but for the xbf itself: a model whose xbf holds the
-   closure the model has now is not run.
+   closure the model has now is not run. Explicit viewer exports write only the requested
+   artifact to managed temporary storage for delivery; no source or intermediate XBF
+   is written (the engine's **Viewer exports**).
 3. **Standalone.** `cadgen.engine` imports nothing of cadgen outside itself: OCP, build123d (and
    ezdxf, build123d's own DXF library), numpy, Pillow and the standard library only. cadgen
    reaches into it, never the other way: its telemetry is an observer the engine calls with
@@ -90,7 +92,7 @@ Laws 1 to 13 and 19 to 20 are the engine's; 14 to 18 hold for the whole package.
    retire or the engine restarts. Reusing a code model's name updates that address.
 7. **Provenance is served live, never written.** What made an element -- the feature, its
    operation, the function, file and line of its call -- lives in the trace of the worker that
-   built the document, and is asked of it while it lives (`made_by`, `cadgen where`). A document
+   built the document, and is asked of it while it lives (`made_by`, `cadgen inspect`). A document
    opened with no such worker has none to give, and says so (`made_by: null`).
 8. **Poses and motion definitions, never frames.** The document carries kinematics -- the
    mechanism, its configurations and its motions -- as poses and definitions, never baked frames
@@ -99,9 +101,10 @@ Laws 1 to 13 and 19 to 20 are the engine's; 14 to 18 hold for the whole package.
 9. **Names are the durable tie to code.** An element's name is spelled from the function that
    made its feature and the author's name for that feature, never from a line or a file: moving
    code renames nothing, and the file holds no line to go stale.
-10. **A file decorator defines an output file.** Whenever the model it decorates runs in a
+10. **A file decorator requires an explicit output path.** `out` is its only argument;
+    omitted paths and `None` are refused. Whenever the model it decorates runs in a
     build -- the build's target, or a child another model's body calls -- that file is written,
-    once per build, from the model's own document.
+    once per build, from the model's own document. A model with no file decorator writes nothing.
 11. **Decoration only declares; a model script is Python.** Importing cadgen or
     defining a decorated function never builds a model, writes its outputs, starts a
     worker, or exits the caller. An explicit call builds the model and writes its
@@ -114,7 +117,13 @@ Laws 1 to 13 and 19 to 20 are the engine's; 14 to 18 hold for the whole package.
     `--model NAME`, `--xbf`, `--step`, `--glb`, `--stl`, `--threemf`, or `--dxf` is
     required before code can run. `--model NAME` declares a named document in
     memory; the file flags declare files, additive among themselves. `--name`
-    alone declares no output. A script is built by calling its models (law 11).
+    alone declares no output. The Python `cadgen.build()` function also accepts an already-built
+    build123d shape, with the same output declarations. A script may call that function
+    or its decorated models (law 11). `cad_build` exposes the code form with explicit
+    `name`, `cwd` and outputs; it has no script-selection mode. Calling `Model.build()`
+    selects decorated models without running the script's `__main__`; importing that
+    script still runs its top-level Python. Running `python script.py` runs its
+    ordinary program, including `__main__`. Neither meaning is substituted for the other.
 13. **The document's kinematics are AP242's, and cadgen stores no kinematic fact the
     standard cannot name.** Every entity and attribute of the mechanism subtree is ISO
     10303-105's as Part 21 writes it (edition 4's domain model's where Part 21 has none);
@@ -165,11 +174,60 @@ Laws 1 to 13 and 19 to 20 are the engine's; 14 to 18 hold for the whole package.
     (the engine's **Architecture** and **The daemon and its workers**).
 
 20. **One engine serves the installation.** A page never replaces or re-executes it. Page sessions and document reads share its
-    authenticated HTTP listener. Launchers exit; clients closing never stop it. Kernel
+    authenticated HTTP listener. `serve` and `viewer` always start or reuse it, with no
+    standalone serving mode. Launchers exit; clients closing never stop it. Kernel
     operations run in child processes, never in the engine's request threads. Each
     page session keeps its own root; each MCP session owns its views and resource. The
     stdio shim owns only connection metadata. Sidebar sharing stays in memory, and host
-    quirks stay in the shim and page. See the engine's **Architecture**.
+    quirks stay in the shim and page. MCP's shared `cad_http` exposes only telemetry
+    status and opt-out to agents; other viewer routes require the session capability
+    delivered in UI-only launch metadata. Only the person can opt in through a page
+    or the telemetry CLI. See the engine's **Architecture**.
+
+21. **Python functions own operations; decorators and CLIs expose them.** Code and
+    supplied-shape builds use the same document/output writer as decorated models.
+    `cadgen.build(shape, model="part", step="part.step")` transfers the shape and its
+    metadata in memory to a worker; the server never decodes native geometry. The
+    caller's already-executed operations have no worker memo or feature provenance.
+    Every successful server-backed build reports its address and localhost viewer URL,
+    including a build with file outputs. A cold `daemon=False` build has no served URL.
+
+
+## Agent operations
+
+Every MCP presentation exposes `cad_build`, `cad_export`, `cad_snapshot` and
+`cad_inspect`, independently of the viewer. They call the Python operations through
+the engine's workers. `cad_build` takes source text assigning `result`, a name,
+an absolute working directory and explicit live-model/file outputs. Export names
+absolute server-host destinations; snapshot names a PNG or a Quick Edit packet.
+Export and snapshot retain the Python API's script-model build behavior.
+
+Start with a unique `requestId` (16–100 letters, digits, underscores or hyphens).
+The result carries `id`, `epoch`, `state`, `sequence`, stage/progress and, when done,
+`result` or `error`. Use the same tool with `action: "status"`, `operationId` and
+`epoch`; `afterSequence` and `waitMs` (up to 25000) provide bounded waiting. A retry
+with the same request ID joins the identical operation; changed arguments are
+refused. `action: "cancel"` cancels queued work. Running operations can write
+explicit destinations and are not cancellable. Disconnecting does not cancel. File outputs are not a multi-file transaction: a
+failed operation may have written earlier outputs or a called model's declarations.
+Failure results state this explicitly; reports over 2 MiB are explicitly marked
+truncated and can be obtained through the Python API or CLI.
+There is no separate job tool or generic HTTP jobs API.
+
+Status is in session memory for up to 24 hours, bounded to 128 operations and 4096
+request identities; a restart loses it. Expired identities never replay writes.
+`jobs.py` owns admission, progress, waiting and cancellation for both agent
+operations and viewer exports. Viewer exports additionally own temporary artifact
+expiry, revision checks and download delivery; running cancellation discards that
+temporary artifact. Browser downloads choose the viewer user's local destination
+before starting. An agent's explicit host path is a different destination contract.
+
+`cadgen inspect`, `cadgen.inspect()` and `cad_inspect` read existing files or live
+models. They never execute source to obtain a missing model or write its declared
+outputs. An unbuilt or expired model requires an explicit build. With no reference,
+inspection returns the build closure; with a reference it returns geometry facts.
+`query="build"` (`--query build`) returns saved-file metadata and closure or live
+build metadata. File metadata does not imply a live worker. `where` is retired.
 
 ## The shape of the package
 
@@ -177,7 +235,7 @@ Laws 1 to 13 and 19 to 20 are the engine's; 14 to 18 hold for the whole package.
 src/cadgen/
   __init__.py            # the root: the engine's surface (xbf, step, ..., select, report)
                          #   and its verbs as functions (build, export, snapshot, serve,
-                         #   where, status, stop, daemon), every name loaded on first use;
+                         #   inspect, status, stop, daemon), every name loaded on first use;
                          #   the font guard and the kernel-import recorder, installed first
   engine/                # the engine: models, the daemon and its workers, documents,
                          #   exports, the mesh, references, the OCCT stills (its README)
@@ -209,8 +267,7 @@ src/cadgen/
   analytics.py           # telemetry: usage counts and crash reports, on by default once
                          #   a command has said so, never after a no
   settings.py            # the person's settings: settings.json in the state directory
-  features.py,           # the CAD views' features a person can turn off, and the
-  language.py            #   language they speak
+  language.py            # the language the person chose for the CAD views
   updates.py             # the daily version check, for a copy nothing else keeps current
   assets.py              # where the bundled runtime is
   build123d.py           # `from cadgen import build123d as bd`, the lazy re-export
@@ -225,7 +282,7 @@ src/cadgen/
                          #   committed, never edited
 ```
 
-Commands: `cadgen build`, `export`, `snapshot`, `serve`, `where`, `status`, `stop` and
+Commands: `cadgen build`, `export`, `snapshot`, `serve`, `inspect`, `status`, `stop` and
 `daemon` are the engine's verbs; `cadgen dxf snapshot`, `urdf snapshot` and `sdf snapshot` its
 snapshot for those files alone; `cadgen urdf|sdf|srdf validate` the validators; `cadgen
 doctor` the installation and a skill's pin; `cadgen viewer` the engine page launcher;

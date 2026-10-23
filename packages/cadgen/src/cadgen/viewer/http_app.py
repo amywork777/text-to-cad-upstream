@@ -45,6 +45,10 @@ __all__ = [
     "create_cad_app",
 ]
 
+import threading
+
+_EXPORTS_LOCK = threading.Lock()
+
 POST_GUARD_HEADER = "x-cadgen-viewer"
 # A thumbnail travels as base64 in the change's JSON: 512 KiB of PNG, and room for the rest.
 _LIBRARY_BODY_LIMIT = 768 * 1024
@@ -207,6 +211,7 @@ class CadApp:
         # reads dispatched directly to its document server (``documents.py``).
         self.engine_documents = documents or EngineDocuments(on_crash=lambda error: self._crashed(error, bugs_only=True))
         self.prompt_files = PromptFiles()
+        self._exports = None
         self.start = to_posix_path(os.path.abspath(start if start is not None else _working_folder()))
         # Whether this computer has a file chooser for the home's Open (``POST /__cad/pick``).
         self.pick = available()
@@ -224,6 +229,15 @@ class CadApp:
         # The engine shares one recorder across its page and MCP sessions.
         self.analytics = None
         self.consent_by = "viewer"
+
+    @property
+    def exports(self):
+        # CadApp handles concurrent requests; construct exactly one coordinator per session.
+        from .exports import ExportJobs
+        with _EXPORTS_LOCK:
+            if self._exports is None:
+                self._exports = ExportJobs(self.engine_documents.server)
+            return self._exports
 
     # --- server info ------------------------------------------------------
 
@@ -375,6 +389,8 @@ class CadApp:
                 self._serve_dist(request, response)
                 return
             try:
+                if pathname == "/__cad/exports" or pathname.startswith("/__cad/exports/"):
+                    return self.exports.handle(request, response)
                 if pathname == "/__cad/server":
                     response.send_json(200, self.server_info())
                 elif pathname == "/__cad/catalog":
@@ -401,16 +417,12 @@ class CadApp:
                     else:
                         status, body = self.engine_documents.response(query.get("file") or "")
                         response.send_json(status, body)
-                elif pathname == "/__cad/prompt-files" or pathname.startswith("/__cad/prompt-files/"):
+                elif pathname.startswith("/__cad/prompt-files/"):
                     self._handle_prompt_files_get(request, response, pathname, query)
                 elif pathname == "/__cad/asset":
                     self._handle_asset(request, response, query)
                 elif pathname == "/__cad/analytics" and self.analytics is not None:
                     response.send_json(200, self._consent())
-                elif pathname == "/__cad/features":
-                    from cadgen import features
-
-                    response.send_json(200, features.read())
                 elif pathname == "/__cad/language":
                     from cadgen import language
 
@@ -424,7 +436,8 @@ class CadApp:
                     response.send_json(404, {"error": "Not found"})
             except Exception as error:  # noqa: BLE001
                 self._crashed(error, bugs_only=True)  # a bad request is the caller's; a mistake in our code is a crash
-                response.send_json(400, {"error": str(error)})
+                response.send_json(400 if isinstance(error, (ValueError, TypeError)) else 404 if isinstance(error, FileNotFoundError) else 500,
+                                   {"ok": False, "error": str(error)})
             return
 
         if method == "POST":
@@ -435,6 +448,8 @@ class CadApp:
             if self._rejected_as_cross_site_post(request, response):
                 return
             try:
+                if pathname == "/__cad/exports" or pathname.startswith("/__cad/exports/"):
+                    return self.exports.handle(request, response)
                 if pathname in ("/__cad/analytics", "/__cad/analytics/activity") and self.analytics is not None:
                     # A page's crash report carries its frames (``_report_activity``): room for them, and no more.
                     if int(request.headers.get("content-length") or 0) > (16384 if pathname.endswith("/activity") else 4096):
@@ -444,18 +459,10 @@ class CadApp:
                     if type(payload) is not dict:
                         raise ValueError("an analytics request is an object")
                     if pathname == "/__cad/analytics":
-                        response.send_json(200, self._consent(payload.get("share")))
+                        response.send_json(200, self._consent(payload.get("share"), by=request.consent_by))
                     else:
                         self._report_activity(payload)
                         response.send_empty(204)
-                elif pathname == "/__cad/features":
-                    # The app menu's features: the person's choices, one for every CAD view (``cadgen/features.py``).
-                    from cadgen import features
-
-                    if int(request.headers.get("content-length") or 0) > 4096:
-                        response.send_empty(413, [("connection", "close")])
-                        return
-                    response.send_json(200, features.change(json.loads(request.body() or b"{}")))
                 elif pathname == "/__cad/language":
                     # The app menu's Language: the person's choice, one for every CAD view (``cadgen/language.py``).
                     from cadgen import language
@@ -499,23 +506,17 @@ class CadApp:
                         return
                     status, body = self.prompt_files.create(request.body())
                     response.send_json(status, body)
-                elif pathname == "/__cad/prompt-files/save":
-                    from .prompt_files import MAX_BODY_BYTES
-                    if int(request.headers.get("content-length") or 0) > MAX_BODY_BYTES:
-                        response.send_empty(413, [("connection", "close")])
-                        return
-                    try:
-                        status, body = self.prompt_files.save(request.body())
-                    except ValueError as error:
-                        status, body = 400, {"ok": False, "error": str(error)}
-                    response.send_json(status, body)
+                elif pathname in {"/__cad/server", "/__cad/catalog", "/__cad/folder", "/__cad/search",
+                                  "/__cad/models", "/__cad/thumbnail", "/__cad/drawing", "/__cad/robot",
+                                  "/__cad/xbf", "/__cad/asset", "/__cad/version"}:
+                    response.send_bytes(405, b'{"ok":false,"error":"Method not allowed"}',
+                                        "application/json", [("allow", "GET, HEAD")])
                 else:
-                    response.send_empty(405, [("allow", "POST")])
+                    response.send_json(404, {"error": "Not found"})
             except Exception as error:  # noqa: BLE001
                 self._crashed(error, bugs_only=True)  # a bad request is the caller's; a mistake in our code is a crash
-                # Note the asymmetry with the GET funnel: this one carries
-                # ok:false and that one does not.
-                response.send_json(400, {"ok": False, "error": str(error)})
+                response.send_json(400 if isinstance(error, (ValueError, TypeError)) else 404 if isinstance(error, FileNotFoundError) else 500,
+                                   {"ok": False, "error": str(error)})
             return
 
         # Unreachable: handler.py answers 405 for every other method before
@@ -624,16 +625,16 @@ class CadApp:
 
     # --- usage stats (telemetry) --------------------------------------------
 
-    def _consent(self, share=None) -> dict:
+    def _consent(self, share=None, *, by=None) -> dict:
         """The app menu's Share anonymous usage data toggle: whether sharing is on and why, and, from the person's
         click, their answer, which changes it whenever. Nothing asks: telemetry is on by default once a
         ``cadgen`` command has said so (``cadgen/analytics.py``)."""
         from cadgen.analytics import PRIVACY_URL
 
-        if isinstance(share, bool):
-            self.analytics.choose(share, by=self.consent_by)
+        changed = self.analytics.choose(share, by=by or self.consent_by) if isinstance(share, bool) else None
         found = self.analytics.status()
-        return {"sharing": found["sharing"], "reason": found["reason"], "policy": PRIVACY_URL}
+        return {"sharing": found["sharing"], "reason": found["reason"], "policy": PRIVACY_URL,
+                **({"saved": bool(changed.get("saved"))} if changed is not None else {})}
 
     def _version(self) -> dict:
         """The page's update button (``cadgen/updates.py``): whether a newer text-to-cad is out, from
@@ -687,9 +688,6 @@ class CadApp:
         """Read a prompt JSON file; every request carries the viewer guard."""
         if not request.header(POST_GUARD_HEADER):
             response.send_json(403, {"ok": False, "error": f"missing {POST_GUARD_HEADER} header; send '{POST_GUARD_HEADER}: 1'"})
-            return
-        if pathname == "/__cad/prompt-files":
-            response.send_json(404, {"ok": False, "error": "Not found"})
             return
         found = self.prompt_files.file(pathname[len("/__cad/prompt-files/"):])
         if found is None:

@@ -552,15 +552,14 @@ class MethodHandling(HttpLayerTestCase):
                 self.assertEqual(headers["content-length"], "0")
                 self.assertNotIn("content-type", {k.lower() for k in headers})
 
-    def test_unknown_post_route_is_405_with_allow_post(self):
+    def test_unknown_post_route_is_json_404(self):
         status, headers, body = self.fixture.request(
             "POST", "/__cad/export", headers={"x-cadgen-viewer": "1"}
         )
-        self.assertEqual(status, 405)
-        self.assertEqual(headers["allow"], "POST")
-        self.assertEqual(headers["content-length"], "0")
-        self.assertEqual(body, b"")
-        self.assertNotIn("content-type", {k.lower() for k in headers})
+        self.assertEqual(status, 404)
+        self.assertEqual(json.loads(body), {"error": "Not found"})
+        self.assertNotIn("allow", headers)
+        self.assertIn("application/json", headers["content-type"])
 
 
 class HeaderContract(HttpLayerTestCase):
@@ -687,7 +686,7 @@ class RequestBodies(HttpLayerTestCase):
     def test_a_body_cap_precedes_the_body_read_and_closes_the_connection(self):
         from cadgen.viewer.http_app import _LIBRARY_BODY_LIMIT
 
-        for path, limit in (("/__cad/features", 4096), ("/__cad/language", 4096),
+        for path, limit in (("/__cad/language", 4096),
                             ("/__cad/recents", _LIBRARY_BODY_LIMIT)):
             with self.subTest(path=path):
                 raw = self.fixture.raw(

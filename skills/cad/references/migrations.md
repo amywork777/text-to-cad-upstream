@@ -7,6 +7,19 @@ argument, key or import is gone, and fails the way an unknown one does (an unkno
 command, an unrecognized argument, an unknown key, an `ImportError`) without naming
 what replaced it. The sections below map old forms to current ones.
 
+## CAD app settings and telemetry in 0.8
+
+Quick Edit has no enable/disable preference. The `features` settings API and
+`/__cad/features` route are removed; a stale `features.quickEdit: false` does not
+hide Quick Edit and needs no conversion.
+
+The MCP `cad_telemetry` tool is removed. Use `cad_http` with method `GET`, URL
+`/__cad/analytics` for status, or method `POST` and base64 body
+`eyJzaGFyZSI6ZmFsc2V9` (`{"share":false}`) when the person requests opt-out.
+No open CAD page is needed. Agents cannot opt in or reach other viewer routes.
+The app page moves to protocol 8 and receives its route capability through
+UI-only launch metadata; reopen a restored page after updating.
+
 ## Models build into documents in 0.8
 
 cadgen 0.8 builds models with its engine: a model's result is an `.xbf` document,
@@ -46,14 +59,15 @@ if __name__ == "__main__":
 ```
 
 The document is what the viewer follows build by build, what refs and
-`cadgen where` read, and the model's cache across a daemon restart. Keep the
+`cadgen inspect` read, and the model's cache across a daemon restart. Keep the
 `__main__` calls: decoration only declares, and each explicit call builds its model.
 
 | 0.7 | 0.8 |
 | --- | --- |
 | `@step(out=..., kinematics=..., materials=..., animation=...)` | `@step(out=...)`: `out` is every decorator's only argument; the rest is written in the body (below) |
 | `@stl(mesh_tolerance=..., mesh_angular_tolerance=...)`, `--mesh-tolerance` | none: every mesh is made at FreeCAD's default tolerance |
-| `python model.py --force`, `--json`, `--verbose`, `--profile` | `python model.py` takes no options. `CADGEN_ENGINE_MEMO=0` builds without memo hits; `Model.build()` returns the report as data; `Model.build(verify=True)` checks every replay |
+| `python model.py --force`, `--json`, `--verbose` | `python model.py` takes no options. `CADGEN_ENGINE_MEMO=0` builds without memo hits; `Model.build()` returns the report as data; `Model.build(verify=True)` checks every replay |
+| `python model.py --profile` | `Model.build(profile=True)` or `cadgen.build(code, model="part", profile=True)`; CLI: `cadgen build CODE --model part --profile`. Measures actual worker execution with normal cache hits; skipped work has no timings |
 | `python model.py --no-daemon` | `Model.build(daemon=False)` from Python |
 | `cadgen step build IN.step OUT.step` | `cadgen export IN.step OUT.step`, or `OUT.xbf` to read it in models |
 | `cadgen step compile` | none: the viewer and snapshots read a STEP as it is |
@@ -65,8 +79,10 @@ The document is what the viewer follows build by build, what refs and
 | snapshot `--animation`, `--time`, `--video` | none: export a GLB and play its clips |
 | snapshot `--mode list` | none: list parts with `read_xbf(path).leaves`, and pick them with `select` |
 | snapshot `--focus`, `--hide` | `--display '{"isolated": ["lid"]}'` and `--display '{"hidden": ["lid"]}'` (part refs); a Quick Edit packet given to `--annotation` or `--job` carries the person's own |
-| `cadgen store why`, `store where`, `store forget`, `store gc`, `store info` | none: no store. `cadgen where DOC` prints a document's build closure, `cadgen where DOC REF` what made an element |
+| `cadgen where`, `cadgen.where()` | `cadgen inspect`, `cadgen.inspect()`; existing files or live models only, never an implicit build |
+| `cadgen store why`, `store where`, `store forget`, `store gc`, `store info` | none: no store. `cadgen inspect DOC` prints a document's build closure, `cadgen inspect DOC REF` what made an element |
 | `cadgen daemon status` | `cadgen status` (and `cadgen stop`) |
+| `cadgen serve DOC --foreground` | `cadgen serve DOC`: start or reuse the installation's server, print its URL, and exit |
 | `CADGEN_CACHE_DIR`, `CADGEN_STORE_MAX`, `CADGEN_DAEMON_STATE_DIR` | none; `CADGEN_ENGINE_DIR` moves the engine daemon's socket |
 | `read_scene(path).resolve(ref).shape()` | `select(path, ref)[0]` |
 | `cadgen.revolute`, `slider`, `cylindrical`, `fastened`, `MateTarget`, `AssemblyHelper` | build123d joints in the body |
