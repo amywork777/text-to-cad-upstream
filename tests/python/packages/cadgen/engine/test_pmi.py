@@ -357,6 +357,81 @@ def pmi_plate():
             pmi.dimension("d", "diameter", faces[0], basic=True)
 
 
+# A plate whose one variable ``cut`` is a round hole and then a square pocket: the name the hole's face
+# gets from it passes to a flat side of the square, parallel to the left face (the viewer's v3).
+CUT = '''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10)
+    cut = {cut}
+    body = body - cut
+    body.label = "plate"
+    left = body.faces().sort_by(bd.Axis.X)[0]
+    return pmi.annotate(body, pmi.datum("C", left), pmi.basic("hole-from-left", left, {hole}))
+'''
+ROUND, SQUARE = "bd.Cylinder(5, 10)", "bd.Box(12, 12, 10)"
+
+
+class FaceKindTest(_Folder):
+    def hole_name(self) -> str:
+        """The round hole's element name, as the served document names it."""
+        self.build(CUT.format(cut=ROUND, hole="body.faces().filter_by(bd.GeomType.CYLINDER)[0]"))
+        loaded = document.Loaded(self.xbf)
+        faces = pmi._faces(loaded.prototypes[0].shape)
+        [ordinal] = [at for at in range(1, faces.Extent() + 1) if pmi._surface(faces.FindKey(at))[0] == "cylinder"]
+        return loaded.prototypes[0].face_names[ordinal]
+
+    def named(self, cut: str, name: str, *, ok: bool = True) -> dict:
+        return self.build(CUT.format(cut=cut, hole=repr(name)), ok=ok)
+
+    def test_a_name_that_comes_to_name_another_kind_of_face_is_invalid(self) -> None:
+        name = self.hole_name()
+        report = self.named(ROUND, name)
+        self.assertEqual(report["pmi"]["problems"], [])
+        self.assertEqual(_by_id(pmi.read(self.xbf))["hole-from-left"]["dimension"]["nominal"]["value"], 50.0)
+        # The hole made a square: the name now names a flat side 44 from the left face. Flagged, not measured.
+        report = self.named(SQUARE, name, ok=False)
+        [problem] = report["pmi"]["problems"]
+        self.assertEqual((problem["id"], problem["status"]), ("hole-from-left", "invalid"))
+        self.assertIn(f"{name} named a cylinder face on the last build and names a plane face now", problem["problem"])
+        self.assertIn("a STEP would drop PMI", report["error"])
+        entry = _by_id(pmi.read(self.xbf))["hole-from-left"]
+        self.assertEqual((entry["status"], entry["dimension"]["nominal"]), ("invalid", None))
+        self.assertEqual(_by_id(pmi.read(self.xbf))["C"]["status"], "ok", "the left face stayed a plane")
+
+    def test_after_a_restart_the_saved_document_remembers(self) -> None:
+        name = self.hole_name()
+        self.named(ROUND, name)
+        engine_build._WRITTEN.clear()  # a fresh process: nothing of the last build but its xbf
+        report = self.named(SQUARE, name, ok=False)
+        self.assertEqual([p["id"] for p in report["pmi"]["problems"]], ["hole-from-left"])
+
+    def test_the_flag_stays_until_the_ref_is_written_anew(self) -> None:
+        name = self.hole_name()
+        self.named(ROUND, name)
+        self.named(SQUARE, name, ok=False)
+        report = self.named(SQUARE, name, ok=False)  # built again, unchanged: still flagged
+        self.assertEqual([p["id"] for p in report["pmi"]["problems"]], ["hole-from-left"])
+        loaded = document.Loaded(self.xbf)
+        names = loaded.prototypes[0].face_names
+        [ordinal] = [at for at, text in names.items() if text == name]
+        # Written anew (the same face by its ordinal): taken as meant, measured to the plane.
+        report = self.named(SQUARE, f"face {ordinal}")
+        self.assertEqual(report["pmi"]["problems"], [])
+        self.assertEqual(_by_id(pmi.read(self.xbf))["hole-from-left"]["dimension"]["nominal"]["value"], 44.0)
+
+    def test_a_face_the_code_selects_is_not_held_to_its_kind(self) -> None:
+        """A build123d Face is what the code's own selection picks each build: never flagged."""
+        self.build(CUT.format(cut=ROUND, hole="body.faces().sort_by(bd.Axis.X)[-1]"))
+        report = self.build(CUT.format(cut=ROUND, hole="body.faces().filter_by(bd.GeomType.CYLINDER)[0]"))
+        self.assertEqual(report["pmi"]["problems"], [])
+
+
 class AssemblyTest(_Folder):
     def test_each_part_of_an_assembly_carries_its_own_pmi_once_however_often_it_is_placed(self) -> None:
         self.build('''

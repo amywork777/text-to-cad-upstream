@@ -44,7 +44,9 @@ keeps its name across edits that do not change how it is made. Each build resolv
 against the part as built now: ``ok``; ``missing`` -- it names nothing (with what the name's atom
 is called now, where anything is); ``ambiguous`` -- it names several faces (each listed); or
 ``invalid`` -- it names a face the annotation cannot stand on (a diameter on a plane, two planes
-not parallel, a datum letter the part does not define). An annotation's status is its worst
+not parallel, a datum letter the part does not define), or, written as text, another kind of face
+than it named on the model's last build (a hole whose name passed to a flat side). The kind it is
+held to is kept in the document and follows the ref until the code writes it anew. An annotation's status is its worst
 ref's. One not ``ok`` is kept in the document, with its status, values and refs as written, and
 linked to no geometry; the build reports it, and a STEP export refuses to drop it.
 
@@ -389,6 +391,10 @@ class Ref:
     status: str
     candidates: list[int] = field(default_factory=list)
     problem: str | None = None
+    # The kind of face (plane, cylinder) this ref is held to: what it named when it last resolved,
+    # kept in the document (``_extra``) and asked of the next build (``remember``). None for a ref
+    # the code selects as a Face, which is whatever that selection picks each build.
+    face: str | None = None
 
 
 @dataclass
@@ -409,19 +415,26 @@ def resolve(tree: Any) -> list[tuple[Any, list[Resolved]]]:
     if held is not None:
         return held
     found = []
+    previous = getattr(tree, "_pmi_previous", None) or {}
     for part, given in tree.pmi or ():
         faces = _faces(part.shape)
         names = list((part.names or {}).get("faces") or [])
         owners = {part.name, tree.root.name}
         letters = {entry["datum"]["letter"] for entry in given if entry["kind"] == "datum"}
-        found.append((part, [_resolved(entry, faces, names, owners, letters) for entry in given]))
+        found.append((part, [_resolved(entry, faces, names, owners, letters, previous.get((part.name, entry["id"])) or {})
+                             for entry in given]))
     tree._pmi_resolved = found
     return found
 
 
 def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners: set[str],
-              letters: set[str]) -> Resolved:
+              letters: set[str], held: dict[tuple[str, str], str]) -> Resolved:
+    """One annotation against the part as built; ``held`` the face kind each of its refs (by role
+    and written text) named on the model's last build."""
     refs = [_ref(given, faces, names, owners) for given in spec["refs"]]
+    texts = [given["face"] is None for given in spec["refs"]]  # written in code, not a selected Face
+    for ref, text in zip(refs, texts):
+        ref.face = held.get((ref.role, ref.written)) if text else None
     nominal = None
     problem = next((ref.problem for ref in refs if ref.status != "ok"), None)
     if all(ref.status == "ok" for ref in refs):
@@ -435,6 +448,21 @@ def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners:
                 ref.status = "invalid"
                 ref.problem = (f"{ref.written} is a {surface[0]} face; a {what.replace('_', ' ')} is on a "
                                f"{' or '.join(wanted)} face")
+        # A ref written as text that names another kind of face than it did on the last build names
+        # another face: a hole made a square cut passes the hole's name to a flat side. It is
+        # flagged where the annotation could stand on the new face too (elsewhere the check above
+        # has said so), and it stays held to the kind it had until the code writes it anew.
+        for ref, surface, text in zip(refs, surfaces, texts):
+            if ref.status != "ok" or not text:
+                continue
+            if ref.face is not None and ref.face != surface[0]:
+                ref.status = "invalid"
+                ref.problem = (f"{ref.written} named a {ref.face} face on the last build and names a {surface[0]} "
+                               "face now: it names another face than the annotation was made on. Point the ref "
+                               "at the face meant (written anew, it is held to that face's kind), or remove the "
+                               "annotation")
+            elif ref.face is None:
+                ref.face = surface[0]
         if all(ref.status == "ok" for ref in refs):
             if what == "diameter":
                 nominal = 2.0 * surfaces[0][1]["radius"]
@@ -572,6 +600,42 @@ def _surface(face: Any) -> tuple[str, dict[str, Any]]:
     return str(kind.name).replace("GeomAbs_", "").lower(), {}
 
 
+def remember(tree: Any, previous: dict[tuple[str, str], dict[tuple[str, str], str]]) -> None:
+    """What each ref of ``tree``'s annotations named on the model's last build (``previous_of_tree``,
+    ``previous_of_file``): asked of before ``tree`` is resolved."""
+    tree._pmi_previous = previous
+    tree.__dict__.pop("_pmi_resolved", None)
+
+
+def previous_of_tree(tree: Any) -> dict[tuple[str, str], dict[tuple[str, str], str]]:
+    """Each annotation's refs' face kinds as a build resolved them, by (part, id), then (role, written)."""
+    found: dict = {}
+    for part, items in resolve(tree) if tree is not None and tree.pmi else ():
+        for item in items:
+            found[(part.name, item.spec["id"])] = {(ref.role, ref.written): ref.face for ref in item.refs if ref.face}
+    return found
+
+
+def previous_of_file(path: Any) -> dict[tuple[str, str], dict[tuple[str, str], str]]:
+    """The same, as the model's saved xbf holds them: the last build of a model this process has not
+    built. A file that cannot be read holds nothing to compare with."""
+    from cadgen.engine import document
+
+    try:
+        loaded = document.load(path)
+        records = records_of_document(loaded.doc, loaded.prototypes)
+    except Exception:  # noqa: BLE001 - no history is no check, never a failed build
+        return {}
+    found: dict = {}
+    for record in records:
+        extra = record["extra"]
+        if extra is None or extra.get("part") is None:
+            continue
+        found[(extra["part"], extra["id"])] = {(ref["role"], ref["written"]): ref["face"]
+                                               for ref in extra["refs"] if ref.get("face")}
+    return found
+
+
 def signature(tree: Any) -> tuple:
     """What a tree's annotations are, for the build's signature: a change to one remakes the document."""
     return tuple(_text({"part": part.name, "pmi": list(given)}) for part, given in tree.pmi or ())
@@ -642,15 +706,15 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
                     tool.SetGeomTolerance(refs[0], at)
                     for letter in spec["geometric_tolerance"]["datums"]:
                         tool.SetDatumToGeomTol(datums[letter], at)
-            TDataStd_AsciiString.Set_s(at, guid, TCollection_AsciiString(_text(_extra(item))))
+            TDataStd_AsciiString.Set_s(at, guid, TCollection_AsciiString(_text(_extra(item, part.name))))
 
 
-def _extra(item: Resolved) -> dict[str, Any]:
+def _extra(item: Resolved, part: str) -> dict[str, Any]:
     spec = item.spec
     return {"id": spec["id"], "label": spec["label"], "presentation": spec["presentation"], "status": item.status,
-            "problem": item.problem, "kind": spec["kind"],
+            "problem": item.problem, "kind": spec["kind"], "part": part,
             "refs": [{"role": ref.role, "written": ref.written, "status": ref.status, "candidates": ref.candidates,
-                      "problem": ref.problem} for ref in item.refs],
+                      "problem": ref.problem, "face": ref.face} for ref in item.refs],
             # What an unlinked annotation meant, for a reader: XCAF links values to geometry alone.
             "unlinked": None if item.status == "ok" else
             {key: spec[key] for key in ("dimension", "datum", "geometric_tolerance") if key in spec}}
@@ -893,7 +957,7 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
                           "zone": given["zone"], "modifier": None, "datums": list(given["datums"]) if linked else []}
             by_kind[spec["kind"]].append({"kind": spec["kind"], "values": values, "xcaf_type": None,
                                           "part": index if linked else None, "targets": targets,
-                                          "extra": json.loads(_text(_extra(item))), "entry": None})
+                                          "extra": json.loads(_text(_extra(item, part.name))), "entry": None})
         records.extend(by_kind["datum"] + by_kind["dimension"] + by_kind["geometric_tolerance"])
     # The document's tool lists datums, then dimensions, then tolerances, of every part.
     return sorted(records, key=lambda record: ("datum", "dimension", "geometric_tolerance").index(record["kind"]))

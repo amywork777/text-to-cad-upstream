@@ -624,6 +624,15 @@ def _finish(model: Any, result: Any, run: Any, report: dict[str, Any], log: Call
     if tree.pmi:
         from cadgen.engine import pmi
 
+        # Each ref held to the kind of face it named on the model's last build: this process's, or
+        # after a restart its xbf's (a ref whose face changed kind is flagged, not measured anew).
+        remembered = _WRITTEN.get(f"{model.script}::{model.name}")
+        xbf_path = next((path for kind, path in targets if kind == "xbf"), None)
+        if remembered is not None and remembered.tree is not None:
+            pmi.remember(tree, pmi.previous_of_tree(remembered.tree))
+        elif xbf_path is not None and Path(xbf_path).is_file():
+            pmi.remember(tree, pmi.previous_of_file(Path(xbf_path)))
+
         # Every annotation resolved against the part as built now: one not ok is said, kept in
         # the document with its status, and refused by a STEP export (``pmi``).
         report["pmi"] = {"annotations": sum(len(given) for _part, given in tree.pmi), "problems": pmi.problems(tree)}

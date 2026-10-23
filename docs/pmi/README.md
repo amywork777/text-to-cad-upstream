@@ -172,21 +172,31 @@ Every build resolves each ref against the part as it is built now:
 | `ok` | The ref names one face the annotation can stand on. | Yes, linked to the face | Yes |
 | `missing` | It names nothing: the face was deleted, or its making changed and it is named differently. The problem text gives the name's atom now, where one exists. | Yes, unlinked, with values | **Refused** |
 | `ambiguous` | It names several faces; `candidates` lists them. | Yes, unlinked | **Refused** |
-| `invalid` | It names a face the annotation cannot stand on: a diameter on a plane, non-parallel planes for a distance, a datum letter the part doesn't define, or an owner that isn't the annotated part. | Yes, unlinked | **Refused** |
+| `invalid` | It names a face the annotation cannot stand on: a diameter on a plane, non-parallel planes for a distance, a datum letter the part doesn't define, or an owner that isn't the annotated part. Or, for a ref written as text, it names another kind of face than it did on the model's last build (below). | Yes, unlinked | **Refused** |
 
 "Refused" means `ExportRefused` names every such id. A decorator's STEP then fails the build
 after the xbf is written, so nothing is silently discarded.
 
-**A name can come to name a different face, and that isn't flagged.** A ref by element name
-resolves to whatever face carries that name in the current build. It stays `ok` when the
-annotation can stand on that face, even if the face is a different kind from before. A basic
-dimension takes a plane or an axis. So when a round hole becomes a square cut, the hole's name
-can pass to a flat side of the cut, and its basic dimension then measures to that plane: 44 in
-the viewer's v3 fixture, instead of flagging that the hole is gone. A diameter or position on the
-same ref does go `invalid`, because a plane can't carry either. Nothing records what kind of face
-a ref named on the build before, so the change goes unnoticed. A ref given as a build123d `Face`
-is whatever the code's own selection picks on each build, so it has the same limit. A follow-up
-could keep each ref's face kind in the xbf and flag a change.
+**A name that comes to name another kind of face is flagged.** Each ref written as text in code (an
+element name, a canonical `owner/element` ref, or `face N`) is held to the kind of face it named:
+a plane, or a cylinder. A later build where the same ref, with the same annotation id, role and
+written text, names a face of another kind marks it `invalid`. The problem names both kinds:
+"… named a cylinder face on the last build and names a plane face now". This catches a hole made a
+square cut whose name passed to a flat side of the cut, which a basic dimension could otherwise
+measure as a plane (44 in the viewer's v3 fixture). Only the kind is compared, so a name that passes
+to another plane, or to another hole, isn't caught.
+
+- **History.** The last build is the model's previous document in this process, or after a restart
+  the model's xbf on disk. A model with no previous document isn't checked: its first build, or an
+  in-memory model after a restart.
+- **Clearing.** The flag stays on every build until the code writes that ref anew. Any other text is
+  a fresh claim and is held to whatever its face is now: another spelling of the same face (with its
+  owner, or as `face N`), a ref to another face, or a build123d `Face`. So an agent that swaps the
+  code's own ref for the viewer's canonical spelling also resets the check, on purpose.
+- **Selected Faces.** A ref given as a build123d `Face` is never held to a kind: it is whatever the
+  code's own selection picks on each build.
+- **Precedence.** The check runs only where the annotation could stand on the new face. Where it
+  couldn't (a diameter on a plane), that existing reason is the one given.
 
 ## AP242 export
 

@@ -1045,8 +1045,9 @@ return pmi.annotate(body,
 A ref is a `Face` of the annotated shape or a ref of the grammar (**References**). A
 dimension's nominal is measured from the geometry; a tolerance is held only where the code gives
 one. Each build resolves every ref against the part as built: `ok`, `missing`, `ambiguous` or
-`invalid` (a face the annotation cannot stand on); the build report's `pmi` lists every one not
-ok, the document keeps it with its status and links it to no geometry, and a STEP export refuses
+`invalid` (a face the annotation cannot stand on, or, for a ref written as text, another kind of
+face than it named on the model's last build: its xbf or this process's previous document); the
+build report's `pmi` lists every one not ok, the document keeps it with its status and links it to no geometry, and a STEP export refuses
 to drop it. The document holds the values, units, kinds and face links in XCAF's
 `XCAFDimTolObjects` on the GD&T tool (the STEP writer's input), and beside each one cadgen
 attribute (JSON) for what XCAF has no place for: the id, the refs as written, the status, and the
