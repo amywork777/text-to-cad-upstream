@@ -1210,6 +1210,125 @@ class FromThePartTests(unittest.TestCase):
         self.assertAlmostEqual(cross, 0.0, places=6, msg="and its line runs through the centre")
 
 
+class ReviewFindingTests(unittest.TestCase):
+    """Plausible-wrong output the first review of the hole reader found."""
+
+    def test_holes_drilled_from_the_other_face_are_their_own_callout(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos
+        from cadgen.eng_drawing import Sheet, _render_sheet, _unstated
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = Box(80, 40, 20, align=align)
+        for x in (-30, -10):
+            part -= Pos(x, 0, 12) * Cylinder(3, 8, align=align)
+        for x in (10, 30):
+            part -= Pos(x, 0, 0) * Cylinder(3, 8, align=align)
+        sheet = Sheet("A3")
+        top, front, _right = sheet.three_views(part)
+        top.holes()
+        top.overall()
+        front.overall(width=False)
+        facts: dict = {}
+        _render_sheet(sheet, index=1, count=1, label="faces", facts=facts)
+        self.assertEqual(_callouts(_render_sheet(sheet, index=1, count=1, label="faces")), ["2× %%c6 ↧8"])
+        missing = _unstated(facts)
+        self.assertEqual(len(missing), 1, missing)
+        self.assertIn("2× ⌀6 ↧8 is not called out", missing[0], "the pair drilled from below")
+
+    def test_a_section_calls_out_only_the_holes_it_keeps(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos, Rot
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = Box(60, 40, 20, align=align) - Pos(10, -20, 10) * Rot(-90, 0, 0) * Cylinder(3, 6, align=align)
+        sheet = Sheet("A3")
+        _top, front, _right = sheet.three_views(part)
+        front.section("A")
+        front.holes()
+        notices: list[str] = []
+        doc = _render_sheet(sheet, index=1, count=1, label="kept", warnings=notices)
+        self.assertEqual(_callouts(doc), [], "the hole is in the half the section took away")
+        self.assertTrue(any("looks down no hole" in n for n in notices), notices)
+
+    def test_a_hole_callout_does_not_state_a_boss_of_its_radius(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos
+        from cadgen.eng_drawing import Sheet, _render_sheet, _unstated
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = Box(80, 60, 10, align=align) - Pos(-20, 0, 0) * Cylinder(15, 10, align=align) \
+            + Pos(25, 0, 10) * Cylinder(7.5, 6, align=align)
+        sheet = Sheet("A3")
+        top, front, _right = sheet.three_views(part)
+        top.overall()
+        top.holes()
+        front.overall(width=False)
+        facts: dict = {}
+        _render_sheet(sheet, index=1, count=1, label="boss", facts=facts)
+        self.assertTrue(any("⌀15" in line for line in _unstated(facts)), "the ⌀15 boss is still unstated")
+
+    def test_an_isometric_the_author_relabelled_keeps_its_label(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A3")
+        iso = sheet.three_views(_plate(), iso=True)[3]
+        iso.label = "PICTORIAL (REF)"
+        texts = [e.dxf.text for e in _render_sheet(sheet, index=1, count=1, label="iso").modelspace().query("TEXT")]
+        self.assertIn("PICTORIAL (REF)", texts)
+        self.assertEqual(iso.label, "PICTORIAL (REF)")
+
+
+class ColdTrialTests(unittest.TestCase):
+    """What an agent given only the skill tripped over."""
+
+    def test_a_bore_chamfered_at_both_ends_is_called_out_both_ends(self) -> None:
+        from build123d import Align, Box, Cone, Cylinder, Pos
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = (Box(40, 40, 12, align=align) - Cylinder(5, 12, align=align)
+                - Pos(0, 0, 11) * Cone(5, 6, 1, align=align) - Cone(6, 5, 1, align=align))
+        sheet = Sheet("A4")
+        sheet.view(part, "top", at=(140, 110)).holes()
+        self.assertEqual(_callouts(_render_sheet(sheet, index=1, count=1, label="both")),
+                         ["%%c10 THRU   ⌵ %%c12 × 90° BOTH ENDS"])
+
+    def test_a_guessed_orientation_is_said(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        front = sheet.view(_plate(), "front", at=(140, 110))
+        front.dim((40, -25, 0), (34, -25, 6))
+        front.dim((-40, -25, 0), (40, -25, 6))  # 80 across, 6 up: no doubt which
+        notices: list[str] = []
+        _render_sheet(sheet, index=1, count=1, label="guess", warnings=notices)
+        guessed = [n for n in notices if "was guessed" in n]
+        self.assertEqual(len(guessed), 1, notices)
+        self.assertIn("front dim 0", guessed[0])
+
+    def test_a_part_that_is_several_solids_is_said(self) -> None:
+        from build123d import Align, Box, Pos
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        split = Box(30, 20, 10, align=align) - Box(4, 30, 20, align=(Align.CENTER, Align.CENTER, Align.CENTER))
+        sheet = Sheet("A4")
+        sheet.view(split, "top", at=(140, 110))
+        notices: list[str] = []
+        _render_sheet(sheet, index=1, count=1, label="split", warnings=notices)
+        self.assertTrue(any("2 separate solids" in n for n in notices), notices)
+
+    def test_a_dimension_to_a_hole_centre_extends_the_centre_line(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_plate(), "top", at=(140, 110)).dim((-30, -18, 6), (-40, -18, 6))
+        doc = _render_sheet(sheet, index=1, count=1, label="ext")
+        dim = doc.modelspace().query("DIMENSION")[0]
+        types = {e.dxf.linetype.upper() for e in doc.blocks.get(dim.dxf.geometry)
+                 if e.dxftype() == "LINE" and e.dxf.hasattr("linetype")}
+        self.assertIn("CENTER", types, "the extension line from the hole centre is a centre line")
+
+
 class SymbolTests(unittest.TestCase):
     def test_drawing_symbols_are_line_work_not_glyphs(self) -> None:
         """⌴ and ⌵ are missing from common fonts and ezdxf fills Ø solid in the
@@ -1249,6 +1368,7 @@ class SymbolTests(unittest.TestCase):
         crowded = [n for n in notices if n.startswith("views crowded")]
         self.assertEqual(len(crowded), 1, notices)
         self.assertIn('Sheet("A3")', crowded[0])
+        self.assertIn("the largest ask is the front view's top side", crowded[0].lower())
 
 
 class LayoutTests(unittest.TestCase):

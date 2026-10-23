@@ -39,7 +39,9 @@ The first run downloads that installation; later runs reuse it.
 2. **Write `<name>_drawing.py`** beside the model, from
    [the template](references/sheet-api.md#template). Import the facts your
    dimensions reference (hole pitch, wall, step lengths) from the model module
-   rather than retyping them, so moving a feature moves its dimension.
+   rather than retyping them, so moving a feature moves its dimension. If the
+   model keeps them inside a function, read them from its source and say so in
+   the handoff; `holes()` and `overall()` need none.
 3. **Choose the views.** `sheet.three_views(part, iso=True)` returns top, front,
    right and an isometric, in the projection the sheet names. The sheet lays
    them out again when it renders, spacing each pair for the dimensions they
@@ -52,13 +54,18 @@ The first run downloads that installation; later runs reuse it.
      dimension already states it (a turned part's height is its diameter).
    - `view.dim(p1, p2)` for feature sizes and positions. Leave `offset` unset:
      the dimension goes on the side of the view its points are on and the
-     shortest sits nearest the view. Diameters of turned features go on the
-     profile with `text="%%c<>"`.
+     shortest sits nearest the view. Put the points at the END of the edges
+     they measure, on the side the dimension will go: a point in the middle of
+     an edge runs its extension line along that edge. Two points that differ
+     in one direction measure that direction; pass `orientation=` otherwise.
+     Diameters of turned features go on the profile with `text="%%c<>"`.
    - `view.holes()` calls out every hole the view looks down; `view.hole(point)`
      calls out one. Diameter, THRU or depth, counterbore, countersink and the
      `4×` count are **read off the part**: do not type them. Anything you do
      type is checked, and a value the part contradicts stops the script.
      Only `thread=` (which the geometry cannot carry) and `label=` are yours.
+     A chamfered bore end is part of its hole: it is called out as `⌵`, with
+     `BOTH ENDS` or `FAR SIDE` when the other end is opened out too.
    - `view.diameter(center)` / `view.radius(center)` measure the circle or arc
      there; pass `size=` only to pick one of several concentric ones.
    - `tol=`, `fit=` and `general_tolerance=` only from the design requirements
@@ -71,8 +78,13 @@ The first run downloads that installation; later runs reuse it.
    - *"measures blank paper"*: a dimension's points miss the view. Usually the
      part was built from a corner and the script assumed it was centred.
    - *"annotation overlaps"*, *"views crowded"*, *"leader crosses the view"*:
-     not enough paper. Take the larger sheet or smaller scale the message
-     names, or dimension that feature in a view with room to spare.
+     not enough paper where the annotation is. The message names the view and
+     side asking most, and a larger sheet or smaller scale; moving that
+     annotation to a view with room to spare often does instead.
+   - *"was guessed"*: a dimension's points differ in both directions about
+     equally; say which with `orientation=`.
+   - *"separate solids"*: the part is in pieces, usually a cut that runs right
+     through the model. Fix the model before drawing it.
    - A refusal (an exception, no PDF): a typed size the part contradicts, a
      hole called out where no hole is, views that run off the frame. The
      message says what the part has, or which scale fits.

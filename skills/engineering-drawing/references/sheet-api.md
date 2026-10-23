@@ -35,12 +35,27 @@ if __name__ == "__main__":
     enclosure_drawing()
 ```
 
-Working examples, each documenting the part beside it, are in the repository's
-[models/examples/src](https://github.com/earthtojake/text-to-cad/tree/main/models/examples/src)
-(not installed with the skill): `electronics_enclosure_base_drawing.py` (a section
-through bosses, blind holes), `circular_flange_drawing.py` (a bolt circle, A4),
-`l_bracket_drawing.py` (holes in two directions) and
-`stepped_shaft_keyway_drawing.py` (turned diameters, a section through a keyway).
+A turned part states its diameters on the profile and cuts the view that shows
+what hidden lines cannot, here a keyway's depth:
+
+```python
+from shaft import KEY_DEPTH, KEY_END, KEY_START, KEY_WIDTH, LENGTH, STEP_DIAMETER, STEP_LENGTH
+
+
+@eng_drawing(out="../PDF/shaft_drawing.pdf")
+def shaft_drawing():
+    part = cadgen.read_step(Path(__file__).parent / "../STEP/shaft.step")   # axis along X
+    sheet = Sheet("A3", title="SHAFT", part_number="SH-001", general_tolerance="ISO 2768-m")
+    top, front, right, iso = sheet.three_views(part, iso=True)
+    middle, r = (KEY_START + KEY_END) / 2, STEP_DIAMETER / 2
+    right.section("A", through=(middle, 0, 0))            # the end view, cut through the keyway
+    front.overall(height=False)                           # the height is the diameter
+    front.dim((STEP_LENGTH / 2, 0, -r), (STEP_LENGTH / 2, 0, r), text="%%c<>")
+    front.dim((0, 0, -r), (STEP_LENGTH, 0, -r))
+    top.dim((KEY_START, KEY_WIDTH / 2, r), (KEY_END, KEY_WIDTH / 2, r))
+    right.dim((middle, 0, -r), (middle, 0, r - KEY_DEPTH))   # what is left under the keyway
+    return sheet
+```
 
 ## `@eng_drawing(out="<path>.pdf")`
 
@@ -58,7 +73,8 @@ script. Both are checked when the module is imported. There is no CLI verb: a
 - `scale`: 1 = 1:1, 0.5 = 1:2, 2 = 2:1. Values stay true size at any scale.
 - `title`, `part_number` (DWG NO.), `material`, `finish`, `revision`, `author`
   (DRAWN), `date`: title block cells. A field left empty prints as an empty,
-  captioned cell. Nothing is stamped from the clock.
+  captioned cell. Nothing is stamped from the clock. The drawing function's
+  name prints small under the title, so a print leads back to its script.
 - `units`: `"mm"`, the unit every value is measured in; anything else is refused.
 - `projection`: `"THIRD ANGLE"` or `"FIRST ANGLE"`. It sets the arrangement
   `three_views` makes and the projection symbol the title block draws.
@@ -73,7 +89,8 @@ Returns `(top, front, right)`, or four views with `iso=True`. When the sheet
 renders, the views are laid out again with each gap sized to the dimensions and
 callouts the facing views carry; `gap=` fixes it instead. The isometric takes
 the larger free region at the sheet's scale or the largest standard scale that
-fits, and its label states that scale.
+fits; its label states its scale when that differs from the sheet's. A label or
+scale you set on it yourself is kept.
 
 ### `sheet.view(shape, name, at=(x, y), label=None, hidden=True, centre_marks=True, scale=None)`
 
@@ -92,7 +109,10 @@ sheet millimetres.
 - `view.dim(p1, p2, offset=None, text=None, orientation=None, tol=None, fit=None)`:
   a linear dimension, measured. Unplaced, it goes on the side of the view its
   points are on, the shortest nearest the view. `offset` places the line that
-  far from the farther point (its sign picks the side). `text` overrides the
+  far from the farther point (its sign picks the side). `orientation` unset
+  measures the direction the points differ more in, and the script says when
+  that was close to a guess. A point on a hole's centre runs its extension line
+  as a centre line. `text` overrides the
   value; `"<>"` inserts the measurement, `"%%c<>"` prefixes ⌀ (a diameter on a
   profile). `tol=0.1` prints ±0.1, `tol=(0.05, 0.02)` +0.05/-0.02, `fit="H7"`
   appends a fit class. `orientation` is `"h"`, `"v"` or None.
@@ -105,6 +125,9 @@ sheet millimetres.
   down that axis. Every size and the count come from the part; a value given is
   checked and a contradiction is refused, naming what the part has. `thread`
   (`"M6x1 - 6H"`) replaces the diameter; `label` is appended (`"EQ SP ON %%c60"`).
+  A through hole opened out at both ends reads `BOTH ENDS` or `FAR SIDE ...`.
+  Pieces of one bore separated by air (a clevis's arms, a cross hole) are one
+  hole; a groove or a pocket with material inside is not a hole.
 - `view.diameter(center, size=None, angle=45, text=None)` and
   `view.radius(center, size=None, ...)`: the circle or arc centred there,
   measured; `size` (a diameter, or a radius) picks one of several.
@@ -128,6 +151,8 @@ sheet millimetres.
 | `annotation overlaps: '120' is printed over 'TOP' ...` | two pieces of text collide |
 | `views crowded: ... Sheet("A2") or Sheet(scale=0.5) gives them room` | the views' annotation needs more paper |
 | `SECTION A-A has no view on this sheet that sees its cutting plane ...` | add the view that shows the plane |
+| `front dim 0: ... which one it measures was guessed ...` | pass `orientation=` |
+| `the part in the top view is 2 separate solids ...` | the model is in pieces |
 
 ## Layers
 

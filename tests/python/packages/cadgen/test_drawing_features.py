@@ -66,6 +66,61 @@ class HoleTests(unittest.TestCase):
         slot = Box(60, 40, 5, align=align) - extrude(SlotCenterToCenter(20, 8), 5)
         self.assertEqual(holes(slot), [])
 
+    def test_a_hole_broken_by_air_is_still_one_hole(self) -> None:
+        """A clevis pin hole crosses the gap between the arms; a blind bore can break
+        through a cross hole. Judged piece by piece, each read as two holes."""
+        from build123d import Align, Box, Cylinder, Pos, Rot
+        from cadgen._internal.drawing_features import holes
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        clevis = (Box(30, 30, 6, align=align) + Pos(0, 0, 26) * Box(30, 30, 6, align=align)
+                  + Pos(-12, 0, 0) * Box(6, 30, 32, align=align)) - Cylinder(5, 40, align=align)
+        found = holes(clevis)
+        self.assertEqual(len(found), 1, "one pin hole through both arms")
+        self.assertTrue(found[0].thru)
+
+        crossed = (Box(40, 40, 30, align=align) - Pos(0, 0, 5) * Cylinder(3, 25, align=align)
+                   - Pos(0, 0, 12) * Rot(0, 90, 0) * Cylinder(5, 60))
+        blind = [h for h in holes(crossed) if round(h.diameter, 3) == 6]
+        self.assertEqual(len(blind), 1, "the bore below the cross hole is the same bore")
+        self.assertFalse(blind[0].thru)
+        self.assertAlmostEqual(blind[0].depth, 25.0, places=6)
+
+    def test_a_groove_inside_a_blind_bore_does_not_end_it(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos
+        from cadgen._internal.drawing_features import holes
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = Box(40, 40, 30, align=align) - Pos(0, 0, 10) * Cylinder(5, 20, align=align) \
+            - Pos(0, 0, 18) * Cylinder(6, 3, align=align)
+        (hole,) = holes(part)
+        self.assertAlmostEqual(hole.diameter, 10.0, places=6)
+        self.assertAlmostEqual(hole.depth, 20.0, places=6)
+
+    def test_a_ring_groove_or_a_pocket_round_a_standoff_is_not_a_hole(self) -> None:
+        """Concave and full circle, but with material inside: nothing a drill makes."""
+        from build123d import Align, Box, Cylinder, Pos
+        from cadgen._internal.drawing_features import holes
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        plate = Box(80, 80, 10, align=align)
+        groove = plate - Pos(0, 0, 7) * (Cylinder(20, 3, align=align) - Cylinder(15, 3, align=align))
+        self.assertEqual(holes(groove), [])
+        standoff = plate - Pos(0, 0, 5) * Cylinder(15, 5, align=align) + Pos(0, 0, 5) * Cylinder(5, 5, align=align)
+        self.assertEqual(holes(standoff), [])
+
+    def test_a_bore_opened_out_at_both_ends_says_so(self) -> None:
+        from build123d import Align, Box, Cone, Cylinder, Pos
+        from cadgen._internal.drawing_features import holes
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = (Box(40, 40, 12, align=align) - Cylinder(5, 12, align=align)
+                - Pos(0, 0, 11) * Cone(5, 6, 1, align=align) - Cone(6, 5, 1, align=align))
+        (hole,) = holes(part)
+        self.assertTrue(hole.thru)
+        self.assertEqual((round(hole.csk[0], 6), hole.csk[1]), (12.0, 90.0))
+        self.assertEqual(hole.far_csk, hole.csk, "the same chamfer at the other end")
+
     def test_two_halves_of_one_bore_are_one_bore(self) -> None:
         """A STEP from some kernels splits a full cylinder into two faces."""
         from cadgen._internal.drawing_features import _full, _merge_split_faces, _Segment
