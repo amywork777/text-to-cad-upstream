@@ -177,6 +177,17 @@ Every build resolves each ref against the part as it is built now:
 "Refused" means `ExportRefused` names every such id. A decorator's STEP then fails the build
 after the xbf is written, so nothing is silently discarded.
 
+**A name can come to name a different face, and that isn't flagged.** A ref by element name
+resolves to whatever face carries that name in the current build. It stays `ok` when the
+annotation can stand on that face, even if the face is a different kind from before. A basic
+dimension takes a plane or an axis. So when a round hole becomes a square cut, the hole's name
+can pass to a flat side of the cut, and its basic dimension then measures to that plane: 44 in
+the viewer's v3 fixture, instead of flagging that the hole is gone. A diameter or position on the
+same ref does go `invalid`, because a plane can't carry either. Nothing records what kind of face
+a ref named on the build before, so the change goes unnoticed. A ref given as a build123d `Face`
+is whatever the code's own selection picks on each build, so it has the same limit. A follow-up
+could keep each ref's face kind in the xbf and flag a change.
+
 ## AP242 export
 
 `@step` and `cadgen export X.xbf X.step` write the AP242 file (schema
