@@ -72,26 +72,52 @@ class PmiParityTest(unittest.TestCase):
             self.assertEqual(found, expected, where)
 
     def test_each_callout_stands_where_the_viewer_puts_it(self) -> None:
-        self.assertEqual(sorted(self.golden), ["v1", "v1-unplaced", "v3"])
+        self.assertEqual(sorted(self.golden), ["v1", "v1-reversed", "v1-unplaced", "v3"])
         for name, expected in self.golden.items():
             structure, meshes = served(name.split("-")[0])
             if name.endswith("unplaced"):
                 structure = {**structure, "pmi": [{**item, "presentation": None} for item in structure["pmi"]]}
+            if name.endswith("reversed"):
+                # Each basic dimension from the hole's axis to its side, placed nowhere.
+                swap = lambda ref: {**ref, "role": "to" if ref["role"] == "from" else "from"}  # noqa: E731
+                structure = {**structure, "pmi": [{**item, "presentation": None, "refs": [swap(ref) for ref in reversed(item["refs"])]}
+                                                  if (item.get("dimension") or {}).get("basic") else item for item in structure["pmi"]]}
             found = [{"id": entry["id"], "construction": made} for entry, made in pmi.constructions(structure, meshes, bounds(structure, meshes))]
             # JSON's own spelling of what the viewer wrote: no tuples, no NaN.
             self.assert_near(json.loads(json.dumps(found)), expected, name)
 
     def test_what_a_callout_says_is_what_the_viewer_says(self) -> None:
         structure, _meshes = served("v1")
-        said = [pmi.callout(entry) for entry in pmi.read(structure)]
-        self.assertEqual([item["kind"] for item in said], ["datum", "dimension", "dimension", "frame", "frame"])
-        self.assertEqual(said[0]["letter"], "A")
-        self.assertEqual([said[1]["nominal"], said[1]["tolerance"]["text"]], ["10.0", "±0.2"])
-        self.assertEqual([said[2]["diameter"], said[2]["nominal"], said[2]["tolerance"]["upper"], said[2]["tolerance"]["lower"]], [True, "10.0", "+0.1", "0"])
-        self.assertEqual([said[4]["characteristic"], said[4]["diameter"], said[4]["value"], said[4]["datums"]], ["position", True, "0.1", ["A"]])
+        said = {entry["id"]: pmi.callout(entry) for entry in pmi.read(structure)}
+        self.assertEqual([item["kind"] for item in said.values()], ["datum", "dimension", "dimension", "dimension", "dimension", "frame", "frame"])
+        self.assertEqual(said["A"]["letter"], "A")
+        self.assertEqual([said["thickness"]["nominal"], said["thickness"]["tolerance"]["text"], said["thickness"]["basic"]], ["10.0", "±0.2", False])
+        hole = said["hole-diameter"]
+        self.assertEqual([hole["diameter"], hole["nominal"], hole["tolerance"]["upper"], hole["tolerance"]["lower"]], [True, "10.0", "+0.1", "0"])
+        # Exact: boxed, no tolerance.
+        self.assertEqual([said["hole-from-front"][key] for key in ("basic", "nominal", "tolerance")], [True, "30", None])
+        position = said["hole-position"]
+        self.assertEqual([position["characteristic"], position["diameter"], position["value"], position["datums"]], ["position", True, "0.1", ["A"]])
         broken, _ = served("v3")
         hole = next(entry for entry in pmi.read(broken) if entry["id"] == "hole-diameter")
         self.assertEqual([hole["status"], hole["supported"], pmi.callout(hole)["nominal"]], ["invalid", True, "?"])
+
+    def test_a_basic_dimension_between_two_holes_is_measured_square_to_both(self) -> None:
+        # The bracket's hole (r 4, its axis z through the origin) and a peg (r 3, its axis z through x 12).
+        hole = {"surface": {"type": "cylinder", "axis": [0, 0, 1], "origin": [0, 0, 0], "radius": 4},
+                "points": [[4, 0, 2], [-4, 0, 2], [0, 4, -2]]}
+        peg = {"surface": {"type": "cylinder", "axis": [0, 0, -1], "origin": [12, 0, 8], "radius": 3}, "points": [[15, 0, 2]]}
+        entry = {"id": "peg-from-hole", "kind": "dimension", "presentation": {"anchor": [0, 0, 2], "offset": [6, -8, 0]},
+                 "dimension": {"type": "distance", "basic": True, "nominal": 12.0, "tolerance": None}}
+        made = pmi.construction(entry, {"from": hole, "to": peg}, ([-20, -10, -2], [20, 10, 14]))
+        self.assert_near(made["label"], [6, -8, 2], "the label")
+        self.assert_near(made["dimension"]["from"], [0, -8, 2], "at the hole's axis, level with the label")
+        self.assert_near(made["dimension"]["to"], [12, -8, 2], "at the peg's")
+        self.assert_near(made["dimension"]["extensions"][0][0], [0, 0, 2], "from the hole's centre line")
+        self.assert_near(made["dimension"]["extensions"][1][0], [12, 0, 2], "from the peg's centre line")
+        # Axes that are not parallel measure nothing.
+        crossed = {"surface": {"type": "cylinder", "axis": [1, 0, 0], "origin": [0, 5, 0], "radius": 1}, "points": [[0, 6, 0]]}
+        self.assertTrue(pmi.construction(entry, {"from": hole, "to": crossed}, None)["broken"])
 
     def test_numbers_are_written_as_the_viewer_writes_them(self) -> None:
         self.assertEqual(pmi.number(-0.0000001, 2), "0.00")
@@ -103,7 +129,7 @@ class PmiParityTest(unittest.TestCase):
 
 
 # A plate with a hole, its PMI on its own faces: a datum on the bottom, the thickness, a flatness on
-# the top. Tolerance values are illustrative.
+# the top, the hole located by a basic distance from the left side. Tolerance values are illustrative.
 PLATE = """
 import build123d as bd
 from cadgen.engine import pmi, xbf
@@ -113,8 +139,9 @@ def plate():
     body = bd.Box(60, 40, 8) - bd.Cylinder(4, 8)
     body.label = "plate"
     bottom, top = body.faces().sort_by(bd.Axis.Z)[0], body.faces().sort_by(bd.Axis.Z)[-1]
+    left, hole = body.faces().sort_by(bd.Axis.X)[0], body.faces().filter_by(bd.GeomType.CYLINDER)[0]
     return pmi.annotate(body, pmi.datum("A", bottom), pmi.distance("thickness", bottom, top, tolerance=pmi.plus_minus(0.2)),
-                        pmi.flatness("top-flat", top, 0.05))
+                        pmi.flatness("top-flat", top, 0.05), pmi.basic("hole-from-left", left, hole))
 
 if __name__ == "__main__":
     plate()
@@ -203,10 +230,10 @@ class PmiStillTest(unittest.TestCase):
         shutil.rmtree(cls.folder, ignore_errors=True)
 
     def test_a_still_draws_the_document_s_pmi_unless_asked_not_to(self) -> None:
-        self.assertEqual([entry["id"] for entry in self.structure["pmi"]], ["A", "thickness", "top-flat"])
+        self.assertEqual([entry["id"] for entry in self.structure["pmi"]], ["A", "thickness", "hole-from-left", "top-flat"])
         # As tall as the viewer the callouts are drawn for (`overlay.REFERENCE_HEIGHT`): their words full size.
         drawn, report = self.held.draw(Still(size=(1200, 900)))
-        self.assertEqual(report["pmi"], 3, report)
+        self.assertEqual(report["pmi"], 4, report)
         bare, report_bare = self.held.draw(Still(size=(1200, 900), display={"pmi": False}))
         self.assertNotIn("pmi", report_bare)
         # The callouts' words are the ink, near black: nothing of the model is as dark. The fit takes
