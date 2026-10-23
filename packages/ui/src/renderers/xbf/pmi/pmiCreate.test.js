@@ -10,6 +10,7 @@ const TOP = { id: "i0/face/2", ref: "plate/f:top", surface: { type: "plane", nor
 const BOTTOM = { id: "i0/face/5", ref: "plate/f:bottom", surface: { type: "plane", normal: [0, 0, -1], origin: [0, 0, -2] } };
 const SIDE = { id: "i0/face/1", ref: "plate/f:side", surface: { type: "plane", normal: [-1, 0, 0], origin: [-20, 0, 0] } };
 const HOLE = { id: "i0/face/11", ref: "plate/f:hole", surface: { type: "cylinder", axis: [0, 0, 1], origin: [0, 0, 0], radius: 4 } };
+const PEG = { id: "i1/face/1", ref: "peg/f:wall", surface: { type: "cylinder", axis: [0, 0, -1], origin: [12, 0, 8], radius: 3 } };
 const PART = { id: "i0", ref: "", surface: null };
 const available = options => options.filter(option => option.available).map(option => option.kind);
 const of = (options, kind) => options.find(option => option.kind === kind);
@@ -17,13 +18,24 @@ const of = (options, kind) => options.find(option => option.kind === kind);
 test("one flat face makes a datum or a flatness; two parallel ones a distance; a round one a diameter", () => {
   assert.deepEqual(available(pmiCreateOptions({ picked: [TOP], entries: [] })), ["datum", "flatness"]);
   const pair = pmiCreateOptions({ picked: [BOTTOM, TOP], entries: [] });
-  assert.deepEqual(available(pair), ["distance"]);
+  assert.deepEqual(available(pair), ["distance", "basic"]);
   assert.deepEqual(of(pair, "distance").call, { kind: "dimension", type: "distance", id: "distance", from: BOTTOM.ref, to: TOP.ref, tolerance: null });
   assert.equal(of(pair, "distance").nominal, 4);
   const round = pmiCreateOptions({ picked: [HOLE], entries: [] });
   assert.deepEqual(available(round), ["diameter"]);
   assert.equal(of(round, "diameter").nominal, 8);
   assert.equal(of(round, "position").need, "Pick one round face, after a datum");
+});
+
+test("a basic dimension goes between flat faces and holes, each hole by its axis, and takes no tolerance", () => {
+  const fromSide = pmiCreateOptions({ picked: [SIDE, HOLE], entries: [] });
+  assert.deepEqual(available(fromSide), ["basic"]);
+  assert.deepEqual(of(fromSide, "basic").call, { kind: "dimension", type: "distance", basic: true, id: "basic", from: SIDE.ref, to: HOLE.ref, tolerance: null });
+  assert.equal(of(fromSide, "basic").nominal, 20, "to the hole's centre line");
+  // Two holes: square to both axes, whichever way each runs.
+  assert.equal(of(pmiCreateOptions({ picked: [HOLE, PEG], entries: [] }), "basic").nominal, 12);
+  // A hole whose axis crosses the face makes none.
+  assert.deepEqual(available(pmiCreateOptions({ picked: [TOP, HOLE], entries: [] })), []);
 });
 
 test("a pick that makes nothing offers nothing, and says what each kind needs", () => {

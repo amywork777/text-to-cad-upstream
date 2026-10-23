@@ -5,7 +5,8 @@
 //
 // What is said comes from the document alone: a dimension's nominal is the engine's, measured on
 // the geometry; a tolerance is what the model's code supplied, and none where it supplied none --
-// the viewer never fills one in. Where an annotation stands on screen (`presentation`) is no part of
+// the viewer never fills one in. A basic dimension (`pmi.basic`: theoretically exact, as a position
+// tolerance's true position is located) is a distance that holds no tolerance at all, drawn boxed. Where an annotation stands on screen (`presentation`) is no part of
 // what it means: moving it changes how it is drawn, never what it says.
 //
 // The document is made from code (`pmi.annotate(body, pmi.datum("A", ...), ...)` in the model), so
@@ -61,6 +62,7 @@ function unsupportedReason(entry) {
   if (!PMI_KINDS.includes(entry.kind)) return `${entry.kind || "an annotation"} is not one the viewer draws`;
   if (entry.kind === "dimension") {
     if (!PMI_DIMENSION_TYPES.includes(entry.dimension?.type)) return `a ${entry.dimension?.type || "dimension"} dimension is not one the viewer draws`;
+    if (entry.dimension.basic && entry.dimension.type !== "distance") return `a basic ${entry.dimension.type} is not one the viewer draws`;
     // A broken reference leaves nothing to measure: no nominal, said as unknown. One that resolved has one.
     if (entry.dimension.nominal === null && entry.status === "ok") return "it has no nominal";
   }
@@ -80,7 +82,7 @@ function unsupportedReason(entry) {
  * @param {object | null} structure  A served document's structure.
  * @returns {Array<{ id: string, kind: string, label: string, status: "ok" | "ambiguous" | "missing",
  *   problem: string, refs: Array<{ role: string, ref: string, written: string, status: string, candidates: string[] }>,
- *   dimension: { type: string, nominal: number | null, unit: string, source: string,
+ *   dimension: { type: string, basic: boolean, nominal: number | null, unit: string, source: string,
  *     tolerance: { type: "plus_minus", upper: number, lower: number } | null } | null,
  *   datum: { letter: string } | null,
  *   tolerance: { characteristic: string, value: number | null, unit: string, zone: string | null,
@@ -99,8 +101,10 @@ export function readXbfPmi(structure) {
     if (seen.has(id)) id = `${id}#${index + 1}`;
     seen.add(id);
     const dimension = item.dimension && typeof item.dimension === "object" ? {
-      type: text(item.dimension.type), nominal: finite(item.dimension.nominal?.value), unit: text(item.dimension.nominal?.unit) || "mm",
-      source: text(item.dimension.nominal?.source), tolerance: readTolerance(item.dimension.tolerance)
+      type: text(item.dimension.type), basic: item.dimension.basic === true, nominal: finite(item.dimension.nominal?.value),
+      unit: text(item.dimension.nominal?.unit) || "mm", source: text(item.dimension.nominal?.source),
+      // A basic dimension is exact: a tolerance on one is not read as one.
+      tolerance: item.dimension.basic === true ? null : readTolerance(item.dimension.tolerance)
     } : null;
     const gdt = item.geometric_tolerance && typeof item.geometric_tolerance === "object" ? {
       characteristic: text(item.geometric_tolerance.characteristic), value: finite(item.geometric_tolerance.value),
@@ -159,7 +163,8 @@ const DIMENSION_NAMES = Object.freeze({ distance: "Distance", diameter: "Diamete
 
 /**
  * What a callout says, in pieces a label draws and in words: a dimension's nominal (at the
- * tolerance's places, where it has one), its `⌀` for a diameter and its tolerance; a datum's letter;
+ * tolerance's places, where it has one), its `⌀` for a diameter and its tolerance, `basic` for one
+ * that is exact (a drawing boxes its number); a datum's letter;
  * a frame's cells -- its characteristic, its value (with `⌀` for a diameter zone) and each datum it
  * refers to. `text` is the one line a row, a hint or a copy carries.
  *
@@ -173,9 +178,10 @@ export function pmiCallout(entry) {
     const nominal = entry.dimension.nominal === null ? "?"
       : pmiNumber(entry.dimension.nominal, tolerance ? Math.max(tolerance.places, 0) : Math.min(decimalsOf(entry.dimension.nominal), 2));
     const diameter = entry.dimension.type === "diameter";
-    return { kind: "dimension", type: entry.dimension.type, diameter, nominal, tolerance, unit: entry.dimension.unit,
-      title: DIMENSION_NAMES[entry.dimension.type],
-      text: `${diameter ? "⌀" : ""}${nominal}${tolerance ? ` ${tolerance.text}` : ""}` };
+    const basic = entry.dimension.basic;
+    return { kind: "dimension", type: entry.dimension.type, diameter, basic, nominal, tolerance, unit: entry.dimension.unit,
+      title: basic ? "Basic distance" : DIMENSION_NAMES[entry.dimension.type],
+      text: `${diameter ? "⌀" : ""}${nominal}${tolerance ? ` ${tolerance.text}` : ""}${basic ? " basic" : ""}` };
   }
   if (entry.kind === "datum") return { kind: "datum", letter: entry.datum.letter, title: "Datum", text: `Datum ${entry.datum.letter}` };
   const { characteristic, value, zone, datums, unit } = entry.tolerance;
@@ -224,6 +230,8 @@ export function pmiPlusMinusText(tolerance) {
  *
  * - `{ kind: "datum", id, letter, ref }`: `pmi.datum("A", ref)` (a datum's id is its letter);
  * - `{ kind: "dimension", type: "distance", id, from, to, tolerance? }`: `pmi.distance(id, from, to, tolerance=...)`;
+ * - `{ kind: "dimension", type: "distance", basic: true, id, from, to }`: `pmi.basic(id, from, to)` (exact: a
+ *   tolerance given it makes no call);
  * - `{ kind: "dimension", type: "diameter", id, ref, tolerance? }`: `pmi.diameter(id, ref, tolerance=...)`;
  * - `{ kind: "geometric_tolerance", characteristic: "flatness", id, ref, value }`: `pmi.flatness(id, ref, value)`;
  * - `{ kind: "geometric_tolerance", characteristic: "position", id, ref, value, datums, diameterZone }`:
@@ -244,6 +252,7 @@ export function pmiCallText(call) {
     const tolerance = call.tolerance ? `tolerance=${pmiPlusMinusText(call.tolerance)}` : null;
     if (call.type === "distance") {
       if (!call.from || !call.to) return null;
+      if (call.basic) return call.tolerance ? null : `pmi.basic(${args(pyString(call.id), pyString(call.from), pyString(call.to))})`;
       return `pmi.distance(${args(pyString(call.id), pyString(call.from), pyString(call.to), tolerance)})`;
     }
     if (call.type === "diameter") {
@@ -281,6 +290,7 @@ export function pmiEntryCall(entry, changes = {}) {
   if (entry.kind === "datum") return { kind: "datum", id: entry.id, letter: given("letter") ?? entry.datum.letter, ref: refOf("feature"), presentation };
   if (entry.kind === "dimension") {
     const tolerance = given("tolerance") === undefined ? entry.dimension.tolerance : given("tolerance");
+    if (entry.dimension.basic) return { kind: "dimension", type: "distance", basic: true, id: entry.id, from: refOf("from"), to: refOf("to"), tolerance: null, presentation };
     return entry.dimension.type === "distance"
       ? { kind: "dimension", type: "distance", id: entry.id, from: refOf("from"), to: refOf("to"), tolerance, presentation }
       : { kind: "dimension", type: "diameter", id: entry.id, ref: refOf("feature"), tolerance, presentation };

@@ -3,7 +3,7 @@ import { PmiGlyph } from "./pmiGlyphs.jsx";
 
 // What a PMI callout says, drawn as a drawing draws it, at the UI's own size: a dimension's
 // nominal (a diameter's struck circle before it) and its tolerance, stacked where it differs each
-// way; a datum's letter in its box; a feature control frame's cells -- its characteristic, its
+// way, a basic one's number boxed (it is exact: it has none); a datum's letter in its box; a feature control frame's cells -- its characteristic, its
 // value (a diameter zone's struck circle first) and the datums it refers to -- each ruled off from
 // the next. Ink on paper, so it reads over any part: the theme's foreground on its background.
 
@@ -27,7 +27,8 @@ export default function PmiLabel({ callout, status = "ok", selected = false, hov
   if (callout.kind === "dimension") {
     return <span className={cn(box, CELL, "gap-px py-px")} data-pmi-callout="dimension">
       {callout.diameter ? <PmiGlyph name="diameter" className={GLYPH} aria-hidden="true" /> : null}
-      <span>{callout.nominal}</span>
+      {callout.basic ? <span className="border border-current px-0.5 leading-[0.875rem]" data-pmi-basic="">{callout.nominal}</span>
+        : <span>{callout.nominal}</span>}
       <Tolerance tolerance={callout.tolerance} />
     </span>;
   }

@@ -207,15 +207,19 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
 
 // The engine's own: a plate built with `cadgen.engine.pmi` (`pmi.annotate`, its faces named by the
 // engine's element names), served as the engine served it (`pmi_plate/v1`), then rebuilt twice: 10
-// mm thick with a Ø10 hole, then 12 mm with a Ø12 hole (every name kept: the same annotations,
-// measured anew), then with a square cut where the hole was (the hole's name now on a flat face,
-// where a diameter and a position cannot stand).
+// mm thick with a Ø10 hole, located by basic distances from the front and the left side to its axis,
+// then 12 mm with a Ø12 hole (every name kept: the same annotations, measured anew), then with a
+// square cut where the hole was (the hole's name now on a flat face, where a diameter and a position
+// cannot stand, and which a basic from the front crosses: one from the left now measures to it).
 test('PMI the engine built follows the model through edits: nominals measured anew, and a reference that can no longer stand marked', async (t) => {
   const { page, pane, errors, label, drawn, labels, view, settle, capture, update, loaded } = await openBracket(t, { fixture: 'pmi_plate/v1' });
   await view({ position: [120, -160, 140], target: [0, 0, 0], up: [0, 0, 1], orthographicHalfHeight: 60 });
   await drawn();
-  assert.deepEqual(await labels(), ['A', 'thickness', 'hole-diameter', 'top-flatness', 'hole-position']);
+  assert.deepEqual(await labels(), ['A', 'thickness', 'hole-diameter', 'hole-from-front', 'hole-from-left', 'top-flatness', 'hole-position']);
   assert.equal(await label('thickness').getAttribute('aria-label'), '10.0 ±0.2');
+  // Exact: its number boxed, no tolerance.
+  assert.equal(await label('hole-from-front').getAttribute('aria-label'), '30 basic');
+  assert.equal(await label('hole-from-front').locator('[data-pmi-basic]').innerText(), '30');
   assert.equal(await label('hole-diameter').getAttribute('aria-label'), '\u230010.0 +0.1/0');
   assert.equal(await label('hole-position').getAttribute('aria-label'), 'Position \u23000.1 | A');
   const still = await capture();
@@ -228,13 +232,15 @@ test('PMI the engine built follows the model through edits: nominals measured an
   await page.waitForFunction(() => document.querySelector('[data-pmi-label="thickness"]')?.getAttribute('aria-label') === '12.0 ±0.2');
   assert.equal(await label('hole-diameter').getAttribute('aria-label'), '\u230012.0 +0.1/0');
   assert.equal(await label('hole-diameter').getAttribute('aria-pressed'), 'true');
-  assert.deepEqual(await pane.locator('[data-pmi-label]').evaluateAll(elements => elements.map(element => element.dataset.pmiStatus)), ['ok', 'ok', 'ok', 'ok', 'ok']);
+  assert.deepEqual(await pane.locator('[data-pmi-label]').evaluateAll(elements => elements.map(element => element.dataset.pmiStatus)), ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
 
   // A square cut where the hole was: its name is a flat face's now, which a diameter cannot stand on.
   await update('pmi_plate/v3');
   await page.waitForFunction(() => document.querySelector('[data-pmi-label="hole-diameter"]')?.dataset.pmiStatus === 'invalid');
   assert.equal(await label('hole-position').getAttribute('data-pmi-status'), 'invalid');
   assert.equal(await label('thickness').getAttribute('data-pmi-status'), 'ok');
+  assert.equal(await label('hole-from-front').getAttribute('data-pmi-status'), 'invalid');
+  assert.equal(await label('hole-from-left').getAttribute('aria-label'), '44 basic');
   // Drawn where the code placed it, its nominal unknown; its row says what the engine said.
   assert.equal(await label('hole-diameter').getAttribute('aria-label'), '\u2300? +0.1/0: f:edit_plate.cut.1;M:edit_plate.body is a plane face; a diameter is on a cylinder face');
   await pane.getByRole('button', { name: 'PMI', exact: true }).click();
@@ -245,7 +251,7 @@ test('PMI the engine built follows the model through edits: nominals measured an
   await page.evaluate(() => window.cadHarness.mounted(true));
   await loaded();
   await drawn();
-  assert.deepEqual(await labels(), ['A', 'thickness', 'hole-diameter', 'top-flatness', 'hole-position']);
+  assert.deepEqual(await labels(), ['A', 'thickness', 'hole-diameter', 'hole-from-front', 'hole-from-left', 'top-flatness', 'hole-position']);
   assert.equal(await label('hole-diameter').getAttribute('data-pmi-status'), 'invalid');
   assert.deepEqual(errors, []);
 });
