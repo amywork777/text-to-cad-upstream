@@ -2631,6 +2631,28 @@ class HoleTableTests(unittest.TestCase):
 
         self.assertFalse([line for line in _unstated(facts) if "called out" in line], "the table states each hole")
 
+    def test_the_tags_and_the_origin_stand_clear_of_the_line_work(self) -> None:
+        import re
+
+        from ezdxf import path
+        from shapely.geometry import LineString, box
+
+        from cadgen._internal.drawing_base import _text_box
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A2", 1.0)
+        top, _front, _right = sheet.three_views(_perforated())
+        top.hole_table()
+        msp = _render_sheet(sheet, index=1, count=1, label="tags").modelspace()
+        lines = [LineString([(v.x, v.y) for v in path.make_path(e).flattening(0.05)])
+                 for e in msp.query("LINE ARC CIRCLE LWPOLYLINE SPLINE ELLIPSE[layer=='VISIBLE' | layer=='CENTER']")]
+        tags = [e for e in msp.query("TEXT[layer=='DIM']") if re.fullmatch(r"[A-Z]\d+|X|Y|0,0", e.dxf.text)]
+        self.assertEqual(len(tags), 17)  # A1, B1-B2, C1-C10, D1, and the origin's X, Y and 0,0
+        for tag in tags:
+            align, at, _end = tag.get_placement()
+            ink = box(*_text_box(tag.dxf.text, at.x, at.y, tag.dxf.height, align))
+            self.assertFalse([line for line in lines if line.intersects(ink)], f"{tag.dxf.text} is printed on line work")
+
     def test_a_hole_table_and_callouts_do_not_share_a_view(self) -> None:
         from cadgen.eng_drawing import Sheet, _render_sheet
 

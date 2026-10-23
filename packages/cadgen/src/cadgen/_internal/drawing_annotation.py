@@ -493,14 +493,16 @@ _ORIGIN_ARM = 10.0
 class _TableRow(NamedTuple):
     """One tabulated hole or slot: its tag, its X and Y from the table's origin
     (model mm, measured on the whole part), its size as a callout reads it, the
-    feature, where the view draws its centre, and its drawn radius (model mm)."""
+    feature, and the arc its tag stands beside: where the view draws that arc's
+    centre (a hole's, or a slot's end furthest up and right) and its radius
+    (model mm)."""
 
     tag: str
     x: float
     y: float
     size: str
     feature: Any
-    centre: tuple[float, float]
+    beside: tuple[float, float]
     radius: float
 
 
@@ -547,6 +549,13 @@ def _hole_table(view: View, proj, features, cut, items) -> _HoleTable:
             return tuple((a + b) / 2 for a, b in zip(*feature.ends))
         return feature.mouth
 
+    def beside(feature) -> tuple[float, float]:
+        """The centre of the arc a tag stands beside: up and right of it, the tag
+        is clear of the outline and the centre lines."""
+        if hasattr(feature, "width"):
+            return max((proj.point(end) for end in feature.ends), key=lambda p: p[0] + p[1])
+        return proj.point(feature.mouth)
+
     rows = []
     for letter, members in zip(_SECTION_LETTERS, order):
         is_slot = hasattr(members[0], "width")
@@ -559,7 +568,7 @@ def _hole_table(view: View, proj, features, cut, items) -> _HoleTable:
             measured.append((round(at[0] - zero[0], 6), round(at[1] - zero[1], 6), feature))
         for number, (x, y, feature) in enumerate(sorted(measured, key=lambda m: (round(m[0], 3), round(m[1], 3))),
                                                 start=1):
-            rows.append(_TableRow(f"{letter}{number}", x, y, size, feature, proj.point(middle(feature)), radius))
+            rows.append(_TableRow(f"{letter}{number}", x, y, size, feature, beside(feature), radius))
     width = sum(w for _n, w in _TABLE_COLUMNS) + max(28.0, max(_ink_width(r.size, 2.5) for r in rows) + 6.0)
     return _HoleTable(rows, origin, (width, (len(rows) + 1) * _TABLE_ROW))
 
@@ -576,15 +585,18 @@ def _draw_hole_tags(msp, table: _HoleTable, proj, to_sheet, sv: float, th: float
     from ezdxf.enums import TextEntityAlignment as A
 
     for row in table.rows:
-        c, r = to_sheet(row.centre), row.radius * sv
+        c, r = to_sheet(row.beside), row.radius * sv
         lean = r * 0.71 + 0.8
         text(row.tag, c[0] + lean, c[1] + lean, 2.5, A.BOTTOM_LEFT, "DIM")
     o = to_sheet(proj.point(table.origin))
-    for tip, name in (((o[0] + _ORIGIN_ARM, o[1]), "X"), ((o[0], o[1] + _ORIGIN_ARM), "Y")):
+    # The arrows often lie along the part's edges, so each letter stands off its
+    # arrow's tip on the far side of the corner, clear of those edges.
+    x_tip, y_tip = (o[0] + _ORIGIN_ARM, o[1]), (o[0], o[1] + _ORIGIN_ARM)
+    for tip in (x_tip, y_tip):
         msp.add_leader([tip, o], dxfattribs={"layer": "DIM"},
                        override={"dimasz": th * 0.7, "dimldrblk": "_CLOSEDFILLED"})
-        text(name, tip[0] + (1.5 if name == "X" else 0.0), tip[1] + (1.5 if name == "Y" else 0.0), 2.5,
-             A.MIDDLE_LEFT if name == "X" else A.BOTTOM_CENTER, "DIM")
+    text("X", x_tip[0], x_tip[1] - 1.0, 2.5, A.TOP_CENTER, "DIM")
+    text("Y", y_tip[0] - 1.0, y_tip[1], 2.5, A.MIDDLE_RIGHT, "DIM")
     text("0,0", o[0] - 1.0, o[1] - 1.0, 2.5, A.TOP_RIGHT, "DIM")
 
 
