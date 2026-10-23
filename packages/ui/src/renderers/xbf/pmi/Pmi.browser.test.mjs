@@ -28,8 +28,8 @@ const unit = v => { const length = Math.hypot(...v); return v.map(c => c / lengt
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-async function openBracket(t) {
-  const harness = await serveXbfHarness(t, { edit: withPmi });
+async function openBracket(t, options = { edit: withPmi }) {
+  const harness = await serveXbfHarness(t, options);
   const opened = await harness.open();
   const { page, pane } = opened;
   const controller = 'window.cadHarness.a.controller';
@@ -103,7 +103,7 @@ test('PMI is drawn on the model and stays legible as the camera moves; a pick li
   const details = pane.locator('[data-pmi-details="top-flat"]');
   await details.waitFor();
   assert.match(await details.innerText(), /Kind\s*Flatness/);
-  assert.match(await details.innerText(), new RegExp(`Feature\\s*${TOP.replace(/[.~]/g, '\\$&')}`));
+  assert.match(await details.innerText(), /Feature\s*plate · face 2/);
   assert.match(await details.innerText(), /Placed\s*Beside its feature/);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => document.querySelector('[data-pmi-label="top-flat"]')?.getAttribute('aria-pressed') === 'false');
@@ -202,5 +202,50 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   await pane.locator('[data-pmi-pick="top-flat"]').click();
   assert.match(await pane.locator('[data-pmi-details="top-flat"]').innerText(), /names nothing in this build/);
   assert.match(await pane.locator('[data-pmi-row="profile"]').innerText(), /not shown/);
+  assert.deepEqual(errors, []);
+});
+
+// The engine's own: a plate built with `cadgen.engine.pmi` (`pmi.annotate`, its faces named by the
+// engine's element names), served as the engine served it (`pmi_plate/v1`), then rebuilt twice: 10
+// mm thick with a Ø10 hole, then 12 mm with a Ø12 hole (every name kept: the same annotations,
+// measured anew), then with a square cut where the hole was (the hole's name now on a flat face,
+// where a diameter and a position cannot stand).
+test('PMI the engine built follows the model through edits: nominals measured anew, and a reference that can no longer stand marked', async (t) => {
+  const { page, pane, errors, label, drawn, labels, view, settle, capture, update, loaded } = await openBracket(t, { fixture: 'pmi_plate/v1' });
+  await view({ position: [120, -160, 140], target: [0, 0, 0], up: [0, 0, 1], orthographicHalfHeight: 60 });
+  await drawn();
+  assert.deepEqual(await labels(), ['A', 'thickness', 'hole-diameter', 'top-flatness', 'hole-position']);
+  assert.equal(await label('thickness').getAttribute('aria-label'), '10.0 ±0.2');
+  assert.equal(await label('hole-diameter').getAttribute('aria-label'), '\u230010.0 +0.1/0');
+  assert.equal(await label('hole-position').getAttribute('aria-label'), 'Position \u23000.1 | A');
+  const still = await capture();
+  await label('hole-diameter').click();
+  await settle();
+  assert.ok(!(await capture()).equals(still), 'the hole is lit');
+
+  // Thicker, the hole bigger: the same annotations, still on their faces, measured anew; still picked.
+  await update('pmi_plate/v2');
+  await page.waitForFunction(() => document.querySelector('[data-pmi-label="thickness"]')?.getAttribute('aria-label') === '12.0 ±0.2');
+  assert.equal(await label('hole-diameter').getAttribute('aria-label'), '\u230012.0 +0.1/0');
+  assert.equal(await label('hole-diameter').getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(await pane.locator('[data-pmi-label]').evaluateAll(elements => elements.map(element => element.dataset.pmiStatus)), ['ok', 'ok', 'ok', 'ok', 'ok']);
+
+  // A square cut where the hole was: its name is a flat face's now, which a diameter cannot stand on.
+  await update('pmi_plate/v3');
+  await page.waitForFunction(() => document.querySelector('[data-pmi-label="hole-diameter"]')?.dataset.pmiStatus === 'invalid');
+  assert.equal(await label('hole-position').getAttribute('data-pmi-status'), 'invalid');
+  assert.equal(await label('thickness').getAttribute('data-pmi-status'), 'ok');
+  // Drawn where the code placed it, its nominal unknown; its row says what the engine said.
+  assert.equal(await label('hole-diameter').getAttribute('aria-label'), '\u2300? +0.1/0: f:edit_plate.cut.1;M:edit_plate.body is a plane face; a diameter is on a cylinder face');
+  await pane.getByRole('button', { name: 'PMI', exact: true }).click();
+  assert.match(await pane.locator('[data-pmi-details="hole-diameter"]').innerText(), /is a plane face; a diameter is on a cylinder face/);
+
+  // Reopened, the document says the same: its PMI is the file's, not the view's.
+  await page.evaluate(() => window.cadHarness.mounted(false));
+  await page.evaluate(() => window.cadHarness.mounted(true));
+  await loaded();
+  await drawn();
+  assert.deepEqual(await labels(), ['A', 'thickness', 'hole-diameter', 'top-flatness', 'hole-position']);
+  assert.equal(await label('hole-diameter').getAttribute('data-pmi-status'), 'invalid');
   assert.deepEqual(errors, []);
 });

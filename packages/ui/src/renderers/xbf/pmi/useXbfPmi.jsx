@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { pmiCallText, pmiCallout, pmiChangeRequest, pmiChangeSettled, pmiEntryCall, pmiStatusText, readXbfPmi } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
-import { pmiConstruction, pmiMovedPlacement } from "@text-to-cad/core/lib/xbf/xbfPmiLayout.js";
+import { pmiConstruction, pmiMovedPlacement, pmiPresentationToPart, pmiPresentationToScene } from "@text-to-cad/core/lib/xbf/xbfPmiLayout.js";
 import { PmiGlyph } from "./pmiGlyphs.jsx";
 import { createPmiRefResolver, resolvePmiEntryRefs } from "./pmiRefs.js";
 
@@ -32,10 +32,17 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
   const read = useMemo(() => readXbfPmi(structure), [structure]);
   const resolver = useMemo(() => createPmiRefResolver(structure, tree), [structure, tree]);
   const entries = useMemo(() => read.map((entry) => {
-    const refs = resolvePmiEntryRefs(entry, resolver);
+    // Each reference named as a pick's chip names it ("plate · face 7"), where it is on the page.
+    const refs = resolvePmiEntryRefs(entry, resolver).map((ref) => {
+      const element = ref.ids.length === 1 ? scene?.describeElement(ref.ids[0]) : null;
+      return { ...ref, name: element ? `${element.partName} \u00b7 ${element.kind} ${element.ordinal}` : ref.written };
+    });
+    // Its part's placement as built: the frame its presentation is in (the part's first occurrence,
+    // the one its canonical refs name).
+    const instance = entry.part === null ? null : (structure?.instances || []).find(item => item?.prototype === entry.part);
     return { ...entry, refs, callout: pmiCallout(entry), statusText: pmiStatusText(entry), glyph: glyphOf(entry),
-      featureIds: [...new Set(refs.flatMap(ref => ref.ids))] };
-  }), [read, resolver]);
+      featureIds: [...new Set(refs.flatMap(ref => ref.ids))], frame: instance?.matrix || null };
+  }), [read, resolver, structure, scene]);
 
   const [hoveredId, setHoveredId] = useState("");
   const [hiddenIds, setHiddenIds] = useState(EMPTY);
@@ -60,7 +67,10 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
       const first = entry.refs[0]?.ids[0] || entry.id;
       const turn = turns.get(first) || 0;
       turns.set(first, turn + 1);
-      const construction = pmiConstruction(entry, { geometry, bounds, turn, placement: placements.get(entry.id) || null });
+      // Placements are the part's (as the code writes them); the construction is the scene's.
+      const placed = { ...entry, presentation: pmiPresentationToScene(entry.presentation, entry.frame) };
+      const construction = pmiConstruction(placed, { geometry, bounds, turn,
+        placement: pmiPresentationToScene(placements.get(entry.id) || null, entry.frame) });
       if (construction) found.set(entry.id, construction);
     }
     return found;
@@ -99,16 +109,17 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
   const add = useCallback(call => setChanges(now => [...now.filter(change => change.key !== `add:${call.id}`), { key: `add:${call.id}`, kind: "add", id: call.id, call }]), []);
   const remove = useCallback(key => setChanges(now => now.filter(change => change.key !== key)), []);
   const clearChanges = useCallback(() => setChanges(now => (now.length ? NO_CHANGES : now)), []);
+  const frameOf = useCallback(id => entries.find(entry => entry.id === id)?.frame || null, [entries]);
   const move = useCallback((id, label) => {
     const construction = constructions.get(id);
     if (!construction || !editable) return;
-    edit(id, { presentation: pmiMovedPlacement(construction.presentation, label) }, { placementOnly: true });
-  }, [constructions, edit, editable]);
+    edit(id, { presentation: pmiPresentationToPart(pmiMovedPlacement(construction.presentation, label), frameOf(id)) }, { placementOnly: true });
+  }, [constructions, edit, editable, frameOf]);
   // Pin where it is drawn now: an annotation the code never placed, placed in code as it stands.
   const pin = useCallback((id) => {
     const construction = constructions.get(id);
-    if (construction && editable) edit(id, { presentation: construction.presentation }, { placementOnly: true });
-  }, [constructions, edit, editable]);
+    if (construction && editable) edit(id, { presentation: pmiPresentationToPart(construction.presentation, frameOf(id)) }, { placementOnly: true });
+  }, [constructions, edit, editable, frameOf]);
 
   const changeChips = useMemo(() => changes.map((change) => {
     const text = pmiChangeRequest(change);

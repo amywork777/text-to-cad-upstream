@@ -156,3 +156,30 @@ export function pmiConstruction(entry, { geometry, bounds = null, turn = 0, plac
 export function pmiMovedPlacement(presentation, label) {
   return { anchor: presentation.anchor.slice(), offset: sub(label, presentation.anchor) };
 }
+
+// A part's placement as the structure holds it: 4 x 4, column-major (`instances[].matrix`).
+const placePoint = (m, p) => [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+  m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]];
+const placeDirection = (m, d) => [m[0] * d[0] + m[4] * d[1] + m[8] * d[2], m[1] * d[0] + m[5] * d[1] + m[9] * d[2], m[2] * d[0] + m[6] * d[1] + m[10] * d[2]];
+// A placement's inverse: rigid, so its rotation's transpose and the translation taken back through it.
+const inverse = (m) => {
+  const t = [m[12], m[13], m[14]];
+  const r = [m[0], m[4], m[8], 0, m[1], m[5], m[9], 0, m[2], m[6], m[10], 0];
+  const back = placeDirection([...r, 0, 0, 0, 1], t);
+  return [...r, -back[0], -back[1], -back[2], 1];
+};
+const isMatrix = m => Array.isArray(m) && m.length === 16 && m.every(Number.isFinite);
+
+/**
+ * A presentation in its part's frame (as `pmi.place` writes it) where the part stands in the scene
+ * (`matrix`, the part's placement), and `pmiPresentationToPart` back: the anchor is a point, the
+ * offset a direction. No placement, or one that is no matrix: the frames are one.
+ */
+export function pmiPresentationToScene(presentation, matrix) {
+  if (!presentation || !isMatrix(matrix)) return presentation;
+  return { anchor: placePoint(matrix, presentation.anchor), offset: placeDirection(matrix, presentation.offset) };
+}
+
+export function pmiPresentationToPart(presentation, matrix) {
+  return isMatrix(matrix) ? pmiPresentationToScene(presentation, inverse(matrix)) : presentation;
+}

@@ -24,8 +24,8 @@ import { parseToleranceInput, pmiCreateOptions } from "./pmiCreate.js";
 
 const ROW_ACTIONS_WIDTH = "1.5rem";
 const ROLE_NAMES = Object.freeze({ feature: "Feature", from: "From", to: "To" });
-const STATUS_WORDS = Object.freeze({ ok: "", missing: "Missing", ambiguous: "Ambiguous" });
-const STATUS_TEXT = Object.freeze({ missing: "text-red-500", ambiguous: "text-amber-500" });
+const STATUS_WORDS = Object.freeze({ ok: "", missing: "Missing", ambiguous: "Ambiguous", invalid: "Invalid" });
+const STATUS_TEXT = Object.freeze({ missing: "text-red-500", invalid: "text-red-500", ambiguous: "text-amber-500" });
 const mm = (value, unit = "mm") => `${value} ${unit}`;
 
 function RowEye({ id, hidden, onToggle }) {
@@ -102,6 +102,7 @@ function EntryDetails({ entry, pmi, letters }) {
       <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" /><span className="min-w-0 [overflow-wrap:anywhere]">{entry.statusText}</span>
     </p> : null}
     {!entry.supported ? <FileSheetStatusText className="px-0">{`Not shown: ${entry.unsupported}.`}</FileSheetStatusText> : null}
+    {!entry.supported ? (entry.values || []).slice(0, 8).map(([key, value]) => <InfoRow key={key} label={key} copy={false}>{value}</InfoRow>) : null}
     {entry.kind === "dimension" && entry.supported ? <>
       {entry.dimension.nominal === null ? <InfoRow label="Nominal" copy={false}>Unknown: nothing to measure</InfoRow>
         : <InfoRow label="Nominal" title="Measured on the geometry by the engine"><MonoValue>{mm(entry.callout.diameter ? `⌀${pmiNumber(entry.dimension.nominal, 3)}` : pmiNumber(entry.dimension.nominal, 3), entry.dimension.unit)}</MonoValue>
@@ -121,7 +122,7 @@ function EntryDetails({ entry, pmi, letters }) {
     </> : null}
     {entry.refs.map(ref => <InfoRow key={`${ref.role}:${ref.written}`} label={ROLE_NAMES[ref.role] || ref.role} copy={ref.ref}
       title={ref.status === "ok" ? ref.ref : `${STATUS_WORDS[ref.status]}: ${ref.written}`}>
-      <span className={cn("[overflow-wrap:anywhere]", STATUS_TEXT[ref.status])}>{ref.written}</span>
+      <span className={cn("[overflow-wrap:anywhere]", STATUS_TEXT[ref.status])}>{ref.status === "ok" ? ref.name : ref.written}</span>
       {ref.status === "ambiguous" && ref.candidates.length ? <span className="block text-muted-foreground">{`names ${ref.candidates.join(", ")}`}</span> : null}
     </InfoRow>)}
     {entry.supported ? <InfoRow label="Placed" copy={false}>{pending?.values.presentation ? "Moved, in Quick Edit" : entry.presentation ? "In code" : "Beside its feature"}</InfoRow> : null}
@@ -205,7 +206,8 @@ export default function PmiSection({ pmi, picked, moving }) {
                 (hidden || !entry.supported) && "text-muted-foreground", hidden ? ROW_NAME_UNDER_ACTIONS.shown : ROW_NAME_UNDER_ACTIONS.hover)}>
               <PmiGlyph name={entry.glyph} className="size-3 shrink-0" aria-hidden="true" />
               <TreeRowLabel className="min-w-0 shrink tabular-nums">{entry.supported ? entry.callout.text : entry.label || entry.id}</TreeRowLabel>
-              <TreeRowLabel className="flex-1 text-micro text-muted-foreground">{entry.supported ? entry.id : "not shown"}</TreeRowLabel>
+              {/* Its id, where it says more than the callout (a datum's id is its letter). */}
+              <TreeRowLabel className="flex-1 text-micro text-muted-foreground">{!entry.supported ? "not shown" : entry.kind === "datum" ? "" : entry.id}</TreeRowLabel>
               {entry.status !== "ok" ? <CircleAlert className={cn("size-3 shrink-0", STATUS_TEXT[entry.status])} aria-label={STATUS_WORDS[entry.status]} /> : null}
             </button>
             {entry.supported ? <RowEye id={entry.id} hidden={hidden} onToggle={pmi.toggleHidden} /> : null}

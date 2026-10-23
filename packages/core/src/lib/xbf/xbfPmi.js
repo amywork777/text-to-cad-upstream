@@ -18,8 +18,11 @@ export const PMI_KINDS = Object.freeze(["dimension", "datum", "geometric_toleran
 export const PMI_DIMENSION_TYPES = Object.freeze(["distance", "diameter"]);
 /** The geometric characteristics the viewer draws. */
 export const PMI_CHARACTERISTICS = Object.freeze(["flatness", "position"]);
-/** What a reference's or an annotation's status may be, best first. */
-export const PMI_STATUSES = Object.freeze(["ok", "ambiguous", "missing"]);
+/**
+ * What a reference's or an annotation's status may be, best first: it names one face it can
+ * stand on; several; nothing; or a face it cannot stand on (a diameter on a plane, say).
+ */
+export const PMI_STATUSES = Object.freeze(["ok", "ambiguous", "missing", "invalid"]);
 
 const MINUS = "−";
 const finite = value => (typeof value === "number" && Number.isFinite(value) ? value : null);
@@ -33,6 +36,13 @@ function readRefs(refs) {
     return { role: text(ref?.role) || "feature", ref: text(ref?.ref) || written, written, status: statusOf(ref?.status),
       candidates: Array.isArray(ref?.candidates) ? ref.candidates.map(text).filter(Boolean) : [] };
   });
+}
+
+// An unsupported entry's values, as far as they read as words: each number, word or list of them.
+function readValues(values) {
+  const plain = value => (typeof value === "number" && Number.isFinite(value)) || (typeof value === "string" && value);
+  return Object.entries(values).flatMap(([key, value]) => (plain(value) ? [[key, String(value)]]
+    : Array.isArray(value) && value.length && value.every(plain) ? [[key, value.join(", ")]] : []));
 }
 
 function readTolerance(value) {
@@ -75,8 +85,10 @@ function unsupportedReason(entry) {
  *   datum: { letter: string } | null,
  *   tolerance: { characteristic: string, value: number | null, unit: string, zone: string | null,
  *     modifier: string | null, datums: string[] } | null,
- *   presentation: { anchor: number[], offset: number[] } | null, xcafType: string,
- *   supported: boolean, unsupported: string }>}
+ *   presentation: { anchor: number[], offset: number[] } | null, xcafType: string, part: number | null,
+ *   values: Array<[string, string]> | null, supported: boolean, unsupported: string }>}
+ *   `part`: the structure's prototype the annotation is of (its presentation is in that part's
+ *   frame), null where it is linked to nothing; `values`: what an unsupported one holds, as words.
  */
 export function readXbfPmi(structure) {
   const list = Array.isArray(structure?.pmi) ? structure.pmi : [];
@@ -100,8 +112,11 @@ export function readXbfPmi(structure) {
       ? { anchor: point3(item.presentation.anchor), offset: point3(item.presentation.offset) } : null;
     const entry = {
       id, kind: text(item.kind), label: text(item.label), status: statusOf(item.status), problem: text(item.problem),
+      part: Number.isInteger(item.part) ? item.part : null,
       refs: readRefs(item.refs), dimension, datum: item.datum && text(item.datum.letter) ? { letter: text(item.datum.letter) } : null,
-      tolerance: gdt, presentation, xcafType: text(item.xcaf_type)
+      tolerance: gdt, presentation, xcafType: text(item.xcaf_type),
+      // What the document holds of an annotation the viewer does not draw: its plain values, to read.
+      values: item.values && typeof item.values === "object" && !Array.isArray(item.values) ? readValues(item.values) : null
     };
     const unsupported = unsupportedReason(entry);
     return { ...entry, supported: !unsupported, unsupported };
@@ -176,6 +191,7 @@ export function pmiStatusText(entry) {
   if (entry.problem) return entry.problem;
   const broken = entry.refs?.find(ref => ref.status !== "ok");
   if (entry.status === "ambiguous") return broken ? `${broken.written} names ${broken.candidates.length || "several"} elements` : "A reference names several elements";
+  if (entry.status === "invalid") return broken ? `${broken.written} names a face this cannot stand on` : "A reference names a face this cannot stand on";
   return broken ? `${broken.written} names nothing in this version` : "A reference names nothing in this version";
 }
 

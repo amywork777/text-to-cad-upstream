@@ -99,3 +99,17 @@ test("a feature not on the page draws at its placement or not at all, and a move
   assert.equal(pmiConstruction(flatness(), { geometry: { feature: null }, bounds: BOUNDS }), null);
   assert.deepEqual(pmiMovedPlacement({ anchor: [1, 2, 3], offset: [0, 0, 1] }, [4, 2, 9]), { anchor: [1, 2, 3], offset: [3, 0, 6] });
 });
+
+test("a placement is in its part's frame: drawn where the part stands, and written back in its frame", async () => {
+  const { pmiPresentationToPart, pmiPresentationToScene } = await import("./xbfPmiLayout.js");
+  // Turned a quarter about z and moved 10 along x: the second peg's kind of placement.
+  const matrix = [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1];
+  const placed = { anchor: [1, 0, 2], offset: [0, 3, 0] };
+  const scene = pmiPresentationToScene(placed, matrix);
+  nearPoint(scene.anchor, [10, 1, 2]);
+  nearPoint(scene.offset, [-3, 0, 0], "an offset turns and does not move");
+  const back = pmiPresentationToPart(scene, matrix);
+  nearPoint(back.anchor, placed.anchor);
+  nearPoint(back.offset, placed.offset);
+  assert.equal(pmiPresentationToScene(placed, null), placed, "no placement, one frame");
+});

@@ -186,3 +186,18 @@ test("a change the document now says is settled, and one it does not yet say is 
   // An edit of an annotation the document no longer holds is not settled: it is the person's to drop.
   assert.equal(pmiChangeSettled({ ...change, id: "gone" }, read), false);
 });
+
+// The engine's own, as it served a plate built with `cadgen.engine.pmi` (`__fixtures__/pmi_plate`):
+// as made (v1), and after an edit put a square cut where the hole was (v3).
+test("the PMI the engine serves reads whole, and a reference an edit left on the wrong kind of face is invalid", async () => {
+  const { readFileSync } = await import("node:fs");
+  const served = version => JSON.parse(readFileSync(new URL(`./__fixtures__/pmi_plate/${version}/structure.json`, import.meta.url), "utf8"));
+  const made = readXbfPmi(served("v1"));
+  assert.deepEqual(made.map(entry => [entry.id, entry.supported, entry.status, entry.part]), [
+    ["A", true, "ok", 0], ["thickness", true, "ok", 0], ["hole-diameter", true, "ok", 0], ["top-flatness", true, "ok", 0], ["hole-position", true, "ok", 0]]);
+  assert.deepEqual(made.map(entry => pmiCallout(entry).text), ["Datum A", "10.0 ±0.2", "⌀10.0 +0.1/0", "Flatness 0.05", "Position ⌀0.1 | A"]);
+  const cut = readXbfPmi(served("v3"));
+  const hole = cut.find(entry => entry.id === "hole-diameter");
+  assert.deepEqual([hole.status, hole.supported, hole.dimension.nominal], ["invalid", true, null]);
+  assert.match(pmiStatusText(hole), /is a plane face; a diameter is on a cylinder face/);
+});

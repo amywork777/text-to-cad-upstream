@@ -21,7 +21,7 @@ function Tolerance({ tolerance }) {
 
 /** A callout's words in their box: `pmiCallout`'s pieces, the box in its state's colour. */
 export default function PmiLabel({ callout, status = "ok", selected = false, hovered = false, moved = false, className }) {
-  const border = status === "missing" ? "border-red-500 border-dashed" : status === "ambiguous" ? "border-amber-500 border-dashed"
+  const border = status === "missing" || status === "invalid" ? "border-red-500 border-dashed" : status === "ambiguous" ? "border-amber-500 border-dashed"
     : selected ? "border-[#2979ff] ring-2 ring-[#2979ff]/35" : hovered ? "border-foreground" : "border-foreground/60";
   const box = cn(BOX, border, moved && "outline-dashed outline-1 outline-offset-2 outline-[#2979ff]", className);
   if (callout.kind === "dimension") {

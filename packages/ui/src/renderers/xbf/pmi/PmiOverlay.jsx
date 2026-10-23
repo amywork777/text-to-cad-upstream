@@ -19,8 +19,9 @@ import { separateLabels } from "./separateLabels.js";
 
 // What Select has picked, as the annotations and the measurements are: the one selection blue.
 const SELECTED_COLOR = "#2979ff";
-// A reference the engine could not find: what it names is gone (failed) or several (a warning).
-const STATUS_COLOR = Object.freeze({ missing: "#ef4444", ambiguous: "#f59e0b" });
+// A reference the engine could not stand the annotation on: it names nothing, or a face it cannot
+// stand on (failed), or several (a warning).
+const STATUS_COLOR = Object.freeze({ missing: "#ef4444", invalid: "#ef4444", ambiguous: "#f59e0b" });
 const ARROW_PX = 7, ARROW_HALF_PX = 2.6, DATUM_PX = 6;
 const FINE_SLOP_PX = 4, COARSE_SLOP_PX = 12;
 // How far a distance's words stand off its dimension line.

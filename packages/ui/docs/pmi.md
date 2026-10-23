@@ -38,12 +38,15 @@ fonts lack them.
 
 Each reference is the engine's ref grammar (`cadgen.engine.refs`): `refs[].ref` canonical where it
 resolved, `refs[].written` as the code wrote it, and a status — `ok`, `missing` (it names nothing
-in this build) or `ambiguous` (it names several, its `candidates` listed). The engine resolves
+in this build), `ambiguous` (it names several, its `candidates` listed) or `invalid` (it names a
+face the annotation cannot stand on: a diameter on a flat face, say). A dimension whose reference
+broke has no nominal, there being nothing to measure: it says `?`. The engine resolves
 them on every build; the page finds the same element (`xbf/pmi/pmiRefs.js`) by spelling each
 candidate's canonical ref as the tree does and keeping exact matches, and finds none for a ref
 that is not `ok`. An annotation whose reference broke is drawn where its code placed it, its box
-and leader dashed in the status colour (failed red, ambiguous amber), and its row and values say
-why — the engine's own words where it gives them.
+and leader dashed in the status colour (missing and invalid red, ambiguous amber), and its row and
+values say why — the engine's own words where it gives them. A reference that resolved is named as
+a pick's chip names it ("plate · face 7"), its canonical ref its copy.
 
 ## Drawing it
 
@@ -52,7 +55,9 @@ coordinates from the elements its references name (`elementGeometry`): the point
 a leader starts from (a flat face's own node nearest its middle, so never in a hole; a hole's rim),
 where its label stands, and a distance's dimension and extension lines, square between its faces.
 `presentation` (`pmi.place(anchor, offset)`: the anchor on the feature and the label's offset from
-it) is where the code placed it; one the code never placed stands out from its feature, each of a
+it, in millimetres in its part's frame, `part` the structure's prototype; drawn where that part's
+first occurrence stands, `pmiPresentationToScene`, and written back in its frame) is where the code
+placed it; one the code never placed stands out from its feature, each of a
 feature's turned from the last. A placement says where a callout is drawn and nothing else.
 
 `xbf/pmi/PmiOverlay.jsx` draws them over the viewport, as the joint handles are drawn: the labels
