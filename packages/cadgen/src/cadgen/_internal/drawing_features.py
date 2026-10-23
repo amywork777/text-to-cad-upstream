@@ -855,15 +855,22 @@ def _strip_chamfer(face, found) -> Chamfer | None:
     return Chamfer((round(legs[0], 6), round(legs[1], 6)), (at.X, at.Y, at.Z))
 
 
-def _cone_bevel(seg: _Segment) -> bool:
+def _cone_bevel(seg: _Segment, line: list[_Segment]) -> bool:
     """Whether a turned cone is a chamfer: convex, short, between 15 and 75
-    degrees, and stopping short of its axis (a cone that reaches it is a point)."""
+    degrees, stopping short of its axis (a cone that reaches it is a point), and
+    bevelling the end of a cylinder of its larger radius on the same axis (a cone
+    that is the whole side of a part is its shape, not a chamfer). ``line`` is
+    every segment on the cone's axis line."""
     axial, radial = seg.hi - seg.lo, abs(seg.r_hi - seg.r_lo)
     if seg.concave or axial < 1e-6 or radial < 1e-6 or max(axial, radial) > _CHAMFER_MAX:
         return False
     if min(seg.r_lo, seg.r_hi) < 1e-6:
         return False
-    return 15.0 <= math.degrees(math.atan2(radial, axial)) <= 75.0
+    if not 15.0 <= math.degrees(math.atan2(radial, axial)) <= 75.0:
+        return False
+    wide_at, wide = (seg.lo, seg.r_lo) if seg.r_lo > seg.r_hi else (seg.hi, seg.r_hi)
+    return any(other.kind == "cyl" and not other.concave and abs(other.r_lo - wide) < _TOUCH
+               and min(abs(other.lo - wide_at), abs(other.hi - wide_at)) < _TOUCH for other in line)
 
 
 def chamfers(shape) -> list[Chamfer]:
@@ -874,8 +881,9 @@ def chamfers(shape) -> list[Chamfer]:
     found = _edge_faces(shape)
     out = [c for c in (_strip_chamfer(face, found) for face in shape.faces()) if c is not None]
     for d, foot, segments in _surface_segments(shape).values():
-        for seg in _merge_split_faces(segments):
-            if seg.kind == "cone" and _cone_bevel(seg):
+        line = _merge_split_faces(segments)
+        for seg in line:
+            if seg.kind == "cone" and _cone_bevel(seg, line):
                 mid = (seg.lo + seg.hi) / 2
                 out.append(Chamfer((round(seg.hi - seg.lo, 6), round(abs(seg.r_hi - seg.r_lo), 6)),
                                    tuple(f + mid * k for f, k in zip(foot, d))))
@@ -899,10 +907,13 @@ def sharp_edges(shape) -> tuple[int, int]:
     found = _edge_faces(shape)
     breaks = [face.wrapped for face, _blend in _blend_faces(shape)]
     breaks += [face.wrapped for face in shape.faces() if _strip_chamfer(face, found) is not None]
+    lines = [_merge_split_faces(segments) for _d, _foot, segments in _surface_segments(shape).values()]
+    bevels = [seg for line in lines for seg in line if seg.kind == "cone" and _cone_bevel(seg, line)]
     for face in shape.faces():
         if BRepAdaptor_Surface(face.wrapped).GetType() == GeomAbs_Cone:
             segment = _cone_segment(face)
-            if segment is not None and _cone_bevel(segment):
+            if segment is not None and any(abs(segment.lo - b.lo) < _TOUCH and abs(segment.hi - b.hi) < _TOUCH
+                                           and abs(segment.r_lo - b.r_lo) < _TOUCH for b in bevels):
                 breaks.append(face.wrapped)
     outside = inside = 0
     for edge in shape.edges():

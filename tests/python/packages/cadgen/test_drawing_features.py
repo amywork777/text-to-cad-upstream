@@ -293,3 +293,4 @@ class EdgeTests(unittest.TestCase):
         self.assertEqual(blends(notch) + blends(link), [], "the end of a notch or a link is its full round")
         pin = Cylinder(3, 20, align=up) + Pos(0, 0, 20) * Cone(3, 0, 3, align=up)
         self.assertEqual(chamfers(pin), [], "a cone that reaches its axis is a point")
+        self.assertEqual(chamfers(Cone(36.5, 30, 6, align=up)), [], "a cone that is a part's whole side is its shape")
