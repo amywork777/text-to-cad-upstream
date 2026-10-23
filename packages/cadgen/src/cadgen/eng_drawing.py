@@ -56,6 +56,7 @@ from __future__ import annotations
 import functools
 import math
 import re
+import sys
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -2520,6 +2521,23 @@ def _write_pdf(docs, sheets: Sequence[Sheet], path: Path) -> None:
         partial.unlink(missing_ok=True)
 
 
+def _say(line: str) -> None:
+    """Print one line the drawing has to say, on any console.
+
+    A drawing's notices quote its callouts, and a Windows console on a legacy
+    code page cannot encode ⌀, ↧, ⌴ or ⌵: under strict error handling the
+    print raised after the drawing was made, from the message rather than the
+    work. A line that will not encode goes out with backslash escapes instead,
+    as cadgen's CLI does. Only this write degrades; the stream's settings belong
+    to the process that embedded us.
+    """
+    try:
+        print(line)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(line.encode(encoding, "backslashreplace").decode(encoding))
+
+
 def _counted(run: Callable[..., list[Path]]) -> Callable[..., list[Path]]:
     """``run``, counted for telemetry (``cadgen/analytics.py``): a drawing made, or a mistake in
     cadgen's own code making one. A drawing is made in the script's own process, which sends nothing
@@ -2596,15 +2614,15 @@ def eng_drawing(func: Callable[..., Any] | None = None, *, out: str | Path | Non
                 raise_on_error_findings(findings, label=f"{fn.__name__} sheet {index}")
                 for finding in findings:
                     if finding.severity == "warning":
-                        print(f"{fn.__name__} sheet {index} {finding.render()}")
+                        _say(f"{fn.__name__} sheet {index} {finding.render()}")
                 docs.append(doc)
             # What the drawing does not state, across every sheet of it: printed, not
             # raised, because a sheet of views is a drawing before it is a finished one.
             notices.extend(_unstated(facts))
             for notice in notices:
-                print(f"{fn.__name__}: {notice}")
+                _say(f"{fn.__name__}: {notice}")
             _write_pdf(docs, sheets, target)
-            print(f"wrote {target} ({len(sheets)} page{'s' if len(sheets) != 1 else ''})")
+            _say(f"wrote {target} ({len(sheets)} page{'s' if len(sheets) != 1 else ''})")
             return [target]
 
         run.__cadgen_eng_drawing__ = True  # type: ignore[attr-defined]

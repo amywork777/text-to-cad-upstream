@@ -1277,6 +1277,33 @@ class ReviewFindingTests(unittest.TestCase):
         self.assertEqual(iso.label, "PICTORIAL (REF)")
 
 
+class ConsoleTests(unittest.TestCase):
+    def test_a_notice_prints_on_a_console_that_cannot_encode_its_symbols(self) -> None:
+        """Windows CI's cp1252 console has no ⌀: the notice raised after the PDF
+        was written, and the drawing failed from the message, not the work."""
+        import io
+        from unittest import mock
+
+        from cadgen.eng_drawing import Sheet, eng_drawing
+
+        with temporary_directory(prefix="tmp-cad-eng-drawing-") as tmp:
+            out = Path(tmp) / "plate.pdf"
+
+            @eng_drawing(out=str(out))
+            def plate():
+                sheet = Sheet("A4")
+                sheet.view(_plate(), "top", at=(140, 110))  # its holes are never called out
+                return sheet
+
+            console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+            with mock.patch.object(sys, "stdout", console):
+                self.assertEqual(plate(), [out])
+                console.flush()
+                printed = console.buffer.getvalue().decode("cp1252")
+            self.assertIn("\\u2300", printed, "the diameter sign as an escape, not an exception")
+            self.assertTrue(out.exists())
+
+
 class ColdTrialTests(unittest.TestCase):
     """What an agent given only the skill tripped over."""
 
