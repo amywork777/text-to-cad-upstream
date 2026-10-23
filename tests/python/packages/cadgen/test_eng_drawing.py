@@ -2522,12 +2522,13 @@ def _inclined():
 
 
 def _bar():
-    """A 600 mm round bar with a stepped end and a cross hole near each end."""
-    from build123d import Align, Cylinder, Pos, Rot
+    """A 600 mm bar, 20 mm square, with a turned spigot on its end and a cross hole
+    near each end. Square, not round: hidden-line removal on a round bar's cross
+    holes takes seconds a view, and the break does not care."""
+    from build123d import Align, Box, Cylinder, Pos, Rot
 
-    up = (Align.CENTER, Align.CENTER, Align.MIN)
-    bar = Rot(0, 90, 0) * Cylinder(10, 600, align=up)
-    bar += Pos(600, 0, 0) * Rot(0, 90, 0) * Cylinder(6, 30, align=up)
+    bar = Box(600, 20, 20, align=(Align.MIN, Align.CENTER, Align.CENTER))
+    bar += Pos(600, 0, 0) * Rot(0, 90, 0) * Cylinder(6, 30, align=(Align.CENTER, Align.CENTER, Align.MIN))
     for x in (20, 580):
         bar -= Pos(x, 0, 0) * Cylinder(3, 40)
     return bar
