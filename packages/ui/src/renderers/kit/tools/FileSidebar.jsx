@@ -214,7 +214,10 @@ export default function FileSidebar({ layout: stored, onLayoutChange, hidden = f
   }), [reveal, shown, closeSection, tabbed, register, measured.viewer, layout, settle]);
   const tiles = ids.map(id => {
     const section = meta.current.get(id) || {};
-    const tile = section.fit === "tree" ? { label: section.title || "Tree", Icon: ListTree }
+    // A section that brings its own icon (`ToolPanel`'s `icon`) shows it; else a tree's, Position's,
+    // Animation's, or a page.
+    const tile = section.icon ? { label: section.title || id, Icon: section.icon }
+      : section.fit === "tree" ? { label: section.title || "Tree", Icon: ListTree }
       : id === "position" ? { label: "Position", Icon: PositionIcon }
         : id === "animation" ? { label: "Animation", Icon: Clapperboard }
         : { label: section.title || id, Icon: FileText };

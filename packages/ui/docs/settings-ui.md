@@ -399,7 +399,8 @@ Model tree (`STEP_PART_VIEW_FEATURES`).
 **The file sidebar** (`kit/tools/FileSidebar.jsx`) holds what there is to read of the file,
 whatever tool is in hand — the strip is for using tools, the sidebar for reading the file: a STEP
 assembly's **Model tree** (a part file, whose tree would be its one row, has none), then
-**Position**, where the file has joints to move; a robot's **Links**, an `.sdf`'s **SDF**, then
+**Position**, where the file has joints to move, then **PMI**, where an engine document carries
+PMI or is an `.xbf` (its manufacturing annotations, [PMI](pmi.md)); a robot's **Links**, an `.sdf`'s **SDF**, then
 **Position**, where a joint can be driven; a drawing's **Layers**, where it has four or more
 layers or any block reference (a flat pattern's CUT and BEND has none): each layer's pen, name,
 entity count and eye, its block references under it; and, after them, the shell's own **Animation** for a
@@ -407,7 +408,8 @@ file with routines (`kit/tools/playbar/AnimationSection.jsx`). A file with none 
 sidebar. It is a toolbar of its own at the view's top-left, 8px in, on the strip's line and of
 its surface, padding and 24px tiles (`data-file-sidebar-tools`, "File sidebar"): one tile per
 section, a tree's a tree icon named for it (Model tree, Links), Position's a spline, Animation's a
-clapperboard, any other section's a page named for it. Preview offers its Position and
+clapperboard, PMI's a feature control frame (a section may bring its own, `ToolPanel`'s `icon`), any
+other section's a page named for it. Preview offers its Position and
 Animation alone, their tiles bare in its top-left corner; the rest stay mounted, out of sight.
 
 - **One section at a time.** None is open as a file opens. A tile opens its section in a panel
@@ -772,14 +774,16 @@ then an X. The file always goes and is not named. Under the header, the note
 buttons at its bottom-right.
 
 While the note is empty the box follows what it would carry: it opens when something
-is picked or annotated, and closes when that goes. Every chip leads with its
+is picked or annotated, or a change is asked for, and closes when that goes. Every chip leads with its
 icon — the Annotation chip's pen, a reference's pick glyph
 (a part's cube, a face, an edge, a vertex) — then its words, and they stand in the order
 they came, whatever their kind. A chip's copy pasted into the note is a pill there,
 drawn as the chip is, 20px like the note's lines so it sits in its rows without spacing
 them out. A click on a pill selects it whole, highlighted in the selection's colour, so
 Backspace, Delete or typing replaces it as it would selected text. Its chips are
-**Annotation** (its X clears the ink), then the selection. The Annotation chip does not copy
+**Annotation** (its X clears the ink), then each change asked for in the view (an engine document's
+PMI: "Add flatness top-flat", "Change thickness", "Move top-flat"; its card the call it asks the code
+to make, its click copies the request, its X drops it), then the selection. The Annotation chip does not copy
 references or write files. Copy Prompt, Queue and Send
 include their data in the snapshot packet; only selection chips copy individual references. A written note keeps it open whatever
 is picked, even with nothing picked or annotated, until the X. The X clears everything:
@@ -799,7 +803,8 @@ is the primary one, which Enter presses (Shift+Enter is a new line). They are th
 icon with a name and a hint — and every one is solid: the primary in the `default`
 variant, the others in `secondary`. Where Copy Prompt is the only one (a host that
 takes no message, as the web), it is a button in words, "Copy Prompt" with its icon
-first. While there is no note they are disabled, dimmed but still drawn:
+first. While there is no note, and no change asked for (which says what it wants on its own),
+they are disabled, dimmed but still drawn:
 
 - **Copy Prompt** (copy icon), always. It copies the note as text: its references
   spelled as copied references are, and its files by the paths they were saved at,
@@ -808,6 +813,8 @@ first. While there is no note they are disabled, dimmed but still drawn:
   into the context of the person's next message.
 - **Send** (up arrow), where the host can post a message: the note goes now, as the
   person's message.
+
+The changes asked for go after the note, under `Requested changes:`, a paragraph each.
 
 Every prompt captures the current view and the recorded views with remaining ink.
 If the current view matches a recorded view, its exact current framing replaces

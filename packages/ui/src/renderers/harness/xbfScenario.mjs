@@ -49,8 +49,10 @@ function harnessBundle() {
  *
  * @param {{ after: (cleanup: () => unknown) => void }} lifetime — a test context, or any object
  *   with its `after`, so one server and one browser can span a whole file.
+ * @param {{ edit?: (structure: object) => object }} [options]  `edit`: what the served structure is
+ *   made of the bracket's (a document carrying PMI, say).
  */
-export async function serveXbfHarness(t) {
+export async function serveXbfHarness(t, { edit = structure => structure } = {}) {
   let server, browser;
   t.after(async () => {
     await browser?.close();
@@ -58,7 +60,7 @@ export async function serveXbfHarness(t) {
   });
   const { bundle, bundledCss } = await harnessBundle();
   // The document as it is served now: its version moves with each `update` of an open page.
-  let served = { version: VERSION, structure: STRUCTURE };
+  let served = { version: VERSION, structure: Buffer.from(JSON.stringify(edit(JSON.parse(STRUCTURE)))) };
   let updates = 0;
   const css = await readFile(new URL('../../../dist/styles.css', import.meta.url));
   const json = (response, body) => { response.setHeader('Content-Type', 'application/json'); response.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); };
@@ -74,6 +76,16 @@ export async function serveXbfHarness(t) {
     // The catalog's row for the file, by its absolute path under the `/models` the harness opens a bare `?file=` in.
     if (path.endsWith('/__cad/catalog')) { json(response, { entries: [{ file: `/models/${FILE}`, kind: 'xbf', hash: VERSION, bytes: STRUCTURE.length }], revision: VERSION }); return; }
     if (path.endsWith('/__cad/server')) { json(response, { backend: 'cadgen' }); return; }
+    // Quick Edit's packet, as the viewer answers one small enough to travel inline.
+    if (path.endsWith('/__cad/prompt-files') && request.method === 'POST') {
+      const chunks = [];
+      request.on('data', chunk => chunks.push(chunk));
+      request.on('end', () => {
+        const { acceptInline, ...packet } = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+        json(response, { ok: true, inline: JSON.stringify(packet) });
+      });
+      return;
+    }
     if (path.endsWith('/__cad/xbf')) {
       if (url.searchParams.get('file') !== `/models/${FILE}`) { notFound(response); return; }
       json(response, url.searchParams.get('held') ? { held: true } : { doc: 'bracket', url: DOC });
@@ -109,7 +121,8 @@ export async function serveXbfHarness(t) {
   /**
    * One page over the bracket. `deviceScaleFactor: 1` keeps a screenshot's pixels the viewport's.
    * Its `update()` serves a new version of the document, as a build that changed none of its parts
-   * writes one, and settles once the page shows it.
+   * writes one, and settles once the page shows it; `update(change)` serves the structure `change`
+   * makes of the one served before (an edit of the model that moved what PMI refers to, say).
    */
   const open = async ({ timeout = 30000 } = {}) => {
     const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
@@ -120,8 +133,8 @@ export async function serveXbfHarness(t) {
     // No Worker: what a worker would build is built on the main thread, as for a host without one.
     await page.addInitScript(() => { window.Worker = undefined; });
     await page.goto(`http://127.0.0.1:${server.address().port}/?file=${FILE}`);
-    const update = async () => {
-      const next = JSON.parse(STRUCTURE);
+    const update = async (change = structure => structure) => {
+      const next = change(JSON.parse(served.structure));
       next.version = `${VERSION}-${(updates += 1)}`;
       served = { version: next.version, structure: Buffer.from(JSON.stringify(next)) };
       // The page hears it on its next wait (about a second), reads it and puts it on screen.

@@ -44,3 +44,16 @@ test("a document with no mechanism keeps no pose, and a stored slice is read as 
   assert.deepEqual(readXbfView({ tree: { expanded: ["a", 7, "", "a"], hidden: "i1" }, pose: { preset: "open", given: { hinge: "x" } } }),
     { tree: { expanded: ["a", "7"], hidden: [], isolated: [] }, pose: { preset: "open", given: null, couplings: null } });
 });
+
+test("what of a document's PMI is hidden comes back across a rebuild, while it has PMI", () => {
+  const annotated = { ...structure, pmi: [{ id: "A" }, { id: "top-flat" }] };
+  const slices = xbfViewSlices({ tree: {}, pmi: { hidden: ["top-flat", "top-flat"], off: true } });
+  assert.deepEqual(slices.pmi, { hidden: ["top-flat"], off: true });
+  const record = writeFileView({ display: { mode: "solid" }, renderer: slices, signatures: xbfViewSignatures(annotated, null) });
+  // A rebuild that moved the parts keeps it: the ids are the annotations' authors', not the parts'.
+  const moved = { ...annotated, instances: [...annotated.instances].reverse() };
+  assert.deepEqual(readXbfView(readFileView(record, xbfViewSignatures(moved, null)).renderer).pmi, { hidden: ["top-flat"], off: true });
+  // A document with no PMI has nothing of it to keep.
+  assert.equal(xbfViewSignatures(structure, null).pmi, undefined);
+  assert.equal(readXbfView(readFileView(record, xbfViewSignatures(structure, null)).renderer).pmi, undefined);
+});

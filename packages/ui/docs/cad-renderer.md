@@ -999,8 +999,13 @@ order, whatever the tool:
 - **Position** (where the document carries a mechanism): Reset in its heading, the `Pose` row and
   the joint values (`XbfPositionSection.jsx`); reaching for one of
   its controls puts the other motions at rest.
+- **PMI** (where the document carries PMI, or is an `.xbf`, made from code, where PMI can be asked
+  for): New and the eye of them all in its heading, then a row per annotation, the one picked
+  opening its values under it (`xbf/pmi/PmiSection.jsx`). Its tile is a feature control frame. The
+  document's manufacturing annotations, drawn on the model and asked for in code: see
+  [PMI](pmi.md).
 
-A part file with no mechanism has no sidebar. What is selected is Quick Edit's chips
+A part file with no mechanism and no PMI section (a STEP part without PMI) has no sidebar. What is selected is Quick Edit's chips
 (`xbf/xbfChips.jsx`'s `useXbfSelectionChips`): a component
 or subassembly a chip of its own, faces and edges a chip for each kind on each part,
 each chip's card the key measurements.
