@@ -160,6 +160,8 @@ class _Dim:
     side: str | None = None
     row: int = 0
     index: int = 0
+    #: The holes or slots a callout states, each one: its ``4×`` covers four.
+    covers: tuple = ()
 
 
 @dataclass
@@ -330,6 +332,7 @@ class View:
         if len(letter) != 1 or letter not in _SECTION_LETTERS:
             raise ValueError(f"section letter must be one of {_SECTION_LETTERS} (ISO 128-40 leaves out I, O "
                              f"and Q), got {letter!r}")
+        _refuse_used_letter(self.sheet, letter, self)
         self._section = (letter, None if through is None else _p3(through))
         self.hidden = False
         if self.label is None:
@@ -348,6 +351,20 @@ class View:
 def _fmt(value: float) -> str:
     text = f"{value:.2f}".rstrip("0").rstrip(".")
     return text or "0"
+
+
+def _refuse_used_letter(sheet, letter: str, view=None) -> None:
+    """A letter names one section or one detail per sheet: two DETAIL Bs, or a
+    DETAIL A beside SECTION A-A, send a reader to the wrong view."""
+    if sheet is None:
+        return
+    for other in sheet.views:
+        if other is view:
+            continue
+        if other._detail is not None and other._detail[3] == letter:
+            raise ValueError(f"letter {letter} already names DETAIL {letter} on this sheet; pick another letter")
+        if other._detail is None and other._section is not None and other._section[0] == letter:
+            raise ValueError(f"letter {letter} already names SECTION {letter}-{letter} on this sheet; pick another letter")
 
 
 def _refuse_retired_size(verb: str, retired: tuple) -> None:
@@ -455,6 +472,9 @@ def hole_callout_text(spec: dict, *, tol=None, fit: str | None = None) -> str:
     if spec.get("slot"):
         text = f"{lead}{_fmt(spec['width'])} × {_fmt(spec['length'])} SLOT"
         text += " THRU" if spec.get("thru") else (f" \u21a7{_fmt(spec['depth'])}" if spec.get("depth") else "")
+        if spec.get("cbore"):
+            width, length, depth = spec["cbore"]
+            text += f"   \u2334 {_fmt(width)} × {_fmt(length)} \u21a7{_fmt(depth)}"
         return text + (f"   {spec['label']}" if spec.get("label") else "")
     size = spec["thread"] if spec.get("thread") else f"%%c{_fmt(spec['diameter'])}"
     size += _tol_suffix(tol) + (f" {fit}" if fit else "")
@@ -648,6 +668,7 @@ class Sheet:
         if len(letter) != 1 or letter not in _SECTION_LETTERS:
             raise ValueError(f"detail letter must be one of {_SECTION_LETTERS} (ISO 128-40 leaves out I, O and Q), "
                              f"got {letter!r}")
+        _refuse_used_letter(self, letter)
         r = _positive("radius", radius)
         parent_scale = view.scale or self.scale
         chosen = scale is None
@@ -667,7 +688,6 @@ class Sheet:
         detail = View(self, view.shape, view.name, at or (0.0, 0.0), f"DETAIL {letter} ({_scale_label(scale)})",
                       view.hidden, view.centre_marks, scale)
         detail._detail = (view, _p3(center), r, letter, at is None, chosen)
-        detail._section = view._section
         self.views.append(detail)
         return detail
 
@@ -1388,11 +1408,11 @@ def _hole_spec(hole, count: int, thread: str | None = None, label: str | None = 
 
 def _slot_spec(slot, count: int, label: str | None = None) -> dict:
     return {"slot": True, "width": slot.width, "length": slot.length, "thru": slot.thru, "depth": slot.depth,
-            "count": count, "label": label}
+            "cbore": slot.cbore, "count": count, "label": label}
 
 
 def _slot_faces_viewer(slot, look) -> bool:
-    return _dot(slot.axis, look) < 0 or slot.thru
+    return _dot(slot.axis, look) < 0 or (slot.thru and not slot.cbore)
 
 
 def _outer_radius(spec: dict) -> float:
@@ -1400,7 +1420,7 @@ def _outer_radius(spec: dict) -> float:
     arrow does not cross a counterbore to reach the bore inside it; on a slot,
     the arc of its end."""
     if spec.get("slot"):
-        return spec["width"] / 2
+        return (spec.get("cbore") or (spec["width"],))[0] / 2
     return max(spec["diameter"], (spec.get("cbore") or (0.0,))[0], (spec.get("csk") or (0.0,))[0]) / 2
 
 
@@ -1546,7 +1566,7 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features=None, slot
             "the drawing states the part, or change the model."
         )
     spec = _hole_spec(hole, len(same), thread, label, features.pcd(same) if features else None)
-    return dataclasses.replace(dim, hole=spec, radius=_outer_radius(spec), feature=hole)
+    return dataclasses.replace(dim, hole=spec, radius=_outer_radius(spec), feature=hole, covers=tuple(same))
 
 
 def _slot_end(proj, bounds, slot) -> tuple:
@@ -1592,7 +1612,7 @@ def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
         )
     spec = _slot_spec(slot, len(same), label)
     end = _slot_end(proj, bounds, slot)
-    return dataclasses.replace(dim, p1=end, hole=spec, radius=slot.width / 2, feature=slot)
+    return dataclasses.replace(dim, p1=end, hole=spec, radius=_outer_radius(spec), feature=slot, covers=tuple(same))
 
 
 def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: list | None,
@@ -1623,12 +1643,12 @@ def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: l
         hole = min(members, key=lambda h: short_way_out(h.mouth))
         spec = _hole_spec(hole, len(members), pcd=features.pcd(members) if features else None)
         out.append(dataclasses.replace(dim, kind="hole", p1=hole.mouth, hole=spec, radius=_outer_radius(spec),
-                                       feature=hole))
+                                       feature=hole, covers=tuple(members)))
     for members in sorted(slot_groups.values(), key=lambda g: g[0].signature()):
         slot = min(members, key=lambda sl: short_way_out(_slot_end(proj, bounds, sl)))
         spec = _slot_spec(slot, len(members))
         out.append(dataclasses.replace(dim, kind="slot", p1=_slot_end(proj, bounds, slot), hole=spec,
-                                       radius=slot.width / 2, feature=slot))
+                                       radius=_outer_radius(spec), feature=slot, covers=tuple(members)))
     return out
 
 
@@ -2243,6 +2263,11 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     cuts: dict[int, tuple] = {}
     checked: set[int] = set()
     for view in sheet.views:
+        if view._detail is not None:
+            # A detail shows what its parent shows when the sheet renders, so a
+            # section() made after detail() still reaches it.
+            parent = view._detail[0]
+            view._section, view.hidden, view.centre_marks = parent._section, parent.hidden, parent.centre_marks
         if id(view.shape) not in checked:
             checked.add(id(view.shape))
             solids = len(view.shape.solids()) if hasattr(view.shape, "solids") else 1
@@ -2584,8 +2609,18 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             # rounded end. A bolt circle: its pitch circle as a chain line.
             look = VIEW_DIRECTIONS[view.name][0]
             features = part_features(view.shape)
+
+            def kept(feature, run: float) -> bool:
+                # As for the section's axes above: what lies wholly in the half the
+                # section took away has no centre line on it.
+                if not cut:
+                    return True
+                far = tuple(m + a * run for m, a in zip(feature.mouth, feature.axis))
+                return min(_dot(tuple(e - c for e, c in zip(end, cut[2])), look)
+                           for end in (feature.mouth, far)) <= 1e-6
+
             for slot in features.slots:
-                if abs(_dot(slot.axis, look)) < 1 - 1e-6:
+                if abs(_dot(slot.axis, look)) < 1 - 1e-6 or not kept(slot, slot.run):
                     continue
                 a, b = to_sheet(proj.point(slot.ends[0])), to_sheet(proj.point(slot.ends[1]))
                 run = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
@@ -2596,7 +2631,8 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                     centre_line((end[0] + u[1] * reach, end[1] - u[0] * reach),
                                 (end[0] - u[1] * reach, end[1] + u[0] * reach))
             for circle in features.circles:
-                if abs(_dot(circle.axis, look)) > 1 - 1e-6:
+                members = [h for h in features.holes if h.mouth in circle.mouths]
+                if abs(_dot(circle.axis, look)) > 1 - 1e-6 and any(kept(h, h.length) for h in members):
                     centre_circle(to_sheet(proj.point(circle.centre)), circle.diameter / 2 * sv)
         if region is not None:
             # The detail's own boundary: a thin continuous circle, as ISO 128-34 draws it.
@@ -2776,7 +2812,7 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 # A hole callout states its hole; a diameter callout states a diameter.
                 # A leader's radius is neither, so it is not a stated value.
                 if dim.kind in ("hole", "slot") and dim.feature is not None:
-                    record["called"].add(_feature_key(dim.feature))
+                    record["called"].update(_member_key(f) for f in (dim.covers or (dim.feature,)))
                 elif dim.kind == "diameter":
                     record["values"].append(2 * dim.radius)
         for dim in items:
@@ -2844,6 +2880,11 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     return doc
 
 
+def _member_key(feature) -> tuple:
+    """One hole or slot, by what it is and where it opens."""
+    return (feature.signature(), tuple(round(c, 4) for c in feature.mouth))
+
+
 def _feature_key(feature) -> tuple:
     """Holes or slots one callout covers: the same kind, opening the same way. A
     plain through hole or slot reads the same from either end; a blind or
@@ -2875,7 +2916,10 @@ def _unstated(facts: dict) -> list[str]:
         for feature in [*find_holes(shape), *find_slots(shape)]:
             kinds.setdefault(_feature_key(feature), []).append(feature)
         for key, members in kinds.items():
-            if key in record["called"]:
+            # Each one, not each kind: a detail's callout covers what its circle
+            # holds, and the identical holes outside it are still unstated.
+            members = [m for m in members if _member_key(m) not in record["called"]]
+            if not members:
                 continue
             feature = members[0]
             is_slot = hasattr(feature, "width")

@@ -152,6 +152,34 @@ class PatternTests(unittest.TestCase):
         self.assertFalse(pocket.thru)
         self.assertAlmostEqual(pocket.depth, 4.0, places=6)
 
+    def test_a_blind_slot_with_a_rounded_floor_is_not_thru(self) -> None:
+        """Air just past the straight wall is the floor fillet, not the far side."""
+        from build123d import Align, Axis, Box, Pos, SlotCenterToCenter, extrude, fillet
+        from cadgen._internal.drawing_features import slots
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        pocket = Box(80, 40, 10, align=align) - Pos(0, 0, 4) * extrude(SlotCenterToCenter(20, 8), 6)
+        floor = pocket.edges().filter_by_position(Axis.Z, 3.9, 4.1)
+        (slot,) = slots(fillet(floor, 1))
+        self.assertFalse(slot.thru)
+        self.assertAlmostEqual(slot.depth, 6.0, places=4, msg="to the floor, past the fillet")
+
+    def test_a_counterbored_slot_and_three_in_a_row(self) -> None:
+        from build123d import Align, Box, Compound, Pos, SlotCenterToCenter, extrude
+        from cadgen._internal.drawing_features import slots
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        sunk = (Box(80, 40, 10, align=align) - extrude(SlotCenterToCenter(20, 6), 10)
+                - Pos(0, 0, 6) * extrude(SlotCenterToCenter(20, 11), 4))
+        (slot,) = slots(sunk)
+        self.assertTrue(slot.thru)
+        self.assertAlmostEqual(slot.width, 6.0, places=6)
+        self.assertEqual(tuple(round(v, 6) for v in slot.cbore), (11.0, 31.0, 4.0))
+        row = Box(120, 60, 6, align=align) - Compound(
+            [Pos(x, 0, 0) * extrude(SlotCenterToCenter(16, 8), 6) for x in (40, -40, 0)])
+        self.assertEqual(sorted(round(sl.length, 6) for sl in slots(row)), [24.0, 24.0, 24.0],
+                         "nearest ends pair; three slots in a row stay three")
+
     def test_a_half_round_notch_is_not_a_slot(self) -> None:
         from build123d import Align, Box, Cylinder, Pos
         from cadgen._internal.drawing_features import slots
@@ -185,6 +213,11 @@ class PatternTests(unittest.TestCase):
             a = math.radians(degrees)
             uneven -= Pos(30 * math.cos(a), 30 * math.sin(a), 0) * Cylinder(3, 10, align=align)
         self.assertEqual(bolt_circles(uneven), [], "not equally spaced")
+        motor = Box(60, 60, 6, align=align) - Cylinder(11, 6, align=align)
+        for x in (-15.5, 15.5):
+            for y in (-15.5, 15.5):
+                motor -= Pos(x, y, 0) * Cylinder(1.5, 6, align=align)
+        self.assertEqual(bolt_circles(motor), [], "a square round a bore on a square plate is pitches")
 
 
 class TurnedTests(unittest.TestCase):

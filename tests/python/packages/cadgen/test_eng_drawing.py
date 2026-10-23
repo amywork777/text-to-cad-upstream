@@ -1820,6 +1820,49 @@ class DetailTests(unittest.TestCase):
         self.assertEqual(sum(1 for e in doc.modelspace().query("TEXT[layer=='NOTES']") if e.dxf.text == "A"), 2,
                          "one cutting plane, not one per view of the section")
 
+    def test_a_detail_states_only_what_it_holds(self) -> None:
+        """One identical hole in the circle is one callout; the other three are
+        still unstated."""
+        from cadgen.eng_drawing import Sheet, _render_sheet, _unstated
+
+        sheet = Sheet("A3")
+        top, front, _right = sheet.three_views(_plate())
+        top.overall()
+        top.hole((0, 0, 6))
+        front.overall(width=False)
+        sheet.detail(top, (30, 18, 6), 5).holes()
+        facts: dict = {}
+        _render_sheet(sheet, index=1, count=1, label="d", facts=facts)
+        missing = _unstated(facts)
+        self.assertEqual(len(missing), 1, missing)
+        self.assertIn("3× ⌀5.5 THRU is not called out", missing[0])
+
+    def test_a_detail_follows_a_section_made_after_it(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A3")
+        _top, front, _right = sheet.three_views(_counterbored())
+        detail = sheet.detail(front, (15, 0, 12), 6, letter="C")
+        front.section("A")
+        doc = _render_sheet(sheet, index=1, count=1, label="d")
+        self.assertTrue(any(all(math.hypot(x - detail.at[0], y - detail.at[1]) <= 6 * detail.scale + 1e-3
+                                for path in h.paths for x, y, *_ in path.vertices)
+                            for h in doc.modelspace().query("HATCH")))
+
+    def test_a_letter_names_one_view(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3")
+        _top, front, right = sheet.three_views(_shaft())
+        front.section("A")
+        sheet.detail(front, (50, 0, 10), 4)
+        with self.assertRaisesRegex(ValueError, "already names DETAIL B"):
+            sheet.detail(front, (-50, 0, 10), 4)
+        with self.assertRaisesRegex(ValueError, "already names SECTION A-A"):
+            sheet.detail(right, (0, 0, 0), 4, letter="A")
+        with self.assertRaisesRegex(ValueError, "already names SECTION A-A"):
+            right.section("A")
+
     def test_a_detail_of_an_isometric_is_refused(self) -> None:
         from cadgen.eng_drawing import Sheet
 

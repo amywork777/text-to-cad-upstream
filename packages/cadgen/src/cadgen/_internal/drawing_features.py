@@ -110,10 +110,13 @@ class Slot:
     depth: float | None = None
     #: From the mouth to the slot's far end, along ``axis``.
     run: float = 0.0
+    #: A wider slot sunk at the mouth, as (width, length, depth).
+    cbore: tuple[float, float, float] | None = None
 
     def signature(self) -> tuple:
         r = lambda v: None if v is None else round(v, 3)
-        return ("slot", r(self.width), r(self.length), self.thru, r(self.depth))
+        sunk = None if self.cbore is None else tuple(round(v, 3) for v in self.cbore)
+        return ("slot", r(self.width), r(self.length), self.thru, r(self.depth), sunk)
 
 
 @dataclass(frozen=True)
@@ -225,6 +228,11 @@ def _merge_split_faces(segments: list[_Segment]) -> list[_Segment]:
             if (other.kind == seg.kind and other.concave == seg.concave
                     and abs(other.lo - seg.lo) < _TOUCH and abs(other.hi - seg.hi) < _TOUCH
                     and abs(other.r_lo - seg.r_lo) < _TOUCH and abs(other.r_hi - seg.r_hi) < _TOUCH):
+                # The merged face faces the way its pieces do between them: two
+                # quarters of a slot's end make the half that opens toward the slot.
+                summed = tuple(a * other.span + b * seg.span for a, b in zip(other.bulge, seg.bulge))
+                reach = math.sqrt(sum(c * c for c in summed)) or 1.0
+                other.bulge = tuple(c / reach for c in summed)
                 other.span += seg.span
                 break
         else:
@@ -247,6 +255,42 @@ def _chains(segments: list[_Segment]) -> list[list[_Segment]]:
     return chains
 
 
+class _Ray:
+    """Whether a feature is open past one of its ends, asked of one solid.
+
+    Open means air just past the end AND no face of the part ahead within the
+    feature's own width. Air alone was the old test, and a blind hole or slot
+    with a filleted or ball floor has air just past where its straight wall
+    stops: it read THRU. A face far ahead is a different matter -- a through
+    hole in the floor of a closed box looks out at the lid -- so only a face
+    close enough to be the feature's own floor closes it.
+    """
+
+    def __init__(self, shape) -> None:
+        from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+
+        self.shape = shape
+        self.cast = IntCurvesFace_ShapeIntersector()
+        self.cast.Load(shape.wrapped, 1e-7)
+
+    def open(self, start, direction, width: float) -> bool:
+        from build123d import Vector
+        from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
+
+        if self.shape.is_inside(Vector(*start)):
+            return False
+        self.cast.Perform(gp_Lin(gp_Pnt(*start), gp_Dir(*direction)), 0.0, max(width, 1.0))
+        return self.cast.NbPnt() == 0
+
+    def depth(self, start, direction) -> float | None:
+        """How far along ``direction`` from ``start`` the first face of the part is."""
+        from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
+
+        self.cast.Perform(gp_Lin(gp_Pnt(*start), gp_Dir(*direction)), _PROBE, 1e9)
+        hits = [self.cast.WParameter(i) for i in range(1, self.cast.NbPnt() + 1)]
+        return min(hits) if hits else None
+
+
 def _perpendicular(d) -> tuple[tuple, tuple]:
     """Two unit vectors square to ``d`` and to each other."""
     seed = (1.0, 0.0, 0.0) if abs(d[0]) < 0.9 else (0.0, 1.0, 0.0)
@@ -262,6 +306,7 @@ def holes(shape) -> list[Hole]:
     from build123d import Vector
 
     found: list[Hole] = []
+    ray = None
     for d, foot, segments in _surface_segments(shape).values():
         u, v = _perpendicular(d)
 
@@ -294,12 +339,13 @@ def holes(shape) -> list[Hole]:
             if not air((longest.lo + longest.hi) / 2, longest.r_lo):
                 continue
             lo, hi = chain[0].lo, chain[-1].hi
-            open_lo = not shape.is_inside(at(lo - _PROBE))
-            open_hi = not shape.is_inside(at(hi + _PROBE))
+            narrowest = min(s.r_lo for s in cylinders)
+            ray = ray or _Ray(shape)
+            open_lo = ray.open(tuple(at(lo - _PROBE)), tuple(-c for c in d), 2 * narrowest)
+            open_hi = ray.open(tuple(at(hi + _PROBE)), d, 2 * narrowest)
             if not (open_lo or open_hi):
                 continue  # a sealed void, not something a drill makes
             thru = open_lo and open_hi
-            narrowest = min(s.r_lo for s in cylinders)
             # The mouth: a blind hole's open end; a through hole's counterbored or
             # countersunk end, else its end at the larger coordinate.
             if thru:
@@ -376,23 +422,26 @@ def axes(shape) -> list[Axis]:
 def slots(shape) -> list[Slot]:
     """Every obround slot in ``shape``: two concave half cylinders of one radius,
     on parallel axes over the same stretch, each open toward the other, with air
-    between them. Through when the solid is air past both ends at the slot's
-    centre; otherwise its depth runs from the open end."""
+    all along the gap between them. Ends are paired nearest first, so three slots
+    in a row stay three. Pairs stacked on one centre line make one slot with a
+    counterbore, and a chamfer at an end belongs to the slot's depth. Through
+    when it is open past both ends (see :class:`_Ray`)."""
     from build123d import Vector
 
-    halves = []
+    halves, cones = [], []
     for d, foot, segments in _surface_segments(shape).values():
-        for seg in segments:
-            if seg.kind == "cyl" and seg.concave and abs(seg.span - math.pi) < 1e-3:
-                halves.append((d, foot, seg))
-    found: list[Slot] = []
-    used: set[int] = set()
+        for seg in _merge_split_faces(segments):
+            if seg.concave and abs(seg.span - math.pi) < 1e-3:
+                (halves if seg.kind == "cyl" else cones).append((d, foot, seg))
+
+    def point(foot, d, t: float) -> tuple:
+        return tuple(f + t * c for f, c in zip(foot, d))
+
+    candidates = []
     for i, (d, foot_a, a) in enumerate(halves):
-        if i in used:
-            continue
         for j in range(i + 1, len(halves)):
             d_b, foot_b, b = halves[j]
-            if j in used or any(abs(x - y) > 1e-6 for x, y in zip(d, d_b)):
+            if any(abs(x - y) > 1e-6 for x, y in zip(d, d_b)):
                 continue
             if abs(a.r_lo - b.r_lo) > _TOUCH or abs(a.lo - b.lo) > _TOUCH or abs(a.hi - b.hi) > _TOUCH:
                 continue
@@ -404,30 +453,83 @@ def slots(shape) -> list[Slot]:
             # Each end opens toward the other: its face bulges away from it.
             if sum(x * y for x, y in zip(a.bulge, toward)) > -0.99 or sum(x * y for x, y in zip(b.bulge, toward)) < 0.99:
                 continue
-            middle = tuple((x + y) / 2 for x, y in zip(foot_a, foot_b))
+            candidates.append((round(gap, 9), i, j, between))
+    pairs = []
+    used: set[int] = set()
+    for gap, i, j, between in sorted(candidates):
+        if i in used or j in used:
+            continue
+        d, foot_a, a = halves[i]
+        mid = (a.lo + a.hi) / 2
+        # Air all along the gap, not just at its middle: two notches facing each
+        # other across a part are not a slot.
+        if any(shape.is_inside(Vector(*point(tuple(f + t * c for f, c in zip(foot_a, between)), d, mid)))
+               for t in (0.02, 0.25, 0.5, 0.75, 0.98)):
+            continue
+        used.update((i, j))
+        middle = tuple(f + c / 2 for f, c in zip(foot_a, between))
+        toward = _canonical(tuple(c / gap for c in between), (0.0, 0.0, 0.0))[0]
+        pairs.append({"d": d, "middle": _canonical(d, middle)[1], "toward": toward, "lo": a.lo, "hi": a.hi,
+                      "r": a.r_lo, "gap": gap, "feet": (foot_a, halves[j][1])})
 
-            def at(t: float, middle=middle, d=d):
-                return Vector(*(m + t * c for m, c in zip(middle, d)))
-
-            if shape.is_inside(at((a.lo + a.hi) / 2)):
-                continue  # material between the ends: two notches, not a slot
-            open_lo = not shape.is_inside(at(a.lo - _PROBE))
-            open_hi = not shape.is_inside(at(a.hi + _PROBE))
+    # Pairs stacked on one centre line, touching end to end, are one slot.
+    lines: dict[tuple, list] = {}
+    for pair in pairs:
+        key = _line_key(pair["d"], pair["middle"]) + tuple(round(c, 4) for c in pair["toward"])
+        lines.setdefault(key, []).append(pair)
+    ray = _Ray(shape) if pairs else None
+    found: list[Slot] = []
+    for stack in lines.values():
+        stack.sort(key=lambda p: p["lo"])
+        chains: list[list] = []
+        for pair in stack:
+            if chains and abs(chains[-1][-1]["hi"] - pair["lo"]) < _TOUCH:
+                chains[-1].append(pair)
+            else:
+                chains.append([pair])
+        for chain in chains:
+            d, middle = chain[0]["d"], chain[0]["middle"]
+            lo, hi = chain[0]["lo"], chain[-1]["hi"]
+            # A chamfer at either end runs on the end arcs' own axes: half cones
+            # touching the straight wall. The slot's depth includes them.
+            end_lines = {_line_key(*_canonical(d, f)) for f in chain[0]["feet"] + chain[-1]["feet"]}
+            for cd, cfoot, cone in cones:
+                if _line_key(*_canonical(cd, cfoot)) not in end_lines:
+                    continue
+                if abs(cone.hi - lo) < _TOUCH:
+                    lo = cone.lo
+                elif abs(cone.lo - hi) < _TOUCH:
+                    hi = cone.hi
+            narrow = min(chain, key=lambda p: p["r"])
+            open_lo = ray.open(point(middle, d, lo - _PROBE), tuple(-c for c in d), 2 * narrow["r"])
+            open_hi = ray.open(point(middle, d, hi + _PROBE), d, 2 * narrow["r"])
             if not (open_lo or open_hi):
                 continue
             thru = open_lo and open_hi
-            from_hi = open_hi
-            mouth_at = a.hi if from_hi else a.lo
+            wide_hi = chain[-1]["r"] > narrow["r"] + _TOUCH
+            wide_lo = chain[0]["r"] > narrow["r"] + _TOUCH
+            from_hi = (wide_hi or not wide_lo) if thru else open_hi
+            mouth_at = hi if from_hi else lo
             axis = tuple(-c for c in d) if from_hi else d
-            ends = tuple(tuple(f + mouth_at * c for f, c in zip(foot, d)) for foot in (foot_a, foot_b))
-            direction = _canonical(toward, (0.0, 0.0, 0.0))[0]
-            used.update((i, j))
+            mouth_pair = chain[-1] if from_hi else chain[0]
+            cbore = None
+            if mouth_pair is not narrow and mouth_pair["r"] > narrow["r"] + _TOUCH:
+                cbore = (2 * mouth_pair["r"], mouth_pair["gap"] + 2 * mouth_pair["r"],
+                         abs(mouth_at - (mouth_pair["lo"] if from_hi else mouth_pair["hi"])))
+            depth = None
+            if not thru:
+                # A blind slot is as deep as its floor on the centre line: a floor
+                # fillet or a ball end runs on below where the straight wall stops.
+                depth = ray.depth(point(middle, d, mouth_at), axis)
+                if depth is None:
+                    deepest = [p for p in chain if abs(p["r"] - narrow["r"]) < _TOUCH]
+                    depth = abs(mouth_at - (deepest[0]["lo"] if from_hi else deepest[-1]["hi"]))
+            ends = tuple(_tidy(point(_canonical(d, f)[1], d, mouth_at)) for f in narrow["feet"])
             found.append(Slot(
-                mouth=_tidy(tuple(m + mouth_at * c for m, c in zip(middle, d))), axis=_tidy(axis),
-                direction=_tidy(direction), ends=(_tidy(ends[0]), _tidy(ends[1])), width=2 * a.r_lo,
-                length=gap + 2 * a.r_lo, thru=thru, depth=None if thru else a.hi - a.lo, run=a.hi - a.lo,
+                mouth=_tidy(point(middle, d, mouth_at)), axis=_tidy(axis), direction=_tidy(narrow["toward"]),
+                ends=(ends[0], ends[1]), width=2 * narrow["r"], length=narrow["gap"] + 2 * narrow["r"],
+                thru=thru, depth=depth, run=hi - lo, cbore=cbore,
             ))
-            break
     found.sort(key=lambda sl: (sl.signature(), sl.axis, sl.mouth))
     return found
 
@@ -439,8 +541,16 @@ def bolt_circles(shape, found: list[Hole] | None = None) -> list[BoltCircle]:
     a pattern a rectangular plate happens to make: four corner holes on a square
     are equally spaced too, and are dimensioned as pitches."""
     found = holes(shape) if found is None else found
-    lines = [(d, foot) for d, foot, segments in _surface_segments(shape).values()
+    surfaces = list(_surface_segments(shape).values())
+    lines = [(d, foot) for d, foot, segments in surfaces
              if any(s.kind == "cyl" and _full(s) for s in _merge_split_faces(segments))]
+    # The outside radius of every turned surface round each line.
+    outside: dict[tuple, float] = {}
+    for d, foot, segments in surfaces:
+        for seg in _merge_split_faces(segments):
+            if seg.kind == "cyl" and _full(seg) and not seg.concave:
+                key = _line_key(d, foot)
+                outside[key] = max(outside.get(key, 0.0), seg.r_lo)
     groups: dict[tuple, list[Hole]] = {}
     for hole in found:
         groups.setdefault((hole.signature(), hole.axis), []).append(hole)
@@ -467,6 +577,12 @@ def bolt_circles(shape, found: list[Hole] | None = None) -> list[BoltCircle]:
         d, foot = _canonical(axis, centre)
         if not any(all(abs(x - y) < 1e-6 for x, y in zip(d, line_d))
                    and math.dist(foot, line_foot) < 1e-3 for line_d, line_foot in lines):
+            continue
+        # Four holes equally spaced are also the corners of a square, and on a
+        # square plate (a motor mount round its bore) they are dimensioned as
+        # pitches. Only a round part -- a turned outside enclosing them -- makes
+        # four a bolt circle.
+        if len(members) == 4 and outside.get(_line_key(d, foot), 0.0) < radius:
             continue
         circles.append(BoltCircle(centre=_tidy(centre), axis=axis, diameter=2 * radius,
                                   mouths=tuple(h.mouth for h in members)))
