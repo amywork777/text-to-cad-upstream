@@ -1651,6 +1651,198 @@ class SectionTests(unittest.TestCase):
             Sheet("A4").view(_plate(), "iso", at=(150, 100)).section()
 
 
+class SlotAndBoltCircleTests(unittest.TestCase):
+    def _plate(self):
+        from build123d import Align, Box, Pos, SlotCenterToCenter, extrude
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        return _plate() - Pos(30, 0, 0) * extrude(SlotCenterToCenter(10, 6), 6) \
+            - Pos(-30, 0, 0) * extrude(SlotCenterToCenter(10, 6), 6)
+
+    def test_a_slot_is_called_out_from_the_part(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(self._plate(), "top", at=(140, 110)).holes()
+        self.assertEqual(sorted(_callouts(_render_sheet(sheet, index=1, count=1, label="slot"))),
+                         sorted(["2× 6 × 16 SLOT THRU", "4× %%c5.5 THRU", "%%c20 THRU"]))
+        sheet = Sheet("A4")
+        sheet.view(self._plate(), "top", at=(140, 110)).slot((35, 0, 6), width=8)
+        with self.assertRaisesRegex(ValueError, r"reads 2× 6 × 16 SLOT THRU, but the callout was given width=8"):
+            _render_sheet(sheet, index=1, count=1, label="slot")
+        sheet = Sheet("A4")
+        sheet.view(self._plate(), "top", at=(140, 110)).hole((30, 0, 6))
+        with self.assertRaisesRegex(ValueError, r"that is a slot, not a hole; call it out with top.slot"):
+            _render_sheet(sheet, index=1, count=1, label="slot")
+
+    def test_a_slot_gets_its_centre_lines(self) -> None:
+        """One down its length, past both rounded ends, and one across each end."""
+        from cadgen.eng_drawing import _CENTRE_OVERSHOOT, Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(self._plate(), "top", at=(140, 110))  # slots along X, ends at x = 25 and 35
+        lines = [e for e in _render_sheet(sheet, index=1, count=1, label="slot").modelspace().query("LINE")
+                 if e.dxf.layer == "CENTER"]
+        along = [e for e in lines if abs(e.dxf.start.y - 110) < 1e-6 and abs(e.dxf.end.y - 110) < 1e-6
+                 and min(e.dxf.start.x, e.dxf.end.x) < 170 < max(e.dxf.start.x, e.dxf.end.x)]
+        self.assertEqual(len(along), 1)
+        xs = sorted((along[0].dxf.start.x, along[0].dxf.end.x))
+        self.assertAlmostEqual(xs[1] - xs[0], 16 + 2 * _CENTRE_OVERSHOOT, places=6)
+        across = sorted(round(e.dxf.start.x, 6) for e in lines
+                        if abs(e.dxf.start.x - e.dxf.end.x) < 1e-6 and abs(e.dxf.start.y - 110) < 12)
+        self.assertIn(165.0, across)
+        self.assertIn(175.0, across)
+
+    def test_an_unstated_slot_is_reported(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet, _unstated
+
+        sheet = Sheet("A3")
+        top, front, _right = sheet.three_views(self._plate())
+        top.overall()
+        top.hole((30, 18, 6))
+        top.hole((0, 0, 6))
+        front.overall(width=False)
+        facts: dict = {}
+        _render_sheet(sheet, index=1, count=1, label="slot", facts=facts)
+        lines = _unstated(facts)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("2× 6 × 16 SLOT THRU is not called out", lines[0])
+        self.assertIn("top.slot(", lines[0])
+
+    def test_a_bolt_circle_is_stated_and_drawn(self) -> None:
+        import math
+
+        from build123d import Align, Cylinder, Pos
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        flange = Cylinder(40, 10, align=align) - Cylinder(15, 10, align=align)
+        for k in range(6):
+            a = 2 * math.pi * k / 6
+            flange -= Pos(30 * math.cos(a), 30 * math.sin(a), 0) * Cylinder(3, 10, align=align)
+        sheet = Sheet("A4")
+        sheet.view(flange, "top", at=(140, 110)).holes()
+        doc = _render_sheet(sheet, index=1, count=1, label="pcd")
+        self.assertIn("6× %%c6 THRU EQ SP ON %%c60", _callouts(doc))
+        pitch = [c for c in doc.modelspace().query("CIRCLE") if c.dxf.layer == "CENTER"]
+        self.assertEqual([round(c.dxf.radius, 6) for c in pitch], [30.0], "the pitch circle as a chain line")
+
+    def test_overlapping_centre_lines_are_one_line(self) -> None:
+        """Chain lines struck over each other out of phase print solid."""
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_plate(), "top", at=(140, 110))
+        lines = [e for e in _render_sheet(sheet, index=1, count=1, label="merge").modelspace().query("LINE")
+                 if e.dxf.layer == "CENTER"]
+        keys = {}
+        for e in lines:
+            a, b = e.dxf.start, e.dxf.end
+            if abs(a.y - b.y) < 1e-6:
+                keys.setdefault(("h", round(a.y, 4)), []).append(sorted((a.x, b.x)))
+            elif abs(a.x - b.x) < 1e-6:
+                keys.setdefault(("v", round(a.x, 4)), []).append(sorted((a.y, b.y)))
+        for spans in keys.values():
+            spans.sort()
+            for (_a0, a1), (b0, _b1) in zip(spans, spans[1:]):
+                self.assertGreater(b0, a1, "two centre lines on one line overlap")
+
+
+class DetailTests(unittest.TestCase):
+    def _sheet(self, **detail):
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3")
+        top, front, right, iso = sheet.three_views(_shaft(), iso=True)
+        front.overall(height=False)
+        return sheet, front, sheet.detail(front, (50, 0, 10), 4, **detail)
+
+    def test_a_detail_is_drawn_larger_clipped_and_marked(self) -> None:
+        from cadgen.eng_drawing import _MARGIN, _render_sheet
+
+        sheet, front, detail = self._sheet()
+        msp = _render_sheet(sheet, index=1, count=1, label="detail").modelspace()
+        self.assertEqual(detail.scale, 5.0, "the largest standard scale that keeps the circle within 60 mm")
+        labels = [e.dxf.text for e in msp.query("TEXT[layer=='NOTES']")]
+        self.assertIn("DETAIL B (5:1)", labels)
+        self.assertIn("B", labels, "the letter beside the circle on the parent")
+        rings = sorted(round(c.dxf.radius, 6) for c in msp.query("CIRCLE") if c.dxf.layer == "NOTES")
+        self.assertEqual(rings, [4.0, 20.0], "the parent's circle at 1:1, the detail's boundary at 5:1")
+        cx, cy = detail.at
+        for entity in msp.query("LINE LWPOLYLINE"):
+            if entity.dxf.layer != "VISIBLE":
+                continue
+            for x, y in _points(entity):
+                if abs(x - cx) < 30 and abs(y - cy) < 30:
+                    self.assertLessEqual(math.hypot(x - cx, y - cy), 20 + 1e-6, "geometry outside the circle")
+        self.assertTrue(_MARGIN < cx - 20 and cx + 20 < 420 - _MARGIN and _MARGIN < cy - 20 and cy + 20 < 297 - _MARGIN)
+
+    def test_a_detail_steps_down_when_the_paper_is_short(self) -> None:
+        """A scale the sheet chose gives way to the next standard one down; the
+        label says the scale it was drawn at."""
+        from unittest import mock
+
+        import cadgen.eng_drawing as drawing
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A3")
+        _top, front, _right = sheet.three_views(_shaft())
+        detail = sheet.detail(front, (50, 0, 10), 2.5)
+        self.assertEqual(detail.scale, 10.0)
+        real = drawing._place_detail
+        with mock.patch.object(drawing, "_place_detail",
+                               side_effect=lambda sh, size, *a: None if size > 30 else real(sh, size, *a)):
+            _render_sheet(sheet, index=1, count=1, label="detail")
+        self.assertEqual(detail.scale, 5.0)
+        self.assertEqual(detail.label, "DETAIL B (5:1)")
+
+    def test_a_detail_given_its_scale_is_refused_when_it_cannot_fit(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        _top, front, _right = sheet.three_views(_shaft())
+        sheet.detail(front, (50, 0, 10), 10, scale=10)
+        with self.assertRaisesRegex(ValueError, "no free paper"):
+            _render_sheet(sheet, index=1, count=1, label="detail")
+
+    def test_a_detail_of_a_section_keeps_the_hatching(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A3")
+        _top, front, right = sheet.three_views(_counterbored())
+        front.section("A")
+        detail = sheet.detail(front, (15, 0, 12), 6, letter="C")
+        doc = _render_sheet(sheet, index=1, count=1, label="detail")
+        hatches = [h for h in doc.modelspace().query("HATCH")
+                   if all(math.hypot(x - detail.at[0], y - detail.at[1]) <= 6 * detail.scale + 1e-3
+                          for path in h.paths for x, y, *_ in path.vertices)]
+        self.assertTrue(hatches, "the section's hatch, clipped to the detail")
+        self.assertEqual(sum(1 for e in doc.modelspace().query("TEXT[layer=='NOTES']") if e.dxf.text == "A"), 2,
+                         "one cutting plane, not one per view of the section")
+
+    def test_a_detail_of_an_isometric_is_refused(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3")
+        iso = sheet.three_views(_shaft(), iso=True)[3]
+        with self.assertRaisesRegex(ValueError, "isometric"):
+            sheet.detail(iso, (0, 0, 0), 5)
+        with self.assertRaisesRegex(ValueError, "ISO 128-40"):
+            sheet.detail(sheet.views[1], (0, 0, 0), 5, letter="O")
+
+    def test_cutting_plane_letters_keep_clear_of_the_view_label(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A3")
+        _top, front, right = sheet.three_views(_shaft())
+        right.section("A", through=(0, 0, 0))
+        msp = _render_sheet(sheet, index=1, count=1, label="letters").modelspace()
+        label = next(e for e in msp.query("TEXT[layer=='NOTES']") if e.dxf.text == "FRONT")
+        letters = [e for e in msp.query("TEXT[layer=='NOTES']") if e.dxf.text == "A"]
+        lowest = min(e.dxf.insert.y for e in letters)
+        self.assertLess(label.dxf.insert.y, lowest - 3, "the label hangs under the cutting plane's letter")
+
+
 def _points(entity):
     kind = entity.dxftype()
     if kind == "LINE":

@@ -189,6 +189,9 @@ class View:
     #: ``(label, scale)`` the arrangement gave an isometric, so the render knows
     #: whether the author has since set their own and leaves it alone.
     _auto: tuple | None = None
+    #: ``(parent view, model centre, model radius, letter)`` when :meth:`Sheet.detail`
+    #: made this a detail view; its ``at`` is None until the render places it.
+    _detail: tuple | None = None
     #: ``(bounding-box size, gap, iso extent or False)`` when :meth:`Sheet.three_views`
     #: placed this view, one tuple shared by the arrangement's views: the render
     #: lays them out again from it, and the off-frame guard does at each candidate
@@ -623,6 +626,50 @@ class Sheet:
             if view.name == "iso":
                 view._auto = (view.label, view.scale)
         return views
+
+    def detail(self, view: "View", center, radius: float, *, letter: str = "B", scale: float | None = None,
+               at=None) -> "View":
+        """A detail view: the part of ``view`` inside a circle of ``radius`` (model
+        mm) round ``center`` (a model point), drawn larger and labelled
+        ``DETAIL B (5:1)``. The parent view gets the circle and the letter.
+
+        ``scale`` defaults to the largest standard scale, at least twice the
+        parent's, that draws the circle no more than 60 mm across, stepping down
+        if the paper has no room for that. ``at`` places it by hand; left unset,
+        the render puts it in the nearest free paper. A
+        detail of a section keeps the section's cut and hatching. Dimensions and
+        callouts are given in model coordinates as on any view, and ``holes()``
+        calls out only what the circle holds."""
+        if view not in self.views:
+            raise ValueError("detail() takes a view of this sheet")
+        if view.name == "iso" or view._detail is not None:
+            raise ValueError("detail() enlarges an orthographic view or a section, not an isometric or a detail")
+        letter = str(letter).upper()
+        if len(letter) != 1 or letter not in _SECTION_LETTERS:
+            raise ValueError(f"detail letter must be one of {_SECTION_LETTERS} (ISO 128-40 leaves out I, O and Q), "
+                             f"got {letter!r}")
+        r = _positive("radius", radius)
+        parent_scale = view.scale or self.scale
+        chosen = scale is None
+        if scale is None:
+            fits = [c for c in _STANDARD_SCALES if c >= 2 * parent_scale - 1e-9 and 2 * r * c <= _DETAIL_SIZE]
+            larger = [c for c in _STANDARD_SCALES if c > parent_scale + 1e-9]
+            scale = max(fits) if fits else (min(larger) if larger else 2 * parent_scale)
+        elif not (scale > 0):
+            raise ValueError("a detail's scale must be positive")
+        if at is not None:
+            try:
+                at = (float(at[0]), float(at[1]))
+            except (TypeError, ValueError, IndexError) as exc:
+                raise TypeError(f"detail at= must be an (x, y) pair of sheet millimetres, got {at!r}") from exc
+            if not (math.isfinite(at[0]) and math.isfinite(at[1])):
+                raise ValueError(f"detail at= must be finite sheet millimetres, got {at!r}")
+        detail = View(self, view.shape, view.name, at or (0.0, 0.0), f"DETAIL {letter} ({_scale_label(scale)})",
+                      view.hidden, view.centre_marks, scale)
+        detail._detail = (view, _p3(center), r, letter, at is None, chosen)
+        detail._section = view._section
+        self.views.append(detail)
+        return detail
 
     def view(self, shape, name: str, *, at, label: str | None = None, hidden: bool = True, centre_marks: bool = True,
              scale: float | None = None) -> View:
@@ -1283,6 +1330,11 @@ _OPPOSITE = {"top": "bottom", "bottom": "top", "front": "back", "back": "front",
 _SAME_PLACE = 0.05
 #: How far a centre line runs past the feature it marks, in sheet millimetres.
 _CENTRE_OVERSHOOT = 3.0
+#: What a cutting plane's end takes past the view it crosses: the line's overshoot
+#: and the letter beside it.
+_PLANE_ROOM = 12.0
+#: The most a detail's circle is drawn across when its scale is left to the sheet.
+_DETAIL_SIZE = 60.0
 _SIDES = ("top", "bottom", "left", "right")
 
 
@@ -1395,7 +1447,11 @@ def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None
 
     def kept(feature, run: float) -> bool:
         """A section draws only the half beyond its plane: a hole or slot wholly in
-        the half taken away is not on it."""
+        the half taken away is not on it. A detail draws only what its circle holds."""
+        if view._detail is not None:
+            centre, radius = view._detail[1], view._detail[2]
+            if math.dist(proj.point(feature.mouth), proj.point(centre)) > radius + 1e-6:
+                return False
         if cut is None:
             return True
         far = tuple(m + a * run for m, a in zip(feature.mouth, feature.axis))
@@ -1907,6 +1963,65 @@ def _cut(view: View) -> tuple:
     return kept, faces, point
 
 
+def _edge_points(edge) -> list[tuple[float, float]]:
+    """A projected edge as points close enough to clip: a line's two ends, a circle
+    or arc in short chords."""
+    from build123d import GeomType
+
+    if edge.geom_type == GeomType.LINE:
+        n = 2
+    elif edge.geom_type == GeomType.CIRCLE:
+        # A full circle at three degrees a point; an arc, at most a half circle's worth.
+        n = 121 if edge.is_closed else 61
+    else:
+        n = 48
+    return [(float(v.X), float(v.Y)) for v in (edge.position_at(i / (n - 1)) for i in range(n))]
+
+
+def _clip_runs(points, region) -> list[list[tuple[float, float]]]:
+    """The runs of a polyline that lie inside ``region`` (a shapely shape)."""
+    from shapely.geometry import LineString
+
+    if len(points) < 2:
+        return []
+    clipped = LineString(points).intersection(region)
+    runs: list[list[tuple[float, float]]] = []
+    for part in getattr(clipped, "geoms", [clipped]):
+        if part.geom_type == "LineString" and len(part.coords) >= 2:
+            runs.append([tuple(c) for c in part.coords])
+        elif part.geom_type == "MultiLineString":
+            runs.extend([tuple(c) for c in line.coords] for line in part.geoms)
+    return runs
+
+
+def _place_detail(sheet: Sheet, size: float, room: dict, occupied: list, near) -> tuple[float, float] | None:
+    """The free spot nearest ``near`` for a detail ``size`` mm across with its
+    annotation ``room``: inside the paper above the notes and title block, clear
+    of every view and its annotation."""
+    m = _MARGIN
+    note_rows = len(sheet.drawn_notes())
+    notes_h = (note_rows * 5.0 + 8.0) if note_rows else 0.0
+    table_h = (len(sheet.revisions) + 1) * 6.0 + 6.0 if sheet.revisions else 0.0
+    x_lo, x_hi = m + 4.0, sheet.width - m - 4.0
+    y_lo, y_hi = m + _TITLE_H + notes_h + 4.0, sheet.height - m - 4.0 - table_h
+    half = size / 2
+    best = None
+    step = 2.0
+    y = y_hi - half - room["top"]
+    while y - half - room["bottom"] >= y_lo:
+        x = x_lo + half + room["left"]
+        while x + half + room["right"] <= x_hi:
+            box = (x - half - room["left"] - 4.0, x + half + room["right"] + 4.0,
+                   y - half - room["bottom"] - 4.0, y + half + room["top"] + 4.0)
+            if not any(box[0] < o[1] and box[1] > o[0] and box[2] < o[3] and box[3] > o[2] for o in occupied):
+                distance = math.hypot(x - near[0], y - near[1])
+                if best is None or distance < best[0]:
+                    best = (distance, (x, y))
+            x += step
+        y -= step
+    return None if best is None else best[1]
+
+
 def _merge_centre_lines(msp) -> None:
     """One chain line where several land on one line and overlap: a row of holes'
     centre marks, a bore's mark, a cutting plane through them. Overlapping chain
@@ -2143,15 +2258,44 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
         if not bounds:
             continue
         if cut:
+            cuts[id(view)] = cut
+        if view._detail is not None:
+            # A detail is the circle round its centre, whatever falls inside it.
+            c2, r = proj.point(view._detail[1]), view._detail[2]
+            bounds, centre = (c2[0] - r, c2[0] + r, c2[1] - r, c2[1] + r), c2
+        elif cut:
             # Centred on the WHOLE part, so the section lines up with the views
             # beside it even when the half it keeps is not symmetric.
-            cuts[id(view)] = cut
             corners = _bbox_bounds(view.shape, proj)
             centre = ((corners[0] + corners[1]) / 2, (corners[2] + corners[3]) / 2)
         else:
             centre = ((bounds[0] + bounds[1]) / 2, (bounds[2] + bounds[3]) / 2)
         items = _resolve_view(view, proj, bounds, part_features, warnings, cut)
         work.append((view, proj, bounds, items, _plan_view(view, proj, bounds, items, sheet), centre))
+
+    # A cutting plane runs out past the view it is drawn on, with an arrow and a
+    # letter at each end: that view needs room on those two sides, or the letter
+    # lands on its label.
+    plane_sides: dict[int, set] = {}
+    projections = {id(item[0]): item[1] for item in work}
+    for view in sheet.views:
+        if view._section is None or view._detail is not None:
+            continue
+        look = VIEW_DIRECTIONS[view.name][0]
+        parent = next((other for name in _PLANE_SHOWN_ON[view.name] for other in sheet.views
+                       if other.name == name and other.shape is view.shape and other._section is None
+                       and other._detail is None and id(other) in projections), None)
+        if parent is None:
+            continue
+        parent_look = VIEW_DIRECTIONS[parent.name][0]
+        along = (parent_look[1] * look[2] - parent_look[2] * look[1], parent_look[2] * look[0] - parent_look[0] * look[2],
+                 parent_look[0] * look[1] - parent_look[1] * look[0])
+        image = [sum(row[k] * a for row, a in zip(projections[id(parent)].m, along)) for k in (0, 1)]
+        plane_sides.setdefault(id(parent), set()).update(
+            ("left", "right") if abs(image[0]) >= abs(image[1]) else ("top", "bottom"))
+    for view, _proj, _bounds, _items, plan, _centre in work:
+        for side in plane_sides.get(id(view), ()):
+            plan["room"][side] = max(plan["room"][side], _PLANE_ROOM + (11.5 if side == "bottom" else 0.0))
 
     # A standard arrangement is laid out again from the room its views' annotation
     # takes; a view placed by hand stays where its author put it.
@@ -2196,6 +2340,56 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 f"{' or '.join(r for r in remedies if r) or 'Fewer views'} gives them room; or move that "
                 "annotation to a view with space to spare."
             )
+
+    # Details go in the free paper nearest their parent, once everything else has
+    # its place.
+    occupied = []
+    for view, _proj, bounds, _items, plan, (cx, cy) in work:
+        if view._detail is not None and view._detail[4]:
+            continue
+        sv = view.scale or s
+        room = plan["room"]
+        occupied.append((view.at[0] + (bounds[0] - cx) * sv - room["left"], view.at[0] + (bounds[1] - cx) * sv + room["right"],
+                         view.at[1] + (bounds[2] - cy) * sv - room["bottom"], view.at[1] + (bounds[3] - cy) * sv + room["top"]))
+    centres = {id(item[0]): (item[1], item[5]) for item in work}
+    for view in sheet.views:
+        # Each detail's circle and letter on its parent are paper a detail cannot use.
+        if view._detail is None or id(view._detail[0]) not in centres:
+            continue
+        parent, point, radius, _letter, _auto, _chosen = view._detail
+        parent_proj, parent_centre = centres[id(parent)]
+        ps = parent.scale or s
+        x, y = (parent.at[k] + (parent_proj.point(point)[k] - parent_centre[k]) * ps for k in (0, 1))
+        ring = radius * ps + th + 4.0
+        occupied.append((x - ring, x + ring, y - ring, y + ring))
+    for view, _proj, _bounds, _items, plan, _centre in work:
+        if view._detail is None or not view._detail[4]:
+            continue
+        parent, _point, radius, letter, _auto, chosen = view._detail
+        # A scale the sheet chose steps down until the circle finds paper; one the
+        # author gave is theirs, and no room for it is a refusal.
+        parent_scale = parent.scale or s
+        tries = [view.scale] + ([c for c in _STANDARD_SCALES if parent_scale * 2 - 1e-9 <= c < view.scale]
+                                if chosen else [])
+        spot = None
+        for scale in tries:
+            size = 2 * radius * scale
+            spot = _place_detail(sheet, size, plan["room"], occupied, parent.at)
+            if spot is not None:
+                if scale != view.scale and view.label == f"DETAIL {letter} ({_scale_label(view.scale)})":
+                    view.label = f"DETAIL {letter} ({_scale_label(scale)})"
+                view.scale = scale
+                break
+        if spot is None:
+            raise ValueError(
+                f"DETAIL {letter}: no free paper on {sheet.size} for a {2 * radius * tries[-1]:.0f} mm circle at "
+                f"{_scale_label(tries[-1])} and its annotation. Give it at=, a smaller scale=, or a larger sheet."
+            )
+        size = 2 * radius * view.scale
+        view.at = spot
+        room = plan["room"]
+        occupied.append((spot[0] - size / 2 - room["left"], spot[0] + size / 2 + room["right"],
+                         spot[1] - size / 2 - room["bottom"], spot[1] + size / 2 + room["top"]))
 
     placed = []
     for view, proj, bounds, _items, _plan, (cx, cy) in work:
@@ -2260,6 +2454,26 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
         def q(value: float) -> float:
             return round(value, 6)
 
+        # A detail draws only inside its circle, in sheet coordinates.
+        region = None
+        if view._detail is not None:
+            from shapely.geometry import Point
+
+            region = Point(view.at).buffer(view._detail[2] * sv, quad_segs=64)
+
+        def centre_line(a, b) -> None:
+            for run in _clip_runs([a, b], region) if region is not None else [[a, b]]:
+                msp.add_line(run[0], run[-1], dxfattribs={"layer": "CENTER"})
+
+        def centre_circle(c, r) -> None:
+            if region is None:
+                msp.add_circle(c, r, dxfattribs={"layer": "CENTER"})
+                return
+            ring = [(c[0] + r * math.cos(2 * math.pi * i / 180), c[1] + r * math.sin(2 * math.pi * i / 180))
+                    for i in range(181)]
+            for run in _clip_runs(ring, region):
+                msp.add_lwpolyline(run, dxfattribs={"layer": "CENTER"})
+
         def put(edges, layer):
             """Write projected edges once each.
 
@@ -2272,6 +2486,19 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             """
             from build123d import GeomType
 
+            if region is not None:
+                # A detail clips every edge to its circle; what it keeps is drawn as
+                # the polyline it was cut to.
+                for edge in edges:
+                    for run in _clip_runs([to_sheet(p) for p in _edge_points(edge)], region):
+                        points = tuple((q(x), q(y)) for x, y in run)
+                        if not once(("poly", min(points, points[::-1]))):
+                            continue
+                        if len(run) == 2:
+                            msp.add_line(run[0], run[1], dxfattribs={"layer": layer})
+                        else:
+                            msp.add_lwpolyline(run, dxfattribs={"layer": layer})
+                return
             for edge in edges:
                 # A circular edge stays a CIRCLE or ARC: exact on the sheet, so a hole
                 # reads as a hole and a fillet as a radius rather than as a polyline.
@@ -2313,12 +2540,24 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
 
             # The cut faces, hatched: what the section is there to show.
             for face in cut[1]:
-                hatch = msp.add_hatch(dxfattribs={"layer": "HATCH"})
-                hatch.set_pattern_fill("ANSI31", scale=_HATCH_SCALE)
-                for k, wire in enumerate([face.outer_wire(), *face.inner_wires()]):
-                    hatch.paths.add_polyline_path(
-                        [to_sheet(proj.point(point)) for point in _wire_points(wire)], is_closed=True,
-                        flags=const.BOUNDARY_PATH_EXTERNAL if k == 0 else const.BOUNDARY_PATH_DEFAULT)
+                rings = [[to_sheet(proj.point(point)) for point in _wire_points(wire)]
+                         for wire in [face.outer_wire(), *face.inner_wires()]]
+                if region is not None:
+                    from shapely.geometry import Polygon
+
+                    clipped = Polygon(rings[0], rings[1:]).buffer(0).intersection(region)
+                    pieces = [[list(g.exterior.coords), *[list(i.coords) for i in g.interiors]]
+                              for g in getattr(clipped, "geoms", [clipped])
+                              if g.geom_type == "Polygon" and not g.is_empty]
+                else:
+                    pieces = [rings]
+                for piece in pieces:
+                    hatch = msp.add_hatch(dxfattribs={"layer": "HATCH"})
+                    hatch.set_pattern_fill("ANSI31", scale=_HATCH_SCALE)
+                    for k, ring in enumerate(piece):
+                        hatch.paths.add_polyline_path(
+                            ring, is_closed=True,
+                            flags=const.BOUNDARY_PATH_EXTERNAL if k == 0 else const.BOUNDARY_PATH_DEFAULT)
         if view.centre_marks:
             # One cross per CENTRE, sized to the largest circle on it. A counterbore
             # is two concentric circles, and two crosses drawn over each other fill
@@ -2335,12 +2574,12 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             for centre, radius in _centres(_circles(proj.visible) + _end_on(view, proj, turned)):
                 c = to_sheet(centre)
                 arm = radius * sv + 2.0
-                msp.add_line((c[0] - arm, c[1]), (c[0] + arm, c[1]), dxfattribs={"layer": "CENTER"})
-                msp.add_line((c[0], c[1] - arm), (c[0], c[1] + arm), dxfattribs={"layer": "CENTER"})
+                centre_line((c[0] - arm, c[1]), (c[0] + arm, c[1]))
+                centre_line((c[0], c[1] - arm), (c[0], c[1] + arm))
             # And a centre line down every turned feature seen from the side: a
             # shaft's axis, a bore drawn hidden through a plate.
             for a, b in _axis_lines(view, proj, turned, to_sheet):
-                msp.add_line(a, b, dxfattribs={"layer": "CENTER"})
+                centre_line(a, b)
             # A slot seen end-on: a centre line down its length and one across each
             # rounded end. A bolt circle: its pitch circle as a chain line.
             look = VIEW_DIRECTIONS[view.name][0]
@@ -2352,15 +2591,16 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 run = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
                 u = ((b[0] - a[0]) / run, (b[1] - a[1]) / run)
                 reach = slot.width / 2 * sv + _CENTRE_OVERSHOOT
-                msp.add_line((a[0] - u[0] * reach, a[1] - u[1] * reach), (b[0] + u[0] * reach, b[1] + u[1] * reach),
-                             dxfattribs={"layer": "CENTER"})
+                centre_line((a[0] - u[0] * reach, a[1] - u[1] * reach), (b[0] + u[0] * reach, b[1] + u[1] * reach))
                 for end in (a, b):
-                    msp.add_line((end[0] + u[1] * reach, end[1] - u[0] * reach),
-                                 (end[0] - u[1] * reach, end[1] + u[0] * reach), dxfattribs={"layer": "CENTER"})
+                    centre_line((end[0] + u[1] * reach, end[1] - u[0] * reach),
+                                (end[0] - u[1] * reach, end[1] + u[0] * reach))
             for circle in features.circles:
                 if abs(_dot(circle.axis, look)) > 1 - 1e-6:
-                    msp.add_circle(to_sheet(proj.point(circle.centre)), circle.diameter / 2 * sv,
-                                   dxfattribs={"layer": "CENTER"})
+                    centre_circle(to_sheet(proj.point(circle.centre)), circle.diameter / 2 * sv)
+        if region is not None:
+            # The detail's own boundary: a thin continuous circle, as ISO 128-34 draws it.
+            msp.add_circle(view.at, view._detail[2] * sv, dxfattribs={"layer": "NOTES"})
         vx0, vx1, vy0, vy1 = own_box
         centres = [to_sheet(c) for c, _r in _centres(_circles(proj.visible) + _end_on(view, proj, part_axes(view.shape)))]
 
@@ -2368,6 +2608,8 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
         # callout lands outside the dimensions on its side. Callouts on one side
         # share a knee and stack upward instead of pushing each other outward.
         reach = {"left": 0.0, "right": 0.0, "top": 0.0, "bottom": 0.0}
+        for side in plane_sides.get(id(view), ()):
+            reach[side] = _PLANE_ROOM  # the cutting plane's letters, drawn after the views
         landings: dict[str, list[float]] = {"left": [], "right": []}
 
         def free_landing_y(side, y):
@@ -2559,6 +2801,9 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                                override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
                 align = TextEntityAlignment.BOTTOM_LEFT if dim.radius >= 0 else TextEntityAlignment.BOTTOM_RIGHT
                 text(dim.text, q[0] + (4 if dim.radius >= 0 else -4), q[1] + 1, th, align, "NOTES")
+                # A note hanging below the view pushes the view's label down, as a
+                # dimension row there does.
+                reach["bottom"] = max(reach["bottom"], vy0 - q[1] + 1.0)
 
         # The view label goes under everything that hangs below the view, so a
         # dimension on the bottom side never sits on it.
@@ -2568,6 +2813,8 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     # Each section's cutting plane, on a view that sees it edge-on.
     for view_id, (kept, _faces, point) in cuts.items():
         view = drawn[view_id][0]
+        if view._detail is not None:
+            continue  # a detail of a section shares its section's plane, drawn once
         letter, look = view._section[0], VIEW_DIRECTIONS[view.name][0]
         parent = next((drawn[id(other)] for name in _PLANE_SHOWN_ON[view.name]
                        for other in sheet.views
@@ -2581,6 +2828,18 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 )
             continue
         _draw_cutting_plane(msp, parent, point, look, letter, text, th)
+    # Each detail's circle and letter on the view it enlarges.
+    for view in sheet.views:
+        if view._detail is None or id(view._detail[0]) not in drawn or id(view) not in drawn:
+            continue
+        parent, point, radius, letter, _auto, _chosen = view._detail
+        _parent_view, parent_to_sheet, _box = drawn[id(parent)]
+        c = parent_to_sheet(point)
+        ring = radius * (parent.scale or s)
+        msp.add_circle(c, ring, dxfattribs={"layer": "NOTES"})
+        lean = (math.cos(math.radians(45)), math.sin(math.radians(45)))
+        text(letter, c[0] + lean[0] * (ring + th), c[1] + lean[1] * (ring + th), th + 1.5,
+             TextEntityAlignment.MIDDLE_CENTER, "NOTES")
     _merge_centre_lines(msp)
     return doc
 

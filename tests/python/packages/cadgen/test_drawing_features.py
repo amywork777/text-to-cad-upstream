@@ -132,6 +132,61 @@ class HoleTests(unittest.TestCase):
         self.assertFalse(_full(_merge_split_faces(halves[:1])[0]), "half a bore is a slot end")
 
 
+class PatternTests(unittest.TestCase):
+    """Slots and bolt circles: what a callout states as one feature."""
+
+    def test_an_obround_slot_reads_as_its_callout_would(self) -> None:
+        from build123d import Align, Box, Pos, SlotCenterToCenter, extrude
+        from cadgen._internal.drawing_features import slots
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        plate = Box(80, 40, 6, align=align) - Pos(10, 0, 0) * extrude(SlotCenterToCenter(22, 8), 6)
+        (slot,) = slots(plate)
+        self.assertAlmostEqual(slot.width, 8.0, places=6)
+        self.assertAlmostEqual(slot.length, 30.0, places=6, msg="end to end")
+        self.assertTrue(slot.thru)
+        self.assertEqual(slot.direction, (1.0, 0.0, 0.0))
+        self.assertEqual(sorted(round(e[0], 6) for e in slot.ends), [-1.0, 21.0])
+        blind = Box(80, 40, 6, align=align) - Pos(0, 0, 2) * extrude(SlotCenterToCenter(22, 8), 4)
+        (pocket,) = slots(blind)
+        self.assertFalse(pocket.thru)
+        self.assertAlmostEqual(pocket.depth, 4.0, places=6)
+
+    def test_a_half_round_notch_is_not_a_slot(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos
+        from cadgen._internal.drawing_features import slots
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        notched = Box(80, 40, 6, align=align) - Pos(40, 0, 0) * Cylinder(5, 6, align=align)
+        self.assertEqual(slots(notched), [])
+
+    def test_a_bolt_circle_needs_equal_spacing_round_a_turned_axis(self) -> None:
+        import math
+
+        from build123d import Align, Box, Cylinder, Pos
+        from cadgen._internal.drawing_features import bolt_circles
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        flange = Cylinder(40, 10, align=align) - Cylinder(15, 10, align=align)
+        for k in range(6):
+            a = 2 * math.pi * k / 6
+            flange -= Pos(30 * math.cos(a), 30 * math.sin(a), 0) * Cylinder(3, 10, align=align)
+        (circle,) = bolt_circles(flange)
+        self.assertAlmostEqual(circle.diameter, 60.0, places=6)
+        self.assertEqual(len(circle.mouths), 6)
+
+        square = Box(80, 80, 8, align=align)
+        for x in (-30, 30):
+            for y in (-30, 30):
+                square -= Pos(x, y, 0) * Cylinder(3, 8, align=align)
+        self.assertEqual(bolt_circles(square), [], "corner holes on a plate are pitches, not a PCD")
+        uneven = Cylinder(40, 10, align=align) - Cylinder(15, 10, align=align)
+        for degrees in (0, 90, 135):
+            a = math.radians(degrees)
+            uneven -= Pos(30 * math.cos(a), 30 * math.sin(a), 0) * Cylinder(3, 10, align=align)
+        self.assertEqual(bolt_circles(uneven), [], "not equally spaced")
+
+
 class TurnedTests(unittest.TestCase):
     def _shaft(self):
         from build123d import Align, Cylinder, Pos, Rot

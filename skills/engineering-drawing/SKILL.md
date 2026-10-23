@@ -1,6 +1,6 @@
 ---
 name: engineering-drawing
-description: Make an engineering drawing of a part as a PDF - orthographic views and section views with hidden lines and centre lines, real dimensions, hole callouts read off the model, notes and an ISO title block on a zoned sheet, all projected from the part's geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or manufacturing drawings, a print, or "2D views of this part".
+description: Make an engineering drawing of a part as a PDF - orthographic, section and detail views with hidden lines and centre lines, real dimensions, hole, slot and bolt-circle callouts read off the model, notes and an ISO title block on a zoned sheet, all projected from the part's geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or manufacturing drawings, a print, or "2D views of this part".
 license: MIT
 ---
 
@@ -48,7 +48,10 @@ The first run downloads that installation; later runs reuse it.
    end up carrying, so add annotation freely. Where hidden lines would be the
    only way to show something (walls, floors, a bore's depth, a keyway), cut
    that view: `front.section("A", through=(x, y, z))` draws SECTION A-A,
-   hatched, with its cutting plane on the view that sees it edge-on.
+   hatched, with its cutting plane on the view that sees it edge-on. Where a
+   feature is too small to dimension at the sheet's scale (a chamfer, a groove,
+   a thin wall), `sheet.detail(front, (x, y, z), radius)` draws DETAIL B larger,
+   in free paper near its parent, which gets the circle and the letter.
 4. **Dimension what a maker needs**, in MODEL coordinates:
    - `view.overall()` for overall size; `overall(height=False)` where another
      dimension already states it (a turned part's height is its diameter).
@@ -59,9 +62,11 @@ The first run downloads that installation; later runs reuse it.
      an edge runs its extension line along that edge. Two points that differ
      in one direction measure that direction; pass `orientation=` otherwise.
      Diameters of turned features go on the profile with `text="%%c<>"`.
-   - `view.holes()` calls out every hole the view looks down; `view.hole(point)`
-     calls out one. Diameter, THRU or depth, counterbore, countersink and the
-     `4×` count are **read off the part**: do not type them. Anything you do
+   - `view.holes()` calls out every hole and slot the view looks down;
+     `view.hole(point)` and `view.slot(point)` call out one. Diameter, THRU or
+     depth, counterbore, countersink, a slot's width and length, the `4×` count
+     and a bolt circle's `EQ SP ON ⌀60` are **read off the part**: do not type
+     them. Anything you do
      type is checked, and a value the part contradicts stops the script.
      Only `thread=` (which the geometry cannot carry) and `label=` are yours.
      A chamfered bore end is part of its hole: it is called out as `⌵`, with
@@ -73,8 +78,8 @@ The first run downloads that installation; later runs reuse it.
      a field you leave blank prints as an empty, captioned cell, which says the
      drawing does not state it.
 5. **Run `python <name>_drawing.py` and read what it prints** before the PDF:
-   - *"incomplete: …"*: a hole not called out, an overall size or a turned
-     diameter not dimensioned. Each line names the call that states it.
+   - *"incomplete: …"*: a hole or slot not called out, an overall size or a
+     turned diameter not dimensioned. Each line names the call that states it.
    - *"measures blank paper"*: a dimension's points miss the view. Usually the
      part was built from a corner and the script assumed it was centred.
    - *"annotation overlaps"*, *"views crowded"*, *"leader crosses the view"*:
@@ -103,8 +108,9 @@ drawing too, and writes its PDF with a list of everything it leaves unstated.
 
 - Line work with meaning, each at its own weight: visible outline (0.5),
   hidden (dashed), centre lines (chain), section hatching (ANSI31), dimensions,
-  notes. Centre marks on every hole seen end-on and a centre line down every
-  turned feature seen from the side.
+  notes. Centre marks on every hole seen end-on, a centre line down every
+  turned feature seen from the side, down every slot and across its ends, and a
+  bolt circle's pitch circle.
 - Dimensions measured from the geometry, true size at any scale; values wider
   than their extension lines set beside them. Hole callouts in the standard
   symbols (⌀ ↧ ⌴ ⌵), drawn as line work so they print the same everywhere.
@@ -119,9 +125,10 @@ drawing too, and writes its PDF with a list of everything it leaves unstated.
 
 - Every dimension without `tol=`/`fit=` is nominal, governed by the general
   tolerance if one is given. Say which requirements came from the user.
-- Full sections only: no half, offset or broken-out sections, no detail or
-  auxiliary views. Say what a view does not show.
-- Holes, overall sizes and turned diameters are checked for completeness;
-  slots, chamfers, fillets, pockets and patterns (a bolt circle's PCD) are
-  not, and are stated with `dim`, `radius` or a `note`.
+- Full sections and circular details only: no half, offset or broken-out
+  sections, no auxiliary views. Say what a view does not show.
+- Holes, slots, overall sizes and turned diameters are checked for
+  completeness; chamfers, fillets and pockets are not, and are stated with
+  `dim`, `radius`, a detail or a `note`. A bolt circle's clocking (where its
+  first hole sits) is a `dim` or an `angle` you add.
 - Millimetres only; one part per arrangement.

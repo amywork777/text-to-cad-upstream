@@ -30,7 +30,7 @@ fixtures to work against.
 | `cam_follower_roller.py` | `STEP/cam_follower_roller.step` | Cam follower roller with central bearing bore and rounded outer profile |
 | `centrifugal_impeller.py` | `STEP/centrifugal_impeller.step` | Single solid centrifugal impeller |
 | `circular_flange.py` | `STEP/circular_flange.step` | Circular flange model |
-| `circular_flange_drawing.py` | `PDF/circular_flange_drawing.pdf` | **Engineering drawing** of the flange on A4: bolt circle and bore called out from the part, a section through the holes. Run the model above first. |
+| `circular_flange_drawing.py` | `PDF/circular_flange_drawing.pdf` | **Engineering drawing** of the flange on A4: the bolt circle (count, size and pitch circle) and bore called out from the part, a section through the holes. Run the model above first. |
 | `clevis_bracket_lightening_cutouts.py` | `STEP/clevis_bracket_lightening_cutouts.step` | Clevis bracket model |
 | `cylindrical_cap.py` | `STEP/cylindrical_cap.step` | Cylindrical cap with hollow interior, top boss, and rounded external edges |
 | `cylindrical_spacer_sleeve.py` | `STEP/cylindrical_spacer_sleeve.step` | Cylindrical spacer sleeve with a central through-bore and rounded rim edges |
@@ -42,6 +42,7 @@ fixtures to work against.
 | `l_bracket.py` | `STEP/l_bracket.step` | L-bracket model |
 | `l_bracket_drawing.py` | `PDF/l_bracket_drawing.pdf` | **Engineering drawing** of the bracket: both hole patterns called out in the views that look down them, plate and gusset sizes. Run the model above first. |
 | `mounting_plate.py` | `STEP/mounting_plate.step + STL/mounting_plate.stl, 3MF/mounting_plate.3mf, GLB/mounting_plate.glb` | Mounting plate with central circular cutout, elongated side slot, four corner holes, and rounded edges |
+| `mounting_plate_drawing.py` | `PDF/mounting_plate_drawing.pdf` | **Engineering drawing** of the plate: its holes and slot called out from the part, the hole pitch, the slot's position and the corner radius. Run the model above first. |
 | `open_top_electronics_enclosure.py` | `STEP/open_top_electronics_enclosure.step` | Open-top electronics enclosure model |
 | `print_in_place_hinge.py` | `STEP/print_in_place_hinge.step` | Print-in-place barrel hinge for FDM printing |
 | `print_in_place_multi_pivot_phone_holder.py` | `STEP/print_in_place_multi_pivot_phone_holder.step` | Print-in-place multi-pivot holder with a phone/tablet cradle for FDM printing |
@@ -55,7 +56,7 @@ fixtures to work against.
 | `spur_gear_blank.py` | `STEP/spur_gear_blank.step + STL/spur_gear_blank.stl, 3MF/spur_gear_blank.3mf, GLB/spur_gear_blank.glb` | Spur gear blank with central bore, raised hub, and simplified perimeter teeth |
 | `square_mounting_block.py` | `STEP/square_mounting_block.step` | Square mounting block with a vertical through-hole and two side clearance holes |
 | `stepped_shaft_keyway.py` | `STEP/stepped_shaft_keyway.step` | Stepped shaft with keyway model |
-| `stepped_shaft_keyway_drawing.py` | `PDF/stepped_shaft_keyway_drawing.pdf` | **Engineering drawing** of the shaft: diameters on the profile, the keyway located, a section through it. Run the model above first. |
+| `stepped_shaft_keyway_drawing.py` | `PDF/stepped_shaft_keyway_drawing.pdf` | **Engineering drawing** of the shaft: diameters on the profile, the keyway located, a section through it, a 5:1 detail of the end chamfer. Run the model above first. |
 | `t_slot_slider_block.py` | `STEP/t_slot_slider_block.step` | T-slot slider block with central channel, side relief cuts, and mounting holes |
 
 Build: `python src/<script>` per row; unchanged models are no-ops.
