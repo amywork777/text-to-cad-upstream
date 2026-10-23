@@ -683,12 +683,14 @@ function XbfSurface({ view, data }) {
   // datum", a new one waiting in Quick Edit). A file with none has no tile for it.
   const pmiShown = Boolean(pmi.entries.length || (pmi.editable && (pmiRequest || pmi.changes.length)));
   const pmiPickedFaces = useMemo(() => (scene ? selected.map(pmiFaceOf) : EMPTY), [scene, selected, pmiFaceOf]);
+
   const sidebar = scene && (assembly || kinematics || pmiShown) ? <>
     {assembly ? <XbfModelTree key={document.modelKey} tree={tree} active={!previewing} disabled={shell.idle} mode={shape}
       selectedIds={selected} onClearSelection={clearSelection} partControls={partControls} /> : null}
     {kinematics ? <XbfPositionSection kinematics={kinematics} values={poseValues || {}} couplings={poseCouplings} preset={posePreset}
       changed={poseApplied} onValues={setPoseValues} onPreset={choosePreset} onReset={resetPose} /> : null}
     {pmiShown ? <PmiSection pmi={pmi} picked={pmiPickedFaces} moving={explodeApplied || poseApplied} request={pmiRequest}
+      selectedFeatureIds={selectedElementIds}
       onRequestDone={() => setPmiRequest(null)} /> : null}
   </> : null;
   // Whether the model hides a point of a callout from the camera now (its leader's start, an

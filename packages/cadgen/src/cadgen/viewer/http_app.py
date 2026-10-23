@@ -232,7 +232,6 @@ class CadApp:
 
     @property
     def exports(self):
-        # CadApp handles concurrent requests; construct exactly one coordinator per session.
         from .exports import ExportJobs
         with _EXPORTS_LOCK:
             if self._exports is None:

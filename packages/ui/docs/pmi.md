@@ -112,6 +112,44 @@ The call names its references as this build resolves them (canonical refs, which
 elements however the code wrote them) and asks the agent to keep the code's own. A STEP is not made
 from code here: its PMI, where the engine serves any, is read alone.
 
+## Reviewing requirements and the export
+
+The PMI section follows the selected annotation's faces, or the selected geometry when
+no annotation is picked. It lists every attached requirement, including hidden callouts.
+**Show all PMI** restores the whole list; **For selection** returns to the filter. A selection
+with no attached PMI says so without implying that it needs no requirements. A dimension
+with explicit tolerances also shows **Current limits** (nominal plus each signed deviation),
+from the saved document, never a guessed tolerance or an unapplied Quick Edit.
+
+A position tolerance lists its datum references in primary, secondary and tertiary order.
+These buttons highlight the datum's geometry without changing its assignment or adding a
+Quick Edit. Selecting a datum lists the tolerances that use it under **Used by**. Both
+directions resolve within the annotation's part.
+
+**Export** in the shared top-right toolbar offers **STEP (AP242)**. The writer includes
+all semantic PMI in the built document. Pending Quick Edit requests are not part of the
+built document. The existing export service pins the viewed revision, owns the job and
+artifact, and never executes model source. Posed or partial STEP exports that would drop
+PMI are unavailable, with a reason.
+
+After writing the STEP, the worker independently parses that exact output and compares
+its supported annotations with the source one-to-one: values, units, datum order,
+tolerance-zone form and named face associations. The result and artifact SHA-256 travel
+with the export job, including after navigating to another model. No separate check
+endpoint or temporary check-only export is needed. The browser's normal save flow writes
+that artifact; a failed save never says Saved.
+
+Missing or extra annotations, no PMI, parser problems and non-AP242 schemas cannot pass.
+Both signed deviations' units are checked. Face names are scanned across all geometry,
+including unannotated faces. Ambiguous names, colliding source refs, repeated datum letters,
+unsupported modifiers, or missing uniqueness metadata make verification incomplete. The
+file stays available for inspection; an incomplete check is explicitly shown in its result.
+
+This check does not establish a complete manufacturing definition or compatibility with
+a factory importer. The latter remains explicitly untested in the result. Graphical
+callouts and author annotation IDs are not exported by this implementation (basic dimensions
+are, marked theoretical, and are checked like any other dimension). The deliverable for interoperability testing is the actual exported STEP.
+
 ## Known limits
 
 - No leader routing: labels the code placed can cover each other, and a leader can cross the

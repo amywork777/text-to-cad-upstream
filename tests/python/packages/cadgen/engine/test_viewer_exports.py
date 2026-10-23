@@ -11,6 +11,26 @@ from cadgen.engine.worker import _export
 
 
 class ViewerExportsTest(unittest.TestCase):
+    def test_semantic_changes_invalidate_export_identity(self):
+        self.assertNotEqual(fingerprint({'pmi': [{'value': .1}]}), fingerprint({'pmi': [{'value': .2}]}))
+
+    def test_step_result_checks_the_written_file(self):
+        from types import SimpleNamespace
+        entry = {'id': 'A', 'kind': 'datum'}
+        source = SimpleNamespace(structure={'pmi': [entry]})
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / 'result.step'
+            def write(source, _unused, target, **kwargs):
+                target.write_bytes(b'written step')
+                return target.stat().st_size
+            with patch.object(building, 'held', return_value=source), \
+                 patch('cadgen.engine.export.viewer.check'), \
+                 patch('cadgen.engine.export.translate', side_effect=write), \
+                 patch('cadgen._internal.pmi_verification.verify', return_value={'matched': 1}) as check:
+                result = _export({'source': {'path': str(output)}, 'expected': {'version': 'v'}, 'destinations': [str(output)]}, lambda _: None)
+                check.assert_called_once_with([entry], output)
+                self.assertEqual(result['files'][0]['pmiVerification']['matched'], 1)
+
     def test_formats_version_pinning_and_live_model_never_rebuilds(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()

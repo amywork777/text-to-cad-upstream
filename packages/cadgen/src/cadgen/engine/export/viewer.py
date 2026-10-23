@@ -13,7 +13,7 @@ from pathlib import Path
 
 def fingerprint(structure: dict) -> str:
     """Content identity of a live document, independent of its served address/version."""
-    fields = ("name", "units", "prototypes", "instances", "tree", "kinematics")
+    fields = ("name", "units", "prototypes", "instances", "tree", "kinematics", "pmi")
     return hashlib.sha256(json.dumps({k: structure.get(k) for k in fields},
                                     sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -38,10 +38,16 @@ def options(source, *, pose=None, part=None, original_allowed=True) -> list[dict
 
     view = source.view(pose=pose, part=part)
     rows = [{"format": kind, "label": label, "extension": extension, "reason": None}
-            for kind, label, extension in (("step", "STEP", ".step"), ("glb", "GLB", ".glb"),
+            for kind, label, extension in (("step", "STEP (AP242)", ".step"), ("glb", "GLB", ".glb"),
                                            ("stl", "STL", ".stl"), ("threemf", "3MF", ".3mf"),
                                            ("dxf", "DXF", ".dxf"), ("xbf", "XBF", ".xbf"))]
     for row in rows:
+        if row["format"] == "step":
+            from cadgen.engine.export.step import _pmi_written_whole
+            try:
+                _pmi_written_whole(view)
+            except ExportRefused as error:
+                row["reason"] = str(error)
         if row["format"] == "dxf":
             try:
                 dxf_bytes(view)

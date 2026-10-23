@@ -48,6 +48,8 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
   const [hiddenIds, setHiddenIds] = useState(EMPTY);
   const [off, setOff] = useState(false);
   const [changes, setChanges] = useState(NO_CHANGES);
+  const [datumFocus, setDatumFocus] = useState('');
+  useEffect(() => { setDatumFocus(''); }, [selectedId, structure]);
   const restore = useCallback((slice) => { setHiddenIds(slice?.hidden || EMPTY); setOff(Boolean(slice?.off)); }, []);
   const known = useMemo(() => new Set(entries.map(entry => entry.id)), [entries]);
   const selected = known.has(selectedId) ? selectedId : "";
@@ -89,8 +91,9 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
   // What the picked annotation's (and the one under the pointer's) features light.
   const selectedEntry = entries.find(entry => entry.id === selected) || null;
   const hoveredEntry = entries.find(entry => entry.id === hovered) || null;
-  const highlight = useMemo(() => ({ selected: selectedEntry?.featureIds || EMPTY, hovered: hoveredEntry?.featureIds[0] || null }),
-    [selectedEntry, hoveredEntry]);
+  const focusedDatum = entries.find(entry => entry.id === datumFocus && entry.kind === 'datum' && entry.part === selectedEntry?.part);
+  const highlight = useMemo(() => ({ selected: focusedDatum?.featureIds || selectedEntry?.featureIds || EMPTY, hovered: hoveredEntry?.featureIds[0] || null }),
+    [selectedEntry, hoveredEntry, focusedDatum]);
 
   // ---- changes: what Quick Edit hands the agent -------------------------------------------------
   const edit = useCallback((id, values, { placementOnly = false } = {}) => setChanges((now) => {
@@ -134,7 +137,8 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
 
   return {
     entries, items, constructions, selectedId: selected, hoveredId: hovered, selectedEntry, highlight,
-    select: onSelect, hover: setHoveredId,
+    select: onSelect, hover: setHoveredId, datumFocus,
+    focusDatum: id => setDatumFocus(now => now === id ? '' : id),
     hiddenIds, off, setOff, restore,
     toggleHidden: id => setHiddenIds(now => (now.includes(id) ? now.filter(item => item !== id) : [...now, id])),
     slice,

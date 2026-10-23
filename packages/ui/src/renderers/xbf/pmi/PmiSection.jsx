@@ -12,6 +12,7 @@ import ToolPanel, { TOOL_PANEL_BUTTON_CLASS, ToolPanelHeadAction } from "../../k
 import { ToolStackContext } from "../../kit/tools/ToolStack.jsx";
 import { PmiGlyph, PmiIcon } from "./pmiGlyphs.jsx";
 import { MAX_DATUMS, parseToleranceInput, pmiCreateOptions, toggleDatum } from "./pmiCreate.js";
+import { datumRelationships, dimensionLimits, featureRequirements } from './pmiReview.js';
 
 // An engine document's **PMI**, a section of the file sidebar for a document that carries any:
 // every annotation, a row each -- its glyph and what its callout says, and its eye -- in the
@@ -94,12 +95,15 @@ function DatumPicker({ letters, value, onChange }) {
 }
 
 /** The values of an annotation, read out: what it is, and where every number came from. */
-function EntryDetails({ entry, pmi, letters }) {
+function EntryDetails({ entry, pmi, letters, onSelectRelated }) {
   const editable = pmi.editable && entry.supported && entry.status === "ok";
   const construction = pmi.constructions.get(entry.id);
   const pending = pmi.changes.find(change => change.key === `edit:${entry.id}`);
   const values = pending?.values || {};
   const given = key => (Object.prototype.hasOwnProperty.call(values, key) ? values[key] : undefined);
+  const limits = dimensionLimits(entry);
+  const datumLinks = datumRelationships(entry, pmi.entries);
+  const dependents = entry.kind === 'datum' ? pmi.entries.filter(item => item.part === entry.part && item.tolerance?.datums.includes(entry.datum.letter)) : [];
   return <div className="px-2 pb-1.5 pt-0.5" data-pmi-details={entry.id}>
     {entry.statusText ? <p className={cn("flex items-start gap-1 py-0.5 text-tiny", STATUS_TEXT[entry.status])} role="status">
       <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" /><span className="min-w-0 [overflow-wrap:anywhere]">{entry.statusText}</span>
@@ -114,6 +118,7 @@ function EntryDetails({ entry, pmi, letters }) {
         : editable ? <ToleranceField value={given("tolerance") === undefined ? entry.dimension.tolerance : given("tolerance")}
         onCommit={tolerance => pmi.edit(entry.id, { tolerance })} />
         : <InfoRow label="Tolerance">{entry.dimension.tolerance ? <MonoValue>{mm(pmiToleranceText(entry.dimension.tolerance).text, entry.dimension.unit)}</MonoValue> : "None given"}</InfoRow>}
+      {limits ? <InfoRow label="Current limits" copy={false}><MonoValue>{limits.lower.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 12 })}–{limits.upper.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 12 })} {limits.unit}</MonoValue></InfoRow> : null}
     </> : null}
     {entry.kind === "datum" && entry.supported ? <InfoRow label="Letter">{entry.datum.letter}</InfoRow> : null}
     {entry.kind === "geometric_tolerance" && entry.supported ? <>
@@ -124,6 +129,19 @@ function EntryDetails({ entry, pmi, letters }) {
         ? <DatumPicker letters={letters} value={given("datums") ?? entry.tolerance.datums} onChange={datums => pmi.edit(entry.id, { datums })} />
         : <InfoRow label="Datums">{entry.tolerance.datums.join(", ") || "None"}</InfoRow>) : null}
     </> : null}
+    {datumLinks.length ? <div className="py-1" role="group" aria-label="Highlight datum references">
+      <p className="pb-1 text-tiny text-muted-foreground">Highlight datum references</p>
+      {datumLinks.map(({ letter, role, entry: datum }) => <button key={letter} type="button"
+        aria-label={`Highlight ${role.toLowerCase()} datum ${letter}`} aria-pressed={Boolean(datum && pmi.datumFocus === datum.id)}
+        disabled={!datum || datum.status !== 'ok'} onClick={() => pmi.focusDatum(datum.id)}
+        className="flex h-6 w-full items-center justify-between gap-2 rounded px-1 text-tiny hover:bg-accent aria-pressed:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+        <span>{role}</span><span>{letter}</span>
+      </button>)}
+    </div> : null}
+    {dependents.length ? <div className="py-1 text-tiny"><p className="pb-1 text-muted-foreground">Used by</p>
+      {dependents.map(item => <button key={item.id} type="button" className="block w-full rounded px-1 py-1 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => onSelectRelated(item.id)}>{item.callout.text}</button>)}
+    </div> : null}
     {entry.refs.map(ref => <InfoRow key={`${ref.role}:${ref.written}`} label={ROLE_NAMES[ref.role] || ref.role} copy={ref.ref}
       title={ref.status === "ok" ? ref.ref : `${STATUS_WORDS[ref.status]}: ${ref.written}`}>
       <span className={cn("[overflow-wrap:anywhere]", STATUS_TEXT[ref.status])}>{ref.status === "ok" ? ref.name : ref.written}</span>
@@ -169,12 +187,18 @@ function NewEntry({ option, letters, onAdd, onCancel }) {
  *   datum"), which opens the section on its form; `onRequestDone`: the form has gone (added or
  *   cancelled).
  */
-export default function PmiSection({ pmi, picked, moving, request = null, onRequestDone }) {
+export default function PmiSection({ pmi, picked, moving, request = null, onRequestDone, selectedFeatureIds = [] }) {
   // What is already asked for counts as taken: a second new one never reuses a pending id or letter.
   const pending = useMemo(() => pmi.changes.filter(change => change.kind === "add").map(change => change.call), [pmi.changes]);
   const options = useMemo(() => pmiCreateOptions({ picked, entries: pmi.entries, pending }), [picked, pmi.entries, pending]);
   const letters = useMemo(() => pmi.entries.filter(entry => entry.kind === "datum" && entry.datum?.letter).map(entry => entry.datum.letter), [pmi.entries]);
   const [draft, setDraft] = useState(null);
+  const featureIds = pmi.selectedEntry ? pmi.selectedEntry.featureIds : selectedFeatureIds;
+  const selectionKey = JSON.stringify(featureIds);
+  const [showAllFor, setShowAllFor] = useState('');
+  const filtered = featureIds.length > 0 && showAllFor !== selectionKey;
+  const visible = filtered ? featureRequirements(pmi.entries, featureIds) : pmi.entries;
+  const selectRelated = id => { setShowAllFor(selectionKey); pmi.select(id); };
   // A kind asked for from a face's menu: its form, the section open on it.
   const stack = useContext(ToolStackContext);
   useEffect(() => {
@@ -216,8 +240,13 @@ export default function PmiSection({ pmi, picked, moving, request = null, onRequ
       onCancel={closeDraft} onAdd={(call) => { pmi.add(call); closeDraft(); }} /> : null}
     {moving ? <FileSheetStatusText className="py-1">Not drawn while the parts are moved: a tolerance is of the part as made.</FileSheetStatusText> : null}
     {!pmi.entries.length && !draft ? <FileSheetStatusText className="py-1">No PMI yet: right-click a face to add some.</FileSheetStatusText> : null}
+    {featureIds.length ? <div className="flex flex-wrap items-center justify-between gap-1 border-b border-border/60 px-2 py-1 text-tiny">
+      <span className="text-muted-foreground">{filtered ? `${visible.length} requirement${visible.length === 1 ? '' : 's'} for selection` : 'All PMI'}</span>
+      <Button type="button" variant="ghost" size="xs" className="h-6 text-tiny" onClick={() => setShowAllFor(filtered ? selectionKey : '')}>{filtered ? 'Show all PMI' : 'For selection'}</Button>
+    </div> : null}
+    {filtered && !visible.length ? <FileSheetStatusText className="py-1">No PMI is attached to this selection. This does not establish that no requirement is needed.</FileSheetStatusText> : null}
     <ul className={cn("px-1 py-1 text-tiny", pmi.off && "opacity-60")} aria-label="PMI" data-pmi-rows="">
-      {pmi.entries.map((entry) => {
+      {visible.map((entry) => {
         const hidden = pmi.hiddenIds.includes(entry.id);
         const picked = entry.id === pmi.selectedId;
         return <li key={entry.id} className="min-w-0">
@@ -235,7 +264,7 @@ export default function PmiSection({ pmi, picked, moving, request = null, onRequ
             </button>
             {entry.supported ? <RowEye id={entry.id} hidden={hidden} onToggle={pmi.toggleHidden} /> : null}
           </TreeRowSurface>
-          {picked ? <EntryDetails entry={entry} pmi={pmi} letters={letters} /> : null}
+          {picked ? <EntryDetails entry={entry} pmi={pmi} letters={letters} onSelectRelated={selectRelated} /> : null}
         </li>;
       })}
     </ul>

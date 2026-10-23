@@ -18,7 +18,7 @@ Status of each interface: **stable** means it is not changed without a deprecati
 | `status` values `ok` / `missing` / `ambiguous` / `invalid` | stable |
 | `presentation` / `pmi.place(anchor, offset)` | **provisional** (frame and fields may change with the 3D viewer) |
 | The cadgen JSON attribute's layout inside the xbf (`pmi.EXTRA_GUID`) | **provisional**, internal: read through `pmi.read`, never directly |
-| Report of `scripts/pmi/ap242_pmi_report.py` | provisional (a verification tool, not an API) |
+| Report of the AP242 reader (`cadgen/_internal/ap242_pmi_report.py`; `scripts/pmi/ap242_pmi_report.py` runs it) and the export check's `pmiVerification` | provisional (verification tools, not an API) |
 
 ## Fixture
 
@@ -200,7 +200,7 @@ to another plane, or to another hole, isn't caught.
 
 ## AP242 export
 
-`@step` and `cadgen export X.xbf X.step` write the AP242 file (schema
+`@step`, `cadgen export X.xbf X.step` and the viewer's **Export** menu write the AP242 file (schema
 `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF`) through OCCT's `STEPCAFControl_Writer` in
 GD&T mode:
 
@@ -238,6 +238,43 @@ These exports are refused while a document holds PMI, because each one rebuilds 
 from a view and would carry no PMI: a posed STEP, a partial STEP (`--part`), and an xbf written
 from a STEP or with `--part`. GLB, STL and 3MF carry no PMI, as they carry no B-rep.
 
+### Exporting from the viewer
+
+**Export** in the viewer's top-right toolbar (#568's export panel) lists the format as
+**STEP (AP242)** and says that it "includes the built model's PMI and checks it in the exported
+STEP". The PMI is the built document's: Quick Edit requests not yet applied to the code are not in
+it. A STEP that would drop PMI (a posed or partial export, or an annotation linked to no geometry)
+is unavailable, with the reason the engine gives.
+
+**The check.** After writing the file, the export worker reads that exact STEP with the AP242 reader
+(`cadgen/_internal/pmi_verification.py`, which uses no OCCT). It compares the file's annotations one
+to one with the model's served PMI:
+- values and units, both deviations' units included;
+- datum letters and the frame's order, and the tolerance zone's form;
+- the named face each annotation is on;
+- for each dimension, whether it is basic: its `'theoretical'` note.
+
+The result travels with the export job, with the SHA-256 of the bytes it checked, and the panel
+shows it: "9/9 PMI annotations verified in STEP", or what failed. Several things make the check
+incomplete, and it never reports success when they happen:
+- an annotation missing from the file, or an extra one;
+- a model with no PMI;
+- a reader problem, or a schema that isn't AP242;
+- a face name that appears more than once across the geometry;
+- a repeated datum letter;
+- an unsupported modifier.
+
+It checks the supported semantic PMI. It does not check graphical callouts or whether the
+requirements are complete for manufacturing, and the panel says that compatibility with a
+factory's importer is untested.
+
+**Reviewing before export.** The PMI section can filter to the selected geometry: **For
+selection**, with **Show all PMI** to return to the whole list.
+- A toleranced dimension shows its **Current limits** (nominal plus each signed deviation), from
+  the saved document.
+- A position lists its datum references in order, and each one lights that datum's face.
+- A datum lists the tolerances that use it, under **Used by**.
+
 ## What was verified, and how
 
 Each claim below is backed by an automated test in `test_pmi.py` unless marked otherwise.
@@ -267,7 +304,7 @@ Each claim below is backed by an automated test in `test_pmi.py` unless marked o
 - **OCCT round trip.** Reading the STEP with OCCT's XCAF reader in GD&T mode gives the same kinds,
   values and face refs as the xbf, by element name. This is OCCT reading its own writer, so it
   does **not** establish interoperability by itself.
-- **Reader with no OCCT.** `scripts/pmi/ap242_pmi_report.py` parses Part 21 with its own
+- **Reader with no OCCT.** `cadgen/_internal/ap242_pmi_report.py` (standard library only; `scripts/pmi/ap242_pmi_report.py` runs it) parses Part 21 with its own
   tokenizer and walks AP242's PMI entities to recover each one's values, units, datum frame
   order, zone form, and the named `ADVANCED_FACE` and surface (plane or cylinder radius). The
   test asserts every value against the model. Outside the automated suite, during this PR:
@@ -303,8 +340,10 @@ Each claim below is backed by an automated test in `test_pmi.py` unless marked o
    [`pmi_plate.report.json`](pmi_plate.report.json) lists the record numbers and face names.
 2. Compare with our reader:
    ```bash
-   python3 scripts/pmi/ap242_pmi_report.py docs/pmi/pmi_plate.step
+   python3 packages/cadgen/src/cadgen/_internal/ap242_pmi_report.py docs/pmi/pmi_plate.step
    ```
+   The reader is one standard-library file, so it runs without cadgen installed. With cadgen,
+   `python -m cadgen._internal.ap242_pmi_report` is the same.
    Add `--parser steputils` once `pip install steputils` is done, and
    `--schema path/to/242_mim_lf.exp` to check attribute counts.
 3. Make your own: edit `models/examples/src/pmi_plate.py` and run it from `models/examples/src`

@@ -186,6 +186,7 @@ export interface CadWorkspaceService {
    * engine leaves it out, and the xbf renderer says it cannot open the file.
    */
   engineDocument?(file: string, options?: CadRequestOptions): Promise<CadEngineDocument>;
+  /** Explicit temporary AP242 export, independently read; no output file is retained. */
   /** Whether the engine holds a read of the document now (`GET /__cad/xbf?held=1`), asked without starting one. */
   engineHolds?(file: string, options?: CadRequestOptions): Promise<boolean>;
   readonly resources: CadResourceProvider;
@@ -233,6 +234,7 @@ export interface ExportJob {
   state: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'failed' | 'ready' | 'expired';
   stage: string; sequence: number; createdAt: number; finishedAt: number; expiresAt: number;
   bytes?: number; error?: string;
+  pmiVerification?: { matched: number; total: number; problems: string[]; sha256: string } | null;
 }
 export interface ExportService {
   options(source: ExportSource, signal: AbortSignal): Promise<{ epoch: string; formats: ExportOption[] }>;

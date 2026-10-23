@@ -115,3 +115,17 @@ it('restored requests reconnect by the same identity and ask for a new local des
   expect(chosen.write).toHaveBeenCalledTimes(1);
   expect(service.create).toHaveBeenCalledTimes(1);
 });
+
+it('shows verification from the completed STEP job with its importer limitation', async () => {
+  const { service, waiting, jobs } = server();
+  mount(service, { choose: vi.fn(async () => destination()) });
+  const user = userEvent.setup();
+  await open(user);
+  await user.click(screen.getByRole('button', { name: 'Choose location & export…' }));
+  await waitFor(() => expect(waiting.size).toBe(1));
+  const [id, job] = [...jobs.entries()][0];
+  await act(async () => waiting.get(id)!({ ...job, state: 'ready', stage: 'Ready to save', bytes: 5,
+    expiresAt: Date.now() / 1000 + 3600, pmiVerification: { matched: 7, total: 7, problems: [], sha256: 'checked-bytes' } }));
+  expect(await screen.findByText('7/7 PMI annotations verified in STEP')).toBeTruthy();
+  expect(screen.getByText('Factory importer compatibility has not been tested.')).toBeTruthy();
+});

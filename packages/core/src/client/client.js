@@ -292,6 +292,7 @@ export function createCadClient({ origin = '', fetch: fetchImpl = globalThis.fet
       if (!file) return Promise.reject(new Error('Missing file'));
       return request('/__cad/robot', { file, signal, timeoutMs: 10_000, operation: 'robot' });
     },
+
     async engineDocument(file, { signal } = {}) {
       // A document the cadgen ENGINE reads -- an `.xbf`, or a STEP -- is served by the engine: the
       // viewer asks it to serve the file (`cadgen.viewer.xbf`) and answers where the page reads it,
