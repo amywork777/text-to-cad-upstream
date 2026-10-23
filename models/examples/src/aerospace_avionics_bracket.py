@@ -63,6 +63,9 @@ def aerospace_avionics_bracket():
                      presentation=pmi.place((-42, -32, 0), (-8, -18, -12))),
         pmi.position("locating-bore-position", bore[0], .1, datums=["A", "B", "C"],
                      presentation=pmi.place((-5, -18, 8), (-18, -22, 30))),
+        # The bore's true position: basic (theoretically exact) distances from B and C, measured.
+        pmi.basic("bore-from-B", back, bore[0], presentation=pmi.place((0, 11, 8), (8, 0, 0))),
+        pmi.basic("bore-from-C", left, bore[0], presentation=pmi.place((-30, -18, 8), (0, -8, 0))),
     )
 
 
