@@ -34,6 +34,7 @@ from cadgen._internal.drawing_sheet import (
 from cadgen._internal.drawing_views import _view_extent
 
 if TYPE_CHECKING:
+    from cadgen._internal.drawing_report import _Facts
     from cadgen.eng_drawing import Sheet, View
 
 
@@ -443,7 +444,7 @@ def _balloon_axis(bounds) -> bool:
     return (bounds[3] - bounds[2]) >= (bounds[1] - bounds[0])
 
 
-def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: dict | None, model_to_sheet, box,
+def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: _Facts | None, model_to_sheet, box,
                    reach: dict, text, printed: Sequence[tuple], obstacles: Sequence[tuple],
                    warnings: list | None) -> None:
     """Balloon each item the view shows that this sheet has not yet keyed.

@@ -8,7 +8,7 @@ module scope.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from cadgen._internal.drawing_assembly import _BALLOON_AIR, _BALLOON_LEAD, _BALLOON_R, _balloon_axis
@@ -214,7 +214,7 @@ def _far_side(call: str, what: str, view) -> ValueError:
     return ValueError(f"{call}: that {what} opens on the far side of the part. Call it out in {there}.")
 
 
-def _holes_hint(view: View, proj, seen, look) -> str:
+def _holes_hint(seen, look) -> str:
     mine = [h for h in seen if _faces_viewer(h, look)]
     if not mine:
         return ("This view looks down no hole; a hole is called out in the view that sees it as a circle "
@@ -228,8 +228,6 @@ def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None
     part, on copies: a hole callout's diameter, depth, counterbore, countersink and
     count, a diameter or radius callout's value, and ``holes()`` expanded into one
     callout per kind of hole. Anything the author typed is checked on the way."""
-    import dataclasses
-
     look = _look(view)
     seen_cache: tuple | None = None
 
@@ -261,16 +259,14 @@ def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None
         elif dim.kind in ("diameter", "radius"):
             resolved = [_resolve_round(view, proj, dim)]
         else:
-            resolved = [dataclasses.replace(dim)]
+            resolved = [replace(dim)]
         for item in resolved:
             item.index = index
         out.extend(resolved)
     return out
 
 
-def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features=None, slots=()) -> "_Dim":
-    import dataclasses
-
+def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features: _Features, slots) -> "_Dim":
     given, thread, label = dim.hole["given"], dim.hole["thread"], dim.hole["label"]
     call = f"{view.name}.hole({_where(dim.p1)})"
     target = proj.point(dim.p1)
@@ -282,7 +278,7 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features=None, slot
                              f"{view.name}.slot({_where(dim.p1)}).")
         if given["diameter"] is None:
             raise ValueError(f"{call}: no hole runs along the {view.name} view's line of sight there. "
-                             + _holes_hint(view, proj, seen, look))
+                             + _holes_hint(seen, look))
         # A bore the reader does not recognise as a hole can still be stated, but
         # only over a circle that is really there.
         radii = _radii_at(proj, target, closed_only=True)
@@ -294,7 +290,7 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features=None, slot
         spec = {"diameter": given["diameter"], "depth": given["depth"], "thru": bool(given["thru"]),
                 "cbore": given["cbore"], "csk": given["csk"], "count": given["count"], "thread": thread,
                 "label": label}
-        return dataclasses.replace(dim, hole=spec, radius=_outer_radius(spec))
+        return replace(dim, hole=spec, radius=_outer_radius(spec))
     # Two holes on one line (a clevis) both match; the one whose mouth this view
     # looks into, nearest the viewer, is the one it calls out.
     here.sort(key=lambda h: (not _faces_viewer(h, look), -_dot(h.mouth, look)))
@@ -323,8 +319,8 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features=None, slot
             f"callout was given {', '.join(problems)}. Leave {'it' if len(problems) == 1 else 'them'} unset so "
             "the drawing states the part, or change the model."
         )
-    spec = _hole_spec(hole, len(same), thread, label, features.pcd(same) if features else None)
-    return dataclasses.replace(dim, hole=spec, radius=_outer_radius(spec), feature=hole, covers=tuple(same))
+    spec = _hole_spec(hole, len(same), thread, label, features.pcd(same))
+    return replace(dim, hole=spec, radius=_outer_radius(spec), feature=hole, covers=tuple(same))
 
 
 def _slot_end(proj, bounds, slot) -> tuple:
@@ -336,8 +332,6 @@ def _slot_end(proj, bounds, slot) -> tuple:
 
 
 def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
-    import dataclasses
-
     given, label = dim.hole["given"], dim.hole["label"]
     call = f"{view.name}.slot({_where(dim.p1)})"
     target = proj.point(dim.p1)
@@ -369,13 +363,11 @@ def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
         )
     spec = _slot_spec(slot, len(same), label)
     end = _slot_end(proj, bounds, slot)
-    return dataclasses.replace(dim, p1=end, hole=spec, radius=_outer_radius(spec), feature=slot, covers=tuple(same))
+    return replace(dim, p1=end, hole=spec, radius=_outer_radius(spec), feature=slot, covers=tuple(same))
 
 
 def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: list | None,
-                  features=None, slots=()) -> list["_Dim"]:
-    import dataclasses
-
+                  features: _Features, slots) -> list["_Dim"]:
     kinds = _kinds(f for f in (*seen, *slots) if _faces_viewer(f, look))
     if not kinds:
         if warnings is not None:
@@ -393,19 +385,17 @@ def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: l
         if isinstance(members[0], Slot):
             slot = min(members, key=lambda sl: short_way_out(_slot_end(proj, bounds, sl)))
             spec = _slot_spec(slot, len(members))
-            out.append(dataclasses.replace(dim, kind="slot", p1=_slot_end(proj, bounds, slot), hole=spec,
+            out.append(replace(dim, kind="slot", p1=_slot_end(proj, bounds, slot), hole=spec,
                                            radius=_outer_radius(spec), feature=slot, covers=tuple(members)))
         else:
             hole = min(members, key=lambda h: short_way_out(h.mouth))
-            spec = _hole_spec(hole, len(members), pcd=features.pcd(members) if features else None)
-            out.append(dataclasses.replace(dim, kind="hole", p1=hole.mouth, hole=spec, radius=_outer_radius(spec),
+            spec = _hole_spec(hole, len(members), pcd=features.pcd(members))
+            out.append(replace(dim, kind="hole", p1=hole.mouth, hole=spec, radius=_outer_radius(spec),
                                            feature=hole, covers=tuple(members)))
     return out
 
 
 def _resolve_round(view: View, proj, dim: "_Dim") -> "_Dim":
-    import dataclasses
-
     closed = dim.kind == "diameter"
     what = "circle" if closed else "arc"
     target = proj.point(dim.p1)
@@ -426,7 +416,7 @@ def _resolve_round(view: View, proj, dim: "_Dim") -> "_Dim":
     else:
         raise ValueError(f"{call}: {len(radii)} {what}s share that centre ({shown}); pass size= to say "
                          "which one this states.")
-    return dataclasses.replace(dim, radius=radius)
+    return replace(dim, radius=radius)
 
 
 def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> dict:

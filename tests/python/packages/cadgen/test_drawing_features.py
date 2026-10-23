@@ -121,15 +121,20 @@ class HoleTests(unittest.TestCase):
         self.assertEqual((round(hole.csk[0], 6), hole.csk[1]), (12.0, 90.0))
         self.assertEqual(hole.far_csk, hole.csk, "the same chamfer at the other end")
 
-    def test_two_halves_of_one_bore_are_one_bore(self) -> None:
-        """A STEP from some kernels splits a full cylinder into two faces."""
-        from cadgen._internal.drawing_features import _full, _merge_split_faces, _Segment
+    def test_a_bore_split_into_several_faces_is_one_bore(self) -> None:
+        """A STEP from some kernels splits a full cylinder into faces."""
+        from build123d import Box, Compound, Cylinder, GeomType, Keep, Plane
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
 
-        halves = [_Segment("cyl", 0.0, 10.0, 3.0, 3.0, True, math.pi), _Segment("cyl", 0.0, 10.0, 3.0, 3.0, True, math.pi)]
-        merged = _merge_split_faces(halves)
-        self.assertEqual(len(merged), 1)
-        self.assertTrue(_full(merged[0]))
-        self.assertFalse(_full(_merge_split_faces(halves[:1])[0]), "half a bore is a slot end")
+        from cadgen._internal.drawing_features import holes
+
+        plate = Box(40, 40, 10) - Cylinder(3, 10)
+        left, right = plate.split(Plane.YZ, keep=Keep.BOTTOM), plate.split(Plane.YZ, keep=Keep.TOP)
+        # Fused without unifying faces, as build123d's own fuse would.
+        joined = Compound(BRepAlgoAPI_Fuse(left.wrapped, right.wrapped).Shape()).solids()[0]
+        self.assertGreater(len([f for f in joined.faces() if f.geom_type == GeomType.CYLINDER]), 1)
+        self.assertEqual([(h.diameter, h.thru) for h in holes(joined)], [(6.0, True)])
+        self.assertEqual(holes(left), [], "half a bore, a notch in an edge, is not a hole")
 
 
 class PatternTests(unittest.TestCase):

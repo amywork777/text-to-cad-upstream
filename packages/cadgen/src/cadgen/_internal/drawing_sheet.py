@@ -32,8 +32,8 @@ _DEFAULT_ROOM = {"top": 2 * _DIM_ROW + 5.0, "bottom": 12.0, "left": 2 * _DIM_ROW
 
 
 def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso, room: dict | None = None,
-                         crowding: list | None = None, paper: str | None = None
-                         ) -> list[tuple[str, tuple[float, float], float | None, str | None]]:
+                         paper: str | None = None
+                         ) -> tuple[list[tuple[str, tuple[float, float], float | None, str | None]], tuple[float, float]]:
     """Where the three (or four) views of a standard arrangement go at scale ``s``.
 
     ``room`` is what each view's annotation takes on every side, in sheet
@@ -50,6 +50,9 @@ def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso,
     their annotation does not. ``iso`` is False, or the isometric's projected
     (width, height) at 1:1, measured once by the caller: it is a hidden-line
     projection, and the guard asks this question at every candidate scale.
+
+    Returns the views' slots, and how far the arrangement overran the paper,
+    ``(width, height)``, before the gaps gave room back: both 0 when it fits.
     """
     L, W, H = size.X * s, size.Y * s, size.Z * s
     need = {name: dict(_DEFAULT_ROOM) for name in ("top", "front", "right")}
@@ -89,10 +92,9 @@ def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso,
     centres, block = place(gap_v, gap_h)
     over_w = (block[1] - block[0]) - (x_hi - x_lo)
     over_h = (block[3] - block[2]) - (y_hi - y_lo)
-    if crowding is not None:
-        crowding[:] = [max(0.0, over_w), max(0.0, over_h)]
-    if gap is None and (over_w > 0 or over_h > 0):
-        centres, block = place(max(_MIN_GAP, gap_v - max(0.0, over_h)), max(_MIN_GAP, gap_h - max(0.0, over_w)))
+    over = (max(0.0, over_w), max(0.0, over_h))
+    if gap is None and max(over) > 0:
+        centres, block = place(max(_MIN_GAP, gap_v - over[1]), max(_MIN_GAP, gap_h - over[0]))
     # Centred in the paper the views and their annotation leave free; a block that
     # does not fit starts at the bottom-left, so it is the top and right that run
     # off and the guard names a scale. With a pictorial the block keeps to the
@@ -104,7 +106,7 @@ def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso,
     slots: list[tuple[str, tuple[float, float], float | None, str | None]] = [
         ("top", at["top"], None, None), ("front", at["front"], None, None), ("right", at["right"], None, None)]
     if not iso:
-        return slots
+        return slots, over
     # Where the pictorial can go: the corner right of the upper row's annotation
     # (above the right view's, in third angle), or the full height right of every
     # view. It takes whichever draws it larger, at the sheet's scale if it fits,
@@ -139,7 +141,7 @@ def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso,
     # sheet: at 2:1 a half-size iso is 1:1, and calling it "1:2" claimed a
     # reduction from full size that never happened.
     slots.append(("iso", iso_at, own, "ISOMETRIC" if own is None else f"ISOMETRIC {_scale_label(iso_scale)}"))
-    return slots
+    return slots, over
 
 
 class _OffFrame(ValueError):
@@ -194,8 +196,8 @@ def _fits_at(sheet: Sheet, placed: Sequence[tuple], candidate: float, frame, gro
     its box shrinks about that point.
     """
     moved: dict[int, tuple[tuple[float, float], float]] = {}
-    for by_name, shape, size, gap, iso, room in groups:
-        for name, at, own, _label in _arrange_three_views(sheet, size, gap, candidate, iso, room):
+    for by_name, _shape, size, gap, iso, room in groups:
+        for name, at, own, _label in _arrange_three_views(sheet, size, gap, candidate, iso, room)[0]:
             if name in by_name:
                 moved[id(by_name[name])] = (at, own or candidate)
     for view, _proj, bounds, _cx, _cy, _box in placed:
@@ -574,9 +576,7 @@ def _choose_size_and_scale(sheet: Sheet, extent, iso, room: dict, gap: float | N
         except ValueError:
             return None  # its notes do not fit this sheet's width
         for scale in scales:
-            over: list = []
-            _arrange_three_views(sheet, extent, gap, scale, iso, room, over, paper)
-            if max(over) <= 0:
+            if max(_arrange_three_views(sheet, extent, gap, scale, iso, room, paper)[1]) <= 0:
                 return scale
         return None
 

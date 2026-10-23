@@ -450,8 +450,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         brk = next((view._break for view in by_name.values() if view._break is not None), None)
         if brk is not None:
             size = _broken_size(size, brk, s)
-        over: list = []
-        for name, at, own, slot_label in _arrange_three_views(sheet, size, gap, s, iso, room, over):
+        slots, over = _arrange_three_views(sheet, size, gap, s, iso, room)
+        for name, at, own, slot_label in slots:
             if name in by_name:
                 view = by_name[name]
                 view.at = at
@@ -463,9 +463,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # The views were squeezed together past the air between them, so one
             # view's annotation now crowds the next. Say what gives them the room.
             def roomy(scale: float) -> bool:
-                over_at: list = []
-                _arrange_three_views(sheet, size, None, scale, iso, room, over_at)
-                return max(over_at) <= 0
+                return max(_arrange_three_views(sheet, size, None, scale, iso, room)[1]) <= 0
 
             roomier = next((name for name in sorted(SHEET_SIZES, key=lambda n: SHEET_SIZES[n][0])
                             if SHEET_SIZES[name][0] > sheet.width), None)

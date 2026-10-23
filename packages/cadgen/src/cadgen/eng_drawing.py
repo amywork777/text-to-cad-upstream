@@ -680,7 +680,7 @@ class Sheet:
         arranged = (size, gap, _view_extent(shape, "iso", 1.0) if iso else False)
         if self._chooses():
             _settle(self, _choose_size_and_scale(self, size, arranged[2], _default_rooms(), gap))
-        slots = _arrange_three_views(self, size, gap, self._scale(), arranged[2])
+        slots, _over = _arrange_three_views(self, size, gap, self._scale(), arranged[2])
         views = tuple(
             self.view(shape, name, at=at, hidden=hidden if name != "iso" else False,
                       centre_marks=centre_marks if name != "iso" else False,

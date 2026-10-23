@@ -698,7 +698,6 @@ def _surface_key(face) -> tuple | None:
 
 def _blend_faces(shape) -> list[tuple]:
     """Each blend face of the part with what it is, as ``(face, Blend)``."""
-    from build123d import GeomType
     from OCP.BRepTools import BRepTools
 
     found = _edge_faces(shape)
