@@ -243,12 +243,16 @@ _ZONE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
 #: block's width so the list stands on the block as one column of the sheet.
 _LIST_ROW = 7.0
 _LIST_COLUMNS = (("ITEM", 12.0), ("QTY", 12.0), ("DESCRIPTION", 68.0), ("PART NO.", 44.0), ("MATERIAL", 44.0))
+#: The revision table, top right inside the frame: its row height and columns.
+_REVISION_ROW = 6.0
+_REVISION_COLUMNS = (("REV", 14.0), ("DATE", 26.0), ("DESCRIPTION", 70.0))
 
 
 def _list_room(sheet: Sheet) -> float:
     """The height a parts list may take above the title block: the frame, less
     the block, a row for the line saying where a long list continues, and air."""
-    revisions = (len(sheet.revisions) + 1) * 6.0 + 4.0 if sheet.revisions else 0.0
+    box = _revisions_box(sheet)
+    revisions = box[3] - box[2] + 4.0 if box is not None else 0.0
     return sheet.height - 2 * _MARGIN - _TITLE_H - _LIST_ROW - 4.0 - revisions
 
 
@@ -385,18 +389,17 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
     for row, line in enumerate(lines):
         text(line, m + _NOTE_INSET, y0 + _TITLE_H + 4 + (len(lines) - 1 - row) * 5, _NOTE_HEIGHT,
              A.BOTTOM_LEFT, "NOTES")
-    if sheet.revisions:
-        # Revision table, top-right inside the frame: REV | DATE | DESCRIPTION.
-        widths = (14.0, 26.0, 70.0)
-        rw, rh = sum(widths), 6.0
-        rx, ry = W - m - rw, H - m - rh
-        table = [("REV", "DATE", "DESCRIPTION")] + [tuple(str(v) for v in row) for row in sheet.revisions]
+    revisions = _revisions_box(sheet)
+    if revisions is not None:
+        rx, rx1, _ry0, ry1 = revisions
+        rh = _REVISION_ROW
+        table = [tuple(name for name, _w in _REVISION_COLUMNS)] + [tuple(str(v) for v in row) for row in sheet.revisions]
         for r, row in enumerate(table):
-            y = ry - r * rh
-            msp.add_lwpolyline([(rx, y), (rx + rw, y), (rx + rw, y + rh), (rx, y + rh)], close=True,
+            y = ry1 - (r + 1) * rh
+            msp.add_lwpolyline([(rx, y), (rx1, y), (rx1, y + rh), (rx, y + rh)], close=True,
                                dxfattribs={"layer": "TITLE"})
             x = rx
-            for c, (width, value) in enumerate(zip(widths, row)):
+            for c, ((_name, width), value) in enumerate(zip(_REVISION_COLUMNS, row)):
                 if c:
                     msp.add_line((x, y), (x, y + rh), dxfattribs={"layer": "TITLE"})
                 text(value, x + 2, y + rh / 2, 2.5, A.MIDDLE_LEFT, fit=width - 4)
@@ -472,9 +475,30 @@ def _notes_height(sheet: Sheet) -> float:
     return rows * 5.0 + 8.0 if rows else 0.0
 
 
+def _revisions_box(sheet: Sheet) -> tuple[float, float, float, float] | None:
+    """The revision table as ``(x0, x1, y0, y1)``, or None on a sheet without one."""
+    if not sheet.revisions:
+        return None
+    w = sum(width for _name, width in _REVISION_COLUMNS)
+    h = (len(sheet.revisions) + 1) * _REVISION_ROW
+    return sheet.width - _MARGIN - w, sheet.width - _MARGIN, sheet.height - _MARGIN - h, sheet.height - _MARGIN
+
+
 def _revisions_height(sheet: Sheet) -> float:
     """How far the revision table reaches down from the frame's top, with air."""
-    return (len(sheet.revisions) + 1) * 6.0 + 6.0 if sheet.revisions else 0.0
+    box = _revisions_box(sheet)
+    return box[3] - box[2] + 6.0 if box is not None else 0.0
+
+
+def _furniture(sheet: Sheet) -> list[tuple[float, float, float, float]]:
+    """The sheet's own furniture as ``(x0, x1, y0, y1)``: the title block with any
+    parts list standing on it, and the revision table."""
+    boxes = [(sheet.width - _MARGIN - _TITLE_W, sheet.width - _MARGIN, _MARGIN,
+              _MARGIN + _TITLE_H + _list_height(sheet))]
+    revisions = _revisions_box(sheet)
+    if revisions is not None:
+        boxes.append(revisions)
+    return boxes
 
 
 def _free_band(sheet: Sheet, paper: str | None = None) -> tuple[float, float, float, float]:

@@ -189,6 +189,14 @@ def _callout_value(dim: "_Dim") -> str:
     return f"%%c{_fmt(2 * dim.radius)}" if dim.kind == "diameter" else f"R{_fmt(dim.radius)}"
 
 
+def _far_side(call: str, what: str, view) -> ValueError:
+    """The refusal for a feature that opens away from the viewer, naming the view
+    that looks into it where there is one by name."""
+    there = (f"the {_OPPOSITE[view.name]} view, which looks into it" if view.name in _OPPOSITE
+             else "a view that looks into it")
+    return ValueError(f"{call}: that {what} opens on the far side of the part. Call it out in {there}.")
+
+
 def _holes_hint(view: View, proj, seen, look) -> str:
     mine = [h for h in seen if _faces_viewer(h, look)]
     if not mine:
@@ -275,8 +283,7 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features=None, slot
     here.sort(key=lambda h: (not _faces_viewer(h, look), -_dot(h.mouth, look)))
     hole = here[0]
     if not _faces_viewer(hole, look):
-        raise ValueError(f"{call}: that hole opens on the far side of the part. Call it out in the "
-                         f"{_OPPOSITE[view.name]} view, which looks into it.")
+        raise _far_side(call, "hole", view)
     same = [h for h in seen if h.signature() == hole.signature() and _faces_viewer(h, look)]
     problems = []
     if given["diameter"] is not None and thread is None and abs(given["diameter"] - hole.diameter) > 0.01:
@@ -325,8 +332,7 @@ def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
         raise ValueError(f"{call}: no slot runs along the {view.name} view's line of sight there. {hint}")
     slot = here[0]
     if not _slot_faces_viewer(slot, look):
-        raise ValueError(f"{call}: that slot opens on the far side of the part. Call it out in the "
-                         f"{_OPPOSITE[view.name]} view, which looks into it.")
+        raise _far_side(call, "slot", view)
     same = [sl for sl in seen if sl.signature() == slot.signature() and _slot_faces_viewer(sl, look)]
     problems = []
     for name, value in (("width", slot.width), ("length", slot.length)):

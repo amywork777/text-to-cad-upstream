@@ -1,5 +1,6 @@
-"""What an assembly drawing reads off an assembly: its parts list, and where on
-each part a balloon's leader can land.
+"""An assembly drawn as a set: the parts list read off the assembly, the balloons
+that key a view to it, and the general arrangement and part sheets
+:func:`cadgen.eng_drawing.assembly_sheets` makes.
 
 A parts list is the assembly's distinct parts, each once, with how many times it
 occurs. Two occurrences are one part when they carry the same name and colour
@@ -12,7 +13,9 @@ spacer and a brass one), a label's detail often names a finish
 shapes under different names are kept apart and reported, so the author can
 merge them with :meth:`PartsList.merge` when they are one part.
 
-Nothing here is drawn; ``cadgen.eng_drawing`` draws the table and the balloons.
+A balloon's leader lands on a point of its part the view sees, found by casting
+rays from the viewer; the balloons stand in even columns whose leaders do not
+cross. The parts list itself is drawn with the rest of the sheet's furniture.
 """
 
 from __future__ import annotations
@@ -25,7 +28,9 @@ from cadgen._internal.drawing_base import (
     _DEFAULT_TEXT, _DIM_ROW, _LABEL_ROOM, _MARGIN, _SIDES, _STANDARD_SCALES, _TITLE_H, _TITLE_W, _look,
     _scale_label,
 )
-from cadgen._internal.drawing_sheet import _LARGEST_SCALE, _OffFrame, _list_height, _next_smaller
+from cadgen._internal.drawing_sheet import (
+    _LARGEST_SCALE, _OffFrame, _list_height, _next_smaller, _notes_height, _revisions_height,
+)
 from cadgen._internal.drawing_views import _view_extent
 
 if TYPE_CHECKING:
@@ -409,6 +414,15 @@ def _spread(desired: Sequence[float], gap: float, lo: float, hi: float) -> list[
 
 # --- balloons -------------------------------------------------------------------------
 
+def _refuse_balloons_on(view) -> None:
+    """Balloons key a whole view. A section's cut faces are not any part's faces,
+    and a detail is a piece of another view; neither is ballooned yet."""
+    if view._section is not None or view._detail is not None:
+        kind = "a section" if view._detail is None else "a detail"
+        raise ValueError(f"balloons() keys a whole view, and the {view.name} view is {kind}; balloon a view "
+                         "of the assembly that is not cut or enlarged.")
+
+
 #: A balloon: its radius and numeral height, the run of leader between the
 #: annotation it stands outside and its circle, the space between two balloons,
 #: and the dot a leader ends in on the part.
@@ -449,11 +463,7 @@ def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: di
     from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
     from shapely.geometry import LineString, box as rect
 
-    from cadgen._internal.drawing_assembly import spread, visible_point
-
-    direction = _look(view)
-    length = math.sqrt(sum(c * c for c in direction))
-    look = tuple(c / length for c in direction)
+    look = _look(view)
     cast = IntCurvesFace_ShapeIntersector()
     cast.Load(view.shape.wrapped, 1e-7)
     keyed = []
@@ -593,6 +603,8 @@ def _refresh_from_item(sheet: Sheet) -> None:
     kept = tuple(new if now == old else now for new, now, old in zip(fresh, current, shown))
     sheet.title, sheet.material, sheet.subtitle = kept
     sheet._item = _PartOf(item, whole, kept)
+
+
 #: The smallest scale a general arrangement is drawn at: below it the views are specks.
 _GA_SMALLEST = 1 / 50
 #: The share of the general arrangement's frame height its parts list may take;
@@ -627,9 +639,9 @@ def _arrange_assembly(sheet: Sheet, shape, second: str) -> tuple[float, list]:
     box = shape.bounding_box().size
     extents = {"front": (box.X, box.Z), "right": (box.Y, box.Z), "top": (box.X, box.Y)}
     overall = {"front": {"width", "height"}, second: {"width"} if second == "right" else {"height"}}
-    note_rows = len(sheet.drawn_notes())
+    notes = _notes_height(sheet)
     a_x = (m + 4.0, W - m - _TITLE_W - 6.0)
-    a_y = (m + 4.0 + ((_TITLE_H + note_rows * 5.0 + 8.0) if note_rows else 0.0), H - m - 4.0)
+    a_y = (m + 4.0 + (_TITLE_H + notes if notes else 0.0), H - m - 4.0)
     third = sheet.projection == "THIRD ANGLE"
 
     def layout(s: float):
@@ -680,9 +692,8 @@ def _arrange_assembly(sheet: Sheet, shape, second: str) -> tuple[float, list]:
         )
     scale, at = fitting
     slots = [("front", at["front"], None, None), (second, at[second], None, None)]
-    table_h = (len(sheet.revisions) + 1) * 6.0 + 6.0 if sheet.revisions else 0.0
     b_x = (W - m - _TITLE_W, W - m - 4.0)
-    b_y = (m + _TITLE_H + _list_height(sheet) + 6.0, H - m - 4.0 - table_h)
+    b_y = (m + _TITLE_H + _list_height(sheet) + 6.0, H - m - 4.0 - _revisions_height(sheet))
     iso_w, iso_h = _view_extent(shape, "iso", 1.0)
     room = _assembly_room((iso_w, iso_h), set())
     for c in (c for c in _STANDARD_SCALES if scale / 5 - 1e-9 <= c <= scale):

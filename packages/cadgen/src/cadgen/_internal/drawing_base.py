@@ -111,8 +111,13 @@ def _dirs(view) -> tuple:
     return view._direction or VIEW_DIRECTIONS[view.name]
 
 
-def _look(view) -> tuple:
-    return _dirs(view)[0]
+def _look(view) -> tuple[float, float, float]:
+    """The unit vector from the part toward the view's viewer. The isometric's
+    direction is not unit length, and a dot product with it is only a cosine
+    once it is."""
+    x, y, z = _dirs(view)[0]
+    length = math.sqrt(x * x + y * y + z * z)
+    return (x / length, y / length, z / length)
 
 
 # --- text and symbols -----------------------------------------------------------------

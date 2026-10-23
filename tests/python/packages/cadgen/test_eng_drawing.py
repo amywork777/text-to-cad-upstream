@@ -55,7 +55,7 @@ def _dim_texts(doc):
 
 class DrawingSheetTests(unittest.TestCase):
     def test_a_sheet_writes_views_dimensions_marks_frame_and_title(self) -> None:
-        from cadgen.eng_drawing import _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
 
         doc = _render_sheet(_sheet(_part()), index=1, count=2, label="t")
         msp = doc.modelspace()
@@ -103,7 +103,7 @@ class DrawingSheetTests(unittest.TestCase):
         catch that; asserting the table can.
         """
         from cadgen._internal.drawing_base import _LAYERS
-        from cadgen.eng_drawing import _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
 
         doc = _render_sheet(_sheet(_part()), index=1, count=1, label="t")
         defined = {lt.dxf.name.upper() for lt in doc.linetypes}
@@ -115,7 +115,8 @@ class DrawingSheetTests(unittest.TestCase):
 
     def test_the_hidden_line_pass_writes_each_edge_once(self) -> None:
         """The kernel returns a hidden edge once per face that hides it."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = _part()
         sheet = Sheet("A4")
@@ -133,7 +134,8 @@ class DrawingSheetTests(unittest.TestCase):
 
     def test_dimension_points_land_on_the_projected_geometry(self) -> None:
         """A dimension between the box's top corners spans exactly the drawn outline."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = _part()
         sheet = Sheet("A4")
@@ -155,7 +157,8 @@ class DrawingSheetTests(unittest.TestCase):
         1:1, so each view sets dimlfac to the inverse of its own scale.
         """
         from build123d import Align, Box
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = Box(80, 50, 10, align=(Align.CENTER, Align.CENTER, Align.MIN))
         for scale in (1.0, 0.5, 0.25):
@@ -176,7 +179,8 @@ class DrawingSheetTests(unittest.TestCase):
 
     def test_a_tolerance_prints_the_authors_deviation_at_any_scale(self) -> None:
         from build123d import Align, Box
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = Box(80, 50, 10, align=(Align.CENTER, Align.CENTER, Align.MIN))
         sheet = Sheet("A3", scale=0.5)
@@ -189,7 +193,8 @@ class DrawingSheetTests(unittest.TestCase):
         """`dim()` used to default to the row `overall()` writes into, and then to
         the top of the view whatever it measured: a pitch along the bottom edge ran
         its extension lines up across the whole part to a row above it."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = _part()
         sheet = Sheet("A4")
@@ -209,7 +214,8 @@ class DrawingSheetTests(unittest.TestCase):
 
     def test_views_that_run_off_the_frame_are_refused_with_a_scale_that_fits(self) -> None:
         from build123d import Align, Box
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = Box(3000, 1200, 200, align=(Align.CENTER, Align.CENTER, Align.MIN))
         sheet = Sheet("A3")
@@ -235,8 +241,9 @@ class DrawingSheetTests(unittest.TestCase):
         ends up inside its cell is not.
         """
         from cadgen._internal.drawing_base import _MIN_TEXT_MM, _text_width
+        from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_sheet import _TITLE_FIT
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         cell = _TITLE_FIT
         for title in ("ENCLOSURE",
@@ -289,7 +296,8 @@ class DrawingSheetTests(unittest.TestCase):
     def test_every_side_view_maps_up_to_up(self) -> None:
         """A model point higher in Z lands higher on the sheet in every view that
         looks along a horizontal direction; the right and left views once mirrored."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = _part()
         for name in ("front", "back", "right", "left"):
@@ -303,7 +311,8 @@ class DrawingSheetTests(unittest.TestCase):
                 self.assertGreater(dim.dxf.defpoint3.y, view.at[1], "the top of the part is above the centre")
 
     def test_view_label_sits_below_bottom_dimensions(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = _part()
         sheet = Sheet("A4")
@@ -315,7 +324,8 @@ class DrawingSheetTests(unittest.TestCase):
         self.assertLess(label.dxf.insert.y, dim.dxf.defpoint.y - 3, "the label hangs under the dimension line")
 
     def test_round_edges_are_written_as_circles_and_arcs(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_part(), "top", at=(100, 120))
@@ -326,7 +336,8 @@ class DrawingSheetTests(unittest.TestCase):
 
     def test_shop_annotations_are_written(self) -> None:
         from cadgen._internal.drawing_annotation import hole_callout_text
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = _part()
         sheet = Sheet("A4", title="TAGGED", general_tolerance="ISO 2768-m",
@@ -354,7 +365,8 @@ class DrawingSheetTests(unittest.TestCase):
                                             "thread": "M6x1 - 6H", "count": None}), "M6x1 - 6H ↧12   ⌴ %%c11 ↧6.5")
 
     def test_an_angular_dimension_is_written(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         front = sheet.view(_part(), "front", at=(100, 100))
@@ -375,7 +387,8 @@ class SheetWarningTests(unittest.TestCase):
         one error a shop cannot catch from the print.
         """
         from build123d import Align, Box
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = Box(120, 30, 30, align=(Align.MIN, Align.CENTER, Align.CENTER))  # X runs 0..120
         sheet = Sheet("A3")
@@ -392,7 +405,7 @@ class SheetWarningTests(unittest.TestCase):
         self.assertTrue(all("measures blank paper" in n for n in notices), notices)
 
     def test_a_clean_sheet_warns_about_nothing(self) -> None:
-        from cadgen.eng_drawing import _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
 
         notices: list[str] = []
         _render_sheet(_sheet(_part()), index=1, count=1, label="clean", warnings=notices)
@@ -401,7 +414,8 @@ class SheetWarningTests(unittest.TestCase):
     def test_annotation_printed_over_annotation_says_so(self) -> None:
         """Two views are laid out knowing only where the views are, so one view's
         outermost dimension can land on the view label of the view above it."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         def build(gap):
             # A fixed gap of 47 mm reserves two dimension rows. Asking the front
@@ -679,7 +693,8 @@ class ChainDimensionTests(unittest.TestCase):
 
     def _warnings(self, pitch: float, tol) -> list:
         from build123d import Box
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         span = 160.0
         sheet = Sheet("A3", title="CHAIN")
@@ -725,7 +740,8 @@ class InkTests(unittest.TestCase):
         black over black, which is why it went unnoticed.
         """
         from build123d import Box, Cylinder, Pos
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = Box(60, 40, 20) - Cylinder(6, 40) - Pos(0, 0, 6) * Cylinder(9, 8)
         sheet = Sheet("A3", title="INK")
@@ -759,7 +775,8 @@ class InkTests(unittest.TestCase):
         every view is checked.
         """
         from build123d import Cylinder, GeomType, Pos, fillet
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         radius, height, blend = 40.0, 10.0, 1.5
         blank = Pos(0, 0, height / 2) * Cylinder(radius, height)
@@ -790,7 +807,8 @@ class InkTests(unittest.TestCase):
     def test_real_hidden_edges_and_silhouettes_survive(self) -> None:
         """Dropping tangents must not drop a bore's walls or a sharp edge."""
         from build123d import Box, Cylinder, Pos
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = Box(60, 40, 20) - Cylinder(6, 40) - Pos(0, 0, 6) * Cylinder(9, 8)
         sheet = Sheet("A3", title="BORES")
@@ -852,7 +870,8 @@ class InkTests(unittest.TestCase):
         there to say it is not.
         """
         from build123d import Box, Cylinder, Pos
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part = Box(60, 40, 20) - Cylinder(4, 40) - Pos(0, 0, 6) * Cylinder(8, 8)
         sheet = Sheet("A3", title="CBORE")
@@ -874,7 +893,8 @@ class ScaleSuggestionTests(unittest.TestCase):
         import re
 
         from build123d import Box
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         def attempt(dims, scale, iso):
             sheet = Sheet("A3", title="BIG", scale=scale)
@@ -897,7 +917,8 @@ class ScaleSuggestionTests(unittest.TestCase):
 
     def test_a_part_no_standard_scale_fits_says_so(self) -> None:
         from build123d import Box
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4", title="ENORMOUS")
         sheet.three_views(Box(4_000_000, 3_000_000, 1_000_000))
@@ -1046,7 +1067,8 @@ class OverallRowTests(unittest.TestCase):
         wrote occupies a row just as surely as one the sheet handed out.
         """
         from build123d import Box
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3", title="ROWS")
         top, _front, _right = sheet.three_views(Box(60, 40, 10))
@@ -1130,7 +1152,8 @@ class FromThePartTests(unittest.TestCase):
     """A callout's numbers are the part's: read off it, or checked against it."""
 
     def test_a_hole_callout_reads_every_size_off_the_part(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_counterbored(), "top", at=(140, 120)).hole((15, 0, 12))
@@ -1139,7 +1162,8 @@ class FromThePartTests(unittest.TestCase):
 
     def test_a_typed_size_the_part_contradicts_is_refused(self) -> None:
         """A callout that says ⌀6 over a ⌀6.6 bore is machined faithfully, and wrong."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         for given, named in (({"diameter": 6}, "diameter=6"), ({"count": 3}, "count=3"),
                              ({"depth": 8}, "depth=8"), ({"cbore": (12, 6.5)}, "cbore=(12, 6.5)")):
@@ -1158,7 +1182,8 @@ class FromThePartTests(unittest.TestCase):
                          ["2× %%c6.6 THRU   ⌴ %%c11 ↧6.5"])
 
     def test_a_callout_where_there_is_no_hole_names_the_holes_there_are(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_counterbored(), "top", at=(140, 120)).hole((0, 0, 12))
@@ -1170,7 +1195,8 @@ class FromThePartTests(unittest.TestCase):
             _render_sheet(sheet, index=1, count=1, label="side")
 
     def test_a_counterbore_on_the_far_side_belongs_to_the_other_view(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_counterbored(), "bottom", at=(140, 120)).hole((15, 0, 0))
@@ -1178,7 +1204,8 @@ class FromThePartTests(unittest.TestCase):
             _render_sheet(sheet, index=1, count=1, label="far")
 
     def test_holes_calls_out_each_kind_of_hole_once(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_plate(), "top", at=(140, 120)).holes()
@@ -1187,7 +1214,8 @@ class FromThePartTests(unittest.TestCase):
 
     def test_diameter_and_radius_are_measured_off_the_view(self) -> None:
         from build123d import Align, Box, fillet, Axis
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         right = sheet.view(_shaft(), "right", at=(140, 120))
@@ -1209,7 +1237,8 @@ class FromThePartTests(unittest.TestCase):
 
     def test_a_leader_points_at_the_centre_of_its_circle(self) -> None:
         """ISO 128 and ASME Y14.2 both: a leader to a circle is radial."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_plate(), "top", at=(140, 120)).hole((30, 18, 6), angle=70)
@@ -1228,8 +1257,9 @@ class ReviewFindingTests(unittest.TestCase):
 
     def test_holes_drilled_from_the_other_face_are_their_own_callout(self) -> None:
         from build123d import Align, Box, Cylinder, Pos
+        from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _unstated
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         align = (Align.CENTER, Align.CENTER, Align.MIN)
         part = Box(80, 40, 20, align=align)
@@ -1251,7 +1281,8 @@ class ReviewFindingTests(unittest.TestCase):
 
     def test_a_section_calls_out_only_the_holes_it_keeps(self) -> None:
         from build123d import Align, Box, Cylinder, Pos, Rot
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         align = (Align.CENTER, Align.CENTER, Align.MIN)
         part = Box(60, 40, 20, align=align) - Pos(10, -20, 10) * Rot(-90, 0, 0) * Cylinder(3, 6, align=align)
@@ -1266,8 +1297,9 @@ class ReviewFindingTests(unittest.TestCase):
 
     def test_a_hole_callout_does_not_state_a_boss_of_its_radius(self) -> None:
         from build123d import Align, Box, Cylinder, Pos
+        from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _unstated
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         align = (Align.CENTER, Align.CENTER, Align.MIN)
         part = Box(80, 60, 10, align=align) - Pos(-20, 0, 0) * Cylinder(15, 10, align=align) \
@@ -1282,7 +1314,8 @@ class ReviewFindingTests(unittest.TestCase):
         self.assertTrue(any("⌀15" in line for line in _unstated(facts)), "the ⌀15 boss is still unstated")
 
     def test_an_isometric_the_author_relabelled_keeps_its_label(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3")
         iso = sheet.three_views(_plate(), iso=True)[3]
@@ -1324,7 +1357,8 @@ class ColdTrialTests(unittest.TestCase):
 
     def test_a_bore_chamfered_at_both_ends_is_called_out_both_ends(self) -> None:
         from build123d import Align, Box, Cone, Cylinder, Pos
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         align = (Align.CENTER, Align.CENTER, Align.MIN)
         part = (Box(40, 40, 12, align=align) - Cylinder(5, 12, align=align)
@@ -1335,7 +1369,8 @@ class ColdTrialTests(unittest.TestCase):
                          ["%%c10 THRU   ⌵ %%c12 × 90° BOTH ENDS"])
 
     def test_a_guessed_orientation_is_said(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         front = sheet.view(_plate(), "front", at=(140, 110))
@@ -1349,7 +1384,8 @@ class ColdTrialTests(unittest.TestCase):
 
     def test_a_part_that_is_several_solids_is_said(self) -> None:
         from build123d import Align, Box, Pos
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         align = (Align.CENTER, Align.CENTER, Align.MIN)
         split = Box(30, 20, 10, align=align) - Box(4, 30, 20, align=(Align.CENTER, Align.CENTER, Align.CENTER))
@@ -1360,7 +1396,8 @@ class ColdTrialTests(unittest.TestCase):
         self.assertTrue(any("2 separate solids" in n for n in notices), notices)
 
     def test_a_dimension_to_a_hole_centre_extends_the_centre_line(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_plate(), "top", at=(140, 110)).dim((-30, -18, 6), (-40, -18, 6))
@@ -1394,11 +1431,11 @@ class AssemblyEdgeTests(unittest.TestCase):
         checks refuse, and the whole sheet with it."""
         from unittest import mock
 
-        import cadgen.eng_drawing as drawing
+        import cadgen._internal.drawing_render as render
         from cadgen.drawing_checks import validate_drawing_document
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen.eng_drawing import Sheet
 
-        real = drawing._edge_polyline
+        real = render._edge_polyline
 
         def collapse(edge, samples=24):
             points = real(edge, samples)
@@ -1406,8 +1443,8 @@ class AssemblyEdgeTests(unittest.TestCase):
 
         sheet = Sheet("A4")
         sheet.view(_shaft(), "iso", at=(150, 110), hidden=False)
-        with mock.patch.object(drawing, "_edge_polyline", collapse):
-            doc = _render_sheet(sheet, index=1, count=1, label="point")
+        with mock.patch.object(render, "_edge_polyline", collapse):
+            doc = render._render_sheet(sheet, index=1, count=1, label="point")
         errors = [f.code for f in validate_drawing_document(doc, drawing=True) if f.severity == "error"]
         self.assertNotIn("zero_length_entity", errors)
 
@@ -1416,7 +1453,8 @@ class SymbolTests(unittest.TestCase):
     def test_drawing_symbols_are_line_work_not_glyphs(self) -> None:
         """⌴ and ⌵ are missing from common fonts and ezdxf fills Ø solid in the
         ones that have it, so no symbol reaches the page as a glyph."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         turned = Sheet("A3")
         _top, front, _right = turned.three_views(_shaft())
@@ -1438,7 +1476,8 @@ class SymbolTests(unittest.TestCase):
 
     def test_a_crowded_sheet_says_what_gives_it_room(self) -> None:
         from build123d import Align, Box
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         top, front, _right = sheet.three_views(Box(120, 60, 50, align=(Align.CENTER, Align.CENTER, Align.MIN)))
@@ -1458,7 +1497,8 @@ class LayoutTests(unittest.TestCase):
     def test_dimensions_nest_shortest_nearest_the_view(self) -> None:
         """Given longest first, they would cross: the long one's extension lines
         through the short one's dimension line."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_plate(), "top", at=(140, 100)).dim((-40, 25, 6), (40, 25, 6)).dim((-30, 25, 6), (30, 25, 6))
@@ -1468,7 +1508,8 @@ class LayoutTests(unittest.TestCase):
         self.assertLess(rows[60], rows[80])
 
     def test_a_vertical_dimension_goes_on_its_own_side(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_plate(), "top", at=(140, 100)).dim((-30, -18, 6), (-30, 18, 6))
@@ -1476,7 +1517,8 @@ class LayoutTests(unittest.TestCase):
         self.assertLess(dim.dxf.defpoint.x, 140 - 40, "left of the view, beside the holes it measures")
 
     def test_views_are_spaced_for_the_annotation_they_carry(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         def top_view_lift(rows: int) -> float:
             sheet = Sheet("A3")
@@ -1494,7 +1536,8 @@ class LayoutTests(unittest.TestCase):
 
     def test_a_value_wider_than_its_extension_lines_is_set_beside_them(self) -> None:
         """Centred, "3 WALL" printed with both witness lines through its glyphs."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         right = sheet.view(_plate(), "right", at=(140, 100))
@@ -1512,7 +1555,8 @@ class LayoutTests(unittest.TestCase):
 
     def test_a_turned_part_seen_from_the_side_has_one_centre_line_end_to_end(self) -> None:
         from cadgen._internal.drawing_base import _CENTRE_OVERSHOOT
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_shaft(), "front", at=(140, 100))
@@ -1528,7 +1572,8 @@ class SheetFurnitureTests(unittest.TestCase):
     def test_the_border_is_zoned(self) -> None:
         """ISO 5457: numbered columns and lettered rows, about 50 mm each, so a
         note or a phone call can say "see C4"."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3", revision="X1")  # not a zone letter, so every A..F below is a zone's
         sheet.view(_plate(), "top", at=(200, 150))
@@ -1538,7 +1583,8 @@ class SheetFurnitureTests(unittest.TestCase):
         self.assertNotIn("G", texts)
 
     def test_the_projection_symbol_is_drawn_in_the_projection_it_names(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         def symbol(projection: str) -> tuple[float, float]:
             sheet = Sheet("A3", projection=projection)
@@ -1559,8 +1605,9 @@ class SheetFurnitureTests(unittest.TestCase):
     def test_a_field_not_given_is_an_empty_captioned_cell(self) -> None:
         """No material is not "ABS": the cell says the drawing states none."""
         from cadgen._internal.drawing_base import _MARGIN, _TITLE_W
+        from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_sheet import _TITLE_CELLS
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3", title="T")
         sheet.view(_plate(), "top", at=(200, 150))
@@ -1582,8 +1629,8 @@ class UnstatedTests(unittest.TestCase):
     """The drawing says what it leaves out, read off the part."""
 
     def _unstated(self, build) -> list[str]:
+        from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _unstated
-        from cadgen.eng_drawing import _render_sheet
 
         facts = _facts()
         _render_sheet(build(), index=1, count=1, label="u", facts=facts)
@@ -1648,7 +1695,7 @@ class SectionTests(unittest.TestCase):
         return sheet, top, front
 
     def test_a_section_hatches_what_it_cuts_and_leaves_hidden_lines_out(self) -> None:
-        from cadgen.eng_drawing import _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
 
         sheet, _top, front = self._sheet()
         doc = _render_sheet(sheet, index=1, count=1, label="sec")
@@ -1665,7 +1712,7 @@ class SectionTests(unittest.TestCase):
         self.assertEqual(list(doc.audit().errors), [])
 
     def test_the_cutting_plane_is_drawn_where_it_is_seen_edge_on(self) -> None:
-        from cadgen.eng_drawing import _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
 
         sheet, top, _front = self._sheet(through=(0, 5, 0))
         msp = _render_sheet(sheet, index=1, count=1, label="sec").modelspace()
@@ -1684,7 +1731,7 @@ class SectionTests(unittest.TestCase):
     def test_a_section_lines_up_with_the_view_above_it(self) -> None:
         """The half it keeps need not be symmetric; the drawing still aligns."""
         from build123d import Align, Box, Pos
-        from cadgen.eng_drawing import _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
 
         align = (Align.MIN, Align.MIN, Align.MIN)
         step = Box(60, 20, 10, align=align) + Pos(0, 20, 0) * Box(30, 20, 25, align=align)
@@ -1699,7 +1746,8 @@ class SectionTests(unittest.TestCase):
         self.assertLess(max(xs(front)), max(xs(top)) - 20, "it keeps only the 30 mm step, not the 60 mm base")
 
     def test_a_section_that_cannot_be_drawn_is_refused(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet, _top, _front = self._sheet(through=(0, 500, 0))
         with self.assertRaisesRegex(ValueError, "does not cut the part"):
@@ -1720,7 +1768,8 @@ class SlotAndBoltCircleTests(unittest.TestCase):
             - Pos(-30, 0, 0) * extrude(SlotCenterToCenter(10, 6), 6)
 
     def test_a_slot_is_called_out_from_the_part(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(self._plate(), "top", at=(140, 110)).holes()
@@ -1738,7 +1787,8 @@ class SlotAndBoltCircleTests(unittest.TestCase):
     def test_a_slot_gets_its_centre_lines(self) -> None:
         """One down its length, past both rounded ends, and one across each end."""
         from cadgen._internal.drawing_base import _CENTRE_OVERSHOOT
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(self._plate(), "top", at=(140, 110))  # slots along X, ends at x = 25 and 35
@@ -1755,8 +1805,9 @@ class SlotAndBoltCircleTests(unittest.TestCase):
         self.assertIn(175.0, across)
 
     def test_an_unstated_slot_is_reported(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _unstated
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3")
         top, front, _right = sheet.three_views(self._plate())
@@ -1775,7 +1826,8 @@ class SlotAndBoltCircleTests(unittest.TestCase):
         import math
 
         from build123d import Align, Cylinder, Pos
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         align = (Align.CENTER, Align.CENTER, Align.MIN)
         flange = Cylinder(40, 10, align=align) - Cylinder(15, 10, align=align)
@@ -1789,9 +1841,31 @@ class SlotAndBoltCircleTests(unittest.TestCase):
         pitch = [c for c in doc.modelspace().query("CIRCLE") if c.dxf.layer == "CENTER"]
         self.assertEqual([round(c.dxf.radius, 6) for c in pitch], [30.0], "the pitch circle as a chain line")
 
+    def test_an_isometric_looks_down_no_hole(self) -> None:
+        import math
+
+        from build123d import Align, Cylinder, Pos
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        flange = Cylinder(40, 10, align=align) - Cylinder(15, 10, align=align)
+        for k in range(6):
+            a = 2 * math.pi * k / 6
+            flange -= Pos(30 * math.cos(a), 30 * math.sin(a), 0) * Cylinder(3, 10, align=align)
+        sheet = Sheet("A4")
+        iso = sheet.view(flange, "iso", at=(140, 110))
+        msp = _render_sheet(sheet, index=1, count=1, label="iso").modelspace()
+        self.assertFalse(list(msp.query("CIRCLE LINE[layer=='CENTER']")),
+                         "no pitch circle or centre marks: the isometric sees every hole slantwise")
+        for call in (iso.holes, lambda: iso.hole((30, 0, 10)), lambda: iso.slot((30, 0, 10))):
+            with self.assertRaisesRegex(ValueError, "isometric looks down no hole"):
+                call()
+
     def test_overlapping_centre_lines_are_one_line(self) -> None:
         """Chain lines struck over each other out of phase print solid."""
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         sheet.view(_plate(), "top", at=(140, 110))
@@ -1821,7 +1895,7 @@ class DetailTests(unittest.TestCase):
 
     def test_a_detail_is_drawn_larger_clipped_and_marked(self) -> None:
         from cadgen._internal.drawing_base import _MARGIN
-        from cadgen.eng_drawing import _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
 
         sheet, front, detail = self._sheet()
         msp = _render_sheet(sheet, index=1, count=1, label="detail").modelspace()
@@ -1840,27 +1914,33 @@ class DetailTests(unittest.TestCase):
                     self.assertLessEqual(math.hypot(x - cx, y - cy), 20 + 1e-6, "geometry outside the circle")
         self.assertTrue(_MARGIN < cx - 20 and cx + 20 < 420 - _MARGIN and _MARGIN < cy - 20 and cy + 20 < 297 - _MARGIN)
 
+    def test_a_detail_is_cut_by_cutting_its_parent(self) -> None:
+        _sheet, _front, detail = self._sheet()
+        with self.assertRaisesRegex(ValueError, "cut the parent view"):
+            detail.section("A")
+
     def test_a_detail_steps_down_when_the_paper_is_short(self) -> None:
         """A scale the sheet chose gives way to the next standard one down; the
         label says the scale it was drawn at."""
         from unittest import mock
 
-        import cadgen.eng_drawing as drawing
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        import cadgen._internal.drawing_render as render
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3")
         _top, front, _right = sheet.three_views(_shaft())
         detail = sheet.detail(front, (50, 0, 10), 2.5)
         self.assertEqual(detail.scale, 10.0)
-        real = drawing._place_detail
-        with mock.patch.object(drawing, "_place_detail",
+        real = render._place_detail
+        with mock.patch.object(render, "_place_detail",
                                side_effect=lambda sh, size, *a: None if size > 30 else real(sh, size, *a)):
-            _render_sheet(sheet, index=1, count=1, label="detail")
+            render._render_sheet(sheet, index=1, count=1, label="detail")
         self.assertEqual(detail.scale, 5.0)
         self.assertEqual(detail.label, "DETAIL B (5:1)")
 
     def test_a_detail_given_its_scale_is_refused_when_it_cannot_fit(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         _top, front, _right = sheet.three_views(_shaft())
@@ -1869,7 +1949,8 @@ class DetailTests(unittest.TestCase):
             _render_sheet(sheet, index=1, count=1, label="detail")
 
     def test_a_detail_of_a_section_keeps_the_hatching(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3")
         _top, front, right = sheet.three_views(_counterbored())
@@ -1886,8 +1967,9 @@ class DetailTests(unittest.TestCase):
     def test_a_detail_states_only_what_it_holds(self) -> None:
         """One identical hole in the circle is one callout; the other three are
         still unstated."""
+        from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _unstated
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3")
         top, front, _right = sheet.three_views(_plate())
@@ -1902,7 +1984,8 @@ class DetailTests(unittest.TestCase):
         self.assertIn("3× ⌀5.5 THRU is not called out", missing[0])
 
     def test_a_detail_follows_a_section_made_after_it(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3")
         _top, front, _right = sheet.three_views(_counterbored())
@@ -1938,7 +2021,8 @@ class DetailTests(unittest.TestCase):
             sheet.detail(sheet.views[1], (0, 0, 0), 5, letter="O")
 
     def test_cutting_plane_letters_keep_clear_of_the_view_label(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3")
         _top, front, right = sheet.three_views(_shaft())
@@ -2071,7 +2155,8 @@ class AssemblyDrawingTests(unittest.TestCase):
             parts.merge(1, 2)
 
     def test_balloons_key_each_part_it_shows_once_with_a_dot_on_the_part(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
 
         parts = parts_list(_assembly())
         sheet = Sheet("A3", title="FIXTURE")
@@ -2100,7 +2185,8 @@ class AssemblyDrawingTests(unittest.TestCase):
     def test_a_column_of_balloons_keeps_its_leaders_in_order(self) -> None:
         from build123d import Box, Compound, Pos
 
-        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
 
         stack = []
         for k in range(6):
@@ -2135,7 +2221,8 @@ class AssemblyDrawingTests(unittest.TestCase):
         unnoticed."""
         from build123d import Box
 
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         tall = Box(20, 20, 150)
         probe = Sheet("A3")
@@ -2156,7 +2243,8 @@ class AssemblyDrawingTests(unittest.TestCase):
         self.assertTrue(any("'X' is printed over '150'" in w for w in warnings), warnings)
 
     def test_a_separate_solids_notice_points_an_assembly_at_the_parts_list(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3")
         sheet.view(_assembly(), "front", at=(150, 150), hidden=False)
@@ -2165,7 +2253,8 @@ class AssemblyDrawingTests(unittest.TestCase):
         self.assertTrue(any("separate solids" in w and "assembly_sheets(parts_list(" in w for w in warnings), warnings)
 
     def test_balloons_refuse_another_shape_a_section_or_a_detail(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
 
         parts = parts_list(_assembly())
         sheet = Sheet("A3")
@@ -2182,7 +2271,8 @@ class AssemblyDrawingTests(unittest.TestCase):
             _render_sheet(sheet, index=1, count=1, label="cut")
 
     def test_the_parts_list_stands_on_the_title_block_and_reads_upward(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
 
         parts = parts_list(_assembly())
         parts.set(1, material="6061-T6")
@@ -2241,7 +2331,8 @@ class AssemblyDrawingTests(unittest.TestCase):
         self.assertIn("PARTS LIST, CONTINUED FROM SHEET 1", seen[2])
 
     def test_a_view_over_the_parts_list_or_a_note_under_it_is_refused(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
 
         parts = parts_list(_assembly())
         sheet = Sheet("A3")
@@ -2282,8 +2373,9 @@ class AssemblyDrawingTests(unittest.TestCase):
                          "a first pass states every part's overall sizes and holes")
 
     def test_on_a_drawing_of_several_parts_each_gap_names_its_sheet(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _unstated
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         facts = _facts()
         for index, (title, part) in enumerate((("SHAFT", _shaft()), ("PLATE", _plate())), start=1):
@@ -2296,7 +2388,8 @@ class AssemblyDrawingTests(unittest.TestCase):
                             for line in report), report)
 
     def test_a_sheet_that_chose_its_scale_steps_down_rather_than_refusing(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         def bracket(sheet):
             part, point = _inclined()
@@ -2330,8 +2423,9 @@ class AssemblyDrawingTests(unittest.TestCase):
         from build123d import Box, Compound, Pos
 
         from cadgen._internal.drawing_base import _MARGIN, _TITLE_H, _TITLE_W
+        from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_sheet import _list_height
-        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+        from cadgen.eng_drawing import Sheet, parts_list
 
         def stack(count):
             kids = []
@@ -2361,7 +2455,8 @@ class AssemblyDrawingTests(unittest.TestCase):
         from build123d import Box, Compound, Pos
         from shapely.geometry import LineString
 
-        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
 
         post = Pos(100, 0, 150) * Box(10, 10, 300)
         post.label = "post"
@@ -2387,7 +2482,8 @@ class AssemblyDrawingTests(unittest.TestCase):
     def test_a_part_showing_a_narrow_band_is_still_ballooned(self) -> None:
         from build123d import Align, Compound, Cylinder, Pos
 
-        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
 
         up = (Align.CENTER, Align.CENTER, Align.MIN)
         rod = Cylinder(4, 100, align=up)
@@ -2408,7 +2504,8 @@ class AssemblyDrawingTests(unittest.TestCase):
         from shapely.geometry import LineString, Point
 
         from cadgen._internal.drawing_assembly import _BALLOON_R
-        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
 
         plate = Box(40, 10, 150) - Pos(-10, 0, 40) * Rot(90, 0, 0) * Cylinder(4, 10)
         plate.label = "plate"
@@ -2440,7 +2537,8 @@ class AssemblyDrawingTests(unittest.TestCase):
             assembly_sheets(parts_list(Compound(children=[post, cap])), title="POST", size="A4")
 
     def test_a_value_too_long_for_its_column_is_refused_not_cut(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
 
         parts = parts_list(_assembly()).set(1, part_number="MSA-100-0042-REV-C-ALT-STEEL-OPTION-77")
         sheet = Sheet("A3")
@@ -2472,7 +2570,8 @@ class AssemblyDrawingTests(unittest.TestCase):
     def test_part_sheets_follow_the_list_and_keep_a_scale_the_author_sets(self) -> None:
         from build123d import Box, Compound, Pos
 
-        from cadgen.eng_drawing import _render_sheet, assembly_sheets, parts_list
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import assembly_sheets, parts_list
 
         plate, block = Box(60, 40, 10), Pos(100, 0, 0) * Box(10, 10, 10)
         plate.label, block.label = "plate", "block"
@@ -2562,7 +2661,8 @@ class ChosenSheetTests(unittest.TestCase):
             Sheet(None, None).view(_plate(), "top", at=(100, 100))
 
     def test_running_out_of_paper_tries_a_larger_sheet_before_a_smaller_scale(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part, point = _inclined()
         sheet = Sheet(None, None)
@@ -2575,7 +2675,8 @@ class ChosenSheetTests(unittest.TestCase):
         self.assertEqual((sheet._size(), sheet._scale()), ("A3", 1.0), "A4 has no room left for VIEW C at 1:1")
 
     def test_a_chosen_size_grows_for_paper_a_fixed_scale_needs(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part, point = _inclined()
         sheet = Sheet(None, 1.0)
@@ -2590,7 +2691,8 @@ class ChosenSheetTests(unittest.TestCase):
     def test_two_arrangements_on_a_chosen_sheet_settle_rather_than_loop(self) -> None:
         from build123d import Box
 
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet(None, None)
         sheet.three_views(Box(20, 20, 20))
@@ -2603,7 +2705,8 @@ class ChosenSheetTests(unittest.TestCase):
     def test_a_value_the_author_sets_is_kept_even_when_it_matches_the_choice(self) -> None:
         from build123d import Cylinder
 
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet(None, None)
         sheet.three_views(Cylinder(7, 11), iso=True)
@@ -2614,7 +2717,8 @@ class ChosenSheetTests(unittest.TestCase):
 
 class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_tags_each_hole_and_states_where_and_what(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A2", 1.0)
         top, _front, _right = sheet.three_views(_perforated())
@@ -2639,7 +2743,8 @@ class HoleTableTests(unittest.TestCase):
         from shapely.geometry import LineString, box
 
         from cadgen._internal.drawing_base import _text_box
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A2", 1.0)
         top, _front, _right = sheet.three_views(_perforated())
@@ -2655,7 +2760,8 @@ class HoleTableTests(unittest.TestCase):
             self.assertFalse([line for line in lines if line.intersects(ink)], f"{tag.dxf.text} is printed on line work")
 
     def test_a_hole_table_and_callouts_do_not_share_a_view(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A2", 1.0)
         top, front, _right = sheet.three_views(_perforated())
@@ -2672,7 +2778,8 @@ class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_on_a_broken_view_measures_the_part_and_leaves_out_the_break(self) -> None:
         from build123d import Cylinder, Pos
 
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A0", 1.0)  # no tag reads A0, so the size cell cannot be counted as one
         top, front, _right = sheet.three_views(_bar() - Pos(300, 0, 0) * Cylinder(3, 40))
@@ -2684,13 +2791,19 @@ class HoleTableTests(unittest.TestCase):
                          "the hole at X = 300 is in the break, so it is neither tagged nor listed")
 
     def test_a_hole_table_placed_by_hand_must_be_on_the_paper(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A2", 1.0)
         top, _front, _right = sheet.three_views(_perforated())
         top.hole_table(at=(800, 900))
         with self.assertRaisesRegex(ValueError, "runs off"):
             _render_sheet(sheet, index=1, count=1, label="off")
+        sheet = Sheet("A2", 1.0, revisions=[("A", "2026-10-01", "FIRST ISSUE")])
+        top, _front, _right = sheet.three_views(_perforated())
+        top.hole_table(at=(480, 405))  # under the revision table, top right
+        with self.assertRaisesRegex(ValueError, "revision table"):
+            _render_sheet(sheet, index=1, count=1, label="revisions")
 
 
 class EdgeNoteTests(unittest.TestCase):
@@ -2723,8 +2836,9 @@ class EdgeNoteTests(unittest.TestCase):
         self.assertEqual(geometry_notes(walls_only), [], "the pocket's floor corners are sharp")
 
     def test_unstated_blends_and_chamfers_are_reported_until_stated(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _unstated
-        from cadgen.eng_drawing import Sheet, _render_sheet, geometry_notes
+        from cadgen.eng_drawing import Sheet, geometry_notes
 
         part = self._block(chamfer_bottom=True)
         for notes, corner_radius, expected in (((), False, 2), (geometry_notes(part), False, 1),
@@ -2748,7 +2862,8 @@ class EdgeNoteTests(unittest.TestCase):
 
 class AuxiliaryViewTests(unittest.TestCase):
     def test_an_auxiliary_view_shows_an_inclined_face_true_and_calls_out_its_hole(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part, point = _inclined()
         sheet = Sheet("A3", 1.0)
@@ -2788,21 +2903,45 @@ class AuxiliaryViewTests(unittest.TestCase):
             sheet.auxiliary(front, (10, -10, 10))
 
     def test_an_auxiliary_views_label_states_a_scale_unlike_the_sheets(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         part, point = _inclined()
-        sheet = Sheet("A3", None)
+        sheet = Sheet("A3", 0.5)
         _top, front, _right = sheet.three_views(part)
         front.scale = 1.0
-        view = sheet.auxiliary(front, (round(point[0], 2), point[1], round(point[2], 2)))
+        view = sheet.auxiliary(front, point)
         _render_sheet(sheet, index=1, count=1, label="label")
-        expected = "VIEW C" if abs(sheet._scale() - 1.0) < 1e-9 else "VIEW C (1:1)"
-        self.assertEqual(view.label, expected)
+        self.assertEqual(view.label, "VIEW C (1:1)")
+        view.label = "VIEW C (TAB)"
+        _render_sheet(sheet, index=1, count=1, label="label")
+        self.assertEqual(view.label, "VIEW C (TAB)", "a label the author set is theirs")
+
+    def test_a_hole_opening_away_from_an_auxiliary_view_names_where_to_call_it_out(self) -> None:
+        from build123d import Align, Box, Cylinder, Location, Pos, Rot
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        # The inclined tab with a blind hole drilled from its outer face, which
+        # VIEW C, looking at the inner face, sees from behind.
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        tab = Box(8, 50, 40, align=(Align.MAX, Align.CENTER, Align.MIN)) \
+            - Pos(-2, 0, 25) * Rot(0, 90, 0) * Cylinder(3, 4)
+        part = (Box(80, 50, 8, align=up) + Location((40, 0, 0), (0, 1, 0), 30) * tab).clean()
+        sheet = Sheet("A3", 1.0)
+        _top, front, _right = sheet.three_views(part)
+        view = sheet.auxiliary(front, _inclined()[1])
+        hole = Location((40, 0, 0), (0, 1, 0), 30) * Pos(-2, 0, 25)
+        view.hole((hole.position.X, hole.position.Y, hole.position.Z))
+        with self.assertRaisesRegex(ValueError, "opens on the far side .* a view that looks into it"):
+            _render_sheet(sheet, index=1, count=1, label="far")
 
 
 class BrokenViewTests(unittest.TestCase):
     def test_a_broken_view_draws_both_ends_and_states_true_lengths(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3", 1.0)
         top, front, _right = sheet.three_views(_bar())
@@ -2818,7 +2957,8 @@ class BrokenViewTests(unittest.TestCase):
         self.assertEqual(len(zigzags), 4, "a break line across each end, in both views")
 
     def test_a_break_where_the_part_changes_is_reported(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3", 1.0)
         _top, front, _right = sheet.three_views(_bar())
@@ -2854,7 +2994,8 @@ class BrokenViewTests(unittest.TestCase):
             front.section("A")
 
     def test_a_dimension_into_the_break_is_reported(self) -> None:
-        from cadgen.eng_drawing import Sheet, _render_sheet
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3", 1.0)
         _top, front, _right = sheet.three_views(_bar())

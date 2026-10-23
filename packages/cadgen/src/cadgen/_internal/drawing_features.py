@@ -5,8 +5,7 @@ An engineering drawing states a hole as one callout -- ``4× ⌀6.6 THRU ⌴ ⌀
 whether it runs through, how deep it goes, the counterbore or countersink at its
 mouth, and how many identical holes the part has. Typing those numbers into the
 drawing script lets them drift from the model, so this module reads them off the
-B-rep instead, and :mod:`cadgen.eng_drawing` checks anything the author does type
-against them.
+B-rep instead, and the drawing checks anything the author does type against them.
 
 A hole is a chain of concave, full-circle cylinders and cones on one axis line,
 end to end, whose inside is air. Two pieces of one drilled hole separated by air
