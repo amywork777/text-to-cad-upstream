@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Sequence
 
 from cadgen._internal.drawing_base import (
     _DIM_ROW, _MARGIN, _MIN_TEXT_MM, _NOTE_HEIGHT, _NOTE_INSET, SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, _TITLE_W,
-    UNITS, _scale_label, _text_width,
+    _scale_label, _text_width,
 )
 from cadgen._internal.drawing_views import _broken_size
 

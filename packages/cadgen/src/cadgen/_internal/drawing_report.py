@@ -10,10 +10,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from cadgen._internal.drawing_annotation import (
-    _faces_viewer, hole_callout_text, _hole_spec, _slot_faces_viewer, _slot_spec,
-)
-from cadgen._internal.drawing_base import _dot, _fmt, _shown, _where
+from cadgen._internal.drawing_annotation import hole_callout_text, _hole_spec, _looks_into, _slot_spec
+from cadgen._internal.drawing_base import _fmt, _shown, _where
+from cadgen._internal.drawing_features import Slot
 
 
 @dataclass
@@ -97,12 +96,10 @@ def _unstated(facts: _Facts) -> list[str]:
             if not members:
                 continue
             feature = members[0]
-            is_slot = hasattr(feature, "width")
+            is_slot = isinstance(feature, Slot)
             text = _shown(hole_callout_text(_slot_spec(feature, len(members)) if is_slot
                                             else _hole_spec(feature, len(members))))
-            faces = _slot_faces_viewer if is_slot else _faces_viewer
-            where = next((name for name, look in views
-                          if abs(_dot(feature.axis, look)) > 1 - 1e-6 and faces(feature, look)), None)
+            where = next((name for name, look in views if _looks_into(feature, look)), None)
             verb = "slot" if is_slot else "hole"
             fix = (f"{where}.{verb}({_where(feature.mouth)}) states it, or {where}.holes() calls out every hole "
                    f"and slot the {where} view looks down." if where else

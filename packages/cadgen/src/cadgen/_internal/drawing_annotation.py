@@ -13,9 +13,10 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from cadgen._internal.drawing_assembly import _BALLOON_LEAD, _BALLOON_R, _balloon_axis
 from cadgen._internal.drawing_base import (
-    _DIM_ROW, _LABEL_ROOM, _OPPOSITE, _SECTION_LETTERS, _SIDES, _dot, _fmt, _ink_width, _look, _near, _shown,
-    _spans, _text_width, _where,
+    _DIM_ROW, _LABEL_ROOM, _OPPOSITE, _SECTION_LETTERS, _SIDES, _dot, _fmt, _ink_width, _look, _looks_down, _near,
+    _shown, _spans, _text_width, _where,
 )
+from cadgen._internal.drawing_features import Slot
 from cadgen._internal.drawing_sheet import _CAPTION_HEIGHT
 
 if TYPE_CHECKING:
@@ -118,11 +119,31 @@ def _shows(view: View, proj, feature, run: float, cut) -> bool:
     return min(_dot(tuple(e - c for e, c in zip(end, cut[2])), look) for end in (feature.mouth, far)) <= 1e-6
 
 
-def _faces_viewer(hole, look) -> bool:
-    """Whether a view sees a hole's mouth: its axis runs into the material away
-    from the viewer, or it is a plain through hole, which reads the same from
-    either end. A counterbore on the far side is not something this view shows."""
-    return _dot(hole.axis, look) < 0 or (hole.thru and not hole.cbore and not hole.csk)
+def _faces_viewer(feature, look) -> bool:
+    """Whether a view sees a hole's or a slot's mouth: its axis runs into the
+    material away from the viewer, or it is plain and through, which reads the
+    same from either end. A counterbore or countersink on the far side is not
+    something this view shows."""
+    if _dot(feature.axis, look) < 0:
+        return True
+    sunk = feature.cbore if isinstance(feature, Slot) else feature.cbore or feature.csk
+    return feature.thru and not sunk
+
+
+def _looks_into(feature, look) -> bool:
+    """Whether a view looks down a hole or slot from the side it opens on."""
+    return _looks_down(feature.axis, look) and _faces_viewer(feature, look)
+
+
+def _kinds(features) -> list[list]:
+    """Holes and slots grouped by kind, in the order a drawing lists them: holes,
+    largest first, then slots."""
+    groups: dict[tuple, list] = {}
+    for feature in features:
+        groups.setdefault((isinstance(feature, Slot), feature.signature()), []).append(feature)
+    return sorted(groups.values(), key=lambda g: (isinstance(g[0], Slot),
+                                                  0.0 if isinstance(g[0], Slot) else -g[0].diameter,
+                                                  g[0].signature()))
 
 
 @dataclass
@@ -152,10 +173,6 @@ def _hole_spec(hole, count: int, thread: str | None = None, label: str | None = 
 def _slot_spec(slot, count: int, label: str | None = None) -> dict:
     return {"slot": True, "width": slot.width, "length": slot.length, "thru": slot.thru, "depth": slot.depth,
             "cbore": slot.cbore, "count": count, "label": label}
-
-
-def _slot_faces_viewer(slot, look) -> bool:
-    return _dot(slot.axis, look) < 0 or (slot.thru and not slot.cbore)
 
 
 def _outer_radius(spec: dict) -> float:
@@ -224,8 +241,8 @@ def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None
         if seen_cache is None:
             features = part_features(view.shape)
             seen_cache = (
-                [h for h in features.holes if abs(_dot(h.axis, look)) > 1 - 1e-6 and kept(h, h.length)],
-                [sl for sl in features.slots if abs(_dot(sl.axis, look)) > 1 - 1e-6 and kept(sl, sl.run)],
+                [h for h in features.holes if _looks_down(h.axis, look) and kept(h, h.length)],
+                [sl for sl in features.slots if _looks_down(sl.axis, look) and kept(sl, sl.run)],
                 features,
             )
         return seen_cache
@@ -326,14 +343,14 @@ def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
     target = proj.point(dim.p1)
     here = [sl for sl in seen if any(_near(proj.point(p), target) for p in (sl.mouth, *sl.ends))]
     if not here:
-        mine = [sl for sl in seen if _slot_faces_viewer(sl, look)]
+        mine = [sl for sl in seen if _faces_viewer(sl, look)]
         hint = (f"The slots it looks down are centred at {', '.join(_where(sl.mouth) for sl in mine[:6])}."
                 if mine else "This view looks down no slot.")
         raise ValueError(f"{call}: no slot runs along the {view.name} view's line of sight there. {hint}")
     slot = here[0]
-    if not _slot_faces_viewer(slot, look):
+    if not _faces_viewer(slot, look):
         raise _far_side(call, "slot", view)
-    same = [sl for sl in seen if sl.signature() == slot.signature() and _slot_faces_viewer(sl, look)]
+    same = [sl for sl in seen if sl.signature() == slot.signature() and _faces_viewer(sl, look)]
     problems = []
     for name, value in (("width", slot.width), ("length", slot.length)):
         if given[name] is not None and abs(given[name] - value) > 0.01:
@@ -359,15 +376,8 @@ def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: l
                   features=None, slots=()) -> list["_Dim"]:
     import dataclasses
 
-    groups: dict[tuple, list] = {}
-    for hole in seen:
-        if _faces_viewer(hole, look):
-            groups.setdefault(hole.signature(), []).append(hole)
-    slot_groups: dict[tuple, list] = {}
-    for slot in slots:
-        if _slot_faces_viewer(slot, look):
-            slot_groups.setdefault(slot.signature(), []).append(slot)
-    if not groups and not slot_groups:
+    kinds = _kinds(f for f in (*seen, *slots) if _faces_viewer(f, look))
+    if not kinds:
         if warnings is not None:
             warnings.append(f"{view.name}.holes(): the {view.name} view looks down no hole or slot, so it calls "
                             "nothing out.")
@@ -379,16 +389,17 @@ def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: l
         return (round(min(p[0] - x0, x1 - p[0]), 6), -round(p[1], 6))
 
     out = []
-    for members in sorted(groups.values(), key=lambda g: (-g[0].diameter, g[0].signature())):
-        hole = min(members, key=lambda h: short_way_out(h.mouth))
-        spec = _hole_spec(hole, len(members), pcd=features.pcd(members) if features else None)
-        out.append(dataclasses.replace(dim, kind="hole", p1=hole.mouth, hole=spec, radius=_outer_radius(spec),
-                                       feature=hole, covers=tuple(members)))
-    for members in sorted(slot_groups.values(), key=lambda g: g[0].signature()):
-        slot = min(members, key=lambda sl: short_way_out(_slot_end(proj, bounds, sl)))
-        spec = _slot_spec(slot, len(members))
-        out.append(dataclasses.replace(dim, kind="slot", p1=_slot_end(proj, bounds, slot), hole=spec,
-                                       radius=_outer_radius(spec), feature=slot, covers=tuple(members)))
+    for members in kinds:
+        if isinstance(members[0], Slot):
+            slot = min(members, key=lambda sl: short_way_out(_slot_end(proj, bounds, sl)))
+            spec = _slot_spec(slot, len(members))
+            out.append(dataclasses.replace(dim, kind="slot", p1=_slot_end(proj, bounds, slot), hole=spec,
+                                           radius=_outer_radius(spec), feature=slot, covers=tuple(members)))
+        else:
+            hole = min(members, key=lambda h: short_way_out(h.mouth))
+            spec = _hole_spec(hole, len(members), pcd=features.pcd(members) if features else None)
+            out.append(dataclasses.replace(dim, kind="hole", p1=hole.mouth, hole=spec, radius=_outer_radius(spec),
+                                           feature=hole, covers=tuple(members)))
     return out
 
 
@@ -529,42 +540,32 @@ def _hole_table(view: View, proj, features, cut, items) -> _HoleTable:
         raise ValueError(f"the {view.name} view both tabulates its holes and calls them out; hole_table() lists "
                          "every hole the view looks down, so drop its holes(), hole() and slot() calls")
     look = _look(view)
-    holes = [h for h in features.holes if abs(_dot(h.axis, look)) > 1 - 1e-6 and _faces_viewer(h, look)
-             and _shows(view, proj, h, h.length, cut)]
-    slots = [sl for sl in features.slots if abs(_dot(sl.axis, look)) > 1 - 1e-6 and _slot_faces_viewer(sl, look)
-             and _shows(view, proj, sl, sl.run, cut)]
-    if not holes and not slots:
+    order = _kinds([*(h for h in features.holes if _looks_into(h, look) and _shows(view, proj, h, h.length, cut)),
+                    *(sl for sl in features.slots if _looks_into(sl, look) and _shows(view, proj, sl, sl.run, cut))])
+    if not order:
         raise ValueError(f"{view.name}.hole_table(): the {view.name} view looks down no hole or slot")
     origin = view._table.origin if view._table.origin is not None else _lower_left(view.shape, proj)
     zero = proj._raw_point(origin)
-    kinds: dict[tuple, list] = {}
-    for feature in holes:
-        kinds.setdefault(feature.signature(), []).append(feature)
-    order = sorted(kinds.values(), key=lambda g: (-g[0].diameter, g[0].signature()))
-    slot_kinds: dict[tuple, list] = {}
-    for feature in slots:
-        slot_kinds.setdefault(feature.signature(), []).append(feature)
-    order += sorted(slot_kinds.values(), key=lambda g: g[0].signature())
     if len(order) > len(_SECTION_LETTERS):
         raise ValueError(f"{view.name}.hole_table(): {len(order)} kinds of hole is more than the "
                          f"{len(_SECTION_LETTERS)} letters a table tags them with")
 
     def middle(feature) -> tuple[float, float, float]:
         """Where a hole's axis or a slot's middle meets the face it opens in."""
-        if hasattr(feature, "width"):
+        if isinstance(feature, Slot):
             return tuple((a + b) / 2 for a, b in zip(*feature.ends))
         return feature.mouth
 
     def beside(feature) -> tuple[float, float]:
         """The centre of the arc a tag stands beside: up and right of it, the tag
         is clear of the outline and the centre lines."""
-        if hasattr(feature, "width"):
+        if isinstance(feature, Slot):
             return max((proj.point(end) for end in feature.ends), key=lambda p: p[0] + p[1])
         return proj.point(feature.mouth)
 
     rows = []
     for letter, members in zip(_SECTION_LETTERS, order):
-        is_slot = hasattr(members[0], "width")
+        is_slot = isinstance(members[0], Slot)
         spec = _slot_spec(members[0], 1) if is_slot else _hole_spec(members[0], 1)
         size = hole_callout_text(spec)
         radius = members[0].width / 2 if is_slot else _outer_radius(spec)

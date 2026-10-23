@@ -60,7 +60,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, NamedTuple, Sequence
 
-from cadgen._internal.drawing_annotation import _Dim, _faces_viewer, _slot_faces_viewer
+from cadgen._internal.drawing_annotation import _Dim, _looks_into
 from cadgen._internal.drawing_assembly import (
     _GA_LIST_SHARE, Item, _PartOf, PartsList, _arrange_assembly, _continuations, _item_subtitle, parts_list,
     _refuse_balloons_on,
@@ -934,9 +934,7 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
         features = [*find_holes(item.shape), *find_slots(item.shape)]
         for view in (top, front, right):
             look = _look(view)
-            if any(abs(_dot(f.axis, look)) > 1 - 1e-6
-                   and (_slot_faces_viewer(f, look) if hasattr(f, "width") else _faces_viewer(f, look))
-                   for f in features):
+            if any(_looks_into(f, look) for f in features):
                 view.holes()
         by_item[item.number] = sheet
     return AssemblySheets([ga, *more, *by_item.values()], parts, by_item)

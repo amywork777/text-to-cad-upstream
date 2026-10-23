@@ -23,9 +23,9 @@ from cadgen._internal.drawing_annotation import (
 from cadgen._internal.drawing_assembly import _draw_balloons, _refresh_from_item, _refuse_balloons_on
 from cadgen._internal.drawing_base import (
     _CENTRE_OVERSHOOT, _DIM_ROW, _HATCH_SCALE, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE,
-    SHEET_SIZES, _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_H, _TITLE_W, _dimstyle, _dirs, _dot,
-    _draw_dimension_symbols, _draw_symbol, _fmt, _ink_width, _look, _mtext_extent, _runs, _scale_label, _shown,
-    _spans, _text_box, _text_width, _where,
+    SHEET_SIZES, _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_H, _TITLE_W, _cross, _dimstyle, _dirs, _dot,
+    _draw_dimension_symbols, _draw_symbol, _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs, _scale_label,
+    _shown, _spans, _text_box, _text_width, _where,
 )
 from cadgen._internal.drawing_report import _Facts, _member_key, _merge_facts
 from cadgen._internal.drawing_sheet import (
@@ -37,7 +37,7 @@ from cadgen._internal.drawing_views import (
     _BREAK_GAP, _PLANE_SHOWN_ON, _Projection, _axis_lines, _bbox_bounds, _break_cuts, _break_hides, _break_shift,
     _broken_shape, _broken_size, _centres, _circles, _clip_runs, _cut, _draw_break_lines, _draw_cutting_plane,
     _edge_points, _edge_polyline, _edges_bounds, _end_on, _merge_centre_lines, _model_to_sheet, _on_cut,
-    _sheet_axis, _wire_points,
+    _plane_parent, _sheet_axis, _wire_points,
 )
 
 if TYPE_CHECKING:
@@ -406,15 +406,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     for view in sheet.views:
         if view._section is None or view._detail is not None:
             continue
-        look = _look(view)
-        parent = next((other for name in _PLANE_SHOWN_ON[view.name] for other in sheet.views
-                       if other.name == name and other.shape is view.shape and other._section is None
-                       and other._detail is None and id(other) in projections), None)
+        parent = _plane_parent(view, [other for other in sheet.views if id(other) in projections])
         if parent is None:
             continue
-        parent_look = _look(parent)
-        along = (parent_look[1] * look[2] - parent_look[2] * look[1], parent_look[2] * look[0] - parent_look[0] * look[2],
-                 parent_look[0] * look[1] - parent_look[1] * look[0])
+        along = _cross(_look(parent), _look(view))
         image = [sum(row[k] * a for row, a in zip(projections[id(parent)].m, along)) for k in (0, 1)]
         plane_sides.setdefault(id(parent), set()).update(
             ("left", "right") if abs(image[0]) >= abs(image[1]) else ("top", "bottom"))
@@ -769,7 +764,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 return _shows(view, proj, feature, run, cut)
 
             for slot in features.slots:
-                if abs(_dot(slot.axis, look)) < 1 - 1e-6 or not kept(slot, slot.run):
+                if not _looks_down(slot.axis, look) or not kept(slot, slot.run):
                     continue
                 a, b = to_sheet(proj.point(slot.ends[0])), to_sheet(proj.point(slot.ends[1]))
                 run = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
@@ -781,7 +776,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                                 (end[0] - u[1] * reach, end[1] + u[0] * reach))
             for circle in features.circles:
                 members = [h for h in features.holes if h.mouth in circle.mouths]
-                if abs(_dot(circle.axis, look)) > 1 - 1e-6 and any(kept(h, h.length) for h in members):
+                if _looks_down(circle.axis, look) and any(kept(h, h.length) for h in members):
                     centre_circle(to_sheet(proj.point(circle.centre)), circle.diameter / 2 * sv)
         if view._detail is not None:
             # The detail's own boundary: a thin continuous circle, as ISO 128-34 draws it.
@@ -1043,10 +1038,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         if view._detail is not None:
             continue  # a detail of a section shares its section's plane, drawn once
         letter, look = view._section[0], _look(view)
-        parent = next((drawn[id(other)] for name in _PLANE_SHOWN_ON[view.name]
-                       for other in sheet.views
-                       if other.name == name and other.shape is view.shape and other._section is None
-                       and id(other) in drawn), None)
+        parent = _plane_parent(view, [other for other in sheet.views if id(other) in drawn])
         if parent is None:
             if warnings is not None:
                 warnings.append(
@@ -1054,7 +1046,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     f"so the plane is not shown; add the {_PLANE_SHOWN_ON[view.name][0]} view."
                 )
             continue
-        _draw_cutting_plane(msp, parent, point, look, letter, text, th)
+        _draw_cutting_plane(msp, drawn[id(parent)], point, look, letter, text, th)
     # Each detail's circle and letter on the view it enlarges.
     for view in sheet.views:
         if view._detail is None or id(view._detail.parent) not in drawn or id(view) not in drawn:

@@ -12,7 +12,7 @@ import math
 from typing import TYPE_CHECKING, Callable, Sequence
 
 from cadgen._internal.drawing_base import (
-    _CENTRE_OVERSHOOT, _LAYERS, _SAME_PLACE, VIEW_DIRECTIONS, _dot, _look, _where,
+    _CENTRE_OVERSHOOT, _LAYERS, _SAME_PLACE, VIEW_DIRECTIONS, _cross, _dot, _look, _where,
 )
 
 if TYPE_CHECKING:
@@ -228,13 +228,28 @@ def _axis_lines(view: View, proj, part_axes, to_sheet) -> list[tuple[tuple[float
     (two holes one behind the other, a shaft's steps) merge into one line, which
     runs ``_CENTRE_OVERSHOOT`` past the feature at each end."""
     look = _look(view)
-    lines: dict[tuple, list[list[float]]] = {}
+    segments = []
     for axis in part_axes:
         d = tuple(e - s for e, s in zip(axis.end, axis.start))
         n = math.sqrt(_dot(d, d))
         if n < 1e-9 or abs(_dot(d, look)) / n > 1e-6:
             continue  # seen end-on, where the centre mark is the cross on its circle
-        a, b = to_sheet(proj.point(axis.start)), to_sheet(proj.point(axis.end))
+        segments.append((to_sheet(proj.point(axis.start)), to_sheet(proj.point(axis.end)), None))
+    out = []
+    for a, b, _tags in _collinear_runs(segments):
+        length = math.hypot(b[0] - a[0], b[1] - a[1])
+        ux, uy = (b[0] - a[0]) / length, (b[1] - a[1]) / length
+        out.append(((a[0] - ux * _CENTRE_OVERSHOOT, a[1] - uy * _CENTRE_OVERSHOOT),
+                    (b[0] + ux * _CENTRE_OVERSHOOT, b[1] + uy * _CENTRE_OVERSHOOT)))
+    return out
+
+
+def _collinear_runs(segments) -> list[tuple[tuple[float, float], tuple[float, float], list]]:
+    """Sheet segments ``(a, b, tag)`` joined where they lie on one line and overlap
+    or touch: each run as its two ends and the tags of the segments it joins.
+    Segments of no length are left out."""
+    lines: dict[tuple, list] = {}
+    for a, b, tag in segments:
         length = math.hypot(b[0] - a[0], b[1] - a[1])
         if length < 1e-9:
             continue
@@ -243,21 +258,19 @@ def _axis_lines(view: View, proj, part_axes, to_sheet) -> list[tuple[tuple[float
             ux, uy = -ux, -uy
         offset = -uy * a[0] + ux * a[1]
         t0, t1 = sorted((ux * a[0] + uy * a[1], ux * b[0] + uy * b[1]))
-        lines.setdefault((round(ux, 6), round(uy, 6), round(offset, 3)), []).append([t0, t1])
-    out = []
+        lines.setdefault((round(ux, 6), round(uy, 6), round(offset, 4)), []).append((t0, t1, tag))
+    runs = []
     for (ux, uy, offset), spans in sorted(lines.items()):
-        merged: list[list[float]] = []
-        for t0, t1 in sorted(spans):
+        merged: list[list] = []
+        for t0, t1, tag in sorted(spans, key=lambda span: (span[0], span[1])):
             if merged and t0 <= merged[-1][1] + 1e-6:
                 merged[-1][1] = max(merged[-1][1], t1)
+                merged[-1][2].append(tag)
             else:
-                merged.append([t0, t1])
-        for t0, t1 in merged:
-            def at(t: float) -> tuple[float, float]:
-                return (ux * t - uy * offset, uy * t + ux * offset)
-
-            out.append((at(t0 - _CENTRE_OVERSHOOT), at(t1 + _CENTRE_OVERSHOOT)))
-    return out
+                merged.append([t0, t1, [tag]])
+        runs += [((ux * t0 - uy * offset, uy * t0 + ux * offset), (ux * t1 - uy * offset, uy * t1 + ux * offset), tags)
+                 for t0, t1, tags in merged]
+    return runs
 
 
 def _end_on(view: View, proj, part_axes) -> list[tuple[tuple[float, float], float]]:
@@ -292,6 +305,14 @@ _PLANE_SHOWN_ON = {
     "right": ("front", "top", "back", "bottom"), "left": ("front", "top", "back", "bottom"),
     "top": ("front", "right", "back", "left"), "bottom": ("front", "right", "back", "left"),
 }
+
+
+def _plane_parent(view: View, others) -> View | None:
+    """The view among ``others`` a section's cutting plane is drawn on: a whole,
+    uncut view of the same part that sees the plane edge-on."""
+    return next((other for name in _PLANE_SHOWN_ON[view.name] for other in others
+                 if other.name == name and other.shape is view.shape and other._section is None
+                 and other._detail is None), None)
 
 
 def _cut(view: View) -> tuple:
@@ -358,36 +379,14 @@ def _merge_centre_lines(msp) -> None:
     centre marks, a bore's mark, a cutting plane through them. Overlapping chain
     lines strike their dashes out of phase and print solid, which reads as an
     edge."""
-    lines: dict[tuple, list] = {}
-    for entity in list(msp.query("LINE[layer=='CENTER']")):
-        a, b = entity.dxf.start, entity.dxf.end
-        length = math.hypot(b.x - a.x, b.y - a.y)
-        if length < 1e-9:
+    segments = [((e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y), e)
+                for e in msp.query("LINE[layer=='CENTER']")]
+    for a, b, entities in _collinear_runs(segments):
+        if len(entities) < 2:
             continue
-        ux, uy = (b.x - a.x) / length, (b.y - a.y) / length
-        if ux < -1e-9 or (abs(ux) <= 1e-9 and uy < 0):
-            ux, uy = -ux, -uy
-        offset = -uy * a.x + ux * a.y
-        t0, t1 = sorted((ux * a.x + uy * a.y, ux * b.x + uy * b.y))
-        lines.setdefault((round(ux, 6), round(uy, 6), round(offset, 4)), []).append((t0, t1, entity))
-    for (ux, uy, offset), spans in lines.items():
-        if len(spans) < 2:
-            continue
-        spans.sort(key=lambda s: (s[0], s[1]))
-        merged: list[list] = []
-        for t0, t1, entity in spans:
-            if merged and t0 <= merged[-1][1] + 1e-6:
-                merged[-1][1] = max(merged[-1][1], t1)
-                merged[-1][2].append(entity)
-            else:
-                merged.append([t0, t1, [entity]])
-        for t0, t1, entities in merged:
-            if len(entities) < 2:
-                continue
-            for entity in entities:
-                msp.delete_entity(entity)
-            msp.add_line((ux * t0 - uy * offset, uy * t0 + ux * offset), (ux * t1 - uy * offset, uy * t1 + ux * offset),
-                         dxfattribs={"layer": "CENTER"})
+        for entity in entities:
+            msp.delete_entity(entity)
+        msp.add_line(a, b, dxfattribs={"layer": "CENTER"})
 
 
 def _model_to_sheet(proj, at, centre, scale, point) -> tuple[float, float]:
@@ -532,9 +531,7 @@ def _draw_cutting_plane(msp, parent: tuple, point, look, letter: str, text, th: 
     from ezdxf.enums import TextEntityAlignment
 
     _view, model_to_sheet, box = parent
-    parent_look = _look(_view)
-    along = (parent_look[1] * look[2] - parent_look[2] * look[1], parent_look[2] * look[0] - parent_look[0] * look[2],
-             parent_look[0] * look[1] - parent_look[1] * look[0])
+    along = _cross(_look(_view), look)
     p0 = model_to_sheet(point)
     p1 = model_to_sheet(tuple(a + b for a, b in zip(point, along)))
     length = math.hypot(p1[0] - p0[0], p1[1] - p0[1]) or 1.0

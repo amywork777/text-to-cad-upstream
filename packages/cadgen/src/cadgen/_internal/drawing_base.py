@@ -399,6 +399,15 @@ def _dot(a, b) -> float:
     return sum(x * y for x, y in zip(a, b))
 
 
+def _cross(a, b) -> tuple[float, float, float]:
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _looks_down(axis, look) -> bool:
+    """Whether a view looking along unit ``look`` sees unit ``axis`` end-on."""
+    return abs(_dot(axis, look)) > 1 - 1e-6
+
+
 def _near(p, q, tol: float = _SAME_PLACE) -> bool:
     return abs(p[0] - q[0]) <= tol and abs(p[1] - q[1]) <= tol
 
