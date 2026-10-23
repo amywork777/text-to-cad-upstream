@@ -1,0 +1,609 @@
+"""The sheet: its frame, title block and parts-list table, where the views go
+on it, and the size and scale a sheet that chooses its own settles on.
+
+Part of :mod:`cadgen.eng_drawing`; nothing here imports the kernel or ezdxf at
+module scope.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import TYPE_CHECKING, Sequence
+
+from cadgen._internal.drawing_base import (
+    _DIM_ROW, _MARGIN, _MIN_TEXT_MM, _NOTE_HEIGHT, _NOTE_INSET, SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, _TITLE_W,
+    UNITS, _scale_label, _text_width,
+)
+from cadgen._internal.drawing_views import _broken_size
+
+if TYPE_CHECKING:
+    from cadgen.eng_drawing import Sheet
+
+
+#: The least clear space between two views, and the air left between one view's
+#: annotation and the next view's.
+_MIN_GAP = 20.0
+_AIR = 8.0
+#: What a view's annotation is assumed to need before its dimensions are known:
+#: two rows above and to the left, a label below. Only the positions
+#: :meth:`Sheet.three_views` hands back at once use it; the render lays the sheet
+#: out again from what each view actually carries.
+_DEFAULT_ROOM = {"top": 2 * _DIM_ROW + 5.0, "bottom": 12.0, "left": 2 * _DIM_ROW + 5.0, "right": 12.0}
+
+
+def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso, room: dict | None = None,
+                         crowding: list | None = None, paper: str | None = None
+                         ) -> list[tuple[str, tuple[float, float], float | None, str | None]]:
+    """Where the three (or four) views of a standard arrangement go at scale ``s``.
+
+    ``room`` is what each view's annotation takes on every side, in sheet
+    millimetres -- its dimension rows, its hole callouts, the label underneath --
+    so the space between two views is what their facing sides need, not one
+    figure for every sheet. A front view with three rows of dimensions above it
+    pushes the top view up instead of printing its outermost row over the top
+    view's label. A ``gap`` the author gives is used as is. When the room asked
+    for does not fit the paper, the gaps give it back first, down to
+    ``_MIN_GAP``, and anything that still collides is reported by the render.
+
+    Separate from :meth:`Sheet.three_views` so the off-frame guard can ask the
+    same question of a candidate scale: the views shrink with the scale and
+    their annotation does not. ``iso`` is False, or the isometric's projected
+    (width, height) at 1:1, measured once by the caller: it is a hidden-line
+    projection, and the guard asks this question at every candidate scale.
+    """
+    L, W, H = size.X * s, size.Y * s, size.Z * s
+    need = {name: dict(_DEFAULT_ROOM) for name in ("top", "front", "right")}
+    for name, value in (room or {}).items():
+        if name in need:
+            need[name] = dict(value)
+    third = sheet.projection == "THIRD ANGLE"
+    if gap is not None:
+        gap_v = gap_h = gap
+    elif third:
+        gap_v = max(_MIN_GAP, need["top"]["bottom"] + need["front"]["top"] + _AIR)
+        gap_h = max(_MIN_GAP, need["front"]["right"] + need["right"]["left"] + _AIR)
+    else:
+        gap_v = max(_MIN_GAP, need["front"]["bottom"] + need["top"]["top"] + _AIR)
+        gap_h = max(_MIN_GAP, need["right"]["right"] + need["front"]["left"] + _AIR)
+    m = _MARGIN
+    x_lo, x_hi, y_lo, y_hi = _free_band(sheet, paper)
+    sheet_w, sheet_h = SHEET_SIZES[paper or sheet._size()]
+    sizes = {"top": (L, W), "front": (L, H), "right": (W, H)}
+
+    def place(gv: float, gh: float):
+        if third:
+            centres = {"front": (L / 2, H / 2), "top": (L / 2, H + gv + W / 2), "right": (L + gh + W / 2, H / 2)}
+        else:
+            # First angle places each view on the side opposite the one it looks
+            # from: the plan below the front, the view from the right to its left.
+            # The pictures are the third-angle pictures; only the slots swap.
+            centres = {"right": (W / 2, W + gv + H / 2), "front": (W + gh + L / 2, W + gv + H / 2),
+                       "top": (W + gh + L / 2, W / 2)}
+        boxes = [(cx - sizes[n][0] / 2 - need[n]["left"], cx + sizes[n][0] / 2 + need[n]["right"],
+                  cy - sizes[n][1] / 2 - need[n]["bottom"], cy + sizes[n][1] / 2 + need[n]["top"])
+                 for n, (cx, cy) in centres.items()]
+        block = (min(b[0] for b in boxes), max(b[1] for b in boxes),
+                 min(b[2] for b in boxes), max(b[3] for b in boxes))
+        return centres, block
+
+    centres, block = place(gap_v, gap_h)
+    over_w = (block[1] - block[0]) - (x_hi - x_lo)
+    over_h = (block[3] - block[2]) - (y_hi - y_lo)
+    if crowding is not None:
+        crowding[:] = [max(0.0, over_w), max(0.0, over_h)]
+    if gap is None and (over_w > 0 or over_h > 0):
+        centres, block = place(max(_MIN_GAP, gap_v - max(0.0, over_h)), max(_MIN_GAP, gap_h - max(0.0, over_w)))
+    # Centred in the paper the views and their annotation leave free; a block that
+    # does not fit starts at the bottom-left, so it is the top and right that run
+    # off and the guard names a scale. With a pictorial the block keeps to the
+    # left, as a print does, and the right of the sheet is the pictorial's.
+    slack_w = max(0.0, (x_hi - x_lo) - (block[1] - block[0]))
+    dx = x_lo - block[0] + (min(slack_w / 2, 12.0) if iso else slack_w / 2)
+    dy = y_lo - block[2] + max(0.0, ((y_hi - y_lo) - (block[3] - block[2])) / 2)
+    at = {n: (cx + dx, cy + dy) for n, (cx, cy) in centres.items()}
+    slots: list[tuple[str, tuple[float, float], float | None, str | None]] = [
+        ("top", at["top"], None, None), ("front", at["front"], None, None), ("right", at["right"], None, None)]
+    if not iso:
+        return slots
+    # Where the pictorial can go: the corner right of the upper row's annotation
+    # (above the right view's, in third angle), or the full height right of every
+    # view. It takes whichever draws it larger, at the sheet's scale if it fits,
+    # else at the largest STANDARD scale that does: a pictorial still states its
+    # scale, and 1:1.17 is not one anybody can use.
+    upper = "top" if third else "front"
+    upper_w, upper_h = sizes[upper]
+    upper_right = at[upper][0] + upper_w / 2 + need[upper]["right"] + 4.0
+    corner_bottom = at[upper][1] - upper_h / 2
+    if third:
+        corner_bottom = max(corner_bottom, at["right"][1] + H / 2 + need["right"]["top"] + 4.0)
+    rightmost = max(at[n][0] + sizes[n][0] / 2 + need[n]["right"] for n in sizes) + 4.0
+    # The revision table, when there is one, owns the top-right corner.
+    x_top, y_top = sheet_w - m - 6.0, sheet_h - m - 6.0 - _revisions_height(sheet)
+    label_room = 12.0  # the pictorial's own label hangs under it
+    regions = [(upper_right, corner_bottom + label_room), (rightmost, y_lo + label_room)]
+    iso_w, iso_h = iso
+
+    def fit_in(region) -> float:
+        x0, y0 = region
+        return min((x_top - x0) / iso_w if iso_w else s, (y_top - y0) / iso_h if iso_h else s)
+
+    x_free, y_free = max(regions, key=fit_in)
+    fit = fit_in((x_free, y_free))
+    iso_scale = s if fit >= s else next((c for c in _STANDARD_SCALES if c <= max(fit, s / 5)),
+                                        _STANDARD_SCALES[-1])
+    w, h = iso_w * iso_scale, iso_h * iso_scale
+    iso_at = (x_free + max(0.0, (x_top - x_free - w) / 2) + w / 2,
+              y_free + max(0.0, (y_top - y_free - h) / 2) + h / 2)
+    own = None if abs(iso_scale / s - 1) < 1e-9 else iso_scale
+    # The label states the scale the pictorial was DRAWN at, not its ratio to the
+    # sheet: at 2:1 a half-size iso is 1:1, and calling it "1:2" claimed a
+    # reduction from full size that never happened.
+    slots.append(("iso", iso_at, own, "ISOMETRIC" if own is None else f"ISOMETRIC {_scale_label(iso_scale)}"))
+    return slots
+
+
+class _OffFrame(ValueError):
+    """Views that run off the frame, with the largest standard scale that fits
+    them (``fits``, None when none does)."""
+
+    def __init__(self, message: str, fits: float | None) -> None:
+        super().__init__(message)
+        self.fits = fits
+
+
+def _assert_views_fit(sheet: Sheet, placed: Sequence[tuple], *, index: int, groups: Sequence[tuple] = ()) -> None:
+    """Refuse a sheet whose views run off the frame, naming the scale that fits.
+
+    A part far larger than the paper still writes valid geometry -- out at
+    x = 4284 on a 420 mm sheet -- and the render then crops to a near-empty page.
+    Nothing downstream can tell that from a drawing of a small feature, so the
+    script stops here, at the one place that knows both extents.
+    """
+    m = _MARGIN
+    frame = (m, sheet.width - m, m, sheet.height - m)
+    over = []
+    for view, _proj, _bounds, _cx, _cy, box in placed:
+        if box[0] < frame[0] or box[1] > frame[1] or box[2] < frame[2] or box[3] > frame[3]:
+            over.append((view, box))
+    if not over:
+        return
+    # Lay the sheet out again at each smaller standard scale and name the first that
+    # actually fits. Dividing the overflow out instead -- usable width over the union
+    # width -- treats the whole arrangement as if it scaled, and the room between
+    # views and the annotation around them do not: three of four ordinary part
+    # sizes then needed two refusals before a scale rendered, each naming another
+    # that did not fit either.
+    fits = next((candidate for candidate in _STANDARD_SCALES
+                 if candidate < sheet._scale() and _fits_at(sheet, placed, candidate, frame, groups)), None)
+    names = ", ".join(sorted({view.name for view, _ in over}))
+    remedy = (f"Use Sheet(scale={fits:g}) ({_scale_label(fits)}), a larger sheet size, or place the "
+              "views closer." if fits is not None else
+              f"No standard scale down to {_scale_label(_STANDARD_SCALES[-1])} fits this part on "
+              f"{sheet._size()}; use a larger sheet size, or fewer views.")
+    raise _OffFrame(
+        f"sheet {index} ({sheet._size()}, scale {_scale_label(sheet._scale())}): the {names} view"
+        f"{'s run' if len(over) > 1 else ' runs'} off the frame. {remedy}", fits)
+
+
+def _fits_at(sheet: Sheet, placed: Sequence[tuple], candidate: float, frame, groups: Sequence[tuple]) -> bool:
+    """Would every view sit inside the frame if the sheet were drawn at `candidate`?
+
+    A standard arrangement is laid out again, because the views move when they
+    shrink; ``groups`` carries each one's (views by name, size, gap, iso, room).
+    A hand-placed view keeps its ``at=``, which is what would happen, and only
+    its box shrinks about that point.
+    """
+    moved: dict[int, tuple[tuple[float, float], float]] = {}
+    for by_name, shape, size, gap, iso, room in groups:
+        for name, at, own, _label in _arrange_three_views(sheet, size, gap, candidate, iso, room):
+            if name in by_name:
+                moved[id(by_name[name])] = (at, own or candidate)
+    for view, _proj, bounds, _cx, _cy, _box in placed:
+        at, scale = moved.get(id(view), (view.at, view.scale or candidate))
+        half_w = (bounds[1] - bounds[0]) * scale / 2
+        half_h = (bounds[3] - bounds[2]) * scale / 2
+        if (at[0] - half_w < frame[0] or at[0] + half_w > frame[1]
+                or at[1] - half_h < frame[2] or at[1] + half_h > frame[3]):
+            return False
+    return True
+
+
+#: The title block's cells as (x, y, width, height), millimetres from its
+#: bottom-left corner: ISO 7200's fields in the arrangement shops read -- what the
+#: part is and its number across the top, what it is made of and the scale in the
+#: middle, who drew it, in what unit and projection, along the bottom. A field the
+#: author did not give stays an empty, captioned cell: a blank MATERIAL says the
+#: drawing does not state one, where a missing cell says nothing at all.
+_TITLE_CELLS = {
+    "TITLE": (0.0, 20.0, 110.0, 20.0),
+    "DWG NO.": (110.0, 30.0, 70.0, 10.0),
+    "REV": (110.0, 20.0, 30.0, 10.0),
+    "SHEET": (140.0, 20.0, 40.0, 10.0),
+    "MATERIAL": (0.0, 10.0, 60.0, 10.0),
+    "FINISH": (60.0, 10.0, 50.0, 10.0),
+    "SCALE": (110.0, 10.0, 30.0, 10.0),
+    "SIZE": (140.0, 10.0, 40.0, 10.0),
+    "DRAWN": (0.0, 0.0, 40.0, 10.0),
+    "DATE": (40.0, 0.0, 30.0, 10.0),
+    "UNITS": (70.0, 0.0, 40.0, 10.0),
+    "PROJECTION": (110.0, 0.0, 70.0, 10.0),
+}
+#: The grid between those cells, drawn as lines so no edge is written twice.
+_TITLE_RULES = (
+    ((0.0, 10.0), (180.0, 10.0)), ((0.0, 20.0), (180.0, 20.0)), ((110.0, 30.0), (180.0, 30.0)),
+    ((110.0, 0.0), (110.0, 40.0)), ((60.0, 10.0), (60.0, 20.0)), ((40.0, 0.0), (40.0, 10.0)),
+    ((70.0, 0.0), (70.0, 10.0)), ((140.0, 10.0), (140.0, 30.0)),
+)
+#: Cap height of a cell's caption, and the width the title itself may take.
+_CAPTION_HEIGHT = 1.8
+_TITLE_FIT = _TITLE_CELLS["TITLE"][2] - 6.0
+#: ISO 5457 zone letters: I and O are left out, being read as 1 and 0.
+_ZONE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+#: A parts list: its row height and its columns, which together span the title
+#: block's width so the list stands on the block as one column of the sheet.
+_LIST_ROW = 7.0
+_LIST_COLUMNS = (("ITEM", 12.0), ("QTY", 12.0), ("DESCRIPTION", 68.0), ("PART NO.", 44.0), ("MATERIAL", 44.0))
+
+
+def _list_room(sheet: Sheet) -> float:
+    """The height a parts list may take above the title block: the frame, less
+    the block, a row for the line saying where a long list continues, and air."""
+    revisions = (len(sheet.revisions) + 1) * 6.0 + 4.0 if sheet.revisions else 0.0
+    return sheet.height - 2 * _MARGIN - _TITLE_H - _LIST_ROW - 4.0 - revisions
+
+
+def _list_height(sheet: Sheet) -> float:
+    """How far a sheet's parts list rises above its title block, its caption row
+    included; 0 without one."""
+    if sheet._parts is None:
+        return 0.0
+    parts, first, last = sheet._parts
+    partial = first > 1 or last < len(parts)
+    return (last - first + 2) * _LIST_ROW + (_LIST_ROW if partial else 0.0)
+
+
+def _draw_parts_list(msp, sheet: Sheet, text, continued: dict) -> None:
+    """The parts list, standing on the title block: header row at the bottom,
+    item numbers rising from it. ``continued`` says on which sheet the rest of a
+    split list is, ``{"from": n, "to": m}``, either or both."""
+    from ezdxf.enums import TextEntityAlignment as A
+
+    parts, first, last = sheet._parts
+    fields = {"DESCRIPTION": "description", "PART NO.": "part_number", "MATERIAL": "material"}
+    for item in parts.items[first - 1:last]:
+        for name, width in _LIST_COLUMNS:
+            value = getattr(item, fields[name]) if name in fields else ""
+            if value and _text_width(value, _MIN_TEXT_MM) > width - 3:
+                raise ValueError(
+                    f"item {item.number}'s {name} {value!r} does not fit the parts list's {name} column "
+                    f"({width:.0f} mm) even at the smallest legible text, and a parts list cut short is wrong. "
+                    f"Shorten it: parts.set({item.number}, {fields[name]}=...)."
+                )
+    x0, y0 = sheet.width - _MARGIN - _TITLE_W, _MARGIN + _TITLE_H
+    rows = [tuple(name for name, _w in _LIST_COLUMNS)] + [
+        (str(item.number), str(item.quantity), item.description, item.part_number, item.material)
+        for item in parts.items[first - 1:last]]
+    top = y0 + len(rows) * _LIST_ROW
+    msp.add_lwpolyline([(x0, y0), (x0 + _TITLE_W, y0), (x0 + _TITLE_W, top), (x0, top)], close=True,
+                       dxfattribs={"layer": "TITLE"})
+    for r in range(1, len(rows)):
+        msp.add_line((x0, y0 + r * _LIST_ROW), (x0 + _TITLE_W, y0 + r * _LIST_ROW), dxfattribs={"layer": "TITLE"})
+    x = x0
+    for c, (_name, width) in enumerate(_LIST_COLUMNS):
+        if c:
+            msp.add_line((x, y0), (x, top), dxfattribs={"layer": "TITLE"})
+        for r, row in enumerate(rows):
+            if not row[c]:
+                continue
+            mid = y0 + (r + 0.5) * _LIST_ROW
+            if c < 2:  # the numbers, centred in their narrow columns
+                text(row[c], x + width / 2, mid, _CAPTION_HEIGHT if r == 0 else 2.5, A.MIDDLE_CENTER, fit=width - 2)
+            else:
+                text(row[c], x + 1.5, mid, _CAPTION_HEIGHT if r == 0 else 2.5, A.MIDDLE_LEFT, fit=width - 3)
+        x += width
+    words = [f"CONTINUED FROM SHEET {continued['from']}" if "from" in continued else "",
+             f"CONTINUED ON SHEET {continued['to']}" if "to" in continued else ""]
+    if any(words):
+        text("PARTS LIST, " + ", ".join(w for w in words if w), x0, top + 2.0, 2.5, A.BOTTOM_LEFT, fit=_TITLE_W)
+
+
+def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, text,
+                    continued: dict | None = None) -> None:
+    """Frame, zone grid, title block, notes and any parts list: what makes a page a
+    drawing sheet."""
+    from ezdxf.enums import TextEntityAlignment as A
+
+    W, H, m = sheet.width, sheet.height, _MARGIN
+    msp.add_lwpolyline([(m, m), (W - m, m), (W - m, H - m), (m, H - m)], close=True, dxfattribs={"layer": "SHEET"})
+    # Zones (ISO 5457): numbered columns along the top and bottom, lettered rows
+    # down both sides, about 50 mm each and an even count, so a note can say
+    # "see C4" and a reader finds it. The marks at the middle of each side run to
+    # the paper's edge: they are the centring marks a scan or a reproduction is
+    # aligned by.
+    cols, rows = max(2, 2 * round(W / 100)), max(2, 2 * round(H / 100))
+    for i in range(1, cols):
+        x = m + i * (W - 2 * m) / cols
+        reach = m if 2 * i == cols else 5.0
+        msp.add_line((x, H - m), (x, H - m + reach), dxfattribs={"layer": "SHEET"})
+        msp.add_line((x, m), (x, m - reach), dxfattribs={"layer": "SHEET"})
+    for j in range(1, rows):
+        y = m + j * (H - 2 * m) / rows
+        reach = m if 2 * j == rows else 5.0
+        msp.add_line((m, y), (m - reach, y), dxfattribs={"layer": "SHEET"})
+        msp.add_line((W - m, y), (W - m + reach, y), dxfattribs={"layer": "SHEET"})
+    for i in range(cols):
+        x = m + (i + 0.5) * (W - 2 * m) / cols
+        text(str(i + 1), x, H - m / 2, 3.0, A.MIDDLE_CENTER)
+        text(str(i + 1), x, m / 2, 3.0, A.MIDDLE_CENTER)
+    for j in range(rows):
+        y = H - m - (j + 0.5) * (H - 2 * m) / rows
+        text(_ZONE_LETTERS[j], m / 2, y, 3.0, A.MIDDLE_CENTER)
+        text(_ZONE_LETTERS[j], W - m / 2, y, 3.0, A.MIDDLE_CENTER)
+
+    x0, y0 = W - m - _TITLE_W, m
+    msp.add_lwpolyline([(x0, y0), (x0 + _TITLE_W, y0), (x0 + _TITLE_W, y0 + _TITLE_H), (x0, y0 + _TITLE_H)],
+                       close=True, dxfattribs={"layer": "TITLE"})
+    for (ax, ay), (bx, by) in _TITLE_RULES:
+        msp.add_line((x0 + ax, y0 + ay), (x0 + bx, y0 + by), dxfattribs={"layer": "TITLE"})
+    values = {
+        "DWG NO.": (sheet.part_number, 3.5), "REV": (sheet.revision, 2.5), "SHEET": (f"{index} OF {count}", 2.5),
+        "MATERIAL": (sheet.material, 2.5), "FINISH": (sheet.finish, 2.5),
+        "SCALE": (_scale_label(sheet._scale()), 2.5), "SIZE": (sheet._size(), 2.5),
+        "DRAWN": (sheet.author, 2.5), "DATE": (sheet.date, 2.5), "UNITS": (sheet.units.upper(), 2.5),
+    }
+    for name, (x, y, w, h) in _TITLE_CELLS.items():
+        if name == "PROJECTION":
+            continue  # the symbol is its own caption
+        text(name, x0 + x + 1.2, y0 + y + h - 1.0, _CAPTION_HEIGHT, A.TOP_LEFT, fit=w - 2.4)
+        if name in values and values[name][0]:
+            value, height = values[name]
+            text(str(value), x0 + x + 1.5, y0 + y + 1.6, height, A.BOTTOM_LEFT, fit=w - 3.0)
+    tx, ty, _tw, th = _TITLE_CELLS["TITLE"]
+    # A subtitle takes the line under the title, which moves up to make room.
+    text(sheet.title, x0 + tx + 3.0, y0 + ty + th / 2 + (2.5 if sheet.subtitle else 1.0), 5.0, A.MIDDLE_LEFT,
+         fit=_TITLE_FIT)
+    if sheet.subtitle:
+        text(sheet.subtitle, x0 + tx + 3.0, y0 + ty + 4.2, 2.5, A.BOTTOM_LEFT, fit=_TITLE_FIT)
+    # The script that drew the sheet, so a print leads back to its source.
+    text(label, x0 + tx + 3.0, y0 + ty + 1.4, _CAPTION_HEIGHT, A.BOTTOM_LEFT, fit=_TITLE_FIT)
+    px, py, pw, ph = _TITLE_CELLS["PROJECTION"]
+    right = _projection_symbol(msp, x0 + px + 4.0, y0 + py + ph / 2, first_angle=sheet.projection == "FIRST ANGLE")
+    text(sheet.projection, right + 4.0, y0 + py + ph / 2, 2.5, A.MIDDLE_LEFT, fit=x0 + px + pw - right - 6.0)
+
+    lines = sheet.note_lines()
+    if sheet._parts is not None:
+        # The notes share the strip above the title block with the parts list, so
+        # each must end before the list begins.
+        room = x0 - 4.0 - (m + _NOTE_INSET)
+        for line in lines:
+            if _text_width(line, _NOTE_HEIGHT) > room:
+                raise ValueError(
+                    f"note {line.strip()!r} runs under the parts list: beside it the {sheet._size()} sheet leaves "
+                    f"{round(room)} mm. Shorten the note or split it across two."
+                )
+        _draw_parts_list(msp, sheet, text, continued or {})
+    for row, line in enumerate(lines):
+        text(line, m + _NOTE_INSET, y0 + _TITLE_H + 4 + (len(lines) - 1 - row) * 5, _NOTE_HEIGHT,
+             A.BOTTOM_LEFT, "NOTES")
+    if sheet.revisions:
+        # Revision table, top-right inside the frame: REV | DATE | DESCRIPTION.
+        widths = (14.0, 26.0, 70.0)
+        rw, rh = sum(widths), 6.0
+        rx, ry = W - m - rw, H - m - rh
+        table = [("REV", "DATE", "DESCRIPTION")] + [tuple(str(v) for v in row) for row in sheet.revisions]
+        for r, row in enumerate(table):
+            y = ry - r * rh
+            msp.add_lwpolyline([(rx, y), (rx + rw, y), (rx + rw, y + rh), (rx, y + rh)], close=True,
+                               dxfattribs={"layer": "TITLE"})
+            x = rx
+            for c, (width, value) in enumerate(zip(widths, row)):
+                if c:
+                    msp.add_line((x, y), (x, y + rh), dxfattribs={"layer": "TITLE"})
+                text(value, x + 2, y + rh / 2, 2.5, A.MIDDLE_LEFT, fit=width - 4)
+                x += width
+
+
+def _projection_symbol(msp, x: float, y: float, *, first_angle: bool) -> float:
+    """The ISO 5456-2 projection symbol with its left edge at ``x``, centred on
+    ``y``; returns its right edge.
+
+    It is a truncated cone drawn in the projection it names: its side view, wide
+    end left, and its end view seen from the small end, where both circles show.
+    Third angle places the view from the right on the right, so the circles sit
+    right of the cone; first angle places it on the left. The cone is the same
+    picture in both.
+    """
+    big, small, length, gap = 6.0, 3.0, 7.0, 3.0
+    if first_angle:
+        circles_x, cone_x = x + big / 2, x + big + gap
+    else:
+        cone_x, circles_x = x, x + length + gap + big / 2
+    msp.add_lwpolyline([(cone_x, y - big / 2), (cone_x + length, y - small / 2), (cone_x + length, y + small / 2),
+                        (cone_x, y + big / 2)], close=True, dxfattribs={"layer": "TITLE"})
+    msp.add_circle((circles_x, y), big / 2, dxfattribs={"layer": "TITLE"})
+    msp.add_circle((circles_x, y), small / 2, dxfattribs={"layer": "TITLE"})
+    right = x + length + gap + big
+    # Its axis, thin and on the title block's layer: it is part of the symbol, and
+    # the CENTER layer holds the views' centre lines and nothing else.
+    msp.add_line((x - 1.0, y), (right + 1.0, y), dxfattribs={"layer": "TITLE"})
+    return right
+
+
+def _free_spot(sheet: Sheet, w: float, h: float, occupied: list, distance) -> tuple[float, float] | None:
+    """The top-left corner of the free ``w`` x ``h`` box that ``distance`` (of a
+    top-left corner) ranks nearest: inside the paper above the notes, title block
+    and any parts list and below any revision table, 4 mm clear of everything in
+    ``occupied``. The search walks a 2 mm grid."""
+    x_lo, x_hi, y_lo, y_hi = _free_band(sheet)
+    y_hi -= _revisions_height(sheet)
+    best = None
+    y = y_hi
+    while y - h >= y_lo:
+        x = x_lo
+        while x + w <= x_hi:
+            box = (x - 4.0, x + w + 4.0, y - h - 4.0, y + 4.0)
+            if not any(box[0] < o[1] and box[1] > o[0] and box[2] < o[3] and box[3] > o[2] for o in occupied):
+                rank = distance(x, y)
+                if best is None or rank < best[0]:
+                    best = (rank, (x, y))
+            x += 2.0
+        y -= 2.0
+    return None if best is None else best[1]
+
+
+def _place_box(sheet: Sheet, w: float, h: float, occupied: list, near) -> tuple[float, float] | None:
+    """The top-left corner of the free ``w`` x ``h`` box whose middle is nearest ``near``."""
+    return _free_spot(sheet, w, h, occupied, lambda x, y: math.hypot(x + w / 2 - near[0], y - h / 2 - near[1]))
+
+
+def _place_detail(sheet: Sheet, size: float, room: dict, occupied: list, near) -> tuple[float, float] | None:
+    """Where a detail ``size`` mm across, with its annotation ``room``, has its
+    centre: the free spot whose circle is nearest ``near``."""
+    half = size / 2
+    w, h = size + room["left"] + room["right"], size + room["bottom"] + room["top"]
+    corner = _free_spot(sheet, w, h, occupied,
+                        lambda x, y: math.hypot(x + room["left"] + half - near[0], y - room["top"] - half - near[1]))
+    return None if corner is None else (corner[0] + room["left"] + half, corner[1] - room["top"] - half)
+
+
+def _notes_height(sheet: Sheet) -> float:
+    """How far the notes rise above the title block's top, with air; 0 without notes."""
+    rows = len(sheet.drawn_notes())
+    return rows * 5.0 + 8.0 if rows else 0.0
+
+
+def _revisions_height(sheet: Sheet) -> float:
+    """How far the revision table reaches down from the frame's top, with air."""
+    return (len(sheet.revisions) + 1) * 6.0 + 6.0 if sheet.revisions else 0.0
+
+
+def _free_band(sheet: Sheet, paper: str | None = None) -> tuple[float, float, float, float]:
+    """The paper views may take, ``(x0, x1, y0, y1)``: inside the frame and 4 mm
+    clear of it, above the notes, the title block and any parts list."""
+    m = _MARGIN
+    width, height = SHEET_SIZES[paper or sheet._size()]
+    above = max(_notes_height(sheet), _list_height(sheet) + 6.0 if sheet._parts is not None else 0.0)
+    return m + 4.0, width - m - 4.0, m + _TITLE_H + above + 4.0, height - m - 4.0
+
+
+def _next_smaller(scale: float) -> float | None:
+    """The next standard scale below ``scale``, or None."""
+    return next((c for c in _STANDARD_SCALES if c < scale - 1e-12), None)
+
+
+def _choose_for_breaks(sheet: Sheet, floor: int, ceiling: float | None) -> None:
+    """Settle a chosen size or scale before a sheet's broken views are projected,
+    with the room three_views() assumes and the extents the breaks leave."""
+    arranged = next((view for view in sheet.views if view._arranged is not None), None)
+    if arranged is None:
+        _settle(sheet, _within(sheet, floor, ceiling))
+        return
+    size, gap, iso = arranged._arranged
+    brk = next(view._break for view in sheet.views if view._break is not None)
+    _settle(sheet, _choose_size_and_scale(sheet, _broken_size(size, brk, sheet._scale()), iso, _default_rooms(), gap,
+                                          floor=floor, ceiling=ceiling))
+
+
+def _within(sheet: Sheet, floor: int, ceiling: float | None) -> tuple[str, float]:
+    """The sheet's current size and scale, held within a retry's bounds: no smaller
+    than the ``floor``-th size, no larger than ``ceiling``."""
+    paper, scale = sheet._size(), sheet._scale()
+    if sheet.size is None and _SIZES_SMALLEST_FIRST.index(paper) < floor:
+        paper = _SIZES_SMALLEST_FIRST[floor]
+    if sheet.scale is None and ceiling is not None and scale > ceiling + 1e-12:
+        scale = next(c for c in _STANDARD_SCALES if c <= ceiling + 1e-12)
+    return paper, scale
+
+
+#: The largest enlargement a sheet chooses: past it a part is a detail view.
+_LARGEST_SCALE = 10.0
+
+
+#: The sheets a sheet choosing its own size tries, smallest first, for a part it
+#: can draw at full size or larger; a part bigger than that goes on A3, reduced.
+#: A1 and A0 are tried only at a scale the author fixed.
+_SIZES_SMALLEST_FIRST = ("A4", "A3", "A2", "A1", "A0")
+_SIZES_CHOSEN = ("A4", "A3", "A2")
+_SIZE_REDUCED = "A3"
+
+
+def _choose_size_and_scale(sheet: Sheet, extent, iso, room: dict, gap: float | None = None, *, floor: int = 0,
+                           ceiling: float | None = None) -> tuple[str, float]:
+    """The size and scale for a sheet that leaves either to itself, with a part
+    of ``extent`` drawn in three views (and an isometric, ``iso`` being its 1:1
+    extent or False), each view with ``room`` for its annotation.
+
+    A chosen scale is the largest standard one, up to 10:1 and no larger than
+    ``ceiling``, that fits. A chosen size is the smallest of A4 to A2, from the
+    ``floor``-th size up, that draws the part at 1:1 or larger, else A3 (or the
+    floor's size, if larger) reduced; given a fixed scale, it is the smallest
+    sheet from the floor up that fits it. A fixed size or scale is kept. A part
+    too big for a fixed scale takes the largest sheet, and the render refuses it,
+    naming the scale that fits."""
+    scales = ([c for c in _STANDARD_SCALES if c <= (ceiling or _LARGEST_SCALE) + 1e-9] if sheet.scale is None
+              else [sheet.scale])
+
+    def largest(paper: str) -> float | None:
+        """The largest candidate scale that fits ``paper``, or None."""
+        try:
+            sheet._check_notes(paper)
+        except ValueError:
+            return None  # its notes do not fit this sheet's width
+        for scale in scales:
+            over: list = []
+            _arrange_three_views(sheet, extent, gap, scale, iso, room, over, paper)
+            if max(over) <= 0:
+                return scale
+        return None
+
+    if sheet.size is not None:
+        paper, fit = sheet.size, largest(sheet.size)
+    elif sheet.scale is not None:
+        # A fixed scale: the smallest sheet it fits.
+        paper, fit = _SIZES_SMALLEST_FIRST[-1], None
+        for name in _SIZES_SMALLEST_FIRST[floor:]:
+            fit = largest(name)
+            if fit is not None:
+                paper = name
+                break
+    else:
+        # Both chosen: the smallest sheet that draws the part full size or larger,
+        # else A3 (or the floor's size, if larger) reduced.
+        paper, fit = None, None
+        for name in _SIZES_CHOSEN[floor:]:
+            fit = largest(name)
+            if fit is not None and fit >= 1.0 - 1e-9:
+                paper = name
+                break
+        if paper is None:
+            paper = _SIZES_SMALLEST_FIRST[max(floor, _SIZES_SMALLEST_FIRST.index(_SIZE_REDUCED))]
+            fit = largest(paper)
+    if fit is None and sheet.scale is not None:
+        fit = sheet.scale  # the render refuses it, naming the scale that fits
+    if fit is None:
+        raise ValueError(
+            f"the views do not fit {paper} at any standard scale: the room their dimensions, callouts and labels "
+            "take alone is more than the sheet has. Give Sheet a larger size=, or fewer views."
+        )
+    return paper, fit
+
+
+def _settle(sheet: Sheet, choice: tuple[str, float]) -> None:
+    """Record a choice for whichever of size and scale the sheet leaves to itself."""
+    paper, scale = choice
+    if sheet.size is None:
+        sheet._chosen_size = paper
+    if sheet.scale is None:
+        sheet._chosen_scale = scale
+    sheet._check_notes(sheet._size())
+
+
+def _default_rooms() -> dict:
+    """The room each of three views is assumed to need before its annotation is known."""
+    return {name: dict(_DEFAULT_ROOM) for name in ("top", "front", "right")}
+
+
+def _require_settled(sheet: Sheet) -> None:
+    """Refuse to place anything by hand on a sheet whose size or scale is not yet chosen."""
+    sheet._size()
+    sheet._scale()

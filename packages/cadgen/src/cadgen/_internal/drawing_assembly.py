@@ -17,8 +17,20 @@ Nothing here is drawn; ``cadgen.eng_drawing`` draws the table and the balloons.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import Any, Iterator, Sequence
+from typing import TYPE_CHECKING, Any, Iterator, NamedTuple, Sequence
+
+from cadgen._internal.drawing_base import (
+    _DEFAULT_TEXT, _DIM_ROW, _LABEL_ROOM, _MARGIN, _SIDES, _STANDARD_SCALES, _TITLE_H, _TITLE_W, _look,
+    _scale_label,
+)
+from cadgen._internal.drawing_sheet import _LARGEST_SCALE, _OffFrame, _list_height, _next_smaller
+from cadgen._internal.drawing_views import _view_extent
+
+if TYPE_CHECKING:
+    from cadgen.eng_drawing import Sheet, View
+
 
 #: The fields an author may fill in on a parts-list row. Everything else on an
 #: item is read off the model.
@@ -392,4 +404,313 @@ def _spread(desired: Sequence[float], gap: float, lo: float, hi: float) -> list[
     for block in blocks:
         first = start(block)
         out.extend(first + j * gap for j in range(block[0]))
+    return out
+
+
+# --- balloons -------------------------------------------------------------------------
+
+#: A balloon: its radius and numeral height, the run of leader between the
+#: annotation it stands outside and its circle, the space between two balloons,
+#: and the dot a leader ends in on the part.
+_BALLOON_R = 5.0
+_BALLOON_TEXT = 5.0
+_BALLOON_LEAD = 8.0
+_BALLOON_AIR = 2.0
+_DOT_R = 0.7
+#: How far along its column a balloon may move to clear its leader from text,
+#: and in what steps.
+_BALLOON_SEARCH = 80.0
+_BALLOON_STEP = 0.5
+
+
+def _balloon_axis(bounds) -> bool:
+    """Whether a view's balloons stand in columns beside it (a tall view) rather
+    than in rows above and below it (a wide one)."""
+    return (bounds[3] - bounds[2]) >= (bounds[1] - bounds[0])
+
+
+def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: dict | None, model_to_sheet, box,
+                   reach: dict, text, printed: Sequence[tuple], obstacles: Sequence[tuple],
+                   warnings: list | None) -> None:
+    """Balloon each item the view shows that this sheet has not yet keyed.
+
+    Each leader ends in a dot on a point of the part that the view sees (nothing
+    of the assembly in front of it). The balloons stand in a column on each side
+    of a tall view (a row above and below a wide one), outside everything
+    already drawn there, each as near the height of the point it keys as the
+    others allow. Points near the middle go to whichever side has fewer, which
+    keeps the two columns even. A column may run the frame's height but keeps
+    off ``obstacles`` (other views, the title block, the parts list), and no
+    balloon stands where its leader would run through text already ``printed``
+    (``(value, box)`` pairs); leaders that would cross are swapped. A column the
+    paper cannot hold is refused, never drawn off the sheet.
+    """
+    from ezdxf.enums import TextEntityAlignment
+    from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+    from shapely.geometry import LineString, box as rect
+
+    from cadgen._internal.drawing_assembly import spread, visible_point
+
+    direction = _look(view)
+    length = math.sqrt(sum(c * c for c in direction))
+    look = tuple(c / length for c in direction)
+    cast = IntCurvesFace_ShapeIntersector()
+    cast.Load(view.shape.wrapped, 1e-7)
+    keyed = []
+    for parts in view._balloons:
+        for item in parts:
+            if (id(parts), item.number) in keyed_on_sheet:
+                continue
+            point = visible_point(item.occurrences, cast, look)
+            if point is None:
+                continue
+            keyed.append((item.number, model_to_sheet(point), parts))
+    vx0, vx1, vy0, vy1 = box
+    tall = _balloon_axis(box)
+    pick, along = (0, 1) if tall else (1, 0)
+    mid = ((vx0 + vx1) / 2, (vy0 + vy1) / 2)
+    band = 0.1 * ((vx1 - vx0) if tall else (vy1 - vy0))
+    low, high = ("left", "right") if tall else ("bottom", "top")
+    sides: dict[str, list] = {low: [], high: []}
+    for number, point, parts in sorted(keyed, key=lambda k: (k[1][along], k[0])):
+        if point[pick] < mid[pick] - band:
+            side = low
+        elif point[pick] > mid[pick] + band:
+            side = high
+        else:
+            side = low if len(sides[low]) <= len(sides[high]) else high
+        sides[side].append((number, point, parts))
+    r, pitch, m = _BALLOON_R, 2 * _BALLOON_R + _BALLOON_AIR, _MARGIN
+    frame = ((m, sheet.width - m), (m, sheet.height - m))
+    texts = [(value, rect(b[0], b[1], b[2], b[3])) for value, b in printed]
+
+    def centre_of(line: float, spot: float) -> tuple[float, float]:
+        return (line, spot) if tall else (spot, line)
+
+    def leader(centre, point) -> LineString:
+        run = math.hypot(point[0] - centre[0], point[1] - centre[1]) or 1.0
+        return LineString([(centre[0] + (point[0] - centre[0]) * r / run, centre[1] + (point[1] - centre[1]) * r / run),
+                           point])
+
+    for side, rows in sides.items():
+        if not rows:
+            continue
+        out = -1.0 if side in ("left", "bottom") else 1.0
+        edge = {"left": vx0, "right": vx1, "bottom": vy0, "top": vy1}[side]
+        line = edge + out * (reach[side] + _BALLOON_LEAD + r)
+        across, lengthwise = frame[pick], frame[along]
+        if not across[0] + 1.0 <= line - r and line + r <= across[1] - 1.0:
+            raise _OffFrame(f"{view.name}.balloons(): no room on {sheet._size()} for a column of balloons on the "
+                            f"{side} of the {view.name} view. A larger sheet or a smaller scale gives it room.",
+                            _next_smaller(sheet._scale()))
+        lo, hi = lengthwise[0] + r + 1.0, lengthwise[1] - r - 1.0
+        # The strip the leaders cross, between the column and the view.
+        near, far = sorted((edge, line - out * r))
+        avoid = [(b[along] - 1.0, b[along + 2] + 1.0) for _v, b in printed if b[pick] < far and b[pick + 2] > near]
+        # Paper the column itself may not take: other views, the title block and
+        # parts list, the revision table.
+        avoid += [(o[2 * along] - r - 1.0, o[2 * along + 1] + r + 1.0) for o in obstacles
+                  if o[2 * pick] < line + r + 1.0 and o[2 * pick + 1] > line - r - 1.0]
+        spots = spread([point[along] for _n, point, _p in rows], pitch, lo, hi, avoid)
+        if spots and (spots[-1] > hi + 1e-6 or spots[0] < lo - 1e-6):
+            raise _OffFrame(
+                f"{view.name}.balloons(): {len(rows)} balloons do not fit on the {side} of the {view.name} view on "
+                f"{sheet._size()}, clear of the other views and the parts list. A larger sheet or a smaller scale gives "
+                "them room, or balloon some items on another view.",
+                _next_smaller(sheet._scale()))
+        # Leaders that cross swap balloons until none do.
+        for _round in range(len(spots) ** 2):
+            crossed = next(((i, j) for i in range(len(rows)) for j in range(i + 1, len(rows))
+                            if leader(centre_of(line, spots[i]), rows[i][1]).crosses(
+                                leader(centre_of(line, spots[j]), rows[j][1]))), None)
+            if crossed is None:
+                break
+            i, j = crossed
+            spots[i], spots[j] = spots[j], spots[i]
+        # A leader through text: the nearest free place along the column where it
+        # runs clear, or a word saying where it does not.
+        for i, (number, point, _parts) in enumerate(rows):
+            def clear(spot: float) -> bool:
+                path = leader(centre_of(line, spot), point)
+                return not any(path.intersects(shape) for _v, shape in texts)
+
+            if clear(spots[i]):
+                continue
+            others = [spot for k, spot in enumerate(spots) if k != i]
+            steps = int(_BALLOON_SEARCH / _BALLOON_STEP)
+            candidates = sorted((spots[i] + k * _BALLOON_STEP for k in range(-steps, steps + 1) if k),
+                                key=lambda y: abs(y - spots[i]))
+            better = next((y for y in candidates if lo <= y <= hi
+                           and all(abs(y - o) >= pitch - 1e-6 for o in others)
+                           and not any(a < y < b for a, b in avoid) and clear(y)
+                           and not any(leader(centre_of(line, y), point).crosses(
+                               leader(centre_of(line, spots[k]), rows[k][1])) for k in range(len(rows)) if k != i)),
+                          None)
+            if better is not None:
+                spots[i] = better
+            elif warnings is not None:
+                hit = next(v for v, shape in texts if leader(centre_of(line, spots[i]), point).intersects(shape))
+                warnings.append(f"{view.name}.balloons(): the leader to balloon {number} runs through {hit.strip()!r}; "
+                                "give the view more room, or balloon that item on another view.")
+        for (number, point, parts), spot in zip(rows, spots):
+            centre = centre_of(line, spot)
+            path = leader(centre, point)
+            msp.add_line(path.coords[0], path.coords[1], dxfattribs={"layer": "NOTES"})
+            dot = msp.add_hatch(dxfattribs={"layer": "NOTES"})
+            dot.set_solid_fill(color=256)
+            dot.paths.add_edge_path().add_arc(point, _DOT_R, 0.0, 360.0)
+            msp.add_circle(centre, r, dxfattribs={"layer": "NOTES"})
+            text(str(number), centre[0], centre[1], _BALLOON_TEXT, TextEntityAlignment.MIDDLE_CENTER, "NOTES")
+            keyed_on_sheet.add((id(parts), number))
+            if facts is not None:
+                facts.of_list(parts)["ballooned"].add(number)
+        reach[side] += _BALLOON_LEAD + 2 * r
+
+
+# --- the general arrangement and part sheets ------------------------------------------
+
+class _PartOf(NamedTuple):
+    """A part's sheet of an assembly drawing: its item, the assembly's title, and
+    the title, material and subtitle the item last gave the sheet."""
+
+    item: Item
+    whole: str
+    shown: tuple[str, str, str]
+
+
+def _item_subtitle(item: Item, whole: str) -> str:
+    return f"ITEM {item.number}{f' (QTY {item.quantity})' if item.quantity > 1 else ''} OF {whole}"
+
+
+def _refresh_from_item(sheet: Sheet) -> None:
+    """A part's sheet shows its item as the item stands when it renders: its
+    description, material and number, so ``parts.set()`` after
+    ``assembly_sheets()`` reaches the sheet. A title, material or subtitle the
+    author has set on the sheet since is theirs, and kept."""
+    item, whole, shown = sheet._item
+    fresh = (item.description or f"ITEM {item.number}", item.material, _item_subtitle(item, whole))
+    current = (sheet.title, sheet.material, sheet.subtitle)
+    kept = tuple(new if now == old else now for new, now, old in zip(fresh, current, shown))
+    sheet.title, sheet.material, sheet.subtitle = kept
+    sheet._item = _PartOf(item, whole, kept)
+#: The smallest scale a general arrangement is drawn at: below it the views are specks.
+_GA_SMALLEST = 1 / 50
+#: The share of the general arrangement's frame height its parts list may take;
+#: longer lists continue on further sheets.
+_GA_LIST_SHARE = 0.45
+
+
+def _assembly_room(size: tuple[float, float], overall: set) -> dict:
+    """What a general-arrangement view's annotation takes on each side: its
+    overall sizes, its balloons (beside a tall view, above and below a wide one)
+    and its label."""
+    room = {side: 4.0 for side in _SIDES}
+    row = _DIM_ROW + _DEFAULT_TEXT * 1.5
+    if "width" in overall:
+        room["top"] += row
+    if "height" in overall:
+        room["left"] += row
+    for side in (("left", "right") if size[1] >= size[0] else ("bottom", "top")):
+        room[side] += _BALLOON_LEAD + 2 * _BALLOON_R + 2.0
+    room["bottom"] += _LABEL_ROOM
+    return room
+
+
+def _arrange_assembly(sheet: Sheet, shape, second: str) -> tuple[float, list]:
+    """The general arrangement's scale and views: the front view and ``second``
+    side by side (or one above the other) in the paper left of the title block,
+    each with room for its overall sizes, balloons and label, at the largest
+    standard scale that fits; the isometric in the column above the parts list,
+    at the largest standard scale up to that one which fits there, or left out
+    when even a fifth of it does not."""
+    m, W, H = _MARGIN, sheet.width, sheet.height
+    box = shape.bounding_box().size
+    extents = {"front": (box.X, box.Z), "right": (box.Y, box.Z), "top": (box.X, box.Y)}
+    overall = {"front": {"width", "height"}, second: {"width"} if second == "right" else {"height"}}
+    note_rows = len(sheet.drawn_notes())
+    a_x = (m + 4.0, W - m - _TITLE_W - 6.0)
+    a_y = (m + 4.0 + ((_TITLE_H + note_rows * 5.0 + 8.0) if note_rows else 0.0), H - m - 4.0)
+    third = sheet.projection == "THIRD ANGLE"
+
+    def layout(s: float):
+        sizes = {n: (extents[n][0] * s, extents[n][1] * s) for n in ("front", second)}
+        rooms = {n: _assembly_room(extents[n], overall[n]) for n in ("front", second)}
+        f, o = sizes["front"], sizes[second]
+        rf, ro = rooms["front"], rooms[second]
+        if second == "right":
+            # Side by side, sharing the front view's height: third angle puts the
+            # view from the right on the right.
+            left, right = ((f, rf), (o, ro)) if third else ((o, ro), (f, rf))
+            w = left[1]["left"] + left[0][0] + left[1]["right"] + right[1]["left"] + right[0][0] + right[1]["right"]
+            h = max(f[1] + rf["top"] + rf["bottom"], o[1] + ro["top"] + ro["bottom"])
+            x = a_x[0] + max(0.0, (a_x[1] - a_x[0] - w) / 2)
+            y = a_y[0] + max(0.0, (a_y[1] - a_y[0] - h) / 2) + max(rf["bottom"], ro["bottom"]) + f[1] / 2
+            cl = x + left[1]["left"] + left[0][0] / 2
+            cr = x + left[1]["left"] + left[0][0] + left[1]["right"] + right[1]["left"] + right[0][0] / 2
+            at = {"front": (cl, y), second: (cr, y)} if third else {"front": (cr, y), second: (cl, y)}
+        else:
+            # One above the other, sharing the front view's width: third angle
+            # puts the view from above above.
+            low, high = ((f, rf), (o, ro)) if third else ((o, ro), (f, rf))
+            h = low[1]["bottom"] + low[0][1] + low[1]["top"] + high[1]["bottom"] + high[0][1] + high[1]["top"]
+            w = max(f[0] + rf["left"] + rf["right"], o[0] + ro["left"] + ro["right"])
+            y = a_y[0] + max(0.0, (a_y[1] - a_y[0] - h) / 2)
+            x = a_x[0] + max(0.0, (a_x[1] - a_x[0] - w) / 2) + max(rf["left"], ro["left"]) + f[0] / 2
+            yl = y + low[1]["bottom"] + low[0][1] / 2
+            yh = y + low[1]["bottom"] + low[0][1] + low[1]["top"] + high[1]["bottom"] + high[0][1] / 2
+            at = {"front": (x, yl), second: (x, yh)} if third else {"front": (x, yh), second: (x, yl)}
+        return w <= a_x[1] - a_x[0] and h <= a_y[1] - a_y[0], at
+
+    fitting = None
+    for c in _STANDARD_SCALES:
+        if not _GA_SMALLEST - 1e-12 <= c <= _LARGEST_SCALE:
+            continue
+        fits, at = layout(c)
+        if fits:
+            fitting = (c, at)
+            break
+    if fitting is None:
+        # The views' own annotation -- overall sizes, balloon columns, labels --
+        # does not fit beside the parts list at any useful scale. Drawing it at
+        # 1:1000 would print the views as specks.
+        raise ValueError(
+            f"the general arrangement does not fit {sheet._size()} beside its parts list at any scale down to "
+            f"{_scale_label(_GA_SMALLEST)}: the front and {second} views with their sizes and balloons need more "
+            "than the paper left of the parts list. Give assembly_sheets() a larger size=."
+        )
+    scale, at = fitting
+    slots = [("front", at["front"], None, None), (second, at[second], None, None)]
+    table_h = (len(sheet.revisions) + 1) * 6.0 + 6.0 if sheet.revisions else 0.0
+    b_x = (W - m - _TITLE_W, W - m - 4.0)
+    b_y = (m + _TITLE_H + _list_height(sheet) + 6.0, H - m - 4.0 - table_h)
+    iso_w, iso_h = _view_extent(shape, "iso", 1.0)
+    room = _assembly_room((iso_w, iso_h), set())
+    for c in (c for c in _STANDARD_SCALES if scale / 5 - 1e-9 <= c <= scale):
+        if (iso_w * c + room["left"] + room["right"] <= b_x[1] - b_x[0]
+                and iso_h * c + room["bottom"] + room["top"] <= b_y[1] - b_y[0]):
+            x = b_x[0] + room["left"] + iso_w * c / 2 + (b_x[1] - b_x[0] - iso_w * c - room["left"] - room["right"]) / 2
+            y = b_y[0] + room["bottom"] + iso_h * c / 2 + (b_y[1] - b_y[0] - iso_h * c - room["bottom"] - room["top"]) / 2
+            own = None if abs(c / scale - 1) < 1e-9 else c
+            slots.append(("iso", (x, y), own, "ISOMETRIC" if own is None else f"ISOMETRIC {_scale_label(c)}"))
+            break
+    return scale, slots
+
+
+def _continuations(sheets: Sequence[Sheet]) -> dict[int, dict]:
+    """For each sheet carrying part of a split parts list, where the list
+    continues from and to: ``{sheet number: {"from": n, "to": m}}``."""
+    runs: dict[int, list] = {}
+    for index, sheet in enumerate(sheets, start=1):
+        if sheet._parts is not None:
+            parts, first, last = sheet._parts
+            runs.setdefault(id(parts), []).append((first, last, index))
+    out: dict[int, dict] = {}
+    for spans in runs.values():
+        spans.sort()
+        for (_f0, l0, before), (f1, _l1, after) in zip(spans, spans[1:]):
+            if f1 <= l0:
+                raise ValueError(f"items {f1} to {l0} of one parts list are listed on sheet {before} and again on "
+                                 f"sheet {after}; each item belongs to one run of the list")
+            out.setdefault(before, {})["to"] = after
+            out.setdefault(after, {})["from"] = before
     return out
