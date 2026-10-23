@@ -58,7 +58,9 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
     .map(change => [change.id, change.values.presentation])), [changes]);
   const constructions = useMemo(() => {
     const found = new Map();
-    if (!scene) return found;
+    // The scene's elements stand where Explode or a pose moved them: nothing is built from them
+    // meanwhile (and nothing pinned), and the parts at rest are built afresh.
+    if (!scene || moving) return found;
     const turns = new Map();
     for (const entry of entries) {
       if (!entry.supported) continue;
@@ -74,7 +76,7 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
       if (construction) found.set(entry.id, construction);
     }
     return found;
-  }, [scene, entries, bounds, placements]);
+  }, [scene, entries, bounds, placements, moving]);
 
   const shown = useCallback(id => !off && !hiddenIds.includes(id), [off, hiddenIds]);
   // What the file's view keeps of it.

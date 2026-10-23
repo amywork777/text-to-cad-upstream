@@ -13,9 +13,10 @@ const DATUM_LETTERS = "ABCDEFGHJKLMNPRSTUVWXYZ".split("");
 const PARALLEL = 1 - 1e-6;
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-/** The first datum letter none of `entries` has. */
-export function nextDatumLetter(entries) {
-  const taken = new Set(entries.filter(entry => entry.kind === "datum").map(entry => entry.datum?.letter));
+/** The first datum letter none of `entries` has, nor any new datum asked for (`pending` calls). */
+export function nextDatumLetter(entries, pending = []) {
+  const taken = new Set([...entries.filter(entry => entry.kind === "datum").map(entry => entry.datum?.letter),
+    ...pending.filter(call => call.kind === "datum").map(call => call.letter)]);
   return DATUM_LETTERS.find(letter => !taken.has(letter)) || "";
 }
 
@@ -24,12 +25,13 @@ export function nextDatumLetter(entries) {
  * makes one (`available`), what it needs when it does not (`need`), and the call it starts as.
  *
  * @param {{ picked: Array<{ id: string, ref: string, surface: { type: string, normal?: number[], origin?: number[], radius?: number } | null }>,
- *   entries: ReturnType<typeof import("@text-to-cad/core/lib/xbf/xbfPmi.js").readXbfPmi> }} options
+ *   entries: ReturnType<typeof import("@text-to-cad/core/lib/xbf/xbfPmi.js").readXbfPmi>, pending?: object[] }} options
  *   `picked`: the faces Select has picked, each with its canonical ref and its surface; anything else
- *   picked makes nothing.
+ *   picked makes nothing. `pending`: the new annotations already asked for (their calls), whose ids
+ *   and letters are taken too.
  */
-export function pmiCreateOptions({ picked, entries }) {
-  const ids = entries.map(entry => entry.id);
+export function pmiCreateOptions({ picked, entries, pending = [] }) {
+  const ids = [...entries.map(entry => entry.id), ...pending.map(call => call.id)];
   const faces = picked.filter(item => item.surface && item.ref);
   const only = picked.length === faces.length;
   const planes = only ? faces.filter(item => item.surface.type === "plane") : [];
@@ -38,7 +40,7 @@ export function pmiCreateOptions({ picked, entries }) {
   const oneRound = faces.length === 1 && cylinders.length === 1 ? cylinders[0] : null;
   const pair = faces.length === 2 && planes.length === 2 ? planes : null;
   const parallel = pair && Math.abs(dot(pair[0].surface.normal, pair[1].surface.normal)) >= PARALLEL ? pair : null;
-  const letter = nextDatumLetter(entries);
+  const letter = nextDatumLetter(entries, pending);
   const datums = entries.filter(entry => entry.kind === "datum" && entry.datum?.letter).map(entry => entry.datum.letter);
   return [
     { kind: "datum", label: "Datum", need: "Pick one flat face", available: Boolean(oneFlat && letter),
@@ -67,4 +69,16 @@ export function parseToleranceInput(text) {
   const [upper, lower] = numbers;
   if (numbers.length > 2 || upper < lower) return { error: "The upper deviation comes first, and is not under the lower" };
   return { tolerance: { type: "plus_minus", upper, lower } };
+}
+
+// A feature control frame refers to a primary, a secondary and a tertiary datum, no more.
+export const MAX_DATUMS = 3;
+
+/**
+ * A frame's datums with `letter` taken out, or put in last: in the order picked, primary first (the
+ * order is what the frame means, never sorted), and never past three.
+ */
+export function toggleDatum(datums, letter) {
+  if (datums.includes(letter)) return datums.filter(item => item !== letter);
+  return datums.length >= MAX_DATUMS ? datums : [...datums, letter];
 }

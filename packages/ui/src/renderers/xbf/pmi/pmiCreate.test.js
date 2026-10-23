@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readXbfPmi } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
-import { nextDatumLetter, parseToleranceInput, pmiCreateOptions } from "./pmiCreate.js";
+import { nextDatumLetter, parseToleranceInput, pmiCreateOptions, toggleDatum } from "./pmiCreate.js";
 
 const TOP = { id: "i0/face/2", ref: "plate/f:top", surface: { type: "plane", normal: [0, 0, 1], origin: [0, 0, 2] } };
 const BOTTOM = { id: "i0/face/5", ref: "plate/f:bottom", surface: { type: "plane", normal: [0, 0, -1], origin: [0, 0, -2] } };
@@ -56,4 +56,19 @@ test("a tolerance typed in is read as a drawing writes one, and none is none", (
   assert.ok(parseToleranceInput("-0.1/+0.1").error, "the upper comes first");
   assert.ok(parseToleranceInput("loose").error);
   assert.ok(parseToleranceInput("0").error);
+});
+
+test("a new one asked for but not yet built takes its id and letter, so a second never replaces it", () => {
+  const pending = [{ kind: "geometric_tolerance", characteristic: "flatness", id: "flatness", ref: TOP.ref, value: 0.05 },
+    { kind: "datum", id: "A", letter: "A", ref: BOTTOM.ref }];
+  const options = pmiCreateOptions({ picked: [TOP], entries: [], pending });
+  assert.equal(of(options, "flatness").call.id, "flatness-2");
+  assert.equal(of(options, "datum").call.letter, "B");
+});
+
+test("a frame's datums keep the order they were picked in, primary first, and stop at three", () => {
+  assert.deepEqual(toggleDatum(["B", "A"], "C"), ["B", "A", "C"]);
+  assert.deepEqual(toggleDatum(["B", "A", "C"], "A"), ["B", "C"]);
+  assert.deepEqual(toggleDatum(["B", "C"], "A"), ["B", "C", "A"]);
+  assert.deepEqual(toggleDatum(["A", "B", "C"], "D"), ["A", "B", "C"]);
 });

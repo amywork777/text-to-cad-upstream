@@ -10,7 +10,7 @@ import { FileSheetStatusText, FileSheetValueInput } from "../../kit/inspector/Fi
 import { InfoRow, MonoValue } from "../../kit/inspector/referenceRows.jsx";
 import ToolPanel, { TOOL_PANEL_BUTTON_CLASS, ToolPanelHeadAction } from "../../kit/tools/ToolPanel.jsx";
 import { PmiGlyph, PmiIcon } from "./pmiGlyphs.jsx";
-import { parseToleranceInput, pmiCreateOptions } from "./pmiCreate.js";
+import { MAX_DATUMS, parseToleranceInput, pmiCreateOptions, toggleDatum } from "./pmiCreate.js";
 
 // An engine document's **PMI**, a section of the file sidebar for a document that carries any:
 // every annotation, a row each -- its glyph and what its callout says, and its eye -- in the
@@ -81,8 +81,10 @@ function DatumPicker({ letters, value, onChange }) {
   return <div className="flex items-center justify-between gap-3 py-0.5">
     <span className="shrink-0 text-tiny text-muted-foreground">Datums</span>
     <div className="flex flex-wrap justify-end gap-1">
+      {/* In the order picked, primary first (a frame's order is what it means), at most three. */}
       {letters.map(letter => <button key={letter} type="button" aria-pressed={value.includes(letter)} data-pmi-datum-choice={letter}
-        onClick={() => onChange(value.includes(letter) ? value.filter(item => item !== letter) : [...value, letter].sort())}
+        disabled={!value.includes(letter) && value.length >= MAX_DATUMS}
+        onClick={() => onChange(toggleDatum(value, letter))}
         className={cn("h-5 min-w-5 rounded-sm border px-1 text-tiny", value.includes(letter) ? "border-foreground bg-accent text-foreground" : "border-border text-muted-foreground")}>
         {letter}
       </button>)}
@@ -160,7 +162,9 @@ function NewEntry({ option, letters, onAdd, onCancel }) {
  *   than built, so the PMI is not drawn.
  */
 export default function PmiSection({ pmi, picked, moving }) {
-  const options = useMemo(() => pmiCreateOptions({ picked, entries: pmi.entries }), [picked, pmi.entries]);
+  // What is already asked for counts as taken: a second new one never reuses a pending id or letter.
+  const pending = useMemo(() => pmi.changes.filter(change => change.kind === "add").map(change => change.call), [pmi.changes]);
+  const options = useMemo(() => pmiCreateOptions({ picked, entries: pmi.entries, pending }), [picked, pmi.entries, pending]);
   const letters = useMemo(() => pmi.entries.filter(entry => entry.kind === "datum" && entry.datum?.letter).map(entry => entry.datum.letter), [pmi.entries]);
   const [draft, setDraft] = useState(null);
   const shownCount = pmi.entries.filter(entry => entry.supported).length;

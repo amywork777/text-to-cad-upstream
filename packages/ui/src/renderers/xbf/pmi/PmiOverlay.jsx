@@ -136,8 +136,8 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
     const host = hostRef.current, canvas = canvasRef.current, root = rootRef.current;
     if (!host || !canvas || !root) return undefined;
     let frame = 0, painted = "", paintedItems = null, paintedDrag = null;
-    const paint = (force = false) => {
-      frame = window.requestAnimationFrame(() => paint());
+    // One drawing as the camera stands now; skipped when nothing it depends on moved, unless `force`.
+    const draw = (force = false) => {
       const runtime = runtimeRef.current;
       const camera = runtime?.camera;
       if (!camera || !runtime?.THREE) return;
@@ -206,8 +206,10 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
       context.globalAlpha = 1;
       context.setLineDash([]);
     };
-    repaintRef.current = () => paint(true);
-    frame = window.requestAnimationFrame(() => paint());
+    // The one loop: it alone schedules itself; a repaint asked for draws once, in place.
+    const loop = () => { frame = window.requestAnimationFrame(loop); draw(); };
+    repaintRef.current = () => draw(true);
+    frame = window.requestAnimationFrame(loop);
     return () => {
       window.cancelAnimationFrame(frame);
       repaintRef.current = () => {};
@@ -268,7 +270,7 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
       tabIndex={interactive ? 0 : -1} aria-label={`${item.callout.text}${item.problem ? `: ${item.problem}` : ""}`} aria-pressed={item.selected}
       data-pmi-label={item.id} data-pmi-status={item.status} data-selected={item.selected ? "" : undefined}
       className={cn("absolute left-0 top-0 select-none whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
-        interactive ? "pointer-events-auto" : "pointer-events-none", item.selected && interactive && "cursor-move")}
+        interactive ? "pointer-events-auto touch-none" : "pointer-events-none", item.selected && interactive && "cursor-move")}
       style={{ visibility: "hidden" }}
       onPointerDown={event => press(event, item)}
       onPointerEnter={() => { if (interactive) callbacks.current.onHover(item.id); }}
