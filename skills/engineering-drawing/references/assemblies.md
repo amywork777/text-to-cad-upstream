@@ -19,7 +19,7 @@ def rig_drawing():
     return sheets
 ```
 
-### `parts_list(source)`
+## `parts_list(source)`
 
 `source` is a scene from `cadgen.read_scene(path)` or a live build123d
 `Compound` made with `children=`. Returns a `PartsList`: one `Item` per
@@ -48,7 +48,7 @@ under different names, and the script prints them.
   prototypes they share).
 - `parts.assembly`: the whole assembly, placed, for the GA's views.
 
-### `assembly_sheets(parts, title=..., part_number="", revision="A", size="A3", author="", date="", projection="THIRD ANGLE", ink="mono", notes=(), general_tolerance="", revisions=())`
+## `assembly_sheets(parts, title=..., part_number="", revision="A", size="A3", author="", date="", projection="THIRD ANGLE", ink="mono", notes=(), general_tolerance="", revisions=())`
 
 Returns the set as a list of `Sheet`s: the general arrangement (front view, the
 one of top and right showing more, an isometric; no hidden lines; overall
@@ -62,7 +62,7 @@ item's description over `ITEM n (QTY q) OF <title>`. Every sheet carries the dra
 and date; `notes` and `revisions` go on the GA, `general_tolerance` on the part
 sheets. `sheets.part(key)` is an item's sheet; `sheets.parts` the list.
 
-### `sheet.parts_list(parts, first=1, last=None)`
+## `sheet.parts_list(parts, first=1, last=None)`
 
 Draws `parts` as the parts list, standing on the title block and as wide as it
 (ISO 7573, ASME Y14.34): ITEM, QTY, DESCRIPTION, PART NO., MATERIAL, the header
@@ -72,7 +72,7 @@ and each run of a split list says on which sheet it continues. The views and
 any detail keep clear of it; a hand-placed view over it, or a note running
 under it, is refused.
 
-### `view.balloons(parts)`
+## `view.balloons(parts)`
 
 Balloon every item of `parts` the view shows, on a view of `parts.assembly`.
 Each leader ends in a dot on a point of the part the view sees. The balloons
@@ -91,3 +91,5 @@ hold is refused, naming a larger sheet or scale. Not on a section or a detail.
 | `incomplete: the parts list leaves out items 18, 19 ...` | draw the rest with `parts_list(parts, first=18)` on another sheet |
 | `note ... runs under the parts list` / `view is drawn over the parts list` | shorten the note, move the view |
 | `note: items 1 and 10 (... and ...) are the same shape under different names ...` | `parts.merge(1, 10)` lists them as one part, if they are one |
+| `front.balloons(): 9 balloons do not fit on the right of the front view on A3 ...` | a larger `size=`, or balloon some items on another view (a refusal) |
+| `the general arrangement does not fit A3 beside its parts list ...` | give `assembly_sheets()` a larger `size=` (a refusal) |

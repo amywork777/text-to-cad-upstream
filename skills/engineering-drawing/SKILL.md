@@ -1,6 +1,6 @@
 ---
 name: engineering-drawing
-description: Make an engineering drawing of a part or an assembly as a PDF - orthographic, section, detail, auxiliary and broken views with hidden lines and centre lines, real dimensions, hole, slot and bolt-circle callouts or a hole table read off the model, fillet and chamfer notes, and an ISO title block on a zoned sheet sized to fit, and for an assembly a general arrangement with balloons and a parts list plus a sheet per part, all projected from the geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or manufacturing drawings, an assembly drawing, a parts list or BOM sheet, a print, or "2D views of this part".
+description: Make an engineering drawing of a part or an assembly as a PDF - orthographic, section, detail, auxiliary and broken views, real dimensions, hole callouts or a hole table, notes and a title block on ISO sheets, and for an assembly balloons, a parts list and a sheet per part, all projected from the geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or assembly drawings, a parts list, a print, or "2D views of this part".
 license: MIT
 ---
 
@@ -81,9 +81,10 @@ The first run downloads that installation; later runs reuse it.
      `BOTH ENDS` or `FAR SIDE` when the other end is opened out too. For a part
      with many holes, `view.hole_table()` tags each one (A1, B1 ...) and lists
      its position and size in a table instead.
-   - `Sheet(notes=geometry_notes(part))` states the part's commonest fillet or
-     round radius and 45-degree chamfer as general notes, read off the part;
-     any other size still needs a `radius()`, a `dim` or a note.
+   - `Sheet(notes=geometry_notes(part))` adds `FILLETS R2 UNLESS OTHERWISE
+     SPECIFIED.` and the like only where the part makes it true (every inside
+     corner filleted, or every outside edge rounded or chamfered). Other sizes
+     need a `radius()` callout or a note giving the size.
    - `view.diameter(center)` / `view.radius(center)` measure the circle or arc
      there; pass `size=` only to pick one of several concentric ones.
    - `tol=`, `fit=` and `general_tolerance=` only from the design requirements
@@ -138,27 +139,19 @@ sheets.part("base_plate").views[1].section("A")   # refine any part's sheet
 return sheets
 ```
 
-- `parts_list` reads the parts off the STEP: one item per distinct part, with
-  its quantity. Occurrences are one part only when they share a name, a colour
-  and their geometry; the description is the model's own name for the part
-  (`piston_rod:chrome` reads `PISTON ROD, CHROME`). Two names on one shape stay
-  two items, and the report says so: `parts.merge(a, b)` lists them as one after
-  checking the shapes match. PART NO. and MATERIAL stay blank unless
-  `parts.set(...)` states them. Label the model's parts before drawing it: an
-  unnamed part has an empty description.
-- `assembly_sheets` makes the GA (front view, whichever of top and right shows
-  more, an isometric, overall sizes, balloons, the parts list on the title
-  block, continued on further sheets when long) and a first-pass sheet per part
-  (three views and an isometric in the part's own frame on a sheet it chooses,
-  overall sizes, every hole and slot called out). Each is an ordinary `Sheet`:
-  add sections, details and dimensions to `sheets.part(name)`, then run and read
-  the report. Merge items before `assembly_sheets`; `set()` works after it too.
-- The report says, per sheet, what each part's sheet leaves unstated, and names
-  any item no balloon keys.
+- `parts_list` reads one item per distinct part off the STEP, with its
+  quantity; the description is the model's own name for it
+  (`piston_rod:chrome` reads `PISTON ROD, CHROME`). Label the model's parts
+  before drawing it. PART NO. and MATERIAL stay blank unless `parts.set(...)`
+  states them. Two names on one shape stay two items and the report says so;
+  `parts.merge(a, b)` lists them as one after checking the shapes match.
+- `assembly_sheets` makes the GA (views, overall sizes, balloons, the parts
+  list) and a first-pass sheet per part (three views, an isometric, overall
+  sizes, every hole and slot). Each is an ordinary `Sheet`: refine
+  `sheets.part(name)` like any other, then run and read the report.
 
-For a custom GA, `sheet.parts_list(parts)` draws the table and
-`view.balloons(parts)` on a view of `parts.assembly` balloons what it shows
-([assemblies reference](references/assemblies.md)).
+Parts lists, balloons on a custom GA, and what the script prints about them:
+[assemblies reference](references/assemblies.md).
 
 ## What the sheet contains
 

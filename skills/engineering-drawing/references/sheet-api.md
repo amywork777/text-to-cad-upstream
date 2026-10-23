@@ -72,9 +72,10 @@ script. Both are checked when the module is imported. There is no CLI verb: a
 
 ## `Sheet(size="A3", scale=1.0, title=..., part_number="", material="", finish="", revision="A", author="", date="", units="mm", projection="THIRD ANGLE", notes=(), ink="mono", text_height=3.5, general_tolerance="", revisions=())`
 
-- `size`: `A4`, `A3`, `A2`, `A1`, `A0`, landscape, with an ISO 5457 zone grid;
-  `None` lets `three_views` choose the smallest of A4 to A2 that draws the part
-  at 1:1 or larger, else A3.
+- `size`: `A4`, `A3`, `A2`, `A1`, `A0`, landscape, with an ISO 5457 zone grid.
+  `None` lets `three_views` choose: the smallest of A4 to A2 that draws the
+  part at 1:1 or larger, else A3 at a reduced scale; with `scale` fixed, the
+  smallest sheet that holds the views at it.
 - `scale`: 1 = 1:1, 0.5 = 1:2, 2 = 2:1. Values stay true size at any scale.
   `None` lets `three_views` choose the largest standard scale, up to 10:1, that
   fits. A chosen scale is chosen again when the sheet renders, from the
@@ -193,23 +194,30 @@ sheet millimetres.
   one model axis, in the view's plane) out of the view, the two ends drawn 10
   mm apart with a zigzag break line across each cut. The other views of the
   arrangement that show that length break alike; the isometric is drawn whole.
-  A dimension across the break, and `overall()`, state the true length. Holes
-  inside the stretch are not drawn, and the script says when the part changes
-  there. One break per view; not on a section, detail or auxiliary view.
+  A dimension across the break, and `overall()`, state the true length; one
+  with a point inside the stretch is reported. Break only where the section is
+  constant: the script says when the stretch holds a hole or a change of shape.
+  One break per view; not on a section, detail or auxiliary view.
 - `view.angle(vertex, p1, p2, offset=14)`: the angle at `vertex` between the
   legs toward `p1` and `p2`.
 - `view.note(text, at, offset=(10, 10))`: a leader from a model point to text.
+
 ## `geometry_notes(part)`
 
-The general notes the part's own geometry states, for `Sheet(notes=...)`: its
-commonest blend radius (`FILLETS R2 UNLESS OTHERWISE SPECIFIED.` for inside
-corners, `ROUNDS` for outside edges, `FILLETS AND ROUNDS` for both) and its
-commonest 45-degree chamfer (`CHAMFERS 1 × 45° UNLESS OTHERWISE SPECIFIED.`).
-Each is a measured fact of the model, not a requirement. A blend is a
-part-cylinder or torus face tangent to the two faces it joins; a chamfer is a
-narrow flat strip bevelling a square edge, or a short cone bevelling a turned
-end. Blends and chamfers of other sizes are reported until a `radius()`, a
-`dim` of the chamfer's leg or a note states them.
+The general notes the part's own geometry makes true, for `Sheet(notes=...)`.
+A note such as `FILLETS R2 UNLESS OTHERWISE SPECIFIED.` tells the shop how to
+treat every edge of its kind drawn without a callout, so it is written only
+when the part leaves no such edge sharp: `FILLETS` when every inside corner is
+filleted, and `ROUNDS` or `CHAMFERS 1 × 45°` (whichever is commoner) when every
+outside edge is rounded or chamfered. Each gives the commonest size. A part
+with sharp edges of both kinds gets no notes; an empty list is the right
+answer for it.
+
+A blend is a part-cylinder or torus face tangent to the two faces it joins; a
+chamfer is a narrow flat strip bevelling a square edge, or a short cone
+bevelling a turned end. The script reports every blend and chamfer size no
+note states: `radius()` states a blend where a view shows it as an arc, and a
+note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 
 ## What the script prints
 
@@ -229,6 +237,10 @@ end. Blends and chamfers of other sizes are reported until a `radius()`, a
 | `front dim 0: ... which one it measures was guessed ...` | pass `orientation=` |
 | `the part in the top view is 2 separate solids ...` | the model is in pieces |
 | `DETAIL B: no free paper on A3 for a 50 mm circle at 10:1 ...` | give `at=`, a smaller `scale=`, or a larger sheet |
+| `VIEW C: no free paper on A3 for it at 1:1 ...` | the same, for an auxiliary view |
+| `top.hole_table(): no free paper on A3 for a 70 x 48 mm table ...` | give the table `at=`, or a larger sheet or smaller scale |
+| `top.hole_table(): the top view looks down no hole or slot` | tabulate the view that looks down the holes |
+| `front dim 3: (250, 0, 0) is inside the break ...` | dimension to a point outside the broken stretch |
 | `incomplete: sheet 3 (PIN): the turned diameter ⌀6 ...` | on a drawing of several parts, each line names its sheet |
 
 ## Layers
