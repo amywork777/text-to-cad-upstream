@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { CircleAlert, Eye, EyeOff, Pin, Plus } from "lucide-react";
 import { pmiNumber, pmiToleranceText } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
 import { Button } from "@text-to-cad/ui/primitives/button";
@@ -9,6 +9,7 @@ import { cn } from "@text-to-cad/ui/utils";
 import { FileSheetStatusText, FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
 import { InfoRow, MonoValue } from "../../kit/inspector/referenceRows.jsx";
 import ToolPanel, { TOOL_PANEL_BUTTON_CLASS, ToolPanelHeadAction } from "../../kit/tools/ToolPanel.jsx";
+import { ToolStackContext } from "../../kit/tools/ToolStack.jsx";
 import { PmiGlyph, PmiIcon } from "./pmiGlyphs.jsx";
 import { MAX_DATUMS, parseToleranceInput, pmiCreateOptions, toggleDatum } from "./pmiCreate.js";
 
@@ -157,16 +158,29 @@ function NewEntry({ option, letters, onAdd, onCancel }) {
 
 /**
  * @param {{ pmi: ReturnType<typeof import("./useXbfPmi.jsx").useXbfPmi>, picked: Parameters<typeof pmiCreateOptions>[0]["picked"],
- *   moving: boolean }} props
+ *   moving: boolean, request?: { kind: string, key: number } | null, onRequestDone?: () => void }} props
  *   `picked`: the faces Select has picked, what New can make of; `moving`: the parts stand elsewhere
- *   than built, so the PMI is not drawn.
+ *   than built, so the PMI is not drawn; `request`: a kind asked for from a face's menu ("Add
+ *   datum"), which opens the section on its form; `onRequestDone`: the form has gone (added or
+ *   cancelled).
  */
-export default function PmiSection({ pmi, picked, moving }) {
+export default function PmiSection({ pmi, picked, moving, request = null, onRequestDone }) {
   // What is already asked for counts as taken: a second new one never reuses a pending id or letter.
   const pending = useMemo(() => pmi.changes.filter(change => change.kind === "add").map(change => change.call), [pmi.changes]);
   const options = useMemo(() => pmiCreateOptions({ picked, entries: pmi.entries, pending }), [picked, pmi.entries, pending]);
   const letters = useMemo(() => pmi.entries.filter(entry => entry.kind === "datum" && entry.datum?.letter).map(entry => entry.datum.letter), [pmi.entries]);
   const [draft, setDraft] = useState(null);
+  // A kind asked for from a face's menu: its form, the section open on it.
+  const stack = useContext(ToolStackContext);
+  useEffect(() => {
+    if (!request) return;
+    const option = options.find(item => item.kind === request.kind && item.available);
+    if (option) setDraft(option);
+    stack?.open?.("pmi");
+    // Once per request: the options follow the pick, which the request has just made.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.key]);
+  const closeDraft = () => { setDraft(null); onRequestDone?.(); };
   const shownCount = pmi.entries.filter(entry => entry.supported).length;
   return <ToolPanel id="pmi" title="PMI" label="PMI" fit="tree" resizable collapsible={false} icon={PmiIcon}>
     <ToolPanelHeadAction>
@@ -194,9 +208,9 @@ export default function PmiSection({ pmi, picked, moving }) {
       </TooltipHint> : null}
     </ToolPanelHeadAction>
     {draft?.call ? <NewEntry key={`${draft.kind}:${draft.call.id}`} option={draft} letters={letters}
-      onCancel={() => setDraft(null)} onAdd={(call) => { pmi.add(call); setDraft(null); }} /> : null}
+      onCancel={closeDraft} onAdd={(call) => { pmi.add(call); closeDraft(); }} /> : null}
     {moving ? <FileSheetStatusText className="py-1">Not drawn while the parts are moved: a tolerance is of the part as made.</FileSheetStatusText> : null}
-    {!pmi.entries.length ? <FileSheetStatusText className="py-1">No PMI yet. Pick faces, then New.</FileSheetStatusText> : null}
+    {!pmi.entries.length && !draft ? <FileSheetStatusText className="py-1">No PMI yet: right-click a face to add some.</FileSheetStatusText> : null}
     <ul className={cn("px-1 py-1 text-tiny", pmi.off && "opacity-60")} aria-label="PMI" data-pmi-rows="">
       {pmi.entries.map((entry) => {
         const hidden = pmi.hiddenIds.includes(entry.id);

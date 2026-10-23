@@ -46,18 +46,22 @@ function boxEdge(from, box) {
   return { x: box.x + dx * s, y: box.y + dy * s };
 }
 
-function arrowHead(context, tip, from) {
+// Drawn behind the model: what of a callout the model hides, faint, as hidden ink is
+// (core's `ANNOTATION_HIDDEN_OPACITY`), its marker hollow.
+const BEHIND_ALPHA = 0.3;
+
+function arrowHead(context, tip, from, hollow = false) {
   const angle = Math.atan2(tip.y - from.y, tip.x - from.x);
   context.beginPath();
   context.moveTo(tip.x, tip.y);
   context.lineTo(tip.x - ARROW_PX * Math.cos(angle) + ARROW_HALF_PX * Math.sin(angle), tip.y - ARROW_PX * Math.sin(angle) - ARROW_HALF_PX * Math.cos(angle));
   context.lineTo(tip.x - ARROW_PX * Math.cos(angle) - ARROW_HALF_PX * Math.sin(angle), tip.y - ARROW_PX * Math.sin(angle) + ARROW_HALF_PX * Math.cos(angle));
   context.closePath();
-  context.fill();
+  if (hollow) context.stroke(); else context.fill();
 }
 
 // A datum's feature symbol: the filled triangle its leader stands on, its base on the feature.
-function datumTriangle(context, base, from) {
+function datumTriangle(context, base, from, hollow = false) {
   const angle = Math.atan2(from.y - base.y, from.x - base.x);
   const along = [Math.cos(angle), Math.sin(angle)], side = [-along[1], along[0]];
   context.beginPath();
@@ -65,20 +69,26 @@ function datumTriangle(context, base, from) {
   context.lineTo(base.x - side[0] * DATUM_PX, base.y - side[1] * DATUM_PX);
   context.lineTo(base.x + along[0] * DATUM_PX * 1.4, base.y + along[1] * DATUM_PX * 1.4);
   context.closePath();
-  context.fill();
+  if (hollow) context.stroke(); else context.fill();
 }
 
 function drawItem(context, item, at, ink) {
   const color = item.status !== "ok" ? STATUS_COLOR[item.status] || ink : item.selected ? SELECTED_COLOR : ink;
   context.strokeStyle = color;
   context.fillStyle = color;
-  context.globalAlpha = item.hovered || item.selected ? 1 : 0.85;
+  const alpha = item.hovered || item.selected ? 1 : 0.85;
+  context.globalAlpha = alpha;
   context.lineWidth = item.selected ? 1.5 : 1;
   context.setLineDash(item.status !== "ok" ? [4, 3] : []);
   const line = (a, b) => { if (!a || !b) return; context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke(); };
   if (at.dimension) {
     const { from, to } = at.dimension;
-    for (const [a, b] of at.dimension.extensions) line(a, b);
+    // An extension line from a face the model hides is drawn faint.
+    at.dimension.extensions.forEach(([a, b], index) => {
+      context.globalAlpha = at.dimension.behind?.[index] ? alpha * BEHIND_ALPHA : alpha;
+      line(a, b);
+    });
+    context.globalAlpha = alpha;
     line(from, to);
     context.setLineDash([]);
     if (!from || !to) return;
@@ -100,6 +110,8 @@ function drawItem(context, item, at, ink) {
   }
   if (!at.anchor || !at.box) return;
   const end = boxEdge(at.anchor, at.box);
+  // A leader to a face the model hides from this side: faint, its marker hollow, so it reads as behind.
+  if (at.behind) context.globalAlpha = alpha * BEHIND_ALPHA;
   line(at.anchor, end);
   context.setLineDash([]);
   // A feature not on the page: an open ring where the code anchored it, nothing pointing at a face.
@@ -107,7 +119,8 @@ function drawItem(context, item, at, ink) {
     context.beginPath();
     context.arc(at.anchor.x, at.anchor.y, ARROW_HALF_PX + 1, 0, Math.PI * 2);
     context.stroke();
-  } else if (item.kind === "datum") datumTriangle(context, at.anchor, end); else arrowHead(context, at.anchor, end);
+  } else if (item.kind === "datum") datumTriangle(context, at.anchor, end, at.behind); else arrowHead(context, at.anchor, end, at.behind);
+  context.globalAlpha = alpha;
 }
 
 /**
@@ -115,11 +128,13 @@ function drawItem(context, item, at, ink) {
  *   items: ReadonlyArray<{ id: string, kind: string, callout: object, status: string, construction: object,
  *     selected: boolean, hovered: boolean, moved: boolean, problem: string }>,
  *   interactive: boolean, onSelect: (id: string) => void, onHover: (id: string) => void,
- *   onMove: (id: string, label: number[]) => void, onLookAt: (id: string) => void }} props
+ *   onMove: (id: string, label: number[]) => void, onLookAt: (id: string) => void,
+ *   hiddenAt?: ((point: number[]) => boolean) | null }} props
  *   `construction`: each annotation's points in the scene's coordinates (`pmiConstruction`); `onMove`:
- *   where a dragged label was let go, in the scene's coordinates.
+ *   where a dragged label was let go, in the scene's coordinates; `hiddenAt`: whether the model hides
+ *   a point from the camera as it stands (a leader's start, an extension line's), which is drawn faint.
  */
-export default function PmiOverlay({ viewport, items, interactive, onSelect, onHover, onMove, onLookAt }) {
+export default function PmiOverlay({ viewport, items, interactive, onSelect, onHover, onMove, onLookAt, hiddenAt = null }) {
   const { runtimeRef, hostRef, viewerReadyTick } = viewport;
   const canvasRef = useRef(null);
   const rootRef = useRef(null);
@@ -131,6 +146,8 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
   const repaintRef = useRef(() => {});
   const callbacks = useRef(null);
   callbacks.current = { onSelect, onHover, onMove, onLookAt };
+  const hiddenAtRef = useRef(hiddenAt);
+  hiddenAtRef.current = hiddenAt;
 
   useEffect(() => {
     const host = hostRef.current, canvas = canvasRef.current, root = rootRef.current;
@@ -197,11 +214,14 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
         element.style.visibility = "";
         element.style.transform = `translate(${Math.round(box.x)}px, ${Math.round(box.y)}px) translate(-50%, -50%)`;
         const construction = item.construction;
+        const behind = point => Boolean(point && hiddenAtRef.current?.(point));
         const dimension = construction?.dimension && drag?.id !== item.id ? {
           from: project(construction.dimension.from), to: project(construction.dimension.to),
-          extensions: construction.dimension.extensions.map(([a, b]) => [project(a), project(b)])
+          extensions: construction.dimension.extensions.map(([a, b]) => [project(a), project(b)]),
+          behind: construction.dimension.extensions.map(([a]) => behind(a))
         } : null;
-        drawItem(context, item, { anchor: project(construction?.anchor), box, dimension, broken: Boolean(construction?.broken) }, ink);
+        drawItem(context, item, { anchor: project(construction?.anchor), box, dimension, broken: Boolean(construction?.broken),
+          behind: !construction?.broken && !construction?.dimension && behind(construction?.anchor) }, ink);
       }
       context.globalAlpha = 1;
       context.setLineDash([]);

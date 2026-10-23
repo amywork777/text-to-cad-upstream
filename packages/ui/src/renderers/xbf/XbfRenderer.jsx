@@ -43,6 +43,8 @@ import { useXbfScene } from "./useXbfScene.js";
 import PmiOverlay from "./pmi/PmiOverlay.jsx";
 import PmiSection from "./pmi/PmiSection.jsx";
 import { useXbfPmi } from "./pmi/useXbfPmi.jsx";
+import { pmiCreateOptions } from "./pmi/pmiCreate.js";
+import { createHiddenTest } from "./pmi/pmiHidden.js";
 
 // An engine document in the viewer, exactly as a STEP is: the same tools in the same order
 // (Select with its filter, Pencil, Shapes, Measure, Explode, Clip), the same selection (Parts, Faces and
@@ -588,6 +590,27 @@ function XbfSurface({ view, data }) {
   }).map(([name, action]) => [name, (menu) => { ensureSelect(); return action(menu); }])),
   [copy, exitSingleIsolate, isolate, exitIsolate, hideOthers, showAll, hideNodes, selectedNodeIds, revealNodes, toggleExpanded,
     zoomToSelection, ensureSelect]);
+  // A pick as PMI's New reads it: each face with its canonical ref and its surface; anything else
+  // picked (a part, an edge) makes nothing.
+  const pmiFaceOf = useCallback((id) => {
+    const element = scene && isElementId(id) ? scene.describeElement(id) : null;
+    if (!element || element.kind !== "face") return { id, ref: "", surface: null };
+    return { id, ref: tree.elementRefOf(`i${element.instance}`, "face", element.ordinal, element.name),
+      surface: scene.elementGeometry(id)?.surface || null };
+  }, [scene, tree]);
+  // A face's menu ends in the PMI it and the faces picked with it can carry ("Add datum", "Add
+  // distance"...), where the document is made from code: each picks them and opens the PMI
+  // section on its form.
+  const [pmiRequest, setPmiRequest] = useState(null);
+  const pmiMenuEntries = (faceIds) => {
+    if (!pmiRef.current.editable) return [];
+    const pending = pmiRef.current.changes.filter(change => change.kind === "add").map(change => change.call);
+    return pmiCreateOptions({ picked: faceIds.map(pmiFaceOf), entries: pmiRef.current.entries, pending })
+      .filter(option => option.available).map((option, index) => ({
+        id: `pmi-${option.kind}`, label: `Add ${option.label.toLowerCase()}`, separatorBefore: index === 0, disabled: false,
+        onSelect: () => { ensureSelect(); setChosen(now => pickElements(now, faceIds, false)); setPmiRequest({ kind: option.kind, key: Date.now() }); }
+      }));
+  };
   const contextMenuItems = selectActive ? (press) => {
     const hit = pickAtClient(press.clientX, press.clientY);
     let menu = null;
@@ -599,7 +622,8 @@ function XbfSurface({ view, data }) {
     }
     menu ||= xbfModelMenu({ tree, assembly, expandedIds, hiddenCount: hiddenIds.length, zoomSelectionAvailable, shape,
       copyText: assembly ? "" : singleChip([tree.roots[0]?.selectionId].filter(Boolean)) });
-    return viewportMenuEntries(menu, { actions: partMenuActions });
+    const entries = viewportMenuEntries(menu, { actions: partMenuActions });
+    return hit?.kind === "face" ? [...entries, ...pmiMenuEntries(menu.referenceIds)] : entries;
   } : null;
 
   // ---- the strip --------------------------------------------------------------------------------
@@ -647,20 +671,29 @@ function XbfSurface({ view, data }) {
     exitIsolate, toggleVisibility, showAll, tree, menuForNode, partMenuActions]);
   // PMI's section: a document's that carries PMI, or one made from code, where PMI can be asked for.
   // New makes of the faces Select has picked: each with its canonical ref and its surface.
-  const pmiShown = Boolean(pmi.entries.length || pmi.editable);
-  const pmiPickedFaces = useMemo(() => (scene ? selected.map((id) => {
-    const element = isElementId(id) ? scene.describeElement(id) : null;
-    if (!element || element.kind !== "face") return { id, ref: "", surface: null };
-    return { id, ref: tree.elementRefOf(`i${element.instance}`, "face", element.ordinal, element.name),
-      surface: scene.elementGeometry(id)?.surface || null };
-  }) : EMPTY), [scene, selected, tree]);
+  // PMI's section: a document's that carries PMI, or one PMI is being made for (a face's "Add
+  // datum", a new one waiting in Quick Edit). A file with none has no tile for it.
+  const pmiShown = Boolean(pmi.entries.length || (pmi.editable && (pmiRequest || pmi.changes.length)));
+  const pmiPickedFaces = useMemo(() => (scene ? selected.map(pmiFaceOf) : EMPTY), [scene, selected, pmiFaceOf]);
   const sidebar = scene && (assembly || kinematics || pmiShown) ? <>
     {assembly ? <XbfModelTree key={document.modelKey} tree={tree} active={!previewing} disabled={shell.idle} mode={shape}
       selectedIds={selected} onClearSelection={clearSelection} partControls={partControls} /> : null}
     {kinematics ? <XbfPositionSection kinematics={kinematics} values={poseValues || {}} couplings={poseCouplings} preset={posePreset}
       changed={poseApplied} onValues={setPoseValues} onPreset={choosePreset} onReset={resetPose} /> : null}
-    {pmiShown ? <PmiSection pmi={pmi} picked={pmiPickedFaces} moving={explodeApplied || poseApplied} /> : null}
+    {pmiShown ? <PmiSection pmi={pmi} picked={pmiPickedFaces} moving={explodeApplied || poseApplied} request={pmiRequest}
+      onRequestDone={() => setPmiRequest(null)} /> : null}
   </> : null;
+  // Whether the model hides a point of a callout from the camera now (its leader's start, an
+  // extension line's): drawn faint. Within a thousandth of the model's size, a point is on the
+  // surface the ray meets, not behind it.
+  const hiddenTestRef = useRef(null);
+  const pmiHiddenAt = useCallback((point) => {
+    const runtime = viewportRef.current?.runtimeRef.current;
+    if (!scene || !runtime?.camera || !runtime.THREE) return false;
+    hiddenTestRef.current ??= createHiddenTest(runtime.THREE);
+    const size = restBounds ? Math.hypot(...restBounds.max.map((value, axis) => value - restBounds.min[axis])) : 0;
+    return hiddenTestRef.current({ camera: runtime.camera, pick: ray => scene.pick(ray), point, tolerance: Math.max(0.05, size * 1e-3) });
+  }, [scene, restBounds]);
   // A PMI's label double-clicked: its feature looked at, as a face is.
   const lookAtPmi = useCallback((id) => {
     const feature = pmiRef.current.entries.find(entry => entry.id === id)?.featureIds[0];
@@ -680,7 +713,7 @@ function XbfSurface({ view, data }) {
           filter={measureFilter} source={source} fetch={engineFetch} onHoverElement={hoverElement} onDoublePick={handleMeasureDoublePick} />
         {handles ? <JointHandleOverlay handles={handles} layoutSeamRef={handleLayoutRef} {...viewport} /> : null}
         {!previewing && pmi.items.length ? <PmiOverlay viewport={viewport} items={pmi.items} interactive={selectActive}
-          onSelect={id => { ensureSelect(); setPmiPicked(id); }} onHover={pmi.hover} onMove={pmi.move} onLookAt={lookAtPmi} /> : null}
+          onSelect={id => { ensureSelect(); setPmiPicked(id); }} onHover={pmi.hover} onMove={pmi.move} onLookAt={lookAtPmi} hiddenAt={pmiHiddenAt} /> : null}
         <XbfPick viewport={viewport} scene={picker} enabled={picking} onPick={handlePick} onHover={handleHover} onDoublePick={handleDoublePick}
           deferRef={deferPickRef} pointerTypeRef={pointerTypeRef} />
       </>;

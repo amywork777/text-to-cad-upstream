@@ -200,6 +200,9 @@ export default function FileSidebar({ layout: stored, onLayoutChange, hidden = f
   const sections = useMemo(() => ({
     sidebar: true,
     reveal,
+    // A section brought up by what the person did elsewhere (an engine document's "Add datum", from
+    // a face's menu, opens PMI): as its tile's press would, but never a second press that closes it.
+    open: id => setOpenId(id),
     openSection: shown,
     closeSection,
     // Whether a section's head carries its X: not under a phone's tabs, whose row has the panel's.

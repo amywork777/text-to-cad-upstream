@@ -249,3 +249,32 @@ test('PMI the engine built follows the model through edits: nominals measured an
   assert.equal(await label('hole-diameter').getAttribute('data-pmi-status'), 'invalid');
   assert.deepEqual(errors, []);
 });
+
+// A document with no PMI has no PMI tile. A face's menu offers what it can carry, and a choice
+// opens the PMI section on that kind's form, the face picked: the first annotation is made there.
+test('a file with no PMI has no tile for it, and a face\'s menu starts the first one', async (t) => {
+  const { page, pane, errors, view, loaded } = await openBracket(t, { fixture: 'bracket' });
+  await loaded();
+  assert.equal(await pane.getByRole('button', { name: 'PMI', exact: true }).count(), 0, 'no tile while there is no PMI');
+  await pane.locator('[data-select-filter-trigger]').click();
+  const filter = page.locator('[role=menu][aria-label="Selection filter"]');
+  await filter.locator('[data-select-filter="faces"]').click();
+  await filter.waitFor({ state: 'detached' });
+  const down = await view({ position: [0, 0, 100], target: [0, 0, 0], up: [0, 1, 0], orthographicHalfHeight: 20 });
+  const top = down([10, 6, 2]);
+  await page.mouse.click(top.x, top.y, { button: 'right' });
+  const menu = page.getByRole('menu');
+  await menu.waitFor();
+  assert.deepEqual(await menu.getByRole('menuitem').filter({ hasText: /^Add / }).allInnerTexts(), ['Add datum', 'Add flatness']);
+  await menu.getByRole('menuitem', { name: 'Add flatness', exact: true }).click();
+  const form = pane.locator('[data-pmi-new="flatness"]');
+  await form.waitFor();
+  assert.ok(await pane.locator('[data-tool-panel-id="pmi"]').isVisible(), 'the PMI section is open on it');
+  const value = form.getByRole('textbox', { name: 'Tolerance' });
+  await value.click(); await value.fill('0.05'); await value.press('Enter');
+  await pane.locator('[data-pmi-add]').click();
+  await pane.getByRole('button', { name: 'Add flatness flatness', exact: true }).waitFor();
+  // Its tile stays while the new one waits in Quick Edit for the agent.
+  assert.equal(await pane.getByRole('button', { name: 'PMI', exact: true }).count(), 1);
+  assert.deepEqual(errors, []);
+});
