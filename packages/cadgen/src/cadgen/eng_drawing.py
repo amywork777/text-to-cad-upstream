@@ -870,10 +870,22 @@ def _view_extent(shape, name: str, scale: float) -> tuple[float, float]:
 
 
 def _edge_polyline(edge, samples: int = 24) -> list[tuple[float, float]]:
+    """A projected edge as points. Sampled by arc length where OCCT can measure it;
+    a projected spline that has collapsed to almost nothing (an assembly's hidden
+    seam seen edge-on, say) makes that fail inside OCCT, so such an edge is
+    sampled by its own curve parameter instead."""
     from build123d import GeomType
 
     n = 2 if edge.geom_type == GeomType.LINE else samples
-    return [(float(v.X), float(v.Y)) for v in (edge.position_at(i / (n - 1)) for i in range(n))]
+    try:
+        return [(float(v.X), float(v.Y)) for v in (edge.position_at(i / (n - 1)) for i in range(n))]
+    except Exception:  # noqa: BLE001 - OCCT's Standard_Failure carries no type worth naming
+        from OCP.BRepAdaptor import BRepAdaptor_Curve
+
+        curve = BRepAdaptor_Curve(edge.wrapped)
+        t0, t1 = curve.FirstParameter(), curve.LastParameter()
+        points = [curve.Value(t0 + (t1 - t0) * i / (n - 1)) for i in range(n)]
+        return [(float(p.X()), float(p.Y())) for p in points]
 
 
 def _circles(edges) -> list[tuple[tuple[float, float], float]]:
@@ -2530,6 +2542,8 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 if edge.geom_type == GeomType.CIRCLE:
                     c = to_sheet((edge.arc_center.X, edge.arc_center.Y))
                     r = edge.radius * sv
+                    if r < 1e-6:
+                        continue
                     if edge.is_closed:
                         if once(("circle", q(c[0]), q(c[1]), q(r))):
                             msp.add_circle(c, r, dxfattribs={"layer": layer})
@@ -2547,6 +2561,11 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                     continue
                 poly = [to_sheet(p) for p in _edge_polyline(edge)]
                 points = tuple((q(x), q(y)) for x, y in poly)
+                # An edge seen exactly end-on projects to a point, and a point is
+                # not a line: drawn, it is a zero-length entity the drawing checks
+                # refuse. Single parts rarely show one; assemblies show many.
+                if max(math.hypot(x - points[0][0], y - points[0][1]) for x, y in points) < 1e-6:
+                    continue
                 # The same edge can come back with its ends swapped; one drawn line is
                 # one key whichever way it was walked.
                 key = ("poly", min(points, points[::-1]))

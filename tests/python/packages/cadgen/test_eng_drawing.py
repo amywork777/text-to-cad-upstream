@@ -1356,6 +1356,47 @@ class ColdTrialTests(unittest.TestCase):
         self.assertIn("CENTER", types, "the extension line from the hole centre is a centre line")
 
 
+class AssemblyEdgeTests(unittest.TestCase):
+    """What a whole assembly brought out that single parts never did. The case was
+    a motorcycle shock absorber, whose coil spring is 156 tilted cylinders fused
+    into one solid -- too slow to build here, so each failure is forced."""
+
+    def test_a_curve_occt_cannot_measure_is_sampled_by_its_parameter(self) -> None:
+        from unittest import mock
+
+        from build123d import Edge
+        from cadgen.eng_drawing import _edge_polyline
+
+        arc = Edge.make_spline([(0, 0, 0), (5, 3, 0), (10, 0, 0)])
+        with mock.patch.object(type(arc), "position_at", side_effect=RuntimeError("Standard_Failure")):
+            points = _edge_polyline(arc, samples=5)
+        self.assertEqual(len(points), 5)
+        self.assertAlmostEqual(points[0][0], 0.0, places=6)
+        self.assertAlmostEqual(points[-1][0], 10.0, places=6)
+
+    def test_an_edge_seen_end_on_draws_nothing(self) -> None:
+        """A point is not a line; written, it is a zero-length entity the drawing
+        checks refuse, and the whole sheet with it."""
+        from unittest import mock
+
+        import cadgen.eng_drawing as drawing
+        from cadgen.drawing_checks import validate_drawing_document
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        real = drawing._edge_polyline
+
+        def collapse(edge, samples=24):
+            points = real(edge, samples)
+            return [points[0]] * len(points) if len(points) > 2 else points
+
+        sheet = Sheet("A4")
+        sheet.view(_shaft(), "iso", at=(150, 110), hidden=False)
+        with mock.patch.object(drawing, "_edge_polyline", collapse):
+            doc = _render_sheet(sheet, index=1, count=1, label="point")
+        errors = [f.code for f in validate_drawing_document(doc, drawing=True) if f.severity == "error"]
+        self.assertNotIn("zero_length_entity", errors)
+
+
 class SymbolTests(unittest.TestCase):
     def test_drawing_symbols_are_line_work_not_glyphs(self) -> None:
         """⌴ and ⌵ are missing from common fonts and ezdxf fills Ø solid in the
