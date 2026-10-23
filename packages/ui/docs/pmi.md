@@ -21,7 +21,10 @@ field read as it is or as nothing, never guessed:
 - A **dimension** (`distance` between two parallel flat faces, `diameter` of a round one): its
   nominal is the engine's, measured on the geometry (`source: "geometry"`); its tolerance is what
   the code supplied (`pmi.plus_minus(upper, lower)`), and none where it supplied none. The viewer
-  never fills a tolerance in, not even a default.
+  never fills a tolerance in, not even a default. A **basic** dimension (`pmi.basic`,
+  `dimension.basic`: theoretically exact, as a position tolerance's true position is located) is a
+  distance between flat faces and holes, a hole by its axis; it holds no tolerance at all, and its
+  number is drawn boxed, as a drawing draws it.
 - A **datum**: its letter.
 - A **geometric tolerance** (`flatness`, `position`): its value, a diameter zone, the datums it
   refers to.
@@ -54,7 +57,9 @@ a pick's chip names it ("plate · face 7"), its canonical ref its copy.
 `@text-to-cad/core/lib/xbf/xbfPmiLayout.js` makes each annotation's construction in the scene's
 coordinates from the elements its references name (`elementGeometry`): the point on its feature
 a leader starts from (a flat face's own node nearest its middle, so never in a hole; a hole's rim),
-where its label stands, and a distance's dimension and extension lines, square between its faces.
+where its label stands, and a distance's dimension and extension lines: along what it measures (the
+first flat face's normal; between two holes, square to both), each extension line from its end's
+plane, or from a hole's centre line.
 `presentation` (`pmi.place(anchor, offset)`: the anchor on the feature and the label's offset from
 it, in millimetres in its part's frame, `part` the structure's prototype; drawn where that part's
 first occurrence stands, `pmiPresentationToScene`, and written back in its frame) is where the code
@@ -97,7 +102,8 @@ paragraph of what to do to the model's `pmi.annotate(...)` call and the call its
 - **New**: from a face's menu ("Add datum", "Add flatness"... whatever it and the faces picked with
   it can carry, which picks them and opens the PMI section on the form), or the section's New, of
   the faces Select has picked: one of the supported subset — a datum or a flatness on
-  one flat face, a distance between two parallel ones, a diameter or a position on a round one —
+  one flat face, a distance between two parallel ones, a basic dimension between two of flat faces
+  and holes, all parallel, a diameter or a position on a round one —
   with a fresh id, its references the faces' canonical refs, and its values given (a geometric
   tolerance's value required; a dimension's tolerance only if given). A kind the pick cannot make
   is off in the menu, saying what it needs.
@@ -111,7 +117,8 @@ from code here: its PMI, where the engine serves any, is read alone.
 - No leader routing: labels the code placed can cover each other, and a leader can cross the
   model.
 - Not drawn under Explode or a pose; not drawn in Preview or in snapshots.
-- Only the supported subset is drawn and made: distance, diameter, datum, flatness, position.
+- Only the supported subset is drawn and made: distance (basic or not), diameter, datum, flatness,
+  position.
 - A moved label returns to the document's placement if its change is dropped or sent before the
   code has it.
 - The section's strings are English, as the engine document's other sections are.
