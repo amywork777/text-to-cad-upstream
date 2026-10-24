@@ -275,6 +275,16 @@ class TurnedTests(unittest.TestCase):
         self.assertEqual(turned_diameters(self._shaft()), [20.0, 30.0])
         self.assertEqual(turned_diameters(Box(40, 40, 10) - Cylinder(5, 10)), [], "a bore is a hole, not a step")
 
+    def test_a_fillet_round_a_shoulder_is_not_a_groove(self) -> None:
+        from build123d import Axis, fillet
+        from cadgen._internal.drawing_features import grooves
+
+        shaft = self._shaft()
+        # The two shoulders' inside corners: the ring edges at X = 30 and 70 of the ⌀20 steps.
+        corners = [e for e in shaft.edges().filter_by(Axis.X, reverse=True)
+                   if abs(e.radius - 10) < 1e-6 and abs(e.center().X - 30) < 1e-6]
+        self.assertEqual(grooves(fillet(corners, 2)), [], "a torus rounding a corner is the fillet's note's")
+
 
 class EdgeTests(unittest.TestCase):
     """Blends and chamfers: what a general note states."""

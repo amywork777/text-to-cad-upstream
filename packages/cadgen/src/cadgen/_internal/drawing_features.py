@@ -737,16 +737,17 @@ class Groove:
 def grooves(shape) -> list[Groove]:
     """The part's turned grooves: concave toroidal faces that are not blends
     rounding a corner (a fillet is its note's)."""
+    from build123d import Vector
     from OCP.BRepAdaptor import BRepAdaptor_Surface
     from OCP.GeomAbs import GeomAbs_Torus
 
-    rounded = [b.point for b in blends(shape)]
+    rounded = [Vector(*b.point) for b in blends(shape)]
     found = []
     for face in shape.faces():
         surface = BRepAdaptor_Surface(face.wrapped)
         if surface.GetType() != GeomAbs_Torus:
             continue
-        if any(_distance_to_face(face, p) < 1e-6 for p in rounded):
+        if any(_distance_to_face(face.wrapped, p) < 1e-6 for p in rounded):
             continue
         torus = surface.Torus()
         ax = torus.Axis()
