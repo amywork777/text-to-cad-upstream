@@ -41,7 +41,9 @@ FIXTURE = Path(__file__).resolve().parent / "pmi_golden"
 WRITE = os.environ.get("CADGEN_RENDER_GOLDENS") == "write"
 
 
-# The fixture's model (``models/examples/src/pmi_plate.py``): tolerance values ILLUSTRATIVE.
+# The fixture's model: the plate of ``models/examples/src/pmi_plate.py`` and its first requirements (the
+# example goes on to a model-based definition: datum-feature profiles, a general profile, notes and
+# views). Tolerance values ILLUSTRATIVE.
 PLATE = '''
 import build123d as bd
 from cadgen.engine import materials, pmi, step, xbf
@@ -1917,7 +1919,7 @@ class ForeignTest(unittest.TestCase):
 
 class FixtureTest(_Folder):
     def test_the_committed_fixture_is_a_fresh_builds_pmi(self) -> None:
-        """``pmi_golden/pmi_plate.step`` says what a build of the example says, to a reader of no OCCT;
+        """``pmi_golden/pmi_plate.step`` says what a build of the plate says, to a reader of no OCCT;
         and ``pmi_golden/pmi_plate.pmi.json`` is the structure's ``pmi`` a viewer is served."""
         self.build(plate())
         if WRITE:

@@ -1,4 +1,4 @@
-# PMI: datums, dimensions, tolerances and notes
+# PMI: datums, dimensions, tolerances, notes and views
 
 Read this file when the user asks for datums, toleranced dimensions, basic dimensions,
 flatness, position, a surface profile or a general profile ("unless otherwise noted, all
@@ -22,11 +22,66 @@ document keeps them:
 - **Views**: `pmi.view`, a named view of the part (a camera, a section, the
   requirements it shows); the iso view shows them all.
 
-The `.xbf` keeps them as the kernel's own GD&T, linked to their faces, and a STEP
-export writes them as AP242 semantic PMI: requirements a program reads off the faces,
-not drawn callouts. A GLB, STL or 3MF carries none. The viewer draws each one on the
-model and lists it in its PMI section, and `cadgen snapshot` draws them as the viewer
-does.
+The `.xbf` keeps them as the kernel's own GD&T, notes and views, linked to their faces,
+and a STEP export writes the requirements as AP242 semantic PMI: requirements a program
+reads off the faces, not drawn callouts. Notes and views stay in the `.xbf`. A GLB, STL
+or 3MF carries none. The viewer draws datums, dimensions, flatness and position on the
+model and lists every annotation in its PMI section, one it does not draw yet (a
+surface profile, a note) with why; `cadgen snapshot` draws them as the viewer does.
+Neither offers views yet.
+
+## A model-based definition
+
+A part a shop can make and inspect with no drawing has a requirement on every face. Build
+it in this order, in the part's one `pmi.annotate` call, and take every value from the
+user (ask for what they have not given; never pick a tolerance):
+
+1. **Datums**, primary first: the faces the part is located and measured from.
+2. **The general profile first**: `pmi.general_profile("general", value, datums=[...])`,
+   Note 1, the user's "unless otherwise noted" profile. It holds every face nothing
+   else controls, so most faces need nothing more.
+3. **Then each feature's own requirements**, where the general profile is not enough: a
+   size (`pmi.diameter`, `pmi.distance` with `plus_minus` or `limits`), a location
+   (`pmi.position` and the `pmi.basic` dimensions to its true position), a form
+   (`pmi.flatness`), a tighter profile (`pmi.profile`). A size, a location or a profile
+   takes its faces out of the general profile.
+4. **The datum features' own controls**: the general profile leaves out the datum
+   features it names. Give each one its own: a flatness on the primary, a profile on
+   the others to the datums before them.
+5. **Notes**, in the user's words: the shop's instructions, general or flagged on
+   faces ([Notes](#notes)).
+6. **Views**: a section through each feature a reader must see cut, and an iso view
+   showing everything ([Views](#views)).
+7. **Build, and read the coverage warnings** ([Coverage](#coverage)): fix each in the
+   model and build again, until the build lists no face without a requirement and no
+   conflict.
+
+```python
+from lib.notes import NOTES   # the project's notes library (Notes, below)
+
+# The values are examples: take the user's, or ask for them.
+return pmi.annotate(
+    body,
+    pmi.datum("A", bottom), pmi.datum("B", front), pmi.datum("C", left),       # 1
+    pmi.general_profile("general", 0.5, datums=["A", "B", "C"]),               # 2: Note 1
+    pmi.diameter("hole-diameter", hole, tolerance=pmi.limits(10.0, 10.1)),     # 3
+    pmi.position("hole-position", hole, 0.1, datums=["A", "B", "C"]),
+    pmi.basic("hole-from-B", front, hole),
+    pmi.basic("hole-from-C", left, hole),
+    pmi.flatness("A-flatness", bottom, 0.05),                                  # 4
+    pmi.profile("B-profile", front, 0.1, datums=["A"]),
+    pmi.profile("C-profile", left, 0.1, datums=["A", "B"]),
+    pmi.note("mask", NOTES["primer-mask"], faces=[hole],                       # 5: Note 2
+             annotations=["hole-diameter"]),
+    pmi.view("A-A", camera="front", shows=["hole-diameter", "hole-position", "mask"],
+             section=pmi.section("y", 0, invert=True)),                        # 6
+    pmi.view("iso", camera="iso"),
+    library=NOTES,
+)
+```
+
+Here the general profile holds the top and the back and right sides; every other face
+has its own requirement, so the build warns of nothing.
 
 ## Annotate a part
 
@@ -57,6 +112,9 @@ def plate():
         pmi.basic("hole-from-C", left, hole),    # and 50 from C
     )
 ```
+
+Built, this warns that the four sides have no requirement: nothing here holds them.
+[A model-based definition](#a-model-based-definition) gives every face one.
 
 - **Annotate the shape that is returned**, after its last boolean: a `Face` given as a
   ref is numbered against that shape when `annotate` is called. Annotations given to
@@ -108,13 +166,14 @@ def plate():
 ## Notes
 
 ```python
-# notes.py, a module of the project's own code: its standard notes by name, in the
-# user's words (cadgen ships no note text; never write notes for the user).
+# lib/notes.py, a module of the project's own code: its standard notes by name, in the
+# user's words. This text is an example, as the tolerance values are: cadgen ships no
+# note text, so never write notes for the user; ask for theirs.
 NOTES = {"primer-mask": "Mask these features before coating with primer"}
 ```
 
 ```python
-from notes import NOTES
+from lib.notes import NOTES
 
 return pmi.annotate(
     body,
@@ -150,8 +209,8 @@ return pmi.annotate(
     body,
     # ... the requirements and notes, as above ...
     pmi.view("A-A", camera="front", shows=["hole-diameter", "hole-position"],
-             section=pmi.section("y", 0),    # through the hole's axis
-             place={"hole-diameter": pmi.place((5, 0, 5), (10, 0, 10))}),
+             section=pmi.section("y", 0, invert=True),  # through the hole's axis
+             place={"hole-diameter": pmi.place((5, 0, 0), (15, 0, 10))}),
     pmi.view("iso", camera="iso"),    # shows every annotation and note
 )
 ```
@@ -162,7 +221,9 @@ return pmi.annotate(
   preset's does (`front` is `(0, -1, 0)`). Every view is orthographic.
 - **A section** is the viewer's Clip: `pmi.section(axis, at, invert=False)` cuts
   across `"x"`, `"y"` or `"z"` at `at` millimetres and keeps the lower side
-  (`invert=True` the upper).
+  (`invert=True` the upper). Keep the side away from the camera, so it looks at the
+  cut: the `front` camera is at -y, so a section across `y` keeps the upper side
+  (`invert=True`); a `back` camera's keeps the lower.
 - **What it shows**: `shows=` names the ids of the same `annotate` call, annotations
   and notes. Leave it out to show everything, as an iso view does.
 - **Placements per view**: `place={id: pmi.place(anchor, offset)}` draws a shown
@@ -185,9 +246,10 @@ nominal measured anew and its tolerance as written. Otherwise its status says wh
 
 Such an annotation stays in the `.xbf` with its values, linked to nothing, and is
 listed in the build report's `pmi` (`{"annotations", "problems"}`, with `warnings`,
-`coverage` and `unattached` where any are). A STEP is refused rather than written without it, naming each one.
-Fix the ref in the code, or remove the annotation. A flag note whose face is gone keeps
-its number and its text and says `missing` too; a STEP is not refused for it.
+`coverage` and `unattached` where any are). A STEP is refused rather than written
+without it, naming each one. Fix the ref in the code, or remove the annotation. A flag
+note whose face is gone keeps its number and its text and says `missing` too; a STEP
+is not refused for it.
 
 A ref written as text that names a face of another kind than on the last build (a
 hole's name that passed to a flat side of the cut that replaced it) is measured as it
@@ -209,7 +271,8 @@ warning: pmi: PART: IDS: PROBLEM
   (`plus_minus` or `limits`) or geometric tolerance on it, or by the general profile.
   A basic dimension, a datum and a note cover nothing: a basic dimension only locates
   what a position or a profile controls. One `pmi.general_profile` usually covers most
-  of them: add it first, with the user's value and datums (ask for them).
+  of them: add it first, with the user's value and datums (ask for them;
+  [A model-based definition](#a-model-based-definition)).
 - **Then the datum features.** The general profile leaves out the datum features it
   names, so they stay listed until each has a control of its own, even where a basic
   dimension starts from it: a flatness on the primary datum, and the user's
@@ -249,8 +312,9 @@ coverage as `pmi_coverage` ([Coverage](#coverage)). A general profile says
 `"general": true`, and its `refs` are the faces it covers on this build, each with
 `written` null; `pmi.otherwise_controlled(entries)` gives the faces the rest control.
 PMI read from another system's STEP that this does not model whole (another
-characteristic, a fit, modifiers, limits beside either, a link to an edge or a point)
-is listed as `kind: "unsupported"` with its `xcaf_type` and a `reason`, never dropped.
+characteristic, a fit, modifiers, limits beside any of these, a link to an edge or a
+point) is listed as `kind: "unsupported"` with its `xcaf_type` and a `reason`, never
+dropped.
 A nominal the file holds says `"source": "file"`; a dimension the file gives limits
 has none (`nominal` is null), since the file states limits, not a nominal.
 
@@ -273,9 +337,9 @@ with the file's SHA-256. It checks the file, not a supplier's importer.
 
 A STEP carries no annotation ids, no drawn callouts, no notes and no views: notes,
 views and the library stay in the `.xbf`, and the check neither expects nor counts
-them. A general profile is written as
-a surface profile on exactly the faces it covers, so a CAM or inspection program reads
-the faces themselves; the file does not say "general".
+them. A general profile is written as a surface profile on exactly the faces it
+covers, so a CAM or inspection program reads the faces themselves; the file does not
+say "general".
 
 ## Review
 

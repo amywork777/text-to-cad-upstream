@@ -9,8 +9,8 @@ Every script of `models/examples/src`, ported to `cadgen.engine`: one `@xbf` eac
 | `basic_shape_mating_test_fixture.py` | `XBF/basic_shape_mating_test_fixture.xbf` | Seven parts and a sub-assembly seated on a base plate by build123d joints |
 | `electronics_enclosure_base_import.py` | `XBF/electronics_enclosure_base_import.xbf`, `XBF/basic_shape_mating_test_fixture_import.xbf` | `STEP/electronics_enclosure_base.step` and `STEP/basic_shape_mating_test_fixture.step` read back with `read_step` |
 | `electronics_enclosure_base_drawing.py` | `PDF/electronics_enclosure_base_drawing.pdf` | **Engineering drawing** (`@eng_drawing`) of the enclosure, read from its xbf (`read_xbf`): three views with hidden lines and centre marks, measured dimensions, hole callouts, title block. Build the enclosure first. |
-| `pmi_plate.py` | `XBF/pmi_plate.xbf`, `XBF/pmi_plate.step` | **Semantic PMI**: a plate with a through-hole, datums A/B/C, thickness and hole-diameter dimensions with plus-minus tolerances, flatness, and the hole's position to A\|B\|C located by basic dimensions from B and C, exported as AP242 semantic PMI (tolerance values illustrative; Aluminum 6061-T6) |
-| `aerospace_avionics_bracket.py` | `XBF/aerospace_avionics_bracket.xbf`, `XBF/aerospace_avionics_bracket.step` | **Semantic PMI** on a bracket with a back wall, webs, slots and a locating bore: datums A/B/C, toleranced thickness and bore, flatness, and the bore's position located by basic dimensions (geometry and tolerance values illustrative, not a flight part; Aluminum 7075-T6) |
+| `pmi_plate.py` | `XBF/pmi_plate.xbf`, `XBF/pmi_plate.step` | **Semantic PMI as a model-based definition**: a plate with a through-hole, datums A/B/C, thickness and hole-diameter dimensions with plus-minus tolerances, flatness, the hole's position to A\|B\|C located by basic dimensions from B and C, profiles on datum features B and C, and a general profile to A\|B\|C (Note 1) on every other face; a general note and a flag note on the hole from the project's notes library (`lib/notes.py`), and two views, section A-A through the hole and an iso. Exported as AP242 semantic PMI; the notes and views stay in the xbf (tolerance values and note texts illustrative; Aluminum 6061-T6) |
+| `aerospace_avionics_bracket.py` | `XBF/aerospace_avionics_bracket.xbf`, `XBF/aerospace_avionics_bracket.step` | **Semantic PMI as a model-based definition** on a bracket with a back wall, webs, slots and a locating bore: datums A/B/C, toleranced thickness and bore, flatness, the bore's position located by basic dimensions, profiles on datum features B and C, and a general profile to A\|B\|C (Note 1) on every other face; the same notes as the plate, flagged on the bore, and two views, section A-A through the bore and an iso (geometry, tolerance values and note texts illustrative, not a flight part; Aluminum 7075-T6) |
 | `cam_follower_roller.py` | `XBF/cam_follower_roller.xbf` | Cam follower roller with central bearing bore and rounded outer profile (Steel 4140) |
 | `centrifugal_impeller.py` | `XBF/centrifugal_impeller.xbf` | Single solid centrifugal impeller (Aluminum 6061-T6) |
 | `circular_flange.py` | `XBF/circular_flange.xbf` | Circular flange with a six-hole bolt circle (Steel 1018) |
@@ -54,7 +54,8 @@ anodised in each part's own colour (`color=None`). The imports read the STEP
 inputs as they are, without materials.
 
 Each model declares its xbf alone, but the mounting plate and the gear blank (STL, 3MF and
-GLB beside it) and the two PMI examples (a STEP beside it, its PMI as AP242's). The import
+GLB beside it) and the two PMI examples (a STEP beside it, its PMI as AP242's; their notes
+come from `lib/notes.py`, the project's notes library, its text illustrative). The import
 reads fixed STEP inputs committed in `../STEP/`, exported once from the enclosure and the fixture; no model writes them
 (re-export one with `cadgen export ../XBF/NAME.xbf ../STEP/NAME.step`).
 Build from this folder, in any order: each script builds every model it defines, for example

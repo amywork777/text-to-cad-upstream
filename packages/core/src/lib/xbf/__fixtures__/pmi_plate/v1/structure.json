@@ -1,7 +1,7 @@
 {
  "name": "plate",
  "path": "pmi_plate.xbf",
- "version": "1792811277384386577-17357",
+ "version": "1792827093187333352-17357",
  "units": "mm",
  "prototypes": [
   {
@@ -362,7 +362,8 @@
     "unit": "mm",
     "zone": null,
     "modifier": null,
-    "datums": []
+    "datums": [],
+    "general": false
    }
   },
   {
@@ -404,8 +405,23 @@
     "modifier": null,
     "datums": [
      "A"
-    ]
+    ],
+    "general": false
    }
+  }
+ ],
+ "pmi_library": [],
+ "pmi_views": [],
+ "pmi_coverage": [
+  {
+   "part": 0,
+   "uncovered": [
+    "plate/f:edit_plate.body_make_box1.1",
+    "plate/f:edit_plate.body_make_box1.2",
+    "plate/f:edit_plate.body_make_box1.3",
+    "plate/f:edit_plate.body_make_box1.4"
+   ],
+   "conflicts": []
   }
  ]
 }
