@@ -189,8 +189,8 @@ return sheets
   drawing.
 - A layered part (a phone case's shell, tape and lining) is a small assembly:
   `view.section("A", parts=parts)` hatches each layer as its material family
-  (`parts.set(n, family="plastic")`), fills a layer too thin to hatch solid,
-  and draws a material key; `sheet.layer_table(parts, rows)` lists each layer's
+  (`parts.set(n, family="plastic")`), fills a layer too thin to hatch solid
+  and names it, and draws a material key, a row per layer; `sheet.layer_table(parts, rows)` lists each layer's
   thickness and coverage as the person states them.
 
 Parts lists, balloons on a custom GA, and what the script prints about them:

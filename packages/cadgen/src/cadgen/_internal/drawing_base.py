@@ -120,6 +120,26 @@ def _fmt(value: float) -> str:
     return text or "0"
 
 
+#: The most decimal places a stated tolerance or limit prints to. A value is printed
+#: as given, never rounded: rounded, a tolerance of 0.005 printed 0.01, a
+#: requirement nobody stated.
+_MOST_PLACES = 4
+
+
+def _places(*values: float) -> int:
+    """The decimal places that print every one of ``values`` exactly."""
+    for places in range(_MOST_PLACES + 1):
+        if all(abs(round(v, places) - v) < 1e-9 for v in values):
+            return places
+    raise ValueError(f"{', '.join(repr(v) for v in values)}: a stated tolerance prints exactly as given, to at "
+                     f"most {_MOST_PLACES} decimal places")
+
+
+def _exact(value: float) -> str:
+    """A stated value as given, to its own decimal places."""
+    return f"{value:.{_places(value)}f}"
+
+
 def _p3(p) -> tuple[float, float, float]:
     values = tuple(float(v) for v in p)
     if len(values) == 2:

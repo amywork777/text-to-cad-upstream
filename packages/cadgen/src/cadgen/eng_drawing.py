@@ -68,7 +68,8 @@ from cadgen._internal.drawing_assembly import (
 )
 from cadgen._internal.drawing_base import (
     _BAND_H, _DETAIL_SIZE, _MARGIN, _NOTE_HEIGHT, _NOTE_INSET, PROJECTIONS, _SAME_PLACE, _SECTION_LETTERS,
-    SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, UNITS, VIEW_DIRECTIONS, _cross, _dirs, _dot, _look, _p3, _scale_label,
+    SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, UNITS, VIEW_DIRECTIONS, _cross, _dirs, _dot, _look, _p3, _places,
+    _scale_label,
     _text_width, _view_axes, _where,
 )
 from cadgen._internal.drawing_gdt import Frame, frame_size
@@ -191,6 +192,20 @@ class View:
     #: The datum features :meth:`datum` defines on this view: (letter, model
     #: point, stem offset or None).
     _datums: list = field(default_factory=list)
+    #: On a part's sheet of an assembly drawing that draws its part turned (a long
+    #: turned part lies down), the turn. The points given to the view are in the
+    #: part's own frame, and turned with it.
+    _turn: Any = None
+
+    def _at(self, p) -> tuple[float, float, float]:
+        """A model point given to the view, in the frame the view draws."""
+        point = _p3(p)
+        if self._turn is None:
+            return point
+        from build123d import Pos
+
+        moved = (self._turn * Pos(*point)).position
+        return moved.X, moved.Y, moved.Z
 
     def dim(self, p1, p2, *, offset: float | None = None, text: str | None = None, orientation: str | None = None,
             tol: float | tuple[float, float] | None = None, fit: str | None = None,
@@ -217,7 +232,7 @@ class View:
         if orientation not in (None, "h", "v"):
             raise ValueError(f"orientation must be 'h', 'v' or None, got {orientation!r}")
         limits = _dimension_kind(tol=tol, fit=fit, limits=limits, basic=basic, reference=reference)
-        self._dims.append(_Dim("linear", _p3(p1), _p3(p2), _offset(offset), text, orientation,
+        self._dims.append(_Dim("linear", self._at(p1), self._at(p2), _offset(offset), text, orientation,
                                tol=_tol(tol), fit=fit, basic=basic, reference=reference, limits=limits,
                                frame=_frame(frame), datum=_new_datum(self.sheet, datum),
                                key=_key(key, reference)))
@@ -254,7 +269,7 @@ class View:
             raise ValueError("a hole is either THRU or has a depth, not both")
         spec = {"given": given, "thread": None if thread is None else str(thread),
                 "label": None if label is None else str(label)}
-        self._dims.append(_Dim("hole", _p3(center), None, 0.0, None, None, radius=0.0,
+        self._dims.append(_Dim("hole", self._at(center), None, 0.0, None, None, radius=0.0,
                                angle=float(angle), tol=_tol(tol), fit=fit, hole=spec,
                                frame=_frame(frame), datum=_new_datum(self.sheet, datum), key=_key(key)))
         return self
@@ -276,7 +291,7 @@ class View:
                  "count": None if count is None else _positive("count", count, integer=True)}
         if thru and depth is not None:
             raise ValueError("a slot is either THRU or has a depth, not both")
-        self._dims.append(_Dim("slot", _p3(center), None, 0.0, None, None, angle=float(angle),
+        self._dims.append(_Dim("slot", self._at(center), None, 0.0, None, None, angle=float(angle),
                                hole={"given": given, "label": None if label is None else str(label)},
                                frame=_frame(frame), datum=_new_datum(self.sheet, datum), key=_key(key)))
         return self
@@ -305,7 +320,7 @@ class View:
         corner = None
         if at is not None:
             corner = _pair("at", at)
-        self._table = _TableSpec(None if origin is None else _p3(origin), corner)
+        self._table = _TableSpec(None if origin is None else self._at(origin), corner)
         return self
 
     def diameter(self, center, *retired, size: float | None = None, angle: float = 45.0,
@@ -317,7 +332,7 @@ class View:
         ``reference``, ``frame``, ``datum`` and ``key`` as :meth:`dim` takes them."""
         _refuse_retired_size("diameter", retired)
         _dimension_kind(basic=basic, reference=reference)
-        self._dims.append(_Dim("diameter", _p3(center), None, 0.0, text, None,
+        self._dims.append(_Dim("diameter", self._at(center), None, 0.0, text, None,
                                radius=0.0 if size is None else _positive("size", size) / 2, angle=float(angle),
                                basic=basic, reference=reference, frame=_frame(frame),
                                datum=_new_datum(self.sheet, datum), key=_key(key, reference)))
@@ -330,7 +345,7 @@ class View:
         and ``basic`` and ``reference`` are as :meth:`dim` takes them."""
         _refuse_retired_size("radius", retired)
         _dimension_kind(basic=basic, reference=reference)
-        self._dims.append(_Dim("radius", _p3(center), None, 0.0, text, None,
+        self._dims.append(_Dim("radius", self._at(center), None, 0.0, text, None,
                                radius=0.0 if size is None else _positive("size", size), angle=float(angle),
                                basic=basic, reference=reference))
         return self
@@ -344,7 +359,7 @@ class View:
         # angle() was the one verb whose arguments went unchecked: offset=nan
         # reached the PDF, and two legs along one line printed "0 degrees" as
         # though that were a measurement.
-        vertex, a, b = _p3(vertex), _p3(p1), _p3(p2)
+        vertex, a, b = self._at(vertex), self._at(p1), self._at(p2)
         distance = _offset(offset)
         if distance is None or distance == 0.0:
             raise ValueError(f"angle offset must be a non-zero number of sheet millimetres, got {offset!r}")
@@ -362,7 +377,7 @@ class View:
             raise TypeError(f"note offset must be an (x, y) pair of sheet millimetres, got {offset!r}") from exc
         if not (math.isfinite(dx) and math.isfinite(dy)):
             raise ValueError(f"note offset must be finite, got {offset!r}")
-        self._dims.append(_Dim("note", _p3(at), None, 0.0, str(text), None, radius=dx, angle=dy))
+        self._dims.append(_Dim("note", self._at(at), None, 0.0, str(text), None, radius=dx, angle=dy))
         return self
 
     def flag(self, text: str, *, at=None, item: int | str | None = None, joint: str | None = None,
@@ -388,7 +403,7 @@ class View:
             self.sheet._flags.append(words)
             if self.sheet.size is not None:
                 self.sheet._check_notes(self.sheet.size)
-        self._dims.append(_Dim("flag", None if at is None else _p3(at), None, None if offset is None else 0.0, words,
+        self._dims.append(_Dim("flag", None if at is None else self._at(at), None, None if offset is None else 0.0, words,
                                None, radius=dx, angle=dy, item=item))
         return self
 
@@ -397,7 +412,7 @@ class View:
         on it): ``Frame("flatness", 0.05)`` on a face, say. ``offset`` places the
         frame as :meth:`note` places its text."""
         dx, dy = _sheet_offset("frame", offset)
-        self._dims.append(_Dim("frame", _p3(at), None, 0.0, None, None, radius=dx, angle=dy, frame=_frame(frame)))
+        self._dims.append(_Dim("frame", self._at(at), None, 0.0, None, None, radius=dx, angle=dy, frame=_frame(frame)))
         return self
 
     def datum(self, letter: str, at, *, offset: tuple[float, float] | None = None) -> "View":
@@ -407,7 +422,7 @@ class View:
         ``offset`` (sheet mm) points the stem; left unset, it leads straight out
         of the view's nearest side."""
         letter = _new_datum(self.sheet, letter)
-        self._datums.append((letter, _p3(at), None if offset is None else _sheet_offset("datum", offset)))
+        self._datums.append((letter, self._at(at), None if offset is None else _sheet_offset("datum", offset)))
         return self
 
     def section(self, letter: str = "A", *, through=None, parts: PartsList | None = None) -> "View":
@@ -446,7 +461,7 @@ class View:
             raise ValueError(f"section letter must be one of {_SECTION_LETTERS} (ISO 128-40 leaves out I, O "
                              f"and Q), got {letter!r}")
         _refuse_used_letter(self.sheet, letter, self)
-        self._section = (letter, None if through is None else _p3(through))
+        self._section = (letter, None if through is None else self._at(through))
         self._section_parts = parts
         self.hidden = False
         if self.label is None:
@@ -475,7 +490,7 @@ class View:
         if self.name == "iso" or self._detail is not None or self._aux is not None or self._section is not None:
             raise ValueError("broken() shortens a whole principal view, not an isometric, a detail, an auxiliary "
                              "view or a section")
-        a, b = _p3(start), _p3(end)
+        a, b = self._at(start), self._at(end)
         axis = max(range(3), key=lambda k: abs(b[k] - a[k]))
         if abs(b[axis] - a[axis]) < 1e-6:
             raise ValueError("broken() takes two different points along the part's length")
@@ -561,12 +576,14 @@ def _tol(value):
     if isinstance(value, bool):
         raise TypeError(f"tol must be a number or a (plus, minus) pair, got {value!r}")
     if isinstance(value, (int, float)):
-        return (abs(float(value)), abs(float(value)))
-    try:
-        plus, minus = value
-        return (abs(float(plus)), abs(float(minus)))
-    except (TypeError, ValueError) as exc:
-        raise TypeError(f"tol must be a number or a (plus, minus) pair, got {value!r}") from exc
+        plus = minus = abs(float(value))
+    else:
+        try:
+            plus, minus = (abs(float(v)) for v in value)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"tol must be a number or a (plus, minus) pair, got {value!r}") from exc
+    _places(plus, minus)
+    return plus, minus
 
 
 def _assert_legs_measure_an_angle(vertex, a, b, *, tol_deg: float = 0.05) -> None:
@@ -680,6 +697,7 @@ def _dimension_kind(*, tol=None, fit=None, limits=None, basic: bool = False,
     low, high = _pair("limits", limits)
     if not low < high:
         raise ValueError(f"limits=(low, high) with low below high, got {limits!r}")
+    _places(low, high)
     return low, high
 
 
@@ -1041,7 +1059,7 @@ class Sheet:
                 raise ValueError(f"detail at= must be finite sheet millimetres, got {at!r}")
         detail = View(self, view.shape, view.name, at or (0.0, 0.0), f"DETAIL {letter} ({_scale_label(scale)})",
                       view.hidden, view.centre_marks, scale)
-        detail._detail = _Detail(view, _p3(center), r, letter, at is None, chosen)
+        detail._detail = _Detail(view, view._at(center), r, letter, at is None, chosen)
         detail._direction = view._direction
         self.views.append(detail)
         return detail
@@ -1073,7 +1091,7 @@ class Sheet:
         if scale is not None and not (scale > 0):
             raise ValueError("an auxiliary view's scale must be positive")
         corner = None if at is None else _pair("at", at)
-        n, outline = _flat_face(view.shape, _p3(point))
+        n, outline = _flat_face(view.shape, view._at(point))
         for name, (direction, _up) in VIEW_DIRECTIONS.items():
             if name != "iso" and _dot(n, direction) > 1 - 1e-6:
                 raise ValueError(f"the face at {_where(point)} faces the {name} view square on; draw that view "
@@ -1096,7 +1114,7 @@ class Sheet:
         # The label is settled when the sheet renders, its scale being known then.
         aux = View(self, view.shape, "auxiliary", corner or (0.0, 0.0), None, view.hidden, view.centre_marks, own)
         aux._direction = (n, up)
-        aux._aux = _Aux(view, _p3(point), letter, corner is None, outline if partial else None)
+        aux._aux = _Aux(view, view._at(point), letter, corner is None, outline if partial else None)
         self.views.append(aux)
         return aux
 
@@ -1249,7 +1267,7 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
         sheet = Sheet(title=shown[0], material=shown[1], spec=shown[2], subtitle=shown[3],
                       general_tolerance=general_tolerance, **(common | {"size": None, "scale": None}))
         sheet._item = _PartOf(item, title, shown)
-        shape = item.shape
+        shape, turn = item.shape, None
         turned = revolved(shape)
         if turned is not None and turned.axis != 0:
             size = shape.bounding_box().size
@@ -1258,7 +1276,8 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
                 # axis across the sheet, where the paper is widest.
                 from build123d import Rot
 
-                shape = (Rot(0, 90, 0) if turned.axis == 2 else Rot(0, 0, -90)) * shape
+                turn = Rot(0, 90, 0) if turned.axis == 2 else Rot(0, 0, -90)
+                shape = turn * shape
                 turned = revolved(shape)
         names = list(_VIEW_NAMES)
         if turned is not None:
@@ -1293,6 +1312,9 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
             look = _look(view)
             if any(_looks_into(f, look) for f in features):
                 view.holes()
+        for view in sheet.views:
+            # The author's points are in the item's own frame, as item.shape is.
+            view._turn = turn
         by_item[item.number] = sheet
     return AssemblySheets([ga, *more, *by_item.values()], parts, by_item)
 

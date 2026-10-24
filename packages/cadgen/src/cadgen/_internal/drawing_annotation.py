@@ -15,7 +15,7 @@ from cadgen._internal.drawing_assembly import _BALLOON_AIR, _BALLOON_LEAD, _BALL
 from cadgen._internal.drawing_base import (
     _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _DIM_ROW, _FLAG_SIDE, _LABEL_ROOM, _OPPOSITE, _SECTION_LETTERS,
     _SIDES,
-    _dot, _fmt, _ink_width, _look, _looks_down, _near, _shown, _spans, _text_width, _where,
+    _dot, _exact, _fmt, _ink_width, _look, _looks_down, _near, _places, _shown, _spans, _text_width, _where,
 )
 from cadgen._internal.drawing_features import Slot
 from cadgen._internal.drawing_gdt import _DATUM_REACH, _datum_toward, _side_of, frame_size, mark_width
@@ -67,8 +67,9 @@ def _tol_suffix(tol) -> str:
         return ""
     plus, minus = tol
     if abs(plus - minus) < 1e-9:
-        return f" ±{_fmt(plus)}"
-    return f" +{_fmt(plus)}/-{_fmt(minus)}"
+        return f" ±{_exact(plus)}"
+    places = _places(plus, minus)  # plus and minus to one precision, as given
+    return f" +{plus:.{places}f}/-{minus:.{places}f}"
 
 
 def hole_callout_text(spec: dict, *, tol=None, fit: str | None = None) -> str:

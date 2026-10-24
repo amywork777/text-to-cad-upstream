@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from cadgen._internal.drawing_base import _SECTION_LETTERS, _fmt, _symbol, _text_width
+from cadgen._internal.drawing_base import _SECTION_LETTERS, _exact, _places, _symbol, _text_width
 
 #: Form tolerances relate a feature to itself, so they name no datum.
 FORM = ("straightness", "flatness", "circularity", "cylindricity")
@@ -58,6 +58,7 @@ class Frame:
             raise ValueError(f"unknown characteristic {self.characteristic!r}; one of {', '.join(CHARACTERISTICS)}")
         if isinstance(self.tolerance, bool) or not isinstance(self.tolerance, (int, float)) or not self.tolerance > 0:
             raise ValueError(f"a frame's tolerance is a positive number of millimetres, got {self.tolerance!r}")
+        _places(self.tolerance)
         if isinstance(self.datums, str):
             raise TypeError(f"datums is a sequence of letters, datums=({self.datums!r},) for one")
         datums = tuple(str(d).upper() for d in self.datums)
@@ -146,7 +147,7 @@ def _draw_pieces(layout, pieces: list[tuple], h: float, layer: str) -> None:
 
 
 def _tolerance_text(frame: Frame) -> str:
-    return _fmt(frame.tolerance)
+    return _exact(frame.tolerance)
 
 
 def _tolerance_width(frame: Frame, th: float) -> float:
@@ -275,9 +276,10 @@ def _draw_mark(layout, mark: str, x: float, mid: float, th: float,
     return box
 
 
-def _check_datums(sheet) -> None:
-    """Refuse a frame that names a datum no view of its sheet defines: a frame read
-    against a datum nobody marked measures from nowhere."""
+def _check_datums(sheet, which: str) -> None:
+    """Refuse a frame that names a datum no view of its sheet (``which``, as the
+    refusal names it) defines: a frame read against a datum nobody marked
+    measures from nowhere."""
     defined = {d[0] for view in sheet.views for d in view._datums} | {
         dim.datum for view in sheet.views for dim in view._dims if dim.datum}
     frames = [(f"{view.name} {dim.kind} {index}", dim.frame) for view in sheet.views
@@ -287,5 +289,5 @@ def _check_datums(sheet) -> None:
     for where, frame in frames:
         missing = [d for d in frame.datums if d not in defined]
         if missing:
-            raise ValueError(f"{where}: its frame names datum {missing[0]}, which no view of this sheet defines; "
-                             f"view.datum({missing[0]!r}, point) on the feature it means defines it")
+            raise ValueError(f"{which}, {where}: its frame names datum {missing[0]}, which no view of this sheet "
+                             f"defines; view.datum({missing[0]!r}, point) on the feature it means defines it")

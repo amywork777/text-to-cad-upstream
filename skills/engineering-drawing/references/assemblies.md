@@ -71,7 +71,8 @@ on A3), then one sheet per modelled item. A GA that does not fit `size` beside i
 parts list at 1:50 or larger is refused, naming a larger size. A part's sheet
 draws `item.shape` in one view per distinct picture and an isometric on a
 sheet that chooses its own size and scale (`Sheet(size=None, scale=None)`); a
-long turned part lies down and states its diameters; it states its overall sizes,
+long turned part lies down and states its diameters, and the points you give
+its views stay in the part's own frame, as `item.shape` is; it states its overall sizes,
 calls out the holes and slots each view looks down, and is titled with the
 item's description over `ITEM n (QTY q) OF <title>`. Every sheet carries the drawing number, revision, author
 and date, and the stage, profile, category, company and fields; `notes` and
@@ -128,10 +129,11 @@ sheet.layer_table(parts, [("shell", "3.0", "FULL"), ("tape", "0.2", "PERIMETER 6
 ```
 
 Each layer is hatched as its family, neighbours of one family at different
-angles; one thinner than 1 mm on the sheet is filled solid (draw a detail at a
-larger scale to show it hatched); where the model overlaps solids the earlier
-item takes the region. Two or more families add a material key (swatch, family,
-materials); thin layers have a row of their own. Every place two layers meet
+angles (layers that touch never alike); one thinner than 1 mm on the sheet is
+filled solid and named with a leader (draw a detail at a larger scale to show
+it hatched); where the model overlaps solids the earlier item takes the region.
+A material key lists each part: its hatch, item number, family and material;
+thin layers read THIN, SOLID. Every place two layers meet
 gets a flag with its `joint`, including `not_bonded`. A liquid adhesive is
 never modelled: its flag and the parts list carry it. Tapes and films are
 modelled as thin layers when they are.
@@ -144,7 +146,9 @@ SUPPLIER, the header against the block and item 1 above it. `first`/`last` draw 
 long for one sheet; one that does not fit is refused, naming where to split it,
 and each run of a split list says on which sheet it continues. The views and
 any detail keep clear of it; a hand-placed view over it, or a note running
-under it, is refused. An entry too long for its column is refused, never cut.
+under it, is refused. Each column takes the room its widest entry needs; a
+list whose entries cannot fit the title block's width even at the smallest
+legible text is refused, naming the longest entry, never cut.
 
 ## `view.balloons(parts)`
 

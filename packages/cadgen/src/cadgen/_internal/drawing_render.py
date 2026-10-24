@@ -24,11 +24,10 @@ from cadgen._internal.drawing_annotation import (
 from cadgen._internal.drawing_assembly import _draw_balloons, _item_point, _refresh_from_item, _refuse_balloons_on
 from cadgen._internal.drawing_base import (
     _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _CALLOUT_STACK, _CENTRE_OVERSHOOT, _DIM_ROW, _FLAG_SIDE,
-    _HATCH_SCALE, HATCHES,
-    _LABEL_GAP, _LABEL_HEIGHT, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE, SHEET_SIZES, _SIDES,
-    _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_W, _box_dimension_value, _box_text, _cross, _dimstyle,
-    _dirs, _dot, _draw_dimension_symbols, _draw_flag, _draw_symbol, _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs,
-    _scale_label, _shown, _spans, _text_box, _text_width, _where,
+    _HATCH_SCALE, HATCHES, _LABEL_GAP, _LABEL_HEIGHT, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE,
+    SHEET_SIZES, _SIDES, _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_W, _box_dimension_value, _box_text, _cross,
+    _dimstyle, _dirs, _dot, _draw_dimension_symbols, _draw_flag, _draw_symbol, _fmt, _ink_width, _look,
+    _looks_down, _mtext_extent, _places, _runs, _scale_label, _shown, _spans, _text_box, _text_width, _where,
 )
 from cadgen._internal.drawing_gdt import (
     _DATUM_REACH, _FRAME_HEIGHT, _check_datums, _datum_toward, _draw_datum, _draw_frame, _draw_mark, _side_of,
@@ -113,6 +112,20 @@ def _place_hole_tables(sheet: Sheet, tables: dict, occupied: list, s: float) -> 
         occupied.append((spot[0] - 4.0, spot[0] + w + 4.0, spot[1] - h - 4.0, spot[1] + 4.0))
 
 
+#: Below this width on the sheet (mm) a cut part is too thin to hatch, and is
+#: filled solid; and how neighbours of one material family are told apart, as
+#: ISO 128-50 has it: the hatch turned a right angle, then spaced wider. A turn
+#: of 45 degrees would set a 45-degree pattern square to the sheet, where its
+#: lines read as edges.
+_THIN = 1.0
+_HATCH_TURNS = ((0.0, 1.0), (90.0, 1.0), (0.0, 1.6), (90.0, 1.6))
+#: How close two cut regions come on the sheet (mm) to count as touching.
+_NEIGHBOURS = 1.0
+#: A cut region narrower than this (sheet mm, across its area) is hatched finer,
+#: so a small one still shows its lines.
+_HATCH_ROOM = 10.0
+
+
 def _cut_region(faces, flat):
     """The region a part's cut faces cover, each face's rings mapped by ``flat``
     from a model point to the sheet's plane."""
@@ -129,12 +142,34 @@ def _thin(region) -> bool:
     return region.buffer(-_THIN / 2).is_empty
 
 
+def _section_looks(cut_items, flat) -> list[tuple]:
+    """Each part a section cuts, with how it is hatched: (item, its region on the
+    sheet, whether it is too thin to hatch, its variant of the family's hatch,
+    how much finer its hatch is set). Parts of one family that touch -- regions
+    within a millimetre on the sheet -- never look alike, whatever their order:
+    each takes the first variant its neighbours of that family do not have."""
+    import statistics
+
+    looks: list[tuple] = []
+    for item, faces in cut_items:
+        region = _cut_region(faces, flat)
+        family = item.family or "general"
+        near = {variant for other, other_region, _thin_too, variant, _fine in looks
+                if (other.family or "general") == family and other_region.distance(region) < _NEIGHBOURS}
+        variant = next((k for k in range(len(_HATCH_TURNS)) if k not in near), len(looks) % len(_HATCH_TURNS))
+        # A small region is hatched finer so it still shows lines; the part's
+        # typical piece sets it, so all of one part is hatched alike.
+        pieces = [g.area for g in getattr(region, "geoms", [region]) if g.area > 0]
+        size = math.sqrt(statistics.median(pieces)) if pieces else _HATCH_ROOM
+        looks.append((item, region, _thin(region), variant, min(1.0, max(0.35, size / _HATCH_ROOM))))
+    return looks
+
+
 def _sheet_tables(sheet: Sheet, cuts: dict, work: list, s: float) -> list[_SheetTable]:
     """The tables a sheet's sections and layers ask for: a material key where its
-    sections cut two or more material families (the parts too thin to hatch
-    being one more, filled solid), and the layer table it was given."""
+    sections cut two or more parts, and the layer table it was given."""
     tables = []
-    families: dict[str, list[str]] = {}
+    rows: dict[int, tuple] = {}
     near = None
     for view, proj, *_rest in work:
         cut = cuts.get(id(view))
@@ -142,20 +177,19 @@ def _sheet_tables(sheet: Sheet, cuts: dict, work: list, s: float) -> list[_Sheet
             continue
         near = near or view.at
         sv = view.scale or s
-        for item, faces in cut[3]:
-            thin = _thin(_cut_region(faces, lambda p: tuple(c * sv for c in proj.point(p))))
-            named = families.setdefault("solid" if thin else item.family or "general", [])
-            what = item.material or item.description or f"ITEM {item.number}"
-            if what not in named:
-                named.append(what)
-    if len(families) > 1:
-        # A row per material, under its family's swatch: a section carries no
-        # balloons, so the key is what says which region is which.
-        rows = [(family, material) for family, named in families.items() for material in named]
-        tables.append(_SheetTable("MATERIAL KEY", ("HATCH", "FAMILY", "MATERIAL"),
-                                  [(" " * 6, "THIN, SOLID" if family == "solid" else family.replace("_", " ").upper(),
-                                    material) for family, material in rows],
-                                  [family for family, _material in rows], near or sheet.views[0].at))
+        for item, _region, thin, variant, _fine in _section_looks(
+                cut[3], lambda p: tuple(c * sv for c in proj.point(p))):
+            # A row per part, its swatch the look its region has: a section
+            # carries no balloons, so the key is what says which region is which.
+            rows.setdefault(item.number, (item, "solid" if thin else item.family or "general", variant))
+    if len(rows) > 1:
+        ordered = [rows[number] for number in sorted(rows)]
+        tables.append(_SheetTable("MATERIAL KEY", ("HATCH", "ITEM", "FAMILY", "MATERIAL"),
+                                  [(" " * 6, str(item.number),
+                                    "THIN, SOLID" if family == "solid" else family.replace("_", " ").upper(),
+                                    item.material or item.description) for item, family, _variant in ordered],
+                                  [(family, variant) for _item, family, variant in ordered],
+                                  near or sheet.views[0].at))
     if sheet._layer_table is not None:
         parts, rows, corner = sheet._layer_table
         tables.append(_SheetTable("LAYER TABLE", ("ITEM", "MATERIAL", "SPEC", "THICKNESS", "COVERAGE"),
@@ -200,16 +234,6 @@ def _check_clear_of_parts_list(sheet: Sheet, placed: list, index: int) -> None:
             )
 
 
-#: Below this width on the sheet (mm) a cut part is too thin to hatch, and is
-#: filled solid; and how neighbours of one material family are told apart, as
-#: ISO 128-50 has it: the hatch turned a right angle, then spaced wider. A turn
-#: of 45 degrees would set a 45-degree pattern square to the sheet, where its
-#: lines read as edges.
-_THIN = 1.0
-_HATCH_TURNS = ((0.0, 1.0), (90.0, 1.0), (0.0, 1.6), (90.0, 1.6))
-#: A cut region narrower than this (sheet mm, across its area) is hatched finer,
-#: so a small one still shows its lines.
-_HATCH_ROOM = 10.0
 #: How many landings further out a callout past the rows may stand to clear text.
 _CALLOUT_STEPS = 4
 
@@ -434,7 +458,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     # Every view is projected, its callouts read off the part and its annotation
     # planned before anything is placed, so the layout knows what each view carries.
     _require_settled(sheet)
-    _check_datums(sheet)
+    _check_datums(sheet, f"sheet {index} ({sheet.title})")
     key_mark = sheet.profile.characteristic_mark if sheet.profile is not None else "KC"
     framed = sheet.general_profile is not None or any(
         dim.frame is not None for view in sheet.views for dim in view._dims)
@@ -443,7 +467,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         for view in sheet.views:
             for number, dim in enumerate(view._dims):
                 if dim.basic:
-                    warnings.append(f"{view.name} {dim.kind} {number}: a basic dimension, and no GD&T frame on the "
+                    kind = "dim" if dim.kind == "linear" else dim.kind
+                    warnings.append(f"{view.name} {kind} {number}: a basic dimension, and no GD&T frame on the "
                                     "sheet bounds it, so it has no tolerance; add the frame that controls the "
                                     "feature, or give the dimension tol=")
     breaks = any(view._break is not None for view in sheet.views)
@@ -872,6 +897,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             put(proj.hidden, "HIDDEN")
         if view._break is not None:
             _draw_break_lines(msp, view, proj, to_sheet)
+        # Each layer too thin to hatch, and the point its callout's leader ends on.
+        thin: list[tuple[tuple[float, float], str]] = []
         if cut:
             from ezdxf import const
 
@@ -900,27 +927,26 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
 
                 # Part by part: each as its family is hatched, the next of a family
                 # turned, overlaps left to the first, the thin filled solid.
-                taken, turns = None, {}
-                for item, faces in cut[3]:
-                    family = item.family or "general"
-                    pattern, angle = HATCHES[family]
-                    turn, spacing = _HATCH_TURNS[turns.get(family, 0) % len(_HATCH_TURNS)]
-                    turns[family] = turns.get(family, 0) + 1
-                    own = _cut_region(faces, lambda p: to_sheet(proj.point(p)))
-                    thin = _thin(own)
+                taken = None
+                for item, own, is_thin, variant, fine in _section_looks(cut[3], lambda p: to_sheet(proj.point(p))):
+                    pattern, angle = HATCHES[item.family or "general"]
+                    turn, spacing = _HATCH_TURNS[variant]
                     if taken is not None:
                         own = own.difference(taken)
                     if region is not None:
                         own = own.intersection(region)
                     taken = own if taken is None else unary_union([taken, own])
+                    if is_thin and not own.is_empty:
+                        inside = own.representative_point()
+                        thin.append(((inside.x, inside.y),
+                                     item.material or item.description or f"ITEM {item.number}"))
                     for g in getattr(own, "geoms", [own]):
                         if g.geom_type != "Polygon" or g.is_empty:
                             continue
                         hatch = msp.add_hatch(dxfattribs={"layer": "HATCH"})
-                        if thin:
+                        if is_thin:
                             hatch.set_solid_fill()
                         else:
-                            fine = min(1.0, max(0.35, math.sqrt(g.area) / _HATCH_ROOM))
                             hatch.set_pattern_fill(pattern, scale=_HATCH_SCALE * spacing * fine, angle=angle + turn)
                         for k, ring in enumerate([g.exterior, *g.interiors]):
                             hatch.paths.add_polyline_path(
@@ -1033,7 +1059,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 # The deviations are the author's, in true size, and ezdxf prints them
                 # as given -- dimlfac scales the measurement, not the tolerance.
                 style_override |= {"dimtol": 1, "dimtp": tol[0], "dimtm": tol[1],
-                                   "dimtdec": 2, "dimtfac": 0.7}
+                                   "dimtdec": _places(*tol), "dimtfac": 0.7}
             span = abs(b[0] - a[0]) if horizontal else abs(b[1] - a[1])
             measured = span / sv
             if true is not None and abs(true - measured) > 1e-6:
@@ -1048,7 +1074,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                                      "or change the model.")
                 # The two limits, stacked; ezdxf prints them from the deviations.
                 style_override |= {"dimlim": 1, "dimtp": high - measured, "dimtm": measured - low,
-                                   "dimtdec": 2, "dimtfac": 0.7}
+                                   "dimtdec": _places(low, high), "dimtfac": 0.7}
             if basic:
                 style_override["dimgap"] = -abs(th * 0.25)  # a negative gap is the DXF's mark of a basic value
             # A value wider than the space between its extension lines is set beside
@@ -1417,21 +1443,20 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 claimed.append(("balloon", circle))
 
         part_lines = None
-        for dim in items:
-            if dim.kind != "flag":
-                continue
-            # A flag note: a leader to the flag, the flag numbered as its note.
-            p = model_to_sheet(dim.p1 if dim.p1 is not None else _item_point(view, dim.item))
-            check("flag", dim.index, p)
-            side, tall = _FLAG_SIDE * th, _FLAG_SIDE * th * math.sqrt(3) / 2
-            number = len(sheet.drawn_notes()) - len(sheet._flags) + sheet._flags.index(dim.text) + 1
 
-            def flag_at(offset):
-                q = (p[0] + offset[0], p[1] + offset[1])
-                right = offset[0] >= 0
-                land = (q[0] + (side / 4 if right else -side / 4), q[1])
-                x = q[0] if right else q[0] - side
-                return q, land, (x, q[1] - tall / 2, x + side, q[1] + tall / 2)
+        def leader_spot(p, offset, land_of, box_of, search: bool):
+            """Where a leader from ``p`` ends, its landing and the box of what it
+            carries: at ``offset``, or, searching, the nearest spot out of the view
+            clear of its annotation, the leader crossing no line and, where it can,
+            none of the part's own; out by the side nearest ``p`` first, where the
+            plan kept room. Returns the spot and whether a clear one was found."""
+            nonlocal part_lines
+            from shapely.geometry import LineString
+            from shapely.ops import unary_union
+
+            def at(off):
+                q = (p[0] + off[0], p[1] + off[1])
+                return q, land_of(q, off[0] >= 0), box_of(q, off[0] >= 0)
 
             def clear(q, land, box) -> bool:
                 x0, y0, x1, y1 = box
@@ -1442,46 +1467,73 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                         and not _crosses_any((p, q, land), [*dimension_lines, *leaders])
                         and not _runs_through((q, land), taken))
 
-            spot = flag_at((dim.radius, dim.angle))
-            if dim.offset is None:
-                # Unplaced: the nearest spot out of the view clear of its
-                # annotation, the leader crossing no line; out by the side
-                # nearest the point first, where the plan kept it room.
-                toward = _datum_toward(p, (vx0, vx1, vy0, vy1), None)
-                ways = sorted(((0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7)),
-                              key=lambda u: -(u[0] * toward[0] + u[1] * toward[1]))
-                tries = [flag_at((ux * reach_out, uy * reach_out)) for pair in (ways[:2], ways[2:])
-                         for reach_out in range(10, 90, 6) for ux, uy in pair]
-                def crosses_part(q) -> bool:
-                    # Whether the leader, past its first millimetre, crosses the
-                    # part's own lines: a seam's flag comes from outside.
-                    nonlocal part_lines
-                    from shapely.geometry import LineString
-                    from shapely.ops import unary_union
+            def crosses_part(q) -> bool:
+                # Past its first millimetre: a seam's leader comes from outside.
+                nonlocal part_lines
+                if part_lines is None:
+                    part_lines = unary_union([LineString([to_sheet(pt) for pt in _edge_points(e)])
+                                              for e in proj.visible])
+                run = math.hypot(q[0] - p[0], q[1] - p[1]) or 1.0
+                start = (p[0] + (q[0] - p[0]) / run, p[1] + (q[1] - p[1]) / run)
+                return LineString([start, q]).intersects(part_lines)
 
-                    if part_lines is None:
-                        part_lines = unary_union([LineString([to_sheet(pt) for pt in _edge_points(e)])
-                                                  for e in proj.visible])
-                    run = math.hypot(q[0] - p[0], q[1] - p[1]) or 1.0
-                    start = (p[0] + (q[0] - p[0]) / run, p[1] + (q[1] - p[1]) / run)
-                    return LineString([start, q]).intersects(part_lines)
+            if not search:
+                return at(offset), True
+            toward = _datum_toward(p, (vx0, vx1, vy0, vy1), None)
+            ways = sorted(((0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7)),
+                          key=lambda u: -(u[0] * toward[0] + u[1] * toward[1]))
+            tries = [at((ux * reach_out, uy * reach_out)) for pair in (ways[:2], ways[2:])
+                     for reach_out in range(10, 90, 6) for ux, uy in pair]
+            spot = (next((t for t in tries if clear(*t) and not crosses_part(t[0])), None)
+                    or next((t for t in tries if clear(*t)), None))
+            return (spot, True) if spot is not None else (at(offset), False)
 
-                spot = (next((t for t in tries if clear(*t) and not crosses_part(t[0])), None)
-                        or next((t for t in tries if clear(*t)), None))
-                if spot is None:
-                    spot = flag_at((dim.radius, dim.angle))
-                    if warnings is not None:
-                        warnings.append(f"{view.name} flag {number}: no clear place near its point; "
-                                        "flag(..., offset=(x, y)) places it")
-            q, land, box = spot
+        def reach_past(box) -> None:
+            for name, beyond in (("top", box[3] - vy1), ("bottom", vy0 - box[1]), ("right", box[2] - vx1),
+                                 ("left", vx0 - box[0])):
+                reach[name] = max(reach[name], beyond + 1.0)
+
+        for dim in items:
+            if dim.kind != "flag":
+                continue
+            # A flag note: a leader to the flag, the flag numbered as its note.
+            p = model_to_sheet(dim.p1 if dim.p1 is not None else _item_point(view, dim.item))
+            check("flag", dim.index, p)
+            side, tall = _FLAG_SIDE * th, _FLAG_SIDE * th * math.sqrt(3) / 2
+            number = len(sheet.drawn_notes()) - len(sheet._flags) + sheet._flags.index(dim.text) + 1
+            (q, land, box), found = leader_spot(
+                p, (dim.radius, dim.angle), lambda q, right: (q[0] + (side / 4 if right else -side / 4), q[1]),
+                lambda q, right: (q[0] if right else q[0] - side, q[1] - tall / 2,
+                                  q[0] + side if right else q[0], q[1] + tall / 2),
+                search=dim.offset is None)
+            if not found and warnings is not None:
+                warnings.append(f"{view.name} flag {number}: no clear place near its point; "
+                                "flag(..., offset=(x, y)) places it")
             msp.add_leader([p, q, land], dxfattribs={"layer": "DIM"},
                            override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
             _draw_flag(msp, str(number), box[0], q[1], side, "DIM")
             claim(f"flag {number}", box)
             leaders.append((p, q, land))
-            for name, beyond in (("top", box[3] - vy1), ("bottom", vy0 - box[1]), ("right", box[2] - vx1),
-                                 ("left", vx0 - box[0])):
-                reach[name] = max(reach[name], beyond + 1.0)
+            reach_past(box)
+
+        for p, label in thin:
+            # A layer too thin to hatch is filled solid and named where it is.
+            width = _ink_width(label, th)
+            (q, land, box), found = leader_spot(
+                p, (10.0, 10.0), lambda q, right: (q[0] + (3.0 if right else -3.0), q[1]),
+                lambda q, right: ((q[0] + 4.0, q[1] - th * 0.6, q[0] + 4.0 + width, q[1] + th * 0.6) if right
+                                  else (q[0] - 4.0 - width, q[1] - th * 0.6, q[0] - 4.0, q[1] + th * 0.6)),
+                search=True)
+            if not found and warnings is not None:
+                warnings.append(f"{view.name}: the thin layer {label!r} has no clear place for its callout; give "
+                                "the section more room, or draw a detail of it")
+            msp.add_leader([p, q, land], dxfattribs={"layer": "NOTES"},
+                           override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
+            right = land[0] > q[0]
+            text(label, box[0] if right else box[2], q[1], th,
+                 TextEntityAlignment.MIDDLE_LEFT if right else TextEntityAlignment.MIDDLE_RIGHT, "NOTES")
+            leaders.append((p, q, land))
+            reach_past(box)
 
         # The view label goes under everything that hangs below the view, so a
         # dimension on the bottom side never sits on it.
@@ -1490,17 +1542,19 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
 
     for table in tables.values():
         _draw_hole_table(msp, table, text)
-    for table, corner in zip(keyed, keyed_at):
-        from ezdxf import const
+    from ezdxf import const
 
-        for family, (x0, y0, x1, y1) in _draw_sheet_table(msp, table, corner, text):
-            # The material's own hatch, a swatch of it.
+    for table, corner in zip(keyed, keyed_at):
+        for (family, variant), (x0, y0, x1, y1) in _draw_sheet_table(msp, table, corner, text):
+            # The part's own hatch, a swatch of it: its family's pattern, turned
+            # and spaced as its region is.
             hatch = msp.add_hatch(dxfattribs={"layer": "DIM"})
             if family == "solid":
                 hatch.set_solid_fill()
             else:
                 pattern, angle = HATCHES[family]
-                hatch.set_pattern_fill(pattern, scale=_HATCH_SCALE * 0.5, angle=angle)
+                turn, spacing = _HATCH_TURNS[variant]
+                hatch.set_pattern_fill(pattern, scale=_HATCH_SCALE * 0.5 * spacing, angle=angle + turn)
             hatch.paths.add_polyline_path([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], is_closed=True,
                                           flags=const.BOUNDARY_PATH_EXTERNAL)
             msp.add_lwpolyline([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], close=True, dxfattribs={"layer": "DIM"})

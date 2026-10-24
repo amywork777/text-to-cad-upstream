@@ -289,6 +289,8 @@ _ZONE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
 #: A parts list: its row height and its columns, which together span the title
 #: block's width so the list stands on the block as one column of the sheet.
 _LIST_ROW = 7.0
+#: Each column's usual share of the list's width; a column takes what its widest
+#: entry needs, and the room left over is shared out in these proportions.
 _LIST_COLUMNS = (("ITEM", 10.0), ("QTY", 10.0), ("DESCRIPTION", 50.0), ("PART NO.", 30.0), ("MATERIAL", 30.0),
                  ("SPEC", 30.0), ("SUPPLIER", 20.0))
 #: The revision table, top right inside the frame: its row height and columns.
@@ -314,6 +316,26 @@ def _list_height(sheet: Sheet) -> float:
     return (last - first + 2) * _LIST_ROW + (_LIST_ROW if partial else 0.0)
 
 
+def _list_widths(rows: list[tuple[str, ...]]) -> list[float] | None:
+    """The parts list's column widths for its entries: each as wide as its widest
+    entry needs, the room left over shared out as the columns usually take it;
+    where that is more than the list's width, as the entries need at the smallest
+    legible text. None when even that does not fit."""
+    def need(c: int, height: float) -> float:
+        head = _text_width(_LIST_COLUMNS[c][0], _CAPTION_HEIGHT) + 2.4
+        return max([head] + [_text_width(row[c], height) + 3.0 for row in rows if row[c]])
+
+    full = [need(c, 2.5) for c in range(len(_LIST_COLUMNS))]
+    if sum(full) <= _TITLE_W:
+        spare = _TITLE_W - sum(full)
+        return [f + spare * usual / _TITLE_W for f, (_name, usual) in zip(full, _LIST_COLUMNS)]
+    least = [need(c, _MIN_TEXT_MM) for c in range(len(_LIST_COLUMNS))]
+    if sum(least) > _TITLE_W:
+        return None
+    room, wants = _TITLE_W - sum(least), [f - m for f, m in zip(full, least)]
+    return [m + room * want / sum(wants) for m, want in zip(least, wants)]
+
+
 def _draw_parts_list(msp, sheet: Sheet, text, continued: dict) -> None:
     """The parts list, standing on the title block: header row at the bottom,
     item numbers rising from it. ``continued`` says on which sheet the rest of a
@@ -323,26 +345,31 @@ def _draw_parts_list(msp, sheet: Sheet, text, continued: dict) -> None:
     parts, first, last = sheet._parts
     fields = {"DESCRIPTION": "description", "PART NO.": "part_number", "MATERIAL": "material", "SPEC": "spec",
               "SUPPLIER": "supplier"}
-    for item in parts.items[first - 1:last]:
-        for name, width in _LIST_COLUMNS:
-            value = getattr(item, fields[name]) if name in fields else ""
-            if value and _text_width(value, _MIN_TEXT_MM) > width - 3:
-                raise ValueError(
-                    f"item {item.number}'s {name} {value!r} does not fit the parts list's {name} column "
-                    f"({width:.0f} mm) even at the smallest legible text, and a parts list cut short is wrong. "
-                    f"Shorten it: parts.set({item.number}, {fields[name]}=...)."
-                )
-    x0, y0 = sheet.width - _MARGIN - _TITLE_W, _MARGIN + sheet._title_height()
+    items = parts.items[first - 1:last]
     rows = [tuple(name for name, _w in _LIST_COLUMNS)] + [
         (str(item.number), str(item.quantity), *(getattr(item, fields[name]) for name, _w in _LIST_COLUMNS[2:]))
-        for item in parts.items[first - 1:last]]
+        for item in items]
+    widths = _list_widths(rows[1:])
+    if widths is None:
+        # Even at the smallest legible text the entries need more than the list's
+        # width: name the longest, as cutting it would state something else.
+        entry = max(((item, name, value) for item, row in zip(items, rows[1:])
+                     for (name, _w), value in zip(_LIST_COLUMNS, row) if name in fields and value),
+                    key=lambda t: _text_width(t[2], _MIN_TEXT_MM))
+        item, name, value = entry
+        raise ValueError(
+            f"item {item.number}'s {name} {value!r} does not fit the parts list, {_TITLE_W:.0f} mm wide like the "
+            "title block it stands on, even at the smallest legible text, and a parts list cut short is wrong. "
+            f"Shorten it: parts.set({item.number}, {fields[name]}=...)."
+        )
+    x0, y0 = sheet.width - _MARGIN - _TITLE_W, _MARGIN + sheet._title_height()
     top = y0 + len(rows) * _LIST_ROW
     msp.add_lwpolyline([(x0, y0), (x0 + _TITLE_W, y0), (x0 + _TITLE_W, top), (x0, top)], close=True,
                        dxfattribs={"layer": "TITLE"})
     for r in range(1, len(rows)):
         msp.add_line((x0, y0 + r * _LIST_ROW), (x0 + _TITLE_W, y0 + r * _LIST_ROW), dxfattribs={"layer": "TITLE"})
     x = x0
-    for c, (_name, width) in enumerate(_LIST_COLUMNS):
+    for c, width in enumerate(widths):
         if c:
             msp.add_line((x, y0), (x, top), dxfattribs={"layer": "TITLE"})
         for r, row in enumerate(rows):
@@ -412,6 +439,13 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
         "COMPANY": (sheet.company, 2.5), "STAGE": (sheet._stage_label(), 2.5),
         **{name: (sheet.fields.get(name, ""), 2.5) for name in band if name not in _BAND_CELLS},
     }
+    for name, (x, y, w, h) in {**_TITLE_CELLS, **band}.items():
+        value = values.get(name, ("", 0.0))[0]
+        if value and _text_width(str(value), _MIN_TEXT_MM) > w - 3.0:
+            # A long title may end inside its cell; a material, a spec or a number
+            # cut short states a different one.
+            raise ValueError(f"the title block's {name} {value!r} does not fit its {w:.0f} mm cell even at the "
+                             f"smallest legible text, and a value cut short is wrong; shorten it")
     for name, (x, y, w, h) in {**_TITLE_CELLS, **band}.items():
         if name == "PROJECTION":
             continue  # the symbol is its own caption
@@ -505,14 +539,14 @@ _TABLE_AIR = 4.0
 
 
 class _SheetTable(NamedTuple):
-    """A captioned table on the sheet's paper: its column names, its rows, a hatch
-    family per row to draw a swatch of in the first column (a material key's), the
-    point it goes nearest, and the corner the author gave, if any."""
+    """A captioned table on the sheet's paper: its column names, its rows, a swatch
+    per row to draw in the first column (a material key's hatch: family and
+    variant), the point it goes nearest, and the corner the author gave, if any."""
 
     caption: str
     names: tuple[str, ...]
     rows: list[tuple[str, ...]]
-    swatches: list[str]
+    swatches: list[tuple[str, int]]
     near: tuple[float, float]
     corner: tuple[float, float] | None = None
 

@@ -72,8 +72,10 @@ Name the pictures by item and show them beside each question.
 | basic | `basic=True` | `40` in a box | the exact target; a GD&T frame bounds the feature |
 | reference | `reference=True` | `(40)` | information only, never inspected; an assembly's envelope |
 
-A dimension with none of these is governed by the general tolerance or the
-general profile. A basic dimension with no frame on its sheet is reported:
+Every stated value prints exactly as given (`tol=0.005` prints `±0.005`),
+to at most four decimal places; a value needing more is refused, never
+rounded. A dimension with none of these is governed by the general tolerance
+or the general profile. A basic dimension with no frame on its sheet is reported:
 nothing bounds it. `diameter()` and `radius()` take `basic` and `reference`;
 `overall(reference=True)` makes both overall sizes reference.
 
@@ -102,7 +104,8 @@ front.frame((0, -25, 10), Frame("flatness", 0.05)) # a free frame on a surface
   face through `point`, out by the nearest side of the view. `datum=` on
   `hole`, `slot`, `dim` or `diameter` makes that feature of size the datum.
   Letters I, O and Q are refused, and a letter names one feature per sheet.
-- A frame naming a datum no view of its sheet defines is refused.
+- A frame naming a datum no view of its sheet defines (a detail of it counts) is
+  refused, naming the sheet.
 - `frame=` on a hole, slot or diameter callout hangs the frame under its text;
   on a `dim`, beyond its value. `key=True` marks a key characteristic with the
   profile's boxed letters.

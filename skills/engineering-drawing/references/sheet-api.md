@@ -83,7 +83,9 @@ script. Both are checked when the module is imported. There is no CLI verb: a
   sheet tries the next size up, then the next scale down. A size or scale you
   set afterwards is yours.
 - `title`, `part_number` (DWG NO.), `material`, `finish`, `revision`, `author`
-  (DRAWN), `date`: title block cells. `spec` is the material's specification:
+  (DRAWN), `date`: title block cells. A long title is set smaller to end inside
+  its cell; any other value too long for its cell at the smallest legible text
+  is refused, never cut. `spec` is the material's specification:
   MATERIAL reads `AL 6061-T6 PER AMS 4027`; a spec without a material is
   refused. A field left empty prints as an empty,
   captioned cell. Nothing is stamped from the clock. The drawing function's
@@ -222,15 +224,17 @@ sheet millimetres.
 - `view.diameter(center, size=None, angle=45, text=None, basic=False, reference=False, frame=None, datum=None, key=False)` and
   `view.radius(center, size=None, ...)`: the circle or arc centred there,
   measured; `size` (a diameter, or a radius) picks one of several.
-- `view.section(letter="A", through=None)`: draw the view as a full section
+- `view.section(letter="A", through=None, parts=None)`: draw the view as a full section
   through `through` (default: the part's middle), square to the line of sight.
   Cut faces are hatched, hidden lines are left out, the view is labelled
   `SECTION A-A`, and the cutting plane is drawn on a view of the same part
   that sees it edge-on. Letters I, O and Q are refused. `parts=` on a view of
   an assembly cuts each item on its own and hatches it as its material family
   (`parts.set(n, family=...)`): neighbours of one family at different angles,
-  a part thinner than 1 mm on the sheet filled solid, solids the model overlaps
-  hatched once; two or more families add a material key.
+  parts of one family that touch never hatched alike, a part thinner than 1 mm
+  on the sheet filled solid and named with a leader, solids the model overlaps
+  hatched once; two or more parts add a material key, a row per part with the
+  hatch its region has, its item number and material.
 - `view.broken(start, end)`: take the stretch between two model points (along
   one model axis, in the view's plane) out of the view, the two ends drawn 10
   mm apart with a zigzag break line across each cut. The other views of the
@@ -302,6 +306,10 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | `incomplete: a production drawing locates its features from datums ...` | mark the datums the person gave with `view.datum` |
 | `note: a production drawing marks its key characteristics ...` | ask whether any feature is one; `key=True` marks it |
 | `top dim 2: a basic dimension, and no GD&T frame on the sheet bounds it ...` | add the frame, or make it toleranced |
+| `sheet 2 (BRACKET), top hole 0: its frame names datum A, which no view of this sheet defines ...` | define the datum on that sheet with `view.datum` (a refusal) |
+| `the title block's MATERIAL '...' does not fit its 60 mm cell ...` | shorten the value (a refusal) |
+| `0.00001: a stated tolerance prints exactly as given, to at most 4 decimal places` | state it to four places or fewer (a refusal) |
+| `front: the thin layer '...' has no clear place for its callout ...` | give the section more room, or draw a detail of it |
 | `top hole 0: its leader crosses a dimension line ...` | no clear way out; move the callout or the dimension |
 | `the top and right views draw the same picture ...` | `three_views(views=(...))` leaves one out |
 

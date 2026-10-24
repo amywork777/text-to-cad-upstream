@@ -187,7 +187,7 @@ class DrawingSheetTests(unittest.TestCase):
         front = sheet.view(part, "front", at=(210, 150))
         front.dim((-40, -25, 0), (40, -25, 0), offset=-14, tol=0.1)
         texts = _dim_texts(_render_sheet(sheet, index=1, count=1, label="tol"))
-        self.assertTrue(any("80" in t and "±0.10" in t for t in texts), texts)
+        self.assertTrue(any("80" in t and "±0.1}" in t for t in texts), texts)
 
     def test_an_unplaced_dimension_takes_the_next_free_row_on_its_own_side(self) -> None:
         """`dim()` used to default to the row `overall()` writes into, and then to
@@ -351,7 +351,7 @@ class DrawingSheetTests(unittest.TestCase):
         doc = _render_sheet(sheet, index=1, count=1, label="tagged")
         msp = doc.modelspace()
         texts = _dim_texts(doc)
-        self.assertTrue(any("±0.10" in t for t in texts), texts)
+        self.assertTrue(any("±0.1}" in t for t in texts), texts)
         self.assertTrue(any("+0.05" in t and "0.02" in t and "h6" in t for t in texts), texts)
         notes = [e.dxf.text for e in msp.query("TEXT[layer=='NOTES']")]
         self.assertTrue(any("ISO 2768-m" in n for n in notes), notes)
@@ -2297,6 +2297,24 @@ class AssemblyDrawingTests(unittest.TestCase):
         self.assertIn("6061-T6", rows)
         self.assertLess(rows["DESCRIPTION"], 10 + 40 + 7, "the header sits on the title block")
 
+    def test_a_part_drawn_lying_down_takes_points_in_its_own_frame(self) -> None:
+        """The rod is drawn lying down; the author still gives points along its own Z."""
+        from build123d import Box, Compound, Cylinder, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        rod, base = Cylinder(5, 60), Pos(0, 0, -35) * Box(30, 30, 10)
+        rod.label, base.label = "rod", "base"
+        sheets = assembly_sheets(parts_list(Compound(children=[rod, base])), title="ROD")
+        sheet = sheets.part("rod")
+        side = next(v for v in sheet.views if v.name == "front")
+        side.dim((0, 5, -30), (0, 5, 30), orientation="h")
+        warnings: list = []
+        doc = _render_sheet(sheet, index=2, count=3, label="rod", warnings=warnings)
+        self.assertFalse([w for w in warnings if "blank paper" in w], warnings)
+        self.assertEqual(_dim_texts(doc).count("60"), 2, "the overall length and the author's, both along the rod")
+
     def test_the_parts_list_carries_spec_and_supplier(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet, assembly_sheets, parts_list
@@ -2338,12 +2356,27 @@ class AssemblyDrawingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not in the model"):
             fresh.merge(4, 5)
 
+    def test_the_parts_list_columns_take_the_room_their_entries_need(self) -> None:
+        """Fixed widths refused MCMASTER-CARR and a forty-letter description."""
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
+
+        parts = parts_list(_assembly())
+        parts.set(1, description="BASE PLATE, MACHINED FROM SOLID, ANODISED", supplier="MCMASTER-CARR")
+        sheet = Sheet("A3")
+        sheet.parts_list(parts)
+        texts = [e.dxf.text for e in _render_sheet(sheet, index=1, count=1, label="wide").modelspace()
+                 .query("TEXT[layer=='TITLE']")]
+        self.assertIn("MCMASTER-CARR", texts)
+        self.assertIn("BASE PLATE, MACHINED FROM SOLID, ANODISED", texts)
+
     def test_a_spec_too_long_for_its_column_is_refused(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet, parts_list
 
         parts = parts_list(_assembly())
-        parts.set(1, spec="AMS 4027 AND AMS-QQ-A-250/11 AND ASTM B209 TEMPER T651")
+        parts.set(1, spec="AMS 4027 AND AMS-QQ-A-250/11 AND ASTM B209 TEMPER T651 OR EN 485-2 OR JIS H4000 "
+                          "A6061P-T651 AS SUPPLIED UNDER THE CUSTOMER'S APPROVED SOURCE LIST")
         sheet = Sheet("A3")
         sheet.parts_list(parts)
         with self.assertRaisesRegex(ValueError, r"item 1's SPEC .* does not fit .* parts\.set\(1, spec=\.\.\.\)"):
@@ -2664,7 +2697,7 @@ class AssemblyDrawingTests(unittest.TestCase):
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet, parts_list
 
-        parts = parts_list(_assembly()).set(1, part_number="MSA-100-0042-REV-C-ALT-STEEL-OPTION-77")
+        parts = parts_list(_assembly()).set(1, part_number="MSA-100-0042-REV-C-ALT-STEEL-OPTION-77-" * 4)
         sheet = Sheet("A3")
         sheet.parts_list(parts)
         with self.assertRaisesRegex(ValueError, r"parts.set\(1, part_number=\.\.\.\)"):
@@ -3021,6 +3054,31 @@ class DimensionKindTests(unittest.TestCase):
         self.assertTrue([e for e in doc.blocks.get(angle.dxf.geometry) if e.dxftype() == "LWPOLYLINE" and e.closed],
                         "a basic angle is boxed too")
 
+    def test_a_stated_tolerance_prints_exactly_as_given(self) -> None:
+        """Rounded, 0.005 printed 0.01: a tolerance nobody gave."""
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Frame
+
+        sheet, top, front = self._block_sheet()
+        top.dim((-20, -15, 10), (20, -15, 10), tol=0.005)
+        front.dim((-20, 0, 0), (20, 0, 0), limits=(39.985, 40.015))
+        top.frame((0, 10, 10), Frame("flatness", 0.0125))
+        doc = _render_sheet(sheet, index=1, count=1, label="exact", warnings=[])
+        values = " ".join(_dim_texts(doc))
+        self.assertIn("0.005", values)
+        self.assertIn("40.015", values)
+        self.assertIn("39.985", values)
+        self.assertIn("0.0125", [e.dxf.text for e in doc.modelspace().query("TEXT[layer=='DIM']")])
+        from cadgen._internal.drawing_annotation import _tol_suffix
+
+        self.assertEqual(_tol_suffix((0.005, 0.0025)), " +0.0050/-0.0025", "a hole callout's, both to one precision")
+        with self.assertRaisesRegex(ValueError, "4 decimal places"):
+            Frame("flatness", 0.00001)
+        with self.assertRaisesRegex(ValueError, "4 decimal places"):
+            top.dim((-20, -15, 10), (20, -15, 10), tol=0.000125)
+        with self.assertRaisesRegex(ValueError, "4 decimal places"):
+            front.dim((-20, 0, 0), (20, 0, 0), limits=(39.99995, 40.0))
+
     def test_a_basic_dimension_without_a_frame_is_reported(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
 
@@ -3028,7 +3086,7 @@ class DimensionKindTests(unittest.TestCase):
         top.dim((-20, -15, 10), (20, -15, 10), basic=True)
         warnings: list = []
         _render_sheet(sheet, index=1, count=1, label="lonely", warnings=warnings)
-        self.assertTrue(any("basic dimension" in w for w in warnings), warnings)
+        self.assertTrue(any(w.startswith("top dim 0: a basic dimension") for w in warnings), warnings)
 
 
 class GdtTests(unittest.TestCase):
@@ -3087,6 +3145,21 @@ class GdtTests(unittest.TestCase):
         top.hole((20, 0, 10), frame=Frame("position", 0.1, ("A", "C"), diameter=True))
         with self.assertRaisesRegex(ValueError, "datum C"):
             _render_sheet(sheet, index=1, count=1, label="undefined")
+
+    def test_a_datum_counts_on_its_own_sheet_only_and_the_refusal_names_the_sheet(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Frame, Sheet
+
+        sheet, top, front, right = self._plate()
+        detail = sheet.detail(front, (0, -25, 0), 8)
+        detail.datum("A", (0, -25, 0))                   # defined in a detail of the sheet
+        top.hole((20, 0, 10), frame=Frame("position", 0.1, ("A",), diameter=True))
+        _render_sheet(sheet, index=1, count=2, label="first", warnings=[])
+        second = Sheet("A3", 1.0, title="SECOND")
+        other = second.three_views(self._plate()[1].shape)[0]
+        other.hole((20, 0, 10), frame=Frame("position", 0.1, ("A",), diameter=True))
+        with self.assertRaisesRegex(ValueError, r"sheet 2 \(SECOND\).*datum A"):
+            _render_sheet(second, index=2, count=2, label="second")
 
     def test_a_datum_letter_names_one_feature_per_sheet(self) -> None:
         sheet, top, front, right = self._plate()
@@ -3260,6 +3333,13 @@ class StageProfileTests(unittest.TestCase):
         self.assertIn("AL 6061-T6 PER AMS 4027", self._texts(sheet))
         with self.assertRaisesRegex(ValueError, "material="):
             Sheet("A3", spec="AMS 4027")
+
+    def test_a_title_block_value_too_long_for_its_cell_is_refused_not_cut(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+
+        sheet = self._sheet(material="ALUMINUM ALLOY 7075-T7351 PLATE", spec="AMS-QQ-A-250/12")[0]
+        with self.assertRaisesRegex(ValueError, r"MATERIAL 'ALUMINUM.*does not fit"):
+            _render_sheet(sheet, index=1, count=1, label="long")
 
     def test_a_profiles_extra_fields_print_blank_until_given(self) -> None:
         from cadgen.eng_drawing import AEROSPACE, Sheet
@@ -3451,20 +3531,62 @@ class MaterialSectionTests(unittest.TestCase):
         doc, _front, _warnings = self._cut(_stack(("shell", 4, "aluminium"), ("base", 6, "plastic")))
         self.assertEqual(sorted(h.dxf.pattern_name for h in self._hatches(doc)), ["ANSI34", "ANSI38"])
 
+    @staticmethod
+    def _look(hatch) -> tuple:
+        return round(hatch.dxf.pattern_angle) % 180, round(hatch.dxf.pattern_scale, 3)
+
     def test_neighbours_of_one_family_differ_in_angle_then_spacing(self) -> None:
         doc, _front, _warnings = self._cut(_stack(("lower", 4, "steel"), ("middle", 4, "steel"), ("upper", 4, "steel")))
-        hatches = self._hatches(doc)
-        angles = [round(h.dxf.pattern_angle) % 180 for h in hatches]
-        self.assertEqual(sorted(set(angles)), [0, 90], "turned a right angle, never 45 (its lines would read as edges)")
-        looks = {(angle, round(h.dxf.pattern_scale, 3)) for angle, h in zip(angles, hatches)}
-        self.assertEqual(len(looks), 3, "the third steel layer spaced wider")
+        hatches = sorted(self._hatches(doc), key=lambda h: min(v[1] for v in h.paths[0].vertices))
+        self.assertEqual(sorted({look[0] for look in map(self._look, hatches)}), [0, 90],
+                         "turned a right angle, never 45 (its lines would read as edges)")
+        lower, middle, upper = map(self._look, hatches)
+        self.assertNotEqual(lower, middle)
+        self.assertNotEqual(middle, upper)
+
+    def test_parts_that_touch_never_look_alike_whatever_their_order(self) -> None:
+        """Item 5 sits on item 1: in item order they took the same look."""
+        from build123d import Align, Box, Compound, Pos
+
+        from cadgen.eng_drawing import parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        places = {"a": (0, 0, 40), "b": (60, 0, 20), "c": (60, 4, 20), "d": (60, 8, 20), "e": (0, 4, 40)}
+        children = []
+        for label, (x, z, width) in places.items():
+            block = Pos(x, 0, z) * Box(width, 30, 4, align=up)
+            block.label = label
+            children.append(block)
+        parts = parts_list(Compound(children=children, label="blocks"))
+        for label in places:
+            parts.set(label, family="steel", material=f"STEEL {label.upper()}")
+        doc, _front, _warnings = self._cut(parts, scale=1.0)
+        left = sorted((h for h in self._hatches(doc) if max(v[0] for v in h.paths[0].vertices) < 160),
+                      key=lambda h: min(v[1] for v in h.paths[0].vertices))
+        self.assertEqual(len(left), 2, "items 1 and 5, one on the other")
+        self.assertNotEqual(self._look(left[0]), self._look(left[1]), "items 1 and 5 touch")
+        swatches = [h for h in doc.modelspace().query("HATCH[layer=='DIM']")]
+        self.assertEqual(len(swatches), 5, "a key row per part, all one family")
+        texts = [e.dxf.text for e in doc.modelspace().query("TEXT")]
+        self.assertTrue({"1", "5", "STEEL A", "STEEL E"} <= set(texts), "each row names its item and material")
+        self.assertEqual({round(h.dxf.pattern_angle) % 180 for h in swatches},
+                         {self._look(h)[0] for h in self._hatches(doc)}, "the key shows the turns the regions have")
 
     def test_a_thin_layer_is_filled_solid(self) -> None:
         doc, _front, _warnings = self._cut(_stack(("shell", 4, "plastic"), ("tape", 0.2, "general"),
                                                   ("lining", 2, "fabric")), scale=1.0)
         solid = [h for h in self._hatches(doc) if h.dxf.solid_fill]
         self.assertEqual(len(solid), 1, "the 0.2 mm tape, too thin to hatch")
-        self.assertIn("THIN, SOLID", [e.dxf.text for e in doc.modelspace().query("TEXT")], "the key says so")
+        texts = [e.dxf.text for e in doc.modelspace().query("TEXT")]
+        self.assertIn("THIN, SOLID", texts, "the key says so")
+        self.assertEqual(texts.count("TAPE"), 2, "the key row, and the callout on the layer itself")
+        callout = next(e for e in doc.modelspace().query("LEADER[layer=='NOTES']"))
+        tape = next(h for h in self._hatches(doc) if h.dxf.solid_fill)
+        from shapely.geometry import Point, Polygon
+
+        region = Polygon([(v[0], v[1]) for v in tape.paths[0].vertices])
+        self.assertLess(region.distance(Point(callout.vertices[0][0], callout.vertices[0][1])), 0.05,
+                        "the leader ends on the tape")
 
     def test_overlapping_items_are_hatched_once(self) -> None:
         from build123d import Box, Compound, Pos
@@ -3487,8 +3609,14 @@ class MaterialSectionTests(unittest.TestCase):
         texts = [e.dxf.text for e in doc.modelspace().query("TEXT")]
         for words in ("MATERIAL KEY", "ALUMINIUM", "PLASTIC", "SHELL", "BASE"):
             self.assertIn(words, texts)
-        doc, _front, _warnings = self._cut(_stack(("lower", 4, "steel"), ("upper", 4, "steel")))
-        self.assertNotIn("MATERIAL KEY", [e.dxf.text for e in doc.modelspace().query("TEXT")], "one family needs none")
+        from build123d import Box, Compound
+
+        from cadgen.eng_drawing import parts_list
+
+        lone = Box(40, 30, 10)
+        lone.label = "block"
+        doc, _front, _warnings = self._cut(parts_list(Compound(children=[lone])))
+        self.assertNotIn("MATERIAL KEY", [e.dxf.text for e in doc.modelspace().query("TEXT")], "one part needs none")
 
     def test_the_layer_table_lists_each_layer(self) -> None:
         from cadgen.eng_drawing import Sheet
