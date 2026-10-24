@@ -189,7 +189,19 @@ sheet millimetres.
   against the part). `basic=True` boxes the value; `reference=True` puts it in
   parentheses; neither takes a tolerance. `frame=` draws a `Frame` beyond the
   value on a row of its own, `datum="B"` makes the feature a datum, `key=True`
-  marks a key characteristic. `orientation` is `"h"`, `"v"` or None.
+  marks a key characteristic. `orientation` is `"h"`, `"v"`, None, or
+  `"aligned"`: along the line between the points, the true length of an
+  inclined edge the view sees edge-on (a tab's length, its thickness across
+  its end). An aligned dimension stands off its own edge, on the side away
+  from the view's middle unless `offset` (positive to the left going from
+  `p1` to `p2`) says otherwise, and takes no frame, datum or key mark.
+- `view.symmetric(direction)`: state the part symmetric about the view's
+  vertical (`"v"`) or horizontal (`"h"`) centre line, drawn with the ISO
+  129-1 symbol, two short strokes beyond each end. The completeness report
+  then counts a feature on that line as located, a spacing centred on it as
+  placing both its ends, and a place reached on one side as placing its
+  mirror. A principal view only; call it in each view where the symmetry is
+  read.
 - `view.holes(angle=45)`: one callout per kind of hole or slot the view looks
   down (`4× ⌀5.5 THRU`, `⌀28 THRU`, `8 × 30 SLOT THRU`), placed on the one
   nearest the view's edge. Identical holes equally spaced round a turned axis
@@ -244,7 +256,9 @@ sheet millimetres.
   constant: the script says when the stretch holds a hole or a change of shape.
   One break per view; not on a section, detail or auxiliary view.
 - `view.angle(vertex, p1, p2, offset=14)`: the angle at `vertex` between the
-  legs toward `p1` and `p2`.
+  legs toward `p1` and `p2`, the one under half a turn, whichever order the
+  legs come in. A leg along an inclined face states its slope; so does a leg
+  along its normal (the right angle a drawing implies).
 - `view.note(text, at, offset=(10, 10))`: a leader from a model point to text.
 - `view.datum(letter, at, offset=None)`: a datum feature symbol on the face
   through `at`, its stem out by the nearest side of the view unless `offset`
@@ -302,6 +316,15 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | `top.hole_table(): the top view looks down no hole or slot` | tabulate the view that looks down the holes |
 | `front dim 3: (250, 0, 0) is inside the break ...` | dimension to a point outside the broken stretch |
 | `incomplete: sheet 3 (PIN): the turned diameter ⌀6 ...` | on a drawing of several parts, each line names its sheet |
+| `incomplete: 4× ⌀5.5 THRU is not located along X and Y ...` | no dimension ties the feature to an edge, a datum or a located feature; dimension it, tabulate it, or state the symmetry it sits on |
+| `incomplete: the face at Z = 8 (square to Z) is not located ...` | a step or shoulder is not placed; dimension it from an edge or a located face |
+| `incomplete: an inclined face (its normal (...)) has no angle ...` | add `view.angle(...)` in a view that sees it edge-on, or place both its ends; more than three on one part are one line with the count |
+| `incomplete: the taper from ⌀30 to ⌀20 leaves ⌀20, its end at Z = 60 unstated ...` | a cone needs both end diameters, each end placed along its axis |
+| `incomplete: the groove R1.5 at Z = 12 leaves its radius R1.5 unstated ...` | a turned groove needs its radius and its middle placed |
+| `incomplete: the overall size along X (100) is given only as a reference dimension ...` | nothing else fixes the size; dimension it, or the sizes that add up to it |
+| `redundant: along X, the 20 (front dim 0), the 40 (front dim 1) and the 60 (front overall) state one size twice ...` | the loop's dimensions, each named; make one reference or leave it out |
+| `interface: item 7 (PIN) ⌀12 in item 1 (CLEVIS) ⌀12 ...: no clearance at nominal sizes ...` | a joint to settle: whether it turns, slides, locates or is fixed decides the fit on both sizes |
+| `interface: item 1 (CLEVIS) and item 6 (BUSHING) touch face to face ...: no end play ...` | a joint with no end play at nominal sizes; ask what it needs |
 | `requirements: concept; 14 sizes, all nominal; no general tolerance; no datums or frames; no fit, tolerance or position on ⌀12 THRU, 4× ⌀6.6 THRU.` | one per part sheet: what it requires, apart from what it draws; report it at the handoff |
 | `incomplete: a prototype drawing states a general tolerance ...` | what the sheet's stage asks for; ask the person |
 | `incomplete: a production drawing locates its features from datums ...` | mark the datums the person gave with `view.datum` |

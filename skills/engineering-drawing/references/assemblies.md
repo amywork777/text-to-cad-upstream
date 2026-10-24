@@ -71,10 +71,15 @@ on A3), then one sheet per modelled item. A GA that does not fit `size` beside i
 parts list at 1:50 or larger is refused, naming a larger size. A part's sheet
 draws `item.shape` in one view per distinct picture and an isometric on a
 sheet that chooses its own size and scale (`Sheet(size=None, scale=None)`); a
-long turned part lies down and states its diameters, and the points you give
-its views stay in the part's own frame, as `item.shape` is; it states its overall sizes,
-calls out the holes and slots each view looks down, and is titled with the
-item's description over `ITEM n (QTY q) OF <title>`. Every sheet carries the drawing number, revision, author
+long turned part lies down, and the points you give its views stay in the
+part's own frame, as `item.shape` is. It states its overall sizes, calls out
+the holes and slots each view looks down and locates them (a prismatic part's
+in a hole table, a turned part's from its axis and its end), and is titled
+with the item's description over `ITEM n (QTY q) OF <title>`. A part turned
+whole states its profile: its diameters, each taper's end diameters, each
+groove's radius, and every shoulder, taper end and groove placed along the
+axis from its near end (the far end is the overall length's). A prismatic
+part's steps and faces are left to you; the report names each. Every sheet carries the drawing number, revision, author
 and date, and the stage, profile, category, company and fields; `notes` and
 `revisions` go on the GA, `general_tolerance` on the part sheets.
 `sheets.part(key)` is an item's sheet; `sheets.parts` the list. A detail of a
@@ -98,6 +103,39 @@ applies:
 Ask the person for every value, joint by joint; never supply a torque or an
 adhesive. The order of work, fixtures and procedures belong to work
 instructions, a separate document.
+
+## Joints and interfaces
+
+The run prints an `interface:` line for each place the parts meet on a turned
+axis:
+
+- a turned surface of one part in a bore of another, their diameters within a
+  loose running fit's clearance of each other (2 % of the bore or 0.5 mm,
+  whichever is more), with the clearance at nominal sizes, or "no clearance",
+  or the interference;
+- two parts on such an axis whose flat faces touch square to it: no end play
+  at nominal sizes. A clevis gap filled exactly by an eye and two bushing
+  flanges prints one line per touching pair.
+
+Nominal sizes that meet exactly are what a model says, not what a shop can
+make: each line is a joint to settle with the person. For each joint, ask:
+
+1. **What it does**: turns, slides, locates, or stays fixed. That decides the
+   fit on both sizes (a clearance, transition or interference fit; a thread).
+2. **How it is held**: a press, a thread and its torque, a retaining ring, a
+   cotter pin, a bond. Each is a flag note.
+3. **End play**: how much the joint may move along its axis, or that it is
+   clamped. A stack of parts across a gap is a tolerance stack: state the gap
+   and the parts' widths with tolerances that keep it.
+4. **For a moving joint**: its stroke or travel, and the mounting distances at
+   each end of it (retracted and extended, eye to eye), which the general
+   arrangement states as reference dimensions or flag notes.
+
+Write the answers as `fit=`/`tol=` on both parts' sizes, `thread=` on a
+threaded bore, and flag notes on the GA. The lines stay in the run as the
+record of each joint; each sheet's `requirements:` line says which sizes still
+have no fit. Splines, keys and threads modelled as plain bores are not found;
+ask about them too.
 
 ## `view.flag(text, at=None, item=None, joint=None, offset=None)`
 
@@ -142,7 +180,10 @@ modelled as thin layers when they are.
 
 Draws `parts` as the parts list, standing on the title block and as wide as it
 (ISO 7573, ASME Y14.34): ITEM, QTY, DESCRIPTION, PART NO., MATERIAL, SPEC,
-SUPPLIER, the header against the block and item 1 above it. `first`/`last` draw a run of a list too
+SUPPLIER, the header against the block and item 1 above it. In a set with a
+sheet per part (`assembly_sheets`, or any set whose sheets come from it), a
+SHEET column gives the sheet each item is detailed on, counted in the set's
+final order when it renders, so a sheet inserted after the GA moves them. `first`/`last` draw a run of a list too
 long for one sheet; one that does not fit is refused, naming where to split it,
 and each run of a split list says on which sheet it continues. The views and
 any detail keep clear of it; a hand-placed view over it, or a note running
@@ -174,3 +215,5 @@ hold is refused, naming a larger sheet or scale. Not on a section or a detail.
 | `item 2's SPEC '...' does not fit the parts list's SPEC column ...` | shorten it: `parts.set(2, spec=...)` (a refusal) |
 | `flag(item='pin') on the front view finds the item in the parts list the view balloons ...` | `front.balloons(parts)` first, or flag with `at=` (a refusal) |
 | `front flag 3: no clear place near its point ...` | give `flag(..., offset=(x, y))` |
+| `interface: item 7 (PIVOT PIN) ⌀12 in item 1 (CLEVIS) ⌀12, on the axis along Y through (0, -16, 36): no clearance at nominal sizes ...` | a fit nobody has chosen: ask what the joint does ([joints](#joints-and-interfaces)) |
+| `interface: item 2 (EYE) and item 6 (BUSHING) touch face to face square to the axis along Y, at (0, 10, 36): no end play ...` | ask the end play the joint needs, or that it is clamped |

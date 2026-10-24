@@ -35,10 +35,19 @@ Ask one thing at a time, in plain words with the standard term in brackets.
    `parts.set(...)`. The script is the record of the interview: rerun it after
    a model change and nothing is asked again. Anything not confirmed stays
    blank, and the run reports it.
-5. **For an assembly, ask joint by joint how each is held:** a torque, a
-   threadlocker grade, a press fit, a bond (adhesive and its cure), a weld,
-   tape, rivets, snaps, or nothing at all. Each answer is a flag note
-   (`view.flag(..., joint=...)`, [assemblies](assemblies.md)).
+5. **For an assembly, go joint by joint.** A first run of the set lists them
+   in its `interface:` lines: each pin in a bore with its clearance at nominal
+   sizes, and each pair of faces that touch with no end play. For each joint,
+   ask what it does (turns, slides, locates or stays fixed), which decides the
+   fit on both parts; how it is held (a torque, a threadlocker grade, a press
+   fit, a bond and its cure, a weld, a retaining ring, nothing at all), which
+   is a flag note (`view.flag(..., joint=...)`); the end play it needs; and
+   for a moving joint, its stroke and the mounting distances at each end of
+   it. How: [joints and interfaces](assemblies.md#joints-and-interfaces).
+6. **Choose the controlling dimensions.** A size the others add up to is
+   stated twice once it is toleranced: say which one matters (the fit, the
+   gap, the mounting distance) and make the derived one reference, or leave it
+   out. The run's `redundant:` lines name every loop it finds.
 
 ### Refreshing a drawing
 
@@ -53,11 +62,12 @@ tolerancing, a nominal drawing cannot show it; say so before redrawing it.
 ### The handoff
 
 Report geometry and requirements apart. Geometry is what the sheet locates
-and sizes and what its `incomplete:` lines still name. Requirements are what
-its `requirements:` line counts: sizes toleranced, basic, reference and
-nominal, the datums and frames, and the interfaces with no fit, tolerance or
-position. A sheet can locate and size every feature and tolerance none of
-them; say both.
+and sizes, what its `incomplete:` and `redundant:` lines still name, and which
+parts are drawn simplified. Requirements are what its `requirements:` line
+counts: sizes toleranced, basic, reference and nominal, the datums and frames,
+and the interfaces with no fit, tolerance or position; for an assembly, each
+`interface:` joint and what was decided about it. A sheet can locate and size
+every feature and tolerance none of them; say both.
 
 ### A picture per question
 

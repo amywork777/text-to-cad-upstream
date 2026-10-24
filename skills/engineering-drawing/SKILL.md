@@ -42,10 +42,19 @@ The first run downloads that installation; later runs reuse it.
    - **Ask** the stage (concept, prototype, production) and the use, then
      propose which interfaces need a requirement, one numbered item at a
      time, each with a picture of the part with that feature marked (`cadgen
-     snapshot --annotation`). For an assembly, ask joint by joint how each is
-     held.
+     snapshot --annotation`).
+   - **For an assembly, ask joint by joint what it does**: turns, slides,
+     locates or stays fixed, which decides its fit; how it is held (a torque,
+     a press, a bond, a pin's retention); the end play it needs along its
+     axis; and for a moving one, its stroke and the mounting distances at each
+     end of it (retracted and extended). A first run of the set, before
+     anything is stated, lists the joints in its `interface:` lines.
    - **Write only what the person confirms** into the script; dimension with
      it from the start, not as a pass afterwards.
+   - **Say where the model is simplified**: a solid where a tube belongs, a
+     plain bore where a thread goes, a coil drawn as segments. Fix the model,
+     or put a note on that part's sheet naming what it leaves out. Never infer
+     a bore or a thread from a part's name.
 
    How: [design intent, tolerances and GD&T](references/intent-and-gdt.md).
    A person who wants a quick sheet of views can skip the questions; the
@@ -100,7 +109,19 @@ The first run downloads that installation; later runs reuse it.
      they measure, on the side the dimension will go: a point in the middle of
      an edge runs its extension line along that edge. Two points that differ
      in one direction measure that direction; pass `orientation=` otherwise.
-     Diameters of turned features go on the profile with `text="%%c<>"`.
+     Diameters of turned features go on the profile with `text="%%c<>"`. An
+     inclined edge the view sees edge-on (a tab's length or thickness) takes
+     `orientation="aligned"`: its true length, along it.
+   - **Locate every feature and face.** A hole, slot or step is drawn where it
+     is only when a dimension ties it to an edge, a datum or a located
+     feature. Where the design is symmetric, say so: `view.symmetric("v")` (or
+     `"h"`) states the part symmetric about the view's vertical (horizontal)
+     centre line and draws the symbol. A feature on that line is then located,
+     a spacing across it places both ends, and one side's dimensions place the
+     other side's mirror. A feature that only looks centred is not located.
+   - **State each size once.** A size the other dimensions add up to (an
+     overall length over a chain, a height that follows from an angle) is
+     `reference=True`, or left out.
    - `view.holes()` calls out every hole and slot the view looks down;
      `view.hole(point)` and `view.slot(point)` call out one. Diameter, THRU or
      depth, counterbore, countersink, a slot's width and length, the `4×` count
@@ -133,11 +154,17 @@ The first run downloads that installation; later runs reuse it.
      prints as an empty, captioned cell, which says the drawing does not
      state it, and the run reports what the sheet's stage still needs.
 5. **Run `python <name>_drawing.py` and read what it prints** before the PDF:
-   - *"incomplete: …"*: a hole or slot not called out, an overall size, a
-     turned diameter, a fillet, round or chamfer not stated, or what the
-     sheet's stage asks for (a general tolerance, datums, the material and its
-     spec, the finish). Each line names the call that states it. Ask the
-     person for the value; do not fill it in.
+   - *"incomplete: …"*: a hole or slot not called out or not located, a flat
+     face not placed, an inclined face with no angle, a taper's end or a
+     groove's size or place, an overall size (or one given only as reference
+     with nothing else fixing it), a turned diameter, a fillet, round or
+     chamfer not stated, or what the sheet's stage asks for (a general
+     tolerance, datums, the material and its spec, the finish). Each line
+     names the call that states it. Take positions from the model's
+     constants; ask the person for anything that is a requirement.
+   - *"redundant: …"*: dimensions that state one size twice, every one in the
+     loop named. Make one of them reference, or leave it out; which one is a
+     design decision (the one that matters is toleranced).
    - *"a basic dimension, and no GD&T frame … bounds it"*: add the frame the
      person gave for that feature, or make the dimension toleranced.
    - *"measures blank paper"*: a dimension's points miss the view. Usually the
@@ -159,6 +186,12 @@ The first run downloads that installation; later runs reuse it.
      nominal (and under which general tolerance); its datums and frames; and
      each hole, slot or turned diameter with no fit, tolerance or position. A
      sheet can have no `incomplete:` line and still read "all nominal".
+   - *"interface: …"*: for an assembly, where its parts meet: a turned surface
+     of one part in a bore of another, with their clearance at nominal sizes
+     (no clearance and interference say so), and faces that touch square to
+     such a joint's axis (no end play). These are the joints to settle with
+     the person (step 0); the line stays as the record of each joint, and the
+     sheets' `requirements:` lines say which sizes still have no fit.
    - A refusal (an exception, no PDF): a typed size the part contradicts, a
      hole called out where no hole is, views that run off the frame on a sheet
      whose scale you fixed. The message says what the part has, or which scale
@@ -172,11 +205,13 @@ The first run downloads that installation; later runs reuse it.
    should, and that the section shows what it was cut for. Fix the script, rerun,
    and read it again.
 7. **Hand off two things, separately.** *Geometry*: what is located and sized,
-   and what the `incomplete:` lines still name (none, at best). *Requirements*:
-   the `requirements:` line for each sheet: what is toleranced and what is
-   nominal, the datums, and the interfaces left without a fit, tolerance or
-   position. "All features dimensioned" and "no tolerances stated" can both be
-   true; say both, and say which requirements came from the person.
+   what the `incomplete:` and `redundant:` lines still name (none, at best),
+   and which parts are simplified. *Requirements*: the `requirements:` line
+   for each sheet (what is toleranced and what is nominal, the datums, the
+   interfaces left without a fit, tolerance or position) and, for an
+   assembly, each `interface:` joint and what the person decided about it.
+   "All features dimensioned" and "no tolerances stated" can both be true;
+   say both, and say which requirements came from the person.
 
 Steps 3 and 5 stand on their own: a sheet of views with no dimensions is a
 drawing too, and writes its PDF with a list of everything it leaves unstated.
@@ -206,10 +241,13 @@ return sheets
   states them. Two names on one shape stay two items and the report says so;
   `parts.merge(a, b)` lists them as one after checking the shapes match.
 - `assembly_sheets` makes the GA (views, overall sizes as reference
-  dimensions, balloons, the parts list) and a first-pass sheet per part (one
-  view per distinct picture, an isometric, diameters for a turned part, overall
-  sizes, every hole and slot). Each is an ordinary `Sheet`: refine
-  `sheets.part(name)` like any other, then run and read the report.
+  dimensions, balloons, the parts list with each item's SHEET) and a
+  first-pass sheet per part: one view per distinct picture, an isometric,
+  overall sizes, every hole and slot called out and located, and for a part
+  turned whole its diameters, its tapers' end diameters, each groove's radius,
+  and every shoulder, taper end and groove placed from one end. Each is an
+  ordinary `Sheet`: refine `sheets.part(name)` like any other (a prismatic
+  part's steps are yours to place), then run and read the report.
 - The GA states the finished state, each requirement a flag note where it
   applies: how each joint is held (torque, threadlocker, press fit, bond and
   its cure, weld, rivet), work done at assembly, gaps and orientation that
@@ -230,7 +268,8 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
   hidden (dashed), centre lines (chain), section hatching (ANSI31), dimensions,
   notes. Centre marks on every hole seen end-on, a centre line down every
   turned feature seen from the side, down every slot and across its ends, and a
-  bolt circle's pitch circle.
+  bolt circle's pitch circle. A centre line stated symmetric carries the ISO
+  129-1 symbol, two short strokes beyond each end.
 - Dimensions measured from the geometry, true size at any scale; values wider
   than their extension lines set beside them. Hole callouts in the standard
   symbols (⌀ ↧ ⌴ ⌵), drawn as line work so they print the same everywhere.
@@ -249,7 +288,8 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
 - On an assembly's GA, balloons (item number in a circle, a leader ending in a
   dot on the part) in even columns whose leaders do not cross, and an ISO 7573
   parts list standing on the title block: ITEM, QTY, DESCRIPTION, PART NO.,
-  MATERIAL, SPEC, SUPPLIER, read upward from the header. A section through
+  MATERIAL, SPEC, SUPPLIER and, in a set with part sheets, the SHEET each item
+  is detailed on, read upward from the header. A section through
   several materials hatches each as its family and carries a material key.
 - PDF bytes that are a function of the content: an unchanged drawing rebuilds
   to an identical file.
@@ -269,10 +309,20 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
   edge-on (no secondary auxiliaries), drawn unrotated, and by default partial
   (the face and what lies within its outline); a view takes one break. Say what
   a view does not show.
-- Holes, slots, overall sizes, turned diameters, fillets, rounds and chamfers
-  are checked for completeness; pockets and other features are not, and are
-  stated with `dim`, a detail or a `note`. A bolt circle's clocking (where its
-  first hole sits) is a `dim` or an `angle` you add.
+- Checked for completeness: holes and slots (called out and located), flat
+  faces square to a model axis (placed), inclined flat faces (an angle, or
+  both ends placed), overall sizes, turned diameters, tapers and grooves,
+  fillets, rounds and chamfers. A curved pocket or a freeform surface is
+  not, and is stated with `dim`, a detail or a `note`. A bolt circle's
+  clocking (where its first hole sits) is a `dim` or an `angle` you add.
+- The location, redundancy and reference checks follow dimensions along the
+  model axes; they do not follow trigonometry. An angle in a view counts as
+  fixing a reference size along that view's axes, and an aligned dimension
+  locates nothing along X, Y or Z.
+- `interface:` lines find coaxial full cylinders of different parts within a
+  loose running fit's clearance, and flat faces touching square to their
+  axis. Splines, keys, threads modelled as plain bores and faces touching
+  elsewhere are not found: ask about them.
 - Millimetres only; one part per arrangement.
 - Assembly sheets: balloons go on whole views, not on sections or details; a
   part sheet always starts from three views; parts are drawn in their model
