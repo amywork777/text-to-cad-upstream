@@ -251,7 +251,7 @@ class OpenItemTests(_Assembly):
     def test_a_block_taller_than_a_page_is_refused_naming_its_step(self) -> None:
         wi = self.instruction()
         wi.step("Load", install=["base_plate"]).instruct("word " * 6000)
-        with self.assertRaisesRegex(ValueError, "STEP 1: one block of text is taller than a page"):
+        with self.assertRaisesRegex(ValueError, "step 1 is taller than a page"):
             _page_texts(wi)
 
 
@@ -274,12 +274,26 @@ class DocumentTests(_Assembly):
         wi.step("Fit", install=["bracket", "pin"]).inspect("Pins seated", per=_sources()[1].at("note 2"))
         return wi
 
-    def test_a_draft_writes_a_cover_and_a_page_per_step_deterministically(self) -> None:
+    def test_a_draft_writes_deterministically(self) -> None:
         first = self._write("a.pdf", self._complete)
         second = self._write("b.pdf", self._complete)
         self.assertEqual(first, second, "no clock reaches the bytes")
-        self.assertEqual(len(re.findall(rb"/Type\s*/Page\b", first)), 3)
         self.assertNotIn(b"/CreationDate", first)
+
+    def test_front_pages_then_a_procedure_table_with_hold_points_and_a_close_out(self) -> None:
+        wi = self.instruction(safety=["Safety glasses"], tools=["Fixture F-12"])
+        wi.operation("Load")
+        wi.step("Load", install=["base_plate"]).caution("Lift with two people.")
+        wi.operation("Fit")
+        wi.step("Fit", install=["bracket", "pin"]).inspect("Pins seated", per=_sources()[1].at("note 2"),
+                                                           record="Pin height, mm")
+        text = [t for page in _page_texts(wi) for t in page]
+        order = [text.index(t) for t in ("APPLICABLE DOCUMENTS", "SAFETY", "PARTS", "EQUIPMENT", "OPERATIONS",
+                                         "APPROVALS", "PROCEDURE", "OPERATION 1   Load", "CAUTION", "Close-out")]
+        self.assertEqual(order, sorted(order), "front pages, then the procedure in order")
+        self.assertIn("Fixture F-12", text)
+        self.assertIn("PIN HEIGHT, MM", text, "the measured value has a blank")
+        self.assertEqual(text.count("HOLD"), 2, "the inspection and the close-out")
 
     def test_released_with_nothing_open_writes_with_no_draft_banner(self) -> None:
         self.assertTrue(self._write("released.pdf", lambda: self._complete(status="released")).startswith(b"%PDF"))

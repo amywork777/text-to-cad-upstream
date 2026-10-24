@@ -63,12 +63,13 @@ __all__ = [
     "work_instruction", "Instruction", "Step",
     "Spec", "Drawing", "Datasheet", "Stated", "Source", "Cited",
     "Torque", "Material", "Adhesive", "Layup", "Cure", "Machining",
-    "TORQUE_UNITS", "CAMERAS", "PAGE_SIZES", "STATUSES", "SOURCE_KINDS",
+    "TORQUE_UNITS", "CAMERAS", "PAGE_SIZES", "STATUSES", "SOURCE_KINDS", "NOTICES",
 ]
 
 TORQUE_UNITS = ("in-lbf", "ft-lbf", "N-m")
 CAMERAS = ("iso", "front", "back", "left", "right", "top", "bottom")
-PAGE_SIZES = ("A4", "LETTER")
+PAGE_SIZES = ("LETTER", "A4")
+NOTICES = ("WARNING", "CAUTION", "NOTE")
 STATUSES = ("draft", "released")
 NOT_STATED = "NOT STATED"
 
@@ -85,6 +86,12 @@ def _text(name: str, value, *, required: bool = True) -> str | None:
     if not value:
         raise ValueError(f"{name} must not be blank: leave it out (None) to print it as {NOT_STATED}")
     return value
+
+
+def _lines(name: str, values) -> list[str]:
+    if isinstance(values, (str, bytes)):
+        raise TypeError(f"{name} takes a list of lines, not one string: {name}=[{values!r}]")
+    return [_text(f"{name} line", value) for value in values]
 
 
 def _one_of(name: str, value, allowed: Sequence[str]) -> str:
@@ -359,15 +366,20 @@ class Machining(_Record):
 
 # --- steps -------------------------------------------------------------------
 
-# What the floor writes down for each kind of operation: blanks to fill in, not
-# values anyone owes. A NOT STATED field is engineering's; these are the technician's.
+# What the floor writes down in each kind of operation: the actual reading and the
+# lot, time and equipment it was made with. Blanks to fill in, not values anyone owes:
+# a NOT STATED field is engineering's; these are the technician's. The tools a step
+# uses (a torque wrench, an oven) are listed once, on the front pages, with their
+# calibration blanks.
 RECORDS = {
-    "fasten": ("Torque wrench ID", "Cal due"),
-    "bond": ("Adhesive lot", "Expiry", "Mixed at", "Pot life ends", "Cure start", "Cure end"),
+    "fasten": ("Actual torque",),
+    "bond": ("Adhesive lot", "Expiry", "Mixed at", "Mated at"),
     "layup": ("Material lot", "Out-time"),
     "cure": ("Oven / autoclave ID", "Start", "End", "Chart no."),
     "machine": ("Machine ID",),
 }
+# Equipment a kind of operation implies, for the front pages' equipment list.
+EQUIPMENT = {"fasten": "Torque wrench", "cure": "Oven / autoclave"}
 
 
 @dataclass(frozen=True)
@@ -386,6 +398,7 @@ class _Op:
     kind: str
     lines: list[_Line]
     missing: list[str] = field(default_factory=list)
+    record: str | None = None  # an inspection's measured-value caption
     surfaces: tuple[tuple[str, str], ...] = ()  # (face ref, the leaf occurrence it is on)
 
 
@@ -394,15 +407,18 @@ class Step:
     Made by :meth:`Instruction.step`; every method returns the step, so they chain."""
 
     def __init__(self, instruction: "Instruction", number: int, title: str, install: tuple[str, ...],
-                 camera: str | None, picture: bool) -> None:
+                 camera: str | None, picture: bool, operation: int | None) -> None:
         self._instruction = instruction
         self.number = number
         self.title = title
         self.install = install
         self.camera = camera
         self.picture = picture
+        self.operation = operation
         self.ops: list[_Op] = []
+        self.notices: list[tuple[str, str]] = []
         self.hold = False
+        self.record: str | None = None
 
     def _add(self, op: _Op) -> "Step":
         self.ops.append(op)
@@ -411,6 +427,22 @@ class Step:
     def instruct(self, text: str) -> "Step":
         """A plain instruction, in the words the user gave."""
         return self._add(_Op("instruct", [_Line("", _text("instruct text", text))]))
+
+    def _notice(self, kind: str, text: str) -> "Step":
+        self.notices.append((kind, _text(f"{kind.lower()} text", text)))
+        return self
+
+    def warning(self, text: str) -> "Step":
+        """A WARNING (harm to people), boxed above the step it governs."""
+        return self._notice("WARNING", text)
+
+    def caution(self, text: str) -> "Step":
+        """A CAUTION (harm to the hardware), boxed above the step it governs."""
+        return self._notice("CAUTION", text)
+
+    def note(self, text: str) -> "Step":
+        """A NOTE, boxed above the step."""
+        return self._notice("NOTE", text)
 
     def fasten(self, hardware: str, *, qty: int | None = None, torque: Torque | None = None,
                locking: Material | None = None, sequence: str | None = None) -> "Step":
@@ -485,15 +517,18 @@ class Step:
             out.append((found[0].ref, found[0].occurrence_ref))
         return tuple(out)
 
-    def inspect(self, text: str, *, per: Source | None = None) -> "Step":
-        """An inspection hold point: the step is not complete until an inspector
-        stamps it. The criterion cites where it comes from; with ``per=None`` its
-        source prints NOT STATED and is an open item."""
+    def inspect(self, text: str, *, per: Source | None = None, record: str | None = None) -> "Step":
+        """An inspection hold point: the step is not complete until QA stamps it.
+        The criterion cites where it comes from; with ``per=None`` its source
+        prints NOT STATED and is an open item. ``record`` captions a blank for
+        the measured value (``"Pin height, mm"``)."""
         if per is not None:
             _source("inspect", per)
         self.hold = True
         line = _Line("Inspect", _text("inspect text", text), per, cite=True)
-        return self._add(_Op("inspect", [line], missing=[] if per else ["criterion source"]))
+        op = _Op("inspect", [line], missing=[] if per else ["criterion source"])
+        op.record = _text("inspect record", record, required=False)
+        return self._add(op)
 
 
 class Instruction:
@@ -501,14 +536,22 @@ class Instruction:
 
     ``status`` is ``draft`` (the default: every page says DRAFT, and NOT STATED
     values and parts no step installs are listed) or ``released`` (either one is
-    refused). ``size`` is one of :data:`PAGE_SIZES`, ``camera`` one of
-    :data:`CAMERAS` for every step's picture (a step may name its own).
-    ``pictures=False`` writes the document with no pictures and needs no browser.
+    refused). ``size`` is one of :data:`PAGE_SIZES` (US Letter by default),
+    ``camera`` one of :data:`CAMERAS` for every step's picture (a step may name
+    its own). ``pictures=False`` writes the document with no pictures and needs
+    no browser.
+
+    The front pages carry ``scope`` (a sentence: what this instruction builds and
+    when it applies), ``safety`` (the PPE and hazards the user's documents state),
+    ``tools`` (fixtures and tooling the user names, beside the equipment the steps
+    imply) and ``revisions`` (``(rev, date, change)`` rows), each only if given.
     """
 
     def __init__(self, step_path: str | Path, *, title: str, number: str, revision: str,
                  part_number: str = "", drawing: Drawing | None = None, author: str = "",
-                 status: str = "draft", size: str = "A4", camera: str = "iso", pictures: bool = True) -> None:
+                 status: str = "draft", size: str = "LETTER", camera: str = "iso", pictures: bool = True,
+                 scope: str = "", safety: Sequence[str] = (), tools: Sequence[str] = (),
+                 revisions: Sequence[tuple[str, str, str]] = ()) -> None:
         self.step_path = Path(step_path).resolve()
         if self.step_path.suffix.lower() not in (".step", ".stp"):
             raise ValueError(f"Instruction takes an assembly .step, got {str(step_path)!r}")
@@ -526,6 +569,14 @@ class Instruction:
         self.size = _one_of("size", size, PAGE_SIZES)
         self.camera = _one_of("camera", camera, CAMERAS)
         self.pictures = bool(pictures)
+        self.scope = _text("scope", scope or None, required=False) or ""
+        self.safety = _lines("safety", safety)
+        self.tools = _lines("tools", tools)
+        if isinstance(revisions, (str, bytes)) or any(
+                not isinstance(row, (tuple, list)) or len(row) != 3 for row in revisions):
+            raise TypeError("revisions takes (rev, date, change) rows")
+        self.revisions = [tuple(_text("revisions cell", cell) for cell in row) for row in revisions]
+        self.operations: list[str] = []
         self.steps: list[Step] = []
         self.materials: list[_Record] = []
         self._scene = None
@@ -571,6 +622,12 @@ class Instruction:
         listing = ", ".join(f"{leaf.ref} {leaf.label or '(unnamed)'}" for leaf in leaves)
         raise KeyError(f"{key!r} is not a part of {self.step_path.name}; its parts are: {listing}")
 
+    def operation(self, title: str) -> "Instruction":
+        """Start the next operation: a heading over the steps that follow it (and a
+        line in the front pages' overview). Steps keep one sequence across them."""
+        self.operations.append(_text("operation title", title))
+        return self
+
     def step(self, title: str, *, install: Iterable[str] = (), camera: str | None = None,
              picture: bool = True) -> Step:
         """Add the next step. ``install`` names the parts this step puts in place
@@ -592,13 +649,19 @@ class Instruction:
                     refs.append(ref)
         for ref in refs:
             self._installed[ref] = number
-        step = Step(self, number, title, tuple(refs), camera, bool(picture))
+        step = Step(self, number, title, tuple(refs), camera, bool(picture),
+                    len(self.operations) if self.operations else None)
         self.steps.append(step)
         return step
 
     def _use(self, record) -> None:
         if record not in self.materials:
             self.materials.append(record)
+
+    def equipment(self) -> list[str]:
+        """The equipment the steps imply, then the tools the user named, each once."""
+        implied = [EQUIPMENT[op.kind] for step in self.steps for op in step.ops if op.kind in EQUIPMENT]
+        return list(dict.fromkeys(implied + self.tools))
 
     def open_items(self) -> list[str]:
         """Everything engineering still owes: each NOT STATED value, and each part no step installs."""
