@@ -3767,6 +3767,42 @@ class LocationTests(unittest.TestCase):
         top.symmetric("v")
         self.assertEqual(self._report(sheet), [])
 
+    def test_symmetry_the_part_does_not_have_is_refused(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos
+
+        from cadgen.eng_drawing import Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        lopsided = Box(100, 60, 10, align=up) - Pos(-30, 0, 0) * Cylinder(4, 10, align=up) \
+            - Pos(40, 20, 0) * Box(20, 20, 10, align=up)
+        sheet = Sheet("A3", 1.0)
+        top, _front = sheet.three_views(lopsided, views=("top", "front"))
+        with self.assertRaisesRegex(ValueError, "not symmetric"):
+            top.symmetric("v")
+        detail = sheet.detail(top, (-30, 0, 10), 8)
+        with self.assertRaisesRegex(ValueError, "detail"):
+            detail.symmetric("v")
+
+    def test_the_symmetry_line_runs_through_the_parts_middle_on_a_broken_view(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        bar = Box(300, 30, 10, align=up) - Pos(-140, 0, 0) * Cylinder(3, 10, align=up) \
+            - Pos(140, 0, 0) * Cylinder(3, 10, align=up)
+        sheet = Sheet("A3", 1.0)
+        top, _front = sheet.three_views(bar, views=("top", "front"))
+        top.broken((20, 0, 10), (120, 0, 10))              # off the middle: the view's box is not centred on it
+        top.symmetric("v")
+        msp = _render_sheet(sheet, index=1, count=1, label="bar", warnings=[]).modelspace()
+        holes = sorted(c.dxf.center.x for c in msp.query("CIRCLE") if abs(c.dxf.radius - 3) < 0.01)
+        middle = holes[0] + 140                            # 1:1, and the left hole is short of the break
+        (line,) = [e for e in msp.query("LINE[layer=='CENTER']") if abs(e.dxf.start.x - e.dxf.end.x) < 1e-6
+                   and abs(e.dxf.start.y - e.dxf.end.y) > 40]
+        self.assertAlmostEqual(line.dxf.start.x, middle, places=3)
+
     def test_stated_symmetry_is_drawn(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
 
@@ -3930,6 +3966,23 @@ class FaceTests(unittest.TestCase):
         self.assertFalse([line for line in self._report(sheet, "overall size")],
                          "the angle may fix what the spans do not; the check cannot follow it, so trusts it")
 
+    def test_an_aligned_dimension_on_a_broken_view_states_its_true_length(self) -> None:
+        from build123d import Plane, Polygon, extrude
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        bar = extrude(Plane.XZ * Polygon((0, 0), (290, 0), (300, 20), (0, 20), align=None), amount=-20)
+        sheet = Sheet("A3", 1.0)
+        _top, front = sheet.three_views(bar, views=("top", "front"))
+        front.broken((50, 0, 10), (250, 0, 10))
+        front.dim((290, 0, 0), (300, 0, 20), orientation="aligned")    # the bevel, beyond the break
+        doc = _render_sheet(sheet, index=1, count=1, label="bevel", warnings=[])
+        self.assertEqual(_dim_texts(doc), ["22.36"], "√(10² + 20²), not the bevel's rise")
+        front.dim((0, 0, 0), (300, 0, 20), orientation="aligned")      # inclined across the break: the wrong angle
+        with self.assertRaisesRegex(ValueError, "aligned.*break"):
+            _render_sheet(sheet, index=1, count=1, label="bevel", warnings=[])
+
     def test_a_height_and_an_angle_state_them(self) -> None:
         sheet, _top, front = self._sheet()
         front.dim((60, 0, 0), (60, 0, 8))
@@ -4088,6 +4141,34 @@ class RedundancyTests(unittest.TestCase):
         facts = _facts()
         _render_sheet(sheet, index=1, count=1, label="pairs", warnings=[], facts=facts)
         self.assertEqual(len(_redundant(facts)), 1)
+
+    def test_two_bosses_of_one_height_are_two_sizes(self) -> None:
+        from build123d import Align, Box, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _redundant
+        from cadgen.eng_drawing import Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = Box(100, 40, 10, align=up) + Pos(-35, 0, 10) * Box(20, 40, 10, align=up) \
+            + Pos(35, 0, 10) * Box(20, 40, 10, align=up)
+
+        def lines(*more):
+            sheet = Sheet("A3", 1.0)
+            _top, front = sheet.three_views(part, views=("top", "front"))
+            front.dim((-45, 0, 10), (-45, 0, 20), orientation="v")     # the left boss's height
+            front.dim((45, 0, 10), (45, 0, 20), orientation="v")       # the right one's: another feature
+            for call in more:
+                call(front)
+            facts = _facts()
+            _render_sheet(sheet, index=1, count=1, label="bosses", warnings=[], facts=facts)
+            return _redundant(facts)
+
+        self.assertEqual(lines(), [], "their tops are coplanar, but each boss's height is its own size")
+        closed = lines(lambda v: v.dim((-50, 0, 0), (-50, 0, 10)), lambda v: v.overall(width=False))
+        self.assertEqual(len(closed), 1, closed)
+        self.assertIn("front overall", closed[0], "the base and a boss add up to the overall height")
+        self.assertNotIn("front dim 1", closed[0], "the right boss stands on its own")
 
     def test_two_steps_of_one_diameter_are_two_sizes(self) -> None:
         from build123d import Align, Cylinder, Pos, Rot

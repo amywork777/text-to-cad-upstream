@@ -384,13 +384,23 @@ class View:
         ISO 129 symmetry symbol. A feature centred on that line is then located
         across it; without the statement, a centred feature still needs a
         dimension, as the report says. A centre is the designer's to state, not
-        the drawing's to assume."""
+        the drawing's to assume. A part that is not its own mirror image about that
+        line is refused: the statement would place features that are not there."""
+        from cadgen._internal.drawing_features import mirror_symmetric
+
         if direction not in ("h", "v"):
             raise ValueError(f"symmetric() takes 'h' or 'v', the view's horizontal or vertical centre line; got "
                              f"{direction!r}")
-        if self.name == "iso" or self._direction is not None:
-            raise ValueError("symmetric() states a centre line of a principal view; an isometric or auxiliary view "
-                             "has none to state")
+        if self.name == "iso" or self._direction is not None or self._detail is not None:
+            raise ValueError("symmetric() states a centre line of a principal view; an isometric, auxiliary or "
+                             "detail view has none to state")
+        width_axis, height_axis = _view_axes(self.name)
+        across = width_axis if direction == "v" else height_axis
+        if not mirror_symmetric(self.shape, across):
+            raise ValueError(f"{self.name}.symmetric({direction!r}): the part is not symmetric about the "
+                             f"{self.name} view's {'vertical' if direction == 'v' else 'horizontal'} centre line "
+                             f"(it differs from its mirror across {'XYZ'[across]}). Dimension each side's features "
+                             "instead.")
         self._symmetric.add(direction)
         return self
 

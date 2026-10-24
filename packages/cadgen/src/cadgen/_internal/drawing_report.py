@@ -80,9 +80,7 @@ def _unstated(facts: _Facts) -> list[str]:
     is not allowed to look finished when it is not, so each line names the call
     that states the missing fact.
     """
-    from cadgen._internal.drawing_features import (
-        holes as find_holes, revolved, slots as find_slots, turned_diameters,
-    )
+    from cadgen._internal.drawing_features import revolved, turned_diameters
 
     lines: list[str] = []
     records = list(facts.parts.values())
@@ -92,7 +90,7 @@ def _unstated(facts: _Facts) -> list[str]:
         whose = _whose(record, records)
         kinds: dict[tuple, list] = {}
         # An assembly's holes and diameters are its parts', stated on their sheets.
-        features = [] if record.get("assembly") else [*find_holes(shape), *find_slots(shape)]
+        features = [] if record.get("assembly") else [*_found(record, "holes"), *_found(record, "slots")]
         for feature in features:
             kinds.setdefault(_feature_key(feature), []).append(feature)
         for key, members in kinds.items():
@@ -233,10 +231,8 @@ def _plane_axis(shape, point) -> int | None:
 def _circle_links(record: dict) -> dict[int, list]:
     """A bolt circle locates its holes from its centre: each hole's place tied to
     the centre's, along each model axis."""
-    from cadgen._internal.drawing_features import bolt_circles, holes as find_holes
-
     links: dict[int, list] = {axis: [] for axis in range(3)}
-    for circle in bolt_circles(record["shape"], find_holes(record["shape"])):
+    for circle in _found(record, "circles"):
         for mouth in circle.mouths:
             for axis in range(3):
                 links[axis].append((round(mouth[axis], _PLACE), round(circle.centre[axis], _PLACE)))
@@ -289,14 +285,19 @@ def _redundant(facts: _Facts) -> list[str]:
     """The dimensions a part's other dimensions already fix: along one axis, a
     dimension whose two ends the others tie together closes a loop, and the
     loop states one size twice. A shop meets both, and their tolerances cannot
-    both hold. A dimension's end on a hole's centre line is that hole, not the
-    place it shares with others: two pairs of holes at one spacing are two
-    sizes. Hole tables and bolt circles place features without asking a size,
+    both hold.
+
+    A dimension's end is the feature it lands on, not the coordinate it shares:
+    a hole whose centre line it is on, or the one flat face square to the axis
+    it touches. Two pairs of holes at one spacing, or two bosses of one height,
+    are two sizes. An end off the part at its extreme (an overall size's corner)
+    is every face at that extreme, and an end where coplanar faces meet is each
+    of them. Hole tables and bolt circles place features without asking a size,
     so they close no loop of their own, though a dimension can close one with
     them. A basic dimension is the exact target a frame bounds, a reference
     dimension asks nothing, and a diameter across a profile is its feature's
     size, however many steps share it: none of them is part of a loop."""
-    from cadgen._internal.drawing_features import bolt_circles, holes as find_holes
+    from build123d import GeomType, Vector
 
     lines: list[str] = []
     records = list(facts.parts.values())
@@ -304,9 +305,23 @@ def _redundant(facts: _Facts) -> list[str]:
         if record.get("assembly"):
             continue  # an assembly's envelope is reference dimensions
         whose = _whose(record, records)
-        holes = find_holes(record["shape"])
-        circles = bolt_circles(record["shape"], holes)
+        shape = record["shape"]
+        holes = _found(record, "holes")
+        box = shape.bounding_box()
         for axis in range(3):
+            extremes = (round(tuple(box.min)[axis], _PLACE), round(tuple(box.max)[axis], _PLACE))
+            flats = []
+            for face in shape.faces():
+                if face.geom_type == GeomType.PLANE:
+                    normal = tuple(face.normal_at())
+                    if abs(abs(normal[axis]) - 1) < 1e-9:
+                        flats.append((round(tuple(face.center())[axis], _PLACE), face))
+            near: dict[tuple, list[tuple[tuple, str]]] = {}
+
+            def tie(a: tuple, b: tuple, what: str) -> None:
+                near.setdefault(a, []).append((b, what))
+                near.setdefault(b, []).append((a, what))
+
             def node(point) -> tuple:
                 for hole in holes:
                     if abs(hole.axis[axis]) > 1e-6:
@@ -316,15 +331,19 @@ def _redundant(facts: _Facts) -> list[str]:
                     if math.dist([r - along * d for r, d in zip(rel, hole.axis)], (0.0, 0.0, 0.0)) <= 0.01:
                         return ("hole", round(hole.mouth[axis], _PLACE),
                                 tuple(round(c, 3) for c, d in zip(hole.mouth, hole.axis) if abs(d) < 1e-6))
-                return ("at", round(point[axis], _PLACE))
+                place = round(point[axis], _PLACE)
+                level = [(k, face) for k, (at, face) in enumerate(flats) if at == place]
+                touching = [k for k, face in level if face.distance_to(Vector(*point)) < 1e-3]
+                if len(touching) == 1:
+                    return ("face", touching[0])
+                if not touching and len(level) == 1 and place not in extremes:
+                    return ("face", level[0][0])
+                spot = ("at", place)
+                for k in touching or ([k for k, _face in level] if place in extremes else []):
+                    tie(spot, ("face", k), "")
+                return spot
 
-            near: dict[tuple, list[tuple[tuple, str]]] = {}
-
-            def tie(a: tuple, b: tuple, what: str) -> None:
-                near.setdefault(a, []).append((b, what))
-                near.setdefault(b, []).append((a, what))
-
-            for circle in circles:
+            for circle in _found(record, "circles"):
                 for mouth in circle.mouths:
                     tie(node(mouth), node(circle.centre), "bolt circle")
             spans = [(node(ends[0]), node(ends[1]), what, kind)
@@ -339,11 +358,27 @@ def _redundant(facts: _Facts) -> list[str]:
                 if loop is None:
                     tie(a, b, what)
                     continue
-                named = list(dict.fromkeys([*loop, what]))
+                named = [n for n in dict.fromkeys([*loop, what]) if n]
                 lines.append(f"redundant: {whose}along {'XYZ'[axis]}, {_and('the ' + n for n in named)} state one "
                              "size twice: a shop meets both, and their tolerances cannot both hold. Make one of the "
                              "dimensions reference=True, or leave it out.")
     return lines
+
+
+def _found(record: dict, what: str) -> list:
+    """A part's holes, slots or bolt circles, read off it once for every check
+    that asks."""
+    from cadgen._internal.drawing_features import bolt_circles, holes as find_holes, slots as find_slots
+
+    cache = record.setdefault("_found", {})
+    if what not in cache:
+        if what == "holes":
+            cache[what] = find_holes(record["shape"])
+        elif what == "slots":
+            cache[what] = find_slots(record["shape"])
+        else:
+            cache[what] = bolt_circles(record["shape"], _found(record, "holes"))
+    return cache[what]
 
 
 def _fixed(record: dict, axis: int) -> bool:
@@ -389,7 +424,13 @@ def _path(near: dict, a: Hashable, b: Hashable) -> list[str] | None:
 
 def _reached(record: dict) -> dict[int, set]:
     """Every place along each model axis the sheet ties to an anchor through its
-    dimensions, its hole tables and its bolt circles."""
+    dimensions, its hole tables and its bolt circles; worked out once a part."""
+    if "_reached" not in record:
+        record["_reached"] = _reach(record)
+    return record["_reached"]
+
+
+def _reach(record: dict) -> dict[int, set]:
     links = _circle_links(record)
     box = record["shape"].bounding_box()
     middle = tuple(round((lo + hi) / 2, _PLACE) for lo, hi in zip(box.min, box.max))
@@ -424,12 +465,10 @@ def _unlocated(record: dict, whose: str) -> list[str]:
     located across its axis when its centre (or a slot's end) ties to an anchor
     through dimensions, a hole table or a bolt circle. A size or a spacing tied to
     nothing leaves it anywhere on the part."""
-    from cadgen._internal.drawing_features import holes as find_holes, slots as find_slots
-
     shape, views = record["shape"], record["views"]
     reached = None
     kinds: dict[tuple, list] = {}
-    for feature in [*find_holes(shape), *find_slots(shape)]:
+    for feature in [*_found(record, "holes"), *_found(record, "slots")]:
         if _member_key(feature) not in record["called"]:
             continue
         along = next((k for k in range(3) if abs(abs(feature.axis[k]) - 1) < 1e-9), None)
@@ -500,10 +539,10 @@ def _unplaced_faces(record: dict, whose: str) -> list[str]:
     hole or slot owns, and chamfers, are stated by their callouts and notes."""
     from build123d import GeomType, Vector
 
-    from cadgen._internal.drawing_features import chamfers, holes as find_holes, slots as find_slots
+    from cadgen._internal.drawing_features import chamfers
 
     shape, views = record["shape"], record["views"]
-    features = [f for f in [*find_holes(shape), *find_slots(shape)] if _member_key(f) in record["called"]]
+    features = [f for f in [*_found(record, "holes"), *_found(record, "slots")] if _member_key(f) in record["called"]]
     bevels = [c.point for c in chamfers(shape)]
     reached = None
     steps: dict[tuple[int, float], None] = {}

@@ -692,6 +692,34 @@ def turned_diameters(shape) -> list[float]:
     return [t.diameter for t in turned_surfaces(shape)]
 
 
+def mirror_symmetric(shape, axis: int) -> bool:
+    """Whether a part is its own mirror image about the plane square to model
+    ``axis`` through the middle of its extent. Its faces, mirrored, are looked
+    for among its own first; where the faces are split differently on the two
+    sides, the part and its mirror are compared as solids."""
+    from build123d import Plane, Vector
+
+    box = shape.bounding_box()
+    middle = (tuple(box.min)[axis] + tuple(box.max)[axis]) / 2
+
+    def signature(face, flip: bool) -> tuple:
+        centre = list(face.center())
+        if flip:
+            centre[axis] = 2 * middle - centre[axis]
+        return (str(face.geom_type), round(face.area, 2), *(round(c, 2) + 0.0 for c in centre))
+
+    faces = shape.faces()
+    if sorted(signature(f, False) for f in faces) == sorted(signature(f, True) for f in faces):
+        return True
+    normal = [0.0, 0.0, 0.0]
+    normal[axis] = 1.0
+    origin = list(box.center())
+    origin[axis] = middle
+    mirrored = shape.mirror(Plane(origin=Vector(*origin), z_dir=Vector(*normal)))
+    left = (shape - mirrored).volume
+    return left <= 1e-4 * max(shape.volume, 1e-9)
+
+
 @dataclass(frozen=True)
 class Taper:
     """A turned cone that is part of the shape, not a chamfer: its diameters at

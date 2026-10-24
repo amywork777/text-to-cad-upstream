@@ -1018,11 +1018,14 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # The detail's own boundary: a thin continuous circle, as ISO 128-34 draws it.
             msp.add_circle(view.at, view._detail.radius * sv, dxfattribs={"layer": "NOTES"})
         vx0, vx1, vy0, vy1 = own_box
+        if view._symmetric:
+            # Through the part's middle, which a break off the middle moves away from
+            # the middle of the drawn view.
+            centre = model_to_sheet(tuple(view.shape.bounding_box().center()))
         for direction in sorted(view._symmetric):
             # ISO 129-1: the centre line across the part, two short strokes square to
             # it beyond each end.
-            middle, (lo, hi) = (((vx0 + vx1) / 2, (vy0, vy1)) if direction == "v" else
-                                ((vy0 + vy1) / 2, (vx0, vx1)))
+            middle, (lo, hi) = ((centre[0], (vy0, vy1)) if direction == "v" else (centre[1], (vx0, vx1)))
             ends = [(middle, lo - _SYMMETRY_REACH), (middle, hi + _SYMMETRY_REACH)]
             line = [(e[0], e[1]) if direction == "v" else (e[1], e[0]) for e in ends]
             msp.add_line(line[0], line[1], dxfattribs={"layer": "CENTER"})
@@ -1270,8 +1273,18 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                         warnings.append(f"{view.name} dim {dim.index}: {_where(inside[0])} is inside the break, which "
                                         "the view leaves out; dimension to a point the view shows.")
                     ra, rb = proj._raw_point(dim.p1), proj._raw_point(dim.p2)
-                    horizontal = (dim.orientation or _spans(a, b)) == "h"
-                    true = abs(rb[0] - ra[0]) if horizontal else abs(rb[1] - ra[1])
+                    if dim.orientation == "aligned":
+                        across = [abs(dim.p2[k] - dim.p1[k]) for k in range(3) if k != axis]
+                        if (min(dim.p1[axis], dim.p2[axis]) < low < high < max(dim.p1[axis], dim.p2[axis])
+                                and max(across) > 1e-9):
+                            raise ValueError(
+                                f"{view.name} dim {dim.index}: an aligned dimension across the break, inclined to it, "
+                                "would be drawn at the shortened view's angle, not the part's. Dimension the edge "
+                                "in a view without the break, or along the break axis.")
+                        true = math.hypot(rb[0] - ra[0], rb[1] - ra[1])
+                    else:
+                        horizontal = (dim.orientation or _spans(a, b)) == "h"
+                        true = abs(rb[0] - ra[0]) if horizontal else abs(rb[1] - ra[1])
                 linear(a, b, dim.offset, dim.side, dim.row, dim.text, dim.orientation, dim.tol, dim.fit, true,
                        basic=dim.basic, reference=dim.reference, limits=dim.limits, name=f"dim {dim.index}",
                        frame=dim.frame, datum=dim.datum, keyed=dim.key, ends=(dim.p1, dim.p2))
