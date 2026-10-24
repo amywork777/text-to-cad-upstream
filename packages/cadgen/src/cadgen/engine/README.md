@@ -1126,11 +1126,14 @@ return pmi.annotate(body,
   "problems"}`, with `"warnings"`, `"coverage"` and `"unattached"` where there are any, each logged.
 - **Coverage.** Every face of a part is to have a requirement, most of them through its general
   profile, and what is not is said (`pmi.coverage(entries, faces)`, pure, of one part's structure
-  entries and the canonical refs of all its faces). A face is covered by an `ok` dimension
-  (toleranced or basic) or geometric tolerance whose refs name it, the general profile by the faces
-  it covers; another system's annotation listed `unsupported` covers its faces as any does, but a
-  datum. A datum and a note cover nothing, and the datum features a general profile names are left
-  out of it: such a face is uncovered until it has a control of its own (datum A's flatness). The
+  entries and the canonical refs of all its faces). A face is covered by an `ok` toleranced
+  dimension (plus-minus or limits) or geometric tolerance whose refs name it, the general profile by
+  the faces it covers; another system's annotation listed `unsupported` covers its faces as any
+  does, but a datum or a basic dimension. A basic dimension covers nothing: it is no requirement, but
+  locates the feature a position or a profile controls, which covers it. A datum and a note cover
+  nothing, and the datum features a general profile names are left out of it: such a face (a datum
+  a basic dimension starts from too) is uncovered until it has a control of its own (datum A's
+  flatness). The
   conflicts, each `{"kind", "ids", "problem"}`, in this order: `unused_datum`, a datum no
   tolerance's frame names; `unlinked_note`, a flag note every face and annotation of which is
   broken (one link that holds keeps it linked; a general note has none to break);

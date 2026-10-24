@@ -1271,7 +1271,7 @@ LOCATED = 'pmi.datum("C", left), pmi.position("hole-position", hole, 0.1, datums
 # A requirement of each conflict: B named by no frame; the hole's limits, which its measured 10 mm
 # lies outside, and which miss its size's 10/10.1; a flatness wider than the general profile on the
 # top, and one wider than the left face's own profile.
-CONFLICTS = '''pmi.diameter("hole-limits", hole, tolerance=pmi.limits(9.9, 9.95)),
+EACH_CONFLICT = '''pmi.diameter("hole-limits", hole, tolerance=pmi.limits(9.9, 9.95)),
         pmi.flatness("top-flatness", top, 0.6),
         pmi.profile("left-profile", left, 0.2),
         pmi.flatness("left-flatness", left, 0.3),
@@ -1322,8 +1322,25 @@ class CoverageTest(_Folder):
         self.assertEqual(structure["pmi_coverage"], [{"part": 0, "uncovered": named, "conflicts": []}])
         self.assertEqual(report["pmi"]["coverage"], [{"part": "plate", "uncovered": named, "conflicts": []}])
 
+    def test_a_basic_dimension_covers_no_face(self) -> None:
+        """A basic dimension is no requirement: the position it locates covers the hole, and the
+        datum features it starts from (B, C) still want controls of their own, as A does."""
+        basics = 'pmi.basic("hole-from-B", front, hole), pmi.basic("hole-from-C", left, hole),'
+        general = 'pmi.general_profile("general", 0.5, datums=["A", "B", "C"]),'
+        self.build(requirements(LOCATED + basics + general))
+        structure = self.served()
+        found = _by_id(structure["pmi"])
+        named = sorted(found[letter]["refs"][0]["ref"] for letter in "ABC")
+        self.assertEqual(structure["pmi_coverage"], [{"part": 0, "uncovered": named, "conflicts": []}])
+        # Each datum feature given a flatness of its own: every face has a requirement.
+        flatness = "".join(f'pmi.flatness("{letter}-flatness", {face}, 0.05),'
+                           for letter, face in (("A", "bottom"), ("B", "front"), ("C", "left")))
+        report = self.build(requirements(LOCATED + basics + general + flatness))
+        self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": []}])
+        self.assertNotIn("coverage", report["pmi"])
+
     def test_each_conflict_is_said(self) -> None:
-        self.build(requirements(CONFLICTS))
+        self.build(requirements(EACH_CONFLICT))
         structure = self.served()
         [found] = structure["pmi_coverage"]
         self.assertEqual(found["conflicts"], [
@@ -1379,7 +1396,7 @@ class CoverageTest(_Folder):
 
     def test_the_build_warns_and_never_fails(self) -> None:
         said: list[str] = []
-        report = self.build(requirements(CONFLICTS), log=said)
+        report = self.build(requirements(EACH_CONFLICT), log=said)
         self.assertEqual(report["pmi"]["problems"], [])
         self.assertTrue(self.step.is_file())
         [found] = self.served()["pmi_coverage"]

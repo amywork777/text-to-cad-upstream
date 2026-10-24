@@ -108,12 +108,13 @@ and one covering no face is linked to nothing and written to no STEP.
 **Coverage** (``coverage``) holds a part to every face having a requirement, most through its
 general profile. Of each part carrying PMI, where its document is served (``coverage_of``, the
 structure's ``pmi_coverage``), and in the build's report from the same: the faces no ``ok``
-dimension or geometric tolerance names (the general profile names those it covers; a datum and a
-note cover nothing, and the datum features a general profile names are left to controls of their
-own), and the requirements that cannot both hold or hold nothing -- a datum no frame names, a flag
-note every link of which is broken, a limits dimension its measured nominal lies outside, two
-dimensions of one type on the same faces whose zones do not meet, a flatness wider than a profile on
-its face. Derived, never held, and warned of: it never fails a build.
+toleranced dimension or geometric tolerance names (the general profile names those it covers; a
+basic dimension, a datum and a note cover nothing, and the datum features a general profile names
+are left to controls of their own), and the requirements that cannot both hold or hold nothing --
+a datum no frame names, a flag note every link of which is broken, a limits dimension its measured
+nominal lies outside, two dimensions of one type on the same faces whose zones do not meet, a
+flatness wider than a profile on its face. Derived, never held, and warned of: it never fails a
+build.
 
 **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
 GD&T as XCAF reads it. What this module does not hold whole -- another characteristic or dimension
@@ -786,11 +787,14 @@ def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, A
     """One part's coverage, of its structure entries (``entries``, their refs canonical) and the
     canonical refs of every face it has (``faces``): ``uncovered``, the faces no requirement is on,
     sorted, and ``conflicts``, the requirements that cannot both hold or hold nothing, each
-    ``{"kind", "ids", "problem"}``. A face is covered by a dimension (toleranced or basic) or a
-    geometric tolerance that is ``ok`` and names it, the general profile by the faces it covers
-    (``otherwise_controlled`` leaves them to it); one another system wrote that this module does not
-    hold whole (``unsupported``) covers its faces as any does, but a datum. A datum and a note cover
-    nothing, and a general profile leaves out the datum features it names: give each its own control.
+    ``{"kind", "ids", "problem"}``. A face is covered by a requirement that is ``ok`` and names it
+    (``_requirement``): a toleranced dimension (plus-minus or limits) or a geometric tolerance, the
+    general profile by the faces it covers (``otherwise_controlled`` leaves them to it); one another
+    system wrote that this module does not hold whole (``unsupported``) covers its faces as any does,
+    but a datum or a basic dimension. A basic dimension covers nothing: it locates the feature a
+    position or a profile controls, and leaves the datum it starts from to that datum. A datum and a
+    note cover nothing, and a general profile leaves out the datum features it names: give each its
+    own control.
     The conflicts (``CONFLICTS``, in that order, each in the entries'): ``unused_datum``, a datum no
     tolerance's frame names; ``unlinked_note``, a flag note every face and annotation of which is
     broken (one link that holds keeps it linked; a general note names nothing to break);
@@ -799,9 +803,7 @@ def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, A
     ``form_over_profile``, a flatness wider than a surface profile on its face (its own, or the
     general one). Warned of, never failing a build. Pure: of its arguments alone."""
     ok = [entry for entry in entries if entry["status"] == "ok"]
-    covered = {ref["ref"] for entry in ok for ref in entry["refs"]
-               if entry["kind"] in ("dimension", "geometric_tolerance")
-               or (entry["kind"] == "unsupported" and entry["xcaf_type"] != "XCAFDimTolObjects_DatumObject")}
+    covered = {ref["ref"] for entry in ok if _requirement(entry) for ref in entry["refs"]}
     said: dict[str, list[dict[str, Any]]] = {kind: [] for kind in CONFLICTS}
 
     def say(kind: str, ids: list[str], problem: str) -> None:
@@ -860,6 +862,20 @@ def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, A
                     f"its form within {_mm(width)} already: make the flatness narrower than the profile, or remove it")
     return {"uncovered": sorted(set(faces) - covered),
             "conflicts": [found for kind in CONFLICTS for found in said[kind]]}
+
+
+def _requirement(entry: dict[str, Any]) -> bool:
+    """Whether an entry is a requirement on the faces its refs name, which ``coverage`` counts them
+    covered by: a dimension given a tolerance (plus-minus or limits), a geometric tolerance, or
+    another system's annotation listed ``unsupported`` but a datum or a basic dimension. A basic
+    dimension is none: it locates the feature a position or a profile controls, which covers it, and
+    leaves the datum it starts from to that datum's own control; nor is a datum or a note."""
+    if entry["kind"] == "dimension":
+        return (entry["dimension"]["tolerance"] or {}).get("type") in ("plus_minus", "limits")
+    if entry["kind"] == "unsupported":
+        return (entry["xcaf_type"] != "XCAFDimTolObjects_DatumObject"
+                and not (entry.get("values") or {}).get("basic"))
+    return entry["kind"] == "geometric_tolerance"
 
 
 def _mm(value: float) -> str:

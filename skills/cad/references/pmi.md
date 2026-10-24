@@ -184,8 +184,8 @@ nominal measured anew and its tolerance as written. Otherwise its status says wh
 - `invalid`: it names a face the annotation cannot stand on (a diameter on a plane).
 
 Such an annotation stays in the `.xbf` with its values, linked to nothing, and is
-listed in the build report's `pmi` (`{"annotations", "problems"}`, with `unattached`
-where any are). A STEP is refused rather than written without it, naming each one.
+listed in the build report's `pmi` (`{"annotations", "problems"}`, with `warnings`,
+`coverage` and `unattached` where any are). A STEP is refused rather than written without it, naming each one.
 Fix the ref in the code, or remove the annotation. A flag note whose face is gone keeps
 its number and its text and says `missing` too; a STEP is not refused for it.
 
@@ -205,13 +205,15 @@ warning: pmi: PART: N faces have no requirement: REF, ...
 warning: pmi: PART: IDS: PROBLEM
 ```
 
-- **Faces with no requirement.** A face is covered by an `ok` dimension (toleranced
-  or basic) or geometric tolerance on it, or by the general profile. A datum and a
-  note cover nothing. One `pmi.general_profile` usually covers most of them: add it
-  first, with the user's value and datums (ask for them).
+- **Faces with no requirement.** A face is covered by an `ok` toleranced dimension
+  (`plus_minus` or `limits`) or geometric tolerance on it, or by the general profile.
+  A basic dimension, a datum and a note cover nothing: a basic dimension only locates
+  what a position or a profile controls. One `pmi.general_profile` usually covers most
+  of them: add it first, with the user's value and datums (ask for them).
 - **Then the datum features.** The general profile leaves out the datum features it
-  names, so they stay listed until each has a control of its own: a flatness on the
-  primary datum, and the user's requirements for the others.
+  names, so they stay listed until each has a control of its own, even where a basic
+  dimension starts from it: a flatness on the primary datum, and the user's
+  requirements for the others.
 - **Conflicts**, each naming its ids and what to change:
   - `unused_datum`: a datum no tolerance's frame names;
   - `unlinked_note`: a flag note whose every face and annotation is broken (one that
