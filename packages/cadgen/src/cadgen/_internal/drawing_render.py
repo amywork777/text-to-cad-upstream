@@ -771,7 +771,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         record = None
         if facts is not None:
             record = facts.parts.setdefault(id(view.shape), {"shape": view.shape, "called": set(), "values": [],
-                                                       "axes": set(), "views": [], "sheet": (index, sheet.title),
+                                                       "axes": set(), "referenced": set(), "views": [],
+                                                       "sheet": (index, sheet.title),
                                                        "assembly": id(view.shape) in assemblies,
                                                        "notes": set(), "radii": set(), "spans": [],
                                                        "anchors": [], "datums": [], "symmetric": set(),
@@ -1064,9 +1065,17 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                    ends=None):
             """``true`` is the length measured on the whole part, when the paper's
             is shorter: a dimension across a broken view's break. ``name`` says
-            which dimension it is in a message."""
-            horizontal = (orientation or _spans(a, b)) == "h"
-            if offset is None:
+            which dimension it is in a message. An ``aligned`` one runs along the
+            line from ``a`` to ``b``, off the side away from the view's middle."""
+            aligned = orientation == "aligned"
+            horizontal = not aligned and (orientation or _spans(a, b)) == "h"
+            if aligned:
+                length = math.hypot(b[0] - a[0], b[1] - a[1])
+                left = (-(b[1] - a[1]) / length, (b[0] - a[0]) / length)
+                if offset is None:
+                    middle = ((a[0] + b[0]) / 2 - (vx0 + vx1) / 2, (a[1] + b[1]) / 2 - (vy0 + vy1) / 2)
+                    offset = _DIM_ROW if middle[0] * left[0] + middle[1] * left[1] >= 0 else -_DIM_ROW
+            elif offset is None:
                 # The row the plan gave it, measured from the VIEW's edge, so two
                 # dimensions on different features still land on different lines.
                 if horizontal:
@@ -1092,7 +1101,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 # as given -- dimlfac scales the measurement, not the tolerance.
                 style_override |= {"dimtol": 1, "dimtp": tol[0], "dimtm": tol[1],
                                    "dimtdec": _places(*tol), "dimtfac": 0.7}
-            span = abs(b[0] - a[0]) if horizontal else abs(b[1] - a[1])
+            span = length if aligned else abs(b[0] - a[0]) if horizontal else abs(b[1] - a[1])
             measured = span / sv
             if true is not None and abs(true - measured) > 1e-6:
                 # The paper's length is the broken view's; the value is the part's.
@@ -1117,7 +1126,17 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             width = _ink_width(printed, th) + (_text_width(_tol_suffix(tol), th * 0.7) if tol else 0.0)
             arrow = th * 0.85
             location = None
-            if horizontal:
+            if aligned:
+                base = (a[0] + left[0] * offset, a[1] + left[1] * offset)
+                d = msp.add_linear_dim(base=base, p1=a, p2=b, angle=math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])),
+                                       dimstyle=dimstyle, text=label, override=style_override,
+                                       dxfattribs={"layer": "DIM"})
+                for x, y in (base, (b[0] + left[0] * offset, b[1] + left[1] * offset)):
+                    reach["top"] = max(reach["top"], y - vy1 + th * 1.5)
+                    reach["bottom"] = max(reach["bottom"], vy0 - y + th * 1.5)
+                    reach["right"] = max(reach["right"], x - vx1 + th * 1.5)
+                    reach["left"] = max(reach["left"], vx0 - x + th * 1.5)
+            elif horizontal:
                 base = (a[0], (max(a[1], b[1]) if offset >= 0 else min(a[1], b[1])) + offset)
                 if width + 1.0 > span:
                     location = (max(a[0], b[0]) + 1.5 * arrow + 1.0 + width / 2, base[1] + 1.0 + th / 2)
@@ -1174,15 +1193,26 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 edge = {"top": vy1, "bottom": vy0, "right": vx1, "left": vx0}[side_name]
                 reach[side_name] = max(reach[side_name], abs((tip[1] if horizontal else tip[0]) - edge) + th)
             # The dimension line, which no leader or other dimension line may cross.
-            if horizontal:
+            if aligned:
+                dimension_lines.append(((a[0] + left[0] * offset, a[1] + left[1] * offset),
+                                        (b[0] + left[0] * offset, b[1] + left[1] * offset)))
+            elif horizontal:
                 dimension_lines.append(((min(a[0], b[0]), base[1]), (max(a[0], b[0]), base[1])))
             else:
                 dimension_lines.append(((base[0], min(a[1], b[1])), (base[0], max(a[1], b[1]))))
+            axis = _sheet_axis(proj, horizontal)
+            if aligned:
+                # Along a model axis only when the edge happens to run along one.
+                run = [q - p for p, q in zip(*ends)] if ends is not None else [1.0, 1.0, 1.0]
+                axis = next((k for k in range(3) if all(abs(run[j]) < 1e-9 for j in range(3) if j != k)), None)
             # A reference dimension states no requirement; an assembly's envelope is
             # stated by one all the same, being information nobody inspects.
             if not reference or (record is not None and record["assembly"]):
-                state(measured, _sheet_axis(proj, horizontal))
-            axis = _sheet_axis(proj, horizontal)
+                state(measured, axis)
+            elif record is not None and axis is not None:
+                # A reference size asks nothing; it is information about a size the
+                # other dimensions fix, which the report checks they do.
+                record["referenced"].add((axis, round(measured, 3)))
             if record is not None and ends is not None and axis is not None and not reference:
                 # What it ties together, along the model axis it measures, what it is
                 # called in a message, and what kind of statement it is.

@@ -491,8 +491,8 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
     mark = sheet.profile.characteristic_mark if sheet.profile is not None else "KC"
     pending: dict[str, list] = {side: [] for side in _SIDES}
     for order, dim in enumerate(items):
-        if dim.kind != "linear":
-            continue
+        if dim.kind != "linear" or dim.orientation == "aligned":
+            continue  # an aligned dimension stands off its own inclined edge, in no row
         a, b = proj.point(dim.p1), proj.point(dim.p2)
         horizontal = (dim.orientation or _spans(a, b)) == "h"
         if dim.offset is not None:

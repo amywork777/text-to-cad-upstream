@@ -216,9 +216,12 @@ class View:
             limits: tuple[float, float] | None = None, basic: bool = False, reference: bool = False,
             frame: Frame | None = None, datum: str | None = None, key: bool = False) -> "View":
         """A linear dimension between two model points. ``orientation`` is ``"h"``,
-        ``"v"`` or None (whichever the projected pair spans more); ``offset`` is
-        the dimension line's distance from the farther point, in sheet mm, and its
-        sign picks the side. Left unset, the dimension takes the next free row on
+        ``"v"`` or None (whichever the projected pair spans more), or
+        ``"aligned"``: along the line between the points, the true length of an
+        inclined edge the view sees edge-on. ``offset`` is the dimension line's
+        distance from the farther point, in sheet mm, and its sign picks the side
+        (an aligned one's: positive to the left going from ``p1`` to ``p2``; left
+        unset, it stands off the view's middle). Left unset, the dimension takes the next free row on
         its side, so defaults never stack on each other or on :meth:`overall`.
         ``tol=0.1`` states ±0.1; ``tol=(0.05, 0.02)`` states +0.05/-0.02
         deviations; ``fit="H7"`` appends an ISO fit class; ``limits=(39.98,
@@ -233,8 +236,11 @@ class View:
         of its own, and ``datum`` makes the dimensioned feature a datum.
         ``key=True`` marks a key characteristic: the profile's boxed letters
         ("KC") after the value."""
-        if orientation not in (None, "h", "v"):
-            raise ValueError(f"orientation must be 'h', 'v' or None, got {orientation!r}")
+        if orientation not in (None, "h", "v", "aligned"):
+            raise ValueError(f"orientation must be 'h', 'v', 'aligned' or None, got {orientation!r}")
+        if orientation == "aligned" and (frame is not None or datum is not None or key):
+            raise ValueError("an aligned dimension takes no frame, datum or key mark; state those on a "
+                             "dimension along the view's axes")
         limits = _dimension_kind(tol=tol, fit=fit, limits=limits, basic=basic, reference=reference)
         self._dims.append(_Dim("linear", self._at(p1), self._at(p2), _offset(offset), text, orientation,
                                tol=_tol(tol), fit=fit, basic=basic, reference=reference, limits=limits,

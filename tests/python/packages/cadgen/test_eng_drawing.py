@@ -3803,13 +3803,13 @@ def _ramp():
 class FaceTests(unittest.TestCase):
     """A step is somewhere and a slope is at some angle only when a dimension says so."""
 
-    def _report(self, sheet) -> list[str]:
+    def _report(self, sheet, words: str = "face") -> list[str]:
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _unstated
 
         facts = _facts()
         _render_sheet(sheet, index=1, count=1, label="faces", warnings=[], facts=facts)
-        return [line for line in _unstated(facts) if "face" in line]
+        return [line for line in _unstated(facts) if words in line]
 
     def _sheet(self):
         from cadgen.eng_drawing import Sheet
@@ -3836,6 +3836,38 @@ class FaceTests(unittest.TestCase):
             front.angle((20, 0, 8), *legs)
             doc = _render_sheet(sheet, index=1, count=1, label="angle", warnings=[])
             self.assertEqual(_dim_texts(doc), ["114.44°"], "never the reflex angle outside the legs")
+
+    def test_an_aligned_dimension_measures_along_an_inclined_edge(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        _top, front = sheet.three_views(_ramp(), views=("top", "front"))
+        front.dim((20, 0, 8), (10, 0, 30), orientation="aligned", tol=0.1)   # the slope's true length
+        warnings: list[str] = []
+        doc = _render_sheet(sheet, index=1, count=1, label="aligned", warnings=warnings)
+        (value,) = _dim_texts(doc)
+        self.assertTrue(value.startswith("\\A0;24.17") and "±0.1" in value,
+                        f"√(10² + 22²), not its width or height on the sheet: {value!r}")
+        line = next(iter(doc.modelspace().query("DIMENSION")))
+        self.assertAlmostEqual(abs(math.tan(math.radians(line.dxf.angle))), 2.2, places=6, msg="along the slope")
+        self.assertFalse([w for w in warnings if "guessed" in w], warnings)
+        with self.assertRaisesRegex(ValueError, "aligned dimension takes no frame"):
+            front.dim((20, 0, 8), (10, 0, 30), orientation="aligned", key=True)
+
+    def test_a_size_an_angle_fixes_may_be_given_as_reference(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(_ramp(), views=("top", "front"))
+        top.overall(width=False)
+        front.overall(reference=True)                      # the 60 and the 30 follow from the rest
+        front.dim((0, 0, 30), (10, 0, 30))                 # the top's width
+        front.dim((60, 0, 8), (20, 0, 8))                  # the slope's foot from the right
+        front.dim((60, 0, 0), (60, 0, 8))
+        front.angle((20, 0, 8), (60, 0, 8), (10, 0, 30))
+        self.assertFalse([line for line in self._report(sheet, "overall size")],
+                         "the angle may fix what the spans do not; the check cannot follow it, so trusts it")
 
     def test_a_height_and_an_angle_state_them(self) -> None:
         sheet, _top, front = self._sheet()
@@ -3969,6 +4001,27 @@ class RedundancyTests(unittest.TestCase):
     def test_a_reference_or_basic_dimension_closes_no_loop(self) -> None:
         self.assertEqual(self._plate_lines(reference=True), [])
         self.assertEqual(self._plate_lines(basic=True), [])
+
+    def test_an_overall_size_the_chain_fixes_is_stated_as_reference(self) -> None:
+        from build123d import Align, Box
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _redundant, _unstated
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(Box(60, 40, 8, align=(Align.MIN, Align.MIN, Align.MIN)),
+                                       views=("top", "front"))
+        front.overall(reference=True)                      # (60) and (8): information
+        front.dim((0, 0, 8), (20, 0, 8))
+        front.dim((20, 0, 8), (60, 0, 8))
+        front.dim((60, 0, 0), (60, 0, 8))
+        top.overall(width=False)
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="plate", warnings=[], facts=facts)
+        self.assertEqual(_redundant(facts), [])
+        self.assertFalse([line for line in _unstated(facts) if "overall size" in line],
+                         "a reference size tells the shop the stock: the size is on the drawing")
 
 
 class InterfaceTests(unittest.TestCase):

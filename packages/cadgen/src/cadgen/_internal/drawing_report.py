@@ -124,6 +124,13 @@ def _unstated(facts: _Facts) -> list[str]:
             if any(abs(d - extent) <= 0.01 for d in across):
                 continue
             where = next((name for name, look in views if abs(look[axis]) < 1e-9), None)
+            if any(a == axis and abs(v - extent) <= 0.01 for a, v in record.get("referenced", ())):
+                if _fixed(record, axis):
+                    continue
+                lines.append(f"incomplete: {whose}the overall size along {'XYZ'[axis]} ({_fmt(extent)}) is given "
+                             "only as a reference dimension, and no other dimension fixes it: a reference asks "
+                             "nothing. Dimension it as a requirement, or the sizes that add up to it.")
+                continue
             fix = f"{where}.overall() states it." if where else "No view on the drawing shows that direction."
             lines.append(f"incomplete: {whose}the overall size along {'XYZ'[axis]} ({_fmt(extent)}) is not "
                          f"dimensioned. {fix}")
@@ -308,6 +315,23 @@ def _redundant(facts: _Facts) -> list[str]:
                              "size twice: a shop meets both, and their tolerances cannot both hold. Make one of the "
                              "dimensions reference=True, or leave it out.")
     return lines
+
+
+def _fixed(record: dict, axis: int) -> bool:
+    """Whether a part's other dimensions fix its overall size along ``axis``: its
+    two extremes tied together through them, or an angle stated in a view that
+    sees that axis, which may fix it in a way the spans cannot show (the report
+    follows no trigonometry, so it trusts the author there)."""
+    if any(abs(look[axis]) < 1e-9 for _vertex, _p1, _p2, look in record["angles"]):
+        return True
+    box = record["shape"].bounding_box()
+    near: dict[float, list[tuple[float, str]]] = {}
+    links = _circle_links(record)[axis] + [(round(a, _PLACE), round(b, _PLACE))
+                                           for k, a, b, _what, _kind in record["spans"] if k == axis]
+    for a, b in links:
+        near.setdefault(a, []).append((b, ""))
+        near.setdefault(b, []).append((a, ""))
+    return _path(near, round(tuple(box.min)[axis], _PLACE), round(tuple(box.max)[axis], _PLACE)) is not None
 
 
 def _and(words) -> str:
