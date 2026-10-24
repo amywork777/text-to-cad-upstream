@@ -132,7 +132,7 @@ Built, this warns that the four sides have no requirement: nothing here holds th
   planes, from a plane to a hole's axis parallel to it, or between two parallel axes.
 - **Tolerances are explicit.** `pmi.plus_minus(upper, lower=None)` takes signed
   deviations, `lower` defaulting to `-upper`; `pmi.limits(lower, upper)` takes the
-  least and the greatest size instead (`pmi.limits(10.0, 10.05)` is 10.00/10.05). A
+  least and the greatest size instead (`pmi.limits(10.0, 10.05)` is 10.00–10.05). A
   dimension given no `tolerance=` holds none: nothing is assumed.
 - **A basic dimension** (`pmi.basic`) has no tolerance: it locates what a geometric
   tolerance controls, such as a position's true position. A tolerance on one, or a

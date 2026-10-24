@@ -454,14 +454,20 @@ class LimitsTest(_Folder):
         import build123d as bd
 
         body = bd.Box(20, 20, 10) - bd.Cylinder(4, 10)
+        hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
         foreign = _Foreign(body)
-        foreign.dimension("Size_Diameter", [body.faces().filter_by(bd.GeomType.CYLINDER)[0]], 8.0,
-                          SetLowerBound=(7.9,), SetUpperBound=(8.1,))
-        [entry] = pmi.read(foreign.step(self.folder / "vendor.step"))
+        # Its hole named, as the check finds a face in a file: by the name its ADVANCED_FACE carries.
+        document._name(foreign.sub(hole), "f:vendor.hole.1")
+        foreign.dimension("Size_Diameter", [hole], 8.0, SetLowerBound=(7.9,), SetUpperBound=(8.1,))
+        vendor = foreign.step(self.folder / "vendor.step")
+        [entry] = pmi.read(vendor)
         self.assertEqual((entry["kind"], entry["status"]), ("dimension", "ok"), entry)
         self.assertEqual(entry["dimension"]["tolerance"], {"type": "limits", "lower": 7.9, "upper": 8.1})
         # The file states limits, not a nominal: none is served (XCAF's midpoint is no fact of the file).
         self.assertIsNone(entry["dimension"]["nominal"])
+        # And the check matches it by its limits, in millimetres, as one of the code's.
+        result = ap242.verify([entry], vendor)
+        self.assertEqual((result["matched"], result["total"], result["problems"]), (1, 1, []))
 
     def test_a_vendor_dimension_with_limits_and_more_is_unsupported_with_why(self) -> None:
         """XCAF holds limits or deviations, never both; limits with a fit or a qualifier say more
@@ -1271,7 +1277,7 @@ def pmi_plate():
 # The hole located: datum C on the left face, and the hole's position to A|B|C.
 LOCATED = 'pmi.datum("C", left), pmi.position("hole-position", hole, 0.1, datums=["A", "B", "C"]),'
 # A requirement of each conflict: B named by no frame; the hole's limits, which its measured 10 mm
-# lies outside, and which miss its size's 10/10.1; a flatness wider than the general profile on the
+# lies outside, and which miss its size's 10.0–10.1; a flatness wider than the general profile on the
 # top, and one wider than the left face's own profile.
 EACH_CONFLICT = '''pmi.diameter("hole-limits", hole, tolerance=pmi.limits(9.9, 9.95)),
         pmi.flatness("top-flatness", top, 0.6),
@@ -1350,10 +1356,10 @@ class CoverageTest(_Folder):
              "problem": "datum B is in no tolerance's frame: name it where a requirement is measured from it, or "
                         "remove it"},
             {"kind": "outside_limits", "ids": ["hole-limits"],
-             "problem": "the diameter measures 10 mm, outside its limits 9.9/9.95: model it within them, or correct "
+             "problem": "the diameter measures 10 mm, outside its limits 9.90–9.95: model it within them, or correct "
                         "the limits"},
             {"kind": "apart", "ids": ["hole-size", "hole-limits"],
-             "problem": "two diameters of the same face whose zones do not meet, 10/10.1 and 9.9/9.95: no part "
+             "problem": "two diameters of the same face whose zones do not meet, 10.0–10.1 and 9.90–9.95: no part "
                         "holds both; keep the one meant"},
             {"kind": "form_over_profile", "ids": ["top-flatness", "general"],
              "problem": "flatness 0.6 is wider than the surface profile 0.5 on its face, which holds its form within "
@@ -1756,6 +1762,30 @@ class RefusedTest(_Folder):
             export.translate(self.xbf, "xbf", self.folder / "part.xbf", part="plate")
         # A mesh carries no PMI, as it carries no B-rep: written.
         export.translate(self.xbf, "stl", self.folder / "plate.stl")
+
+    def test_an_xbf_made_again_is_refused_for_views_or_a_library_alone(self) -> None:
+        """An xbf made again carries none of the code's PMI: views alone, or a notes library alone,
+        would be lost as annotations would (law 17), so it is refused, naming them; a STEP carries
+        neither, whole or not, and is written."""
+        from cadgen.engine.export import viewer
+
+        library = VIEWS_ALONE.replace('pmi.view("iso", camera="iso"), pmi.view("top", camera="top")',
+                                      'library={"primer-mask": "Mask these features before coating with primer"}')
+        for model, said in ((VIEWS_ALONE, r"plate holds 2 named view\(s\) \(iso, top\), and an xbf written from "
+                                          r"it is a document made again, which carries none yet: export it as built, "
+                                          r"whole"),
+                            (library, r"plate holds a notes library \(primer-mask\), and an xbf written from it")):
+            self.build(model)
+            with self.assertRaisesRegex(export.ExportRefused, said):
+                export.translate(self.xbf, "xbf", self.folder / "part.xbf", part="plate")
+            self.assertFalse((self.folder / "part.xbf").exists())
+            xbf_row = next(row for row in viewer.options(export.Source.read(self.xbf), part="plate")
+                           if row["format"] == "xbf")
+            self.assertTrue(xbf_row["pmi"])
+            self.assertRegex(xbf_row["reason"], said)
+            for part in (None, "plate"):
+                export.translate(self.xbf, "step", self.folder / "again.step", part=part)
+                self.assertTrue((self.folder / "again.step").is_file())
 
 
 class _Foreign:

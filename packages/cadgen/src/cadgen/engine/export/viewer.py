@@ -57,14 +57,14 @@ def options(source, *, pose=None, part=None, original_allowed=True) -> list[dict
                 row["reason"] = str(error)
         if row["format"] == "xbf":
             # Whether the PMI decided this row: only an XBF made again, a part extracted or a
-            # document converted, is one.
+            # document converted, is one, and its views and notes library are the PMI's too.
             row["pmi"] = False
             if pose is not None:
                 row["reason"] = "XBF stores the authored document, not a requested pose."
             elif source.path and source.path.suffix.lower() == ".xbf" and part is None and not source.foreign:
                 row["reason"] = "Use Download original XBF, or select a part to extract."
             else:
-                row["pmi"] = bool(source.structure.get("pmi"))
+                row["pmi"] = any(source.structure.get(key) for key in ("pmi", "pmi_views", "pmi_library"))
                 try:
                     pmi.refuse_dropped(view, "xbf")
                 except ExportRefused as error:

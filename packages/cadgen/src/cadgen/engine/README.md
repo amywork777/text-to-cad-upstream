@@ -1093,7 +1093,7 @@ return pmi.annotate(body,
   measured from the geometry: a cylinder's diameter, or a distance between parallel planes, from
   a plane to a hole's axis, or between parallel axes. A tolerance is held only where the code
   gives one: `plus_minus(upper, lower=None)`, signed deviations, or `limits(lower, upper)`, the
-  least and the greatest size, absolute (`limits(10.0, 10.05)` is 10.00/10.05). A basic dimension
+  least and the greatest size, absolute (`limits(10.0, 10.05)` is 10.00–10.05). A basic dimension
   (`pmi.basic`) has none, and a tolerance on one is refused. `presentation=pmi.place(anchor,
   offset)` (millimetres, the part's frame) is where a viewer draws the callout, never a
   requirement and never in a STEP.
@@ -1272,7 +1272,8 @@ view (OCCT's writer writes neither): **notes, views and the library stay in the 
 STEP is refused for one. The exports that rebuild the document from a view would carry no PMI:
 a posed STEP, and a STEP or xbf of one part (`--part`). Every export that would not carry the
 PMI the code made whole is refused by name (`pmi.refuse_dropped`, in `export.translate`; a STEP
-held to the GD&T, an xbf made again to the notes as well); one of a document another system wrote
+held to the GD&T, an xbf made again to the notes, the views and the notes library as well, a part
+given views or a library alone included, each named); one of a document another system wrote
 is written, and what it leaves out is said (`pmi.dropped`: `warning: pmi: FILE: ID is not carried
 whole: WHY` in the export's log). OCCT's writer gets three PMI records wrong, and the STEP export
 puts them right (`export/step.py`, `_pmi_records`; found and checked by the AP242 reader below):

@@ -66,7 +66,9 @@ shows, its section an XCAF clipping plane (``XCAFDoc_ClippingPlaneTool``) named 
 the same ``TDF_Reference`` and a cadgen attribute holding the view as the code gave it, which the
 structure's ``pmi_views`` is served from. The notes it shows are that attribute's alone: OCCT's
 ``SetView`` files a view's notes under its clipping-plane link. OCCT's STEP writer writes no views,
-so a STEP carries none and is never refused for one. A view this module did not write is not read.
+so a STEP carries none and is never refused for one. An xbf made again from a document (one part
+of it) carries no views, notes or library yet, and is refused for any of them, by name
+(``refuse_dropped``). A view this module did not write is not read.
 
 **Values.** A dimension's nominal is the geometry's, measured at document time: a cylinder's
 diameter, the distance between two parallel planes. No nominal is typed in. A tolerance is held
@@ -224,7 +226,7 @@ def plus_minus(upper: float, lower: float | None = None) -> dict[str, Any]:
 
 def limits(lower: float, upper: float) -> dict[str, Any]:
     """Limits: the least and the greatest size, absolute millimetres, ``upper`` above ``lower``
-    (``limits(10.0, 10.05)`` is 10.00/10.05). In place of deviations; the nominal is still
+    (``limits(10.0, 10.05)`` is 10.00–10.05). In place of deviations; the nominal is still
     measured."""
     lower = _number(lower, "a dimension's lower limit")
     upper = _number(upper, "a dimension's upper limit")
@@ -834,8 +836,8 @@ def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, A
             zone = (tolerance["lower"], tolerance["upper"])
             if nominal is not None and not zone[0] - _ROUNDING <= nominal <= zone[1] + _ROUNDING:
                 say("outside_limits", [entry["id"]], f"the {given['type']} measures {_mm(nominal)} mm, outside its "
-                                                     f"limits {_mm(zone[0])}/{_mm(zone[1])}: model it within them, or "
-                                                     "correct the limits")
+                                                     f"limits {_sizes(*zone)}: model it within them, or correct the "
+                                                     "limits")
         elif tolerance.get("type") == "plus_minus" and nominal is not None:
             zone = (nominal + tolerance["lower"], nominal + tolerance["upper"])
         else:
@@ -846,8 +848,7 @@ def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, A
             if other == key and max(zone[0], then[0]) > min(zone[1], then[1]) + _ROUNDING:
                 say("apart", [first["id"], second["id"]],
                     f"two {key[0]}s of the same face{'s' if len(key[1]) > 1 else ''} whose zones do not meet, "
-                    f"{_mm(zone[0])}/{_mm(zone[1])} and {_mm(then[0])}/{_mm(then[1])}: no part holds both; keep the "
-                    "one meant")
+                    f"{_sizes(*zone)} and {_sizes(*then)}: no part holds both; keep the one meant")
     profiles = [entry for entry in ok if entry["kind"] == "geometric_tolerance"
                 and entry["geometric_tolerance"]["characteristic"] == "surface_profile"]
     for entry in ok:
@@ -881,6 +882,13 @@ def _requirement(entry: dict[str, Any]) -> bool:
 def _mm(value: float) -> str:
     """A length in millimetres as a problem says it: to four decimals at most (``10``, ``9.95``)."""
     return f"{value:.4f}".rstrip("0").rstrip(".")
+
+
+def _sizes(lower: float, upper: float) -> str:
+    """The least size and the greatest as the viewer writes limits (``pmiToleranceText``): at one
+    number of places, what the more exact needs (four at most), an en dash between (``9.90–9.95``)."""
+    places = max(len(_mm(value).partition(".")[2]) for value in (lower, upper))
+    return f"{lower:.{places}f}–{upper:.{places}f}"
 
 
 def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners: set[str],
@@ -2088,18 +2096,31 @@ def dropped(view: Any, kind: str) -> list[tuple[dict[str, Any], str]]:
 
 def refuse_dropped(view: Any, kind: str) -> None:
     """A ``kind`` file of ``view`` that would not carry whole an annotation the code made
-    (``dropped``), refused by name: it would be no translation of the model's document. One of a
-    document another system wrote is written: ``export.translate`` says what it leaves out."""
+    (``dropped``), refused by name: it would be no translation of the model's document; so is an
+    xbf made again of one holding the code's views or notes library (``pmi_views``,
+    ``pmi_library``), which it would lose as it would annotations, named. One of a document another
+    system wrote is written: ``export.translate`` says what it leaves out."""
     from cadgen.engine.export import ExportRefused
 
     lost = [(entry, why) for entry, why in dropped(view, kind) if _from_code(entry)]
+    structure = view.source.structure
+    if kind == "xbf":
+        again = view.posed or view.parted or not view.source.foreign
+        views = [given["name"] for given in structure.get("pmi_views") or []] if again else []
+        library = [given["name"] for given in structure.get("pmi_library") or []] if again else []
+        held = [f"{len(structure['pmi'])} PMI annotation(s)"] if lost else []
+        if views:
+            held.append(f"{len(views)} named view(s) ({', '.join(views)})")
+        if library:
+            held.append(f"a notes library ({', '.join(library)})")
+        if held:
+            said = held[0] if len(held) == 1 else f"{', '.join(held[:-1])} and {held[-1]}"
+            raise ExportRefused(f"{view.source.name} holds {said}, and an xbf written from it is a document made "
+                                "again, which carries none yet: export it as built, whole")
+        return
     if not lost:
         return
-    entries = view.source.structure["pmi"]
-    held = len(step_entries(entries) if kind == "step" else entries)
-    if kind == "xbf":
-        raise ExportRefused(f"{view.source.name} holds {held} PMI annotation(s), and an xbf written from it is a "
-                            "document made again, which carries none yet: export it as built, whole")
+    held = len(step_entries(structure["pmi"]))
     if view.posed or view.parted:
         raise ExportRefused(f"the document holds {held} PMI annotation(s), and a posed or partial STEP is a "
                             "document made again, which carries none: export it as built, whole")

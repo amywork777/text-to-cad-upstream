@@ -93,6 +93,19 @@ class VerificationTest(unittest.TestCase):
             with patch("cadgen.engine.export.ap242.report", side_effect=ValueError("unsupported syntax")):
                 self.assertTrue(verify(entries, target)["problems"])
 
+    def test_a_note_is_never_counted_even_where_the_check_fails(self) -> None:
+        """A STEP carries no note: a failed check counts the GD&T alone, as a completed one does."""
+        entries, _found = fixtures()
+        note = {"id": "deburr", "kind": "note", "status": "ok", "refs": [],
+                "note": {"number": 1, "text": "Break all sharp edges 0.2 max", "general": True, "annotations": []}}
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "export.step"
+            target.write_bytes(b"exported bytes")
+            with patch("cadgen.engine.export.ap242.report", side_effect=ValueError("unsupported syntax")):
+                result = verify([entries[0], note], target)
+        self.assertEqual((result["matched"], result["total"]), (0, 1))
+        self.assertEqual(result["problems"], ["The STEP reader could not complete the check: unsupported syntax"])
+
     def test_the_committed_fixture_verifies_whole_basic_dimensions_included(self) -> None:
         """The plate's served PMI against its own exported STEP: every annotation, its two basic
         dimensions too (their 'theoretical' note), matched one to one."""

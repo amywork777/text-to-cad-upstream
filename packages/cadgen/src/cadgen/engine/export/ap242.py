@@ -486,14 +486,16 @@ def _dimension_matches(dimension: dict[str, Any], row: dict[str, Any]) -> bool:
     if kind not in ("diameter", "distance") or row.get("name") != {"diameter": "diameter", "distance": "linear distance"}[kind]:
         return False
     nominal, tolerance = dimension.get("nominal"), dimension.get("tolerance")
-    if not isinstance(nominal, dict):
-        return False
     # A basic dimension carries AP242's 'theoretical' note (CAx-IF 5.3), and nothing else does.
     if bool(dimension.get("basic")) != (["dimensional note", "theoretical"] in (row.get("notes") or [])):
         return False
     actual = row.get("tolerance")
     if tolerance is not None and tolerance.get("type") == "limits":
-        return actual is None and _limits_match(tolerance, nominal.get("unit"), row)
+        # Limits are sizes of their own: a file's serve no nominal (``nominal: null``), and are millimetres.
+        unit = nominal.get("unit") if isinstance(nominal, dict) else "mm"
+        return actual is None and _limits_match(tolerance, unit, row)
+    if not isinstance(nominal, dict):
+        return False
     if row.get("limits") is not None or not _measure(row.get("nominal"), nominal):
         return False
     if tolerance is None:
@@ -558,7 +560,7 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any]) -> dict[str, A
     how many, and why any does not. A general profile that covers no face matches no record, and
     is verified by none being left over. A note is the document's alone (a STEP carries none): it is
     neither expected nor counted."""
-    entries = [entry for entry in entries if entry.get("kind") != "note"]
+    entries = _carried(entries)
     problems = list(found.get("problems") or [])
     if not entries:
         problems.append("The model has no PMI to verify.")
@@ -599,12 +601,19 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any]) -> dict[str, A
     return result
 
 
+def _carried(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The entries a STEP carries: every one but the notes, the xbf's alone (``pmi.step_entries``)."""
+    return [entry for entry in entries if entry.get("kind") != "note"]
+
+
 def verify(entries: list[dict[str, Any]], target: Path) -> dict[str, Any]:
     """``compare`` of the file at ``target``, with the SHA-256 of the bytes checked, read once: the
-    result belongs to those bytes, whatever the viewer opens next."""
+    result belongs to those bytes, whatever the viewer opens next. A check the reader cannot
+    complete counts what ``compare`` would, the notes never."""
     data = target.read_bytes()
     try:
         result = compare(entries, report(target, data))
     except Exception as error:  # noqa: BLE001 - a file the reader cannot read is a failed check, never a failed export
-        result = {"matched": 0, "total": len(entries), "problems": [f"The STEP reader could not complete the check: {error}"]}
+        result = {"matched": 0, "total": len(_carried(entries)),
+                  "problems": [f"The STEP reader could not complete the check: {error}"]}
     return {**result, "sha256": hashlib.sha256(data).hexdigest()}
