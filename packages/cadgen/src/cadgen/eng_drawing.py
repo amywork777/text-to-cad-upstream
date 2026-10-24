@@ -1244,8 +1244,10 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
     dimensions: an assembly's envelope is information, never inspected; what
     it requires once assembled goes in flag notes (:meth:`View.flag`).
     """
+    from build123d import GeomType
+
     from cadgen._internal.drawing_features import (
-        holes as find_holes, revolved, slots as find_slots, turned_surfaces,
+        grooves, holes as find_holes, revolved, slots as find_slots, tapers, turned_surfaces,
     )
 
     if not isinstance(parts, PartsList):
@@ -1315,11 +1317,42 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
                      if abs(abs(s.axis[turned.axis]) - 1) < 1e-9]
             if all(abs(d - turned.diameter) > 0.01 for d, _m in steps):
                 steps.append((turned.diameter, turned.at))
+            k = turned.axis
+
+            def on_profile(z: float, r: float, side_of: float = 1.0) -> tuple[float, ...]:
+                return tuple((z if j == k else turned.at[j]) + side_of * r * across[j] for j in range(3))
+
+            # Along the axis, every step from one end: each shoulder, each end of a
+            # taper and the middle of each groove. The far end is the overall
+            # size's; a dimension to it as well would close a loop.
+            ends = shape.bounding_box()
+            near, far = tuple(ends.min)[k], tuple(ends.max)[k]
+            stations: dict[float, float] = {}
+            for face in shape.faces():
+                normal = tuple(face.normal_at()) if face.geom_type == GeomType.PLANE else (0.0, 0.0, 0.0)
+                if abs(abs(normal[k]) - 1) < 1e-9:
+                    reach = max(math.dist(tuple(v), on_profile(tuple(v)[k], 0.0)) for v in face.vertices())
+                    z = round(tuple(face.center())[k], 3)
+                    stations[z] = max(stations.get(z, 0.0), reach)
+            for taper in tapers(shape):
+                for end, diameter in zip(taper.ends, (taper.small, taper.large)):
+                    z = round(end[k], 3)
+                    stations[z] = max(stations.get(z, 0.0), diameter / 2)
+                    if all(abs(d - diameter) > 0.01 for d, _m in steps):
+                        steps.append((diameter, end))
+            for groove in grooves(shape):
+                z = round(groove.middle[k], 3)
+                stations[z] = max(stations.get(z, 0.0), groove.ring)
+                side.radius(on_profile(z, groove.ring), size=groove.radius)
             for diameter, middle in steps:
-                r = diameter / 2
-                side.dim(tuple(m + r * c for m, c in zip(middle, across)),
-                         tuple(m - r * c for m, c in zip(middle, across)), text="%%c<>")
-            stated = {k for k in range(3) if k != turned.axis}
+                side.dim(on_profile(middle[k], diameter / 2), on_profile(middle[k], diameter / 2, -1.0), text="%%c<>")
+            lengthwise = "h" if _view_axes(side.name)[0] == k else "v"
+            start = on_profile(near, stations.get(round(near, 3), turned.diameter / 2))
+            for z, r in sorted(stations.items()):
+                if abs(z - near) > 0.01 and abs(z - far) > 0.01:
+                    side.dim(start, on_profile(z, r), orientation=lengthwise)
+            placed = set(stations)
+            stated = {j for j in range(3) if j != k}
         for view in views:
             width_axis, height_axis = _view_axes(view.name)
             if width_axis not in stated or height_axis not in stated:
@@ -1327,6 +1360,8 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
             stated |= {width_axis, height_axis}
         features = [*find_holes(shape), *find_slots(shape)]
         low = shape.bounding_box().min
+        if turned is None:
+            placed = set()
         for view in views:
             look = _look(view)
             seen = [f for f in features if _looks_into(f, look)]
@@ -1339,7 +1374,6 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
             # A turned part's axis locates what lies on it; a hole off it is placed
             # along the axis from the part's end.
             k = turned.axis
-            placed: set[float] = set()
             for feature in seen:
                 if all(abs(feature.mouth[j] - turned.at[j]) <= 0.01 for j in range(3) if j != k):
                     continue

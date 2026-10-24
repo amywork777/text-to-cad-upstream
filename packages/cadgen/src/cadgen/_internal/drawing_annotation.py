@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from cadgen._internal.drawing_assembly import _BALLOON_AIR, _BALLOON_LEAD, _BALLOON_R, _balloon_axis
 from cadgen._internal.drawing_base import (
     _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _DIM_ROW, _FLAG_SIDE, _LABEL_ROOM, _OPPOSITE, _SECTION_LETTERS,
-    _SIDES,
+    _SAME_PLACE, _SIDES,
     _dot, _exact, _fmt, _ink_width, _look, _looks_down, _near, _places, _shown, _spans, _text_width, _where,
 )
 from cadgen._internal.drawing_features import Slot
@@ -202,15 +202,23 @@ def _outer_radius(spec: dict) -> float:
 
 def _radii_at(proj, target, *, closed_only: bool) -> list[float]:
     """The radii of the circles (and, unless ``closed_only``, arcs) a view draws
-    centred on ``target``, in model millimetres."""
+    centred on ``target``, in model millimetres. The hidden-line pass draws a
+    turned groove's outline as a spline on one side and a circle on the other
+    (where the torus's seam lies); a spline every point of which lies one
+    distance from ``target`` is that arc."""
     from build123d import GeomType
+
+    from cadgen._internal.drawing_views import _edge_polyline
 
     radii: set[float] = set()
     for edge in list(proj.visible) + list(proj.hidden):
-        if edge.geom_type != GeomType.CIRCLE or (closed_only and not edge.is_closed):
-            continue
-        if _near((edge.arc_center.X, edge.arc_center.Y), target):
-            radii.add(round(edge.radius, 4))
+        if edge.geom_type == GeomType.CIRCLE and not (closed_only and not edge.is_closed):
+            if _near((edge.arc_center.X, edge.arc_center.Y), target):
+                radii.add(round(edge.radius, 4))
+        elif edge.geom_type == GeomType.BSPLINE and not closed_only:
+            reach = [math.hypot(x - target[0], y - target[1]) for x, y in _edge_polyline(edge, 9)]
+            if min(reach) > _SAME_PLACE and max(reach) - min(reach) <= _SAME_PLACE:
+                radii.add(round(sum(reach) / len(reach), 4))
     return sorted(radii)
 
 
@@ -439,7 +447,7 @@ def _resolve_round(view: View, proj, dim: "_Dim") -> "_Dim":
         radius = radii[0]
     elif not radii:
         raise ValueError(f"{call}: no {what} is centred there in the {view.name} view. A {dim.kind} is "
-                         f"stated where the feature is seen as a {what}, at its centre.")
+                         f"stated where the feature is seen as {'a circle' if closed else 'an arc'}, at its centre.")
     else:
         raise ValueError(f"{call}: {len(radii)} {what}s share that centre ({shown}); pass size= to say "
                          "which one this states.")

@@ -142,6 +142,7 @@ def _unstated(facts: _Facts) -> list[str]:
         lines.extend(_unstated_edges(record, whose))
         lines.extend(_unlocated(record, whose))
         lines.extend(_unplaced_faces(record, whose))
+        lines.extend(_unstated_turns(record, whose))
     for entry in facts.lists.values():
         parts, listed, keyed = entry["parts"], entry["listed"], entry["ballooned"]
         if not listed:
@@ -376,6 +377,45 @@ def _unplaced_faces(record: dict, whose: str) -> list[str]:
                "No view on the drawing sees it edge-on; add one.")
         lines.append(f"incomplete: {whose}an inclined face (its normal {tuple(_fmt(c) for c in normal)}) has no "
                      f"angle. {fix}")
+    return lines
+
+
+def _unstated_turns(record: dict, whose: str) -> list[str]:
+    """A taper's two ends and a groove's size and place: a taper is stated by both
+    its end diameters, each end placed along its axis; a groove by its radius and
+    its middle placed along its axis."""
+    from cadgen._internal.drawing_features import grooves, tapers
+
+    shape, views = record["shape"], record["views"]
+    stated = record["values"]
+    side = next((name for name, look in views), None)
+    reached = None
+    lines = []
+    for taper in tapers(shape):
+        along = next((k for k in range(3) if abs(abs(taper.axis[k]) - 1) < 1e-9), None)
+        missing = [f"⌀{_fmt(d)}" for d in (taper.small, taper.large) if not any(abs(v - d) <= 0.01 for v in stated)]
+        if along is not None:
+            if reached is None:
+                reached = _reached(record)
+            missing += [f"its end at {'XYZ'[along]} = {_fmt(end[along])}" for end in taper.ends
+                        if round(end[along], _PLACE) not in reached[along]]
+        if missing:
+            lines.append(f"incomplete: {whose}the taper from ⌀{_fmt(taper.large)} to ⌀{_fmt(taper.small)} leaves "
+                         f"{', '.join(missing)} unstated: a diameter across its profile at each end "
+                         "(text=\"%%c<>\"), and each end placed along its axis, state it.")
+    for groove in grooves(shape):
+        along = next((k for k in range(3) if abs(abs(groove.axis[k]) - 1) < 1e-9), None)
+        named = any(abs(r - groove.radius) <= 0.01 for r in record.get("radii", ()))
+        missing = [] if named else [f"its radius R{_fmt(groove.radius)}"]
+        if along is not None:
+            if reached is None:
+                reached = _reached(record)
+            if round(groove.middle[along], _PLACE) not in reached[along]:
+                missing.append(f"its place along {'XYZ'[along]}")
+        if missing:
+            lines.append(f"incomplete: {whose}the groove R{_fmt(groove.radius)} at {'XYZ'[along or 0]} = "
+                         f"{_fmt(groove.middle[along or 0])} leaves {' and '.join(missing)} unstated: "
+                         f"{side or 'a view'}.radius(...) on its arc and a dimension to its middle state it.")
     return lines
 
 

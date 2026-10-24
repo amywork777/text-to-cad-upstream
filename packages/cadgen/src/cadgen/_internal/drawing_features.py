@@ -693,6 +693,70 @@ def turned_diameters(shape) -> list[float]:
 
 
 @dataclass(frozen=True)
+class Taper:
+    """A turned cone that is part of the shape, not a chamfer: its diameters at
+    each end, and the point on its axis at each end (small end first)."""
+
+    small: float
+    large: float
+    ends: tuple[tuple[float, float, float], tuple[float, float, float]]
+    axis: tuple[float, float, float]
+
+
+def tapers(shape) -> list[Taper]:
+    """The part's outside tapers: full convex cones between two diameters that
+    are not chamfers bevelling an edge (a chamfer is its note's)."""
+    found = []
+    for d, foot, segments in _surface_segments(shape).values():
+        line = _merge_split_faces(segments)
+        for seg in line:
+            if seg.kind != "cone" or seg.concave or not _full(seg) or _cone_bevel(seg, line):
+                continue
+            if min(seg.r_lo, seg.r_hi) < 1e-6:
+                continue  # a point is a cone's tip, not a diameter
+            ends = [tuple(f + t * c for f, c in zip(foot, d)) for t in (seg.lo, seg.hi)]
+            small, large = sorted((2 * seg.r_lo, 2 * seg.r_hi))
+            if seg.r_lo > seg.r_hi:
+                ends.reverse()
+            found.append(Taper(round(small, 6), round(large, 6), (_tidy(ends[0]), _tidy(ends[1])), d))
+    return found
+
+
+@dataclass(frozen=True)
+class Groove:
+    """A turned groove: a torus cut round a turned surface, not a fillet. Its
+    section radius, the point on its axis at its middle, and ``ring``, the radius
+    of the circle its section's centre runs round."""
+
+    radius: float
+    middle: tuple[float, float, float]
+    axis: tuple[float, float, float]
+    ring: float
+
+
+def grooves(shape) -> list[Groove]:
+    """The part's turned grooves: concave toroidal faces that are not blends
+    rounding a corner (a fillet is its note's)."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Torus
+
+    rounded = [b.point for b in blends(shape)]
+    found = []
+    for face in shape.faces():
+        surface = BRepAdaptor_Surface(face.wrapped)
+        if surface.GetType() != GeomAbs_Torus:
+            continue
+        if any(_distance_to_face(face, p) < 1e-6 for p in rounded):
+            continue
+        torus = surface.Torus()
+        ax = torus.Axis()
+        loc, direction = ax.Location(), ax.Direction()
+        found.append(Groove(round(torus.MinorRadius(), 6), _tidy((loc.X(), loc.Y(), loc.Z())),
+                            (direction.X(), direction.Y(), direction.Z()), round(torus.MajorRadius(), 6)))
+    return found
+
+
+@dataclass(frozen=True)
 class Blend:
     """A fillet (``concave``: an inside corner rounded) or a round (an outside edge
     rounded), by radius; ``point`` is on its face."""

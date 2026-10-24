@@ -2505,7 +2505,8 @@ class AssemblyDrawingTests(unittest.TestCase):
         facts = _facts()
         doc = _render_sheet(sheet, index=1, count=1, label="pin", facts=facts)
         # The ⌀ is drawn as line work beside each value, so the text is the number.
-        self.assertEqual(sorted(_dim_texts(doc)), ["10", "24", "6"], "two diameters and the length, once each")
+        self.assertEqual(sorted(_dim_texts(doc)), ["10", "20", "24", "6"],
+                         "two diameters, the shoulder and the length, once each")
         self.assertFalse([line for line in _unstated(facts) if "overall size" in line or "turned diameter" in line],
                          "the diameters state the sizes across the axis")
 
@@ -3830,6 +3831,68 @@ class FaceTests(unittest.TestCase):
         front.overall(width=False)
         top.holes()
         self.assertFalse([line for line in self._report(sheet) if "Z =" in line], "the counterbore's floor is the hole's")
+
+
+def _spigot():
+    """A turned part along Z: a ⌀30 x 40 body, a taper from ⌀30 down to ⌀20 over
+    20, and an R1.5 groove round the body 12 from its foot."""
+    from build123d import Align, Cone, Cylinder, Pos, Torus
+
+    up = (Align.CENTER, Align.CENTER, Align.MIN)
+    body = Cylinder(15, 40, align=up) + Pos(0, 0, 40) * Cone(15, 10, 20, align=up)
+    return body - Pos(0, 0, 12) * Torus(15, 1.5)
+
+
+class TurnedShapeTests(unittest.TestCase):
+    """A taper has two ends and a groove a size and a place; a drawing states both."""
+
+    def test_a_tapers_small_end_and_a_groove_are_reported_until_stated(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(_spigot(), views=("top", "front"))
+        front.overall()
+        front.dim((0, 15, 0), (0, -15, 0), text="%%c<>")
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="spigot", warnings=[], facts=facts)
+        lines = _unstated(facts)
+        self.assertTrue(any("taper" in line and "⌀20" in line for line in lines), lines)
+        self.assertTrue(any("groove" in line and "R1.5" in line for line in lines), lines)
+
+    def test_a_taper_and_groove_stated_leave_nothing_reported(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(_spigot(), views=("top", "front"))
+        front.overall()
+        front.dim((15, 0, 20), (-15, 0, 20), text="%%c<>")
+        front.dim((10, 0, 60), (-10, 0, 60), text="%%c<>")
+        front.dim((15, 0, 0), (15, 0, 40))
+        front.dim((-15, 0, 0), (-15, 0, 12))
+        # The groove's outline on this side is the hidden-line pass's spline, not
+        # a circle: the callout finds it all the same.
+        front.radius((-15, 0, 12))
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="spigot", warnings=[], facts=facts)
+        self.assertEqual([line for line in _unstated(facts) if "taper" in line or "groove" in line], [])
+
+    def test_a_first_pass_sheet_states_a_turned_parts_shape(self) -> None:
+        from build123d import Align, Box, Compound, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        spigot, base = _spigot(), Pos(0, 0, -5) * Box(60, 60, 5, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        spigot.label, base.label = "spigot", "base"
+        sheets = assembly_sheets(parts_list(Compound(children=[spigot, base])), title="SPIGOT")
+        facts = _facts()
+        _render_sheet(sheets.part("spigot"), index=2, count=3, label="spigot", warnings=[], facts=facts)
+        self.assertEqual(_unstated(facts), [], "diameters, the taper's ends, the groove and every step placed")
 
 
 class HoleTableTests(unittest.TestCase):
