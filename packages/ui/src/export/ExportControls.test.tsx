@@ -129,6 +129,34 @@ it('says a STEP carries PMI only where the document has PMI', async () => {
   expect(screen.getByText(/Includes the built model’s PMI/)).toBeTruthy();
 });
 
+it('says the notes and named views stay in the XBF under a STEP, only the kinds the document holds', async () => {
+  const { service } = server();
+  const user = userEvent.setup();
+  const said = {
+    'notes,views': 'Notes and named views stay in the XBF: a STEP carries the GD&T.',
+    notes: 'Notes stay in the XBF: a STEP carries the GD&T.',
+    views: 'Named views stay in the XBF: a STEP carries the GD&T.',
+  };
+  for (const [kept, line] of Object.entries(said)) {
+    service.options.mockResolvedValue({ ...formats, formats: [{ ...formats.formats[0], pmi: true, kept: kept.split(',') }] });
+    mount(service, { choose: vi.fn() });
+    await open(user);
+    expect(screen.getByText(line)).toBeTruthy();
+    cleanup();
+  }
+  // None kept, or another format chosen: no line.
+  service.options.mockResolvedValue({ ...formats, formats: [{ ...formats.formats[0], pmi: true, kept: [] }] });
+  mount(service, { choose: vi.fn() });
+  await open(user);
+  expect(screen.queryByText(/stay in the XBF/)).toBeNull();
+  cleanup();
+  service.options.mockResolvedValue({ ...formats, formats: [{ ...formats.formats[0], reason: 'not offered', kept: ['notes'] },
+    { format: 'glb', label: 'GLB', extension: '.glb', reason: null }] });
+  mount(service, { choose: vi.fn() });
+  await open(user);
+  expect(screen.queryByText(/stay in the XBF/)).toBeNull();
+});
+
 it('says why a format is not offered where the PMI decided it, STEP and XBF alike, and only there', async () => {
   const { service } = server();
   // As the engine's rows are: `pmi` on a row the PMI decided, and on STEP wherever the document holds PMI.

@@ -1283,8 +1283,10 @@ tolerance magnitude in a bare metre while its value is millimetres. OCCT's own r
 datum only through a tolerance that names it.
 
 **The viewer's check.** A viewer export lists STEP as "STEP (AP242)", unavailable with the reason
-where it would drop PMI, and its `pmi` true where the STEP carries some (a note is none). For a
-document holding PMI a STEP carries, after writing the file the worker reads it back with
+where it would drop PMI, its `pmi` true where the STEP carries some (a note is none), and its
+`kept` the kinds the document holds that stay in the xbf, `notes` (a notes library among them)
+and `views` (empty where none), which the Export panel says. For a document holding PMI a STEP
+carries, after writing the file the worker reads it back with
 `export/ap242.py` -- a Part 21 reader of AP242's PMI entities with no OCCT in it -- and matches
 every entry but the notes, which it neither expects nor counts (nor the views, which are no
 entries), to one record of the file by face name, kind, values, units, datum order, zone and a

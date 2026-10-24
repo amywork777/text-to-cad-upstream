@@ -234,6 +234,8 @@ export interface ExportOption {
    * With a `reason`, the format would not carry the PMI whole.
    */
   pmi?: boolean;
+  /** STEP's: what the document holds that a STEP does not carry, which stays in the XBF (none where none). */
+  kept?: ('notes' | 'views')[];
 }
 export interface ExportRequest { requestId: string; epoch: string; source: ExportSource; format: ExportFormat }
 export interface ExportJob {

@@ -185,6 +185,10 @@ export function ExportControls({ service, downloads, file, children }: {
     return () => controller.abort();
   }, [open, spec, service, downloads?.unavailable]);
   const selected = options?.formats.find(row => row.format === format);
+  // What a STEP leaves in the XBF, said of the kinds the document holds.
+  const held = new Set(selected?.kept || []);
+  const kept = held.has('notes') && held.has('views') ? 'export.pmiKeptNotesViews' : held.has('notes') ? 'export.pmiKeptNotes'
+    : held.has('views') ? 'export.pmiKeptViews' : '';
   // A format the PMI decided says why it is not offered: one that would not carry the PMI whole.
   const pmiUnavailable = options?.formats.filter(row => row.pmi && row.reason) || [];
   useEffect(() => {
@@ -222,6 +226,7 @@ export function ExportControls({ service, downloads, file, children }: {
         {options ? <label className="block space-y-1"><span>{t('export.format')}</span><Select value={format} onValueChange={setFormat}><SelectTrigger size="sm" aria-label={t('export.format')}><SelectValue /></SelectTrigger><SelectContent>{options.formats.filter(row => !row.reason).map(row => <SelectItem key={row.format} value={row.format}>{row.format === 'original' ? t('export.original') : row.label}</SelectItem>)}</SelectContent></Select></label>
           : !error ? <p role="status" className="flex items-center gap-2 text-tiny"><Spinner className="size-3" />{t('export.checking')}</p> : null}
         {selected?.format === 'step' && selected.pmi ? <p className="text-tiny text-muted-foreground">{t('export.pmiIncluded')}</p> : null}
+        {selected?.format === 'step' && kept ? <p className="text-tiny text-muted-foreground">{t(kept)}</p> : null}
         {pmiUnavailable.map(row => <p key={row.format} className="text-tiny text-muted-foreground">{t('export.formatUnavailable', { label: row.label, reason: row.reason })}</p>)}
         <Button className="w-full" size="sm" disabled={!selected || Boolean(selected.reason) || choosing} onClick={() => { void begin(); }}>{choosing ? t('export.choosing') : t('export.start')}</Button>
       </> : <p className="text-tiny text-muted-foreground">{t('export.open')}</p>}

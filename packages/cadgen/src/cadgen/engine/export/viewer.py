@@ -44,8 +44,13 @@ def options(source, *, pose=None, part=None, original_allowed=True) -> list[dict
                                            ("dxf", "DXF", ".dxf"), ("xbf", "XBF", ".xbf"))]
     for row in rows:
         if row["format"] == "step":
-            # Whether the STEP carries PMI: its GD&T, a note being the xbf's alone.
-            row["pmi"] = bool(pmi.step_entries(source.structure.get("pmi") or []))
+            # Whether the STEP carries PMI: its GD&T, a note being the xbf's alone; and what the
+            # document holds that stays in it, which the panel says (a notes library is notes too).
+            entries = source.structure.get("pmi") or []
+            row["pmi"] = bool(pmi.step_entries(entries))
+            notes = any(entry.get("kind") == "note" for entry in entries) or bool(source.structure.get("pmi_library"))
+            row["kept"] = [kind for kind, held in (("notes", notes), ("views", bool(source.structure.get("pmi_views"))))
+                           if held]
             try:
                 pmi.refuse_dropped(view, "step")
             except ExportRefused as error:

@@ -73,6 +73,27 @@ class ViewerExportsTest(unittest.TestCase):
             step = next(row for row in options(Source.read(root / "plate.xbf")) if row["format"] == "step")
             self.assertEqual((step["pmi"], step["reason"]), (False, None))
 
+    def test_a_step_row_says_what_stays_in_the_xbf(self):
+        """Notes and named views are the xbf's (a notes library is its notes too): the STEP row's
+        ``kept`` names the kinds the document holds that a STEP does not carry, none where none."""
+        calls = {"both": 'pmi.note("deburr", "Break all sharp edges 0.2 max"), pmi.view("iso", camera="iso")',
+                 "views": 'pmi.view("iso", camera="iso")',
+                 "library": 'library={"primer-mask": "Mask these features before coating with primer"}'}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            for name, given in calls.items():
+                script = root / f"{name}.py"
+                script.write_text(f'from cadgen import pmi, xbf\nimport build123d as bd\n@xbf("{name}.xbf")\n'
+                                  f'def {name}():\n    return pmi.annotate(bd.Box(2, 3, 4), {given})\n', encoding="utf-8")
+                reports = building.build(script, [name], cwd=root)
+                self.assertTrue(reports[0]["ok"], reports)
+            kept = {name: next(row for row in options(Source.read(root / f"{name}.xbf")) if row["format"] == "step")["kept"]
+                    for name in calls}
+        self.assertEqual(kept, {"both": ["notes", "views"], "views": ["views"], "library": ["notes"]})
+        whole = next(row for row in options(Source.read(Path(__file__).resolve().parent / "pmi_golden" / "pmi_plate.xbf"))
+                     if row["format"] == "step")
+        self.assertEqual(whole["kept"], [])
+
     def test_a_pmi_document_offers_step_as_carrying_its_pmi(self):
         fixture = Path(__file__).resolve().parent / "pmi_golden" / "pmi_plate.xbf"
         source = Source.read(fixture)

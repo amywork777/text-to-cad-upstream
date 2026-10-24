@@ -229,8 +229,11 @@ Quick Edit. Selecting a datum lists the tolerances that use it under **Used by**
 directions resolve within the annotation's part.
 
 **Export** in the top-right toolbar offers **STEP (AP242)**, written from the built document
-with all its semantic PMI; a Quick Edit request not yet built is not in it. Where the document
-carries PMI, the menu says so under the format. The export service pins the revision on screen,
+with its GD&T; a Quick Edit request not yet built is not in it. Its notes (and notes library) and
+named views are the XBF's: a STEP carries neither, and is not refused for them. Where the document
+carries PMI, the menu says so under the format, and where it holds notes or views, which of them
+stay in the XBF (the STEP row's `kept`: "Notes and named views stay in the XBF: a STEP carries the
+GD&T."). The export service pins the revision on screen,
 holds the job and its file, and never runs the model's code. A STEP of a pose or of one part, and
 an XBF made again from the document, would drop the PMI, so they are unavailable; the menu says why
 for each row the PMI decided (`pmi` with a `reason`), STEP and XBF alike.
