@@ -1184,8 +1184,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 state(measured, _sheet_axis(proj, horizontal))
             axis = _sheet_axis(proj, horizontal)
             if record is not None and ends is not None and axis is not None and not reference:
-                # What it ties together, along the model axis it measures.
-                record["spans"].append((axis, ends[0][axis], ends[1][axis]))
+                # What it ties together, along the model axis it measures, what it is
+                # called in a message, and what kind of statement it is.
+                record["spans"].append((axis, ends[0][axis], ends[1][axis], f"{_fmt(measured)} ({view.name} {name})",
+                                        "basic" if basic else "size"))
 
         def on_view(point, margin: float = 1.0) -> bool:
             """Does a projected point land on the view's own drawn extent?"""
@@ -1418,7 +1420,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 # A table gives each hole's X and Y from its origin.
                 for axis in (_sheet_axis(proj, True), _sheet_axis(proj, False)):
                     if axis is not None:
-                        record["spans"].extend((axis, table.origin[axis], row.feature.mouth[axis])
+                        record["spans"].extend((axis, table.origin[axis], row.feature.mouth[axis], "hole table", "table")
                                                for row in table.rows)
         if record is not None:
             for dim in items:

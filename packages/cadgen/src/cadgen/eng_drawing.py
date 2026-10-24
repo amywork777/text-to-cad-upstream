@@ -78,7 +78,7 @@ from cadgen._internal.drawing_profile import (
     _standard_note,
 )
 from cadgen._internal.drawing_render import _render_sheet
-from cadgen._internal.drawing_report import _Facts, geometry_notes, _requirements, _unstated
+from cadgen._internal.drawing_report import _Facts, geometry_notes, _redundant, _requirements, _unstated
 from cadgen._internal.drawing_sheet import (
     _BAND_CELLS, _LIST_ROW, _TITLE_CELLS, _VIEW_NAMES, _Arrangement, _arrange_three_views, _choose_size_and_scale,
     _default_rooms, _list_room, _require_settled, _settle,
@@ -1550,6 +1550,8 @@ def eng_drawing(func: Callable[..., Any] | None = None, *, out: str | Path | Non
             # And, apart from what is drawn, what is required: the sizes each sheet
             # tolerances and the interfaces it leaves nominal.
             notices.extend(_requirements(facts))
+            # And what it states twice: a size the other dimensions already fix.
+            notices.extend(_redundant(facts))
             for notice in notices:
                 _say(f"{fn.__name__}: {notice}")
             _write_pdf(docs, sheets, target)

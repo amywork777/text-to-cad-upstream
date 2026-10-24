@@ -214,19 +214,92 @@ def _plane_axis(shape, point) -> int | None:
     return None
 
 
-def _reached(record: dict) -> dict[int, set]:
-    """Every place along each model axis the sheet ties to an anchor through its
-    dimensions, its hole tables and its bolt circles."""
+def _circle_links(record: dict) -> dict[int, list]:
+    """A bolt circle locates its holes from its centre: each hole's place tied to
+    the centre's, along each model axis."""
     from cadgen._internal.drawing_features import bolt_circles, holes as find_holes
 
     links: dict[int, list] = {axis: [] for axis in range(3)}
-    for axis, a, b in record["spans"]:
-        links[axis].append((round(a, _PLACE), round(b, _PLACE)))
     for circle in bolt_circles(record["shape"], find_holes(record["shape"])):
-        # A bolt circle locates its holes from its centre.
         for mouth in circle.mouths:
             for axis in range(3):
                 links[axis].append((round(mouth[axis], _PLACE), round(circle.centre[axis], _PLACE)))
+    return links
+
+
+def _redundant(facts: _Facts) -> list[str]:
+    """The dimensions a part's other dimensions already fix: along one axis, a
+    dimension whose two ends the others tie together closes a loop, and the
+    loop states one size twice. A shop meets both, and their tolerances cannot
+    both hold. Hole tables and bolt circles place features without asking a
+    size, so they close no loop of their own, though a dimension can close one
+    with them. A basic dimension is the exact target a frame bounds, and a
+    reference dimension asks nothing: neither is part of a loop."""
+    lines: list[str] = []
+    records = list(facts.parts.values())
+    for record in records:
+        if record.get("assembly"):
+            continue  # an assembly's envelope is reference dimensions
+        whose = _whose(record, records)
+        circles = _circle_links(record)
+        for axis in range(3):
+            near: dict[float, list[tuple[float, str]]] = {}
+
+            def tie(a: float, b: float, what: str) -> None:
+                near.setdefault(a, []).append((b, what))
+                near.setdefault(b, []).append((a, what))
+
+            for a, b in circles[axis]:
+                tie(a, b, "bolt circle")
+            spans = [(round(a, _PLACE), round(b, _PLACE), what, kind)
+                     for k, a, b, what, kind in record["spans"] if k == axis and kind != "basic"]
+            for a, b, what, kind in spans:
+                if kind == "table":
+                    tie(a, b, what)
+            for a, b, what, kind in spans:
+                if kind != "size" or a == b:
+                    continue
+                loop = _path(near, a, b)
+                if loop is None:
+                    tie(a, b, what)
+                    continue
+                named = list(dict.fromkeys([*loop, what]))
+                lines.append(f"redundant: {whose}along {'XYZ'[axis]}, {_and('the ' + n for n in named)} state one "
+                             "size twice: a shop meets both, and their tolerances cannot both hold. Make one of the "
+                             "dimensions reference=True, or leave it out.")
+    return lines
+
+
+def _and(words) -> str:
+    """``a``, ``a and b``, ``a, b and c``."""
+    words = list(words)
+    return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} and {words[-1]}"
+
+
+def _path(near: dict, a: float, b: float) -> list[str] | None:
+    """What ties ``a`` to ``b`` through ``near``, the shortest way, or None."""
+    came: dict[float, tuple[float, str] | None] = {a: None}
+    queue = [a]
+    for place in queue:
+        if place == b:
+            out = []
+            while came[place] is not None:
+                place, what = came[place]
+                out.append(what)
+            return out[::-1]
+        for other, what in near.get(place, ()):
+            if other not in came:
+                came[other] = (place, what)
+                queue.append(other)
+    return None
+
+
+def _reached(record: dict) -> dict[int, set]:
+    """Every place along each model axis the sheet ties to an anchor through its
+    dimensions, its hole tables and its bolt circles."""
+    links = _circle_links(record)
+    for axis, a, b, _what, _kind in record["spans"]:
+        links[axis].append((round(a, _PLACE), round(b, _PLACE)))
     reached = _anchors(record)
     for axis in range(3):
         grown = True

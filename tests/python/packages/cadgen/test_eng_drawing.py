@@ -3895,6 +3895,38 @@ class TurnedShapeTests(unittest.TestCase):
         self.assertEqual(_unstated(facts), [], "diameters, the taper's ends, the groove and every step placed")
 
 
+class RedundancyTests(unittest.TestCase):
+    """A size the other dimensions already fix is stated twice: a shop meets two
+    requirements on one size, and their tolerances cannot both hold."""
+
+    @staticmethod
+    def _plate_lines(**last) -> list[str]:
+        from build123d import Align, Box
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _redundant
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(Box(60, 40, 8, align=(Align.MIN, Align.MIN, Align.MIN)),
+                                       views=("top", "front"))
+        front.overall()
+        front.dim((0, 0, 8), (20, 0, 8))
+        front.dim((20, 0, 8), (60, 0, 8), **last)
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="plate", warnings=[], facts=facts)
+        return _redundant(facts)
+
+    def test_a_chain_that_adds_up_to_the_overall_size_is_reported(self) -> None:
+        lines = self._plate_lines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith("redundant:") and "along X" in lines[0] and "40" in lines[0], lines)
+
+    def test_a_reference_or_basic_dimension_closes_no_loop(self) -> None:
+        self.assertEqual(self._plate_lines(reference=True), [])
+        self.assertEqual(self._plate_lines(basic=True), [])
+
+
 class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_tags_each_hole_and_states_where_and_what(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
