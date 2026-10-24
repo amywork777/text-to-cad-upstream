@@ -17,6 +17,10 @@
 // anchor's foot on it, an axis's from the point of the axis nearest the dimension line. One the code
 // never placed is anchored at the first face's edge (a first axis: at its end), so its extension
 // lines are short.
+//
+// A flag note is drawn as a frame is, out from its first face. A general note and the part's
+// general profile (its Note 1, on every face nothing else controls) are said in the notes and drawn
+// as nothing on the part, so they take no turn of a face either.
 
 import { add, cross, dot, length, placeXbfPoint, scale, sub, unit } from "./xbfEntities.js";
 import { invert } from "./xbfKinematics.js";
@@ -38,6 +42,8 @@ const boxCentre = bounds => (bounds ? scale(add(bounds.min, bounds.max), 0.5) : 
 const boxDiagonal = bounds => (bounds ? length(sub(bounds.max, bounds.min)) : 0);
 /** How far out from its feature a label the code never placed stands. */
 const pmiReach = bounds => Math.max(REACH_MIN, boxDiagonal(bounds) * REACH_SHARE);
+/** Said in the notes and never drawn on the part: a general note, and the general profile. */
+const saidInNotes = entry => Boolean(entry.note?.general || entry.tolerance?.general);
 
 /**
  * A point on a face to start a leader from: one of its own nodes, so it is on the face whatever its
@@ -132,8 +138,9 @@ function defaultOffset({ anchor, out, centre, reach, turn }) {
 }
 
 /**
- * What an annotation is drawn as, in the scene's coordinates, or null where it cannot be: a
- * reference that names no element on the page and no placement to stand at.
+ * What an annotation is drawn as, in the scene's coordinates, or null where it cannot be (a
+ * reference that names no element on the page and no placement to stand at) or is not drawn on the
+ * part (a general note, the general profile: said in the notes).
  *
  * - `anchor`: where its leader starts on its feature (a distance's: on its first face); where its
  *   feature is not on the page (a broken reference), where the code anchored it, and `broken`.
@@ -143,7 +150,7 @@ function defaultOffset({ anchor, out, centre, reach, turn }) {
  * - `presentation`: the placement drawn (`{ anchor, offset }`), as `pmi.place` would write it.
  * - `placed`: `"given"` (its `placement` here, or the code's), or `"default"`.
  *
- * @param {ReturnType<typeof import("./xbfPmi.js").readXbfPmi>[number]} entry
+ * @param {import("./xbfPmi.js").XbfPmiEntry} entry
  * @param {{ geometry: Record<string, { surface: object, points?: number[][] } | null>, bounds?: { min: number[], max: number[] } | null,
  *   turn?: number, placement?: { anchor: number[], offset: number[] } | null }} options
  *   `geometry`: each role's element (`feature`, `from`, `to`), null for one not on the page; `turn`:
@@ -151,6 +158,7 @@ function defaultOffset({ anchor, out, centre, reach, turn }) {
  *   the code's (a drag not yet written).
  */
 export function pmiConstruction(entry, { geometry, bounds = null, turn = 0, placement = null }) {
+  if (saidInNotes(entry)) return null;
   const centre = boxCentre(bounds);
   const reach = pmiReach(bounds);
   const given = placement || entry.presentation;
@@ -222,12 +230,14 @@ export function pmiPresentationToPart(presentation, matrix) {
 /**
  * Every annotation of a document as the viewer draws it (`pmiConstruction`), by `key`: each supported
  * one from the elements its references name where it is drawn (`elements`, by ref: an element id, or
- * null for one not on the page), as `geometry` reads each; its presentation, and a label dragged
- * there and not yet written (`placements`, by key), taken from its part's frame (`frame`: the matrix
- * of the occurrence it is drawn at; none, the scene's) to the scene's; and each later annotation of a
- * feature (its first element) turned from the one before. One that cannot be drawn is left out.
+ * null for one not on the page), as `geometry` reads each, a role's the first of its refs' (a
+ * profile or a flag note on several faces stands on the first); its presentation, and a label
+ * dragged there and not yet written (`placements`, by key), taken from its part's frame (`frame`:
+ * the matrix of the occurrence it is drawn at; none, the scene's) to the scene's; and each later
+ * annotation of a feature (its first element) turned from the one before. One that cannot be drawn,
+ * or is said in the notes, is left out.
  *
- * @param {ReadonlyArray<{ entry: ReturnType<typeof import("./xbfPmi.js").readXbfPmi>[number],
+ * @param {ReadonlyArray<{ entry: import("./xbfPmi.js").XbfPmiEntry,
  *   elements: ReadonlyArray<string | null>, frame?: number[] | null }>} drawn
  * @param {{ geometry: (id: string) => { surface: object, points?: number[][] } | null,
  *   bounds?: { min: number[], max: number[] } | null,
@@ -238,8 +248,9 @@ export function pmiConstructions(drawn, { geometry, bounds = null, placements = 
   const found = new Map();
   const turns = new Map();
   for (const { entry, elements, frame = null } of drawn) {
-    if (!entry.supported) continue;
-    const roles = Object.fromEntries(entry.refs.map((ref, index) => [ref.role, elements[index] ? geometry(elements[index]) : null]));
+    if (!entry.supported || saidInNotes(entry)) continue;
+    const roles = {};
+    entry.refs.forEach((ref, index) => { if (!(ref.role in roles)) roles[ref.role] = elements[index] ? geometry(elements[index]) : null; });
     const first = elements[0] || entry.key;
     const turn = turns.get(first) || 0;
     turns.set(first, turn + 1);

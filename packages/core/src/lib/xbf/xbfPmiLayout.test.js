@@ -35,7 +35,7 @@ const TOP = "i0/face/2", BOTTOM = "i0/face/5", HOLE = "i0/face/11";
 const BOUNDS = { min: [-20, -10, -2], max: [20, 10, 14] };
 const near = (actual, expected, what = "") => assert.ok(Math.abs(actual - expected) < 1e-6, `${what} ${actual} is not ${expected}`);
 const nearPoint = (actual, expected, what = "") => expected.forEach((value, axis) => near(actual[axis], value, `${what}[${axis}]`));
-const entry = (item) => readXbfPmi({ pmi: [{ status: "ok", refs: [], presentation: null, ...item }] })[0];
+const entry = (item) => readXbfPmi({ pmi: [{ status: "ok", refs: [], presentation: null, ...item }] }).entries[0];
 const flatness = (presentation = null) => entry({ id: "top-flat", kind: "geometric_tolerance", presentation,
   geometric_tolerance: { characteristic: "flatness", value: 0.05, unit: "mm", datums: [] } });
 
@@ -128,6 +128,32 @@ test("a feature not on the page draws at its placement or not at all, and a move
   assert.deepEqual(pmiMovedPlacement({ anchor: [1, 2, 3], offset: [0, 0, 1] }, [4, 2, 9]), { anchor: [1, 2, 3], offset: [3, 0, 6] });
 });
 
+test("a flag note stands out from its first face as a frame does; a general note and the general profile are drawn as no callout", async () => {
+  const scene = await bracket();
+  const note = (item = {}) => entry({ id: "mask", kind: "note", note: { number: 2, text: "Mask before coating", general: false, annotations: [] }, ...item });
+  const geometry = { feature: scene.elementGeometry(TOP, { points: true }) };
+  const flag = pmiConstruction(note(), { geometry, bounds: BOUNDS });
+  assert.deepEqual(flag, pmiConstruction(flatness(), { geometry, bounds: BOUNDS }), "where a frame on the face stands");
+  near(flag.anchor[2], 2, "its leader on the top");
+  const placed = pmiConstruction(note({ presentation: { anchor: [10, 5, 2], offset: [0, 0, 6] } }), { geometry, bounds: BOUNDS });
+  assert.equal(placed.placed, "given");
+  nearPoint(placed.label, [10, 5, 8]);
+  // A general note is said in the notes, as the general profile is: neither is drawn on the part, placed or not.
+  const general = note({ presentation: { anchor: [10, 5, 2], offset: [0, 0, 6] }, note: { number: 2, text: "Deburr", general: true, annotations: [] } });
+  assert.equal(pmiConstruction(general, { geometry, bounds: BOUNDS }), null);
+  const profile = entry({ id: "general", kind: "geometric_tolerance", geometric_tolerance: { characteristic: "surface_profile", value: 0.5, unit: "mm", datums: [], general: true } });
+  assert.equal(pmiConstruction(profile, { geometry, bounds: BOUNDS }), null);
+  // On several faces it stands on the first, turned from what stood there before it; the general
+  // profile on the same face, said in the notes, takes no turn of it.
+  const ref = at => ({ role: "feature", ref: at, written: at, status: "ok" });
+  const topFlat = entry({ id: "top-flat", kind: "geometric_tolerance", refs: [ref("plate/top")], geometric_tolerance: { characteristic: "flatness", value: 0.05, unit: "mm", datums: [] } });
+  const onBoth = note({ refs: [ref("plate/top"), ref("plate/bottom")] });
+  const drawn = pmiConstructions([{ entry: { ...profile, refs: [ref("plate/top")] }, elements: [TOP] }, { entry: topFlat, elements: [TOP] },
+    { entry: onBoth, elements: [TOP, BOTTOM] }], { geometry: id => scene.elementGeometry(id, { points: true }), bounds: BOUNDS });
+  assert.deepEqual([...drawn.keys()], [":top-flat", ":mask"]);
+  assert.deepEqual(drawn.get(":mask"), pmiConstruction(note(), { geometry, bounds: BOUNDS, turn: 1 }));
+});
+
 test("a placement is in its part's frame: drawn where the part stands, and written back in its frame", () => {
   // Turned a quarter about z and moved 10 along x: the second peg's kind of placement.
   const matrix = [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1];
@@ -176,7 +202,7 @@ test("the constructions cadgen's stills are held to are the ones this layout mak
       const ordinal = typeof element === "string" ? ordinals.get(element) : element?.ordinal;
       return Number.isInteger(ordinal) ? `i0/face/${ordinal}` : null;
     };
-    const drawn = readXbfPmi(structure).map(entry => ({ entry, elements: entry.refs.map(ref => (ref.status === "ok" ? idOf(ref.ref) : null)),
+    const drawn = readXbfPmi(structure).entries.map(entry => ({ entry, elements: entry.refs.map(ref => (ref.status === "ok" ? idOf(ref.ref) : null)),
       frame: entry.part === null ? null : structure.instances[0].matrix }));
     const constructions = pmiConstructions(drawn, { geometry: id => scene.elementGeometry(id, { points: true }), bounds: scene.restBounds });
     made[name] = drawn.filter(({ entry }) => constructions.has(entry.key)).map(({ entry }) => ({ id: entry.id, construction: constructions.get(entry.key) }));
