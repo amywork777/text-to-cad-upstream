@@ -194,6 +194,12 @@ over the decorator. The decorator is the whole surface; the script is the
 program; the output is one PDF. Adding a `cadgen eng-drawing` verb would mean
 passing a script to a CLI, so it stays absent by design.
 
+`@work_instruction` (`cadgen.work_instruction`) is the same kind of document and
+takes the same exception, for the same reason: what it consumes is an
+`Instruction` the author composed over an assembly STEP -- steps in order, the
+parts each installs, and process values each cited to the document it came from
+-- and the output is one PDF.
+
 ### 7. Documents-only CLIs; scripts are programs
 
 `python model.py` is the one source door: it gates, builds, writes every
