@@ -379,6 +379,35 @@ def _draw_dimension_symbols(doc, dimension, layer: str = "DIM") -> None:
         entity.dxf.insert = place((advance / 2, 0.0))
 
 
+#: The air between a basic dimension's value and its box, in text heights.
+_BASIC_AIR = 0.3
+
+
+def _box_text(layout, box: tuple[float, float, float, float], *, angle: float = 0.0,
+              air: float | None = None) -> None:
+    """Frame a value, as a basic dimension's is framed: ``box`` is its text's
+    (x0, y0, x1, y1) before turning by ``angle`` degrees about its middle."""
+    x0, y0, x1, y1 = box
+    pad = _BASIC_AIR * (y1 - y0) if air is None else air
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    hw, hh = (x1 - x0) / 2 + pad, (y1 - y0) / 2 + pad
+    turn = math.radians(angle)
+    corners = [(cx + dx * math.cos(turn) - dy * math.sin(turn), cy + dx * math.sin(turn) + dy * math.cos(turn))
+               for dx, dy in ((-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh))]
+    layout.add_lwpolyline(corners, close=True, dxfattribs={"layer": "DIM"})
+
+
+def _box_dimension_value(doc, dimension) -> None:
+    """Frame a basic dimension's value in its own block. ezdxf marks a basic value
+    with a negative DIMGAP but leaves the frame undrawn."""
+    block = doc.blocks.get(dimension.dxf.geometry)
+    for value in [e for e in block if e.dxftype() == "MTEXT"]:
+        width, tall = _mtext_extent(value.text, value.dxf.char_height)
+        x, y = value.dxf.insert.x, value.dxf.insert.y
+        _box_text(block, (x - width / 2, y - tall / 2, x + width / 2, y + tall / 2),
+                  angle=float(value.dxf.get("rotation", 0.0) or 0.0))
+
+
 def _text_box(value: str, x: float, y: float, height: float, align) -> tuple[float, float, float, float]:
     """The rectangle a TEXT entity occupies, from its anchor and alignment."""
     width = _ink_width(value, height)

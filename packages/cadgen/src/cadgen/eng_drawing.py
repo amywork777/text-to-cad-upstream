@@ -149,8 +149,10 @@ class View:
     #: often drawn smaller so it fits the free corner.
     scale: float | None = None
     _dims: list[_Dim] = field(default_factory=list)
-    #: Which overall sizes ``overall()`` asked for: {"width", "height"}, or empty.
+    #: Which overall sizes ``overall()`` asked for: {"width", "height"}, or empty;
+    #: and whether they are reference dimensions.
     _overall: frozenset = frozenset()
+    _overall_reference: bool = False
     #: ``(letter, model point or None)`` when :meth:`section` made this a section.
     _section: tuple | None = None
     #: ``(label, scale)`` the sheet gave an isometric or an auxiliary view, so the
@@ -175,18 +177,28 @@ class View:
     _aux: _Aux | None = None
 
     def dim(self, p1, p2, *, offset: float | None = None, text: str | None = None, orientation: str | None = None,
-            tol: float | tuple[float, float] | None = None, fit: str | None = None) -> "View":
+            tol: float | tuple[float, float] | None = None, fit: str | None = None,
+            limits: tuple[float, float] | None = None, basic: bool = False, reference: bool = False) -> "View":
         """A linear dimension between two model points. ``orientation`` is ``"h"``,
         ``"v"`` or None (whichever the projected pair spans more); ``offset`` is
         the dimension line's distance from the farther point, in sheet mm, and its
         sign picks the side. Left unset, the dimension takes the next free row on
         its side, so defaults never stack on each other or on :meth:`overall`.
         ``tol=0.1`` states ±0.1; ``tol=(0.05, 0.02)`` states +0.05/-0.02
-        deviations; ``fit="H7"`` appends an ISO fit class."""
+        deviations; ``fit="H7"`` appends an ISO fit class; ``limits=(39.98,
+        40.02)`` prints the two limits the part must lie between, and is checked
+        against the part.
+
+        ``basic=True`` makes it a basic dimension: the exact value, in a box, that
+        a GD&T frame bounds. ``reference=True`` makes it a reference dimension:
+        information only, in parentheses, never inspected and stating no
+        requirement; an assembly's overall size is one. Neither takes a
+        tolerance."""
         if orientation not in (None, "h", "v"):
             raise ValueError(f"orientation must be 'h', 'v' or None, got {orientation!r}")
+        limits = _dimension_kind(tol=tol, fit=fit, limits=limits, basic=basic, reference=reference)
         self._dims.append(_Dim("linear", _p3(p1), _p3(p2), _offset(offset), text, orientation,
-                               tol=_tol(tol), fit=fit))
+                               tol=_tol(tol), fit=fit, basic=basic, reference=reference, limits=limits))
         return self
 
     def hole(self, center, diameter: float | None = None, *, depth: float | None = None, thru: bool | None = None,
@@ -267,27 +279,36 @@ class View:
         return self
 
     def diameter(self, center, *retired, size: float | None = None, angle: float = 45.0,
-                 text: str | None = None) -> "View":
+                 text: str | None = None, basic: bool = False, reference: bool = False) -> "View":
         """A diameter callout on the circle centred at ``center``, measured off the
         view. ``size`` picks one of several concentric circles (a chamfered
-        shaft end shows two) and is checked against the geometry."""
+        shaft end shows two) and is checked against the geometry. ``basic`` and
+        ``reference`` as :meth:`dim` takes them."""
         _refuse_retired_size("diameter", retired)
+        _dimension_kind(basic=basic, reference=reference)
         self._dims.append(_Dim("diameter", _p3(center), None, 0.0, text, None,
-                               radius=0.0 if size is None else _positive("size", size) / 2, angle=float(angle)))
+                               radius=0.0 if size is None else _positive("size", size) / 2, angle=float(angle),
+                               basic=basic, reference=reference))
         return self
 
     def radius(self, center, *retired, size: float | None = None, angle: float = 45.0,
-               text: str | None = None) -> "View":
+               text: str | None = None, basic: bool = False, reference: bool = False) -> "View":
         """A radius callout on the arc centred at ``center``, measured off the view;
-        ``size`` (the radius) picks one of several and is checked like ``diameter``'s."""
+        ``size`` (the radius) picks one of several and is checked like ``diameter``'s,
+        and ``basic`` and ``reference`` are as :meth:`dim` takes them."""
         _refuse_retired_size("radius", retired)
+        _dimension_kind(basic=basic, reference=reference)
         self._dims.append(_Dim("radius", _p3(center), None, 0.0, text, None,
-                               radius=0.0 if size is None else _positive("size", size), angle=float(angle)))
+                               radius=0.0 if size is None else _positive("size", size), angle=float(angle),
+                               basic=basic, reference=reference))
         return self
 
-    def angle(self, vertex, p1, p2, *, offset: float = 14.0) -> "View":
+    def angle(self, vertex, p1, p2, *, offset: float = 14.0, basic: bool = False,
+              reference: bool = False) -> "View":
         """The angle at ``vertex`` between the legs toward ``p1`` and ``p2`` (model
-        points); ``offset`` is the arc's distance from the vertex, in sheet mm."""
+        points); ``offset`` is the arc's distance from the vertex, in sheet mm.
+        ``basic`` and ``reference`` as :meth:`dim` takes them."""
+        _dimension_kind(basic=basic, reference=reference)
         # angle() was the one verb whose arguments went unchecked: offset=nan
         # reached the PDF, and two legs along one line printed "0 degrees" as
         # though that were a measurement.
@@ -296,7 +317,8 @@ class View:
         if distance is None or distance == 0.0:
             raise ValueError(f"angle offset must be a non-zero number of sheet millimetres, got {offset!r}")
         _assert_legs_measure_an_angle(vertex, a, b)
-        self._dims.append(_Dim("angle", vertex, a, distance, None, None, radius=0.0, angle=0.0, hole={"p2": b}))
+        self._dims.append(_Dim("angle", vertex, a, distance, None, None, radius=0.0, angle=0.0, hole={"p2": b},
+                               basic=basic, reference=reference))
         return self
 
     def note(self, text: str, at, *, offset: tuple[float, float] = (10.0, 10.0)) -> "View":
@@ -340,12 +362,14 @@ class View:
             self.label = f"SECTION {letter}-{letter}"
         return self
 
-    def overall(self, *, width: bool = True, height: bool = True) -> "View":
+    def overall(self, *, width: bool = True, height: bool = True, reference: bool = False) -> "View":
         """Overall width (above) and height (left) of the view's projected extent,
         each on the outermost row of its side. Turn one off where another
         dimension already states it -- a turned part's height is its diameter,
-        and a drawing states a size once."""
+        and a drawing states a size once. ``reference=True`` prints them as
+        reference dimensions: an assembly's envelope, which nobody inspects."""
         self._overall = frozenset(name for name, on in (("width", width), ("height", height)) if on)
+        self._overall_reference = bool(reference)
         return self
 
     def broken(self, start, end) -> "View":
@@ -502,6 +526,30 @@ def _positive(name: str, value, *, allow_none: bool = False, integer: bool = Fal
     if not math.isfinite(number) or number <= 0:
         raise ValueError(f"{name} must be a positive number, got {value!r}")
     return int(round(number)) if integer else number
+
+
+def _dimension_kind(*, tol=None, fit=None, limits=None, basic: bool = False,
+                    reference: bool = False) -> tuple[float, float] | None:
+    """Check that a dimension's kind and its tolerance agree, and return its limits
+    as numbers. A basic dimension is exact, its tolerance the GD&T frame's that
+    uses it; a reference dimension is information only; limits are the tolerance
+    themselves."""
+    if basic and reference:
+        raise ValueError("a dimension is basic (exact, boxed) or reference (information, in parentheses), not both")
+    for kind, on in (("basic", basic), ("reference", reference)):
+        if on and (tol is not None or fit is not None or limits is not None):
+            raise ValueError(f"a {kind} dimension takes no tol=, fit= or limits=: "
+                             + ("its tolerance is the GD&T frame's that uses it" if kind == "basic"
+                                else "it states no requirement to tolerance"))
+    if limits is None:
+        return None
+    if tol is not None:
+        raise ValueError("limits= are the tolerance, as the two limits the part lies between; give them or tol=, "
+                         "not both")
+    low, high = _pair("limits", limits)
+    if not low < high:
+        raise ValueError(f"limits=(low, high) with low below high, got {limits!r}")
+    return low, high
 
 
 def _pair(name: str, value) -> tuple[float, float] | None:

@@ -45,6 +45,11 @@ class _Dim:
     index: int = 0
     #: The holes or slots a callout states, each one: its ``4×`` covers four.
     covers: tuple = ()
+    #: A basic dimension (exact, boxed: a GD&T frame bounds it) or a reference one
+    #: (information only, in parentheses); and limits, the two the part lies between.
+    basic: bool = False
+    reference: bool = False
+    limits: tuple[float, float] | None = None
 
 
 def _tol_suffix(tol) -> str:
@@ -202,8 +207,10 @@ def _callout_value(dim: "_Dim") -> str:
     if dim.kind in ("hole", "slot"):
         return hole_callout_text(dim.hole, tol=dim.tol, fit=dim.fit)
     if dim.text:
-        return dim.text
-    return f"%%c{_fmt(2 * dim.radius)}" if dim.kind == "diameter" else f"R{_fmt(dim.radius)}"
+        value = dim.text
+    else:
+        value = f"%%c{_fmt(2 * dim.radius)}" if dim.kind == "diameter" else f"R{_fmt(dim.radius)}"
+    return f"({value})" if dim.reference else value
 
 
 def _far_side(call: str, what: str, view) -> ValueError:

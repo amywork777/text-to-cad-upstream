@@ -2866,6 +2866,102 @@ class CrossingTests(unittest.TestCase):
         crossing = [(i, j) for i, a in enumerate(leaders) for j, b in enumerate(leaders) if i < j and a.crosses(b)]
         self.assertFalse(crossing, "two leaders cross")
 
+
+class DimensionKindTests(unittest.TestCase):
+    """Toleranced, basic and reference dimensions each mean what Y14.5 says."""
+
+    def _block_sheet(self):
+        from build123d import Align, Box
+
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, front, right = sheet.three_views(Box(40, 30, 10, align=(Align.CENTER, Align.CENTER, Align.MIN)))
+        return sheet, top, front
+
+    def test_a_reference_dimension_prints_in_parentheses_and_states_nothing(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+
+        sheet, top, front = self._block_sheet()
+        top.dim((-20, -15, 10), (20, -15, 10), reference=True)
+        facts = _facts()
+        doc = _render_sheet(sheet, index=1, count=1, label="ref", facts=facts)
+        self.assertIn("(40)", _dim_texts(doc))
+        self.assertTrue(any("overall size along X (40)" in line for line in _unstated(facts)),
+                        "a reference dimension is information, not the requirement")
+
+    def test_a_basic_dimensions_value_is_boxed(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+
+        sheet, top, front = self._block_sheet()
+        top.dim((-20, -15, 10), (20, -15, 10), basic=True)
+        doc = _render_sheet(sheet, index=1, count=1, label="basic", warnings=[])
+        (dim,) = doc.modelspace().query("DIMENSION")
+        self.assertLess(dim.override().get("dimgap"), 0, "the DXF says basic too")
+        block = list(doc.blocks.get(dim.dxf.geometry))
+        (value,) = [e for e in block if e.dxftype() == "MTEXT"]
+        frames = [e for e in block if e.dxftype() == "LWPOLYLINE" and e.closed]
+        self.assertEqual(len(frames), 1)
+        xs, ys = zip(*[(p[0], p[1]) for p in frames[0].get_points()])
+        self.assertTrue(min(xs) < value.dxf.insert.x < max(xs) and min(ys) < value.dxf.insert.y < max(ys))
+
+    def test_limits_print_the_two_limits_the_part_lies_between(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+
+        sheet, top, front = self._block_sheet()
+        top.dim((-20, -15, 10), (20, -15, 10), limits=(39.98, 40.02))
+        doc = _render_sheet(sheet, index=1, count=1, label="limits")
+        (dim,) = doc.modelspace().query("DIMENSION")
+        self.assertEqual(dim.override().get("dimlim"), 1)
+        text = " ".join(_dim_texts(doc))
+        self.assertIn("40.02", text)
+        self.assertIn("39.98", text)
+        sheet, top, front = self._block_sheet()
+        top.dim((-20, -15, 10), (20, -15, 10), limits=(40.1, 40.2))
+        with self.assertRaisesRegex(ValueError, "measures 40"):
+            _render_sheet(sheet, index=1, count=1, label="outside")
+
+    def test_kinds_that_cannot_combine_are_refused(self) -> None:
+        sheet, top, front = self._block_sheet()
+        a, b = (-20, -15, 10), (20, -15, 10)
+        for kinds, words in (({"basic": True, "tol": 0.1}, "basic"), ({"reference": True, "fit": "H7"}, "reference"),
+                             ({"basic": True, "reference": True}, "basic"), ({"limits": (39, 41), "tol": 0.1}, "limits"),
+                             ({"limits": (41, 39)}, "limits")):
+            with self.assertRaisesRegex(ValueError, words):
+                top.dim(a, b, **kinds)
+        with self.assertRaisesRegex(ValueError, "basic"):
+            top.diameter((0, 0, 10), basic=True, reference=True)
+
+    def test_round_callouts_and_overall_sizes_take_the_kinds_too(self) -> None:
+        from build123d import Align, Box, Cylinder
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        sheet = Sheet("A3", 1.0)
+        top, front, right = sheet.three_views(Box(60, 40, 10, align=up) - Cylinder(8, 10, align=up))
+        top.diameter((0, 0, 10), reference=True)
+        front.overall(reference=True)
+        top.angle((-30, -20, 10), (30, -20, 10), (-30, 20, 10), basic=True)
+        doc = _render_sheet(sheet, index=1, count=1, label="kinds", warnings=[])
+        self.assertIn("(%%c16)", _callouts(doc))
+        self.assertTrue({"(60)", "(10)"} <= set(_dim_texts(doc)), _dim_texts(doc))
+        (angle,) = [d for d in doc.modelspace().query("DIMENSION") if d.dxf.dimtype & 0x0F == 5]  # 3-point angular
+        self.assertTrue([e for e in doc.blocks.get(angle.dxf.geometry) if e.dxftype() == "LWPOLYLINE" and e.closed],
+                        "a basic angle is boxed too")
+
+    @unittest.expectedFailure  # needs the GD&T frames of the next change
+    def test_a_basic_dimension_without_a_frame_is_reported(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+
+        sheet, top, front = self._block_sheet()
+        top.dim((-20, -15, 10), (20, -15, 10), basic=True)
+        warnings: list = []
+        _render_sheet(sheet, index=1, count=1, label="lonely", warnings=warnings)
+        self.assertTrue(any("basic dimension" in w for w in warnings), warnings)
+
 class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_tags_each_hole_and_states_where_and_what(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet

@@ -25,9 +25,9 @@ from cadgen._internal.drawing_assembly import _draw_balloons, _refresh_from_item
 from cadgen._internal.drawing_base import (
     _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _CALLOUT_STACK, _CENTRE_OVERSHOOT, _DIM_ROW, _HATCH_SCALE,
     _LABEL_GAP, _LABEL_HEIGHT, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE, SHEET_SIZES, _SIDES,
-    _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_H, _TITLE_W, _cross, _dimstyle, _dirs, _dot, _draw_dimension_symbols,
-    _draw_symbol, _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs, _scale_label, _shown, _spans,
-    _text_box, _text_width, _where,
+    _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_H, _TITLE_W, _box_dimension_value, _box_text, _cross, _dimstyle,
+    _dirs, _dot, _draw_dimension_symbols, _draw_symbol, _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs,
+    _scale_label, _shown, _spans, _text_box, _text_width, _where,
 )
 from cadgen._internal.drawing_report import _Facts, _member_key, _merge_facts
 from cadgen._internal.drawing_sheet import (
@@ -856,9 +856,11 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 if axis is not None:
                     record["axes"].add((axis, round(value, 3)))
 
-        def linear(a, b, offset, side, row, override, orientation, tol=None, fit=None, true=None):
+        def linear(a, b, offset, side, row, override, orientation, tol=None, fit=None, true=None, *,
+                   basic=False, reference=False, limits=None, name="overall"):
             """``true`` is the length measured on the whole part, when the paper's
-            is shorter: a dimension across a broken view's break."""
+            is shorter: a dimension across a broken view's break. ``name`` says
+            which dimension it is in a message."""
             horizontal = (orientation or _spans(a, b)) == "h"
             if offset is None:
                 # The row the plan gave it, measured from the VIEW's edge, so two
@@ -870,6 +872,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     offset = ((vx1 + _DIM_ROW * row) - max(a[0], b[0]) if side == "right"
                               else (vx0 - _DIM_ROW * row) - min(a[0], b[0]))
             label = (override or "<>") + (f" {fit}" if fit else "")
+            if reference:
+                label = f"({label})"
             # The value is measured in SHEET millimetres, which are the model's only
             # at 1:1. dimlfac scales what the dimension prints back to true size, per
             # view, so a view drawn at its own scale still reads the part.
@@ -890,6 +894,17 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 # The paper's length is the broken view's; the value is the part's.
                 measured = true
                 label = label.replace("<>", _fmt(true))
+            if limits is not None:
+                low, high = limits
+                if not low - 1e-6 <= measured <= high + 1e-6:
+                    raise ValueError(f"{view.name} {name}: limits=({_fmt(low)}, {_fmt(high)}) do not hold the part, "
+                                     f"which measures {_fmt(measured)} there. Give the limits the design requires, "
+                                     "or change the model.")
+                # The two limits, stacked; ezdxf prints them from the deviations.
+                style_override |= {"dimlim": 1, "dimtp": high - measured, "dimtm": measured - low,
+                                   "dimtdec": 2, "dimtfac": 0.7}
+            if basic:
+                style_override["dimgap"] = -abs(th * 0.25)  # a negative gap is the DXF's mark of a basic value
             # A value wider than the space between its extension lines is set beside
             # them, on the dimension line's side, instead of across them: centred,
             # "3 WALL" printed with both witness lines running through its glyphs.
@@ -919,12 +934,15 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             d.render()
             claim_rendered(d.dimension)
             _draw_dimension_symbols(doc, d.dimension)
+            if basic:
+                _box_dimension_value(doc, d.dimension)
             # The dimension line, which no leader or other dimension line may cross.
             if horizontal:
                 dimension_lines.append(((min(a[0], b[0]), base[1]), (max(a[0], b[0]), base[1])))
             else:
                 dimension_lines.append(((base[0], min(a[1], b[1])), (base[0], max(a[1], b[1]))))
-            state(measured, _sheet_axis(proj, horizontal))
+            if not reference:  # a reference dimension states no requirement
+                state(measured, _sheet_axis(proj, horizontal))
 
         def on_view(point, margin: float = 1.0) -> bool:
             """Does a projected point land on the view's own drawn extent?"""
@@ -973,13 +991,14 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     ra, rb = proj._raw_point(dim.p1), proj._raw_point(dim.p2)
                     horizontal = (dim.orientation or _spans(a, b)) == "h"
                     true = abs(rb[0] - ra[0]) if horizontal else abs(rb[1] - ra[1])
-                linear(a, b, dim.offset, dim.side, dim.row, dim.text, dim.orientation, dim.tol, dim.fit, true)
+                linear(a, b, dim.offset, dim.side, dim.row, dim.text, dim.orientation, dim.tol, dim.fit, true,
+                       basic=dim.basic, reference=dim.reference, limits=dim.limits, name=f"dim {dim.index}")
         if "width" in view._overall:
             linear((vx0, vy1), (vx1, vy1), None, "top", plan["overall"]["top"], None, "h",
-                   true=whole[1] - whole[0] if whole else None)
+                   true=whole[1] - whole[0] if whole else None, reference=view._overall_reference)
         if "height" in view._overall:
             linear((vx0, vy0), (vx0, vy1), None, "left", plan["overall"]["left"], None, "v",
-                   true=whole[3] - whole[2] if whole else None)
+                   true=whole[3] - whole[2] if whole else None, reference=view._overall_reference)
         # How far the callouts reach past each side, so balloons drawn later
         # stand outside them; callouts on one side share a knee, so this is not
         # applied until they are all placed.
@@ -1097,6 +1116,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             leaders.append((start, knee, landing))
             align = TextEntityAlignment.MIDDLE_LEFT if sign > 0 else TextEntityAlignment.MIDDLE_RIGHT
             text(value, landing[0] + sign * _CALLOUT_GAP, landing[1], th, align, "DIM")
+            if dim.basic:
+                _box_text(msp, _text_box(value, landing[0] + sign * _CALLOUT_GAP, landing[1], th, align))
             if side in ("left", "right"):
                 tip = landing[0] + sign * (_CALLOUT_GAP + _ink_width(value, th))
                 callout_reach[side] = max(callout_reach[side], abs(tip - (vx1 if side == "right" else vx0)) + _CALLOUT_GAP)
@@ -1113,9 +1134,9 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 # A leader's radius is neither, so it is not a stated value.
                 if dim.kind in ("hole", "slot") and dim.feature is not None:
                     record["called"].update(_member_key(f) for f in (dim.covers or (dim.feature,)))
-                elif dim.kind == "diameter":
+                elif dim.kind == "diameter" and not dim.reference:
                     record["values"].append(2 * dim.radius)
-                elif dim.kind == "radius":
+                elif dim.kind == "radius" and not dim.reference:
                     record["radii"].add(round(dim.radius, 3))
         for name, value in callout_reach.items():
             reach[name] = max(reach[name], value)
@@ -1134,9 +1155,13 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 mid = ua + ((ub - ua + math.pi) % (2 * math.pi) - math.pi) / 2
                 base = (v[0] + dim.offset * math.cos(mid), v[1] + dim.offset * math.sin(mid))
                 d = msp.add_angular_dim_3p(base=base, center=v, p1=a, p2=b, dimstyle=dimstyle,
+                                           text="(<>)" if dim.reference else "<>",
+                                           override={"dimgap": -abs(th * 0.25)} if dim.basic else None,
                                            dxfattribs={"layer": "DIM"})
                 d.render()
                 claim_rendered(d.dimension)
+                if dim.basic:
+                    _box_dimension_value(doc, d.dimension)
             elif dim.kind == "note":
                 p = model_to_sheet(dim.p1)
                 check("note", dim.index, p)
