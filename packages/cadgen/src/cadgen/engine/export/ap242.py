@@ -547,9 +547,16 @@ def _matches(entry: dict[str, Any], row: dict[str, Any]) -> bool:
     return False
 
 
+def _written_as_nothing(entry: dict[str, Any]) -> bool:
+    """A general profile that covers no face: linked to nothing, so the writer writes no record of it."""
+    return (entry.get("kind") == "geometric_tolerance" and entry.get("status") == "ok" and not entry.get("refs")
+            and bool((entry.get("geometric_tolerance") or {}).get("general")))
+
+
 def compare(entries: list[dict[str, Any]], found: dict[str, Any]) -> dict[str, Any]:
     """A document's PMI entries against a file's ``report``: how many match one record each, of
-    how many, and why any does not."""
+    how many, and why any does not. A general profile that covers no face matches no record, and
+    is verified by none being left over."""
     problems = list(found.get("problems") or [])
     if not entries:
         problems.append("The model has no PMI to verify.")
@@ -575,6 +582,9 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any]) -> dict[str, A
         return result
     remaining = list(found.get("datums", [])) + list(found.get("dimensions", [])) + list(found.get("tolerances", []))
     for entry in entries:
+        if _written_as_nothing(entry):
+            result["matched"] += 1
+            continue
         match = next((at for at, row in enumerate(remaining) if entry.get("status") == "ok" and _matches(entry, row)), None)
         if match is None:
             problems.append(f"{entry.get('label') or entry.get('id')}: values, units, datum order or face association "

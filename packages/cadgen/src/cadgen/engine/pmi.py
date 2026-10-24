@@ -24,11 +24,12 @@ A model gives its part annotations, each on faces of that part, and returns the 
 values and units (millimetres, the document's) and link the annotation to the sub-shape labels of
 the faces it is on; beside each, a ``TDF_Reference`` to its part's shape label and one cadgen
 attribute (``EXTRA_GUID``, JSON of ``SCHEMA``) holding what XCAF has no place for: the author's id
-and label, the kind, each ref as the code wrote it, the presentation, and an annotation linked to
-nothing its values (XCAF gives values meaning only through geometry). The id and the kind are in
-XCAF too (its semantic name, its object). No status, no problem and nothing of a previous build is
-held: an annotation's status is derived where the document is read (``records_of_document``), as a
-build derives it. The STEP writer reads the XCAF objects and writes AP242's semantic PMI
+and label, the kind, each ref as the code wrote it, the presentation, a general profile's flag, and
+an annotation linked to nothing its values (XCAF gives values meaning only through geometry). The
+id and the kind are in XCAF too (its semantic name, its object). No status, no problem and nothing
+of a previous build is held: an annotation's status is derived where the document is read
+(``records_of_document``), as a build derives it, and a general profile's faces with it. The STEP
+writer reads the XCAF objects and writes AP242's semantic PMI
 (``DIMENSIONAL_SIZE``/``DIMENSIONAL_LOCATION`` with ``PLUS_MINUS_TOLERANCE`` or their limits,
 ``DATUM``/``DATUM_FEATURE``, ``FLATNESS_TOLERANCE``, ``POSITION_TOLERANCE`` and
 ``SURFACE_PROFILE_TOLERANCE`` with their ``DATUM_SYSTEM``) on ``SHAPE_ASPECT``s whose
@@ -62,6 +63,16 @@ names another kind of face than on the model's last build (a hole whose name pas
 of the cut that replaced it) is warned of (``warn``): the build's report and its served structure
 say so, the document never.
 
+**The general profile** (``general_profile``) is ASME Y14.5's "unless otherwise noted, all
+surfaces": a surface profile of every face of its part that nothing else controls
+(``otherwise_controlled``: a face with a size or location requirement of its own), computed by each
+build from that build's annotations and geometry alone, never written in the code and never kept
+from an earlier build. The document links it to exactly those faces, and a STEP has it as a
+``SURFACE_PROFILE_TOLERANCE`` on them, so a reader gets the faces themselves. It is not XCAF's
+``All_Over`` modifier, which in ASME means every surface beside any other requirement. It has no
+ref to break: it is ``ok`` (``invalid`` where its frame names a datum the part lacks), and one
+covering no face is linked to nothing and written to no STEP.
+
 **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
 GD&T as XCAF reads it. What this module does not hold whole -- another characteristic or dimension
 type, a fit, a qualifier, a modifier, limits beside any of them, a datum target, a link to an edge or
@@ -80,7 +91,8 @@ datums on a plane or cylinder; diameter and linear-distance dimensions with a pl
 tolerance or limits; basic (theoretically exact) distances, from planes and hole axes, with no
 tolerance, marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); flatness; position
 with an ordered datum reference frame and a diametral zone; a surface profile on one face or
-several, of any kind, with a frame of up to three datums or none. Every
+several, of any kind, with a frame of up to three datums or none; a part's general profile, on
+the faces nothing else controls. Every
 other XCAF characteristic, dimension type, modifier and tolerance form is refused by name
 (``PMIUnsupported``), never approximated. PMI is part-level: an annotation is on one part, and an
 assembly is refused.
@@ -95,8 +107,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
 __all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "basic", "datum",
-           "diameter", "dimension", "distance", "flatness", "geometric", "limits", "place", "plus_minus", "position",
-           "profile", "read"]
+           "diameter", "dimension", "distance", "flatness", "general_profile", "geometric", "limits",
+           "otherwise_controlled", "place", "plus_minus", "position", "profile", "read"]
 
 # The attribute an annotated shape holds its annotations in (a tuple of plain dicts), as a part's
 # configurations are held (``kernel.memo`` keys it).
@@ -233,6 +245,16 @@ def geometric(id: str, characteristic: str, ref: Any, value: float, *, datums: I
     millimetres on one face (a surface profile: on one, or on each of a list of them), referring
     to ``datums`` in order (primary first); a diametral zone with ``diameter_zone``. Other
     characteristics are refused (``PMIUnsupported``)."""
+    refs = list(ref) if characteristic == "surface_profile" and isinstance(ref, (list, tuple)) else [ref]
+    if not refs:
+        raise PMIError(f"tolerance {id!r}: a surface profile is on one face or more, not none")
+    return _geometric(id, characteristic, refs, value, datums, diameter_zone, label, presentation, general=False)
+
+
+def _geometric(id: str, characteristic: str, refs: list[Any], value: float, datums: Iterable[str],
+               diameter_zone: bool, label: str | None, presentation: dict | None, *, general: bool) -> dict[str, Any]:
+    """A geometric tolerance on ``refs`` (``geometric``); ``general``: the part's general profile,
+    on no ref the code writes (``general_profile``)."""
     if characteristic not in GEOMETRIC_CHARACTERISTICS:
         if characteristic in _XCAF_CHARACTERISTICS:
             raise PMIUnsupported(f"tolerance {id!r}: {characteristic} is not written verified yet; the "
@@ -254,18 +276,12 @@ def geometric(id: str, characteristic: str, ref: Any, value: float, *, datums: I
         raise PMIError(f"tolerance {id!r}: flatness is a form tolerance, with no datum and no diametral zone")
     if characteristic == "position" and not letters:
         raise PMIUnsupported(f"tolerance {id!r}: a position with no datum is not written verified yet; name its datums")
-    refs = [ref]
-    if characteristic == "surface_profile":
-        if diameter_zone:
-            raise PMIError(f"tolerance {id!r}: a surface profile's zone is a width about the profile: no diametral zone")
-        refs = list(ref) if isinstance(ref, (list, tuple)) else [ref]
-        if not refs:
-            raise PMIError(f"tolerance {id!r}: a surface profile is on one face or more, not none")
-    # ``general``: the part's general profile, of every face nothing else controls (none made here).
+    if characteristic == "surface_profile" and diameter_zone:
+        raise PMIError(f"tolerance {id!r}: a surface profile's zone is a width about the profile: no diametral zone")
     return _annotation(id, "geometric_tolerance", [("feature", given) for given in refs], label, presentation,
                        geometric_tolerance={"characteristic": characteristic, "value": value, "unit": UNIT,
                                             "zone": "diameter" if diameter_zone else None, "modifier": None,
-                                            "datums": letters, "general": False})
+                                            "datums": letters, "general": general})
 
 
 def flatness(id: str, ref: Any, value: float, *, label: str | None = None,
@@ -288,6 +304,16 @@ def profile(id: str, refs: Any, value: float, *, datums: Iterable[str] = (), lab
     on each of a list of faces of any kind (one requirement on all of them), relative to
     ``datums`` in order (none to three)."""
     return geometric(id, "surface_profile", refs, value, datums=datums, label=label, presentation=presentation)
+
+
+def general_profile(id: str, value: float, *, datums: Iterable[str] = (), label: str | None = None) -> dict[str, Any]:
+    """The part's general profile, ``value`` millimetres wide, relative to ``datums`` in order
+    (none to three): ASME Y14.5's "unless otherwise noted, all surfaces", a surface profile of every
+    face of the part that nothing else controls (``otherwise_controlled``), its faces computed by
+    each build from that build's annotations and geometry. Not XCAF's ``All_Over`` modifier (every
+    surface, beside any other requirement): it is written as a surface profile on exactly the faces
+    it covers. One per part."""
+    return _geometric(id, "surface_profile", [], value, datums, False, label, None, general=True)
 
 
 def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
@@ -335,6 +361,9 @@ def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
     letters = [entry["datum"]["letter"] for entry in held if entry["kind"] == "datum"]
     if len(set(letters)) != len(letters):
         raise PMIError(f"a part defines each datum letter once, not {letters}")
+    general = [entry["id"] for entry in held if _general(entry)]
+    if len(general) > 1:
+        raise PMIError(f"a part has one general profile, not {' and '.join(map(repr, general))}")
     shape.__dict__[PMI] = tuple(held)
     _note_call(held)
     return shape
@@ -356,6 +385,11 @@ def _annotation(id: str, kind: str, refs: list[tuple[str, Any]], label: str | No
         raise PMIError(f"annotation {id!r}: a presentation is pmi.place(anchor, offset)")
     return {"pmi": 1, "id": id, "kind": kind, "label": label, "presentation": presentation,
             "refs": [{"role": role, "target": target} for role, target in refs], **values}
+
+
+def _general(spec: dict[str, Any]) -> bool:
+    """Whether an annotation is its part's general profile (``general_profile``)."""
+    return spec["kind"] == "geometric_tolerance" and bool(spec["geometric_tolerance"].get("general"))
 
 
 def _tolerance(tolerance: dict | None, id: str) -> dict | None:
@@ -427,7 +461,7 @@ def refuse_assembly(obj: Any, path: str) -> None:
 @dataclass
 class Ref:
     role: str
-    written: str
+    written: str | None  # None: a face a general profile covers, which the code does not write
     ordinal: int | None
     status: str
     candidates: list[int] = field(default_factory=list)
@@ -461,11 +495,53 @@ def resolve(tree: Any) -> list[tuple[Any, list[Resolved]]]:
 def _resolved_part(given: Iterable[dict[str, Any]], shape: Any, names: list[str | None],
                    owners: set[str]) -> list[Resolved]:
     """A part's annotations (as the code gives them) resolved against its ``shape``, whose faces
-    are named ``names`` by ordinal, in the document owned as ``owners`` name it."""
+    are named ``names`` by ordinal, in the document owned as ``owners`` name it; its general
+    profile, where it is ``ok``, on every face the others leave (``_covered``)."""
     given = list(given)
     faces = _faces(shape)
     letters = {entry["datum"]["letter"] for entry in given if entry["kind"] == "datum"}
-    return [_resolved(entry, faces, names, owners, letters) for entry in given]
+    found = [_resolved(entry, faces, names, owners, letters) for entry in given]
+    for item in found:
+        if _general(item.spec) and item.status == "ok":
+            item.refs = _covered(found, faces.Extent())
+    return found
+
+
+def _covered(items: list[Resolved], count: int) -> list[Ref]:
+    """The faces a part's general profile covers, of the ``count`` it has: each that none of its
+    resolved annotations ``items`` controls (``otherwise_controlled``, its faces spelled by
+    ordinal), in the part's order. This build's annotations and geometry alone decide it."""
+    controlled = otherwise_controlled([
+        {"kind": item.spec["kind"], "status": item.status,
+         **{key: item.spec[key] for key in ("dimension", "geometric_tolerance") if key in item.spec},
+         "refs": [{"role": ref.role, "ref": f"face {ref.ordinal}"} for ref in item.refs]} for item in items])
+    return [Ref("feature", None, at, "ok") for at in range(1, count + 1) if f"face {at}" not in controlled]
+
+
+def otherwise_controlled(entries: list[dict[str, Any]]) -> set[str]:
+    """The faces of ``entries`` (structure entries, ``entries``: their refs as they spell them,
+    canonical where served) that have a size or location requirement of their own, which a general
+    profile leaves to it: each ref of a plus-minus or limits dimension; the feature of a position
+    or of a profile not general; and a ref of a basic dimension whose other ref is such a feature.
+    A form control alone (flatness) or a datum leaves a face to the general profile, and an entry
+    not ``ok`` controls nothing (it is linked to nothing). Pure: of ``entries`` alone."""
+    held = [entry for entry in entries if entry.get("status") == "ok"]
+    located: set[str] = set()  # the features of a position or of a profile not general
+    for entry in held:
+        given = entry["geometric_tolerance"] if entry["kind"] == "geometric_tolerance" else None
+        if given is not None and (given["characteristic"] == "position"
+                                  or given["characteristic"] == "surface_profile" and not given.get("general")):
+            located.update(ref["ref"] for ref in entry["refs"] if ref["role"] == "feature")
+    controlled = set(located)
+    for entry in held:
+        if entry["kind"] != "dimension":
+            continue
+        refs = [ref["ref"] for ref in entry["refs"]]
+        if (entry["dimension"].get("tolerance") or {}).get("type") in ("plus_minus", "limits"):
+            controlled.update(refs)
+        elif entry["dimension"].get("basic") and len(refs) == 2:
+            controlled.update(ref for ref, other in zip(refs, reversed(refs)) if other in located)
+    return controlled
 
 
 def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners: set[str],
@@ -755,7 +831,7 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
         ordered = _datums_first(items)
         for item in ordered:
             spec = item.spec
-            linked = item.status == "ok"
+            linked = _on_faces(item)
             refs = [sub(ref.ordinal) for ref in item.refs] if linked else []
             if spec["kind"] == "datum":
                 at = tool.AddDatum()
@@ -786,14 +862,23 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
             TDF_Reference.Set_s(at, label)
 
 
+def _on_faces(item: Resolved) -> bool:
+    """Whether an annotation is linked to the faces it is on: ``ok``, and on one or more (a general
+    profile covering none is linked to nothing, as one not ``ok`` is)."""
+    return item.status == "ok" and bool(item.refs)
+
+
 def _extra(item: Resolved) -> dict[str, Any]:
     """The cadgen attribute's JSON (see the module): what the code says that XCAF has no place for."""
     spec = item.spec
-    return {"schema": SCHEMA, "id": spec["id"], "kind": spec["kind"], "label": spec["label"],
-            "presentation": spec["presentation"], "refs": spec["refs"],
-            # What an unlinked annotation meant, for a reader: XCAF links values to geometry alone.
-            "unlinked": None if item.status == "ok" else
-            {key: spec[key] for key in ("dimension", "datum", "geometric_tolerance") if key in spec}}
+    found = {"schema": SCHEMA, "id": spec["id"], "kind": spec["kind"], "label": spec["label"],
+             "presentation": spec["presentation"], "refs": spec["refs"],
+             # What an unlinked annotation meant, for a reader: XCAF links values to geometry alone.
+             "unlinked": None if _on_faces(item) else
+             {key: spec[key] for key in ("dimension", "datum", "geometric_tolerance") if key in spec}}
+    if _general(spec):
+        found["general"] = True  # the part's general profile: its faces are computed, not written
+    return found
 
 
 def _ascii(text: str) -> Any:
@@ -1145,19 +1230,20 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         if any(_entry(named) in modified for named in datums):
             beyond.append("a datum it names has modifiers or is a datum target")
         add(label, "geometric_tolerance", values, beyond, found.GetType().name)
-    # The code's annotations resolved as their build resolved them, each against its part.
-    letters_of: dict[int, set[str]] = {}
-    for record in records:
-        if record["extra"] is not None and record["kind"] == "datum":
-            letters_of.setdefault(record["part"], set()).add(record["values"]["letter"])
+    # The code's annotations resolved as their build resolved them, each part's together (its general
+    # profile covers what the others leave): the same faces again, from the document alone.
+    of_part: dict[int, list[dict[str, Any]]] = {}
     for record in records:
         if record["extra"] is not None:
-            prototype = prototypes[record["part"]]
-            faces = _faces(prototype.shape)
-            names = [prototype.face_names.get(at) for at in range(1, faces.Extent() + 1)]
-            given = record["extra"]
-            spec = {"kind": given["kind"], "refs": given["refs"], **(given["unlinked"] or {given["kind"]: record["values"]})}
-            resolved = _resolved(spec, faces, names, {prototype.name, root}, letters_of.get(record["part"], set()))
+            if record["extra"].get("general"):
+                record["values"]["general"] = True  # the cadgen attribute's: XCAF has no place for it
+            of_part.setdefault(record["part"], []).append(record)
+    for index, held in of_part.items():
+        prototype = prototypes[index]
+        names = [prototype.face_names.get(at) for at in range(1, _faces(prototype.shape).Extent() + 1)]
+        specs = [{"kind": record["extra"]["kind"], "refs": record["extra"]["refs"],
+                  **(record["extra"]["unlinked"] or {record["extra"]["kind"]: record["values"]})} for record in held]
+        for record, resolved in zip(held, _resolved_part(specs, prototype.shape, names, {prototype.name, root})):
             record.update(status=resolved.status, problem=resolved.problem, refs=_refs(resolved))
             if (record["values"].get("tolerance") or {}).get("type") == "limits":
                 record["values"]["nominal"] = _as_held(resolved.nominal or 0.0)  # measured, as its build did
@@ -1257,7 +1343,7 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
         by_kind = {"datum": [], "dimension": [], "geometric_tolerance": []}
         for item in ordered:
             spec = item.spec
-            linked = item.status == "ok"
+            linked = _on_faces(item)
             targets = [(ref.role, (index, "face", ref.ordinal)) for ref in item.refs] if linked else []
             if spec["kind"] == "datum":
                 values = {"letter": spec["datum"]["letter"]}
@@ -1412,6 +1498,7 @@ def refuse_dropped(view: Any, kind: str) -> None:
 
 
 def _from_code(entry: dict[str, Any]) -> bool:
-    """Whether an entry is an annotation a model's code made (its refs as the code wrote them), not
-    one read from a file another system wrote."""
-    return any(ref.get("written") is not None for ref in entry.get("refs") or ())
+    """Whether an entry is an annotation a model's code made (its refs as the code wrote them, or
+    a general profile, whose faces none writes), not one read from a file another system wrote."""
+    return (any(ref.get("written") is not None for ref in entry.get("refs") or ())
+            or bool((entry.get("geometric_tolerance") or {}).get("general")))

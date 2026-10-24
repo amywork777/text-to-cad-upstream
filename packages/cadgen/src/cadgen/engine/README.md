@@ -1048,7 +1048,8 @@ return pmi.annotate(body,
     pmi.flatness("top-flat", top, 0.05),
     pmi.position("hole-pos", hole, 0.1, datums=["A", "B", "C"]),
     pmi.basic("hole-from-B", front, hole),      # the true position: basic, no tolerance
-    pmi.profile("outline", [back, right], 0.5, datums=["A"]))   # one requirement on both faces
+    pmi.profile("outline", [back, right], 0.5, datums=["A"]),   # one requirement on both faces
+    pmi.general_profile("general", 1.0, datums=["A", "B", "C"]))  # every face nothing else controls
 ```
 
 - **Authoring.** `annotate` takes one part (an annotated assembly is refused: annotate its
@@ -1064,7 +1065,15 @@ return pmi.annotate(body,
   (`pmi.basic`) has none, and a tolerance on one is refused. A surface profile
   (`pmi.profile(id, refs, value, datums=())`) is one requirement on a face or on a list of faces,
   of any kind, to up to three datums or none; its zone is a width about the true profile, so a
-  diametral one is refused, as is a profile on no face. `presentation=pmi.place(anchor,
+  diametral one is refused, as is a profile on no face. The general profile
+  (`pmi.general_profile(id, value, datums=())`, one per part: a second is refused by name) is
+  ASME Y14.5's "unless otherwise noted, all surfaces": a surface profile of every face of the part
+  that nothing else controls, the code naming none of them. A face is otherwise controlled when it
+  has a size or location requirement of its own (`pmi.otherwise_controlled(entries)`, over
+  structure entries): a ref of a plus-minus or limits dimension, the feature of a position or of a
+  profile not general, or a ref of a basic dimension whose other ref is such a feature. A form
+  control alone (flatness) and a datum leave a face to it. It is not XCAF's `All_Over` modifier,
+  which in ASME means every surface beside any other requirement. `presentation=pmi.place(anchor,
   offset)` (millimetres, the part's frame) is where a viewer draws the callout, never a
   requirement and never in a STEP.
 - **Resolution.** Each build resolves every ref against the part as built: `ok`, `missing` (it names
@@ -1072,7 +1081,11 @@ return pmi.annotate(body,
   `candidates` lists them) or `invalid` (a face the annotation cannot stand on: a diameter on a
   plane, a flatness on a cylinder, a datum on neither, a face a profile names twice). An annotation
   that is not `ok` is kept in the document with its values, linked to no geometry, and a STEP export
-  refuses to drop it, naming each one. A ref written as text that names another kind of face, plane
+  refuses to drop it, naming each one. A general profile's faces are resolved with the rest: every
+  face of the part as built that the part's other `ok` annotations leave, from this build's
+  annotations and geometry alone. It has no ref to break, so it is `ok` (`invalid` where its frame
+  names a datum the part lacks, then covering nothing); one that covers no face is `ok`, linked to
+  nothing, and no STEP refuses it. A ref written as text that names another kind of face, plane
   or cylinder, than on the model's last build -- this process's previous tree, else the model's xbf
   on disk -- is warned of: a hole whose name passed to a flat side of the cut that replaced it,
   measured as it now is. The warning is the build's report and its served structure's, never the
@@ -1084,12 +1097,14 @@ return pmi.annotate(body,
   values, units, kinds and face links are XCAF's `XCAFDimTolObjects` on the GD&T tool, linked to the
   faces' sub-shape labels (the STEP writer's input); beside each, a `TDF_Reference` to its part's
   shape label and one cadgen attribute (JSON, schema `cadgen.pmi/1`) holding what XCAF has no
-  place for: the id, the label, the kind, the refs as the code wrote them, and the presentation;
+  place for: the id, the label, the kind, the refs as the code wrote them, the presentation, and
+  a general profile's flag (`"general": true`, its faces linked in XCAF, none written in the refs);
   an unlinked annotation's values too, since XCAF gives values meaning only through geometry. The
   id and the kind are also XCAF's (the object's semantic name and its type). No status and no
   problem are held: they are derived where the document is served (`pmi.records_of_document`),
   from the refs as written, the document's names and geometry and each kind's faces, as the build
-  derives them (kinematics derives its loop where it serves its block). A document without PMI
+  derives them, a general profile's faces with them (kinematics derives its loop where it serves
+  its block). A document without PMI
   holds nothing new. A document holding PMI is converted whole on a warm build (GD&T labels link
   the sub-shape labels a patch remakes).
 - **An entry** of `pmi.read` (an xbf or a STEP): `id`, `kind` (`datum`, `dimension`,
@@ -1100,8 +1115,10 @@ return pmi.annotate(body,
   `distance`, `basic`, `nominal` `{value, unit, source}`, `tolerance`: `{type: "plus_minus", upper,
   lower}`, `{type: "limits", lower, upper}` or null) or `geometric_tolerance`
   (`characteristic` `flatness`, `position` or `surface_profile`, `value`, `unit`, `zone`, `datums`
-  in order, and `general`, false for a tolerance on the faces the code names). A surface
-  profile's `refs` are its faces, each of role `feature`. A nominal's `source` is
+  in order, and `general`, false for a tolerance on the faces the code names, true for the part's
+  general profile). A surface profile's `refs` are its faces, each of role `feature`; a general
+  profile's are the faces it covers this build, in the part's order, each `written` null and
+  `status` `ok`, and none where it covers none. A nominal's `source` is
   `geometry`, measured, where the code made the annotation, and `file` where another system did.
   XCAF holds limits in place of a nominal (its value is then their midpoint): a nominal of the
   code's beside limits is measured where the document is read, and a dimension read from a file
@@ -1123,7 +1140,7 @@ dimensions with plus-minus tolerances or limits; basic distances, marked 'theore
 marks them (CAx-IF PMI Recommended Practices 5.3, a dimensional note on the dimension's
 representation); flatness; position with an ordered datum frame of up to three and a diametral
 zone; a surface profile on one face or several, of any kind, with a frame of up to three datums or
-none. Every other characteristic, dimension type, tolerance form (fits, modifiers), a basic
+none; a part's general profile, on the faces nothing else controls. Every other characteristic, dimension type, tolerance form (fits, modifiers), a basic
 diameter or angle, and assembly-level PMI is refused by name (`PMIUnsupported`), never
 approximated.
 
@@ -1138,8 +1155,10 @@ nominal value their midpoint (XCAF holds the limits alone); `FLATNESS_TOLERANCE`
 `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE`); each on its `ADVANCED_FACE` (named with the
 element's name) through a `GEOMETRIC_ITEM_SPECIFIC_USAGE` of its `SHAPE_ASPECT` -- a tolerance on
 several faces on a `COMPOSITE_SHAPE_ASPECT` that a `SHAPE_ASPECT_RELATIONSHIP` per face relates to
-that face's aspect -- every measure in millimetres. A STEP carries no annotation id (the writer
-leaves every name empty) and no graphical PMI. The exports
+that face's aspect -- every measure in millimetres. A general profile is a
+`SURFACE_PROFILE_TOLERANCE` on exactly the faces it covers, so a reader gets an explicit face set
+(the file says nothing of "general"); one that covers no face is written as nothing. A STEP
+carries no annotation id (the writer leaves every name empty) and no graphical PMI. The exports
 that rebuild the document from a view would carry none: a posed STEP, and a STEP or xbf of one part
 (`--part`). Every export that would not carry the PMI the code made whole is refused by name
 (`pmi.refuse_dropped`, in `export.translate`); one of a document another system wrote is written,
@@ -1156,7 +1175,8 @@ where it would drop PMI. For a document holding PMI, after writing the file the 
 with `export/ap242.py` -- a Part 21 reader of AP242's PMI entities with no OCCT in it -- and matches
 every entry to one record of the file by face name, kind, values, units, datum order, zone and a
 basic dimension's note (`verify`); a limit dimension by its two limits, in its nominal's unit, its
-nominal value their midpoint; a tolerance on several faces by the same faces, in any order. The
+nominal value their midpoint; a tolerance on several faces by the same faces, in any order; a
+general profile that covers no face by no record, none being left over. The
 result, `{"matched", "total", "problems", "sha256"}` (the digest of the bytes checked), travels
 with the export job as `pmiVerification`. Nothing is
 guessed: a face name the file uses twice, two parts reusing one, a repeated datum letter, an entity

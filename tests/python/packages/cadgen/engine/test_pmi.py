@@ -3,7 +3,9 @@ written into its xbf as XCAF's GD&T objects and read back the same from the file
 build; its AP242 STEP read by OCCT and by a reader of no OCCT (``export/ap242.py``),
 which agree on values, units, datum frames and the faces each annotation is on; a dimension
 given limits, written as AP242's lower and upper limit and its nominal still measured; a surface
-profile on several faces of any kind, written as one AP242 surface profile tolerance; a warm rebuild,
+profile on several faces of any kind, written as one AP242 surface profile tolerance; a general
+profile on every face nothing else controls, computed each build and written on exactly those
+faces, or as nothing where it covers none; a warm rebuild,
 an edit of the geometry and of a tolerance, a ref the model no longer satisfies (missing,
 ambiguous, invalid) kept in the document and refused by a STEP, and one that names another kind
 of face than on the last build warned of, the document the code's alone; what is not supported
@@ -593,6 +595,177 @@ class ProfileTest(_Folder):
         self.assertEqual((entry["kind"], entry["xcaf_type"]),
                          ("unsupported", "XCAFDimTolObjects_GeomToleranceType_ProfileOfSurface"), entry)
         self.assertIn("diametral zone", entry["reason"])
+
+
+# A plate given a general profile (ASME's "unless otherwise noted, all surfaces"): the hole has a size
+# and a position, located from B and C by basic dimensions; the top has a flatness alone. Values
+# ILLUSTRATIVE.
+GENERAL = '''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
+    body.label = "plate"
+    bottom = body.faces().sort_by(bd.Axis.Z)[0]
+    top = body.faces().sort_by(bd.Axis.Z)[-1]
+    front = body.faces().sort_by(bd.Axis.Y)[0]
+    left = body.faces().sort_by(bd.Axis.X)[0]
+    hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+    return pmi.annotate(
+        body,
+        pmi.datum("A", bottom),
+        pmi.datum("B", front),
+        pmi.datum("C", left),
+        pmi.diameter("hole-diameter", hole, tolerance=pmi.plus_minus(0.1, 0)),
+        pmi.position("hole-position", hole, 0.1, datums=["A", "B", "C"]),
+        pmi.basic("hole-from-B", front, hole),
+        pmi.basic("hole-from-C", left, hole),
+        pmi.flatness("top-flatness", top, 0.05),
+        pmi.general_profile("general", 0.5, datums=["A", "B", "C"]),
+    )
+'''
+# A block each face of which has a size of its own, and a general profile: values ILLUSTRATIVE.
+CONTROLLED = '''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10)
+    body.label = "plate"
+    x, y, z = (body.faces().sort_by(axis) for axis in (bd.Axis.X, bd.Axis.Y, bd.Axis.Z))
+    return pmi.annotate(
+        body,
+        pmi.datum("A", z[0]),
+        pmi.distance("length", x[0], x[-1], tolerance=pmi.plus_minus(0.2)),
+        pmi.distance("width", y[0], y[-1], tolerance=pmi.limits(59.8, 60.2)),
+        pmi.distance("thickness", z[0], z[-1], tolerance=pmi.plus_minus(0.1)),
+        pmi.general_profile("general", 0.5, datums=["A"]),
+    )
+'''
+# A plate whose ``cut`` is a round hole and then a square pocket, its thickness toleranced and the
+# rest left to a general profile ({general}): values ILLUSTRATIVE.
+GENERAL_CUT = '''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10) - {cut}
+    body.label = "plate"
+    bottom = body.faces().sort_by(bd.Axis.Z)[0]
+    top = body.faces().sort_by(bd.Axis.Z)[-1]
+    return pmi.annotate(body, pmi.datum("A", bottom),
+                        pmi.distance("thickness", bottom, top, tolerance=pmi.plus_minus(0.2)), {general})
+'''
+
+
+def _ordinal(loaded: document.Loaded, ref: str) -> int:
+    """The ordinal of the face a canonical ref names, in the document's own geometry."""
+    from cadgen.engine.refs import resolve_structure
+
+    [hit] = resolve_structure(loaded.structure(), ref)
+    return hit.ordinal
+
+
+class GeneralProfileTest(_Folder):
+    def test_it_covers_every_face_nothing_else_controls(self) -> None:
+        report = self.build(GENERAL)
+        self.assertEqual(report["pmi"], {"annotations": 9, "problems": []})
+        loaded = document.Loaded(self.xbf)
+        served = loaded.structure()["pmi"]
+        self.assertEqual(served, engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"])
+        found = _by_id(served)
+        general = found["general"]
+        self.assertEqual((general["kind"], general["status"], general["problem"]), ("geometric_tolerance", "ok", None))
+        self.assertEqual(general["geometric_tolerance"], {
+            "characteristic": "surface_profile", "value": 0.5, "unit": "mm", "zone": None, "modifier": None,
+            "datums": ["A", "B", "C"], "general": True})
+        # The hole has a size and a location of its own, and B and C are the ends of the basic
+        # dimensions locating it; the top's flatness is form alone, and a datum is no requirement.
+        hole, front, left = (found["hole-position"]["refs"][0]["ref"], found["hole-from-B"]["refs"][0]["ref"],
+                             found["hole-from-C"]["refs"][0]["ref"])
+        self.assertEqual(pmi.otherwise_controlled(served), {hole, front, left})
+        controlled = {_ordinal(loaded, ref) for ref in (hole, front, left)}
+        count = pmi._faces(loaded.prototypes[0].shape).Extent()
+        # Every other face, in the part's order, each a computed ref the code never wrote.
+        self.assertEqual([_ordinal(loaded, ref["ref"]) for ref in general["refs"]],
+                         [at for at in range(1, count + 1) if at not in controlled])
+        self.assertEqual(len(general["refs"]), 4)
+        self.assertTrue(all(ref == {"role": "feature", "written": None, "status": "ok", "ref": ref["ref"],
+                                    "candidates": None, "problem": None} for ref in general["refs"]), general["refs"])
+        covered = {ref["ref"] for ref in general["refs"]}
+        self.assertLessEqual({found["top-flatness"]["refs"][0]["ref"], found["A"]["refs"][0]["ref"]}, covered)
+
+    def test_the_step_holds_it_on_exactly_those_faces(self) -> None:
+        self.build(GENERAL)
+        ours = pmi.read(self.xbf)
+        result = ap242.verify(ours, self.step)
+        self.assertEqual((result["matched"], result["total"], result["problems"]), (9, 9, []))
+        general = _by_id(ours)["general"]
+        [profile] = [row for row in ap242.report(self.step)["tolerances"] if row["entity"] == "SURFACE_PROFILE_TOLERANCE"]
+        self.assertEqual(sorted(feature["name"] for feature in profile["features"]),
+                         sorted(ref["ref"].split("/", 1)[1] for ref in general["refs"]))
+        self.assertEqual((profile["magnitude"]["value"], profile["magnitude"]["unit"], profile["datums"]),
+                         (0.5, "mm", ["A", "B", "C"]))
+        # OCCT's reader: a surface profile on those faces, as any CAM reader gets it.
+        [theirs] = [entry for entry in pmi.read(self.step)
+                    if (entry.get("geometric_tolerance") or {}).get("characteristic") == "surface_profile"]
+        self.assertEqual(sorted(ref["ref"] for ref in theirs["refs"]), sorted(ref["ref"] for ref in general["refs"]))
+
+    def test_it_covers_no_face_when_every_face_has_its_own(self) -> None:
+        report = self.build(CONTROLLED)
+        self.assertEqual(report["pmi"], {"annotations": 5, "problems": []})
+        served = pmi.read(self.xbf)
+        self.assertEqual(served, engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"])
+        general = _by_id(served)["general"]
+        self.assertEqual((general["status"], general["problem"], general["refs"]), ("ok", None, []))
+        self.assertEqual((general["geometric_tolerance"]["datums"], general["geometric_tolerance"]["general"]),
+                         (["A"], True))
+        # Linked to nothing, it is written as nothing, and the check expects nothing for it.
+        self.assertNotIn("SURFACE_PROFILE_TOLERANCE", self.step.read_text(encoding="utf-8"))
+        result = ap242.verify(served, self.step)
+        self.assertEqual((result["matched"], result["total"], result["problems"]), (5, 5, []))
+
+    def test_a_second_general_profile_is_refused(self) -> None:
+        import build123d as bd
+
+        with self.assertRaisesRegex(pmi.PMIError, "one general profile, not 'general' and 'outer'"):
+            pmi.annotate(bd.Box(10, 10, 10), pmi.general_profile("general", 0.5), pmi.general_profile("outer", 0.2))
+
+    def test_one_naming_a_datum_the_part_lacks_covers_nothing_and_is_refused_by_a_step(self) -> None:
+        report = self.build(GENERAL_CUT.format(cut=ROUND,
+                                               general='pmi.general_profile("general", 0.5, datums=["B"])'), ok=False)
+        [problem] = report["pmi"]["problems"]
+        self.assertEqual((problem["id"], problem["status"]), ("general", "invalid"))
+        self.assertIn("a STEP would drop PMI", report["error"])
+        self.assertIn("general", report["error"])
+        self.assertEqual(_by_id(pmi.read(self.xbf))["general"]["refs"], [])
+
+    def test_its_faces_follow_an_edit_with_the_same_bytes_whatever_was_built_before(self) -> None:
+        def built(cut: str) -> list[str]:
+            """The kinds of the faces the general profile covers, built with ``cut``."""
+            self.build(GENERAL_CUT.format(cut=cut, general='pmi.general_profile("general", 0.5, datums=["A"])'))
+            loaded = document.Loaded(self.xbf)
+            general = _by_id(loaded.structure()["pmi"])["general"]
+            return sorted(_face(loaded, general, at)[0] for at in range(len(general["refs"])))
+
+        # The four sides and the hole; then the four sides and the pocket's four, nothing controlling them.
+        self.assertEqual(built(ROUND), ["cylinder"] + ["plane"] * 4)
+        self.assertEqual(built(SQUARE), ["plane"] * 8)
+        after = self.xbf.read_bytes()
+        self.xbf.unlink()
+        engine_build._WRITTEN.clear()
+        self.assertEqual(built(SQUARE), ["plane"] * 8)
+        self.assertEqual(self.xbf.read_bytes(), after)
 
 
 # A plate whose one variable ``cut`` is a round hole and then a square pocket: the name the hole's face

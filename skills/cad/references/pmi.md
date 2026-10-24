@@ -1,8 +1,9 @@
 # PMI: datums, dimensions and tolerances
 
 Read this file when the user asks for datums, toleranced dimensions, basic dimensions,
-flatness, position or a surface profile (GD&T, PMI, model-based definition), or for a
-STEP a supplier or an inspection tool can read requirements from.
+flatness, position, a surface profile or a general profile ("unless otherwise noted, all
+surfaces"; GD&T, PMI, model-based definition), or for a STEP a supplier or an inspection
+tool can read requirements from.
 
 A part's requirements are written in its model, on the faces they control, and the
 document keeps them:
@@ -12,7 +13,8 @@ document keeps them:
 - **Datums** name the faces the others are measured from: `pmi.datum("A", face)`.
 - **Dimensions** are measured on the geometry, never typed: `pmi.diameter`,
   `pmi.distance`, and `pmi.basic` for a theoretically exact one.
-- **Geometric tolerances**: `pmi.flatness`, `pmi.position` and `pmi.profile`.
+- **Geometric tolerances**: `pmi.flatness`, `pmi.position` and `pmi.profile`, and
+  `pmi.general_profile` for every face nothing else controls.
 
 The `.xbf` keeps them as the kernel's own GD&T, linked to their faces, and a STEP
 export writes them as AP242 semantic PMI: requirements a program reads off the faces,
@@ -78,6 +80,16 @@ def plate():
   zone of that width about their true profile. It takes up to three datums, or none. A
   diametral zone or an empty list is refused, and a face the list names twice leaves
   the profile `invalid`.
+- **A general profile** (`pmi.general_profile("general", 0.5, datums=["A", "B", "C"])`)
+  is ASME Y14.5's "unless otherwise noted, all surfaces profile 0.5 to A|B|C": a surface
+  profile of every face of the part that nothing else controls. You name no faces: each
+  build computes them from that build's annotations and geometry, so after an edit it
+  covers the new faces. A face is otherwise controlled when it has a size or location
+  requirement of its own: a face of a `plus_minus` or `limits` dimension, the face of a
+  position or of a `pmi.profile`, or a face a basic dimension locates such a face from.
+  A flatness alone, or a datum, leaves a face to the general profile. It is not XCAF's
+  `All_Over` modifier (every surface, beside any other requirement). One per part. A
+  general profile with no face left to cover is fine: it is `ok` and written to no STEP.
 - **Anything else is refused** (`PMIUnsupported`), never approximated: other
   characteristics and dimension types, fits, material modifiers, reference
   dimensions, and assembly-level PMI.
@@ -117,7 +129,9 @@ for entry in pmi.read("XBF/plate.xbf"):   # or a .step
 Each entry has `id`, `kind` (`datum`, `dimension`, `geometric_tolerance`), `status`
 (`ok`, `missing`, `ambiguous`, `invalid`), `problem`, `refs` (each with its canonical
 ref and status), and one of `datum`, `dimension` or `geometric_tolerance` holding its
-values. PMI read from another system's STEP that this does not model whole (another
+values. A general profile says `"general": true`, and its `refs` are the faces it covers
+on this build, each with `written` null; `pmi.otherwise_controlled(entries)` gives the
+faces the rest control. PMI read from another system's STEP that this does not model whole (another
 characteristic, a fit, modifiers, limits beside either, a link to an edge or a point)
 is listed as `kind: "unsupported"` with its `xcaf_type` and a `reason`, never dropped.
 A nominal the file holds says `"source": "file"`; a dimension the file gives limits
@@ -140,7 +154,9 @@ the kernel, and matches every annotation to the file: values, units, datum order
 zone, faces and a basic dimension's mark. The export's status says how many matched,
 with the file's SHA-256. It checks the file, not a supplier's importer.
 
-A STEP carries no annotation ids, and no drawn callouts.
+A STEP carries no annotation ids, and no drawn callouts. A general profile is written as
+a surface profile on exactly the faces it covers, so a CAM or inspection program reads
+the faces themselves; the file does not say "general".
 
 ## Review
 
