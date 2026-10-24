@@ -380,6 +380,13 @@ def _reached(record: dict) -> dict[int, set]:
                 if (a in reached[axis]) != (b in reached[axis]):
                     reached[axis] |= {a, b}
                     grown = True
+            if axis in record["symmetric"]:
+                # One side of a part stated symmetric places the other: the mirror
+                # of every place reached is reached (ISO 129-1).
+                mirrored = {round(2 * middle[axis] - place, _PLACE) for place in reached[axis]}
+                if not mirrored <= reached[axis]:
+                    reached[axis] |= mirrored
+                    grown = True
     return reached
 
 

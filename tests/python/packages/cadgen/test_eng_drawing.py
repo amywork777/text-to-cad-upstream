@@ -3855,6 +3855,26 @@ class FaceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "aligned dimension takes no frame"):
             front.dim((20, 0, 8), (10, 0, 30), orientation="aligned", key=True)
 
+    def test_one_side_of_a_part_stated_symmetric_places_the_other(self) -> None:
+        from build123d import Align, Box, Pos
+
+        from cadgen.eng_drawing import Sheet
+
+        tray = Box(60, 40, 10, align=(Align.CENTER, Align.CENTER, Align.MIN)) \
+            - Pos(0, 0, 5) * Box(50, 30, 5, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(tray, views=("top", "front"))
+        top.overall()
+        front.overall(width=False)
+        top.dim((-30, 0, 10), (-25, 0, 10))                # the left wall
+        top.dim((0, -20, 10), (0, -15, 10))                # the front wall
+        front.dim((30, 0, 10), (30, 0, 5))                 # the pocket's depth
+        self.assertEqual(sorted(line.split(" (")[0] for line in self._report(sheet)),
+                         ["incomplete: the face at X = 25", "incomplete: the face at Y = 15"])
+        top.symmetric("h")
+        top.symmetric("v")                                 # the right and back walls mirror them
+        self.assertEqual(self._report(sheet), [])
+
     def test_a_size_an_angle_fixes_may_be_given_as_reference(self) -> None:
         from cadgen.eng_drawing import Sheet
 
