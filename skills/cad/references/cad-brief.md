@@ -33,5 +33,6 @@ assumptions. Do not ask the user to fill out a template.
   [inspection and validation](inspection-and-validation.md).
 
 Before modeling, identify the relevant source/output paths, units, coordinate
-convention and functional interfaces. Choose construction and validation methods
+convention and functional interfaces, and the manufacturing process and use
+that decide [edge treatment](build123d-modeling.md#edge-treatment). Choose construction and validation methods
 that make the controlling dimensions easy to express and check.
