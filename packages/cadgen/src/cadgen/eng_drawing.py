@@ -67,7 +67,8 @@ from cadgen._internal.drawing_assembly import (
 )
 from cadgen._internal.drawing_base import (
     _DETAIL_SIZE, _MARGIN, _NOTE_HEIGHT, _NOTE_INSET, PROJECTIONS, _SAME_PLACE, _SECTION_LETTERS, SHEET_SIZES,
-    _STANDARD_SCALES, UNITS, VIEW_DIRECTIONS, _dirs, _dot, _look, _p3, _scale_label, _text_width, _where,
+    _STANDARD_SCALES, UNITS, VIEW_DIRECTIONS, _cross, _dirs, _dot, _look, _p3, _scale_label, _text_width,
+    _view_axes, _where,
 )
 from cadgen._internal.drawing_render import _render_sheet
 from cadgen._internal.drawing_report import _Facts, geometry_notes, _unstated
@@ -903,7 +904,9 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
     sheets, whose sizes it governs. Materials and part numbers come from
     ``parts.set(...)`` and are blank otherwise.
     """
-    from cadgen._internal.drawing_features import holes as find_holes, slots as find_slots
+    from cadgen._internal.drawing_features import (
+        holes as find_holes, revolved, slots as find_slots, turned_surfaces,
+    )
 
     if not isinstance(parts, PartsList):
         raise TypeError(f"assembly_sheets() takes the PartsList that parts_list() returns, got {type(parts).__name__}")
@@ -939,11 +942,37 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
         sheet = Sheet(title=shown[0], material=shown[1], subtitle=shown[2], general_tolerance=general_tolerance,
                       **(common | {"size": None, "scale": None}))
         sheet._item = _PartOf(item, title, shown)
-        top, front, right = sheet.three_views(item.shape, iso=True)[:3]
-        top.overall()
-        front.overall(width=False)
+        turned = revolved(item.shape)
+        names = list(_VIEW_NAMES)
+        if turned is not None:
+            # Turned whole: the two views square to its axis draw the same picture,
+            # so the first of them in front, top, right order is drawn.
+            beside = [n for n in ("front", "top", "right") if not VIEW_DIRECTIONS[n][0][turned.axis]]
+            names.remove(beside[1])
+        views = sheet.three_views(item.shape, iso=True, views=names)[:-1]
+        stated: set[int] = set()  # the model axes whose overall size is stated
+        if turned is not None:
+            # Its diameters, across the profile in the view that sees the axis
+            # side-on; the largest states the part's size across the axis both ways.
+            side = next(v for v in views if not VIEW_DIRECTIONS[v.name][0][turned.axis])
+            unit = tuple(float(k == turned.axis) for k in range(3))
+            across = _cross(unit, _look(side))
+            steps = [(s.diameter, s.middle) for s in turned_surfaces(item.shape)
+                     if abs(abs(s.axis[turned.axis]) - 1) < 1e-9]
+            if all(abs(d - turned.diameter) > 0.01 for d, _m in steps):
+                steps.append((turned.diameter, turned.at))
+            for diameter, middle in steps:
+                r = diameter / 2
+                side.dim(tuple(m + r * c for m, c in zip(middle, across)),
+                         tuple(m - r * c for m, c in zip(middle, across)), text="%%c<>")
+            stated = {k for k in range(3) if k != turned.axis}
+        for view in views:
+            width_axis, height_axis = _view_axes(view.name)
+            if width_axis not in stated or height_axis not in stated:
+                view.overall(width=width_axis not in stated, height=height_axis not in stated)
+            stated |= {width_axis, height_axis}
         features = [*find_holes(item.shape), *find_slots(item.shape)]
-        for view in (top, front, right):
+        for view in views:
             look = _look(view)
             if any(_looks_into(f, look) for f in features):
                 view.holes()

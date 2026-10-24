@@ -76,7 +76,9 @@ def _unstated(facts: _Facts) -> list[str]:
     is not allowed to look finished when it is not, so each line names the call
     that states the missing fact.
     """
-    from cadgen._internal.drawing_features import holes as find_holes, slots as find_slots, turned_diameters
+    from cadgen._internal.drawing_features import (
+        holes as find_holes, revolved, slots as find_slots, turned_diameters,
+    )
 
     lines: list[str] = []
     records = list(facts.parts.values())
@@ -107,9 +109,12 @@ def _unstated(facts: _Facts) -> list[str]:
             lines.append(f"incomplete: {whose}{text} is not called out. {fix}")
         size = shape.bounding_box().size
         turned = [] if record.get("assembly") else turned_diameters(shape)
+        whole = None if record.get("assembly") else revolved(shape)
         # A stated diameter of the part's largest turned surface states its width
-        # across that axis too: a shaft's ⌀30 is its size in Y and in Z.
-        across = [d for d in turned if any(abs(v - d) <= 0.01 for v in record["values"])]
+        # across that axis too: a shaft's ⌀30 is its size in Y and in Z, and a
+        # cone's widest circle is a spring seat's.
+        across = [d for d in [*turned, *([whole.diameter] if whole else [])]
+                  if any(abs(v - d) <= 0.01 for v in record["values"])]
         for axis, extent in enumerate((size.X, size.Y, size.Z)):
             if any(a == axis and abs(v - extent) <= 0.01 for a, v in record["axes"]):
                 continue

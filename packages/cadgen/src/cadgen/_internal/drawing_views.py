@@ -22,6 +22,10 @@ if TYPE_CHECKING:
 #: Points per curved edge when two views' pictures are compared: a circle's chords
 #: then stray from it by well under the comparison's tolerance.
 _ALIKE_SAMPLES = 72
+#: The most edges a picture may have for it to be compared: the views that repeat
+#: are a turned or symmetric part's few, and a coil spring's thousands of curves
+#: would take longer to sample than the rest of its drawing.
+_ALIKE_EDGES = 200
 
 
 # --- projection -----------------------------------------------------------------------
@@ -184,6 +188,8 @@ def _pictures_alike(first: _Projection, second: _Projection, extent: float) -> b
     from shapely.geometry import MultiLineString
 
     tolerance = 0.02 + 0.001 * extent
+    if any(len(p.visible) + len(p.hidden) > _ALIKE_EDGES for p in (first, second)):
+        return False
     # Two pictures of different extent are not alike, and most pairs differ there:
     # settle those before sampling any curve.
     boxes = [_edges_bounds([*p.visible, *p.hidden]) for p in (first, second)]
@@ -204,12 +210,6 @@ def _pictures_alike(first: _Projection, second: _Projection, extent: float) -> b
     pairs = [(lines(first.visible), lines(second.visible)), (lines(first.hidden), lines(second.hidden))]
     return any(all(covers(a, affinity.scale(b, fx, fy, origin=(0, 0))) for a, b in pairs)
                for fx, fy in ((1, 1), (-1, 1), (1, -1), (-1, -1)))
-
-
-def _same_picture(shape, a: str, b: str) -> bool:
-    """Whether principal views ``a`` and ``b`` of ``shape`` draw the same picture."""
-    return _pictures_alike(_Projection(shape, VIEW_DIRECTIONS[a]), _Projection(shape, VIEW_DIRECTIONS[b]),
-                           shape.bounding_box().size.length)
 
 
 def _view_extent(shape, name: str, scale: float) -> tuple[float, float]:

@@ -2372,6 +2372,46 @@ class AssemblyDrawingTests(unittest.TestCase):
         self.assertFalse([line for line in printed if "incomplete: sheet" in line],
                          "a first pass states every part's overall sizes and holes")
 
+    def test_a_round_parts_sheet_has_one_side_view_and_states_its_diameters(self) -> None:
+        from build123d import Align, Box, Compound, Cylinder, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        plate = Box(60, 40, 8, align=up)
+        plate.label = "plate"
+        pin = Pos(15, 0, 8) * (Cylinder(3, 20, align=up) + Pos(0, 0, 20) * Cylinder(5, 4, align=up))
+        pin.label = "pin"
+        sheets = assembly_sheets(parts_list(Compound(children=[plate, pin])), title="RIG")
+        sheet = sheets.part("pin")
+        names = [v.name for v in sheet.views]
+        self.assertEqual(names, ["top", "front", "iso"], "turned about Z: the right view would repeat the front")
+        facts = _facts()
+        doc = _render_sheet(sheet, index=1, count=1, label="pin", facts=facts)
+        # The ⌀ is drawn as line work beside each value, so the text is the number.
+        self.assertEqual(sorted(_dim_texts(doc)), ["10", "24", "6"], "two diameters and the length, once each")
+        self.assertFalse([line for line in _unstated(facts) if "overall size" in line or "turned diameter" in line],
+                         "the diameters state the sizes across the axis")
+
+    def test_a_cones_widest_diameter_states_its_size_across_the_axis(self) -> None:
+        from build123d import Align, Box, Compound, Cone
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        base = Box(80, 80, 6, align=up)
+        base.label = "base"
+        seat = Cone(36, 20, 12, align=up)
+        seat.label = "seat"
+        sheet = assembly_sheets(parts_list(Compound(children=[base, seat])), title="RIG").part("seat")
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="seat", facts=facts)
+        self.assertFalse([line for line in _unstated(facts) if "overall size" in line], _unstated(facts))
+
     def test_on_a_drawing_of_several_parts_each_gap_names_its_sheet(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _unstated

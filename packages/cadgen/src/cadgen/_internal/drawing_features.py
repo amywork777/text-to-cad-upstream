@@ -597,15 +597,99 @@ def bolt_circles(shape, found: list[Hole] | None = None) -> list[BoltCircle]:
     return circles
 
 
-def turned_diameters(shape) -> list[float]:
-    """The diameters of the part's turned outside surfaces -- a shaft's steps, a
-    boss -- which a drawing must state as surely as it states a hole."""
-    found: set[float] = set()
-    for _d, _foot, segments in _surface_segments(shape).values():
+@dataclass(frozen=True)
+class Turned:
+    """A turned outside surface -- a shaft's step, a boss -- by diameter, with the
+    direction of its axis and the point on the axis midway along it."""
+
+    diameter: float
+    axis: tuple[float, float, float]
+    middle: tuple[float, float, float]
+
+
+def turned_surfaces(shape) -> list[Turned]:
+    """The part's turned outside surfaces, one per diameter (the first found where
+    two steps share one), smallest first."""
+    found: dict[float, Turned] = {}
+    for d, foot, segments in _surface_segments(shape).values():
         for seg in _merge_split_faces(segments):
             if seg.kind == "cyl" and not seg.concave and _full(seg):
-                found.add(round(2 * seg.r_lo, 6))
-    return sorted(found)
+                middle = (seg.lo + seg.hi) / 2
+                diameter = round(2 * seg.r_lo, 6)
+                found.setdefault(diameter, Turned(diameter, d, _tidy(tuple(f + middle * c for f, c in zip(foot, d)))))
+    return [found[d] for d in sorted(found)]
+
+
+@dataclass(frozen=True)
+class Revolved:
+    """A part turned whole about a principal axis (0 X, 1 Y, 2 Z): every face a
+    surface of revolution on one line along it, or a plane square to it. Such a
+    part draws the same picture from every side of its axis. ``diameter`` is its
+    largest, at ``at`` on the axis."""
+
+    axis: int
+    diameter: float
+    at: tuple[float, float, float]
+
+
+def revolved(shape) -> Revolved | None:
+    """How a part is turned whole about a principal axis, or None if it is not."""
+    from build123d import GeomType
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Cone, GeomAbs_Cylinder, GeomAbs_Plane, GeomAbs_Sphere, GeomAbs_Torus
+
+    line = None
+    normals = []
+    for face in shape.faces():
+        surface = BRepAdaptor_Surface(face.wrapped)
+        kind = surface.GetType()
+        if kind == GeomAbs_Plane:
+            n = surface.Plane().Axis().Direction()
+            normals.append((n.X(), n.Y(), n.Z()))
+            continue
+        if kind == GeomAbs_Cylinder:
+            ax = surface.Cylinder().Axis()
+        elif kind == GeomAbs_Cone:
+            ax = surface.Cone().Axis()
+        elif kind == GeomAbs_Torus:
+            ax = surface.Torus().Axis()
+        elif kind == GeomAbs_Sphere:
+            ax = surface.Sphere().Position().Axis()
+        else:
+            return None
+        loc, direction = ax.Location(), ax.Direction()
+        d, foot = _canonical((direction.X(), direction.Y(), direction.Z()), (loc.X(), loc.Y(), loc.Z()))
+        key = _line_key(d, foot)
+        if kind == GeomAbs_Sphere:
+            continue  # a sphere turns about any line through its centre: checked below
+        if line is None:
+            line = (key, d, foot)
+        elif key != line[0]:
+            return None
+    if line is None:
+        return None
+    _key, d, foot = line
+    axis = next((k for k in range(3) if abs(abs(d[k]) - 1) < 1e-6), None)
+    if axis is None or any(abs(abs(n[axis]) - 1) > 1e-6 for n in normals):
+        return None
+    largest, at = 0.0, foot
+    for edge in shape.edges():
+        if edge.geom_type != GeomType.CIRCLE:
+            continue
+        c = edge.arc_center
+        rel = (c.X - foot[0], c.Y - foot[1], c.Z - foot[2])
+        along = sum(a * b for a, b in zip(rel, d))
+        if math.dist(rel, tuple(along * x for x in d)) > _TOUCH:
+            continue  # a torus's seam arc; a cross hole would have failed on its surface
+        if edge.radius > largest:
+            largest, at = edge.radius, _tidy((c.X, c.Y, c.Z))
+    return Revolved(axis, round(2 * largest, 6), at) if largest else None
+
+
+def turned_diameters(shape) -> list[float]:
+    """The diameters of the part's turned outside surfaces, which a drawing must
+    state as surely as it states a hole."""
+    return [t.diameter for t in turned_surfaces(shape)]
 
 
 @dataclass(frozen=True)

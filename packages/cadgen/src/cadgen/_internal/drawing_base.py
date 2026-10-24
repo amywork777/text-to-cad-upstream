@@ -121,6 +121,13 @@ def _dirs(view) -> tuple:
     return view._direction or VIEW_DIRECTIONS[view.name]
 
 
+def _view_axes(name: str) -> tuple[int, int]:
+    """The model axes a principal view shows across and up the sheet."""
+    look, up = VIEW_DIRECTIONS[name]
+    vertical = next(k for k in range(3) if up[k])
+    return next(k for k in range(3) if k != vertical and not look[k]), vertical
+
+
 def _look(view) -> tuple[float, float, float]:
     """The unit vector from the part toward the view's viewer. The isometric's
     direction is not unit length, and a dot product with it is only a cosine

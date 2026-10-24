@@ -137,6 +137,29 @@ class HoleTests(unittest.TestCase):
         self.assertEqual(holes(left), [], "half a bore, a notch in an edge, is not a hole")
 
 
+class RevolvedTests(unittest.TestCase):
+    """A part turned whole about one principal axis, and parts that are not."""
+
+    def test_a_grooved_ring_is_turned_whole_and_its_largest_diameter_found(self) -> None:
+        from build123d import Axis, Cylinder, fillet
+
+        from cadgen._internal.drawing_features import revolved
+
+        ring = Cylinder(28.5, 24) - Cylinder(20, 24)
+        ring = fillet(ring.edges().filter_by(Axis.Z, reverse=True).group_by(Axis.Z)[-1], 2)  # tori, with seams
+        found = revolved(ring)
+        self.assertIsNotNone(found)
+        self.assertEqual((found.axis, found.diameter), (2, 57.0))
+
+    def test_a_cross_hole_or_a_flat_is_not_turned_whole(self) -> None:
+        from build123d import Box, Cylinder, Pos, Rot
+
+        from cadgen._internal.drawing_features import revolved
+
+        self.assertIsNone(revolved(Cylinder(10, 40) - Rot(90, 0, 0) * Cylinder(2, 30)))
+        self.assertIsNone(revolved(Cylinder(10, 40) - Pos(9, 0, 0) * Box(4, 30, 50)))
+        self.assertIsNone(revolved(Box(10, 10, 10)))
+
 class PatternTests(unittest.TestCase):
     """Slots and bolt circles: what a callout states as one feature."""
 
