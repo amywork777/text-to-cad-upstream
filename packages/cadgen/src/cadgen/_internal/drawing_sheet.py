@@ -293,6 +293,10 @@ _LIST_ROW = 7.0
 #: entry needs, and the room left over is shared out in these proportions.
 _LIST_COLUMNS = (("ITEM", 10.0), ("QTY", 10.0), ("DESCRIPTION", 50.0), ("PART NO.", 30.0), ("MATERIAL", 30.0),
                  ("SPEC", 30.0), ("SUPPLIER", 20.0))
+#: In a set with each part's own sheet, the list says which sheet that is.
+_SHEET_COLUMN = ("SHEET", 10.0)
+#: The columns of numbers, centred in their narrow cells.
+_COUNTED = ("ITEM", "QTY", "SHEET")
 #: The revision table, top right inside the frame: its row height and columns.
 _REVISION_ROW = 6.0
 _REVISION_COLUMNS = (("REV", 14.0), ("DATE", 26.0), ("DESCRIPTION", 70.0))
@@ -316,20 +320,20 @@ def _list_height(sheet: Sheet) -> float:
     return (last - first + 2) * _LIST_ROW + (_LIST_ROW if partial else 0.0)
 
 
-def _list_widths(rows: list[tuple[str, ...]]) -> list[float] | None:
+def _list_widths(rows: list[tuple[str, ...]], columns: tuple = _LIST_COLUMNS) -> list[float] | None:
     """The parts list's column widths for its entries: each as wide as its widest
     entry needs, the room left over shared out as the columns usually take it;
     where that is more than the list's width, as the entries need at the smallest
     legible text. None when even that does not fit."""
     def need(c: int, height: float) -> float:
-        head = _text_width(_LIST_COLUMNS[c][0], _CAPTION_HEIGHT) + 2.4
+        head = _text_width(columns[c][0], _CAPTION_HEIGHT) + 2.4
         return max([head] + [_text_width(row[c], height) + 3.0 for row in rows if row[c]])
 
-    full = [need(c, 2.5) for c in range(len(_LIST_COLUMNS))]
+    full = [need(c, 2.5) for c in range(len(columns))]
     if sum(full) <= _TITLE_W:
-        spare = _TITLE_W - sum(full)
-        return [f + spare * usual / _TITLE_W for f, (_name, usual) in zip(full, _LIST_COLUMNS)]
-    least = [need(c, _MIN_TEXT_MM) for c in range(len(_LIST_COLUMNS))]
+        spare, usual = _TITLE_W - sum(full), sum(width for _name, width in columns)
+        return [f + spare * width / usual for f, (_name, width) in zip(full, columns)]
+    least = [need(c, _MIN_TEXT_MM) for c in range(len(columns))]
     if sum(least) > _TITLE_W:
         return None
     room, wants = _TITLE_W - sum(least), [f - m for f, m in zip(full, least)]
@@ -339,22 +343,26 @@ def _list_widths(rows: list[tuple[str, ...]]) -> list[float] | None:
 def _draw_parts_list(msp, sheet: Sheet, text, continued: dict) -> None:
     """The parts list, standing on the title block: header row at the bottom,
     item numbers rising from it. ``continued`` says on which sheet the rest of a
-    split list is, ``{"from": n, "to": m}``, either or both."""
+    split list is, ``{"from": n, "to": m}``, either or both, and on which each
+    item is detailed, ``{"sheets": {item: sheet}}``: then a SHEET column says so."""
     from ezdxf.enums import TextEntityAlignment as A
 
     parts, first, last = sheet._parts
     fields = {"DESCRIPTION": "description", "PART NO.": "part_number", "MATERIAL": "material", "SPEC": "spec",
               "SUPPLIER": "supplier"}
     items = parts.items[first - 1:last]
-    rows = [tuple(name for name, _w in _LIST_COLUMNS)] + [
-        (str(item.number), str(item.quantity), *(getattr(item, fields[name]) for name, _w in _LIST_COLUMNS[2:]))
+    detailed = continued.get("sheets", {})
+    columns = _LIST_COLUMNS + ((_SHEET_COLUMN,) if detailed else ())
+    rows = [tuple(name for name, _w in columns)] + [
+        (str(item.number), str(item.quantity), *(getattr(item, fields[name]) for name, _w in _LIST_COLUMNS[2:]),
+         *((str(detailed.get(item.number, "")),) if detailed else ()))
         for item in items]
-    widths = _list_widths(rows[1:])
+    widths = _list_widths(rows[1:], columns)
     if widths is None:
         # Even at the smallest legible text the entries need more than the list's
         # width: name the longest, as cutting it would state something else.
         entry = max(((item, name, value) for item, row in zip(items, rows[1:])
-                     for (name, _w), value in zip(_LIST_COLUMNS, row) if name in fields and value),
+                     for (name, _w), value in zip(columns, row) if name in fields and value),
                     key=lambda t: _text_width(t[2], _MIN_TEXT_MM))
         item, name, value = entry
         raise ValueError(
@@ -376,7 +384,7 @@ def _draw_parts_list(msp, sheet: Sheet, text, continued: dict) -> None:
             if not row[c]:
                 continue
             mid = y0 + (r + 0.5) * _LIST_ROW
-            if c < 2:  # the numbers, centred in their narrow columns
+            if columns[c][0] in _COUNTED:
                 text(row[c], x + width / 2, mid, _CAPTION_HEIGHT if r == 0 else 2.5, A.MIDDLE_CENTER, fit=width - 2)
             else:
                 text(row[c], x + 1.5, mid, _CAPTION_HEIGHT if r == 0 else 2.5, A.MIDDLE_LEFT, fit=width - 3)

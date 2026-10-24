@@ -906,15 +906,26 @@ def _arrange_assembly(sheet: Sheet, shape, second: str) -> tuple[float, list]:
 
 
 def _continuations(sheets: Sequence[Sheet]) -> dict[int, dict]:
-    """For each sheet carrying part of a split parts list, where the list
-    continues from and to: ``{sheet number: {"from": n, "to": m}}``."""
+    """For each sheet carrying a parts list, what the rest of the set says about
+    it: where a split list continues from and to, and on which sheet each item it
+    lists is detailed: ``{sheet number: {"from": n, "to": m, "sheets": {item
+    number: sheet number}}}``, each key only where it applies."""
     runs: dict[int, list] = {}
+    lists: dict[int, PartsList] = {}
     for index, sheet in enumerate(sheets, start=1):
         if sheet._parts is not None:
             parts, first, last = sheet._parts
             runs.setdefault(id(parts), []).append((first, last, index))
+            lists[id(parts)] = parts
+    detailed: dict[int, dict[int, int]] = {}
+    for index, sheet in enumerate(sheets, start=1):
+        if sheet._item is None:
+            continue
+        for key, parts in lists.items():
+            if any(item is sheet._item.item for item in parts.items):
+                detailed.setdefault(key, {})[sheet._item.item.number] = index
     out: dict[int, dict] = {}
-    for spans in runs.values():
+    for key, spans in runs.items():
         spans.sort()
         for (_f0, l0, before), (f1, _l1, after) in zip(spans, spans[1:]):
             if f1 <= l0:
@@ -922,4 +933,7 @@ def _continuations(sheets: Sequence[Sheet]) -> dict[int, dict]:
                                  f"sheet {after}; each item belongs to one run of the list")
             out.setdefault(before, {})["to"] = after
             out.setdefault(after, {})["from"] = before
+        if key in detailed:
+            for _first, _last, index in spans:
+                out.setdefault(index, {})["sheets"] = detailed[key]
     return out

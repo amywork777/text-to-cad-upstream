@@ -2339,6 +2339,31 @@ class AssemblyDrawingTests(unittest.TestCase):
         base = assembly_sheets(parts, title="FIXTURE").part("base")
         self.assertEqual(base._material_label(), "AL 6061-T6 PER AMS 4027", "the part's sheet joins its spec")
 
+    def test_the_parts_list_names_each_items_detail_sheet(self) -> None:
+        from cadgen._internal.drawing_assembly import _continuations
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, assembly_sheets, parts_list
+
+        made = assembly_sheets(parts_list(_assembly()), title="FIXTURE")
+        sheets = list(made)
+        doc = _render_sheet(sheets[0], index=1, count=len(sheets), label="ga",
+                            continued=_continuations(sheets).get(1))
+        texts = [(e.dxf.insert.x, round(e.dxf.insert.y, 2), e.dxf.text)
+                 for e in doc.modelspace().query("TEXT[layer=='TITLE']")]
+        head = next(y for _x, y, t in texts if t == "QTY")
+        column = {t: x for x, y, t in texts if y == head}
+        self.assertIn("SHEET", column, "the list's header names the column")
+        numbers = {y: int(t) for x, y, t in texts if abs(x - column["ITEM"]) < 0.01 and y != head}
+        named = {numbers[y]: t for x, y, t in texts if abs(x - column["SHEET"]) < 0.01 and y in numbers}
+        self.assertEqual(named, {item.number: str(sheets.index(made.part(item.number)) + 1)
+                                 for item in made.parts if item.shape is not None})
+        # A list with no detail sheets in its set has nothing to point at.
+        alone = Sheet("A3")
+        alone.parts_list(made.parts)
+        plain = [e.dxf.text for e in _render_sheet(alone, index=1, count=1, label="list").modelspace()
+                 .query("TEXT[layer=='TITLE']")]
+        self.assertEqual(plain.count("SHEET"), 1, "the title block's caption only")
+
     def test_an_item_the_model_lacks_is_listed_as_required(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _unstated
