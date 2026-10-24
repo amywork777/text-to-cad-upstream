@@ -16,8 +16,8 @@ held, written and printed on a miss in CI as `test_render.py` holds its own), an
 left out (`pmiLeftOut`); asking for it where it cannot be drawn (a document with none, the parts
 exploded, posed or in Preview) is refused by name. A view's still (`--view`) is drawn down its
 camera, cut by its section, its PMI alone at its placements (`render_golden/pmi-view.png`); an
-unknown view, a view with a camera of its own or a clip, and a view whose section its placement
-turns off the world's axes are refused by name. Drawing needs an OpenGL context
+unknown view, a view with a camera of its own or a clip, a view with a section on an exploded
+picture, and a view whose section its placement turns off the world's axes are refused by name. Drawing needs an OpenGL context
 (`tests/python/support/opengl.py`): skipped, saying why, where none can be made."""
 
 from __future__ import annotations
@@ -538,6 +538,37 @@ class PmiAskedTest(unittest.TestCase):
         with self.assertRaisesRegex(SnapshotRefused, "view A-A's section is not on the axes of plate's placement"):
             held.draw(Still(view="A-A"))
         self.assertFalse(held.scenes, "nothing was drawn")
+
+    def test_a_sectioned_view_is_refused_on_an_exploded_picture_whatever_its_pmi(self) -> None:
+        """A section is placed on the parts as made, and Explode then moves them: it would cut them in
+        the wrong place (law 17), so it is refused by name, its PMI drawn or not; a view of no section
+        is its camera alone there."""
+        from cadgen.engine.render.service import Held
+        from cadgen.engine.snapshot import view_of
+
+        structure = json.loads((FIXTURES / "v4" / "structure.json").read_text(encoding="utf-8"))
+        buffers = {p["key"]: (FIXTURES / "v4" / f"{p['key']}.xbm").read_bytes() for p in structure["prototypes"]}
+        # The plate placed twice, so Explode has parts to move apart.
+        placed = structure["instances"][0]
+        twice = {**structure, "version": "twice",
+                 "instances": [placed, {**placed, "path": "plate/plate.2", "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0,
+                                                                                      150, 0, 0, 1]}],
+                 "tree": {**structure["tree"], "children": [*structure["tree"]["children"],
+                                                            {"name": "plate.2", "prototype": 0, "instance": 1}]}}
+        held = Held(FIXTURES / "v4" / "plate.xbf")
+        self.addCleanup(held.close)
+        held.hold(twice, buffers)
+        exploded = {"enabled": True, "amount": 0.5}
+        for display, said in (({"pmi": False, "exploded": exploded},
+                               "view A-A is cut by its section on the parts as made; display.exploded moves them "
+                               "apart. Remove one or the other."),
+                              ({"exploded": exploded}, "--view A-A draws its PMI on the parts as made; "
+                                                       "display.exploded moves or restages them")):
+            with self.assertRaisesRegex(SnapshotRefused, said):
+                held.draw(Still(view="A-A", display=display))
+        self.assertFalse(held.scenes, "nothing was drawn")
+        found = view_of(Still(view="iso", display={"pmi": False, "exploded": exploded}), twice, "plate.xbf", frozenset())
+        self.assertEqual((found["view"]["name"], found["at"]["section"]), ("iso", None))
 
 
 class PmiStillTest(unittest.TestCase):

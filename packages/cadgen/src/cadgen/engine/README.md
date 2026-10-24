@@ -593,10 +593,11 @@ own placements (what it does not show is no part of it, and not left out); `--js
 one with `--camera` (a view has its own) or with `display.clip` beside its section, one the viewer
 cannot apply, one whose part the picture hides, one whose section that placement turns off every
 world axis (a still cuts only square to a world axis, never along another, so never cuts wrong),
-and a view of a document with PMI exploded, posed or in Preview (with `pmi=off` it draws its camera
-and section alone). `--annotation FILE` draws the viewer's annotation over the
-model -- each mark on the part it was drawn on, wherever the picture places that part -- from an
-annotation file or the Quick Edit packet that carries one (the `.snapshot.json` the viewer writes),
+a view of a document with PMI exploded, posed or in Preview (with `pmi=off` it draws its camera and
+section alone), and a view with a section on an exploded picture, whatever `pmi` is (the section is
+placed on the parts as made, which Explode moves). `--annotation FILE` draws the viewer's
+annotation over the model -- each mark on the part it was drawn on, wherever the picture places
+that part -- from an annotation file or the Quick Edit packet that carries one (the `.snapshot.json` the viewer writes),
 and `--measurements FILE` Measure's dimensions (`[{start, end, label, color}]`). A mark names the
 view it was drawn in by label alone (`"view": "view 1"`); the view itself -- its camera
 (`position`, `target`, `up`, `orthographicHalfHeight`, the snapshot's own camera object), size and

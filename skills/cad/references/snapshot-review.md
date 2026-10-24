@@ -94,7 +94,10 @@ A view has its own camera and section, so `--view` with `--camera`, or with a
 `display.clip` beside its section, is refused. So is an unknown view (the message
 lists the document's views), a view whose part the picture hides, a view of an
 exploded, posed or Preview picture (`pmi=off` draws its camera and section alone),
-and a view whose section its part's placement turns off the world's axes: a picture
+a view with a section on an exploded picture, `pmi=off` or not (the section is
+placed on the parts as made, which Explode moves apart: a view of no section draws
+its camera alone there), and a view whose section its part's placement turns off
+the world's axes: a picture
 cuts only square to a world axis, never along another, so it is refused rather than
 cut wrong. In a `--job`, a job's `display.view` draws that job as the view (its own
 camera beside it is refused), and `--view` draws every job as the view.

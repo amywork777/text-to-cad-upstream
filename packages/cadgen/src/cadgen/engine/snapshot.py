@@ -36,8 +36,8 @@ projection -- is a job of the packet (``authored``). Nothing is written but OUT.
 ``--view NAME`` (``PART/NAME`` where two parts have one; a job's ``display.view``) draws a part's
 named view (``pmi.view``) as the viewer applies it: down its camera from its part's first placement
 shown, cut by its section (the Clip's), only the PMI it shows, at its own placements (``view_of``).
-An unknown view, one with ``--camera`` or a clip beside it, and one whose section its placement
-turns off the world's axes are refused by name.
+An unknown view, one with ``--camera`` or a clip beside it, one with a section on an exploded
+picture, and one whose section its placement turns off the world's axes are refused by name.
 
 ``--pose`` draws a document's mechanism at a configuration (its name) or at joint and coupling
 values (a JSON object, the rest as built): each link placed by its pairs from the ground; a robot's
@@ -621,8 +621,10 @@ def view_of(still: Still, structure: dict[str, Any], name: str, hidden: frozense
     the picture shows its part -- ``{"view", "at"}`` -- or None for none. Refused by name before
     anything renders: a name no view has (``NAME``, or ``PART/NAME``; one two parts have is asked
     for by its part), one the viewer cannot apply, one whose part the picture does not show, one
-    with a clip beside its own section, and one whose section its placement turns off the world's
-    axes: a still cuts only square to a world axis and never along another (law 17)."""
+    with a clip beside its own section, one with a section on an exploded picture (placed on the
+    parts as made, which Explode then moves, its PMI drawn or not), and one whose section its
+    placement turns off the world's axes: a still cuts only square to a world axis and never along
+    another (law 17)."""
     if still.view is None:
         return None
     from cadgen.engine.render import pmi
@@ -655,6 +657,9 @@ def view_of(still: Still, structure: dict[str, Any], name: str, hidden: frozense
     clip = still.display.get("clip")
     if view["section"] and clip and clip.get("enabled") is not False:
         raise SnapshotRefused(f"view {view['name']} is cut by its own section; remove display.clip")
+    if view["section"] and exploded_amount(still.display) > 0:
+        raise SnapshotRefused(f"view {view['name']} is cut by its section on the parts as made; display.exploded "
+                              "moves them apart. Remove one or the other.")
     if at["section_off"]:
         raise SnapshotRefused(f"view {view['name']}'s section is not on the axes of {part_name(view)}'s placement "
                               f"the picture shows: its {view['section']['axis']} axis is turned off the world's, and a "
