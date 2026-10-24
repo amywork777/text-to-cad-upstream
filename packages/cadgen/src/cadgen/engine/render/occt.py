@@ -48,14 +48,10 @@ import numpy as np
 from cadgen.engine.mesh import Mesh
 from cadgen.engine.render.context import Canvas
 from cadgen.engine.render.look import LOOK
+from cadgen.engine.render.presets import PRESETS
 from cadgen.engine.render.shapes import LINES, part_shapes
 
 MODES = ("solid", "shaded", "parts", "xray", "hidden-line", "wireframe")
-PRESETS = {
-    "front": ((0, -1, 0), (0, 0, 1)), "back": ((0, 1, 0), (0, 0, 1)), "right": ((1, 0, 0), (0, 0, 1)),
-    "left": ((-1, 0, 0), (0, 0, 1)), "top": ((0, 0, 1), (0, 1, 0)), "bottom": ((0, 0, -1), (0, 1, 0)),
-    "iso": ((1, -1, 0.8), (0, 0, 1)),
-}
 # The regular modes' numbers are the look's (``look.py``), which the viewer draws by too.
 BACKGROUND = LOOK.backdrop
 EDGE = dict(LOOK.edge_colours)

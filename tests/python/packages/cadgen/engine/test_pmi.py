@@ -7,7 +7,9 @@ profile on several faces of any kind, written as one AP242 surface profile toler
 profile on every face nothing else controls, computed each build and written on exactly those
 faces, or as nothing where it covers none; general and flag notes, numbered after the general
 profile, and a project's notes library, kept in the xbf as XCAF notes (the same bytes from the same
-code) and never in a STEP, which neither refuses nor checks them; a warm rebuild,
+code) and never in a STEP, which neither refuses nor checks them; named views of a part (their
+camera, a preset's the snapshot's own, section, shown ids and placements) kept in the xbf as XCAF
+views and served as ``pmi_views``, never in a STEP; a warm rebuild,
 an edit of the geometry and of a tolerance, a ref the model no longer satisfies (missing,
 ambiguous, invalid) kept in the document and refused by a STEP, and one that names another kind
 of face than on the last build warned of, the document the code's alone; what is not supported
@@ -19,6 +21,7 @@ deliberate change to what a build writes makes the fixture again:
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -998,6 +1001,237 @@ def pmi_plate():
         export.translate(self.xbf, "step", self.folder / "again.step", log=said.append)
         self.assertEqual([line for line in said if "pmi" in line], [])
         self.assertEqual(pmi.dropped(export.Source.read(self.xbf).view(), "step"), [])
+
+
+# A plate (0..100, 0..60, 0..10) with a hole through it at (50, 30) and named views (the values
+# ILLUSTRATIVE): section A-A through the hole, seen from the front, showing the hole's diameter and
+# position, the diameter's callout placed for that view; the iso view, which shows everything; and
+# ``{more}``.
+VIEWS = '''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10, align=bd.Align.MIN) - bd.Pos(50, 30, 0) * bd.Cylinder(
+        5, 10, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
+    body.label = "plate"
+    bottom = body.faces().sort_by(bd.Axis.Z)[0]
+    hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+    return pmi.annotate(
+        body,
+        pmi.datum("A", bottom),
+        pmi.diameter("hole-dia", hole, tolerance=pmi.plus_minus(0.1, 0)),
+        pmi.position("hole-pos", hole, 0.1, datums=["A"]),
+        pmi.note("deburr", "Break all sharp edges 0.2 max"),
+        pmi.view("A-A", camera="front", shows=["hole-dia", "hole-pos"], section=pmi.section("y", 30),
+                 place={"hole-dia": pmi.place((5, 30, 0), (10, 0, 10))}, label="Section A-A"),
+        pmi.view("iso", camera="iso"),
+        {more}
+    )
+'''
+# A part given views alone.
+VIEWS_ALONE = '''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10)
+    body.label = "plate"
+    return pmi.annotate(body, pmi.view("iso", camera="iso"), pmi.view("top", camera="top"))
+'''
+
+
+def views(more: str = "") -> str:
+    return VIEWS.replace("{more}", more)
+
+
+class ViewTest(_Folder):
+    def served(self) -> dict:
+        """The structure the last build served."""
+        return engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure
+
+    def test_a_view_holds_its_camera_section_shows_and_placements(self) -> None:
+        report = self.build(views('pmi.view("down", camera=pmi.camera((0, -1, 1), (0, 0, 1)), shows=["deburr"]),'))
+        # Views are no annotations: the report counts the four, and ``pmi`` lists none.
+        self.assertEqual(report["pmi"], {"annotations": 4, "problems": []})
+        self.assertEqual([entry["kind"] for entry in pmi.read(self.xbf)], ["datum", "dimension", "geometric_tolerance",
+                                                                           "note"])
+        served = document.Loaded(self.xbf).structure()["pmi_views"]
+        self.assertEqual(served, self.served()["pmi_views"])
+        section, iso, down = served
+        self.assertEqual(section, {
+            "part": 0, "name": "A-A", "label": "Section A-A",
+            "camera": {"preset": "front", "direction": [0.0, -1.0, 0.0], "up": [0.0, 0.0, 1.0],
+                       "projection": "orthographic"},
+            "section": {"axis": "y", "at": 30.0, "invert": False}, "shows": ["hole-dia", "hole-pos"],
+            "place": {"hole-dia": {"anchor": [5.0, 30.0, 0.0], "offset": [10.0, 0.0, 10.0]}}})
+        # The iso view shows every annotation and note (``shows`` null), with no section.
+        self.assertEqual((iso["name"], iso["label"], iso["camera"]["preset"], iso["section"], iso["shows"], iso["place"]),
+                         ("iso", None, "iso", None, None, {}))
+        # A camera of the code's own: unit vectors, the direction from the part toward the eye.
+        self.assertEqual(pmi.camera((0, -1, 1), (0, 0, 2)), {"direction": [0.0, -1 / math.sqrt(2), 1 / math.sqrt(2)],
+                                                             "up": [0.0, 0.0, 1.0]})
+        self.assertEqual(down["camera"], {"preset": None, **pmi.camera((0, -1, 1), (0, 0, 1)),
+                                          "projection": "orthographic"})
+        self.assertEqual(pmi.section("z", 4, invert=True), {"axis": "z", "at": 4.0, "invert": True})
+
+    def test_a_preset_camera_is_the_snapshot_presets_own(self) -> None:
+        from cadgen.engine import snapshot
+        from cadgen.engine.render.occt import direction_of
+
+        names = sorted(snapshot.CAMERA_PRESETS)
+        self.build(views("".join(f'pmi.view("{name} preset", camera="{name}"),' for name in names)))
+        served = {view["name"]: view["camera"] for view in self.served()["pmi_views"]}
+        top = served["top preset"]
+        self.assertEqual((top["preset"], top["direction"], top["up"]), ("top", [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]))
+        for name in names:
+            direction, up = direction_of(snapshot.parse_camera(name))
+            camera = served[f"{name} preset"]
+            self.assertEqual(camera["preset"], name)
+            for held, drawn in zip(camera["direction"] + camera["up"], list(direction) + list(up)):
+                self.assertAlmostEqual(held, float(drawn), places=15, msg=name)
+        with self.assertRaisesRegex(pmi.PMIError, "view 'A-A': a camera is a preset "
+                                                  rf"\({', '.join(names)}\) or pmi.camera\(direction, up\)"):
+            pmi.view("A-A", camera="30:20")
+
+    def test_views_survive_the_xbf_as_xcaf_views_and_make_the_same_bytes(self) -> None:
+        from OCP.gp import gp_Pln
+        from OCP.TCollection import TCollection_ExtendedString
+        from OCP.TDF import TDF_Label, TDF_LabelSequence, TDF_Tool
+        from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_View
+        from OCP.XCAFView import XCAFView_ProjectionType_Parallel
+
+        from cadgen.engine.document import _entry
+
+        self.build(views())
+        loaded = document.Loaded(self.xbf)
+        tool = XCAFDoc_DocumentTool.ViewTool_s(loaded.doc.Main())
+        labels = TDF_LabelSequence()
+        tool.GetViewLabels(labels)
+        found = {XCAFDoc_View.Set_s(labels.Value(at)).GetObject().Name().ToCString(): labels.Value(at)
+                 for at in range(1, labels.Length() + 1)}
+        self.assertEqual(list(found), ["A-A", "iso"])
+        entries = {(record["extra"] or {}).get("id"): record["entry"]
+                   for record in pmi.records_of_document(loaded.doc, loaded.prototypes, loaded.name)}
+
+        def linked(method: object, label: object) -> list[str]:
+            sequence = TDF_LabelSequence()
+            method(label, sequence)  # type: ignore[operator]
+            return [_entry(sequence.Value(at)) for at in range(1, sequence.Length() + 1)]
+
+        # Section A-A: parallel, looking along +Y (XCAF's view direction is the one looked along,
+        # the served direction's opposite), up +Z, its eye the part's box centre (50, 30, 5) moved
+        # toward the eye by the box's diagonal; on its part, with the GD&T it shows.
+        held = XCAFDoc_View.Set_s(found["A-A"]).GetObject()
+        self.assertEqual(held.Type(), XCAFView_ProjectionType_Parallel)
+        look, up, eye = held.ViewDirection(), held.UpDirection(), held.ProjectionPoint()
+        self.assertEqual([(look.X(), look.Y(), look.Z()), (up.X(), up.Y(), up.Z())], [(0.0, 1.0, 0.0), (0.0, 0.0, 1.0)])
+        diagonal = math.sqrt(100 ** 2 + 60 ** 2 + 10 ** 2)
+        for held_at, wanted in zip((eye.X(), eye.Y(), eye.Z()), (50.0, 30.0 - diagonal, 5.0)):
+            self.assertAlmostEqual(held_at, wanted, places=6)
+        self.assertEqual(linked(tool.GetRefShapeLabel, found["A-A"]), [loaded.prototypes[0].entry])
+        self.assertEqual(linked(tool.GetRefGDTLabel, found["A-A"]), [entries["hole-dia"], entries["hole-pos"]])
+        # Its section, an XCAF clipping plane named for it: at y = 30, its normal into the half kept
+        # (the Clip's lower side, -Y), capped as the Clip caps.
+        planes = XCAFDoc_DocumentTool.ClippingPlaneTool_s(loaded.doc.Main())
+        listed = TDF_LabelSequence()
+        planes.GetClippingPlanes(listed)
+        self.assertEqual(linked(tool.GetRefClippingPlaneLabel, found["A-A"]),
+                         [_entry(listed.Value(at)) for at in range(1, listed.Length() + 1)])
+        plane_label = listed.Value(1)
+        plane, name = gp_Pln(), TCollection_ExtendedString()
+        self.assertTrue(planes.GetClippingPlane(plane_label, plane, name, False))
+        point, normal = plane.Location(), plane.Axis().Direction()
+        self.assertEqual((name.ToExtString(), point.Y(), (normal.X(), normal.Y(), normal.Z()), planes.GetCapping(plane_label)),
+                         ("A-A", 30.0, (0.0, -1.0, 0.0), True))
+        # The iso view shows every annotation, its GD&T all linked, and cuts nothing.
+        self.assertEqual(linked(tool.GetRefGDTLabel, found["iso"]), [entries["A"], entries["hole-dia"], entries["hole-pos"]])
+        self.assertEqual(linked(tool.GetRefClippingPlaneLabel, found["iso"]), [])
+        # The notes a view shows are its cadgen attribute's: OCCT's SetView files a view's notes under
+        # its clipping-plane link, where a reader would take them for planes.
+        deburr = TDF_Label()
+        TDF_Tool.Label_s(loaded.doc.GetData(), entries["deburr"], deburr)
+        self.assertEqual(linked(tool.GetViewLabelsForNote, deburr), [])
+        # The same code makes the same bytes, built warm or fresh.
+        first = self.xbf.read_bytes()
+        self.xbf.unlink()
+        self.build(views())
+        self.assertEqual(self.xbf.read_bytes(), first)
+        self.xbf.unlink()
+        engine_build._WRITTEN.clear()
+        self.build(views())
+        self.assertEqual(self.xbf.read_bytes(), first)
+
+    def test_an_unknown_id_a_duplicate_name_and_a_place_of_an_unshown_id_are_refused(self) -> None:
+        import build123d as bd
+
+        box = bd.Box(10, 10, 10)
+        top = box.faces().sort_by(bd.Axis.Z)[-1]
+        flat = pmi.flatness("top-flat", top, 0.05)
+        with self.assertRaisesRegex(pmi.PMIError, "view 'A-A' shows 'hole-dia', which is no annotation of this "
+                                                  r"pmi.annotate\(\) call; its ids are 'top-flat'"):
+            pmi.annotate(box, flat, pmi.view("A-A", camera="front", shows=["hole-dia"]))
+        with self.assertRaisesRegex(pmi.PMIError, "two views of one part are named 'A-A': a view's name is unique"):
+            pmi.annotate(box, flat, pmi.view("A-A", camera="front"), pmi.view("A-A", camera="back"))
+        lap = pmi.note("lap", "Lap this face", faces=[top])
+        with self.assertRaisesRegex(pmi.PMIError, "view 'A-A' places 'top-flat', which it does not show"):
+            pmi.annotate(box, flat, lap, pmi.view("A-A", camera="front", shows=["lap"],
+                                                  place={"top-flat": pmi.place((0, 0, 5))}))
+        with self.assertRaisesRegex(pmi.PMIError, "view 'iso' places 'gone', which is no annotation of this"):
+            pmi.annotate(box, flat, pmi.view("iso", camera="iso", place={"gone": pmi.place((0, 0, 5))}))
+        # A view is no annotation: a note names none.
+        with self.assertRaisesRegex(pmi.PMIError, "note 'see' names 'iso', which is no annotation"):
+            pmi.annotate(box, flat, pmi.view("iso", camera="iso"), pmi.note("see", "See view iso", annotations=["iso"]))
+        # Each value is refused by name where it is made.
+        for given, said in ((lambda: pmi.view("", camera="front"), "a view's name is a non-empty string"),
+                            (lambda: pmi.view("A-A", camera="front", shows=["lap", "lap"]),
+                             "view 'A-A' shows 'lap' twice"),
+                            (lambda: pmi.view("A-A", camera="front", place={"lap": (0, 0, 5)}),
+                             r"view 'A-A': a placement is pmi.place\(anchor, offset\)"),
+                            (lambda: pmi.view("A-A", camera="front", section={"axis": "x"}),
+                             r"view 'A-A': a section is pmi.section\(axis, at\)"),
+                            (lambda: pmi.view("A-A", camera={"direction": [0, 0, 2], "up": [0, 1, 0]}),
+                             r"view 'A-A': a camera is a preset .* or pmi.camera\(direction, up\)"),
+                            (lambda: pmi.camera((0, 0, 1), (0, 0, -2)), "a camera's up is not along its direction"),
+                            (lambda: pmi.camera((0, 0, 0), (0, 0, 1)), "a camera's direction is longer than 0"),
+                            (lambda: pmi.section("w", 3), "a section's axis is x, y or z, not 'w'"),
+                            (lambda: pmi.section("x", float("nan")), "a section's place is a finite number"),
+                            (lambda: pmi.section("x", 3, invert=1), "a section's invert is True or False")):
+            with self.assertRaisesRegex(pmi.PMIError, said):
+                given()
+        # Views alone are a part's too.
+        self.assertIs(pmi.annotate(box, pmi.view("iso", camera="iso")), box)
+
+    def test_a_step_of_a_document_with_views_is_written_and_checked_without_them(self) -> None:
+        """Review Focus 5: a STEP carries no view (OCCT's writer writes none), so a view never stops
+        one, and the check matches the GD&T alone."""
+        from cadgen.engine.export import viewer
+
+        self.build(views())
+        result = ap242.verify(pmi.read(self.xbf), self.step)
+        self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
+        text = self.step.read_text(encoding="utf-8")
+        self.assertNotIn("CAMERA_MODEL", text)
+        self.assertNotIn("Section A-A", text)
+        self.assertEqual(document.Loaded(self.step).structure()["pmi_views"], [])
+        said: list[str] = []
+        export.translate(self.xbf, "step", self.folder / "again.step", log=said.append)
+        self.assertEqual([line for line in said if "pmi" in line], [])
+        self.assertEqual(pmi.dropped(export.Source.read(self.xbf).view(), "step"), [])
+        # A part given views alone: its STEP is written, carrying no PMI, and the viewer offers it.
+        report = self.build(VIEWS_ALONE)
+        self.assertEqual(report["pmi"], {"annotations": 0, "problems": []})
+        structure = document.Loaded(self.xbf).structure()
+        self.assertEqual((structure["pmi"], [view["name"] for view in structure["pmi_views"]]), ([], ["iso", "top"]))
+        self.assertEqual(pmi.read(self.step), [])
+        [step_row] = [row for row in viewer.options(export.Source.read(self.xbf)) if row["format"] == "step"]
+        self.assertEqual((step_row["reason"], step_row["pmi"]), (None, False))
 
 
 # A plate whose one variable ``cut`` is a round hole and then a square pocket: the name the hole's face

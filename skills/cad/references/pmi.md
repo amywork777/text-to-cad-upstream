@@ -3,8 +3,9 @@
 Read this file when the user asks for datums, toleranced dimensions, basic dimensions,
 flatness, position, a surface profile or a general profile ("unless otherwise noted, all
 surfaces"; GD&T, PMI, model-based definition), for notes on a part (general notes, a flag
-note on faces, a project's standard notes), or for a STEP a supplier or an inspection
-tool can read requirements from.
+note on faces, a project's standard notes), for named views of a part (a front, a
+section, a detail, each showing its own requirements), or for a STEP a supplier or an
+inspection tool can read requirements from.
 
 A part's requirements are written in its model, on the faces they control, and the
 document keeps them:
@@ -18,6 +19,8 @@ document keeps them:
   `pmi.general_profile` for every face nothing else controls.
 - **Notes**: `pmi.note`, a general note or a flag note on faces and annotations,
   numbered per part.
+- **Views**: `pmi.view`, a named view of the part (a camera, a section, the
+  requirements it shows); the iso view shows them all.
 
 The `.xbf` keeps them as the kernel's own GD&T, linked to their faces, and a STEP
 export writes them as AP242 semantic PMI: requirements a program reads off the faces,
@@ -138,6 +141,39 @@ return pmi.annotate(
   The viewer and `cadgen snapshot` do not draw notes yet: each is listed among what
   they leave out.
 
+## Views
+
+A part's named views walk a reader through its requirements one view at a time:
+
+```python
+return pmi.annotate(
+    body,
+    # ... the requirements and notes, as above ...
+    pmi.view("A-A", camera="front", shows=["hole-diameter", "hole-position"],
+             section=pmi.section("y", 0),    # through the hole's axis
+             place={"hole-diameter": pmi.place((5, 0, 5), (10, 0, 10))}),
+    pmi.view("iso", camera="iso"),    # shows every annotation and note
+)
+```
+
+- **A camera** is a preset's name, the same as `cadgen snapshot --camera`'s: `iso`,
+  `front`, `back`, `left`, `right`, `top`, `bottom`. Or your own,
+  `pmi.camera(direction, up)`: `direction` points from the part toward the eye, as a
+  preset's does (`front` is `(0, -1, 0)`). Every view is orthographic.
+- **A section** is the viewer's Clip: `pmi.section(axis, at, invert=False)` cuts
+  across `"x"`, `"y"` or `"z"` at `at` millimetres and keeps the lower side
+  (`invert=True` the upper).
+- **What it shows**: `shows=` names the ids of the same `annotate` call, annotations
+  and notes. Leave it out to show everything, as an iso view does.
+- **Placements per view**: `place={id: pmi.place(anchor, offset)}` draws a shown
+  callout there in this view, and as its own `presentation=` says elsewhere.
+- Everything is in the part's frame. A view's name is unique among the part's
+  views; an id the call does not have, or a placement of one the view does not
+  show, is refused.
+- **Views are the `.xbf`'s**, kept as the kernel's own views: no STEP carries them,
+  and no STEP is refused for one. A view is no annotation: the build report does not
+  count it. The viewer and `cadgen snapshot` do not offer views yet.
+
 ## After an edit
 
 Every build resolves each ref again. One that still names its face follows it, its
@@ -173,7 +209,9 @@ Each entry has `id`, `kind` (`datum`, `dimension`, `geometric_tolerance`, `note`
 canonical ref and status), and one of `datum`, `dimension`, `geometric_tolerance` or
 `note` holding its values. A note's is `{"number", "text", "general", "annotations"}`,
 its `refs` its faces. The document's structure lists each part's library as
-`pmi_library` (`{"part", "name", "text"}`). A general profile says `"general": true`, and its `refs` are the faces it covers
+`pmi_library` (`{"part", "name", "text"}`), and its views as `pmi_views`
+(`{"part", "name", "label", "camera", "section", "shows", "place"}`, the camera's
+`direction` and `up` unit vectors and its `preset` the name or null). A general profile says `"general": true`, and its `refs` are the faces it covers
 on this build, each with `written` null; `pmi.otherwise_controlled(entries)` gives the
 faces the rest control. PMI read from another system's STEP that this does not model whole (another
 characteristic, a fit, modifiers, limits beside either, a link to an edge or a point)
@@ -198,8 +236,9 @@ the kernel, and matches every annotation to the file: values, units, datum order
 zone, faces and a basic dimension's mark. The export's status says how many matched,
 with the file's SHA-256. It checks the file, not a supplier's importer.
 
-A STEP carries no annotation ids, no drawn callouts and no notes: notes and the library
-stay in the `.xbf`, and the check neither expects nor counts them. A general profile is written as
+A STEP carries no annotation ids, no drawn callouts, no notes and no views: notes,
+views and the library stay in the `.xbf`, and the check neither expects nor counts
+them. A general profile is written as
 a surface profile on exactly the faces it covers, so a CAM or inspection program reads
 the faces themselves; the file does not say "general".
 

@@ -64,6 +64,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from cadgen.engine.atomic_replace import replace_atomic
+from cadgen.engine.render.presets import PRESETS
 
 __all__ = ["SnapshotRefused", "Still", "add_parser", "authored", "build_parser", "draw", "draw_pictures", "job_input",
            "job_pictures", "main", "options", "parse_annotation", "parse_camera", "parse_display", "parse_measurements",
@@ -78,7 +79,8 @@ APPEARANCES = ("light", "dark")
 EXPLODED_KEYS = frozenset({"enabled", "amount"})
 # Explode's amount when a request names none: the viewer's own default.
 EXPLODED_AMOUNT = 0.5
-CAMERA_PRESETS = frozenset({"front", "back", "right", "left", "top", "bottom", "iso"})
+# The camera presets' names: the stills' own table (``render/presets.py``), which a PMI view names too.
+CAMERA_PRESETS = frozenset(PRESETS)
 CAMERA_KEYS = frozenset({"preset", "name", "position", "target", "up", "direction", "zoom", "orthographicHalfHeight"})
 # ``--camera authored``: the view the annotation's ink was drawn in, exactly (``authored``).
 AUTHORED = "authored"

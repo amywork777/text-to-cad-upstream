@@ -261,7 +261,7 @@ is explicitly restarted. Session state is memory only and is recreated after res
 | `previous.py` | the model's build closure on its xbf's main label (`manifest`), the release from the version beside the code, and the closure made again before the body runs (`again`) |
 | `document.py` | result to XCAF (prototypes, instances, names, colours, materials, element names; a mesh face refused, `mesh_faces`), a warm build's patch of the document it kept, atomic BinXCAF save, read-back of an xbf or a foreign STEP |
 | `reader.py` | what a model imports: an XCAF document described as data and assembled into a build123d tree (`read_step`, `read_xbf`); the reader process a build's STEP files are parsed in; a mesh file as data (`read_mesh`, `Mesh`); a read of a file the build writes refused (`refuse_written`) |
-| `pmi.py` | semantic PMI: datums, dimensions and geometric tolerances on a part's faces (`pmi.annotate`), resolved each build (ok, missing, ambiguous, invalid), written as XCAF's GD&T objects, read back as the structure's `pmi`; another system's GD&T listed as read, and copied into an xbf of its STEP (**PMI**) |
+| `pmi.py` | semantic PMI: datums, dimensions and geometric tolerances on a part's faces (`pmi.annotate`), resolved each build (ok, missing, ambiguous, invalid), written as XCAF's GD&T objects, read back as the structure's `pmi`; its notes, notes library and named views (`pmi_views`), the xbf's alone; another system's GD&T listed as read, and copied into an xbf of its STEP (**PMI**) |
 | `refs.py` | references to geometry: the ref grammar, occurrence paths, resolution by name in the latest build, `select` (**References**) |
 | `export/` | `translate` and the kind registry (`__init__`); an xbf packaged with its closure's files (`cadz`); STEP through the XCAF writer (`step`); a STEP's semantic PMI read back without OCCT and checked against the document's (`ap242`); placements and meshes from the one mesh cache (`mesh`); GLB, 3MF, binary STL (`glb`, `threemf`, `stl`); a planar document's drawing through build123d's DXF exporter, with the drawing checks (`dxf`); a motion baked into a glTF clip (`motion`); a view made a document again, for a posed or parted STEP and an xbf (`tree`) |
 | `mesh.py` | per-part tessellation at FreeCAD's default tolerance, edge classes, element facts, and the wire format |
@@ -269,7 +269,7 @@ is explicitly restarted. Session state is memory only and is recreated after res
 | `access.py` | which pages may read a served document from another origin: loopback ones |
 | `snapshot.py` | `cadgen snapshot`: one dispatcher by suffix -- a document, a mesh file, a robot or a DXF drawn by OCCT (`render/`) into a PNG; a script's model drawn from its worker's memory |
 | `formats/` | the files the stills draw that are not documents, each read into a structure and part buffers: STL (numpy), 3MF (zip + XML), GLB (OCCT's glTF reader, textures and all), URDF/SDF/SRDF (XML, the viewer's forward kinematics), DXF (group codes, flattened as the viewer's pane draws it) |
-| `render/` | the stills drawn by OCCT from the engine's meshes: a document held and drawn, and the daemon's render process per served document and per file (`service.py`); the scene (`occt.py`); a DXF drawn in the 2D look (`drawing.py`); the viewer's Explode, ported (`explode.py`); a document's PMI drawn as the viewer shows it, its layout ported (`pmi.py`); a part's buffer as OCCT shapes (`shapes.py`); the headless OpenGL context per platform (`context.py`) |
+| `render/` | the stills drawn by OCCT from the engine's meshes: a document held and drawn, and the daemon's render process per served document and per file (`service.py`); the scene (`occt.py`); the camera presets' one table, which `snapshot.py` and `pmi.view` read too (`presets.py`); a DXF drawn in the 2D look (`drawing.py`); the viewer's Explode, ported (`explode.py`); a document's PMI drawn as the viewer shows it, its layout ported (`pmi.py`); a part's buffer as OCCT shapes (`shapes.py`); the headless OpenGL context per platform (`context.py`) |
 | `daemon.py`, `worker.py`, `client.py` | one daemon per installation, one warm worker per model script, at most one per core alive (`Pool`), connect-or-start; a worker's memory cap |
 | `progress.py` | where a build is: the author's `report` and `track`, the engine's stages heard where they begin, the frames, and the terminal's bar |
 | `atomic_replace.py` | the one rename every written file is moved into place with: cadgen's bounded Windows retry, kept in the engine |
@@ -1054,6 +1054,9 @@ return pmi.annotate(body,
     pmi.general_profile("general", 1.0, datums=["A", "B", "C"]),  # every face nothing else controls
     pmi.note("edges", NOTES["edges"]),                             # a general note: Note 2
     pmi.note("mask", NOTES["primer-mask"], faces=[hole], annotations=["hole"]),  # a flag note
+    pmi.view("A-A", camera="front", shows=["hole", "hole-pos"],  # a named view: a section
+             section=pmi.section("y", 30), place={"hole": pmi.place((5, 30, 0), (10, 0, 10))}),
+    pmi.view("iso", camera="iso"),                                 # shows everything
     library=NOTES)
 ```
 
@@ -1089,7 +1092,19 @@ return pmi.annotate(body,
   numbered per part: the general profile is Note 1 where the part has one, then each note in the
   order the code gives them. `annotate(..., library=NOTES)` keeps the project's notes by name (the
   dict a module of its own code holds; cadgen ships no note text) with the part, for a viewer to
-  offer; a library is no requirement.
+  offer; a library is no requirement. A view (`pmi.view(name, camera=..., shows=None, section=None,
+  place=None, label=None)`) is a named view of the part, given among its annotations: seen
+  orthographically down `camera`, a preset's name (`iso`, `front`, `back`, `left`, `right`, `top`,
+  `bottom`: `cadgen snapshot --camera`'s, one table, `render/presets.py`) or `pmi.camera(direction,
+  up)`, whose `direction` means what a preset's does, the way from the part toward the eye (`front`
+  is `(0, -1, 0)`), both made unit vectors (an `up` along the direction is refused); cut by
+  `section=pmi.section(axis, at, invert=False)`, the viewer's Clip (one plane across `x`, `y` or `z`
+  at `at`, keeping the lower side, `invert` the upper), where it has one; showing the ids of the same
+  call `shows` names, annotations and notes (None: every one, as an iso view does); and drawing each
+  id it `place`s (`{id: pmi.place(...)}`) there in that view. All in the part's frame. A view's name
+  is unique among its part's views; an id the call does not have, and a placement of one the view
+  does not show, are refused by name. A view is no annotation: the report counts none and a note
+  names none.
 - **Resolution.** Each build resolves every ref against the part as built: `ok`, `missing` (it names
   no face; the problem gives the name's atom now, where there is one), `ambiguous` (several:
   `candidates` lists them) or `invalid` (a face the annotation cannot stand on: a diameter on a
@@ -1127,7 +1142,15 @@ return pmi.annotate(body,
   text is XCAF's). A general note is attached to its part's shape label; a flag note, where it is
   `ok`, to each of its faces (`AddNoteToSubshape`, the sub-shape index the face's ordinal in its
   part's face map), and to the GD&T label of each annotation it names. A part's library is one JSON
-  attribute on its shape label. A document without PMI
+  attribute on its shape label. A view is an XCAF view in the views tool (`XCAFDoc_ViewTool`):
+  parallel, its view direction the served direction reversed (XCAF's is the one looked along), its
+  up, its eye the part's box centre moved toward the eye by the box's diagonal, its window that
+  diagonal and its zoom 1; linked to its part's shape label and the GD&T labels it shows, its section
+  an XCAF clipping plane (`XCAFDoc_ClippingPlaneTool`) named for the view, its normal into the half
+  the Clip keeps, capped; beside it the same reference and a cadgen attribute (`kind` `view`, the
+  name, label, camera as written, shows, section and placements), which the structure is served
+  from. The notes a view shows are that attribute's alone: OCCT's `SetView` files a view's notes
+  under its clipping-plane link. A document without PMI
   holds nothing new. A document holding PMI is converted whole on a warm build (GD&T labels link
   the sub-shape labels a patch remakes).
 - **An entry** of `pmi.read` (an xbf or a STEP): `id`, `kind` (`datum`, `dimension`,
@@ -1149,7 +1172,13 @@ return pmi.annotate(body,
   code's beside limits is measured where the document is read, and a dimension read from a file
   with limits has none (`nominal` is null): the file states limits, and the midpoint XCAF rebuilds
   is no fact of it. Beside `pmi`, the structure's `pmi_library` lists each part's library,
-  `{"part", "name", "text"}` in the project's order (empty where none); served wherever `pmi` is.
+  `{"part", "name", "text"}` in the project's order (empty where none), and its `pmi_views` each
+  part's views, by part, in the code's order: `{"part", "name", "label", "camera": {"preset",
+  "direction", "up", "projection": "orthographic"}, "section": {"axis", "at", "invert"} or null,
+  "shows": [ids] or null (every one), "place": {id: {"anchor", "offset"}}}`, the camera's direction
+  and up unit vectors, the direction from the part toward the eye (a preset's from the stills' table,
+  `preset` its name; null for `pmi.camera`'s), and all of it in the part's frame, which a viewer
+  places through the part's placement (empty where none); both served wherever `pmi` is.
 - **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
   GD&T as XCAF reads it, and never blocks a conversion or an export. What this does not hold whole
   is `unsupported`, with its `xcaf_type`, its values and a `reason`: another characteristic or
@@ -1167,7 +1196,7 @@ marks them (CAx-IF PMI Recommended Practices 5.3, a dimensional note on the dime
 representation); flatness; position with an ordered datum frame of up to three and a diametral
 zone; a surface profile on one face or several, of any kind, with a frame of up to three datums or
 none; a part's general profile, on the faces nothing else controls; general and flag notes and a
-part's notes library, in the xbf alone. Every other characteristic, dimension type, tolerance form (fits, modifiers), a basic
+part's notes library and its named views, in the xbf alone. Every other characteristic, dimension type, tolerance form (fits, modifiers), a basic
 diameter or angle, and assembly-level PMI is refused by name (`PMIUnsupported`), never
 approximated.
 
@@ -1185,8 +1214,9 @@ several faces on a `COMPOSITE_SHAPE_ASPECT` that a `SHAPE_ASPECT_RELATIONSHIP` p
 that face's aspect -- every measure in millimetres. A general profile is a
 `SURFACE_PROFILE_TOLERANCE` on exactly the faces it covers, so a reader gets an explicit face set
 (the file says nothing of "general"); one that covers no face is written as nothing. A STEP
-carries no annotation id (the writer leaves every name empty), no graphical PMI and no note (OCCT's
-writer writes none): notes and the library stay in the xbf, and no STEP is refused for a note. The exports
+carries no annotation id (the writer leaves every name empty), no graphical PMI, no note and no view
+(OCCT's writer writes neither): notes, views and the library stay in the xbf, and no STEP is refused
+for one. The exports
 that rebuild the document from a view would carry none: a posed STEP, and a STEP or xbf of one part
 (`--part`). Every export that would not carry the PMI the code made whole is refused by name
 (`pmi.refuse_dropped`, in `export.translate`); one of a document another system wrote is written,
@@ -1202,7 +1232,8 @@ value is millimetres. OCCT's own reader finds a datum only through a tolerance t
 where it would drop PMI, and its `pmi` true where the STEP carries some (a note is none). For a
 document holding PMI a STEP carries, after writing the file the worker reads it back
 with `export/ap242.py` -- a Part 21 reader of AP242's PMI entities with no OCCT in it -- and matches
-every entry but the notes, which it neither expects nor counts, to one record of the file by face
+every entry but the notes, which it neither expects nor counts (nor the views, which are no
+entries), to one record of the file by face
 name, kind, values, units, datum order, zone and a
 basic dimension's note (`verify`); a limit dimension by its two limits, in its nominal's unit, its
 nominal value their midpoint; a tolerance on several faces by the same faces, in any order; a

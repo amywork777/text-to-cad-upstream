@@ -52,6 +52,22 @@ none and is never refused for one (``step_entries``). A part's notes library (``
 JSON attribute (``LIBRARY_GUID``) on its shape label, served as ``pmi_library``. A note this module
 did not write (no cadgen attribute) is not read.
 
+**Views** (``view``) are the xbf's alone too: a part's named views, the views its requirements are
+walked through in (a front, a section, a detail; an iso view showing all). Each is seen down a camera
+-- a preset's name, ``cadgen snapshot --camera``'s own table (``render/presets.py``), or
+``camera(direction, up)``, ``direction`` from the part toward the eye as a preset's is --
+orthographic, cut where it has a section (``section``: the viewer's Clip, ``{axis, at, invert}``),
+showing the ids of its ``annotate`` call it names (every one where it names none) with its own
+placements of them (``place``), all in its part's frame. Each is an XCAF view in the views tool
+(``XCAFDoc_ViewTool``): parallel, looking along its direction reversed (XCAF's view direction is
+the one looked along), its eye the part's box centre moved toward the eye by the box's diagonal,
+its window that diagonal and its zoom 1; linked to its part's shape label and the GD&T labels it
+shows, its section an XCAF clipping plane (``XCAFDoc_ClippingPlaneTool``) named for it; beside it
+the same ``TDF_Reference`` and a cadgen attribute holding the view as the code gave it, which the
+structure's ``pmi_views`` is served from. The notes it shows are that attribute's alone: OCCT's
+``SetView`` files a view's notes under its clipping-plane link. OCCT's STEP writer writes no views,
+so a STEP carries none and is never refused for one. A view this module did not write is not read.
+
 **Values.** A dimension's nominal is the geometry's, measured at document time: a cylinder's
 diameter, the distance between two parallel planes. No nominal is typed in. A tolerance is held
 only where the code gives one (``plus_minus``: signed deviations, upper above lower; ``limits``:
@@ -108,8 +124,8 @@ tolerance or limits; basic (theoretically exact) distances, from planes and hole
 tolerance, marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); flatness; position
 with an ordered datum reference frame and a diametral zone; a surface profile on one face or
 several, of any kind, with a frame of up to three datums or none; a part's general profile, on
-the faces nothing else controls; and, in the xbf alone, general and flag notes and a part's
-notes library. Every
+the faces nothing else controls; and, in the xbf alone, general and flag notes, a part's notes
+library and its named views. Every
 other XCAF characteristic, dimension type, modifier and tolerance form is refused by name
 (``PMIUnsupported``), never approximated. PMI is part-level: an annotation is on one part, and an
 assembly is refused.
@@ -121,11 +137,12 @@ import json
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
-__all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "basic", "datum",
-           "diameter", "dimension", "distance", "flatness", "general_profile", "geometric", "limits", "note",
-           "otherwise_controlled", "place", "plus_minus", "position", "profile", "read", "step_entries"]
+__all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "basic", "camera",
+           "datum", "diameter", "dimension", "distance", "flatness", "general_profile", "geometric", "limits", "note",
+           "otherwise_controlled", "place", "plus_minus", "position", "profile", "read", "section", "step_entries",
+           "view"]
 
 # The attribute an annotated shape holds its annotations in (a tuple of plain dicts), as a part's
 # configurations are held (``kernel.memo`` keys it).
@@ -137,9 +154,10 @@ SCHEMA = "cadgen.pmi/1"
 # The GUID of a part's notes library (``annotate``'s ``library``), one JSON attribute of ``SCHEMA`` on its
 # shape label.
 LIBRARY_GUID = "471db751-90aa-42aa-8fda-c0a0418a5689"
-# The GD&T tool's label under the main label (``XCAFDoc_DocumentTool::DimTolLabel``), and the notes
-# tool's (``XCAFDoc_DocumentTool::NotesLabel``).
+# The GD&T tool's label under the main label (``XCAFDoc_DocumentTool::DimTolLabel``), the views
+# tool's (``XCAFDoc_DocumentTool::ViewsLabel``) and the notes tool's (``XCAFDoc_DocumentTool::NotesLabel``).
 DIMTOL_TAG = 4
+VIEWS_TAG = 7
 NOTES_TAG = 9
 # A note is an XCAF comment by one fixed user with no timestamp: the same code makes the same bytes.
 NOTE_USER = "cadgen"
@@ -210,6 +228,10 @@ def place(anchor: Iterable[float], offset: Iterable[float] = (0.0, 0.0, 0.0)) ->
     """Where a viewer draws an annotation (provisional): ``anchor`` on or near its feature and the
     text ``offset`` from it, millimetres in the annotated part's frame. Not semantic: never in a
     STEP, and moving it changes nothing the annotation means."""
+    return _place(anchor, offset)
+
+
+def _place(anchor: Any, offset: Any) -> dict[str, Any]:
     return {"anchor": _point(anchor, "an anchor"), "offset": _point(offset, "an offset")}
 
 
@@ -363,12 +385,103 @@ def note(id: str, text: str, *, faces: Any = (), annotations: Iterable[str] = ()
                        note={"text": text, "annotations": named})
 
 
+def camera(direction: Iterable[float], up: Iterable[float]) -> dict[str, Any]:
+    """A view's camera of the code's own: ``direction`` from the part toward the eye (as a
+    preset's, ``cadgen snapshot --camera``'s: ``front`` is ``(0, -1, 0)``) and the camera's
+    ``up``, in the part's frame, each made a unit vector. An ``up`` along the direction is refused."""
+    found = [_unit(direction, "a camera's direction"), _unit(up, "a camera's up")]
+    if _cross(*found) < 1e-9:
+        raise PMIError(f"a camera's up is not along its direction, not {list(up)} with {list(direction)}")
+    return {"direction": found[0], "up": found[1]}
+
+
+def section(axis: str, at: float, *, invert: bool = False) -> dict[str, Any]:
+    """A view's section: the viewer's Clip, one plane across ``axis`` (``x``, ``y`` or ``z``) at
+    ``at`` millimetres in the part's frame, keeping the lower side (``invert``: the upper)."""
+    return _section(axis, at, invert)
+
+
+def _section(axis: Any, at: Any, invert: Any) -> dict[str, Any]:
+    if axis not in ("x", "y", "z"):
+        raise PMIError(f"a section's axis is x, y or z, not {axis!r}")
+    if not isinstance(invert, bool):
+        raise PMIError(f"a section's invert is True or False, not {invert!r}")
+    return {"axis": axis, "at": _number(at, "a section's place"), "invert": invert}
+
+
+def view(name: str, *, camera: str | dict, shows: Sequence[str] | None = None, section: dict | None = None,
+         place: Mapping[str, dict] | None = None, label: str | None = None) -> dict[str, Any]:
+    """A named view of the part, given to ``annotate`` among its annotations: seen down ``camera``
+    (a preset's name, ``cadgen snapshot --camera``'s, or ``pmi.camera(direction, up)``), orthographic,
+    cut by ``section`` (``pmi.section``) where it has one, showing the annotations and notes of the
+    same call ``shows`` names by id (None: every one, as an iso view does), each it ``place``-s by
+    id drawn there in this view (``pmi.place``) and elsewhere as its own presentation says. Its
+    name is unique among its part's views. Kept in the xbf as an XCAF view, never in a STEP."""
+    from cadgen.engine.render.presets import PRESETS
+
+    if not isinstance(name, str) or not name.strip():
+        raise PMIError(f"a view's name is a non-empty string, not {name!r}")
+    if label is not None and not isinstance(label, str):
+        raise PMIError(f"view {name!r}: a label is a string, not {label!r}")
+    if not (camera in PRESETS if isinstance(camera, str) else _is_camera(camera)):
+        raise PMIError(f"view {name!r}: a camera is a preset ({', '.join(sorted(PRESETS))}) or pmi.camera(direction, "
+                       f"up), not {camera!r}")
+    named = None if shows is None else [shows] if isinstance(shows, str) else list(shows)
+    for at, given in enumerate(named or ()):
+        if not isinstance(given, str) or not given.strip():
+            raise PMIError(f"view {name!r}: an annotation is shown by its id, not {given!r}")
+        if given in named[:at]:
+            raise PMIError(f"view {name!r} shows {given!r} twice; a view shows each annotation once")
+    if section is not None:
+        if not isinstance(section, dict) or set(section) != {"axis", "at", "invert"}:
+            raise PMIError(f"view {name!r}: a section is pmi.section(axis, at), not {section!r}")
+        section = _section(section["axis"], section["at"], section["invert"])
+    placed: dict[str, Any] = {}
+    for id, given in (place or {}).items():
+        if not isinstance(id, str) or not id.strip():
+            raise PMIError(f"view {name!r}: an annotation is placed by its id, not {id!r}")
+        if not isinstance(given, dict) or set(given) != {"anchor", "offset"}:
+            raise PMIError(f"view {name!r}: a placement is pmi.place(anchor, offset), not {given!r}")
+        placed[id] = _place(given["anchor"], given["offset"])
+    return {"pmi": 1, "kind": "view", "name": name, "label": label,
+            "camera": camera if isinstance(camera, str) else {"direction": list(camera["direction"]),
+                                                              "up": list(camera["up"])},
+            "shows": named, "section": section, "place": placed}
+
+
+def _is_camera(given: Any) -> bool:
+    """Whether ``given`` is a camera ``camera`` made: a unit direction and a unit up, not along it."""
+    if not isinstance(given, dict) or set(given) != {"direction", "up"}:
+        return False
+    try:
+        found = [_point(given[key], "a camera's " + key) for key in ("direction", "up")]
+    except PMIError:
+        return False
+    return all(abs(math.sqrt(sum(c * c for c in v)) - 1.0) < 1e-9 for v in found) and _cross(*found) >= 1e-9
+
+
+def _unit(value: Any, what: str) -> list[float]:
+    found = _point(value, what)
+    length = math.sqrt(sum(c * c for c in found))
+    if not length > 0:
+        raise PMIError(f"{what} is longer than 0, not {value!r}")
+    return [c / length + 0.0 for c in found]
+
+
+def _cross(first: list[float], second: list[float]) -> float:
+    """The length of two vectors' cross product: 0 where they lie along one line."""
+    (a, b, c), (d, e, f) = first, second
+    return math.sqrt((b * f - c * e) ** 2 + (c * d - a * f) ** 2 + (a * e - b * d) ** 2)
+
+
 def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str] | None = None) -> Any:
     """``shape`` given ``annotations`` (replacing any it held): the part a model returns, or
     one part of its assembly. A ``Face`` given as a ref is numbered against ``shape`` now. Ids are
     unique on a part, a note's with the rest, as are datum letters; a note names annotations of
     this call; and a datum holds one place in every frame that names it (XCAF holds one position
-    per datum). ``library`` is the project's notes by name, the dict its own module holds (cadgen
+    per datum). Its views (``view``) are among them, each name unique among its views, each
+    showing and placing ids of this call (a view's placement of an id it does not show is
+    refused). ``library`` is the project's notes by name, the dict its own module holds (cadgen
     ships none): kept with the part, for a viewer to offer, and no requirement. Returns ``shape``."""
     import build123d as bd
 
@@ -378,6 +491,7 @@ def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str
         raise PMIUnsupported("pmi.annotate() is given one part: assembly-level PMI is not written yet; annotate "
                              "each part")
     held: list[dict[str, Any]] = []
+    views: list[dict[str, Any]] = []
     ids: set[str] = set()
     places: dict[str, tuple[int, str]] = {}
     faces = None
@@ -385,6 +499,11 @@ def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str
         if not isinstance(given, dict) or given.get("pmi") != 1:
             raise PMIError(f"pmi.annotate() takes annotations made by pmi.datum(), pmi.diameter(), ...: "
                            f"not {given!r}")
+        if given["kind"] == "view":
+            if any(other["name"] == given["name"] for other in views):
+                raise PMIError(f"two views of one part are named {given['name']!r}: a view's name is unique")
+            views.append(dict(given))
+            continue
         if given["id"] in ids:
             raise PMIError(f"two annotations on one part are {given['id']!r}: an id is unique")
         ids.add(given["id"])
@@ -421,7 +540,18 @@ def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str
                                f"call; its ids are {', '.join(map(repr, kinds))}")
             if kinds[named] == "note":
                 raise PMIError(f"note {entry['id']!r} names note {named!r}: a note names annotations, not notes")
+    for given in views:
+        shown = given["shows"]
+        for named in [*(shown or ()), *given["place"]]:
+            if named not in kinds:
+                raise PMIError(f"view {given['name']!r} {'shows' if named in (shown or ()) else 'places'} {named!r}, "
+                               f"which is no annotation of this pmi.annotate() call; its ids are "
+                               f"{', '.join(map(repr, kinds)) or 'none'}")
+            if shown is not None and named not in shown:
+                raise PMIError(f"view {given['name']!r} places {named!r}, which it does not show; its shows are "
+                               f"{', '.join(map(repr, shown))}")
     _note_call(held)
+    held.extend(views)
     if library is not None:
         held.extend(_library_entry(library))
     shape.__dict__[PMI] = tuple(held)
@@ -445,8 +575,13 @@ def _library_entry(library: Any) -> list[dict[str, Any]]:
 
 
 def _annotations(given: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """What ``annotate`` gave a part, its library apart: its annotations, notes among them."""
-    return [entry for entry in given if entry["kind"] != "library"]
+    """What ``annotate`` gave a part, its views and library apart: its annotations, notes among them."""
+    return [entry for entry in given if entry["kind"] not in ("library", "view")]
+
+
+def _views(given: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A part's views as ``annotate`` gave them (``view``), in the code's order."""
+    return [entry for entry in given if entry["kind"] == "view"]
 
 
 def _library(given: Iterable[dict[str, Any]]) -> list[dict[str, str]]:
@@ -886,8 +1021,9 @@ def warnings(tree: Any) -> list[str]:
 def write(doc: Any, tree: Any, label_of: Any) -> None:
     """The tree's annotations into ``doc``'s GD&T tool, each part's in its order, datums first
     (a tolerance's frame names them), then its notes into the notes tool, in the code's order
-    (``_note``), and its notes library onto its shape label; and the GD&T of the document the tree
-    was read from (``Tree.pmi_source``: ``copy``). ``label_of(part)`` is the part's shape label."""
+    (``_note``), its views into the views tool, in the code's order (``_view``), and its notes
+    library onto its shape label; and the GD&T of the document the tree was read from
+    (``Tree.pmi_source``: ``copy``). ``label_of(part)`` is the part's shape label."""
     if tree.pmi_source is not None:
         loaded, parts = tree.pmi_source
         copy(doc, loaded, lambda index: label_of(parts[index]))
@@ -957,6 +1093,10 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
                 at = _note(XCAFDoc_DocumentTool.NotesTool_s(doc.Main()), item, label, made)
                 TDataStd_AsciiString.Set_s(at, guid, TCollection_AsciiString(_text(_extra(item))))
                 TDF_Reference.Set_s(at, label)
+        for given in _views(part.pmi):
+            at = _view(doc, given, label, made)
+            TDataStd_AsciiString.Set_s(at, guid, TCollection_AsciiString(_text(_view_extra(given))))
+            TDF_Reference.Set_s(at, label)
         library = _library(part.pmi)
         if library:
             TDataStd_AsciiString.Set_s(label, Standard_GUID(LIBRARY_GUID),
@@ -982,6 +1122,80 @@ def _note(notes: Any, item: Resolved, label: Any, made: dict[str, Any]) -> Any:
     if not spec["refs"] and not spec["note"]["annotations"]:
         notes.AddNote(found, label)
     return found
+
+
+def _view(doc: Any, given: dict[str, Any], label: Any, made: dict[str, Any]) -> Any:
+    """A view (``view``) as an XCAF view in ``doc``'s views tool; its label. Parallel, looking along
+    the camera's direction reversed (XCAF's view direction is the one looked along; the code's, the
+    way to the eye), its eye the part's box centre moved toward the eye by the box's diagonal, its
+    window that diagonal each way and its zoom 1, each set (the same code makes the same bytes); on
+    its part's shape ``label``, with the GD&T labels (``made``, by id) it shows, in its order (all
+    of them, the document's order, where it names none), and its section as an XCAF clipping plane
+    named for it, its normal into the half the Clip keeps, capped as the Clip caps. The notes it
+    shows are its cadgen attribute's alone: OCCT's ``SetView`` files a view's notes under its
+    clipping-plane link, where a reader would take them for planes."""
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    from OCP.gp import gp_Dir, gp_Pln, gp_Pnt
+    from OCP.TCollection import TCollection_ExtendedString
+    from OCP.TDF import TDF_LabelSequence
+    from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool, XCAFDoc_View
+    from OCP.XCAFView import XCAFView_Object, XCAFView_ProjectionType_Parallel
+
+    tool = XCAFDoc_DocumentTool.ViewTool_s(doc.Main())
+    camera = _camera_of(given["camera"])
+    box = Bnd_Box()
+    BRepBndLib.AddOptimal_s(XCAFDoc_ShapeTool.GetShape_s(label), box, False, False)
+    low, high = box.CornerMin(), box.CornerMax()
+    low_at, high_at = (low.X(), low.Y(), low.Z()), (high.X(), high.Y(), high.Z())
+    diagonal = math.sqrt(sum((b - a) ** 2 for a, b in zip(low_at, high_at)))
+    eye = [(a + b) / 2 + side * diagonal for a, b, side in zip(low_at, high_at, camera["direction"])]
+    found = XCAFView_Object()
+    found.SetName(_ascii(given["name"]))
+    found.SetType(XCAFView_ProjectionType_Parallel)
+    found.SetProjectionPoint(gp_Pnt(*eye))
+    found.SetViewDirection(gp_Dir(*(-side for side in camera["direction"])))
+    found.SetUpDirection(gp_Dir(*camera["up"]))
+    found.SetZoomFactor(1.0)
+    found.SetWindowHorizontalSize(diagonal)
+    found.SetWindowVerticalSize(diagonal)
+    at = tool.AddView()
+    XCAFDoc_View.Set_s(at).SetObject(found)
+    sequences = {"shapes": TDF_LabelSequence(), "gdts": TDF_LabelSequence(), "planes": TDF_LabelSequence()}
+    sequences["shapes"].Append(label)
+    for id in made if given["shows"] is None else given["shows"]:
+        if id in made:
+            sequences["gdts"].Append(made[id])
+    cut = given["section"]
+    if cut is not None:
+        axis = "xyz".index(cut["axis"])
+        point, normal = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+        point[axis], normal[axis] = cut["at"], 1.0 if cut["invert"] else -1.0
+        sequences["planes"].Append(XCAFDoc_DocumentTool.ClippingPlaneTool_s(doc.Main()).AddClippingPlane(
+            gp_Pln(gp_Pnt(*point), gp_Dir(*normal)), TCollection_ExtendedString(given["name"], True), True))
+    tool.SetView(sequences["shapes"], sequences["gdts"], sequences["planes"], at)
+    return at
+
+
+def _view_extra(given: dict[str, Any]) -> dict[str, Any]:
+    """The cadgen attribute beside a view's XCAF view (see the module): the view as the code gave it,
+    its camera as written (a preset's name, or ``camera``'s two unit vectors)."""
+    return {"schema": SCHEMA, "kind": "view", **{key: given[key] for key in
+                                                ("name", "label", "camera", "shows", "section", "place")}}
+
+
+def _camera_of(written: Any) -> dict[str, Any]:
+    """A view's camera as served: its preset's name or None, its direction (from the part toward the
+    eye) and up, unit vectors in the part's frame (a preset's from the stills' own table,
+    ``render/presets.py``), and its projection, orthographic."""
+    from cadgen.engine.render.presets import PRESETS
+
+    if isinstance(written, str):
+        side, up = PRESETS[written]
+        found = {"direction": _unit(side, "a preset's direction"), "up": _unit(up, "a preset's up")}
+    else:
+        found = {"direction": list(written["direction"]), "up": list(written["up"])}
+    return {"preset": written if isinstance(written, str) else None, **found, "projection": "orthographic"}
 
 
 def _on_faces(item: Resolved) -> bool:
@@ -1260,9 +1474,6 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
     One another system wrote is resolved by the elements the file links it to, and what this module
     does not hold whole is ``unsupported``, with why (``_beyond_*``). ``prototypes`` are the document's
     (``document.Prototype``: each its label's entry and shape), ``root`` the name of its root."""
-    from OCP.Standard import Standard_GUID
-    from OCP.TDataStd import TDataStd_AsciiString
-    from OCP.TDF import TDF_Reference
     from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_DimensionType_Location_LinearDistance,
                                         XCAFDimTolObjects_DimensionType_Size_Diameter,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_Diameter,
@@ -1280,28 +1491,11 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         return []
     by_entry = {prototype.entry: prototype for prototype in prototypes}
     maps: dict[tuple[int, str], Any] = {}
-    guid = Standard_GUID(EXTRA_GUID)
-
-    def extra(label: Any) -> dict[str, Any] | None:
-        found = TDataStd_AsciiString()
-        if label.IsAttribute(guid) and label.FindAttribute(guid, found):
-            held = json.loads(found.Get().ToCString())
-            return held if held.get("schema") == SCHEMA else None
-        return None
-
-    def part_of(label: Any) -> int | None:
-        """The prototype an annotation the code made is of: its ``TDF_Reference``'s."""
-        found = TDF_Reference()
-        if not label.FindAttribute(TDF_Reference.GetID_s(), found):
-            return None
-        prototype = by_entry.get(_entry(found.Get()))
-        return None if prototype is None else prototype.index
-
     records: list[dict[str, Any]] = []
 
     def add(label: Any, kind: str, values: dict[str, Any], beyond: list[str], xcaf_type: str | None) -> None:
         """The record of a GD&T label holding an object of ``kind``."""
-        held = extra(label)
+        held = _held_extra(label)
         first, second = ([_element(sequence.Value(at), by_entry, maps) for at in range(1, sequence.Length() + 1)]
                          for sequence in _linked(tool, label))
         if kind == "dimension" and second:
@@ -1310,7 +1504,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
             targets = [("feature", hit) for hit in first]
         found = {"values": values, "targets": targets, "extra": held, "entry": _entry(label), "warnings": []}
         if held is not None:
-            found.update(kind=held["kind"], xcaf_type=None, reason=None, part=part_of(label))
+            found.update(kind=held["kind"], xcaf_type=None, reason=None, part=_part_of(label, by_entry))
             records.append(found)
             return
         # Linked to an edge or a point: no annotation on faces, kept and listed, never drawn.
@@ -1375,14 +1569,14 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
     if notes_tool is not None:
         notes_tool.GetNotes(labels)
     for label in (labels.Value(at) for at in range(1, labels.Length() + 1)):
-        held = extra(label)
+        held = _held_extra(label)
         if held is None or held.get("kind") != "note" or not label.IsAttribute(XCAFDoc_NoteComment.GetID_s()):
             continue
         # Its text is XCAF's comment; its faces are resolved with its part's annotations, below.
         text = XCAFDoc_NoteComment.Get_s(label).Comment().ToExtString()
         records.append({"kind": "note", "values": {"text": text, "annotations": list(held["annotations"])},
                         "targets": [], "extra": held, "entry": _entry(label), "warnings": [], "xcaf_type": NOTE_TYPE,
-                        "reason": None, "part": part_of(label)})
+                        "reason": None, "part": _part_of(label, by_entry)})
     # The code's annotations resolved as their build resolved them, each part's together (its general
     # profile covers what the others leave): the same faces again, from the document alone.
     of_part: dict[int, list[dict[str, Any]]] = {}
@@ -1560,6 +1754,70 @@ def library_of_document(doc: Any, prototypes: list[Any]) -> list[dict[str, Any]]
             found.extend({"part": prototype.index, "name": note["name"], "text": note["text"]}
                          for note in given["library"])
     return found
+
+
+def views_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]:
+    """A built tree's views as ``views_of_document`` reads them back from its document, by part, in
+    the code's order."""
+    found = [_view_entry(index_of[id(part)], json.loads(_text(_view_extra(given))))
+             for part, held in tree.pmi or () for given in _views(held)]
+    return sorted(found, key=lambda given: given["part"])
+
+
+def views_of_document(doc: Any, prototypes: list[Any]) -> list[dict[str, Any]]:
+    """The structure's ``pmi_views``: each view the code gave a part of a document (``view``), served
+    from its cadgen attribute (the XCAF view beside it is for another reader), by part, in the code's
+    order: its ``part`` (a prototype index), ``name``, ``label``, ``camera`` (``_camera_of``),
+    ``section`` (``{axis, at, invert}``, the Clip's, or None), ``shows`` (ids, or None for every
+    annotation and note) and ``place`` (each placed id's ``{anchor, offset}``), in the part's frame.
+    A view another system wrote (no cadgen attribute) is not read; none where there are none."""
+    from OCP.TDF import TDF_LabelSequence
+    from OCP.XCAFDoc import XCAFDoc_ViewTool
+
+    label = doc.Main().FindChild(VIEWS_TAG, False)
+    if label.IsNull() or not label.IsAttribute(XCAFDoc_ViewTool.GetID_s()):
+        return []
+    by_entry = {prototype.entry: prototype for prototype in prototypes}
+    labels = TDF_LabelSequence()
+    XCAFDoc_ViewTool.Set_s(label).GetViewLabels(labels)
+    found = []
+    for at in range(1, labels.Length() + 1):
+        held = _held_extra(labels.Value(at))
+        part = _part_of(labels.Value(at), by_entry)
+        if held is not None and held.get("kind") == "view" and part is not None:
+            found.append(_view_entry(part, held))
+    return sorted(found, key=lambda given: given["part"])
+
+
+def _view_entry(part: int, held: dict[str, Any]) -> dict[str, Any]:
+    """A ``pmi_views`` entry of part ``part`` from the view's cadgen attribute (``_view_extra``)."""
+    return {"part": part, "name": held["name"], "label": held["label"], "camera": _camera_of(held["camera"]),
+            "section": held["section"], "shows": held["shows"], "place": held["place"]}
+
+
+def _held_extra(label: Any) -> dict[str, Any] | None:
+    """The cadgen attribute a label holds (``EXTRA_GUID``), or None where it holds none of ``SCHEMA``."""
+    from OCP.Standard import Standard_GUID
+    from OCP.TDataStd import TDataStd_AsciiString
+
+    guid, found = Standard_GUID(EXTRA_GUID), TDataStd_AsciiString()
+    if label.IsAttribute(guid) and label.FindAttribute(guid, found):
+        held = json.loads(found.Get().ToCString())
+        return held if held.get("schema") == SCHEMA else None
+    return None
+
+
+def _part_of(label: Any, by_entry: dict[str, Any]) -> int | None:
+    """The prototype index of what the code gave a part: its label's ``TDF_Reference``'s."""
+    from OCP.TDF import TDF_Reference
+
+    from cadgen.engine.document import _entry
+
+    found = TDF_Reference()
+    if not label.FindAttribute(TDF_Reference.GetID_s(), found):
+        return None
+    prototype = by_entry.get(_entry(found.Get()))
+    return None if prototype is None else prototype.index
 
 
 def _as_held(value: float) -> float:

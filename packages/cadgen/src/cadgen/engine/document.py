@@ -33,8 +33,9 @@ standard attributes beside the XCAF tools (``mechanism``).
 
 A part given semantic PMI (``pmi.annotate``) carries it in the GD&T tool, as XCAF's own
 datum, dimension and geometric-tolerance objects linked to its faces' sub-shape labels, its
-notes in the notes tool and its notes library on its shape label (``pmi``); a document holding
-PMI is converted whole on a warm build.
+notes in the notes tool, its named views in the views tool (their sections in the clipping
+planes tool) and its notes library on its shape label (``pmi``); a document holding PMI is
+converted whole on a warm build.
 
 A model's document is kept in memory between builds (``Kept``) and a warm build patches
 it rather than converting every prototype again (``to_xcaf``): each shape label holds the
@@ -104,7 +105,7 @@ class Part:
     material: Any = None
     face_materials: dict[int, Any] = field(default_factory=dict)
     # Its semantic PMI as the code gave it (``pmi.annotate``): annotations as plain dicts, its
-    # notes among them, and its notes library (``pmi._library``).
+    # notes among them, its views (``pmi._views``) and its notes library (``pmi._library``).
     pmi: tuple = ()
 
 
@@ -1352,9 +1353,11 @@ class Loaded:
 
         records = pmi.records_of_document(self.doc, self.prototypes, self.name)
         library = pmi.library_of_document(self.doc, self.prototypes)
-        if records or library:
+        views = pmi.views_of_document(self.doc, self.prototypes)
+        if records or library or views:
             found["pmi"] = pmi.entries(records, found)
             found["pmi_library"] = library
+            found["pmi_views"] = views
         return found
 
     def root_label(self) -> Any:
@@ -1477,6 +1480,7 @@ def tree_structure(tree: Tree, path: Path) -> dict[str, Any]:
 
         found["pmi"] = pmi.entries(pmi.records_of_tree(tree, index_of), found)
         found["pmi_library"] = pmi.library_of_tree(tree, index_of)
+        found["pmi_views"] = pmi.views_of_tree(tree, index_of)
     return found
 
 
