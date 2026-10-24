@@ -1437,6 +1437,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     record["angles"].append((dim.p1, dim.p2, dim.hole["p2"], _look(view)))
                 ua = math.atan2(a[1] - v[1], a[0] - v[0])
                 ub = math.atan2(b[1] - v[1], b[0] - v[0])
+                if (ub - ua) % (2 * math.pi) > math.pi:
+                    # The DXF measures anticlockwise from its first leg; the angle
+                    # between the legs is the one under half a turn.
+                    a, b, ua, ub = b, a, ub, ua
                 mid = ua + ((ub - ua + math.pi) % (2 * math.pi) - math.pi) / 2
                 base = (v[0] + dim.offset * math.cos(mid), v[1] + dim.offset * math.sin(mid))
                 d = msp.add_angular_dim_3p(base=base, center=v, p1=a, p2=b, dimstyle=dimstyle,

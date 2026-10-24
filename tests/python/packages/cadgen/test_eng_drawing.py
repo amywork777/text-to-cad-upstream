@@ -3826,6 +3826,17 @@ class FaceTests(unittest.TestCase):
         self.assertTrue(any("at Z = 8" in line and "front." in line for line in lines), lines)
         self.assertTrue(any("inclined face" in line and "front.angle(" in line for line in lines), lines)
 
+    def test_an_angle_is_the_one_between_its_legs_in_either_order(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        for legs in (((60, 0, 8), (10, 0, 30)), ((10, 0, 30), (60, 0, 8))):
+            sheet = Sheet("A3", 1.0)
+            _top, front = sheet.three_views(_ramp(), views=("top", "front"))
+            front.angle((20, 0, 8), *legs)
+            doc = _render_sheet(sheet, index=1, count=1, label="angle", warnings=[])
+            self.assertEqual(_dim_texts(doc), ["114.44°"], "never the reflex angle outside the legs")
+
     def test_a_height_and_an_angle_state_them(self) -> None:
         sheet, _top, front = self._sheet()
         front.dim((60, 0, 0), (60, 0, 8))
