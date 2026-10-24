@@ -28,6 +28,8 @@ A sharp edge is a design decision, not a default. For a physical part, round or
 break the edges its manufacturing process and use call for, and keep sharp the
 edges they need sharp. Take the process from the request or project; when none
 is given, infer the likely one from the part and record it as an assumption.
+Edge treatment rounds the geometry the design has; it is not a reason to add
+ribs, gussets or other features.
 
 - **Use.** Fillet inside corners that carry load: rib, boss and gusset roots,
   wall-to-floor junctions, a stepped shaft's shoulder. Round or break exposed
