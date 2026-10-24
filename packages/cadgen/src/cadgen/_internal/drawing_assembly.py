@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterator, NamedTuple, Sequence
 
 from cadgen._internal.drawing_base import (
-    _DEFAULT_TEXT, _DIM_ROW, FAMILIES, _LABEL_ROOM, _MARGIN, _SIDES, _STANDARD_SCALES, _TITLE_W, _look,
+    _DEFAULT_TEXT, _DIM_ROW, FAMILIES, _LABEL_ROOM, _MARGIN, _SIDES, _STANDARD_SCALES, _TITLE_H, _TITLE_W, _look,
     _scale_label,
 )
 from cadgen._internal.drawing_sheet import (
@@ -36,6 +36,40 @@ from cadgen._internal.drawing_views import _view_extent
 if TYPE_CHECKING:
     from cadgen._internal.drawing_report import _Facts
     from cadgen.eng_drawing import Sheet, View
+
+
+#: How the parts of an assembly may be joined, each with the word its flag note
+#: begins with. A liquid adhesive is never modelled, so the note carries it.
+JOINTS = ("weld", "braze", "solder", "rivet", "crimp", "press_fit", "bond", "tape", "overmold", "snap",
+          "not_bonded")
+_JOINT_WORDS = {"press_fit": "PRESS FIT", "snap": "SNAP FIT", "not_bonded": "NOT BONDED"}
+
+
+def _joint_note(text: str, joint: str | None) -> str:
+    """A flag note's words: the joint's own first ("BOND: LOCTITE 401")."""
+    if joint is None:
+        return text
+    if joint not in JOINTS:
+        raise ValueError(f"unknown joint {joint!r}; one of {', '.join(JOINTS)}")
+    word = _JOINT_WORDS.get(joint, joint.upper())
+    return f"{word}: {text}" if text else word
+
+
+def _item_point(view, key: int | str) -> tuple[float, float, float]:
+    """A point a view sees on an item of the parts list it balloons."""
+    from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+
+    if not view._balloons:
+        raise ValueError(f"flag(item={key!r}) on the {view.name} view finds the item in the parts list the view "
+                         f"balloons, and it balloons none; {view.name}.balloons(parts) first")
+    item = view._balloons[0][key]
+    cast = IntCurvesFace_ShapeIntersector()
+    cast.Load(view.shape.wrapped, 1e-7)
+    point = visible_point(item.occurrences, cast, _look(view))
+    if point is None:
+        raise ValueError(f"flag(item={key!r}): the {view.name} view shows none of item {item.number} "
+                         f"({item.description or 'unnamed'}); flag it in a view that shows it, or with at=")
+    return point
 
 
 #: The fields an author may fill in on a parts-list row. Everything else on an
@@ -686,7 +720,7 @@ def _arrange_assembly(sheet: Sheet, shape, second: str) -> tuple[float, list]:
     overall = {"front": {"width", "height"}, second: {"width"} if second == "right" else {"height"}}
     notes = _notes_height(sheet)
     a_x = (m + 4.0, W - m - _TITLE_W - 6.0)
-    a_y = (m + 4.0 + (sheet._title_height() + notes if notes else 0.0), H - m - 4.0)
+    a_y = (m + 4.0 + (_TITLE_H + notes if notes else 0.0), H - m - 4.0)
     third = sheet.projection == "THIRD ANGLE"
 
     def layout(s: float):

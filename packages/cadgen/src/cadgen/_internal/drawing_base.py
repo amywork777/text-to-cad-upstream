@@ -408,6 +408,27 @@ def _box_text(layout, box: tuple[float, float, float, float], *, angle: float = 
     layout.add_lwpolyline(corners, close=True, dxfattribs={"layer": "DIM"})
 
 
+#: A flag note's triangle, its side in text heights, and its number's height in sides.
+_FLAG_SIDE = 2.0
+_FLAG_NUMBER = 0.38
+
+
+def _draw_flag(layout, number: str, x: float, mid: float, side: float,
+               layer: str) -> tuple[float, float, float, float]:
+    """A flag note's symbol: an upright equilateral triangle of ``side``, its base
+    from ``x``, its middle at height ``mid``, the note's number in it. Returns its
+    box (x0, y0, x1, y1)."""
+    from ezdxf.enums import TextEntityAlignment
+
+    tall = side * math.sqrt(3) / 2
+    base = mid - tall / 2
+    layout.add_lwpolyline([(x, base), (x + side, base), (x + side / 2, base + tall)], close=True,
+                          dxfattribs={"layer": layer})
+    label = layout.add_text(number, dxfattribs={"height": side * _FLAG_NUMBER, "layer": layer})
+    label.set_placement((x + side / 2, base + tall / 3), align=TextEntityAlignment.MIDDLE_CENTER)
+    return x, base, x + side, base + tall
+
+
 def _box_dimension_value(doc, dimension) -> None:
     """Frame a basic dimension's value in its own block. ezdxf marks a basic value
     with a negative DIMGAP but leaves the frame undrawn."""

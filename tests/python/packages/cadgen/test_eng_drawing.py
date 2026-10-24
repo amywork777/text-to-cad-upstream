@@ -3268,6 +3268,117 @@ class StageProfileTests(unittest.TestCase):
         self.assertIn("CC", self._texts(sheet, "DIM"))
 
 
+class FlagNoteTests(unittest.TestCase):
+    """What an assembly requires once it is put together, flagged where it applies."""
+
+    @staticmethod
+    def _triangles(doc, layer: str) -> int:
+        return len([e for e in doc.modelspace().query(f"LWPOLYLINE[layer=='{layer}']") if e.closed and len(e) == 3])
+
+    def test_a_flag_note_numbers_its_flag_and_its_note(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0, notes=["BREAK SHARP EDGES."])
+        top, front, _right = sheet.three_views(_part())
+        top.flag("TORQUE TO 9 NM", at=(10, 5, 10))
+        front.flag("LOCTITE 401", at=(0, -15, 5), joint="bond")
+        top.flag("TORQUE TO 9 NM", at=(-10, 0, 10))
+        self.assertEqual(sheet.drawn_notes(), ["BREAK SHARP EDGES.", "TORQUE TO 9 NM", "BOND: LOCTITE 401"])
+        doc = _render_sheet(sheet, index=1, count=1, label="flags", warnings=[])
+        field = [e.dxf.text for e in doc.modelspace().query("TEXT[layer=='DIM']")]
+        self.assertEqual((field.count("2"), field.count("3")), (2, 1), "a flag numbered as its note, twice for two places")
+        self.assertEqual(self._triangles(doc, "DIM"), 3)
+        self.assertEqual(self._triangles(doc, "NOTES"), 2, "notes 2 and 3 carry their flags")
+        lines = [e.dxf.text for e in doc.modelspace().query("TEXT[layer=='NOTES']")]
+        self.assertTrue(any(line.endswith("BOND: LOCTITE 401") for line in lines), lines)
+        with self.assertRaisesRegex(ValueError, "one of at= or item="):
+            top.flag("TORQUE TO 9 NM")
+
+    def test_an_unplaced_flag_keeps_clear_of_the_dimensions(self) -> None:
+        from shapely.geometry import LineString, Polygon, box
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, front, _right = sheet.three_views(_part())
+        top.overall()
+        front.overall()
+        top.dim((-20, -15, 10), (10, -15, 10))
+        top.flag("TORQUE TO 9 NM", at=(-5, 0, 10))
+        top.flag("STAKE 3 PLACES", at=(-20, 15, 10))
+        warnings: list = []
+        doc = _render_sheet(sheet, index=1, count=1, label="clear", warnings=warnings)
+        self.assertFalse([w for w in warnings if "overlaps" in w or "flag" in w], warnings)
+        lines = _dimension_lines(doc)
+        for leader in doc.modelspace().query("LEADER[layer=='DIM']"):
+            path = LineString([(v[0], v[1]) for v in leader.vertices])
+            self.assertFalse([line for line in lines if path.crosses(line)], "a flag's leader crosses a dimension")
+        # Each view's extent, from its visible lines: views stand apart, so boxes
+        # that touch are one view.
+        views: list[list[float]] = []
+        for line in doc.modelspace().query("LINE LWPOLYLINE[layer=='VISIBLE']"):
+            x0, y0, x1, y1 = LineString(_points(line)).bounds
+            hit = [v for v in views if x0 <= v[2] + 1 and x1 >= v[0] - 1 and y0 <= v[3] + 1 and y1 >= v[1] - 1]
+            merged = [min([x0, *(v[0] for v in hit)]), min([y0, *(v[1] for v in hit)]),
+                      max([x1, *(v[2] for v in hit)]), max([y1, *(v[3] for v in hit)])]
+            views = [v for v in views if v not in hit] + [merged]
+        flags = [Polygon(e.get_points("xy")) for e in doc.modelspace().query("LWPOLYLINE[layer=='DIM']")
+                 if e.closed and len(e) == 3]
+        self.assertEqual(len(flags), 2)
+        self.assertFalse([f for f in flags if any(f.intersects(box(*v)) for v in views)], "a flag on a view")
+
+    def test_a_flag_keyed_to_an_item_lands_on_that_item(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
+
+        parts = parts_list(_assembly())
+        sheet = Sheet("A3", 1.0)
+        front = sheet.view(parts.assembly, "front", at=(160, 170), hidden=False)
+        front.balloons(parts)
+        front.flag("PRESS WITH LOCTITE 609", item="pin", joint="press_fit")
+        doc = _render_sheet(sheet, index=1, count=1, label="keyed", warnings=[])
+        flag = next(e for e in doc.modelspace().query("LEADER[layer=='DIM']"))
+        start = flag.vertices[0]
+        pin = next(point for number, _centre, point in _balloons(doc) if number == 2)
+        self.assertLess(math.hypot(start[0] - pin[0], start[1] - pin[1]), 0.5, "on the pin, where its balloon keys it")
+        lonely = Sheet("A3", 1.0)
+        bare = lonely.view(parts.assembly, "front", at=(160, 170), hidden=False)
+        bare.flag("PRESS", item="pin")
+        with self.assertRaisesRegex(ValueError, "balloons"):
+            _render_sheet(lonely, index=1, count=1, label="unkeyed")
+
+    def test_an_unknown_joint_kind_is_refused(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        top = Sheet("A3", 1.0).three_views(_part())[0]
+        with self.assertRaisesRegex(ValueError, "weld, braze"):
+            top.flag("GLUE IT", at=(0, 0, 10), joint="glue")
+
+    def test_the_general_arrangements_overall_sizes_are_reference(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import GENERIC, assembly_sheets, parts_list
+
+        sheets = assembly_sheets(parts_list(_assembly()), title="FIXTURE", stage="prototype", profile=GENERIC,
+                                 company="EXAMPLE CO.")
+        self.assertTrue(all((s.stage, s.profile, s.company) == ("prototype", GENERIC, "EXAMPLE CO.") for s in sheets))
+        texts = _dim_texts(_render_sheet(sheets[0], index=1, count=len(sheets), label="ga"))
+        self.assertTrue(texts and all(t.startswith("(") and t.endswith(")") for t in texts), texts)
+
+    def test_a_detail_of_the_general_arrangement_draws(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        sheets = assembly_sheets(parts_list(_assembly()), title="FIXTURE")
+        ga = sheets[0]
+        front = next(v for v in ga.views if v.name == "front")
+        ga.detail(front, (-25, 0, 6), 6)
+        labels = [e.dxf.text for e in _render_sheet(ga, index=1, count=len(sheets), label="ga").modelspace()
+                  .query("TEXT[layer=='NOTES']")]
+        self.assertTrue(any(label.startswith("DETAIL") for label in labels), labels)
+
+
 class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_tags_each_hole_and_states_where_and_what(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet

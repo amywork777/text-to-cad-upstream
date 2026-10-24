@@ -11,8 +11,8 @@ import math
 from typing import TYPE_CHECKING, Any, NamedTuple, Sequence
 
 from cadgen._internal.drawing_base import (
-    _DIM_ROW, _MARGIN, _MIN_TEXT_MM, _NOTE_HEIGHT, _NOTE_INSET, SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, _TITLE_W,
-    _scale_label, _text_width,
+    _DIM_ROW, _FLAG_SIDE, _MARGIN, _MIN_TEXT_MM, _NOTE_HEIGHT, _NOTE_INSET, SHEET_SIZES, _STANDARD_SCALES, _TITLE_H,
+    _TITLE_W, _draw_flag, _scale_label, _text_width,
 )
 from cadgen._internal.drawing_gdt import _draw_frame
 from cadgen._internal.drawing_views import _broken_size
@@ -444,8 +444,13 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
                 )
         _draw_parts_list(msp, sheet, text, continued or {})
     for row, (line, note) in enumerate(zip(lines, sheet.drawn_notes())):
-        y = y0 + tall + 4 + (len(lines) - 1 - row) * 5
+        # The notes stand left of the title block, on its height without the band.
+        y = y0 + _TITLE_H + 4 + (len(lines) - 1 - row) * 5
         text(line, m + _NOTE_INSET, y, _NOTE_HEIGHT, A.BOTTOM_LEFT, "NOTES")
+        if row >= len(lines) - len(sheet._flags):
+            # A flag note's number stands in its flag, where the others' are printed.
+            at = m + _NOTE_INSET + _text_width(line[:8] + "X", _NOTE_HEIGHT) - _text_width("X", _NOTE_HEIGHT)
+            _draw_flag(msp, str(row + 1), at, y + _NOTE_HEIGHT / 2, _FLAG_SIDE * _NOTE_HEIGHT, "NOTES")
         if row == 0 and sheet.general_profile is not None:
             # Note 1's frame follows its words: every surface within this profile.
             _draw_frame(msp, sheet.general_profile, m + _NOTE_INSET + _text_width(line, _NOTE_HEIGHT) + _NOTE_HEIGHT,
@@ -536,7 +541,7 @@ def _notes_box(sheet: Sheet) -> list[tuple[float, float, float, float]]:
     lines = sheet.note_lines()
     if not lines:
         return []
-    x0, y0 = _MARGIN + _NOTE_INSET, _MARGIN + sheet._title_height() + 4.0
+    x0, y0 = _MARGIN + _NOTE_INSET, _MARGIN + _TITLE_H + 4.0
     width = max(sheet._note_widths())
     return [(x0, x0 + width, y0 - 1.0, y0 + (len(lines) - 1) * 5.0 + _NOTE_HEIGHT + 1.0)]
 
@@ -578,8 +583,10 @@ def _free_band(sheet: Sheet, paper: str | None = None) -> tuple[float, float, fl
     clear of it, above the notes, the title block and any parts list."""
     m = _MARGIN
     width, height = SHEET_SIZES[paper or sheet._size()]
-    above = max(_notes_height(sheet), _list_height(sheet) + 6.0 if sheet._parts is not None else 0.0)
-    return m + 4.0, width - m - 4.0, m + sheet._title_height() + above + 4.0, height - m - 4.0
+    title = sheet._title_height()
+    floor = max(title, _TITLE_H + _notes_height(sheet),
+                title + _list_height(sheet) + 6.0 if sheet._parts is not None else 0.0)
+    return m + 4.0, width - m - 4.0, m + floor + 4.0, height - m - 4.0
 
 
 def _next_smaller(scale: float) -> float | None:

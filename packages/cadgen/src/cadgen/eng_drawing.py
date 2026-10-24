@@ -62,7 +62,8 @@ from typing import Any, Callable, Iterable, Mapping, NamedTuple, Sequence
 
 from cadgen._internal.drawing_annotation import _Dim, _looks_into
 from cadgen._internal.drawing_assembly import (
-    _GA_LIST_SHARE, Item, _PartOf, PartsList, _arrange_assembly, _continuations, _item_shown, parts_list,
+    _GA_LIST_SHARE, JOINTS, Item, _PartOf, PartsList, _arrange_assembly, _continuations, _item_shown, _joint_note,
+    parts_list,
     _refuse_balloons_on,
 )
 from cadgen._internal.drawing_base import (
@@ -86,9 +87,11 @@ from cadgen._internal.drawing_views import _flat_face, _view_extent
 
 #: Note 1 of a sheet with a general profile; its frame is drawn after the words.
 _GENERAL_PROFILE = "UNLESS OTHERWISE SPECIFIED, ALL SURFACES"
+#: The room a flag note's flag takes where another note's number is printed.
+_FLAG_ROOM = " " * 7
 
-__all__ = ["eng_drawing", "Sheet", "View", "Frame", "Profile", "GENERIC", "AEROSPACE", "STAGES", "SHEET_SIZES",
-           "parts_list", "PartsList", "Item", "assembly_sheets", "AssemblySheets", "geometry_notes"]
+__all__ = ["eng_drawing", "Sheet", "View", "Frame", "Profile", "GENERIC", "AEROSPACE", "STAGES", "JOINTS",
+           "SHEET_SIZES", "parts_list", "PartsList", "Item", "assembly_sheets", "AssemblySheets", "geometry_notes"]
 
 
 class _Detail(NamedTuple):
@@ -358,6 +361,33 @@ class View:
         if not (math.isfinite(dx) and math.isfinite(dy)):
             raise ValueError(f"note offset must be finite, got {offset!r}")
         self._dims.append(_Dim("note", _p3(at), None, 0.0, str(text), None, radius=dx, angle=dy))
+        return self
+
+    def flag(self, text: str, *, at=None, item: int | str | None = None, joint: str | None = None,
+             offset: tuple[float, float] | None = None) -> "View":
+        """A flag note: what an assembly requires where it applies (a torque, a
+        threadlocker, a bond, work done at assembly). A numbered flag with a leader
+        from ``at`` (a model point) or from ``item`` (a part this view balloons,
+        by number or name), and the note under that number in the notes block.
+        ``joint`` (one of ``JOINTS``) says how the parts there are held, and its
+        word begins the note: ``joint="bond"`` reads ``BOND: <text>``. The same
+        note flagged twice keeps one number. ``offset`` places the flag as
+        :meth:`note` places its text; left unset, the flag takes the nearest
+        place clear of the view and its annotation, its leader crossing none."""
+        if (at is None) == (item is None):
+            raise ValueError("flag() points from one of at= or item=: a model point, or a part this view balloons")
+        if not isinstance(text, str):
+            raise TypeError(f"flag() takes its note as a string, got {text!r}")
+        words = _joint_note(text, joint)
+        if not words:
+            raise ValueError("flag() needs its note's words, or a joint= that is one")
+        dx, dy = (10.0, 10.0) if offset is None else _sheet_offset("flag", offset)
+        if words not in self.sheet._flags:
+            self.sheet._flags.append(words)
+            if self.sheet.size is not None:
+                self.sheet._check_notes(self.sheet.size)
+        self._dims.append(_Dim("flag", None if at is None else _p3(at), None, None if offset is None else 0.0, words,
+                               None, radius=dx, angle=dy, item=item))
         return self
 
     def frame(self, at, frame: Frame, *, offset: tuple[float, float] = (10.0, 10.0)) -> "View":
@@ -716,6 +746,9 @@ class Sheet:
     #: For a part's sheet of an assembly drawing, the item it details: its title,
     #: subtitle and material follow the item when it renders.
     _item: Any = field(default=None, init=False, repr=False)
+    #: The flag notes its views flag, in the order first flagged: they follow the
+    #: notes, each numbered in its flag.
+    _flags: list[str] = field(default_factory=list, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.size is not None and self.size not in SHEET_SIZES:
@@ -847,12 +880,14 @@ class Sheet:
         is read by, the general tolerance spelled out, and the author's notes."""
         profile = [_GENERAL_PROFILE] if self.general_profile is not None else []
         general = [_general_tolerance_note(self.profile, self.general_tolerance)] if self.general_tolerance else []
-        return profile + _standard_note(self.profile) + general + list(self.notes)
+        return profile + _standard_note(self.profile) + general + list(self.notes) + list(self._flags)
 
     def note_lines(self) -> list[str]:
-        """Each drawn note with the prefix and number the sheet prints before it."""
+        """Each drawn note with the prefix and number the sheet prints before it; a
+        flag note leaves its number's place to the flag drawn there."""
         notes = self.drawn_notes()
-        return [f"{'NOTES:  ' if row == 0 else '        '}{row + 1}. {note}"
+        flagged = len(notes) - len(self._flags)
+        return [f"{'NOTES:  ' if row == 0 else '        '}{_FLAG_ROOM if row >= flagged else f'{row + 1}. '}{note}"
                 for row, note in enumerate(notes)]
 
     @property
@@ -1107,7 +1142,9 @@ class AssemblySheets(list):
 def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revision: str = "A",
                     size: str = "A3", author: str = "", date: str = "", projection: str = "THIRD ANGLE",
                     ink: str = "mono", notes: Sequence[str] = (), general_tolerance: str = "",
-                    revisions: Sequence[tuple[str, str, str]] = ()) -> AssemblySheets:
+                    revisions: Sequence[tuple[str, str, str]] = (), stage: str | None = None,
+                    profile: Profile | None = None, category: str = "", company: str = "",
+                    fields: Mapping[str, str] | None = None) -> AssemblySheets:
     """An assembly drawing: a general arrangement sheet and a sheet for each part.
 
     The general arrangement draws the assembly whole and without hidden lines: the
@@ -1128,8 +1165,12 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
     The title block on every sheet carries the assembly's drawing number,
     revision, author and date, the set being one drawing; ``notes`` and
     ``revisions`` go on the general arrangement, ``general_tolerance`` on the part
-    sheets, whose sizes it governs. Materials and part numbers come from
-    ``parts.set(...)`` and are blank otherwise.
+    sheets, whose sizes it governs. ``stage``, ``profile``, ``category``,
+    ``company`` and ``fields`` go on every sheet, as :class:`Sheet` takes them.
+    Materials and part numbers come from ``parts.set(...)`` and are blank
+    otherwise. The general arrangement's overall sizes are reference
+    dimensions: an assembly's envelope is information, never inspected; what
+    it requires once assembled goes in flag notes (:meth:`View.flag`).
     """
     from cadgen._internal.drawing_features import (
         holes as find_holes, revolved, slots as find_slots, turned_surfaces,
@@ -1138,7 +1179,8 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
     if not isinstance(parts, PartsList):
         raise TypeError(f"assembly_sheets() takes the PartsList that parts_list() returns, got {type(parts).__name__}")
     common = dict(size=size, part_number=part_number, revision=revision, author=author, date=date,
-                  projection=projection, ink=ink)
+                  projection=projection, ink=ink, stage=stage, profile=profile, category=category, company=company,
+                  fields=dict(fields or {}))
     ga = Sheet(title=title, notes=notes, revisions=revisions, **common)
     frame = ga.height - 2 * _MARGIN
     on_ga = min(len(parts), max(1, int(_GA_LIST_SHARE * frame // _LIST_ROW) - 1))
@@ -1157,8 +1199,8 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
     ga.scale, slots = _arrange_assembly(ga, shape, second)
     views = {name: ga.view(shape, name, at=at, label=label, hidden=False, centre_marks=name != "iso", scale=own)
              for name, at, own, label in slots}
-    views["front"].overall()
-    views[second].overall(width=second == "right", height=second == "top")
+    views["front"].overall(reference=True)
+    views[second].overall(width=second == "right", height=second == "top", reference=True)
     for name in ("front", second, "iso"):
         if name in views:
             views[name].balloons(parts)

@@ -21,12 +21,13 @@ from cadgen._internal.drawing_annotation import (
     _Features, _HoleTable, _callout_value, _draw_hole_table, _draw_hole_tags, _hole_table, _plan_view,
     _resolve_view, _shows, _tol_suffix,
 )
-from cadgen._internal.drawing_assembly import _draw_balloons, _refresh_from_item, _refuse_balloons_on
+from cadgen._internal.drawing_assembly import _draw_balloons, _item_point, _refresh_from_item, _refuse_balloons_on
 from cadgen._internal.drawing_base import (
-    _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _CALLOUT_STACK, _CENTRE_OVERSHOOT, _DIM_ROW, _HATCH_SCALE,
+    _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _CALLOUT_STACK, _CENTRE_OVERSHOOT, _DIM_ROW, _FLAG_SIDE,
+    _HATCH_SCALE,
     _LABEL_GAP, _LABEL_HEIGHT, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE, SHEET_SIZES, _SIDES,
     _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_W, _box_dimension_value, _box_text, _cross, _dimstyle,
-    _dirs, _dot, _draw_dimension_symbols, _draw_symbol, _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs,
+    _dirs, _dot, _draw_dimension_symbols, _draw_flag, _draw_symbol, _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs,
     _scale_label, _shown, _spans, _text_box, _text_width, _where,
 )
 from cadgen._internal.drawing_gdt import (
@@ -1001,7 +1002,9 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 dimension_lines.append(((min(a[0], b[0]), base[1]), (max(a[0], b[0]), base[1])))
             else:
                 dimension_lines.append(((base[0], min(a[1], b[1])), (base[0], max(a[1], b[1]))))
-            if not reference:  # a reference dimension states no requirement
+            # A reference dimension states no requirement; an assembly's envelope is
+            # stated by one all the same, being information nobody inspects.
+            if not reference or (record is not None and record["assembly"]):
                 state(measured, _sheet_axis(proj, horizontal))
 
         def on_view(point, margin: float = 1.0) -> bool:
@@ -1258,6 +1261,50 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 box = _draw_frame(msp, dim.frame, q[0] + 3 if right else q[0] - 3 - width, q[1], th)
                 claim(f"frame {dim.frame.characteristic}", box)
                 reach["bottom"] = max(reach["bottom"], vy0 - box[1] + 1.0)
+            elif dim.kind == "flag":
+                # A flag note: a leader to the flag, the flag numbered as its note.
+                p = model_to_sheet(dim.p1 if dim.p1 is not None else _item_point(view, dim.item))
+                check("flag", dim.index, p)
+                side, tall = _FLAG_SIDE * th, _FLAG_SIDE * th * math.sqrt(3) / 2
+                number = len(sheet.drawn_notes()) - len(sheet._flags) + sheet._flags.index(dim.text) + 1
+
+                def flag_at(offset):
+                    q = (p[0] + offset[0], p[1] + offset[1])
+                    right = offset[0] >= 0
+                    land = (q[0] + (side / 4 if right else -side / 4), q[1])
+                    x = q[0] if right else q[0] - side
+                    return q, land, (x, q[1] - tall / 2, x + side, q[1] + tall / 2)
+
+                def clear(q, land, box) -> bool:
+                    x0, y0, x1, y1 = box
+                    taken = [(b[0], b[2], b[1], b[3]) for _v, b in claimed]
+                    return (not blocked(x0, x1, y0, y1, own_box)
+                            and not (x1 > vx0 and x0 < vx1 and y1 > vy0 and y0 < vy1)
+                            and not any(x0 < t[1] and x1 > t[0] and y0 < t[3] and y1 > t[2] for t in taken)
+                            and not _crosses_any((p, q, land), [*dimension_lines, *leaders])
+                            and not _runs_through((q, land), taken))
+
+                spot = flag_at((dim.radius, dim.angle))
+                if dim.offset is None:
+                    # Unplaced: the nearest spot out of the view, clear of its
+                    # annotation, the leader crossing no line.
+                    tries = [flag_at((ux * reach_out, uy * reach_out)) for reach_out in range(10, 90, 6)
+                             for ux, uy in ((0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7))]
+                    spot = next((t for t in tries if clear(*t)), None)
+                    if spot is None:
+                        spot = flag_at((dim.radius, dim.angle))
+                        if warnings is not None:
+                            warnings.append(f"{view.name} flag {number}: no clear place near its point; "
+                                            "flag(..., offset=(x, y)) places it")
+                q, land, box = spot
+                msp.add_leader([p, q, land], dxfattribs={"layer": "DIM"},
+                               override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
+                _draw_flag(msp, str(number), box[0], q[1], side, "DIM")
+                claim(f"flag {number}", box)
+                leaders.append((p, q, land))
+                for name, beyond in (("top", box[3] - vy1), ("bottom", vy0 - box[1]), ("right", box[2] - vx1),
+                                     ("left", vx0 - box[0])):
+                    reach[name] = max(reach[name], beyond + 1.0)
             elif dim.kind == "note":
                 p = model_to_sheet(dim.p1)
                 check("note", dim.index, p)

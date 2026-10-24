@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from cadgen._internal.drawing_assembly import _BALLOON_AIR, _BALLOON_LEAD, _BALLOON_R, _balloon_axis
 from cadgen._internal.drawing_base import (
-    _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _DIM_ROW, _LABEL_ROOM, _OPPOSITE, _SECTION_LETTERS, _SIDES,
+    _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _DIM_ROW, _FLAG_SIDE, _LABEL_ROOM, _OPPOSITE, _SECTION_LETTERS,
+    _SIDES,
     _dot, _fmt, _ink_width, _look, _looks_down, _near, _shown, _spans, _text_width, _where,
 )
 from cadgen._internal.drawing_features import Slot
@@ -38,6 +39,8 @@ class _Dim:
     tol: Any = None
     fit: str | None = None
     hole: dict | None = None
+    #: The parts-list item a flag note points at, where it names one.
+    item: Any = None
     #: Filled in at render time, on a copy: the hole a callout states, the side and
     #: row an unplaced dimension was given, and the call's index for messages.
     feature: Any = None
@@ -510,9 +513,10 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
                 width = max(width, frame_size(dim.frame, th)[0])
             room[side] = max(room[side], rowed[side] + _CALLOUT_CLEAR + _CALLOUT_LANDING + _CALLOUT_GAP
                              + width + _CALLOUT_GAP)
-        elif dim.kind in ("note", "frame"):
+        elif dim.kind in ("note", "frame", "flag") and dim.p1 is not None:
             p = proj.point(dim.p1)
-            width = (_text_width(dim.text, th) if dim.kind == "note" else frame_size(dim.frame, th)[0]) + 4.0
+            width = 4.0 + (_text_width(dim.text, th) if dim.kind == "note" else
+                           frame_size(dim.frame, th)[0] if dim.kind == "frame" else _FLAG_SIDE * th)
             if dim.radius >= 0:
                 room["right"] = max(room["right"], (p[0] - bx1) * sv + dim.radius + width)
             else:
