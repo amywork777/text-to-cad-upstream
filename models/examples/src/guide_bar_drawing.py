@@ -27,7 +27,8 @@ def guide_bar_drawing():
     front.dim((LENGTH / 12, 0, -r), (LENGTH / 12, 0, r), text="%%c<>")    # left of the break
     front.dim((LENGTH + SPIGOT_LENGTH / 2, 0, -s), (LENGTH + SPIGOT_LENGTH / 2, 0, s), text="%%c<>")
     front.dim((LENGTH, 0, -r), (LENGTH + SPIGOT_LENGTH, 0, -r))
-    front.dim((0, 0, r), (CROSS_HOLE_INSET, 0, r))
+    front.dim((0, 0, r), (CROSS_HOLE_INSET, 0, r))                         # the left cross hole from the end
+    front.dim((LENGTH - CROSS_HOLE_INSET, 0, r), (LENGTH, 0, r))           # the right one from the shoulder
     front.note(f"{END_CHAMFER:g} × 45°", (END_CHAMFER / 2, 0, -r + END_CHAMFER / 2), offset=(-10, -10))
     top.holes()
     return sheet

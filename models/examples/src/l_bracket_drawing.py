@@ -2,7 +2,9 @@
 
 Run `python l_bracket.py` first; this script documents the STEP it writes. Both hole
 patterns are called out from the part, in the views that look down them; every
-constant a dimension references comes from the model module.
+constant a dimension references comes from the model module. The bracket is
+symmetric about its middle across X, and the views that measure X say so: the
+spacings across that line place the holes and the gussets either side.
 """
 
 from pathlib import Path
@@ -40,6 +42,7 @@ def l_bracket_drawing():
     # Top: the base, its holes and where the gussets stand.
     (x0, y0), (x1, _) = BASE_HOLE_LOCATIONS
     top.overall()
+    top.symmetric("v")
     top.holes()
     top.dim((x0, y0, BASE_THICKNESS), (x1, y0, BASE_THICKNESS))
     top.dim((x1, -BASE_WIDTH / 2, BASE_THICKNESS), (x1, y0, BASE_THICKNESS))
@@ -54,6 +57,7 @@ def l_bracket_drawing():
     # Front: the back plate's holes, seen down their axes.
     (bx0, bz0), (bx1, _) = BACK_HOLE_LOCATIONS
     front.overall(width=False)
+    front.symmetric("v")
     front.holes()
     front.dim((bx0, back_face, bz0), (bx1, back_face, bz0))
     front.dim((bx0, back_face, 0), (bx0, back_face, bz0))

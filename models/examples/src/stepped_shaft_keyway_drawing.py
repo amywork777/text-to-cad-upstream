@@ -3,7 +3,8 @@
 Run `python stepped_shaft_keyway.py` first; this script documents the STEP it
 writes. The diameters are dimensioned on the profile, where a turner reads them,
 the end view is a section through the keyway, which shows its depth, and a
-detail draws the end chamfer large enough to dimension.
+detail draws the end chamfer large enough to dimension. The keyway is centred on
+the shaft, and the top view says so.
 """
 
 from pathlib import Path
@@ -47,6 +48,7 @@ def stepped_shaft_keyway_drawing():
     front.dim((0, 0, -rs), (LEFT_LENGTH, 0, -rs))
     front.dim((LEFT_LENGTH, 0, -r), (LEFT_LENGTH + MIDDLE_LENGTH, 0, -r))
 
+    top.symmetric("h")                                                       # the keyway is centred
     top.dim((LEFT_LENGTH, KEYWAY_WIDTH / 2, r), (KEYWAY_X_START, KEYWAY_WIDTH / 2, r))
     top.dim((KEYWAY_X_START, KEYWAY_WIDTH / 2, r), (KEYWAY_X_END, KEYWAY_WIDTH / 2, r))
     top.dim((KEYWAY_X_END, -KEYWAY_WIDTH / 2, r), (KEYWAY_X_END, KEYWAY_WIDTH / 2, r))

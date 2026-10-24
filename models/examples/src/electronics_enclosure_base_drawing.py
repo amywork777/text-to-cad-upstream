@@ -4,7 +4,9 @@ Documents the STEP that `electronics_enclosure_base.py` writes, beside it in thi
 project: run that model first (`python electronics_enclosure_base.py`), then this
 script. Every view and measured value follows that artifact, every hole callout is
 read off it, and every constant a dimension references is imported from the model,
-so moving a standoff in the model moves the dimension here.
+so moving a standoff in the model moves the dimension here. The base is symmetric
+about both centre lines, and the drawing says so: one wall each way, and the
+standoff spacings across the centre lines, place the rest.
 """
 
 from pathlib import Path
@@ -42,6 +44,7 @@ def electronics_enclosure_base_drawing():
     front.section("A", through=(0, ys[0], 0))
 
     top.overall()
+    top.symmetric("h").symmetric("v")                                        # symmetric both ways
     top.dim((xs[0], ys[-1], OUTER_HEIGHT), (xs[-1], ys[-1], OUTER_HEIGHT))   # standoff pitch in X
     top.dim((xs[-1], ys[0], OUTER_HEIGHT), (xs[-1], ys[-1], OUTER_HEIGHT))   # and in Y
     top.holes()                                                              # 4× ⌀3 ↧8, from the part
@@ -54,6 +57,7 @@ def electronics_enclosure_base_drawing():
     front.dim((OUTER_LENGTH / 2, y, 0), (OUTER_LENGTH / 2, y, FLOOR_THICKNESS))
     front.dim((-OUTER_LENGTH / 2, y, OUTER_HEIGHT), (-OUTER_LENGTH / 2 + WALL_THICKNESS, y, OUTER_HEIGHT))
     front.dim((xs[0], y, FLOOR_THICKNESS), (xs[0], y, FLOOR_THICKNESS + STANDOFF_HEIGHT))
+    right.dim((0, OUTER_WIDTH / 2, OUTER_HEIGHT), (0, OUTER_WIDTH / 2 - WALL_THICKNESS, OUTER_HEIGHT))   # a side wall
     return sheet
 
 

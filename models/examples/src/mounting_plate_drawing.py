@@ -3,7 +3,9 @@
 Run `python mounting_plate.py` first; this script documents the STEP it writes.
 The holes and the slot are called out from the part itself. The model keeps its
 sizes inside `lib.simple_model_library.make_mounting_plate`, so the positions
-below are that function's numbers, read from its source.
+below are that function's numbers, read from its source. The plate is symmetric
+about both centre lines, and the drawing says so: the bore is on both, and each
+spacing across a centre line puts its holes half of it either side.
 """
 
 from pathlib import Path
@@ -28,6 +30,7 @@ def mounting_plate_drawing():
                   general_tolerance="ISO 2768-m", notes=["OUTSIDE EDGES ROUNDED R0.8.", "BREAK SHARP EDGES."])
     top, front, right, iso = sheet.three_views(part, iso=True)
     top.overall()
+    top.symmetric("h").symmetric("v")                                    # the design is symmetric both ways
     top.holes()                                                          # holes and the slot, from the part
     top.dim((-HOLE_X, HOLE_Y, THICKNESS), (HOLE_X, HOLE_Y, THICKNESS))   # hole pitch in X
     top.dim((HOLE_X, -HOLE_Y, THICKNESS), (HOLE_X, HOLE_Y, THICKNESS))   # and in Y
