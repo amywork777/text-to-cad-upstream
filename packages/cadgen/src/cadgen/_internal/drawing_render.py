@@ -13,6 +13,7 @@ size or scale answers with a larger sheet or a smaller scale.
 from __future__ import annotations
 
 import functools
+import itertools
 import math
 from typing import TYPE_CHECKING
 
@@ -38,7 +39,7 @@ from cadgen._internal.drawing_views import (
     _BREAK_GAP, _PLANE_SHOWN_ON, _Projection, _axis_lines, _bbox_bounds, _break_cuts, _break_hides, _break_shift,
     _broken_shape, _broken_size, _centres, _circles, _clip_runs, _cut, _draw_break_lines, _draw_cutting_plane,
     _edge_points, _edge_polyline, _edges_bounds, _end_on, _merge_centre_lines, _model_to_sheet, _on_cut,
-    _plane_parent, _sheet_axis, _wire_points,
+    _pictures_alike, _plane_parent, _sheet_axis, _wire_points,
 )
 
 if TYPE_CHECKING:
@@ -427,8 +428,9 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             first = next(iter(groups_seen.values()))
             rooms = {view.name: plan["room"] for view, _proj, _bounds, _items, plan, _centre in work
                      if view._arranged is first._arranged}
-            size, gap, iso = first._arranged
-            _settle(sheet, _choose_size_and_scale(sheet, size, iso, rooms, gap, floor=floor, ceiling=ceiling))
+            size, gap, iso, names = first._arranged
+            _settle(sheet, _choose_size_and_scale(sheet, size, iso, rooms, gap, floor=floor, ceiling=ceiling,
+                                                  names=names))
         else:
             # Several arrangements, or none: no one layout to choose by, so the
             # earlier choice stands, held within the bounds a retry set.
@@ -445,12 +447,12 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             arranged[id(view._arranged)][1][view.name] = view
             arranged[id(view._arranged)][2][view.name] = plan["room"]
     groups = []
-    for (size, gap, iso), by_name, room in arranged.values():
+    for (size, gap, iso, names), by_name, room in arranged.values():
         shape = next(iter(by_name.values())).shape
         brk = next((view._break for view in by_name.values() if view._break is not None), None)
         if brk is not None:
             size = _broken_size(size, brk, s)
-        slots, over = _arrange_three_views(sheet, size, gap, s, iso, room)
+        slots, over = _arrange_three_views(sheet, size, gap, s, iso, room, names=names)
         for name, at, own, slot_label in slots:
             if name in by_name:
                 view = by_name[name]
@@ -458,12 +460,21 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 if name == "iso" and (view._auto_label is None or (view.label, view.scale) == view._auto_label):
                     view.scale, view.label = own, slot_label
                     view._auto_label = (slot_label, own)
-        groups.append((by_name, shape, size, gap, iso, room))
+        groups.append((by_name, shape, size, gap, iso, room, names))
+        if warnings is not None:
+            # A turned or symmetric part shows two sides alike, and drawing both
+            # states nothing twice. Sections draw a different picture by design.
+            whole = [n for n in names if n in by_name and by_name[n]._section is None]
+            extent = shape.bounding_box().size.length
+            for a, b in itertools.combinations(whole, 2):
+                if _pictures_alike(projections[id(by_name[a])], projections[id(by_name[b])], extent):
+                    warnings.append(f"the {a} and {b} views draw the same picture; three_views(views=(...)) "
+                                    "leaves one out")
         if gap is None and max(over) > _AIR and warnings is not None:
             # The views were squeezed together past the air between them, so one
             # view's annotation now crowds the next. Say what gives them the room.
             def roomy(scale: float) -> bool:
-                return max(_arrange_three_views(sheet, size, None, scale, iso, room)[1]) <= 0
+                return max(_arrange_three_views(sheet, size, None, scale, iso, room, names=names)[1]) <= 0
 
             roomier = next((name for name in sorted(SHEET_SIZES, key=lambda n: SHEET_SIZES[n][0])
                             if SHEET_SIZES[name][0] > sheet.width), None)

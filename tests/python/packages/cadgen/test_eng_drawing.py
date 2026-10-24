@@ -3004,6 +3004,45 @@ class BrokenViewTests(unittest.TestCase):
         self.assertTrue(any("inside the break" in w for w in warnings), warnings)
 
 
+
+class ViewChoiceTests(unittest.TestCase):
+    """The views a part needs, and no repeat of one it already has."""
+
+    def test_three_views_draws_only_the_views_asked_for(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        front, right = sheet.three_views(_shaft(), views=("front", "right"))
+        self.assertEqual([v.name for v in sheet.views], ["front", "right"])
+        self.assertEqual((front.name, right.name), ("front", "right"))
+        labels = [e.dxf.text for e in _render_sheet(sheet, index=1, count=1, label="v").modelspace()
+                  .query("TEXT[layer=='NOTES']")]
+        self.assertNotIn("TOP", labels)
+        self.assertIn("FRONT", labels)
+
+    def test_a_bad_choice_of_views_is_refused(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        for views in ((), ("front", "front"), ("iso",), ("side",)):
+            with self.assertRaisesRegex(ValueError, "views"):
+                Sheet("A3", 1.0).three_views(_shaft(), views=views)
+
+    def test_two_views_of_the_same_picture_are_reported(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        warnings: list = []
+        sheet = Sheet("A3", 1.0)
+        sheet.three_views(_shaft())  # turned about X: the top and front views draw the same lines
+        _render_sheet(sheet, index=1, count=1, label="same", warnings=warnings)
+        self.assertTrue(any("top and front views draw the same picture" in w for w in warnings), warnings)
+        warnings = []
+        sheet = Sheet("A2", 1.0)
+        sheet.three_views(_perforated())  # a plate: no two of its views alike
+        _render_sheet(sheet, index=1, count=1, label="unlike", warnings=warnings)
+        self.assertFalse([w for w in warnings if "same picture" in w], warnings)
+
 def _points(entity):
     kind = entity.dxftype()
     if kind == "LINE":

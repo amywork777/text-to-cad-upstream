@@ -72,7 +72,8 @@ from cadgen._internal.drawing_base import (
 from cadgen._internal.drawing_render import _render_sheet
 from cadgen._internal.drawing_report import _Facts, geometry_notes, _unstated
 from cadgen._internal.drawing_sheet import (
-    _LIST_ROW, _arrange_three_views, _choose_size_and_scale, _default_rooms, _list_room, _require_settled, _settle,
+    _LIST_ROW, _VIEW_NAMES, _Arrangement, _arrange_three_views, _choose_size_and_scale, _default_rooms, _list_room,
+    _require_settled, _settle,
 )
 from cadgen._internal.drawing_views import _flat_face, _view_extent
 
@@ -156,11 +157,10 @@ class View:
     _auto_label: tuple | None = None
     #: Set when :meth:`Sheet.detail` made this a detail view.
     _detail: _Detail | None = None
-    #: ``(bounding-box size, gap, iso extent or False)`` when :meth:`Sheet.three_views`
-    #: placed this view, one tuple shared by the arrangement's views: the render
-    #: lays them out again from it, and the off-frame guard does at each candidate
-    #: scale. None for a hand-placed ``at=``, which does not move.
-    _arranged: tuple | None = None
+    #: The arrangement :meth:`Sheet.three_views` placed this view in, shared by its
+    #: views: the render lays them out again from it, and the off-frame guard does
+    #: at each candidate scale. None for a hand-placed ``at=``, which does not move.
+    _arranged: _Arrangement | None = None
     #: The parts lists :meth:`balloons` keys this view to.
     _balloons: list = field(default_factory=list)
     #: Set when :meth:`hole_table` tabulates this view's holes.
@@ -664,10 +664,16 @@ class Sheet:
         return self.size is None or self.scale is None
 
     def three_views(self, shape, *, gap: float | None = None, hidden: bool = True, centre_marks: bool = True,
-                    iso: bool = False) -> tuple[View, View, View] | tuple[View, View, View, View]:
+                    iso: bool = False, views: Sequence[str] = _VIEW_NAMES) -> tuple[View, ...]:
         """Top, front and right views in the arrangement ``projection`` names, placed
         from the part's own extents. ``iso=True`` adds an isometric in the free
-        corner, at a standard scale, and returns it fourth.
+        corner, at a standard scale, and returns it last.
+
+        ``views`` names the principal views to draw, returned in the order top,
+        front, right. A turned or symmetric part shows the same picture from two
+        sides; drawing both says nothing twice, so name the ones that differ
+        (``views=("front", "right")`` for a shaft along X). The render says when
+        two views drawn are the same picture.
 
         The positions returned are provisional: when the sheet renders, the views
         are laid out again with each gap sized to the dimensions and callouts the
@@ -676,11 +682,16 @@ class Sheet:
 
         On a sheet made with ``size=None`` or ``scale=None``, the first call
         chooses them for this part (see :class:`Sheet`)."""
+        names = tuple(views)
+        if not names or len(set(names)) != len(names) or any(n not in _VIEW_NAMES for n in names):
+            raise ValueError(f"three_views(views={views!r}): name each of {_VIEW_NAMES} at most once, at least one "
+                             "of them; the isometric comes from iso=True")
+        names = tuple(n for n in _VIEW_NAMES if n in names)
         size = shape.bounding_box().size
-        arranged = (size, gap, _view_extent(shape, "iso", 1.0) if iso else False)
+        arranged = _Arrangement(size, gap, _view_extent(shape, "iso", 1.0) if iso else False, names)
         if self._chooses():
-            _settle(self, _choose_size_and_scale(self, size, arranged[2], _default_rooms(), gap))
-        slots, _over = _arrange_three_views(self, size, gap, self._scale(), arranged[2])
+            _settle(self, _choose_size_and_scale(self, size, arranged.iso, _default_rooms(), gap, names=names))
+        slots, _over = _arrange_three_views(self, size, gap, self._scale(), arranged.iso, names=names)
         views = tuple(
             self.view(shape, name, at=at, hidden=hidden if name != "iso" else False,
                       centre_marks=centre_marks if name != "iso" else False,

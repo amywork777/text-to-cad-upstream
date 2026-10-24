@@ -19,6 +19,11 @@ if TYPE_CHECKING:
     from cadgen.eng_drawing import View
 
 
+#: Points per curved edge when two views' pictures are compared: a circle's chords
+#: then stray from it by well under the comparison's tolerance.
+_ALIKE_SAMPLES = 72
+
+
 # --- projection -----------------------------------------------------------------------
 
 def _project_to_viewport(shape, origin, up, look_at):
@@ -168,6 +173,43 @@ def _edges_bounds(edges) -> tuple[float, float, float, float] | None:
     if not math.isfinite(x0):
         return None
     return (x0, x1, y0, y1)
+
+
+def _pictures_alike(first: _Projection, second: _Projection, extent: float) -> bool:
+    """Whether two projections draw the same visible and hidden lines, allowing for
+    the mirror image a turned or symmetric part shows from the next view round.
+    Both are centred on the part's middle, so one picture lies on the other or on
+    its mirror; ``extent`` (the part's diagonal) sets how close counts."""
+    from shapely import affinity
+    from shapely.geometry import MultiLineString
+
+    tolerance = 0.02 + 0.001 * extent
+    # Two pictures of different extent are not alike, and most pairs differ there:
+    # settle those before sampling any curve.
+    boxes = [_edges_bounds([*p.visible, *p.hidden]) for p in (first, second)]
+    if None in boxes:
+        return False
+    (ax0, ax1, ay0, ay1), (bx0, bx1, by0, by1) = boxes
+    if abs((ax1 - ax0) - (bx1 - bx0)) > tolerance or abs((ay1 - ay0) - (by1 - by0)) > tolerance:
+        return False
+
+    def lines(edges) -> MultiLineString:
+        return MultiLineString([_edge_polyline(edge, _ALIKE_SAMPLES) for edge in edges])
+
+    def covers(a, b) -> bool:
+        if a.is_empty or b.is_empty:
+            return a.is_empty and b.is_empty
+        return a.buffer(tolerance).contains(b) and b.buffer(tolerance).contains(a)
+
+    pairs = [(lines(first.visible), lines(second.visible)), (lines(first.hidden), lines(second.hidden))]
+    return any(all(covers(a, affinity.scale(b, fx, fy, origin=(0, 0))) for a, b in pairs)
+               for fx, fy in ((1, 1), (-1, 1), (1, -1), (-1, -1)))
+
+
+def _same_picture(shape, a: str, b: str) -> bool:
+    """Whether principal views ``a`` and ``b`` of ``shape`` draw the same picture."""
+    return _pictures_alike(_Projection(shape, VIEW_DIRECTIONS[a]), _Projection(shape, VIEW_DIRECTIONS[b]),
+                           shape.bounding_box().size.length)
 
 
 def _view_extent(shape, name: str, scale: float) -> tuple[float, float]:

@@ -8,7 +8,7 @@ module scope.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any, NamedTuple, Sequence
 
 from cadgen._internal.drawing_base import (
     _DIM_ROW, _MARGIN, _MIN_TEXT_MM, _NOTE_HEIGHT, _NOTE_INSET, SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, _TITLE_W,
@@ -29,10 +29,24 @@ _AIR = 8.0
 #: :meth:`Sheet.three_views` hands back at once use it; the render lays the sheet
 #: out again from what each view actually carries.
 _DEFAULT_ROOM = {"top": 2 * _DIM_ROW + 5.0, "bottom": 12.0, "left": 2 * _DIM_ROW + 5.0, "right": 12.0}
+#: The principal views a standard arrangement can hold, in the order it gives them.
+_VIEW_NAMES = ("top", "front", "right")
+
+
+class _Arrangement(NamedTuple):
+    """One standard arrangement, shared by its views: the part's box size, a gap
+    the author fixed (or None), the isometric's 1:1 extent (or False) and the
+    principal views it draws. The render lays the views out again from it, and
+    the off-frame guard does at each candidate scale."""
+
+    size: Any
+    gap: float | None
+    iso: Any
+    names: tuple[str, ...]
 
 
 def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso, room: dict | None = None,
-                         paper: str | None = None
+                         paper: str | None = None, names: tuple[str, ...] = _VIEW_NAMES
                          ) -> tuple[list[tuple[str, tuple[float, float], float | None, str | None]], tuple[float, float]]:
     """Where the three (or four) views of a standard arrangement go at scale ``s``.
 
@@ -50,6 +64,9 @@ def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso,
     their annotation does not. ``iso`` is False, or the isometric's projected
     (width, height) at 1:1, measured once by the caller: it is a hidden-line
     projection, and the guard asks this question at every candidate scale.
+
+    ``names`` are the principal views drawn; the others keep their places empty,
+    so a front and right view sit where they would beside a top view.
 
     Returns the views' slots, and how far the arrangement overran the paper,
     ``(width, height)``, before the gaps gave room back: both 0 when it fits.
@@ -82,6 +99,7 @@ def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso,
             # The pictures are the third-angle pictures; only the slots swap.
             centres = {"right": (W / 2, W + gv + H / 2), "front": (W + gh + L / 2, W + gv + H / 2),
                        "top": (W + gh + L / 2, W / 2)}
+        centres = {n: c for n, c in centres.items() if n in names}
         boxes = [(cx - sizes[n][0] / 2 - need[n]["left"], cx + sizes[n][0] / 2 + need[n]["right"],
                   cy - sizes[n][1] / 2 - need[n]["bottom"], cy + sizes[n][1] / 2 + need[n]["top"])
                  for n, (cx, cy) in centres.items()]
@@ -104,7 +122,7 @@ def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso,
     dy = y_lo - block[2] + max(0.0, ((y_hi - y_lo) - (block[3] - block[2])) / 2)
     at = {n: (cx + dx, cy + dy) for n, (cx, cy) in centres.items()}
     slots: list[tuple[str, tuple[float, float], float | None, str | None]] = [
-        ("top", at["top"], None, None), ("front", at["front"], None, None), ("right", at["right"], None, None)]
+        (n, at[n], None, None) for n in _VIEW_NAMES if n in names]
     if not iso:
         return slots, over
     # Where the pictorial can go: the corner right of the upper row's annotation
@@ -113,16 +131,18 @@ def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso,
     # else at the largest STANDARD scale that does: a pictorial still states its
     # scale, and 1:1.17 is not one anybody can use.
     upper = "top" if third else "front"
-    upper_w, upper_h = sizes[upper]
-    upper_right = at[upper][0] + upper_w / 2 + need[upper]["right"] + 4.0
-    corner_bottom = at[upper][1] - upper_h / 2
-    if third:
-        corner_bottom = max(corner_bottom, at["right"][1] + H / 2 + need["right"]["top"] + 4.0)
-    rightmost = max(at[n][0] + sizes[n][0] / 2 + need[n]["right"] for n in sizes) + 4.0
+    rightmost = max(at[n][0] + sizes[n][0] / 2 + need[n]["right"] for n in at) + 4.0
+    label_room = 12.0  # the pictorial's own label hangs under it
+    regions = [(rightmost, y_lo + label_room)]
+    if upper in at:
+        upper_w, upper_h = sizes[upper]
+        upper_right = at[upper][0] + upper_w / 2 + need[upper]["right"] + 4.0
+        corner_bottom = at[upper][1] - upper_h / 2
+        if third and "right" in at:
+            corner_bottom = max(corner_bottom, at["right"][1] + H / 2 + need["right"]["top"] + 4.0)
+        regions.insert(0, (upper_right, corner_bottom + label_room))
     # The revision table, when there is one, owns the top-right corner.
     x_top, y_top = sheet_w - m - 6.0, sheet_h - m - 6.0 - _revisions_height(sheet)
-    label_room = 12.0  # the pictorial's own label hangs under it
-    regions = [(upper_right, corner_bottom + label_room), (rightmost, y_lo + label_room)]
     iso_w, iso_h = iso
 
     def fit_in(region) -> float:
@@ -191,13 +211,14 @@ def _fits_at(sheet: Sheet, placed: Sequence[tuple], candidate: float, frame, gro
     """Would every view sit inside the frame if the sheet were drawn at `candidate`?
 
     A standard arrangement is laid out again, because the views move when they
-    shrink; ``groups`` carries each one's (views by name, size, gap, iso, room).
+    shrink; ``groups`` carries each one's (views by name, shape, size, gap, iso,
+    room, names).
     A hand-placed view keeps its ``at=``, which is what would happen, and only
     its box shrinks about that point.
     """
     moved: dict[int, tuple[tuple[float, float], float]] = {}
-    for by_name, _shape, size, gap, iso, room in groups:
-        for name, at, own, _label in _arrange_three_views(sheet, size, gap, candidate, iso, room)[0]:
+    for by_name, _shape, size, gap, iso, room, names in groups:
+        for name, at, own, _label in _arrange_three_views(sheet, size, gap, candidate, iso, room, names=names)[0]:
             if name in by_name:
                 moved[id(by_name[name])] = (at, own or candidate)
     for view, _proj, bounds, _cx, _cy, _box in placed:
@@ -524,10 +545,10 @@ def _choose_for_breaks(sheet: Sheet, floor: int, ceiling: float | None) -> None:
     if arranged is None:
         _settle(sheet, _within(sheet, floor, ceiling))
         return
-    size, gap, iso = arranged._arranged
+    size, gap, iso, names = arranged._arranged
     brk = next(view._break for view in sheet.views if view._break is not None)
     _settle(sheet, _choose_size_and_scale(sheet, _broken_size(size, brk, sheet._scale()), iso, _default_rooms(), gap,
-                                          floor=floor, ceiling=ceiling))
+                                          floor=floor, ceiling=ceiling, names=names))
 
 
 def _within(sheet: Sheet, floor: int, ceiling: float | None) -> tuple[str, float]:
@@ -554,7 +575,7 @@ _SIZE_REDUCED = "A3"
 
 
 def _choose_size_and_scale(sheet: Sheet, extent, iso, room: dict, gap: float | None = None, *, floor: int = 0,
-                           ceiling: float | None = None) -> tuple[str, float]:
+                           ceiling: float | None = None, names: tuple[str, ...] = _VIEW_NAMES) -> tuple[str, float]:
     """The size and scale for a sheet that leaves either to itself, with a part
     of ``extent`` drawn in three views (and an isometric, ``iso`` being its 1:1
     extent or False), each view with ``room`` for its annotation.
@@ -576,7 +597,7 @@ def _choose_size_and_scale(sheet: Sheet, extent, iso, room: dict, gap: float | N
         except ValueError:
             return None  # its notes do not fit this sheet's width
         for scale in scales:
-            if max(_arrange_three_views(sheet, extent, gap, scale, iso, room, paper)[1]) <= 0:
+            if max(_arrange_three_views(sheet, extent, gap, scale, iso, room, paper, names)[1]) <= 0:
                 return scale
         return None
 
