@@ -1098,8 +1098,9 @@ return pmi.annotate(body,
   (`characteristic`, `value`, `unit`, `zone`, `datums` in order). A nominal's `source` is
   `geometry`, measured, where the code made the annotation, and `file` where another system did.
   XCAF holds limits in place of a nominal (its value is then their midpoint): a nominal of the
-  code's beside limits is measured where the document is read, and one read from a file is the
-  limits' midpoint, whatever nominal value the file writes.
+  code's beside limits is measured where the document is read, and a dimension read from a file
+  with limits has none (`nominal` is null): the file states limits, and the midpoint XCAF rebuilds
+  is no fact of it.
 - **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
   GD&T as XCAF reads it, and never blocks a conversion or an export. What this does not hold whole
   is `unsupported`, with its `xcaf_type`, its values and a `reason`: another characteristic or

@@ -113,9 +113,10 @@ Each entry has `id`, `kind` (`datum`, `dimension`, `geometric_tolerance`), `stat
 (`ok`, `missing`, `ambiguous`, `invalid`), `problem`, `refs` (each with its canonical
 ref and status), and one of `datum`, `dimension` or `geometric_tolerance` holding its
 values. PMI read from another system's STEP that this does not model whole (another
-characteristic, limits, a fit, modifiers, a link to an edge or a point) is listed as
-`kind: "unsupported"` with its `xcaf_type` and a `reason`, never dropped, and a
-nominal the file holds says `"source": "file"`.
+characteristic, a fit, modifiers, limits beside either, a link to an edge or a point)
+is listed as `kind: "unsupported"` with its `xcaf_type` and a `reason`, never dropped.
+A nominal the file holds says `"source": "file"`; a dimension the file gives limits
+has none (`nominal` is null), since the file states limits, not a nominal.
 
 ## Export
 

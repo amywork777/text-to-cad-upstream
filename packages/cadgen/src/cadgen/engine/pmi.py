@@ -43,7 +43,7 @@ magnitude and the STEP writer negates it, so ``plus_minus(0.2)`` is written
 dimension's two values in place of its nominal, its value then their midpoint, which the STEP
 writer writes as the nominal value beside CAx-IF's ``'lower limit'`` and ``'upper limit'`` items:
 the nominal of one the code made is measured again where its document is read, and one read from
-a file is their midpoint, whatever nominal value the file writes.
+a file has none (the file states limits; the midpoint XCAF rebuilds is no fact of it).
 
 **References.** A ref is a face of the part annotated: a build123d ``Face`` of the shape given to
 ``annotate`` (numbered against it at once), or a ref in the engine's grammar (``refs``) -- an
@@ -1080,8 +1080,10 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
                          "upper": _as_held(found.GetUpperBound())}
         notes = [(found.GetDescriptionName(at).ToCString(), found.GetDescription(at).ToCString())
                  for at in range(found.NbDescriptions())] if found.HasDescriptions() else []
-        values = {"type": kind, "basic": THEORETICAL in notes, "nominal": _as_held(found.GetValue()),
-                  "tolerance": tolerance}
+        # A file's limits come with no nominal: XCAF's value is then their midpoint, no fact of the
+        # file (one the code made is measured, below).
+        nominal = None if found.IsDimWithRange() else _as_held(found.GetValue())
+        values = {"type": kind, "basic": THEORETICAL in notes, "nominal": nominal, "tolerance": tolerance}
         if notes:
             values["notes"] = [list(note) for note in notes]
         add(label, "dimension", values, _beyond_dimension(found, kind, notes), found.GetType().name)
@@ -1119,8 +1121,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
             resolved = _resolved(spec, faces, names, {prototype.name, root}, letters_of.get(record["part"], set()))
             record.update(status=resolved.status, problem=resolved.problem, refs=_refs(resolved))
             if (record["values"].get("tolerance") or {}).get("type") == "limits":
-                # XCAF's value of a dimension given limits is their midpoint: its nominal is measured.
-                record["values"]["nominal"] = _as_held(resolved.nominal or 0.0)
+                record["values"]["nominal"] = _as_held(resolved.nominal or 0.0)  # measured, as its build did
     return records
 
 
@@ -1300,10 +1301,12 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
                                       "basic": bool(unlinked["dimension"].get("basic")), "nominal": None,
                                       "tolerance": unlinked["dimension"]["tolerance"]}
             else:
-                # Measured from the geometry where the code made it; as the file says, where another system did.
+                # Measured from the geometry where the code made it; as the file says, where another
+                # system did, and none where the file states limits alone.
                 entry["dimension"] = {"type": values["type"], "basic": bool(values.get("basic")),
-                                      "nominal": {"value": values["nominal"], "unit": UNIT,
-                                                  "source": "geometry" if extra is not None else "file"},
+                                      "nominal": None if values["nominal"] is None else
+                                      {"value": values["nominal"], "unit": UNIT,
+                                       "source": "geometry" if extra is not None else "file"},
                                       "tolerance": values["tolerance"]}
         elif kind == "geometric_tolerance":
             entry["geometric_tolerance"] = dict(unlinked["geometric_tolerance"] if unlinked is not None else values)

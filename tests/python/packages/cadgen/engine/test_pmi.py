@@ -440,8 +440,8 @@ class LimitsTest(_Folder):
         [entry] = pmi.read(foreign.step(self.folder / "vendor.step"))
         self.assertEqual((entry["kind"], entry["status"]), ("dimension", "ok"), entry)
         self.assertEqual(entry["dimension"]["tolerance"], {"type": "limits", "lower": 7.9, "upper": 8.1})
-        # XCAF holds the two limits alone: the nominal read with them is their midpoint.
-        self.assertEqual(entry["dimension"]["nominal"], {"value": 8.0, "unit": "mm", "source": "file"})
+        # The file states limits, not a nominal: none is served (XCAF's midpoint is no fact of the file).
+        self.assertIsNone(entry["dimension"]["nominal"])
 
     def test_a_vendor_dimension_with_limits_and_more_is_unsupported_with_why(self) -> None:
         """XCAF holds limits or deviations, never both; limits with a fit or a qualifier say more
@@ -464,6 +464,7 @@ class LimitsTest(_Folder):
             self.assertIn("limits", entry["reason"])
             self.assertIn(other, entry["reason"])
             self.assertEqual(entry["values"]["tolerance"], {"type": "limits", "lower": 7.9, "upper": 8.1})
+            self.assertIsNone(entry["values"]["nominal"])
 
 
 # A plate whose one variable ``cut`` is a round hole and then a square pocket: the name the hole's face
