@@ -288,10 +288,11 @@ function EntryRow({ entry, pmi, label, rowProps, onSelectRelated, children }) {
 }
 
 /**
- * A part's named view: its glyph, its name and what it shows (how many, or all); a pick applies it,
- * a second leaves it. One its part's placement cannot cut, or the viewer cannot apply, says why.
+ * A part's named view: its glyph, its name and what it shows (how many, or all), and its part where
+ * several parts have views (`ofParts`); a pick applies it, a second leaves it. One its part's
+ * placement cannot cut, or the viewer cannot apply, says why.
  */
-function ViewRow({ view, pmi }) {
+function ViewRow({ view, pmi, ofParts }) {
   const active = view.key === pmi.viewKey;
   const note = !view.supported ? `Not shown: ${view.unsupported}.` : view.at?.sectionOff ? PMI_SECTION_OFF : "";
   return <li className="min-w-0">
@@ -301,6 +302,7 @@ function ViewRow({ view, pmi }) {
         <PmiGlyph name="view" className="size-3 shrink-0" aria-hidden="true" />
         <TreeRowLabel className="min-w-0 shrink">{view.name}</TreeRowLabel>
         <TreeRowLabel className="flex-1 text-micro text-muted-foreground">{view.supported ? pmiViewShowsText(view) : "not shown"}</TreeRowLabel>
+        {ofParts ? <TreeRowLabel className="shrink-0 text-micro text-muted-foreground">{view.partName}</TreeRowLabel> : null}
       </button>
     </TreeRowSurface>
     {note ? <FileSheetStatusText className="pb-0.5 pl-6">{note}</FileSheetStatusText> : null}
@@ -348,8 +350,9 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
     return pmi.entries.filter(entry => !said.has(entry.key));
   }, [pmi.entries, notes]);
   const visible = filtered ? featureRequirements(annotations, featureIds) : annotations;
-  // Notes of several parts each number from 1: each says its part.
+  // Notes of several parts each number from 1, and views of several may share a name: each says its part.
   const notesOfParts = new Set(notes.map(note => note.part)).size > 1;
+  const viewsOfParts = new Set(views.map(view => view.part)).size > 1;
   const coverageOfParts = coverage.length > 1;
   // A related annotation picked from another's values: the whole list, for the selection it makes.
   const selectRelated = (entry) => { setShowAllFor(selectionKeyOf(entry.featureIds)); pmi.select(entry.key); };
@@ -395,10 +398,10 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
     {draft?.call ? <NewEntry key={draft.started} option={draft}
       onCancel={closeDraft} onAdd={(call) => { pmi.add(draft.part, call); closeDraft(); }} /> : null}
     {moving ? <FileSheetStatusText className="py-1">Not drawn while the parts are moved: a tolerance is of the part as made.</FileSheetStatusText> : null}
-    {!pmi.entries.length && !draft ? <FileSheetStatusText className="py-1">No PMI yet: add some from a face's menu.</FileSheetStatusText> : null}
+    {!pmi.entries.length && !views.length && !draft ? <FileSheetStatusText className="py-1">No PMI yet: add some from a face's menu.</FileSheetStatusText> : null}
     <div data-pmi-groups="">
       {views.length ? <FileSheetSettingsSection title="Views" sectionId="pmi-views">
-        <ul className="px-1 text-tiny" aria-label="Views">{views.map(view => <ViewRow key={view.key} view={view} pmi={pmi} />)}</ul>
+        <ul className="px-1 text-tiny" aria-label="Views">{views.map(view => <ViewRow key={view.key} view={view} pmi={pmi} ofParts={viewsOfParts} />)}</ul>
       </FileSheetSettingsSection> : null}
       {notes.length ? <FileSheetSettingsSection title="Notes" sectionId="pmi-notes">
         <ul className={cn("px-1 text-tiny", pmi.off && "opacity-60")} aria-label="Notes">

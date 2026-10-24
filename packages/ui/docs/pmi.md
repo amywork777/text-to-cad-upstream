@@ -123,10 +123,12 @@ built: while Explode or a pose moves the parts they are not drawn, and the secti
 
 The PMI section (`xbf/pmi/PmiSection.jsx`) is read as a machinist reads a drawing: under its head
 (New, the eye of them all), four groups, each under a static heading with a rule above all but the
-first, none folding ([settings UI](settings-ui.md)), each there only where it has something:
+first, none folding ([settings UI](settings-ui.md)), each there only where it has something (a
+part with no annotation, note or view at all says "No PMI yet" instead):
 
 - **Views**: a row per view, its glyph, its name and what it shows ("4 annotations", or "All" for
-  one that names none). A pick applies it and a second leaves it; another view's pick applies that
+  one that names none), each part's said where several parts have views (two may share a name).
+  A pick applies it and a second leaves it; another view's pick applies that
   one instead. Applied (`xbf/pmi/usePmiView.js`, `pmiViews.js`): the camera is set down its
   direction (from the part toward the eye, as the stills' presets) with its up, fitted to its
   part's box where the part stands, through the viewport's own camera (`setPerspective`), the

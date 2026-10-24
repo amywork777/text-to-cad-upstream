@@ -92,8 +92,8 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
     [entries, instances, shownParts]);
 
   // ---- views: each part's, seen from where its part stands -------------------------------------
-  const views = useMemo(() => served.views.map(view => ({ ...view, at: pmiViewAt(view, instances, shownParts) })),
-    [served, instances, shownParts]);
+  const views = useMemo(() => served.views.map(view => ({ ...view, partName: partNameOf(view.part), at: pmiViewAt(view, instances, shownParts) })),
+    [served, partNameOf, instances, shownParts]);
   // The view picked (`viewed`), while it can be applied: its camera and section placed, its part's box.
   const viewed = views.find(item => item.key === viewKey && item.at) || null;
   const viewedBounds = viewed ? scene?.selectionBounds?.([xbfElementId(viewed.at.instance)]) || null : null;

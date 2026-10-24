@@ -166,6 +166,30 @@ it('groups views, notes, coverage and annotations under static headings', () => 
   expect(drawnKeys()).toEqual(['0:A']);
 });
 
+it("two parts' views of one name each say their part, as their notes do", () => {
+  // A second part, the lid, placed beside the plate and given an iso view of its own.
+  openMbd(structure => ({ ...structure,
+    prototypes: [...structure.prototypes, { ...structure.prototypes[0], index: 1, name: 'lid' }],
+    instances: [...structure.instances, { ...structure.instances[0], prototype: 1, path: 'plate/lid' }],
+    tree: { ...structure.tree, children: [...structure.tree.children, { name: 'lid', prototype: 1, instance: 1 }] },
+    pmi_views: [...structure.pmi_views, { ...structure.pmi_views[1], part: 1 }] }));
+  expect(rowsOf('Views')).toEqual(['A-A4 annotationsplate', 'isoAllplate', 'isoAlllid']);
+  cleanup();
+  // One part's views say none.
+  openMbd();
+  expect(rowsOf('Views')).toEqual(['A-A4 annotations', 'isoAll']);
+});
+
+it('says there is no PMI yet only where a document has none at all, views included', () => {
+  // Views alone: listed, and no word of there being nothing.
+  openMbd(structure => ({ ...structure, pmi: [], pmi_coverage: [] }));
+  expect(headings()).toEqual(['Views']);
+  expect(screen.queryByText(/No PMI yet/)).toBeNull();
+  cleanup();
+  openMbd(structure => ({ ...structure, pmi: [], pmi_views: [], pmi_library: [], pmi_coverage: [] }));
+  expect(screen.getByText("No PMI yet: add some from a face's menu.")).toBeTruthy();
+});
+
 it("a view's row applies its camera, section and PMI, and a second pick leaves it", () => {
   const { viewer, store, fit } = openMbd();
   expect(drawnKeys()).toEqual(ALL_DRAWN);
