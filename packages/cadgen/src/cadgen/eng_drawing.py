@@ -1267,6 +1267,7 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
     from cadgen._internal.drawing_features import (
         grooves, holes as find_holes, revolved, slots as find_slots, tapers, turned_surfaces,
     )
+    from cadgen._internal.drawing_report import _owned
 
     if not isinstance(parts, PartsList):
         raise TypeError(f"assembly_sheets() takes the PartsList that parts_list() returns, got {type(parts).__name__}")
@@ -1306,7 +1307,7 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
                       general_tolerance=general_tolerance, **(common | {"size": None, "scale": None}))
         sheet._item = _PartOf(item, title, shown)
         shape, turn = item.shape, None
-        turned = revolved(shape)
+        turned = revolved(shape, bores=True)
         if turned is not None and turned.axis != 0:
             size = shape.bounding_box().size
             if (size.X, size.Y, size.Z)[turned.axis] > turned.diameter:
@@ -1316,13 +1317,16 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
 
                 turn = Rot(0, 90, 0) if turned.axis == 2 else Rot(0, 0, -90)
                 shape = turn * shape
-                turned = revolved(shape)
+                turned = revolved(shape, bores=True)
         names = list(_VIEW_NAMES)
+        features = [*find_holes(shape), *find_slots(shape)]
         if turned is not None:
             # Turned whole: the two views square to its axis draw the same picture,
-            # so the first of them in front, top, right order is drawn.
+            # so the first of them in front, top, right order is drawn, unless only
+            # the other looks down a hole drilled across it.
             beside = [n for n in ("front", "top", "right") if not VIEW_DIRECTIONS[n][0][turned.axis]]
-            names.remove(beside[1])
+            sees = [any(_looks_into(f, VIEW_DIRECTIONS[n][0]) for f in features) for n in beside]
+            names.remove(beside[0] if sees[1] and not sees[0] else beside[1])
         views = sheet.three_views(shape, iso=True, views=names)[:-1]
         stated: set[int] = set()  # the model axes whose overall size is stated
         if turned is not None:
@@ -1342,13 +1346,14 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
 
             # Along the axis, every step from one end: each shoulder, each end of a
             # taper and the middle of each groove. The far end is the overall
-            # size's; a dimension to it as well would close a loop.
+            # size's; a dimension to it as well would close a loop. A counterbore's
+            # floor or a blind bore's bottom is its callout's depth, not a step.
             ends = shape.bounding_box()
             near, far = tuple(ends.min)[k], tuple(ends.max)[k]
             stations: dict[float, float] = {}
             for face in shape.faces():
                 normal = tuple(face.normal_at()) if face.geom_type == GeomType.PLANE else (0.0, 0.0, 0.0)
-                if abs(abs(normal[k]) - 1) < 1e-9:
+                if abs(abs(normal[k]) - 1) < 1e-9 and not _owned(face, features):
                     reach = max(math.dist(tuple(v), on_profile(tuple(v)[k], 0.0)) for v in face.vertices())
                     z = round(tuple(face.center())[k], 3)
                     stations[z] = max(stations.get(z, 0.0), reach)
@@ -1376,7 +1381,6 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
             if width_axis not in stated or height_axis not in stated:
                 view.overall(width=width_axis not in stated, height=height_axis not in stated)
             stated |= {width_axis, height_axis}
-        features = [*find_holes(shape), *find_slots(shape)]
         low = shape.bounding_box().min
         if turned is None:
             placed = set()

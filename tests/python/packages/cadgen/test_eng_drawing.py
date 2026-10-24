@@ -4087,6 +4087,41 @@ class TurnedShapeTests(unittest.TestCase):
         _render_sheet(sheet, index=1, count=1, label="spigot", warnings=[], facts=facts)
         self.assertEqual([line for line in _unstated(facts) if "taper" in line or "groove" in line], [])
 
+    def test_a_first_pass_leaves_a_counterbores_floor_to_its_callout(self) -> None:
+        from build123d import Align, Box, Compound, Cylinder, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        tube = Cylinder(15, 120, align=up) - Pos(0, 0, 90) * Cylinder(10, 30, align=up) - Cylinder(6, 120, align=up)
+        base = Pos(0, 0, -5) * Box(60, 60, 5, align=up)
+        tube.label, base.label = "tube", "base"
+        sheets = assembly_sheets(parts_list(Compound(children=[tube, base])), title="TUBE")
+        facts = _facts()
+        doc = _render_sheet(sheets.part("tube"), index=2, count=3, label="tube", warnings=[], facts=facts)
+        self.assertNotIn("90", _dim_texts(doc), "the floor is the callout's ↧30, not a second statement of it")
+        self.assertEqual(_unstated(facts), [])
+
+    def test_a_cross_drilled_pins_first_pass_is_a_turned_parts(self) -> None:
+        from build123d import Align, Box, Compound, Cylinder, Pos, Rot
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        pin = Cylinder(6, 80, align=up) + Pos(0, 0, 80) * Cylinder(4, 20, align=up) \
+            - Pos(0, 0, 70) * Rot(0, 90, 0) * Cylinder(1, 20)              # a cotter hole across it
+        base = Pos(0, 0, -5) * Box(60, 60, 5, align=up)
+        pin.label, base.label = "pin", "base"
+        sheets = assembly_sheets(parts_list(Compound(children=[pin, base])), title="PIN")
+        facts = _facts()
+        doc = _render_sheet(sheets.part("pin"), index=2, count=3, label="pin", warnings=[], facts=facts)
+        self.assertEqual(_unstated(facts), [], "its diameters, its shoulder and the cotter hole's place")
+        self.assertIn("8", _dim_texts(doc), "the ⌀8 step, as a turned part states it")
+
     def test_a_first_pass_sheet_states_a_turned_parts_shape(self) -> None:
         from build123d import Align, Box, Compound, Pos
 

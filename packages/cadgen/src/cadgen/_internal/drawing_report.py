@@ -111,7 +111,7 @@ def _unstated(facts: _Facts) -> list[str]:
             lines.append(f"incomplete: {whose}{text} is not called out. {fix}")
         size = shape.bounding_box().size
         turned = [] if record.get("assembly") else turned_diameters(shape)
-        whole = None if record.get("assembly") else revolved(shape)
+        whole = None if record.get("assembly") else revolved(shape, bores=True)
         # A stated diameter of the part's largest turned surface states its width
         # across that axis too: a shaft's ⌀30 is its size in Y and in Z, and a
         # cone's widest circle is a spring seat's.
@@ -208,7 +208,7 @@ def _anchors(record: dict) -> dict[int, set]:
         if along is not None and all(abs(hi[k] - lo[k] - surface.diameter) <= 0.01 for k in across):
             for k in across:
                 anchors[k].add(round(surface.middle[k], _PLACE))
-    whole = revolved(shape)
+    whole = revolved(shape, bores=True)
     if whole is not None:
         for k in range(3):
             if k != whole.axis:
@@ -274,6 +274,11 @@ def _interfaces(facts: _Facts) -> list[str]:
                          "nominal sizes. What holds the joint along its axis decides the end play it needs, or "
                          "that it is clamped there.")
     return lines
+
+
+def _vector(v) -> str:
+    """A direction as ``(0.71, 0.71, 0)``: no quotes, no minus zero."""
+    return f"({', '.join(_fmt(round(c, 3) + 0.0) for c in v)})"
 
 
 def _places(count: int) -> str:
@@ -628,7 +633,7 @@ def _unplaced_faces(record: dict, whose: str) -> list[str]:
     if len(slopes) > _MANY_SLOPES:
         # Past a few, a line each buries the rest of the report: one line says how
         # many, which views can state them, and the first few to look for.
-        shown = ", ".join(str(tuple(_fmt(c) for c in normal)) for normal, _where in list(slopes)[:_MANY_SLOPES])
+        shown = ", ".join(_vector(normal) for normal, _where in list(slopes)[:_MANY_SLOPES])
         seen = sorted({where for _normal, where in slopes if where})
         unseen = sum(1 for _normal, where in slopes if where is None)
         fix = [f"{where}.angle(vertex, p1, p2), one leg along a face, states each it sees edge-on." for where in seen]
@@ -639,7 +644,7 @@ def _unplaced_faces(record: dict, whose: str) -> list[str]:
     for normal, where in slopes:
         fix = (f"{where}.angle(vertex, p1, p2), one leg along the face, states it." if where else
                "No view on the drawing sees it edge-on; add one.")
-        lines.append(f"incomplete: {whose}an inclined face (its normal {tuple(_fmt(c) for c in normal)}) has no "
+        lines.append(f"incomplete: {whose}an inclined face (its normal {_vector(normal)}) has no "
                      f"angle. {fix}")
     return lines
 
@@ -677,8 +682,9 @@ def _unstated_turns(record: dict, whose: str) -> list[str]:
             if round(groove.middle[along], _PLACE) not in reached[along]:
                 missing.append(f"its place along {'XYZ'[along]}")
         if missing:
-            lines.append(f"incomplete: {whose}the groove R{_fmt(groove.radius)} at {'XYZ'[along or 0]} = "
-                         f"{_fmt(groove.middle[along or 0])} leaves {' and '.join(missing)} unstated: "
+            at = f"{'XYZ'[along]} = {_fmt(groove.middle[along])}" if along is not None else _where(groove.middle)
+            lines.append(f"incomplete: {whose}the groove R{_fmt(groove.radius)} at {at} leaves "
+                         f"{' and '.join(missing)} unstated: "
                          f"{side or 'a view'}.radius(...) on its arc and a dimension to its middle state it.")
     return lines
 

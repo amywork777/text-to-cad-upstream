@@ -632,12 +632,23 @@ class Revolved:
     at: tuple[float, float, float]
 
 
-def revolved(shape) -> Revolved | None:
-    """How a part is turned whole about a principal axis, or None if it is not."""
+def revolved(shape, *, bores: bool = False) -> Revolved | None:
+    """How a part is turned whole about a principal axis, or None if it is not.
+    ``bores=True`` leaves out what is drilled across the axis after turning (a
+    cross hole, a cotter hole, and a blind one's flat bottom): such a part is
+    still turned, though its views from the side are not all alike."""
     from build123d import GeomType
     from OCP.BRepAdaptor import BRepAdaptor_Surface
     from OCP.GeomAbs import GeomAbs_Cone, GeomAbs_Cylinder, GeomAbs_Plane, GeomAbs_Sphere, GeomAbs_Torus
 
+    across: dict[tuple, tuple] = {}  # the bores drilled across: line key -> (direction, foot, radius)
+    if bores:
+        lines = _surface_segments(shape)
+        outside = [key for key, (_d, _foot, segments) in lines.items() if any(not s.concave for s in segments)]
+        if len(outside) == 1:
+            across = {key: (d, foot, max(max(s.r_lo, s.r_hi) for s in segments))
+                      for key, (d, foot, segments) in lines.items()
+                      if key != outside[0] and all(s.concave for s in segments)}
     line = None
     normals = []
     for face in shape.faces():
@@ -645,7 +656,9 @@ def revolved(shape) -> Revolved | None:
         kind = surface.GetType()
         if kind == GeomAbs_Plane:
             n = surface.Plane().Axis().Direction()
-            normals.append((n.X(), n.Y(), n.Z()))
+            normal = (n.X(), n.Y(), n.Z())
+            if not any(_bottom_of(face, normal, bore) for bore in across.values()):
+                normals.append(normal)
             continue
         if kind == GeomAbs_Cylinder:
             ax = surface.Cylinder().Axis()
@@ -662,6 +675,8 @@ def revolved(shape) -> Revolved | None:
         key = _line_key(d, foot)
         if kind == GeomAbs_Sphere:
             continue  # a sphere turns about any line through its centre: checked below
+        if key in across:
+            continue  # drilled across the axis
         if line is None:
             line = (key, d, foot)
         elif key != line[0]:
@@ -684,6 +699,17 @@ def revolved(shape) -> Revolved | None:
         if edge.radius > largest:
             largest, at = edge.radius, _tidy((c.X, c.Y, c.Z))
     return Revolved(axis, round(2 * largest, 6), at) if largest else None
+
+
+def _bottom_of(face, normal, bore) -> bool:
+    """Whether a flat face is the bottom of a bore drilled across the axis: square
+    to the bore, and within its radius of the bore's axis."""
+    d, foot, radius = bore
+    if abs(abs(sum(a * b for a, b in zip(normal, d))) - 1) > 1e-6:
+        return False
+    rel = [c - f for c, f in zip(face.center(), foot)]
+    along = sum(a * b for a, b in zip(rel, d))
+    return math.dist(rel, [along * c for c in d]) <= radius + _TOUCH
 
 
 def turned_diameters(shape) -> list[float]:
@@ -780,8 +806,21 @@ def grooves(shape) -> list[Groove]:
         torus = surface.Torus()
         ax = torus.Axis()
         loc, direction = ax.Location(), ax.Direction()
-        found.append(Groove(round(torus.MinorRadius(), 6), _tidy((loc.X(), loc.Y(), loc.Z())),
-                            (direction.X(), direction.Y(), direction.Z()), round(torus.MajorRadius(), 6)))
+        middle = (loc.X(), loc.Y(), loc.Z())
+        d = (direction.X(), direction.Y(), direction.Z())
+        # A groove's surface faces into the ring its section's centre runs round
+        # (the air is in the torus); a bead's faces out of it.
+        point = face.position_at(0.5, 0.5)
+        normal = face.normal_at(point)
+        rel = [p - m for p, m in zip(point, middle)]
+        radial = [r - sum(a * b for a, b in zip(rel, d)) * c for r, c in zip(rel, d)]
+        reach = math.sqrt(sum(c * c for c in radial)) or 1.0
+        centre = [m + torus.MajorRadius() * c / reach for m, c in zip(middle, radial)]
+        if sum(n * (c - p) for n, c, p in zip(normal, centre, point)) <= 0:
+            continue
+        groove = Groove(round(torus.MinorRadius(), 6), _tidy(middle), d, round(torus.MajorRadius(), 6))
+        if groove not in found:
+            found.append(groove)
     return found
 
 

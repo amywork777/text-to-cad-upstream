@@ -275,6 +275,16 @@ class TurnedTests(unittest.TestCase):
         self.assertEqual(turned_diameters(self._shaft()), [20.0, 30.0])
         self.assertEqual(turned_diameters(Box(40, 40, 10) - Cylinder(5, 10)), [], "a bore is a hole, not a step")
 
+    def test_a_bead_is_not_a_groove_and_a_groove_is_one(self) -> None:
+        from build123d import Align, Cylinder, Pos, Torus
+        from cadgen._internal.drawing_features import grooves
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        self.assertEqual(grooves(Cylinder(10, 40, align=up) + Pos(0, 0, 20) * Torus(10, 1.5)), [],
+                         "material raised round it is a bead")
+        found = grooves(Cylinder(10, 40, align=up) - Pos(0, 0, 20) * Torus(10, 1.5))
+        self.assertEqual(len(found), 1, found)
+
     def test_a_fillet_round_a_shoulder_is_not_a_groove(self) -> None:
         from build123d import Axis, fillet
         from cadgen._internal.drawing_features import grooves
