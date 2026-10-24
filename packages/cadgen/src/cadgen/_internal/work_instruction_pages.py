@@ -5,11 +5,13 @@ page's header can say ``PAGE n OF m``, then renders them with matplotlib to a
 temporary file renamed into place: a failed run leaves no document behind.
 
 The pictures are one snapshot packet, one browser: for each step the assembly
-as it stands after the step. Parts a later step installs are hidden; parts the
-step installs are tinted by an area mark laid over their own triangles, and the
-surfaces the step names (a bond line, a machined face) are marked in a second
-colour. Every picture shares one camera fitted to the whole assembly, with
-tight framing off, so a part sits in the same place on every page.
+as it stands after the step, drawn as hidden-line art -- black edges, whatever
+colours the STEP carries, so the one colour on the page means what the legend
+says. Parts a later step installs are hidden; parts the step installs are
+filled by an area mark laid over their own triangles, and the surfaces the step
+names (a bond line, a machined face) are filled in a second colour. Every
+picture shares one camera fitted to the whole assembly, with tight framing off,
+so a part sits in the same place on every page.
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ from typing import Callable
 
 NEW_PART = "#1f6feb"
 SURFACE = "#8250df"
-EARLIER = "#c3cad1"
 PICTURE_PX = (1600, 1000)
 PAGE_MM = {"A4": (210.0, 297.0), "LETTER": (215.9, 279.4)}
 MARGIN = 12.0
@@ -100,12 +101,12 @@ def render_pictures(wi, folder: Path) -> dict[int, Path]:
     jobs, out = [], {}
     for picture in plan:
         camera = {"preset": picture.camera, "target": centre, "orthographicHalfHeight": round(0.55 * diagonal, 4)}
-        marks = [_area(f"step{picture.step}-{ref}", leaves[ref].shape(), NEW_PART, 0.55, tolerance)
+        marks = [_area(f"step{picture.step}-{ref}", leaves[ref].shape(), NEW_PART, 0.6, tolerance)
                  for ref in picture.tint]
         marks += [_area(f"step{picture.step}-{ref}", wi.scene.resolve(ref)[0].shape(), SURFACE, 0.75, tolerance)
                   for ref in picture.surfaces]
         path = folder / f"step-{picture.step}.png"
-        job = {"input": str(wi.step_path), "mode": "view",
+        job = {"input": str(wi.step_path), "mode": "view", "display": "hidden-line",
                "output": {"tightFrame": False, "transparent": True},
                "outputs": [{"path": str(path), "camera": camera}]}
         if marks:
@@ -191,6 +192,11 @@ class _Flow:
     def room(self, height: float) -> None:
         if self.y - height < MARGIN + 8.0:
             self.new_page()
+            if self.y - height < MARGIN + 8.0:
+                raise ValueError(
+                    f"{self.continued or 'the cover'}: one block of text is taller than a page "
+                    f"({height:.0f} mm); split it into shorter instructions"
+                )
 
     def add(self, draw: Draw) -> None:
         self.pages[-1].append(draw)
@@ -264,8 +270,9 @@ class _Flow:
         self.y -= height + 1.0
         x = MARGIN
         for color, label in legend:
-            self.add(lambda ax, x=x, y=self.y, color=color: ax.add_patch(
-                _rect(x, y - 3.0, 3.0, 2.4, lw=0, edge=color, face=color)))
+            face = "white" if color is None else color
+            self.add(lambda ax, x=x, y=self.y, face=face: ax.add_patch(
+                _rect(x, y - 3.0, 3.0, 2.4, lw=0.4, edge="black", face=face)))
             self.add(lambda ax, x=x, y=self.y, label=label: ax.text(
                 x + 4.0, y - 2.6, label, fontsize=SMALL, va="baseline", ha="left", color="#444444"))
             x += 6.0 + self.measure.width(label, SMALL)
@@ -292,12 +299,24 @@ def _blank(ax, x, top, width, caption) -> None:
     ax.plot([x, x + width], [top - 7.0, top - 7.0], lw=0.5, color="black")
 
 
-def _header(ax, wi, w, h, page: int, count: int, open_count: int) -> None:
+def _fit(measure: "_Measure", text: str, size: float, width: float, *, smallest: float = 7.0) -> tuple[str, float]:
+    """``text`` at the largest size down to ``smallest`` that fits ``width``; past
+    that, cut with an ellipsis -- the full title is on the cover, wrapped."""
+    while size > smallest and measure.width(text, size, "bold") > width:
+        size -= 0.5
+    while measure.width(text, size, "bold") > width and len(text) > 1:
+        text = text[:-2].rstrip() + "\u2026"
+    return text, size
+
+
+def _header(ax, measure: "_Measure", wi, w, h, page: int, count: int, open_count: int) -> None:
     top = h - MARGIN
     ax.add_patch(_rect(MARGIN, top - 15.0, w - 2 * MARGIN, 15.0, lw=0.6, edge="black"))
-    ax.text(MARGIN + 2.5, top - 6.5, wi.title, fontsize=HEAD + 1, weight="bold", va="baseline")
-    ax.text(w - MARGIN - 2.5, top - 6.5, f"{wi.number}  REV {wi.revision}", fontsize=HEAD, weight="bold",
-            va="baseline", ha="right")
+    number = f"{wi.number}  REV {wi.revision}"
+    room = w - 2 * MARGIN - 10.0 - measure.width(number, HEAD, "bold")
+    title, size = _fit(measure, wi.title, HEAD + 1, room)
+    ax.text(MARGIN + 2.5, top - 6.5, title, fontsize=size, weight="bold", va="baseline")
+    ax.text(w - MARGIN - 2.5, top - 6.5, number, fontsize=HEAD, weight="bold", va="baseline", ha="right")
     detail = "WORK INSTRUCTION"
     if wi.part_number:
         detail += f"   ASSEMBLY P/N {wi.part_number}"
@@ -385,7 +404,7 @@ def _step(flow: _Flow, wi, step, picture: Path | None) -> None:
         earlier = any(s.install for s in wi.steps[:step.number - 1])
         surfaces = any(op.surfaces for op in step.ops)
         legend = tuple(entry for entry, shown in (((NEW_PART, "THIS STEP"), bool(step.install)),
-                                                  ((EARLIER, "INSTALLED EARLIER"), earlier),
+                                                  ((None, "INSTALLED EARLIER (OUTLINE)"), earlier),
                                                   ((SURFACE, "SURFACE"), surfaces)) if shown)
         flow.image(picture, legend)
     if step.install:
@@ -396,12 +415,13 @@ def _step(flow: _Flow, wi, step, picture: Path | None) -> None:
     caption_w, source_w = 26.0, 58.0
     value_x, value_w = MARGIN + caption_w, flow.inner - caption_w - source_w
     for op in step.ops:
-        for caption, value, source in op.lines:
+        for line in op.lines:
             if op.kind == "instruct":
-                flow.row([(value, MARGIN, flow.inner, "normal")])
+                flow.row([(line.value, MARGIN, flow.inner, "normal")])
                 continue
-            flow.row([(caption, MARGIN, caption_w, "bold"), (value, value_x, value_w, "normal"),
-                      ("per " + source.cite() if source else "", value_x + value_w, source_w, "normal")])
+            cited = "per " + line.source.cite() if line.source else (None if line.cite else "")
+            flow.row([(line.caption, MARGIN, caption_w, "bold"), (line.value, value_x, value_w, "normal"),
+                      (cited, value_x + value_w, source_w, "normal")])
         flow.blanks(_records(op.kind))
     flow.y -= 3.0
     flow.blanks(("Technician", "Date") + (("Inspector stamp", "Date") if step.hold else ()), per_row=4)
@@ -414,6 +434,22 @@ def _records(kind: str) -> tuple[str, ...]:
 
 
 # --- the PDF -----------------------------------------------------------------
+
+
+def layout(wi, open_items: list[str], pictures: dict[int, Path]) -> _Flow:
+    """The pages as draw commands: the cover, then each step from a new page."""
+    flow = _Flow(wi, len(open_items))
+    _cover(flow, wi, open_items)
+    for step in wi.steps:
+        _step(flow, wi, step, pictures.get(step.number))
+    return flow
+
+
+def draw_page(ax, flow: _Flow, index: int, open_count: int) -> None:
+    """Page ``index`` (from 1), its header first, onto a matplotlib axes in millimetres."""
+    _header(ax, flow.measure, flow.wi, flow.w, flow.h, index, len(flow.pages), open_count)
+    for draw in flow.pages[index - 1]:
+        draw(ax)
 
 
 def write_pdf(wi, path: Path, *, open_items: list[str]) -> int:
@@ -434,26 +470,21 @@ def write_pdf(wi, path: Path, *, open_items: list[str]) -> int:
     picture_plan(wi)  # refuses a mark on a part not yet installed, before any render
     with tempfile.TemporaryDirectory(prefix="cadgen-wi-") as folder:
         pictures = render_pictures(wi, Path(folder)) if wi.pictures else {}
-        flow = _Flow(wi, len(open_items))
-        _cover(flow, wi, open_items)
-        for step in wi.steps:
-            _step(flow, wi, step, pictures.get(step.number))
+        flow = layout(wi, open_items, pictures)
 
         path.parent.mkdir(parents=True, exist_ok=True)
         partial = path.with_name(f".{path.name}{temp_suffix()}")
         count = len(flow.pages)
         try:
             with PdfPages(partial, metadata={"CreationDate": None}) as pdf:
-                for index, page in enumerate(flow.pages, start=1):
+                for index in range(1, count + 1):
                     fig = plt.figure(figsize=(flow.w / 25.4, flow.h / 25.4))
                     ax = fig.add_axes([0, 0, 1, 1])
                     ax.set_xlim(0, flow.w)
                     ax.set_ylim(0, flow.h)
                     ax.set_aspect("equal")
                     ax.axis("off")
-                    _header(ax, wi, flow.w, flow.h, index, count, len(open_items))
-                    for draw in page:
-                        draw(ax)
+                    draw_page(ax, flow, index, len(open_items))
                     ax.set_xlim(0, flow.w)
                     ax.set_ylim(0, flow.h)
                     pdf.savefig(fig)

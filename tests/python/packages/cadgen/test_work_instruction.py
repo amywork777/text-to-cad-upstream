@@ -69,6 +69,35 @@ def _sources():
     return Spec("PS-2001", "Threaded fastener installation", revision="D"), Drawing("DWG-1", revision="B")
 
 
+class _Page:
+    """A matplotlib axes that keeps the text drawn on it and draws nothing."""
+
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+
+    def text(self, _x, _y, value, **_kwargs) -> None:
+        self.texts.append(value)
+
+    def plot(self, *_args, **_kwargs) -> None:
+        pass
+
+    add_patch = imshow = plot
+
+
+def _page_texts(wi) -> list[list[str]]:
+    """Each page's text, laid out as the PDF is (no pictures)."""
+    from cadgen._internal.work_instruction_pages import draw_page, layout
+
+    items = wi.open_items()
+    flow = layout(wi, items, {})
+    pages = []
+    for index in range(1, len(flow.pages) + 1):
+        page = _Page()
+        draw_page(page, flow, index, len(items))
+        pages.append(page.texts)
+    return pages
+
+
 class SourceTests(unittest.TestCase):
     def test_every_process_value_names_where_it_comes_from(self) -> None:
         from cadgen.work_instruction import Adhesive, Cure, Machining, Material, Torque
@@ -78,6 +107,32 @@ class SourceTests(unittest.TestCase):
                      lambda: Material("Loctite 242")):
             with self.subTest(make=make), self.assertRaisesRegex(TypeError, r"Spec\(\.\.\.\)\.at"):
                 make()
+
+    def test_a_source_names_a_known_kind_a_document_and_where_in_it(self) -> None:
+        from cadgen.work_instruction import Source
+
+        for kind, document, where in (("bogus", "X", "y"), ("stated", "", ""), ("spec", "PS-1 Rev A", "")):
+            with self.subTest(kind=kind, document=document), self.assertRaises((ValueError, TypeError)):
+                Source(kind, document, where)
+
+    def test_a_field_from_a_second_document_cites_that_document(self) -> None:
+        from cadgen.work_instruction import Adhesive, Cited, Datasheet
+
+        spec, _ = _sources()
+        tds = Datasheet("EA 9394", revision="2019-05")
+        adhesive = Adhesive("EA 9394", prep="IPA wipe", mix=Cited("100:17", per=tds.at("Mixing")),
+                            per=spec.at("5.1"))
+        cites = {caption: source.cite() if source else None for caption, _text, source in adhesive.fields()}
+        self.assertEqual(cites, {"prep": "PS-2001 Rev D \u00a75.1", "mix": "EA 9394 datasheet, 2019-05, Mixing",
+                                 "pot life": None, "cure": None})
+        self.assertEqual(adhesive.missing(), ["pot life", "cure"])
+
+    def test_a_torque_prints_the_numbers_given(self) -> None:
+        from cadgen.work_instruction import Torque
+
+        spec, _ = _sources()
+        self.assertEqual(Torque(12.345678, unit="N-m", per=spec.at("4")).text(), "12.345678 N-m")
+        self.assertEqual(Torque(40.0, 45, "in-lbf", per=spec.at("4")).text(), "40\u201345 in-lbf")
 
     def test_a_citation_says_which_document_and_where(self) -> None:
         from cadgen.work_instruction import Stated
@@ -136,6 +191,12 @@ class PartTests(_Assembly):
         with self.assertRaisesRegex(KeyError, r"#o1\.2 bracket"):
             self.instruction().step("Load", install=["brackett"])
 
+    def test_a_refused_step_leaves_its_parts_for_the_next(self) -> None:
+        wi = self.instruction()
+        with self.assertRaises(ValueError):
+            wi.step("Load", install=["base_plate"], camera="isometric")
+        self.assertEqual(wi.step("Load", install=["base_plate"]).install, ("#o1.1",))
+
     def test_a_part_is_installed_by_one_step(self) -> None:
         wi = self.instruction()
         wi.step("Load", install=["base_plate"])
@@ -158,10 +219,11 @@ class OpenItemTests(_Assembly):
 
     def test_every_value_nobody_stated_and_every_part_no_step_installs_is_listed(self) -> None:
         wi = self._wi()
-        wi.steps[-1].fasten("MS21042-3 nut")
+        wi.steps[-1].fasten("MS21042-3 nut").inspect("Pin seated")
         self.assertEqual(wi.open_items(), [
             "step 2 (bond): pot life not stated",
             "step 3 (fasten): torque not stated",
+            "step 3 (inspect): criterion source not stated",
             "#o1.4 pin: no step installs it",
         ])
 
@@ -169,6 +231,7 @@ class OpenItemTests(_Assembly):
         from cadgen.work_instruction import work_instruction
 
         target = self.root / "refused.pdf"
+        target.write_bytes(b"%PDF an earlier, released instruction")
 
         @work_instruction(out=str(target))
         def released():
@@ -176,7 +239,20 @@ class OpenItemTests(_Assembly):
 
         with self.assertRaisesRegex(ValueError, "released with 2 open item"):
             released()
-        self.assertFalse(target.exists())
+        self.assertFalse(target.exists(), "the earlier file would read as this run's")
+
+    def test_every_blank_prints_not_stated_and_a_draft_says_so_on_every_page(self) -> None:
+        wi = self._wi()
+        wi.steps[-1].inspect("Pin seated")
+        pages = _page_texts(wi)
+        self.assertEqual(sum(page.count("NOT STATED") for page in pages), 2, "pot life, the inspection's source")
+        self.assertTrue(all(any(text.startswith("DRAFT") for text in page) for page in pages))
+
+    def test_a_block_taller_than_a_page_is_refused_naming_its_step(self) -> None:
+        wi = self.instruction()
+        wi.step("Load", install=["base_plate"]).instruct("word " * 6000)
+        with self.assertRaisesRegex(ValueError, "STEP 1: one block of text is taller than a page"):
+            _page_texts(wi)
 
 
 class DocumentTests(_Assembly):
@@ -195,7 +271,7 @@ class DocumentTests(_Assembly):
     def _complete(self, **kwargs):
         wi = self.instruction(**kwargs)
         wi.step("Load", install=["base_plate"]).instruct("Datum A down.")
-        wi.step("Fit", install=["bracket", "pin"]).inspect("Pins seated")
+        wi.step("Fit", install=["bracket", "pin"]).inspect("Pins seated", per=_sources()[1].at("note 2"))
         return wi
 
     def test_a_draft_writes_a_cover_and_a_page_per_step_deterministically(self) -> None:
@@ -205,8 +281,10 @@ class DocumentTests(_Assembly):
         self.assertEqual(len(re.findall(rb"/Type\s*/Page\b", first)), 3)
         self.assertNotIn(b"/CreationDate", first)
 
-    def test_released_with_nothing_open_writes(self) -> None:
+    def test_released_with_nothing_open_writes_with_no_draft_banner(self) -> None:
         self.assertTrue(self._write("released.pdf", lambda: self._complete(status="released")).startswith(b"%PDF"))
+        pages = _page_texts(self._complete(status="released"))
+        self.assertFalse([text for page in pages for text in page if "DRAFT" in text or "NOT STATED" in text])
 
     def test_the_output_path_is_required_and_names_a_pdf(self) -> None:
         from cadgen.work_instruction import work_instruction

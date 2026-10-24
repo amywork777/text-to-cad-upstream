@@ -17,23 +17,24 @@ nobody stated prints as a captioned blank, ``NOT STATED``, and the run lists it,
 so a draft says exactly what engineering still owes the floor. A released
 instruction (``status="released"``) refuses to be written with one.
 
-Usage::
+Usage (every document and value here is a placeholder: a real one is copied
+from the section of the user's document it cites)::
 
     import cadgen
     from pathlib import Path
     from cadgen.work_instruction import work_instruction, Instruction, Spec, Drawing, Torque
 
-    FASTENING = Spec("PS-2001", "Threaded fastener installation", revision="D")
-    DWG = Drawing("DWG-1042", revision="B")
+    FASTENING = Spec("PS-XXXX", "<fastening spec title>", revision="<rev>")
+    DWG = Drawing("DWG-ZZZZ", revision="<rev>")
 
     @work_instruction(out="../PDF/bracket_assembly_wi.pdf")
     def bracket_assembly_wi():
         wi = Instruction(Path(__file__).parent / "../STEP/bracket_assembly.step",
-                         title="BRACKET ASSEMBLY", number="WI-1042", revision="A", drawing=DWG)
+                         title="BRACKET ASSEMBLY", number="WI-0001", revision="A", drawing=DWG)
         wi.step("Place the base plate on the fixture", install=["base_plate"])
         wi.step("Fasten the bracket to the base plate", install=["bracket"]).fasten(
-            "NAS1352-3-8P screw", qty=4,
-            torque=Torque(20, 25, "in-lbf", per=FASTENING.at("4.2, Table 3")))
+            "<screw part number>", qty=4,
+            torque=Torque(1, 2, "in-lbf", per=FASTENING.at("<table>")))  # <low>, <high> as stated
         return wi
 
     if __name__ == "__main__":
@@ -41,8 +42,8 @@ Usage::
 
 Running the script writes one PDF at ``out``: a cover page (documents, parts,
 materials, open items) and a page per step, each with a picture of the assembly
-as it stands after that step -- parts installed earlier in grey, the step's own
-parts tinted, parts still to come left out -- and the fill-ins the floor records
+as it stands after that step -- drawn as line art, the step's own parts filled,
+parts still to come left out -- and the fill-ins the floor records
 (lot numbers, mix and cure times, stamps).
 
 Like ``@eng_drawing`` this is a document over a document, with no public function
@@ -54,15 +55,15 @@ from __future__ import annotations
 
 import functools
 import math
-from dataclasses import dataclass, field
+from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
 __all__ = [
     "work_instruction", "Instruction", "Step",
-    "Spec", "Drawing", "Stated", "Source",
+    "Spec", "Drawing", "Datasheet", "Stated", "Source", "Cited",
     "Torque", "Material", "Adhesive", "Layup", "Cure", "Machining",
-    "TORQUE_UNITS", "CAMERAS", "PAGE_SIZES", "STATUSES",
+    "TORQUE_UNITS", "CAMERAS", "PAGE_SIZES", "STATUSES", "SOURCE_KINDS",
 ]
 
 TORQUE_UNITS = ("in-lbf", "ft-lbf", "N-m")
@@ -94,22 +95,32 @@ def _one_of(name: str, value, allowed: Sequence[str]) -> str:
 
 # --- where a value comes from ------------------------------------------------
 
+SOURCE_KINDS = ("spec", "drawing", "datasheet", "stated")
+
 
 @dataclass(frozen=True)
 class Source:
-    """Where one value comes from. Made by :meth:`Spec.at`, :meth:`Drawing.at` or
-    :class:`Stated`, never directly: ``kind`` is ``spec``, ``drawing`` or ``stated``."""
+    """Where one value comes from: made by :meth:`Spec.at`, :meth:`Drawing.at`,
+    :meth:`Datasheet.at` or :func:`Stated`. ``kind`` is one of :data:`SOURCE_KINDS`,
+    and a document and (but for ``stated``) the place in it are required."""
 
     kind: str
     document: str
     where: str = ""
     title: str = ""
 
+    def __post_init__(self) -> None:
+        _one_of("Source kind", self.kind, SOURCE_KINDS)
+        object.__setattr__(self, "document", _text("Source document", self.document))
+        if self.kind != "stated":
+            object.__setattr__(self, "where", _text(f"the place in {self.document}", self.where or None))
+
     def cite(self) -> str:
         if self.kind == "stated":
             return self.document
-        return f"{self.document} {self.where}".strip() if self.kind == "spec" else \
-            f"{self.document}, {self.where} (drawing callout)"
+        if self.kind == "drawing":
+            return f"{self.document}, {self.where} (drawing callout)"
+        return f"{self.document} {self.where}" if self.kind == "spec" else f"{self.document}, {self.where}"
 
 
 @dataclass(frozen=True)
@@ -131,7 +142,7 @@ class Spec:
         return f"{self.number} Rev {self.revision}"
 
     def at(self, section: str) -> Source:
-        return Source("spec", self.name, f"§{_text('Spec.at section', section)}", self.title)
+        return Source("spec", self.name, f"\u00a7{_text('Spec.at section', section)}", self.title)
 
 
 @dataclass(frozen=True)
@@ -156,6 +167,27 @@ class Drawing:
         return Source("drawing", self.name, _text("Drawing.at callout", callout), self.title)
 
 
+@dataclass(frozen=True)
+class Datasheet:
+    """A manufacturer's technical data sheet the user supplied, for a product the
+    spec defers to (an adhesive's mix ratio and pot life, a prepreg's cure).
+    ``revision`` is as the sheet prints it -- a revision letter or a date."""
+
+    product: str
+    revision: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "product", _text("Datasheet product", self.product))
+        object.__setattr__(self, "revision", _text("Datasheet revision", self.revision))
+
+    @property
+    def name(self) -> str:
+        return f"{self.product} datasheet, {self.revision}"
+
+    def at(self, section: str) -> Source:
+        return Source("datasheet", self.name, _text("Datasheet.at section", section), "Manufacturer's data sheet")
+
+
 def Stated(by: str, *, on: str) -> Source:  # noqa: N802 - reads as the record it makes
     """A value the user stated themself: who said it and the date (``on``, as
     written, e.g. ``"2026-10-23"``). Use it only for what the person actually
@@ -167,9 +199,24 @@ def _source(owner: str, per) -> Source:
     if not isinstance(per, Source):
         raise TypeError(
             f"{owner} needs per=: where the value comes from -- Spec(...).at(section), "
-            "Drawing(...).at(callout) or Stated(by, on=date). A value with no source is not written down."
+            "Drawing(...).at(callout), Datasheet(...).at(section) or Stated(by, on=date). "
+            "A value with no source is not written down."
         )
     return per
+
+
+@dataclass(frozen=True)
+class Cited:
+    """One field of a record that comes from a different document than the rest:
+    ``Adhesive(..., mix=Cited("100:17 by weight", per=TDS.at("Mixing")), per=SPEC.at("5.1"))``."""
+
+    text: str
+    _: KW_ONLY
+    per: Source | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "text", _text("Cited text", self.text))
+        _source("Cited", self.per)
 
 
 # --- process records ---------------------------------------------------------
@@ -179,11 +226,12 @@ def _source(owner: str, per) -> Source:
 class Torque:
     """A torque, ``Torque(20, 25, "in-lbf", per=...)`` for a range or
     ``Torque(30, unit="N-m", per=...)`` for one value. The unit is one of
-    :data:`TORQUE_UNITS`; nothing is converted."""
+    :data:`TORQUE_UNITS`; nothing is converted or rounded."""
 
     low: float
     high: float | None = None
     unit: str = ""
+    _: KW_ONLY
     per: Source | None = None
 
     def __post_init__(self) -> None:
@@ -199,18 +247,19 @@ class Torque:
         _source("Torque", self.per)
 
     def text(self) -> str:
-        span = _num(self.low) if self.high is None or self.high == self.low else f"{_num(self.low)}–{_num(self.high)}"
+        span = _num(self.low) if self.high is None or self.high == self.low else f"{_num(self.low)}\u2013{_num(self.high)}"
         return f"{span} {self.unit}"
 
 
 def _num(value: float) -> str:
-    return f"{value:g}"
+    """The number as it was given: 12.345678 stays 12.345678, and 40.0 prints 40."""
+    return str(int(value)) if float(value).is_integer() else repr(float(value))
 
 
 @dataclass(frozen=True)
 class _Record:
-    """A process record: its fields are printed strings, a required one left out
-    prints as NOT STATED. Subclasses name REQUIRED and OPTIONAL."""
+    """A process record: its fields are printed text (or :class:`Cited` text), a
+    required one left out prints as NOT STATED. Subclasses name REQUIRED and OPTIONAL."""
 
     REQUIRED = ()
     OPTIONAL = ()
@@ -219,13 +268,20 @@ class _Record:
         kind = type(self).__name__
         object.__setattr__(self, "name", _text(f"{kind} name", self.name))
         for key in self.REQUIRED + self.OPTIONAL:
-            object.__setattr__(self, key, _text(f"{kind} {key}", getattr(self, key), required=False))
+            value = getattr(self, key)
+            if not isinstance(value, Cited):
+                object.__setattr__(self, key, _text(f"{kind} {key}", value, required=False))
         _source(kind, self.per)
 
-    def fields(self) -> list[tuple[str, str | None]]:
-        """(caption, value) pairs to print; a required field's None is NOT STATED."""
-        rows = [(key.replace("_", " "), getattr(self, key)) for key in self.REQUIRED]
-        rows += [(key.replace("_", " "), getattr(self, key)) for key in self.OPTIONAL if getattr(self, key)]
+    def fields(self) -> list[tuple[str, str | None, Source | None]]:
+        """(caption, text, source) to print; a required field's None is NOT STATED."""
+        rows = []
+        for key in self.REQUIRED + tuple(k for k in self.OPTIONAL if getattr(self, k) is not None):
+            value = getattr(self, key)
+            if isinstance(value, Cited):
+                rows.append((key.replace("_", " "), value.text, value.per))
+            else:
+                rows.append((key.replace("_", " "), value, self.per if value is not None else None))
         return rows
 
     def missing(self) -> list[str]:
@@ -238,21 +294,24 @@ class Material(_Record):
     threadlocker, a sealant, a primer. ``note`` is how it is applied, as stated."""
 
     name: str
+    _: KW_ONLY
     per: Source | None = None
-    note: str | None = None
+    note: str | Cited | None = None
     OPTIONAL = ("note",)
 
 
 @dataclass(frozen=True)
 class Adhesive(_Record):
     """A bonding process record: surface prep, mixing, pot life and cure, each as
-    the spec or datasheet states it."""
+    the spec states it -- or, where the spec defers to the manufacturer, as
+    :class:`Cited` text from the :class:`Datasheet`."""
 
     name: str
-    prep: str | None = None
-    mix: str | None = None
-    pot_life: str | None = None
-    cure: str | None = None
+    _: KW_ONLY
+    prep: str | Cited | None = None
+    mix: str | Cited | None = None
+    pot_life: str | Cited | None = None
+    cure: str | Cited | None = None
     per: Source | None = None
     REQUIRED = ("prep", "mix", "pot_life", "cure")
 
@@ -263,8 +322,9 @@ class Layup(_Record):
     the spec calls for it."""
 
     name: str
-    plies: str | None = None
-    debulk: str | None = None
+    _: KW_ONLY
+    plies: str | Cited | None = None
+    debulk: str | Cited | None = None
     per: Source | None = None
     REQUIRED = ("plies",)
     OPTIONAL = ("debulk",)
@@ -275,7 +335,8 @@ class Cure(_Record):
     """A cure cycle: ramp, hold, pressure and cool-down as the spec states them."""
 
     name: str
-    cycle: str | None = None
+    _: KW_ONLY
+    cycle: str | Cited | None = None
     per: Source | None = None
     REQUIRED = ("cycle",)
 
@@ -286,10 +347,11 @@ class Machining(_Record):
     where the spec states it."""
 
     name: str
-    tool: str | None = None
-    speed: str | None = None
-    feed: str | None = None
-    coolant: str | None = None
+    _: KW_ONLY
+    tool: str | Cited | None = None
+    speed: str | Cited | None = None
+    feed: str | Cited | None = None
+    coolant: str | Cited | None = None
     per: Source | None = None
     REQUIRED = ("tool", "speed", "feed")
     OPTIONAL = ("coolant",)
@@ -308,10 +370,21 @@ RECORDS = {
 }
 
 
+@dataclass(frozen=True)
+class _Line:
+    """One printed row: a ``None`` value is NOT STATED, and so is a ``None``
+    source where one is owed (an inspection criterion with no document)."""
+
+    caption: str
+    value: str | None
+    source: Source | None = None
+    cite: bool = False
+
+
 @dataclass
 class _Op:
     kind: str
-    lines: list[tuple[str, str | None, Source | None]]  # (caption, value or None = NOT STATED, source)
+    lines: list[_Line]
     missing: list[str] = field(default_factory=list)
     surfaces: tuple[tuple[str, str], ...] = ()  # (face ref, the leaf occurrence it is on)
 
@@ -337,7 +410,7 @@ class Step:
 
     def instruct(self, text: str) -> "Step":
         """A plain instruction, in the words the user gave."""
-        return self._add(_Op("instruct", [("", _text("instruct text", text), None)]))
+        return self._add(_Op("instruct", [_Line("", _text("instruct text", text))]))
 
     def fasten(self, hardware: str, *, qty: int | None = None, torque: Torque | None = None,
                locking: Material | None = None, sequence: str | None = None) -> "Step":
@@ -350,23 +423,24 @@ class Step:
             raise TypeError("fasten torque= takes a Torque(...)")
         if locking is not None and not isinstance(locking, Material):
             raise TypeError("fasten locking= takes a Material(...)")
-        lines = [("Hardware", f"{hardware}{f', qty {qty}' if qty else ''}", None),
-                 ("Torque", torque.text() if torque else None, torque.per if torque else None)]
+        lines = [_Line("Hardware", f"{hardware}{f', qty {qty}' if qty else ''}"),
+                 _Line("Torque", torque.text() if torque else None, torque.per if torque else None)]
         if locking is not None:
             self._instruction._use(locking)
-            lines.append(("Locking", locking.name + (f" -- {locking.note}" if locking.note else ""), locking.per))
+            lines += [_Line("Locking", locking.name, locking.per)]
+            lines += [_Line(caption.capitalize(), value, source) for caption, value, source in locking.fields()]
         if sequence is not None:
-            lines.append(("Sequence", _text("fasten sequence", sequence), None))
+            lines.append(_Line("Sequence", _text("fasten sequence", sequence)))
         return self._add(_Op("fasten", lines, missing=[] if torque else ["torque"]))
 
     def _record(self, kind: str, record, cls, label: str, surfaces=()) -> "Step":
         if record is None:
-            return self._add(_Op(kind, [(label, None, None)], missing=[label.lower()],
+            return self._add(_Op(kind, [_Line(label, None)], missing=[label.lower()],
                                  surfaces=self._faces(surfaces)))
         if not isinstance(record, cls):
             raise TypeError(f"{kind}() takes a {cls.__name__}(...) or None, got {type(record).__name__}")
-        lines = [(label, record.name, record.per)]
-        lines += [(caption.capitalize(), value, record.per if value else None) for caption, value in record.fields()]
+        lines = [_Line(label, record.name, record.per)]
+        lines += [_Line(caption.capitalize(), value, source) for caption, value, source in record.fields()]
         if kind in ("bond", "layup"):  # a consumable the kit list carries; a cure or a cut is not
             self._instruction._use(record)
         return self._add(_Op(kind, lines, missing=record.missing(), surfaces=self._faces(surfaces)))
@@ -390,9 +464,8 @@ class Step:
         if not isinstance(material, Material):
             raise TypeError("apply() takes a Material(...)")
         self._instruction._use(material)
-        lines = [("Apply", material.name, material.per)]
-        if material.note:
-            lines.append(("How", material.note, material.per))
+        lines = [_Line("Apply", material.name, material.per)]
+        lines += [_Line("How", value, source) for _caption, value, source in material.fields()]
         return self._add(_Op("apply", lines, surfaces=self._faces(surfaces)))
 
     def _faces(self, refs) -> tuple[tuple[str, str], ...]:
@@ -413,11 +486,14 @@ class Step:
         return tuple(out)
 
     def inspect(self, text: str, *, per: Source | None = None) -> "Step":
-        """An inspection hold point: the step is not complete until an inspector stamps it."""
+        """An inspection hold point: the step is not complete until an inspector
+        stamps it. The criterion cites where it comes from; with ``per=None`` its
+        source prints NOT STATED and is an open item."""
         if per is not None:
             _source("inspect", per)
         self.hold = True
-        return self._add(_Op("inspect", [("Inspect", _text("inspect text", text), per)]))
+        line = _Line("Inspect", _text("inspect text", text), per, cite=True)
+        return self._add(_Op("inspect", [line], missing=[] if per else ["criterion source"]))
 
 
 class Instruction:
@@ -503,6 +579,10 @@ class Instruction:
         if isinstance(install, (str, bytes)):
             raise TypeError(f"install takes a sequence of part names or refs, not one string: install=({install!r},)")
         number = len(self.steps) + 1
+        # Everything that can refuse is checked before a part is claimed, so a refused
+        # step leaves the parts free for the next one.
+        title = _text("step title", title)
+        camera = None if camera is None else _one_of("camera", camera, CAMERAS)
         refs: list[str] = []
         for key in install:
             for ref in self._leaf_refs(key):
@@ -512,8 +592,7 @@ class Instruction:
                     refs.append(ref)
         for ref in refs:
             self._installed[ref] = number
-        step = Step(self, number, _text("step title", title), tuple(refs),
-                    None if camera is None else _one_of("camera", camera, CAMERAS), bool(picture))
+        step = Step(self, number, title, tuple(refs), camera, bool(picture))
         self.steps.append(step)
         return step
 
@@ -539,8 +618,9 @@ class Instruction:
             seen[self.drawing.name] = self.drawing.title or "Assembly drawing"
         for step in self.steps:
             for op in step.ops:
-                for _caption, _value, source in op.lines:
-                    if source is not None and source.kind in ("spec", "drawing"):
+                for line in op.lines:
+                    source = line.source
+                    if source is not None and source.kind in ("spec", "drawing", "datasheet"):
                         seen.setdefault(source.document, source.title)
         return list(seen.items())
 
@@ -571,7 +651,23 @@ def work_instruction(func: Callable[..., Any] | None = None, *, out: str | Path 
 
         @functools.wraps(fn)
         def run(*args: Any, **kwargs: Any) -> list[Path]:
-            wi = fn(*args, **kwargs)
+            target = target_spec if target_spec.is_absolute() else (script.parent / target_spec).resolve()
+            try:
+                return write(target, fn(*args, **kwargs))
+            except BaseException as error:
+                # A refused or failed run leaves nothing at out=: an older instruction
+                # still there would read as this run's.
+                target.unlink(missing_ok=True)
+                try:
+                    from cadgen import analytics
+
+                    if isinstance(error, Exception):  # a mistake in cadgen's own code, never the author's
+                        analytics.report(error, "build", bugs_only=True)
+                except Exception:  # noqa: BLE001 - a crash report never adds a failure to one
+                    pass
+                raise
+
+        def write(target: Path, wi: Any) -> list[Path]:
             if not isinstance(wi, Instruction):
                 raise TypeError(f"@work_instruction {fn.__name__} must return an Instruction")
             if not wi.steps:
@@ -584,7 +680,6 @@ def work_instruction(func: Callable[..., Any] | None = None, *, out: str | Path 
                 )
             from cadgen._internal.work_instruction_pages import write_pdf
 
-            target = target_spec if target_spec.is_absolute() else (script.parent / target_spec).resolve()
             pages = write_pdf(wi, target, open_items=items)
             for item in items:
                 print(f"{fn.__name__}: open item: {item}")
