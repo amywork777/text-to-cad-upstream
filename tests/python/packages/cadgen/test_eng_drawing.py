@@ -3759,6 +3759,14 @@ class LocationTests(unittest.TestCase):
         top.symmetric("v")                                 # the bore is centred: stated, not assumed
         self.assertEqual(self._report(sheet), [])
 
+    def test_a_spacing_centred_on_a_stated_centre_line_locates_both_ends(self) -> None:
+        sheet, top, _front = self._plate()
+        # Symmetric about both centre lines, a spacing across one puts each hole
+        # half of it from the line (ISO 129-1): the pattern needs no edge dimension.
+        top.symmetric("h")
+        top.symmetric("v")
+        self.assertEqual(self._report(sheet), [])
+
     def test_stated_symmetry_is_drawn(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
 

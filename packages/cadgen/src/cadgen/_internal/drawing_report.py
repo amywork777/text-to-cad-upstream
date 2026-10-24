@@ -338,8 +338,15 @@ def _reached(record: dict) -> dict[int, set]:
     """Every place along each model axis the sheet ties to an anchor through its
     dimensions, its hole tables and its bolt circles."""
     links = _circle_links(record)
+    box = record["shape"].bounding_box()
+    middle = tuple(round((lo + hi) / 2, _PLACE) for lo, hi in zip(box.min, box.max))
     for axis, a, b, _what, _kind in record["spans"]:
-        links[axis].append((round(a, _PLACE), round(b, _PLACE)))
+        a, b = round(a, _PLACE), round(b, _PLACE)
+        links[axis].append((a, b))
+        if axis in record["symmetric"] and round((a + b) / 2, _PLACE) == middle[axis]:
+            # Across a centre line stated symmetric, each end is half of it from the
+            # line (ISO 129-1): a spacing centred on it places both.
+            links[axis].append((a, middle[axis]))
     reached = _anchors(record)
     for axis in range(3):
         grown = True
