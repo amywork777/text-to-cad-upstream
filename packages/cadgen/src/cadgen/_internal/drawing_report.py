@@ -18,11 +18,12 @@ from cadgen._internal.drawing_features import Slot
 @dataclass
 class _Facts:
     """What a drawing's sheets state, gathered as they render, for the report of
-    what they leave unstated: a record per part drawn (keyed by its shape), and
-    one per parts list (keyed by the list)."""
+    what they leave unstated: a record per part drawn (keyed by its shape), one
+    per parts list (keyed by the list), and one per sheet, for its stage."""
 
     parts: dict = field(default_factory=dict)
     lists: dict = field(default_factory=dict)
+    sheets: list = field(default_factory=list)
 
     def of_list(self, parts) -> dict:
         """The record of one parts list: the items its tables list and its balloons key."""
@@ -32,6 +33,7 @@ class _Facts:
 def _merge_facts(into: _Facts, more: _Facts) -> None:
     """Fold one sheet's facts into the drawing's: a part shown on two sheets is
     stated by both."""
+    into.sheets.extend(more.sheets)
     for mine, theirs in ((into.parts, more.parts), (into.lists, more.lists)):
         for key, record in theirs.items():
             if key not in mine:
@@ -158,6 +160,43 @@ def _unstated(facts: _Facts) -> list[str]:
                     f"incomplete: item {item.number} ({item.description or 'unnamed'}) has no balloon: no ballooned "
                     "view shows any of it unhidden. balloons() on a view from a side where it shows keys it."
                 )
+    for record in facts.sheets:
+        lines.extend(_unstated_for_stage(record, _whose(record, facts.sheets)))
+    return lines
+
+
+def _unstated_for_stage(record: dict, whose: str) -> list[str]:
+    """What a part's sheet leaves out that its stage asks it to define. A concept
+    is a drawing to talk over and asks nothing; a prototype states a general
+    tolerance and the material; production leaves nothing undefined."""
+    stage = record["stage"]
+    if stage not in ("prototype", "production") or not record["part"]:
+        return []
+    lines = []
+    if stage == "prototype":
+        if not record["general"]:
+            lines.append(f"incomplete: {whose}a prototype drawing states a general tolerance for what it does not "
+                         "tolerance one by one; Sheet(general_tolerance=...) or general_profile= states it.")
+        if not record["material"]:
+            lines.append(f"incomplete: {whose}a prototype drawing states the material; Sheet(material=...).")
+        return lines
+    if not record["datums"]:
+        lines.append(f"incomplete: {whose}a production drawing locates its features from datums, and no datum is "
+                     "marked; view.datum(\"A\", point) on the face the part locates on defines one.")
+    if not record["general"]:
+        lines.append(f"incomplete: {whose}a production drawing leaves no surface undefined, and no general profile "
+                     "or general tolerance covers what it does not dimension one by one; "
+                     "Sheet(general_profile=Frame(\"surface_profile\", ...)) or general_tolerance= covers it.")
+    if not (record["material"] and record["spec"]):
+        lines.append(f"incomplete: {whose}a production drawing states the material and its spec; "
+                     "Sheet(material=..., spec=...).")
+    if not record["finish"]:
+        lines.append(f"incomplete: {whose}a production drawing states the finish, or that there is none; "
+                     "Sheet(finish=...).")
+    if not record["keyed"]:
+        lines.append(f"note: {whose}a production drawing marks its key characteristics, and no feature is marked "
+                     f"{record['mark']}; key=True on the dimension or callout of a feature whose variation affects "
+                     "fit, function or safety marks it, if any is one.")
     return lines
 
 

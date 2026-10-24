@@ -208,10 +208,11 @@ _DATUM_TRIANGLE = 1.0
 
 
 def _draw_datum(layout, letter: str, tip: tuple[float, float], toward: tuple[float, float], th: float,
-                layer: str = "DIM") -> tuple[float, float, float, float]:
+                layer: str = "DIM", extra: float = 0.0) -> tuple[float, float, float, float]:
     """Draw datum feature symbol ``letter``: a filled triangle standing on the
     feature at ``tip``, a stem leading ``toward`` (a unit direction away from the
-    part) and the letter in a square. Returns the square's box (x0, y0, x1, y1)."""
+    part), ``extra`` mm longer than its own length, and the letter in a square.
+    Returns the square's box (x0, y0, x1, y1)."""
     from ezdxf import const
     from ezdxf.enums import TextEntityAlignment as A
 
@@ -225,7 +226,7 @@ def _draw_datum(layout, letter: str, tip: tuple[float, float], toward: tuple[flo
     hatch.paths.add_polyline_path(triangle, is_closed=True, flags=const.BOUNDARY_PATH_EXTERNAL)
     layout.add_lwpolyline(triangle, close=True, dxfattribs={"layer": layer})
     cell = _FRAME_HEIGHT * th
-    end = (apex[0] + ux * _DATUM_STEM * th, apex[1] + uy * _DATUM_STEM * th)
+    end = (apex[0] + ux * (_DATUM_STEM * th + extra), apex[1] + uy * (_DATUM_STEM * th + extra))
     layout.add_line(apex, end, dxfattribs={"layer": layer})
     centre = (end[0] + ux * cell / 2, end[1] + uy * cell / 2)
     box = (centre[0] - cell / 2, centre[1] - cell / 2, centre[0] + cell / 2, centre[1] + cell / 2)
@@ -237,6 +238,41 @@ def _draw_datum(layout, letter: str, tip: tuple[float, float], toward: tuple[flo
 
 #: How far a datum feature symbol reaches from its feature, in text heights.
 _DATUM_REACH = _DATUM_TRIANGLE * 0.87 + _DATUM_STEM + _FRAME_HEIGHT
+
+
+def _datum_toward(p: tuple[float, float], bounds, stem) -> tuple[float, float]:
+    """The way a datum feature symbol's stem leads out of a view whose extent is
+    ``bounds`` (x0, x1, y0, y1): the author's offset, else out by the nearest side."""
+    if stem is not None:
+        length = math.hypot(*stem)
+        return stem[0] / length, stem[1] / length
+    x0, x1, y0, y1 = bounds
+    gaps = {(-1.0, 0.0): p[0] - x0, (1.0, 0.0): x1 - p[0], (0.0, -1.0): p[1] - y0, (0.0, 1.0): y1 - p[1]}
+    return min(gaps, key=lambda k: gaps[k])
+
+
+def _side_of(toward: tuple[float, float]) -> str:
+    ux, uy = toward
+    return ("right" if ux > 0 else "left") if abs(ux) >= abs(uy) else ("top" if uy > 0 else "bottom")
+
+
+def mark_width(mark: str, th: float) -> float:
+    """A key characteristic mark's width at text height ``th``."""
+    return _text_width(mark, th) + 2 * _FRAME_PAD * th
+
+
+def _draw_mark(layout, mark: str, x: float, mid: float, th: float,
+               layer: str = "DIM") -> tuple[float, float, float, float]:
+    """Draw a key characteristic's letters in a box a frame cell high, its left
+    edge at ``x`` and centred on ``mid``. Returns its box (x0, y0, x1, y1)."""
+    from ezdxf.enums import TextEntityAlignment as A
+
+    width, cell = mark_width(mark, th), _FRAME_HEIGHT * th
+    box = (x, mid - cell / 2, x + width, mid + cell / 2)
+    layout.add_lwpolyline([(box[0], box[1]), (box[2], box[1]), (box[2], box[3]), (box[0], box[3])], close=True,
+                          dxfattribs={"layer": layer})
+    _put(layout, mark, x + width / 2, mid, th, A.MIDDLE_CENTER, layer)
+    return box
 
 
 def _check_datums(sheet) -> None:

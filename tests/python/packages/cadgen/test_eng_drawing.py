@@ -3075,6 +3075,141 @@ class GdtTests(unittest.TestCase):
         self.assertFalse([w for w in warnings if "overlaps" in w or "crosses" in w], warnings)
 
 
+class StageProfileTests(unittest.TestCase):
+    """A stage says how much a drawing must define; a profile, whose conventions it follows."""
+
+    def _sheet(self, hole_key: bool = False, **kwargs):
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0, title="STAGED", **kwargs)
+        top, front, right = sheet.three_views(_part())
+        top.overall()
+        front.overall()
+        top.hole((10, 5, 10), key=hole_key)
+        return sheet, top, front
+
+    def _texts(self, sheet, layer: str | None = None) -> list[str]:
+        from cadgen._internal.drawing_render import _render_sheet
+
+        doc = _render_sheet(sheet, index=1, count=1, label="staged", warnings=[])
+        query = f"TEXT[layer=='{layer}']" if layer else "TEXT"
+        return [e.dxf.text for e in doc.modelspace().query(query)]
+
+    def _report(self, sheet) -> list[str]:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="staged", warnings=[], facts=facts)
+        return _unstated(facts)
+
+    def test_stage_is_closed_and_prints_in_the_title_block(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        for stage, printed in (("prototype", "PROTOTYPE"), ("concept", "CONCEPT, NOT FOR MANUFACTURE")):
+            texts = self._texts(self._sheet(stage=stage)[0])
+            self.assertIn("STAGE", texts)
+            self.assertIn(printed, texts)
+        with self.assertRaisesRegex(ValueError, "concept, prototype, production"):
+            Sheet("A3", stage="beta")
+
+    def test_a_category_maps_to_its_stage(self) -> None:
+        from cadgen.eng_drawing import Profile, Sheet
+
+        acme = Profile("ACME", "ASME Y14.5-2018", {"TYPE B": "production"})
+        sheet = self._sheet(profile=acme, category="TYPE B")[0]
+        self.assertIn("TYPE B", self._texts(sheet))
+        self.assertTrue(any("no datum" in line for line in self._report(sheet)), "checked as production")
+        with self.assertRaisesRegex(ValueError, "TYPE B"):
+            Sheet("A3", profile=acme, category="TYPE B", stage="prototype")
+        with self.assertRaisesRegex(ValueError, "TYPE B"):
+            Sheet("A3", profile=acme, category="TYPE Z")
+        with self.assertRaisesRegex(ValueError, "profile"):
+            Sheet("A3", category="TYPE B")
+        with self.assertRaisesRegex(ValueError, "concept, prototype, production"):
+            Profile("ACME", "ASME Y14.5-2018", {"TYPE B": "release"})
+        with self.assertRaisesRegex(ValueError, "ISO GPS"):
+            Profile("ACME", "DIN 7167", {})
+
+    def test_a_general_tolerance_from_the_other_standard_is_refused(self) -> None:
+        from cadgen.eng_drawing import AEROSPACE, GENERIC, Sheet
+
+        with self.assertRaisesRegex(ValueError, "ASME Y14.5-2018"):
+            Sheet("A3", profile=AEROSPACE, general_tolerance="ISO 2768-m")
+        with self.assertRaisesRegex(ValueError, "ISO GPS"):
+            Sheet("A3", profile=GENERIC, general_tolerance="ASME Y14.5 BLOCK")
+        notes = Sheet("A3", profile=AEROSPACE, general_tolerance="±0.1").drawn_notes()
+        self.assertEqual(notes, ["DIMENSIONS AND TOLERANCES PER ASME Y14.5-2018.",
+                                 "UNLESS OTHERWISE SPECIFIED, TOLERANCES ARE ±0.1."])
+
+    def test_what_each_stage_requires_is_reported(self) -> None:
+        from cadgen.eng_drawing import eng_drawing
+
+        concept = self._report(self._sheet(stage="concept")[0])
+        self.assertFalse([line for line in concept if "tolerance" in line or "material" in line], concept)
+        prototype = self._report(self._sheet(stage="prototype")[0])
+        self.assertEqual(len([line for line in prototype if "general tolerance" in line]), 1, prototype)
+        self.assertEqual(len([line for line in prototype if "material" in line]), 1, prototype)
+        production = self._report(self._sheet(stage="production")[0])
+        for words in ("no datum", "general profile", "spec", "finish"):
+            self.assertEqual(len([line for line in production if words in line]), 1, (words, production))
+        with temporary_directory(prefix="tmp-cad-eng-drawing-") as td:
+            out = Path(td) / "bare.pdf"
+
+            @eng_drawing(out=str(out))
+            def bare():
+                return self._sheet(stage="production")[0]
+
+            self.assertEqual(bare(), [out])
+            self.assertTrue(out.read_bytes().startswith(b"%PDF"))
+
+    def test_a_finished_production_sheet_reports_nothing_of_its_stage(self) -> None:
+        from cadgen.eng_drawing import Frame
+
+        sheet, top, front = self._sheet(stage="production", material="AL 6061-T6", spec="AMS 4027",
+                                        finish="ANODISE CLEAR", general_profile=Frame("surface_profile", 0.2, ("A",)))
+        front.datum("A", (0, -15, 0))
+        top.dim((-20, -15, 10), (10, -15, 10), key=True)
+        self.assertFalse([line for line in self._report(sheet) if "production" in line])
+
+    def test_material_and_spec_print_together(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        sheet = self._sheet(material="AL 6061-T6", spec="AMS 4027")[0]
+        self.assertIn("AL 6061-T6 PER AMS 4027", self._texts(sheet))
+        with self.assertRaisesRegex(ValueError, "material="):
+            Sheet("A3", spec="AMS 4027")
+
+    def test_a_profiles_extra_fields_print_blank_until_given(self) -> None:
+        from cadgen.eng_drawing import AEROSPACE, Sheet
+
+        texts = self._texts(self._sheet(profile=AEROSPACE, company="ACME AERO")[0], "TITLE")
+        for caption in ("COMPANY", "ACME AERO", "STAGE", "CAGE CODE", "DISTRIBUTION"):
+            self.assertIn(caption, texts)
+        texts = self._texts(self._sheet(profile=AEROSPACE, fields={"CAGE CODE": "1ABC2"})[0], "TITLE")
+        self.assertIn("1ABC2", texts)
+        with self.assertRaisesRegex(ValueError, "CAGE CODE"):
+            Sheet("A3", fields={"CAGE CODE": "1ABC2"})
+        with self.assertRaisesRegex(ValueError, "EXPORT"):
+            Sheet("A3", profile=AEROSPACE, fields={"EXPORT": "EAR99"})
+
+    def test_a_key_characteristic_is_marked(self) -> None:
+        from cadgen.eng_drawing import AEROSPACE, Profile
+
+        sheet, top, front = self._sheet(profile=AEROSPACE, stage="production")
+        self.assertTrue(any(line.startswith("note:") and "key characteristic" in line
+                            for line in self._report(sheet)))
+        sheet, top, front = self._sheet(profile=AEROSPACE, stage="production", hole_key=True)
+        top.dim((-20, -15, 10), (10, -15, 10), key=True)
+        texts = self._texts(sheet, "DIM")
+        self.assertEqual(texts.count("KC"), 2, "the dimension's mark and the callout's")
+        self.assertFalse([line for line in self._report(sheet) if "key characteristic" in line])
+        own = Profile("OWN", "ISO GPS", {}, characteristic_mark="CC")
+        sheet, top, front = self._sheet(profile=own)
+        top.dim((-20, -15, 10), (10, -15, 10), key=True)
+        self.assertIn("CC", self._texts(sheet, "DIM"))
+
+
 class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_tags_each_hole_and_states_where_and_what(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet

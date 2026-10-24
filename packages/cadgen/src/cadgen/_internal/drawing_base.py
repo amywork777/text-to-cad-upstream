@@ -68,6 +68,8 @@ PROJECTIONS = ("THIRD ANGLE", "FIRST ANGLE")
 
 _MARGIN = 10.0
 _TITLE_W, _TITLE_H = 180.0, 40.0
+#: The band a sheet's stage, profile or company adds across the title block's top.
+_BAND_H = 10.0
 #: Text height the notes block is drawn at, and the left inset of its first glyph.
 #: The guard that refuses an over-wide note measures at these, because a guard
 #: that measures a different string at a different height than the draw either

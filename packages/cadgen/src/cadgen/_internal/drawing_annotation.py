@@ -17,7 +17,7 @@ from cadgen._internal.drawing_base import (
     _dot, _fmt, _ink_width, _look, _looks_down, _near, _shown, _spans, _text_width, _where,
 )
 from cadgen._internal.drawing_features import Slot
-from cadgen._internal.drawing_gdt import frame_size
+from cadgen._internal.drawing_gdt import _DATUM_REACH, _datum_toward, _side_of, frame_size, mark_width
 from cadgen._internal.drawing_sheet import _CAPTION_HEIGHT
 
 if TYPE_CHECKING:
@@ -55,6 +55,8 @@ class _Dim:
     #: letter its feature is (a datum feature of size: a bore, a width).
     frame: Any = None
     datum: str | None = None
+    #: A key characteristic: marked with the profile's boxed letters after the value.
+    key: bool = False
 
 
 def _tol_suffix(tol) -> str:
@@ -431,6 +433,19 @@ def _resolve_round(view: View, proj, dim: "_Dim") -> "_Dim":
     return replace(dim, radius=radius)
 
 
+def _rows_beyond(dim: "_Dim", horizontal: bool, th: float, mark: str) -> int:
+    """The dimension rows a dimension's frame, datum symbol and key mark take
+    beyond its own. Over a level dimension the frame takes the next row and the
+    datum symbol the one after; beside an upright one's value they all run
+    outward, across as many rows as they are wide."""
+    if horizontal:
+        return (dim.frame is not None) + (dim.datum is not None)
+    width = ((mark_width(mark, th) + th * 0.5 if dim.key else 0.0)
+             + (frame_size(dim.frame, th)[0] + th * 0.5 if dim.frame is not None else 0.0)
+             + (_DATUM_REACH * th if dim.datum is not None else 0.0))
+    return max(0, math.ceil((th * 1.5 + width + 2.0) / _DIM_ROW) - 1) if width else 0
+
+
 def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> dict:
     """Which side and row each dimension takes, and the room the view's annotation
     needs on each side, before anything is drawn.
@@ -448,6 +463,11 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
     th = sheet.text_height
     sv = view.scale or sheet._scale()
     explicit = dict.fromkeys(_SIDES, 0)
+    # A datum feature symbol stands on its face, in the first rows out of its side.
+    for _letter, point, stem in view._datums:
+        side = _side_of(_datum_toward(proj.point(point), bounds, stem))
+        explicit[side] = max(explicit[side], math.ceil((_DATUM_REACH * th + 2.0) / _DIM_ROW) - 1)
+    mark = sheet.profile.characteristic_mark if sheet.profile is not None else "KC"
     pending: dict[str, list] = {side: [] for side in _SIDES}
     for order, dim in enumerate(items):
         if dim.kind != "linear":
@@ -463,15 +483,14 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
             side, span = ("top" if (a[1] + b[1]) / 2 >= cy - 1e-9 else "bottom"), abs(b[0] - a[0])
         else:
             side, span = ("right" if (a[0] + b[0]) / 2 >= cx - 1e-9 else "left"), abs(b[1] - a[1])
-        pending[side].append((round(span, 6), order, dim))
+        pending[side].append((round(span, 6), order, dim, horizontal))
     rows: dict[str, int] = {}
     for side in _SIDES:
         row = explicit[side]
-        for _span, _order, dim in sorted(pending[side], key=lambda t: (t[0], t[1])):
+        for _span, _order, dim, horizontal in sorted(pending[side], key=lambda t: (t[0], t[1])):
             row += 1
             dim.side, dim.row = side, row
-            if dim.frame is not None or dim.datum is not None:
-                row += 1  # its frame or datum symbol stands on the next row out
+            row += _rows_beyond(dim, horizontal, th, mark)
         rows[side] = row
     overall = {}
     if "width" in view._overall:

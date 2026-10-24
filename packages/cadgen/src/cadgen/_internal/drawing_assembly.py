@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterator, NamedTuple, Sequence
 
 from cadgen._internal.drawing_base import (
-    _DEFAULT_TEXT, _DIM_ROW, _LABEL_ROOM, _MARGIN, _SIDES, _STANDARD_SCALES, _TITLE_H, _TITLE_W, _look,
+    _DEFAULT_TEXT, _DIM_ROW, _LABEL_ROOM, _MARGIN, _SIDES, _STANDARD_SCALES, _TITLE_W, _look,
     _scale_label,
 )
 from cadgen._internal.drawing_sheet import (
@@ -642,7 +642,7 @@ def _arrange_assembly(sheet: Sheet, shape, second: str) -> tuple[float, list]:
     overall = {"front": {"width", "height"}, second: {"width"} if second == "right" else {"height"}}
     notes = _notes_height(sheet)
     a_x = (m + 4.0, W - m - _TITLE_W - 6.0)
-    a_y = (m + 4.0 + (_TITLE_H + notes if notes else 0.0), H - m - 4.0)
+    a_y = (m + 4.0 + (sheet._title_height() + notes if notes else 0.0), H - m - 4.0)
     third = sheet.projection == "THIRD ANGLE"
 
     def layout(s: float):
@@ -694,7 +694,7 @@ def _arrange_assembly(sheet: Sheet, shape, second: str) -> tuple[float, list]:
     scale, at = fitting
     slots = [("front", at["front"], None, None), (second, at[second], None, None)]
     b_x = (W - m - _TITLE_W, W - m - 4.0)
-    b_y = (m + _TITLE_H + _list_height(sheet) + 6.0, H - m - 4.0 - _revisions_height(sheet))
+    b_y = (m + sheet._title_height() + _list_height(sheet) + 6.0, H - m - 4.0 - _revisions_height(sheet))
     iso_w, iso_h = _view_extent(shape, "iso", 1.0)
     room = _assembly_room((iso_w, iso_h), set())
     for c in (c for c in _STANDARD_SCALES if scale / 5 - 1e-9 <= c <= scale):

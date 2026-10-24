@@ -252,12 +252,35 @@ _TITLE_CELLS = {
     "UNITS": (70.0, 0.0, 40.0, 10.0),
     "PROJECTION": (110.0, 0.0, 70.0, 10.0),
 }
+#: The band across the top: who the drawing is by and how far along it is. A
+#: profile's own cells take the middle of it (:func:`_band_cells`).
+_BAND_CELLS = {
+    "COMPANY": (0.0, 40.0, 110.0, 10.0),
+    "STAGE": (110.0, 40.0, 70.0, 10.0),
+}
 #: The grid between those cells, drawn as lines so no edge is written twice.
 _TITLE_RULES = (
     ((0.0, 10.0), (180.0, 10.0)), ((0.0, 20.0), (180.0, 20.0)), ((110.0, 30.0), (180.0, 30.0)),
     ((110.0, 0.0), (110.0, 40.0)), ((60.0, 10.0), (60.0, 20.0)), ((40.0, 0.0), (40.0, 10.0)),
     ((70.0, 0.0), (70.0, 10.0)), ((140.0, 10.0), (140.0, 30.0)),
 )
+
+
+def _band_cells(sheet: Sheet) -> dict[str, tuple[float, float, float, float]]:
+    """The top band's cells: COMPANY and STAGE, with the profile's own cells
+    sharing the space between them; none on a sheet that states no stage,
+    profile or company."""
+    if not sheet._banded():
+        return {}
+    extra = sheet.profile.fields if sheet.profile is not None else ()
+    if not extra:
+        return _BAND_CELLS
+    width = 70.0 / len(extra)
+    return {"COMPANY": (0.0, 40.0, 70.0, 10.0),
+            **{name: (70.0 + i * width, 40.0, width, 10.0) for i, name in enumerate(extra)},
+            "STAGE": (140.0, 40.0, 40.0, 10.0)}
+
+
 #: Cap height of a cell's caption, and the width the title itself may take.
 _CAPTION_HEIGHT = 1.8
 _TITLE_FIT = _TITLE_CELLS["TITLE"][2] - 6.0
@@ -277,7 +300,7 @@ def _list_room(sheet: Sheet) -> float:
     the block, a row for the line saying where a long list continues, and air."""
     box = _revisions_box(sheet)
     revisions = box[3] - box[2] + 4.0 if box is not None else 0.0
-    return sheet.height - 2 * _MARGIN - _TITLE_H - _LIST_ROW - 4.0 - revisions
+    return sheet.height - 2 * _MARGIN - sheet._title_height() - _LIST_ROW - 4.0 - revisions
 
 
 def _list_height(sheet: Sheet) -> float:
@@ -307,7 +330,7 @@ def _draw_parts_list(msp, sheet: Sheet, text, continued: dict) -> None:
                     f"({width:.0f} mm) even at the smallest legible text, and a parts list cut short is wrong. "
                     f"Shorten it: parts.set({item.number}, {fields[name]}=...)."
                 )
-    x0, y0 = sheet.width - _MARGIN - _TITLE_W, _MARGIN + _TITLE_H
+    x0, y0 = sheet.width - _MARGIN - _TITLE_W, _MARGIN + sheet._title_height()
     rows = [tuple(name for name, _w in _LIST_COLUMNS)] + [
         (str(item.number), str(item.quantity), item.description, item.part_number, item.material)
         for item in parts.items[first - 1:last]]
@@ -369,17 +392,25 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
         text(_ZONE_LETTERS[j], W - m / 2, y, 3.0, A.MIDDLE_CENTER)
 
     x0, y0 = W - m - _TITLE_W, m
-    msp.add_lwpolyline([(x0, y0), (x0 + _TITLE_W, y0), (x0 + _TITLE_W, y0 + _TITLE_H), (x0, y0 + _TITLE_H)],
+    tall = sheet._title_height()
+    msp.add_lwpolyline([(x0, y0), (x0 + _TITLE_W, y0), (x0 + _TITLE_W, y0 + tall), (x0, y0 + tall)],
                        close=True, dxfattribs={"layer": "TITLE"})
+    band = _band_cells(sheet)
     for (ax, ay), (bx, by) in _TITLE_RULES:
         msp.add_line((x0 + ax, y0 + ay), (x0 + bx, y0 + by), dxfattribs={"layer": "TITLE"})
+    if band:
+        msp.add_line((x0, y0 + _TITLE_H), (x0 + _TITLE_W, y0 + _TITLE_H), dxfattribs={"layer": "TITLE"})
+    for x, y, _w, h in list(band.values())[1:]:
+        msp.add_line((x0 + x, y0 + y), (x0 + x, y0 + y + h), dxfattribs={"layer": "TITLE"})
     values = {
         "DWG NO.": (sheet.part_number, 3.5), "REV": (sheet.revision, 2.5), "SHEET": (f"{index} OF {count}", 2.5),
-        "MATERIAL": (sheet.material, 2.5), "FINISH": (sheet.finish, 2.5),
+        "MATERIAL": (sheet._material_label(), 2.5), "FINISH": (sheet.finish, 2.5),
         "SCALE": (_scale_label(sheet._scale()), 2.5), "SIZE": (sheet._size(), 2.5),
         "DRAWN": (sheet.author, 2.5), "DATE": (sheet.date, 2.5), "UNITS": (sheet.units.upper(), 2.5),
+        "COMPANY": (sheet.company, 2.5), "STAGE": (sheet._stage_label(), 2.5),
+        **{name: (sheet.fields.get(name, ""), 2.5) for name in band if name not in _BAND_CELLS},
     }
-    for name, (x, y, w, h) in _TITLE_CELLS.items():
+    for name, (x, y, w, h) in {**_TITLE_CELLS, **band}.items():
         if name == "PROJECTION":
             continue  # the symbol is its own caption
         text(name, x0 + x + 1.2, y0 + y + h - 1.0, _CAPTION_HEIGHT, A.TOP_LEFT, fit=w - 2.4)
@@ -411,7 +442,7 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
                 )
         _draw_parts_list(msp, sheet, text, continued or {})
     for row, (line, note) in enumerate(zip(lines, sheet.drawn_notes())):
-        y = y0 + _TITLE_H + 4 + (len(lines) - 1 - row) * 5
+        y = y0 + tall + 4 + (len(lines) - 1 - row) * 5
         text(line, m + _NOTE_INSET, y, _NOTE_HEIGHT, A.BOTTOM_LEFT, "NOTES")
         if row == 0 and sheet.general_profile is not None:
             # Note 1's frame follows its words: every surface within this profile.
@@ -503,7 +534,7 @@ def _notes_box(sheet: Sheet) -> list[tuple[float, float, float, float]]:
     lines = sheet.note_lines()
     if not lines:
         return []
-    x0, y0 = _MARGIN + _NOTE_INSET, _MARGIN + _TITLE_H + 4.0
+    x0, y0 = _MARGIN + _NOTE_INSET, _MARGIN + sheet._title_height() + 4.0
     width = max(sheet._note_widths())
     return [(x0, x0 + width, y0 - 1.0, y0 + (len(lines) - 1) * 5.0 + _NOTE_HEIGHT + 1.0)]
 
@@ -533,7 +564,7 @@ def _furniture(sheet: Sheet) -> list[tuple[float, float, float, float]]:
     """The sheet's own furniture as ``(x0, x1, y0, y1)``: the title block with any
     parts list standing on it, and the revision table."""
     boxes = [(sheet.width - _MARGIN - _TITLE_W, sheet.width - _MARGIN, _MARGIN,
-              _MARGIN + _TITLE_H + _list_height(sheet))]
+              _MARGIN + sheet._title_height() + _list_height(sheet))]
     revisions = _revisions_box(sheet)
     if revisions is not None:
         boxes.append(revisions)
@@ -546,7 +577,7 @@ def _free_band(sheet: Sheet, paper: str | None = None) -> tuple[float, float, fl
     m = _MARGIN
     width, height = SHEET_SIZES[paper or sheet._size()]
     above = max(_notes_height(sheet), _list_height(sheet) + 6.0 if sheet._parts is not None else 0.0)
-    return m + 4.0, width - m - 4.0, m + _TITLE_H + above + 4.0, height - m - 4.0
+    return m + 4.0, width - m - 4.0, m + sheet._title_height() + above + 4.0, height - m - 4.0
 
 
 def _next_smaller(scale: float) -> float | None:

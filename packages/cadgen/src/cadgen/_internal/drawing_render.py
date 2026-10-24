@@ -25,11 +25,14 @@ from cadgen._internal.drawing_assembly import _draw_balloons, _refresh_from_item
 from cadgen._internal.drawing_base import (
     _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _CALLOUT_STACK, _CENTRE_OVERSHOOT, _DIM_ROW, _HATCH_SCALE,
     _LABEL_GAP, _LABEL_HEIGHT, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE, SHEET_SIZES, _SIDES,
-    _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_H, _TITLE_W, _box_dimension_value, _box_text, _cross, _dimstyle,
+    _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_W, _box_dimension_value, _box_text, _cross, _dimstyle,
     _dirs, _dot, _draw_dimension_symbols, _draw_symbol, _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs,
     _scale_label, _shown, _spans, _text_box, _text_width, _where,
 )
-from cadgen._internal.drawing_gdt import _DATUM_REACH, _check_datums, _draw_datum, _draw_frame, frame_size
+from cadgen._internal.drawing_gdt import (
+    _DATUM_REACH, _FRAME_HEIGHT, _check_datums, _datum_toward, _draw_datum, _draw_frame, _draw_mark, _side_of,
+    frame_size, mark_width,
+)
 from cadgen._internal.drawing_report import _Facts, _member_key, _merge_facts
 from cadgen._internal.drawing_sheet import (
     _AIR, _LARGEST_SCALE, _SIZES_CHOSEN, _SIZES_SMALLEST_FIRST, _OffFrame, _arrange_three_views, _assert_views_fit,
@@ -112,7 +115,7 @@ def _check_clear_of_parts_list(sheet: Sheet, placed: list, index: int) -> None:
     """Refuse a view drawn over the parts list, which would print both illegible."""
     if sheet._parts is None:
         return
-    x_block, y_title = sheet.width - _MARGIN - _TITLE_W, _MARGIN + _TITLE_H
+    x_block, y_title = sheet.width - _MARGIN - _TITLE_W, _MARGIN + sheet._title_height()
     y_list = y_title + _list_height(sheet)
     for view, _proj, _bounds, _cx, _cy, box in placed:
         if box[1] > x_block + 1e-6 and box[2] < y_list - 1e-6 and box[3] > y_title:
@@ -348,6 +351,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     # planned before anything is placed, so the layout knows what each view carries.
     _require_settled(sheet)
     _check_datums(sheet)
+    key_mark = sheet.profile.characteristic_mark if sheet.profile is not None else "KC"
     framed = sheet.general_profile is not None or any(
         dim.frame is not None for view in sheet.views for dim in view._dims)
     if warnings is not None and not framed:
@@ -375,6 +379,16 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     assemblies = {id(parts.assembly) for view in sheet.views for parts in view._balloons}
     if sheet._parts is not None:
         assemblies.add(id(sheet._parts.parts.assembly))
+    if facts is not None:
+        # What the sheet's stage asks of it is checked once the drawing is done.
+        facts.sheets.append({
+            "sheet": (index, sheet.title), "stage": sheet._stage(), "mark": key_mark,
+            "part": any(id(view.shape) not in assemblies for view in sheet.views),
+            "material": sheet.material, "spec": sheet.spec, "finish": sheet.finish,
+            "general": bool(sheet.general_tolerance or sheet.general_profile),
+            "datums": any(view._datums or any(d.datum for d in view._dims) for view in sheet.views),
+            "keyed": any(d.key for view in sheet.views for d in view._dims),
+        })
     for view in sheet.views:
         if view._detail is not None:
             # A detail shows what its parent shows when the sheet renders, so a
@@ -600,8 +614,9 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     furniture = _furniture(sheet)
     if sheet._parts is not None:
         # Annotation printed over the parts list makes both unreadable; say so.
-        claim("the parts list", (sheet.width - _MARGIN - _TITLE_W, _MARGIN + _TITLE_H, sheet.width - _MARGIN,
-                                 _MARGIN + _TITLE_H + _list_height(sheet)))
+        title = sheet._title_height()
+        claim("the parts list", (sheet.width - _MARGIN - _TITLE_W, _MARGIN + title, sheet.width - _MARGIN,
+                                 _MARGIN + title + _list_height(sheet)))
     _assert_views_fit(sheet, placed, index=index, groups=groups)
     _check_clear_of_parts_list(sheet, placed, index)
     m = _MARGIN
@@ -869,7 +884,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     record["axes"].add((axis, round(value, 3)))
 
         def linear(a, b, offset, side, row, override, orientation, tol=None, fit=None, true=None, *,
-                   basic=False, reference=False, limits=None, name="overall", frame=None, datum=None):
+                   basic=False, reference=False, limits=None, name="overall", frame=None, datum=None, keyed=False):
             """``true`` is the length measured on the whole part, when the paper's
             is shorter: a dimension across a broken view's break. ``name`` says
             which dimension it is in a message."""
@@ -948,20 +963,30 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             _draw_dimension_symbols(doc, d.dimension)
             if basic:
                 _box_dimension_value(doc, d.dimension)
-            if frame is not None or datum is not None:
-                # Beyond the value, on the row the plan kept for it: the frame, and the
-                # datum symbol on the frame's outer edge, or on the value's.
+            if keyed or frame is not None or datum is not None:
+                # A key characteristic's mark follows the value; the frame takes the
+                # rows the plan kept beyond it, the datum symbol on the frame's outer
+                # edge, or on the value's. Beside an upright value they run outward.
                 value = next(e for e in doc.blocks.get(d.dimension.dxf.geometry) if e.dxftype() == "MTEXT")
                 vx, vy = value.dxf.insert.x, value.dxf.insert.y
                 out = 1.0 if offset >= 0 else -1.0
                 toward = (0.0, out) if horizontal else (out, 0.0)
                 tip = (vx, vy + out * th) if horizontal else (vx + out * th, vy)
+                if keyed:
+                    width = mark_width(key_mark, th)
+                    if horizontal:
+                        length, _tall = _mtext_extent(value.text, value.dxf.char_height)
+                        box = _draw_mark(msp, key_mark, vx + length / 2 + th * 0.5, vy, th)
+                    else:
+                        box = _draw_mark(msp, key_mark, tip[0] if out > 0 else tip[0] - width, vy, th)
+                        tip = (box[2] + th * 0.5 if out > 0 else box[0] - th * 0.5, vy)
+                    claim(f"{name} key mark", box)
                 if frame is not None:
                     width, cell = frame_size(frame, th)
                     if horizontal:
                         box = _draw_frame(msp, frame, vx - width / 2, vy + out * _DIM_ROW, th)
                     else:
-                        box = _draw_frame(msp, frame, vx + th if out > 0 else vx - th - width, vy, th)
+                        box = _draw_frame(msp, frame, tip[0] if out > 0 else tip[0] - width, vy, th)
                     claim(f"frame {frame.characteristic}", box)
                     tip = (((box[0] + box[2]) / 2, box[3] if out > 0 else box[1]) if horizontal
                            else (box[2] if out > 0 else box[0], (box[1] + box[3]) / 2))
@@ -1028,7 +1053,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     true = abs(rb[0] - ra[0]) if horizontal else abs(rb[1] - ra[1])
                 linear(a, b, dim.offset, dim.side, dim.row, dim.text, dim.orientation, dim.tol, dim.fit, true,
                        basic=dim.basic, reference=dim.reference, limits=dim.limits, name=f"dim {dim.index}",
-                       frame=dim.frame, datum=dim.datum)
+                       frame=dim.frame, datum=dim.datum, keyed=dim.key)
         if "width" in view._overall:
             linear((vx0, vy1), (vx1, vy1), None, "top", plan["overall"]["top"], None, "h",
                    true=whole[1] - whole[0] if whole else None, reference=view._overall_reference)
@@ -1068,7 +1093,11 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             exit_angle = math.radians(dim.angle if dim.angle is not None else 45.0)
             # What hangs under the callout's text: its frame, its datum symbol.
             under_width = frame_size(dim.frame, th)[0] if dim.frame is not None else 0.0
-            under_depth = ((frame_size(dim.frame, th)[1] + 1.0 if dim.frame is not None else 0.0)
+            # A key characteristic's mark at the text's outer end.
+            beside = mark_width(key_mark, th) + th * 0.5 if dim.key else 0.0
+            # How far the callout's line reaches down: its text, or a key mark's box.
+            head = _FRAME_HEIGHT * th / 2 if dim.key else th * 0.6
+            under_depth = (head - th * 0.6 + (frame_size(dim.frame, th)[1] + 1.0 if dim.frame is not None else 0.0)
                            + (_DATUM_REACH * th if dim.datum is not None else 0.0))
 
             def past(vertical: str, step: int) -> float:
@@ -1100,7 +1129,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 run = math.hypot(knee[0] - centre[0], knee[1] - centre[1]) or 1.0
                 start = (centre[0] + r * (knee[0] - centre[0]) / run, centre[1] + r * (knee[1] - centre[1]) / run)
                 landing = (knee[0] + sign * _CALLOUT_LANDING, knee[1])
-                far_end = landing[0] + sign * (_CALLOUT_GAP + max(_ink_width(value, th), under_width))
+                far_end = landing[0] + sign * (_CALLOUT_GAP + max(_ink_width(value, th) + beside, under_width))
                 x0, x1 = min(landing[0], far_end), max(landing[0], far_end)
                 y0, y1 = knee[1] - th - under_depth, knee[1] + th
                 free = (not blocked(x0, x1, y0, y1, own_box)
@@ -1156,11 +1185,16 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             leaders.append((start, knee, landing))
             align = TextEntityAlignment.MIDDLE_LEFT if sign > 0 else TextEntityAlignment.MIDDLE_RIGHT
             text(value, landing[0] + sign * _CALLOUT_GAP, landing[1], th, align, "DIM")
+            if dim.key:
+                outer = landing[0] + sign * (_CALLOUT_GAP + _ink_width(value, th) + th * 0.5)
+                claim(f"{view.name} {dim.kind} {dim.index} key mark",
+                      _draw_mark(msp, key_mark, outer if sign > 0 else outer - mark_width(key_mark, th),
+                                 landing[1], th))
             if dim.basic:
                 _box_text(msp, _text_box(value, landing[0] + sign * _CALLOUT_GAP, landing[1], th, align))
             if dim.frame is not None or dim.datum is not None:
                 # Under the callout: its frame, then the datum symbol the feature is.
-                attach, under = landing[0] + sign * _CALLOUT_GAP, landing[1] - th * 0.6 - 1.0
+                attach, under = landing[0] + sign * _CALLOUT_GAP, landing[1] - head - 1.0
                 box = (attach, under, attach, under)
                 if dim.frame is not None:
                     width, cell = frame_size(dim.frame, th)
@@ -1241,16 +1275,17 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # the view by the nearest side unless the author pointed it.
             tip = model_to_sheet(point)
             check("datum", letter, tip)
-            if stem is None:
-                gaps = {(-1.0, 0.0): tip[0] - vx0, (1.0, 0.0): vx1 - tip[0], (0.0, -1.0): tip[1] - vy0,
-                        (0.0, 1.0): vy1 - tip[1]}
-                toward = min(gaps, key=lambda k: gaps[k])
-            else:
-                length = math.hypot(*stem)
-                toward = (stem[0] / length, stem[1] / length)
-            box = _draw_datum(msp, letter, tip, toward, th)
+            toward = _datum_toward(tip, (vx0, vx1, vy0, vy1), stem)
+            # A face inside the view's outline reaches its side first.
+            inside = 0.0 if stem is not None else {
+                (-1.0, 0.0): tip[0] - vx0, (1.0, 0.0): vx1 - tip[0], (0.0, -1.0): tip[1] - vy0,
+                (0.0, 1.0): vy1 - tip[1]}[toward]
+            box = _draw_datum(msp, letter, tip, toward, th, extra=inside)
             claim(f"datum {letter}", box)
-            reach["bottom"] = max(reach["bottom"], vy0 - box[1] + 1.0)
+            side = _side_of(toward)
+            edge = {"top": vy1, "bottom": vy0, "right": vx1, "left": vx0}[side]
+            far = {"top": box[3], "bottom": box[1], "right": box[2], "left": box[0]}[side]
+            reach[side] = max(reach[side], abs(far - edge) + 1.0)
 
         if view._balloons:
             _draw_balloons(msp, sheet, view, keyed_on_sheet, facts, model_to_sheet, own_box, reach, text,
