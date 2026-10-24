@@ -244,7 +244,8 @@ def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None
     """The view's annotation with every size the part decides filled in from the
     part, on copies: a hole callout's diameter, depth, counterbore, countersink and
     count, a diameter or radius callout's value, and ``holes()`` expanded into one
-    callout per kind of hole. Anything the author typed is checked on the way."""
+    callout per kind of hole, less the kinds a ``hole()`` or ``slot()`` on the view
+    states. Anything the author typed is checked on the way."""
     look = _look(view)
     seen_cache: tuple | None = None
 
@@ -262,24 +263,30 @@ def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None
             )
         return seen_cache
 
-    out: list[_Dim] = []
+    resolved: dict[int, list[_Dim]] = {}
     for index, dim in enumerate(view._dims):
         if dim.kind == "hole":
             holes, slots, features = seen()
-            resolved = [_resolve_hole(view, proj, dim, holes, look, features, slots)]
+            resolved[index] = [_resolve_hole(view, proj, dim, holes, look, features, slots)]
         elif dim.kind == "slot":
             _holes, slots, _features = seen()
-            resolved = [_resolve_slot(view, proj, bounds, dim, slots, look)]
-        elif dim.kind == "holes":
-            holes, slots, features = seen()
-            resolved = _expand_holes(view, proj, bounds, dim, holes, look, warnings, features, slots)
+            resolved[index] = [_resolve_slot(view, proj, bounds, dim, slots, look)]
         elif dim.kind in ("diameter", "radius"):
-            resolved = [_resolve_round(view, proj, dim)]
-        else:
-            resolved = [replace(dim)]
-        for item in resolved:
+            resolved[index] = [_resolve_round(view, proj, dim)]
+        elif dim.kind != "holes":
+            resolved[index] = [replace(dim)]
+    # A kind of hole a hole() call states is that call's, with its fit or frame;
+    # holes() calls out the rest.
+    stated = {id(f) for items in resolved.values() for item in items for f in (item.covers or (item.feature,))}
+    for index, dim in enumerate(view._dims):
+        if dim.kind == "holes":
+            holes, slots, features = seen()
+            resolved[index] = _expand_holes(view, proj, bounds, dim, holes, look, warnings, features, slots, stated)
+    out: list[_Dim] = []
+    for index in sorted(resolved):
+        for item in resolved[index]:
             item.index = index
-        out.extend(resolved)
+        out.extend(resolved[index])
     return out
 
 
@@ -384,7 +391,7 @@ def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
 
 
 def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: list | None,
-                  features: _Features, slots) -> list["_Dim"]:
+                  features: _Features, slots, stated: set) -> list["_Dim"]:
     kinds = _kinds(f for f in (*seen, *slots) if _faces_viewer(f, look))
     if not kinds:
         if warnings is not None:
@@ -399,6 +406,8 @@ def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: l
 
     out = []
     for members in kinds:
+        if any(id(member) in stated for member in members):
+            continue
         if isinstance(members[0], Slot):
             slot = min(members, key=lambda sl: short_way_out(_slot_end(proj, bounds, sl)))
             spec = _slot_spec(slot, len(members))

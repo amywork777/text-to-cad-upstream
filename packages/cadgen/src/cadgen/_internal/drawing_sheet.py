@@ -444,8 +444,7 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
                 )
         _draw_parts_list(msp, sheet, text, continued or {})
     for row, (line, note) in enumerate(zip(lines, sheet.drawn_notes())):
-        # The notes stand left of the title block, on its height without the band.
-        y = y0 + _TITLE_H + 4 + (len(lines) - 1 - row) * 5
+        y = y0 + _notes_base(sheet) + 4 + (len(lines) - 1 - row) * 5
         text(line, m + _NOTE_INSET, y, _NOTE_HEIGHT, A.BOTTOM_LEFT, "NOTES")
         if row >= len(lines) - len(sheet._flags):
             # A flag note's number stands in its flag, where the others' are printed.
@@ -600,9 +599,19 @@ def _notes_box(sheet: Sheet) -> list[tuple[float, float, float, float]]:
     lines = sheet.note_lines()
     if not lines:
         return []
-    x0, y0 = _MARGIN + _NOTE_INSET, _MARGIN + _TITLE_H + 4.0
+    x0, y0 = _MARGIN + _NOTE_INSET, _MARGIN + _notes_base(sheet) + 4.0
     width = max(sheet._note_widths())
     return [(x0, x0 + width, y0 - 1.0, y0 + (len(lines) - 1) * 5.0 + _NOTE_HEIGHT + 1.0)]
+
+
+def _notes_base(sheet: Sheet, paper: str | None = None) -> float:
+    """How high above the frame the notes stand on ``paper`` (the sheet's own by
+    default): on the title block's own height when every note ends before the
+    title block, the band above it not reaching them; above the band when a note
+    runs on under it."""
+    room = SHEET_SIZES[paper or sheet._size()][0] - _MARGIN - _TITLE_W - 4.0 - (_MARGIN + _NOTE_INSET)
+    widths = sheet._note_widths()
+    return _TITLE_H if not widths or max(widths) <= room else sheet._title_height()
 
 
 def _notes_height(sheet: Sheet) -> float:
@@ -643,7 +652,7 @@ def _free_band(sheet: Sheet, paper: str | None = None) -> tuple[float, float, fl
     m = _MARGIN
     width, height = SHEET_SIZES[paper or sheet._size()]
     title = sheet._title_height()
-    floor = max(title, _TITLE_H + _notes_height(sheet),
+    floor = max(title, _notes_base(sheet, paper) + _notes_height(sheet),
                 title + _list_height(sheet) + 6.0 if sheet._parts is not None else 0.0)
     return m + 4.0, width - m - 4.0, m + floor + 4.0, height - m - 4.0
 

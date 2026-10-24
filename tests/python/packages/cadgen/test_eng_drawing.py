@@ -1151,6 +1151,17 @@ def _callouts(doc, h: float = 3.5) -> list[str]:
 class FromThePartTests(unittest.TestCase):
     """A callout's numbers are the part's: read off it, or checked against it."""
 
+    def test_holes_leaves_a_kind_a_hole_call_states_to_that_call(self) -> None:
+        """A first pass's holes() and the fit the person gave one bore: one callout."""
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, _front, _right = sheet.three_views(_part())
+        top.holes()
+        top.hole((10, 5, 10), fit="H7")
+        self.assertEqual(_callouts(_render_sheet(sheet, index=1, count=1, label="fit")), ["%%c6 H7 THRU"])
+
     def test_a_hole_callout_reads_every_size_off_the_part(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet
@@ -3230,6 +3241,18 @@ class StageProfileTests(unittest.TestCase):
         top.dim((-20, -15, 10), (10, -15, 10), key=True)
         self.assertFalse([line for line in self._report(sheet) if "production" in line])
 
+    def test_notes_running_under_the_title_block_stand_above_its_band(self) -> None:
+        from cadgen._internal.drawing_base import _MARGIN, _TITLE_W
+        from cadgen._internal.drawing_sheet import _notes_box
+        from cadgen.eng_drawing import Sheet
+
+        for notes in (["BREAK SHARP EDGES."], ["EXAMPLE REQUIREMENTS FOR DEMONSTRATION; NOT A RELEASED DESIGN."]):
+            sheet = Sheet("A4", 1.0, stage="prototype", notes=notes)
+            ((x0, x1, y0, y1),) = _notes_box(sheet)
+            title = (297 - _MARGIN - _TITLE_W, _MARGIN + sheet._title_height())
+            self.assertTrue(x1 <= title[0] or y0 >= title[1], (notes, x1, y0, title))
+        self.assertLess(y0 - 1.0, _MARGIN + sheet._title_height() + 4.0 + 1e-6, "no higher than it must")
+
     def test_material_and_spec_print_together(self) -> None:
         from cadgen.eng_drawing import Sheet
 
@@ -3343,6 +3366,12 @@ class FlagNoteTests(unittest.TestCase):
         start = flag.vertices[0]
         pin = next(point for number, _centre, point in _balloons(doc) if number == 2)
         self.assertLess(math.hypot(start[0] - pin[0], start[1] - pin[1]), 0.5, "on the pin, where its balloon keys it")
+        from shapely.geometry import LineString
+
+        path = LineString([(v[0], v[1]) for v in flag.vertices])
+        balloon_leaders = [LineString([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
+                           for e in doc.modelspace().query("LINE[layer=='NOTES']")]
+        self.assertFalse([b for b in balloon_leaders if path.crosses(b)], "the flag's leader crosses a balloon's")
         lonely = Sheet("A3", 1.0)
         bare = lonely.view(parts.assembly, "front", at=(160, 170), hidden=False)
         bare.flag("PRESS", item="pin")
@@ -3422,16 +3451,20 @@ class MaterialSectionTests(unittest.TestCase):
         doc, _front, _warnings = self._cut(_stack(("shell", 4, "aluminium"), ("base", 6, "plastic")))
         self.assertEqual(sorted(h.dxf.pattern_name for h in self._hatches(doc)), ["ANSI34", "ANSI38"])
 
-    def test_neighbours_of_one_family_differ_in_angle(self) -> None:
-        doc, _front, _warnings = self._cut(_stack(("lower", 4, "steel"), ("upper", 4, "steel")))
-        angles = {round(h.dxf.pattern_angle) % 180 for h in self._hatches(doc)}
-        self.assertEqual(len(angles), 2, "two steel layers, two angles")
+    def test_neighbours_of_one_family_differ_in_angle_then_spacing(self) -> None:
+        doc, _front, _warnings = self._cut(_stack(("lower", 4, "steel"), ("middle", 4, "steel"), ("upper", 4, "steel")))
+        hatches = self._hatches(doc)
+        angles = [round(h.dxf.pattern_angle) % 180 for h in hatches]
+        self.assertEqual(sorted(set(angles)), [0, 90], "turned a right angle, never 45 (its lines would read as edges)")
+        looks = {(angle, round(h.dxf.pattern_scale, 3)) for angle, h in zip(angles, hatches)}
+        self.assertEqual(len(looks), 3, "the third steel layer spaced wider")
 
     def test_a_thin_layer_is_filled_solid(self) -> None:
         doc, _front, _warnings = self._cut(_stack(("shell", 4, "plastic"), ("tape", 0.2, "general"),
                                                   ("lining", 2, "fabric")), scale=1.0)
         solid = [h for h in self._hatches(doc) if h.dxf.solid_fill]
         self.assertEqual(len(solid), 1, "the 0.2 mm tape, too thin to hatch")
+        self.assertIn("THIN, SOLID", [e.dxf.text for e in doc.modelspace().query("TEXT")], "the key says so")
 
     def test_overlapping_items_are_hatched_once(self) -> None:
         from build123d import Box, Compound, Pos

@@ -193,8 +193,10 @@ sheet millimetres.
   nearest the view's edge. Identical holes equally spaced round a turned axis
   of the part read `6× ⌀6 THRU EQ SP ON ⌀60`, and their pitch circle is drawn.
   A blind or counterbored hole that opens on the far side belongs to the
-  opposite view. An isometric looks down no hole, so callouts on one are
-  refused.
+  opposite view. A kind that a `hole()` or `slot()` call on the same view
+  states is left to that call, so a first pass's `holes()` and the fit given
+  one bore make one callout. An isometric looks down no hole, so callouts on
+  one are refused.
 - `view.hole_table(origin=None, at=None)`: tabulate the holes and slots the
   view looks down instead of calling them out: each tagged on the view (A1, A2
   for one kind, B1 for the next), an X and Y origin marked (the lower-left

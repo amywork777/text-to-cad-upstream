@@ -149,10 +149,13 @@ def _sheet_tables(sheet: Sheet, cuts: dict, work: list, s: float) -> list[_Sheet
             if what not in named:
                 named.append(what)
     if len(families) > 1:
+        # A row per material, under its family's swatch: a section carries no
+        # balloons, so the key is what says which region is which.
+        rows = [(family, material) for family, named in families.items() for material in named]
         tables.append(_SheetTable("MATERIAL KEY", ("HATCH", "FAMILY", "MATERIAL"),
                                   [(" " * 6, "THIN, SOLID" if family == "solid" else family.replace("_", " ").upper(),
-                                    ", ".join(named)) for family, named in families.items()],
-                                  list(families), near or sheet.views[0].at))
+                                    material) for family, material in rows],
+                                  [family for family, _material in rows], near or sheet.views[0].at))
     if sheet._layer_table is not None:
         parts, rows, corner = sheet._layer_table
         tables.append(_SheetTable("LAYER TABLE", ("ITEM", "MATERIAL", "SPEC", "THICKNESS", "COVERAGE"),
@@ -198,9 +201,15 @@ def _check_clear_of_parts_list(sheet: Sheet, placed: list, index: int) -> None:
 
 
 #: Below this width on the sheet (mm) a cut part is too thin to hatch, and is
-#: filled solid; and the turns that tell neighbours of one material family apart.
+#: filled solid; and how neighbours of one material family are told apart, as
+#: ISO 128-50 has it: the hatch turned a right angle, then spaced wider. A turn
+#: of 45 degrees would set a 45-degree pattern square to the sheet, where its
+#: lines read as edges.
 _THIN = 1.0
-_HATCH_TURNS = (0.0, 90.0, 45.0)
+_HATCH_TURNS = ((0.0, 1.0), (90.0, 1.0), (0.0, 1.6), (90.0, 1.6))
+#: A cut region narrower than this (sheet mm, across its area) is hatched finer,
+#: so a small one still shows its lines.
+_HATCH_ROOM = 10.0
 #: How many landings further out a callout past the rows may stand to clear text.
 _CALLOUT_STEPS = 4
 
@@ -895,7 +904,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 for item, faces in cut[3]:
                     family = item.family or "general"
                     pattern, angle = HATCHES[family]
-                    turn = _HATCH_TURNS[turns.get(family, 0) % len(_HATCH_TURNS)]
+                    turn, spacing = _HATCH_TURNS[turns.get(family, 0) % len(_HATCH_TURNS)]
                     turns[family] = turns.get(family, 0) + 1
                     own = _cut_region(faces, lambda p: to_sheet(proj.point(p)))
                     thin = _thin(own)
@@ -911,7 +920,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                         if thin:
                             hatch.set_solid_fill()
                         else:
-                            hatch.set_pattern_fill(pattern, scale=_HATCH_SCALE, angle=angle + turn)
+                            fine = min(1.0, max(0.35, math.sqrt(g.area) / _HATCH_ROOM))
+                            hatch.set_pattern_fill(pattern, scale=_HATCH_SCALE * spacing * fine, angle=angle + turn)
                         for k, ring in enumerate([g.exterior, *g.interiors]):
                             hatch.paths.add_polyline_path(
                                 list(ring.coords), is_closed=True,
@@ -1369,54 +1379,6 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 box = _draw_frame(msp, dim.frame, q[0] + 3 if right else q[0] - 3 - width, q[1], th)
                 claim(f"frame {dim.frame.characteristic}", box)
                 reach["bottom"] = max(reach["bottom"], vy0 - box[1] + 1.0)
-            elif dim.kind == "flag":
-                # A flag note: a leader to the flag, the flag numbered as its note.
-                p = model_to_sheet(dim.p1 if dim.p1 is not None else _item_point(view, dim.item))
-                check("flag", dim.index, p)
-                side, tall = _FLAG_SIDE * th, _FLAG_SIDE * th * math.sqrt(3) / 2
-                number = len(sheet.drawn_notes()) - len(sheet._flags) + sheet._flags.index(dim.text) + 1
-
-                def flag_at(offset):
-                    q = (p[0] + offset[0], p[1] + offset[1])
-                    right = offset[0] >= 0
-                    land = (q[0] + (side / 4 if right else -side / 4), q[1])
-                    x = q[0] if right else q[0] - side
-                    return q, land, (x, q[1] - tall / 2, x + side, q[1] + tall / 2)
-
-                def clear(q, land, box) -> bool:
-                    x0, y0, x1, y1 = box
-                    taken = [(b[0], b[2], b[1], b[3]) for _v, b in claimed]
-                    return (not blocked(x0, x1, y0, y1, own_box)
-                            and not (x1 > vx0 and x0 < vx1 and y1 > vy0 and y0 < vy1)
-                            and not any(x0 < t[1] and x1 > t[0] and y0 < t[3] and y1 > t[2] for t in taken)
-                            and not _crosses_any((p, q, land), [*dimension_lines, *leaders])
-                            and not _runs_through((q, land), taken))
-
-                spot = flag_at((dim.radius, dim.angle))
-                if dim.offset is None:
-                    # Unplaced: the nearest spot out of the view clear of its
-                    # annotation, the leader crossing no line; out by the side
-                    # nearest the point first, where the plan kept it room.
-                    toward = _datum_toward(p, (vx0, vx1, vy0, vy1), None)
-                    ways = sorted(((0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7)),
-                                  key=lambda u: -(u[0] * toward[0] + u[1] * toward[1]))
-                    tries = [flag_at((ux * reach_out, uy * reach_out)) for pair in (ways[:2], ways[2:])
-                             for reach_out in range(10, 90, 6) for ux, uy in pair]
-                    spot = next((t for t in tries if clear(*t)), None)
-                    if spot is None:
-                        spot = flag_at((dim.radius, dim.angle))
-                        if warnings is not None:
-                            warnings.append(f"{view.name} flag {number}: no clear place near its point; "
-                                            "flag(..., offset=(x, y)) places it")
-                q, land, box = spot
-                msp.add_leader([p, q, land], dxfattribs={"layer": "DIM"},
-                               override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
-                _draw_flag(msp, str(number), box[0], q[1], side, "DIM")
-                claim(f"flag {number}", box)
-                leaders.append((p, q, land))
-                for name, beyond in (("top", box[3] - vy1), ("bottom", vy0 - box[1]), ("right", box[2] - vx1),
-                                     ("left", vx0 - box[0])):
-                    reach[name] = max(reach[name], beyond + 1.0)
             elif dim.kind == "note":
                 p = model_to_sheet(dim.p1)
                 check("note", dim.index, p)
@@ -1447,8 +1409,79 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             reach[side] = max(reach[side], abs(far - edge) + 1.0)
 
         if view._balloons:
-            _draw_balloons(msp, sheet, view, keyed_on_sheet, facts, model_to_sheet, own_box, reach, text,
-                           list(claimed), [b for b in boxes if b is not own_box] + furniture, warnings)
+            # Their circles and leaders, which a flag drawn next keeps clear of.
+            for path, circle in _draw_balloons(msp, sheet, view, keyed_on_sheet, facts, model_to_sheet, own_box,
+                                               reach, text, list(claimed),
+                                               [b for b in boxes if b is not own_box] + furniture, warnings):
+                leaders.append(path)
+                claimed.append(("balloon", circle))
+
+        part_lines = None
+        for dim in items:
+            if dim.kind != "flag":
+                continue
+            # A flag note: a leader to the flag, the flag numbered as its note.
+            p = model_to_sheet(dim.p1 if dim.p1 is not None else _item_point(view, dim.item))
+            check("flag", dim.index, p)
+            side, tall = _FLAG_SIDE * th, _FLAG_SIDE * th * math.sqrt(3) / 2
+            number = len(sheet.drawn_notes()) - len(sheet._flags) + sheet._flags.index(dim.text) + 1
+
+            def flag_at(offset):
+                q = (p[0] + offset[0], p[1] + offset[1])
+                right = offset[0] >= 0
+                land = (q[0] + (side / 4 if right else -side / 4), q[1])
+                x = q[0] if right else q[0] - side
+                return q, land, (x, q[1] - tall / 2, x + side, q[1] + tall / 2)
+
+            def clear(q, land, box) -> bool:
+                x0, y0, x1, y1 = box
+                taken = [(b[0], b[2], b[1], b[3]) for _v, b in claimed]
+                return (not blocked(x0, x1, y0, y1, own_box)
+                        and not (x1 > vx0 and x0 < vx1 and y1 > vy0 and y0 < vy1)
+                        and not any(x0 < t[1] and x1 > t[0] and y0 < t[3] and y1 > t[2] for t in taken)
+                        and not _crosses_any((p, q, land), [*dimension_lines, *leaders])
+                        and not _runs_through((q, land), taken))
+
+            spot = flag_at((dim.radius, dim.angle))
+            if dim.offset is None:
+                # Unplaced: the nearest spot out of the view clear of its
+                # annotation, the leader crossing no line; out by the side
+                # nearest the point first, where the plan kept it room.
+                toward = _datum_toward(p, (vx0, vx1, vy0, vy1), None)
+                ways = sorted(((0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7)),
+                              key=lambda u: -(u[0] * toward[0] + u[1] * toward[1]))
+                tries = [flag_at((ux * reach_out, uy * reach_out)) for pair in (ways[:2], ways[2:])
+                         for reach_out in range(10, 90, 6) for ux, uy in pair]
+                def crosses_part(q) -> bool:
+                    # Whether the leader, past its first millimetre, crosses the
+                    # part's own lines: a seam's flag comes from outside.
+                    nonlocal part_lines
+                    from shapely.geometry import LineString
+                    from shapely.ops import unary_union
+
+                    if part_lines is None:
+                        part_lines = unary_union([LineString([to_sheet(pt) for pt in _edge_points(e)])
+                                                  for e in proj.visible])
+                    run = math.hypot(q[0] - p[0], q[1] - p[1]) or 1.0
+                    start = (p[0] + (q[0] - p[0]) / run, p[1] + (q[1] - p[1]) / run)
+                    return LineString([start, q]).intersects(part_lines)
+
+                spot = (next((t for t in tries if clear(*t) and not crosses_part(t[0])), None)
+                        or next((t for t in tries if clear(*t)), None))
+                if spot is None:
+                    spot = flag_at((dim.radius, dim.angle))
+                    if warnings is not None:
+                        warnings.append(f"{view.name} flag {number}: no clear place near its point; "
+                                        "flag(..., offset=(x, y)) places it")
+            q, land, box = spot
+            msp.add_leader([p, q, land], dxfattribs={"layer": "DIM"},
+                           override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
+            _draw_flag(msp, str(number), box[0], q[1], side, "DIM")
+            claim(f"flag {number}", box)
+            leaders.append((p, q, land))
+            for name, beyond in (("top", box[3] - vy1), ("bottom", vy0 - box[1]), ("right", box[2] - vx1),
+                                 ("left", vx0 - box[0])):
+                reach[name] = max(reach[name], beyond + 1.0)
 
         # The view label goes under everything that hangs below the view, so a
         # dimension on the bottom side never sits on it.

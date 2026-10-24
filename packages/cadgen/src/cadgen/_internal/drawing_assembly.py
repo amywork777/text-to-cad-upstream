@@ -25,11 +25,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterator, NamedTuple, Sequence
 
 from cadgen._internal.drawing_base import (
-    _DEFAULT_TEXT, _DIM_ROW, FAMILIES, _LABEL_ROOM, _MARGIN, _SIDES, _STANDARD_SCALES, _TITLE_H, _TITLE_W, _look,
+    _DEFAULT_TEXT, _DIM_ROW, FAMILIES, _LABEL_ROOM, _MARGIN, _SIDES, _STANDARD_SCALES, _TITLE_W, _look,
     _scale_label,
 )
 from cadgen._internal.drawing_sheet import (
-    _LARGEST_SCALE, _OffFrame, _list_height, _next_smaller, _notes_height, _revisions_height,
+    _LARGEST_SCALE, _OffFrame, _list_height, _next_smaller, _notes_base, _notes_height, _revisions_height,
 )
 from cadgen._internal.drawing_views import _view_extent
 
@@ -515,7 +515,7 @@ def _balloon_axis(bounds) -> bool:
 
 def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: _Facts | None, model_to_sheet, box,
                    reach: dict, text, printed: Sequence[tuple], obstacles: Sequence[tuple],
-                   warnings: list | None) -> None:
+                   warnings: list | None) -> list[tuple]:
     """Balloon each item the view shows that this sheet has not yet keyed.
 
     Each leader ends in a dot on a point of the part that the view sees (nothing
@@ -527,7 +527,8 @@ def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: _F
     off ``obstacles`` (other views, the title block, the parts list), and no
     balloon stands where its leader would run through text already ``printed``
     (``(value, box)`` pairs); leaders that would cross are swapped. A column the
-    paper cannot hold is refused, never drawn off the sheet.
+    paper cannot hold is refused, never drawn off the sheet. Returns each
+    balloon's leader and circle box, ``((start, end), (x0, y0, x1, y1))``.
     """
     from ezdxf.enums import TextEntityAlignment
     from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
@@ -536,7 +537,7 @@ def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: _F
     look = _look(view)
     cast = IntCurvesFace_ShapeIntersector()
     cast.Load(view.shape.wrapped, 1e-7)
-    keyed = []
+    keyed, drawn = [], []
     for parts in view._balloons:
         for item in parts:
             if (id(parts), item.number) in keyed_on_sheet:
@@ -641,10 +642,12 @@ def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: _F
             dot.paths.add_edge_path().add_arc(point, _DOT_R, 0.0, 360.0)
             msp.add_circle(centre, r, dxfattribs={"layer": "NOTES"})
             text(str(number), centre[0], centre[1], _BALLOON_TEXT, TextEntityAlignment.MIDDLE_CENTER, "NOTES")
+            drawn.append((tuple(path.coords), (centre[0] - r, centre[1] - r, centre[0] + r, centre[1] + r)))
             keyed_on_sheet.add((id(parts), number))
             if facts is not None:
                 facts.of_list(parts)["ballooned"].add(number)
         reach[side] += _BALLOON_LEAD + 2 * r
+    return drawn
 
 
 # --- the general arrangement and part sheets ------------------------------------------
@@ -720,7 +723,7 @@ def _arrange_assembly(sheet: Sheet, shape, second: str) -> tuple[float, list]:
     overall = {"front": {"width", "height"}, second: {"width"} if second == "right" else {"height"}}
     notes = _notes_height(sheet)
     a_x = (m + 4.0, W - m - _TITLE_W - 6.0)
-    a_y = (m + 4.0 + (_TITLE_H + notes if notes else 0.0), H - m - 4.0)
+    a_y = (m + 4.0 + (_notes_base(sheet) + notes if notes else 0.0), H - m - 4.0)
     third = sheet.projection == "THIRD ANGLE"
 
     def layout(s: float):
