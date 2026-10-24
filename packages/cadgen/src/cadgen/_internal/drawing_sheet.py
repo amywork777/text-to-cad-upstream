@@ -14,6 +14,7 @@ from cadgen._internal.drawing_base import (
     _DIM_ROW, _MARGIN, _MIN_TEXT_MM, _NOTE_HEIGHT, _NOTE_INSET, SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, _TITLE_W,
     _scale_label, _text_width,
 )
+from cadgen._internal.drawing_gdt import _draw_frame
 from cadgen._internal.drawing_views import _broken_size
 
 if TYPE_CHECKING:
@@ -402,16 +403,20 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
         # The notes share the strip above the title block with the parts list, so
         # each must end before the list begins.
         room = x0 - 4.0 - (m + _NOTE_INSET)
-        for line in lines:
-            if _text_width(line, _NOTE_HEIGHT) > room:
+        for line, width in zip(lines, sheet._note_widths()):
+            if width > room:
                 raise ValueError(
                     f"note {line.strip()!r} runs under the parts list: beside it the {sheet._size()} sheet leaves "
                     f"{round(room)} mm. Shorten the note or split it across two."
                 )
         _draw_parts_list(msp, sheet, text, continued or {})
-    for row, line in enumerate(lines):
-        text(line, m + _NOTE_INSET, y0 + _TITLE_H + 4 + (len(lines) - 1 - row) * 5, _NOTE_HEIGHT,
-             A.BOTTOM_LEFT, "NOTES")
+    for row, (line, note) in enumerate(zip(lines, sheet.drawn_notes())):
+        y = y0 + _TITLE_H + 4 + (len(lines) - 1 - row) * 5
+        text(line, m + _NOTE_INSET, y, _NOTE_HEIGHT, A.BOTTOM_LEFT, "NOTES")
+        if row == 0 and sheet.general_profile is not None:
+            # Note 1's frame follows its words: every surface within this profile.
+            _draw_frame(msp, sheet.general_profile, m + _NOTE_INSET + _text_width(line, _NOTE_HEIGHT) + _NOTE_HEIGHT,
+                        y + _NOTE_HEIGHT / 2, _NOTE_HEIGHT, "NOTES")
     revisions = _revisions_box(sheet)
     if revisions is not None:
         rx, rx1, _ry0, ry1 = revisions
@@ -499,7 +504,7 @@ def _notes_box(sheet: Sheet) -> list[tuple[float, float, float, float]]:
     if not lines:
         return []
     x0, y0 = _MARGIN + _NOTE_INSET, _MARGIN + _TITLE_H + 4.0
-    width = max(_text_width(line, _NOTE_HEIGHT) for line in lines)
+    width = max(sheet._note_widths())
     return [(x0, x0 + width, y0 - 1.0, y0 + (len(lines) - 1) * 5.0 + _NOTE_HEIGHT + 1.0)]
 
 

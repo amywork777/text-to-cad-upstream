@@ -17,6 +17,7 @@ from cadgen._internal.drawing_base import (
     _dot, _fmt, _ink_width, _look, _looks_down, _near, _shown, _spans, _text_width, _where,
 )
 from cadgen._internal.drawing_features import Slot
+from cadgen._internal.drawing_gdt import frame_size
 from cadgen._internal.drawing_sheet import _CAPTION_HEIGHT
 
 if TYPE_CHECKING:
@@ -50,6 +51,10 @@ class _Dim:
     basic: bool = False
     reference: bool = False
     limits: tuple[float, float] | None = None
+    #: A feature control frame the callout or dimension carries, and the datum
+    #: letter its feature is (a datum feature of size: a bore, a width).
+    frame: Any = None
+    datum: str | None = None
 
 
 def _tol_suffix(tol) -> str:
@@ -461,9 +466,13 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
         pending[side].append((round(span, 6), order, dim))
     rows: dict[str, int] = {}
     for side in _SIDES:
-        for i, (_span, _order, dim) in enumerate(sorted(pending[side], key=lambda t: (t[0], t[1]))):
-            dim.side, dim.row = side, explicit[side] + 1 + i
-        rows[side] = explicit[side] + len(pending[side])
+        row = explicit[side]
+        for _span, _order, dim in sorted(pending[side], key=lambda t: (t[0], t[1])):
+            row += 1
+            dim.side, dim.row = side, row
+            if dim.frame is not None or dim.datum is not None:
+                row += 1  # its frame or datum symbol stands on the next row out
+        rows[side] = row
     overall = {}
     if "width" in view._overall:
         overall["top"] = rows["top"] + 1
@@ -477,11 +486,14 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
             # The side a callout prefers is its hole's own half of the view, the
             # short way out, past every dimension row on that side.
             side = "right" if proj.point(dim.p1)[0] > cx + 1e-6 else "left"
+            width = _ink_width(_callout_value(dim), th)
+            if dim.frame is not None:
+                width = max(width, frame_size(dim.frame, th)[0])
             room[side] = max(room[side], rowed[side] + _CALLOUT_CLEAR + _CALLOUT_LANDING + _CALLOUT_GAP
-                             + _ink_width(_callout_value(dim), th) + _CALLOUT_GAP)
-        elif dim.kind == "note":
+                             + width + _CALLOUT_GAP)
+        elif dim.kind in ("note", "frame"):
             p = proj.point(dim.p1)
-            width = _text_width(dim.text, th) + 4.0
+            width = (_text_width(dim.text, th) if dim.kind == "note" else frame_size(dim.frame, th)[0]) + 4.0
             if dim.radius >= 0:
                 room["right"] = max(room["right"], (p[0] - bx1) * sv + dim.radius + width)
             else:

@@ -70,6 +70,7 @@ from cadgen._internal.drawing_base import (
     _STANDARD_SCALES, UNITS, VIEW_DIRECTIONS, _cross, _dirs, _dot, _look, _p3, _scale_label, _text_width,
     _view_axes, _where,
 )
+from cadgen._internal.drawing_gdt import Frame, frame_size
 from cadgen._internal.drawing_render import _render_sheet
 from cadgen._internal.drawing_report import _Facts, geometry_notes, _unstated
 from cadgen._internal.drawing_sheet import (
@@ -79,7 +80,10 @@ from cadgen._internal.drawing_sheet import (
 from cadgen._internal.drawing_views import _flat_face, _view_extent
 
 
-__all__ = ["eng_drawing", "Sheet", "View", "SHEET_SIZES", "parts_list", "PartsList", "Item", "assembly_sheets",
+#: Note 1 of a sheet with a general profile; its frame is drawn after the words.
+_GENERAL_PROFILE = "UNLESS OTHERWISE SPECIFIED, ALL SURFACES"
+
+__all__ = ["eng_drawing", "Sheet", "View", "Frame", "SHEET_SIZES", "parts_list", "PartsList", "Item", "assembly_sheets",
            "AssemblySheets", "geometry_notes"]
 
 
@@ -175,10 +179,14 @@ class View:
     _break: _Break | None = None
     #: Set when :meth:`Sheet.auxiliary` made this an auxiliary view.
     _aux: _Aux | None = None
+    #: The datum features :meth:`datum` defines on this view: (letter, model
+    #: point, stem offset or None).
+    _datums: list = field(default_factory=list)
 
     def dim(self, p1, p2, *, offset: float | None = None, text: str | None = None, orientation: str | None = None,
             tol: float | tuple[float, float] | None = None, fit: str | None = None,
-            limits: tuple[float, float] | None = None, basic: bool = False, reference: bool = False) -> "View":
+            limits: tuple[float, float] | None = None, basic: bool = False, reference: bool = False,
+            frame: Frame | None = None, datum: str | None = None) -> "View":
         """A linear dimension between two model points. ``orientation`` is ``"h"``,
         ``"v"`` or None (whichever the projected pair spans more); ``offset`` is
         the dimension line's distance from the farther point, in sheet mm, and its
@@ -193,19 +201,21 @@ class View:
         a GD&T frame bounds. ``reference=True`` makes it a reference dimension:
         information only, in parentheses, never inspected and stating no
         requirement; an assembly's overall size is one. Neither takes a
-        tolerance."""
+        tolerance. ``frame`` is a :class:`Frame` drawn beyond the value, on a row
+        of its own, and ``datum`` makes the dimensioned feature a datum."""
         if orientation not in (None, "h", "v"):
             raise ValueError(f"orientation must be 'h', 'v' or None, got {orientation!r}")
         limits = _dimension_kind(tol=tol, fit=fit, limits=limits, basic=basic, reference=reference)
         self._dims.append(_Dim("linear", _p3(p1), _p3(p2), _offset(offset), text, orientation,
-                               tol=_tol(tol), fit=fit, basic=basic, reference=reference, limits=limits))
+                               tol=_tol(tol), fit=fit, basic=basic, reference=reference, limits=limits,
+                               frame=_frame(frame), datum=_new_datum(self.sheet, datum)))
         return self
 
     def hole(self, center, diameter: float | None = None, *, depth: float | None = None, thru: bool | None = None,
              cbore: tuple[float, float] | None = None, csk: tuple[float, float] | None = None,
              thread: str | None = None, count: int | None = None, angle: float = 45.0,
              tol: float | tuple[float, float] | None = None, fit: str | None = None,
-             label: str | None = None) -> "View":
+             label: str | None = None, frame: Frame | None = None, datum: str | None = None) -> "View":
         """A hole callout in the standard symbols -- ``4× ⌀6.6 THRU ⌴ ⌀11 ↧6.5`` --
         read off the part. ``center`` is any model point on the hole's axis (its
         mouth is the natural one), in a view that looks down that axis.
@@ -217,7 +227,9 @@ class View:
         the diameter with the thread spec (``"M6x1 - 6H"``), which the B-rep
         cannot carry; ``tol``/``fit`` qualify the diameter the way :meth:`dim`
         does; ``label`` is appended (``"WHEEL"``). ``angle`` is where the leader
-        leaves the circle, degrees from horizontal."""
+        leaves the circle, degrees from horizontal. ``frame`` is the
+        :class:`Frame` drawn under the callout (its position, say), and ``datum``
+        makes the hole a datum feature, its symbol on the callout."""
         _refuse_iso(self, "hole()")
         given = {"diameter": _positive("diameter", diameter, allow_none=True),
                  "depth": _positive("depth", depth, allow_none=True),
@@ -229,17 +241,19 @@ class View:
         spec = {"given": given, "thread": None if thread is None else str(thread),
                 "label": None if label is None else str(label)}
         self._dims.append(_Dim("hole", _p3(center), None, 0.0, None, None, radius=0.0,
-                               angle=float(angle), tol=_tol(tol), fit=fit, hole=spec))
+                               angle=float(angle), tol=_tol(tol), fit=fit, hole=spec,
+                               frame=_frame(frame), datum=_new_datum(self.sheet, datum)))
         return self
 
     def slot(self, center, *, width: float | None = None, length: float | None = None, thru: bool | None = None,
              depth: float | None = None, count: int | None = None, angle: float = 45.0,
-             label: str | None = None) -> "View":
+             label: str | None = None, frame: Frame | None = None, datum: str | None = None) -> "View":
         """A slot callout -- ``2× 8 × 30 SLOT THRU`` -- read off the part, in a view
         that looks down the slot. ``center`` is the slot's centre or the centre of
         either rounded end. Width, length (end to end), THRU or depth and the count
         come from the geometry; any given here is checked and a contradiction is
-        refused. ``label`` is appended."""
+        refused. ``label`` is appended; ``frame`` and ``datum`` are as :meth:`hole`
+        takes them."""
         _refuse_iso(self, "slot()")
         given = {"width": _positive("width", width, allow_none=True),
                  "length": _positive("length", length, allow_none=True),
@@ -248,7 +262,8 @@ class View:
         if thru and depth is not None:
             raise ValueError("a slot is either THRU or has a depth, not both")
         self._dims.append(_Dim("slot", _p3(center), None, 0.0, None, None, angle=float(angle),
-                               hole={"given": given, "label": None if label is None else str(label)}))
+                               hole={"given": given, "label": None if label is None else str(label)},
+                               frame=_frame(frame), datum=_new_datum(self.sheet, datum)))
         return self
 
     def holes(self, *, angle: float = 45.0) -> "View":
@@ -279,16 +294,18 @@ class View:
         return self
 
     def diameter(self, center, *retired, size: float | None = None, angle: float = 45.0,
-                 text: str | None = None, basic: bool = False, reference: bool = False) -> "View":
+                 text: str | None = None, basic: bool = False, reference: bool = False,
+                 frame: Frame | None = None, datum: str | None = None) -> "View":
         """A diameter callout on the circle centred at ``center``, measured off the
         view. ``size`` picks one of several concentric circles (a chamfered
-        shaft end shows two) and is checked against the geometry. ``basic`` and
-        ``reference`` as :meth:`dim` takes them."""
+        shaft end shows two) and is checked against the geometry. ``basic``,
+        ``reference``, ``frame`` and ``datum`` as :meth:`dim` takes them."""
         _refuse_retired_size("diameter", retired)
         _dimension_kind(basic=basic, reference=reference)
         self._dims.append(_Dim("diameter", _p3(center), None, 0.0, text, None,
                                radius=0.0 if size is None else _positive("size", size) / 2, angle=float(angle),
-                               basic=basic, reference=reference))
+                               basic=basic, reference=reference, frame=_frame(frame),
+                               datum=_new_datum(self.sheet, datum)))
         return self
 
     def radius(self, center, *retired, size: float | None = None, angle: float = 45.0,
@@ -331,6 +348,24 @@ class View:
         if not (math.isfinite(dx) and math.isfinite(dy)):
             raise ValueError(f"note offset must be finite, got {offset!r}")
         self._dims.append(_Dim("note", _p3(at), None, 0.0, str(text), None, radius=dx, angle=dy))
+        return self
+
+    def frame(self, at, frame: Frame, *, offset: tuple[float, float] = (10.0, 10.0)) -> "View":
+        """A feature control frame with a leader to a surface at ``at`` (a model point
+        on it): ``Frame("flatness", 0.05)`` on a face, say. ``offset`` places the
+        frame as :meth:`note` places its text."""
+        dx, dy = _sheet_offset("frame", offset)
+        self._dims.append(_Dim("frame", _p3(at), None, 0.0, None, None, radius=dx, angle=dy, frame=_frame(frame)))
+        return self
+
+    def datum(self, letter: str, at, *, offset: tuple[float, float] | None = None) -> "View":
+        """Make the surface at ``at`` (a model point on it, as the view shows it)
+        datum feature ``letter``: a filled triangle on it, a stem, and the letter
+        in a square, which frames name. A letter names one feature per sheet.
+        ``offset`` (sheet mm) points the stem; left unset, it leads straight out
+        of the view's nearest side."""
+        letter = _new_datum(self.sheet, letter)
+        self._datums.append((letter, _p3(at), None if offset is None else _sheet_offset("datum", offset)))
         return self
 
     def section(self, letter: str = "A", *, through=None) -> "View":
@@ -528,6 +563,37 @@ def _positive(name: str, value, *, allow_none: bool = False, integer: bool = Fal
     return int(round(number)) if integer else number
 
 
+def _frame(frame) -> Frame | None:
+    if frame is not None and not isinstance(frame, Frame):
+        raise TypeError(f"frame= takes a Frame, e.g. Frame(\"position\", 0.1, (\"A\", \"B\")), got {frame!r}")
+    return frame
+
+
+def _new_datum(sheet: "Sheet", letter: str | None) -> str | None:
+    """A datum letter not yet used on the sheet, or None."""
+    if letter is None:
+        return None
+    letter = str(letter).upper()
+    if len(letter) != 1 or letter not in _SECTION_LETTERS:
+        raise ValueError(f"a datum letter is one of {_SECTION_LETTERS} (Y14.5 leaves out I, O and Q), "
+                         f"got {letter!r}")
+    used = {d[0] for view in sheet.views for d in view._datums} | {
+        dim.datum for view in sheet.views for dim in view._dims if dim.datum}
+    if letter in used:
+        raise ValueError(f"datum {letter} is already a feature on this sheet; a letter names one feature")
+    return letter
+
+
+def _sheet_offset(call: str, offset) -> tuple[float, float]:
+    try:
+        dx, dy = (float(offset[0]), float(offset[1]))
+    except (TypeError, ValueError, IndexError) as exc:
+        raise TypeError(f"{call} offset must be an (x, y) pair of sheet millimetres, got {offset!r}") from exc
+    if not (math.isfinite(dx) and math.isfinite(dy)) or (dx, dy) == (0.0, 0.0):
+        raise ValueError(f"{call} offset must be a finite, non-zero (x, y) pair, got {offset!r}")
+    return dx, dy
+
+
 def _dimension_kind(*, tol=None, fit=None, limits=None, basic: bool = False,
                     reference: bool = False) -> tuple[float, float] | None:
     """Check that a dimension's kind and its tolerance agree, and return its limits
@@ -594,8 +660,12 @@ class Sheet:
     notes: Sequence[str] = ()
     ink: str = "mono"
     text_height: float = 3.5
-    #: A general tolerance standard, e.g. "ISO 2768-m": written as the first note.
+    #: A general tolerance standard, e.g. "ISO 2768-m": written as a note, after
+    #: any general profile.
     general_tolerance: str = ""
+    #: A surface profile every surface meets unless otherwise specified, to its
+    #: datums: note 1, "UNLESS OTHERWISE SPECIFIED, ALL SURFACES" and the frame.
+    general_profile: Frame | None = None
     #: Revision history rows (rev, date, description), drawn as a table top-right.
     revisions: Sequence[tuple[str, str, str]] = ()
     #: A second line under the title: on a part's sheet of an assembly drawing,
@@ -652,6 +722,10 @@ class Sheet:
         for row in self.revisions:
             if isinstance(row, (str, bytes)) or len(row) != 3:
                 raise ValueError(f"each revision must be a (rev, date, description) triple, got {row!r}")
+        if self.general_profile is not None and (not isinstance(self.general_profile, Frame)
+                                                 or self.general_profile.characteristic != "surface_profile"):
+            raise ValueError("general_profile takes a Frame of surface_profile, e.g. Frame(\"surface_profile\", 0.2, "
+                             f"(\"A\", \"B\", \"C\")); got {self.general_profile!r}")
         if self.size is not None:
             self._check_notes(self.size)
 
@@ -661,18 +735,31 @@ class Sheet:
         sheet DRAWS -- numbered, prefixed, general tolerance expanded -- at the
         height it draws it, against the room ``paper`` gives it."""
         room = SHEET_SIZES[paper][0] - 2 * (_MARGIN + _NOTE_INSET)
-        for line, note in zip(self.note_lines(), self.drawn_notes()):
-            if _text_width(line, _NOTE_HEIGHT) > room:
+        for width, note in zip(self._note_widths(), self.drawn_notes()):
+            if width > room:
                 raise ValueError(
                     f"note {note!r} is wider than the {paper} sheet's note row "
                     f"({round(room)} mm). Shorten it, or split it across two notes."
                 )
 
+    def _note_widths(self) -> list[float]:
+        """Each drawn note line's width at the height the sheet draws it, a general
+        profile's frame included."""
+        widths = []
+        for line, note in zip(self.note_lines(), self.drawn_notes()):
+            width = _text_width(line, _NOTE_HEIGHT)
+            if note == _GENERAL_PROFILE and self.general_profile is not None:
+                width += _NOTE_HEIGHT + frame_size(self.general_profile, _NOTE_HEIGHT)[0]
+            widths.append(width)
+        return widths
+
     def drawn_notes(self) -> list[str]:
-        """The note strings as they reach the paper: the general tolerance, spelled
-        out, is note 1 when it is given."""
+        """The note strings as they reach the paper: a general profile is note 1
+        (its frame drawn after the words), then the general tolerance, spelled
+        out, then the author's notes."""
+        profile = [_GENERAL_PROFILE] if self.general_profile is not None else []
         general = [f"TOLERANCES PER {self.general_tolerance} UNLESS OTHERWISE SPECIFIED."]
-        return (general if self.general_tolerance else []) + list(self.notes)
+        return profile + (general if self.general_tolerance else []) + list(self.notes)
 
     def note_lines(self) -> list[str]:
         """Each drawn note with the prefix and number the sheet prints before it."""

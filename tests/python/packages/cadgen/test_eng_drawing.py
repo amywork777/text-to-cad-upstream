@@ -2952,7 +2952,6 @@ class DimensionKindTests(unittest.TestCase):
         self.assertTrue([e for e in doc.blocks.get(angle.dxf.geometry) if e.dxftype() == "LWPOLYLINE" and e.closed],
                         "a basic angle is boxed too")
 
-    @unittest.expectedFailure  # needs the GD&T frames of the next change
     def test_a_basic_dimension_without_a_frame_is_reported(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
 
@@ -2961,6 +2960,120 @@ class DimensionKindTests(unittest.TestCase):
         warnings: list = []
         _render_sheet(sheet, index=1, count=1, label="lonely", warnings=warnings)
         self.assertTrue(any("basic dimension" in w for w in warnings), warnings)
+
+
+class GdtTests(unittest.TestCase):
+    """Feature control frames and datum feature symbols, every value the person's."""
+
+    def _plate(self):
+        from build123d import Align, Box, Cylinder, Pos
+
+        from cadgen.eng_drawing import Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = Box(80, 50, 10, align=up) - Pos(20, 0, 0) * Cylinder(5, 10, align=up)
+        sheet = Sheet("A3", 1.0)
+        top, front, right = sheet.three_views(part)
+        return sheet, top, front, right
+
+    def test_frame_vocabulary_is_closed_and_follows_y14_5(self) -> None:
+        from cadgen.eng_drawing import Frame
+
+        for args, kwargs, words in ((("roundness", 0.1), {}, "unknown characteristic"),
+                                    (("flatness", 0.1, ("A",)), {}, "names no datum"),
+                                    (("perpendicularity", 0.1), {}, "measured from a datum"),
+                                    (("flatness", 0.1), {"diameter": True}, "not a diameter"),
+                                    (("flatness", 0.1), {"modifier": "M"}, "no material condition"),
+                                    (("position", 0.1, ("A",)), {"modifier": "X"}, "modifier"),
+                                    (("position", 0.0, ("A",)), {}, "positive"),
+                                    (("position", 0.1, ("A", "I")), {}, "letters"),
+                                    (("position", 0.1, ("A", "A")), {}, "letters")):
+            with self.assertRaisesRegex(ValueError, words):
+                Frame(*args, **kwargs)
+        frame = Frame("position", 0.1, ("a", "b"), diameter=True, modifier="M")
+        self.assertEqual(frame.datums, ("A", "B"))
+
+    def test_a_hole_carries_its_position_frame(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Frame
+
+        sheet, top, front, right = self._plate()
+        front.datum("A", (0, -25, 0))
+        top.datum("B", (-40, 0, 10))
+        top.hole((20, 0, 10), frame=Frame("position", 0.1, ("A", "B"), diameter=True, modifier="M"))
+        doc = _render_sheet(sheet, index=1, count=1, label="frame", warnings=[])
+        texts = [e.dxf.text for e in doc.modelspace().query("TEXT[layer=='DIM']")]
+        for value in ("0.1", "M", "A", "B"):
+            self.assertIn(value, texts)
+        frames = [e for e in doc.modelspace().query("LWPOLYLINE[layer=='DIM']") if e.closed and len(e) == 4]
+        self.assertGreaterEqual(len(frames), 3, "the frame and the two datum squares")
+        self.assertTrue(doc.modelspace().query("HATCH[layer=='DIM']"), "each datum's filled triangle")
+
+    def test_a_frame_naming_an_undefined_datum_is_refused(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Frame
+
+        sheet, top, front, right = self._plate()
+        front.datum("A", (0, -25, 0))
+        top.hole((20, 0, 10), frame=Frame("position", 0.1, ("A", "C"), diameter=True))
+        with self.assertRaisesRegex(ValueError, "datum C"):
+            _render_sheet(sheet, index=1, count=1, label="undefined")
+
+    def test_a_datum_letter_names_one_feature_per_sheet(self) -> None:
+        sheet, top, front, right = self._plate()
+        front.datum("A", (0, -25, 0))
+        with self.assertRaisesRegex(ValueError, "datum A"):
+            top.datum("A", (-40, 0, 10))
+        with self.assertRaisesRegex(ValueError, "letter"):
+            top.datum("O", (-40, 0, 10))
+
+    def test_the_general_profile_note_is_note_1(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Frame, Sheet
+
+        with self.assertRaisesRegex(ValueError, "surface_profile"):
+            Sheet("A3", 1.0, general_profile=Frame("flatness", 0.1))
+        sheet = Sheet("A3", 1.0, general_profile=Frame("surface_profile", 0.2, ("A", "B")),
+                      general_tolerance="ISO 2768-m")
+        top, front, right = sheet.three_views(self._plate()[1].shape)
+        front.datum("A", (0, -25, 0))
+        top.datum("B", (-40, 0, 10))
+        self.assertTrue(sheet.note_lines()[0].endswith("1. UNLESS OTHERWISE SPECIFIED, ALL SURFACES"))
+        doc = _render_sheet(sheet, index=1, count=1, label="profile", warnings=[])
+        notes = [e.dxf.text for e in doc.modelspace().query("TEXT")]
+        self.assertIn("0.2", notes, "the frame drawn at the end of note 1")
+
+    def test_a_free_frame_points_at_a_surface_and_keeps_clear_of_other_text(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Frame
+
+        sheet, top, front, right = self._plate()
+        front.datum("A", (0, -25, 0))
+        top.frame((0, 20, 10), Frame("flatness", 0.05))
+        top.frame((-30, -20, 10), Frame("parallelism", 0.1, ("A",)), offset=(-12, -12))
+        front.overall()
+        warnings: list = []
+        doc = _render_sheet(sheet, index=1, count=1, label="free", warnings=warnings)
+        texts = [e.dxf.text for e in doc.modelspace().query("TEXT[layer=='DIM']")]
+        self.assertEqual((texts.count("0.05"), texts.count("0.1")), (1, 1), "both frames drawn")
+        self.assertEqual(len(doc.modelspace().query("LEADER")), 2, "each frame's leader to its surface")
+        self.assertFalse([w for w in warnings if "overlaps" in w], warnings)
+
+    def test_a_dimension_carries_its_frame_and_the_datum_it_defines(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Frame
+
+        sheet, top, front, right = self._plate()
+        front.datum("A", (0, -25, 0))
+        front.dim((-40, -25, 0), (-40, -25, 10), frame=Frame("parallelism", 0.05, ("A",)), datum="B")
+        top.dim((-40, -25, 10), (40, -25, 10), frame=Frame("perpendicularity", 0.1, ("A", "B")))
+        warnings: list = []
+        doc = _render_sheet(sheet, index=1, count=1, label="dim frames", warnings=warnings)
+        texts = [e.dxf.text for e in doc.modelspace().query("TEXT[layer=='DIM']")]
+        self.assertEqual((texts.count("0.05"), texts.count("0.1"), texts.count("B")), (1, 1, 2),
+                         "both frames, and B as a symbol and in a frame")
+        self.assertFalse([w for w in warnings if "overlaps" in w or "crosses" in w], warnings)
+
 
 class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_tags_each_hole_and_states_where_and_what(self) -> None:
