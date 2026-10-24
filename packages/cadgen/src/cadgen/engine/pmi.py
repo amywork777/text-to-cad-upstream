@@ -29,16 +29,21 @@ nothing its values (XCAF gives values meaning only through geometry). The id and
 XCAF too (its semantic name, its object). No status, no problem and nothing of a previous build is
 held: an annotation's status is derived where the document is read (``records_of_document``), as a
 build derives it. The STEP writer reads the XCAF objects and writes AP242's semantic PMI
-(``DIMENSIONAL_SIZE``/``DIMENSIONAL_LOCATION`` with ``PLUS_MINUS_TOLERANCE``,
+(``DIMENSIONAL_SIZE``/``DIMENSIONAL_LOCATION`` with ``PLUS_MINUS_TOLERANCE`` or their limits,
 ``DATUM``/``DATUM_FEATURE``, ``FLATNESS_TOLERANCE``, ``POSITION_TOLERANCE`` with its
 ``DATUM_SYSTEM``) on ``SHAPE_ASPECT``s whose ``GEOMETRIC_ITEM_SPECIFIC_USAGE`` names the face.
 The cadgen attribute is not written to a STEP.
 
 **Values.** A dimension's nominal is the geometry's, measured at document time: a cylinder's
 diameter, the distance between two parallel planes. No nominal is typed in. A tolerance is held
-only where the code gives one (``plus_minus``: signed deviations, upper above lower). XCAF holds
-a dimension's lower deviation as a magnitude and the STEP writer negates it, so ``plus_minus(0.2)``
-is written ``TOLERANCE_VALUE(-0.2, 0.2)``; the conversion is this module's, both ways.
+only where the code gives one (``plus_minus``: signed deviations, upper above lower; ``limits``:
+the least and the greatest size, absolute). XCAF holds a dimension's lower deviation as a
+magnitude and the STEP writer negates it, so ``plus_minus(0.2)`` is written
+``TOLERANCE_VALUE(-0.2, 0.2)``; the conversion is this module's, both ways. XCAF holds limits as a
+dimension's two values in place of its nominal, its value then their midpoint, which the STEP
+writer writes as the nominal value beside CAx-IF's ``'lower limit'`` and ``'upper limit'`` items:
+the nominal of one the code made is measured again where its document is read, and one read from
+a file is their midpoint, whatever nominal value the file writes.
 
 **References.** A ref is a face of the part annotated: a build123d ``Face`` of the shape given to
 ``annotate`` (numbered against it at once), or a ref in the engine's grammar (``refs``) -- an
@@ -57,8 +62,9 @@ say so, the document never.
 
 **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
 GD&T as XCAF reads it. What this module does not hold whole -- another characteristic or dimension
-type, limits, a fit, a modifier, a datum target, a link to an edge or a point -- is listed
-``unsupported`` with its XCAF type and why, never refused and never read as less than it says.
+type, a fit, a qualifier, a modifier, limits beside any of them, a datum target, a link to an edge or
+a point -- is listed ``unsupported`` with its XCAF type and why, never refused and never read as less
+than it says.
 An xbf converted from it copies its GD&T as read (``copy``); an export of it says what it leaves
 out (``dropped``) where one of a document the code made is refused (``refuse_dropped``).
 
@@ -69,9 +75,9 @@ written to a STEP, and moving it changes nothing an annotation means.
 **Scope.** What is written and read back is verified end to end (the engine's PMI tests, with
 an AP242 reader of no OCCT):
 datums on a plane or cylinder; diameter and linear-distance dimensions with a plus-minus
-tolerance; basic (theoretically exact) distances, from planes and hole axes, with no tolerance,
-marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); flatness; position with an
-ordered datum reference frame and a diametral zone. Every
+tolerance or limits; basic (theoretically exact) distances, from planes and hole axes, with no
+tolerance, marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); flatness; position
+with an ordered datum reference frame and a diametral zone. Every
 other XCAF characteristic, dimension type, modifier and tolerance form is refused by name
 (``PMIUnsupported``), never approximated. PMI is part-level: an annotation is on one part, and an
 assembly is refused.
@@ -86,7 +92,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
 __all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "basic", "datum",
-           "diameter", "dimension", "distance", "flatness", "geometric", "place", "plus_minus", "position", "read"]
+           "diameter", "dimension", "distance", "flatness", "geometric", "limits", "place", "plus_minus", "position",
+           "read"]
 
 # The attribute an annotated shape holds its annotations in (a tuple of plain dicts), as a part's
 # configurations are held (``kernel.memo`` keys it).
@@ -140,6 +147,19 @@ def plus_minus(upper: float, lower: float | None = None) -> dict[str, Any]:
     if not upper > lower:
         raise PMIError(f"a plus-minus tolerance's upper deviation is above its lower ({lower}), not {upper}")
     return {"type": "plus_minus", "upper": upper, "lower": lower}
+
+
+def limits(lower: float, upper: float) -> dict[str, Any]:
+    """Limits: the least and the greatest size, absolute millimetres, ``upper`` above ``lower``
+    (``limits(10.0, 10.05)`` is 10.00/10.05). In place of deviations; the nominal is still
+    measured."""
+    lower = _number(lower, "a dimension's lower limit")
+    upper = _number(upper, "a dimension's upper limit")
+    if not lower > 0:
+        raise PMIError(f"a dimension's lower limit is a size above 0, not {lower}")
+    if not upper > lower:
+        raise PMIError(f"a dimension's upper limit (the second) is above its lower, not {lower} and {upper}")
+    return {"type": "limits", "lower": lower, "upper": upper}
 
 
 def place(anchor: Iterable[float], offset: Iterable[float] = (0.0, 0.0, 0.0)) -> dict[str, Any]:
@@ -318,8 +338,8 @@ def _annotation(id: str, kind: str, refs: list[tuple[str, Any]], label: str | No
 def _tolerance(tolerance: dict | None, id: str) -> dict | None:
     if tolerance is None:
         return None
-    if not isinstance(tolerance, dict) or tolerance.get("type") != "plus_minus":
-        raise PMIUnsupported(f"dimension {id!r}: a tolerance is pmi.plus_minus(...); limits, fits and "
+    if not isinstance(tolerance, dict) or tolerance.get("type") not in ("plus_minus", "limits"):
+        raise PMIUnsupported(f"dimension {id!r}: a tolerance is pmi.plus_minus(...) or pmi.limits(...); fits and "
                              "general tolerances are not written yet")
     return dict(tolerance)
 
@@ -782,9 +802,14 @@ def _dimension(label: Any, spec: dict[str, Any], nominal: float | None) -> None:
         found.AddDescription(_ascii(THEORETICAL[1]), _ascii(THEORETICAL[0]))
     tolerance = spec["dimension"]["tolerance"]
     if tolerance is not None and nominal is not None:
-        # XCAF's lower deviation is a magnitude the writer negates (see the module): -lower.
-        found.SetLowerTolValue(-tolerance["lower"])
-        found.SetUpperTolValue(tolerance["upper"])
+        if tolerance["type"] == "limits":
+            # XCAF holds limits as the dimension's two values, in place of its nominal (see the module).
+            found.SetLowerBound(tolerance["lower"])
+            found.SetUpperBound(tolerance["upper"])
+        else:
+            # XCAF's lower deviation is a magnitude the writer negates (see the module): -lower.
+            found.SetLowerTolValue(-tolerance["lower"])
+            found.SetUpperTolValue(tolerance["upper"])
     XCAFDoc_Dimension.Set_s(label).SetObject(found)
 
 
@@ -1050,6 +1075,9 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         if found.IsDimWithPlusMinusTolerance():
             tolerance = {"type": "plus_minus", "upper": _as_held(found.GetUpperTolValue()),
                          "lower": _as_held(-found.GetLowerTolValue())}
+        elif found.IsDimWithRange():
+            tolerance = {"type": "limits", "lower": _as_held(found.GetLowerBound()),
+                         "upper": _as_held(found.GetUpperBound())}
         notes = [(found.GetDescriptionName(at).ToCString(), found.GetDescription(at).ToCString())
                  for at in range(found.NbDescriptions())] if found.HasDescriptions() else []
         values = {"type": kind, "basic": THEORETICAL in notes, "nominal": _as_held(found.GetValue()),
@@ -1090,6 +1118,9 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
             spec = {"kind": given["kind"], "refs": given["refs"], **(given["unlinked"] or {given["kind"]: record["values"]})}
             resolved = _resolved(spec, faces, names, {prototype.name, root}, letters_of.get(record["part"], set()))
             record.update(status=resolved.status, problem=resolved.problem, refs=_refs(resolved))
+            if (record["values"].get("tolerance") or {}).get("type") == "limits":
+                # XCAF's value of a dimension given limits is their midpoint: its nominal is measured.
+                record["values"]["nominal"] = _as_held(resolved.nominal or 0.0)
     return records
 
 
@@ -1114,13 +1145,13 @@ def _beyond_datum(found: Any) -> list[str]:
 
 
 def _beyond_dimension(found: Any, kind: str | None, notes: list[tuple[str, str]]) -> list[str]:
-    """What a dimension of a file says that this module does not hold: another type, limits, a fit, a
-    qualifier, modifiers, a note other than a basic one's, a basic dimension other than a distance."""
+    """What a dimension of a file says that this module does not hold: another type, a fit, a
+    qualifier, modifiers, a note other than a basic one's, a basic dimension other than a distance;
+    and limits beside any of them or on a basic dimension (limits are held alone). XCAF holds limits
+    or deviations, never both."""
     beyond = []
     if kind is None:
         beyond.append(f"a {_words(found.GetType().name)} dimension is not one this holds")
-    if found.IsDimWithRange():
-        beyond.append("it has limits (a range) in place of a tolerance")
     if found.IsDimWithClassOfTolerance():
         beyond.append("it has a class of tolerance (a fit)")
     if found.HasQualifier():
@@ -1132,6 +1163,8 @@ def _beyond_dimension(found: Any, kind: str | None, notes: list[tuple[str, str]]
         beyond.append(f"it has notes {other}")
     if THEORETICAL in notes and kind not in (None, "distance"):
         beyond.append(f"a basic {kind} is not one this holds")
+    if found.IsDimWithRange() and (beyond or THEORETICAL in notes):
+        beyond.append("it has limits (a range), held only on a dimension that says nothing more")
     return beyond
 
 
@@ -1191,8 +1224,7 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
                 values = {"type": spec["dimension"]["type"], "basic": bool(spec["dimension"].get("basic")),
                           "nominal": _as_held(item.nominal or 0.0),
                           "tolerance": None if tolerance is None else
-                          {"type": "plus_minus", "upper": _as_held(tolerance["upper"]),
-                           "lower": _as_held(tolerance["lower"])}}
+                          {key: given if key == "type" else _as_held(given) for key, given in tolerance.items()}}
             else:
                 given = spec["geometric_tolerance"]
                 values = {"characteristic": given["characteristic"], "value": _as_held(given["value"]), "unit": UNIT,

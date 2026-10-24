@@ -115,6 +115,43 @@ class VerificationTest(unittest.TestCase):
         bare = {**row, "notes": []}  # the same distance with no 'theoretical' note: not the basic one modelled
         self.assertEqual(compare(entries, {**found, "dimensions": found["dimensions"] + [bare]})["matched"], 3)
 
+    def test_limits_match_by_value_and_unit_and_never_as_a_plus_minus(self) -> None:
+        """A dimension given limits matches a row of the same two limits in the nominal's unit, its
+        nominal value their midpoint (XCAF holds the limits alone), and no plus-minus tolerance."""
+        entries, found = fixtures()
+        entries[1]["dimension"]["tolerance"] = {"type": "limits", "lower": 10.0, "upper": 10.05}
+        row = found["dimensions"][0]
+        row.update(tolerance=None, nominal={"value": 10.025, "unit": "mm"},
+                   limits=({"value": 10.0, "unit": "mm"}, {"value": 10.05, "unit": "mm"}))
+        self.assertEqual(compare(entries, found), {"matched": 3, "total": 3, "problems": []})
+        for change in ({"limits": ({"value": 10.0, "unit": "mm"}, {"value": 10.1, "unit": "mm"})},
+                       {"limits": ({"value": 10.0, "unit": "m"}, {"value": 10.05, "unit": "m"})},
+                       {"limits": None, "tolerance": {"lower": 0, "upper": 0.05, "unit": "mm"}},
+                       {"nominal": {"value": 10.0, "unit": "mm"}}):
+            changed = copy.deepcopy(found)
+            changed["dimensions"][0].update(change)
+            self.assertEqual(compare(entries, changed)["matched"], 2, change)
+        entries[1]["dimension"]["tolerance"] = {"type": "plus_minus", "lower": 0, "upper": 0.05}
+        self.assertEqual(compare(entries, {**found, "dimensions": [{**row, "tolerance": {
+            "lower": 0, "upper": 0.05, "unit": "mm"}, "nominal": {"value": 10, "unit": "mm"}}]})["matched"], 2)
+
+    def test_reader_reads_a_dimensions_limits_beside_its_nominal(self) -> None:
+        reader = Report(parse("""ISO-10303-21; HEADER; ENDSEC; DATA;
+          #1=DIMENSIONAL_SIZE($,'diameter');
+          #2=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#1,#3);
+          #3=SHAPE_DIMENSION_REPRESENTATION('',(#5,#4,#6),$);
+          #4=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM()
+              MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(10.),#7) REPRESENTATION_ITEM('lower limit'));
+          #5=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM()
+              MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(10.05),#7) REPRESENTATION_ITEM('upper limit'));
+          #6=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM()
+              MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(10.025),#7) REPRESENTATION_ITEM('nominal value'));
+          #7=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+          ENDSEC; END-ISO-10303-21;"""))
+        self.assertEqual((reader.nominal(1)["value"], reader.nominal(1)["role"]), (10.025, "nominal value"))
+        self.assertEqual([(bound["value"], bound["unit"]) for bound in reader.limits(1)], [(10.0, "mm"), (10.05, "mm")])
+        self.assertEqual(reader.problems, [])
+
     def test_reader_checks_unannotated_face_names(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             step = Path(temp) / "duplicate.step"

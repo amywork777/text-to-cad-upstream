@@ -1,7 +1,8 @@
 """Semantic PMI (``cadgen.engine.pmi``): a plate's datums, dimensions and geometric tolerances
 written into its xbf as XCAF's GD&T objects and read back the same from the file as from the
 build; its AP242 STEP read by OCCT and by a reader of no OCCT (``export/ap242.py``),
-which agree on values, units, datum frames and the faces each annotation is on; a warm rebuild,
+which agree on values, units, datum frames and the faces each annotation is on; a dimension
+given limits, written as AP242's lower and upper limit and its nominal still measured; a warm rebuild,
 an edit of the geometry and of a tolerance, a ref the model no longer satisfies (missing,
 ambiguous, invalid) kept in the document and refused by a STEP, and one that names another kind
 of face than on the last build warned of, the document the code's alone; what is not supported
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 import textwrap
@@ -362,6 +364,106 @@ def pmi_plate():
             pmi.dimension("b", "distance", faces[0], faces[-1], basic=True, tolerance=pmi.plus_minus(0.1))
         with self.assertRaisesRegex(pmi.PMIUnsupported, "basic"):
             pmi.dimension("d", "diameter", faces[0], basic=True)
+
+
+# A plate whose hole and thickness are given limits: values ILLUSTRATIVE.
+LIMITS = '''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
+    body.label = "plate"
+    bottom = body.faces().sort_by(bd.Axis.Z)[0]
+    top = body.faces().sort_by(bd.Axis.Z)[-1]
+    hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+    return pmi.annotate(
+        body,
+        pmi.diameter("hole", hole, tolerance=pmi.limits(10.0, 10.05)),
+        pmi.distance("thickness", bottom, top, tolerance=pmi.limits(9.9, 10.1)),
+    )
+'''
+
+
+class LimitsTest(_Folder):
+    def test_a_diameter_given_limits_keeps_them_and_measures_its_nominal(self) -> None:
+        self.build(LIMITS)
+        served = _by_id(engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"])
+        self.assertEqual(_by_id(pmi.read(self.xbf)), served)
+        entry = served["hole"]
+        self.assertEqual(entry["status"], "ok", entry)
+        self.assertEqual(entry["dimension"]["tolerance"], {"type": "limits", "lower": 10.0, "upper": 10.05})
+        self.assertAlmostEqual(entry["dimension"]["nominal"]["value"], 10.0)
+        self.assertEqual(entry["dimension"]["nominal"]["source"], "geometry")
+        self.assertEqual(served["thickness"]["dimension"]["tolerance"], {"type": "limits", "lower": 9.9, "upper": 10.1})
+        self.assertAlmostEqual(served["thickness"]["dimension"]["nominal"]["value"], 10.0)
+
+    def test_limits_are_refused_when_not_upper_above_lower(self) -> None:
+        with self.assertRaisesRegex(pmi.PMIError, "upper limit .* is above its lower, not 10.05 and 10.05"):
+            pmi.limits(10.05, 10.05)
+
+    def test_limits_are_sizes_above_zero(self) -> None:
+        with self.assertRaisesRegex(pmi.PMIError, "lower limit is a size above 0, not 0.0"):
+            pmi.limits(0, 0.05)
+
+    def test_a_basic_dimension_refuses_limits(self) -> None:
+        import build123d as bd
+
+        faces = bd.Box(10, 10, 10).faces().sort_by(bd.Axis.Z)
+        with self.assertRaisesRegex(pmi.PMIError, "a basic dimension is theoretically exact"):
+            pmi.dimension("b", "distance", faces[0], faces[-1], basic=True, tolerance=pmi.limits(9.9, 10.1))
+
+    def test_the_step_carries_the_limits_and_the_check_matches_them(self) -> None:
+        self.build(LIMITS)
+        result = ap242.verify(pmi.read(self.xbf), self.step)
+        self.assertEqual((result["matched"], result["total"], result["problems"]), (2, 2, []))
+        text = self.step.read_text(encoding="utf-8")
+        for value, role in (("10.", "lower limit"), ("10.05", "upper limit"), ("9.9", "lower limit"),
+                            ("10.1", "upper limit")):
+            self.assertRegex(text, rf"POSITIVE_LENGTH_MEASURE\({re.escape(value)}\),#\d+\)\s*REPRESENTATION_ITEM\s*"
+                                   rf"\('{role}'\)")
+        self.assertNotIn("PLUS_MINUS_TOLERANCE", text)
+        size = next(row for row in ap242.report(self.step)["dimensions"] if row["entity"] == "DIMENSIONAL_SIZE")
+        self.assertEqual([(bound["value"], bound["unit"]) for bound in size["limits"]], [(10.0, "mm"), (10.05, "mm")])
+        self.assertIsNone(size["tolerance"])
+
+    def test_a_vendor_dimension_with_limits_reads_as_limits(self) -> None:
+        import build123d as bd
+
+        body = bd.Box(20, 20, 10) - bd.Cylinder(4, 10)
+        foreign = _Foreign(body)
+        foreign.dimension("Size_Diameter", [body.faces().filter_by(bd.GeomType.CYLINDER)[0]], 8.0,
+                          SetLowerBound=(7.9,), SetUpperBound=(8.1,))
+        [entry] = pmi.read(foreign.step(self.folder / "vendor.step"))
+        self.assertEqual((entry["kind"], entry["status"]), ("dimension", "ok"), entry)
+        self.assertEqual(entry["dimension"]["tolerance"], {"type": "limits", "lower": 7.9, "upper": 8.1})
+        # XCAF holds the two limits alone: the nominal read with them is their midpoint.
+        self.assertEqual(entry["dimension"]["nominal"], {"value": 8.0, "unit": "mm", "source": "file"})
+
+    def test_a_vendor_dimension_with_limits_and_more_is_unsupported_with_why(self) -> None:
+        """XCAF holds limits or deviations, never both; limits with a fit or a qualifier say more
+        than limits, so they are listed unsupported, naming both, never read as limits alone."""
+        import build123d as bd
+        from OCP import XCAFDimTolObjects as X
+
+        body = bd.Box(20, 20, 10) - bd.Cylinder(4, 10)
+        hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+        foreign = _Foreign(body)
+        foreign.dimension("Size_Diameter", [hole], 8.0, SetLowerBound=(7.9,), SetUpperBound=(8.1,),
+                          SetClassOfTolerance=(True, X.XCAFDimTolObjects_DimensionFormVariance_H,
+                                               X.XCAFDimTolObjects_DimensionGrade_IT7))
+        foreign.dimension("Size_Diameter", [hole], 8.0, SetLowerBound=(7.9,), SetUpperBound=(8.1,),
+                          SetQualifier=(X.XCAFDimTolObjects_DimensionQualifier_Avg,))
+        fitted, qualified = pmi.read(foreign.xbf(self.folder / "foreign.xbf"))
+        for entry, other in ((fitted, "class of tolerance"), (qualified, "qualifier")):
+            self.assertEqual((entry["kind"], entry["xcaf_type"]),
+                             ("unsupported", "XCAFDimTolObjects_DimensionType_Size_Diameter"), entry)
+            self.assertIn("limits", entry["reason"])
+            self.assertIn(other, entry["reason"])
+            self.assertEqual(entry["values"]["tolerance"], {"type": "limits", "lower": 7.9, "upper": 8.1})
 
 
 # A plate whose one variable ``cut`` is a round hole and then a square pocket: the name the hole's face
@@ -759,23 +861,20 @@ class ForeignTest(unittest.TestCase):
         self.assertEqual(entry["values"]["value"], 0.2)
 
     def test_what_a_file_says_beyond_the_model_is_unsupported_with_why(self) -> None:
-        """A diameter with limits or a flatness with a projected zone says more than a plain one: it
-        is listed unsupported, saying why, never read as the plain one. A nominal read from a file
-        was measured by nothing here: its source is the file."""
+        """A flatness with a projected zone or a maximum value says more than a plain one: it is
+        listed unsupported, saying why, never read as the plain one (limits with more: ``LimitsTest``).
+        A nominal read from a file was measured by nothing here: its source is the file."""
         import build123d as bd
         from OCP import XCAFDimTolObjects as X
 
         body = bd.Box(20, 20, 10) - bd.Cylinder(4, 10)
         top, hole = body.faces().sort_by(bd.Axis.Z)[-1], body.faces().filter_by(bd.GeomType.CYLINDER)[0]
         foreign = _Foreign(body)
-        foreign.dimension("Size_Diameter", [hole], 8.0, SetLowerBound=(7.9,), SetUpperBound=(8.1,))
         foreign.dimension("Size_Diameter", [hole], 8.0, SetLowerTolValue=(0.0,), SetUpperTolValue=(0.1,))
         foreign.tolerance("Flatness", top, 0.2, SetZoneModifier=(X.XCAFDimTolObjects_GeomToleranceZoneModif_Projected,),
                           SetValueOfZoneModifier=(5.0,))
         foreign.tolerance("Flatness", top, 0.1, SetMaxValueModifier=(0.3,))
-        ranged, plain, projected, capped = pmi.read(foreign.xbf(self.folder / "foreign.xbf"))
-        self.assertEqual((ranged["kind"], ranged["xcaf_type"]), ("unsupported", "XCAFDimTolObjects_DimensionType_Size_Diameter"))
-        self.assertIn("limits", ranged["reason"])
+        plain, projected, capped = pmi.read(foreign.xbf(self.folder / "foreign.xbf"))
         self.assertEqual(plain["kind"], "dimension")
         self.assertEqual(plain["dimension"]["nominal"], {"value": 8.0, "unit": "mm", "source": "file"})
         self.assertEqual(plain["dimension"]["tolerance"], {"type": "plus_minus", "upper": 0.1, "lower": 0.0})

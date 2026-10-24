@@ -1058,9 +1058,11 @@ return pmi.annotate(body,
   ref is a `Face` or a ref of the grammar (**References**). A nominal is measured from the
   geometry: a cylinder's diameter, or a distance between parallel planes, from a plane to a
   hole's axis, or between parallel axes. A tolerance is held only where the code gives one
-  (`plus_minus(upper, lower=None)`, signed deviations). A basic dimension (`pmi.basic`) has
-  none, and a tolerance on one is refused. `presentation=pmi.place(anchor, offset)` (millimetres,
-  the part's frame) is where a viewer draws the callout, never a requirement and never in a STEP.
+  (`plus_minus(upper, lower=None)`, signed deviations, or `limits(lower, upper)`, the least and
+  the greatest size, absolute: `limits(10.0, 10.05)` is 10.00/10.05). A basic dimension
+  (`pmi.basic`) has none, and a tolerance on one is refused. `presentation=pmi.place(anchor,
+  offset)` (millimetres, the part's frame) is where a viewer draws the callout, never a
+  requirement and never in a STEP.
 - **Resolution.** Each build resolves every ref against the part as built: `ok`, `missing` (it
   names no face; the problem gives the name's atom now, where there is one), `ambiguous` (several:
   `candidates` lists them) or `invalid` (a face the annotation cannot stand on: a diameter on a
@@ -1091,28 +1093,36 @@ return pmi.annotate(body,
   in its served structure alone), `part` (the structure's prototype index, linked or not), `refs`
   (each `role`, the canonical `ref` when resolved, `written`, `status`, `candidates`, `problem`),
   `presentation`, `xcaf_type`, and one of `datum` (`letter`), `dimension` (`type` `diameter` or
-  `distance`, `basic`, `nominal` `{value, unit, source}`, `tolerance`) or `geometric_tolerance`
+  `distance`, `basic`, `nominal` `{value, unit, source}`, `tolerance`: `{type: "plus_minus", upper,
+  lower}`, `{type: "limits", lower, upper}` or null) or `geometric_tolerance`
   (`characteristic`, `value`, `unit`, `zone`, `datums` in order). A nominal's `source` is
   `geometry`, measured, where the code made the annotation, and `file` where another system did.
+  XCAF holds limits in place of a nominal (its value is then their midpoint): a nominal of the
+  code's beside limits is measured where the document is read, and one read from a file is the
+  limits' midpoint, whatever nominal value the file writes.
 - **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
   GD&T as XCAF reads it, and never blocks a conversion or an export. What this does not hold whole
   is `unsupported`, with its `xcaf_type`, its values and a `reason`: another characteristic or
-  dimension type, limits (a range), a fit, a qualifier, modifiers, a zone modifier, a maximum
+  dimension type, a fit, a qualifier, modifiers, limits beside any of these or on a basic
+  dimension (XCAF holds limits or deviations, never both), a zone modifier, a maximum
   value, a datum target or modified datum, a note other than a basic one's, and a link to an edge
   or a point (kept, its refs spelled as the grammar spells an edge or a vertex, never drawn). It is
   listed, never read as less than it says (law 13: left out with a word, never patched). An xbf of
   such a STEP copies its GD&T as read (`pmi.copy`), each object linked to the same elements.
 
 Verified, and nothing else written: datums on planes and cylinders; diameter and linear-distance
-dimensions with plus-minus tolerances; basic distances, marked 'theoretical' as AP242 marks them
-(CAx-IF PMI Recommended Practices 5.3, a dimensional note on the dimension's representation);
-flatness; position with an ordered datum frame of up to three and a diametral zone. Every other
-characteristic, dimension type, tolerance form (limits and fits, modifiers), a basic diameter or
-angle, and assembly-level PMI is refused by name (`PMIUnsupported`), never approximated.
+dimensions with plus-minus tolerances or limits; basic distances, marked 'theoretical' as AP242
+marks them (CAx-IF PMI Recommended Practices 5.3, a dimensional note on the dimension's
+representation); flatness; position with an ordered datum frame of up to three and a diametral
+zone. Every other characteristic, dimension type, tolerance form (fits, modifiers), a basic
+diameter or angle, and assembly-level PMI is refused by name (`PMIUnsupported`), never
+approximated.
 
 **The STEP.** `@step` and `cadgen export` write the PMI as AP242's semantic PMI: `DATUM` and
 `DATUM_FEATURE`; `DIMENSIONAL_SIZE('diameter')` and `DIMENSIONAL_LOCATION('linear distance')`
-with their `SHAPE_DIMENSION_REPRESENTATION` and `PLUS_MINUS_TOLERANCE`; `FLATNESS_TOLERANCE`;
+with their `SHAPE_DIMENSION_REPRESENTATION` and `PLUS_MINUS_TOLERANCE`, or, given limits, the
+representation's `'lower limit'` and `'upper limit'` items (CAx-IF's) and no tolerance, its
+nominal value their midpoint (XCAF holds the limits alone); `FLATNESS_TOLERANCE`;
 `POSITION_TOLERANCE` with its `DATUM_SYSTEM` of ordered compartments and a
 `TOLERANCE_ZONE_FORM('cylindrical or circular')`; each on its `ADVANCED_FACE` (named with the
 element's name) through a `GEOMETRIC_ITEM_SPECIFIC_USAGE`, every measure in millimetres. A STEP
@@ -1132,7 +1142,8 @@ value is millimetres. OCCT's own reader finds a datum only through a tolerance t
 where it would drop PMI. For a document holding PMI, after writing the file the worker reads it back
 with `export/ap242.py` -- a Part 21 reader of AP242's PMI entities with no OCCT in it -- and matches
 every entry to one record of the file by face name, kind, values, units, datum order, zone and a
-basic dimension's note (`verify`). The result, `{"matched", "total", "problems", "sha256"}` (the
+basic dimension's note (`verify`); a limit dimension by its two limits, in its nominal's unit, its
+nominal value their midpoint. The result, `{"matched", "total", "problems", "sha256"}` (the
 digest of the bytes checked), travels with the export job as `pmiVerification`. Nothing is
 guessed: a face name the file uses twice, two parts reusing one, a repeated datum letter, an entity
 the reader does not read, or a schema other than AP242 verifies nothing.

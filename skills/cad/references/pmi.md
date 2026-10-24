@@ -65,15 +65,16 @@ def plate():
 - **Nominals are measured**: a cylinder's diameter, or a distance between two parallel
   planes, from a plane to a hole's axis parallel to it, or between two parallel axes.
 - **Tolerances are explicit.** `pmi.plus_minus(upper, lower=None)` takes signed
-  deviations, `lower` defaulting to `-upper`. A dimension given no `tolerance=` holds
-  none: nothing is assumed.
+  deviations, `lower` defaulting to `-upper`; `pmi.limits(lower, upper)` takes the
+  least and the greatest size instead (`pmi.limits(10.0, 10.05)` is 10.00/10.05). A
+  dimension given no `tolerance=` holds none: nothing is assumed.
 - **A basic dimension** (`pmi.basic`) has no tolerance: it locates what a geometric
   tolerance controls, such as a position's true position. A tolerance on one, or a
   basic diameter, is refused.
 - **A datum frame** is ordered, primary first, three datums at most, and a datum holds
   one place in every frame that names it.
 - **Anything else is refused** (`PMIUnsupported`), never approximated: other
-  characteristics and dimension types, limits and fits, material modifiers, reference
+  characteristics and dimension types, fits, material modifiers, reference
   dimensions, and assembly-level PMI.
 - **`presentation=pmi.place(anchor, offset)`** says where a callout's label is drawn,
   in millimetres in the part's frame. It is not a requirement, and no export writes

@@ -7,8 +7,9 @@ for PMI define them:
 
 - dimensions: ``DIMENSIONAL_SIZE`` / ``DIMENSIONAL_LOCATION``, their nominal from the
   ``DIMENSIONAL_CHARACTERISTIC_REPRESENTATION``'s ``SHAPE_DIMENSION_REPRESENTATION``, its
-  descriptive notes (a basic dimension's ``'theoretical'``), and their
-  ``PLUS_MINUS_TOLERANCE``'s ``TOLERANCE_VALUE`` (lower, upper);
+  limits (its items named ``'lower limit'`` and ``'upper limit'``), its descriptive notes (a basic
+  dimension's ``'theoretical'``), and their ``PLUS_MINUS_TOLERANCE``'s ``TOLERANCE_VALUE``
+  (lower, upper);
 - datums: ``DATUM`` (its identification), the ``DATUM_FEATURE`` a ``SHAPE_ASPECT_RELATIONSHIP``
   ties to it;
 - geometric tolerances: any ``*_TOLERANCE`` entity (simple or complex), its magnitude, its
@@ -201,6 +202,9 @@ def _statements(body: str):
 
 # --- the report --------------------------------------------------------------------------------
 
+# A limit dimension's representation items (CAx-IF's value range), by name.
+_LIMITS = ("lower limit", "upper limit")
+
 
 class Report:
     def __init__(self, records: dict[int, list[tuple[str, list]]]) -> None:
@@ -304,6 +308,7 @@ class Report:
                     entry["name"] = values[0]
                     entry["features"] = [self.face(values[2].id), self.face(values[3].id)]
                 entry["nominal"] = self.nominal(number)
+                entry["limits"] = self.limits(number)
                 entry["notes"] = self.notes(number)
                 entry["tolerance"] = self.plus_minus(number)
                 found.append(entry)
@@ -313,16 +318,36 @@ class Report:
         return [self.part(holder, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")[1].id
                 for holder in self.referring(dimension, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")]
 
+    def _role(self, item: int) -> str | None:
+        """A representation item's name: what its value is (``'nominal value'``, ``'lower limit'``)."""
+        names = [values[0] for name, values in self.records[item] if name == "REPRESENTATION_ITEM"]
+        return names[0] if names else None
+
     def nominal(self, dimension: int) -> dict[str, Any] | None:
         for representation in self._representations(dimension):
             for item in self.part(representation, "SHAPE_DIMENSION_REPRESENTATION")[1]:
-                if "DESCRIPTIVE_REPRESENTATION_ITEM" in self.types(item.id):
-                    continue  # a note (``notes``), not the value
+                if "DESCRIPTIVE_REPRESENTATION_ITEM" in self.types(item.id) or self._role(item.id) in _LIMITS:
+                    continue  # a note (``notes``) or a limit (``limits``), not the value
                 measure = self.measure(item.id)
-                names = [values[0] for name, values in self.records[item.id] if name == "REPRESENTATION_ITEM"]
-                measure["role"] = names[0] if names else None
+                measure["role"] = self._role(item.id)
                 return measure
         return None
+
+    def limits(self, dimension: int) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        """A dimension's limits, (lower, upper), each a measure: its representation's items named
+        ``'lower limit'`` and ``'upper limit'`` (CAx-IF's), or None where it has none."""
+        found = {}
+        for representation in self._representations(dimension):
+            for item in self.part(representation, "SHAPE_DIMENSION_REPRESENTATION")[1]:
+                if self._role(item.id) in _LIMITS:
+                    found[self._role(item.id)] = self.measure(item.id)
+        if not found:
+            return None
+        if len(found) != 2:
+            self.problems.append(f"#{dimension}: a dimension of one limit ({', '.join(found)}); limits are a lower "
+                                 "and an upper")
+            return None
+        return found["lower limit"], found["upper limit"]
 
     def notes(self, dimension: int) -> list[list[str]]:
         """A dimension's descriptive items, [name, description] each: CAx-IF's dimension modifiers
@@ -444,19 +469,34 @@ def _dimension_matches(dimension: dict[str, Any], row: dict[str, Any]) -> bool:
     kind = dimension.get("type")
     if kind not in ("diameter", "distance") or row.get("name") != {"diameter": "diameter", "distance": "linear distance"}[kind]:
         return False
-    nominal = dimension.get("nominal")
-    if not _measure(row.get("nominal"), nominal):
+    nominal, tolerance = dimension.get("nominal"), dimension.get("tolerance")
+    if not isinstance(nominal, dict):
         return False
     # A basic dimension carries AP242's 'theoretical' note (CAx-IF 5.3), and nothing else does.
     if bool(dimension.get("basic")) != (["dimensional note", "theoretical"] in (row.get("notes") or [])):
         return False
-    tolerance, actual = dimension.get("tolerance"), row.get("tolerance")
+    actual = row.get("tolerance")
+    if tolerance is not None and tolerance.get("type") == "limits":
+        return actual is None and _limits_match(tolerance, nominal.get("unit"), row)
+    if row.get("limits") is not None or not _measure(row.get("nominal"), nominal):
+        return False
     if tolerance is None:
         return actual is None
     return (tolerance.get("type") == "plus_minus" and isinstance(actual, dict)
             and actual.get("unit") == nominal.get("unit")
             and _near(actual.get("lower"), tolerance.get("lower"))
             and _near(actual.get("upper"), tolerance.get("upper")))
+
+
+def _limits_match(tolerance: dict[str, Any], unit: Any, row: dict[str, Any]) -> bool:
+    """A dimension given limits against a row: the same two limits, in the nominal's unit. XCAF
+    holds the limits alone, so the file's nominal value is their midpoint, never the one measured."""
+    lower, upper, limits = tolerance.get("lower"), tolerance.get("upper"), row.get("limits")
+    if not (isinstance(lower, (int, float)) and isinstance(upper, (int, float))
+            and isinstance(limits, (list, tuple)) and len(limits) == 2):
+        return False
+    return (_measure(limits[0], {"value": lower, "unit": unit}) and _measure(limits[1], {"value": upper, "unit": unit})
+            and _measure(row.get("nominal"), {"value": (lower + upper) / 2, "unit": unit}))
 
 
 def _tolerance_matches(tolerance: dict[str, Any], row: dict[str, Any]) -> bool:
