@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Hashable
 from dataclasses import dataclass, field
 
 from cadgen._internal.drawing_annotation import hole_callout_text, _hole_spec, _looks_into, _slot_spec
@@ -278,28 +279,45 @@ def _redundant(facts: _Facts) -> list[str]:
     """The dimensions a part's other dimensions already fix: along one axis, a
     dimension whose two ends the others tie together closes a loop, and the
     loop states one size twice. A shop meets both, and their tolerances cannot
-    both hold. Hole tables and bolt circles place features without asking a
-    size, so they close no loop of their own, though a dimension can close one
-    with them. A basic dimension is the exact target a frame bounds, and a
-    reference dimension asks nothing: neither is part of a loop."""
+    both hold. A dimension's end on a hole's centre line is that hole, not the
+    place it shares with others: two pairs of holes at one spacing are two
+    sizes. Hole tables and bolt circles place features without asking a size,
+    so they close no loop of their own, though a dimension can close one with
+    them. A basic dimension is the exact target a frame bounds, and a reference
+    dimension asks nothing: neither is part of a loop."""
+    from cadgen._internal.drawing_features import bolt_circles, holes as find_holes
+
     lines: list[str] = []
     records = list(facts.parts.values())
     for record in records:
         if record.get("assembly"):
             continue  # an assembly's envelope is reference dimensions
         whose = _whose(record, records)
-        circles = _circle_links(record)
+        holes = find_holes(record["shape"])
+        circles = bolt_circles(record["shape"], holes)
         for axis in range(3):
-            near: dict[float, list[tuple[float, str]]] = {}
+            def node(point) -> tuple:
+                for hole in holes:
+                    if abs(hole.axis[axis]) > 1e-6:
+                        continue  # a hole along this axis is no one place on it
+                    rel = [p - m for p, m in zip(point, hole.mouth)]
+                    along = sum(r * d for r, d in zip(rel, hole.axis))
+                    if math.dist([r - along * d for r, d in zip(rel, hole.axis)], (0.0, 0.0, 0.0)) <= 0.01:
+                        return ("hole", round(hole.mouth[axis], _PLACE),
+                                tuple(round(c, 3) for c, d in zip(hole.mouth, hole.axis) if abs(d) < 1e-6))
+                return ("at", round(point[axis], _PLACE))
 
-            def tie(a: float, b: float, what: str) -> None:
+            near: dict[tuple, list[tuple[tuple, str]]] = {}
+
+            def tie(a: tuple, b: tuple, what: str) -> None:
                 near.setdefault(a, []).append((b, what))
                 near.setdefault(b, []).append((a, what))
 
-            for a, b in circles[axis]:
-                tie(a, b, "bolt circle")
-            spans = [(round(a, _PLACE), round(b, _PLACE), what, kind)
-                     for k, a, b, what, kind in record["spans"] if k == axis and kind != "basic"]
+            for circle in circles:
+                for mouth in circle.mouths:
+                    tie(node(mouth), node(circle.centre), "bolt circle")
+            spans = [(node(ends[0]), node(ends[1]), what, kind)
+                     for k, _a, _b, what, kind, ends in record["spans"] if k == axis and kind != "basic"]
             for a, b, what, kind in spans:
                 if kind == "table":
                     tie(a, b, what)
@@ -327,7 +345,7 @@ def _fixed(record: dict, axis: int) -> bool:
     box = record["shape"].bounding_box()
     near: dict[float, list[tuple[float, str]]] = {}
     links = _circle_links(record)[axis] + [(round(a, _PLACE), round(b, _PLACE))
-                                           for k, a, b, _what, _kind in record["spans"] if k == axis]
+                                           for k, a, b, *_rest in record["spans"] if k == axis]
     for a, b in links:
         near.setdefault(a, []).append((b, ""))
         near.setdefault(b, []).append((a, ""))
@@ -340,9 +358,9 @@ def _and(words) -> str:
     return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} and {words[-1]}"
 
 
-def _path(near: dict, a: float, b: float) -> list[str] | None:
-    """What ties ``a`` to ``b`` through ``near``, the shortest way, or None."""
-    came: dict[float, tuple[float, str] | None] = {a: None}
+def _path(near: dict, a: Hashable, b: Hashable) -> list[str] | None:
+    """What ties place ``a`` to place ``b`` through ``near``, the shortest way, or None."""
+    came: dict[Hashable, tuple[Hashable, str] | None] = {a: None}
     queue = [a]
     for place in queue:
         if place == b:
@@ -364,7 +382,7 @@ def _reached(record: dict) -> dict[int, set]:
     links = _circle_links(record)
     box = record["shape"].bounding_box()
     middle = tuple(round((lo + hi) / 2, _PLACE) for lo, hi in zip(box.min, box.max))
-    for axis, a, b, _what, _kind in record["spans"]:
+    for axis, a, b, *_rest in record["spans"]:
         a, b = round(a, _PLACE), round(b, _PLACE)
         links[axis].append((a, b))
         if axis in record["symmetric"] and round((a + b) / 2, _PLACE) == middle[axis]:

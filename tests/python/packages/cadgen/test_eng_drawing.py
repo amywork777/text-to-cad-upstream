@@ -4035,6 +4035,32 @@ class RedundancyTests(unittest.TestCase):
         self.assertEqual(self._plate_lines(reference=True), [])
         self.assertEqual(self._plate_lines(basic=True), [])
 
+    def test_two_hole_pairs_at_one_spacing_are_two_sizes(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _redundant
+        from cadgen.eng_drawing import Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        plate = Box(80, 50, 8, align=up)
+        for x in (-25, 25):
+            for y in (-12, 12):
+                plate -= Pos(x, y, 0) * Cylinder(3, 8, align=up)
+        sheet = Sheet("A3", 1.0)
+        top, _front = sheet.three_views(plate, views=("top", "front"))
+        top.holes()
+        top.dim((-25, -12, 8), (25, -12, 8))               # the front pair's spacing
+        top.dim((-25, 12, 8), (25, 12, 8))                 # the back pair's: another size, at the same X
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="pairs", warnings=[], facts=facts)
+        self.assertEqual(_redundant(facts), [])
+        top.dim((-40, -12, 8), (-25, -12, 8))
+        top.dim((-40, -12, 8), (25, -12, 8))               # with the spacing, one size twice
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="pairs", warnings=[], facts=facts)
+        self.assertEqual(len(_redundant(facts)), 1)
+
     def test_an_overall_size_the_chain_fixes_is_stated_as_reference(self) -> None:
         from build123d import Align, Box
 
