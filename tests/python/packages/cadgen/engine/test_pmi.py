@@ -2,7 +2,8 @@
 written into its xbf as XCAF's GD&T objects and read back the same from the file as from the
 build; its AP242 STEP read by OCCT and by a reader of no OCCT (``export/ap242.py``),
 which agree on values, units, datum frames and the faces each annotation is on; a dimension
-given limits, written as AP242's lower and upper limit and its nominal still measured; a warm rebuild,
+given limits, written as AP242's lower and upper limit and its nominal still measured; a surface
+profile on several faces of any kind, written as one AP242 surface profile tolerance; a warm rebuild,
 an edit of the geometry and of a tolerance, a ref the model no longer satisfies (missing,
 ambiguous, invalid) kept in the document and refused by a STEP, and one that names another kind
 of face than on the last build warned of, the document the code's alone; what is not supported
@@ -149,11 +150,12 @@ class PlateTest(_Folder):
         self.assertEqual(diameter["dimension"]["tolerance"], {"type": "plus_minus", "upper": 0.1, "lower": 0.0})
         # Flatness on the top; position of the hole to A|B|C, a diametral zone.
         self.assertEqual(found["top-flatness"]["geometric_tolerance"], {
-            "characteristic": "flatness", "value": 0.05, "unit": "mm", "zone": None, "modifier": None, "datums": []})
+            "characteristic": "flatness", "value": 0.05, "unit": "mm", "zone": None, "modifier": None, "datums": [],
+            "general": False})
         self.assertEqual(found["top-flatness"]["refs"][0]["ref"], thickness["refs"][1]["ref"])
         self.assertEqual(found["hole-position"]["geometric_tolerance"], {
             "characteristic": "position", "value": 0.1, "unit": "mm", "zone": "diameter", "modifier": None,
-            "datums": ["A", "B", "C"]})
+            "datums": ["A", "B", "C"], "general": False})
         self.assertEqual(found["hole-position"]["refs"][0]["ref"], diameter["refs"][0]["ref"])
         # Presentation is kept, apart from the semantics.
         self.assertEqual(found["hole-position"]["presentation"], {"anchor": [-5.0, 0.0, 5.0], "offset": [-15.0, 15.0, 0.0]})
@@ -465,6 +467,132 @@ class LimitsTest(_Folder):
             self.assertIn(other, entry["reason"])
             self.assertEqual(entry["values"]["tolerance"], {"type": "limits", "lower": 7.9, "upper": 8.1})
             self.assertIsNone(entry["values"]["nominal"])
+
+
+# A plate whose sides and hole are given one surface profile to datum A, and whose spherical dimple is
+# given another of no datum: values ILLUSTRATIVE. No dimension, so OCCT's writer would put every
+# magnitude in a bare metre (``UnitsTest``).
+PROFILE = '''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10) - bd.Pos(30, 0, 5) * bd.Sphere(4)
+    body.label = "plate"
+    bottom = body.faces().sort_by(bd.Axis.Z)[0]
+    front = body.faces().sort_by(bd.Axis.Y)[0]
+    left = body.faces().sort_by(bd.Axis.X)[0]
+    hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+    dimple = body.faces().filter_by(bd.GeomType.SPHERE)[0]
+    return pmi.annotate(
+        body,
+        pmi.datum("A", bottom),
+        pmi.profile("sides", [front, left, hole], 0.5, datums=["A"]),
+        pmi.profile("dimple", dimple, 0.2),
+    )
+'''
+
+
+class ProfileTest(_Folder):
+    def test_a_profile_stands_on_several_faces_of_any_kind(self) -> None:
+        report = self.build(PROFILE)
+        self.assertEqual(report["pmi"], {"annotations": 3, "problems": []})
+        loaded = document.Loaded(self.xbf)
+        found = _by_id(loaded.structure()["pmi"])
+        self.assertEqual(found, _by_id(engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"]))
+        sides = found["sides"]
+        self.assertEqual((sides["kind"], sides["status"]), ("geometric_tolerance", "ok"), sides)
+        self.assertEqual(sides["geometric_tolerance"], {
+            "characteristic": "surface_profile", "value": 0.5, "unit": "mm", "zone": None, "modifier": None,
+            "datums": ["A"], "general": False})
+        self.assertEqual([(ref["role"], ref["status"]) for ref in sides["refs"]], [("feature", "ok")] * 3)
+        self.assertEqual([_face(loaded, sides, at)[0] for at in range(3)], ["plane", "plane", "cylinder"])
+        # One face, of a kind no other annotation stands on.
+        dimple = found["dimple"]
+        self.assertEqual((dimple["status"], _face(loaded, dimple)[0]), ("ok", "sphere"))
+        self.assertEqual((dimple["geometric_tolerance"]["value"], dimple["geometric_tolerance"]["datums"]), (0.2, []))
+
+    def test_a_profile_is_written_as_one_surface_profile_tolerance_and_checked(self) -> None:
+        self.build(PROFILE)
+        ours = _by_id(pmi.read(self.xbf))
+        result = ap242.verify(list(ours.values()), self.step)
+        self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
+        found = ap242.report(self.step)
+        self.assertEqual(found["problems"], [])
+        sides, dimple = sorted(found["tolerances"], key=lambda row: -len(row["features"]))
+        # The sides': one tolerance to datum A on the three faces, its magnitude in millimetres (the
+        # writer's bare metre put right); the dimple's, of no datum, on its sphere.
+        self.assertEqual((sides["entity"], sides["magnitude"]["value"], sides["magnitude"]["unit"], sides["datums"]),
+                         ("SURFACE_PROFILE_TOLERANCE", 0.5, "mm", ["A"]))
+        self.assertEqual(sorted(feature["name"] for feature in sides["features"]),
+                         sorted(ref["ref"].split("/", 1)[1] for ref in ours["sides"]["refs"]))
+        self.assertEqual(sorted(feature["surface"]["type"] for feature in sides["features"]), ["cylinder", "plane", "plane"])
+        self.assertEqual((dimple["entity"], dimple["magnitude"]["value"], dimple["magnitude"]["unit"], dimple["datums"]),
+                         ("SURFACE_PROFILE_TOLERANCE", 0.2, "mm", []))
+        self.assertEqual([feature["surface"]["type"] for feature in dimple["features"]], ["spherical_surface"])
+        text = self.step.read_text(encoding="utf-8")
+        self.assertRegex(text, r"GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE\s*\(\s*\(\s*#\d+\s*\)\s*\)\s*"
+                               r"SURFACE_PROFILE_TOLERANCE\s*\(\s*\)")
+        self.assertNotIn("SI_UNIT($,.METRE.)", text.replace(" ", ""))
+        # OCCT's reader: the same characteristic, value and faces.
+        theirs = {entry["geometric_tolerance"]["value"]: entry for entry in pmi.read(self.step)
+                  if entry["kind"] == "geometric_tolerance"}
+        self.assertEqual(sorted(theirs), [0.2, 0.5])
+        self.assertEqual(theirs[0.5]["geometric_tolerance"]["characteristic"], "surface_profile")
+        self.assertEqual(sorted(ref["ref"] for ref in theirs[0.5]["refs"]), sorted(ref["ref"] for ref in ours["sides"]["refs"]))
+
+    def test_a_profile_refuses_no_faces_a_zone_and_four_datums(self) -> None:
+        import build123d as bd
+
+        box = bd.Box(10, 10, 10)
+        top = box.faces().sort_by(bd.Axis.Z)[-1]
+        with self.assertRaisesRegex(pmi.PMIError, "a surface profile is on one face or more, not none"):
+            pmi.profile("p", [], 0.5)
+        with self.assertRaisesRegex(pmi.PMIError, "a surface profile's zone is a width about the profile: no "
+                                                  "diametral zone"):
+            pmi.geometric("p", "surface_profile", top, 0.5, diameter_zone=True)
+        with self.assertRaisesRegex(pmi.PMIError, "three datums at most, not 4"):
+            pmi.profile("p", top, 0.5, datums=["A", "B", "C", "D"])
+        # A list of faces is a profile's alone.
+        with self.assertRaisesRegex(pmi.PMIError, "a ref is a face of the part"):
+            pmi.flatness("f", [top], 0.05)
+        # One face named twice (here as a Face and by its element name) is no second face.
+        ordinal = pmi._faces(box.wrapped).FindIndex(top.wrapped)
+        names = [None] * 6
+        names[ordinal - 1] = "f:box.top.1"
+        pmi.annotate(box, pmi.profile("p", [top, "f:box.top.1"], 0.5))
+        [item] = pmi._resolved_part(box.__dict__[pmi.PMI], box.wrapped, names, {"box"})
+        self.assertEqual((item.status, [ref.status for ref in item.refs]), ("invalid", ["ok", "invalid"]))
+        self.assertEqual(item.problem, f"f:box.top.1 names face {ordinal}, as face {ordinal} does: a surface profile "
+                                       "is on each face once")
+
+    def test_a_vendor_profile_reads_as_supported(self) -> None:
+        """An OCCT-written surface profile on two faces reads back as one, on both; one with a
+        diametral zone says more than a profile this holds, so it is listed unsupported."""
+        import build123d as bd
+        from OCP import XCAFDimTolObjects as X
+
+        body = bd.Box(20, 20, 10)
+        sides = body.faces().sort_by(bd.Axis.X)
+        foreign = _Foreign(body)
+        foreign.tolerance("ProfileOfSurface", [sides[0], sides[-1]], 0.3)
+        [entry] = pmi.read(foreign.step(self.folder / "vendor.step"))
+        self.assertEqual((entry["kind"], entry["status"], entry["xcaf_type"]), ("geometric_tolerance", "ok", None), entry)
+        self.assertEqual(entry["geometric_tolerance"], {
+            "characteristic": "surface_profile", "value": 0.3, "unit": "mm", "zone": None, "modifier": None,
+            "datums": [], "general": False})
+        self.assertEqual([(ref["role"], ref["status"]) for ref in entry["refs"]], [("feature", "ok")] * 2)
+        self.assertEqual(len({ref["ref"] for ref in entry["refs"]}), 2)
+        zoned = _Foreign(body)
+        zoned.tolerance("ProfileOfSurface", [sides[0]], 0.3,
+                        SetTypeOfValue=(X.XCAFDimTolObjects_GeomToleranceTypeValue_Diameter,))
+        [entry] = pmi.read(zoned.xbf(self.folder / "zoned.xbf"))
+        self.assertEqual((entry["kind"], entry["xcaf_type"]),
+                         ("unsupported", "XCAFDimTolObjects_GeomToleranceType_ProfileOfSurface"), entry)
+        self.assertIn("diametral zone", entry["reason"])
 
 
 # A plate whose one variable ``cut`` is a round hole and then a square pocket: the name the hole's face
@@ -795,7 +923,9 @@ class _Foreign:
         return found
 
     def tolerance(self, kind: str, element: object, value: float, **set: object) -> object:
+        """A tolerance of ``kind`` on ``element``, or on each of a list of them."""
         from OCP import XCAFDimTolObjects as X
+        from OCP.TDF import TDF_LabelSequence
         from OCP.XCAFDoc import XCAFDoc_GeomTolerance
 
         at = self.tool.AddGeomTolerance()
@@ -805,7 +935,10 @@ class _Foreign:
         for name, argument in set.items():
             getattr(given, name)(*argument)
         XCAFDoc_GeomTolerance.Set_s(at).SetObject(given)
-        self.tool.SetGeomTolerance(self.sub(element), at)
+        elements = TDF_LabelSequence()
+        for each in element if isinstance(element, list) else [element]:
+            elements.Append(self.sub(each))
+        self.tool.SetGeomTolerance(elements, at)
         return at
 
     def dimension(self, kind: str, elements: list, value: float, **set: object) -> object:

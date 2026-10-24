@@ -16,7 +16,9 @@ for PMI define them:
   ``DATUM_SYSTEM``'s compartments in order, its ``TOLERANCE_ZONE``'s form;
 - each annotation's geometry: the ``GEOMETRIC_ITEM_SPECIFIC_USAGE`` of its shape aspect, the
   ``ADVANCED_FACE`` it identifies (its name), and that face's surface: a ``PLANE`` (origin,
-  normal) or a ``CYLINDRICAL_SURFACE`` (radius);
+  normal) or a ``CYLINDRICAL_SURFACE`` (radius), another by its type; a tolerance on several
+  faces is on a ``COMPOSITE_SHAPE_ASPECT``, each face's through the aspect a
+  ``SHAPE_ASPECT_RELATIONSHIP`` relates to it;
 - every measure's unit, from its unit entity (``SI_UNIT(.MILLI.,.METRE.)`` is mm).
 
 It also says what is malformed for a strict reader: a measure written untyped where AP242's
@@ -277,6 +279,20 @@ class Report:
         return {"face": f"#{item}", "name": name, "surface": self.surface(geometry.id),
                 "same_sense": same_sense.name if isinstance(same_sense, Enum) else same_sense}
 
+    def features(self, aspect: int) -> list[dict[str, Any] | None]:
+        """What a toleranced shape aspect identifies: its face, or a ``COMPOSITE_SHAPE_ASPECT``'s
+        faces, one through each aspect a ``SHAPE_ASPECT_RELATIONSHIP`` relates to it, in order."""
+        if "COMPOSITE_SHAPE_ASPECT" not in self.types(aspect):
+            return [self.face(aspect)]
+        members = []
+        for relation in self.referring(aspect, "SHAPE_ASPECT_RELATIONSHIP"):
+            _name, _description, relating, related = self.part(relation, "SHAPE_ASPECT_RELATIONSHIP")
+            if relating == Ref(aspect):
+                members.append(related.id)
+        if not members:
+            self.problems.append(f"#{aspect}: a COMPOSITE_SHAPE_ASPECT that relates no shape aspect")
+        return [self.face(member) for member in members]
+
     def surface(self, number: int) -> dict[str, Any]:
         kind = self.types(number)[0]
         values = self.part(number, kind)
@@ -402,7 +418,7 @@ class Report:
             magnitude, aspect = base[2], base[3]
             entry: dict[str, Any] = {"record": f"#{number}", "entity": kinds[0],
                                      "magnitude": self.measure(magnitude.id), "datums": [], "zone": None,
-                                     "features": [self.face(aspect.id)]}
+                                     "features": self.features(aspect.id)}
             reference = dict(parts).get("GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")
             for system in reference[0] if reference else ():
                 for compartment in self.part(system.id, "DATUM_SYSTEM")[4]:
@@ -499,12 +515,17 @@ def _limits_match(tolerance: dict[str, Any], unit: Any, row: dict[str, Any]) -> 
             and _measure(row.get("nominal"), {"value": (lower + upper) / 2, "unit": unit}))
 
 
+# The entity each characteristic the engine writes is written as.
+_TOLERANCE_ENTITIES = {"flatness": "FLATNESS_TOLERANCE", "position": "POSITION_TOLERANCE",
+                       "surface_profile": "SURFACE_PROFILE_TOLERANCE"}
+
+
 def _tolerance_matches(tolerance: dict[str, Any], row: dict[str, Any]) -> bool:
-    characteristic = tolerance.get("characteristic")
+    entity = _TOLERANCE_ENTITIES.get(tolerance.get("characteristic"))
     # The reader does not establish material modifiers or zones other than a diameter's.
-    if characteristic not in ("flatness", "position") or tolerance.get("modifier") or tolerance.get("zone") not in (None, "", "diameter"):
+    if entity is None or tolerance.get("modifier") or tolerance.get("zone") not in (None, "", "diameter"):
         return False
-    return (row.get("entity") == characteristic.upper() + "_TOLERANCE"
+    return (row.get("entity") == entity
             and _measure(row.get("magnitude"), tolerance)
             and row.get("datums", []) == tolerance.get("datums", [])
             and row.get("zone") == ("cylindrical or circular" if tolerance.get("zone") == "diameter" else None))

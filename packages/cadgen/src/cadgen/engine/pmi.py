@@ -30,9 +30,11 @@ XCAF too (its semantic name, its object). No status, no problem and nothing of a
 held: an annotation's status is derived where the document is read (``records_of_document``), as a
 build derives it. The STEP writer reads the XCAF objects and writes AP242's semantic PMI
 (``DIMENSIONAL_SIZE``/``DIMENSIONAL_LOCATION`` with ``PLUS_MINUS_TOLERANCE`` or their limits,
-``DATUM``/``DATUM_FEATURE``, ``FLATNESS_TOLERANCE``, ``POSITION_TOLERANCE`` with its
-``DATUM_SYSTEM``) on ``SHAPE_ASPECT``s whose ``GEOMETRIC_ITEM_SPECIFIC_USAGE`` names the face.
-The cadgen attribute is not written to a STEP.
+``DATUM``/``DATUM_FEATURE``, ``FLATNESS_TOLERANCE``, ``POSITION_TOLERANCE`` and
+``SURFACE_PROFILE_TOLERANCE`` with their ``DATUM_SYSTEM``) on ``SHAPE_ASPECT``s whose
+``GEOMETRIC_ITEM_SPECIFIC_USAGE`` names the face (a profile on several faces: on a
+``COMPOSITE_SHAPE_ASPECT`` relating one such aspect per face). The cadgen attribute is not
+written to a STEP.
 
 **Values.** A dimension's nominal is the geometry's, measured at document time: a cylinder's
 diameter, the distance between two parallel planes. No nominal is typed in. A tolerance is held
@@ -77,7 +79,8 @@ an AP242 reader of no OCCT):
 datums on a plane or cylinder; diameter and linear-distance dimensions with a plus-minus
 tolerance or limits; basic (theoretically exact) distances, from planes and hole axes, with no
 tolerance, marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); flatness; position
-with an ordered datum reference frame and a diametral zone. Every
+with an ordered datum reference frame and a diametral zone; a surface profile on one face or
+several, of any kind, with a frame of up to three datums or none. Every
 other XCAF characteristic, dimension type, modifier and tolerance form is refused by name
 (``PMIUnsupported``), never approximated. PMI is part-level: an annotation is on one part, and an
 assembly is refused.
@@ -93,7 +96,7 @@ from typing import Any, Callable, Iterable
 
 __all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "basic", "datum",
            "diameter", "dimension", "distance", "flatness", "geometric", "limits", "place", "plus_minus", "position",
-           "read"]
+           "profile", "read"]
 
 # The attribute an annotated shape holds its annotations in (a tuple of plain dicts), as a part's
 # configurations are held (``kernel.memo`` keys it).
@@ -113,18 +116,21 @@ UNIT = "mm"
 # The dimension types and geometric characteristics written and read back, verified; every other
 # XCAF one is refused by name.
 DIMENSION_TYPES = ("diameter", "distance")
-GEOMETRIC_CHARACTERISTICS = ("flatness", "position")
+GEOMETRIC_CHARACTERISTICS = ("flatness", "position", "surface_profile")
 # XCAF's other characteristics, so a request for one is refused as unsupported rather than unknown.
 _XCAF_CHARACTERISTICS = ("angularity", "circular_runout", "circularity_or_roundness", "coaxiality", "concentricity",
                          "cylindricity", "flatness", "line_profile", "parallelism", "perpendicularity", "position",
                          "straightness", "surface_profile", "symmetry", "total_runout")
 _XCAF_DIMENSION_TYPES = ("diameter", "distance", "radius", "angle", "curved_distance", "linear_distance",
                          "spherical_diameter", "spherical_radius", "toroidal_minor_diameter", "thickness")
+# Every kind of face, as ``_surface`` names OCCT's surface types (``GeomAbs_SurfaceType``).
+_EVERY_SURFACE = ("plane", "cylinder", "cone", "sphere", "torus", "beziersurface", "bsplinesurface",
+                  "surfaceofrevolution", "surfaceofextrusion", "offsetsurface", "othersurface")
 # The faces each annotation stands on.
 # A basic dimension is a distance between planes, a plane and a hole's axis, or two axes.
 _SURFACES = {"datum": ("plane", "cylinder"), "diameter": ("cylinder",), "distance": ("plane",),
              "basic": ("plane", "cylinder"),
-             "flatness": ("plane",), "position": ("cylinder",)}
+             "flatness": ("plane",), "position": ("cylinder",), "surface_profile": _EVERY_SURFACE}
 
 
 class PMIError(ValueError):
@@ -224,8 +230,9 @@ def basic(id: str, ref_from: Any, ref_to: Any, *, label: str | None = None,
 def geometric(id: str, characteristic: str, ref: Any, value: float, *, datums: Iterable[str] = (),
               diameter_zone: bool = False, label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
     """A geometric tolerance of ``characteristic`` (``GEOMETRIC_CHARACTERISTICS``) of ``value``
-    millimetres on one face, referring to ``datums`` in order (primary first); a diametral zone
-    with ``diameter_zone``. Other characteristics are refused (``PMIUnsupported``)."""
+    millimetres on one face (a surface profile: on one, or on each of a list of them), referring
+    to ``datums`` in order (primary first); a diametral zone with ``diameter_zone``. Other
+    characteristics are refused (``PMIUnsupported``)."""
     if characteristic not in GEOMETRIC_CHARACTERISTICS:
         if characteristic in _XCAF_CHARACTERISTICS:
             raise PMIUnsupported(f"tolerance {id!r}: {characteristic} is not written verified yet; the "
@@ -247,10 +254,18 @@ def geometric(id: str, characteristic: str, ref: Any, value: float, *, datums: I
         raise PMIError(f"tolerance {id!r}: flatness is a form tolerance, with no datum and no diametral zone")
     if characteristic == "position" and not letters:
         raise PMIUnsupported(f"tolerance {id!r}: a position with no datum is not written verified yet; name its datums")
-    return _annotation(id, "geometric_tolerance", [("feature", ref)], label, presentation,
+    refs = [ref]
+    if characteristic == "surface_profile":
+        if diameter_zone:
+            raise PMIError(f"tolerance {id!r}: a surface profile's zone is a width about the profile: no diametral zone")
+        refs = list(ref) if isinstance(ref, (list, tuple)) else [ref]
+        if not refs:
+            raise PMIError(f"tolerance {id!r}: a surface profile is on one face or more, not none")
+    # ``general``: the part's general profile, of every face nothing else controls (none made here).
+    return _annotation(id, "geometric_tolerance", [("feature", given) for given in refs], label, presentation,
                        geometric_tolerance={"characteristic": characteristic, "value": value, "unit": UNIT,
                                             "zone": "diameter" if diameter_zone else None, "modifier": None,
-                                            "datums": letters})
+                                            "datums": letters, "general": False})
 
 
 def flatness(id: str, ref: Any, value: float, *, label: str | None = None,
@@ -265,6 +280,14 @@ def position(id: str, ref: Any, value: float, *, datums: Iterable[str], diameter
     zone by default, relative to ``datums`` in order."""
     return geometric(id, "position", ref, value, datums=datums, diameter_zone=diameter_zone, label=label,
                      presentation=presentation)
+
+
+def profile(id: str, refs: Any, value: float, *, datums: Iterable[str] = (), label: str | None = None,
+            presentation: dict | None = None) -> dict[str, Any]:
+    """The profile of a surface, ``value`` millimetres wide about its true profile: on a face, or
+    on each of a list of faces of any kind (one requirement on all of them), relative to
+    ``datums`` in order (none to three)."""
+    return geometric(id, "surface_profile", refs, value, datums=datums, label=label, presentation=presentation)
 
 
 def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
@@ -461,6 +484,13 @@ def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners:
                 ref.status = "invalid"
                 ref.problem = (f"{ref.written} is a {surface[0]} face; a {what.replace('_', ' ')} is on a "
                                f"{' or '.join(wanted)} face")
+        if what == "surface_profile":
+            for at, ref in enumerate(refs):
+                earlier = next((other for other in refs[:at] if other.ordinal == ref.ordinal), None)
+                if earlier is not None:
+                    ref.status = "invalid"
+                    ref.problem = (f"{ref.written} names face {ref.ordinal}, as {earlier.written} does: a surface "
+                                   "profile is on each face once")
         if all(ref.status == "ok" for ref in refs):
             if what == "diameter":
                 nominal = 2.0 * surfaces[0][1]["radius"]
@@ -746,7 +776,10 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
                 at = tool.AddGeomTolerance()
                 _tolerance_object(at, spec)
                 if linked:
-                    tool.SetGeomTolerance(refs[0], at)
+                    sequence = TDF_LabelSequence()
+                    for ref in refs:
+                        sequence.Append(ref)
+                    tool.SetGeomTolerance(sequence, at)
                     for letter in spec["geometric_tolerance"]["datums"]:
                         tool.SetDatumToGeomTol(datums[letter], at)
             TDataStd_AsciiString.Set_s(at, guid, TCollection_AsciiString(_text(_extra(item))))
@@ -813,18 +846,27 @@ def _dimension(label: Any, spec: dict[str, Any], nominal: float | None) -> None:
     XCAFDoc_Dimension.Set_s(label).SetObject(found)
 
 
+def _xcaf_characteristics() -> dict[str, Any]:
+    """XCAF's type of each characteristic held (``GEOMETRIC_CHARACTERISTICS``): what a tolerance is
+    written as and read back by."""
+    from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_GeomToleranceType_Flatness,
+                                        XCAFDimTolObjects_GeomToleranceType_Position,
+                                        XCAFDimTolObjects_GeomToleranceType_ProfileOfSurface)
+
+    return {"flatness": XCAFDimTolObjects_GeomToleranceType_Flatness,
+            "position": XCAFDimTolObjects_GeomToleranceType_Position,
+            "surface_profile": XCAFDimTolObjects_GeomToleranceType_ProfileOfSurface}
+
+
 def _tolerance_object(label: Any, spec: dict[str, Any]) -> None:
     from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_GeomToleranceObject,
-                                        XCAFDimTolObjects_GeomToleranceType_Flatness,
-                                        XCAFDimTolObjects_GeomToleranceType_Position,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_Diameter)
     from OCP.XCAFDoc import XCAFDoc_GeomTolerance
 
     given = spec["geometric_tolerance"]
     found = XCAFDimTolObjects_GeomToleranceObject()
     found.SetSemanticName(_ascii(spec["id"]))
-    found.SetType(XCAFDimTolObjects_GeomToleranceType_Flatness if given["characteristic"] == "flatness"
-                  else XCAFDimTolObjects_GeomToleranceType_Position)
+    found.SetType(_xcaf_characteristics()[given["characteristic"]])
     found.SetValue(given["value"])
     if given["zone"] == "diameter":
         found.SetTypeOfValue(XCAFDimTolObjects_GeomToleranceTypeValue_Diameter)
@@ -998,8 +1040,6 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
     from OCP.TDF import TDF_Reference
     from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_DimensionType_Location_LinearDistance,
                                         XCAFDimTolObjects_DimensionType_Size_Diameter,
-                                        XCAFDimTolObjects_GeomToleranceType_Flatness,
-                                        XCAFDimTolObjects_GeomToleranceType_Position,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_Diameter,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_None)
     from OCP.XCAFDoc import XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_GeomTolerance
@@ -1008,8 +1048,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
 
     dimensions = {XCAFDimTolObjects_DimensionType_Size_Diameter: "diameter",
                   XCAFDimTolObjects_DimensionType_Location_LinearDistance: "distance"}
-    characteristics = {XCAFDimTolObjects_GeomToleranceType_Flatness: "flatness",
-                       XCAFDimTolObjects_GeomToleranceType_Position: "position"}
+    characteristics = {xcaf: name for name, xcaf in _xcaf_characteristics().items()}
     tool = _tool(doc)
     if tool is None:
         return []
@@ -1101,7 +1140,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
             zone = "other"
         characteristic = characteristics.get(found.GetType())
         values = {"characteristic": characteristic, "value": _as_held(found.GetValue()), "unit": UNIT, "zone": zone,
-                  "modifier": None, "datums": [letter for _place, letter in letters]}
+                  "modifier": None, "datums": [letter for _place, letter in letters], "general": False}
         beyond = _beyond_tolerance(found, characteristic, zone)
         if any(_entry(named) in modified for named in datums):
             beyond.append("a datum it names has modifiers or is a datum target")
@@ -1172,7 +1211,7 @@ def _beyond_dimension(found: Any, kind: str | None, notes: list[tuple[str, str]]
 def _beyond_tolerance(found: Any, characteristic: str | None, zone: str | None) -> list[str]:
     """What a geometric tolerance of a file says that this module does not hold: another
     characteristic, modifiers, a material requirement, a zone modifier, a maximum value, a zone
-    other than a width's or a diameter's."""
+    other than a width's or a diameter's, a diameter's on a surface profile."""
     from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_GeomToleranceMatReqModif_None,
                                         XCAFDimTolObjects_GeomToleranceZoneModif_None)
 
@@ -1189,6 +1228,8 @@ def _beyond_tolerance(found: Any, characteristic: str | None, zone: str | None) 
         beyond.append("it has a maximum value")
     if zone == "other":
         beyond.append(f"its zone is {_words(found.GetTypeOfValue().name)}")
+    if zone == "diameter" and characteristic == "surface_profile":
+        beyond.append("a surface profile with a diametral zone is not one this holds")
     return beyond
 
 
@@ -1229,7 +1270,8 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
             else:
                 given = spec["geometric_tolerance"]
                 values = {"characteristic": given["characteristic"], "value": _as_held(given["value"]), "unit": UNIT,
-                          "zone": given["zone"], "modifier": None, "datums": list(given["datums"]) if linked else []}
+                          "zone": given["zone"], "modifier": None, "datums": list(given["datums"]) if linked else [],
+                          "general": given["general"]}
             by_kind[spec["kind"]].append({
                 "kind": spec["kind"], "values": values, "xcaf_type": None, "reason": None, "part": index,
                 "targets": targets, "extra": json.loads(_text(_extra(item))), "entry": None, "status": item.status,

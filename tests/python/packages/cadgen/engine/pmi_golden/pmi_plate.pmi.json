@@ -341,7 +341,8 @@
       "unit": "mm",
       "zone": null,
       "modifier": null,
-      "datums": []
+      "datums": [],
+      "general": false
     }
   },
   {
@@ -385,7 +386,8 @@
         "A",
         "B",
         "C"
-      ]
+      ],
+      "general": false
     }
   }
 ]

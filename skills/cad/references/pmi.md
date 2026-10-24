@@ -1,8 +1,8 @@
 # PMI: datums, dimensions and tolerances
 
 Read this file when the user asks for datums, toleranced dimensions, basic dimensions,
-flatness or position (GD&T, PMI, model-based definition), or for a STEP a supplier or
-an inspection tool can read requirements from.
+flatness, position or a surface profile (GD&T, PMI, model-based definition), or for a
+STEP a supplier or an inspection tool can read requirements from.
 
 A part's requirements are written in its model, on the faces they control, and the
 document keeps them:
@@ -12,7 +12,7 @@ document keeps them:
 - **Datums** name the faces the others are measured from: `pmi.datum("A", face)`.
 - **Dimensions** are measured on the geometry, never typed: `pmi.diameter`,
   `pmi.distance`, and `pmi.basic` for a theoretically exact one.
-- **Geometric tolerances**: `pmi.flatness` and `pmi.position`.
+- **Geometric tolerances**: `pmi.flatness`, `pmi.position` and `pmi.profile`.
 
 The `.xbf` keeps them as the kernel's own GD&T, linked to their faces, and a STEP
 export writes them as AP242 semantic PMI: requirements a program reads off the faces,
@@ -73,6 +73,11 @@ def plate():
   basic diameter, is refused.
 - **A datum frame** is ordered, primary first, three datums at most, and a datum holds
   one place in every frame that names it.
+- **A surface profile** (`pmi.profile("sides", [front, left, hole], 0.5, datums=["A"])`)
+  is one requirement on a face or on a list of faces, of any kind: they lie within a
+  zone of that width about their true profile. It takes up to three datums, or none. A
+  diametral zone or an empty list is refused, and a face the list names twice leaves
+  the profile `invalid`.
 - **Anything else is refused** (`PMIUnsupported`), never approximated: other
   characteristics and dimension types, fits, material modifiers, reference
   dimensions, and assembly-level PMI.

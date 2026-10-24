@@ -152,6 +152,53 @@ class VerificationTest(unittest.TestCase):
         self.assertEqual([(bound["value"], bound["unit"]) for bound in reader.limits(1)], [(10.0, "mm"), (10.05, "mm")])
         self.assertEqual(reader.problems, [])
 
+    def test_a_profile_matches_on_its_faces_in_any_order_and_on_no_other(self) -> None:
+        entries, found = fixtures()
+        entries.append({"id": "sides", "kind": "geometric_tolerance", "status": "ok",
+                        "refs": [{"ref": "part/f:front.1"}, {"ref": "part/f:left.1"}, {"ref": "part/f:bore.1"}],
+                        "geometric_tolerance": {"characteristic": "surface_profile", "value": 0.5, "unit": "mm",
+                                                "zone": None, "datums": ["A"], "general": False}})
+        row = {"entity": "SURFACE_PROFILE_TOLERANCE", "magnitude": {"value": 0.5, "unit": "mm"}, "zone": None,
+               "datums": ["A"], "features": [{"name": "f:bore.1"}, {"name": "f:front.1"}, {"name": "f:left.1"}]}
+        self.assertEqual(compare(entries, {**found, "tolerances": found["tolerances"] + [row]}),
+                         {"matched": 4, "total": 4, "problems": []})
+        for change in ({"features": row["features"][:2]}, {"features": row["features"] + [{"name": "f:top.1"}]},
+                       {"entity": "FLATNESS_TOLERANCE"}, {"datums": []}, {"zone": "cylindrical or circular"}):
+            self.assertEqual(compare(entries, {**found, "tolerances": found["tolerances"] + [{**row, **change}]})["matched"],
+                             3, change)
+
+    def test_reader_reads_each_face_of_a_composite_shape_aspect(self) -> None:
+        """A tolerance on several faces is on a COMPOSITE_SHAPE_ASPECT, each face's own aspect related
+        to it, as OCCT's writer writes it: every face read, in order."""
+        reader = Report(parse("""ISO-10303-21; HEADER; ENDSEC; DATA;
+          #1=SURFACE_PROFILE_TOLERANCE('','',#2,#3);
+          #2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.5),#4);
+          #3=COMPOSITE_SHAPE_ASPECT('','',#9,.T.);
+          #4=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+          #5=SHAPE_ASPECT('','',#9,.T.);
+          #6=SHAPE_ASPECT_RELATIONSHIP('',$,#3,#5);
+          #7=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#5,#9,#20);
+          #8=SHAPE_ASPECT('','',#9,.T.);
+          #10=SHAPE_ASPECT_RELATIONSHIP('',$,#3,#8);
+          #11=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#8,#9,#21);
+          #9=PRODUCT_DEFINITION_SHAPE('','',$);
+          #20=ADVANCED_FACE('f:front.1',(),#22,.T.);
+          #21=ADVANCED_FACE('f:left.1',(),#22,.T.);
+          #22=CONICAL_SURFACE('',$,1.,0.5);
+          ENDSEC; END-ISO-10303-21;"""))
+        [tolerance] = reader.tolerances()
+        self.assertEqual(tolerance["entity"], "SURFACE_PROFILE_TOLERANCE")
+        self.assertEqual([feature["name"] for feature in tolerance["features"]], ["f:front.1", "f:left.1"])
+        self.assertEqual(reader.problems, [])
+        empty = Report(parse("""ISO-10303-21; HEADER; ENDSEC; DATA;
+          #1=SURFACE_PROFILE_TOLERANCE('','',#2,#3);
+          #2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.5),#4);
+          #3=COMPOSITE_SHAPE_ASPECT('','',$,.T.);
+          #4=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+          ENDSEC; END-ISO-10303-21;"""))
+        self.assertEqual(empty.tolerances()[0]["features"], [])
+        self.assertTrue(any("relates no shape aspect" in problem for problem in empty.problems), empty.problems)
+
     def test_reader_checks_unannotated_face_names(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             step = Path(temp) / "duplicate.step"
