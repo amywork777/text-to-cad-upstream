@@ -260,7 +260,7 @@ def _interfaces(facts: _Facts) -> list[str]:
         for fit in fits:
             gap = round(fit.bore - fit.shaft, 4)
             head = (f"interface: {named(fit.inner)} ⌀{_fmt(fit.shaft)} in {named(fit.outer)} ⌀{_fmt(fit.bore)}, "
-                    f"on the axis {_axis_words(fit.axis)} through {_where(fit.at)}: ")
+                    f"on the axis {_axis_words(fit.axis)} through {_where(fit.at)}{_places(fit.places)}: ")
             if gap > 0:
                 lines.append(head + f"{_fmt(gap)} clearance at nominal sizes.")
                 continue
@@ -270,9 +270,14 @@ def _interfaces(facts: _Facts) -> list[str]:
         for touch in abutments:
             a, b = touch.items
             lines.append(f"interface: {named(a)} and {named(b)} touch face to face square to the axis "
-                         f"{_axis_words(touch.axis)}, at {_where(touch.at)}: no end play at nominal sizes. What holds "
-                         "the joint along its axis decides the end play it needs, or that it is clamped there.")
+                         f"{_axis_words(touch.axis)}, at {_where(touch.at)}{_places(touch.places)}: no end play at "
+                         "nominal sizes. What holds the joint along its axis decides the end play it needs, or "
+                         "that it is clamped there.")
     return lines
+
+
+def _places(count: int) -> str:
+    return f" ({count} places)" if count > 1 else ""
 
 
 def _axis_words(d) -> str:
@@ -381,17 +386,44 @@ def _found(record: dict, what: str) -> list:
     return cache[what]
 
 
+def _slope_links(record: dict) -> dict[int, list]:
+    """What an aligned dimension ties together where an angle fixes its
+    direction: its length and its angle give its run and its rise, so its two
+    ends are tied along each model axis it leans across. An angle fixes a leg's
+    direction when its other leg runs along a model axis, and then fixes the
+    direction square to it in the same view (the right angle a drawing
+    implies)."""
+    known = []
+    for vertex, p1, p2, look in record["angles"]:
+        legs = [tuple(q - v for q, v in zip(p, vertex)) for p in (p1, p2)]
+        for leg, other in (legs, legs[::-1]):
+            if sum(abs(c) > 1e-9 for c in other) == 1:
+                known.append((leg, look))
+    links: dict[int, list] = {axis: [] for axis in range(3)}
+    for p, q in record["aligned"]:
+        run = tuple(b - a for a, b in zip(p, q))
+        length = math.sqrt(sum(c * c for c in run)) or 1.0
+        for leg, look in known:
+            if abs(sum(a * b for a, b in zip(run, look))) > 1e-6 * length:
+                continue  # not in that angle's view
+            reach = math.sqrt(sum(c * c for c in leg)) or 1.0
+            along = abs(sum(a * b for a, b in zip(run, leg))) / (length * reach)
+            if along > 0.9999 or along < 1e-4:
+                for k in range(3):
+                    if abs(run[k]) > 1e-9:
+                        links[k].append((round(p[k], _PLACE), round(q[k], _PLACE)))
+                break
+    return links
+
+
 def _fixed(record: dict, axis: int) -> bool:
     """Whether a part's other dimensions fix its overall size along ``axis``: its
-    two extremes tied together through them, or an angle stated in a view that
-    sees that axis, which may fix it in a way the spans cannot show (the report
-    follows no trigonometry, so it trusts the author there)."""
-    if any(abs(look[axis]) < 1e-9 for _vertex, _p1, _p2, look in record["angles"]):
-        return True
+    two extremes tied together through them, an aligned dimension at a stated
+    angle counting for its run and its rise."""
     box = record["shape"].bounding_box()
     near: dict[float, list[tuple[float, str]]] = {}
-    links = _circle_links(record)[axis] + [(round(a, _PLACE), round(b, _PLACE))
-                                           for k, a, b, *_rest in record["spans"] if k == axis]
+    links = _circle_links(record)[axis] + _slope_links(record)[axis] + [
+        (round(a, _PLACE), round(b, _PLACE)) for k, a, b, *_rest in record["spans"] if k == axis]
     for a, b in links:
         near.setdefault(a, []).append((b, ""))
         near.setdefault(b, []).append((a, ""))
@@ -432,6 +464,8 @@ def _reached(record: dict) -> dict[int, set]:
 
 def _reach(record: dict) -> dict[int, set]:
     links = _circle_links(record)
+    for axis, slopes in _slope_links(record).items():
+        links[axis].extend(slopes)
     box = record["shape"].bounding_box()
     middle = tuple(round((lo + hi) / 2, _PLACE) for lo, hi in zip(box.min, box.max))
     for axis, a, b, *_rest in record["spans"]:

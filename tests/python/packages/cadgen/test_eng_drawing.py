@@ -3952,7 +3952,7 @@ class FaceTests(unittest.TestCase):
         top.symmetric("v")                                 # the right and back walls mirror them
         self.assertEqual(self._report(sheet), [])
 
-    def test_a_size_an_angle_fixes_may_be_given_as_reference(self) -> None:
+    def test_a_size_a_slope_fixes_may_be_given_as_reference(self) -> None:
         from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3", 1.0)
@@ -3963,8 +3963,25 @@ class FaceTests(unittest.TestCase):
         front.dim((60, 0, 8), (20, 0, 8))                  # the slope's foot from the right
         front.dim((60, 0, 0), (60, 0, 8))
         front.angle((20, 0, 8), (60, 0, 8), (10, 0, 30))
-        self.assertFalse([line for line in self._report(sheet, "overall size")],
-                         "the angle may fix what the spans do not; the check cannot follow it, so trusts it")
+        self.assertEqual(len(self._report(sheet, "only as a reference")), 2,
+                         "an angle alone gives the slope's direction, not its length")
+        front.dim((20, 0, 8), (10, 0, 30), orientation="aligned")   # its length: now its run and rise follow
+        self.assertEqual(self._report(sheet, "overall size"), [])
+
+    def test_an_angle_somewhere_does_not_excuse_a_reference_size(self) -> None:
+        from build123d import Polygon, extrude
+
+        from cadgen.eng_drawing import Sheet
+
+        plate = extrude(Polygon((-50, -30), (50, -30), (50, 20), (40, 30), (-50, 30), align=None), 10)
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(plate, views=("top", "front"))
+        top.overall(reference=True)
+        front.overall(width=False)
+        top.dim((50, 20, 10), (50, 30, 10))                # the corner cut's leg
+        top.angle((40, 30, 10), (-50, 30, 10), (50, 20, 10))
+        self.assertEqual(len(self._report(sheet, "only as a reference")), 2,
+                         "a 45° corner cut fixes neither the 100 nor the 60")
 
     def test_an_aligned_dimension_on_a_broken_view_states_its_true_length(self) -> None:
         from build123d import Plane, Polygon, extrude
@@ -4251,6 +4268,50 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(len(sleeve), 1, lines)
         self.assertIn("0.2 clearance", sleeve[0])
         self.assertFalse([line for line in lines if "ROD" in line], "⌀4 in a ⌀12 bore is a gap, not a fit")
+
+    def test_one_part_used_four_times_is_one_joint(self) -> None:
+        from build123d import Align, Box, Compound, Cylinder, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _interfaces
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        corners = [(x, y) for x in (-30, 30) for y in (-20, 20)]
+        plate = Box(80, 60, 6, align=up)
+        for x, y in corners:
+            plate -= Pos(x, y, 0) * Cylinder(3.2, 6, align=up)
+        plate.label = "plate"
+        bolts = []
+        for x, y in corners:
+            bolt = Pos(x, y, -4) * (Cylinder(3, 10, align=up) + Pos(0, 0, 10) * Cylinder(5, 3, align=up))
+            bolt.label = "bolt"
+            bolts.append(bolt)
+        sheets = assembly_sheets(parts_list(Compound(children=[plate, *bolts])), title="PLATE")
+        facts = _facts()
+        _render_sheet(list(sheets)[0], index=1, count=1, label="plate", warnings=[], facts=facts)
+        lines = _interfaces(facts)
+        self.assertEqual(len([line for line in lines if "touch" in line]), 1, lines)
+        self.assertEqual(len([line for line in lines if "in item" in line]), 1, lines)
+        self.assertTrue(all("4 places" in line for line in lines), lines)
+
+    def test_a_rod_running_in_a_looser_bore_is_a_joint(self) -> None:
+        from build123d import Align, Box, Compound, Cylinder, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _interfaces
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        guide = Box(40, 40, 10, align=up) - Cylinder(6.5, 10, align=up)   # a ⌀13 guide
+        rod = Pos(0, 0, -20) * Cylinder(6, 60, align=up)                   # a ⌀12 rod that strokes through it
+        guide.label, rod.label = "guide", "rod"
+        sheets = assembly_sheets(parts_list(Compound(children=[guide, rod])), title="GUIDE")
+        facts = _facts()
+        _render_sheet(list(sheets)[0], index=1, count=1, label="guide", warnings=[], facts=facts)
+        lines = _interfaces(facts)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("1 clearance", lines[0])
 
     def test_an_interference_is_called_out(self) -> None:
         lines = self._lines()

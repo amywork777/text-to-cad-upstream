@@ -776,7 +776,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                                                        "assembly": id(view.shape) in assemblies,
                                                        "notes": set(), "radii": set(), "spans": [],
                                                        "anchors": [], "datums": [], "symmetric": set(),
-                                                       "angles": []})
+                                                       "angles": [], "aligned": []})
             # Where the view says things are: the centre lines it states the part
             # symmetric about, as the model axes they locate across.
             for direction in view._symmetric:
@@ -1220,6 +1220,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 # A reference size asks nothing; it is information about a size the
                 # other dimensions fix, which the report checks they do.
                 record["referenced"].add((axis, round(measured, 3)))
+            if aligned and record is not None and ends is not None and not reference:
+                record["aligned"].append(tuple(ends))
             if record is not None and ends is not None and axis is not None and not reference:
                 # What it ties together, along the model axis it measures, what it is
                 # called in a message, what kind of statement it is, and its two ends.
