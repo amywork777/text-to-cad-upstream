@@ -2941,7 +2941,7 @@ class WhiteSpaceTests(unittest.TestCase):
 
 
 class CrossingTests(unittest.TestCase):
-    """Alex: dimension lines crossing other dimension lines are not acceptable."""
+    """A reviewing engineer: dimension lines crossing other dimension lines are not acceptable."""
 
     def test_no_leader_or_dimension_line_crosses_a_dimension_line(self) -> None:
         from shapely.geometry import LineString
