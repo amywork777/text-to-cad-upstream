@@ -942,14 +942,24 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
         sheet = Sheet(title=shown[0], material=shown[1], subtitle=shown[2], general_tolerance=general_tolerance,
                       **(common | {"size": None, "scale": None}))
         sheet._item = _PartOf(item, title, shown)
-        turned = revolved(item.shape)
+        shape = item.shape
+        turned = revolved(shape)
+        if turned is not None and turned.axis != 0:
+            size = shape.bounding_box().size
+            if (size.X, size.Y, size.Z)[turned.axis] > turned.diameter:
+                # A long turned part is drawn lying down, as it sits in a lathe: its
+                # axis across the sheet, where the paper is widest.
+                from build123d import Rot
+
+                shape = (Rot(0, 90, 0) if turned.axis == 2 else Rot(0, 0, -90)) * shape
+                turned = revolved(shape)
         names = list(_VIEW_NAMES)
         if turned is not None:
             # Turned whole: the two views square to its axis draw the same picture,
             # so the first of them in front, top, right order is drawn.
             beside = [n for n in ("front", "top", "right") if not VIEW_DIRECTIONS[n][0][turned.axis]]
             names.remove(beside[1])
-        views = sheet.three_views(item.shape, iso=True, views=names)[:-1]
+        views = sheet.three_views(shape, iso=True, views=names)[:-1]
         stated: set[int] = set()  # the model axes whose overall size is stated
         if turned is not None:
             # Its diameters, across the profile in the view that sees the axis
@@ -957,7 +967,7 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
             side = next(v for v in views if not VIEW_DIRECTIONS[v.name][0][turned.axis])
             unit = tuple(float(k == turned.axis) for k in range(3))
             across = _cross(unit, _look(side))
-            steps = [(s.diameter, s.middle) for s in turned_surfaces(item.shape)
+            steps = [(s.diameter, s.middle) for s in turned_surfaces(shape)
                      if abs(abs(s.axis[turned.axis]) - 1) < 1e-9]
             if all(abs(d - turned.diameter) > 0.01 for d, _m in steps):
                 steps.append((turned.diameter, turned.at))
@@ -971,7 +981,7 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
             if width_axis not in stated or height_axis not in stated:
                 view.overall(width=width_axis not in stated, height=height_axis not in stated)
             stated |= {width_axis, height_axis}
-        features = [*find_holes(item.shape), *find_slots(item.shape)]
+        features = [*find_holes(shape), *find_slots(shape)]
         for view in views:
             look = _look(view)
             if any(_looks_into(f, look) for f in features):

@@ -2387,13 +2387,28 @@ class AssemblyDrawingTests(unittest.TestCase):
         sheets = assembly_sheets(parts_list(Compound(children=[plate, pin])), title="RIG")
         sheet = sheets.part("pin")
         names = [v.name for v in sheet.views]
-        self.assertEqual(names, ["top", "front", "iso"], "turned about Z: the right view would repeat the front")
+        self.assertEqual(names, ["front", "right", "iso"], "one side view and the end view; no repeat")
+        size = sheet.views[0].shape.bounding_box().size
+        self.assertGreater(size.X, size.Z, "a long turned part is drawn lying down, its axis across the sheet")
         facts = _facts()
         doc = _render_sheet(sheet, index=1, count=1, label="pin", facts=facts)
         # The ⌀ is drawn as line work beside each value, so the text is the number.
         self.assertEqual(sorted(_dim_texts(doc)), ["10", "24", "6"], "two diameters and the length, once each")
         self.assertFalse([line for line in _unstated(facts) if "overall size" in line or "turned diameter" in line],
                          "the diameters state the sizes across the axis")
+
+    def test_a_flat_turned_part_keeps_its_face_view(self) -> None:
+        from build123d import Align, Box, Compound, Cylinder
+
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        base = Box(80, 80, 6, align=up)
+        base.label = "base"
+        washer = Cylinder(20, 3, align=up) - Cylinder(8, 3, align=up)
+        washer.label = "washer"
+        sheet = assembly_sheets(parts_list(Compound(children=[base, washer])), title="RIG").part("washer")
+        self.assertEqual([v.name for v in sheet.views], ["top", "front", "iso"], "a disc stays flat: face and edge")
 
     def test_a_cones_widest_diameter_states_its_size_across_the_axis(self) -> None:
         from build123d import Align, Box, Compound, Cone
@@ -2660,6 +2675,7 @@ def _inclined():
     return (base + Location((40, 0, 0), (0, 1, 0), 30) * tab).clean(), (44.164, 0, 23.212)
 
 
+
 def _bar():
     """A 600 mm bar, 20 mm square, with a turned spigot on its end and a cross hole
     near each end. Square, not round: hidden-line removal on a round bar's cross
@@ -2754,6 +2770,37 @@ class ChosenSheetTests(unittest.TestCase):
         _render_sheet(sheet, index=1, count=1, label="pinned")
         self.assertEqual((sheet._size(), sheet._scale()), ("A3", 1.0))
 
+
+
+
+class WhiteSpaceTests(unittest.TestCase):
+    def test_an_enlarged_sheet_out_of_paper_draws_smaller_before_taking_a_bigger_sheet(self) -> None:
+        """A small part drawn enlarged that runs out of paper is drawn at the next
+        scale down on its own sheet, down to 1:1, not at the same scale on a sheet
+        twice the size that it then leaves mostly empty."""
+        from unittest import mock
+
+        from build123d import Align, Box, Cylinder, Pos
+
+        import cadgen._internal.drawing_render as render
+        from cadgen._internal.drawing_sheet import _OffFrame
+        from cadgen.eng_drawing import Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        block = Box(24, 16, 6, align=up) - Pos(-7, 0, 0) * Cylinder(2, 6, align=up) - Pos(7, 0, 0) * Cylinder(2, 6, align=up)
+        sheet = Sheet(size=None, scale=None)
+        top, _front, _right = sheet.three_views(block)
+        top.hole_table()
+        real = render._place_hole_tables
+
+        def tables(sheet, *args):
+            if sheet._scale() > 1:
+                raise _OffFrame("no room for the table", None)
+            return real(sheet, *args)
+
+        with mock.patch.object(render, "_place_hole_tables", tables):
+            render._render_sheet(sheet, index=1, count=1, label="small")
+        self.assertEqual((sheet._size(), sheet._scale()), ("A4", 1.0))
 
 class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_tags_each_hole_and_states_where_and_what(self) -> None:

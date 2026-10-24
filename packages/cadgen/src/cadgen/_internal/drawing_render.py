@@ -152,9 +152,10 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     A sheet that leaves its size or scale to itself and runs out of paper -- its
     views off the frame, no free paper for a detail, a table or balloons -- is
     drawn again rather than refused, those being the sheet's choices, not the
-    author's: on the next size up if it chooses its size, at the next standard
-    scale down if it chooses its scale. Only the drawing that succeeds reports
-    anything.
+    author's. A part drawn enlarged is drawn smaller on the same sheet first, down
+    to 1:1; then the sheet takes the next size up if it chooses its size, or the
+    next standard scale down if it chooses its scale. Only the drawing that
+    succeeds reports anything.
     """
     if sheet._item is not None:
         _refresh_from_item(sheet)
@@ -172,6 +173,13 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 raise
             tried.add(attempt)
             index_now = _SIZES_SMALLEST_FIRST.index(attempt[0])
+            if sheet.scale is None and attempt[1] > 1.0 + 1e-9:
+                # Enlarged and out of paper: a smaller scale on this sheet, before a
+                # larger sheet that would leave most of itself empty.
+                ceiling = max(1.0, _next_smaller(attempt[1]) or 1.0)
+                if sheet.size is None:
+                    floor = index_now
+                continue
             if sheet.size is None and index_now < len(_SIZES_CHOSEN) - 1:
                 # A larger sheet is for room, not for a larger scale.
                 floor = index_now + 1
