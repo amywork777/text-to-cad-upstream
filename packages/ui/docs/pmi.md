@@ -171,18 +171,43 @@ document says it (a label, a position's zone, round or not):
 - **Move**: a drag of the picked label, on the plane facing the view through where it stood. It
   stands where it was let go, ringed, until the change goes; the request sets only `presentation`.
   **Pin placement** writes an annotation the code never placed where it is drawn now.
-- **Edit**: a dimension's tolerance (`±0.1`, `+0.1/-0.05`, or nothing for none), a geometric
-  tolerance's value and a position's datums, committed as the section's fields are. The label
-  keeps saying what the document says until the code does.
+- **Edit**: a dimension's tolerance (`±0.1`, `+0.1/-0.05`, its limits `9.8–10.2`, or nothing
+  for none), a geometric tolerance's value and a position's datums, committed as the section's
+  fields are. Limits are two unsigned sizes, the least first, between an en dash (the field's own
+  text for them, so a limits dimension's field reads back as its limits), a hyphen or "to"
+  (`10.00-10.05`, `10.00 to 10.05`: `pmi.limits(10, 10.05)`); a signed or slashed pair stays
+  deviations (`+0.1/-0.05`, `0.1 -0.05`). The label keeps saying what the document says until the
+  code does.
 - **New**: from a face's menu ("Add datum", "Add flatness"... whatever it and the faces picked with
   it can carry, which picks them and opens the PMI section on the form), or the section's New, of
   the faces Select has picked: one of the supported subset — a datum on one flat or round face, a
   flatness on one flat face, a distance between two parallel ones, a basic dimension between two
-  of flat faces and holes, all parallel, a diameter or a position on a round one —
+  of flat faces and holes, all parallel, a diameter or a position on a round one, a **surface
+  profile** on one face or several of one part, of any kind (`pmi.profile`, its datums its
+  part's, none to three) —
   with an id and a letter its part has none of, its references the faces' canonical refs, its
   datums its part's, and its values given (a geometric tolerance's value required; a dimension's
   tolerance only if given). A kind the pick cannot make is off in the menu, saying what it needs.
   Until it is built it is called by its id ("Add flatness"), a datum by its letter ("Add datum B").
+  After a rule, what is of the faces' part, or, with nothing picked, of the document's one part:
+  - **Note**: a flag note on the faces picked, a general note where none are (`pmi.note`). Its
+    words are typed, or one of its part's notes library entries picked by its name (**Library**);
+    nothing starts them, cadgen ships none. A library entry's request asks the agent to write that
+    entry of the dict the call's `library=` is given, by its name, the call carrying its words (the
+    page knows the entry, not what the model's module calls the dict). A face's menu offers it as
+    "Add note", a flag note.
+  - **General profile**: no face to pick (`pmi.general_profile`, its faces each build's), its value
+    and its datums given; offered while its part has none, built or asked for ("Its part has one").
+  - **View from here**: the view the viewport shows now, as a named view of the part
+    (`pmi.view`), seen from the first occurrence of the part that is shown and taken back through
+    its placement into the part's frame, as `pmiViews.js` places a view (`pmiViewFromHere`): the
+    camera as `pmi.camera(direction, up)`, `direction` from the target toward the eye (as the
+    stills' presets), `up` the screen's; the Clip, while it is on, as `pmi.section(axis, at,
+    invert=True)` where it keeps the upper side; `shows` the part's annotations drawn now, by id.
+    Its name is fresh among its part's views ("view", "view-2"...) and the person's to change. Where
+    the placement turns the Clip's axis off the part's axes it is refused, saying "Its section is
+    not on this placement's axes" (it is no section of the part, nor made one along another axis);
+    it is not offered while the parts are moved. Called by its name ("Add view").
 
 The call names its references as this build resolves them (canonical refs, which name the same
 elements however the code wrote them) and asks the agent to keep the code's own. A STEP is not made
@@ -236,8 +261,9 @@ dimension is. What interoperability is tested with is the exported STEP itself.
   is drawn where the document places it.
 - Only the supported subset is drawn: distance (basic or not, its tolerance or its limits),
   diameter, datum, flatness, position, surface profile, the general profile (said, not drawn) and
-  notes; New makes distances, diameters, datums, flatness and positions (the rest are the code's
-  to write).
+  notes; New makes distances, diameters, datums, flatness, positions, surface profiles, notes, a
+  general profile and views from here (the rest are the code's to write: a note on annotations, a
+  view's own placements or label, a preset's name for its camera).
 - A view's projection is the person's (the Projection menu), not the view's; its section is cut
   only along a world axis.
 - A moved label returns to the document's placement if its change is dropped or sent before the

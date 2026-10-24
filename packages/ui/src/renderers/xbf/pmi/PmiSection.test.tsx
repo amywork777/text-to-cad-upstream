@@ -3,14 +3,29 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PmiSection from '../../../../dist/renderers/xbf/pmi/PmiSection.js';
 import { useXbfPmi } from '../../../../dist/renderers/xbf/pmi/useXbfPmi.js';
 import { usePmiViewApplied } from '../../../../dist/renderers/xbf/pmi/usePmiView.js';
 import { presentXbfTree } from '../../../../dist/renderers/xbf/xbfTree.js';
 import { createViewSettingsStore } from '../../../../dist/renderers/kit/view-settings/viewSettingsStore.js';
+import FileSidebar from '../../../../dist/renderers/kit/tools/FileSidebar.js';
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+const restores: (() => void)[] = [];
+function override(target: object, key: string, descriptor: PropertyDescriptor) {
+  const previous = Object.getOwnPropertyDescriptor(target, key);
+  Object.defineProperty(target, key, { configurable: true, ...descriptor });
+  restores.push(() => previous ? Object.defineProperty(target, key, previous) : delete (target as any)[key]);
+}
+beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  // A menu's and a select's content, which jsdom cannot lay out or point at.
+  override(Element.prototype, 'scrollIntoView', { value() {} });
+  for (const name of ['setPointerCapture', 'releasePointerCapture']) override(Element.prototype, name, { value() {} });
+  override(Element.prototype, 'hasPointerCapture', { value: () => false });
+});
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); while (restores.length) restores.pop()!(); });
 const section = (overrides: Record<string, unknown>) => ({ changes: [], pending: [], hiddenKeys: [], constructions: new Map(), editable: false,
   selectedEntry: null, selectedKey: '', hover: () => {}, select: () => {}, toggleHidden: () => {}, edit: () => {}, focusDatum: () => {}, ...overrides });
 const datum = (part: number, letter: string, face: string) => ({ key: `${part}:${letter}`, id: letter, kind: 'datum', part, status: 'ok', supported: true, warnings: [],
@@ -95,20 +110,23 @@ const PLATE = { min: [-50, -30, -5], max: [50, 30, 5] };
 const EIGHTH_Z = [Math.SQRT1_2, Math.SQRT1_2, 0, 0, -Math.SQRT1_2, Math.SQRT1_2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const BEFORE = { position: [100, -100, 100], target: [0, 0, 0], up: [0, 0, 1] };
 let live: any;
-function Mbd({ structure, viewer, store, fit }: any) {
+const NOWHERE = () => ({ camera: null, clip: null });
+function Mbd({ structure, viewer, store, fit, picked = [], here = NOWHERE }: any) {
   const scene = React.useMemo(() => ({ structure, elementGeometry: () => null, describeElement: () => null, selectionBounds: () => PLATE }), [structure]);
   const tree = React.useMemo(() => presentXbfTree(structure), [structure]);
   const [selectedKey, select] = React.useState('');
-  const pmi = useXbfPmi({ scene, tree, bounds: PLATE, moving: false, editable: true, selectedKey, onSelect: select });
+  const pmi = useXbfPmi({ scene, tree, bounds: PLATE, moving: false, editable: true, selectedKey, onSelect: select, here });
   usePmiViewApplied({ applied: pmi.view, viewer: () => viewer, store, fit });
   live = pmi;
-  return <PmiSection pmi={pmi} picked={[]} moving={false} />;
+  return <PmiSection pmi={pmi} picked={picked} moving={false} />;
 }
-function openMbd(edit = (structure: any) => structure) {
+function openMbd(edit = (structure: any) => structure, { sidebar = false, ...props }: Record<string, unknown> = {}) {
   const viewer = { getPerspective: vi.fn(() => BEFORE), setPerspective: vi.fn(() => true) };
   const store = createViewSettingsStore({ mode: 'solid' });
   const fit = vi.fn((at: any) => ({ position: at.direction.map((c: number) => c * 200), target: [0, 0, 0], up: at.up }));
-  render(<Mbd structure={edit(structuredClone(V4))} viewer={viewer} store={store} fit={fit} />);
+  const mbd = <Mbd structure={edit(structuredClone(V4))} viewer={viewer} store={store} fit={fit} {...props} />;
+  // In the file sidebar, as the renderer shows it: its head holds New.
+  render(sidebar ? <FileSidebar layout={{ panels: {}, collapsed: {} }} onLayoutChange={() => {}}>{mbd}</FileSidebar> : mbd);
   return { viewer, store, fit };
 }
 const drawnKeys = () => live.items.map((item: any) => item.key);
@@ -211,4 +229,113 @@ it('a flag note naming annotations alone is listed with its flag, drawn nowhere,
   expect(document.querySelector('[data-pmi-note="mask"] [data-pmi-visibility]')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Note 3: Mask these features before coating with primer', exact: true }));
   expect(live.highlight.selected).toEqual(['i0/face/7']);
+});
+
+// ---- New: what a model-based definition adds, each the call it asks the code for -------------------
+const V4_HOLE = 'plate/f:edit_plate.cut.1;M:edit_plate.body';
+const HOLE_FACE = { id: 'i0/face/7', part: 0, ref: V4_HOLE, surface: { type: 'cylinder', axis: [0, 0, 1], origin: [0, 0, 0], radius: 5 } };
+const ADD = `Add this PMI to the pmi.annotate(...) call of the model's part "plate" (from cadgen.engine import pmi)`;
+const requests = () => live.changeChips.map((chip: any) => chip.request);
+const form = () => document.querySelector<HTMLElement>('[data-pmi-new]')!;
+async function openNew(user: ReturnType<typeof userEvent.setup>, edit?: (structure: any) => any, props: Record<string, unknown> = {}) {
+  openMbd(edit, { sidebar: true, ...props });
+  await user.click(screen.getByRole('button', { name: 'PMI', exact: true }));
+}
+async function choose(user: ReturnType<typeof userEvent.setup>, kind: string) {
+  await user.click(screen.getByRole('button', { name: 'New PMI', exact: true }));
+  await user.click(document.querySelector<HTMLElement>(`[data-pmi-new-kind="${kind}"]`)!);
+  expect(form().getAttribute('data-pmi-new')).toBe(kind);
+}
+const add = (user: ReturnType<typeof userEvent.setup>) => user.click(within(form()).getByRole('button', { name: 'Add to Quick Edit' }));
+
+it('New offers, with nothing picked on a part of its own, a note and a view from here; a profile needs faces, and the part has its general profile', async () => {
+  const user = userEvent.setup();
+  await openNew(user);
+  await user.click(screen.getByRole('button', { name: 'New PMI', exact: true }));
+  const item = (kind: string) => document.querySelector(`[data-pmi-new-kind="${kind}"]`)!;
+  expect(['profile', 'note', 'general_profile', 'view'].map(kind => [item(kind).hasAttribute('data-disabled'), item(kind).textContent]))
+    .toEqual([[true, 'Surface profilePick faces of one part'], [false, 'Note'], [true, 'General profileIts part has one'], [false, 'View from here']]);
+});
+
+it('a surface profile on the faces picked, to its part\'s datums, and a general profile where its part has none', async () => {
+  const user = userEvent.setup();
+  await openNew(user, structure => ({ ...structure, pmi: structure.pmi.filter((item: any) => item.id !== 'general') }), { picked: [HOLE_FACE] });
+  await choose(user, 'profile');
+  // A value is the person's to give: until then, nothing to add.
+  expect((within(form()).getByRole('button', { name: 'Add to Quick Edit' }) as HTMLButtonElement).disabled).toBe(true);
+  await user.type(within(form()).getByRole('textbox', { name: 'Tolerance' }), '0.1{Enter}');
+  await user.click(within(form()).getByRole('button', { name: 'A', exact: true }));
+  await add(user);
+  await choose(user, 'general_profile');
+  await user.type(within(form()).getByRole('textbox', { name: 'Tolerance' }), '0.5{Enter}');
+  await add(user);
+  expect(requests()).toEqual([`${ADD}:\npmi.profile("profile", "${V4_HOLE}", 0.1, datums=["A"])`, `${ADD}:\npmi.general_profile("general", 0.5)`]);
+  // Asked for, the part has one.
+  await user.click(screen.getByRole('button', { name: 'New PMI', exact: true }));
+  expect(document.querySelector('[data-pmi-new-kind="general_profile"]')!.hasAttribute('data-disabled')).toBe(true);
+});
+
+it("a note's words come from its part's library, by name, and ask for that entry; typed, they are the person's own", async () => {
+  const user = userEvent.setup();
+  await openNew(user);
+  await choose(user, 'note');
+  expect(within(form()).getByText('A general note, on no face.')).toBeTruthy();
+  await user.click(within(form()).getByRole('combobox', { name: 'Notes library' }));
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['edges', 'primer-mask']);
+  await user.click(screen.getByRole('option', { name: 'primer-mask' }));
+  expect((within(form()).getByRole('textbox', { name: 'Note text' }) as HTMLInputElement).value).toBe('Mask these features before coating with primer');
+  await add(user);
+  await choose(user, 'note');
+  expect((within(form()).getByRole('button', { name: 'Add to Quick Edit' }) as HTMLButtonElement).disabled).toBe(true);
+  await user.type(within(form()).getByRole('textbox', { name: 'Note text' }), 'Deburr all holes{Enter}');
+  await add(user);
+  expect(requests()).toEqual([
+    `${ADD}, its text the project's notes library entry "primer-mask" (the dict given as library=), written as that entry rather than these words:\n`
+      + 'pmi.note("note", "Mask these features before coating with primer")',
+    `${ADD}:\npmi.note("note-2", "Deburr all holes")`]);
+});
+
+it('a view from here is the camera and the Clip now, in its part\'s frame, showing what is drawn; its name the person\'s to give', async () => {
+  const user = userEvent.setup();
+  let clip: any = { axis: 'y', at: 0, invert: true };
+  await openNew(user, undefined, { here: () => ({ camera: { position: [0, -170, 0], target: [0, 0, 0], up: [0, 0, 1] }, clip }) });
+  await choose(user, 'view');
+  const name = within(form()).getByRole('textbox', { name: 'View name' }) as HTMLInputElement;
+  expect(name.value).toBe('view');
+  await user.clear(name);
+  await user.type(name, 'front-cut{Enter}');
+  await add(user);
+  clip = null;
+  await choose(user, 'view');
+  await add(user);
+  const shows = 'shows=["A", "thickness", "hole-diameter", "hole-from-front", "hole-from-left", "top-flatness", "hole-position", "hole-profile", "mask"]';
+  expect(requests()).toEqual([
+    `${ADD}:\npmi.view("front-cut", camera=pmi.camera((0, -1, 0), (0, 0, 1)), ${shows}, section=pmi.section("y", 0, invert=True))`,
+    `${ADD}:\npmi.view("view", camera=pmi.camera((0, -1, 0), (0, 0, 1)), ${shows})`]);
+  expect(live.changeChips.map((chip: any) => chip.label)).toEqual(['Add front-cut', 'Add view']);
+});
+
+it("a view from here is refused where its part's placement turns the Clip off the part's axes", async () => {
+  const user = userEvent.setup();
+  await openNew(user, structure => ({ ...structure, instances: structure.instances.map((instance: any) => ({ ...instance, matrix: EIGHTH_Z })) }),
+    { here: () => ({ camera: { position: [0, -170, 0], target: [0, 0, 0], up: [0, 0, 1] }, clip: { axis: 'y', at: 0, invert: false } }) });
+  await choose(user, 'view');
+  expect(within(form()).getByText("Its section is not on this placement's axes")).toBeTruthy();
+  expect((within(form()).getByRole('button', { name: 'Add to Quick Edit' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("a limits dimension's tolerance field reads back as its limits, and limits typed are asked for as pmi.limits", async () => {
+  const user = userEvent.setup();
+  openMbd();
+  fireEvent.click(screen.getByRole('button', { name: '9.8–10.2', exact: true }));
+  const field = screen.getByRole('textbox', { name: 'Tolerance' }) as HTMLInputElement;
+  expect(field.value).toBe('9.8–10.2');
+  // Committed as it reads: nothing wrong, nothing asked.
+  fireEvent.focus(field);
+  fireEvent.blur(field);
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(live.changes).toEqual([]);
+  await user.clear(field);
+  await user.type(field, '9.9 to 10.2{Enter}');
+  expect(requests()).toEqual([expect.stringMatching(/^Change the PMI "thickness" .*: tolerance=pmi\.limits\(9\.9, 10\.2\)\. .*tolerance=pmi\.limits\(9\.9, 10\.2\)/s)]);
 });

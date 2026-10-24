@@ -6,16 +6,16 @@ import { xbfElementLabel } from "../xbfChips.jsx";
 import { newPmiName } from "./pmiCreate.js";
 import { PmiGlyph } from "./pmiGlyphs.jsx";
 import { createPmiRefResolver, pmiDrawnAt, pmiFeatureIds, resolvePmiEntryRefs } from "./pmiRefs.js";
-import { pmiViewAt, pmiViewPlacements, pmiViewShows } from "./pmiViews.js";
+import { pmiViewAt, pmiViewFromHere, pmiViewPlacements, pmiViewShows } from "./pmiViews.js";
 
 // An engine document's PMI in the viewer: what the document carries (`structure.pmi`), found on
 // the page, drawn and picked; its numbered notes, its parts' named views and what coverage found
 // (`readXbfPmi`); which of it the person has hidden (the file's view, `xbfViewSlices`), the view
 // picked and whether the faces no requirement is on are lit; and the changes asked for it -- a new
-// annotation, a value edited, a label moved -- each the `cadgen.engine.pmi` call it would make the
-// code say, which Quick Edit hands the agent (`changeChips`). The viewer writes nothing: the
-// model's code is the document's source, and a change reaches the view as the engine's next
-// version.
+// annotation or note, a view from where the viewport looks now, a value edited, a label moved --
+// each the `cadgen.engine.pmi` call it would make the code say, which Quick Edit hands the agent
+// (`changeChips`). The viewer writes nothing: the model's code is the document's source, and a
+// change reaches the view as the engine's next version.
 //
 // An annotation is known by its part and its id (`key`: an id is unique only on its part), a view
 // by its part and its name: the two may spell one key (a view "A", a datum A), so a view is never
@@ -26,6 +26,7 @@ import { pmiViewAt, pmiViewPlacements, pmiViewShows } from "./pmiViews.js";
 
 const EMPTY = Object.freeze([]);
 const NO_CHANGES = Object.freeze([]);
+const NOWHERE = () => ({ camera: null, clip: null });
 // A row's glyph: its kind's; a note's, read, a flag note's flag, a general note none (it is words alone).
 const glyphOf = entry => (entry.kind === "datum" ? "datum" : entry.kind === "dimension" ? (entry.dimension?.type === "diameter" ? "diameter" : "dimension")
   : entry.kind === "geometric_tolerance" ? entry.tolerance?.characteristic || "frame"
@@ -37,14 +38,17 @@ const callGlyph = call => (call.kind === "datum" ? "datum" : call.kind === "dime
 /**
  * @param {{ scene: object | null, tree: ReturnType<typeof import("../xbfTree.js").presentXbfTree>, bounds: { min: number[], max: number[] } | null,
  *   moving: boolean, editable: boolean, hiddenParts?: readonly string[], isolatedParts?: readonly string[],
- *   selectedKey: string, onSelect: (key: string) => void }} options
+ *   selectedKey: string, onSelect: (key: string) => void,
+ *   here?: () => { camera: { position: number[], target: number[], up: number[] } | null, clip: { axis: string, at: number, invert: boolean } | null } }} options
  *   `moving`: the parts stand elsewhere than built (Explode, a pose): a tolerance is of the part as
  *   made, so its callouts are not drawn meanwhile. `editable`: the document is made from code the
  *   agent can change (an `.xbf`), so changes can be asked for. `hiddenParts`, `isolatedParts`: the
  *   instances hidden and isolated (`i3`), as the scene takes them. `selectedKey`, `onSelect`: the
- *   PMI picked (its `key`), the renderer's (its Escape and its picks clear it).
+ *   PMI picked (its `key`), the renderer's (its Escape and its picks clear it). `here`: the
+ *   viewport's camera now and the Clip's plane (null while it is off), read when a view is made
+ *   from them ("View from here").
  */
-export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts = EMPTY, isolatedParts = EMPTY, selectedKey, onSelect }) {
+export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts = EMPTY, isolatedParts = EMPTY, selectedKey, onSelect, here = NOWHERE }) {
   const structure = scene?.structure || null;
   const instances = structure?.instances || EMPTY;
   const served = useMemo(() => readXbfPmi(structure), [structure]);
@@ -162,12 +166,25 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
     const settled = change => pmiChangeSettled(change, entries, served.views);
     setChanges(now => (now.some(settled) ? now.filter(change => !settled(change)) : now));
   }, [entries, served]);
-  // The new annotations asked for (each its part and its call), whose ids and letters a next one on that part must not take.
+  // The new annotations and views asked for (each its part and its call), whose ids, letters and
+  // names a next one on that part must not take.
   const pending = useMemo(() => changes.filter(change => change.kind === "add").map(change => ({ part: change.part, call: change.call })), [changes]);
+  // A view is known by its name, apart from the annotations' ids (a view "A" beside datum A).
   const add = useCallback((part, call) => setChanges((now) => {
-    const key = `add:${pmiKey(part, call.id)}`;
-    return [...now.filter(change => change.key !== key), { key, kind: "add", part, partName: partNameOf(part), id: call.id, call }];
+    const id = call.kind === "view" ? call.name : call.id;
+    const key = call.kind === "view" ? `add:view:${pmiKey(part, id)}` : `add:${pmiKey(part, id)}`;
+    return [...now.filter(change => change.key !== key), { key, kind: "add", part, partName: partNameOf(part), id, call }];
   }), [partNameOf]);
+  // The parts the document places (the structure's prototypes): the one a pick of nothing is of,
+  // where there is one.
+  const parts = useMemo(() => unique(instances.map(instance => instance.prototype)).filter(Number.isInteger), [instances]);
+  // "View from here": the viewport's camera and Clip now, as a view of `part` seen from its first
+  // occurrence shown (`pmiViewFromHere`), showing what of the part is drawn now.
+  const viewFromHere = useCallback((part, name) => {
+    const { camera, clip } = here();
+    const shows = items.filter(item => item.key === pmiKey(part, item.id)).map(item => item.id);
+    return pmiViewFromHere({ part, name, camera, clip, instances, shown: shownParts, shows });
+  }, [here, items, instances, shownParts]);
   const remove = useCallback(key => setChanges(now => now.filter(change => change.key !== key)), []);
   const clearChanges = useCallback(() => setChanges(now => (now.length ? NO_CHANGES : now)), []);
   // Its placement's frame where it is drawn: a placement is written back in its part's frame.
@@ -205,6 +222,7 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
     hiddenKeys, off, setOff, restore,
     toggleHidden: key => setHiddenKeys(now => (now.includes(key) ? now.filter(item => item !== key) : [...now, key])),
     slice,
-    editable, placeable, changes, pending, edit, add, remove, clearChanges, move, pin, changeChips
+    editable, placeable, changes, pending, edit, add, remove, clearChanges, move, pin, changeChips,
+    parts, library: served.library, viewFromHere
   };
 }

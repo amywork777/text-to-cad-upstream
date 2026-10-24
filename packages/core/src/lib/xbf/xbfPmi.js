@@ -434,8 +434,9 @@ function pmiViewText(call) {
  * - `{ kind: "geometric_tolerance", characteristic: "surface_profile", general: true, id, value, datums? }`:
  *   `pmi.general_profile(id, value, datums=[...])`, on no ref (its faces are each build's) and never
  *   placed (a presentation given it makes no call);
- * - `{ kind: "note", id, text, faces?, annotations? }`: `pmi.note(id, text, faces=[...], annotations=[...])`,
- *   a general note naming neither;
+ * - `{ kind: "note", id, text, faces?, annotations?, library? }`: `pmi.note(id, text, faces=[...], annotations=[...])`,
+ *   a general note naming neither; `library`, the name of the project's notes library entry its
+ *   text is, which the call writes as its words (a request asks for the entry, `pmiChangeRequest`);
  * - `{ kind: "view", name, camera, shows?, section?, place? }`: `pmi.view(name, camera="front", shows=[...],
  *   section=pmi.section(axis, at, invert=True), place={id: pmi.place(...)})`, its camera a preset's
  *   name or `{ direction, up }` (`pmi.camera(direction, up)`), its shows null for every one.
@@ -562,13 +563,19 @@ function pmiEditSettings(values) {
  * to do to the `pmi.annotate(...)` call of its part (`partName`, where the part has one), then the
  * call itself, exactly. `change`: a new annotation (`{ kind: "add", part, partName, id, call }`) or an
  * edit of one the document holds (`{ kind: "edit", part, partName, id, values, call, placementOnly }`:
- * what it sets, and the call it makes), `id` the author's. "" for a call that lacks what its kind needs.
+ * what it sets, and the call it makes), `id` the author's. A new note whose words are the project's
+ * notes library entry (`call.library`, its name) asks for that entry: the page knows its name and
+ * its words, not what the model's module calls the dict. "" for a call that lacks what its kind needs.
  */
 export function pmiChangeRequest(change) {
   const call = pmiCallText(change.call);
   if (!call) return "";
   const annotate = change.partName ? `the pmi.annotate(...) call of the model's part ${pyString(change.partName)}` : "the model's pmi.annotate(...) call";
-  if (change.kind === "add") return `Add this PMI to ${annotate} (from cadgen.engine import pmi):\n${call}`;
+  if (change.kind === "add") {
+    const library = change.call.kind === "note" && text(change.call.library)
+      ? `, its text the project's notes library entry ${pyString(change.call.library)} (the dict given as library=), written as that entry rather than these words` : "";
+    return `Add this PMI to ${annotate} (from cadgen.engine import pmi)${library}:\n${call}`;
+  }
   const what = change.placementOnly
     ? `Move the PMI "${change.id}" in ${annotate}, its placement only (what it says is unchanged)`
     : `Change the PMI "${change.id}" in ${annotate}`;

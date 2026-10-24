@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { viewFeaturesForKind } from "@text-to-cad/core/common/viewSettings.js";
 import { sceneFramingBounds } from "@text-to-cad/core/lib/viewer/sceneContract.js";
 import { boundsInUnits } from "@text-to-cad/core/lib/viewer/sceneUnits.js";
+import { clipAxisPosition, normalizeStepClipSettings } from "@text-to-cad/core/lib/viewer/clipPlane.js";
 import { fetchXbfPartGroups } from "@text-to-cad/core/lib/xbf/xbfDocument.js";
 import { parseXbfElementId } from "@text-to-cad/core/lib/xbf/xbfScene.js";
 import { isEngineRefFile } from "@text-to-cad/core/lib/cadRefs.js";
@@ -291,8 +292,16 @@ function XbfSurface({ view, data }) {
   // so only a document made from code (an .xbf) takes changes; a STEP's are read alone.
   const restBounds = scene ? sceneFramingBounds(scene) : null;
   const isolatedParts = useMemo(() => leavesOf(isolatedIds), [leavesOf, isolatedIds]);
+  // PMI's "View from here": the viewport's camera now, and the Clip's plane where it stands (its
+  // `at` in the file's unit, else the middle of the model at rest, as the Clip cuts), none while it is off.
+  const pmiHere = useCallback(() => {
+    const clip = normalizeStepClipSettings(store.getSnapshot().display.clip);
+    const box = scene ? boundsInUnits(sceneFramingBounds(scene), scene.units) : null;
+    return { camera: shellRef.current?.frame.viewerRef.current?.getPerspective?.() || null,
+      clip: clip.enabled ? { axis: clip.axis, at: clipAxisPosition(box, clip), invert: clip.invert } : null };
+  }, [store, scene]);
   const pmi = useXbfPmi({ scene, tree, bounds: restBounds, moving: explodeApplied || poseApplied, editable: isEngineRefFile(view.file.path),
-    hiddenParts: hiddenIds, isolatedParts, selectedKey: pmiPicked, onSelect: setPmiPicked });
+    hiddenParts: hiddenIds, isolatedParts, selectedKey: pmiPicked, onSelect: setPmiPicked, here: pmiHere });
   const pmiRef = useRef(pmi);
   pmiRef.current = pmi;
   pmiViewRef.current = { restore: pmi.restore, slice: pmi.slice };

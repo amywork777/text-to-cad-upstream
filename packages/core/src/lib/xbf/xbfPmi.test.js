@@ -468,3 +468,13 @@ test("each new kind's call is the engine's call exactly", () => {
   assert.equal(pmiCallText({ kind: "view", name: "v", camera: "front", place: { "hole-diameter": { anchor: [0, 0] } } }), null);
   assert.equal(pmiCallText({ kind: "geometric_tolerance", characteristic: "surface_profile", general: true, id: "g", value: 0.5, presentation: { anchor: [0, 0, 0], offset: [0, 0, 1] } }), null);
 });
+
+test("a note from the project's library asks for that entry by its name, its call carrying the words", () => {
+  const call = { kind: "note", id: "edges", text: "Break all sharp edges 0.2 max", faces: [], library: "edges" };
+  assert.equal(pmiChangeRequest({ kind: "add", part: 0, partName: "plate", id: "edges", call }),
+    `Add this PMI to the pmi.annotate(...) call of the model's part "plate" (from cadgen.engine import pmi), its text the project's notes library entry "edges" `
+    + `(the dict given as library=), written as that entry rather than these words:\npmi.note("edges", "Break all sharp edges 0.2 max")`);
+  // Typed, the words are the person's own.
+  assert.equal(pmiChangeRequest({ kind: "add", part: 0, partName: "plate", id: "edges", call: { ...call, library: null } }),
+    `Add this PMI to the pmi.annotate(...) call of the model's part "plate" (from cadgen.engine import pmi):\npmi.note("edges", "Break all sharp edges 0.2 max")`);
+});

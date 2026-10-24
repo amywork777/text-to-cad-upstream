@@ -7,8 +7,8 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { readXbfPmi } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
-import { pmiViewAt, pmiViewPlacements, pmiViewShows, pmiViewShowsText } from "./pmiViews.js";
+import { pmiCallText, readXbfPmi } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
+import { PMI_SECTION_OFF, pmiViewAt, pmiViewFromHere, pmiViewPlacements, pmiViewShows, pmiViewShowsText } from "./pmiViews.js";
 
 const FIXTURES = join(dirname(createRequire(import.meta.url).resolve("@text-to-cad/core/lib/xbf/xbfDocument.js")), "__fixtures__");
 const V4 = JSON.parse(readFileSync(join(FIXTURES, "pmi_plate", "v4", "structure.json"), "utf8"));
@@ -53,4 +53,37 @@ test("a view shows its part's ids, or every one of its part, at its own placemen
   assert.deepEqual([entry(0, "thickness"), entry(1, "thickness")].map(item => pmiViewShows(ISO, item)), [true, false]);
   assert.deepEqual([...pmiViewPlacements(SECTION)], [["0:hole-diameter", { anchor: [5, 0, 0], offset: [15, 0, 10] }]]);
   assert.deepEqual([pmiViewShowsText(SECTION), pmiViewShowsText(ISO), pmiViewShowsText({ ...SECTION, shows: ["mask"] })], ["4 annotations", "All", "1 annotation"]);
+});
+
+// The camera and the Clip as the viewport has them now (the scene's frame), and the view they make.
+const FRONT = { position: [0, -170, 0], target: [0, 30, 0], up: [0, 0, 1] };
+const fromHere = (options) => pmiViewFromHere({ part: 0, name: "view", camera: FRONT, clip: null, instances: instances(moved(0, 30, 0)), shows: ["hole-diameter"], ...options });
+
+test("the view from here is the camera and the Clip in its part's frame, through its first occurrence shown", () => {
+  // The plate placed 30 along y, seen from the front, cut across y where it stands, keeping the far side.
+  const { call } = fromHere({ clip: { axis: "y", at: 30, invert: true } });
+  assert.deepEqual(call, { kind: "view", name: "view", camera: { direction: [0, -1, 0], up: [0, 0, 1] }, shows: ["hole-diameter"],
+    section: { axis: "y", at: 0, invert: true } });
+  assert.equal(pmiCallText(call), `pmi.view("view", camera=pmi.camera((0, -1, 0), (0, 0, 1)), shows=["hole-diameter"], section=pmi.section("y", 0, invert=True))`);
+  // The Clip off: no section.
+  assert.equal(pmiCallText(fromHere({}).call), `pmi.view("view", camera=pmi.camera((0, -1, 0), (0, 0, 1)), shows=["hole-diameter"])`);
+  // Placed again where its part stands, it is the camera and the Clip it was made from.
+  const turned = fromHere({ camera: { position: [80, -40, 90], target: [0, 0, 0], up: [0, 0, 1] }, clip: { axis: "x", at: 4, invert: false },
+    instances: instances(moved(0, 0, 0), QUARTER_Z), shown: { hidden: ["i0"] } }).call;
+  assert.equal(turned.section.axis, "y", "the scene's x is the turned part's -y");
+  const back = pmiViewAt({ supported: true, part: 0, camera: turned.camera, section: turned.section }, instances(moved(0, 0, 0), QUARTER_Z), { hidden: ["i0"] });
+  near(back.direction, [80, -40, 90].map(value => value / Math.hypot(80, -40, 90)), "direction");
+  assert.deepEqual(back.section, { axis: "x", at: 4, invert: false });
+  // Its up is the screen's: square to where it looks, whatever up the camera turns about.
+  assert.ok(Math.abs(turned.camera.up.reduce((sum, value, axis) => sum + value * turned.camera.direction[axis], 0)) < 1e-9);
+});
+
+test("a view from here is refused where its part's placement turns the Clip off the part's axes, or its part is not shown", () => {
+  assert.deepEqual(fromHere({ clip: { axis: "y", at: 0, invert: false }, instances: instances(EIGHTH_Z) }), { problem: PMI_SECTION_OFF });
+  assert.equal(PMI_SECTION_OFF, "Its section is not on this placement's axes");
+  // Uncut, the same placement makes one.
+  assert.ok(fromHere({ instances: instances(EIGHTH_Z) }).call);
+  assert.deepEqual(fromHere({ shown: { hidden: ["i0"] } }), { problem: "Its part is not shown" });
+  assert.deepEqual(fromHere({ camera: null }), { problem: "No camera to view from" });
+  assert.deepEqual(fromHere({ camera: { position: [0, 0, 100], target: [0, 0, 0], up: [0, 0, 1] } }), { problem: "The camera's up is along its direction" });
 });

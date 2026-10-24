@@ -1,5 +1,6 @@
 import { pmiKey } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
 import { placeXbfDirection, placeXbfPoint } from "@text-to-cad/core/lib/xbf/xbfEntities.js";
+import { invert } from "@text-to-cad/core/lib/xbf/xbfKinematics.js";
 import { pmiShownOccurrence } from "./pmiRefs.js";
 
 // A part's named view (`readXbfPmi`'s `views`) where the part stands: its camera and its section
@@ -8,6 +9,9 @@ import { pmiShownOccurrence } from "./pmiRefs.js";
 // section is the Clip's own shape (one plane square to an axis, `{ axis, at, invert }`), so it is
 // cut only where the placement keeps its axis a world axis. Turned off one (a part placed at an
 // angle in an assembly), it is not cut along another, nearest axis: the view says it cannot be.
+// A view made from the viewport ("View from here") is the same placement undone: the camera and
+// the Clip taken back into the part's frame through that occurrence, refused where its placement
+// turns the Clip's axis off the part's.
 
 const AXES = Object.freeze(["x", "y", "z"]);
 const IDENTITY = Object.freeze([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -15,12 +19,20 @@ const IDENTITY = Object.freeze([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
 const ON_AXIS = 1e-9;
 // A coordinate free of the float noise a placement leaves (and of a negative zero).
 const clean = value => Number(value.toPrecision(12)) + 0;
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const unit = (v) => {
+  const length = Math.hypot(...v);
+  return length > 1e-12 ? v.map(value => value / length) : null;
+};
+
+/** Why a section cannot be cut where its part stands, or made from the Clip there: one sentence, the row's and the form's. */
+export const PMI_SECTION_OFF = "Its section is not on this placement's axes";
 
 /**
  * A view's section (`{ axis, at, invert }`, its part's frame) where `matrix` places the part (4 x 4,
  * column-major): the Clip's settings in the scene's, or null where the placement turns its axis off
  * every world axis. Its plane keeps the side it kept: turned to point down a world axis, its
- * `invert` flips.
+ * `invert` flips. The inverse placement takes the Clip back into the part's frame the same way.
  */
 function placedSection(section, matrix) {
   const index = AXES.indexOf(section.axis);
@@ -55,6 +67,38 @@ export function pmiViewAt(view, instances, shown = {}) {
   const section = view.section ? placedSection(view.section, matrix) : null;
   return { instance, direction: placeXbfDirection(matrix, view.camera.direction), up: placeXbfDirection(matrix, view.camera.up),
     section, sectionOff: Boolean(view.section) && !section };
+}
+
+/**
+ * The view the viewport shows now, as its part's `pmi.view` call (`pmiCallText`'s input): seen
+ * from the first occurrence of `part` that is shown, its camera the viewport's taken into the
+ * part's frame through that occurrence's placement -- `direction` from the target toward the eye,
+ * as a preset's, and `up` the screen's (the camera's up made square to it) -- and its section the
+ * Clip's (`clip`, its settings with `at` where the plane stands, null while it is off), taken there
+ * too. Refused (`problem`) where that placement turns the Clip's axis off the part's axes (it is no
+ * section of the part, and is not made one along another axis), where no occurrence of the part is
+ * shown, or where there is no camera to look from.
+ *
+ * @param {{ part: number, name: string, camera: { position: number[], target: number[], up: number[] } | null,
+ *   clip: { axis: string, at: number, invert: boolean } | null, instances: readonly object[],
+ *   shown?: { hidden?: readonly string[], isolated?: readonly string[] }, shows: string[] }} options
+ *   `shows`: the ids of the part's annotations and notes drawn now.
+ * @returns {{ call: { kind: "view", name: string, camera: { direction: number[], up: number[] }, shows: string[],
+ *   section: { axis: string, at: number, invert: boolean } | null } } | { problem: string }}
+ */
+export function pmiViewFromHere({ part, name, camera, clip, instances, shown = {}, shows }) {
+  const toEye = camera ? unit(camera.position.map((value, axis) => value - camera.target[axis])) : null;
+  if (!toEye) return { problem: "No camera to view from" };
+  const instance = pmiShownOccurrence(part, instances, shown);
+  if (instance === undefined) return { problem: "Its part is not shown" };
+  const toPart = invert(instances[instance]?.matrix || IDENTITY);
+  // The screen's up: the camera's, less what of it runs along where it looks.
+  const up = unit(camera.up.map((value, axis) => value - dot(camera.up, toEye) * toEye[axis]));
+  if (!up) return { problem: "The camera's up is along its direction" };
+  const section = clip ? placedSection(clip, toPart) : null;
+  if (clip && !section) return { problem: PMI_SECTION_OFF };
+  const inPart = vector => placeXbfDirection(toPart, vector).map(clean);
+  return { call: { kind: "view", name, camera: { direction: inPart(toEye), up: inPart(up) }, shows: [...shows], section } };
 }
 
 /** Whether a view shows an annotation: one of its part it names, or any of its part where it names none. */

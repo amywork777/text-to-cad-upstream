@@ -122,11 +122,12 @@ export function viewportMenuEntries(menu, options) {
 
 /**
  * What a face's menu ends in where PMI can be asked for: an "Add datum", "Add distance"... for each
- * kind the faces picked can carry (`pmi/pmiCreate.js`'s options), after a separator. `actions.onAdd`
- * takes the option.
+ * kind the faces picked can carry (`pmi/pmiCreate.js`'s options that stand on them, `onFaces`: a
+ * note is a flag note on them; the general profile and a view, of the part, are New's), after a
+ * separator. `actions.onAdd` takes the option.
  */
 export function pmiMenuEntries(options, { actions = {} } = {}) {
-  return options.filter(option => option.available).map((option, index) =>
+  return options.filter(option => option.available && option.onFaces).map((option, index) =>
     entry(`pmi-${option.kind}`, `Add ${option.label.toLowerCase()}`, false, () => actions.onAdd?.(option), index === 0));
 }
 

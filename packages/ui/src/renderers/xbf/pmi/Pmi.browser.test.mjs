@@ -69,11 +69,20 @@ async function openBracket(t, options = { edit: withPmi }) {
   };
   const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const center = async locator => { const box = await locator.boundingBox(); return { x: box.x + box.width / 2, y: box.y + box.height / 2, box }; };
-  return { ...harness, ...opened, loaded, label, drawn, labels, view, capture, settle, center, controller };
+  // What Quick Edit hands the agent: its prompt, copied.
+  const prompt = async () => {
+    const count = await page.evaluate(() => window.cadHarness.promptMessages.length);
+    await pane.getByRole('button', { name: 'Copy Prompt', exact: true }).click();
+    await page.waitForFunction(seen => window.cadHarness.promptMessages.length > seen || document.querySelector('[data-quick-edit-box] [role=alert]'), count);
+    const alert = await pane.locator('[data-quick-edit-box] [role=alert]').allInnerTexts();
+    assert.deepEqual(alert, [], 'the prompt was copied');
+    return page.evaluate(() => window.cadHarness.promptMessages.at(-1));
+  };
+  return { ...harness, ...opened, loaded, label, drawn, labels, view, capture, settle, center, controller, prompt };
 }
 
 test('PMI is drawn on the model and stays legible as the camera moves; a pick lights its face; it hides, and stays hidden across a reopen; a named view applies and leaves', async (t) => {
-  const { page, pane, errors, label, drawn, labels, view, capture, settle, center, loaded, update, controller } = await openBracket(t);
+  const { page, pane, errors, label, drawn, labels, view, capture, settle, center, loaded, update, controller, prompt } = await openBracket(t);
   await view({ position: [60, -80, 70], target: [0, 0, 2], up: [0, 0, 1], orthographicHalfHeight: 30 });
   await drawn();
   assert.deepEqual(await labels(), ['A', 'thickness', 'top-flat']);
@@ -163,6 +172,16 @@ test('PMI is drawn on the model and stays legible as the camera moves; a pick li
   assert.ok(Math.hypot(toEye[0], toEye[1] + 1, toEye[2]) < 1e-6, `seen from the front: ${toEye}`);
   assert.ok(Math.hypot(seen.camera.target[0], seen.camera.target[1] - 30, seen.camera.target[2]) < 1e-6, `at the part where it stands: ${seen.camera.target}`);
   await drawn();
+  // Viewed from here, it is A-A again: the viewport's camera and the Clip taken back into the
+  // part's frame (the cut at y 30 here is y 0 there), showing the four it draws.
+  await pane.getByRole('button', { name: 'New PMI', exact: true }).click();
+  await page.locator('[data-pmi-new-kind="view"]').click();
+  await pane.locator('[data-pmi-new="view"] [data-pmi-add]').click();
+  await pane.getByRole('button', { name: 'Add view', exact: true }).waitFor();
+  const asked = await prompt();
+  assert.ok(asked.includes('\npmi.view("view", camera=pmi.camera((0, -1, 0), (0, 0, 1)), shows=["hole-diameter", "hole-position", "hole-profile", "mask"], '
+    + 'section=pmi.section("y", 0, invert=True))\n'), asked);
+  await pane.getByRole('button', { name: 'Close Quick Edit', exact: true }).click();
   await section.click();
   await page.waitForFunction(count => document.querySelectorAll('[data-pmi-label]').length === count && window.__cadStage().cut === 0, every.length);
   const left = await read();
@@ -174,17 +193,9 @@ test('PMI is drawn on the model and stays legible as the camera moves; a pick li
 });
 
 test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild that loses a reference says so where the code placed it', async (t) => {
-  const { page, pane, errors, label, drawn, view, settle, center, update } = await openBracket(t);
+  const { page, pane, errors, label, drawn, view, settle, center, update, prompt } = await openBracket(t);
   await view({ position: [60, -80, 70], target: [0, 0, 2], up: [0, 0, 1], orthographicHalfHeight: 30 });
   await drawn();
-  const prompt = async () => {
-    const count = await page.evaluate(() => window.cadHarness.promptMessages.length);
-    await pane.getByRole('button', { name: 'Copy Prompt', exact: true }).click();
-    await page.waitForFunction(seen => window.cadHarness.promptMessages.length > seen || document.querySelector('[data-quick-edit-box] [role=alert]'), count);
-    const alert = await pane.locator('[data-quick-edit-box] [role=alert]').allInnerTexts();
-    assert.deepEqual(alert, [], 'the prompt was copied');
-    return page.evaluate(() => window.cadHarness.promptMessages.at(-1));
-  };
 
   // A drag of a label not picked moves nothing; picked, it moves, and Quick Edit asks for the placement.
   const at = await center(label('top-flat'));
@@ -327,7 +338,7 @@ test('a file with no PMI has no tile for it, and a face\'s menu starts the first
   await page.mouse.click(top.x, top.y, { button: 'right' });
   const menu = page.getByRole('menu');
   await menu.waitFor();
-  assert.deepEqual(await menu.getByRole('menuitem').filter({ hasText: /^Add / }).allInnerTexts(), ['Add datum', 'Add flatness']);
+  assert.deepEqual(await menu.getByRole('menuitem').filter({ hasText: /^Add / }).allInnerTexts(), ['Add datum', 'Add flatness', 'Add surface profile', 'Add note']);
   await menu.getByRole('menuitem', { name: 'Add flatness', exact: true }).click();
   const form = pane.locator('[data-pmi-new="flatness"]');
   await form.waitFor();
