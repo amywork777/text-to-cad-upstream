@@ -88,6 +88,8 @@ _LABEL_ROOM = _LABEL_GAP + _LABEL_HEIGHT + 2.0
 _CALLOUT_CLEAR = 10.0
 _CALLOUT_LANDING = 6.0
 _CALLOUT_GAP = 2.0
+#: Callouts landing on one side stand this many text heights apart.
+_CALLOUT_STACK = 2.2
 #: The text height a sheet draws at unless told otherwise.
 _DEFAULT_TEXT = 3.5
 #: The smallest text a print stays legible at. Below it, text is cut, not shrunk.

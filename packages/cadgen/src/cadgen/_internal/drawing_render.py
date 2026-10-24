@@ -23,17 +23,17 @@ from cadgen._internal.drawing_annotation import (
 )
 from cadgen._internal.drawing_assembly import _draw_balloons, _refresh_from_item, _refuse_balloons_on
 from cadgen._internal.drawing_base import (
-    _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _CENTRE_OVERSHOOT, _DIM_ROW, _HATCH_SCALE, _LABEL_GAP,
-    _LABEL_HEIGHT, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE, SHEET_SIZES, _STANDARD_SCALES,
-    _SYMBOL_ADVANCE, _TITLE_H, _TITLE_W, _cross, _dimstyle, _dirs, _dot, _draw_dimension_symbols, _draw_symbol,
-    _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs, _scale_label, _shown, _spans, _text_box,
-    _text_width, _where,
+    _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _CALLOUT_STACK, _CENTRE_OVERSHOOT, _DIM_ROW, _HATCH_SCALE,
+    _LABEL_GAP, _LABEL_HEIGHT, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE, SHEET_SIZES, _SIDES,
+    _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_H, _TITLE_W, _cross, _dimstyle, _dirs, _dot, _draw_dimension_symbols,
+    _draw_symbol, _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs, _scale_label, _shown, _spans,
+    _text_box, _text_width, _where,
 )
 from cadgen._internal.drawing_report import _Facts, _member_key, _merge_facts
 from cadgen._internal.drawing_sheet import (
     _AIR, _LARGEST_SCALE, _SIZES_CHOSEN, _SIZES_SMALLEST_FIRST, _OffFrame, _arrange_three_views, _assert_views_fit,
     _choose_for_breaks, _choose_size_and_scale, _draw_furniture, _furniture, _list_height, _next_smaller,
-    _place_box, _place_detail, _require_settled, _settle, _within,
+    _notes_box, _place_box, _place_detail, _require_settled, _settle, _within,
 )
 from cadgen._internal.drawing_views import (
     _BREAK_GAP, _PLANE_SHOWN_ON, _Projection, _axis_lines, _bbox_bounds, _break_cuts, _break_hides, _break_shift,
@@ -122,6 +122,27 @@ def _check_clear_of_parts_list(sheet: Sheet, placed: list, index: int) -> None:
             )
 
 
+#: How many landings further out a callout past the rows may stand to clear text.
+_CALLOUT_STEPS = 4
+
+
+def _runs_through(polyline, boxes) -> bool:
+    """Whether a polyline runs through any of the boxes ``(x0, x1, y0, y1)``."""
+    from shapely.geometry import LineString, box
+
+    path = LineString(polyline)
+    return any(path.intersects(box(b[0], b[2], b[1], b[3])) for b in boxes)
+
+
+def _crosses_any(polyline, others) -> bool:
+    """Whether a polyline crosses any of the others (touching an end is not
+    crossing)."""
+    from shapely.geometry import LineString
+
+    path = LineString(polyline)
+    return any(path.crosses(LineString(other)) for other in others)
+
+
 def _draw_aux_arrows(msp, sheet: Sheet, drawn: dict, text, th: float) -> None:
     """On each view an auxiliary view is projected from, an arrow pointing at the
     face the way the auxiliary view looks, and its letter."""
@@ -177,8 +198,7 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 # Enlarged and out of paper: a smaller scale on this sheet, before a
                 # larger sheet that would leave most of itself empty.
                 ceiling = max(1.0, _next_smaller(attempt[1]) or 1.0)
-                if sheet.size is None:
-                    floor = index_now
+                floor = 0  # the smaller drawing may fit a smaller sheet
                 continue
             if sheet.size is None and index_now < len(_SIZES_CHOSEN) - 1:
                 # A larger sheet is for room, not for a larger scale.
@@ -222,7 +242,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         aci = 7 if sheet.ink == "mono" and name != "HIDDEN" else color
         doc.layers.add(name, color=aci, linetype=linetype, lineweight=int(round(weight * 100)))
     dimstyle = _dimstyle(doc, sheet.text_height)
-    W, th = sheet.width, sheet.text_height
+    W, H, th = sheet.width, sheet.height, sheet.text_height
 
     def text(value, x, y, height, align, layer="TITLE", fit: float | None = None):
         # ``fit`` is the width the text may occupy; longer text is set smaller
@@ -271,6 +291,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     # on another's. Nothing here moves them, because which of the two should give
     # way is the author's call; it says so instead of leaving it to the print.
     claimed: list[tuple[str, tuple[float, float, float, float]]] = []
+    #: Every dimension line drawn, as its two ends on the sheet, and every callout's
+    #: leader, as its points: a new leader may cross neither.
+    dimension_lines: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    leaders: list[tuple[tuple[float, float], ...]] = []
 
     def claim_rendered(dimension) -> None:
         """A dimension's VALUE lives as MTEXT inside its rendered block, not as
@@ -570,16 +594,21 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     _check_clear_of_parts_list(sheet, placed, index)
     m = _MARGIN
 
+    # The sheet's own furniture as (x0, x1, y0, y1), and the notes beside it: no
+    # annotation lands on them.
+    furnished = [*furniture, *_notes_box(sheet)]
+
     def blocked(x0, x1, y0, y1, own_box):
-        """Whether a landing area [x0,x1]x[y0,y1] runs off the frame or into another view."""
-        if min(x0, x1) < m + 2 or max(x0, x1) > W - m - 2:
+        """Whether a landing area [x0,x1]x[y0,y1] runs off the frame, into another view,
+        or onto the title block, the parts list, the revision table or the notes."""
+        if min(x0, x1) < m + 2 or max(x0, x1) > W - m - 2 or min(y0, y1) < m + 2 or max(y0, y1) > H - m - 2:
             return True
         for box in boxes:
             if box is own_box:
                 continue
             if max(x0, x1) >= box[0] - 4 and min(x0, x1) <= box[1] + 4 and y1 >= box[2] - 4 and y0 <= box[3] + 4:
                 return True
-        return False
+        return any(max(x0, x1) >= f[0] and min(x0, x1) <= f[1] and y1 >= f[2] and y0 <= f[3] for f in furnished)
 
     drawn: dict[int, tuple] = {}
     # Items ballooned on this sheet so far, as (parts list, item number): an item
@@ -808,13 +837,17 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         reach = {"left": 0.0, "right": 0.0, "top": 0.0, "bottom": 0.0}
         for side in plane_sides.get(id(view), ()):
             reach[side] = _PLANE_ROOM  # the cutting plane's letters, drawn after the views
-        landings: dict[str, list[float]] = {"left": [], "right": []}
+        landings: dict[str, list[float]] = {side: [] for side in _SIDES}
 
-        def free_landing_y(side, y):
-            step = th * 2.2
+        def landing_y(side, y, *, commit: bool = False):
+            """The first free height for a callout landing on ``side`` at or past
+            ``y``; ``commit`` takes it. Stacked callouts climb, except below the
+            view, where they go down."""
+            step = _CALLOUT_STACK * th * (-1.0 if side == "bottom" else 1.0)
             while any(abs(y - used) < th * 1.6 for used in landings[side]):
                 y += step
-            landings[side].append(y)
+            if commit:
+                landings[side].append(y)
             return y
 
         def state(value: float, axis: int | None) -> None:
@@ -886,6 +919,11 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             d.render()
             claim_rendered(d.dimension)
             _draw_dimension_symbols(doc, d.dimension)
+            # The dimension line, which no leader or other dimension line may cross.
+            if horizontal:
+                dimension_lines.append(((min(a[0], b[0]), base[1]), (max(a[0], b[0]), base[1])))
+            else:
+                dimension_lines.append(((base[0], min(a[1], b[1])), (base[0], max(a[1], b[1]))))
             state(measured, _sheet_axis(proj, horizontal))
 
         def on_view(point, margin: float = 1.0) -> bool:
@@ -945,7 +983,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         # How far the callouts reach past each side, so balloons drawn later
         # stand outside them; callouts on one side share a knee, so this is not
         # applied until they are all placed.
-        callout_reach = {"left": 0.0, "right": 0.0}
+        callout_reach = dict.fromkeys(_SIDES, 0.0)
         for dim in items:
             if dim.kind not in ("diameter", "radius", "hole", "slot"):
                 continue
@@ -963,29 +1001,92 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # other side. A leader across the whole part is the last resort.
             # A hole on the centreline leaves to the left: in third angle the right
             # of the upper view is where the pictorial goes.
+            # The ways out, tried in turn until one crosses no dimension line, runs into
+            # no other view and lands on no text already printed: the hole's own side,
+            # the short way out; that side past the rows above or below, out of the
+            # corner, the hole's half first; straight above or below the view; the
+            # far side, across the part.
             prefer_right = centre[0] > (vx0 + vx1) / 2 + 1e-6
-            choice = None
-            for go_right in (prefer_right, not prefer_right):
-                clear_try = reach["right" if go_right else "left"] + _CALLOUT_CLEAR
-                knee_try = (vx1 + clear_try) if go_right else (vx0 - clear_try)
-                land_x0, land_x1 = (knee_try, knee_try + text_w) if go_right else (knee_try - text_w, knee_try)
-                if not blocked(land_x0, land_x1, centre[1] - th, centre[1] + r + 6.0 + th, own_box):
-                    choice = go_right
-                    break
-            go_right = prefer_right if choice is None else choice
-            if go_right != prefer_right and warnings is not None:
-                warnings.append(
-                    f"{view.name} {dim.kind} {dim.index}: there is no room for {_shown(value)!r} on the "
-                    f"{'right' if prefer_right else 'left'}, so its leader crosses the view to the other side. "
-                    "Give the view more room (a larger sheet, or three_views(gap=...)), or call out a hole of "
-                    "the same kind nearer the other edge."
-                )
-            side = "right" if go_right else "left"
-            knee_x = (vx1 + reach[side] + _CALLOUT_CLEAR) if go_right else (vx0 - reach[side] - _CALLOUT_CLEAR)
+            own = "right" if prefer_right else "left"
+            far = "left" if prefer_right else "right"
+            near = "top" if centre[1] >= (vy0 + vy1) / 2 else "bottom"
             exit_angle = math.radians(dim.angle if dim.angle is not None else 45.0)
-            land_y = free_landing_y(side, centre[1] + r * math.sin(exit_angle) + 6.0)
-            sign = 1.0 if go_right else -1.0
-            knee = (knee_x, land_y)
+
+            def past(vertical: str, step: int) -> float:
+                """A landing height past the dimension rows above or below the view, and
+                ``step`` landings further out, should text already stand there."""
+                outward = 1.0 if vertical == "top" else -1.0
+                return (vy1 if vertical == "top" else vy0) + outward * (reach[vertical] + _CALLOUT_CLEAR
+                                                                        + step * _CALLOUT_STACK * th)
+
+            def way(kind: str, side: str, step: int = 0, inward: bool = False):
+                """(landings key, knee, sign) for one way out. A callout straight above
+                or below the view reads toward the hole's own side, or ``inward``."""
+                if kind == "vertical":
+                    sign = (1.0 if prefer_right else -1.0) * (-1.0 if inward else 1.0)
+                    y = landing_y(side, past(side, step))
+                    return side, (centre[0] + sign * abs(y - centre[1]) / math.tan(math.radians(60.0)), y), sign
+                beside, vertical = (side, None) if kind == "side" else (own, side)
+                sign = 1.0 if beside == "right" else -1.0
+                x = (vx1 + reach[beside] + _CALLOUT_CLEAR) if beside == "right" else (vx0 - reach[beside] - _CALLOUT_CLEAR)
+                y = centre[1] + r * math.sin(exit_angle) + 6.0
+                if vertical is not None:
+                    y = max(y, past(vertical, step)) if vertical == "top" else min(y, past(vertical, step))
+                return beside, (x, landing_y(beside, y)), sign
+
+            def clear_of(knee, sign: float, below: bool) -> tuple[bool, bool]:
+                """Whether a way out runs into nothing, and whether it crosses no line.
+                ``below``: straight below the view, where the view's label then hangs
+                under it and needs the paper too."""
+                run = math.hypot(knee[0] - centre[0], knee[1] - centre[1]) or 1.0
+                start = (centre[0] + r * (knee[0] - centre[0]) / run, centre[1] + r * (knee[1] - centre[1]) / run)
+                landing = (knee[0] + sign * _CALLOUT_LANDING, knee[1])
+                far_end = landing[0] + sign * (_CALLOUT_GAP + _ink_width(value, th))
+                x0, x1 = min(landing[0], far_end), max(landing[0], far_end)
+                y0, y1 = knee[1] - th, knee[1] + th
+                free = (not blocked(x0, x1, y0, y1, own_box)
+                        and not any(x0 < b[2] and x1 > b[0] and y0 < b[3] and y1 > b[1] for _v, b in claimed)
+                        and not _runs_through((start, knee, landing),
+                                              [*furnished, *(b for b in boxes if b is not own_box)]))
+                if below:
+                    label = knee[1] - th - _LABEL_GAP - _LABEL_HEIGHT
+                    free = free and not blocked(vx0, vx1, label, knee[1] - th, own_box)
+                return free, not _crosses_any((start, knee, landing), [*dimension_lines, *leaders])
+
+            def crowded(vertical: str) -> bool:
+                """Whether another view stands that way, over this one's width."""
+                return any(box is not own_box and box[0] < vx1 and box[1] > vx0
+                           and (box[2] >= vy1 if vertical == "top" else box[3] <= vy0) for box in boxes)
+
+            # Out of a corner, into free paper first: the gap shared with the next view
+            # is that view's too.
+            corners = sorted(("top", "bottom"), key=lambda v: (crowded(v), v != near))
+            ways = [("side", own, False), ("corner", corners[0], False), ("corner", corners[1], False),
+                    ("vertical", corners[0], False), ("vertical", corners[0], True), ("side", far, False)]
+            chosen = None
+            for kind, side, inward in ways:
+                # Past the rows, a landing may stand a few further out to clear text
+                # another view's annotation already put there.
+                for step in range(_CALLOUT_STEPS if kind != "side" else 1):
+                    landed, knee, sign = way(kind, side, step, inward)
+                    free, uncrossed = clear_of(knee, sign, kind == "vertical" and side == "bottom")
+                    if free and uncrossed:
+                        chosen = (kind, side, landed, knee, sign)
+                        break
+                if chosen is not None:
+                    break
+            if chosen is None:
+                # Every way crosses a line or lands on something: the short way, said.
+                landed, knee, sign = way("side", own)
+                chosen = ("side", own, landed, knee, sign)
+            kind, way_side, side, knee, sign = chosen
+            knee = (knee[0], landing_y(side, knee[1], commit=True))
+            if kind == "side" and side == far and warnings is not None:
+                warnings.append(
+                    f"{view.name} {dim.kind} {dim.index}: there is no room for {_shown(value)!r} on the {own}, "
+                    "so its leader crosses the view to the other side. Give the view more room (a larger "
+                    "sheet, or three_views(gap=...)), or call out a hole of the same kind nearer the other edge."
+                )
             # The leader points at the centre, as a leader to a circle must, and
             # stops on the circle; then it runs level to the text.
             run = math.hypot(knee[0] - centre[0], knee[1] - centre[1]) or 1.0
@@ -993,10 +1094,20 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             landing = (knee[0] + sign * _CALLOUT_LANDING, knee[1])
             msp.add_leader([start, knee, landing], dxfattribs={"layer": "DIM"},
                            override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
-            align = TextEntityAlignment.MIDDLE_LEFT if go_right else TextEntityAlignment.MIDDLE_RIGHT
+            leaders.append((start, knee, landing))
+            align = TextEntityAlignment.MIDDLE_LEFT if sign > 0 else TextEntityAlignment.MIDDLE_RIGHT
             text(value, landing[0] + sign * _CALLOUT_GAP, landing[1], th, align, "DIM")
-            tip = landing[0] + sign * (_CALLOUT_GAP + _ink_width(value, th))
-            callout_reach[side] = max(callout_reach[side], abs(tip - (vx1 if go_right else vx0)) + _CALLOUT_GAP)
+            if side in ("left", "right"):
+                tip = landing[0] + sign * (_CALLOUT_GAP + _ink_width(value, th))
+                callout_reach[side] = max(callout_reach[side], abs(tip - (vx1 if side == "right" else vx0)) + _CALLOUT_GAP)
+            if kind == "vertical":
+                # Straight above or below the view: the label and anything placed later
+                # stand past it. A corner's text is beside the view, outside its column.
+                edge = vy1 if way_side == "top" else vy0
+                callout_reach[way_side] = max(callout_reach[way_side], abs(knee[1] - edge) + th)
+            if warnings is not None and _crosses_any((start, knee, landing), dimension_lines):
+                warnings.append(f"{view.name} {dim.kind} {dim.index}: its leader crosses a dimension line; move "
+                                "the dimension, or call out the feature in a view with room around it")
             if record is not None:
                 # A hole callout states its hole; a diameter callout states a diameter.
                 # A leader's radius is neither, so it is not a stated value.

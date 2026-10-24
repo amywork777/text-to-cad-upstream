@@ -2676,6 +2676,41 @@ def _inclined():
 
 
 
+
+def _clevis():
+    """A clevis on a base plate: two ears with a pin bore, four mounting holes
+    and two slots."""
+    from build123d import Align, Axis, Box, Cylinder, Pos, Rot, SlotCenterToCenter, extrude, fillet
+
+    up = (Align.CENTER, Align.CENTER, Align.MIN)
+    part = fillet(Box(100, 64, 8, align=up).edges().filter_by(Axis.Z), 4)
+    for sign in (-1, 1):
+        y = sign * 16
+        part += Pos(0, y, 8) * Box(30, 8, 28, align=up) + Pos(0, y, 36) * Rot(90, 0, 0) * Cylinder(15, 8)
+    part -= Pos(0, 0, 36) * Rot(90, 0, 0) * Cylinder(6, 40)
+    for x, y in ((-40, -24), (-40, 24), (40, -24), (40, 24)):
+        part -= Pos(x, y, 0) * Cylinder(3.3, 8, align=up)
+    for x in (-32, 32):
+        part -= Pos(x, 0, 0) * Rot(0, 0, 90) * extrude(SlotCenterToCenter(18, 12), 8)
+    return part.clean()
+
+
+def _dimension_lines(doc) -> list:
+    """Each DIMENSION's dimension line, as shapely lines: in its block, the lines
+    that run the way the dimension measures (its extension lines run across)."""
+    from shapely.geometry import LineString
+
+    found = []
+    for dim in doc.modelspace().query("DIMENSION"):
+        horizontal = abs(math.sin(math.radians(dim.dxf.get("angle", 0.0)))) < 0.5
+        for e in doc.blocks.get(dim.dxf.geometry):
+            if e.dxftype() != "LINE":
+                continue
+            a, b = e.dxf.start, e.dxf.end
+            if (abs(b.y - a.y) < 1e-6) == horizontal and math.hypot(b.x - a.x, b.y - a.y) > 1e-6:
+                found.append(LineString([(a.x, a.y), (b.x, b.y)]))
+    return found
+
 def _bar():
     """A 600 mm bar, 20 mm square, with a turned spigot on its end and a cross hole
     near each end. Square, not round: hidden-line removal on a round bar's cross
@@ -2801,6 +2836,35 @@ class WhiteSpaceTests(unittest.TestCase):
         with mock.patch.object(render, "_place_hole_tables", tables):
             render._render_sheet(sheet, index=1, count=1, label="small")
         self.assertEqual((sheet._size(), sheet._scale()), ("A4", 1.0))
+
+
+class CrossingTests(unittest.TestCase):
+    """Alex: dimension lines crossing other dimension lines are not acceptable."""
+
+    def test_no_leader_or_dimension_line_crosses_a_dimension_line(self) -> None:
+        from shapely.geometry import LineString
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A2", 2.0)
+        top, front, right = sheet.three_views(_clevis())
+        top.overall()
+        top.radius((-46, 28, 8), size=4, angle=135)
+        front.overall(width=False)
+        front.holes()
+        front.dim((-50, -32, 0), (-50, -32, 8))
+        front.dim((15, -24, 0), (15, -24, 36))
+        front.radius((0, -24, 36), size=15, angle=135)
+        doc = _render_sheet(sheet, index=1, count=1, label="crossing", warnings=[])
+        lines = _dimension_lines(doc)
+        leaders = [LineString([(v[0], v[1]) for v in e.vertices]) for e in doc.modelspace().query("LEADER")]
+        crossing = [(i, j) for i, a in enumerate(lines) for j, b in enumerate(lines) if i < j and a.crosses(b)]
+        self.assertFalse(crossing, "two dimension lines cross")
+        crossing = [(i, j) for i, a in enumerate(leaders) for j, b in enumerate(lines) if a.crosses(b)]
+        self.assertFalse(crossing, "a leader crosses a dimension line")
+        crossing = [(i, j) for i, a in enumerate(leaders) for j, b in enumerate(leaders) if i < j and a.crosses(b)]
+        self.assertFalse(crossing, "two leaders cross")
 
 class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_tags_each_hole_and_states_where_and_what(self) -> None:

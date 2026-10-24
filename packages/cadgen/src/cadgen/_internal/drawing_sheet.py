@@ -492,6 +492,17 @@ def _place_detail(sheet: Sheet, size: float, room: dict, occupied: list, near) -
     return None if corner is None else (corner[0] + room["left"] + half, corner[1] - room["top"] - half)
 
 
+def _notes_box(sheet: Sheet) -> list[tuple[float, float, float, float]]:
+    """The notes block as ``[(x0, x1, y0, y1)]``, as the furniture draws it; empty
+    without notes."""
+    lines = sheet.note_lines()
+    if not lines:
+        return []
+    x0, y0 = _MARGIN + _NOTE_INSET, _MARGIN + _TITLE_H + 4.0
+    width = max(_text_width(line, _NOTE_HEIGHT) for line in lines)
+    return [(x0, x0 + width, y0 - 1.0, y0 + (len(lines) - 1) * 5.0 + _NOTE_HEIGHT + 1.0)]
+
+
 def _notes_height(sheet: Sheet) -> float:
     """How far the notes rise above the title block's top, with air; 0 without notes."""
     rows = len(sheet.drawn_notes())
