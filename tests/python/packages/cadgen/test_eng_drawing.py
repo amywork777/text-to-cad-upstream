@@ -1692,6 +1692,8 @@ class UnstatedTests(unittest.TestCase):
                 if stated:
                     front.dim((-35, 0, -10), (-35, 0, 10), text="%%c<>")
                     front.dim((0, 0, -15), (0, 0, 15), text="%%c<>")
+                    front.dim((-50, 0, 10), (-20, 0, 10))      # the shoulders, placed
+                    front.dim((20, 0, 10), (50, 0, 10))
                 return sheet
             return make
 
@@ -2477,8 +2479,10 @@ class AssemblyDrawingTests(unittest.TestCase):
                 fixture()
         self.assertFalse([line for line in printed if "separate solids" in line or "holes():" in line], printed)
         self.assertTrue(any("item 4 (CORE) has no balloon" in line for line in printed), printed)
-        self.assertFalse([line for line in printed if "incomplete: sheet" in line],
-                         "a first pass states every part's overall sizes and holes")
+        self.assertFalse([line for line in printed if "incomplete: sheet" in line and any(
+                             words in line for words in ("not called out", "overall size", "turned diameter",
+                                                         "not located along"))],
+                         "a first pass states every part's overall sizes and holes, and where the holes are")
 
     def test_a_round_parts_sheet_has_one_side_view_and_states_its_diameters(self) -> None:
         from build123d import Align, Box, Compound, Cylinder, Pos
@@ -3751,6 +3755,81 @@ class LocationTests(unittest.TestCase):
         ftop, _ffront = flange.three_views(_flange(), views=("top", "front"))
         ftop.holes()
         self.assertEqual(self._report(flange), [], "a bolt circle and a bore on a turned part's axis")
+
+
+def _ramp():
+    """A 60 x 40 block profile in XZ: an 8-high base, a slope rising to a 30-high
+    top 0..10 along X."""
+    from build123d import Plane, Polygon, extrude
+
+    profile = Plane.XZ * Polygon((0, 0), (60, 0), (60, 8), (20, 8), (10, 30), (0, 30), align=None)
+    return extrude(profile, amount=-40)
+
+
+class FaceTests(unittest.TestCase):
+    """A step is somewhere and a slope is at some angle only when a dimension says so."""
+
+    def _report(self, sheet) -> list[str]:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="faces", warnings=[], facts=facts)
+        return [line for line in _unstated(facts) if "face" in line]
+
+    def _sheet(self):
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(_ramp(), views=("top", "front"))
+        top.overall()
+        front.overall(width=False)
+        return sheet, top, front
+
+    def test_an_unplaced_step_and_an_unstated_slope_are_reported(self) -> None:
+        sheet, _top, _front = self._sheet()
+        lines = self._report(sheet)
+        self.assertTrue(any("at Z = 8" in line and "front." in line for line in lines), lines)
+        self.assertTrue(any("inclined face" in line and "front.angle(" in line for line in lines), lines)
+
+    def test_a_height_and_an_angle_state_them(self) -> None:
+        sheet, _top, front = self._sheet()
+        front.dim((60, 0, 0), (60, 0, 8))
+        front.angle((20, 0, 8), (60, 0, 8), (10, 0, 30))
+        self.assertEqual(self._report(sheet), [])
+
+    def test_a_slope_placed_by_its_ends_needs_no_angle(self) -> None:
+        sheet, _top, front = self._sheet()
+        front.dim((60, 0, 0), (60, 0, 8))
+        front.dim((60, 0, 8), (20, 0, 8))                  # the slope's foot from the right edge
+        front.dim((0, 0, 30), (10, 0, 30))                 # and its head from the left
+        self.assertEqual(self._report(sheet), [], "both ends placed: the slope is defined")
+
+    def test_a_slots_walls_are_the_slots(self) -> None:
+        from build123d import Align, Box, Pos, SlotCenterToCenter, extrude
+
+        from cadgen.eng_drawing import Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        plate = Box(80, 50, 6, align=up) - Pos(20, 0, 0) * extrude(SlotCenterToCenter(16, 8), 6)
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(plate, views=("top", "front"))
+        top.overall()
+        front.overall(width=False)
+        top.holes()
+        top.dim((40, 0, 6), (20, 0, 6))
+        top.symmetric("h")
+        self.assertEqual(self._report(sheet), [], "its width and centre place its walls")
+
+    def test_the_faces_a_hole_or_a_chamfer_owns_ask_nothing(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, front, _right = sheet.three_views(_counterbored())
+        top.overall()
+        front.overall(width=False)
+        top.holes()
+        self.assertFalse([line for line in self._report(sheet) if "Z =" in line], "the counterbore's floor is the hole's")
 
 
 class HoleTableTests(unittest.TestCase):

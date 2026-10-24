@@ -774,7 +774,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                                                        "axes": set(), "views": [], "sheet": (index, sheet.title),
                                                        "assembly": id(view.shape) in assemblies,
                                                        "notes": set(), "radii": set(), "spans": [],
-                                                       "anchors": [], "datums": [], "symmetric": set()})
+                                                       "anchors": [], "datums": [], "symmetric": set(),
+                                                       "angles": []})
             # Where the view says things are: the centre lines it states the part
             # symmetric about, as the model axes they locate across.
             for direction in view._symmetric:
@@ -1430,6 +1431,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 a = model_to_sheet(dim.p2)
                 b = model_to_sheet(dim.hole["p2"])
                 check("angle", dim.index, v, a, b)
+                if record is not None and not dim.reference:
+                    record["angles"].append((dim.p1, dim.p2, dim.hole["p2"], _look(view)))
                 ua = math.atan2(a[1] - v[1], a[0] - v[0])
                 ub = math.atan2(b[1] - v[1], b[0] - v[0])
                 mid = ua + ((ub - ua + math.pi) % (2 * math.pi) - math.pi) / 2

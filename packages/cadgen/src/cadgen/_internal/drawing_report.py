@@ -141,6 +141,7 @@ def _unstated(facts: _Facts) -> list[str]:
         whose = _whose(record, records)
         lines.extend(_unstated_edges(record, whose))
         lines.extend(_unlocated(record, whose))
+        lines.extend(_unplaced_faces(record, whose))
     for entry in facts.lists.values():
         parts, listed, keyed = entry["parts"], entry["listed"], entry["ballooned"]
         if not listed:
@@ -275,6 +276,106 @@ def _unlocated(record: dict, whose: str) -> list[str]:
             f"each is, or {where}.symmetric(\"h\" or \"v\") states the part symmetric about the centre line it "
             "sits on."
         )
+    return lines
+
+
+def _owned(face, features) -> bool:
+    """Whether a planar face belongs to a hole or slot whose callout states it: a
+    counterbore's floor, a blind hole's bottom, a slot's floor."""
+    points = [(v.X, v.Y, v.Z) for v in face.vertices()] or [tuple(face.center())]
+    for feature in features:
+        axis, mouth = feature.axis, feature.mouth
+        normal = face.normal_at()
+        square = abs(abs(normal.X * axis[0] + normal.Y * axis[1] + normal.Z * axis[2]) - 1) <= 1e-6
+        if not square and not isinstance(feature, Slot):
+            continue  # a slot's flat walls are its own too; a hole's are round
+        if isinstance(feature, Slot):
+            reach, line = feature.width / 2, feature.ends
+        else:
+            reach = max([feature.diameter, *(pair[0] for pair in (feature.cbore, feature.csk, feature.far_cbore,
+                                                                     feature.far_csk) if pair)]) / 2
+            line = (mouth, mouth)
+
+        def off(p, a=line[0], b=line[1]) -> float:
+            # Distance from p to the feature's axis (or a slot's centre segment), across its axis.
+            ab = tuple(q - r for q, r in zip(b, a))
+            ap = tuple(q - r for q, r in zip(p, a))
+            run = sum(c * c for c in ab)
+            t = 0.0 if run < 1e-12 else max(0.0, min(1.0, sum(x * y for x, y in zip(ap, ab)) / run))
+            d = tuple(q - (r + t * s) for q, r, s in zip(p, a, ab))
+            along = sum(x * y for x, y in zip(d, axis))
+            return math.sqrt(max(0.0, sum(x * x for x in d) - along * along))
+
+        if all(off(p) <= reach + 0.01 for p in points):
+            return True
+    return False
+
+
+def _unplaced_faces(record: dict, whose: str) -> list[str]:
+    """The flat faces a part's sheets leave without a place or an angle. A face
+    square to a model axis (a step, a shoulder, a rib's side, a plate's top) is
+    placed when its position ties to an anchor through dimensions; an inclined
+    face is stated by an angle in a view that sees it edge-on. Faces a called-out
+    hole or slot owns, and chamfers, are stated by their callouts and notes."""
+    from build123d import GeomType, Vector
+
+    from cadgen._internal.drawing_features import chamfers, holes as find_holes, slots as find_slots
+
+    shape, views = record["shape"], record["views"]
+    features = [f for f in [*find_holes(shape), *find_slots(shape)] if _member_key(f) in record["called"]]
+    bevels = [c.point for c in chamfers(shape)]
+    reached = None
+    steps: dict[tuple[int, float], None] = {}
+    slopes: dict[tuple, None] = {}
+    for face in shape.faces():
+        if face.geom_type != GeomType.PLANE:
+            continue
+        n = face.normal_at()
+        normal = (n.X, n.Y, n.Z)
+        axis = next((k for k in range(3) if abs(abs(normal[k]) - 1) < 1e-9), None)
+        if axis is not None:
+            if reached is None:
+                reached = _reached(record)
+            place = round(tuple(face.center())[axis], _PLACE)
+            if place not in reached[axis] and not _owned(face, features):
+                steps[(axis, place)] = None
+            continue
+        if any(face.distance_to(Vector(*p)) < 1e-6 for p in bevels):
+            continue
+        seen = [name for name, look in views if abs(sum(a * b for a, b in zip(normal, look))) < 1e-6]
+        stated = False
+        for vertex, p1, p2, look in record["angles"]:
+            if abs(sum(a * b for a, b in zip(normal, look))) > 1e-6:
+                continue
+            for leg in (p1, p2):
+                u = tuple(q - r for q, r in zip(leg, vertex))
+                length = math.sqrt(sum(c * c for c in u)) or 1.0
+                along = abs(sum(a * b for a, b in zip(normal, u))) / length
+                # A leg along the face states its angle; a leg along its normal states
+                # it square to a stated slope, the right angle a drawing implies.
+                if along < 0.01 or along > 0.9999:
+                    stated = True
+        if not stated and sum(abs(c) < 1e-9 for c in normal) == 1:
+            # A slope seen edge-on, both its ends placed in the plane it leans in, is
+            # defined by them: a gusset given by its legs.
+            if reached is None:
+                reached = _reached(record)
+            leans = [k for k in range(3) if abs(normal[k]) >= 1e-9]
+            stated = all(round(getattr(v, "XYZ"[k]), _PLACE) in reached[k] for v in face.vertices() for k in leans)
+        if not stated:
+            slopes[(tuple(round(c, 3) for c in normal), seen[0] if seen else None)] = None
+    lines = []
+    for axis, place in sorted(steps):
+        where = next((name for name, look in views if abs(look[axis]) < 1e-9), None)
+        fix = (f"{where}.dim(...) from an edge, or from a located face, places it." if where else
+               "No view on the drawing sees it edge-on.")
+        lines.append(f"incomplete: {whose}the face at {'XYZ'[axis]} = {_fmt(place)} (square to {'XYZ'[axis]}) is "
+                     f"not located: no dimension ties it to an edge, a datum or a located face. {fix}")
+    for normal, where in slopes:
+        fix = (f"{where}.angle(vertex, p1, p2), one leg along the face, states it." if where else
+               "No view on the drawing sees it edge-on; add one.")
+        lines.append(f"incomplete: {whose}an inclined face (its normal {tuple(_fmt(c) for c in normal)}) has no "
+                     f"angle. {fix}")
     return lines
 
 
