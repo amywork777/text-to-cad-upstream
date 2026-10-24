@@ -7,8 +7,8 @@ eyes apart (lower, upper), so they arrive as two items; they are one part, made
 twice, and merge() lists them as one after checking their shapes are the same.
 
 The requirements below -- materials and their specs, the threadlocker and the
-grease, how each joint is held, the eye bore's fit, the collar's thread -- are
-EXAMPLE values, written the way a design-intent interview records what the
+grease, how each joint is held, the eye bore's fit, the collar's thread and the
+tube's -- are EXAMPLE values, written the way a design-intent interview records what the
 person confirmed. They are not a released design, and every sheet says so. The
 run prints what each sheet still leaves unstated and the joints still to settle.
 
@@ -22,8 +22,12 @@ from pathlib import Path
 import cadgen
 from cadgen.eng_drawing import GENERIC, Sheet, assembly_sheets, eng_drawing, parts_list
 from motorcycle_shock_absorber import (
-    BODY_OD, PRELOAD_COLLAR_TOP_Z, SPRING_BOTTOM_Z, SPRING_HEIGHT, SPRING_MEAN_D, SPRING_TURNS, SPRING_WIRE_D,
+    BODY_OD, BODY_TOP_Z, PRELOAD_COLLAR_TOP_Z, SPRING_BOTTOM_Z, SPRING_HEIGHT, SPRING_MEAN_D, SPRING_TURNS,
+    SPRING_WIRE_D,
 )
+
+#: The tube's thread runs this far down from its top end: the collar's travel.
+THREAD_LENGTH = 40.0
 
 STEP = Path(__file__).parent / "../../STEP/motorcycle_shock_absorber/motorcycle_shock_absorber.step"
 EXAMPLE = "EXAMPLE REQUIREMENTS FOR DEMONSTRATION; NOT A RELEASED DESIGN."
@@ -79,6 +83,11 @@ def motorcycle_shock_absorber_drawing():
     collar = sheets.part("preload_adjuster_collar")
     collar_end = next(view for view in collar.views if view.name == "top")
     collar_end.hole((0, 0, PRELOAD_COLLAR_TOP_Z), thread=f"M{BODY_OD:g}x1.5 - 6H")
+    tube_side, tube_end = (next(view for view in sheets.part("pressure_tube").views if view.name == name)
+                           for name in ("front", "right"))
+    r = BODY_OD / 2
+    tube_side.dim((r, 0, BODY_TOP_Z), (r, 0, BODY_TOP_Z - THREAD_LENGTH))           # the thread's length
+    tube_end.note(f"M{BODY_OD:g}x1.5 - 6g", (0, r, BODY_TOP_Z), offset=(15, 15))     # and the thread, on its circle
     # The spring is drawn simplified: its data governs, and what is open is named.
     spring = sheets.part("coil_spring")
     spring_end = next(view for view in spring.views if view.name == "top")

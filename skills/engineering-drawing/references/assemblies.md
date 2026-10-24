@@ -74,7 +74,8 @@ sheet that chooses its own size and scale (`Sheet(size=None, scale=None)`); a
 long turned part lies down, and the points you give its views stay in the
 part's own frame, as `item.shape` is. It states its overall sizes, calls out
 the holes and slots each view looks down and locates them (a prismatic part's
-in a hole table, a turned part's from its axis and its end), and is titled
+in a hole table, a turned part's from its axis and its end, a cross hole
+included), and is titled
 with the item's description over `ITEM n (QTY q) OF <title>`. A part turned
 whole states its profile: its diameters, each taper's end diameters, each
 groove's radius, and every shoulder, taper end and groove placed along the
@@ -109,13 +110,16 @@ instructions, a separate document.
 The run prints an `interface:` line for each place the parts meet on a turned
 axis:
 
-- a turned surface of one part in a bore of another, their diameters within a
-  loose running fit's clearance of each other (2 % of the bore or 0.5 mm,
-  whichever is more), with the clearance at nominal sizes, or "no clearance",
-  or the interference;
+- a turned surface of one part in a bore of another, their diameters within
+  10 % of the bore or 2 mm of each other (whichever is more: a fit, or a
+  clearance a rod runs in), with the clearance at nominal sizes, or "no
+  clearance", or the interference;
 - two parts on such an axis whose flat faces touch square to it: no end play
   at nominal sizes. A clevis gap filled exactly by an eye and two bushing
   flanges prints one line per touching pair.
+
+A joint the assembly repeats (four bolts in four holes) is one line, with its
+number of places.
 
 Nominal sizes that meet exactly are what a model says, not what a shop can
 make: each line is a joint to settle with the person. For each joint, ask:

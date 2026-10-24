@@ -13,12 +13,12 @@ Single-tube coilover damper in its static design pose.
   native linear joint along Z (the damper stroke axis); the coil spring is
   seated face-to-face on both spring perches.
 
-`inspect interfere` reports overlaps at every threaded/blind joint (gland
-cap on the tube, eye shank, spring ends on the seats). Those are accepted
-static-assembly interpenetrations, not defects; the only moving joint (rod
-stroke along Z) stays coaxial and clear: the rod runs in the tube's bore and
-through both spring seats' bores. The collar threads onto the tube, its bore
-the tube's outside diameter.
+`inspect interfere` reports overlaps only where the simplified coil spring's
+ends bear on the seats. The gland cap sits on the tube's end, its spigot in
+the tube's bore; the eye shank butts the tube's other end, where the weld
+joins them; the collar threads onto the tube, its bore the tube's outside
+diameter. The only moving joint (rod stroke along Z) stays coaxial and clear:
+the rod runs in the gland cap's and both spring seats' bores.
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ LOWER_EYE_Z = -EYE_TO_EYE / 2
 UPPER_EYE_Z = EYE_TO_EYE / 2
 
 SHANK_BOTTOM_Z = LOWER_EYE_Z + EYE_OD / 2 - 1.0   # forging from eye to tube
-SHANK_TOP_Z = BODY_BOTTOM_Z + 3.0
+SHANK_TOP_Z = BODY_BOTTOM_Z
 
 KNOB_D = 11.0               # rebound adjuster clicker on the tube wall
 KNOB_AXIS_Z = BODY_BOTTOM_Z + 14.0
@@ -174,15 +174,24 @@ def _damper_body_children():
         BODY_OD / 2, BODY_OD / 2 - TUBE_WALL, BODY_TOP_Z - BODY_BOTTOM_Z,
     )
 
-    # forged shank flaring from the eye into the tube weld
+    # forged shank flaring from the eye to the tube's end, welded there
     shank = bd.Cone(
         bottom_radius=12.0, top_radius=BODY_OD / 2,
         height=SHANK_TOP_Z - SHANK_BOTTOM_Z,
     ).moved(bd.Location((0.0, 0.0, (SHANK_BOTTOM_Z + SHANK_TOP_Z) / 2)))
 
-    gland_cap = _axis_ring(
+    # the gland cap's head sits on the tube's end; its spigot locates in the bore
+    gland_head = _axis_cylinder(
+        (0.0, 0.0, (BODY_TOP_Z + GLAND_CAP_TOP_Z) / 2), (0.0, 0.0, 1.0),
+        GLAND_CAP_OD / 2, GLAND_CAP_TOP_Z - BODY_TOP_Z,
+    )
+    gland_spigot = _axis_cylinder(
+        (0.0, 0.0, (GLAND_CAP_BOTTOM_Z + BODY_TOP_Z) / 2), (0.0, 0.0, 1.0),
+        BODY_OD / 2 - TUBE_WALL, BODY_TOP_Z - GLAND_CAP_BOTTOM_Z,
+    )
+    gland_cap = (gland_head + gland_spigot) - _axis_cylinder(
         (0.0, 0.0, (GLAND_CAP_BOTTOM_Z + GLAND_CAP_TOP_Z) / 2), (0.0, 0.0, 1.0),
-        GLAND_CAP_OD / 2, ROD_D / 2 + 0.5, GLAND_CAP_TOP_Z - GLAND_CAP_BOTTOM_Z,
+        ROD_D / 2 + 0.5, GLAND_CAP_TOP_Z - GLAND_CAP_BOTTOM_Z + 2.0,
     )
 
     # threaded preload adjuster with two grip grooves, threaded onto the tube

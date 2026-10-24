@@ -194,14 +194,18 @@ sheet millimetres.
   inclined edge the view sees edge-on (a tab's length, its thickness across
   its end). An aligned dimension stands off its own edge, on the side away
   from the view's middle unless `offset` (positive to the left going from
-  `p1` to `p2`) says otherwise, and takes no frame, datum or key mark.
+  `p1` to `p2`) says otherwise, and takes no frame, datum or key mark. With an
+  `angle()` fixing its direction, the report counts it for its run and rise.
+  On a broken view it states the true length; one inclined across the break
+  is refused.
 - `view.symmetric(direction)`: state the part symmetric about the view's
   vertical (`"v"`) or horizontal (`"h"`) centre line, drawn with the ISO
-  129-1 symbol, two short strokes beyond each end. The completeness report
-  then counts a feature on that line as located, a spacing centred on it as
-  placing both its ends, and a place reached on one side as placing its
-  mirror. A principal view only; call it in each view where the symmetry is
-  read.
+  129-1 symbol through the part's middle, two short strokes beyond each end.
+  A part that is not its own mirror image about that line is refused. The
+  completeness report then counts a feature on that line as located, a
+  spacing centred on it as placing both its ends, and a place reached on one
+  side as placing its mirror. A principal view only, not a detail; call it in
+  each view where the symmetry is read.
 - `view.holes(angle=45)`: one callout per kind of hole or slot the view looks
   down (`4× ⌀5.5 THRU`, `⌀28 THRU`, `8 × 30 SLOT THRU`), placed on the one
   nearest the view's edge. Identical holes equally spaced round a turned axis

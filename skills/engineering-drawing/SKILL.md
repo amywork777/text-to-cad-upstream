@@ -116,9 +116,10 @@ The first run downloads that installation; later runs reuse it.
      is only when a dimension ties it to an edge, a datum or a located
      feature. Where the design is symmetric, say so: `view.symmetric("v")` (or
      `"h"`) states the part symmetric about the view's vertical (horizontal)
-     centre line and draws the symbol. A feature on that line is then located,
-     a spacing across it places both ends, and one side's dimensions place the
-     other side's mirror. A feature that only looks centred is not located.
+     centre line and draws the symbol; a part that is not its own mirror image
+     there is refused. A feature on that line is then located, a spacing across
+     it places both ends, and one side's dimensions place the other side's
+     mirror. A feature that only looks centred is not located.
    - **State each size once.** A size the other dimensions add up to (an
      overall length over a chain, a height that follows from an angle) is
      `reference=True`, or left out.
@@ -243,8 +244,9 @@ return sheets
 - `assembly_sheets` makes the GA (views, overall sizes as reference
   dimensions, balloons, the parts list with each item's SHEET) and a
   first-pass sheet per part: one view per distinct picture, an isometric,
-  overall sizes, every hole and slot called out and located, and for a part
-  turned whole its diameters, its tapers' end diameters, each groove's radius,
+  overall sizes, the holes and slots its views look down called out and
+  located, and for a part turned whole (a cross hole or a cotter hole
+  allowed) its diameters, its tapers' end diameters, each groove's radius,
   and every shoulder, taper end and groove placed from one end. Each is an
   ordinary `Sheet`: refine `sheets.part(name)` like any other (a prismatic
   part's steps are yours to place), then run and read the report.
@@ -316,13 +318,18 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
   not, and is stated with `dim`, a detail or a `note`. A bolt circle's
   clocking (where its first hole sits) is a `dim` or an `angle` you add.
 - The location, redundancy and reference checks follow dimensions along the
-  model axes; they do not follow trigonometry. An angle in a view counts as
-  fixing a reference size along that view's axes, and an aligned dimension
-  locates nothing along X, Y or Z.
-- `interface:` lines find coaxial full cylinders of different parts within a
-  loose running fit's clearance, and flat faces touching square to their
-  axis. Splines, keys, threads modelled as plain bores and faces touching
-  elsewhere are not found: ask about them.
+  model axes. An aligned dimension at a stated angle (one leg along a model
+  axis, or square to such a leg) counts for its run and its rise; an angle
+  alone fixes no length. Features that share a coordinate share a place (two
+  holes on one centre line are located together), but a dimension's end on a
+  hole or on one face is that feature when the check looks for a size stated
+  twice. A hole on an inclined axis is not location-checked: say how the
+  auxiliary view locates it.
+- `interface:` lines find coaxial full cylinders of different parts whose
+  diameters are within 10 % of the bore or 2 mm, and flat faces of parts on
+  such an axis that touch square to it, a repeated joint once with its number
+  of places. Splines, keys, threads modelled as plain bores and faces that
+  touch away from a turned joint are not found: ask about them.
 - Millimetres only; one part per arrangement.
 - Assembly sheets: balloons go on whole views, not on sections or details; a
   part sheet always starts from three views; parts are drawn in their model
