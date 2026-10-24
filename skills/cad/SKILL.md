@@ -86,7 +86,7 @@ python src/bracket.py
   requests for surfaces or construction geometry.
 - Give a physical part's edges the fillets and chamfers its manufacturing
   process and use call for, rather than leaving every edge sharp; see
-  [edge treatment](references/build123d-modeling.md#edge-treatment).
+  [fillets and chamfers](references/build123d-modeling.md#fillets-and-chamfers).
 - Put parameterized geometry in ordinary factory functions; a decorated model
   selects a configuration. Keep module bodies cheap: create geometry and read
   CAD inputs inside the model or its helpers. Use the lazy `bd` import above;
