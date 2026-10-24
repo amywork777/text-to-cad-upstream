@@ -1041,6 +1041,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         reach = {"left": 0.0, "right": 0.0, "top": 0.0, "bottom": 0.0}
         for side in plane_sides.get(id(view), ()):
             reach[side] = _PLANE_ROOM  # the cutting plane's letters, drawn after the views
+        for direction in view._symmetric:
+            # The symmetry line runs past both ends, its strokes on it.
+            for side in (("top", "bottom") if direction == "v" else ("left", "right")):
+                reach[side] = max(reach[side], _SYMMETRY_REACH + 1.0)
         landings: dict[str, list[float]] = {side: [] for side in _SIDES}
 
         def landing_y(side, y, *, commit: bool = False):

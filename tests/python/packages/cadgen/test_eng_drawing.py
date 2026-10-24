@@ -3775,6 +3775,19 @@ class LocationTests(unittest.TestCase):
         msp = _render_sheet(sheet, index=1, count=1, label="sym", warnings=[]).modelspace()
         marks = [e for e in msp.query("LINE[layer=='NOTES']")]
         self.assertEqual(len(marks), 4, "the symmetry symbol, two short strokes at each end of the centre line")
+        from cadgen.eng_drawing import Sheet
+
+        bare = Sheet("A3", 1.0)
+        plain, _front = bare.three_views(_mounting_plate(), views=("top", "front"))
+        plain.symmetric("v")                               # nothing else below the view
+        msp = _render_sheet(bare, index=1, count=1, label="sym", warnings=[]).modelspace()
+        (label,) = [e for e in msp.query("TEXT") if e.dxf.text == "TOP"]
+        x, y = label.dxf.align_point.x, label.dxf.align_point.y
+        line = [e for e in msp.query("LINE[layer=='CENTER']") if abs(e.dxf.start.x - x) < 0.5
+                and abs(e.dxf.end.x - x) < 0.5 and max(e.dxf.start.y, e.dxf.end.y) > y]
+        self.assertTrue(line)
+        self.assertLess(y, min(min(e.dxf.start.y, e.dxf.end.y) for e in line),
+                        "the view's label hangs below the symmetry line, not through it")
         with self.assertRaisesRegex(ValueError, "'h' or 'v'"):
             top.symmetric("x")
 
