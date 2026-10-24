@@ -112,6 +112,11 @@ def _place_hole_tables(sheet: Sheet, tables: dict, occupied: list, s: float) -> 
         occupied.append((spot[0] - 4.0, spot[0] + w + 4.0, spot[1] - h - 4.0, spot[1] + 4.0))
 
 
+#: The symmetry symbol: how far its centre line runs past the part, where its two
+#: strokes stand beyond the outline, and half a stroke's length (sheet mm).
+_SYMMETRY_REACH = 6.0
+_SYMMETRY_STROKES = (2.0, 3.2)
+_SYMMETRY_HALF = 1.8
 #: Below this width on the sheet (mm) a cut part is too thin to hatch, and is
 #: filled solid; and how neighbours of one material family are told apart, as
 #: ISO 128-50 has it: the hatch turned a right angle, then spaced wider. A turn
@@ -768,7 +773,14 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             record = facts.parts.setdefault(id(view.shape), {"shape": view.shape, "called": set(), "values": [],
                                                        "axes": set(), "views": [], "sheet": (index, sheet.title),
                                                        "assembly": id(view.shape) in assemblies,
-                                                       "notes": set(), "radii": set()})
+                                                       "notes": set(), "radii": set(), "spans": [],
+                                                       "anchors": [], "datums": [], "symmetric": set()})
+            # Where the view says things are: the centre lines it states the part
+            # symmetric about, as the model axes they locate across.
+            for direction in view._symmetric:
+                axis = _sheet_axis(proj, direction == "v")
+                if axis is not None:
+                    record["symmetric"].add(axis)
             # What the sheet's notes and this view's notes say, for the blends and
             # chamfers a general note states.
             record["notes"].update(sheet.drawn_notes())
@@ -1004,6 +1016,21 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # The detail's own boundary: a thin continuous circle, as ISO 128-34 draws it.
             msp.add_circle(view.at, view._detail.radius * sv, dxfattribs={"layer": "NOTES"})
         vx0, vx1, vy0, vy1 = own_box
+        for direction in sorted(view._symmetric):
+            # ISO 129-1: the centre line across the part, two short strokes square to
+            # it beyond each end.
+            middle, (lo, hi) = (((vx0 + vx1) / 2, (vy0, vy1)) if direction == "v" else
+                                ((vy0 + vy1) / 2, (vx0, vx1)))
+            ends = [(middle, lo - _SYMMETRY_REACH), (middle, hi + _SYMMETRY_REACH)]
+            line = [(e[0], e[1]) if direction == "v" else (e[1], e[0]) for e in ends]
+            msp.add_line(line[0], line[1], dxfattribs={"layer": "CENTER"})
+            for end, outward in ((lo, -1.0), (hi, 1.0)):
+                for step in _SYMMETRY_STROKES:
+                    at = end + outward * step
+                    stroke = [(middle - _SYMMETRY_HALF, at), (middle + _SYMMETRY_HALF, at)]
+                    if direction == "h":
+                        stroke = [(q, p) for p, q in stroke]
+                    msp.add_line(stroke[0], stroke[1], dxfattribs={"layer": "NOTES"})
         centres = [to_sheet(c) for c, _r in _centres(_circles(proj.visible) + _end_on(view, proj, part_axes(view.shape)))]
 
         # How far annotation already reaches past each side of the view, so a
@@ -1032,7 +1059,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     record["axes"].add((axis, round(value, 3)))
 
         def linear(a, b, offset, side, row, override, orientation, tol=None, fit=None, true=None, *,
-                   basic=False, reference=False, limits=None, name="overall", frame=None, datum=None, keyed=False):
+                   basic=False, reference=False, limits=None, name="overall", frame=None, datum=None, keyed=False,
+                   ends=None):
             """``true`` is the length measured on the whole part, when the paper's
             is shorter: a dimension across a broken view's break. ``name`` says
             which dimension it is in a message."""
@@ -1153,6 +1181,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # stated by one all the same, being information nobody inspects.
             if not reference or (record is not None and record["assembly"]):
                 state(measured, _sheet_axis(proj, horizontal))
+            axis = _sheet_axis(proj, horizontal)
+            if record is not None and ends is not None and axis is not None and not reference:
+                # What it ties together, along the model axis it measures.
+                record["spans"].append((axis, ends[0][axis], ends[1][axis]))
 
         def on_view(point, margin: float = 1.0) -> bool:
             """Does a projected point land on the view's own drawn extent?"""
@@ -1203,13 +1235,15 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     true = abs(rb[0] - ra[0]) if horizontal else abs(rb[1] - ra[1])
                 linear(a, b, dim.offset, dim.side, dim.row, dim.text, dim.orientation, dim.tol, dim.fit, true,
                        basic=dim.basic, reference=dim.reference, limits=dim.limits, name=f"dim {dim.index}",
-                       frame=dim.frame, datum=dim.datum, keyed=dim.key)
+                       frame=dim.frame, datum=dim.datum, keyed=dim.key, ends=(dim.p1, dim.p2))
+        extent = view.shape.bounding_box()
+        corners = ((extent.min.X, extent.min.Y, extent.min.Z), (extent.max.X, extent.max.Y, extent.max.Z))
         if "width" in view._overall:
             linear((vx0, vy1), (vx1, vy1), None, "top", plan["overall"]["top"], None, "h",
-                   true=whole[1] - whole[0] if whole else None, reference=view._overall_reference)
+                   true=whole[1] - whole[0] if whole else None, reference=view._overall_reference, ends=corners)
         if "height" in view._overall:
             linear((vx0, vy0), (vx0, vy1), None, "left", plan["overall"]["left"], None, "v",
-                   true=whole[3] - whole[2] if whole else None, reference=view._overall_reference)
+                   true=whole[3] - whole[2] if whole else None, reference=view._overall_reference, ends=corners)
         # How far the callouts reach past each side, so balloons drawn later
         # stand outside them; callouts on one side share a knee, so this is not
         # applied until they are all placed.
@@ -1378,7 +1412,18 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         if id(view) in tables:
             _draw_hole_tags(msp, tables[id(view)], proj, to_sheet, sv, th, text)
             if record is not None:
-                record["called"].update(_member_key(row.feature) for row in tables[id(view)].rows)
+                table = tables[id(view)]
+                record["called"].update(_member_key(row.feature) for row in table.rows)
+                # A table gives each hole's X and Y from its origin.
+                for axis in (_sheet_axis(proj, True), _sheet_axis(proj, False)):
+                    if axis is not None:
+                        record["spans"].extend((axis, table.origin[axis], row.feature.mouth[axis])
+                                               for row in table.rows)
+        if record is not None:
+            for dim in items:
+                if dim.datum and dim.kind in ("hole", "slot") and dim.feature is not None:
+                    # A feature of size made a datum locates from its centre.
+                    record["anchors"].extend((axis, dim.feature.mouth[axis]) for axis in range(3))
         for dim in items:
             if dim.kind == "angle":
                 v = model_to_sheet(dim.p1)
@@ -1423,6 +1468,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         for letter, point, stem in view._datums:
             # A datum feature symbol stands on its surface, its stem leading out of
             # the view by the nearest side unless the author pointed it.
+            if record is not None:
+                record["datums"].append(point)
             tip = model_to_sheet(point)
             check("datum", letter, tip)
             toward = _datum_toward(tip, (vx0, vx1, vy0, vy1), stem)

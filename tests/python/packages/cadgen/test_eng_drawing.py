@@ -1286,7 +1286,7 @@ class ReviewFindingTests(unittest.TestCase):
         facts = _facts()
         _render_sheet(sheet, index=1, count=1, label="faces", facts=facts)
         self.assertEqual(_callouts(_render_sheet(sheet, index=1, count=1, label="faces")), ["2× %%c6 ↧8"])
-        missing = _unstated(facts)
+        missing = [line for line in _unstated(facts) if "not called out" in line]
         self.assertEqual(len(missing), 1, missing)
         self.assertIn("2× ⌀6 ↧8 is not called out", missing[0], "the pair drilled from below")
 
@@ -1670,6 +1670,12 @@ class UnstatedTests(unittest.TestCase):
             top, front, _right = sheet.three_views(_plate())
             top.overall()
             top.holes()
+            top.dim((-40, -18, 6), (-30, -18, 6))      # the pattern from the left edge
+            top.dim((-30, -25, 6), (-30, -18, 6))      # and from the front edge
+            top.dim((-30, 18, 6), (30, 18, 6))
+            top.dim((30, -18, 6), (30, 18, 6))
+            top.symmetric("h")
+            top.symmetric("v")                         # the bore is centred
             front.overall(width=False)
             return sheet
 
@@ -1828,7 +1834,7 @@ class SlotAndBoltCircleTests(unittest.TestCase):
         front.overall(width=False)
         facts = _facts()
         _render_sheet(sheet, index=1, count=1, label="slot", facts=facts)
-        lines = _unstated(facts)
+        lines = [line for line in _unstated(facts) if "not called out" in line]
         self.assertEqual(len(lines), 1, lines)
         self.assertIn("2× 6 × 16 SLOT THRU is not called out", lines[0])
         self.assertIn("top.slot(", lines[0])
@@ -1990,7 +1996,7 @@ class DetailTests(unittest.TestCase):
         sheet.detail(top, (30, 18, 6), 5).holes()
         facts = _facts()
         _render_sheet(sheet, index=1, count=1, label="d", facts=facts)
-        missing = _unstated(facts)
+        missing = [line for line in _unstated(facts) if "not called out" in line]
         self.assertEqual(len(missing), 1, missing)
         self.assertIn("3× ⌀5.5 THRU is not called out", missing[0])
 
@@ -3653,6 +3659,98 @@ class MaterialSectionTests(unittest.TestCase):
             Sheet("A3").layer_table(parts, [("shell", "4.0")])
         with self.assertRaisesRegex(ValueError, "parts.assembly"):
             Sheet("A3").view(_part(), "front", at=(100, 100)).section("A", parts=parts)
+
+
+def _flange():
+    """A ⌀80 x 10 flange: a ⌀30 bore, six ⌀6 holes equally spaced on ⌀60."""
+    import math
+
+    from build123d import Align, Cylinder, Pos
+
+    up = (Align.CENTER, Align.CENTER, Align.MIN)
+    flange = Cylinder(40, 10, align=up) - Cylinder(15, 10, align=up)
+    for k in range(6):
+        a = 2 * math.pi * k / 6
+        flange -= Pos(30 * math.cos(a), 30 * math.sin(a), 0) * Cylinder(3, 10, align=up)
+    return flange
+
+
+def _mounting_plate():
+    """A 100 x 70 x 8 plate: four corner holes on a 76 x 48 pattern, a central bore."""
+    from build123d import Align, Box, Cylinder, Pos
+
+    up = (Align.CENTER, Align.CENTER, Align.MIN)
+    plate = Box(100, 70, 8, align=up) - Pos(0, 0, 0) * Cylinder(14, 8, align=up)
+    for x in (-38, 38):
+        for y in (-24, 24):
+            plate -= Pos(x, y, 0) * Cylinder(2.75, 8, align=up)
+    return plate
+
+
+class LocationTests(unittest.TestCase):
+    """A feature is drawn where it is only when a dimension says where: its size
+    alone, or a spacing tied to nothing, leaves it anywhere on the part."""
+
+    def _report(self, sheet) -> list[str]:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="where", warnings=[], facts=facts)
+        return [line for line in _unstated(facts) if "not located" in line]
+
+    def _plate(self):
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(_mounting_plate(), views=("top", "front"))
+        top.overall()
+        front.overall(width=False)
+        top.holes()
+        top.dim((-38, -24, 8), (38, -24, 8))               # the pattern's spacing, tied to nothing
+        top.dim((38, -24, 8), (38, 24, 8))
+        return sheet, top, front
+
+    def test_a_spacing_tied_to_nothing_leaves_the_pattern_unlocated(self) -> None:
+        sheet, top, _front = self._plate()
+        lines = self._report(sheet)
+        pattern = [line for line in lines if "4× ⌀5.5 THRU" in line]
+        bore = [line for line in lines if "⌀28 THRU" in line]
+        self.assertEqual(len(pattern), 1, lines)
+        self.assertIn("along X and Y", pattern[0])
+        self.assertEqual(len(bore), 1, lines)
+        self.assertIn("top.symmetric(", bore[0], "the fix names the call")
+
+    def test_an_edge_dimension_or_stated_symmetry_locates_it(self) -> None:
+        sheet, top, _front = self._plate()
+        top.dim((-50, -24, 8), (-38, -24, 8))              # the pattern from the left edge
+        top.dim((-38, -35, 8), (-38, -24, 8))              # and from the front edge
+        top.symmetric("h")
+        top.symmetric("v")                                 # the bore is centred: stated, not assumed
+        self.assertEqual(self._report(sheet), [])
+
+    def test_stated_symmetry_is_drawn(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+
+        sheet, top, _front = self._plate()
+        top.symmetric("v")
+        msp = _render_sheet(sheet, index=1, count=1, label="sym", warnings=[]).modelspace()
+        marks = [e for e in msp.query("LINE[layer=='NOTES']")]
+        self.assertEqual(len(marks), 4, "the symmetry symbol, two short strokes at each end of the centre line")
+        with self.assertRaisesRegex(ValueError, "'h' or 'v'"):
+            top.symmetric("x")
+
+    def test_a_hole_table_or_a_turned_axis_locates_what_it_holds(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        top, _front = sheet.three_views(_mounting_plate(), views=("top", "front"))
+        top.hole_table()
+        self.assertEqual(self._report(sheet), [], "the table gives every hole's X and Y")
+        flange = Sheet("A3", 1.0)
+        ftop, _ffront = flange.three_views(_flange(), views=("top", "front"))
+        ftop.holes()
+        self.assertEqual(self._report(flange), [], "a bolt circle and a bore on a turned part's axis")
 
 
 class HoleTableTests(unittest.TestCase):

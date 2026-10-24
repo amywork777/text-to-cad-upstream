@@ -140,6 +140,7 @@ def _unstated(facts: _Facts) -> list[str]:
             continue
         whose = _whose(record, records)
         lines.extend(_unstated_edges(record, whose))
+        lines.extend(_unlocated(record, whose))
     for entry in facts.lists.values():
         parts, listed, keyed = entry["parts"], entry["listed"], entry["ballooned"]
         if not listed:
@@ -164,6 +165,116 @@ def _unstated(facts: _Facts) -> list[str]:
                 )
     for record in facts.sheets:
         lines.extend(_unstated_for_stage(record, _whose(record, facts.sheets)))
+    return lines
+
+
+#: Coordinates this close (model mm) are one place, for tying features together.
+_PLACE = 2
+
+
+def _anchors(record: dict) -> dict[int, set]:
+    """Where locations may start, along each model axis: the part's extremes, the
+    faces made datums, the centre lines stated symmetric, the centres of datum
+    features of size, and the axis of a part whose outline is turned (a centred
+    bore on a flange is located by the flange's diameter)."""
+    from cadgen._internal.drawing_features import turned_surfaces
+
+    shape = record["shape"]
+    box = shape.bounding_box()
+    lo, hi = (box.min.X, box.min.Y, box.min.Z), (box.max.X, box.max.Y, box.max.Z)
+    anchors = {axis: {round(lo[axis], _PLACE), round(hi[axis], _PLACE)} for axis in range(3)}
+    for axis in record["symmetric"]:
+        anchors[axis].add(round((lo[axis] + hi[axis]) / 2, _PLACE))
+    for axis, value in record["anchors"]:
+        anchors[axis].add(round(value, _PLACE))
+    for point in record["datums"]:
+        axis = _plane_axis(shape, point)
+        if axis is not None:
+            anchors[axis].add(round(point[axis], _PLACE))
+    for surface in turned_surfaces(shape):
+        along = next((k for k in range(3) if abs(abs(surface.axis[k]) - 1) < 1e-9), None)
+        across = [k for k in range(3) if k != along]
+        if along is not None and all(abs(hi[k] - lo[k] - surface.diameter) <= 0.01 for k in across):
+            for k in across:
+                anchors[k].add(round(surface.middle[k], _PLACE))
+    return anchors
+
+
+def _plane_axis(shape, point) -> int | None:
+    """The model axis a planar face through ``point`` is square to, if it is."""
+    from build123d import GeomType, Vector
+
+    for face in shape.faces():
+        if face.geom_type != GeomType.PLANE or face.distance_to(Vector(*point)) > 1e-6:
+            continue
+        normal = face.normal_at()
+        return next((k for k, c in enumerate((normal.X, normal.Y, normal.Z)) if abs(abs(c) - 1) < 1e-9), None)
+    return None
+
+
+def _reached(record: dict) -> dict[int, set]:
+    """Every place along each model axis the sheet ties to an anchor through its
+    dimensions, its hole tables and its bolt circles."""
+    from cadgen._internal.drawing_features import bolt_circles, holes as find_holes
+
+    links: dict[int, list] = {axis: [] for axis in range(3)}
+    for axis, a, b in record["spans"]:
+        links[axis].append((round(a, _PLACE), round(b, _PLACE)))
+    for circle in bolt_circles(record["shape"], find_holes(record["shape"])):
+        # A bolt circle locates its holes from its centre.
+        for mouth in circle.mouths:
+            for axis in range(3):
+                links[axis].append((round(mouth[axis], _PLACE), round(circle.centre[axis], _PLACE)))
+    reached = _anchors(record)
+    for axis in range(3):
+        grown = True
+        while grown:
+            grown = False
+            for a, b in links[axis]:
+                if (a in reached[axis]) != (b in reached[axis]):
+                    reached[axis] |= {a, b}
+                    grown = True
+    return reached
+
+
+def _unlocated(record: dict, whose: str) -> list[str]:
+    """Every hole and slot the sheet calls out but does not place: a feature is
+    located across its axis when its centre (or a slot's end) ties to an anchor
+    through dimensions, a hole table or a bolt circle. A size or a spacing tied to
+    nothing leaves it anywhere on the part."""
+    from cadgen._internal.drawing_features import holes as find_holes, slots as find_slots
+
+    shape, views = record["shape"], record["views"]
+    reached = None
+    kinds: dict[tuple, list] = {}
+    for feature in [*find_holes(shape), *find_slots(shape)]:
+        if _member_key(feature) not in record["called"]:
+            continue
+        along = next((k for k in range(3) if abs(abs(feature.axis[k]) - 1) < 1e-9), None)
+        if along is None:
+            continue  # an inclined hole is located in the view square to it, which measures no model axis
+        if reached is None:
+            reached = _reached(record)
+        places = [feature.mouth, *getattr(feature, "ends", ())]
+        missing = [axis for axis in range(3) if axis != along
+                   and not any(round(p[axis], _PLACE) in reached[axis] for p in places)]
+        if missing:
+            kinds.setdefault(_feature_key(feature), []).append((feature, missing))
+    lines = []
+    for members in kinds.values():
+        feature = members[0][0]
+        missing = sorted({axis for _f, axes in members for axis in axes})
+        is_slot = isinstance(feature, Slot)
+        text = _shown(hole_callout_text(_slot_spec(feature, len(members)) if is_slot
+                                        else _hole_spec(feature, len(members))))
+        where = next((name for name, look in views if _looks_into(feature, look)), "view")
+        across = " and ".join("XYZ"[axis] for axis in missing)
+        lines.append(
+            f"incomplete: {whose}{text} is not located along {across}: no dimension ties it to an edge, a datum "
+            f"or a located feature. {where}.dim(edge point, its centre) locates it, a hole_table() lists where "
+            f"each is, or {where}.symmetric(\"h\" or \"v\") states the part symmetric about the centre line it "
+            "sits on."
+        )
     return lines
 
 

@@ -196,6 +196,8 @@ class View:
     #: turned part lies down), the turn. The points given to the view are in the
     #: part's own frame, and turned with it.
     _turn: Any = None
+    #: The view's centre lines the part is stated symmetric about: "h", "v".
+    _symmetric: set = field(default_factory=set)
 
     def _at(self, p) -> tuple[float, float, float]:
         """A model point given to the view, in the frame the view draws."""
@@ -366,6 +368,22 @@ class View:
         _assert_legs_measure_an_angle(vertex, a, b)
         self._dims.append(_Dim("angle", vertex, a, distance, None, None, radius=0.0, angle=0.0, hole={"p2": b},
                                basic=basic, reference=reference))
+        return self
+
+    def symmetric(self, direction: str) -> "View":
+        """State that the part is symmetric about this view's centre line, ``"h"``
+        (the horizontal one) or ``"v"`` (the vertical one), and draw it with the
+        ISO 129 symmetry symbol. A feature centred on that line is then located
+        across it; without the statement, a centred feature still needs a
+        dimension, as the report says. A centre is the designer's to state, not
+        the drawing's to assume."""
+        if direction not in ("h", "v"):
+            raise ValueError(f"symmetric() takes 'h' or 'v', the view's horizontal or vertical centre line; got "
+                             f"{direction!r}")
+        if self.name == "iso" or self._direction is not None:
+            raise ValueError("symmetric() states a centre line of a principal view; an isometric or auxiliary view "
+                             "has none to state")
+        self._symmetric.add(direction)
         return self
 
     def note(self, text: str, at, *, offset: tuple[float, float] = (10.0, 10.0)) -> "View":
@@ -1308,10 +1326,28 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
                 view.overall(width=width_axis not in stated, height=height_axis not in stated)
             stated |= {width_axis, height_axis}
         features = [*find_holes(shape), *find_slots(shape)]
+        low = shape.bounding_box().min
         for view in views:
             look = _look(view)
-            if any(_looks_into(f, look) for f in features):
-                view.holes()
+            seen = [f for f in features if _looks_into(f, look)]
+            if not seen:
+                continue
+            if turned is None:
+                view.hole_table()  # each hole's X and Y from one corner: called out and located
+                continue
+            view.holes()
+            # A turned part's axis locates what lies on it; a hole off it is placed
+            # along the axis from the part's end.
+            k = turned.axis
+            placed: set[float] = set()
+            for feature in seen:
+                if all(abs(feature.mouth[j] - turned.at[j]) <= 0.01 for j in range(3) if j != k):
+                    continue
+                if round(feature.mouth[k], 3) in placed:
+                    continue
+                placed.add(round(feature.mouth[k], 3))
+                end = tuple((low.X, low.Y, low.Z)[j] if j == k else feature.mouth[j] for j in range(3))
+                view.dim(end, feature.mouth)
         for view in sheet.views:
             # The author's points are in the item's own frame, as item.shape is.
             view._turn = turn
