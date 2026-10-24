@@ -285,8 +285,8 @@ cadgen build SOURCE | - [--name N]           one model from source text (stdin w
     [--xbf [F]] [--step [F]] [--glb [F]] [--stl [F]] [--threemf [F]] [--dxf [F]] [--json] [--verify] [--profile] [--no-daemon]
 cadgen export SRC DST [DST ...] [--pose NAME|JSON] [--part OWNER] [--no-inputs] [--no-daemon] [--json]
                                              SRC an .xbf or a .step
-cadgen snapshot SRC OUT.png [--display MODE|exploded=A|JSON] [--grid] [--camera C|authored] [--preview]
-                [--pose NAME|JSON] [--annotation FILE] [--measurements FILE]
+cadgen snapshot SRC OUT.png [--display MODE|exploded=A|JSON] [--grid] [--camera C|authored | --view NAME]
+                [--preview] [--pose NAME|JSON] [--annotation FILE] [--measurements FILE]
                 [--width W --height H | --size-profile P] [--no-daemon] [--json]
 cadgen snapshot --job PACKET [SRC] [the same flags, each over every job]
                                              every picture a Quick Edit packet (or a job file) names
@@ -570,14 +570,31 @@ and each stage's milliseconds (`serveMs`, `meshMs`, `sceneMs` when a scene is ma
 render process opening it). `parts` and `exploded` for a document that places one
 part are refused by name before anything renders. A document's PMI (**PMI**) is drawn
 as the viewer shows it: each callout's words, leader and dimension at its placement, at its part's
-first placement the picture shows, every label over every line, a callout whose reference broke at
-its code placement in its status's colour, a leader to a feature the model hides faint; the camera's
+first placement the picture shows (a dimension given its limits says them alone, stacked upper over
+lower; a surface profile's frame has its symbol; a flag note is its flag and its number, out from
+its first face), every label over every line, a callout whose reference broke at
+its code placement in its status's colour, a leader to a feature the model hides faint (what a clip
+cut away hides nothing); the camera's
 fit takes in the callouts drawn, and `--json` reports how many were drawn (`pmi`) and each
-annotation left out, with why (`pmiLeftOut`, `{id, part, status, reason}`): one the viewer does not
-draw, one whose part the picture hides, or a broken one its code never placed.
+annotation left out, with why (`pmiLeftOut`, `{id, part, status, reason}`, each a warning on
+stderr): one the viewer does not draw, a note (a general note, the part's general profile, a flag
+note on annotations alone: the viewer lists it in its notes, a still does not draw it), one whose
+part the picture hides, or a broken one its code never placed.
 `pmi=off` (`display.pmi` false) draws none. PMI is shown only on the parts as made, as the viewer
 shows it: an exploded, posed or Preview picture draws none, and asking for it there (`pmi` or
-`pmi=on`, `display.pmi` true), or of a document that carries none, is refused by name. `--annotation FILE` draws the viewer's annotation over the
+`pmi=on`, `display.pmi` true), or of a document that carries none, is refused by name. `--view
+NAME` (`PART/NAME` where two parts have one; `display.view` in a display object, a job's among
+them) draws a part's named view (**PMI**, Views) as the viewer applies it
+(`snapshot.view_of`, `render/pmi.py`'s `view_at`): its camera's direction and up placed by its
+part's first placement the picture shows, fitted as any camera object is; its section as the clip,
+along the world axis that placement turns the section's own onto; and only the PMI it shows, at its
+own placements (what it does not show is no part of it, and not left out); `--json` reports
+`view`. Refused by name before anything renders: an unknown view (the document's views listed),
+one with `--camera` (a view has its own) or with `display.clip` beside its section, one the viewer
+cannot apply, one whose part the picture hides, one whose section that placement turns off every
+world axis (a still cuts only square to a world axis, never along another, so never cuts wrong),
+and a view of a document with PMI exploded, posed or in Preview (with `pmi=off` it draws its camera
+and section alone). `--annotation FILE` draws the viewer's annotation over the
 model -- each mark on the part it was drawn on, wherever the picture places that part -- from an
 annotation file or the Quick Edit packet that carries one (the `.snapshot.json` the viewer writes),
 and `--measurements FILE` Measure's dimensions (`[{start, end, label, color}]`). A mark names the
@@ -595,7 +612,8 @@ separator -- and the picture is then `<SRC's stem>_<UTC time>.png` in it (a mode
 of jobs, or `{"input", "jobs": [...], "annotation", "measurements"}` -- in one call
 (`snapshot.job_pictures`, `api.snapshot_job`), on the machinery above: each job is a view, drawn with
 its own `camera` (an output's own `camera` over it), its `display` (its `hidden` and `isolated` parts
-among it; the packet's top-level copies are `--annotation`'s), its pose (`jointValues`, as `--pose`
+among it; the packet's top-level copies are `--annotation`'s; a `view` in it draws the job as that
+view, and its own camera beside one is refused), its pose (`jointValues`, as `--pose`
 takes it), `preview`, and -- a robot's -- the visuals its `selection.hide` names by the viewer's ids
 (`link:v1`, each robot instance carrying its visual's), the packet's ink and dimensions over each
 (a job's own `annotation` and `measurements` over the packet's); and each of its `outputs` (`path`,
@@ -614,8 +632,8 @@ Measure, the grid -- is as heavy against the picture at any scale, while OCCT's 
 drawing's hairlines) stay one pixel of the larger frame and read finer: OCCT's core profile draws no
 line wider than a pixel, and this is that, not a bug; `sizeProfile` sizes an output that gives no
 size. SRC, given, is drawn in place of every job's input, and a flag given overrides every job: the
-display, the grid, the camera, Preview, the pose, the ink, the dimensions, the size of every
-output; an OUT is refused. Every job is checked before anything renders (an unknown key, a setting
+display, the grid, the camera (`--view` too, in place of each job's camera), Preview, the pose, the
+ink, the dimensions, the size of every output; an OUT is refused. Every job is checked before anything renders (an unknown key, a setting
 out of range, two outputs at one path, a file that is not there: refused by name, every file left as
 it was), and a picture that fails leaves none of the job's. Through the daemon each picture is a frame
 of the file's warm render process; `--no-daemon` serves each file once for all its pictures.
@@ -1113,7 +1131,8 @@ return pmi.annotate(body,
   each id it `place`s (`{id: pmi.place(...)}`) there in that view, as its own presentation says
   elsewhere. All in the part's frame. A view's name is unique among its part's views; an id the
   call does not have, and a placement of one the view does not show, are refused by name. A view
-  is no annotation: the report counts none and a note names none.
+  is no annotation: the report counts none and a note names none. `cadgen snapshot --view NAME`
+  draws it as the viewer applies it (**The viewer and the snapshot**).
 - **Resolution.** Each build resolves every ref against the part as built: `ok`, `missing` (it
   names no face; the problem gives the name's atom now, where there is one), `ambiguous`
   (several: `candidates` lists them) or `invalid` (a face the annotation cannot stand on: a

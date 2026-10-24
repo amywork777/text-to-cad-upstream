@@ -744,20 +744,21 @@ class Scene:
         if any(str(mark.get("label") or "").strip() for mark in marks):
             self.fonts.add(face(*LABEL_FACE).name)
 
-    def pmi(self) -> None:
+    def pmi(self, view: dict[str, Any] | None = None) -> None:
         """The document's PMI (``structure["pmi"]``), painted over the finished frame as the viewer
         draws it over its page (``pmi.py``): each callout the viewer draws, where its layout puts it
-        in the document at rest, at its part's first placement shown; what is not drawn is said, and
-        why (``pmi_left_out``). Made before the camera is framed and after the hidden parts are
-        known: a fitted frame takes in each callout's label and dimension line (``placed_points``),
-        so none is cut off."""
+        in the document at rest, at its part's first placement shown; in a part's named view
+        (``view``, ``pmi.views``'), what it shows alone, at its own placements. What is not drawn is
+        said, and why (``pmi_left_out``). Made before the camera is framed and after the hidden parts
+        are known: a fitted frame takes in each callout's label and dimension line
+        (``placed_points``), so none is cut off."""
         from cadgen.engine.render import pmi
         from cadgen.engine.render.text import face
 
         self.pmi_bounds = pmi.rest_bounds(self.rest_structure, self.meshes)
-        found = pmi.constructions(self.rest_structure, self.meshes, self.pmi_bounds, self.hidden)
+        found = pmi.constructions(self.rest_structure, self.meshes, self.pmi_bounds, self.hidden, view)
         self.pmi_drawn = [(entry, made) for entry, made in found if made is not None]
-        self.pmi_left_out = pmi.left_out(self.rest_structure, found, self.hidden)
+        self.pmi_left_out = pmi.left_out(self.rest_structure, found, self.hidden, view)
         points = [made["label"] for _entry, made in self.pmi_drawn]
         for _entry, made in self.pmi_drawn:
             if made["dimension"]:

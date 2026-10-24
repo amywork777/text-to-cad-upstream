@@ -5,23 +5,28 @@ picture as the CAD Viewer draws them over its page.
 A port, operation for operation, of the viewer's own: what a callout says (``@text-to-cad/core``'s
 ``lib/xbf/xbfPmi.js``, ``readXbfPmi`` and ``pmiCallout``), where it stands in the model
 (``lib/xbf/xbfPmiLayout.js``, ``pmiConstruction``, from a face's nodes and surface as
-``lib/xbf/xbfEntities.js`` reads them off the part's mesh buffer, the one the viewer reads), and how
-it is drawn (``@text-to-cad/ui``'s ``renderers/xbf/pmi/PmiOverlay.jsx`` and ``PmiLabel.jsx``: the
-label a few words at the UI's size in a ruled box, a leader to its feature with an arrow (a datum's
-on its filled triangle), a distance's dimension and extension lines; every label over every line).
-One golden made by the viewer's own code (``lib/xbf/__fixtures__/pmi_plate/constructions.json``)
-holds both to one layout.
+``lib/xbf/xbfEntities.js`` reads them off the part's mesh buffer, the one the viewer reads), how a
+part's named view is seen (``@text-to-cad/ui``'s ``renderers/xbf/pmi/pmiViews.js``), and how it is
+drawn (``renderers/xbf/pmi/PmiOverlay.jsx`` and ``PmiLabel.jsx``: the label a few words at the UI's
+size in a ruled box, a leader to its feature with an arrow (a datum's on its filled triangle), a
+distance's dimension and extension lines; every label over every line). One golden made by the
+viewer's own code (``lib/xbf/__fixtures__/pmi_plate/constructions.json``) holds both to one layout.
 
 A reference is resolved as the engine resolves one (``refs.resolve_structure``); one the engine
 found broken (``missing``, ``ambiguous``, ``invalid``) is drawn where its code placed it, dashed in
 its status colour with an open ring where it was anchored, its nominal ``?``. A leader or extension
-line whose start the model hides from the camera is faint, its marker hollow. An annotation is drawn
-at its part's first placement the picture shows. Only the supported subset is drawn: distance (a
-basic one exact, its number boxed, measured to a hole's centre line), diameter, datum, flatness and
-position. What is not drawn -- another kind, a part the picture hides, a broken reference its code
-never placed -- is said, and why (``left_out``). Everything in the scene's coordinates (the
-document's millimetres), at rest: a still drawn exploded or posed draws none (``snapshot.py``
-refuses asking for it).
+line whose start the model hides from the camera is faint, its marker hollow (what a clip cut away
+hides nothing). An annotation is drawn at its part's first placement the picture shows. Only the
+supported subset is drawn: distance (a basic one exact, its number boxed, measured to a hole's
+centre line; one given its limits says them alone, stacked), diameter, datum, flatness, position,
+surface profile and a flag note (its flag and its number, out from its first face). A general note,
+the general profile (its part's Note 1) and a flag note on annotations alone are said in the
+viewer's notes and drawn as nothing on the part. What is not drawn -- another kind, a note, a part
+the picture hides, a broken reference its code never placed -- is said, and why (``left_out``). A
+view (``views``, ``view_at``) is seen down its camera from its part's first placement shown, cut by
+its section where that placement keeps the section's axis a world axis, showing its own PMI at its
+own placements. Everything in the scene's coordinates (the document's millimetres), at rest: a still
+drawn exploded or posed draws none (``snapshot.py`` refuses asking for it).
 """
 
 from __future__ import annotations
@@ -32,15 +37,22 @@ from typing import Any
 
 import numpy as np
 
-__all__ = ["Hidden", "callout", "construction", "constructions", "decimals", "element", "entries", "face_nodes",
-           "face_surface", "feature_point", "key", "left_out", "number", "paint", "placement", "reach", "rest_bounds",
-           "separate", "to_scene", "tolerance_text"]
+__all__ = ["Hidden", "NOTE", "callout", "construction", "constructions", "decimals", "dimension_places",
+           "drawn_on_part", "element", "entries", "face_nodes", "face_surface", "feature_point", "key", "left_out",
+           "number", "paint", "placed_section", "placement", "reach", "rest_bounds", "separate", "to_scene",
+           "tolerance_text", "view_at", "view_shows", "views"]
 
-KINDS = ("dimension", "datum", "geometric_tolerance")
+KINDS = ("dimension", "datum", "geometric_tolerance", "note")
 DIMENSION_TYPES = ("distance", "diameter")
-CHARACTERISTICS = ("flatness", "position")
+CHARACTERISTICS = ("flatness", "position", "surface_profile")
+CHARACTERISTIC_NAMES = {"flatness": "Flatness", "position": "Position", "surface_profile": "Surface profile"}
+DIMENSION_NAMES = {"distance": "Distance", "diameter": "Diameter"}
+SECTION_AXES = ("x", "y", "z")
 STATUSES = ("ok", "ambiguous", "missing", "invalid")
 MINUS = "−"
+EN_DASH = "–"
+# Why a still leaves out what the viewer says in its notes alone (``drawn_on_part``).
+NOTE = "a note: the viewer lists it, a still does not draw it"
 
 # --- the words (xbfPmi.js) -------------------------------------------------------------------
 
@@ -59,11 +71,17 @@ def _status(value: Any) -> str:
     return value if value in STATUSES else "missing"
 
 
-def _tolerance(value: Any) -> dict[str, float] | None:
-    if not isinstance(value, dict) or value.get("type") != "plus_minus":
+def _words(value: Any) -> list[str]:
+    return [item for item in value if isinstance(item, str) and item] if isinstance(value, list) else []
+
+
+def _tolerance(value: Any) -> dict[str, Any] | None:
+    """``readTolerance``: a plus-minus tolerance (signed deviations from the nominal) or limits (the
+    least size and the greatest, absolute), or None."""
+    if not isinstance(value, dict) or value.get("type") not in ("plus_minus", "limits"):
         return None
     upper, lower = _finite(value.get("upper")), _finite(value.get("lower"))
-    return None if upper is None or lower is None else {"upper": upper, "lower": lower}
+    return None if upper is None or lower is None else {"type": value["type"], "upper": upper, "lower": lower}
 
 
 def _point3(value: Any) -> list[float] | None:
@@ -85,8 +103,9 @@ def _dimension(value: Any) -> dict[str, Any] | None:
     basic = value.get("basic") is True
     # A basic dimension is exact: a tolerance on one is not read as one.
     tolerance = None if basic else _tolerance(value.get("tolerance"))
-    nominal = _finite((value.get("nominal") or {}).get("value"))
-    return {"type": _text(value.get("type")), "basic": basic, "nominal": nominal, "tolerance": tolerance}
+    given = value.get("nominal") if isinstance(value.get("nominal"), dict) else {}
+    return {"type": _text(value.get("type")), "basic": basic, "nominal": _finite(given.get("value")),
+            "unit": _text(given.get("unit")) or "mm", "tolerance": tolerance}
 
 
 def _datum(value: Any) -> dict[str, str] | None:
@@ -97,9 +116,22 @@ def _datum(value: Any) -> dict[str, str] | None:
 def _geometric_tolerance(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict) or not value:
         return None
+    # ``general``: the part's general profile, on the faces nothing else controls this build (its refs).
     return {"characteristic": _text(value.get("characteristic")), "value": _finite(value.get("value")),
-            "zone": _text(value.get("zone")) or None,
-            "datums": [datum for datum in value.get("datums") or [] if isinstance(datum, str) and datum]}
+            "unit": _text(value.get("unit")) or "mm", "zone": _text(value.get("zone")) or None,
+            "datums": _words(value.get("datums")), "general": value.get("general") is True}
+
+
+def _note(value: Any) -> dict[str, Any] | None:
+    """``readNote``: a note's number (the engine's: Note 1 is its part's general profile where it has
+    one), its words, whether it is general (it names no face and no annotation) and the ids it names."""
+    if not isinstance(value, dict):
+        return None
+    number = value.get("number")
+    whole = isinstance(number, (int, float)) and not isinstance(number, bool) and math.isfinite(number) \
+        and float(number).is_integer() and number > 0
+    return {"number": int(number) if whole else None, "text": _text(value.get("text")),
+            "general": value.get("general") is True, "annotations": _words(value.get("annotations"))}
 
 
 def _presentation(value: Any) -> dict[str, list[float]] | None:
@@ -120,10 +152,9 @@ def entries(structure: dict[str, Any]) -> list[dict[str, Any]]:
     carries, a field missing or of the wrong type read as nothing, what it is known by (``key``),
     whether it is drawn (``supported``) and, where it is not, why (``unsupported``)."""
     found, seen = [], set()
-    # Counted as the viewer counts them: among the document's objects (a list one, of no fields).
-    items = [item for item in structure.get("pmi") or [] if isinstance(item, (dict, list))]
+    # Counted as the viewer counts them (``keyedByPart``): among the document's objects.
+    items = [item for item in structure.get("pmi") or [] if isinstance(item, dict)]
     for index, item in enumerate(items):
-        item = item if isinstance(item, dict) else {}
         part = item.get("part")
         part = part if isinstance(part, int) and not isinstance(part, bool) else None
         # One the document lacks an id for, or repeats on a part, is kept apart by its place.
@@ -132,11 +163,11 @@ def entries(structure: dict[str, Any]) -> list[dict[str, Any]]:
         if known in seen:
             known = f"{known}#{index + 1}"
         seen.add(known)
-        entry = {"key": known, "id": ident, "kind": _text(item.get("kind")), "status": _status(item.get("status")),
-                 "problem": _text(item.get("problem")), "part": part,
+        entry = {"key": known, "id": ident, "kind": _text(item.get("kind")), "label": _text(item.get("label")),
+                 "status": _status(item.get("status")), "problem": _text(item.get("problem")), "part": part,
                  "refs": [_ref(ref) for ref in item.get("refs") or []],
                  "dimension": _dimension(item.get("dimension")), "datum": _datum(item.get("datum")),
-                 "tolerance": _geometric_tolerance(item.get("geometric_tolerance")),
+                 "tolerance": _geometric_tolerance(item.get("geometric_tolerance")), "note": _note(item.get("note")),
                  "presentation": _presentation(item.get("presentation")), "xcaf_type": _text(item.get("xcaf_type"))}
         # Why it is not drawn in the document's own words where it has them (``reason``), else the viewer's.
         unsupported = _unsupported(entry)
@@ -161,8 +192,10 @@ def _unsupported(entry: dict[str, Any]) -> str:
             return f"a {dimension.get('type') or 'dimension'} dimension is not one the viewer draws"
         if dimension["basic"] and dimension["type"] != "distance":
             return f"a basic {dimension['type']} is not one the viewer draws"
-        # A broken reference leaves nothing to measure (its nominal said as ``?``); one that resolved has one.
-        if dimension["nominal"] is None and entry["status"] == "ok":
+        # A broken reference leaves nothing to measure (its nominal said as ``?``); one that resolved
+        # has one, but where its limits say its sizes, which need none (a file states limits alone).
+        limits = (dimension["tolerance"] or {}).get("type") == "limits"
+        if dimension["nominal"] is None and entry["status"] == "ok" and not limits:
             return "it has no nominal"
     if kind == "datum" and entry["datum"] is None:
         return "it has no letter"
@@ -172,6 +205,13 @@ def _unsupported(entry: dict[str, Any]) -> str:
             return f"{tolerance.get('characteristic') or 'this characteristic'} is not one the viewer draws"
         if tolerance["value"] is None:
             return "it has no tolerance value"
+        if tolerance["general"] and tolerance["characteristic"] != "surface_profile":
+            return f"a general {tolerance['characteristic']} is not one the viewer draws"
+    if kind == "note":
+        if not (entry["note"] or {}).get("text", "").strip():
+            return "it has no text"
+        if entry["note"]["number"] is None:
+            return "it has no number"
     return ""
 
 
@@ -200,37 +240,76 @@ def _signed(value: float, places: int) -> str:
     return f"+{number(value, places)}" if value > 0 else number(value, places)
 
 
-def tolerance_text(tolerance: dict[str, float] | None) -> dict[str, Any] | None:
-    """``pmiToleranceText``: ``±0.2`` the same both ways, else each deviation signed, a zero bare."""
+def tolerance_text(tolerance: dict[str, Any] | None) -> dict[str, Any] | None:
+    """``pmiToleranceText``, at one number of places (what the more exact of its two numbers needs):
+    a plus-minus one ``±0.2`` the same both ways, else each deviation signed, a zero bare; limits,
+    the least size and the greatest, ``9.8–10.2`` (an en dash), stacked upper over lower where drawn."""
     if not tolerance:
         return None
     upper, lower = tolerance["upper"], tolerance["lower"]
     places = max(decimals(upper), decimals(lower))
+    if tolerance.get("type") == "limits":
+        upper_text, lower_text = number(upper, places), number(lower, places)
+        return {"limits": True, "upper": upper_text, "lower": lower_text, "text": f"{lower_text}{EN_DASH}{upper_text}",
+                "places": places}
     if upper > 0 and abs(upper + lower) < 1e-12:
-        return {"symmetric": True, "text": f"±{number(upper, places)}", "places": places}
+        return {"symmetric": True, "text": f"±{number(upper, places)}", "upper": f"+{number(upper, places)}",
+                "lower": f"{MINUS}{number(upper, places)}", "places": places}
     upper_text, lower_text = _signed(upper, places), _signed(lower, places)
-    return {"symmetric": False, "upper": upper_text, "lower": lower_text, "text": f"{upper_text}/{lower_text}",
+    return {"symmetric": False, "text": f"{upper_text}/{lower_text}", "upper": upper_text, "lower": lower_text,
             "places": places}
 
 
+def dimension_places(dimension: dict[str, Any]) -> int:
+    """``pmiDimensionPlaces``: its tolerance's places (none without one) or what its nominal needs (up
+    to four), whichever is more; limits given are its sizes, said at their own places."""
+    tolerance = tolerance_text(dimension["tolerance"])
+    if tolerance and tolerance.get("limits"):
+        return tolerance["places"]
+    nominal = dimension["nominal"]
+    return max(tolerance["places"] if tolerance else 0, 0 if nominal is None else decimals(nominal))
+
+
 def callout(entry: dict[str, Any]) -> dict[str, Any]:
-    """``pmiCallout``: what a callout says, in the pieces its label draws."""
+    """``pmiCallout``: what a callout says, in the pieces its label draws and in words (``text``): a
+    dimension's nominal and tolerance (its limits in place of a nominal, ``nominal`` None), a datum's
+    letter, a frame's cells, a note's number (``flag`` for one on faces or annotations), the general
+    profile as its part's Note 1 (drawn as no callout)."""
+    if not entry.get("supported"):
+        return {"kind": "unsupported", "title": entry.get("label") or entry["id"] or "",
+                "text": entry["xcaf_type"] or entry["kind"] or "PMI"}
     if entry["kind"] == "dimension":
         dimension = entry["dimension"]
         tolerance = tolerance_text(dimension["tolerance"])
-        nominal = dimension["nominal"]
-        if nominal is None:
-            shown = "?"
-        else:
-            # At the tolerance's places, or more where the nominal needs them (up to four).
-            shown = number(nominal, max(tolerance["places"] if tolerance else 0, decimals(nominal)))
-        return {"kind": "dimension", "diameter": dimension["type"] == "diameter", "basic": dimension["basic"],
-                "nominal": shown, "tolerance": tolerance}
+        diameter, basic = dimension["type"] == "diameter", dimension["basic"]
+        head = {"kind": "dimension", "type": dimension["type"], "diameter": diameter, "basic": basic,
+                "tolerance": tolerance, "unit": dimension["unit"],
+                "title": "Basic distance" if basic else DIMENSION_NAMES.get(dimension["type"])}
+        if tolerance and tolerance.get("limits"):
+            return {**head, "nominal": None, "text": f"{'⌀' if diameter else ''}{tolerance['text']}"}
+        # No nominal where the reference broke: there is nothing to measure it on.
+        nominal = "?" if dimension["nominal"] is None else number(dimension["nominal"], dimension_places(dimension))
+        within = f" {tolerance['text']}" if tolerance else ""
+        said = f"{'⌀' if diameter else ''}{nominal}{within}{' basic' if basic else ''}"
+        return {**head, "nominal": nominal, "text": said}
     if entry["kind"] == "datum":
-        return {"kind": "datum", "letter": entry["datum"]["letter"]}
+        return {"kind": "datum", "letter": entry["datum"]["letter"], "title": "Datum",
+                "text": f"Datum {entry['datum']['letter']}"}
+    if entry["kind"] == "note":
+        note = entry["note"]
+        return {"kind": "note", "number": note["number"], "flag": not note["general"],
+                "title": f"Note {note['number']}", "text": note["text"]}
     tolerance = entry["tolerance"]
-    return {"kind": "frame", "characteristic": tolerance["characteristic"], "diameter": tolerance["zone"] == "diameter",
-            "value": number(tolerance["value"]), "datums": list(tolerance["datums"])}
+    datums = list(tolerance["datums"])
+    if tolerance["general"]:
+        return {"kind": "general_profile", "number": 1, "title": "Note 1",
+                "text": f"Unless otherwise noted, all surfaces profile {number(tolerance['value'])}"
+                        f"{' to ' + '|'.join(datums) if datums else ''}"}
+    diameter, shown = tolerance["zone"] == "diameter", number(tolerance["value"])
+    name = CHARACTERISTIC_NAMES[tolerance["characteristic"]]
+    return {"kind": "frame", "characteristic": tolerance["characteristic"], "diameter": diameter, "value": shown,
+            "datums": datums, "unit": tolerance["unit"], "title": name,
+            "text": " | ".join([f"{name} {'⌀' if diameter else ''}{shown}", *datums])}
 
 
 # --- a face, from its part's mesh (xbfEntities.js) -------------------------------------------
@@ -413,6 +492,15 @@ def _any_perpendicular(n: Any) -> list[float] | None:
     return _unit(_cross(n, [1, 0, 0]) if abs(n[0]) < 0.9 else _cross(n, [0, 1, 0]))
 
 
+def drawn_on_part(entry: dict[str, Any]) -> bool:
+    """``pmiDrawnOnPart``: whether an annotation is drawn on the part -- all but what the viewer says
+    in its notes alone: a general note, the general profile, and a flag note naming annotations and
+    no face (it has no face of its own to stand on)."""
+    if (entry.get("note") or {}).get("general") or (entry.get("tolerance") or {}).get("general"):
+        return False
+    return not (entry["kind"] == "note" and not entry["refs"])
+
+
 def reach(bounds: tuple[Any, Any] | None) -> float:
     diagonal = _length(_sub(bounds[1], bounds[0])) if bounds else 0.0
     return max(REACH_MIN, diagonal * REACH_SHARE)
@@ -519,12 +607,16 @@ def _broken(at: dict[str, Any] | None, placed: str) -> dict[str, Any] | None:
 
 
 def construction(entry: dict[str, Any], geometry: dict[str, Any], bounds: tuple[Any, Any] | None,
-                 turn: int = 0) -> dict[str, Any] | None:
+                 turn: int = 0, placement: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """``pmiConstruction``: the scene points a callout is drawn from -- its anchor, its label, a
-    distance's dimension and extension lines -- or None where it can be drawn nowhere."""
+    distance's dimension and extension lines -- or None where it can be drawn nowhere or is said in
+    the notes alone (``drawn_on_part``). ``placement``: one to draw it at in place of its code's (a
+    view's own), in the scene's coordinates."""
+    if not drawn_on_part(entry):
+        return None
     centre = _scale(_add(bounds[0], bounds[1]), 0.5) if bounds else [0.0, 0.0, 0.0]
     far = reach(bounds)
-    given = entry["presentation"]
+    given = placement or entry["presentation"]
     at = {"anchor": list(given["anchor"]), "offset": list(given["offset"])} if given else None
     placed = "given" if given else "default"
     if entry["kind"] == "dimension" and entry["dimension"]["type"] == "distance":
@@ -596,20 +688,23 @@ def placement(structure: dict[str, Any], part: int, hidden: frozenset[int] = fro
 
 
 def constructions(structure: dict[str, Any], meshes: dict[str, Any], bounds: tuple[Any, Any] | None,
-                  hidden: frozenset[int] = frozenset()) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
-    """Every supported entry with its construction (``useXbfPmi``'s), None where it is drawn
-    nowhere: its references resolved as the engine resolves them, each that names one face taken
-    from its part's mesh where the part's first placement shown stands (``placement``), the
-    placement its code gives it taken from that frame, and each later annotation of a feature
-    turned from the one before it. An entry whose part the picture shows nowhere is drawn nowhere.
-    ``bounds``: the model's at rest (``rest_bounds``); ``hidden``: the instances the picture leaves
-    out."""
+                  hidden: frozenset[int] = frozenset(),
+                  view: dict[str, Any] | None = None) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
+    """Every supported entry drawn on the part with its construction (``useXbfPmi``'s), None where it
+    is drawn nowhere: its references resolved as the engine resolves them, a role's first that names
+    one face taken from its part's mesh where the part's first placement shown stands
+    (``placement``), the placement its code gives it taken from that frame, and each later
+    annotation of a feature turned from the one before it. An entry whose part the picture shows
+    nowhere is drawn nowhere. ``bounds``: the model's at rest (``rest_bounds``); ``hidden``: the
+    instances the picture leaves out; ``view`` (``views``'): what it shows alone, each it places
+    where it places it (every entry turned as without it, as the viewer turns them)."""
     from cadgen.engine import refs
 
     prototypes, instances = structure["prototypes"], structure["instances"]
+    placed_by = {key(view["part"], ident): at for ident, at in view["place"].items()} if view else {}
     found, turns = [], {}
     for entry in entries(structure):
-        if not entry["supported"]:
+        if not entry["supported"] or not drawn_on_part(entry):
             continue
         shown = None
         if entry["part"] is not None:
@@ -619,6 +714,8 @@ def constructions(structure: dict[str, Any], meshes: dict[str, Any], bounds: tup
                 continue
         geometry, first = {}, entry["key"]
         for at, ref in enumerate(entry["refs"]):
+            if ref["role"] in geometry:  # a role stands on its first face (a profile's or a note's on several)
+                continue
             face = None
             if ref["status"] == "ok":
                 try:
@@ -637,25 +734,30 @@ def constructions(structure: dict[str, Any], meshes: dict[str, Any], bounds: tup
         placed = {**entry, "presentation": to_scene(entry["presentation"], frame)}
         turn = turns.get(first, 0)
         turns[first] = turn + 1
-        found.append((entry, construction(placed, geometry, bounds, turn)))
-    return found
+        here = to_scene(placed_by.get(entry["key"]), frame)  # a view's own placement of it
+        found.append((entry, construction(placed, geometry, bounds, turn, here)))
+    # In a view, what it shows alone (``pmiViewShows``), as the viewer draws its items.
+    return [(entry, made) for entry, made in found if view is None or view_shows(view, entry)]
 
 
 def left_out(structure: dict[str, Any], found: list[tuple[dict[str, Any], dict[str, Any] | None]],
-             hidden: frozenset[int] = frozenset()) -> list[dict[str, Any]]:
+             hidden: frozenset[int] = frozenset(), view: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """What a picture leaves out of the document's PMI, and why, each ``{id, part, status, reason}``
     (``part`` its part's name, which with the id names it): an entry the viewer does not draw (as its
-    PMI section says it is not shown), one whose part the picture shows nowhere, and one with no
-    feature to stand on and no placement in its code. ``found``: what ``constructions`` made, with
-    the same ``hidden``."""
+    PMI section says it is not shown), a note the viewer says in its notes alone (``NOTE``), one
+    whose part the picture shows nowhere, and one with no feature to stand on and no placement in
+    its code. In a view, only what it shows (what it does not is no part of it). ``found``: what
+    ``constructions`` made, with the same ``hidden`` and ``view``."""
     made = {entry["key"]: construction for entry, construction in found}
     prototypes = structure["prototypes"]
     left = []
     for entry in entries(structure):
-        if made.get(entry["key"]) is not None:
+        if made.get(entry["key"]) is not None or (view is not None and not view_shows(view, entry)):
             continue
         if not entry["supported"]:
             reason = entry["unsupported"]
+        elif not drawn_on_part(entry):
+            reason = NOTE
         elif entry["part"] is not None and placement(structure, entry["part"], hidden) is None:
             reason = "no placement of its part is shown"
         else:
@@ -663,6 +765,110 @@ def left_out(structure: dict[str, Any], found: list[tuple[dict[str, Any], dict[s
         part = prototypes[entry["part"]].get("name") if entry["part"] in range(len(prototypes)) else None
         left.append({"id": entry["id"], "part": part, "status": entry["status"], "reason": reason})
     return left
+
+
+# --- a part's named views (xbfPmi.js readXbfPmi, pmiViews.js) ---------------------------------
+
+IDENTITY = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+# How near a world axis a placed section's normal must be: a placement's own rounding, no more.
+ON_AXIS = 1e-9
+
+
+def _camera(value: Any) -> dict[str, Any] | None:
+    """``readCamera``: the side from the target toward the eye (``direction``, a preset's as the
+    stills' are), its up, the preset it is (None for the code's own) and its projection; None
+    without both vectors."""
+    if not isinstance(value, dict) or not _point3(value.get("direction")) or not _point3(value.get("up")):
+        return None
+    return {"preset": _text(value.get("preset")) or None, "direction": _point3(value["direction"]),
+            "up": _point3(value["up"]), "projection": _text(value.get("projection")) or None}
+
+
+def _section(value: Any) -> dict[str, Any] | None:
+    """``readSection``: the Clip's shape, one plane across ``axis`` at ``at`` keeping the lower side
+    (``invert``: the upper); None for none, or for one that is not that."""
+    if (not isinstance(value, dict) or value.get("axis") not in SECTION_AXES or _finite(value.get("at")) is None
+            or not isinstance(value.get("invert"), bool)):
+        return None
+    return {"axis": value["axis"], "at": value["at"], "invert": value["invert"]}
+
+
+def views(structure: dict[str, Any]) -> list[dict[str, Any]]:
+    """Each part's named views as the viewer reads them (``readXbfPmi``'s ``views``, from
+    ``structure["pmi_views"]``), in the code's order, known by part and name (``key``): ``camera``,
+    ``section``, ``shows`` (ids, None for every one of its part's), ``place`` (its own placements by
+    id, its part's frame), whether the viewer can apply it (``supported``) and, where not, why."""
+    found, seen = [], set()
+    items = [item for item in structure.get("pmi_views") or [] if isinstance(item, dict)]
+    for index, item in enumerate(items):
+        part = item.get("part")
+        part = part if isinstance(part, int) and not isinstance(part, bool) else None
+        name = _text(item.get("name")) or f"#{index + 1}"
+        known = key(part, name)
+        if known in seen:
+            known = f"{known}#{index + 1}"
+        seen.add(known)
+        camera, section = _camera(item.get("camera")), _section(item.get("section"))
+        place = item.get("place") if isinstance(item.get("place"), dict) else {}
+        shows = item.get("shows")
+        # One the viewer cannot apply says why: it is never seen down another camera, or uncut.
+        unsupported = "it has no camera" if camera is None else ""
+        if not unsupported and item.get("section") is not None and section is None:
+            unsupported = "its section is not one the viewer applies"
+        if not unsupported and shows is not None and not isinstance(shows, list):
+            unsupported = "what it shows is not a list of ids"
+        found.append({"key": known, "kind": "view", "part": part, "name": name, "label": _text(item.get("label")),
+                      "camera": camera, "section": section, "shows": _words(shows) if isinstance(shows, list) else None,
+                      "place": {ident: _presentation(at) for ident, at in place.items() if ident and _presentation(at)},
+                      "supported": not unsupported, "unsupported": unsupported})
+    return found
+
+
+def _clean(value: float) -> float:
+    """A coordinate free of the float noise a placement leaves, and of a negative zero."""
+    return float(f"{value:.12g}") + 0.0
+
+
+def placed_section(section: dict[str, Any], matrix: list[float]) -> dict[str, Any] | None:
+    """``placedSection``: a view's section (its part's frame) where ``matrix`` (column-major) places
+    the part -- the Clip's settings in the scene's -- or None where the placement turns its axis off
+    every world axis. Its plane keeps the side it kept: turned to point down a world axis, its
+    ``invert`` flips."""
+    index = SECTION_AXES.index(section["axis"])
+    along = [0.0, 0.0, 0.0]
+    along[index] = 1.0
+    normal = _place_direction(matrix, along)
+    world = next((axis for axis, component in enumerate(normal) if abs(abs(component) - 1) <= ON_AXIS), None)
+    if world is None:
+        return None
+    point = [0.0, 0.0, 0.0]
+    point[index] = section["at"]
+    return {"axis": SECTION_AXES[world], "at": _clean(_place_point(matrix, point)[world]),
+            "invert": not section["invert"] if normal[world] < 0 else section["invert"]}
+
+
+def view_at(view: dict[str, Any], structure: dict[str, Any],
+            hidden: frozenset[int] = frozenset()) -> dict[str, Any] | None:
+    """``pmiViewAt``: where a view is seen from -- its part's first placement shown (``instance``,
+    ``placement``), its camera's ``direction`` (from the part toward the eye) and ``up`` placed by
+    it, and its section as the Clip cuts it there (``section``), None where it has none or where the
+    placement turns its axis off a world axis (``section_off``). None where no placement of its part
+    is shown, or the view is one the viewer cannot apply."""
+    if not view["supported"] or view["part"] is None:
+        return None
+    instance = placement(structure, view["part"], hidden)
+    if instance is None:
+        return None
+    matrix = structure["instances"][instance].get("matrix") or IDENTITY
+    section = placed_section(view["section"], matrix) if view["section"] else None
+    return {"instance": instance, "direction": _place_direction(matrix, view["camera"]["direction"]),
+            "up": _place_direction(matrix, view["camera"]["up"]), "section": section,
+            "section_off": bool(view["section"]) and section is None}
+
+
+def view_shows(view: dict[str, Any], entry: dict[str, Any]) -> bool:
+    """``pmiViewShows``: one of its part's it names, or any of its part's where it names none."""
+    return entry["part"] == view["part"] and (view["shows"] is None or entry["id"] in view["shows"])
 
 
 # --- drawn over the picture (PmiOverlay.jsx, PmiLabel.jsx) -----------------------------------
@@ -682,7 +888,7 @@ LABEL_CLEAR = 6.0
 LABEL_MARGIN = 4.0
 GAP_PX = 3.0
 # The label: 11 px words (``text-tiny``) on 16 px lines, a 1 px rule and 1 px inside it, cells 4 px in;
-# a datum's letter medium (``font-medium``), a tolerance's limits 10 px.
+# a datum's letter and a note's number medium (``font-medium``), a tolerance's two numbers 10 px.
 TEXT, LETTER, SMALL, ROW, PAD, GLYPH = (400, 11), (500, 11), (400, 10), 16.0, 4.0, 12.0
 # A basic dimension's box about its number: a 1 px rule 2 px out from it each side, 14 px words tall.
 BOXED, BOXED_HEIGHT = 3.0, 16.0
@@ -707,6 +913,18 @@ def _glyph(painter: Any, name: str, x: float, middle: float, color: Any, alpha: 
         painter.disc(at(12, 12), 5.5 * k, color, ring=width, alpha=alpha)
         painter.line(at(12, 3), at(12, 21), width, color, alpha)
         painter.line(at(3, 12), at(21, 12), width, color, alpha)
+    elif name == "surface_profile":
+        # A half circle closed by its chord (``M3.5 16.5a8.5 8.5 0 0 1 17 0Z``).
+        arc = [at(12 - 8.5 * math.cos(math.pi * step / 16), 16.5 - 8.5 * math.sin(math.pi * step / 16))
+               for step in range(17)]
+        for a, b in zip(arc, arc[1:]):
+            painter.line(a, b, width, color, alpha)
+        painter.line(arc[-1], arc[0], width, color, alpha)
+    elif name == "flag":
+        # A flag note's flag on its pole (``M6 21V4h11l-2.5 4.5L17 13H6``).
+        flag = [at(6, 21), at(6, 4), at(17, 4), at(14.5, 8.5), at(17, 13), at(6, 13)]
+        for a, b in zip(flag, flag[1:]):
+            painter.line(a, b, width, color, alpha)
 
 
 def _cells(said: dict[str, Any]) -> list[dict[str, Any]]:
@@ -715,16 +933,21 @@ def _cells(said: dict[str, Any]) -> list[dict[str, Any]]:
 
     words, small = face(*TEXT), face(*SMALL)
     if said["kind"] == "dimension":
-        cell = {"glyphs": ["diameter"] if said["diameter"] else [], "words": said["nominal"], "face": words,
+        # Limits alone, in place of a nominal; deviations stacked beside it (``ml-0.5``), or ``±`` after it.
+        cell = {"glyphs": ["diameter"] if said["diameter"] else [], "words": said["nominal"] or "", "face": words,
                 "small": None, "boxed": said["basic"]}
         tolerance = said["tolerance"]
-        if tolerance and tolerance["symmetric"]:
+        if tolerance and tolerance.get("symmetric"):
             cell["words"] += f" {tolerance['text']}"
         elif tolerance:
             cell["small"] = (tolerance["upper"], tolerance["lower"])
+            cell["beside"] = 0.0 if tolerance.get("limits") else 2.0
         cells = [cell]
     elif said["kind"] == "datum":
         cells = [{"glyphs": [], "words": said["letter"], "face": face(*LETTER), "small": None, "min": 20.0}]
+    elif said["kind"] == "note":
+        # A flag note's flag and its number (``gap-0.5``), its words the viewer's notes' to read.
+        cells = [{"glyphs": ["flag"], "words": str(said["number"]), "face": face(*LETTER), "small": None, "gap": 2.0}]
     else:
         cells = [{"glyphs": [said["characteristic"]], "words": "", "face": words, "small": None},
                  {"glyphs": ["diameter"] if said["diameter"] else [], "words": said["value"], "face": words,
@@ -733,15 +956,15 @@ def _cells(said: dict[str, Any]) -> list[dict[str, Any]]:
     for cell in cells:
         width = PAD * 2 + _content(cell)
         if cell["small"]:
-            width += 2 + max(small.width(cell["small"][0]), small.width(cell["small"][1]))
+            width += cell["beside"] + max(small.width(cell["small"][0]), small.width(cell["small"][1]))
         cell["width"] = max(width, cell.get("min", 0.0))
     return cells
 
 
 def _content(cell: dict[str, Any]) -> float:
     """How wide a cell's glyphs and words are, a basic number's box about them: its padding and a
-    tolerance's small words apart."""
-    glyphs = len(cell["glyphs"]) * (GLYPH + 1)
+    tolerance's small words apart. A glyph and what follows it stand ``gap`` apart (``gap-px``)."""
+    glyphs = len(cell["glyphs"]) * (GLYPH + cell.get("gap", 1.0))
     text = cell["face"].width(cell["words"]) if cell["words"] else 0
     return glyphs + text + (BOXED * 2 if cell.get("boxed") else 0)
 
@@ -766,7 +989,7 @@ def _label(painter: Any, box: dict[str, Any]) -> None:
         start = at + (cell["width"] - _content(cell)) / 2 if cell.get("min") else at + PAD
         for glyph in cell["glyphs"]:
             _glyph(painter, glyph, start, box["y"], INK, 1.0)
-            start += GLYPH + 1
+            start += GLYPH + cell.get("gap", 1.0)
         if cell.get("boxed"):
             # A basic dimension's number in its own box, ruled in the ink (``border px-0.5``).
             boxed = cell["face"].width(cell["words"]) + BOXED * 2
@@ -778,8 +1001,8 @@ def _label(painter: Any, box: dict[str, Any]) -> None:
         if cell.get("boxed"):
             start += BOXED
         if cell["small"]:
-            painter.words(cell["small"][0], small, start + 2, box["y"] - 5.6, INK)
-            painter.words(cell["small"][1], small, start + 2, box["y"] + 5.6, INK)
+            painter.words(cell["small"][0], small, start + cell["beside"], box["y"] - 5.6, INK)
+            painter.words(cell["small"][1], small, start + cell["beside"], box["y"] + 5.6, INK)
         at += cell["width"]
 
 
@@ -862,7 +1085,9 @@ HIDDEN_SHARE, HIDDEN_MIN = 1e-3, 0.05
 class Hidden:
     """Whether the model hides a point from the camera (``pmiHidden.js``): a ray from the eye
     through the point meets a shown part's triangle nearer than the point by more than the
-    tolerance, from ``bounds``, the model's at rest (``rest_bounds``). After the camera is framed."""
+    tolerance, from ``bounds``, the model's at rest (``rest_bounds``); a triangle the clip cut away
+    meets nothing, as the viewer's pick takes no hit the Clip's plane does not keep
+    (``xbfScene.js``'s ``kept``). After the camera is framed."""
 
     def __init__(self, scene: Any, bounds: tuple[Any, Any] | None) -> None:
         triangles = []
@@ -882,6 +1107,14 @@ class Hidden:
         self.perspective = camera["projection"] == "perspective"
         size = float(np.linalg.norm(np.subtract(bounds[1], bounds[0]))) if bounds else 0.0
         self.tolerance = max(HIDDEN_MIN, size * HIDDEN_SHARE)
+        # The side of the clip's plane it keeps (``clip.plane``'s): the lower coordinates, ``invert`` the upper.
+        clip = (getattr(scene, "display", None) or {}).get("clip")
+        self.kept: tuple[int, float, float] | None = None
+        if clip and clip.get("enabled") is not False:
+            axis = SECTION_AXES.index(clip.get("axis", "x"))
+            low, high = scene.rest_bounds() if clip.get("at") is None else (None, None)
+            at = float(clip["at"]) if clip.get("at") is not None else (float(low[axis]) + float(high[axis])) / 2
+            self.kept = (axis, at, 1.0 if clip.get("invert") else -1.0)
 
     def __call__(self, point: Any) -> bool:
         if not len(self.triangles):
@@ -905,6 +1138,9 @@ class Hidden:
         v = (q @ direction) * inv
         t = np.einsum("ij,ij->i", e2, q) * inv
         hit = ok & (u >= -1e-9) & (v >= -1e-9) & (u + v <= 1 + 1e-9) & (t > 0)
+        if self.kept is not None:
+            axis, at, side = self.kept
+            hit &= side * (origin[axis] + t * direction[axis] - at) >= 0
         if not hit.any():
             return False
         return bool(t[hit].min() < float((point - origin) @ direction) - self.tolerance)

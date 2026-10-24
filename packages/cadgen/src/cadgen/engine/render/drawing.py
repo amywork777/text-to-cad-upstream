@@ -66,7 +66,8 @@ def refusals(still: Any, name: str) -> None:
     if still.camera is not None:
         plan_view(still.camera, name)
     asked = [key for key in REFUSED if still.display.get(key) not in (None, False)]
-    for flag, given in (("--preview", still.preview), ("--pose", still.pose is not None)):
+    for flag, given in (("--preview", still.preview), ("--pose", still.pose is not None),
+                        ("--view", still.view is not None)):
         if given:
             asked.append(flag)
     if asked:

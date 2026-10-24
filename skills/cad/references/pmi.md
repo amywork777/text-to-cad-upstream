@@ -25,10 +25,10 @@ document keeps them:
 The `.xbf` keeps them as the kernel's own GD&T, notes and views, linked to their faces,
 and a STEP export writes the requirements as AP242 semantic PMI: requirements a program
 reads off the faces, not drawn callouts. Notes and views stay in the `.xbf`. A GLB, STL
-or 3MF carries none. The viewer draws datums, dimensions, flatness and position on the
-model and lists every annotation in its PMI section, one it does not draw yet (a
-surface profile, a note) with why; `cadgen snapshot` draws them as the viewer does.
-Neither offers views yet.
+or 3MF carries none. The viewer draws datums, dimensions (limits stacked), flatness,
+position, surface profiles and flag notes on the model and lists every annotation and
+note in its PMI section, one it does not draw with why; `cadgen snapshot` draws them as
+the viewer does, and `--view` draws a named view.
 
 ## A model-based definition
 
@@ -197,8 +197,9 @@ return pmi.annotate(
   build keeps it with the part, so the viewer can offer those notes; it is no
   requirement. The text is the user's: ask for it.
 - **Notes are the `.xbf`'s**: no STEP carries them, and no STEP is refused for one.
-  The viewer and `cadgen snapshot` do not draw notes yet: each is listed among what
-  they leave out.
+  A flag note on faces is drawn as its flag and number on its first face; a general
+  note and the general profile (Note 1) are the viewer's notes alone, which
+  `cadgen snapshot` lists among what it leaves out.
 
 ## Views
 
@@ -233,7 +234,10 @@ return pmi.annotate(
   show, is refused.
 - **Views are the `.xbf`'s**, kept as the kernel's own views: no STEP carries them,
   and no STEP is refused for one. A view is no annotation: the build report does not
-  count it. The viewer and `cadgen snapshot` do not offer views yet.
+  count it. The viewer applies a view from its PMI section, and `cadgen snapshot
+  --view A-A` draws it ([snapshots](snapshot-review.md)); a view whose section the
+  part's placement turns off the world's axes is refused there, not cut along
+  another.
 
 ## After an edit
 
@@ -344,7 +348,7 @@ say "general".
 ## Review
 
 `cadgen snapshot` draws a document's PMI as the viewer shows it, a broken one in red
-or amber at the place the code gave it; `pmi=off` draws the model alone
-([snapshots](snapshot-review.md)). In the viewer, picking a callout or its row lights
+or amber at the place the code gave it; `pmi=off` draws the model alone, and
+`--view NAME` a named view ([snapshots](snapshot-review.md)). In the viewer, picking a callout or its row lights
 its faces and shows its values: a toleranced dimension's limits, a tolerance's datums
 in order, and what uses each datum.

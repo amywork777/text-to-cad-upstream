@@ -12,7 +12,7 @@ import * as THREE from "three";
 
 import { parseEngineRef } from "../cadRefs.js";
 import { loadXbfDocument } from "./xbfDocument.js";
-import { readXbfPmi } from "./xbfPmi.js";
+import { pmiKey, readXbfPmi } from "./xbfPmi.js";
 import { pmiConstruction, pmiConstructions, pmiDrawnOnPart, pmiFeaturePoint, pmiMovedPlacement, pmiPresentationToPart, pmiPresentationToScene } from "./xbfPmiLayout.js";
 import { createXbfScene } from "./xbfScene.js";
 
@@ -185,15 +185,21 @@ test("a placement is in its part's frame: drawn where the part stands, and writt
 // engine served (`__fixtures__/pmi_plate`, which its `make_fixtures.py` builds and captures again),
 // as its code placed its PMI (v1), with no placement at all (every default: a feature's point, a
 // distance at the face's edge, each turned from the last), with each basic dimension's ends swapped
-// and unplaced (a hole's axis first: anchored on its centre line), and after the edit that left the
-// hole's callouts invalid (v3: its name now a flat face's, where it named a round one). The file was
-// made by this loop over these fixtures; a deliberate change to the layout or the fixtures changes
-// it, and the port follows it.
+// and unplaced (a hole's axis first: anchored on its centre line), after the edit that left the
+// hole's callouts invalid (v3: its name now a flat face's, where it named a round one), with every
+// kind (v4: limits, a surface profile on the hole, the general profile and a general note drawn as no
+// callout, a flag note on the hole), placed and unplaced (the general profile and the general note,
+// said in the notes, take no turn of a face), and v4 as its view A-A places what it places
+// (`placements`, by key: the view's own placements, in its part's frame). The file was made by this loop over these
+// fixtures; a deliberate change to the layout or the fixtures changes it, and the port follows it.
 test("the constructions cadgen's stills are held to are the ones this layout makes", async () => {
   const variants = { "v1": structure => structure, "v1-unplaced": structure => ({ ...structure, pmi: structure.pmi.map(item => ({ ...item, presentation: null })) }),
     "v1-reversed": structure => ({ ...structure, pmi: structure.pmi.map(item => (item.dimension?.basic
       ? { ...item, presentation: null, refs: item.refs.map(ref => ({ ...ref, role: ref.role === "from" ? "to" : "from" })).reverse() } : item)) }),
-    "v3": structure => structure };
+    "v3": structure => structure, "v4": structure => structure,
+    "v4-unplaced": structure => ({ ...structure, pmi: structure.pmi.map(item => ({ ...item, presentation: null })) }), "v4-A-A": structure => structure };
+  // A variant drawn as a view places its PMI: the view's placements by each annotation's key.
+  const placedBy = { "v4-A-A": "A-A" };
   const made = {};
   for (const [name, change] of Object.entries(variants)) {
     const version = name.split("-")[0];
@@ -214,11 +220,15 @@ test("the constructions cadgen's stills are held to are the ones this layout mak
       const ordinal = typeof element === "string" ? ordinals.get(element) : element?.ordinal;
       return Number.isInteger(ordinal) ? `i0/face/${ordinal}` : null;
     };
-    const drawn = readXbfPmi(structure).entries.map(entry => ({ entry, elements: entry.refs.map(ref => (ref.status === "ok" ? idOf(ref.ref) : null)),
+    const pmi = readXbfPmi(structure);
+    const drawn = pmi.entries.map(entry => ({ entry, elements: entry.refs.map(ref => (ref.status === "ok" ? idOf(ref.ref) : null)),
       frame: entry.part === null ? null : structure.instances[0].matrix }));
-    const constructions = pmiConstructions(drawn, { geometry: id => scene.elementGeometry(id, { points: true }), bounds: scene.restBounds });
+    const view = pmi.views.find(item => item.name === placedBy[name]);
+    const placements = view ? new Map(Object.entries(view.place).map(([id, at]) => [pmiKey(view.part, id), at])) : null;
+    const constructions = pmiConstructions(drawn, { geometry: id => scene.elementGeometry(id, { points: true }), bounds: scene.restBounds, placements });
     made[name] = drawn.filter(({ entry }) => constructions.has(entry.key)).map(({ entry }) => ({ id: entry.id, construction: constructions.get(entry.key) }));
   }
+  assert.ok(placedBy["v4-A-A"] && made["v4-A-A"].length, "v4's view A-A is in the fixture");
   const golden = JSON.parse(read("pmi_plate/constructions.json"));
   const close = (actual, expected, where) => {
     if (Array.isArray(expected)) { assert.equal(actual.length, expected.length, where); expected.forEach((value, index) => close(actual[index], value, `${where}[${index}]`)); return; }
