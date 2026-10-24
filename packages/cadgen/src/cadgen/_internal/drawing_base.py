@@ -59,6 +59,15 @@ _LAYERS = {
 _SECTION_LETTERS = "ABCDEFGHJKLMNPRSTUVWXYZ"
 #: ANSI31 at this scale is 45-degree lines 3.2 mm apart: legible on A4, not grey on A0.
 _HATCH_SCALE = 1.0
+#: The material families a part may be stated as, and the ANSI pattern a section
+#: hatches each with, at an angle (degrees) where two families share a pattern.
+#: The sheet's material key says which pattern is which material.
+HATCHES = {
+    "steel": ("ANSI32", 0.0), "iron": ("ANSI31", 0.0), "aluminium": ("ANSI38", 0.0),
+    "copper_alloy": ("ANSI33", 0.0), "plastic": ("ANSI34", 0.0), "elastomer": ("ANSI34", 90.0),
+    "composite": ("ANSI37", 0.0), "fabric": ("ANSI37", 90.0), "glass": ("ANSI36", 0.0), "general": ("ANSI31", 0.0),
+}
+FAMILIES = tuple(HATCHES)
 
 #: Projection conventions the title block may name. The two differ only in WHERE a
 #: view is placed: third angle puts the view from above above the front view and the

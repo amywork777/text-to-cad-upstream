@@ -62,7 +62,7 @@ from typing import Any, Callable, Iterable, Mapping, NamedTuple, Sequence
 
 from cadgen._internal.drawing_annotation import _Dim, _looks_into
 from cadgen._internal.drawing_assembly import (
-    _GA_LIST_SHARE, Item, _PartOf, PartsList, _arrange_assembly, _continuations, _item_subtitle, parts_list,
+    _GA_LIST_SHARE, Item, _PartOf, PartsList, _arrange_assembly, _continuations, _item_shown, parts_list,
     _refuse_balloons_on,
 )
 from cadgen._internal.drawing_base import (
@@ -815,7 +815,7 @@ class Sheet:
         return _TITLE_H + (_BAND_H if self._banded() else 0.0)
 
     def _material_label(self) -> str:
-        return f"{self.material} PER {self.spec}" if self.spec else self.material
+        return f"{self.material} PER {self.spec}" if self.spec and self.material else self.material
 
     def _check_notes(self, paper: str) -> None:
         """A note wider than the sheet runs off the paper, and the sheet is the one
@@ -1097,7 +1097,11 @@ class AssemblySheets(list):
         self._by_item = by_item
 
     def part(self, key: int | str) -> Sheet:
-        return self._by_item[self.parts[key].number]
+        item = self.parts[key]
+        if item.number not in self._by_item:
+            raise KeyError(f"item {item.number} ({item.description}) is not in the model, so it has no sheet; "
+                           "the parts list carries it")
+        return self._by_item[item.number]
 
 
 def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revision: str = "A",
@@ -1161,9 +1165,11 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
 
     by_item: dict[int, Sheet] = {}
     for item in parts:
-        shown = (item.description or f"ITEM {item.number}", item.material, _item_subtitle(item, title))
-        sheet = Sheet(title=shown[0], material=shown[1], subtitle=shown[2], general_tolerance=general_tolerance,
-                      **(common | {"size": None, "scale": None}))
+        if item.shape is None:
+            continue  # listed, not modelled: an adhesive has no sheet of its own
+        shown = _item_shown(item, title)
+        sheet = Sheet(title=shown[0], material=shown[1], spec=shown[2], subtitle=shown[3],
+                      general_tolerance=general_tolerance, **(common | {"size": None, "scale": None}))
         sheet._item = _PartOf(item, title, shown)
         shape = item.shape
         turned = revolved(shape)

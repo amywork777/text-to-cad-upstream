@@ -2286,6 +2286,64 @@ class AssemblyDrawingTests(unittest.TestCase):
         self.assertIn("6061-T6", rows)
         self.assertLess(rows["DESCRIPTION"], 10 + 40 + 7, "the header sits on the title block")
 
+    def test_the_parts_list_carries_spec_and_supplier(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, assembly_sheets, parts_list
+
+        parts = parts_list(_assembly())
+        parts.set("base", material="AL 6061-T6", spec="AMS 4027", supplier="ACME METALS", family="aluminium")
+        self.assertEqual(parts[1].family, "aluminium")
+        sheet = Sheet("A3")
+        sheet.parts_list(parts)
+        texts = [e.dxf.text for e in _render_sheet(sheet, index=1, count=1, label="list").modelspace()
+                 .query("TEXT[layer=='TITLE']")]
+        for value in ("SPEC", "SUPPLIER", "AL 6061-T6", "AMS 4027", "ACME METALS"):
+            self.assertIn(value, texts)
+        base = assembly_sheets(parts, title="FIXTURE").part("base")
+        self.assertEqual(base._material_label(), "AL 6061-T6 PER AMS 4027", "the part's sheet joins its spec")
+
+    def test_an_item_the_model_lacks_is_listed_as_required(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        parts = parts_list(_assembly())
+        loctite = parts.add("LOCTITE 243", spec="MIL-S-46163 TYPE II")
+        self.assertEqual((loctite.number, loctite.quantity, loctite.shape), (5, "AR", None))
+        sheets = assembly_sheets(parts, title="FIXTURE")
+        self.assertEqual(len(sheets), 1 + 4, "the arrangement and a sheet per modelled part")
+        with self.assertRaisesRegex(KeyError, "not in the model"):
+            sheets.part(5)
+        facts = _facts()
+        msp = _render_sheet(sheets[0], index=1, count=5, label="ga", facts=facts).modelspace()
+        texts = [e.dxf.text for e in msp.query("TEXT[layer=='TITLE']")]
+        self.assertIn("LOCTITE 243", texts)
+        self.assertIn("AR", texts)
+        self.assertFalse([line for line in _unstated(facts) if "item 5" in line])
+        fresh = parts_list(_assembly())
+        with self.assertRaisesRegex(ValueError, "AR"):
+            fresh.add("GREASE", quantity=0)
+        fresh.add("GREASE")
+        with self.assertRaisesRegex(ValueError, "not in the model"):
+            fresh.merge(4, 5)
+
+    def test_a_spec_too_long_for_its_column_is_refused(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
+
+        parts = parts_list(_assembly())
+        parts.set(1, spec="AMS 4027 AND AMS-QQ-A-250/11 AND ASTM B209 TEMPER T651")
+        sheet = Sheet("A3")
+        sheet.parts_list(parts)
+        with self.assertRaisesRegex(ValueError, r"item 1's SPEC .* does not fit .* parts\.set\(1, spec=\.\.\.\)"):
+            _render_sheet(sheet, index=1, count=1, label="long")
+
+    def test_an_unknown_family_is_refused(self) -> None:
+        from cadgen.eng_drawing import parts_list
+
+        with self.assertRaisesRegex(ValueError, "aluminium, copper_alloy"):
+            parts_list(_assembly()).set(1, family="unobtainium")
+
     def test_a_long_parts_list_is_refused_with_where_to_split_it(self) -> None:
         from build123d import Box, Compound, Pos
 

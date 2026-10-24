@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterator, NamedTuple, Sequence
 
 from cadgen._internal.drawing_base import (
-    _DEFAULT_TEXT, _DIM_ROW, _LABEL_ROOM, _MARGIN, _SIDES, _STANDARD_SCALES, _TITLE_W, _look,
+    _DEFAULT_TEXT, _DIM_ROW, FAMILIES, _LABEL_ROOM, _MARGIN, _SIDES, _STANDARD_SCALES, _TITLE_W, _look,
     _scale_label,
 )
 from cadgen._internal.drawing_sheet import (
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 #: The fields an author may fill in on a parts-list row. Everything else on an
 #: item is read off the model.
-FIELDS = ("description", "part_number", "material")
+FIELDS = ("description", "part_number", "material", "spec", "supplier", "family")
 
 
 @dataclass(slots=True, eq=False)
@@ -49,17 +49,22 @@ class Item:
 
     ``number`` is the item number its balloons carry. ``description`` defaults to
     the model's own name for the part made readable (``piston_rod:chrome`` reads
-    ``PISTON ROD, CHROME``); ``part_number`` and ``material`` are blank unless the
-    author states them, because the model does not. ``shape`` is one occurrence
-    in the part's own frame, for its detail sheet; ``occurrences`` are all of
-    them, placed in the assembly.
+    ``PISTON ROD, CHROME``); ``part_number``, ``material``, its ``spec`` and
+    ``supplier`` are blank unless the author states them, because the model does
+    not. ``family`` is the material family a section hatches it as. ``shape`` is
+    one occurrence in the part's own frame, for its detail sheet; ``occurrences``
+    are all of them, placed in the assembly. An item the model does not hold (an
+    adhesive, a grease) has neither, and a quantity of ``"AR"``, as required.
     """
 
     number: int
     description: str
-    quantity: int
+    quantity: int | str
     part_number: str = ""
     material: str = ""
+    spec: str = ""
+    supplier: str = ""
+    family: str = ""
     labels: tuple[str, ...] = ()
     refs: tuple[str, ...] = ()
     shape: Any = None
@@ -110,7 +115,9 @@ class PartsList:
 
     def set(self, key: int | str, **fields: str) -> "PartsList":
         """State what the model cannot carry for one item: ``description``,
-        ``part_number`` or ``material``. Returns the list, so calls chain."""
+        ``part_number``, ``material``, its ``spec`` ("AMS 4027") and
+        ``supplier``, or the material ``family`` a section hatches it as (one of
+        ``FAMILIES``). Returns the list, so calls chain."""
         unknown = sorted(set(fields) - set(FIELDS))
         if unknown:
             raise TypeError(f"parts.set() takes {', '.join(FIELDS)}; not {', '.join(unknown)}")
@@ -118,8 +125,32 @@ class PartsList:
         for name, value in fields.items():
             if not isinstance(value, str):
                 raise TypeError(f"parts.set({key!r}, {name}=...) takes a string, got {value!r}")
+        if fields.get("family") and fields["family"] not in FAMILIES:
+            raise ValueError(f"unknown material family {fields['family']!r}; one of {', '.join(FAMILIES)}")
+        for name, value in fields.items():
             setattr(item, name, value)
         return self
+
+    def add(self, description: str, *, quantity: int | str = "AR", part_number: str = "", material: str = "",
+            spec: str = "", supplier: str = "") -> Item:
+        """List an item the model does not hold: an adhesive, a sealant, a grease,
+        a shim set at assembly. It is numbered last, takes no balloon and has no
+        sheet; ``quantity`` is a count or ``"AR"``, as required."""
+        if self._frozen:
+            raise ValueError("add() lists a new item, and sheets are already drawn from this list; add before "
+                             "assembly_sheets() or balloons()")
+        if not (quantity == "AR" or (isinstance(quantity, int) and not isinstance(quantity, bool) and quantity > 0)):
+            raise ValueError(f"quantity is a positive count or \"AR\" (as required), got {quantity!r}")
+        for name, value in (("description", description), ("part_number", part_number), ("material", material),
+                            ("spec", spec), ("supplier", supplier)):
+            if not isinstance(value, str):
+                raise TypeError(f"parts.add({name}=...) takes a string, got {value!r}")
+        if not description:
+            raise ValueError("parts.add() needs a description: it is the item's only name")
+        item = Item(len(self.items) + 1, description, quantity, part_number=part_number, material=material,
+                    spec=spec, supplier=supplier)
+        self.items += (item,)
+        return item
 
     def merge(self, *keys: int | str, description: str | None = None) -> "PartsList":
         """List several items as one part: the parts the model names differently
@@ -139,6 +170,10 @@ class PartsList:
             if any(item is other for other in chosen):
                 raise ValueError(f"merge(): item {item.number} is named twice")
             chosen.append(item)
+        absent = next((item for item in chosen if item.shape is None), None)
+        if absent is not None:
+            raise ValueError(f"merge(): item {absent.number} ({absent.description}) is not in the model, so it is "
+                             "the same shape as nothing; merge the parts the model holds")
         first = min(chosen, key=lambda item: item.number)
         for other in chosen:
             if other is first:
@@ -582,15 +617,24 @@ def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: _F
 
 class _PartOf(NamedTuple):
     """A part's sheet of an assembly drawing: its item, the assembly's title, and
-    the title, material and subtitle the item last gave the sheet."""
+    the title, material, spec and subtitle the item last gave the sheet."""
 
     item: Item
     whole: str
-    shown: tuple[str, str, str]
+    shown: tuple[str, str, str, str]
 
 
 def _item_subtitle(item: Item, whole: str) -> str:
     return f"ITEM {item.number}{f' (QTY {item.quantity})' if item.quantity > 1 else ''} OF {whole}"
+
+
+def _item_shown(item: Item, whole: str) -> tuple[str, str, str, str]:
+    """What an item gives its part's sheet: title, material, spec, subtitle."""
+    if item.spec and not item.material:
+        raise ValueError(f"item {item.number} ({item.description or 'unnamed'}) has spec={item.spec!r} and no "
+                         f"material, which its sheet's MATERIAL reads before the spec; "
+                         f"parts.set({item.number}, material=...)")
+    return item.description or f"ITEM {item.number}", item.material, item.spec, _item_subtitle(item, whole)
 
 
 def _refresh_from_item(sheet: Sheet) -> None:
@@ -599,10 +643,10 @@ def _refresh_from_item(sheet: Sheet) -> None:
     ``assembly_sheets()`` reaches the sheet. A title, material or subtitle the
     author has set on the sheet since is theirs, and kept."""
     item, whole, shown = sheet._item
-    fresh = (item.description or f"ITEM {item.number}", item.material, _item_subtitle(item, whole))
-    current = (sheet.title, sheet.material, sheet.subtitle)
+    fresh = _item_shown(item, whole)
+    current = (sheet.title, sheet.material, sheet.spec, sheet.subtitle)
     kept = tuple(new if now == old else now for new, now, old in zip(fresh, current, shown))
-    sheet.title, sheet.material, sheet.subtitle = kept
+    sheet.title, sheet.material, sheet.spec, sheet.subtitle = kept
     sheet._item = _PartOf(item, whole, kept)
 
 

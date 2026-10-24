@@ -155,7 +155,8 @@ def _unstated(facts: _Facts) -> list[str]:
                          f"{parts[b].description or 'unnamed'}) are the same shape under different names; "
                          f"parts.merge({a}, {b}) lists them as one part, if they are one.")
         for item in parts:
-            if item.number in listed and item.number not in keyed:
+            # An item the model does not hold (an adhesive) has nothing to balloon.
+            if item.number in listed and item.number not in keyed and item.shape is not None:
                 lines.append(
                     f"incomplete: item {item.number} ({item.description or 'unnamed'}) has no balloon: no ballooned "
                     "view shows any of it unhidden. balloons() on a view from a side where it shows keys it."

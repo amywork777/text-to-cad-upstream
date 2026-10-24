@@ -289,7 +289,8 @@ _ZONE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
 #: A parts list: its row height and its columns, which together span the title
 #: block's width so the list stands on the block as one column of the sheet.
 _LIST_ROW = 7.0
-_LIST_COLUMNS = (("ITEM", 12.0), ("QTY", 12.0), ("DESCRIPTION", 68.0), ("PART NO.", 44.0), ("MATERIAL", 44.0))
+_LIST_COLUMNS = (("ITEM", 10.0), ("QTY", 10.0), ("DESCRIPTION", 50.0), ("PART NO.", 30.0), ("MATERIAL", 30.0),
+                 ("SPEC", 30.0), ("SUPPLIER", 20.0))
 #: The revision table, top right inside the frame: its row height and columns.
 _REVISION_ROW = 6.0
 _REVISION_COLUMNS = (("REV", 14.0), ("DATE", 26.0), ("DESCRIPTION", 70.0))
@@ -320,7 +321,8 @@ def _draw_parts_list(msp, sheet: Sheet, text, continued: dict) -> None:
     from ezdxf.enums import TextEntityAlignment as A
 
     parts, first, last = sheet._parts
-    fields = {"DESCRIPTION": "description", "PART NO.": "part_number", "MATERIAL": "material"}
+    fields = {"DESCRIPTION": "description", "PART NO.": "part_number", "MATERIAL": "material", "SPEC": "spec",
+              "SUPPLIER": "supplier"}
     for item in parts.items[first - 1:last]:
         for name, width in _LIST_COLUMNS:
             value = getattr(item, fields[name]) if name in fields else ""
@@ -332,7 +334,7 @@ def _draw_parts_list(msp, sheet: Sheet, text, continued: dict) -> None:
                 )
     x0, y0 = sheet.width - _MARGIN - _TITLE_W, _MARGIN + sheet._title_height()
     rows = [tuple(name for name, _w in _LIST_COLUMNS)] + [
-        (str(item.number), str(item.quantity), item.description, item.part_number, item.material)
+        (str(item.number), str(item.quantity), *(getattr(item, fields[name]) for name, _w in _LIST_COLUMNS[2:]))
         for item in parts.items[first - 1:last]]
     top = y0 + len(rows) * _LIST_ROW
     msp.add_lwpolyline([(x0, y0), (x0 + _TITLE_W, y0), (x0 + _TITLE_W, top), (x0, top)], close=True,
