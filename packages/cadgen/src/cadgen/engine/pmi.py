@@ -67,11 +67,12 @@ say so, the document never.
 surfaces": a surface profile of every face of its part that nothing else controls
 (``otherwise_controlled``: a face with a size or location requirement of its own), computed by each
 build from that build's annotations and geometry alone, never written in the code and never kept
-from an earlier build. The document links it to exactly those faces, and a STEP has it as a
-``SURFACE_PROFILE_TOLERANCE`` on them, so a reader gets the faces themselves. It is not XCAF's
-``All_Over`` modifier, which in ASME means every surface beside any other requirement. It has no
-ref to break: it is ``ok`` (``invalid`` where its frame names a datum the part lacks), and one
-covering no face is linked to nothing and written to no STEP.
+from an earlier build. The datum features it names are controlled on their own and left out (no
+face is profiled relative to itself). The document links it to exactly those faces, and a STEP
+has it as a ``SURFACE_PROFILE_TOLERANCE`` on them, so a reader gets the faces themselves. It is
+not XCAF's ``All_Over`` modifier, which in ASME means every surface beside any other requirement.
+It has no ref to break: it is ``ok`` (``invalid`` where its frame names a datum the part lacks),
+and one covering no face is linked to nothing and written to no STEP.
 
 **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
 GD&T as XCAF reads it. What this module does not hold whole -- another characteristic or dimension
@@ -503,44 +504,46 @@ def _resolved_part(given: Iterable[dict[str, Any]], shape: Any, names: list[str 
     found = [_resolved(entry, faces, names, owners, letters) for entry in given]
     for item in found:
         if _general(item.spec) and item.status == "ok":
-            item.refs = _covered(found, faces.Extent())
+            item.refs = _covered(found, item.spec["geometric_tolerance"]["datums"], faces.Extent())
     return found
 
 
-def _covered(items: list[Resolved], count: int) -> list[Ref]:
-    """The faces a part's general profile covers, of the ``count`` it has: each that none of its
-    resolved annotations ``items`` controls (``otherwise_controlled``, its faces spelled by
-    ordinal), in the part's order. This build's annotations and geometry alone decide it."""
+def _covered(items: list[Resolved], datums: list[str], count: int) -> list[Ref]:
+    """The faces a part's general profile to ``datums`` covers, of the ``count`` it has: each that
+    none of its resolved annotations ``items`` controls (``otherwise_controlled``, its faces spelled
+    by ordinal) and that is no feature of a datum it names, which is controlled on its own (no
+    face is profiled relative to itself), in the part's order. This build's annotations and
+    geometry alone decide it."""
     controlled = otherwise_controlled([
         {"kind": item.spec["kind"], "status": item.status,
          **{key: item.spec[key] for key in ("dimension", "geometric_tolerance") if key in item.spec},
          "refs": [{"role": ref.role, "ref": f"face {ref.ordinal}"} for ref in item.refs]} for item in items])
-    return [Ref("feature", None, at, "ok") for at in range(1, count + 1) if f"face {at}" not in controlled]
+    named = {f"face {ref.ordinal}" for item in items if item.spec["kind"] == "datum" and item.status == "ok"
+             and item.spec["datum"]["letter"] in datums for ref in item.refs}
+    left = controlled | named
+    return [Ref("feature", None, at, "ok") for at in range(1, count + 1) if f"face {at}" not in left]
 
 
 def otherwise_controlled(entries: list[dict[str, Any]]) -> set[str]:
     """The faces of ``entries`` (structure entries, ``entries``: their refs as they spell them,
     canonical where served) that have a size or location requirement of their own, which a general
-    profile leaves to it: each ref of a plus-minus or limits dimension; the feature of a position
-    or of a profile not general; and a ref of a basic dimension whose other ref is such a feature.
-    A form control alone (flatness) or a datum leaves a face to the general profile, and an entry
-    not ``ok`` controls nothing (it is linked to nothing). Pure: of ``entries`` alone."""
-    held = [entry for entry in entries if entry.get("status") == "ok"]
-    located: set[str] = set()  # the features of a position or of a profile not general
-    for entry in held:
-        given = entry["geometric_tolerance"] if entry["kind"] == "geometric_tolerance" else None
-        if given is not None and (given["characteristic"] == "position"
-                                  or given["characteristic"] == "surface_profile" and not given.get("general")):
-            located.update(ref["ref"] for ref in entry["refs"] if ref["role"] == "feature")
-    controlled = set(located)
-    for entry in held:
-        if entry["kind"] != "dimension":
+    profile leaves to it: each ref of a plus-minus or limits dimension, and the feature of a
+    position or of a profile not general. A basic dimension locates such a feature, counted as it
+    is, and leaves the datum it starts from to that face's own control; a form control alone
+    (flatness) or a datum leaves a face to the general profile; and an entry not ``ok`` controls
+    nothing (it is linked to nothing). Pure: of ``entries`` alone."""
+    controlled: set[str] = set()
+    for entry in entries:
+        if entry.get("status") != "ok":
             continue
-        refs = [ref["ref"] for ref in entry["refs"]]
-        if (entry["dimension"].get("tolerance") or {}).get("type") in ("plus_minus", "limits"):
-            controlled.update(refs)
-        elif entry["dimension"].get("basic") and len(refs) == 2:
-            controlled.update(ref for ref, other in zip(refs, reversed(refs)) if other in located)
+        if entry["kind"] == "dimension":
+            if (entry["dimension"].get("tolerance") or {}).get("type") in ("plus_minus", "limits"):
+                controlled.update(ref["ref"] for ref in entry["refs"])
+        elif entry["kind"] == "geometric_tolerance":
+            given = entry["geometric_tolerance"]
+            if given["characteristic"] == "position" or (given["characteristic"] == "surface_profile"
+                                                         and not given.get("general")):
+                controlled.update(ref["ref"] for ref in entry["refs"] if ref["role"] == "feature")
     return controlled
 
 

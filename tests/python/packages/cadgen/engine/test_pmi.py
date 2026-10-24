@@ -597,9 +597,9 @@ class ProfileTest(_Folder):
         self.assertIn("diametral zone", entry["reason"])
 
 
-# A plate given a general profile (ASME's "unless otherwise noted, all surfaces"): the hole has a size
-# and a position, located from B and C by basic dimensions; the top has a flatness alone. Values
-# ILLUSTRATIVE.
+# A plate given a general profile to A|B (ASME's "unless otherwise noted, all surfaces"): the hole has
+# a size and a position, located from B and C by basic dimensions; the top has a flatness alone.
+# Values ILLUSTRATIVE.
 GENERAL = '''
 import build123d as bd
 from cadgen.engine import pmi, step, xbf
@@ -625,7 +625,7 @@ def pmi_plate():
         pmi.basic("hole-from-B", front, hole),
         pmi.basic("hole-from-C", left, hole),
         pmi.flatness("top-flatness", top, 0.05),
-        pmi.general_profile("general", 0.5, datums=["A", "B", "C"]),
+        pmi.general_profile("general", 0.5, datums=["A", "B"]),
     )
 '''
 # A block each face of which has a size of its own, and a general profile: values ILLUSTRATIVE.
@@ -688,22 +688,24 @@ class GeneralProfileTest(_Folder):
         self.assertEqual((general["kind"], general["status"], general["problem"]), ("geometric_tolerance", "ok", None))
         self.assertEqual(general["geometric_tolerance"], {
             "characteristic": "surface_profile", "value": 0.5, "unit": "mm", "zone": None, "modifier": None,
-            "datums": ["A", "B", "C"], "general": True})
-        # The hole has a size and a location of its own, and B and C are the ends of the basic
-        # dimensions locating it; the top's flatness is form alone, and a datum is no requirement.
-        hole, front, left = (found["hole-position"]["refs"][0]["ref"], found["hole-from-B"]["refs"][0]["ref"],
-                             found["hole-from-C"]["refs"][0]["ref"])
-        self.assertEqual(pmi.otherwise_controlled(served), {hole, front, left})
-        controlled = {_ordinal(loaded, ref) for ref in (hole, front, left)}
+            "datums": ["A", "B"], "general": True})
+        # The hole has a size and a location of its own. The basic dimensions locate it, not their
+        # datum ends; the top's flatness is form alone, and a datum is no requirement.
+        hole = found["hole-position"]["refs"][0]["ref"]
+        self.assertEqual(pmi.otherwise_controlled(served), {hole})
+        # The datum features it names are controlled on their own: no face is profiled to itself.
+        named = [found[letter]["refs"][0]["ref"] for letter in "AB"]
+        left = {_ordinal(loaded, ref) for ref in [hole, *named]}
         count = pmi._faces(loaded.prototypes[0].shape).Extent()
         # Every other face, in the part's order, each a computed ref the code never wrote.
         self.assertEqual([_ordinal(loaded, ref["ref"]) for ref in general["refs"]],
-                         [at for at in range(1, count + 1) if at not in controlled])
+                         [at for at in range(1, count + 1) if at not in left])
         self.assertEqual(len(general["refs"]), 4)
         self.assertTrue(all(ref == {"role": "feature", "written": None, "status": "ok", "ref": ref["ref"],
                                     "candidates": None, "problem": None} for ref in general["refs"]), general["refs"])
         covered = {ref["ref"] for ref in general["refs"]}
-        self.assertLessEqual({found["top-flatness"]["refs"][0]["ref"], found["A"]["refs"][0]["ref"]}, covered)
+        # C, which the frame does not name and only a basic dimension starts from, stays covered.
+        self.assertLessEqual({found["top-flatness"]["refs"][0]["ref"], found["C"]["refs"][0]["ref"]}, covered)
 
     def test_the_step_holds_it_on_exactly_those_faces(self) -> None:
         self.build(GENERAL)
@@ -715,7 +717,7 @@ class GeneralProfileTest(_Folder):
         self.assertEqual(sorted(feature["name"] for feature in profile["features"]),
                          sorted(ref["ref"].split("/", 1)[1] for ref in general["refs"]))
         self.assertEqual((profile["magnitude"]["value"], profile["magnitude"]["unit"], profile["datums"]),
-                         (0.5, "mm", ["A", "B", "C"]))
+                         (0.5, "mm", ["A", "B"]))
         # OCCT's reader: a surface profile on those faces, as any CAM reader gets it.
         [theirs] = [entry for entry in pmi.read(self.step)
                     if (entry.get("geometric_tolerance") or {}).get("characteristic") == "surface_profile"]

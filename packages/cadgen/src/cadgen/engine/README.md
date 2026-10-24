@@ -1070,22 +1070,24 @@ return pmi.annotate(body,
   ASME Y14.5's "unless otherwise noted, all surfaces": a surface profile of every face of the part
   that nothing else controls, the code naming none of them. A face is otherwise controlled when it
   has a size or location requirement of its own (`pmi.otherwise_controlled(entries)`, over
-  structure entries): a ref of a plus-minus or limits dimension, the feature of a position or of a
-  profile not general, or a ref of a basic dimension whose other ref is such a feature. A form
-  control alone (flatness) and a datum leave a face to it. It is not XCAF's `All_Over` modifier,
-  which in ASME means every surface beside any other requirement. `presentation=pmi.place(anchor,
-  offset)` (millimetres, the part's frame) is where a viewer draws the callout, never a
-  requirement and never in a STEP.
+  structure entries): a ref of a plus-minus or limits dimension, or the feature of a position or of
+  a profile not general (a basic dimension locates that feature, and leaves the datum it starts
+  from to it). A form control alone (flatness) and a datum leave a face to it, but the datum
+  features it names are controlled on their own and left out of it: no face is profiled relative
+  to itself. It is not XCAF's `All_Over` modifier, which in ASME means every surface beside any
+  other requirement. `presentation=pmi.place(anchor, offset)` (millimetres, the part's frame) is
+  where a viewer draws the callout, never a requirement and never in a STEP.
 - **Resolution.** Each build resolves every ref against the part as built: `ok`, `missing` (it names
   no face; the problem gives the name's atom now, where there is one), `ambiguous` (several:
   `candidates` lists them) or `invalid` (a face the annotation cannot stand on: a diameter on a
   plane, a flatness on a cylinder, a datum on neither, a face a profile names twice). An annotation
   that is not `ok` is kept in the document with its values, linked to no geometry, and a STEP export
   refuses to drop it, naming each one. A general profile's faces are resolved with the rest: every
-  face of the part as built that the part's other `ok` annotations leave, from this build's
-  annotations and geometry alone. It has no ref to break, so it is `ok` (`invalid` where its frame
-  names a datum the part lacks, then covering nothing); one that covers no face is `ok`, linked to
-  nothing, and no STEP refuses it. A ref written as text that names another kind of face, plane
+  face of the part as built that the part's other `ok` annotations leave, but the datum features
+  it names, from this build's annotations and geometry alone. It has no ref to break, so it is
+  `ok` (`invalid` where its frame names a datum the part lacks, then covering nothing); one that
+  covers no face is `ok`, linked to nothing, and no STEP refuses it. A ref written as text that
+  names another kind of face, plane
   or cylinder, than on the model's last build -- this process's previous tree, else the model's xbf
   on disk -- is warned of: a hole whose name passed to a flat side of the cut that replaced it,
   measured as it now is. The warning is the build's report and its served structure's, never the

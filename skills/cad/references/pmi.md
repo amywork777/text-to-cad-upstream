@@ -85,9 +85,11 @@ def plate():
   profile of every face of the part that nothing else controls. You name no faces: each
   build computes them from that build's annotations and geometry, so after an edit it
   covers the new faces. A face is otherwise controlled when it has a size or location
-  requirement of its own: a face of a `plus_minus` or `limits` dimension, the face of a
-  position or of a `pmi.profile`, or a face a basic dimension locates such a face from.
-  A flatness alone, or a datum, leaves a face to the general profile. It is not XCAF's
+  requirement of its own: a face of a `plus_minus` or `limits` dimension, or the face of
+  a position or of a `pmi.profile`. A flatness alone, a datum, or the start of a basic
+  dimension leaves a face to the general profile. The datum features it names are
+  controlled on their own and left out of it (no face is profiled relative to itself):
+  give each one its own control, such as datum A's flatness. It is not XCAF's
   `All_Over` modifier (every surface, beside any other requirement). One per part. A
   general profile with no face left to cover is fine: it is `ok` and written to no STEP.
 - **Anything else is refused** (`PMIUnsupported`), never approximated: other
