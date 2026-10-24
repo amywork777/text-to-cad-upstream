@@ -261,7 +261,7 @@ is explicitly restarted. Session state is memory only and is recreated after res
 | `previous.py` | the model's build closure on its xbf's main label (`manifest`), the release from the version beside the code, and the closure made again before the body runs (`again`) |
 | `document.py` | result to XCAF (prototypes, instances, names, colours, materials, element names; a mesh face refused, `mesh_faces`), a warm build's patch of the document it kept, atomic BinXCAF save, read-back of an xbf or a foreign STEP |
 | `reader.py` | what a model imports: an XCAF document described as data and assembled into a build123d tree (`read_step`, `read_xbf`); the reader process a build's STEP files are parsed in; a mesh file as data (`read_mesh`, `Mesh`); a read of a file the build writes refused (`refuse_written`) |
-| `pmi.py` | semantic PMI: datums, dimensions and geometric tolerances on a part's faces (`pmi.annotate`), resolved each build (ok, missing, ambiguous, invalid), written as XCAF's GD&T objects, read back as the structure's `pmi`; its notes, notes library and named views (`pmi_views`), the xbf's alone; another system's GD&T listed as read, and copied into an xbf of its STEP (**PMI**) |
+| `pmi.py` | semantic PMI: datums, dimensions and geometric tolerances on a part's faces (`pmi.annotate`), resolved each build (ok, missing, ambiguous, invalid), written as XCAF's GD&T objects, read back as the structure's `pmi`; its notes, notes library and named views (`pmi_views`), the xbf's alone; each part's faces no requirement is on and its requirements that cannot both hold (`pmi_coverage`), warned of; another system's GD&T listed as read, and copied into an xbf of its STEP (**PMI**) |
 | `refs.py` | references to geometry: the ref grammar, occurrence paths, resolution by name in the latest build, `select` (**References**) |
 | `export/` | `translate` and the kind registry (`__init__`); an xbf packaged with its closure's files (`cadz`); STEP through the XCAF writer (`step`); a STEP's semantic PMI read back without OCCT and checked against the document's (`ap242`); placements and meshes from the one mesh cache (`mesh`); GLB, 3MF, binary STL (`glb`, `threemf`, `stl`); a planar document's drawing through build123d's DXF exporter, with the drawing checks (`dxf`); a motion baked into a glTF clip (`motion`); a view made a document again, for a posed or parted STEP and an xbf (`tree`) |
 | `mesh.py` | per-part tessellation at FreeCAD's default tolerance, edge classes, element facts, and the wire format |
@@ -1123,7 +1123,26 @@ return pmi.annotate(body,
   measured as it now is. The warning is the build's report and its served structure's, never the
   document's, as kinematics' are, so it says what changed on the build that changed it and not
   after; a ref selected as a `Face` is never warned of. The build report's `pmi` is `{"annotations",
-  "problems"}`, with `"warnings"` and `"unattached"` where there are any, each logged.
+  "problems"}`, with `"warnings"`, `"coverage"` and `"unattached"` where there are any, each logged.
+- **Coverage.** Every face of a part is to have a requirement, most of them through its general
+  profile, and what is not is said (`pmi.coverage(entries, faces)`, pure, of one part's structure
+  entries and the canonical refs of all its faces). A face is covered by an `ok` dimension
+  (toleranced or basic) or geometric tolerance whose refs name it, the general profile by the faces
+  it covers; another system's annotation listed `unsupported` covers its faces as any does, but a
+  datum. A datum and a note cover nothing, and the datum features a general profile names are left
+  out of it: such a face is uncovered until it has a control of its own (datum A's flatness). The
+  conflicts, each `{"kind", "ids", "problem"}`, in this order: `unused_datum`, a datum no
+  tolerance's frame names; `unlinked_note`, a flag note every face and annotation of which is
+  broken (one link that holds keeps it linked; a general note has none to break);
+  `outside_limits`, a limits dimension whose measured nominal lies outside them; `apart`, two
+  toleranced dimensions of one type on the same faces whose zones do not meet; and
+  `form_over_profile`, a flatness wider than a surface profile on its face, its own or the general
+  one. It is derived where the document is served, never held: the structure's `pmi_coverage` is
+  `[{"part", "uncovered": [refs, sorted], "conflicts": [...]}]`, one per part carrying PMI (a part
+  given views or a library alone carries none), served wherever `pmi` is; the build report's
+  `coverage` is the same of each part with something to say, by its name, each logged as
+  `warning: pmi: PART: N faces have no requirement: REF, ...` and `warning: pmi: PART: IDS:
+  PROBLEM`. It warns: it never fails a build.
 - **The document** holds what the code says and what this build's geometry resolves, and nothing
   of a previous build: the same code and closure make the same xbf whatever was built before. The
   values, units, kinds and face links are XCAF's `XCAFDimTolObjects` on the GD&T tool, linked to the

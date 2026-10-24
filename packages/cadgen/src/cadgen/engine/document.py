@@ -1358,6 +1358,8 @@ class Loaded:
             found["pmi"] = pmi.entries(records, found)
             found["pmi_library"] = library
             found["pmi_views"] = views
+            found["pmi_coverage"] = pmi.coverage_of(found, {prototype.index: prototype.shape
+                                                            for prototype in self.prototypes})
         return found
 
     def root_label(self) -> Any:
@@ -1481,6 +1483,7 @@ def tree_structure(tree: Tree, path: Path) -> dict[str, Any]:
         found["pmi"] = pmi.entries(pmi.records_of_tree(tree, index_of), found)
         found["pmi_library"] = pmi.library_of_tree(tree, index_of)
         found["pmi_views"] = pmi.views_of_tree(tree, index_of)
+        found["pmi_coverage"] = pmi.coverage_of(found, {index_of[id(part)]: part.shape for part, _given in tree.pmi})
     return found
 
 

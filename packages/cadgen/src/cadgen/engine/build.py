@@ -630,9 +630,12 @@ def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[
     """The tree's PMI resolved and said, the build report's ``pmi``: how many annotations, each one
     not ok and why (kept in the document linked to nothing, refused by a STEP), each ref that names
     another kind of face than on the model's last build (``warnings``: its last tree in this
-    process, else its saved ``xbf``), and those its body gave a shape the result does not hold
-    (``unattached``); each logged, none dropped in silence. Timed as ``pmi``."""
-    from cadgen.engine import pmi
+    process, else its saved ``xbf``), each part's faces no requirement is on and its requirements
+    that cannot both hold (``coverage``: the served structure's ``pmi_coverage`` of each part with
+    something to say, by its name; warned of, never failing the build), and those its body gave a
+    shape the result does not hold (``unattached``); each logged, none dropped in silence. Timed as
+    ``pmi``."""
+    from cadgen.engine import document, pmi
 
     clock = time.perf_counter()
     if tree.pmi:
@@ -650,6 +653,20 @@ def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[
             report["pmi"]["warnings"] = warnings
         for text in warnings:
             log(f"warning: pmi: {text}")
+        # Of the structure the build serves (no file's version: none is written yet), so the two agree.
+        served = document.tree_structure(tree, None)
+        names = [prototype["name"] for prototype in served["prototypes"]]
+        coverage = [{"part": names[found["part"]], "uncovered": found["uncovered"], "conflicts": found["conflicts"]}
+                    for found in served["pmi_coverage"] if found["uncovered"] or found["conflicts"]]
+        if coverage:
+            report["pmi"]["coverage"] = coverage
+        for found in coverage:
+            if found["uncovered"]:
+                count = len(found["uncovered"])
+                log(f"warning: pmi: {found['part']}: {count} {'face has' if count == 1 else 'faces have'} no "
+                    f"requirement: {', '.join(found['uncovered'])}")
+            for conflict in found["conflicts"]:
+                log(f"warning: pmi: {found['part']}: {', '.join(conflict['ids'])}: {conflict['problem']}")
     lost = pmi.unattached(run, f"{model.script}::{model.name}", tree) if run is not None else []
     if lost:
         report.setdefault("pmi", {"annotations": 0, "problems": []})["unattached"] = lost

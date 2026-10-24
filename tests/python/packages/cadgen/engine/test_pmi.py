@@ -9,7 +9,9 @@ faces, or as nothing where it covers none; general and flag notes, numbered afte
 profile, and a project's notes library, kept in the xbf as XCAF notes (the same bytes from the same
 code) and never in a STEP, which neither refuses nor checks them; named views of a part (their
 camera, a preset's the snapshot's own, section, shown ids and placements) kept in the xbf as XCAF
-views and served as ``pmi_views``, never in a STEP; a warm rebuild,
+views and served as ``pmi_views``, never in a STEP; each part's coverage (the faces no requirement
+is on, and the requirements that cannot both hold) served as ``pmi_coverage`` and warned of by the
+build, never failing it; a warm rebuild,
 an edit of the geometry and of a tolerance, a ref the model no longer satisfies (missing,
 ambiguous, invalid) kept in the document and refused by a STEP, and one that names another kind
 of face than on the last build warned of, the document the code's alone; what is not supported
@@ -83,12 +85,14 @@ class _Folder(unittest.TestCase):
         self.folder = Path(tempfile.mkdtemp(prefix="engine-pmi-")).resolve()
         self.addCleanup(shutil.rmtree, self.folder, ignore_errors=True)
 
-    def build(self, source: str, name: str = "pmi_plate", *, ok: bool | None = True) -> dict:
-        """The model built from ``source``, its report ``ok`` as said (None: either)."""
+    def build(self, source: str, name: str = "pmi_plate", *, ok: bool | None = True,
+              log: list[str] | None = None) -> dict:
+        """The model built from ``source``, its report ``ok`` as said (None: either), its log's lines
+        kept in ``log``."""
         script = self.folder / f"{name}.py"
         script.write_text(textwrap.dedent(source), encoding="utf-8")
         os.utime(script, ns=(time.time_ns(), time.time_ns()))
-        report = engine_build.build(script, [name], cwd=self.folder)[0]
+        report = engine_build.build(script, [name], cwd=self.folder, log=(log if log is not None else []).append)[0]
         if ok is not None:
             self.assertEqual(report["ok"], ok, report)
         return report
@@ -104,6 +108,11 @@ class _Folder(unittest.TestCase):
 
 def _by_id(entries: list[dict]) -> dict[str, dict]:
     return {entry["id"]: entry for entry in entries}
+
+
+def _but_coverage(report: dict) -> dict:
+    """A build report's ``pmi`` with its ``coverage`` left out, which ``CoverageTest`` holds."""
+    return {key: value for key, value in report["pmi"].items() if key != "coverage"}
 
 
 def _said(found: object) -> object:
@@ -128,7 +137,7 @@ def _face(loaded: document.Loaded, entry: dict, at: int = 0) -> tuple[str, dict]
 class PlateTest(_Folder):
     def test_the_document_holds_each_annotation_on_its_face(self) -> None:
         report = self.build(plate())
-        self.assertEqual(report["pmi"], {"annotations": 9, "problems": []})
+        self.assertEqual(_but_coverage(report), {"annotations": 9, "problems": []})
         loaded = document.Loaded(self.xbf)
         found = _by_id(loaded.structure()["pmi"])
         self.assertEqual(list(found), ["A", "B", "C", "thickness", "hole-diameter", "hole-from-B", "hole-from-C",
@@ -506,7 +515,7 @@ def pmi_plate():
 class ProfileTest(_Folder):
     def test_a_profile_stands_on_several_faces_of_any_kind(self) -> None:
         report = self.build(PROFILE)
-        self.assertEqual(report["pmi"], {"annotations": 3, "problems": []})
+        self.assertEqual(_but_coverage(report), {"annotations": 3, "problems": []})
         loaded = document.Loaded(self.xbf)
         found = _by_id(loaded.structure()["pmi"])
         self.assertEqual(found, _by_id(engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"]))
@@ -684,7 +693,7 @@ def _ordinal(loaded: document.Loaded, ref: str) -> int:
 class GeneralProfileTest(_Folder):
     def test_it_covers_every_face_nothing_else_controls(self) -> None:
         report = self.build(GENERAL)
-        self.assertEqual(report["pmi"], {"annotations": 9, "problems": []})
+        self.assertEqual(_but_coverage(report), {"annotations": 9, "problems": []})
         loaded = document.Loaded(self.xbf)
         served = loaded.structure()["pmi"]
         self.assertEqual(served, engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"])
@@ -826,7 +835,7 @@ class NoteTest(_Folder):
 
     def test_notes_are_numbered_after_the_general_profile(self) -> None:
         report = self.build(notes())
-        self.assertEqual(report["pmi"], {"annotations": 5, "problems": []})
+        self.assertEqual(_but_coverage(report), {"annotations": 5, "problems": []})
         served = pmi.read(self.xbf)
         self.assertEqual(served, self.served()["pmi"])
         # The part's general profile is Note 1; the notes follow in the order the code gives them.
@@ -1059,7 +1068,7 @@ class ViewTest(_Folder):
     def test_a_view_holds_its_camera_section_shows_and_placements(self) -> None:
         report = self.build(views('pmi.view("down", camera=pmi.camera((0, -1, 1), (0, 0, 1)), shows=["deburr"]),'))
         # Views are no annotations: the report counts the four, and ``pmi`` lists none.
-        self.assertEqual(report["pmi"], {"annotations": 4, "problems": []})
+        self.assertEqual(_but_coverage(report), {"annotations": 4, "problems": []})
         self.assertEqual([entry["kind"] for entry in pmi.read(self.xbf)], ["datum", "dimension", "geometric_tolerance",
                                                                            "note"])
         served = document.Loaded(self.xbf).structure()["pmi_views"]
@@ -1234,6 +1243,196 @@ class ViewTest(_Folder):
         self.assertEqual((step_row["reason"], step_row["pmi"]), (None, False))
 
 
+# A plate with a hole through it, datums A and B on its bottom and front, the hole's size, and
+# ``{more}``: values ILLUSTRATIVE.
+REQUIREMENTS = '''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
+    body.label = "plate"
+    bottom, top = body.faces().sort_by(bd.Axis.Z)[0], body.faces().sort_by(bd.Axis.Z)[-1]
+    front, left = body.faces().sort_by(bd.Axis.Y)[0], body.faces().sort_by(bd.Axis.X)[0]
+    hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+    return pmi.annotate(
+        body,
+        pmi.datum("A", bottom),
+        pmi.datum("B", front),
+        pmi.diameter("hole-size", hole, tolerance=pmi.plus_minus(0.1, 0)),
+        {more}
+    )
+'''
+# The hole located: datum C on the left face, and the hole's position to A|B|C.
+LOCATED = 'pmi.datum("C", left), pmi.position("hole-position", hole, 0.1, datums=["A", "B", "C"]),'
+# A requirement of each conflict: B named by no frame; the hole's limits, which its measured 10 mm
+# lies outside, and which miss its size's 10/10.1; a flatness wider than the general profile on the
+# top, and one wider than the left face's own profile.
+CONFLICTS = '''pmi.diameter("hole-limits", hole, tolerance=pmi.limits(9.9, 9.95)),
+        pmi.flatness("top-flatness", top, 0.6),
+        pmi.profile("left-profile", left, 0.2),
+        pmi.flatness("left-flatness", left, 0.3),
+        pmi.general_profile("general", 0.5, datums=["A"]),'''
+
+
+def requirements(more: str) -> str:
+    return REQUIREMENTS.replace("{more}", more)
+
+
+class CoverageTest(_Folder):
+    def served(self) -> dict:
+        """The structure the last build served, after checking the file serves the same coverage."""
+        structure = engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure
+        self.assertEqual(structure["pmi_coverage"], document.Loaded(self.xbf).structure()["pmi_coverage"])
+        return structure
+
+    def test_faces_nothing_controls_are_listed(self) -> None:
+        report = self.build(requirements(LOCATED))
+        loaded = document.Loaded(self.xbf)
+        structure = self.served()
+        [found] = structure["pmi_coverage"]
+        self.assertEqual((found["part"], found["conflicts"]), (0, []))
+        # The six faces of the box, sorted: the hole has a size and a position; a datum is no requirement.
+        faces = pmi._faces(loaded.prototypes[0].shape)
+        planes = [at for at in range(1, faces.Extent() + 1) if pmi._surface(faces.FindKey(at))[0] == "plane"]
+        self.assertEqual(len(planes), 6)
+        self.assertEqual(found["uncovered"], sorted(found["uncovered"]))
+        self.assertEqual(sorted(_ordinal(loaded, ref) for ref in found["uncovered"]), planes)
+        self.assertEqual(report["pmi"]["coverage"], [{"part": "plate", "uncovered": found["uncovered"],
+                                                      "conflicts": []}])
+        # Pure: of a part's entries and its faces alone, in any order.
+        hole = _by_id(structure["pmi"])["hole-size"]["refs"][0]["ref"]
+        self.assertEqual(pmi.coverage(structure["pmi"], [hole, *reversed(found["uncovered"])]),
+                         {"uncovered": found["uncovered"], "conflicts": []})
+
+    def test_a_general_profile_covers_them(self) -> None:
+        # A's own flatness, and a general profile to A of every other face nothing controls.
+        general = 'pmi.flatness("bottom-flatness", bottom, 0.05), pmi.general_profile("general", 0.5, datums=["A"]),'
+        report = self.build(requirements(LOCATED + general))
+        self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": []}])
+        self.assertNotIn("coverage", report["pmi"])
+        # Profiled to A|B|C, it leaves the datum features it names to their own control: B and C have none.
+        report = self.build(requirements(LOCATED + general.replace('["A"]', '["A", "B", "C"]')))
+        structure = self.served()
+        found = _by_id(structure["pmi"])
+        named = sorted(found[letter]["refs"][0]["ref"] for letter in "BC")
+        self.assertEqual(structure["pmi_coverage"], [{"part": 0, "uncovered": named, "conflicts": []}])
+        self.assertEqual(report["pmi"]["coverage"], [{"part": "plate", "uncovered": named, "conflicts": []}])
+
+    def test_each_conflict_is_said(self) -> None:
+        self.build(requirements(CONFLICTS))
+        structure = self.served()
+        [found] = structure["pmi_coverage"]
+        self.assertEqual(found["conflicts"], [
+            {"kind": "unused_datum", "ids": ["B"],
+             "problem": "datum B is in no tolerance's frame: name it where a requirement is measured from it, or "
+                        "remove it"},
+            {"kind": "outside_limits", "ids": ["hole-limits"],
+             "problem": "the diameter measures 10 mm, outside its limits 9.9/9.95: model it within them, or correct "
+                        "the limits"},
+            {"kind": "apart", "ids": ["hole-size", "hole-limits"],
+             "problem": "two diameters of the same face whose zones do not meet, 10/10.1 and 9.9/9.95: no part "
+                        "holds both; keep the one meant"},
+            {"kind": "form_over_profile", "ids": ["top-flatness", "general"],
+             "problem": "flatness 0.6 is wider than the surface profile 0.5 on its face, which holds its form within "
+                        "0.5 already: make the flatness narrower than the profile, or remove it"},
+            {"kind": "form_over_profile", "ids": ["left-flatness", "left-profile"],
+             "problem": "flatness 0.3 is wider than the surface profile 0.2 on its face, which holds its form within "
+                        "0.2 already: make the flatness narrower than the profile, or remove it"},
+        ])
+        # Every requirement holds as written: each is ok, and the faces left are A's alone (the general
+        # profile leaves the datum it names to its own control).
+        self.assertTrue(all(entry["status"] == "ok" for entry in structure["pmi"]))
+        self.assertEqual(found["uncovered"], [_by_id(structure["pmi"])["A"]["refs"][0]["ref"]])
+
+    def test_a_note_is_unlinked_only_when_every_link_is_broken(self) -> None:
+        """Review Focus 2: a flag note linked to a face or an annotation that holds is linked; one whose
+        every face and annotation is broken is linked to nothing; a general note names nothing to break."""
+        def unlinked() -> list[dict]:
+            """The xbf's: a build whose STEP is refused has written it, but keeps no document of its own."""
+            return [conflict for found in document.Loaded(self.xbf).structure()["pmi_coverage"]
+                    for conflict in found["conflicts"] if conflict["kind"] == "unlinked_note"]
+
+        self.build(notes())
+        self.assertEqual(unlinked(), [])
+        # Its face gone, the diameter it names holds.
+        self.build(notes(mask="'face 99'"))
+        self.assertEqual(_by_id(pmi.read(self.xbf))["mask"]["status"], "missing")
+        self.assertEqual(unlinked(), [])
+        # The diameter it names broken, its face holds (the STEP is refused for the diameter, not the note).
+        self.build(notes(hole="'face 99'", mask=HOLE), ok=False)
+        self.assertEqual(unlinked(), [])
+        # The hole removed: its face and the diameter both gone, it keeps its number and is said.
+        loaded = document.Loaded(self.xbf)
+        faces = pmi._faces(loaded.prototypes[0].shape)
+        [ordinal] = [at for at in range(1, faces.Extent() + 1) if pmi._surface(faces.FindKey(at))[0] == "cylinder"]
+        name = loaded.prototypes[0].face_names[ordinal]
+        report = self.build(notes(hole=repr(name), cut="pass"), ok=False)
+        self.assertEqual(unlinked(), [{"kind": "unlinked_note", "ids": ["mask"],
+                                       "problem": "Note 3 is linked to nothing: every face and annotation it names is "
+                                                  "broken; point it at what it is for, or remove it"}])
+        self.assertIn({"kind": "unlinked_note", "ids": ["mask"], "problem": unlinked()[0]["problem"]},
+                      report["pmi"]["coverage"][0]["conflicts"])
+
+    def test_the_build_warns_and_never_fails(self) -> None:
+        said: list[str] = []
+        report = self.build(requirements(CONFLICTS), log=said)
+        self.assertEqual(report["pmi"]["problems"], [])
+        self.assertTrue(self.step.is_file())
+        [found] = self.served()["pmi_coverage"]
+        self.assertEqual(report["pmi"]["coverage"], [{"part": "plate", "uncovered": found["uncovered"],
+                                                      "conflicts": found["conflicts"]}])
+        self.assertEqual([line for line in said if line.startswith("warning: pmi:")],
+                         [f"warning: pmi: plate: 1 face has no requirement: {found['uncovered'][0]}"]
+                         + [f"warning: pmi: plate: {', '.join(conflict['ids'])}: {conflict['problem']}"
+                            for conflict in found["conflicts"]])
+        said.clear()
+        self.build(requirements(LOCATED), log=said)
+        [found] = self.served()["pmi_coverage"]
+        self.assertEqual([line for line in said if line.startswith("warning: pmi:")],
+                         [f"warning: pmi: plate: 6 faces have no requirement: {', '.join(found['uncovered'])}"])
+
+    def test_a_part_with_no_pmi_says_nothing(self) -> None:
+        # An assembly of an annotated base and a pin given no PMI: the base's coverage alone.
+        report = self.build('''
+import build123d as bd
+from cadgen.engine import pmi, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+def pmi_plate():
+    base = bd.Box(100, 60, 10)
+    base.label = "base"
+    base = pmi.annotate(base, pmi.datum("A", base.faces().sort_by(bd.Axis.Z)[0]),
+                        pmi.flatness("base-top", base.faces().sort_by(bd.Axis.Z)[-1], 0.02))
+    pin = bd.Cylinder(3, 20).moved(bd.Pos(30, 0, 15))
+    pin.label = "pin"
+    return bd.Compound(children=[base, pin], label="fixture")
+''')
+        structure = self.served()
+        names = [prototype["name"] for prototype in structure["prototypes"]]
+        self.assertEqual([names[found["part"]] for found in structure["pmi_coverage"]], ["base"])
+        self.assertEqual([(found["part"], len(found["uncovered"]), [conflict["ids"] for conflict in found["conflicts"]])
+                          for found in report["pmi"]["coverage"]], [("base", 5, [["A"]])])
+        # A part given views alone has no requirement to cover, and a model given no PMI says nothing.
+        report = self.build(VIEWS_ALONE)
+        self.assertEqual((report["pmi"], self.served()["pmi_coverage"]), ({"annotations": 0, "problems": []}, []))
+        report = self.build('''
+import build123d as bd
+from cadgen.engine import xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+def pmi_plate():
+    return bd.Box(100, 60, 10)
+''')
+        self.assertNotIn("pmi", report)
+        self.assertNotIn("pmi_coverage", document.Loaded(self.xbf).structure())
+
+
 # A plate whose one variable ``cut`` is a round hole and then a square pocket: the name the hole's face
 # gets from it passes to a flat side of the square, parallel to the left face (the viewer's v3).
 CUT = '''
@@ -1317,7 +1516,7 @@ class FaceKindTest(_Folder):
         """A build123d Face is what the code's own selection picks each build: never warned of."""
         self.build(CUT.format(cut=ROUND, hole="body.faces().sort_by(bd.Axis.X)[-1]"))
         report = self.build(CUT.format(cut=ROUND, hole="body.faces().filter_by(bd.GeomType.CYLINDER)[0]"))
-        self.assertEqual(report["pmi"], {"annotations": 2, "problems": []})
+        self.assertEqual(_but_coverage(report), {"annotations": 2, "problems": []})
 
 
 class AssemblyTest(_Folder):

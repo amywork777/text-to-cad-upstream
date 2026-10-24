@@ -4,8 +4,8 @@ Read this file when the user asks for datums, toleranced dimensions, basic dimen
 flatness, position, a surface profile or a general profile ("unless otherwise noted, all
 surfaces"; GD&T, PMI, model-based definition), for notes on a part (general notes, a flag
 note on faces, a project's standard notes), for named views of a part (a front, a
-section, a detail, each showing its own requirements), or for a STEP a supplier or an
-inspection tool can read requirements from.
+section, a detail, each showing its own requirements), for which faces of a part have no
+requirement, or for a STEP a supplier or an inspection tool can read requirements from.
 
 A part's requirements are written in its model, on the faces they control, and the
 document keeps them:
@@ -195,6 +195,37 @@ is now, and the build warns of it once, on that build: `warning: pmi: ...` in it
 and `warnings` in its report's `pmi`. Read the warning, and point the ref at the face
 meant: the next build of the same code no longer says it.
 
+## Coverage
+
+Every face of a part is to have a requirement. After each build of a part with PMI,
+read its coverage warnings and fix them in the model:
+
+```text
+warning: pmi: PART: N faces have no requirement: REF, ...
+warning: pmi: PART: IDS: PROBLEM
+```
+
+- **Faces with no requirement.** A face is covered by an `ok` dimension (toleranced
+  or basic) or geometric tolerance on it, or by the general profile. A datum and a
+  note cover nothing. One `pmi.general_profile` usually covers most of them: add it
+  first, with the user's value and datums (ask for them).
+- **Then the datum features.** The general profile leaves out the datum features it
+  names, so they stay listed until each has a control of its own: a flatness on the
+  primary datum, and the user's requirements for the others.
+- **Conflicts**, each naming its ids and what to change:
+  - `unused_datum`: a datum no tolerance's frame names;
+  - `unlinked_note`: a flag note whose every face and annotation is broken (one that
+    still holds keeps it linked);
+  - `outside_limits`: the measured size is outside its own limits: model it within
+    them, or correct the limits;
+  - `apart`: two dimensions of one type on the same faces whose zones do not meet;
+  - `form_over_profile`: a flatness wider than a surface profile on its face (its own
+    or the general one), which already holds the face's form tighter.
+- **It warns and never fails**: the `.xbf` and the STEP are written all the same. The
+  build report's `pmi` has `coverage` for each part with something to say, and the
+  document's structure has `pmi_coverage`, `{"part", "uncovered", "conflicts"}` for
+  every part with PMI.
+
 ## Read and check
 
 ```python
@@ -209,11 +240,13 @@ Each entry has `id`, `kind` (`datum`, `dimension`, `geometric_tolerance`, `note`
 canonical ref and status), and one of `datum`, `dimension`, `geometric_tolerance` or
 `note` holding its values. A note's is `{"number", "text", "general", "annotations"}`,
 its `refs` its faces. The document's structure lists each part's library as
-`pmi_library` (`{"part", "name", "text"}`), and its views as `pmi_views`
+`pmi_library` (`{"part", "name", "text"}`), its views as `pmi_views`
 (`{"part", "name", "label", "camera", "section", "shows", "place"}`, the camera's
-`direction` and `up` unit vectors and its `preset` the name or null). A general profile says `"general": true`, and its `refs` are the faces it covers
-on this build, each with `written` null; `pmi.otherwise_controlled(entries)` gives the
-faces the rest control. PMI read from another system's STEP that this does not model whole (another
+`direction` and `up` unit vectors and its `preset` the name or null), and each part's
+coverage as `pmi_coverage` ([Coverage](#coverage)). A general profile says
+`"general": true`, and its `refs` are the faces it covers on this build, each with
+`written` null; `pmi.otherwise_controlled(entries)` gives the faces the rest control.
+PMI read from another system's STEP that this does not model whole (another
 characteristic, a fit, modifiers, limits beside either, a link to an edge or a point)
 is listed as `kind: "unsupported"` with its `xcaf_type` and a `reason`, never dropped.
 A nominal the file holds says `"source": "file"`; a dimension the file gives limits

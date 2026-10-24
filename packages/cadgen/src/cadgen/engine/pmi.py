@@ -105,6 +105,16 @@ not XCAF's ``All_Over`` modifier, which in ASME means every surface beside any o
 It has no ref to break: it is ``ok`` (``invalid`` where its frame names a datum the part lacks),
 and one covering no face is linked to nothing and written to no STEP.
 
+**Coverage** (``coverage``) holds a part to every face having a requirement, most through its
+general profile. Of each part carrying PMI, where its document is served (``coverage_of``, the
+structure's ``pmi_coverage``), and in the build's report from the same: the faces no ``ok``
+dimension or geometric tolerance names (the general profile names those it covers; a datum and a
+note cover nothing, and the datum features a general profile names are left to controls of their
+own), and the requirements that cannot both hold or hold nothing -- a datum no frame names, a flag
+note every link of which is broken, a limits dimension its measured nominal lies outside, two
+dimensions of one type on the same faces whose zones do not meet, a flatness wider than a profile on
+its face. Derived, never held, and warned of: it never fails a build.
+
 **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
 GD&T as XCAF reads it. What this module does not hold whole -- another characteristic or dimension
 type, a fit, a qualifier, a modifier, limits beside any of them, a datum target, a link to an edge or
@@ -140,9 +150,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 __all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "basic", "camera",
-           "datum", "diameter", "dimension", "distance", "flatness", "general_profile", "geometric", "limits", "note",
-           "otherwise_controlled", "place", "plus_minus", "position", "profile", "read", "section", "step_entries",
-           "view"]
+           "coverage", "datum", "diameter", "dimension", "distance", "flatness", "general_profile", "geometric",
+           "limits", "note", "otherwise_controlled", "place", "plus_minus", "position", "profile", "read", "section",
+           "step_entries", "view"]
 
 # The attribute an annotated shape holds its annotations in (a tuple of plain dicts), as a part's
 # configurations are held (``kernel.memo`` keys it).
@@ -764,6 +774,97 @@ def otherwise_controlled(entries: list[dict[str, Any]]) -> set[str]:
                                                          and not given.get("general")):
                 controlled.update(ref["ref"] for ref in entry["refs"] if ref["role"] == "feature")
     return controlled
+
+
+# The conflicts ``coverage`` says, in the order it says them.
+CONFLICTS = ("unused_datum", "unlinked_note", "outside_limits", "apart", "form_over_profile")
+# Millimetres a measured size may pass a limit by, and two zones miss each other by: its own rounding.
+_ROUNDING = 1e-6
+
+
+def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, Any]:
+    """One part's coverage, of its structure entries (``entries``, their refs canonical) and the
+    canonical refs of every face it has (``faces``): ``uncovered``, the faces no requirement is on,
+    sorted, and ``conflicts``, the requirements that cannot both hold or hold nothing, each
+    ``{"kind", "ids", "problem"}``. A face is covered by a dimension (toleranced or basic) or a
+    geometric tolerance that is ``ok`` and names it, the general profile by the faces it covers
+    (``otherwise_controlled`` leaves them to it); one another system wrote that this module does not
+    hold whole (``unsupported``) covers its faces as any does, but a datum. A datum and a note cover
+    nothing, and a general profile leaves out the datum features it names: give each its own control.
+    The conflicts (``CONFLICTS``, in that order, each in the entries'): ``unused_datum``, a datum no
+    tolerance's frame names; ``unlinked_note``, a flag note every face and annotation of which is
+    broken (one link that holds keeps it linked; a general note names nothing to break);
+    ``outside_limits``, a limits dimension whose measured nominal lies outside them; ``apart``, two
+    toleranced dimensions of one type on the same faces whose zones do not meet; and
+    ``form_over_profile``, a flatness wider than a surface profile on its face (its own, or the
+    general one). Warned of, never failing a build. Pure: of its arguments alone."""
+    ok = [entry for entry in entries if entry["status"] == "ok"]
+    covered = {ref["ref"] for entry in ok for ref in entry["refs"]
+               if entry["kind"] in ("dimension", "geometric_tolerance")
+               or (entry["kind"] == "unsupported" and entry["xcaf_type"] != "XCAFDimTolObjects_DatumObject")}
+    said: dict[str, list[dict[str, Any]]] = {kind: [] for kind in CONFLICTS}
+
+    def say(kind: str, ids: list[str], problem: str) -> None:
+        said[kind].append({"kind": kind, "ids": ids, "problem": problem})
+
+    framed = {letter for entry in entries
+              for letter in (entry.get("geometric_tolerance") or entry.get("values") or {}).get("datums") or ()}
+    for entry in entries:
+        if entry["kind"] == "datum" and entry["datum"]["letter"] not in framed:
+            say("unused_datum", [entry["id"]], f"datum {entry['datum']['letter']} is in no tolerance's frame: name it "
+                                               "where a requirement is measured from it, or remove it")
+    statuses = {entry["id"]: entry["status"] for entry in entries if entry["kind"] != "note"}
+    for entry in entries:
+        if (entry["kind"] == "note" and not entry["note"]["general"]
+                and all(ref["status"] != "ok" for ref in entry["refs"])
+                and all(statuses.get(named) != "ok" for named in entry["note"]["annotations"])):
+            say("unlinked_note", [entry["id"]], f"Note {entry['note']['number']} is linked to nothing: every face "
+                                                "and annotation it names is broken; point it at what it is for, or "
+                                                "remove it")
+    zones = []
+    for entry in ok:
+        if entry["kind"] != "dimension":
+            continue
+        given = entry["dimension"]
+        tolerance = given["tolerance"] or {}
+        nominal = (given["nominal"] or {}).get("value")
+        if tolerance.get("type") == "limits":
+            zone = (tolerance["lower"], tolerance["upper"])
+            if nominal is not None and not zone[0] - _ROUNDING <= nominal <= zone[1] + _ROUNDING:
+                say("outside_limits", [entry["id"]], f"the {given['type']} measures {_mm(nominal)} mm, outside its "
+                                                     f"limits {_mm(zone[0])}/{_mm(zone[1])}: model it within them, or "
+                                                     "correct the limits")
+        elif tolerance.get("type") == "plus_minus" and nominal is not None:
+            zone = (nominal + tolerance["lower"], nominal + tolerance["upper"])
+        else:
+            continue
+        zones.append((entry, (given["type"], frozenset(ref["ref"] for ref in entry["refs"])), zone))
+    for at, (first, key, zone) in enumerate(zones):
+        for second, other, then in zones[at + 1:]:
+            if other == key and max(zone[0], then[0]) > min(zone[1], then[1]) + _ROUNDING:
+                say("apart", [first["id"], second["id"]],
+                    f"two {key[0]}s of the same face{'s' if len(key[1]) > 1 else ''} whose zones do not meet, "
+                    f"{_mm(zone[0])}/{_mm(zone[1])} and {_mm(then[0])}/{_mm(then[1])}: no part holds both; keep the "
+                    "one meant")
+    profiles = [entry for entry in ok if entry["kind"] == "geometric_tolerance"
+                and entry["geometric_tolerance"]["characteristic"] == "surface_profile"]
+    for entry in ok:
+        if entry["kind"] != "geometric_tolerance" or entry["geometric_tolerance"]["characteristic"] != "flatness":
+            continue
+        value, on = entry["geometric_tolerance"]["value"], {ref["ref"] for ref in entry["refs"]}
+        for profile in profiles:
+            width = profile["geometric_tolerance"]["value"]
+            if value > width and on & {ref["ref"] for ref in profile["refs"]}:
+                say("form_over_profile", [entry["id"], profile["id"]],
+                    f"flatness {_mm(value)} is wider than the surface profile {_mm(width)} on its face, which holds "
+                    f"its form within {_mm(width)} already: make the flatness narrower than the profile, or remove it")
+    return {"uncovered": sorted(set(faces) - covered),
+            "conflicts": [found for kind in CONFLICTS for found in said[kind]]}
+
+
+def _mm(value: float) -> str:
+    """A length in millimetres as a problem says it: to four decimals at most (``10``, ``9.95``)."""
+    return f"{value:.4f}".rstrip("0").rstrip(".")
 
 
 def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners: set[str],
@@ -1835,23 +1936,7 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
     own block of values. A note's (``note``) is its ``number`` (its part's general profile Note 1
     where it has one, then each note in the code's order), ``text``, ``general`` (it names no face
     and no annotation) and the ``annotations`` it names, as written."""
-    from cadgen.engine import refs as grammar
-
-    root = grammar.structure_tree(structure)
-    first_node: dict[int, Any] = {}
-    for node in root.parts():
-        first_node.setdefault(node.payload["prototype"], node)
-    one_part = len(root.parts()) == 1
-    prototypes = structure["prototypes"]
-    named = {"face": "faceNames", "edge": "edgeNames", "vertex": "vertexNames"}
-
-    def canonical(index: int, kind: str, ordinal: int) -> str:
-        name = (prototypes[index].get(named[kind]) or {}).get(str(ordinal))
-        node = first_node.get(index)
-        if node is None:
-            return name or f"{kind} {ordinal}"
-        return grammar._element_ref(root, node, kind, ordinal, name, one_part)
-
+    canonical = _canonical(structure)
     found = []
     counters: dict[str, int] = {}
     # Each part's notes are numbered after its general profile, Note 1 where it has one.
@@ -1904,6 +1989,44 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
             entry["reason"] = record["reason"]
             entry["values"] = values
         found.append(entry)
+    return found
+
+
+def _canonical(structure: dict[str, Any]) -> Callable[[int, str, int], str]:
+    """How ``structure`` spells an element of a prototype -- by its index, the element's kind and
+    its ordinal -- canonically, as ``refs`` spells it for that document: under the prototype's first
+    placement, by its name where it has one."""
+    from cadgen.engine import refs as grammar
+
+    root = grammar.structure_tree(structure)
+    first_node: dict[int, Any] = {}
+    for node in root.parts():
+        first_node.setdefault(node.payload["prototype"], node)
+    one_part = len(root.parts()) == 1
+    prototypes = structure["prototypes"]
+    named = {"face": "faceNames", "edge": "edgeNames", "vertex": "vertexNames"}
+
+    def canonical(index: int, kind: str, ordinal: int) -> str:
+        name = (prototypes[index].get(named[kind]) or {}).get(str(ordinal))
+        node = first_node.get(index)
+        if node is None:
+            return name or f"{kind} {ordinal}"
+        return grammar._element_ref(root, node, kind, ordinal, name, one_part)
+
+    return canonical
+
+
+def coverage_of(structure: dict[str, Any], shapes: Mapping[int, Any]) -> list[dict[str, Any]]:
+    """The structure's ``pmi_coverage``: ``coverage`` of each part its ``pmi`` has an entry on, as
+    ``{"part", "uncovered", "conflicts"}``, by part (a prototype index), its faces every face of its
+    shape (``shapes``, by prototype index) as the structure spells them. A part with no entry says
+    nothing. Derived where the structure is served, the build's report read from the same."""
+    entries = structure.get("pmi") or []
+    canonical = _canonical(structure)
+    found = []
+    for index in sorted({entry["part"] for entry in entries if entry["part"] is not None}):
+        faces = [canonical(index, "face", at) for at in range(1, _faces(shapes[index]).Extent() + 1)]
+        found.append({"part": index, **coverage([entry for entry in entries if entry["part"] == index], faces)})
     return found
 
 

@@ -592,7 +592,7 @@ class CodeTest(unittest.TestCase):
                              pmi.diameter("hole", hole, tolerance=pmi.plus_minus(0.1, 0)))
         built = build(plate, model="shape_pmi", xbf=str(self.folder / "plate.xbf"), daemon=False)
         self.assertTrue(built.ok, built.report)
-        self.assertEqual(built.report["pmi"], {"annotations": 2, "problems": []})
+        self.assertEqual((built.report["pmi"]["annotations"], built.report["pmi"]["problems"]), (2, []))
         found = {entry["id"]: entry for entry in pmi.read(self.folder / "plate.xbf")}
         self.assertEqual(sorted(found), ["A", "hole"])
         self.assertEqual(found["hole"]["dimension"]["nominal"]["value"], 6.0)
