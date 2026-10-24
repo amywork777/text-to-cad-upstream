@@ -40,6 +40,39 @@ class ViewerExportsTest(unittest.TestCase):
                 check.assert_not_called()
                 self.assertNotIn("pmiVerification", result["files"][0])
 
+    def test_notes_are_no_pmi_of_a_step(self):
+        """A note is the xbf's (OCCT's STEP writer writes none): a document whose PMI is notes alone
+        offers a STEP that carries no PMI, and its file is not checked; beside GD&T, the check is
+        given the document's PMI and matches the GD&T alone (``ap242.compare``)."""
+        from types import SimpleNamespace
+        note = {"id": "deburr", "kind": "note", "status": "ok", "refs": [],
+                "note": {"number": 1, "text": "Break all sharp edges 0.2 max", "general": True, "annotations": []}}
+        source = SimpleNamespace(structure={"pmi": [note]})
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "result.step"
+
+            def write(source, _unused, target, **kwargs):
+                target.write_bytes(b"written step")
+                return target.stat().st_size
+
+            with patch.object(building, "held", return_value=source), \
+                 patch("cadgen.engine.export.viewer.check"), \
+                 patch("cadgen.engine.export.translate", side_effect=write), \
+                 patch("cadgen.engine.export.ap242.verify") as check:
+                result = _export({"source": {"path": str(output)}, "expected": {"version": "v"},
+                                  "destinations": [str(output)]}, lambda _: None)
+                check.assert_not_called()
+                self.assertNotIn("pmiVerification", result["files"][0])
+            root = Path(folder).resolve()
+            script = root / "plate.py"
+            script.write_text('from cadgen import pmi, xbf\nimport build123d as bd\n@xbf("plate.xbf")\ndef plate():\n'
+                              '    return pmi.annotate(bd.Box(2, 3, 4), pmi.note("deburr", "Break all sharp edges 0.2 max"))\n',
+                              encoding="utf-8")
+            reports = building.build(script, ["plate"], cwd=root)
+            self.assertTrue(reports[0]["ok"], reports)
+            step = next(row for row in options(Source.read(root / "plate.xbf")) if row["format"] == "step")
+            self.assertEqual((step["pmi"], step["reason"]), (False, None))
+
     def test_a_pmi_document_offers_step_as_carrying_its_pmi(self):
         fixture = Path(__file__).resolve().parent / "pmi_golden" / "pmi_plate.xbf"
         source = Source.read(fixture)

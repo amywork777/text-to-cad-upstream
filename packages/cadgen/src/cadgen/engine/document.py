@@ -32,8 +32,9 @@ pairs, the ground, the as-built configuration and the named ones, as a subtree o
 standard attributes beside the XCAF tools (``mechanism``).
 
 A part given semantic PMI (``pmi.annotate``) carries it in the GD&T tool, as XCAF's own
-datum, dimension and geometric-tolerance objects linked to its faces' sub-shape labels
-(``pmi``); a document holding PMI is converted whole on a warm build.
+datum, dimension and geometric-tolerance objects linked to its faces' sub-shape labels, its
+notes in the notes tool and its notes library on its shape label (``pmi``); a document holding
+PMI is converted whole on a warm build.
 
 A model's document is kept in memory between builds (``Kept``) and a warm build patches
 it rather than converting every prototype again (``to_xcaf``): each shape label holds the
@@ -102,7 +103,8 @@ class Part:
     origin: Any = None  # the result's object it was first seen as
     material: Any = None
     face_materials: dict[int, Any] = field(default_factory=dict)
-    # Its semantic PMI as the code gave it (``pmi.annotate``): annotations as plain dicts.
+    # Its semantic PMI as the code gave it (``pmi.annotate``): annotations as plain dicts, its
+    # notes among them, and its notes library (``pmi._library``).
     pmi: tuple = ()
 
 
@@ -1349,8 +1351,10 @@ class Loaded:
         from cadgen.engine import pmi
 
         records = pmi.records_of_document(self.doc, self.prototypes, self.name)
-        if records:
+        library = pmi.library_of_document(self.doc, self.prototypes)
+        if records or library:
             found["pmi"] = pmi.entries(records, found)
+            found["pmi_library"] = library
         return found
 
     def root_label(self) -> Any:
@@ -1472,6 +1476,7 @@ def tree_structure(tree: Tree, path: Path) -> dict[str, Any]:
         from cadgen.engine import pmi
 
         found["pmi"] = pmi.entries(pmi.records_of_tree(tree, index_of), found)
+        found["pmi_library"] = pmi.library_of_tree(tree, index_of)
     return found
 
 

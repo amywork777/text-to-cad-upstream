@@ -641,7 +641,8 @@ def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[
             pmi.warn(tree, pmi.faces_named(remembered.tree))
         elif xbf is not None and Path(xbf).is_file():
             pmi.warn(tree, pmi.faces_named_in(Path(xbf)))
-        report["pmi"] = {"annotations": sum(len(given) for _part, given in tree.pmi), "problems": pmi.problems(tree)}
+        report["pmi"] = {"annotations": sum(len(items) for _part, items in pmi.resolve(tree)),
+                         "problems": pmi.problems(tree)}
         for problem in report["pmi"]["problems"]:
             log(f"pmi {problem['part']}/{problem['id']}: {problem['status']}: {problem['problem']}")
         warnings = pmi.warnings(tree)

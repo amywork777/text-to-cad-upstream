@@ -44,7 +44,8 @@ def options(source, *, pose=None, part=None, original_allowed=True) -> list[dict
                                            ("dxf", "DXF", ".dxf"), ("xbf", "XBF", ".xbf"))]
     for row in rows:
         if row["format"] == "step":
-            row["pmi"] = bool(source.structure.get("pmi"))
+            # Whether the STEP carries PMI: its GD&T, a note being the xbf's alone.
+            row["pmi"] = bool(pmi.step_entries(source.structure.get("pmi") or []))
             try:
                 pmi.refuse_dropped(view, "step")
             except ExportRefused as error:

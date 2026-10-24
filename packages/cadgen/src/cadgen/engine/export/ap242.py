@@ -556,7 +556,9 @@ def _written_as_nothing(entry: dict[str, Any]) -> bool:
 def compare(entries: list[dict[str, Any]], found: dict[str, Any]) -> dict[str, Any]:
     """A document's PMI entries against a file's ``report``: how many match one record each, of
     how many, and why any does not. A general profile that covers no face matches no record, and
-    is verified by none being left over."""
+    is verified by none being left over. A note is the document's alone (a STEP carries none): it is
+    neither expected nor counted."""
+    entries = [entry for entry in entries if entry.get("kind") != "note"]
     problems = list(found.get("problems") or [])
     if not entries:
         problems.append("The model has no PMI to verify.")

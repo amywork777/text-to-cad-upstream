@@ -1,8 +1,9 @@
-# PMI: datums, dimensions and tolerances
+# PMI: datums, dimensions, tolerances and notes
 
 Read this file when the user asks for datums, toleranced dimensions, basic dimensions,
 flatness, position, a surface profile or a general profile ("unless otherwise noted, all
-surfaces"; GD&T, PMI, model-based definition), or for a STEP a supplier or an inspection
+surfaces"; GD&T, PMI, model-based definition), for notes on a part (general notes, a flag
+note on faces, a project's standard notes), or for a STEP a supplier or an inspection
 tool can read requirements from.
 
 A part's requirements are written in its model, on the faces they control, and the
@@ -15,6 +16,8 @@ document keeps them:
   `pmi.distance`, and `pmi.basic` for a theoretically exact one.
 - **Geometric tolerances**: `pmi.flatness`, `pmi.position` and `pmi.profile`, and
   `pmi.general_profile` for every face nothing else controls.
+- **Notes**: `pmi.note`, a general note or a flag note on faces and annotations,
+  numbered per part.
 
 The `.xbf` keeps them as the kernel's own GD&T, linked to their faces, and a STEP
 export writes them as AP242 semantic PMI: requirements a program reads off the faces,
@@ -99,6 +102,42 @@ def plate():
   in millimetres in the part's frame. It is not a requirement, and no export writes
   it. Dragging a label in the viewer asks for this change.
 
+## Notes
+
+```python
+# notes.py, a module of the project's own code: its standard notes by name, in the
+# user's words (cadgen ships no note text; never write notes for the user).
+NOTES = {"primer-mask": "Mask these features before coating with primer"}
+```
+
+```python
+from notes import NOTES
+
+return pmi.annotate(
+    body,
+    # ... the requirements, as above ...
+    pmi.general_profile("general", 0.5, datums=["A", "B", "C"]),   # Note 1
+    # Note 2, a flag note: on the hole's face and its diameter.
+    pmi.note("mask", NOTES["primer-mask"], faces=[hole], annotations=["hole-diameter"]),
+    library=NOTES,
+)
+```
+
+- **A general note** names no face and no annotation: `pmi.note(id, text)`.
+- **A flag note** names the faces it applies to (`faces=`, a face or a list, of any
+  kind) and the annotations of the same `annotate` call it applies to (`annotations=`,
+  by id). An id the call does not have, a note's id, or an empty text is refused.
+- **Numbers are the part's**: the general profile is Note 1 where the part has one,
+  then each note in the order the code gives them. Reorder the calls to renumber.
+- **Ids are shared**: a note's id is unique among the part's annotations.
+- **A notes library** is the project's: keep its notes in a module of its own code
+  that the models import, and pass the dict as `annotate(..., library=NOTES)`. The
+  build keeps it with the part, so the viewer can offer those notes; it is no
+  requirement. The text is the user's: ask for it.
+- **Notes are the `.xbf`'s**: no STEP carries them, and no STEP is refused for one.
+  The viewer and `cadgen snapshot` do not draw notes yet: each is listed among what
+  they leave out.
+
 ## After an edit
 
 Every build resolves each ref again. One that still names its face follows it, its
@@ -111,7 +150,8 @@ nominal measured anew and its tolerance as written. Otherwise its status says wh
 Such an annotation stays in the `.xbf` with its values, linked to nothing, and is
 listed in the build report's `pmi` (`{"annotations", "problems"}`, with `unattached`
 where any are). A STEP is refused rather than written without it, naming each one.
-Fix the ref in the code, or remove the annotation.
+Fix the ref in the code, or remove the annotation. A flag note whose face is gone keeps
+its number and its text and says `missing` too; a STEP is not refused for it.
 
 A ref written as text that names a face of another kind than on the last build (a
 hole's name that passed to a flat side of the cut that replaced it) is measured as it
@@ -128,10 +168,12 @@ for entry in pmi.read("XBF/plate.xbf"):   # or a .step
     print(entry["id"], entry["kind"], entry["status"], entry["problem"])
 ```
 
-Each entry has `id`, `kind` (`datum`, `dimension`, `geometric_tolerance`), `status`
-(`ok`, `missing`, `ambiguous`, `invalid`), `problem`, `refs` (each with its canonical
-ref and status), and one of `datum`, `dimension` or `geometric_tolerance` holding its
-values. A general profile says `"general": true`, and its `refs` are the faces it covers
+Each entry has `id`, `kind` (`datum`, `dimension`, `geometric_tolerance`, `note`),
+`status` (`ok`, `missing`, `ambiguous`, `invalid`), `problem`, `refs` (each with its
+canonical ref and status), and one of `datum`, `dimension`, `geometric_tolerance` or
+`note` holding its values. A note's is `{"number", "text", "general", "annotations"}`,
+its `refs` its faces. The document's structure lists each part's library as
+`pmi_library` (`{"part", "name", "text"}`). A general profile says `"general": true`, and its `refs` are the faces it covers
 on this build, each with `written` null; `pmi.otherwise_controlled(entries)` gives the
 faces the rest control. PMI read from another system's STEP that this does not model whole (another
 characteristic, a fit, modifiers, limits beside either, a link to an edge or a point)
@@ -156,7 +198,8 @@ the kernel, and matches every annotation to the file: values, units, datum order
 zone, faces and a basic dimension's mark. The export's status says how many matched,
 with the file's SHA-256. It checks the file, not a supplier's importer.
 
-A STEP carries no annotation ids, and no drawn callouts. A general profile is written as
+A STEP carries no annotation ids, no drawn callouts and no notes: notes and the library
+stay in the `.xbf`, and the check neither expects nor counts them. A general profile is written as
 a surface profile on exactly the faces it covers, so a CAM or inspection program reads
 the faces themselves; the file does not say "general".
 

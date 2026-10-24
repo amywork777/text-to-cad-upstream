@@ -5,7 +5,9 @@ which agree on values, units, datum frames and the faces each annotation is on; 
 given limits, written as AP242's lower and upper limit and its nominal still measured; a surface
 profile on several faces of any kind, written as one AP242 surface profile tolerance; a general
 profile on every face nothing else controls, computed each build and written on exactly those
-faces, or as nothing where it covers none; a warm rebuild,
+faces, or as nothing where it covers none; general and flag notes, numbered after the general
+profile, and a project's notes library, kept in the xbf as XCAF notes (the same bytes from the same
+code) and never in a STEP, which neither refuses nor checks them; a warm rebuild,
 an edit of the geometry and of a tolerance, a ref the model no longer satisfies (missing,
 ambiguous, invalid) kept in the document and refused by a STEP, and one that names another kind
 of face than on the last build warned of, the document the code's alone; what is not supported
@@ -768,6 +770,234 @@ class GeneralProfileTest(_Folder):
         engine_build._WRITTEN.clear()
         self.assertEqual(built(SQUARE), ["plane"] * 8)
         self.assertEqual(self.xbf.read_bytes(), after)
+
+
+# A plate given a general note and a flag note on its hole, after its general profile ({general}): the
+# flag note's text is the project's notes library's, a dict its own module would hold (here inline).
+# Tolerance values and note texts ILLUSTRATIVE.
+NOTES = '''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+LIBRARY = {{"primer-mask": "Mask these features before coating with primer"}}
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10)
+    {cut}
+    body.label = "plate"
+    bottom = body.faces().sort_by(bd.Axis.Z)[0]
+    return pmi.annotate(
+        body,
+        pmi.datum("A", bottom),
+        pmi.diameter("hole-dia", {hole}, tolerance=pmi.plus_minus(0.1, 0)),
+        {general}
+        pmi.note("deburr", "Break all sharp edges 0.2 max"),
+        pmi.note("mask", LIBRARY["primer-mask"], faces=[{mask}], annotations=["hole-dia"]),
+        library=LIBRARY,
+    )
+'''
+HOLE = "body.faces().filter_by(bd.GeomType.CYLINDER)[0]"
+MASK = "Mask these features before coating with primer"
+
+
+def notes(*, general: bool = True, cut: str = "body = body - bd.Cylinder(5, 10)", hole: str = HOLE,
+          mask: str | None = None) -> str:
+    """The plate with notes; ``mask``: the flag note's face where it is not the hole's ref."""
+    return NOTES.format(general='pmi.general_profile("general", 0.5, datums=["A"]),' if general else "", cut=cut,
+                        hole=hole, mask=hole if mask is None else mask)
+
+
+def _numbers(entries: list[dict]) -> list[tuple[str, int, bool]]:
+    """Each note's id, number and whether it is a general note, in the order served."""
+    return [(entry["id"], entry["note"]["number"], entry["note"]["general"]) for entry in entries
+            if entry["kind"] == "note"]
+
+
+class NoteTest(_Folder):
+    def served(self) -> dict:
+        """The structure the last build served."""
+        return engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure
+
+    def test_notes_are_numbered_after_the_general_profile(self) -> None:
+        report = self.build(notes())
+        self.assertEqual(report["pmi"], {"annotations": 5, "problems": []})
+        served = pmi.read(self.xbf)
+        self.assertEqual(served, self.served()["pmi"])
+        # The part's general profile is Note 1; the notes follow in the order the code gives them.
+        self.assertEqual(_numbers(served), [("deburr", 2, True), ("mask", 3, False)])
+        deburr = _by_id(served)["deburr"]
+        self.assertEqual((deburr["status"], deburr["problem"], deburr["refs"]), ("ok", None, []))
+        self.assertEqual(deburr["note"], {"number": 2, "text": "Break all sharp edges 0.2 max", "general": True,
+                                          "annotations": []})
+        # With no general profile, the first note is Note 1.
+        self.build(notes(general=False))
+        self.assertEqual(_numbers(pmi.read(self.xbf)), [("deburr", 1, True), ("mask", 2, False)])
+
+    def test_a_flag_note_names_its_faces_and_annotations(self) -> None:
+        self.build(notes())
+        loaded = document.Loaded(self.xbf)
+        found = _by_id(loaded.structure()["pmi"])
+        mask = found["mask"]
+        self.assertEqual(set(mask), {"id", "kind", "label", "status", "problem", "warnings", "part", "refs",
+                                     "presentation", "xcaf_type", "note"})
+        self.assertEqual((mask["kind"], mask["label"], mask["status"], mask["problem"], mask["warnings"], mask["part"],
+                          mask["presentation"], mask["xcaf_type"]),
+                         ("note", None, "ok", None, [], 0, None, "XCAFDoc_NoteComment"))
+        self.assertEqual(mask["note"], {"number": 3, "text": MASK, "general": False, "annotations": ["hole-dia"]})
+        # On the hole's face, a ref as any other annotation's.
+        hole = found["hole-dia"]["refs"][0]
+        self.assertEqual(mask["refs"], [{"role": "feature", "written": hole["written"], "status": "ok", "ref": hole["ref"],
+                                         "candidates": None, "problem": None}])
+        self.assertEqual(_face(loaded, mask), ("cylinder", {"radius": 5.0}))
+
+    def test_a_flag_note_whose_face_is_gone_keeps_its_number_and_says_missing(self) -> None:
+        self.build(notes())
+        loaded = document.Loaded(self.xbf)
+        faces = pmi._faces(loaded.prototypes[0].shape)
+        [ordinal] = [at for at in range(1, faces.Extent() + 1) if pmi._surface(faces.FindKey(at))[0] == "cylinder"]
+        name = loaded.prototypes[0].face_names[ordinal]
+        self.build(notes(hole=repr(name)))
+        before = _by_id(pmi.read(self.xbf))["mask"]
+        self.assertEqual((before["status"], before["note"]["number"]), ("ok", 3))
+        # The hole removed: the note's face is gone. The build says so; the note keeps its number,
+        # its text and its links as written, missing; the STEP is refused for the diameter alone.
+        report = self.build(notes(hole=repr(name), cut="pass"), ok=False)
+        self.assertEqual({(problem["id"], problem["status"]) for problem in report["pmi"]["problems"]},
+                         {("hole-dia", "missing"), ("mask", "missing")})
+        self.assertIn("hole-dia", report["error"])
+        self.assertNotIn("mask", report["error"])
+        served = pmi.read(self.xbf)
+        mask = _by_id(served)["mask"]
+        self.assertEqual((mask["status"], mask["note"]), ("missing", before["note"]))
+        self.assertIn(f"no face {name}", mask["problem"])
+        self.assertEqual([(ref["ref"], ref["written"], ref["status"]) for ref in mask["refs"]], [(name, name, "missing")])
+
+    def test_an_unknown_annotation_id_and_empty_text_are_refused(self) -> None:
+        import build123d as bd
+
+        box = bd.Box(10, 10, 10)
+        top = box.faces().sort_by(bd.Axis.Z)[-1]
+        with self.assertRaisesRegex(pmi.PMIError, "note 'mask' names 'hole-dia', which is no annotation of this "
+                                                  r"pmi.annotate\(\) call"):
+            pmi.annotate(box, pmi.flatness("top-flat", top, 0.05), pmi.note("mask", MASK, faces=[top],
+                                                                            annotations=["hole-dia"]))
+        with self.assertRaisesRegex(pmi.PMIError, "note 'see' names note 'deburr': a note names annotations"):
+            pmi.annotate(box, pmi.note("deburr", "Break all sharp edges 0.2 max"),
+                         pmi.note("see", "See note 2", annotations=["deburr"]))
+        for text in ("", "   ", None, 3):
+            with self.assertRaisesRegex(pmi.PMIError, "note 'blank': a note's text is a non-empty string"):
+                pmi.note("blank", text)  # type: ignore[arg-type]
+        # A note's id is one of its part's ids, as its annotations' are.
+        with self.assertRaisesRegex(pmi.PMIError, "two annotations on one part are 'top-flat'"):
+            pmi.annotate(box, pmi.flatness("top-flat", top, 0.05), pmi.note("top-flat", "Lap this face"))
+        with self.assertRaisesRegex(pmi.PMIError, "library note 'primer-mask': its text is a non-empty string"):
+            pmi.annotate(box, library={"primer-mask": ""})
+        with self.assertRaisesRegex(pmi.PMIError, "a library is a project's notes by name"):
+            pmi.annotate(box, library=["primer-mask"])  # type: ignore[arg-type]
+
+    def test_notes_and_the_library_survive_the_xbf_and_make_the_same_bytes(self) -> None:
+        from OCP.TDF import TDF_Label, TDF_LabelSequence, TDF_Tool
+        from OCP.XCAFDoc import XCAFDoc_AssemblyItemId, XCAFDoc_DocumentTool, XCAFDoc_NoteComment
+
+        self.build(notes())
+        loaded = document.Loaded(self.xbf)
+        structure = loaded.structure()
+        self.assertEqual(structure["pmi_library"], [{"part": 0, "name": "primer-mask", "text": MASK}])
+        self.assertEqual((self.served()["pmi"], self.served()["pmi_library"]),
+                         (structure["pmi"], structure["pmi_library"]))
+        # XCAF's notes: comments by one fixed user with no timestamp, in the code's order.
+        tool = XCAFDoc_DocumentTool.NotesTool_s(loaded.doc.Main())
+        labels = TDF_LabelSequence()
+        tool.GetNotes(labels)
+        said = [XCAFDoc_NoteComment.Get_s(labels.Value(at)) for at in range(1, labels.Length() + 1)]
+        self.assertEqual([(note.Comment().ToExtString(), note.UserName().ToExtString(), note.TimeStamp().ToExtString())
+                          for note in said], [("Break all sharp edges 0.2 max", "cadgen", ""), (MASK, "cadgen", "")])
+
+        def label(entry: str) -> object:
+            found = TDF_Label()
+            TDF_Tool.Label_s(loaded.doc.GetData(), entry, found)
+            return found
+
+        def texts(found: TDF_LabelSequence) -> list[str]:
+            return [XCAFDoc_NoteComment.Get_s(found.Value(at)).Comment().ToExtString()
+                    for at in range(1, found.Length() + 1)]
+
+        # The general note on the part; the flag note on the hole's face, its sub-shape index the
+        # face's ordinal in the part's face map (the ref grammar's), and on the diameter's GD&T label.
+        self.assertEqual(tool.NbAnnotatedItems(), 3)
+        part = loaded.prototypes[0]
+        found = TDF_LabelSequence()
+        tool.GetNotes(label(part.entry), found)
+        self.assertEqual(texts(found), ["Break all sharp edges 0.2 max"])
+        ordinal = _ordinal(loaded, _by_id(structure["pmi"])["mask"]["refs"][0]["ref"])
+        self.assertEqual(pmi._surface(pmi._faces(part.shape).FindKey(ordinal))[0], "cylinder")
+        for at in range(1, pmi._faces(part.shape).Extent() + 1):
+            found = TDF_LabelSequence()
+            tool.GetSubshapeNotes(XCAFDoc_AssemblyItemId(part.entry), at, found)
+            self.assertEqual(texts(found), [MASK] if at == ordinal else [], at)
+        [diameter] = [record for record in pmi.records_of_document(loaded.doc, loaded.prototypes, loaded.name)
+                      if (record["extra"] or {}).get("id") == "hole-dia"]
+        found = TDF_LabelSequence()
+        tool.GetNotes(label(diameter["entry"]), found)
+        self.assertEqual(texts(found), [MASK])
+        # The same code makes the same bytes, built warm or fresh.
+        first = self.xbf.read_bytes()
+        self.xbf.unlink()
+        self.build(notes())
+        self.assertEqual(self.xbf.read_bytes(), first)
+        self.xbf.unlink()
+        engine_build._WRITTEN.clear()
+        self.build(notes())
+        self.assertEqual(self.xbf.read_bytes(), first)
+
+    def test_a_library_alone_is_served_and_a_note_keeps_any_text(self) -> None:
+        model = '''
+import build123d as bd
+from cadgen.engine import pmi, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+def pmi_plate():
+    body = bd.Box(100, 60, 10)
+    body.label = "plate"
+    return pmi.annotate(body, {notes}library={{"primer-mask": "{mask}", "finish": "Ra 1.6 µm"}})
+'''
+        # A project's library before any note is written: the viewer offers what the build saw.
+        self.build(model.format(notes="", mask=MASK))
+        structure = document.Loaded(self.xbf).structure()
+        self.assertEqual(structure["pmi"], [])
+        self.assertEqual(structure["pmi_library"], [{"part": 0, "name": "primer-mask", "text": MASK},
+                                                    {"part": 0, "name": "finish", "text": "Ra 1.6 µm"}])
+        self.assertEqual(self.served()["pmi_library"], structure["pmi_library"])
+        self.build(model.format(notes='pmi.note("finish", "Ra 1.6 µm, ⌀ holes ±0.1"), ', mask=MASK))
+        [finish] = pmi.read(self.xbf)
+        self.assertEqual((finish["note"]["number"], finish["note"]["text"]), (1, "Ra 1.6 µm, ⌀ holes ±0.1"))
+
+    def test_a_step_of_a_document_with_notes_is_written_and_checked_without_them(self) -> None:
+        """Review Focus 5: a STEP carries no note (OCCT's writer writes none), so a note never stops
+        one, and the check matches the GD&T alone."""
+        self.build(notes())
+        served = pmi.read(self.xbf)
+        result = ap242.verify(served, self.step)
+        self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
+        text = self.step.read_text(encoding="utf-8")
+        self.assertNotIn("Break all sharp edges", text)
+        self.assertNotIn(MASK, text)
+        self.assertNotIn("note", {entry["kind"] for entry in pmi.read(self.step)})
+        # A flag note gone missing: the build and its STEP are written, the check the same, and an
+        # export of the saved document says nothing of the note.
+        report = self.build(notes(mask="'face 99'"))
+        self.assertEqual([(problem["id"], problem["status"]) for problem in report["pmi"]["problems"]],
+                         [("mask", "missing")])
+        result = ap242.verify(pmi.read(self.xbf), self.step)
+        self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
+        said: list[str] = []
+        export.translate(self.xbf, "step", self.folder / "again.step", log=said.append)
+        self.assertEqual([line for line in said if "pmi" in line], [])
+        self.assertEqual(pmi.dropped(export.Source.read(self.xbf).view(), "step"), [])
 
 
 # A plate whose one variable ``cut`` is a round hole and then a square pocket: the name the hole's face

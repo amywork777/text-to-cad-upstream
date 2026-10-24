@@ -37,6 +37,21 @@ writer reads the XCAF objects and writes AP242's semantic PMI
 ``COMPOSITE_SHAPE_ASPECT`` relating one such aspect per face). The cadgen attribute is not
 written to a STEP.
 
+**Notes** (``note``) are the xbf's alone: XCAF comments in its notes tool (``XCAFDoc_NotesTool``),
+by one fixed user (``NOTE_USER``) with no timestamp, so the same code makes the same bytes; each
+with the same ``TDF_Reference`` and cadgen attribute beside it (the id, label, presentation, refs
+and the ids it names as written; the text is XCAF's). A general note names no face and no
+annotation and is attached to its part's shape label; a flag note is attached to each face it is
+on (``AddNoteToSubshape``, the sub-shape index the face's ordinal in its part's face map, where
+the note is ``ok``) and to the GD&T label of each annotation it names. A note's faces resolve as
+any ref does, on a face of any kind; one whose face is gone keeps its number and text, its status
+saying so. Its number is derived where served: Note 1 is the part's general profile where it has
+one, then each note in the code's order. OCCT's STEP writer writes no notes, so a STEP carries
+none and is never refused for one (``step_entries``). A part's notes library (``annotate``'s
+``library``: the project's notes by name, the dict its own module holds; cadgen ships none) is one
+JSON attribute (``LIBRARY_GUID``) on its shape label, served as ``pmi_library``. A note this module
+did not write (no cadgen attribute) is not read.
+
 **Values.** A dimension's nominal is the geometry's, measured at document time: a cylinder's
 diameter, the distance between two parallel planes. No nominal is typed in. A tolerance is held
 only where the code gives one (``plus_minus``: signed deviations, upper above lower; ``limits``:
@@ -93,7 +108,8 @@ tolerance or limits; basic (theoretically exact) distances, from planes and hole
 tolerance, marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); flatness; position
 with an ordered datum reference frame and a diametral zone; a surface profile on one face or
 several, of any kind, with a frame of up to three datums or none; a part's general profile, on
-the faces nothing else controls. Every
+the faces nothing else controls; and, in the xbf alone, general and flag notes and a part's
+notes library. Every
 other XCAF characteristic, dimension type, modifier and tolerance form is refused by name
 (``PMIUnsupported``), never approximated. PMI is part-level: an annotation is on one part, and an
 assembly is refused.
@@ -105,11 +121,11 @@ import json
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 __all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "basic", "datum",
-           "diameter", "dimension", "distance", "flatness", "general_profile", "geometric", "limits",
-           "otherwise_controlled", "place", "plus_minus", "position", "profile", "read"]
+           "diameter", "dimension", "distance", "flatness", "general_profile", "geometric", "limits", "note",
+           "otherwise_controlled", "place", "plus_minus", "position", "profile", "read", "step_entries"]
 
 # The attribute an annotated shape holds its annotations in (a tuple of plain dicts), as a part's
 # configurations are held (``kernel.memo`` keys it).
@@ -118,8 +134,16 @@ PMI = "xbf_pmi"
 # module): an attribute of another schema is not read.
 EXTRA_GUID = "5d3a7c1e-9f42-4b86-a0e5-3c7b9d2f6e18"
 SCHEMA = "cadgen.pmi/1"
-# The GD&T tool's label under the main label (``XCAFDoc_DocumentTool::DimTolLabel``).
+# The GUID of a part's notes library (``annotate``'s ``library``), one JSON attribute of ``SCHEMA`` on its
+# shape label.
+LIBRARY_GUID = "471db751-90aa-42aa-8fda-c0a0418a5689"
+# The GD&T tool's label under the main label (``XCAFDoc_DocumentTool::DimTolLabel``), and the notes
+# tool's (``XCAFDoc_DocumentTool::NotesLabel``).
 DIMTOL_TAG = 4
+NOTES_TAG = 9
+# A note is an XCAF comment by one fixed user with no timestamp: the same code makes the same bytes.
+NOTE_USER = "cadgen"
+NOTE_TYPE = "XCAFDoc_NoteComment"
 STATUSES = ("ok", "missing", "ambiguous", "invalid")
 # A basic dimension's mark in AP242 (CAx-IF PMI Recommended Practices 4.1, 5.3, Table 7): the
 # descriptive item's name and description.
@@ -143,7 +167,8 @@ _EVERY_SURFACE = ("plane", "cylinder", "cone", "sphere", "torus", "beziersurface
 # A basic dimension is a distance between planes, a plane and a hole's axis, or two axes.
 _SURFACES = {"datum": ("plane", "cylinder"), "diameter": ("cylinder",), "distance": ("plane",),
              "basic": ("plane", "cylinder"),
-             "flatness": ("plane",), "position": ("cylinder",), "surface_profile": _EVERY_SURFACE}
+             "flatness": ("plane",), "position": ("cylinder",), "surface_profile": _EVERY_SURFACE,
+             "note": _EVERY_SURFACE}
 
 
 class PMIError(ValueError):
@@ -317,11 +342,34 @@ def general_profile(id: str, value: float, *, datums: Iterable[str] = (), label:
     return _geometric(id, "surface_profile", [], value, datums, False, label, None, general=True)
 
 
-def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
+def note(id: str, text: str, *, faces: Any = (), annotations: Iterable[str] = (), label: str | None = None,
+         presentation: dict | None = None) -> dict[str, Any]:
+    """A note of the part saying ``text``, the code's words (a project's notes library's, or its
+    own): a general note where it names no face and no annotation; a flag note on ``faces`` (a
+    face, or a list of faces of any kind) and on the ``annotations`` of the same ``annotate`` call
+    it names by id. Numbered among its part's notes as the code gives them, after the part's
+    general profile, which is Note 1 where it has one. Its id is one of the part's ids. Kept in the
+    xbf, never in a STEP (AP242's writer here writes no notes)."""
+    if not isinstance(text, str) or not text.strip():
+        raise PMIError(f"note {id!r}: a note's text is a non-empty string, not {text!r}")
+    refs = list(faces) if isinstance(faces, (list, tuple)) else [faces]
+    named = [annotations] if isinstance(annotations, str) else list(annotations)
+    for at, given in enumerate(named):
+        if not isinstance(given, str) or not given.strip():
+            raise PMIError(f"note {id!r}: an annotation is named by its id, not {given!r}")
+        if given in named[:at]:
+            raise PMIError(f"note {id!r}: names {given!r} twice; a note names each annotation once")
+    return _annotation(id, "note", [("feature", face) for face in refs], label, presentation,
+                       note={"text": text, "annotations": named})
+
+
+def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str] | None = None) -> Any:
     """``shape`` given ``annotations`` (replacing any it held): the part a model returns, or
     one part of its assembly. A ``Face`` given as a ref is numbered against ``shape`` now. Ids are
-    unique on a part, as are datum letters, and a datum holds one place in every frame that
-    names it (XCAF holds one position per datum). Returns ``shape``."""
+    unique on a part, a note's with the rest, as are datum letters; a note names annotations of
+    this call; and a datum holds one place in every frame that names it (XCAF holds one position
+    per datum). ``library`` is the project's notes by name, the dict its own module holds (cadgen
+    ships none): kept with the part, for a viewer to offer, and no requirement. Returns ``shape``."""
     import build123d as bd
 
     if not isinstance(shape, bd.Shape) or getattr(shape, "wrapped", None) is None:
@@ -365,9 +413,45 @@ def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
     general = [entry["id"] for entry in held if _general(entry)]
     if len(general) > 1:
         raise PMIError(f"a part has one general profile, not {' and '.join(map(repr, general))}")
-    shape.__dict__[PMI] = tuple(held)
+    kinds = {entry["id"]: entry["kind"] for entry in held}
+    for entry in held:
+        for named in (entry.get("note") or {}).get("annotations") or ():
+            if named not in kinds:
+                raise PMIError(f"note {entry['id']!r} names {named!r}, which is no annotation of this pmi.annotate() "
+                               f"call; its ids are {', '.join(map(repr, kinds))}")
+            if kinds[named] == "note":
+                raise PMIError(f"note {entry['id']!r} names note {named!r}: a note names annotations, not notes")
     _note_call(held)
+    if library is not None:
+        held.extend(_library_entry(library))
+    shape.__dict__[PMI] = tuple(held)
     return shape
+
+
+def _library_entry(library: Any) -> list[dict[str, Any]]:
+    """A part's notes library as ``annotate`` holds it among its annotations: one entry of kind
+    ``library``, each note's name and text in the project's order; none for an empty one."""
+    if not isinstance(library, Mapping):
+        raise PMIError("pmi.annotate(library=...): a library is a project's notes by name, a dict of each note's "
+                       f"name to its text, not {type(library).__name__}")
+    found = []
+    for name, text in library.items():
+        if not isinstance(name, str) or not name.strip():
+            raise PMIError(f"a library's note is named by a non-empty string, not {name!r}")
+        if not isinstance(text, str) or not text.strip():
+            raise PMIError(f"library note {name!r}: its text is a non-empty string, not {text!r}")
+        found.append({"name": name, "text": text})
+    return [{"pmi": 1, "kind": "library", "library": found}] if found else []
+
+
+def _annotations(given: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What ``annotate`` gave a part, its library apart: its annotations, notes among them."""
+    return [entry for entry in given if entry["kind"] != "library"]
+
+
+def _library(given: Iterable[dict[str, Any]]) -> list[dict[str, str]]:
+    """A part's notes library as ``annotate`` gave it (``_library_entry``): each note's name and text."""
+    return next((list(entry["library"]) for entry in given if entry["kind"] == "library"), [])
 
 
 def _annotation(id: str, kind: str, refs: list[tuple[str, Any]], label: str | None, presentation: dict | None,
@@ -488,7 +572,7 @@ def resolve(tree: Any) -> list[tuple[Any, list[Resolved]]]:
     found = []
     for part, given in tree.pmi or ():
         names = list((part.names or {}).get("faces") or [])
-        found.append((part, _resolved_part(given, part.shape, names, {part.name, tree.root.name})))
+        found.append((part, _resolved_part(_annotations(given), part.shape, names, {part.name, tree.root.name})))
     tree.pmi_resolved = found
     return found
 
@@ -563,13 +647,13 @@ def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners:
                 ref.status = "invalid"
                 ref.problem = (f"{ref.written} is a {surface[0]} face; a {what.replace('_', ' ')} is on a "
                                f"{' or '.join(wanted)} face")
-        if what == "surface_profile":
+        if what in ("surface_profile", "note"):
             for at, ref in enumerate(refs):
                 earlier = next((other for other in refs[:at] if other.ordinal == ref.ordinal), None)
                 if earlier is not None:
                     ref.status = "invalid"
-                    ref.problem = (f"{ref.written} names face {ref.ordinal}, as {earlier.written} does: a surface "
-                                   "profile is on each face once")
+                    ref.problem = (f"{ref.written} names face {ref.ordinal}, as {earlier.written} does: a "
+                                   f"{what.replace('_', ' ')} is on each face once")
         if all(ref.status == "ok" for ref in refs):
             if what == "diameter":
                 nominal = 2.0 * surfaces[0][1]["radius"]
@@ -587,10 +671,10 @@ def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners:
 
 
 def _what(spec: dict[str, Any]) -> str:
-    """What an annotation is, as ``_SURFACES`` knows it: a datum, a dimension's type (``basic`` for
-    a basic one) or a tolerance's characteristic."""
-    if spec["kind"] == "datum":
-        return "datum"
+    """What an annotation is, as ``_SURFACES`` knows it: a datum, a note, a dimension's type
+    (``basic`` for a basic one) or a tolerance's characteristic."""
+    if spec["kind"] in ("datum", "note"):
+        return spec["kind"]
     if spec["kind"] == "dimension":
         return "basic" if spec["dimension"].get("basic") else spec["dimension"]["type"]
     return spec["geometric_tolerance"]["characteristic"]
@@ -801,8 +885,9 @@ def warnings(tree: Any) -> list[str]:
 
 def write(doc: Any, tree: Any, label_of: Any) -> None:
     """The tree's annotations into ``doc``'s GD&T tool, each part's in its order, datums first
-    (a tolerance's frame names them), and the GD&T of the document the tree was read from
-    (``Tree.pmi_source``: ``copy``); ``label_of(part)`` is the part's shape label."""
+    (a tolerance's frame names them), then its notes into the notes tool, in the code's order
+    (``_note``), and its notes library onto its shape label; and the GD&T of the document the tree
+    was read from (``Tree.pmi_source``: ``copy``). ``label_of(part)`` is the part's shape label."""
     if tree.pmi_source is not None:
         loaded, parts = tree.pmi_source
         copy(doc, loaded, lambda index: label_of(parts[index]))
@@ -829,11 +914,14 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
             return found
 
         datums: dict[str, Any] = {}
+        made: dict[str, Any] = {}  # each annotation's GD&T label, by id: what a note names
         positions = {letter: at for item in items if item.spec["kind"] == "geometric_tolerance"
                      for at, letter in enumerate(item.spec["geometric_tolerance"]["datums"], 1)}
         ordered = _datums_first(items)
         for item in ordered:
             spec = item.spec
+            if spec["kind"] == "note":
+                continue
             linked = _on_faces(item)
             refs = [sub(ref.ordinal) for ref in item.refs] if linked else []
             if spec["kind"] == "datum":
@@ -863,6 +951,37 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
                         tool.SetDatumToGeomTol(datums[letter], at)
             TDataStd_AsciiString.Set_s(at, guid, TCollection_AsciiString(_text(_extra(item))))
             TDF_Reference.Set_s(at, label)
+            made[spec["id"]] = at
+        for item in items:
+            if item.spec["kind"] == "note":
+                at = _note(XCAFDoc_DocumentTool.NotesTool_s(doc.Main()), item, label, made)
+                TDataStd_AsciiString.Set_s(at, guid, TCollection_AsciiString(_text(_extra(item))))
+                TDF_Reference.Set_s(at, label)
+        library = _library(part.pmi)
+        if library:
+            TDataStd_AsciiString.Set_s(label, Standard_GUID(LIBRARY_GUID),
+                                       TCollection_AsciiString(_text({"schema": SCHEMA, "library": library})))
+
+
+def _note(notes: Any, item: Resolved, label: Any, made: dict[str, Any]) -> Any:
+    """A note as an XCAF comment (``NOTE_USER``, no timestamp) in ``notes``, the notes tool; its
+    label. A flag note is attached to each face it is on, where it is ``ok`` (the sub-shape index
+    is the face's ordinal in its part's face map, as the ref grammar numbers faces), and to the
+    GD&T label of each annotation it names (``made``, by id); a general note to its part's shape
+    ``label``."""
+    from OCP.TCollection import TCollection_ExtendedString
+
+    spec = item.spec
+    found = notes.CreateComment(TCollection_ExtendedString(NOTE_USER, True), TCollection_ExtendedString("", True),
+                                TCollection_ExtendedString(spec["note"]["text"], True)).Label()
+    if _on_faces(item):
+        for ref in item.refs:
+            notes.AddNoteToSubshape(found, label, ref.ordinal)
+    for named in spec["note"]["annotations"]:
+        notes.AddNote(found, made[named])
+    if not spec["refs"] and not spec["note"]["annotations"]:
+        notes.AddNote(found, label)
+    return found
 
 
 def _on_faces(item: Resolved) -> bool:
@@ -872,8 +991,13 @@ def _on_faces(item: Resolved) -> bool:
 
 
 def _extra(item: Resolved) -> dict[str, Any]:
-    """The cadgen attribute's JSON (see the module): what the code says that XCAF has no place for."""
+    """The cadgen attribute's JSON (see the module): what the code says that XCAF has no place for.
+    A note's text is XCAF's (its comment), linked or not: beside it, what it names as written."""
     spec = item.spec
+    if spec["kind"] == "note":
+        return {"schema": SCHEMA, "id": spec["id"], "kind": "note", "label": spec["label"],
+                "presentation": spec["presentation"], "refs": spec["refs"],
+                "annotations": list(spec["note"]["annotations"])}
     found = {"schema": SCHEMA, "id": spec["id"], "kind": spec["kind"], "label": spec["label"],
              "presentation": spec["presentation"], "refs": spec["refs"],
              # What an unlinked annotation meant, for a reader: XCAF links values to geometry alone.
@@ -1052,12 +1176,24 @@ def _tool(doc: Any) -> Any:
     return XCAFDoc_DimTolTool.Set_s(label)
 
 
+def _notes_tool(doc: Any) -> Any:
+    """A document's notes tool (``XCAFDoc_NotesTool``), or None where it has none."""
+    from OCP.XCAFDoc import XCAFDoc_NotesTool
+
+    label = doc.Main().FindChild(NOTES_TAG, False)
+    if label.IsNull() or not label.IsAttribute(XCAFDoc_NotesTool.GetID_s()):
+        return None
+    return XCAFDoc_NotesTool.Set_s(label)
+
+
 def _labels(tool: Any, kind: str) -> list[Any]:
     """The GD&T tool's labels of ``kind`` (``datum``, ``dimension``, ``geometric_tolerance``) that hold
-    their object, in the tool's order."""
+    their object, in the tool's order; none where the document has no GD&T tool (``tool`` None)."""
     from OCP.TDF import TDF_LabelSequence
     from OCP.XCAFDoc import XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_GeomTolerance
 
+    if tool is None:
+        return []
     listed, attribute = {"datum": (tool.GetDatumLabels, XCAFDoc_Datum),
                          "dimension": (tool.GetDimensionLabels, XCAFDoc_Dimension),
                          "geometric_tolerance": (tool.GetGeomToleranceLabels, XCAFDoc_GeomTolerance)}[kind]
@@ -1117,7 +1253,8 @@ _NOT_LINKED = "the file links it to no face, edge or point of a part"
 
 def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict[str, Any]]:
     """A document's annotations as records (``entries``' input): every GD&T object its tool holds,
-    datums, dimensions and geometric tolerances in the tool's order, each resolved as the document
+    datums, dimensions and geometric tolerances in the tool's order, then the notes the code made
+    in the notes tool's (a note another system wrote is not read), each resolved as the document
     is now. One the code made (its cadgen attribute) is resolved as its build resolved it
     (``_resolved``, against its part's faces and their names): its status is derived, never read.
     One another system wrote is resolved by the elements the file links it to, and what this module
@@ -1130,15 +1267,16 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
                                         XCAFDimTolObjects_DimensionType_Size_Diameter,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_Diameter,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_None)
-    from OCP.XCAFDoc import XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_GeomTolerance
+    from OCP.TDF import TDF_LabelSequence
+    from OCP.XCAFDoc import XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_GeomTolerance, XCAFDoc_NoteComment
 
     from cadgen.engine.document import _entry
 
     dimensions = {XCAFDimTolObjects_DimensionType_Size_Diameter: "diameter",
                   XCAFDimTolObjects_DimensionType_Location_LinearDistance: "distance"}
     characteristics = {xcaf: name for name, xcaf in _xcaf_characteristics().items()}
-    tool = _tool(doc)
-    if tool is None:
+    tool, notes_tool = _tool(doc), _notes_tool(doc)
+    if tool is None and notes_tool is None:
         return []
     by_entry = {prototype.entry: prototype for prototype in prototypes}
     maps: dict[tuple[int, str], Any] = {}
@@ -1233,6 +1371,18 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         if any(_entry(named) in modified for named in datums):
             beyond.append("a datum it names has modifiers or is a datum target")
         add(label, "geometric_tolerance", values, beyond, found.GetType().name)
+    labels = TDF_LabelSequence()
+    if notes_tool is not None:
+        notes_tool.GetNotes(labels)
+    for label in (labels.Value(at) for at in range(1, labels.Length() + 1)):
+        held = extra(label)
+        if held is None or held.get("kind") != "note" or not label.IsAttribute(XCAFDoc_NoteComment.GetID_s()):
+            continue
+        # Its text is XCAF's comment; its faces are resolved with its part's annotations, below.
+        text = XCAFDoc_NoteComment.Get_s(label).Comment().ToExtString()
+        records.append({"kind": "note", "values": {"text": text, "annotations": list(held["annotations"])},
+                        "targets": [], "extra": held, "entry": _entry(label), "warnings": [], "xcaf_type": NOTE_TYPE,
+                        "reason": None, "part": part_of(label)})
     # The code's annotations resolved as their build resolved them, each part's together (its general
     # profile covers what the others leave): the same faces again, from the document alone.
     of_part: dict[int, list[dict[str, Any]]] = {}
@@ -1245,9 +1395,13 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         prototype = prototypes[index]
         names = [prototype.face_names.get(at) for at in range(1, _faces(prototype.shape).Extent() + 1)]
         specs = [{"kind": record["extra"]["kind"], "refs": record["extra"]["refs"],
-                  **(record["extra"]["unlinked"] or {record["extra"]["kind"]: record["values"]})} for record in held]
+                  **(record["extra"].get("unlinked") or {record["extra"]["kind"]: record["values"]})} for record in held]
         for record, resolved in zip(held, _resolved_part(specs, prototype.shape, names, {prototype.name, root})):
             record.update(status=resolved.status, problem=resolved.problem, refs=_refs(resolved))
+            if record["kind"] == "note":
+                # A note's faces as resolved now (XCAF's links to them are for another reader, ``_note``).
+                record["targets"] = ([(ref.role, (index, "face", ref.ordinal)) for ref in resolved.refs]
+                                     if _on_faces(resolved) else [])
             if (record["values"].get("tolerance") or {}).get("type") == "limits":
                 record["values"]["nominal"] = _as_held(resolved.nominal or 0.0)  # measured, as its build did
     return records
@@ -1336,14 +1490,14 @@ def _name_of(datum: Any) -> str:
 
 def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]:
     """A built tree's annotations as the records ``records_of_document`` reads back from its
-    document: the same order (each part's datums, then the rest), the same values, as XCAF
-    holds them (``_as_held``), the same refs resolved; and each one's warnings (``warn``), which
-    are the build's and no document's."""
+    document: the same order (each part's datums, then the rest, its notes last), the same values,
+    as XCAF holds them (``_as_held``), the same refs resolved; and each one's warnings (``warn``),
+    which are the build's and no document's."""
     records = []
     for part, items in resolve(tree):
         index = index_of[id(part)]
         ordered = _datums_first(items)
-        by_kind = {"datum": [], "dimension": [], "geometric_tolerance": []}
+        by_kind: dict[str, list] = {"datum": [], "dimension": [], "geometric_tolerance": [], "note": []}
         for item in ordered:
             spec = item.spec
             linked = _on_faces(item)
@@ -1356,19 +1510,56 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
                           "nominal": _as_held(item.nominal or 0.0),
                           "tolerance": None if tolerance is None else
                           {key: given if key == "type" else _as_held(given) for key, given in tolerance.items()}}
+            elif spec["kind"] == "note":
+                values = {"text": spec["note"]["text"], "annotations": list(spec["note"]["annotations"])}
             else:
                 given = spec["geometric_tolerance"]
                 values = {"characteristic": given["characteristic"], "value": _as_held(given["value"]), "unit": UNIT,
                           "zone": given["zone"], "modifier": None, "datums": list(given["datums"]) if linked else [],
                           "general": given["general"]}
             by_kind[spec["kind"]].append({
-                "kind": spec["kind"], "values": values, "xcaf_type": None, "reason": None, "part": index,
+                "kind": spec["kind"], "values": values, "xcaf_type": NOTE_TYPE if spec["kind"] == "note" else None,
+                "reason": None, "part": index,
                 "targets": targets, "extra": json.loads(_text(_extra(item))), "entry": None, "status": item.status,
                 "problem": item.problem, "refs": _refs(item),
                 "warnings": list(tree.pmi_warnings.get((part.name, spec["id"])) or ())})
-        records.extend(by_kind["datum"] + by_kind["dimension"] + by_kind["geometric_tolerance"])
-    # The document's tool lists datums, then dimensions, then tolerances, of every part.
-    return sorted(records, key=lambda record: ("datum", "dimension", "geometric_tolerance").index(record["kind"]))
+        records.extend(by_kind["datum"] + by_kind["dimension"] + by_kind["geometric_tolerance"] + by_kind["note"])
+    # The document's GD&T tool lists datums, then dimensions, then tolerances, of every part; its
+    # notes tool the notes after them.
+    return sorted(records, key=lambda record: _KINDS.index(record["kind"]))
+
+
+# The kinds of the code's records, in the order its document lists them.
+_KINDS = ("datum", "dimension", "geometric_tolerance", "note")
+
+
+def library_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]:
+    """A built tree's notes libraries as ``library_of_document`` reads them back from its document:
+    each note's ``part`` (a prototype index), ``name`` and ``text``, by part, in the project's order."""
+    found = [{"part": index_of[id(part)], **given} for part, held in tree.pmi or () for given in _library(held)]
+    return sorted(found, key=lambda given: given["part"])
+
+
+def library_of_document(doc: Any, prototypes: list[Any]) -> list[dict[str, Any]]:
+    """The structure's ``pmi_library``: the notes library each part of a document holds (``annotate``'s
+    ``library``, on its shape label), each note's ``part``, ``name`` and ``text``, by part, in the
+    project's order; none where no part holds one."""
+    from OCP.Standard import Standard_GUID
+    from OCP.TDataStd import TDataStd_AsciiString
+    from OCP.TDF import TDF_Label, TDF_Tool
+
+    guid = Standard_GUID(LIBRARY_GUID)
+    found = []
+    for prototype in sorted(prototypes, key=lambda prototype: prototype.index):
+        label, held = TDF_Label(), TDataStd_AsciiString()
+        TDF_Tool.Label_s(doc.GetData(), prototype.entry, label)
+        if label.IsNull() or not label.IsAttribute(guid) or not label.FindAttribute(guid, held):
+            continue
+        given = json.loads(held.Get().ToCString())
+        if given.get("schema") == SCHEMA:
+            found.extend({"part": prototype.index, "name": note["name"], "text": note["text"]}
+                         for note in given["library"])
+    return found
 
 
 def _as_held(value: float) -> float:
@@ -1379,11 +1570,13 @@ def _as_held(value: float) -> float:
 
 def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[dict[str, Any]]:
     """The structure's ``pmi``: one JSON-plain entry per record -- ``id``, ``kind`` (``dimension``,
-    ``datum``, ``geometric_tolerance``, ``unsupported``), ``label``, ``status``, ``problem``,
-    ``warnings``, ``part`` (a prototype index), ``refs`` (each ``role``, ``ref`` -- canonical as
-    ``refs`` spells it for this document --, ``written``, ``status``, ``candidates``, ``problem``),
-    ``presentation``, ``xcaf_type``, an unsupported one's ``reason``, and the kind's own block of
-    values."""
+    ``datum``, ``geometric_tolerance``, ``note``, ``unsupported``), ``label``, ``status``,
+    ``problem``, ``warnings``, ``part`` (a prototype index), ``refs`` (each ``role``, ``ref`` --
+    canonical as ``refs`` spells it for this document --, ``written``, ``status``, ``candidates``,
+    ``problem``), ``presentation``, ``xcaf_type``, an unsupported one's ``reason``, and the kind's
+    own block of values. A note's (``note``) is its ``number`` (its part's general profile Note 1
+    where it has one, then each note in the code's order), ``text``, ``general`` (it names no face
+    and no annotation) and the ``annotations`` it names, as written."""
     from cadgen.engine import refs as grammar
 
     root = grammar.structure_tree(structure)
@@ -1403,6 +1596,8 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
 
     found = []
     counters: dict[str, int] = {}
+    # Each part's notes are numbered after its general profile, Note 1 where it has one.
+    numbers = {record["part"]: 1 for record in records if (record["extra"] or {}).get("general")}
     for record in records:
         extra, kind = record["extra"], record["kind"]
         targets = list(record["targets"])
@@ -1415,7 +1610,8 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
                                         for ordinal in ref["candidates"]] or None,
                          "problem": ref["problem"]})
         if extra is not None:
-            ident, label, presentation, unlinked = extra["id"], extra["label"], extra["presentation"], extra["unlinked"]
+            ident, label, presentation = extra["id"], extra["label"], extra["presentation"]
+            unlinked = extra.get("unlinked")
         else:
             counters[kind] = counters.get(kind, 0) + 1
             ident = (record["values"].get("letter") or kind) if kind == "datum" else f"{kind}-{counters[kind]}"
@@ -1441,6 +1637,11 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
                                       "tolerance": values["tolerance"]}
         elif kind == "geometric_tolerance":
             entry["geometric_tolerance"] = dict(unlinked["geometric_tolerance"] if unlinked is not None else values)
+        elif kind == "note":
+            numbers[record["part"]] = numbers.get(record["part"], 0) + 1
+            entry["note"] = {"number": numbers[record["part"]], "text": values["text"],
+                             "general": not extra["refs"] and not values["annotations"],
+                             "annotations": list(values["annotations"])}
         else:
             entry["reason"] = record["reason"]
             entry["values"] = values
@@ -1461,13 +1662,22 @@ def read(source: Any) -> list[dict[str, Any]]:
 # --- exports -----------------------------------------------------------------------------------
 
 
+def step_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The entries of a document's PMI (``entries``) a STEP carries: every one but its notes, which
+    are the xbf's alone (OCCT's STEP writer writes no notes)."""
+    return [entry for entry in entries if entry.get("kind") != "note"]
+
+
 def dropped(view: Any, kind: str) -> list[tuple[dict[str, Any], str]]:
     """Each annotation of a document that a ``kind`` file written from ``view`` does not carry whole,
     and why: a posed or partial STEP or xbf, or an xbf of a document this engine wrote, is a document
     made again from the view (``tree.tree_of``), which carries no PMI; and a STEP drops one linked to
     no geometry, as an xbf of a STEP (which copies its GD&T as read, ``copy``) keeps one the file links
-    to no element of a part linked to nothing. A mesh carries no B-rep, so no PMI."""
+    to no element of a part linked to nothing. A STEP carries no note, whole or not, and is never
+    refused for one (``step_entries``). A mesh carries no B-rep, so no PMI."""
     entries = view.source.structure.get("pmi") or []
+    if kind == "step":
+        entries = step_entries(entries)
     if kind not in ("step", "xbf") or not entries:
         return []
     shown = "STEP" if kind == "step" else kind
@@ -1488,7 +1698,8 @@ def refuse_dropped(view: Any, kind: str) -> None:
     lost = [(entry, why) for entry, why in dropped(view, kind) if _from_code(entry)]
     if not lost:
         return
-    held = len(view.source.structure["pmi"])
+    entries = view.source.structure["pmi"]
+    held = len(step_entries(entries) if kind == "step" else entries)
     if kind == "xbf":
         raise ExportRefused(f"{view.source.name} holds {held} PMI annotation(s), and an xbf written from it is a "
                             "document made again, which carries none yet: export it as built, whole")
@@ -1501,7 +1712,8 @@ def refuse_dropped(view: Any, kind: str) -> None:
 
 
 def _from_code(entry: dict[str, Any]) -> bool:
-    """Whether an entry is an annotation a model's code made (its refs as the code wrote them, or
-    a general profile, whose faces none writes), not one read from a file another system wrote."""
+    """Whether an entry is an annotation a model's code made (its refs as the code wrote them, a
+    general profile, whose faces none writes, or a note, which only the code's are read as), not one
+    read from a file another system wrote."""
     return (any(ref.get("written") is not None for ref in entry.get("refs") or ())
-            or bool((entry.get("geometric_tolerance") or {}).get("general")))
+            or bool((entry.get("geometric_tolerance") or {}).get("general")) or entry.get("kind") == "note")

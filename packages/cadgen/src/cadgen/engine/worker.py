@@ -265,7 +265,7 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
     model's picture is drawn from the document in this worker's memory). Answers what was
     written."""
     from cadgen.engine import build as engine_build
-    from cadgen.engine import export
+    from cadgen.engine import export, pmi
 
     source_spec = request["source"]
     built: list[dict[str, Any]] = []
@@ -323,8 +323,10 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
         seconds = time.perf_counter() - clock
         files.append({"path": str(target), "kind": export.kind_of(target), "bytes": size,
                       "seconds": round(seconds, 4)})
-        # A STEP of a document with PMI is checked in the file written (``export/ap242.py``).
-        if request.get("expected") and export.kind_of(target) == "step" and source.structure.get("pmi"):
+        # A STEP of a document with PMI is checked in the file written (``export/ap242.py``): with the
+        # PMI a STEP carries, its notes being the xbf's alone (``pmi.step_entries``).
+        if (request.get("expected") and export.kind_of(target) == "step"
+                and pmi.step_entries(source.structure.get("pmi") or [])):
             from cadgen.engine.export.ap242 import verify
             if progress is not None:
                 progress.stage("write", detail="Checking PMI in " + target.name)
