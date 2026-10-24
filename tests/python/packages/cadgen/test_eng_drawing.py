@@ -3379,6 +3379,100 @@ class FlagNoteTests(unittest.TestCase):
         self.assertTrue(any(label.startswith("DETAIL") for label in labels), labels)
 
 
+def _stack(*layers):
+    """Layers stacked up Z from 0, each (label, thickness, family), as an assembly
+    with its parts list, families stated."""
+    from build123d import Align, Box, Compound, Pos
+
+    from cadgen.eng_drawing import parts_list
+
+    children, z = [], 0.0
+    for label, thickness, _family in layers:
+        layer = Pos(0, 0, z) * Box(40, 30, thickness, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        layer.label = label
+        children.append(layer)
+        z += thickness
+    parts = parts_list(Compound(children=children, label="stack"))
+    for label, _thickness, family in layers:
+        parts.set(label, family=family, material=label.upper())
+    return parts
+
+
+class MaterialSectionTests(unittest.TestCase):
+    """A section through several materials: each cut hatched as what it is."""
+
+    def _cut(self, parts, scale: float = 2.0, **table):
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", scale)
+        front = sheet.view(parts.assembly, "front", at=(150, 120), hidden=False).section("A", parts=parts)
+        sheet.view(parts.assembly, "top", at=(150, 210), hidden=False)
+        if table:
+            sheet.layer_table(parts, table["rows"])
+        warnings: list = []
+        doc = _render_sheet(sheet, index=1, count=1, label="layers", warnings=warnings)
+        return doc, front, warnings
+
+    @staticmethod
+    def _hatches(doc):
+        return list(doc.modelspace().query("HATCH[layer=='HATCH']"))
+
+    def test_each_item_in_a_section_is_hatched_by_its_family(self) -> None:
+        doc, _front, _warnings = self._cut(_stack(("shell", 4, "aluminium"), ("base", 6, "plastic")))
+        self.assertEqual(sorted(h.dxf.pattern_name for h in self._hatches(doc)), ["ANSI34", "ANSI38"])
+
+    def test_neighbours_of_one_family_differ_in_angle(self) -> None:
+        doc, _front, _warnings = self._cut(_stack(("lower", 4, "steel"), ("upper", 4, "steel")))
+        angles = {round(h.dxf.pattern_angle) % 180 for h in self._hatches(doc)}
+        self.assertEqual(len(angles), 2, "two steel layers, two angles")
+
+    def test_a_thin_layer_is_filled_solid(self) -> None:
+        doc, _front, _warnings = self._cut(_stack(("shell", 4, "plastic"), ("tape", 0.2, "general"),
+                                                  ("lining", 2, "fabric")), scale=1.0)
+        solid = [h for h in self._hatches(doc) if h.dxf.solid_fill]
+        self.assertEqual(len(solid), 1, "the 0.2 mm tape, too thin to hatch")
+
+    def test_overlapping_items_are_hatched_once(self) -> None:
+        from build123d import Box, Compound, Pos
+        from shapely.geometry import Polygon
+        from shapely.ops import unary_union
+
+        from cadgen.eng_drawing import parts_list
+
+        a, b = Pos(-5, 0, 0) * Box(20, 10, 10), Pos(5, 0, 0) * Box(20, 10, 10)
+        a.label, b.label = "stud", "nut"
+        parts = parts_list(Compound(children=[a, b], label="joint"))
+        doc, _front, _warnings = self._cut(parts, scale=1.0)
+        regions = [Polygon([(v[0], v[1]) for v in path.vertices]) for h in self._hatches(doc)
+                   for path in h.paths if hasattr(path, "vertices")]
+        self.assertAlmostEqual(sum(r.area for r in regions), unary_union(regions).area, delta=1.0)
+        self.assertAlmostEqual(unary_union(regions).area, 30 * 10, delta=1.0)
+
+    def test_a_material_key_appears_with_two_families(self) -> None:
+        doc, _front, _warnings = self._cut(_stack(("shell", 4, "aluminium"), ("base", 6, "plastic")))
+        texts = [e.dxf.text for e in doc.modelspace().query("TEXT")]
+        for words in ("MATERIAL KEY", "ALUMINIUM", "PLASTIC", "SHELL", "BASE"):
+            self.assertIn(words, texts)
+        doc, _front, _warnings = self._cut(_stack(("lower", 4, "steel"), ("upper", 4, "steel")))
+        self.assertNotIn("MATERIAL KEY", [e.dxf.text for e in doc.modelspace().query("TEXT")], "one family needs none")
+
+    def test_the_layer_table_lists_each_layer(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        parts = _stack(("shell", 4, "aluminium"), ("base", 6, "plastic"))
+        parts.set("shell", spec="AMS 4027")
+        doc, _front, warnings = self._cut(parts, rows=[("shell", "4.0", "FULL"), ("base", "6.0", "FULL")])
+        texts = [e.dxf.text for e in doc.modelspace().query("TEXT")]
+        for words in ("LAYER TABLE", "ITEM", "THICKNESS", "COVERAGE", "SHELL", "AMS 4027", "4.0", "6.0", "FULL"):
+            self.assertIn(words, texts)
+        self.assertFalse([w for w in warnings if "overlaps" in w], warnings)
+        with self.assertRaisesRegex(ValueError, "thickness"):
+            Sheet("A3").layer_table(parts, [("shell", "4.0")])
+        with self.assertRaisesRegex(ValueError, "parts.assembly"):
+            Sheet("A3").view(_part(), "front", at=(100, 100)).section("A", parts=parts)
+
+
 class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_tags_each_hole_and_states_where_and_what(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet

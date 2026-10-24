@@ -357,15 +357,11 @@ def _plane_parent(view: View, others) -> View | None:
                  and other._detail is None), None)
 
 
-def _cut(view: View) -> tuple:
-    """The part a section view draws: (the half beyond the plane, its cut faces,
-    the point the plane passes through)."""
+def _plane_cut(shape, point, look) -> tuple:
+    """``shape`` cut by the plane through ``point`` square to ``look``: (the half
+    beyond the plane, the faces the cut leaves in the plane)."""
     from build123d import Compound, GeomType, Keep, Plane
 
-    letter, through = view._section
-    shape = view.shape
-    point = through if through is not None else tuple(shape.bounding_box().center())
-    look = _look(view)
     kept = shape.split(Plane(origin=point, z_dir=look), keep=Keep.BOTTOM)
     if isinstance(kept, (list, tuple)):
         kept = Compound(list(kept))
@@ -377,12 +373,44 @@ def _cut(view: View) -> tuple:
         if (abs(abs(_dot((normal.X, normal.Y, normal.Z), look)) - 1) < 1e-6
                 and abs(_dot((centre.X - point[0], centre.Y - point[1], centre.Z - point[2]), look)) < 1e-6):
             faces.append(face)
+    return kept, faces
+
+
+def _cut(view: View) -> tuple:
+    """The part a section view draws: (the half beyond the plane, its cut faces,
+    the point the plane passes through, and for a section through an assembly's
+    parts each item with its own cut faces)."""
+    from build123d import Compound
+
+    letter, through = view._section
+    shape = view.shape
+    point = through if through is not None else tuple(shape.bounding_box().center())
+    look = _look(view)
+    items = []
+    if view._section_parts is None:
+        kept, faces = _plane_cut(shape, point, look)
+    else:
+        # Each part cut on its own, so each is hatched as what it is made of; and
+        # parts the model overlaps on purpose (a thread) cut cleanly, which the
+        # assembly cut whole does not.
+        halves, faces = [], []
+        for item in view._section_parts:
+            own = []
+            for placed in item.occurrences:
+                half, cut = _plane_cut(placed, point, look)
+                if half is not None:
+                    halves.append(half)
+                own += cut
+            if own:
+                items.append((item, own))
+                faces += own
+        kept = Compound(halves) if halves else None
     if not faces:
         raise ValueError(
             f"{view.name}.section({letter!r}): the plane through {_where(point)} square to the {view.name} "
             "view's line of sight does not cut the part. Give through= a model point inside it."
         )
-    return kept, faces, point
+    return kept, faces, point, items
 
 
 def _edge_points(edge) -> list[tuple[float, float]]:

@@ -164,8 +164,10 @@ class View:
     #: and whether they are reference dimensions.
     _overall: frozenset = frozenset()
     _overall_reference: bool = False
-    #: ``(letter, model point or None)`` when :meth:`section` made this a section.
+    #: ``(letter, model point or None)`` when :meth:`section` made this a section;
+    #: and the parts list whose items it hatches each by material, if any.
     _section: tuple | None = None
+    _section_parts: Any = None
     #: ``(label, scale)`` the sheet gave an isometric or an auxiliary view, so the
     #: render knows whether the author has since set their own and leaves it alone.
     _auto_label: tuple | None = None
@@ -408,7 +410,7 @@ class View:
         self._datums.append((letter, _p3(at), None if offset is None else _sheet_offset("datum", offset)))
         return self
 
-    def section(self, letter: str = "A", *, through=None) -> "View":
+    def section(self, letter: str = "A", *, through=None, parts: PartsList | None = None) -> "View":
         """Draw this view as a full section, the way a drawing shows what hidden
         lines cannot: the part cut by the plane through ``through`` (a model
         point; the middle of the part by default) square to the line of sight,
@@ -416,9 +418,22 @@ class View:
         degrees, and no hidden lines. The cutting plane is drawn, with ``letter``
         at both ends and arrows in the viewing direction, on a view of the same
         part that sees it edge-on, and this view is labelled ``SECTION A-A``.
-        Dimensions and callouts are given in model coordinates as on any view."""
+        Dimensions and callouts are given in model coordinates as on any view.
+
+        ``parts`` cuts an assembly part by part, on a view of ``parts.assembly``:
+        each item is hatched by its material family (``parts.set(n,
+        family=...)``), neighbours of one family at different angles, a part too
+        thin to hatch at the drawing's scale filled solid, and where solids
+        overlap the earlier item takes the region. With two or more families the
+        sheet draws a material key."""
         if self.name == "iso":
             raise ValueError("section() cuts an orthographic view; an isometric is drawn whole")
+        if parts is not None:
+            if not isinstance(parts, PartsList):
+                raise TypeError(f"section(parts=) takes the PartsList that parts_list() returns, got {parts!r}")
+            if self.shape is not parts.assembly:
+                raise ValueError("section(parts=) cuts each item of parts.assembly, and this view draws another "
+                                 "shape; section the view of parts.assembly")
         if self._direction is not None:
             raise ValueError("section() cuts a principal view; an auxiliary view is drawn whole")
         if self._detail is not None:
@@ -432,6 +447,7 @@ class View:
                              f"and Q), got {letter!r}")
         _refuse_used_letter(self.sheet, letter, self)
         self._section = (letter, None if through is None else _p3(through))
+        self._section_parts = parts
         self.hidden = False
         if self.label is None:
             self.label = f"SECTION {letter}-{letter}"
@@ -749,6 +765,8 @@ class Sheet:
     #: The flag notes its views flag, in the order first flagged: they follow the
     #: notes, each numbered in its flag.
     _flags: list[str] = field(default_factory=list, init=False, repr=False)
+    #: Set by :meth:`layer_table`: (parts list, rows, corner or None).
+    _layer_table: tuple | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.size is not None and self.size not in SHEET_SIZES:
@@ -921,6 +939,24 @@ class Sheet:
     def _chooses(self) -> bool:
         """Whether the sheet settles its own size or scale."""
         return self.size is None or self.scale is None
+
+    def layer_table(self, parts: PartsList, rows: Sequence[tuple], *, at=None) -> "Sheet":
+        """A table of a layered part's layers, as the person states them: each row
+        is ``(item, thickness, coverage)`` -- the item by number or name, its
+        thickness and where it covers in the person's words ("0.2", "BACK FACE
+        ONLY"); material and spec come from the item. The table goes in the free
+        paper nearest the sheet's section, or with its top-left corner at ``at``."""
+        if not isinstance(parts, PartsList):
+            raise TypeError(f"layer_table() takes the PartsList that parts_list() returns, got {parts!r}")
+        checked = []
+        for row in rows:
+            if isinstance(row, (str, bytes)) or len(row) != 3 or not all(isinstance(v, str) and v for v in row[1:]):
+                raise ValueError(f"each layer_table row is (item, thickness, coverage), the thickness and coverage "
+                                 f"as the person states them; got {row!r}")
+            parts[row[0]]  # refuses an item the list does not have
+            checked.append(tuple(row))
+        self._layer_table = (parts, checked, None if at is None else _pair("at", at))
+        return self
 
     def three_views(self, shape, *, gap: float | None = None, hidden: bool = True, centre_marks: bool = True,
                     iso: bool = False, views: Sequence[str] = _VIEW_NAMES) -> tuple[View, ...]:

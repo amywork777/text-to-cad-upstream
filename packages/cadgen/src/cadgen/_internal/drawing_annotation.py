@@ -513,6 +513,10 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
                 width = max(width, frame_size(dim.frame, th)[0])
             room[side] = max(room[side], rowed[side] + _CALLOUT_CLEAR + _CALLOUT_LANDING + _CALLOUT_GAP
                              + width + _CALLOUT_GAP)
+        elif dim.kind == "flag" and dim.p1 is not None and dim.offset is None:
+            # An unplaced flag goes out by the side nearest its point.
+            side = _side_of(_datum_toward(proj.point(dim.p1), bounds, None))
+            room[side] = max(room[side], rowed[side] + _FLAG_SIDE * th + 12.0)
         elif dim.kind in ("note", "frame", "flag") and dim.p1 is not None:
             p = proj.point(dim.p1)
             width = 4.0 + (_text_width(dim.text, th) if dim.kind == "note" else

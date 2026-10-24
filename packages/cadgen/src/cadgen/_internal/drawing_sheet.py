@@ -498,6 +498,65 @@ def _projection_symbol(msp, x: float, y: float, *, first_angle: bool) -> float:
     return right
 
 
+#: A table the sheet carries on its paper (a material key, a layer table): its
+#: row height, the room its caption takes above it, and the air in a cell.
+_TABLE_ROW = 6.0
+_TABLE_CAPTION = 5.0
+_TABLE_AIR = 4.0
+
+
+class _SheetTable(NamedTuple):
+    """A captioned table on the sheet's paper: its column names, its rows, a hatch
+    family per row to draw a swatch of in the first column (a material key's), the
+    point it goes nearest, and the corner the author gave, if any."""
+
+    caption: str
+    names: tuple[str, ...]
+    rows: list[tuple[str, ...]]
+    swatches: list[str]
+    near: tuple[float, float]
+    corner: tuple[float, float] | None = None
+
+    def widths(self) -> list[float]:
+        """Each column as wide as its widest entry: a table cut short is wrong."""
+        return [max(_text_width(value, 2.5) if r else _text_width(value, _CAPTION_HEIGHT)
+                    for r, value in enumerate((name, *(row[c] for row in self.rows)))) + _TABLE_AIR
+                for c, name in enumerate(self.names)]
+
+    def size(self) -> tuple[float, float]:
+        return sum(self.widths()), (len(self.rows) + 1) * _TABLE_ROW + _TABLE_CAPTION
+
+
+def _draw_sheet_table(msp, table: _SheetTable, corner: tuple[float, float], text) -> list:
+    """The table, caption above and header on top. Returns each swatch cell as
+    (family, (x0, y0, x1, y1)), for the caller to hatch."""
+    from ezdxf.enums import TextEntityAlignment as A
+
+    x0, y1 = corner
+    widths = table.widths()
+    w, h = sum(widths), (len(table.rows) + 1) * _TABLE_ROW
+    top = y1 - _TABLE_CAPTION
+    text(table.caption, x0, top + 1.5, 2.5, A.BOTTOM_LEFT, "NOTES")
+    msp.add_lwpolyline([(x0, top), (x0 + w, top), (x0 + w, top - h), (x0, top - h)], close=True,
+                       dxfattribs={"layer": "TITLE"})
+    for r in range(1, len(table.rows) + 1):
+        msp.add_line((x0, top - r * _TABLE_ROW), (x0 + w, top - r * _TABLE_ROW), dxfattribs={"layer": "TITLE"})
+    swatches, x = [], x0
+    for c, (name, width) in enumerate(zip(table.names, widths)):
+        if c:
+            msp.add_line((x, top), (x, top - h), dxfattribs={"layer": "TITLE"})
+        text(name, x + width / 2, top - _TABLE_ROW / 2, _CAPTION_HEIGHT, A.MIDDLE_CENTER)
+        for r, row in enumerate(table.rows, start=1):
+            mid = top - (r + 0.5) * _TABLE_ROW
+            if c == 0 and table.swatches:
+                swatches.append((table.swatches[r - 1], (x + 1.0, mid - _TABLE_ROW / 2 + 1.0, x + width - 1.0,
+                                                         mid + _TABLE_ROW / 2 - 1.0)))
+            elif row[c]:
+                text(row[c], x + 2.0, mid, 2.5, A.MIDDLE_LEFT, "NOTES")
+        x += width
+    return swatches
+
+
 def _free_spot(sheet: Sheet, w: float, h: float, occupied: list, distance) -> tuple[float, float] | None:
     """The top-left corner of the free ``w`` x ``h`` box that ``distance`` (of a
     top-left corner) ranks nearest: inside the paper above the notes, title block
