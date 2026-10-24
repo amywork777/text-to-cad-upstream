@@ -51,14 +51,14 @@ test("a new one's id and letter are ones the document does not have, and a posit
   const entries = readXbfPmi({ pmi: [
     { id: "A", kind: "datum", status: "ok", part: 0, refs: [], datum: { letter: "A" } },
     { id: "flatness", kind: "geometric_tolerance", status: "ok", part: 0, refs: [], geometric_tolerance: { characteristic: "flatness", value: 0.05, datums: [] } },
-  ] });
+  ] }).entries;
   assert.deepEqual(of(pmiCreateOptions({ picked: [TOP], entries }), "datum").call, { kind: "datum", id: "B", letter: "B", ref: TOP.ref });
   assert.equal(of(pmiCreateOptions({ picked: [TOP], entries }), "flatness").call.id, "flatness-2");
   const position = of(pmiCreateOptions({ picked: [HOLE], entries }), "position");
   assert.equal(position.available, true);
   assert.deepEqual([position.call.datums, position.call.value, position.call.diameterZone], [["A"], null, true]);
   // I, O and Q are never datum letters.
-  assert.equal(nextDatumLetter(readXbfPmi({ pmi: "ABCDEFGH".split("").map(letter => ({ id: letter, kind: "datum", datum: { letter } })) })), "J");
+  assert.equal(nextDatumLetter(readXbfPmi({ pmi: "ABCDEFGH".split("").map(letter => ({ id: letter, kind: "datum", datum: { letter } })) }).entries), "J");
 });
 
 test("a tolerance typed in is read as a drawing writes one, and none is none", () => {
@@ -86,7 +86,7 @@ test("ids and datum letters are a part's own: another part's never take them, no
     { id: "A", kind: "datum", status: "ok", part: 0, refs: [], datum: { letter: "A" } },
     { id: "B", kind: "datum", status: "ok", part: 1, refs: [], datum: { letter: "B" } },
     { id: "diameter", kind: "dimension", status: "ok", part: 0, refs: [], dimension: { type: "diameter", nominal: { value: 8 }, tolerance: null } },
-  ] });
+  ] }).entries;
   const onPeg = pmiCreateOptions({ picked: [PEG], entries, pending: [{ part: 0, call: { kind: "datum", id: "C", letter: "C", ref: TOP.ref } }] });
   assert.equal(onPeg.every(option => option.part === 1), true, "made on the peg");
   assert.deepEqual([of(onPeg, "datum").call.letter, of(onPeg, "diameter").call.id], ["A", "diameter"]);

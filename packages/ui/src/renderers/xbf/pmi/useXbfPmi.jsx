@@ -36,7 +36,7 @@ const callGlyph = call => (call.kind === "datum" ? "datum" : call.kind === "dime
 export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts = EMPTY, isolatedParts = EMPTY, selectedKey, onSelect }) {
   const structure = scene?.structure || null;
   const instances = structure?.instances || EMPTY;
-  const read = useMemo(() => readXbfPmi(structure), [structure]);
+  const read = useMemo(() => readXbfPmi(structure).entries, [structure]);
   const resolver = useMemo(() => createPmiRefResolver(structure, tree), [structure, tree]);
   // A part's name, which a request names the part's annotate call by.
   const partNameOf = useCallback(part => (part === null ? "" : structure?.prototypes?.[part]?.name || ""), [structure]);

@@ -49,7 +49,7 @@ export const newPmiName = call => (call.kind === "datum" ? `datum ${call.letter}
  * and the call it starts as; a position with the datums it can refer to (`datums`, its part's).
  *
  * @param {{ picked: Array<{ id: string, part: number | null, ref: string, surface: { type: string, normal?: number[], axis?: number[], origin?: number[], radius?: number } | null }>,
- *   entries: ReturnType<typeof import("@text-to-cad/core/lib/xbf/xbfPmi.js").readXbfPmi>, pending?: Array<{ part: number | null, call: object }> }} options
+ *   entries: ReturnType<typeof import("@text-to-cad/core/lib/xbf/xbfPmi.js").readXbfPmi>["entries"], pending?: Array<{ part: number | null, call: object }> }} options
  *   `picked`: the faces Select has picked, each with its part (the structure's prototype), its
  *   canonical ref and its surface; anything else picked makes nothing. `pending`: the new
  *   annotations already asked for (each its part and its call), whose ids and letters are taken too.
