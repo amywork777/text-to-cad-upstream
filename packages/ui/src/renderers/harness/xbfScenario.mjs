@@ -126,7 +126,8 @@ export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure
    * Its `update()` serves a new version of the document, as a build that changed none of its parts
    * writes one, and settles once the page shows it; `update(change)` serves the structure `change`
    * makes of the one served before, or `update('pmi_plate/v2')` the next build a fixture holds,
-   * its structure and its parts, as the engine served them after an edit of the model.
+   * its structure and its parts, as the engine served them after an edit of the model (`edit`:
+   * what is served is made of that structure, its parts the fixture's).
    */
   const open = async ({ timeout = 30000 } = {}) => {
     const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
@@ -137,9 +138,9 @@ export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure
     // No Worker: what a worker would build is built on the main thread, as for a host without one.
     await page.addInitScript(() => { window.Worker = undefined; });
     await page.goto(`http://127.0.0.1:${server.address().port}/?file=${file}`);
-    const update = async (change = structure => structure) => {
+    const update = async (change = structure => structure, edit = structure => structure) => {
       const built = typeof change === 'string';
-      const next = built ? JSON.parse(readFileSync(join(FIXTURES, change, 'structure.json'))) : change(JSON.parse(served.structure));
+      const next = built ? edit(JSON.parse(readFileSync(join(FIXTURES, change, 'structure.json')))) : change(JSON.parse(served.structure));
       if (!built) next.version = `${fixtureVersion}-${(updates += 1)}`;
       served = { version: next.version, structure: Buffer.from(JSON.stringify(next)), parts: built ? change : served.parts };
       // The page hears it on its next wait (about a second), reads it and puts it on screen.

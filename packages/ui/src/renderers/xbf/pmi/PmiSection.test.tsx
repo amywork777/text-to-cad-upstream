@@ -1,7 +1,14 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import PmiSection from '../../../../dist/renderers/xbf/pmi/PmiSection.js';
+import { useXbfPmi } from '../../../../dist/renderers/xbf/pmi/useXbfPmi.js';
+import { usePmiViewApplied } from '../../../../dist/renderers/xbf/pmi/usePmiView.js';
+import { presentXbfTree } from '../../../../dist/renderers/xbf/xbfTree.js';
+import { createViewSettingsStore } from '../../../../dist/renderers/kit/view-settings/viewSettingsStore.js';
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const section = (overrides: Record<string, unknown>) => ({ changes: [], pending: [], hiddenKeys: [], constructions: new Map(), editable: false,
@@ -76,4 +83,132 @@ it('says a nominal another system\'s file gives as the file\'s, and one the engi
   expect(screen.getByText(', from the file')).toBeTruthy();
   expect(screen.queryByText(', measured')).toBeNull();
   expect(document.querySelector('[title="Measured on the geometry by the engine"]')).toBeNull();
+});
+
+// ---- the MBD panel, over the engine's v4 plate: its views, notes, coverage and annotations ----------
+// The plate's served document (`pmi_plate/v4`), its part on a scene that knows no geometry: what is
+// drawn is drawn where its code (or a view) placed it.
+const FIXTURES = join(dirname(createRequire(import.meta.url).resolve('@text-to-cad/core/lib/xbf/xbfDocument.js')), '__fixtures__');
+const V4 = JSON.parse(readFileSync(join(FIXTURES, 'pmi_plate', 'v4', 'structure.json'), 'utf8'));
+const V4_BOTTOM = 'plate/f:edit_plate.body_make_box1.5;M:edit_plate.body';
+const PLATE = { min: [-50, -30, -5], max: [50, 30, 5] };
+const EIGHTH_Z = [Math.SQRT1_2, Math.SQRT1_2, 0, 0, -Math.SQRT1_2, Math.SQRT1_2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+const BEFORE = { position: [100, -100, 100], target: [0, 0, 0], up: [0, 0, 1] };
+let live: any;
+function Mbd({ structure, viewer, store, fit }: any) {
+  const scene = React.useMemo(() => ({ structure, elementGeometry: () => null, describeElement: () => null, selectionBounds: () => PLATE }), [structure]);
+  const tree = React.useMemo(() => presentXbfTree(structure), [structure]);
+  const [selectedKey, select] = React.useState('');
+  const pmi = useXbfPmi({ scene, tree, bounds: PLATE, moving: false, editable: true, selectedKey, onSelect: select });
+  usePmiViewApplied({ applied: pmi.view, viewer: () => viewer, store, fit });
+  live = pmi;
+  return <PmiSection pmi={pmi} picked={[]} moving={false} />;
+}
+function openMbd(edit = (structure: any) => structure) {
+  const viewer = { getPerspective: vi.fn(() => BEFORE), setPerspective: vi.fn(() => true) };
+  const store = createViewSettingsStore({ mode: 'solid' });
+  const fit = vi.fn((at: any) => ({ position: at.direction.map((c: number) => c * 200), target: [0, 0, 0], up: at.up }));
+  render(<Mbd structure={edit(structuredClone(V4))} viewer={viewer} store={store} fit={fit} />);
+  return { viewer, store, fit };
+}
+const drawnKeys = () => live.items.map((item: any) => item.key);
+const headings = () => screen.getAllByRole('heading', { level: 2 }).map(heading => heading.textContent);
+const rowsOf = (title: string) => within(screen.getByRole('region', { name: title })).queryAllByRole('listitem').map(row => row.textContent);
+const ALL_DRAWN = ['0:A', '0:thickness', '0:hole-diameter', '0:hole-from-front', '0:hole-from-left', '0:top-flatness', '0:hole-position', '0:hole-profile', '0:mask'];
+
+it('groups views, notes, coverage and annotations under static headings', () => {
+  // A view "A" beside the datum A: a view and an annotation may share a key, and are kept apart.
+  openMbd(structure => ({ ...structure, pmi_views: [...structure.pmi_views, { ...structure.pmi_views[1], name: 'A', shows: ['A'] }] }));
+  expect(headings()).toEqual(['Views', 'Notes', 'Coverage', 'Annotations']);
+  // Nothing folds: every group is open, its heading no button.
+  expect(screen.queryByRole('button', { name: 'Views' })).toBeNull();
+  expect(rowsOf('Views')).toEqual(['A-A4 annotations', 'isoAll', 'A1 annotation']);
+  expect(rowsOf('Notes')).toEqual(['1. Unless otherwise noted, all surfaces profile 0.5 to A', '2. Break all sharp edges 0.2 max', '3. Mask these features before coating with primer']);
+  // The flag note its flag, the general profile its profile, a general note none.
+  expect([...document.querySelectorAll('[data-pmi-note]')].map(row => row.querySelector('[data-pmi-glyph]')?.getAttribute('data-pmi-glyph') || ''))
+    .toEqual(['surface_profile', '', 'flag']);
+  expect(within(screen.getByRole('region', { name: 'Coverage' })).getByText('Every face has a requirement')).toBeTruthy();
+  // The annotations as before, but the notes: limits stacked in words as the callout says them.
+  expect([...screen.getByRole('region', { name: 'Annotations' }).querySelectorAll('[data-pmi-pick]')].map(row => row.getAttribute('aria-label')))
+    .toEqual(['Datum A', '9.8–10.2', '⌀10.0 +0.1/0', '30 basic', '50 basic', 'Flatness 0.05', 'Position ⌀0.1 | A', 'Surface profile 0.2 | A']);
+  // A flag note picked lights its faces, and lets go when picked again.
+  const mask = () => screen.getByRole('button', { name: 'Note 3: Mask these features before coating with primer', exact: true });
+  fireEvent.click(mask());
+  expect(mask().getAttribute('aria-pressed')).toBe('true');
+  expect(live.highlight.selected).toEqual(['i0/face/7']);
+  fireEvent.click(mask());
+  expect(live.highlight.selected).toEqual([]);
+  // View "A" picked leaves datum A unpicked, and datum A picked leaves view "A" applied.
+  fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  expect(screen.getByRole('button', { name: 'A', exact: true }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Datum A', exact: true }).getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(screen.getByRole('button', { name: 'Datum A', exact: true }));
+  expect(screen.getByRole('button', { name: 'Datum A', exact: true }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: 'A', exact: true }).getAttribute('aria-pressed')).toBe('true');
+  expect(drawnKeys()).toEqual(['0:A']);
+});
+
+it("a view's row applies its camera, section and PMI, and a second pick leaves it", () => {
+  const { viewer, store, fit } = openMbd();
+  expect(drawnKeys()).toEqual(ALL_DRAWN);
+  const row = () => screen.getByRole('button', { name: 'A-A', exact: true });
+  fireEvent.click(row());
+  expect(row().getAttribute('aria-pressed')).toBe('true');
+  // Seen down its camera, fitted to its part where it stands, through the viewer's own camera.
+  expect(fit).toHaveBeenLastCalledWith(expect.objectContaining({ key: '0:A-A', direction: [0, -1, 0], up: [0, 0, 1], bounds: PLATE }));
+  expect(viewer.setPerspective).toHaveBeenLastCalledWith({ position: [0, -200, 0], target: [0, 0, 0], up: [0, 0, 1] });
+  // Cut as its section says, the Clip's own settings; only what it shows drawn, at its own placements.
+  expect(store.getSnapshot().display.clip).toEqual({ enabled: true, axis: 'y', at: 0, invert: true, partColors: true });
+  expect(drawnKeys()).toEqual(['0:hole-diameter', '0:hole-position', '0:hole-profile', '0:mask']);
+  expect(live.constructions.get('0:hole-diameter').label).toEqual([20, 0, 10]);
+  // Picked again: the camera, the Clip and the PMI as they were.
+  fireEvent.click(row());
+  expect(row().getAttribute('aria-pressed')).toBe('false');
+  expect(viewer.setPerspective).toHaveBeenLastCalledWith(BEFORE);
+  expect(store.getSnapshot().display.clip).toBeUndefined();
+  expect(drawnKeys()).toEqual(ALL_DRAWN);
+  expect(live.constructions.get('0:hole-diameter').label).toEqual([20, 15, 5]);
+});
+
+it('the coverage checkbox lights the faces with no requirement', () => {
+  // Test-owned coverage: the bottom uncovered, a datum nothing names.
+  openMbd(structure => ({ ...structure, pmi_coverage: [{ part: 0, uncovered: [V4_BOTTOM],
+    conflicts: [{ kind: 'unused_datum', ids: ['B'], problem: 'datum B is named by no tolerance' }] }] }));
+  const coverage = within(screen.getByRole('region', { name: 'Coverage' }));
+  expect(coverage.getByText('1 face has no requirement')).toBeTruthy();
+  const conflict = coverage.getByRole('status');
+  expect(conflict.textContent).toBe('B: datum B is named by no tolerance');
+  expect(conflict.className).toMatch(/text-amber-500/);
+  // Off, it lights nothing, and the section still says what it found.
+  const show = screen.getByRole('checkbox', { name: 'Show faces with no requirement' });
+  expect(show.getAttribute('aria-checked')).toBe('false');
+  expect(live.highlight.selected).toEqual([]);
+  fireEvent.click(show);
+  expect(show.getAttribute('aria-checked')).toBe('true');
+  expect(live.highlight.selected).toEqual(['i0/face/5']);
+  fireEvent.click(show);
+  expect(live.highlight.selected).toEqual([]);
+});
+
+it("a view whose section is off the placement's axes says so and applies its camera alone", () => {
+  // The plate placed an eighth turn about z: the section's y is no world axis there.
+  const { viewer, store, fit } = openMbd(structure => ({ ...structure, instances: structure.instances.map((instance: any) => ({ ...instance, matrix: EIGHTH_Z })) }));
+  const row = screen.getByRole('button', { name: "A-A: Its section is not on this placement's axes", exact: true });
+  expect(screen.getByText("Its section is not on this placement's axes")).toBeTruthy();
+  fireEvent.click(row);
+  const [{ direction }] = fit.mock.lastCall as any;
+  expect(direction.map((c: number) => Number(c.toFixed(9)))).toEqual([Number(Math.SQRT1_2.toFixed(9)), -Number(Math.SQRT1_2.toFixed(9)), 0]);
+  expect(viewer.setPerspective).toHaveBeenCalledTimes(1);
+  expect(store.getSnapshot().display.clip).toBeUndefined();
+  expect(drawnKeys()).toEqual(['0:hole-diameter', '0:hole-position', '0:hole-profile', '0:mask']);
+});
+
+it('a flag note naming annotations alone is listed with its flag, drawn nowhere, and its pick lights what they are on', () => {
+  openMbd(structure => ({ ...structure, pmi: structure.pmi.map((item: any) => (item.id === 'mask' ? { ...item, refs: [], presentation: null } : item)) }));
+  expect(drawnKeys()).not.toContain('0:mask');
+  expect(document.querySelector('[data-pmi-note="mask"] [data-pmi-glyph]')?.getAttribute('data-pmi-glyph')).toBe('flag');
+  // Drawn nowhere, it has no eye.
+  expect(document.querySelector('[data-pmi-note="mask"] [data-pmi-visibility]')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Note 3: Mask these features before coating with primer', exact: true }));
+  expect(live.highlight.selected).toEqual(['i0/face/7']);
 });

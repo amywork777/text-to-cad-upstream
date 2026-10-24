@@ -251,6 +251,22 @@ test("a change the document now says is settled, and one it does not yet say is 
   assert.equal(pmiChangeSettled({ ...change, id: "gone" }, read), false);
 });
 
+test("a change to a view is settled by the document's views, never by an annotation of its name", () => {
+  const { entries, views } = readXbfPmi(served("v4"));
+  const [section] = views;
+  const add = { kind: "add", part: 0, id: "A-A", call: pmiEntryCall(section) };
+  assert.equal(pmiChangeSettled(add, entries, views), true);
+  assert.equal(pmiChangeSettled({ ...add, id: "B-B", call: { ...add.call, name: "B-B" } }, entries, views), false);
+  // A view "A" asked for is not the datum A the part holds.
+  assert.equal(pmiChangeSettled({ ...add, id: "A", call: { ...add.call, name: "A" } }, entries, views), false);
+  const values = { section: { axis: "y", at: 2, invert: true } };
+  const edit = { kind: "edit", part: 0, id: "A-A", values, call: pmiEntryCall(section, values) };
+  assert.equal(pmiChangeSettled(edit, entries, views), false);
+  assert.equal(pmiChangeSettled(edit, entries, [{ ...section, section: values.section }]), true);
+  // Served without views, none is settled.
+  assert.equal(pmiChangeSettled(add, entries), false);
+});
+
 test("an edit keeps what the code said beside its values: a position's zone, round or not, and its label", () => {
   const position = (item = {}) => entriesOf({ pmi: [{ id: "hole-pos", kind: "geometric_tolerance", label: "Hole location", status: "ok",
     refs: [ref("feature", HOLE)], geometric_tolerance: { characteristic: "position", value: 0.1, unit: "mm", zone: null, modifier: null, datums: ["A"] }, ...item }] });

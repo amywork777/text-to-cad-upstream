@@ -13,7 +13,7 @@ import * as THREE from "three";
 import { parseEngineRef } from "../cadRefs.js";
 import { loadXbfDocument } from "./xbfDocument.js";
 import { readXbfPmi } from "./xbfPmi.js";
-import { pmiConstruction, pmiConstructions, pmiFeaturePoint, pmiMovedPlacement, pmiPresentationToPart, pmiPresentationToScene } from "./xbfPmiLayout.js";
+import { pmiConstruction, pmiConstructions, pmiDrawnOnPart, pmiFeaturePoint, pmiMovedPlacement, pmiPresentationToPart, pmiPresentationToScene } from "./xbfPmiLayout.js";
 import { createXbfScene } from "./xbfScene.js";
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), "__fixtures__");
@@ -130,7 +130,8 @@ test("a feature not on the page draws at its placement or not at all, and a move
 
 test("a flag note stands out from its first face as a frame does; a general note and the general profile are drawn as no callout", async () => {
   const scene = await bracket();
-  const note = (item = {}) => entry({ id: "mask", kind: "note", note: { number: 2, text: "Mask before coating", general: false, annotations: [] }, ...item });
+  const note = (item = {}) => entry({ id: "mask", kind: "note", refs: [{ role: "feature", ref: "plate/top", written: "plate/top", status: "ok" }],
+    note: { number: 2, text: "Mask before coating", general: false, annotations: [] }, ...item });
   const geometry = { feature: scene.elementGeometry(TOP, { points: true }) };
   const flag = pmiConstruction(note(), { geometry, bounds: BOUNDS });
   assert.deepEqual(flag, pmiConstruction(flatness(), { geometry, bounds: BOUNDS }), "where a frame on the face stands");
@@ -152,6 +153,17 @@ test("a flag note stands out from its first face as a frame does; a general note
     { entry: onBoth, elements: [TOP, BOTTOM] }], { geometry: id => scene.elementGeometry(id, { points: true }), bounds: BOUNDS });
   assert.deepEqual([...drawn.keys()], [":top-flat", ":mask"]);
   assert.deepEqual(drawn.get(":mask"), pmiConstruction(note(), { geometry, bounds: BOUNDS, turn: 1 }));
+  assert.deepEqual([topFlat, onBoth, note(), general, profile].map(pmiDrawnOnPart), [true, true, true, false, false]);
+});
+
+test("a flag note naming annotations alone has no face to stand on: listed, and drawn nowhere, placed or not", () => {
+  const onAnnotations = entry({ id: "inspect", kind: "note", presentation: { anchor: [10, 5, 2], offset: [0, 0, 6] },
+    note: { number: 2, text: "Inspect every part", general: false, annotations: ["thickness"] } });
+  assert.equal(onAnnotations.supported, true);
+  assert.equal(pmiDrawnOnPart(onAnnotations), false);
+  // Not a broken one at the code's placement: it never named a face to break.
+  assert.equal(pmiConstruction(onAnnotations, { geometry: {}, bounds: BOUNDS }), null);
+  assert.equal(pmiConstructions([{ entry: onAnnotations, elements: [] }], { geometry: () => null, bounds: BOUNDS }).size, 0);
 });
 
 test("a placement is in its part's frame: drawn where the part stands, and written back in its frame", () => {

@@ -1,34 +1,46 @@
 # PMI
 
 An engine document's PMI — its product and manufacturing information: dimensions with their
-tolerances, datum features and geometric tolerances (GD&T) — in the CAD viewer: read from the
-document, drawn on the model, picked, hidden, and asked for. It is the document's own, not the
-person's: ink (Pencil and Shapes, [annotation](annotation.md)) is a note on a view and goes with a
-prompt; PMI is what the part is made to, and goes with the part.
+tolerances or limits, datum features, geometric tolerances (GD&T) and numbered notes, with each
+part's named views and what its coverage check found — in the CAD viewer: read from the document,
+drawn on the model, picked, hidden, walked view by view, and asked for. It is the document's own,
+not the person's: ink (Pencil and Shapes, [annotation](annotation.md)) is a note on a view and goes
+with a prompt; PMI is what the part is made to, and goes with the part.
 
 The document is made from code. A model declares its PMI with `cadgen.engine.pmi`
 (`pmi.annotate(body, pmi.datum("A", ...), pmi.distance(...), pmi.flatness(...), ...)`), the
 engine writes it into the document's XCAF GD&T attributes, which its AP242 export reads, and the
-served structure carries it (`structure.pmi`, absent where there is none). So the viewer writes
+served structure carries it (`structure.pmi`, absent where there is none; beside it
+`pmi_views`, `pmi_library` and `pmi_coverage`, the xbf's alone). So the viewer writes
 nothing: a change asked for in the viewer is the call the model's code should make, which Quick
 Edit hands the agent, and the change reaches the view as the engine's next version.
 
 ## What is said, and where it comes from
 
-`@text-to-cad/core/lib/xbf/xbfPmi.js` reads `structure.pmi` (`readXbfPmi`), entry by entry, each
-field read as it is or as nothing, never guessed:
+`@text-to-cad/core/lib/xbf/xbfPmi.js` reads the structure (`readXbfPmi`), each field read as it is
+or as nothing, never guessed, into `{ entries, notes, views, library, coverage }`: every annotation
+and note (`entries`); the ones said as each part's numbered notes, in their numbers (`notes`: its
+general profile Note 1, then its notes); each part's named views in the code's order, keyed by
+part and name (`views`); its notes library (`library`, no requirement); and, of each part carrying
+PMI, the faces no requirement is on and the requirements that cannot both hold (`coverage`). An
+entry is one of:
 
 - A **dimension** (`distance` between two parallel flat faces, `diameter` of a round one): its
   nominal is the engine's, measured on the geometry (`source: "geometry"`), or as another system's
   file gives it (`source: "file"`, said so in its values); its tolerance is what
-  the code supplied (`pmi.plus_minus(upper, lower)`), and none where it supplied none. The viewer
-  never fills a tolerance in, not even a default. A **basic** dimension (`pmi.basic`,
+  the code supplied (`pmi.plus_minus(upper, lower)`, or its **limits**, `pmi.limits(lower, upper)`:
+  its least size and its greatest, which need no nominal, a file's having none), and none where it
+  supplied none. The viewer never fills a tolerance in, not even a default. A **basic** dimension (`pmi.basic`,
   `dimension.basic`: theoretically exact, as a position tolerance's true position is located) is a
   distance between flat faces and holes, a hole by its axis; it holds no tolerance at all, and its
   number is drawn boxed, as a drawing draws it.
 - A **datum**: its letter.
-- A **geometric tolerance** (`flatness`, `position`): its value, a diameter zone, the datums it
-  refers to.
+- A **geometric tolerance** (`flatness`, `position`, `surface_profile` on one face or several):
+  its value, a diameter zone, the datums it refers to. A part's **general profile**
+  (`pmi.general_profile`, `general: true`: every face nothing else controls, within its value of
+  true, to its datums) is its Note 1; its refs are the faces it covers this build.
+- A **note** (`pmi.note`): its number, its words, and a **flag note**'s faces and the annotations it
+  names (a general note names neither).
 - Anything else the document holds (a STEP's profile tolerance, an angle) is an entry the viewer
   does not draw: listed, saying why (`unsupported`: the engine's `reason` where it gives one, else
   the viewer's own, with its XCAF type), never dropped. Whether it is drawn is the viewer's to say;
@@ -41,9 +53,12 @@ and two parts may each have a datum A.
 `pmiCallout` says each as a drawing writes it: the nominal at its tolerance's places or at what it
 needs (up to four), whichever is more (`pmiDimensionPlaces`: `⌀6.35 ±0.1`, `25.40 ±0.05`,
 `3.175 basic`), `±0.2` where it is the same both ways and the two deviations stacked where it is not, true minus
-signs; a datum's letter in its box; a frame's cells — its characteristic, `⌀` and its value, each
-datum. The characteristic and `⌀` glyphs are drawn (`xbf/pmi/pmiGlyphs.jsx`), not typed: most UI
-fonts lack them.
+signs; limits in place of the nominal, `9.8–10.2` (an en dash), drawn stacked, the upper over the
+lower; a datum's letter in its box; a frame's cells — its characteristic (**Surface profile** ⌓
+among them), `⌀` and its value, each datum; a flag note its flag and its number; the general
+profile as a drawing's notes say it, "Unless otherwise noted, all surfaces profile 0.5 to A",
+drawn as no callout. The characteristic, `⌀` and flag glyphs are drawn (`xbf/pmi/pmiGlyphs.jsx`), not typed: most UI
+fonts lack them. A kind's glyph is neutral, never a status's colour.
 
 ## References and their state
 
@@ -79,7 +94,12 @@ stands, `pmiPresentationToScene`, and written back in its frame) is where the co
 placed it; one the code never placed stands out from its feature, each of a
 feature's turned from the last. A placement says where a callout is drawn and nothing else.
 `pmiConstructions` is that loop over a document, the one the viewer draws and cadgen's stills are
-held to (`__fixtures__/pmi_plate/constructions.json`).
+held to (`__fixtures__/pmi_plate/constructions.json`). A flag note is drawn as a frame is, out from
+its first face. What is said in the notes alone is drawn on no face (`pmiDrawnOnPart`): a general
+note, the general profile, and a flag note naming annotations and no face — drawn on its
+annotations' faces it would say it is about those faces, which its code never said, and the viewer
+cannot stand a flag beside another callout's label, so it is listed, and its pick lights what its
+annotations are on.
 
 A repeated part's occurrences carry the same faces (`xbf/pmi/pmiRefs.js`): an annotation of the
 part is about those faces on every occurrence, so a pick of any of them finds it, and it is drawn
@@ -98,6 +118,38 @@ start the model hides from the camera (a datum on the bottom, seen from above) i
 its marker hollow (`pmiHidden.js`: a ray through the point, its first surface nearer by more than
 a thousandth of the model); the labels themselves are always on top, to be read. They are drawn on the model as
 built: while Explode or a pose moves the parts they are not drawn, and the section says so.
+
+## The MBD panel
+
+The PMI section (`xbf/pmi/PmiSection.jsx`) is read as a machinist reads a drawing: under its head
+(New, the eye of them all), four groups, each under a static heading with a rule above all but the
+first, none folding ([settings UI](settings-ui.md)), each there only where it has something:
+
+- **Views**: a row per view, its glyph, its name and what it shows ("4 annotations", or "All" for
+  one that names none). A pick applies it and a second leaves it; another view's pick applies that
+  one instead. Applied (`xbf/pmi/usePmiView.js`, `pmiViews.js`): the camera is set down its
+  direction (from the part toward the eye, as the stills' presets) with its up, fitted to its
+  part's box where the part stands, through the viewport's own camera (`setPerspective`), the
+  projection staying the person's; its section is the Clip's settings (`{ enabled, axis, at,
+  invert }`), placed from the part's frame to the scene's; only what it shows is drawn, its own
+  placements first (`pmiConstructions`' `placements`). Each is seen from the first occurrence of
+  its part that is shown, as its PMI is drawn there. Where that occurrence's placement turns the
+  section's axis off a world axis (a part placed at an angle), it is not cut along another: the row
+  says "Its section is not on this placement's axes" and the view applies its camera alone. Left,
+  the camera and the Clip are as they were before the first view was picked; a view with no
+  section leaves the Clip as the person had it. In a view a label stands where the view places it,
+  so it is neither moved nor pinned there. A view is never an annotation: a view "A" and a datum A
+  are picked apart.
+- **Notes**: a row per note, "1. Unless otherwise noted, …", in their numbers (the general profile
+  Note 1 with its profile glyph, a flag note with its flag, a general note bare), each part's said
+  where several parts have notes. A pick opens its words whole under its row; a flag note's lights
+  its faces, and its eye hides its flag.
+- **Coverage**: of each part, "N faces have no requirement" or "Every face has a requirement",
+  then each requirement that cannot hold with another, in the warning colour, by its ids and the
+  engine's words. **Show faces with no requirement**, the checkbox at the heading's right end,
+  lights those faces as a pick is lit; the group's lines stay either way. It warns, as the engine
+  does: nothing here fails.
+- **Annotations**: every other entry, as below.
 
 ## Picking, hiding, and asking
 
@@ -142,8 +194,9 @@ The PMI section follows the selected annotation's faces, or the selected geometr
 no annotation is picked. It lists every attached requirement, including hidden callouts.
 **Show all PMI** restores the whole list; **For selection** returns to the filter. A selection
 with no attached PMI says so without implying that it needs no requirements. A dimension
-with explicit tolerances also shows **Current limits** (nominal plus each signed deviation, at
-the places its nominal is written at), from the saved document, never a guessed tolerance or an unapplied Quick Edit.
+with explicit tolerances also shows **Current limits** (nominal plus each signed deviation, or the
+limits it was given, at the places its nominal is written at), from the saved document, never a
+guessed tolerance or an unapplied Quick Edit.
 
 A position tolerance lists its datum references in primary, secondary and tertiary order.
 These buttons highlight the datum's geometry without changing its assignment or adding a
@@ -181,8 +234,12 @@ dimension is. What interoperability is tested with is the exported STEP itself.
 - Not drawn under Explode or a pose, or in Preview. `cadgen snapshot` draws it as this does, on the
   parts as made (the engine README's snapshot section); a label moved here and not yet in the code
   is drawn where the document places it.
-- Only the supported subset is drawn and made: distance (basic or not), diameter, datum, flatness,
-  position.
+- Only the supported subset is drawn: distance (basic or not, its tolerance or its limits),
+  diameter, datum, flatness, position, surface profile, the general profile (said, not drawn) and
+  notes; New makes distances, diameters, datums, flatness and positions (the rest are the code's
+  to write).
+- A view's projection is the person's (the Projection menu), not the view's; its section is cut
+  only along a world axis.
 - A moved label returns to the document's placement if its change is dropped or sent before the
   code has it.
 - The section's strings are English, as the engine document's other sections are.

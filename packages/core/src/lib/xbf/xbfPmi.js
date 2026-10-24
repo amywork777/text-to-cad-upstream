@@ -579,10 +579,14 @@ export function pmiChangeRequest(change) {
 /**
  * Whether the document now says what `change` asked for, so it has nothing left to ask: a new
  * annotation its part holds, an edit whose call -- its values, zone, label and placement -- is the
- * one the part's entry of that id makes now. What the viewer drops once a build has it.
+ * one the part's entry of that id makes now. A change to a view (its call `pmi.view`) is settled by
+ * the part's view of that name in `views` (`readXbfPmi`'s), never by an annotation: a view and an
+ * annotation may share a name. What the viewer drops once a build has it.
  */
-export function pmiChangeSettled(change, entries) {
-  const entry = entries.find(item => item.part === change.part && item.id === change.id);
-  if (change.kind === "add") return Boolean(entry);
-  return Boolean(entry?.supported) && pmiCallText(pmiEntryCall(entry)) === pmiCallText(change.call);
+export function pmiChangeSettled(change, entries, views = []) {
+  const found = change.call?.kind === "view"
+    ? views.find(view => view.part === change.part && view.name === change.call.name)
+    : entries.find(item => item.part === change.part && item.id === change.id);
+  if (change.kind === "add") return Boolean(found);
+  return Boolean(found?.supported) && pmiCallText(pmiEntryCall(found)) === pmiCallText(change.call);
 }

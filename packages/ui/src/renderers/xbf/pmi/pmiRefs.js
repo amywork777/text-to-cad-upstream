@@ -102,24 +102,36 @@ export function pmiFeatureIds(entry, instances) {
 }
 
 /**
- * Where an annotation is drawn: at the first occurrence of its part that is shown -- not `hidden`,
- * and in the isolation (`isolated`) where one is set, each an instance id (`i3`) as the scene takes
- * them -- its references' elements there (`elements`, by ref: null for one that names none), the
- * elements it is about there (`featureIds`) and that occurrence's placement (`frame`, its matrix).
- * Null where no occurrence of its part is shown: it is not drawn, and stays listed. One whose
- * reference broke is still its part's, drawn where its code placed it; one of no part (another
- * system's, linked to nothing) is in the scene's frame.
+ * The first occurrence of `part` that is shown -- not `hidden`, and in the isolation (`isolated`)
+ * where one is set, each an instance id (`i3`) as the scene takes them: the instance's index, or
+ * undefined where none is. Where a part's PMI is drawn, and its views are seen from.
+ *
+ * @param {number} part
+ * @param {readonly object[]} instances
+ * @param {{ hidden?: readonly string[], isolated?: readonly string[] }} [shown]
+ */
+export function pmiShownOccurrence(part, instances, { hidden = [], isolated = [] } = {}) {
+  return occurrencesOf(instances, part).find(index => !hidden.includes(xbfElementId(index))
+    && (!isolated.length || isolated.includes(xbfElementId(index))));
+}
+
+/**
+ * Where an annotation is drawn: at the first occurrence of its part that is shown
+ * (`pmiShownOccurrence`) -- its references' elements there (`elements`, by ref: null for one that
+ * names none), the elements it is about there (`featureIds`) and that occurrence's placement
+ * (`frame`, its matrix). Null where no occurrence of its part is shown: it is not drawn, and stays
+ * listed. One whose reference broke is still its part's, drawn where its code placed it; one of
+ * no part (another system's, linked to nothing) is in the scene's frame.
  *
  * @param {{ part: number | null, refs: ReadonlyArray<{ ids: readonly string[] }> }} entry  Its refs resolved (`resolvePmiEntryRefs`).
  * @param {readonly object[]} instances
  * @param {{ hidden?: readonly string[], isolated?: readonly string[] }} [shown]
  * @returns {{ elements: (string | null)[], featureIds: string[], frame: number[] | null } | null}
  */
-export function pmiDrawnAt(entry, instances, { hidden = [], isolated = [] } = {}) {
+export function pmiDrawnAt(entry, instances, shown = {}) {
   const elements = entry.refs.map(ref => (ref.ids.length === 1 ? ref.ids[0] : null));
   if (entry.part === null) return { elements, featureIds: unique(entry.refs.flatMap(ref => ref.ids)), frame: null };
-  const instance = occurrencesOf(instances, entry.part).find(index => !hidden.includes(xbfElementId(index))
-    && (!isolated.length || isolated.includes(xbfElementId(index))));
+  const instance = pmiShownOccurrence(entry.part, instances, shown);
   if (instance === undefined) return null;
   const there = id => onOccurrence(id, instance);
   return { elements: elements.map(id => (id ? there(id) : null)), featureIds: unique(entry.refs.flatMap(ref => ref.ids.map(there))),

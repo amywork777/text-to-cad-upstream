@@ -9,6 +9,7 @@ import { serveXbfHarness } from '../../harness/xbfScenario.mjs';
 // the plate (its part, the structure's first prototype). Its
 // callouts are drawn on the model and stay put on it, a fixed size, as the camera moves; a pick of
 // one lights its face; it hides and shows, kept across a reopen, and goes with its part hidden; a
+// named view picked moves the camera, cuts the part and draws its PMI alone, and leaves cleanly; a
 // value edited, a label moved and a new annotation each go to Quick Edit as the call the model's
 // code should make; and a rebuild that loses a reference says so, where the code placed it.
 
@@ -71,8 +72,8 @@ async function openBracket(t, options = { edit: withPmi }) {
   return { ...harness, ...opened, loaded, label, drawn, labels, view, capture, settle, center, controller };
 }
 
-test('PMI is drawn on the model and stays legible as the camera moves; a pick lights its face; it hides, and stays hidden across a reopen', async (t) => {
-  const { page, pane, errors, label, drawn, labels, view, capture, settle, center, loaded } = await openBracket(t);
+test('PMI is drawn on the model and stays legible as the camera moves; a pick lights its face; it hides, and stays hidden across a reopen; a named view applies and leaves', async (t) => {
+  const { page, pane, errors, label, drawn, labels, view, capture, settle, center, loaded, update, controller } = await openBracket(t);
   await view({ position: [60, -80, 70], target: [0, 0, 2], up: [0, 0, 1], orthographicHalfHeight: 30 });
   await drawn();
   assert.deepEqual(await labels(), ['A', 'thickness', 'top-flat']);
@@ -132,6 +133,43 @@ test('PMI is drawn on the model and stays legible as the camera moves; a pick li
   await pane.getByRole('button', { name: 'Reveal plate', exact: true }).click();
   await drawn();
   assert.deepEqual(await labels(), ['A', 'thickness']);
+
+  // The engine's plate as a model-based definition (`pmi_plate/v4`), its part placed 30 along y: the
+  // section reads it as a drawing is read, its views, notes, coverage and annotations. View A-A
+  // picked is seen from the front, cut across y where its section is in the part's frame (0 there,
+  // 30 here), keeping the far side, and draws only the four callouts it shows; picked again, the
+  // camera, the Clip and the PMI are as they were.
+  await update('pmi_plate/v4', structure => ({ ...structure, instances: structure.instances.map(instance => ({ ...instance, matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 30, 0, 1] })) }));
+  await loaded();
+  await view({ position: [120, -130, 140], target: [0, 30, 0], up: [0, 0, 1], orthographicHalfHeight: 70 });
+  await drawn();
+  const every = ['A', 'thickness', 'hole-diameter', 'hole-from-front', 'hole-from-left', 'top-flatness', 'hole-position', 'hole-profile', 'mask'];
+  assert.deepEqual(await labels(), every);
+  // Limits stacked in words as in the box; the flag note its flag and its number.
+  assert.equal(await label('thickness').getAttribute('aria-label'), '9.8\u201310.2');
+  assert.equal(await label('mask').innerText(), '3');
+  await pane.getByRole('button', { name: 'PMI', exact: true }).click();
+  assert.deepEqual(await pane.locator('[data-tool-panel-id="pmi"] h2').allInnerTexts(), ['Views', 'Notes', 'Coverage', 'Annotations']);
+  const read = () => page.evaluate(`({ state: ${controller}.readState(), camera: window.__cadCamera(), cut: window.__cadStage().cut })`);
+  const unpicked = await read();
+  const section = pane.getByRole('button', { name: 'A-A', exact: true });
+  await section.click();
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-pmi-label]')].map(element => element.dataset.pmiLabel).join() === 'hole-diameter,hole-position,hole-profile,mask'
+    && window.__cadStage().cut === 1);
+  const seen = await read();
+  assert.deepEqual(seen.state.display.clip, { enabled: true, axis: 'y', at: 30, invert: true, partColors: true });
+  assert.equal(seen.cut, 1);
+  const toEye = unit(seen.camera.position.map((value, axis) => value - seen.camera.target[axis]));
+  assert.ok(Math.hypot(toEye[0], toEye[1] + 1, toEye[2]) < 1e-6, `seen from the front: ${toEye}`);
+  assert.ok(Math.hypot(seen.camera.target[0], seen.camera.target[1] - 30, seen.camera.target[2]) < 1e-6, `at the part where it stands: ${seen.camera.target}`);
+  await drawn();
+  await section.click();
+  await page.waitForFunction(count => document.querySelectorAll('[data-pmi-label]').length === count && window.__cadStage().cut === 0, every.length);
+  const left = await read();
+  assert.deepEqual([left.state.display.clip, left.cut], [unpicked.state.display.clip, unpicked.cut]);
+  for (const key of ['position', 'target', 'up']) {
+    assert.ok(Math.hypot(...left.camera[key].map((value, axis) => value - unpicked.camera[key][axis])) < 1e-6, `the camera's ${key} as it was`);
+  }
   assert.deepEqual(errors, []);
 });
 

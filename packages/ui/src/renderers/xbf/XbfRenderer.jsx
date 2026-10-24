@@ -7,6 +7,7 @@ import { parseXbfElementId } from "@text-to-cad/core/lib/xbf/xbfScene.js";
 import { isEngineRefFile } from "@text-to-cad/core/lib/cadRefs.js";
 import { useExportView } from "../../export/context.js";
 import { useViewerHost } from "../../host/context.js";
+import { interactiveCameraFrameForBounds } from "../kit/camera/viewportCameraFit.js";
 import { readFileView } from "../kit/shell/fileView.js";
 import RendererShell from "../kit/shell/RendererShell.jsx";
 import { usePreviewState, useRendererShell } from "../kit/shell/useRendererShell.js";
@@ -44,6 +45,7 @@ import { useXbfScene } from "./useXbfScene.js";
 import PmiOverlay from "./pmi/PmiOverlay.jsx";
 import PmiSection from "./pmi/PmiSection.jsx";
 import { useXbfPmi } from "./pmi/useXbfPmi.jsx";
+import { usePmiViewApplied } from "./pmi/usePmiView.js";
 import { pmiCreateOptions } from "./pmi/pmiCreate.js";
 import { createHiddenTest } from "./pmi/pmiHidden.js";
 
@@ -701,6 +703,20 @@ function XbfSurface({ view, data }) {
     const [feature] = pmiRef.current.drawnFeatureIds(key);
     if (feature) lookAt(feature);
   }, [lookAt]);
+  // A part's named view picked in the PMI section: seen down its camera, its part's box framed from
+  // its direction as the viewport frames a model (`interactiveCameraFrameForBounds`), the camera
+  // handed the viewer (`setPerspective`) and its section the Clip's (`usePmiViewApplied`); its PMI
+  // alone drawn (`useXbfPmi`). The projection stays the person's (the Projection menu).
+  const fitPmiView = useCallback(({ direction, up, bounds }) => {
+    const runtime = viewportRef.current?.runtimeRef.current;
+    const rect = viewportRef.current?.hostRef.current?.getBoundingClientRect?.();
+    if (!runtime?.THREE || !runtime.camera || !runtime.controls || !bounds) return null;
+    const frame = interactiveCameraFrameForBounds(runtime.THREE, { camera: runtime.camera, controls: runtime.controls, bounds,
+      frameAspect: rect?.width && rect?.height ? rect.width / rect.height : runtime.camera.aspect, viewDirection: direction, viewUp: up });
+    return frame ? { position: frame.position.toArray(), target: frame.target.toArray(), up: frame.up.toArray(), zoom: 1,
+      orthographicHalfHeight: frame.halfHeight } : null;
+  }, []);
+  usePmiViewApplied({ applied: pmi.view, viewer: () => shellRef.current?.frame.viewerRef.current, store, fit: fitPmiView });
 
   return <RendererShell shell={shell} tools={strip} subToolbar={measuring ? <MeasurementsBar measure={measure} /> : effects.subToolbar} sidebar={sidebar} previewView={previewView}
     references={previewing ? NO_REFERENCES : references} referenceChips={previewing ? NO_REFERENCES : chips} nameReference={nameReference}

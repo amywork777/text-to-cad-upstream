@@ -18,9 +18,10 @@
 // never placed is anchored at the first face's edge (a first axis: at its end), so its extension
 // lines are short.
 //
-// A flag note is drawn as a frame is, out from its first face. A general note and the part's
-// general profile (its Note 1, on every face nothing else controls) are said in the notes and drawn
-// as nothing on the part, so they take no turn of a face either.
+// A flag note is drawn as a frame is, out from its first face. A general note, the part's general
+// profile (its Note 1, on every face nothing else controls) and a flag note naming annotations and
+// no face are said in the notes and drawn as nothing on the part (`pmiDrawnOnPart`), so they take
+// no turn of a face either.
 
 import { add, cross, dot, length, placeXbfPoint, scale, sub, unit } from "./xbfEntities.js";
 import { invert } from "./xbfKinematics.js";
@@ -42,8 +43,19 @@ const boxCentre = bounds => (bounds ? scale(add(bounds.min, bounds.max), 0.5) : 
 const boxDiagonal = bounds => (bounds ? length(sub(bounds.max, bounds.min)) : 0);
 /** How far out from its feature a label the code never placed stands. */
 const pmiReach = bounds => Math.max(REACH_MIN, boxDiagonal(bounds) * REACH_SHARE);
-/** Said in the notes and never drawn on the part: a general note, and the general profile. */
-const saidInNotes = entry => Boolean(entry.note?.general || entry.tolerance?.general);
+/**
+ * Whether an annotation is drawn on the part: all but what is said in the notes alone -- a general
+ * note, the general profile, and a flag note naming annotations and no face. That one has no face
+ * of its own to stand on, and drawn on its annotations' it would say it is about those faces,
+ * which its code never said (a drawing flags the callout, which this cannot stand beside): it is
+ * listed, its pick lighting what its annotations are on.
+ *
+ * @param {import("./xbfPmi.js").XbfPmiEntry} entry
+ */
+export function pmiDrawnOnPart(entry) {
+  if (entry.note?.general || entry.tolerance?.general) return false;
+  return !(entry.kind === "note" && !entry.refs.length);
+}
 
 /**
  * A point on a face to start a leader from: one of its own nodes, so it is on the face whatever its
@@ -140,7 +152,7 @@ function defaultOffset({ anchor, out, centre, reach, turn }) {
 /**
  * What an annotation is drawn as, in the scene's coordinates, or null where it cannot be (a
  * reference that names no element on the page and no placement to stand at) or is not drawn on the
- * part (a general note, the general profile: said in the notes).
+ * part (said in the notes alone, `pmiDrawnOnPart`).
  *
  * - `anchor`: where its leader starts on its feature (a distance's: on its first face); where its
  *   feature is not on the page (a broken reference), where the code anchored it, and `broken`.
@@ -158,7 +170,7 @@ function defaultOffset({ anchor, out, centre, reach, turn }) {
  *   the code's (a drag not yet written).
  */
 export function pmiConstruction(entry, { geometry, bounds = null, turn = 0, placement = null }) {
-  if (saidInNotes(entry)) return null;
+  if (!pmiDrawnOnPart(entry)) return null;
   const centre = boxCentre(bounds);
   const reach = pmiReach(bounds);
   const given = placement || entry.presentation;
@@ -248,7 +260,7 @@ export function pmiConstructions(drawn, { geometry, bounds = null, placements = 
   const found = new Map();
   const turns = new Map();
   for (const { entry, elements, frame = null } of drawn) {
-    if (!entry.supported || saidInNotes(entry)) continue;
+    if (!entry.supported || !pmiDrawnOnPart(entry)) continue;
     const roles = {};
     entry.refs.forEach((ref, index) => { if (!(ref.role in roles)) roles[ref.role] = elements[index] ? geometry(elements[index]) : null; });
     const first = elements[0] || entry.key;
