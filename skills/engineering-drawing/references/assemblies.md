@@ -1,7 +1,7 @@
 # Assembly drawings
 
 ```python
-from cadgen.eng_drawing import eng_drawing, parts_list, assembly_sheets
+from cadgen.eng_drawing import eng_drawing, parts_list, assembly_sheets, JOINTS
 ```
 
 An assembly is a drawing set: a general arrangement keyed to a parts list,
@@ -12,8 +12,13 @@ then a sheet per part, each one refined like any sheet:
 def rig_drawing():
     parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/rig.step"))
     parts.merge("eye:upper", "eye:lower")                                # one part, named twice
-    parts.set("base_plate", material="6061-T6", part_number="RIG-101")   # stated, never guessed
-    sheets = assembly_sheets(parts, title="RIG", part_number="RIG-100", general_tolerance="ISO 2768-m")
+    parts.set("base_plate", material="AL 6061-T6", spec="AMS 4027", part_number="RIG-101")   # stated, never guessed
+    parts.add("LOCTITE 243", spec="MIL-S-46163 TYPE II")                 # in no model: QTY AR
+    sheets = assembly_sheets(parts, title="RIG", part_number="RIG-100", general_tolerance="ISO 2768-m",
+                             stage="prototype")
+    ga_front = next(v for v in sheets[0].views if v.name == "front")
+    ga_front.flag("TORQUE TO 9 NM WITH LOCTITE 243", item="cap_screw")   # the finished state
+    ga_front.flag("FLUSH WITHIN 0.1", item="bushing", joint="press_fit")
     top, front, right, iso = sheets.part("base_plate").views
     front.section("A")
     return sheets
@@ -34,9 +39,17 @@ under different names, and the script prints them.
 
 - `parts[3]`, `parts["coil_spring"]`: an item by number, label or the label's
   name before the colon; an unknown or ambiguous key is refused with the list.
-- `parts.set(key, description=..., part_number=..., material=...)`: what the
-  model cannot carry; chains. Nothing else is accepted. It may follow
-  `assembly_sheets`: each part's sheet reads its item when it renders.
+- `parts.set(key, description=..., part_number=..., material=..., spec=..., supplier=..., family=...)`:
+  what the model cannot carry; chains. `spec` is the material's specification
+  ("AMS 4027"), `supplier` who it is bought from, `family` the material family
+  a section hatches it as: `steel`, `iron`, `aluminium`, `copper_alloy`,
+  `plastic`, `elastomer`, `composite`, `fabric`, `glass` or `general`. Nothing
+  else is accepted. It may follow `assembly_sheets`: each part's sheet reads
+  its item when it renders, its MATERIAL cell `AL 6061-T6 PER AMS 4027`.
+- `parts.add(description, quantity="AR", part_number="", material="", spec="", supplier="")`:
+  an item the model does not hold (an adhesive, a sealant, a grease, a shim
+  set at assembly), numbered last. It has no sheet and needs no balloon;
+  `quantity` is a count or `"AR"` (as required). Add before drawing.
 - `parts.merge(*keys, description=None)`: list items as one part, after
   checking their geometry is the same; a different shape is refused. The first
   keeps its place, later items are numbered again, and the description is the
@@ -48,29 +61,90 @@ under different names, and the script prints them.
   prototypes they share).
 - `parts.assembly`: the whole assembly, placed, for the GA's views.
 
-## `assembly_sheets(parts, title=..., part_number="", revision="A", size="A3", author="", date="", projection="THIRD ANGLE", ink="mono", notes=(), general_tolerance="", revisions=())`
+## `assembly_sheets(parts, title=..., part_number="", revision="A", size="A3", author="", date="", projection="THIRD ANGLE", ink="mono", notes=(), general_tolerance="", revisions=(), stage=None, profile=None, category="", company="", fields=None)`
 
 Returns the set as a list of `Sheet`s: the general arrangement (front view, the
 one of top and right showing more, an isometric; no hidden lines; overall
-sizes; balloons; the parts list, continued on further sheets past 16
-items on A3), then one sheet per item. A GA that does not fit `size` beside its
+sizes as reference dimensions, an assembly's envelope being information nobody
+inspects; balloons; the parts list, continued on further sheets past 16 items
+on A3), then one sheet per modelled item. A GA that does not fit `size` beside its
 parts list at 1:50 or larger is refused, naming a larger size. A part's sheet
-draws `item.shape` in three views and an isometric on a sheet that chooses its
-own size and scale (`Sheet(size=None, scale=None)`), states its overall sizes,
+draws `item.shape` in one view per distinct picture and an isometric on a
+sheet that chooses its own size and scale (`Sheet(size=None, scale=None)`); a
+long turned part lies down and states its diameters; it states its overall sizes,
 calls out the holes and slots each view looks down, and is titled with the
 item's description over `ITEM n (QTY q) OF <title>`. Every sheet carries the drawing number, revision, author
-and date; `notes` and `revisions` go on the GA, `general_tolerance` on the part
-sheets. `sheets.part(key)` is an item's sheet; `sheets.parts` the list.
+and date, and the stage, profile, category, company and fields; `notes` and
+`revisions` go on the GA, `general_tolerance` on the part sheets.
+`sheets.part(key)` is an item's sheet; `sheets.parts` the list. A detail of a
+joint on the GA is `sheets[0].detail(ga_front, point, radius)`.
+
+## What an assembly drawing states
+
+The finished state, as ASME Y14.24 has it: what must be true once it is put
+together, not the steps. Each requirement is a flag note on the view where it
+applies:
+
+- how each joint is held: a torque or torque spec, a threadlocker grade, a
+  lubricant, safety wire, a cotter pin, staking
+- bonding and sealing: the adhesive or sealant with its spec, the surface
+  preparation and cure spec, masking
+- work done at assembly ("PRESS WITH RETAINING COMPOUND", "REAM AFTER
+  ASSEMBLY TO ⌀X"); those dimensions are toleranced, being inspected then
+- the orientation, gaps and clearances that matter
+- marking
+
+Ask the person for every value, joint by joint; never supply a torque or an
+adhesive. The order of work, fixtures and procedures belong to work
+instructions, a separate document.
+
+## `view.flag(text, at=None, item=None, joint=None, offset=None)`
+
+A numbered flag where a requirement applies, the note under that number after
+the sheet's other notes, its flag beside it. Exactly one of `at` (a model
+point) or `item` (a part the view balloons, by number or name; the leader lands
+where its balloon's does). `joint` says how the parts there are held, one of
+`JOINTS`: `weld`, `braze`, `solder`, `rivet`, `crimp`, `press_fit`, `bond`,
+`tape`, `overmold`, `snap`, `not_bonded`; its word begins the note (`BOND:
+LOCTITE 401`). The same note flagged twice keeps one number. Left without
+`offset`, the flag takes the nearest place off the view clear of its
+annotation, its leader crossing no line. Weld symbols (AWS A2.4, ISO 2553) are
+not drawn; a weld is a flag note.
+
+## Layered parts
+
+A part made of layers (a phone case's shell, tape and lining; a laminate) is
+modelled as a small assembly, a layer per part, and drawn with a section
+through it:
+
+```python
+parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/case_back.step"))
+parts.set("shell", material="PC/ABS", family="plastic")
+parts.set("tape", material="3M VHB 4910")
+sheet = Sheet("A3", 5.0, title="CASE BACK")
+front = sheet.view(parts.assembly, "front", at=(180, 170), hidden=False).section("A", parts=parts)
+front.flag("15 PSI, 72 H DWELL", at=(10, 0, 1.6), joint="tape")   # a point on the tape
+sheet.layer_table(parts, [("shell", "3.0", "FULL"), ("tape", "0.2", "PERIMETER 6 WIDE")])
+```
+
+Each layer is hatched as its family, neighbours of one family at different
+angles; one thinner than 1 mm on the sheet is filled solid (draw a detail at a
+larger scale to show it hatched); where the model overlaps solids the earlier
+item takes the region. Two or more families add a material key (swatch, family,
+materials); thin layers have a row of their own. Every place two layers meet
+gets a flag with its `joint`, including `not_bonded`. A liquid adhesive is
+never modelled: its flag and the parts list carry it. Tapes and films are
+modelled as thin layers when they are.
 
 ## `sheet.parts_list(parts, first=1, last=None)`
 
 Draws `parts` as the parts list, standing on the title block and as wide as it
-(ISO 7573, ASME Y14.34): ITEM, QTY, DESCRIPTION, PART NO., MATERIAL, the header
-against the block and item 1 above it. `first`/`last` draw a run of a list too
+(ISO 7573, ASME Y14.34): ITEM, QTY, DESCRIPTION, PART NO., MATERIAL, SPEC,
+SUPPLIER, the header against the block and item 1 above it. `first`/`last` draw a run of a list too
 long for one sheet; one that does not fit is refused, naming where to split it,
 and each run of a split list says on which sheet it continues. The views and
 any detail keep clear of it; a hand-placed view over it, or a note running
-under it, is refused.
+under it, is refused. An entry too long for its column is refused, never cut.
 
 ## `view.balloons(parts)`
 
@@ -93,3 +167,6 @@ hold is refused, naming a larger sheet or scale. Not on a section or a detail.
 | `note: items 1 and 10 (... and ...) are the same shape under different names ...` | `parts.merge(1, 10)` lists them as one part, if they are one |
 | `front.balloons(): 9 balloons do not fit on the right of the front view on A3 ...` | a larger `size=`, or balloon some items on another view (a refusal) |
 | `the general arrangement does not fit A3 beside its parts list ...` | give `assembly_sheets()` a larger `size=` (a refusal) |
+| `item 2's SPEC '...' does not fit the parts list's SPEC column ...` | shorten it: `parts.set(2, spec=...)` (a refusal) |
+| `flag(item='pin') on the front view finds the item in the parts list the view balloons ...` | `front.balloons(parts)` first, or flag with `at=` (a refusal) |
+| `front flag 3: no clear place near its point ...` | give `flag(..., offset=(x, y))` |

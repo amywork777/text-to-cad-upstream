@@ -1,6 +1,6 @@
 ---
 name: engineering-drawing
-description: Make an engineering drawing of a part or an assembly as a PDF - orthographic, section, detail, auxiliary and broken views, real dimensions, hole callouts or a hole table, notes and a title block on ISO sheets, and for an assembly balloons, a parts list and a sheet per part, all projected from the geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or assembly drawings, a parts list, a print, or "2D views of this part".
+description: Make an engineering drawing of a part or an assembly as a PDF - views, sections and details, measured dimensions with the tolerances, GD&T and datums the person confirms, hole callouts, notes and a title block, and for an assembly balloons, a parts list, flag notes and a sheet per part, all projected from the geometry. Use when the user asks for a drawing, a dimensioned sheet, shop or assembly drawings, a parts list, a print, or "2D views of this part".
 license: MIT
 ---
 
@@ -32,6 +32,16 @@ The first run downloads that installation; later runs reuse it.
 
 ## Workflow
 
+0. **Ask before dimensioning.** Which dimensions matter, how tightly and from
+   which faces depends on how the part is used and how far along it is, and
+   only the person knows. Ask the stage (concept, prototype, production) and
+   the use; then propose what you think matters, one numbered item at a time,
+   each with a picture of the part with that feature marked (`cadgen
+   snapshot --annotation`); and write into the script only what they confirm.
+   For an assembly, ask joint by joint how each is held. How:
+   [design intent, tolerances and GD&T](references/intent-and-gdt.md). A
+   person who wants a quick sheet of views can skip it; the drawing then
+   states nominal sizes only, and says so.
 1. **Get the part.** `cadgen.read_step(Path(__file__).parent / "../STEP/part.step")`
    reads the artifact a `@step` model wrote (run `python <model>.py` first); a
    live build123d shape works too. The drawing documents geometry; it does not
@@ -46,8 +56,11 @@ The first run downloads that installation; later runs reuse it.
    sheet choose: the smallest of A4 to A2 that draws the part at 1:1 or larger,
    else A3 reduced; give either to fix it. `sheet.three_views(part, iso=True)`
    returns top, front, right and an isometric, in the projection the sheet
-   names. The sheet lays them out again when it renders, spacing each pair for
-   the dimensions they end up carrying, so add annotation freely. Where hidden
+   names. A turned or symmetric part shows the same picture from two sides:
+   draw the ones that differ, `three_views(part, views=("front", "right"))`;
+   the run says when two views drawn are alike. The sheet lays them out again
+   when it renders, spacing each pair for the dimensions they end up carrying,
+   so add annotation freely. Where hidden
    lines would be the only way to show something (walls, floors, a bore's
    depth, a keyway), cut that view: `front.section("A", through=(x, y, z))`
    draws SECTION A-A, hatched, with its cutting plane on the view that sees it
@@ -88,17 +101,32 @@ The first run downloads that installation; later runs reuse it.
      need a `radius()` callout or a note giving the size.
    - `view.diameter(center)` / `view.radius(center)` measure the circle or arc
      there; pass `size=` only to pick one of several concentric ones.
-   - `tol=`, `fit=` and `general_tolerance=` only from the design requirements
-     or the user. Never invent a tolerance, material, finish or process note:
-     a field you leave blank prints as an empty, captioned cell, which says the
-     drawing does not state it.
+   - Each dimension is one of three kinds: toleranced (`tol=`, `fit=`,
+     `limits=`; inspect to this), basic (`basic=True`, boxed; a GD&T frame
+     bounds the feature) or reference (`reference=True`, in parentheses;
+     information only). `frame=Frame(...)` on a callout or dimension,
+     `view.datum("A", point)`, `view.frame(point, Frame(...))` and
+     `Sheet(general_profile=...)` give GD&T; `key=True` marks a key
+     characteristic. `Sheet(stage=, profile=)` says how far along it is and
+     whose conventions it follows. All of it:
+     [intent and GD&T](references/intent-and-gdt.md).
+   - Every tolerance, fit, datum, frame, material, spec, finish and note comes
+     from the person or the requirements, confirmed in step 0. Never invent
+     one, and never present a guess as a requirement: a field you leave blank
+     prints as an empty, captioned cell, which says the drawing does not
+     state it, and the run reports what the sheet's stage still needs.
 5. **Run `python <name>_drawing.py` and read what it prints** before the PDF:
    - *"incomplete: …"*: a hole or slot not called out, an overall size, a
-     turned diameter, a fillet, round or chamfer not stated. Each line names
-     the call that states it.
+     turned diameter, a fillet, round or chamfer not stated, or what the
+     sheet's stage asks for (a general tolerance, datums, the material and its
+     spec, the finish). Each line names the call that states it. Ask the
+     person for the value; do not fill it in.
+   - *"a basic dimension, and no GD&T frame … bounds it"*: add the frame the
+     person gave for that feature, or make the dimension toleranced.
    - *"measures blank paper"*: a dimension's points miss the view. Usually the
      part was built from a corner and the script assumed it was centred.
-   - *"annotation overlaps"*, *"views crowded"*, *"leader crosses the view"*:
+   - *"annotation overlaps"*, *"views crowded"*, *"leader crosses the view"*,
+     *"its leader crosses a dimension line"*:
      not enough paper where the annotation is. The message names the view and
      side asking most, and a larger sheet or smaller scale; moving that
      annotation to a view with room to spare often does instead.
@@ -134,8 +162,11 @@ keys every part to a parts list with a balloon, and one sheet per distinct part.
 # in the @eng_drawing function; from cadgen.eng_drawing import assembly_sheets, parts_list
 parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/rig.step"))
 parts.merge("eye:upper", "eye:lower")              # one part the model names twice
-parts.set("base_plate", material="6061-T6")        # only what the requirements state
-sheets = assembly_sheets(parts, title="RIG", part_number="RIG-100")
+parts.set("base_plate", material="AL 6061-T6", spec="AMS 4027")   # only what the person states
+parts.add("LOCTITE 243", spec="MIL-S-46163 TYPE II")             # not modelled: QTY AR
+sheets = assembly_sheets(parts, title="RIG", part_number="RIG-100", stage="prototype")
+front = next(v for v in sheets[0].views if v.name == "front")
+front.flag("TORQUE TO 9 NM WITH LOCTITE 243", item="cap_screw")   # how the joint is held
 sheets.part("base_plate").views[1].section("A")   # refine any part's sheet
 return sheets
 ```
@@ -146,10 +177,21 @@ return sheets
   before drawing it. PART NO. and MATERIAL stay blank unless `parts.set(...)`
   states them. Two names on one shape stay two items and the report says so;
   `parts.merge(a, b)` lists them as one after checking the shapes match.
-- `assembly_sheets` makes the GA (views, overall sizes, balloons, the parts
-  list) and a first-pass sheet per part (three views, an isometric, overall
+- `assembly_sheets` makes the GA (views, overall sizes as reference
+  dimensions, balloons, the parts list) and a first-pass sheet per part (one
+  view per distinct picture, an isometric, diameters for a turned part, overall
   sizes, every hole and slot). Each is an ordinary `Sheet`: refine
   `sheets.part(name)` like any other, then run and read the report.
+- The GA states the finished state, each requirement a flag note where it
+  applies: how each joint is held (torque, threadlocker, press fit, bond and
+  its cure, weld, rivet), work done at assembly, gaps and orientation that
+  matter, marking. The steps themselves belong to work instructions, not the
+  drawing.
+- A layered part (a phone case's shell, tape and lining) is a small assembly:
+  `view.section("A", parts=parts)` hatches each layer as its material family
+  (`parts.set(n, family="plastic")`), fills a layer too thin to hatch solid,
+  and draws a material key; `sheet.layer_table(parts, rows)` lists each layer's
+  thickness and coverage as the person states them.
 
 Parts lists, balloons on a custom GA, and what the script prints about them:
 [assemblies reference](references/assemblies.md).
@@ -166,22 +208,34 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
   symbols (⌀ ↧ ⌴ ⌵), drawn as line work so they print the same everywhere.
 - An ISO 5457 zoned border, an ISO 7200-style title block (TITLE, DWG NO., REV,
   SHEET, MATERIAL, FINISH, SCALE, SIZE, DRAWN, DATE, UNITS and the ISO 5456-2
-  projection symbol), numbered notes with the general tolerance as note 1, and
-  a revision table when `revisions=` is given.
+  projection symbol; COMPANY, STAGE and a profile's own cells in a band above
+  when a stage or profile is given), numbered notes (a general profile first,
+  then the standard, the general tolerance, the author's notes and the flag
+  notes, each numbered in its flag), and a revision table when `revisions=`
+  is given.
+- Feature control frames, datum feature symbols and key characteristic marks,
+  drawn as line work, each kept on rows of its own clear of other annotation.
 - Hole tables: each hole and slot tagged on the view, an X and Y origin, and a
   table of TAG, X, Y and SIZE. Auxiliary views labelled VIEW C with the viewing
   arrow on their parent; broken views with a zigzag break line across each cut.
 - On an assembly's GA, balloons (item number in a circle, a leader ending in a
   dot on the part) in even columns whose leaders do not cross, and an ISO 7573
   parts list standing on the title block: ITEM, QTY, DESCRIPTION, PART NO.,
-  MATERIAL, read upward from the header.
+  MATERIAL, SPEC, SUPPLIER, read upward from the header. A section through
+  several materials hatches each as its family and carries a material key.
 - PDF bytes that are a function of the content: an unchanged drawing rebuilds
   to an identical file.
 
 ## Limits to state in the handoff
 
-- Every dimension without `tol=`/`fit=` is nominal, governed by the general
-  tolerance if one is given. Say which requirements came from the user.
+- Every dimension without `tol=`/`fit=`/`limits=` is nominal, governed by the
+  general tolerance or general profile if one is given. Say which requirements
+  came from the person, and which features the stage asks about that they have
+  not decided.
+- GD&T: single-segment frames on callouts, dimensions and surfaces, datum
+  feature symbols on faces and features of size; no composite frames, datum
+  targets, projected zones or all-around symbols. Weld symbols are not drawn:
+  a weld is a flag note.
 - Full sections and circular details only: no half, offset or broken-out
   sections. Auxiliary views are projected from a view that sees the face
   edge-on (no secondary auxiliaries), drawn unrotated, and by default partial
@@ -199,4 +253,5 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
 ## References
 
 - Sheets, views and every annotation call, with a template: `references/sheet-api.md`
-- Assembly drawings, parts lists and balloons: `references/assemblies.md`
+- The interview, dimension kinds, frames and datums, stages and profiles: `references/intent-and-gdt.md`
+- Assembly drawings, parts lists, balloons, flag notes and layered parts: `references/assemblies.md`

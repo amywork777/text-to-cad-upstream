@@ -1,7 +1,7 @@
 # `cadgen.eng_drawing` reference
 
 ```python
-from cadgen.eng_drawing import eng_drawing, Sheet, geometry_notes
+from cadgen.eng_drawing import eng_drawing, Sheet, Frame, geometry_notes
 ```
 
 ## Template
@@ -70,7 +70,7 @@ the drawing leaves unstated, and returns `[path]`.
 script. Both are checked when the module is imported. There is no CLI verb: a
 `Sheet` is composed in Python and no argument list carries that.
 
-## `Sheet(size="A3", scale=1.0, title=..., part_number="", material="", finish="", revision="A", author="", date="", units="mm", projection="THIRD ANGLE", notes=(), ink="mono", text_height=3.5, general_tolerance="", revisions=())`
+## `Sheet(size="A3", scale=1.0, title=..., part_number="", material="", spec="", finish="", revision="A", author="", date="", units="mm", projection="THIRD ANGLE", notes=(), ink="mono", text_height=3.5, general_tolerance="", general_profile=None, revisions=(), stage=None, profile=None, category="", company="", fields={})`
 
 - `size`: `A4`, `A3`, `A2`, `A1`, `A0`, landscape, with an ISO 5457 zone grid.
   `None` lets `three_views` choose: the smallest of A4 to A2 that draws the
@@ -83,14 +83,27 @@ script. Both are checked when the module is imported. There is no CLI verb: a
   sheet tries the next size up, then the next scale down. A size or scale you
   set afterwards is yours.
 - `title`, `part_number` (DWG NO.), `material`, `finish`, `revision`, `author`
-  (DRAWN), `date`: title block cells. A field left empty prints as an empty,
+  (DRAWN), `date`: title block cells. `spec` is the material's specification:
+  MATERIAL reads `AL 6061-T6 PER AMS 4027`; a spec without a material is
+  refused. A field left empty prints as an empty,
   captioned cell. Nothing is stamped from the clock. The drawing function's
   name prints small under the title, so a print leads back to its script.
 - `units`: `"mm"`, the unit every value is measured in; anything else is refused.
 - `projection`: `"THIRD ANGLE"` or `"FIRST ANGLE"`. It sets the arrangement
   `three_views` makes and the projection symbol the title block draws.
-- `general_tolerance="ISO 2768-m"`: note 1, "TOLERANCES PER ISO 2768-m UNLESS
-  OTHERWISE SPECIFIED." `notes=` takes a LIST; a bare string is refused.
+- `general_tolerance="ISO 2768-m"`: a note, "TOLERANCES PER ISO 2768-m UNLESS
+  OTHERWISE SPECIFIED." (under an ASME profile, "UNLESS OTHERWISE SPECIFIED,
+  TOLERANCES ARE ±0.1." from `general_tolerance="±0.1"`). `notes=` takes a
+  LIST; a bare string is refused.
+- `general_profile=Frame("surface_profile", 0.2, ("A", "B", "C"))`: note 1,
+  "UNLESS OTHERWISE SPECIFIED, ALL SURFACES" and the frame. Its datums must be
+  defined on the sheet.
+- `stage`: `"concept"`, `"prototype"` or `"production"`, printed in the title
+  block's band and checked by the report. `profile` (`GENERIC`, `AEROSPACE` or
+  a `Profile`) sets the tolerancing standard, its notes, the band's extra cells
+  and the key characteristic mark; `category` is one of the profile's names
+  for a stage; `company` and `fields` fill the band's cells. With none of
+  these the title block has no band. See [intent and GD&T](intent-and-gdt.md).
   `notes=geometry_notes(part)` adds the general notes the part's geometry
   states (below).
 - `revisions=[("A", "2026-09-01", "INITIAL RELEASE"), ...]`: a revision table.
@@ -98,9 +111,12 @@ script. Both are checked when the module is imported. There is no CLI verb: a
   carries `ITEM 4 (QTY 2) OF RIG` there.
 - `ink`: `"mono"` (default) or `"color"` (per-layer colours, for review).
 
-### `sheet.three_views(shape, gap=None, iso=False)`
+### `sheet.three_views(shape, gap=None, iso=False, views=("top", "front", "right"))`
 
-Returns `(top, front, right)`, or four views with `iso=True`. When the sheet
+Returns `(top, front, right)`, or four views with `iso=True`. `views` names the
+principal views to draw, returned in that order: a turned or symmetric part
+draws only the ones that differ, and the run says when two drawn views are the
+same picture. When the sheet
 renders, the views are laid out again with each gap sized to the dimensions and
 callouts the facing views carry; `gap=` fixes it instead. The isometric takes
 the larger free region at the sheet's scale or the largest standard scale that
@@ -135,6 +151,14 @@ foreshortened there. A face square to a principal view is refused: draw that
 view. Give it dimensions and callouts like any view; `holes()` on it calls out
 the holes in that face.
 
+### `sheet.layer_table(parts, rows, at=None)`
+
+A layered part's layers: each row is `(item, thickness, coverage)`, the item by
+number or name, the thickness and where it covers in the person's words
+(`("tape", "0.2", "PERIMETER 6 WIDE")`); ITEM, MATERIAL and SPEC come from the
+item. Placed in the free paper nearest the sheet's section, or with its
+top-left corner at `at`.
+
 ### `sheet.view(shape, name, at=(x, y), label=None, hidden=True, centre_marks=True, scale=None)`
 
 One view, centred on `at` (sheet mm from the bottom-left corner), for a custom
@@ -147,9 +171,10 @@ A view whose geometry runs off the frame is refused, naming a scale that fits.
 Points are MODEL coordinates (3-tuples; a 2-tuple means z = 0); offsets are
 sheet millimetres.
 
-- `view.overall(width=True, height=True)`: overall width above and height left
-  of the view, each on the outermost row of its side.
-- `view.dim(p1, p2, offset=None, text=None, orientation=None, tol=None, fit=None)`:
+- `view.overall(width=True, height=True, reference=False)`: overall width above
+  and height left of the view, each on the outermost row of its side;
+  `reference=True` prints them in parentheses, stating no requirement.
+- `view.dim(p1, p2, offset=None, text=None, orientation=None, tol=None, fit=None, limits=None, basic=False, reference=False, frame=None, datum=None, key=False)`:
   a linear dimension, measured. Unplaced, it goes on the side of the view its
   points are on, the shortest nearest the view. `offset` places the line that
   far from the farther point (its sign picks the side). `orientation` unset
@@ -158,7 +183,11 @@ sheet millimetres.
   as a centre line. `text` overrides the
   value; `"<>"` inserts the measurement, `"%%c<>"` prefixes ⌀ (a diameter on a
   profile). `tol=0.1` prints ±0.1, `tol=(0.05, 0.02)` +0.05/-0.02, `fit="H7"`
-  appends a fit class. `orientation` is `"h"`, `"v"` or None.
+  appends a fit class, `limits=(39.98, 40.02)` prints the two limits (checked
+  against the part). `basic=True` boxes the value; `reference=True` puts it in
+  parentheses; neither takes a tolerance. `frame=` draws a `Frame` beyond the
+  value on a row of its own, `datum="B"` makes the feature a datum, `key=True`
+  marks a key characteristic. `orientation` is `"h"`, `"v"` or None.
 - `view.holes(angle=45)`: one callout per kind of hole or slot the view looks
   down (`4× ⌀5.5 THRU`, `⌀28 THRU`, `8 × 30 SLOT THRU`), placed on the one
   nearest the view's edge. Identical holes equally spaced round a turned axis
@@ -173,27 +202,33 @@ sheet millimetres.
   table of TAG, X, Y and SIZE in free paper beside the view (or with its
   top-left corner at `at`). Sizes are read off the part as a callout reads
   them. A view tabulates its holes or calls them out, not both.
-- `view.hole(point, diameter=None, depth=None, thru=None, cbore=None, csk=None, thread=None, count=None, angle=45, tol=None, fit=None, label=None)`:
+- `view.hole(point, diameter=None, depth=None, thru=None, cbore=None, csk=None, thread=None, count=None, angle=45, tol=None, fit=None, label=None, frame=None, datum=None, key=False)`:
   one callout on the hole whose axis passes through `point`, in a view looking
   down that axis. Every size and the count come from the part; a value given is
   checked and a contradiction is refused, naming what the part has. `thread`
   (`"M6x1 - 6H"`) replaces the diameter; `label` is appended (`"WHEEL"`).
   A through hole opened out at both ends reads `BOTH ENDS` or `FAR SIDE ...`.
   Pieces of one bore separated by air (a clevis's arms, a cross hole) are one
-  hole; a groove or a pocket with material inside is not a hole.
-- `view.slot(point, width=None, length=None, thru=None, depth=None, count=None, angle=45, label=None)`:
+  hole; a groove or a pocket with material inside is not a hole. `frame=`
+  hangs a `Frame` (its position, say) under the callout; `datum=` and `key=`
+  as `dim` takes them.
+- `view.slot(point, width=None, length=None, thru=None, depth=None, count=None, angle=45, label=None, frame=None, datum=None, key=False)`:
   one slot callout, `point` being the slot's centre or either end's centre.
   Width, length end to end, THRU or depth and the count come from the part;
   values given are checked. A slot is two half-round ends with straight sides
   and air between; a half-round notch in an edge is not one.
-- `view.diameter(center, size=None, angle=45, text=None)` and
+- `view.diameter(center, size=None, angle=45, text=None, basic=False, reference=False, frame=None, datum=None, key=False)` and
   `view.radius(center, size=None, ...)`: the circle or arc centred there,
   measured; `size` (a diameter, or a radius) picks one of several.
 - `view.section(letter="A", through=None)`: draw the view as a full section
   through `through` (default: the part's middle), square to the line of sight.
   Cut faces are hatched, hidden lines are left out, the view is labelled
   `SECTION A-A`, and the cutting plane is drawn on a view of the same part
-  that sees it edge-on. Letters I, O and Q are refused.
+  that sees it edge-on. Letters I, O and Q are refused. `parts=` on a view of
+  an assembly cuts each item on its own and hatches it as its material family
+  (`parts.set(n, family=...)`): neighbours of one family at different angles,
+  a part thinner than 1 mm on the sheet filled solid, solids the model overlaps
+  hatched once; two or more families add a material key.
 - `view.broken(start, end)`: take the stretch between two model points (along
   one model axis, in the view's plane) out of the view, the two ends drawn 10
   mm apart with a zigzag break line across each cut. The other views of the
@@ -205,6 +240,21 @@ sheet millimetres.
 - `view.angle(vertex, p1, p2, offset=14)`: the angle at `vertex` between the
   legs toward `p1` and `p2`.
 - `view.note(text, at, offset=(10, 10))`: a leader from a model point to text.
+- `view.datum(letter, at, offset=None)`: a datum feature symbol on the face
+  through `at`, its stem out by the nearest side of the view unless `offset`
+  points it. A letter names one feature per sheet.
+- `view.frame(at, frame, offset=(10, 10))`: a feature control frame with a
+  leader to the surface through `at`.
+- `view.flag(text, at=None, item=None, joint=None, offset=None)`: a flag note,
+  numbered as its note in the notes block; see [assemblies](assemblies.md).
+
+## `Frame(characteristic, tolerance, datums=(), diameter=False, modifier=None)`
+
+A feature control frame, `Frame("position", 0.1, ("A", "B"), diameter=True,
+modifier="M")`. The characteristics and their rules (form names no datum,
+orientation and runout need one, a diameter zone and a material condition only
+where they apply) are in [intent and GD&T](intent-and-gdt.md#frames-and-datums).
+A frame naming a datum no view of its sheet defines is refused.
 
 ## `geometry_notes(part)`
 
@@ -246,6 +296,12 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | `top.hole_table(): the top view looks down no hole or slot` | tabulate the view that looks down the holes |
 | `front dim 3: (250, 0, 0) is inside the break ...` | dimension to a point outside the broken stretch |
 | `incomplete: sheet 3 (PIN): the turned diameter ⌀6 ...` | on a drawing of several parts, each line names its sheet |
+| `incomplete: a prototype drawing states a general tolerance ...` | what the sheet's stage asks for; ask the person |
+| `incomplete: a production drawing locates its features from datums ...` | mark the datums the person gave with `view.datum` |
+| `note: a production drawing marks its key characteristics ...` | ask whether any feature is one; `key=True` marks it |
+| `top dim 2: a basic dimension, and no GD&T frame on the sheet bounds it ...` | add the frame, or make it toleranced |
+| `top hole 0: its leader crosses a dimension line ...` | no clear way out; move the callout or the dimension |
+| `the top and right views draw the same picture ...` | `three_views(views=(...))` leaves one out |
 
 ## Layers
 
@@ -256,9 +312,9 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | VISIBLE | continuous | 0.50 | visible edges |
 | HIDDEN | DASHED | 0.25 | hidden edges |
 | CENTER | CENTER | 0.18 | centre marks and centre lines, cutting planes |
-| DIM | continuous | 0.18 | dimensions, callouts |
+| DIM | continuous | 0.18 | dimensions, callouts, frames, datum symbols, key marks, flags |
 | NOTES | continuous | 0.25 | notes, view labels, leaders, detail circles, balloons |
-| HATCH | continuous | 0.18 | section hatching |
+| HATCH | continuous | 0.18 | section hatching, a pattern per material family |
 
 They exist inside the ezdxf document the page is rendered from; the PDF carries
 their weights and dash patterns, not the layer names.
