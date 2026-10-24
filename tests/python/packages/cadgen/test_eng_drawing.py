@@ -3927,6 +3927,55 @@ class RedundancyTests(unittest.TestCase):
         self.assertEqual(self._plate_lines(basic=True), [])
 
 
+class InterfaceTests(unittest.TestCase):
+    """Where two parts meet, the drawing set must say how: a pin in a bore at one
+    nominal size is a fit nobody has chosen, and faces that touch leave no end play."""
+
+    @staticmethod
+    def _lines(sleeve_bore: float = 12.0) -> list[str]:
+        from build123d import Align, Box, Compound, Cylinder, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _interfaces
+        from cadgen.eng_drawing import assembly_sheets, parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        plate = Box(60, 40, 8, align=up) - Pos(-15, 0, 0) * Cylinder(6, 8, align=up) \
+            - Pos(15, 0, 0) * Cylinder(10, 8, align=up)
+        # A headed pin through the left bore, its head down on the plate; a sleeve
+        # in the right bore; a rod far smaller than the hole it stands in.
+        pin = Pos(-15, 0, -4) * (Cylinder(6, 12, align=up) + Pos(0, 0, 12) * Cylinder(9, 3, align=up))
+        sleeve = Pos(15, 0, -2) * (Cylinder(9.9, 12, align=up) - Cylinder(sleeve_bore / 2, 12, align=up))
+        rod = Pos(15, 0, -6) * Cylinder(2, 20, align=up)
+        plate.label, pin.label, sleeve.label, rod.label = "plate", "pin", "sleeve", "rod"
+        sheets = assembly_sheets(parts_list(Compound(children=[plate, pin, sleeve, rod])), title="RIG")
+        facts = _facts()
+        _render_sheet(list(sheets)[0], index=1, count=1, label="rig", warnings=[], facts=facts)
+        return _interfaces(facts)
+
+    def test_a_pin_in_a_bore_of_its_own_size_and_faces_that_touch_are_named(self) -> None:
+        lines = self._lines()
+        fits = [line for line in lines if "PIN" in line and "PLATE" in line and "⌀12" in line]
+        self.assertEqual(len(fits), 1, lines)
+        self.assertIn("no clearance", fits[0])
+        touching = [line for line in lines if "touch" in line and "PIN" in line and "PLATE" in line]
+        self.assertEqual(len(touching), 1, lines)
+        self.assertIn("end play", touching[0])
+
+    def test_a_sleeve_with_clearance_says_how_much_and_a_loose_rod_is_no_fit(self) -> None:
+        lines = self._lines()
+        sleeve = [line for line in lines if "SLEEVE" in line and "PLATE" in line]
+        self.assertEqual(len(sleeve), 1, lines)
+        self.assertIn("0.2 clearance", sleeve[0])
+        self.assertFalse([line for line in lines if "ROD" in line], "⌀4 in a ⌀12 bore is a gap, not a fit")
+
+    def test_an_interference_is_called_out(self) -> None:
+        lines = self._lines()
+        self.assertTrue(all(line.startswith("interface:") for line in lines), lines)
+        squeezed = self._lines(sleeve_bore=3.9)
+        self.assertTrue([line for line in squeezed if "ROD" in line and "interference" in line], squeezed)
+
+
 class HoleTableTests(unittest.TestCase):
     def test_a_hole_table_tags_each_hole_and_states_where_and_what(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet

@@ -358,6 +358,122 @@ _SAMPLE_PITCH = 4.0
 _SAMPLES = 2500
 
 
+#: Two coaxial surfaces of different parts mate, one in the other, when their
+#: diameters differ by at most a loose running fit's clearance: 2 % of the bore
+#: or half a millimetre, whichever is more. Further apart is a gap, not a fit.
+_FIT_SHARE = 0.02
+_FIT_LEAST = 0.5
+
+
+@dataclass(frozen=True)
+class Fit:
+    """A turned surface of one item in a bore of another, on one axis: their
+    nominal diameters, the axis's direction, and a point on it where they meet."""
+
+    inner: int
+    outer: int
+    shaft: float
+    bore: float
+    axis: tuple[float, float, float]
+    at: tuple[float, float, float]
+
+
+@dataclass(frozen=True)
+class Abutment:
+    """Two items' flat faces touching square to a fit's axis: no end play at
+    nominal sizes. ``at`` is the point on the axis in the plane they share."""
+
+    items: tuple[int, int]
+    axis: tuple[float, float, float]
+    at: tuple[float, float, float]
+
+
+def interfaces(parts: PartsList) -> tuple[list[Fit], list[Abutment]]:
+    """Where an assembly's parts meet on a turned axis: each turned surface of one
+    part in a bore of another, their diameters a fit's clearance apart or closer
+    (an interference among them), and the flat faces of parts on such an axis
+    that touch square to it. Read off the placed occurrences; an item that
+    occurs twice meets the same way twice and is named once."""
+    from cadgen._internal.drawing_features import _TOUCH, _full, _merge_split_faces, _surface_segments
+
+    placed = [(item.number, shape) for item in parts for shape in item.occurrences]
+    turned = []
+    for _number, shape in placed:
+        found = {}
+        for key, (d, foot, segments) in _surface_segments(shape).items():
+            whole = [seg for seg in _merge_split_faces(segments) if seg.kind == "cyl" and _full(seg)]
+            if whole:
+                found[key] = (d, foot, whole)
+        turned.append(found)
+    fits: dict[tuple, Fit] = {}
+    on_axis: dict[tuple, tuple[tuple, set[int]]] = {}
+    for i in range(len(placed)):
+        for j in range(i + 1, len(placed)):
+            if placed[i][0] == placed[j][0]:
+                continue
+            for key in turned[i].keys() & turned[j].keys():
+                d, foot, _ = turned[i][key]
+                for inner, outer in ((i, j), (j, i)):
+                    for shaft in turned[inner][key][2]:
+                        for bore in turned[outer][key][2]:
+                            if shaft.concave or not bore.concave:
+                                continue
+                            lo, hi = max(shaft.lo, bore.lo), min(shaft.hi, bore.hi)
+                            across = (2 * shaft.r_lo, 2 * bore.r_lo)
+                            if hi - lo < _TOUCH or abs(across[1] - across[0]) > max(_FIT_LEAST, _FIT_SHARE * across[1]):
+                                continue
+                            at = tuple(round(f + (lo + hi) / 2 * c, 6) + 0.0 for f, c in zip(foot, d))
+                            name = (placed[inner][0], placed[outer][0], round(across[0], 4), round(across[1], 4))
+                            fits.setdefault(name, Fit(name[0], name[1], name[2], name[3], d, at))
+                            on_axis.setdefault(key, (d, set()))[1].update((i, j))
+    abutments: dict[tuple, Abutment] = {}
+    for key, (d, members) in on_axis.items():
+        foot = turned[min(members)][key][1]
+        flats = {m: [f for f in placed[m][1].faces() if _square_to(f, d)] for m in members}
+        for m in sorted(members):
+            for n in sorted(members):
+                if n <= m or placed[m][0] == placed[n][0]:
+                    continue
+                for fa in flats[m]:
+                    for fb in flats[n]:
+                        place = _touching(fa, fb, d)
+                        if place is None:
+                            continue
+                        items = tuple(sorted((placed[m][0], placed[n][0])))
+                        at = tuple(round(f + place * c, 6) + 0.0 for f, c in zip(foot, d))
+                        abutments.setdefault((items, key, round(place, 3)), Abutment(items, d, at))
+    return list(fits.values()), list(abutments.values())
+
+
+def _square_to(face, d) -> bool:
+    from build123d import GeomType
+
+    if face.geom_type != GeomType.PLANE:
+        return False
+    n = face.normal_at()
+    return abs(abs(n.X * d[0] + n.Y * d[1] + n.Z * d[2]) - 1) < 1e-9
+
+
+def _touching(fa, fb, d) -> float | None:
+    """Where along ``d`` two flat faces square to it touch, facing each other
+    over an area, or None when they do not."""
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    ca, cb = fa.center(), fb.center()
+    place = ca.X * d[0] + ca.Y * d[1] + ca.Z * d[2]
+    if abs(place - (cb.X * d[0] + cb.Y * d[1] + cb.Z * d[2])) > 1e-4:
+        return None
+    na, nb = fa.normal_at(), fb.normal_at()
+    if na.X * nb.X + na.Y * nb.Y + na.Z * nb.Z > -1 + 1e-9:
+        return None  # side by side, not face to face
+    common = BRepAlgoAPI_Common(fa.wrapped, fb.wrapped)
+    props = GProp_GProps()
+    BRepGProp.SurfaceProperties_s(common.Shape(), props)
+    return place if props.Mass() > 1e-6 else None
+
+
 def visible_point(occurrences, cast, look, *, faces: int = 40) -> tuple[float, float, float] | None:
     """A point on one of ``occurrences`` that the viewer looking along ``-look``
     sees: on a face turned toward them, with nothing of the assembly (``cast``,

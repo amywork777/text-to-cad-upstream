@@ -227,6 +227,46 @@ def _circle_links(record: dict) -> dict[int, list]:
     return links
 
 
+def _interfaces(facts: _Facts) -> list[str]:
+    """Where an assembly's parts meet, for the person to settle how each joint
+    works: whether it turns, slides, locates or is fixed decides a fit, and
+    what holds it along its axis decides its end play. A pin in a bore of its
+    own size, or faces that touch, are what the model says at nominal sizes,
+    which no shop can make: each is named, and what states it."""
+    from cadgen._internal.drawing_assembly import interfaces
+
+    lines: list[str] = []
+    for entry in facts.lists.values():
+        parts = entry["parts"]
+
+        def named(number: int) -> str:
+            return f"item {number} ({parts[number].description or 'unnamed'})"
+
+        fits, abutments = interfaces(parts)
+        for fit in fits:
+            gap = round(fit.bore - fit.shaft, 4)
+            head = (f"interface: {named(fit.inner)} ⌀{_fmt(fit.shaft)} in {named(fit.outer)} ⌀{_fmt(fit.bore)}, "
+                    f"on the axis {_axis_words(fit.axis)} through {_where(fit.at)}: ")
+            if gap > 0:
+                lines.append(head + f"{_fmt(gap)} clearance at nominal sizes.")
+                continue
+            what = "no clearance" if gap == 0 else f"{_fmt(-gap)} interference"
+            lines.append(head + f"{what} at nominal sizes. Whether it turns, slides, locates or is fixed decides the "
+                         "fit; state it with fit= or tol= on both sizes.")
+        for touch in abutments:
+            a, b = touch.items
+            lines.append(f"interface: {named(a)} and {named(b)} touch face to face square to the axis "
+                         f"{_axis_words(touch.axis)}, at {_where(touch.at)}: no end play at nominal sizes. State the "
+                         "end play the joint needs, or that it is clamped there.")
+    return lines
+
+
+def _axis_words(d) -> str:
+    """A direction as words: ``along Y``, or its components."""
+    k = next((k for k in range(3) if abs(abs(d[k]) - 1) < 1e-9), None)
+    return f"along {'XYZ'[k]}" if k is not None else f"along ({', '.join(_fmt(c) for c in d)})"
+
+
 def _redundant(facts: _Facts) -> list[str]:
     """The dimensions a part's other dimensions already fix: along one axis, a
     dimension whose two ends the others tie together closes a loop, and the
