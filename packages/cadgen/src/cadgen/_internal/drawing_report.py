@@ -180,14 +180,17 @@ def _unstated(facts: _Facts) -> list[str]:
 
 #: Coordinates this close (model mm) are one place, for tying features together.
 _PLACE = 2
+#: More unstated slopes than this on one part are one line, not one each.
+_MANY_SLOPES = 3
 
 
 def _anchors(record: dict) -> dict[int, set]:
     """Where locations may start, along each model axis: the part's extremes, the
     faces made datums, the centre lines stated symmetric, the centres of datum
     features of size, and the axis of a part whose outline is turned (a centred
-    bore on a flange is located by the flange's diameter)."""
-    from cadgen._internal.drawing_features import turned_surfaces
+    bore on a flange is located by the flange's diameter), or that is turned
+    whole (a coned spring perch's bore by the perch)."""
+    from cadgen._internal.drawing_features import revolved, turned_surfaces
 
     shape = record["shape"]
     box = shape.bounding_box()
@@ -207,6 +210,11 @@ def _anchors(record: dict) -> dict[int, set]:
         if along is not None and all(abs(hi[k] - lo[k] - surface.diameter) <= 0.01 for k in across):
             for k in across:
                 anchors[k].add(round(surface.middle[k], _PLACE))
+    whole = revolved(shape)
+    if whole is not None:
+        for k in range(3):
+            if k != whole.axis:
+                anchors[k].add(round(whole.at[k], _PLACE))
     return anchors
 
 
@@ -240,7 +248,9 @@ def _interfaces(facts: _Facts) -> list[str]:
     works: whether it turns, slides, locates or is fixed decides a fit, and
     what holds it along its axis decides its end play. A pin in a bore of its
     own size, or faces that touch, are what the model says at nominal sizes,
-    which no shop can make: each is named, and what states it."""
+    which no shop can make: each is named, and what decides it. The lines are
+    the joints to review, printed whether or not the sheets state them yet;
+    each sheet's requirements: line says which sizes still have no fit."""
     from cadgen._internal.drawing_assembly import interfaces
 
     lines: list[str] = []
@@ -260,12 +270,12 @@ def _interfaces(facts: _Facts) -> list[str]:
                 continue
             what = "no clearance" if gap == 0 else f"{_fmt(-gap)} interference"
             lines.append(head + f"{what} at nominal sizes. Whether it turns, slides, locates or is fixed decides the "
-                         "fit; state it with fit= or tol= on both sizes.")
+                         "fit both sizes need (fit= or tol= on each).")
         for touch in abutments:
             a, b = touch.items
             lines.append(f"interface: {named(a)} and {named(b)} touch face to face square to the axis "
-                         f"{_axis_words(touch.axis)}, at {_where(touch.at)}: no end play at nominal sizes. State the "
-                         "end play the joint needs, or that it is clamped there.")
+                         f"{_axis_words(touch.axis)}, at {_where(touch.at)}: no end play at nominal sizes. What holds "
+                         "the joint along its axis decides the end play it needs, or that it is clamped there.")
     return lines
 
 
@@ -542,6 +552,17 @@ def _unplaced_faces(record: dict, whose: str) -> list[str]:
                "No view on the drawing sees it edge-on.")
         lines.append(f"incomplete: {whose}the face at {'XYZ'[axis]} = {_fmt(place)} (square to {'XYZ'[axis]}) is "
                      f"not located: no dimension ties it to an edge, a datum or a located face. {fix}")
+    if len(slopes) > _MANY_SLOPES:
+        # Past a few, a line each buries the rest of the report: one line says how
+        # many, which views can state them, and the first few to look for.
+        shown = ", ".join(str(tuple(_fmt(c) for c in normal)) for normal, _where in list(slopes)[:_MANY_SLOPES])
+        seen = sorted({where for _normal, where in slopes if where})
+        unseen = sum(1 for _normal, where in slopes if where is None)
+        fix = [f"{where}.angle(vertex, p1, p2), one leg along a face, states each it sees edge-on." for where in seen]
+        fix += [f"No view on the drawing sees {unseen} of them edge-on; add one."] if unseen else []
+        lines.append(f"incomplete: {whose}{len(slopes)} inclined faces have no angle (their normals {shown} and "
+                     f"{len(slopes) - _MANY_SLOPES} more). {' '.join(fix)}")
+        return lines
     for normal, where in slopes:
         fix = (f"{where}.angle(vertex, p1, p2), one leg along the face, states it." if where else
                "No view on the drawing sees it edge-on; add one.")

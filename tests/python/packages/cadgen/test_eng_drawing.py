@@ -3791,6 +3791,19 @@ class LocationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "'h' or 'v'"):
             top.symmetric("x")
 
+    def test_a_bore_on_a_coned_parts_axis_is_located_by_it(self) -> None:
+        from build123d import Align, Cone, Cylinder
+
+        from cadgen.eng_drawing import Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        seat = Cone(29, 36, 6, align=up) - Cylinder(6.5, 6, align=up)   # a spring perch round a rod
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(seat, views=("top", "front"))
+        top.holes()
+        front.overall()
+        self.assertEqual(self._report(sheet), [], "turned whole, its axis locates its bore")
+
     def test_a_hole_table_or_a_turned_axis_locates_what_it_holds(self) -> None:
         from cadgen.eng_drawing import Sheet
 
@@ -3867,6 +3880,21 @@ class FaceTests(unittest.TestCase):
         self.assertFalse([w for w in warnings if "guessed" in w], warnings)
         with self.assertRaisesRegex(ValueError, "aligned dimension takes no frame"):
             front.dim((20, 0, 8), (10, 0, 30), orientation="aligned", key=True)
+
+    def test_many_unstated_slopes_on_one_part_make_one_line(self) -> None:
+        from build123d import RegularPolygon, extrude
+
+        from cadgen.eng_drawing import Sheet
+
+        bar = extrude(RegularPolygon(20, 8), amount=10)    # an octagon on its corners: every side leans
+        sheet = Sheet("A3", 1.0)
+        top, front = sheet.three_views(bar, views=("top", "front"))
+        top.overall()
+        front.overall(width=False)
+        lines = [line for line in self._report(sheet) if "inclined" in line]
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("8 inclined faces", lines[0])
+        self.assertIn("top.angle(", lines[0])
 
     def test_one_side_of_a_part_stated_symmetric_places_the_other(self) -> None:
         from build123d import Align, Box, Pos
