@@ -403,7 +403,7 @@ class Held:
                       "displayMode": display.get("mode", "solid"), "preview": still.preview,
                       "parts": len(self.structure["prototypes"]), "instances": len(shown["instances"]),
                       "unmeshed": unmeshed, "pose": posed, "exploded": exploded_amount(display) or None,
-                      **({"pmi": len(scene.pmi_drawn)} if pmi else {}),
+                      **({"pmi": len(scene.pmi_drawn), "pmiLeftOut": scene.pmi_left_out} if pmi else {}),
                       "renderer": "occt", **({"font": ", ".join(sorted(scene.fonts))} if scene.fonts else {}),
                       **({"kind": self.kind, "warnings": self.warnings} if self.kind else {}), "timings": timings}
 

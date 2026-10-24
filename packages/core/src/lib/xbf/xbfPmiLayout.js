@@ -18,13 +18,9 @@
 // never placed is anchored at the first face's edge (a first axis: at its end), so its extension
 // lines are short.
 
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const length = a => Math.hypot(a[0], a[1], a[2]);
-const unit = (a) => { const l = length(a); return l > 1e-12 ? scale(a, 1 / l) : null; };
+import { add, cross, dot, length, placeXbfPoint, scale, sub, unit } from "./xbfEntities.js";
+import { invert } from "./xbfKinematics.js";
+
 const mean = points => scale(points.reduce((sum, point) => add(sum, point), [0, 0, 0]), 1 / points.length);
 // Any direction square to `n`: what a side is where nothing else says one.
 const anyPerpendicular = n => unit(Math.abs(n[0]) < 0.9 ? cross(n, [1, 0, 0]) : cross(n, [0, 1, 0]));
@@ -204,17 +200,9 @@ export function pmiMovedPlacement(presentation, label) {
   return { anchor: presentation.anchor.slice(), offset: sub(label, presentation.anchor) };
 }
 
-// A part's placement as the structure holds it: 4 x 4, column-major (`instances[].matrix`).
-const placePoint = (m, p) => [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
-  m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]];
-const placeDirection = (m, d) => [m[0] * d[0] + m[4] * d[1] + m[8] * d[2], m[1] * d[0] + m[5] * d[1] + m[9] * d[2], m[2] * d[0] + m[6] * d[1] + m[10] * d[2]];
-// A placement's inverse: rigid, so its rotation's transpose and the translation taken back through it.
-const inverse = (m) => {
-  const t = [m[12], m[13], m[14]];
-  const r = [m[0], m[4], m[8], 0, m[1], m[5], m[9], 0, m[2], m[6], m[10], 0];
-  const back = placeDirection([...r, 0, 0, 0, 1], t);
-  return [...r, -back[0], -back[1], -back[2], 1];
-};
+// A part's placement as the structure holds it: 4 x 4, column-major (`instances[].matrix`). An offset
+// is turned by it and not moved, at its own length (`placeXbfDirection` would make it a unit).
+const turnedBy = (m, d) => [0, 1, 2].map(row => m[row] * d[0] + m[4 + row] * d[1] + m[8 + row] * d[2]);
 const isMatrix = m => Array.isArray(m) && m.length === 16 && m.every(Number.isFinite);
 
 /**
@@ -224,9 +212,40 @@ const isMatrix = m => Array.isArray(m) && m.length === 16 && m.every(Number.isFi
  */
 export function pmiPresentationToScene(presentation, matrix) {
   if (!presentation || !isMatrix(matrix)) return presentation;
-  return { anchor: placePoint(matrix, presentation.anchor), offset: placeDirection(matrix, presentation.offset) };
+  return { anchor: placeXbfPoint(matrix, presentation.anchor), offset: turnedBy(matrix, presentation.offset) };
 }
 
 export function pmiPresentationToPart(presentation, matrix) {
-  return isMatrix(matrix) ? pmiPresentationToScene(presentation, inverse(matrix)) : presentation;
+  return isMatrix(matrix) ? pmiPresentationToScene(presentation, invert(matrix)) : presentation;
+}
+
+/**
+ * Every annotation of a document as the viewer draws it (`pmiConstruction`), by `key`: each supported
+ * one from the elements its references name where it is drawn (`elements`, by ref: an element id, or
+ * null for one not on the page), as `geometry` reads each; its presentation, and a label dragged
+ * there and not yet written (`placements`, by key), taken from its part's frame (`frame`: the matrix
+ * of the occurrence it is drawn at; none, the scene's) to the scene's; and each later annotation of a
+ * feature (its first element) turned from the one before. One that cannot be drawn is left out.
+ *
+ * @param {ReadonlyArray<{ entry: ReturnType<typeof import("./xbfPmi.js").readXbfPmi>[number],
+ *   elements: ReadonlyArray<string | null>, frame?: number[] | null }>} drawn
+ * @param {{ geometry: (id: string) => { surface: object, points?: number[][] } | null,
+ *   bounds?: { min: number[], max: number[] } | null,
+ *   placements?: ReadonlyMap<string, { anchor: number[], offset: number[] }> | null }} options
+ * @returns {Map<string, NonNullable<ReturnType<typeof pmiConstruction>>>}
+ */
+export function pmiConstructions(drawn, { geometry, bounds = null, placements = null }) {
+  const found = new Map();
+  const turns = new Map();
+  for (const { entry, elements, frame = null } of drawn) {
+    if (!entry.supported) continue;
+    const roles = Object.fromEntries(entry.refs.map((ref, index) => [ref.role, elements[index] ? geometry(elements[index]) : null]));
+    const first = elements[0] || entry.key;
+    const turn = turns.get(first) || 0;
+    turns.set(first, turn + 1);
+    const construction = pmiConstruction({ ...entry, presentation: pmiPresentationToScene(entry.presentation, frame) },
+      { geometry: roles, bounds, turn, placement: pmiPresentationToScene(placements?.get(entry.key) || null, frame) });
+    if (construction) found.set(entry.key, construction);
+  }
+  return found;
 }

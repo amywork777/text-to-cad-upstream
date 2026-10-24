@@ -6,14 +6,14 @@
 //
 //   tree   { expanded, hidden, isolated }   against the document's tree: its assemblies and instances
 //   pose   { preset, given, couplings }     against its mechanism: its pairs, configurations, couplings
-//   pmi    { hidden, off }                  against its having PMI: the annotations hidden, and all of them
+//   pmi    { hidden, off }                  against the parts its PMI is on: the annotations hidden, and all of them
 //
 // `expanded` are the Model tree's open rows (selection ids; a folded group's own row id), `hidden` the
 // instances hidden (`i3`),
 // `isolated` the nodes isolated; `preset` is the Pose row's choice (a configuration, Default or
 // Custom), `given` the values set by hand and `couplings` each coupling's slider (`useXbfPose`);
-// `hidden` the PMI hidden by their ids (the author's, stable across builds, so a rebuild keeps them)
-// and `off` whether the PMI is hidden whole.
+// `hidden` the PMI hidden, each by its part and its author's id (`pmiKey`: `0:top-flat`, an id being
+// unique only on its part), and `off` whether the PMI is hidden whole.
 //
 // A slice comes back only when the document it was written against is still the one on screen: a
 // rebuild that changed the parts renumbers the instances (`i3` is an index), so ids from the old one
@@ -37,12 +37,13 @@ function digest(value) {
 
 /**
  * What each slice is written against: the tree the document's structure has (its tree and its
- * instances, each by its path and prototype), and the mechanism its kinematics has (`useXbfPose`'s
- * key: the pairs, the configurations, the as-built values and the couplings). No structure, no
- * signatures: nothing can come back yet. A document with no mechanism has no pose to keep.
+ * instances, each by its path and prototype), the mechanism its kinematics has (`useXbfPose`'s
+ * key: the pairs, the configurations, the as-built values and the couplings), and the parts its PMI
+ * is on (its prototypes, by name: a hidden annotation is its part's number and its author's id, so a
+ * rebuild of the same parts keeps it, whatever it changed of them). No structure, no signatures:
+ * nothing can come back yet. A document with no mechanism has no pose to keep, one with no PMI none.
  * @param {object | null} structure  The engine's structure (`scene.structure`).
  * @param {object | null} kinematics  The scene's kinematics (`scene.kinematics`).
- * A document with PMI keeps what of it is hidden whatever its build: an annotation's id is its author's.
  * @returns {{ tree: string, pose?: string, pmi?: string } | null}
  */
 export function xbfViewSignatures(structure, kinematics) {
@@ -51,7 +52,7 @@ export function xbfViewSignatures(structure, kinematics) {
     (structure.instances || []).map(instance => [instance.path ?? null, instance.prototype ?? null])]));
   const signatures = { tree };
   if (kinematics) signatures.pose = digest(JSON.stringify([kinematics.pairs, kinematics.configurations, kinematics.asBuilt, kinematics.couplings || null]));
-  if (Array.isArray(structure.pmi) && structure.pmi.length) signatures.pmi = "1";
+  if (Array.isArray(structure.pmi) && structure.pmi.length) signatures.pmi = digest(JSON.stringify((structure.prototypes || []).map(prototype => prototype?.name ?? null)));
   return signatures;
 }
 

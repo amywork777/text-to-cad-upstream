@@ -51,11 +51,11 @@ function harnessBundle() {
  *   `<its first segment>.xbf`; `edit`: what the served structure is made of the fixture's.
  */
 export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure => structure } = {}) {
-  const STRUCTURE = readFileSync(join(FIXTURES, fixture, 'structure.json'));
-  const VERSION = JSON.parse(STRUCTURE).version;
+  const fixtureBytes = readFileSync(join(FIXTURES, fixture, 'structure.json'));
+  const fixtureVersion = JSON.parse(fixtureBytes).version;
   const name = fixture.split('/')[0];
-  const FILE = `${name}.xbf`;
-  const DOC = `/__cad/xbf/api/doc/${name}`;
+  const file = `${name}.xbf`;
+  const docUrl = `/__cad/xbf/api/doc/${name}`;
   let server, browser;
   t.after(async () => {
     await browser?.close();
@@ -63,7 +63,7 @@ export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure
   });
   const { bundle, bundledCss } = await harnessBundle();
   // The document as it is served now: its version moves with each `update` of an open page.
-  let served = { version: VERSION, structure: Buffer.from(JSON.stringify(edit(JSON.parse(STRUCTURE)))), parts: fixture };
+  let served = { version: fixtureVersion, structure: Buffer.from(JSON.stringify(edit(JSON.parse(fixtureBytes)))), parts: fixture };
   let updates = 0;
   const css = await readFile(new URL('../../../dist/styles.css', import.meta.url));
   const json = (response, body) => { response.setHeader('Content-Type', 'application/json'); response.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); };
@@ -77,7 +77,7 @@ export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure
     if (path === '/styles.css') { response.setHeader('Content-Type', 'text/css'); response.end(css); return; }
     if (path === '/harness.css') { response.setHeader('Content-Type', 'text/css'); response.end(bundledCss); return; }
     // The catalog's row for the file, by its absolute path under the `/models` the harness opens a bare `?file=` in.
-    if (path.endsWith('/__cad/catalog')) { json(response, { entries: [{ file: `/models/${FILE}`, kind: 'xbf', hash: VERSION, bytes: STRUCTURE.length }], revision: VERSION }); return; }
+    if (path.endsWith('/__cad/catalog')) { json(response, { entries: [{ file: `/models/${file}`, kind: 'xbf', hash: fixtureVersion, bytes: fixtureBytes.length }], revision: fixtureVersion }); return; }
     if (path.endsWith('/__cad/server')) { json(response, { backend: 'cadgen' }); return; }
     // Quick Edit's packet, as the viewer answers one small enough to travel inline.
     if (path.endsWith('/__cad/prompt-files') && request.method === 'POST') {
@@ -90,8 +90,8 @@ export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure
       return;
     }
     if (path.endsWith('/__cad/xbf')) {
-      if (url.searchParams.get('file') !== `/models/${FILE}`) { notFound(response); return; }
-      json(response, url.searchParams.get('held') ? { held: true } : { doc: name, url: DOC });
+      if (url.searchParams.get('file') !== `/models/${file}`) { notFound(response); return; }
+      json(response, url.searchParams.get('held') ? { held: true } : { doc: name, url: docUrl });
       return;
     }
     const relayed = path.indexOf('/__cad/xbf/api/');
@@ -99,16 +99,16 @@ export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure
       const rest = path.slice(relayed);
       if (rest === '/__cad/xbf/api/look') { json(response, LOOK); return; }
       if (rest === '/__cad/xbf/api/look/environment') { binary(response, ENVIRONMENT); return; }
-      if (rest === DOC) { json(response, served.structure); return; }
+      if (rest === docUrl) { json(response, served.structure); return; }
       // The engine answers a version wait at once with the version it holds: the page paces its next ask.
-      if (rest === `${DOC}/version`) { json(response, { version: served.version, patch: null }); return; }
-      const part = /^\/part\/([0-9a-f]+)$/.exec(rest.slice(DOC.length));
+      if (rest === `${docUrl}/version`) { json(response, { version: served.version, patch: null }); return; }
+      const part = /^\/part\/([0-9a-f]+)$/.exec(rest.slice(docUrl.length));
       if (part) {
         try { binary(response, readFileSync(join(FIXTURES, served.parts, `${part[1]}.xbm`))); } catch { notFound(response); }
         return;
       }
-      if (/^\/part\/[0-9a-f]+\/groups$/.test(rest.slice(DOC.length))) { json(response, { faces: {}, edges: {} }); return; }
-      const fact = /^\/part\/[0-9a-f]+\/(face|edge|vertex)\/(\d+)$/.exec(rest.slice(DOC.length));
+      if (/^\/part\/[0-9a-f]+\/groups$/.test(rest.slice(docUrl.length))) { json(response, { faces: {}, edges: {} }); return; }
+      const fact = /^\/part\/[0-9a-f]+\/(face|edge|vertex)\/(\d+)$/.exec(rest.slice(docUrl.length));
       if (fact) { json(response, { kind: fact[1], ordinal: Number(fact[2]) }); return; }
       notFound(response);
       return;
@@ -136,11 +136,11 @@ export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure
     page.on('pageerror', error => errors.push(error.message));
     // No Worker: what a worker would build is built on the main thread, as for a host without one.
     await page.addInitScript(() => { window.Worker = undefined; });
-    await page.goto(`http://127.0.0.1:${server.address().port}/?file=${FILE}`);
+    await page.goto(`http://127.0.0.1:${server.address().port}/?file=${file}`);
     const update = async (change = structure => structure) => {
       const built = typeof change === 'string';
       const next = built ? JSON.parse(readFileSync(join(FIXTURES, change, 'structure.json'))) : change(JSON.parse(served.structure));
-      if (!built) next.version = `${VERSION}-${(updates += 1)}`;
+      if (!built) next.version = `${fixtureVersion}-${(updates += 1)}`;
       served = { version: next.version, structure: Buffer.from(JSON.stringify(next)), parts: built ? change : served.parts };
       // The page hears it on its next wait (about a second), reads it and puts it on screen.
       await page.waitForFunction(version => window.__cadViewerLoad?.complete && window.__cadViewerLoad.modelKey.endsWith(`:${version}`), next.version);

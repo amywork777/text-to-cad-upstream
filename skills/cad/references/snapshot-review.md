@@ -67,8 +67,16 @@ A document carrying PMI ([`pmi.annotate`](pmi.md)) has it drawn as the
 viewer shows it: each callout at its placement, its leader to the feature, a callout
 whose reference broke in red (missing, invalid) or amber (ambiguous) at the place the
 code gave it. Read those before the picture: the reference no longer names what the
-code meant. `pmi=off` (`display.pmi` false) draws the model alone; an exploded, posed
-or Preview picture draws no PMI, and asking for it there is refused.
+code meant. A part placed more than once has its PMI drawn at its first placement the
+picture shows. What a picture cannot draw is left out of it, so fewer callouts than the
+code wrote is not a clean picture. Each annotation left out is a warning on stderr
+(`warning: plate: the picture does not draw PMI hole-diameter (invalid): ...`), and with
+`--json`, `pmi` counts the callouts drawn and `pmiLeftOut` lists each one left out, as
+`{id, part, status, reason}` (an id is unique only on its part) -- a kind the viewer
+does not draw (in the document's words where it has them), one whose part the picture
+hides, or a broken one the code never placed. Read it with the red callouts. `pmi=off`
+(`display.pmi` false) draws the model alone; an exploded, posed or Preview picture draws
+no PMI, and asking for it there is refused.
 
 `--grid` draws the measuring grid (red X and green Y axes) under the model.
 `--preview` draws Preview's photographic look instead of a mode.

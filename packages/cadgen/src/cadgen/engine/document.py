@@ -138,10 +138,13 @@ class Tree:
     # The model's build closure (``previous.manifest``, as text), written on the main label;
     # None for none.
     closure: str | None = None
-    # What each annotation's refs named on the model's last build (``pmi.remember``), and the
-    # annotations resolved against the parts as built (``pmi.resolve``), made once.
-    pmi_previous: dict = field(default_factory=dict)
+    # The annotations resolved against the parts as built (``pmi.resolve``), made once; what the
+    # build warns of them (``pmi.warn``), its report's and never the document's; and, for a tree
+    # made of a document another system wrote, that document and each of its prototypes' part, its
+    # GD&T copied as read (``pmi.copy``).
     pmi_resolved: list | None = None
+    pmi_warnings: dict = field(default_factory=dict)
+    pmi_source: tuple | None = None
 
     @property
     def pmi(self) -> list[tuple["Part", tuple]]:
@@ -883,7 +886,7 @@ def _convert(tree: Tree, records: list[_Record], kept: Kept) -> Any:
         mechanism.write(doc, tree.mechanism, lambda path: converter.occurrence(tree, labels, path))
     places = {id(prototype): at for at, prototype in enumerate(tree.order)}
     pmi.write(doc, tree, lambda part: labels[places[id(part)]])
-    kept.pmi = bool(tree.pmi)
+    kept.pmi = bool(tree.pmi) or tree.pmi_source is not None
     kept.doc, kept.records, kept.tables = doc, records, _tables(records)
     kept.tools = {tag for tag in _held_children(doc.Main()) if tag != mechanism.TAG}
     kept.converted, kept.patched = len(records), False
@@ -898,7 +901,7 @@ def _patch(kept: Kept, tree: Tree, records: list[_Record]) -> Any:
 
     from cadgen.engine import mechanism
 
-    if kept.pmi or tree.pmi:
+    if kept.pmi or tree.pmi or tree.pmi_source is not None:
         # PMI links GD&T labels to the sub-shape labels a patch forgets and makes again: a
         # document holding it, or about to, is converted whole.
         return None
@@ -1345,7 +1348,7 @@ class Loaded:
                                                   lambda path: _matrix(self.worlds[path]))
         from cadgen.engine import pmi
 
-        records = pmi.records_of_document(self.doc, self.prototypes)
+        records = pmi.records_of_document(self.doc, self.prototypes, self.name)
         if records:
             found["pmi"] = pmi.entries(records, found)
         return found

@@ -15,7 +15,7 @@ const GLYPHS = Object.freeze({
   datum: <path d="M5 18h14l-7-11Z" fill="currentColor" />,
   // A dimension: two extension lines and the line between them, its arrowheads.
   dimension: <><path d="M4 5v14M20 5v14M4 12h16" /><path d="m7 9-3 3 3 3M17 9l3 3-3 3" /></>,
-  // A frame: two cells, a row of a frame's kind (as the section's tile is, the kit's `PmiIcon`).
+  // A frame: two cells, a row of a frame's kind (the PMI section's tile too, `PmiIcon`).
   frame: <><rect x="2.5" y="7" width="19" height="10" rx="1" /><path d="M9.5 7v10" /></>,
   // What the viewer does not draw: a frame with a question in it.
   unsupported: <><rect x="3" y="5" width="18" height="14" rx="1.5" strokeDasharray="2.5 2.5" /><path d="M10 10a2 2 0 1 1 2.5 1.9c-.4.2-.5.5-.5.9v.4M12 16h.01" /></>,
@@ -26,4 +26,9 @@ export function PmiGlyph({ name, ...props }) {
   const glyph = GLYPHS[name];
   if (!glyph) return null;
   return <svg {...SVG} data-pmi-glyph={name} {...props}>{glyph}</svg>;
+}
+
+/** The PMI section's icon, its file sidebar tile and tab (`ToolPanel`'s `icon`): a feature control frame. */
+export function PmiIcon(props) {
+  return <PmiGlyph name="frame" {...props} />;
 }

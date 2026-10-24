@@ -199,6 +199,7 @@ class Scene:
         self.text_quads: list[tuple[np.ndarray, str]] = []  # their world corners and colours
         self.screen_marks: list[dict[str, Any]] = []  # painted over the frame: Measure's
         self.pmi_drawn: list[tuple[dict[str, Any], Any]] = []  # painted over the frame: the PMI's callouts
+        self.pmi_left_out: list[dict[str, Any]] = []  # the PMI not drawn, and why (pmi.left_out)
         self.pmi_points: np.ndarray | None = None  # their labels and dimension lines, which a fitted frame takes in
         self.pmi_bounds: tuple[Any, Any] | None = None  # the model's box at rest they were laid out by (pmi.rest_bounds)
         self.fonts: set[str] = set()  # the faces the words of the frame were set in (text.face_source)
@@ -572,6 +573,7 @@ class Scene:
         self.text_quads = []
         self.screen_marks = []
         self.pmi_drawn = []
+        self.pmi_left_out = []
         self.pmi_points = None
         self.pmi_bounds = None
         self.fonts = set()
@@ -749,14 +751,17 @@ class Scene:
     def pmi(self) -> None:
         """The document's PMI (``structure["pmi"]``), painted over the finished frame as the viewer
         draws it over its page (``pmi.py``): each callout the viewer draws, where its layout puts it
-        in the document at rest. Made before the camera is framed: a fitted frame takes in each
-        callout's label and dimension line (``placed_points``), so none is cut off."""
+        in the document at rest, at its part's first placement shown; what is not drawn is said, and
+        why (``pmi_left_out``). Made before the camera is framed and after the hidden parts are
+        known: a fitted frame takes in each callout's label and dimension line (``placed_points``),
+        so none is cut off."""
         from cadgen.engine.render import pmi
         from cadgen.engine.render.text import face
 
         self.pmi_bounds = pmi.rest_bounds(self.rest_structure, self.meshes)
-        found = pmi.constructions(self.rest_structure, self.meshes, self.pmi_bounds)
+        found = pmi.constructions(self.rest_structure, self.meshes, self.pmi_bounds, self.hidden)
         self.pmi_drawn = [(entry, made) for entry, made in found if made is not None]
+        self.pmi_left_out = pmi.left_out(self.rest_structure, found, self.hidden)
         points = [made["label"] for _entry, made in self.pmi_drawn]
         for _entry, made in self.pmi_drawn:
             if made["dimension"]:
@@ -764,6 +769,8 @@ class Scene:
         self.pmi_points = np.array(points, float) if points else None
         if self.pmi_drawn:
             self.fonts.add(face(*pmi.TEXT).name)
+        if any(entry["kind"] == "datum" for entry, _made in self.pmi_drawn):
+            self.fonts.add(face(*pmi.LETTER).name)
 
     # --- preview ------------------------------------------------------------------------------
 

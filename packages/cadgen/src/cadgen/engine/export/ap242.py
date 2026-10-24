@@ -403,10 +403,11 @@ def _refs(values: Any):
             yield from _refs(value)
 
 
-def report(path: Path) -> dict[str, Any]:
+def report(path: Path, data: bytes | None = None) -> dict[str, Any]:
     """What a STEP file's PMI says: its schema, dimensions, datums and tolerances, the face names
-    it uses more than once, and its problems."""
-    text = path.read_text(encoding="utf-8")
+    it uses more than once, and its problems. ``data`` is the file's bytes where they are read
+    already (``verify``)."""
+    text = (path.read_bytes() if data is None else data).decode("utf-8")
     found = Report(parse(text))
     schema = _SCHEMA.search(text.split("DATA;", 1)[0])
     result = {"file": path.name, "schema": schema.group(1) if schema else None,
@@ -526,11 +527,11 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any]) -> dict[str, A
 
 
 def verify(entries: list[dict[str, Any]], target: Path) -> dict[str, Any]:
-    """``compare`` of the file at ``target``, with the SHA-256 of the bytes checked: the result
-    belongs to that file, whatever the viewer opens next."""
-    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    """``compare`` of the file at ``target``, with the SHA-256 of the bytes checked, read once: the
+    result belongs to those bytes, whatever the viewer opens next."""
+    data = target.read_bytes()
     try:
-        result = compare(entries, report(target))
+        result = compare(entries, report(target, data))
     except Exception as error:  # noqa: BLE001 - a file the reader cannot read is a failed check, never a failed export
         result = {"matched": 0, "total": len(entries), "problems": [f"The STEP reader could not complete the check: {error}"]}
-    return {**result, "sha256": digest}
+    return {**result, "sha256": hashlib.sha256(data).hexdigest()}

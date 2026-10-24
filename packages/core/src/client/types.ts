@@ -228,7 +228,11 @@ export type ExportFormat = 'step' | 'glb' | 'stl' | 'threemf' | 'dxf' | 'xbf' | 
 export interface ExportSource { doc: string; revision: string; part: string | null; pose: Record<string, number> | null }
 export interface ExportOption {
   format: ExportFormat; label: string; extension: string; reason: string | null;
-  /** STEP only: the document carries PMI, which the export writes and checks in the file. */
+  /**
+   * Whether the PMI decided the row: STEP's wherever the document carries PMI (which the export
+   * writes and checks in the file), XBF's where it is made again (a part, a converted document).
+   * With a `reason`, the format would not carry the PMI whole.
+   */
   pmi?: boolean;
 }
 export interface ExportRequest { requestId: string; epoch: string; source: ExportSource; format: ExportFormat }

@@ -86,14 +86,18 @@ nominal measured anew and its tolerance as written. Otherwise its status says wh
 
 - `missing`: it names no face (the face was removed, or is made another way);
 - `ambiguous`: it names several faces;
-- `invalid`: it names a face the annotation cannot stand on (a diameter on a plane),
-  or, written as text, a face of another kind than on the model's last build (a
-  hole's name that passed to a flat side of the cut that replaced it).
+- `invalid`: it names a face the annotation cannot stand on (a diameter on a plane).
 
 Such an annotation stays in the `.xbf` with its values, linked to nothing, and is
-listed in the build report's `pmi` (`{"annotations", "problems", "unattached"}`). A
-STEP is refused rather than written without it, naming each one. Fix the ref in the
-code, or remove the annotation: a ref written anew is held to the face it names now.
+listed in the build report's `pmi` (`{"annotations", "problems"}`, with `unattached`
+where any are). A STEP is refused rather than written without it, naming each one.
+Fix the ref in the code, or remove the annotation.
+
+A ref written as text that names a face of another kind than on the last build (a
+hole's name that passed to a flat side of the cut that replaced it) is measured as it
+is now, and the build warns of it once, on that build: `warning: pmi: ...` in its log
+and `warnings` in its report's `pmi`. Read the warning, and point the ref at the face
+meant: the next build of the same code no longer says it.
 
 ## Read and check
 
@@ -107,15 +111,22 @@ for entry in pmi.read("XBF/plate.xbf"):   # or a .step
 Each entry has `id`, `kind` (`datum`, `dimension`, `geometric_tolerance`), `status`
 (`ok`, `missing`, `ambiguous`, `invalid`), `problem`, `refs` (each with its canonical
 ref and status), and one of `datum`, `dimension` or `geometric_tolerance` holding its
-values. PMI read from another system's STEP that this does not model is listed as
-`kind: "unsupported"`, never dropped.
+values. PMI read from another system's STEP that this does not model whole (another
+characteristic, limits, a fit, modifiers, a link to an edge or a point) is listed as
+`kind: "unsupported"` with its `xcaf_type` and a `reason`, never dropped, and a
+nominal the file holds says `"source": "file"`.
 
 ## Export
 
 `@step`, `cadgen export XBF/plate.xbf STEP/plate.step` and the viewer's Export
-(**STEP (AP242)**) write the PMI. While a document holds PMI, the exports that would
-rebuild it without its PMI are refused: a posed STEP, a STEP or `.xbf` of one part
-(`--part`), and an `.xbf` from a STEP.
+(**STEP (AP242)**) write the PMI. While a document holds PMI the code made, the
+exports that would rebuild it without its PMI are refused: a posed STEP, and a STEP
+or `.xbf` of one part (`--part`).
+
+A vendor's STEP converts as ever (`cadgen export vendor/motor.step vendor/motor.xbf`):
+the `.xbf` keeps the file's GD&T as read, and an export of either writes it. What an
+export of a vendor's document cannot carry whole (a posed or partial one carries no
+PMI) is said in its log, `warning: pmi: ...`, never refused.
 
 The viewer's Export reads each STEP it writes back with a reader of its own, without
 the kernel, and matches every annotation to the file: values, units, datum order,

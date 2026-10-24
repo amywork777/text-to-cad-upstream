@@ -3,7 +3,8 @@
 The assembly with its instance and product names, colours per part and per painted face,
 material names and densities (the writer's material mode), the element names on face
 and edge sub-shape labels (``write.stepcaf.subshapes.name``), and the document's semantic PMI
-(``pmi``: the writer's GD&T mode), whole or refused. A document as built is
+(``pmi``: the writer's GD&T mode; ``export.translate`` refuses a STEP that would drop the code's,
+``pmi.refuse_dropped``). A document as built is
 written from its XCAF document itself; a posed one, or a subtree, from the view made a
 document again (``tree.tree_of``), every placement its own. The mechanism, its
 configurations and the model's provenance are never in a STEP: the kernel has no writer
@@ -38,7 +39,6 @@ WRITTEN_STAMP = "2000-01-01T00:00:00"
 
 
 def write(view: Any, path: Path) -> None:
-    _pmi_written_whole(view)
     doc = view.source.xcaf
     if doc is None or view.posed or view.parted:
         from cadgen.engine import document
@@ -46,24 +46,6 @@ def write(view: Any, path: Path) -> None:
 
         doc = document.to_xcaf(tree_of(view))
     write_document(doc, path)
-
-
-def _pmi_written_whole(view: Any) -> None:
-    """A document's semantic PMI (``pmi``) is written whole or the STEP is refused, by name: an
-    annotation linked to no geometry (its status not ok) would be dropped by the writer, and a
-    posed or partial view is a document made again (``tree.tree_of``), which carries none."""
-    from cadgen.engine.export import ExportRefused
-
-    entries = view.source.structure.get("pmi") or []
-    if not entries:
-        return
-    if view.posed or view.parted:
-        raise ExportRefused(f"the document holds {len(entries)} PMI annotation(s), and a posed or partial STEP is a "
-                            "document made again, which carries none: export it as built, whole")
-    unlinked = [f"{entry['id']} ({entry['status']}: {entry['problem']})" for entry in entries if entry["status"] != "ok"]
-    if unlinked:
-        raise ExportRefused("a STEP would drop PMI linked to no geometry: " + "; ".join(unlinked)
-                            + ". Fix the refs in the model, or remove the annotations")
 
 
 def write_document(doc: Any, path: Path) -> None:

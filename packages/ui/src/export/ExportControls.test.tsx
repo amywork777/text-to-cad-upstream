@@ -129,6 +129,30 @@ it('says a STEP carries PMI only where the document has PMI', async () => {
   expect(screen.getByText(/Includes the built model’s PMI/)).toBeTruthy();
 });
 
+it('says why a format is not offered where the PMI decided it, STEP and XBF alike, and only there', async () => {
+  const { service } = server();
+  // As the engine's rows are: `pmi` on a row the PMI decided, and on STEP wherever the document holds PMI.
+  const rows = (step: { pmi: boolean, reason: string | null }, xbf: { pmi: boolean, reason: string | null }) => ({ ...formats, formats: [
+    { format: 'step', label: 'STEP (AP242)', extension: '.step', ...step },
+    { format: 'glb', label: 'GLB', extension: '.glb', reason: null },
+    { format: 'xbf', label: 'XBF', extension: '.xbf', ...xbf }] });
+  const user = userEvent.setup();
+  // A part of a document holding PMI: neither would carry it.
+  service.options.mockResolvedValue(rows({ pmi: true, reason: 'part.xbf holds 1 PMI annotation(s): export it whole' },
+    { pmi: true, reason: 'an xbf of one part carries none of its PMI' }));
+  mount(service, { choose: vi.fn() });
+  await open(user);
+  expect(screen.getByText('STEP (AP242): part.xbf holds 1 PMI annotation(s): export it whole')).toBeTruthy();
+  expect(screen.getByText('XBF: an xbf of one part carries none of its PMI')).toBeTruthy();
+  cleanup();
+  // The whole document: its STEP carries the PMI, and its XBF is not offered for another reason, unsaid.
+  service.options.mockResolvedValue(rows({ pmi: true, reason: null }, { pmi: false, reason: 'Use Download original XBF, or select a part to extract.' }));
+  mount(service, { choose: vi.fn() });
+  await open(user);
+  expect(screen.getByText(/^Includes the built model’s PMI/)).toBeTruthy();
+  expect(screen.queryByText(/^XBF: /)).toBeNull();
+});
+
 it('shows verification from the completed STEP job with its importer limitation', async () => {
   const { service, waiting, jobs } = server();
   mount(service, { choose: vi.fn(async () => destination()) });

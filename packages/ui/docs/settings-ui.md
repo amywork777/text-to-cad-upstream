@@ -784,7 +784,7 @@ drawn as the chip is, 20px like the note's lines so it sits in its rows without 
 them out. A click on a pill selects it whole, highlighted in the selection's colour, so
 Backspace, Delete or typing replaces it as it would selected text. Its chips are
 **Annotation** (its X clears the ink), then each change asked for in the view (an engine document's
-PMI: "Add flatness top-flat", "Change thickness", "Move top-flat"; its card the call it asks the code
+PMI: "Add flatness", "Change thickness", "Move top-flat"; its card the call it asks the code
 to make, its click copies the request, its X drops it), then the selection. The Annotation chip does not copy
 references or write files. Copy Prompt, Queue and Send
 include their data in the snapshot packet; only selection chips copy individual references. A written note keeps it open whatever

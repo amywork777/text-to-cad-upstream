@@ -613,31 +613,9 @@ def _finish(model: Any, result: Any, run: Any, report: dict[str, Any], log: Call
         tokens.append(cached.token)
         built[cached.key] = cached
     document.merge(tree)
-    from cadgen.engine import pmi
-
-    if tree.pmi:
-        # Each ref held to the kind of face it named on the model's last build: this process's, or
-        # after a restart its xbf's (a ref whose face changed kind is flagged, not measured anew).
-        remembered = _WRITTEN.get(f"{model.script}::{model.name}")
-        xbf_path = next((path for kind, path in targets if kind == "xbf"), None)
-        if remembered is not None and remembered.tree is not None:
-            pmi.remember(tree, pmi.previous_of_tree(remembered.tree))
-        elif xbf_path is not None and Path(xbf_path).is_file():
-            pmi.remember(tree, pmi.previous_of_file(Path(xbf_path)))
-
-        # Every annotation resolved against the part as built now: one not ok is said, kept in
-        # the document with its status, and refused by a STEP export (``pmi``).
-        report["pmi"] = {"annotations": sum(len(given) for _part, given in tree.pmi), "problems": pmi.problems(tree)}
-        for problem in report["pmi"]["problems"]:
-            log(f"pmi {problem['part']}/{problem['id']}: {problem['status']}: {problem['problem']}")
-    # Annotations this model's body gave a shape its result does not hold (one a later operation
-    # replaced): said, never dropped in silence.
-    lost = pmi.unattached(run, f"{model.script}::{model.name}", tree)
-    if lost:
-        report.setdefault("pmi", {"annotations": 0, "problems": []})["unattached"] = lost
-        log(f"pmi: {', '.join(lost)} given to a shape that is not in the result (annotate the shape returned)")
     signature = (_signature(tree), tuple(tokens), tree.closure)
     timings["names"] = round(time.perf_counter() - clock, 4)
+    _pmi(model, tree, run, report, log, xbf)
     report["parts"] = len(tree.parts)
     report["named"] = named
     for kind, path in targets:
@@ -646,6 +624,37 @@ def _finish(model: Any, result: Any, run: Any, report: dict[str, Any], log: Call
     _BUILT[os.path.normcase(model.address)] = built
     _write(model, plan, tree, signature, report, log)
     timings["total"] = round(sum(value for name, value in timings.items() if name != "total"), 4)
+
+
+def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[[str], None], xbf: Any) -> None:
+    """The tree's PMI resolved and said, the build report's ``pmi``: how many annotations, each one
+    not ok and why (kept in the document linked to nothing, refused by a STEP), each ref that names
+    another kind of face than on the model's last build (``warnings``: its last tree in this
+    process, else its saved ``xbf``), and those its body gave a shape the result does not hold
+    (``unattached``); each logged, none dropped in silence. Timed as ``pmi``."""
+    from cadgen.engine import pmi
+
+    clock = time.perf_counter()
+    if tree.pmi:
+        remembered = _WRITTEN.get(f"{model.script}::{model.name}")
+        if remembered is not None and remembered.tree is not None:
+            pmi.warn(tree, pmi.faces_named(remembered.tree))
+        elif xbf is not None and Path(xbf).is_file():
+            pmi.warn(tree, pmi.faces_named_in(Path(xbf)))
+        report["pmi"] = {"annotations": sum(len(given) for _part, given in tree.pmi), "problems": pmi.problems(tree)}
+        for problem in report["pmi"]["problems"]:
+            log(f"pmi {problem['part']}/{problem['id']}: {problem['status']}: {problem['problem']}")
+        warnings = pmi.warnings(tree)
+        if warnings:
+            report["pmi"]["warnings"] = warnings
+        for text in warnings:
+            log(f"warning: pmi: {text}")
+    lost = pmi.unattached(run, f"{model.script}::{model.name}", tree) if run is not None else []
+    if lost:
+        report.setdefault("pmi", {"annotations": 0, "problems": []})["unattached"] = lost
+        log(f"pmi: {', '.join(lost)} given to a shape that is not in the result (annotate the shape returned)")
+    if "pmi" in report:
+        report["timings"]["pmi"] = round(time.perf_counter() - clock, 4)
 
 
 def _write(model: Any, plan: list, tree: Any, signature: tuple, report: dict[str, Any],

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import build123d as bd
 
-from cadgen.engine import pmi, step, xbf
+from cadgen.engine import materials, pmi, step, xbf
 
 
 def _body():
@@ -34,6 +34,7 @@ def _body():
     for x in (-38, 38):
         body -= bd.Pos(x, 36, 28) * bd.Rot(90, 0, 0) * bd.Cylinder(3.2, 10)
     body.label = "avionics bracket"
+    body.material = materials.aluminium_7075
     return body
 
 

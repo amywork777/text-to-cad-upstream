@@ -1116,7 +1116,44 @@
      6,
      6
     ],
-    "dimension": null,
+    "dimension": {
+     "from": [
+      -50,
+      6,
+      6
+     ],
+     "to": [
+      -6,
+      6,
+      6
+     ],
+     "extensions": [
+      [
+       [
+        -50,
+        0,
+        6
+       ],
+       [
+        -50,
+        6,
+        6
+       ]
+      ],
+      [
+       [
+        -6,
+        0,
+        6
+       ],
+       [
+        -6,
+        6,
+        6
+       ]
+      ]
+     ]
+    },
     "presentation": {
      "anchor": [
       -25,
@@ -1129,8 +1166,7 @@
       0
      ]
     },
-    "placed": "given",
-    "broken": true
+    "placed": "given"
    }
   },
   {

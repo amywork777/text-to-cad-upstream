@@ -351,18 +351,14 @@ def _subtree(structure: dict[str, Any], part: str) -> tuple[dict[str, Any], tupl
 # --- the one call ------------------------------------------------------------------------------
 
 
-def pmi_kept(source: Any) -> None:
-    """An xbf written from a source holding PMI is refused, by name: it is a document made again from
-    the view (``tree.tree_of``), which carries none. (A posed or partial STEP: ``step.write``.)"""
-    annotations = source.structure.get("pmi") or []
-    if annotations:
-        raise ExportRefused(f"{source.name} holds {len(annotations)} PMI annotation(s), and an xbf written from it "
-                            "is a document made again, which carries none yet: export it as built, whole")
-
-
-def translate(document: Any, kind: str | None, path: Any, *, pose: Any = None, part: str | None = None) -> int:
+def translate(document: Any, kind: str | None, path: Any, *, pose: Any = None, part: str | None = None,
+              log: Callable[[str], None] | None = None) -> int:
     """Write ``document`` (a ``Source``, or the path of an ``.xbf``/``.step``) to ``path``
-    as ``kind`` (from the suffix when None); returns the file's size."""
+    as ``kind`` (from the suffix when None); returns the file's size. A file that would not carry
+    whole the PMI the code made is refused by name (``pmi.refuse_dropped``); what one of a document
+    another system wrote leaves out is said to ``log``."""
+    from cadgen.engine import pmi
+
     path = Path(path)
     kind = kind or kind_of(path)
     if kind not in KINDS:
@@ -375,9 +371,10 @@ def translate(document: Any, kind: str | None, path: Any, *, pose: Any = None, p
             raise ExportRefused("a posed xbf is refused: a pose is a request, never a document")
         if not source.foreign and part is None and source.path is not None and source.path.suffix.lower() == ".xbf":
             raise ExportRefused("an xbf is written from another xbf only with --part: the document already is one")
-    if kind == "xbf":
-        pmi_kept(source)
     view = source.view(pose=pose, part=part)
+    pmi.refuse_dropped(view, kind)
+    for entry, why in pmi.dropped(view, kind) if log is not None else ():
+        log(f"warning: pmi: {path.name}: {entry['id']} is not carried whole: {why}")
     path.parent.mkdir(parents=True, exist_ok=True)
     spec = KINDS[kind]
     if not spec.atomic:

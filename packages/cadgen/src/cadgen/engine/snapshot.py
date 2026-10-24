@@ -775,6 +775,7 @@ def _occt(document: Path, out: Path, still: Still, daemon: bool, source: Any, st
 def _written(document: Path, out: Path, data: bytes, report: dict[str, Any], started: float) -> dict[str, Any]:
     """A picture drawn, written to ``out``: its warnings said, and what was drawn."""
     _warn(report.get("unmeshed") or {})
+    _warn_left_out(document, report.get("pmiLeftOut") or [])
     for warning in report.get("warnings") or []:
         print(f"warning: {document.name}: {warning}", file=sys.stderr)
     write_png(out, data)
@@ -1020,6 +1021,15 @@ def _warn(unmeshed: dict[str, list[int]]) -> dict[str, list[int]]:
               f"{', '.join(map(str, faces))} without triangles, so the picture does not draw "
               f"{'them' if len(faces) > 1 else 'it'}", file=sys.stderr)
     return unmeshed
+
+
+def _warn_left_out(document: Path, left: list[dict[str, Any]]) -> None:
+    """A warning for each of the document's PMI the picture leaves out (``render/pmi.left_out``),
+    and why: its part's name first, the document's for one on no part; a broken one's status said."""
+    for item in left:
+        status = "" if item["status"] == "ok" else f" ({item['status']})"
+        print(f"warning: {item['part'] or document.name}: the picture does not draw PMI {item['id']}{status}: "
+              f"{item['reason']}", file=sys.stderr)
 
 
 def _arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

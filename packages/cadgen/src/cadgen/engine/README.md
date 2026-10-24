@@ -97,7 +97,9 @@ def hinge():
    `TDataStd_NamedData` beside it for the rest; `XCAFDoc_VisMaterial`: PBR), element names
    on face, edge and vertex sub-shape
    labels, an assembly's mechanism (links, pairs, ground, configurations: see
-   Kinematics), and each part's semantic PMI as XCAF's own GD&T objects (see **PMI**); its main label names what wrote it (`cadgen.engine xbf/4 (cadgen
+   Kinematics), and each part's semantic PMI as XCAF's own GD&T objects (`XCAFDoc_DimTolTool`'s
+   datums, dimensions and geometric tolerances, and beside each a `TDF_Reference` to its part and
+   one `TDataStd_AsciiString` of cadgen's JSON for the rest: see **PMI**); its main label names what wrote it (`cadgen.engine xbf/4 (cadgen
    <release>)`, `document.Loaded.writer`) and holds the model's build closure
    (**Build closure**). No code location is on an element. STEP, GLB, STL, 3MF and,
    of a planar document, DXF are translations of it (**Exports**).
@@ -259,9 +261,9 @@ is explicitly restarted. Session state is memory only and is recreated after res
 | `previous.py` | the model's build closure on its xbf's main label (`manifest`), the release from the version beside the code, and the closure made again before the body runs (`again`) |
 | `document.py` | result to XCAF (prototypes, instances, names, colours, materials, element names; a mesh face refused, `mesh_faces`), a warm build's patch of the document it kept, atomic BinXCAF save, read-back of an xbf or a foreign STEP |
 | `reader.py` | what a model imports: an XCAF document described as data and assembled into a build123d tree (`read_step`, `read_xbf`); the reader process a build's STEP files are parsed in; a mesh file as data (`read_mesh`, `Mesh`); a read of a file the build writes refused (`refuse_written`) |
-| `pmi.py` | semantic PMI: datums, dimensions and geometric tolerances on a part's faces (`pmi.annotate`), resolved each build (ok, missing, ambiguous, invalid), written as XCAF's GD&T objects, read back as the structure's `pmi` (**PMI**) |
+| `pmi.py` | semantic PMI: datums, dimensions and geometric tolerances on a part's faces (`pmi.annotate`), resolved each build (ok, missing, ambiguous, invalid), written as XCAF's GD&T objects, read back as the structure's `pmi`; another system's GD&T listed as read, and copied into an xbf of its STEP (**PMI**) |
 | `refs.py` | references to geometry: the ref grammar, occurrence paths, resolution by name in the latest build, `select` (**References**) |
-| `export/` | `translate` and the kind registry (`__init__`); an xbf packaged with its closure's files (`cadz`); STEP through the XCAF writer (`step`); placements and meshes from the one mesh cache (`mesh`); GLB, 3MF, binary STL (`glb`, `threemf`, `stl`); a planar document's drawing through build123d's DXF exporter, with the drawing checks (`dxf`); a motion baked into a glTF clip (`motion`); a view made a document again, for a posed or parted STEP and an xbf (`tree`) |
+| `export/` | `translate` and the kind registry (`__init__`); an xbf packaged with its closure's files (`cadz`); STEP through the XCAF writer (`step`); a STEP's semantic PMI read back without OCCT and checked against the document's (`ap242`); placements and meshes from the one mesh cache (`mesh`); GLB, 3MF, binary STL (`glb`, `threemf`, `stl`); a planar document's drawing through build123d's DXF exporter, with the drawing checks (`dxf`); a motion baked into a glTF clip (`motion`); a view made a document again, for a posed or parted STEP and an xbf (`tree`) |
 | `mesh.py` | per-part tessellation at FreeCAD's default tolerance, edge classes, element facts, and the wire format |
 | `serve.py`, `page/` | HTTP: structure JSON and one binary buffer per part; a STEP read in a reader process, held by its bytes; a minimal three.js page |
 | `access.py` | which pages may read a served document from another origin: loopback ones |
@@ -566,9 +568,12 @@ and each stage's milliseconds (`serveMs`, `meshMs`, `sceneMs` when a scene is ma
 `frameMs`, `drawMs`, `renderMs`, `totalMs`; a file no document: `readMs` its reader, `openMs` its
 render process opening it). `parts` and `exploded` for a document that places one
 part are refused by name before anything renders. A document's PMI (**PMI**) is drawn
-as the viewer shows it: each callout's words, leader and dimension at its placement, a callout whose
-reference broke at its code placement in its status's colour, a leader to a feature the model hides
-faint; the camera's fit takes the callouts in, and `--json` reports how many were drawn (`pmi`).
+as the viewer shows it: each callout's words, leader and dimension at its placement, at its part's
+first placement the picture shows, every label over every line, a callout whose reference broke at
+its code placement in its status's colour, a leader to a feature the model hides faint; the camera's
+fit takes in the callouts drawn, and `--json` reports how many were drawn (`pmi`) and each
+annotation left out, with why (`pmiLeftOut`, `{id, part, status, reason}`): one the viewer does not
+draw, one whose part the picture hides, or a broken one its code never placed.
 `pmi=off` (`display.pmi` false) draws none. PMI is shown only on the parts as made, as the viewer
 shows it: an exploded, posed or Preview picture draws none, and asking for it there (`pmi` or
 `pmi=on`, `display.pmi` true), or of a document that carries none, is refused by name. `--annotation FILE` draws the viewer's annotation over the
@@ -709,7 +714,7 @@ target and moved over it; a DXF only when its bytes change.
 
 - **Sources are documents**: an `.xbf` or a `.step` (read into a document first); from Python,
   a `Model` (built first, in its worker) or built code (a `Built`) too. A mesh is never a
-  source: it has no B-rep. An xbf is written from a STEP, or from an xbf with `--part`; a posed xbf is refused (a
+  source: it has no B-rep. An xbf is written from a STEP (its GD&T copied as read, **PMI**), or from an xbf with `--part`; a posed xbf is refused (a
   pose is a request, never a document). Several destinations read the document once; an export
   runs in the worker that built the document while the file is as it left it, else in the
   daemon's documents worker, which reads it.
@@ -721,8 +726,9 @@ target and moved over it; a DXF only when its bytes change.
   roughness, emissive and the rest: a material reads back matte), every physical field but the
   density, a face's material (the face keeps its colour), the mechanism and its configurations,
   and the model's key and provenance. The parts' semantic PMI is written as AP242's (**PMI**),
-  whole or refused: an annotation linked to no geometry, a posed or a partial STEP, is refused
-  by name. The writer's two run-dependent choices are settled
+  the code's whole or refused: an annotation linked to no geometry, a posed or a partial STEP, is
+  refused by name; a document another system wrote is written, what it leaves out said. The
+  writer's two run-dependent choices are settled
   before it writes: the header's time stamp is `step.WRITTEN_STAMP` (the xbf's date), and the
   colour presentations, which it keeps in a map keyed by shape, are put in the order of the
   shapes they style, so the same document is the same STEP in any process on any day.
@@ -1057,29 +1063,45 @@ return pmi.annotate(body,
   the part's frame) is where a viewer draws the callout, never a requirement and never in a STEP.
 - **Resolution.** Each build resolves every ref against the part as built: `ok`, `missing` (it
   names no face; the problem gives the name's atom now, where there is one), `ambiguous` (several:
-  `candidates` lists them) or `invalid` (a face the annotation cannot stand on). A ref written as
-  text is also held to the kind of face, plane or cylinder, it named on the model's last build --
-  this process's previous document, else the model's xbf on disk -- and is `invalid` when it names
-  another kind now: a hole whose name passed to a flat side of the cut that replaced it. The flag
-  stays until the code writes that ref anew; a ref selected as a `Face` is never held to a kind.
-  The build report's `pmi` is `{"annotations", "problems", "unattached"}`; the document keeps an
-  annotation that is not `ok` with its status and values, linked to no geometry, and a STEP export
-  refuses to drop it, naming each one.
-- **The document.** The values, units, kinds and face links are XCAF's `XCAFDimTolObjects` on the
-  GD&T tool, linked to the faces' sub-shape labels (the STEP writer's input), and beside each one
-  cadgen attribute (JSON) holds what XCAF has no place for: the id, the label, the refs as
-  written, the status and its problem, and the presentation; an unlinked annotation's values too,
-  since XCAF gives values meaning only through geometry. A document without PMI holds nothing new.
-  A document holding PMI is converted whole on a warm build (GD&T labels link the sub-shape labels
-  a patch remakes).
+  `candidates` lists them) or `invalid` (a face the annotation cannot stand on: a diameter on a
+  plane, a flatness on a cylinder, a datum on neither). An annotation that is not `ok` is kept in
+  the document with its values, linked to no geometry, and a STEP export refuses to drop it, naming
+  each one. A ref written as text that names another kind of face, plane or cylinder, than on the
+  model's last build -- this process's previous tree, else the model's xbf on disk -- is warned of:
+  a hole whose name passed to a flat side of the cut that replaced it, measured as it now is. The
+  warning is the build's report and its served structure's, never the document's, as kinematics'
+  are, so it says what changed on the build that changed it and not after; a ref selected as a
+  `Face` is never warned of. The build report's `pmi` is `{"annotations", "problems"}`, with
+  `"warnings"` and `"unattached"` where there are any, each logged.
+- **The document** holds what the code says and what this build's geometry resolves, and nothing
+  of a previous build: the same code and closure make the same xbf whatever was built before. The
+  values, units, kinds and face links are XCAF's `XCAFDimTolObjects` on the GD&T tool, linked to the
+  faces' sub-shape labels (the STEP writer's input); beside each, a `TDF_Reference` to its part's
+  shape label and one cadgen attribute (JSON, schema `cadgen.pmi/1`) holding what XCAF has no
+  place for: the id, the label, the kind, the refs as the code wrote them, and the presentation;
+  an unlinked annotation's values too, since XCAF gives values meaning only through geometry. The
+  id and the kind are also XCAF's (the object's semantic name and its type). No status and no
+  problem are held: they are derived where the document is served (`pmi.records_of_document`),
+  from the refs as written, the document's names and geometry and each kind's faces, as the build
+  derives them (kinematics derives its loop where it serves its block). A document without PMI
+  holds nothing new. A document holding PMI is converted whole on a warm build (GD&T labels link
+  the sub-shape labels a patch remakes).
 - **An entry** of `pmi.read` (an xbf or a STEP): `id`, `kind` (`datum`, `dimension`,
-  `geometric_tolerance`, or `unsupported` for what a STEP another system wrote holds and this does
-  not model, with its `xcaf_type` and values), `label`, `status`, `problem`, `part` (the
-  structure's prototype index, None when unlinked), `refs` (each `role`, the canonical `ref` when
-  resolved, `written`, `status`, `candidates`, `problem`), `presentation`, and one of `datum`
-  (`letter`), `dimension` (`type` `diameter` or `distance`, `basic`, `nominal` `{value, unit}`,
-  `tolerance`) or `geometric_tolerance` (`characteristic`, `value`, `unit`, `zone`, `datums` in
-  order).
+  `geometric_tolerance`, or `unsupported`), `label`, `status`, `problem`, `warnings` (the build's,
+  in its served structure alone), `part` (the structure's prototype index, linked or not), `refs`
+  (each `role`, the canonical `ref` when resolved, `written`, `status`, `candidates`, `problem`),
+  `presentation`, `xcaf_type`, and one of `datum` (`letter`), `dimension` (`type` `diameter` or
+  `distance`, `basic`, `nominal` `{value, unit, source}`, `tolerance`) or `geometric_tolerance`
+  (`characteristic`, `value`, `unit`, `zone`, `datums` in order). A nominal's `source` is
+  `geometry`, measured, where the code made the annotation, and `file` where another system did.
+- **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
+  GD&T as XCAF reads it, and never blocks a conversion or an export. What this does not hold whole
+  is `unsupported`, with its `xcaf_type`, its values and a `reason`: another characteristic or
+  dimension type, limits (a range), a fit, a qualifier, modifiers, a zone modifier, a maximum
+  value, a datum target or modified datum, a note other than a basic one's, and a link to an edge
+  or a point (kept, its refs spelled as the grammar spells an edge or a vertex, never drawn). It is
+  listed, never read as less than it says (law 13: left out with a word, never patched). An xbf of
+  such a STEP copies its GD&T as read (`pmi.copy`), each object linked to the same elements.
 
 Verified, and nothing else written: datums on planes and cylinders; diameter and linear-distance
 dimensions with plus-minus tolerances; basic distances, marked 'theoretical' as AP242 marks them
@@ -1095,10 +1117,13 @@ with their `SHAPE_DIMENSION_REPRESENTATION` and `PLUS_MINUS_TOLERANCE`; `FLATNES
 `TOLERANCE_ZONE_FORM('cylindrical or circular')`; each on its `ADVANCED_FACE` (named with the
 element's name) through a `GEOMETRIC_ITEM_SPECIFIC_USAGE`, every measure in millimetres. A STEP
 carries no annotation id (the writer leaves every name empty) and no graphical PMI. The exports
-that rebuild the document from a view would carry none, so they are refused while it holds PMI: a
-posed STEP, a STEP or xbf of one part (`--part`), and an xbf from a STEP. OCCT's writer gets three
-PMI records wrong, and the STEP export puts them right (`export/step.py`, `_pmi_records`; found and
-checked by the AP242 reader below): a plus-minus tolerance's bounds untyped
+that rebuild the document from a view would carry none: a posed STEP, and a STEP or xbf of one part
+(`--part`). Every export that would not carry the PMI the code made whole is refused by name
+(`pmi.refuse_dropped`, in `export.translate`); one of a document another system wrote is written,
+and what it leaves out is said (`pmi.dropped`: `warning: pmi: FILE: ID is not carried whole: WHY`
+in the export's log). OCCT's writer gets three PMI records wrong, and the STEP export puts them
+right (`export/step.py`, `_pmi_records`; found and checked by the AP242 reader below): a
+plus-minus tolerance's bounds untyped
 (`MEASURE_WITH_UNIT(0.2,#u)`); a two-attribute `RUNOUT_ZONE_DEFINITION` beside every diametral
 zone; and, in a document with no dimension, every tolerance magnitude in a bare metre while its
 value is millimetres. OCCT's own reader finds a datum only through a tolerance that names it.

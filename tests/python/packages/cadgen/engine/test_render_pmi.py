@@ -3,13 +3,17 @@ stands, and is held to the constructions the viewer's own layout made
 (`packages/core/src/lib/xbf/__fixtures__/pmi_plate/constructions.json`, which `xbfPmiLayout.test.js`
 holds the viewer to), over the plate the engine served (`__fixtures__/pmi_plate`): as its code
 placed its PMI, with no placement at all, and after the edit that left the hole's callouts invalid,
-to 1e-6. No node runs.
+to 1e-6. Its words are the viewer's to the rounding (JavaScript's `toFixed`); a part placed twice
+has its PMI drawn at its first placement shown; what is not drawn is said, and why. Painted onto a
+frame of numpy bytes, every label is over every line and a broken reference is dashed in its
+status's red. No node runs, and none of this needs OpenGL.
 
 And a still of a document carrying PMI draws it -- by default, as the viewer shows it, and not with
 `display.pmi` false -- every callout inside the picture, as its golden (`render_golden/pmi.png`,
-held and written as `test_render.py` holds its own); asking for it where it cannot be drawn (a
-document with none, the parts exploded, posed or in Preview) is refused by name. Drawing needs an
-OpenGL context (`tests/python/support/opengl.py`): skipped, saying why, where none can be made."""
+held, written and printed on a miss in CI as `test_render.py` holds its own), and reports what it
+left out (`pmiLeftOut`); asking for it where it cannot be drawn (a document with none, the parts
+exploded, posed or in Preview) is refused by name. Drawing needs an OpenGL context
+(`tests/python/support/opengl.py`): skipped, saying why, where none can be made."""
 
 from __future__ import annotations
 
@@ -26,7 +30,7 @@ import numpy as np
 from cadgen.engine.mesh import Mesh
 from cadgen.engine.render import pmi
 from cadgen.engine.snapshot import SnapshotRefused, Still, draws_pmi, parse_display
-from tests.python.packages.cadgen.engine.test_render import GOLDEN, WRITE, build, gl, mismatch, pixels, served
+from tests.python.packages.cadgen.engine.test_render import GOLDEN, PLATFORM, WRITE, build, gl, mismatch, pixels, served
 
 FIXTURES = Path(__file__).resolve().parents[5] / "packages" / "core" / "src" / "lib" / "xbf" / "__fixtures__" / "pmi_plate"
 TOLERANCE = 1e-6
@@ -76,8 +80,9 @@ class PmiParityTest(unittest.TestCase):
             if name.endswith("reversed"):
                 structure = {**structure, "pmi": [reversed_basic(item) for item in structure["pmi"]]}
             made = pmi.constructions(structure, meshes, pmi.rest_bounds(structure, meshes))
-            found = [{"id": entry["id"], "construction": construction} for entry, construction in made]
-            # JSON's own spelling of what the viewer wrote: no tuples, no NaN.
+            # What it draws, as the viewer's loop lists it; in JSON's own spelling: no tuples, no NaN.
+            found = [{"id": entry["id"], "construction": construction} for entry, construction in made
+                     if construction is not None]
             self.assert_near(json.loads(json.dumps(found)), expected, name)
 
     def test_what_a_callout_says_is_what_the_viewer_says(self) -> None:
@@ -117,9 +122,183 @@ class PmiParityTest(unittest.TestCase):
         self.assertEqual(pmi.number(-0.0000001, 2), "0.00")
         self.assertEqual(pmi.number(12.5), "12.5")
         self.assertEqual(pmi.number(-0.05, 2), "−0.05")
-        # JavaScript's toFixed takes the larger of two as near: Python's own format would not.
+        # JavaScript's toFixed rounds the double itself, a tie to the larger: 0.125 is one, and 8.35
+        # is a little under 8.35, so it is 8.3 (what node says of each).
         self.assertEqual(pmi.number(0.125, 2), "0.13")
+        for value, places, said in ((8.35, 1, "8.3"), (2.675, 2, "2.67"), (1.45, 1, "1.4"), (0.045, 2, "0.04"),
+                                    (0.075, 2, "0.07"), (0.15, 1, "0.1"), (-8.35, 1, "−8.3")):
+            self.assertEqual(pmi.number(value, places), said, value)
         self.assertEqual(pmi.tolerance_text({"upper": 0.05, "lower": -0.1})["text"], "+0.05/−0.10")
+
+    def test_a_nominal_is_written_at_its_tolerance_s_places_or_its_own_if_more(self) -> None:
+        def said(kind: str, nominal: float, within: float | None = None, basic: bool = False) -> list:
+            tolerance = {"type": "plus_minus", "upper": within, "lower": -within} if within else None
+            dimension = {"type": kind, "basic": basic, "nominal": {"value": nominal}, "tolerance": tolerance}
+            entry = {"id": "d", "kind": "dimension", "status": "ok", "dimension": dimension}
+            found = pmi.callout(pmi.entries({"pmi": [entry]})[0])
+            return [found["nominal"], (found["tolerance"] or {}).get("text")]
+
+        self.assertEqual(said("diameter", 6.35, 0.1), ["6.35", "±0.1"])
+        self.assertEqual(said("distance", 25.4, 0.05), ["25.40", "±0.05"])
+        self.assertEqual(said("distance", 3.175, basic=True), ["3.175", None])
+        self.assertEqual(said("distance", 12.0625), ["12.0625", None])
+
+    def test_a_part_s_pmi_is_drawn_at_its_first_placement_shown(self) -> None:
+        structure, meshes = fixture("v1")
+        built = pmi.constructions(structure, meshes, pmi.rest_bounds(structure, meshes))
+        placed = twice(structure)
+        bounds = pmi.rest_bounds(placed, meshes)
+        for hidden, matrix in ((frozenset(), TURNED), (frozenset({0}), FLIPPED)):
+            made = pmi.constructions(placed, meshes, bounds, hidden)
+            found = [{"id": entry["id"], "construction": construction} for entry, construction in made]
+            expected = [{"id": entry["id"], "construction": moved(made, matrix)} for entry, made in built]
+            self.assert_near(json.loads(json.dumps(found)), expected, f"hidden {sorted(hidden)}")
+        # Neither placement shown: none drawn.
+        made = pmi.constructions(placed, meshes, bounds, frozenset({0, 1}))
+        self.assertEqual([construction for _entry, construction in made], [None] * len(built))
+
+    def test_what_a_still_leaves_out_is_said_with_why(self) -> None:
+        structure, meshes = fixture("v3")
+        # The hole's callouts the edit broke, placed nowhere; and one the viewer does not draw.
+        broken = [item if item["status"] == "ok" else {**item, "presentation": None} for item in structure["pmi"]]
+        square = {"id": "square", "kind": "geometric_tolerance", "status": "ok", "part": 0,
+                  "geometric_tolerance": {"characteristic": "perpendicularity", "value": 0.1}}
+        structure = {**structure, "pmi": [*broken, square]}
+        found = pmi.constructions(structure, meshes, pmi.rest_bounds(structure, meshes))
+        nowhere = "no feature to stand it on and no placement in its code"
+        self.assertEqual(pmi.left_out(structure, found), [
+            *({"id": ident, "part": "plate", "status": "invalid", "reason": nowhere}
+              for ident in ("hole-diameter", "hole-from-front", "hole-position")),
+            {"id": "square", "part": "plate", "status": "ok",
+             "reason": "perpendicularity is not one the viewer draws"}])
+        # A part no placement of which is shown: each of its annotations left out, saying so.
+        built, meshes = fixture("v1")
+        placed, hidden = twice(built), frozenset({0, 1})
+        found = pmi.constructions(placed, meshes, pmi.rest_bounds(placed, meshes), hidden)
+        self.assertEqual({(item["part"], item["reason"]) for item in pmi.left_out(placed, found, hidden)},
+                         {("plate", "no placement of its part is shown")})
+        self.assertEqual(len(pmi.left_out(placed, found, hidden)), len(found))
+
+    def test_an_annotation_is_known_by_its_part_and_its_id(self) -> None:
+        # An id is unique only on its part (`readXbfPmi`'s `key`): kept as written, one repeated on a
+        # part or lacking kept apart by its place.
+        datum = {"kind": "datum", "status": "ok", "datum": {"letter": "A"}}
+        found = pmi.entries({"pmi": [{**datum, "id": "A", "part": 0}, {**datum, "id": "A", "part": 1},
+                                     {**datum, "id": "A", "part": 0}, datum]})
+        self.assertEqual([(entry["id"], entry["key"]) for entry in found],
+                         [("A", "0:A"), ("A", "1:A"), ("A", "0:A#3"), ("#4", ":#4")])
+        # The plate's datum A drawn, and a lid's datum A, the lid placed nowhere, left out: each its own.
+        structure, meshes = fixture("v1")
+        lid = {**datum, "id": "A", "part": 1, "presentation": {"anchor": [0, 0, 0], "offset": [0, 0, 5]}}
+        structure = {**structure, "prototypes": [*structure["prototypes"], {**structure["prototypes"][0], "name": "lid"}],
+                     "pmi": [*structure["pmi"], lid]}
+        found = pmi.constructions(structure, meshes, pmi.rest_bounds(structure, meshes))
+        self.assertEqual([(entry["key"], made is not None) for entry, made in found if entry["id"] == "A"],
+                         [("0:A", True), ("1:A", False)])
+        self.assertEqual(pmi.left_out(structure, found),
+                         [{"id": "A", "part": "lid", "status": "ok", "reason": "no placement of its part is shown"}])
+
+    def test_what_the_viewer_does_not_draw_says_why_in_the_document_s_words_where_it_has_them(self) -> None:
+        found = pmi.entries({"pmi": [
+            {"id": "edge", "kind": "unsupported", "status": "ok", "part": 0, "xcaf_type": "DatumObject",
+             "reason": "linked to an edge"},
+            {"id": "bare", "kind": "unsupported", "status": "ok", "part": 0, "xcaf_type": "DatumObject"},
+            {"id": "square", "kind": "geometric_tolerance", "status": "ok", "part": 0,
+             "geometric_tolerance": {"characteristic": "perpendicularity", "value": 0.1}}]})
+        self.assertEqual([entry["unsupported"] for entry in found], [
+            "linked to an edge", "DatumObject is not one the viewer draws", "perpendicularity is not one the viewer draws"])
+
+
+# The plate placed twice, neither where it was built (column-major): turned a quarter about Z and
+# moved, then turned over about X and moved.
+TURNED = [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 100, 20, 5, 1]
+FLIPPED = [1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, -50, 0, 10, 1]
+
+
+def twice(structure: dict) -> dict:
+    """The plate placed at ``TURNED`` and at ``FLIPPED``, its PMI's references naming the first, as
+    the engine names a part's first occurrence."""
+    instance = structure["instances"][0]
+    first = [{**item, "refs": [{**ref, "ref": ref["ref"].replace("plate/", "plate/plate.1/", 1)}
+                               for ref in item["refs"]]} for item in structure["pmi"]]
+    return {**structure, "pmi": first,
+            "instances": [{**instance, "matrix": TURNED}, {**instance, "path": "plate/plate.2", "matrix": FLIPPED}],
+            "tree": {"name": "plate", "children": [{"name": "plate", "prototype": 0, "instance": 0},
+                                                   {"name": "plate", "prototype": 0, "instance": 1}]}}
+
+
+def moved(construction: dict, matrix: list) -> dict:
+    """A construction made at rest, where ``matrix`` (column-major) places its part: its points
+    placed, its offset turned."""
+    m = np.array(matrix, float).reshape(4, 4).T
+
+    def point(p: list) -> list:
+        return (m[:3, :3] @ p + m[:3, 3]).tolist()
+
+    dimension = construction["dimension"]
+    return {**construction, "anchor": point(construction["anchor"]), "label": point(construction["label"]),
+            "presentation": {"anchor": point(construction["presentation"]["anchor"]),
+                             "offset": (m[:3, :3] @ construction["presentation"]["offset"]).tolist()},
+            "dimension": dimension and {"from": point(dimension["from"]), "to": point(dimension["to"]),
+                                        "extensions": [[point(a), point(b)] for a, b in dimension["extensions"]]}}
+
+
+def top(points: np.ndarray) -> np.ndarray:
+    """The plate fixture from above, onto a 1200 x 900 frame: x right, y up, 6 pixels a millimetre."""
+    return np.stack([(points[:, 0] + 100) * 6, (60 - points[:, 1]) * 6], 1)
+
+
+class PmiPaintTest(unittest.TestCase):
+    """The callouts painted over a picture as the viewer's overlay paints them: onto a frame of
+    numpy bytes, from above, no OpenGL."""
+
+    def paint(self, drawn: list, project=top) -> np.ndarray:
+        # As tall as the viewer (`overlay.REFERENCE_HEIGHT`), so a viewer pixel is one of the frame's.
+        frame = np.full((900, 1200, 3), 255, np.uint8)
+        pmi.paint(frame, drawn, project, lambda _point: False)
+        return frame.astype(np.int16)
+
+    def test_every_label_is_painted_over_every_line(self) -> None:
+        # Datum B's leader runs from (200, 300) to its label at (420, 300), under datum A's label at (300, 300).
+        a, b = pmi.entries({"pmi": [{"id": letter, "kind": "datum", "status": "ok", "datum": {"letter": letter}}
+                                    for letter in "AB"]})
+        given = {"dimension": None, "placed": "given"}
+        frame = self.paint([(a, {**given, "anchor": [300, 340, 0], "label": [300, 300, 0]}),
+                            (b, {**given, "anchor": [200, 300, 0], "label": [420, 300, 0]})], lambda points: points[:, :2])
+        self.assertLess(int(frame[300, 250].min()), 200, "B's leader is drawn")
+        # Inside A's label, clear of its letter, on the row B's leader takes: A's paper over it.
+        self.assertGreater(int(frame[300, 292].min()), 230, "B's leader is over A's label")
+
+    def test_a_broken_reference_is_dashed_in_its_status_s_colour_round_an_open_ring(self) -> None:
+        structure, meshes = fixture("v3")
+        made = {entry["id"]: (entry, construction) for entry, construction in
+                pmi.constructions(structure, meshes, pmi.rest_bounds(structure, meshes))}
+        entry, construction = made["hole-diameter"]  # invalid: the edit left its name on a flat face
+        frame = self.paint([(entry, construction)])
+        red = (frame[..., 0] - frame[..., 1]) > 60  # the status's red (239, 68, 68) over white
+        anchor, label = top(np.array([construction["anchor"], construction["label"]], float))
+        way = (label - anchor) / np.linalg.norm(label - anchor)
+        across = np.array([-way[1], way[0]])
+
+        def reddened(point: np.ndarray) -> bool:
+            x, y = np.floor(point).astype(int)
+            return bool(red[y - 1:y + 2, x - 1:x + 2].any())
+
+        # An open ring where it was anchored: red round it, not inside it behind the leader.
+        ring = pmi.ARROW_HALF + 1
+        for side in (across, -way, -across):
+            self.assertTrue(reddened(anchor + side * ring), side)
+        x, y = np.floor(anchor - way * 1.5).astype(int)
+        self.assertFalse(red[y, x], "the ring is open")
+        # Its leader dashed: red, then white, then red again along it.
+        steps = np.floor([anchor + way * at for at in np.arange(ring + 2, 40, 0.5)]).astype(int)
+        along = [bool(red[y, x]) for x, y in steps]
+        self.assertTrue(any(along) and not all(along), along)
+        # Its label ruled in dashes of the same red.
+        box = pmi._box(entry, construction, lambda point: tuple(top(np.array([point], float))[0]))
+        row, left, right = round(box["y"] - box["h"] / 2), round(box["x"] - box["w"] / 2), round(box["x"] + box["w"] / 2)
+        rule = red[row - 1:row + 2, left + 3:right - 3].any(0)
+        self.assertTrue(rule.any() and not rule.all(), "its label's rule dashed")
 
 
 # A plate with a hole, its PMI on its own faces: a datum on the bottom, the thickness, a flatness on
@@ -159,6 +338,26 @@ class PmiAskedTest(unittest.TestCase):
         with self.assertRaisesRegex(SnapshotRefused, "display.pmi draws a document's PMI; box.xbf carries none"):
             draws_pmi(Still(display={"pmi": True}), bare, "box.xbf")
 
+    def test_a_still_says_what_it_left_out_and_why_beside_its_other_warnings(self) -> None:
+        import contextlib
+        import io
+        import time
+
+        from cadgen.engine import snapshot
+
+        folder = Path(tempfile.mkdtemp(prefix="engine-render-pmi-said-")).resolve()
+        self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
+        nowhere = "no feature to stand it on and no placement in its code"
+        report = {"pmi": 1, "timings": {}, "unmeshed": {"plate": [3]}, "pmiLeftOut": [
+            {"id": "hole-diameter", "part": "plate", "status": "invalid", "reason": nowhere},
+            {"id": "datum-1", "part": None, "status": "ok", "reason": "linked to an edge"}]}
+        said = io.StringIO()
+        with contextlib.redirect_stderr(said):
+            snapshot._written(Path("plate.xbf"), folder / "plate.png", b"png", report, time.perf_counter())
+        self.assertEqual(said.getvalue().splitlines()[1:], [
+            f"warning: plate: the picture does not draw PMI hole-diameter (invalid): {nowhere}",
+            "warning: plate.xbf: the picture does not draw PMI datum-1: linked to an edge"])
+
     def test_display_takes_pmi_as_a_word_or_a_boolean_and_nothing_else(self) -> None:
         self.assertEqual(parse_display("pmi", False), {"pmi": True})
         self.assertEqual(parse_display("hidden-line,pmi=off", False), {"mode": "hidden-line", "pmi": False})
@@ -196,12 +395,17 @@ class PmiStillTest(unittest.TestCase):
         self.assertEqual([entry["id"] for entry in self.structure["pmi"]], ["A", "thickness", "hole-from-left", "top-flat"])
         # As tall as the viewer the callouts are drawn for (`overlay.REFERENCE_HEIGHT`): their words full size.
         drawn, report = self.held.draw(Still(size=(1200, 900)))
-        self.assertEqual(report["pmi"], 4, report)
-        golden = GOLDEN / "pmi.png"
+        self.assertEqual((report["pmi"], report["pmiLeftOut"]), (4, []), report)
+        own = GOLDEN / PLATFORM / "pmi.png"
+        golden = own if own.is_file() else GOLDEN / "pmi.png"
         if WRITE:
             golden.write_bytes(drawn)
         else:
             share = mismatch(pixels(drawn), pixels(golden.read_bytes()))
+            if share > 0.015 and os.environ.get("GITHUB_ACTIONS") == "true":
+                import base64
+
+                print(f"GOLDEN {PLATFORM}/pmi {base64.b64encode(drawn).decode()}")
             self.assertLessEqual(share, 0.015, f"pmi: {share:.1%} of its pixels are not the golden's")
         bare, report_bare = self.held.draw(Still(size=(1200, 900), display={"pmi": False}))
         self.assertNotIn("pmi", report_bare)
@@ -214,6 +418,38 @@ class PmiStillTest(unittest.TestCase):
         rim = np.ones_like(inked)
         rim[3:-3, 3:-3] = False
         self.assertFalse((inked & rim).any(), "a callout runs off the picture")
+
+    def test_what_a_still_leaves_out_is_reported_with_why(self) -> None:
+        # Asked for, and none of it drawable: a datum whose face is gone, placed nowhere, and a
+        # characteristic the viewer does not draw.
+        from cadgen.engine.render.service import Held
+
+        lost = {"id": "B", "kind": "datum", "status": "missing", "part": 0, "datum": {"letter": "B"},
+                "refs": [{"role": "feature", "written": "f:gone", "status": "missing"}]}
+        square = {"id": "square", "kind": "geometric_tolerance", "status": "ok", "part": 0,
+                  "geometric_tolerance": {"characteristic": "perpendicularity", "value": 0.1}}
+        held = Held(self.document)
+        self.addCleanup(held.close)
+        held.hold({**self.structure, "version": "left-out", "pmi": [lost, square]}, self.buffers)
+        _drawn, report = held.draw(Still(size=(320, 240), display={"pmi": True}))
+        self.assertEqual(report["pmi"], 0)
+        self.assertEqual(report["pmiLeftOut"], [
+            {"id": "B", "part": "plate", "status": "missing",
+             "reason": "no feature to stand it on and no placement in its code"},
+            {"id": "square", "part": "plate", "status": "ok", "reason": "perpendicularity is not one the viewer draws"}])
+
+    def test_a_part_placed_twice_has_its_pmi_drawn_and_framed_where_it_is_shown(self) -> None:
+        from cadgen.engine.render.service import Held
+
+        held = Held(self.document)
+        self.addCleanup(held.close)
+        held.hold({**twice(self.structure), "version": "twice"}, self.buffers)
+        # TURNED stands the plate at x 80 to 120, FLIPPED at x -80 to -20: its callouts beside it.
+        for hide, side in (("plate/plate.2", 1), ("plate/plate.1", -1)):
+            _drawn, report = held.draw(Still(size=(320, 240), display={"hidden": [hide]}))
+            self.assertEqual((report["pmi"], report["pmiLeftOut"]), (4, []), hide)
+            fitted = held.scenes[False].pmi_points[:, 0] * side
+            self.assertGreater(float(fitted.min()), 0, f"{hide} hidden: the callouts and the fit at the other")
 
     def test_asking_for_pmi_on_moved_parts_is_refused_before_anything_renders(self) -> None:
         with self.assertRaisesRegex(SnapshotRefused, "on the parts as made; --preview moves or restages them"):

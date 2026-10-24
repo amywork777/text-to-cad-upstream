@@ -6,39 +6,39 @@ from unittest.mock import patch
 
 from cadgen.engine import build as building
 from cadgen.engine.export import Source, ExportRefused
-from cadgen.engine.export.viewer import fingerprint
+from cadgen.engine.export.viewer import fingerprint, options
 from cadgen.engine.worker import _export
 
 
 class ViewerExportsTest(unittest.TestCase):
     def test_semantic_changes_invalidate_export_identity(self):
-        self.assertNotEqual(fingerprint({'pmi': [{'value': .1}]}), fingerprint({'pmi': [{'value': .2}]}))
+        self.assertNotEqual(fingerprint({"pmi": [{"value": .1}]}), fingerprint({"pmi": [{"value": .2}]}))
 
     def test_step_result_checks_the_written_file(self):
         from types import SimpleNamespace
-        entry = {'id': 'A', 'kind': 'datum'}
-        source = SimpleNamespace(structure={'pmi': [entry]})
+        entry = {"id": "A", "kind": "datum"}
+        source = SimpleNamespace(structure={"pmi": [entry]})
         with tempfile.TemporaryDirectory() as folder:
-            output = Path(folder) / 'result.step'
+            output = Path(folder) / "result.step"
             def write(source, _unused, target, **kwargs):
-                target.write_bytes(b'written step')
+                target.write_bytes(b"written step")
                 return target.stat().st_size
-            with patch.object(building, 'held', return_value=source), \
-                 patch('cadgen.engine.export.viewer.check'), \
-                 patch('cadgen.engine.export.translate', side_effect=write), \
-                 patch('cadgen.engine.export.ap242.verify', return_value={'matched': 1}) as check:
-                result = _export({'source': {'path': str(output)}, 'expected': {'version': 'v'}, 'destinations': [str(output)]}, lambda _: None)
+            with patch.object(building, "held", return_value=source), \
+                 patch("cadgen.engine.export.viewer.check"), \
+                 patch("cadgen.engine.export.translate", side_effect=write), \
+                 patch("cadgen.engine.export.ap242.verify", return_value={"matched": 1}) as check:
+                result = _export({"source": {"path": str(output)}, "expected": {"version": "v"}, "destinations": [str(output)]}, lambda _: None)
                 check.assert_called_once_with([entry], output)
-                self.assertEqual(result['files'][0]['pmiVerification']['matched'], 1)
+                self.assertEqual(result["files"][0]["pmiVerification"]["matched"], 1)
             # A document without PMI: its STEP is not checked, and its result carries no verification.
             source.structure = {}
-            with patch.object(building, 'held', return_value=source), \
-                 patch('cadgen.engine.export.viewer.check'), \
-                 patch('cadgen.engine.export.translate', side_effect=write), \
-                 patch('cadgen.engine.export.ap242.verify') as check:
-                result = _export({'source': {'path': str(output)}, 'expected': {'version': 'v'}, 'destinations': [str(output)]}, lambda _: None)
+            with patch.object(building, "held", return_value=source), \
+                 patch("cadgen.engine.export.viewer.check"), \
+                 patch("cadgen.engine.export.translate", side_effect=write), \
+                 patch("cadgen.engine.export.ap242.verify") as check:
+                result = _export({"source": {"path": str(output)}, "expected": {"version": "v"}, "destinations": [str(output)]}, lambda _: None)
                 check.assert_not_called()
-                self.assertNotIn('pmiVerification', result['files'][0])
+                self.assertNotIn("pmiVerification", result["files"][0])
 
     def test_a_pmi_document_offers_step_as_carrying_its_pmi(self):
         fixture = Path(__file__).resolve().parent / "pmi_golden" / "pmi_plate.xbf"
@@ -47,6 +47,16 @@ class ViewerExportsTest(unittest.TestCase):
                    "destinations": [], "inspect": True}
         step = next(r for r in _export(request, lambda _: None)["formats"] if r["format"] == "step")
         self.assertEqual((step["label"], step["pmi"], step["reason"]), ("STEP (AP242)", True, None))
+
+    def test_a_row_says_when_the_pmi_decided_it(self):
+        # Opened whole, the plate's XBF is its original's to download, which is no PMI matter; a
+        # part extracted would be an XBF made again, which the PMI decides.
+        source = Source.read(Path(__file__).resolve().parent / "pmi_golden" / "pmi_plate.xbf")
+        whole = {row["format"]: row for row in options(source)}
+        self.assertEqual((whole["step"]["pmi"], whole["xbf"]["pmi"]), (True, False))
+        extracted = {row["format"]: row for row in options(source, part="plate")}
+        self.assertIs(extracted["xbf"]["pmi"], True)
+        self.assertIn("PMI", extracted["xbf"]["reason"])
 
     def test_formats_version_pinning_and_live_model_never_rebuilds(self):
         with tempfile.TemporaryDirectory() as folder:

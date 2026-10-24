@@ -19,13 +19,17 @@ A model gives its part annotations, each on faces of that part, and returns the 
             pmi.flatness("top-flat", top, 0.05),
             pmi.position("hole-pos", hole, 0.1, datums=["A"]))
 
-**What is held.** One structured record per annotation, in the document's own terms: XCAF's
+**What is held.** What the code says and what this build's geometry resolves, nothing else: XCAF's
 ``XCAFDimTolObjects`` objects on the GD&T tool's labels (``XCAFDoc_DimTolTool``) hold the kind,
 values and units (millimetres, the document's) and link the annotation to the sub-shape labels of
-the faces it is on; beside each, one cadgen attribute (``EXTRA_GUID``, JSON) holds what XCAF has
-no place for: the author's id and label, each ref as the code wrote it, the annotation's status,
-and its presentation. Nothing is held twice. The STEP writer reads the XCAF objects and writes
-AP242's semantic PMI (``DIMENSIONAL_SIZE``/``DIMENSIONAL_LOCATION`` with ``PLUS_MINUS_TOLERANCE``,
+the faces it is on; beside each, a ``TDF_Reference`` to its part's shape label and one cadgen
+attribute (``EXTRA_GUID``, JSON of ``SCHEMA``) holding what XCAF has no place for: the author's id
+and label, the kind, each ref as the code wrote it, the presentation, and an annotation linked to
+nothing its values (XCAF gives values meaning only through geometry). The id and the kind are in
+XCAF too (its semantic name, its object). No status, no problem and nothing of a previous build is
+held: an annotation's status is derived where the document is read (``records_of_document``), as a
+build derives it. The STEP writer reads the XCAF objects and writes AP242's semantic PMI
+(``DIMENSIONAL_SIZE``/``DIMENSIONAL_LOCATION`` with ``PLUS_MINUS_TOLERANCE``,
 ``DATUM``/``DATUM_FEATURE``, ``FLATNESS_TOLERANCE``, ``POSITION_TOLERANCE`` with its
 ``DATUM_SYSTEM``) on ``SHAPE_ASPECT``s whose ``GEOMETRIC_ITEM_SPECIFIC_USAGE`` names the face.
 The cadgen attribute is not written to a STEP.
@@ -44,11 +48,19 @@ keeps its name across edits that do not change how it is made. Each build resolv
 against the part as built now: ``ok``; ``missing`` -- it names nothing (with what the name's atom
 is called now, where anything is); ``ambiguous`` -- it names several faces (each listed); or
 ``invalid`` -- it names a face the annotation cannot stand on (a diameter on a plane, two planes
-not parallel, a datum letter the part does not define), or, written as text, another kind of face
-than it named on the model's last build (a hole whose name passed to a flat side). The kind it is
-held to is kept in the document and follows the ref until the code writes it anew. An annotation's status is its worst
-ref's. One not ``ok`` is kept in the document, with its status, values and refs as written, and
-linked to no geometry; the build reports it, and a STEP export refuses to drop it.
+not parallel, a datum letter the part does not define). An annotation's status is its worst ref's.
+One not ``ok`` is kept in the document, with its values and refs as written, and linked to no
+geometry; the build reports it, and a STEP export refuses to drop it. A ref written as text that
+names another kind of face than on the model's last build (a hole whose name passed to a flat side
+of the cut that replaced it) is warned of (``warn``): the build's report and its served structure
+say so, the document never.
+
+**A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
+GD&T as XCAF reads it. What this module does not hold whole -- another characteristic or dimension
+type, limits, a fit, a modifier, a datum target, a link to an edge or a point -- is listed
+``unsupported`` with its XCAF type and why, never refused and never read as less than it says.
+An xbf converted from it copies its GD&T as read (``copy``); an export of it says what it leaves
+out (``dropped``) where one of a document the code made is refused (``refuse_dropped``).
 
 **Presentation** (``place``) is where a viewer draws an annotation: an anchor and a text offset in
 millimetres, in the annotated part's frame. It is no part of the semantic record: it is never
@@ -61,17 +73,17 @@ tolerance; basic (theoretically exact) distances, from planes and hole axes, wit
 marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); flatness; position with an
 ordered datum reference frame and a diametral zone. Every
 other XCAF characteristic, dimension type, modifier and tolerance form is refused by name
-(``PMIUnsupported``), never approximated. A document read from a STEP another system wrote lists
-its PMI too; what this module does not model is listed as ``unsupported`` with its XCAF type.
-PMI is part-level: an annotation is on one part, and an assembly is refused.
+(``PMIUnsupported``), never approximated. PMI is part-level: an annotation is on one part, and an
+assembly is refused.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 __all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "basic", "datum",
            "diameter", "dimension", "distance", "flatness", "geometric", "place", "plus_minus", "position", "read"]
@@ -79,8 +91,10 @@ __all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsup
 # The attribute an annotated shape holds its annotations in (a tuple of plain dicts), as a part's
 # configurations are held (``kernel.memo`` keys it).
 PMI = "xbf_pmi"
-# The GUID of the cadgen attribute beside each XCAF GD&T object: its JSON (see the module).
+# The GUID of the cadgen attribute beside each XCAF GD&T object, and its JSON's schema (see the
+# module): an attribute of another schema is not read.
 EXTRA_GUID = "5d3a7c1e-9f42-4b86-a0e5-3c7b9d2f6e18"
+SCHEMA = "cadgen.pmi/1"
 # The GD&T tool's label under the main label (``XCAFDoc_DocumentTool::DimTolLabel``).
 DIMTOL_TAG = 4
 STATUSES = ("ok", "missing", "ambiguous", "invalid")
@@ -124,7 +138,7 @@ def plus_minus(upper: float, lower: float | None = None) -> dict[str, Any]:
     upper = _number(upper, "a tolerance's upper deviation")
     lower = -upper if lower is None else _number(lower, "a tolerance's lower deviation")
     if not upper > lower:
-        raise PMIError(f"a plus-minus tolerance's upper deviation ({upper}) is above its lower ({lower})")
+        raise PMIError(f"a plus-minus tolerance's upper deviation is above its lower ({lower}), not {upper}")
     return {"type": "plus_minus", "upper": upper, "lower": lower}
 
 
@@ -375,10 +389,6 @@ class Ref:
     status: str
     candidates: list[int] = field(default_factory=list)
     problem: str | None = None
-    # The kind of face (plane, cylinder) this ref is held to: what it named when it last resolved,
-    # kept in the document (``_extra``) and asked of the next build (``remember``). None for a ref
-    # the code selects as a Face, which is whatever that selection picks each build.
-    face: str | None = None
 
 
 @dataclass
@@ -398,26 +408,28 @@ def resolve(tree: Any) -> list[tuple[Any, list[Resolved]]]:
     if tree.pmi_resolved is not None:
         return tree.pmi_resolved
     found = []
-    previous = tree.pmi_previous
     for part, given in tree.pmi or ():
-        faces = _faces(part.shape)
         names = list((part.names or {}).get("faces") or [])
-        owners = {part.name, tree.root.name}
-        letters = {entry["datum"]["letter"] for entry in given if entry["kind"] == "datum"}
-        found.append((part, [_resolved(entry, faces, names, owners, letters, previous.get((part.name, entry["id"])) or {})
-                             for entry in given]))
+        found.append((part, _resolved_part(given, part.shape, names, {part.name, tree.root.name})))
     tree.pmi_resolved = found
     return found
 
 
+def _resolved_part(given: Iterable[dict[str, Any]], shape: Any, names: list[str | None],
+                   owners: set[str]) -> list[Resolved]:
+    """A part's annotations (as the code gives them) resolved against its ``shape``, whose faces
+    are named ``names`` by ordinal, in the document owned as ``owners`` name it."""
+    given = list(given)
+    faces = _faces(shape)
+    letters = {entry["datum"]["letter"] for entry in given if entry["kind"] == "datum"}
+    return [_resolved(entry, faces, names, owners, letters) for entry in given]
+
+
 def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners: set[str],
-              letters: set[str], held: dict[tuple[str, str], str]) -> Resolved:
-    """One annotation against the part as built; ``held`` the face kind each of its refs (by role
-    and written text) named on the model's last build."""
+              letters: set[str]) -> Resolved:
+    """One annotation against the part as built: each ref, then the faces it names against the
+    faces its kind stands on (``_SURFACES``), then its nominal measured."""
     refs = [_ref(given, faces, names, owners) for given in spec["refs"]]
-    texts = [given["face"] is None for given in spec["refs"]]  # written in code, not a selected Face
-    for ref, text in zip(refs, texts):
-        ref.face = held.get((ref.role, ref.written)) if text else None
     nominal = None
     problem = next((ref.problem for ref in refs if ref.status != "ok"), None)
     if all(ref.status == "ok" for ref in refs):
@@ -429,21 +441,6 @@ def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners:
                 ref.status = "invalid"
                 ref.problem = (f"{ref.written} is a {surface[0]} face; a {what.replace('_', ' ')} is on a "
                                f"{' or '.join(wanted)} face")
-        # A ref written as text that names another kind of face than it did on the last build names
-        # another face: a hole made a square cut passes the hole's name to a flat side. It is
-        # flagged where the annotation could stand on the new face too (elsewhere the check above
-        # has said so), and it stays held to the kind it had until the code writes it anew.
-        for ref, surface, text in zip(refs, surfaces, texts):
-            if ref.status != "ok" or not text:
-                continue
-            if ref.face is not None and ref.face != surface[0]:
-                ref.status = "invalid"
-                ref.problem = (f"{ref.written} named a {ref.face} face on the last build and names a {surface[0]} "
-                               "face now: it names another face than the annotation was made on. Point the ref "
-                               "at the face meant (written anew, it is held to that face's kind), or remove the "
-                               "annotation")
-            elif ref.face is None:
-                ref.face = surface[0]
         if all(ref.status == "ok" for ref in refs):
             if what == "diameter":
                 nominal = 2.0 * surfaces[0][1]["radius"]
@@ -600,39 +597,58 @@ def _surface(face: Any) -> tuple[str, dict[str, Any]]:
     return str(kind.name).replace("GeomAbs_", "").lower(), {}
 
 
-def remember(tree: Any, previous: dict[tuple[str, str], dict[tuple[str, str], str]]) -> None:
-    """What each ref of ``tree``'s annotations named on the model's last build (``previous_of_tree``,
-    ``previous_of_file``): asked of before ``tree`` is resolved."""
-    tree.pmi_previous, tree.pmi_resolved = previous, None
-
-
-def previous_of_tree(tree: Any) -> dict[tuple[str, str], dict[tuple[str, str], str]]:
-    """Each annotation's refs' face kinds as a build resolved them, by (part, id), then (role, written)."""
+def faces_named(tree: Any) -> dict[tuple[str, str], dict[tuple[str, str], str]]:
+    """The kind of face (plane, cylinder) each ref of a built tree's annotations names, by
+    annotation (part, id), then ref (role, written): what ``warn`` compares two builds by."""
     found: dict = {}
     for part, items in resolve(tree) if tree is not None and tree.pmi else ():
+        faces = _faces(part.shape)
         for item in items:
-            found[(part.name, item.spec["id"])] = {(ref.role, ref.written): ref.face for ref in item.refs if ref.face}
+            found[(part.name, item.spec["id"])] = {(ref.role, ref.written): _surface(faces.FindKey(ref.ordinal))[0]
+                                                   for ref in item.refs if ref.ordinal is not None}
     return found
 
 
-def previous_of_file(path: Any) -> dict[tuple[str, str], dict[tuple[str, str], str]]:
-    """The same, as the model's saved xbf holds them: the last build of a model this process has not
-    built. A file that cannot be read holds nothing to compare with."""
+def faces_named_in(path: Any) -> dict[tuple[str, str], dict[tuple[str, str], str]]:
+    """The same, of the model's saved xbf: its last build, where this process has not built it. A
+    file that cannot be read holds nothing to compare with."""
     from cadgen.engine import document
 
     try:
         loaded = document.load(path)
-        records = records_of_document(loaded.doc, loaded.prototypes)
-    except Exception:  # noqa: BLE001 - no history is no check, never a failed build
+        records = records_of_document(loaded.doc, loaded.prototypes, loaded.name)
+    except Exception:  # noqa: BLE001 - no last build is nothing to warn of, never a failed build
         return {}
     found: dict = {}
     for record in records:
-        extra = record["extra"]
-        if extra is None or extra.get("part") is None:
+        if record["extra"] is None:
             continue
-        found[(extra["part"], extra["id"])] = {(ref["role"], ref["written"]): ref["face"]
-                                               for ref in extra["refs"] if ref.get("face")}
+        prototype = loaded.prototypes[record["part"]]
+        faces = _faces(prototype.shape)
+        found[(prototype.name, record["extra"]["id"])] = {(ref["role"], ref["written"]): _surface(
+            faces.FindKey(ref["ordinal"]))[0] for ref in record["refs"] if ref["ordinal"] is not None}
     return found
+
+
+def warn(tree: Any, previous: dict[tuple[str, str], dict[tuple[str, str], str]]) -> None:
+    """Each ref of ``tree``'s annotations written as text that names another kind of face than on
+    the model's last build (``previous``: ``faces_named`` of its tree, or ``faces_named_in`` its
+    xbf) -- a hole whose name passed to a flat side of the cut that replaced it -- where the
+    annotation stands on the face it names now (elsewhere its status says so): warned of in
+    ``Tree.pmi_warnings``, the build's report and its served structure, never the document, which
+    is what the code makes."""
+    now = faces_named(tree)
+    for part, items in resolve(tree):
+        for item in items:
+            key = (part.name, item.spec["id"])
+            for ref, given in zip(item.refs, item.spec["refs"]):
+                was = (previous.get(key) or {}).get((ref.role, ref.written))
+                named = now[key].get((ref.role, ref.written))
+                if given["face"] is None and ref.status == "ok" and was is not None and was != named:
+                    tree.pmi_warnings.setdefault(key, []).append(
+                        f"{ref.written} named a {was} face on the last build and names a {named} face now: another "
+                        "face than the annotation was made on, measured as it is. Point the ref at the face meant, "
+                        "or remove the annotation")
 
 
 def signature(tree: Any) -> tuple:
@@ -646,18 +662,27 @@ def problems(tree: Any) -> list[dict[str, Any]]:
             for part, items in resolve(tree) for item in items if item.status != "ok"]
 
 
+def warnings(tree: Any) -> list[str]:
+    """Every warning of ``tree``'s annotations (``warn``), each naming its annotation (``part/id``)."""
+    return [f"{part}/{id}: {text}" for (part, id), texts in tree.pmi_warnings.items() for text in texts]
+
+
 # --- the XCAF document -------------------------------------------------------------------------
 
 
 def write(doc: Any, tree: Any, label_of: Any) -> None:
     """The tree's annotations into ``doc``'s GD&T tool, each part's in its order, datums first
-    (a tolerance's frame names them); ``label_of(part)`` is the part's shape label."""
+    (a tolerance's frame names them), and the GD&T of the document the tree was read from
+    (``Tree.pmi_source``: ``copy``); ``label_of(part)`` is the part's shape label."""
+    if tree.pmi_source is not None:
+        loaded, parts = tree.pmi_source
+        copy(doc, loaded, lambda index: label_of(parts[index]))
     if not tree.pmi:
         return
     from OCP.Standard import Standard_GUID
     from OCP.TCollection import TCollection_AsciiString
     from OCP.TDataStd import TDataStd_AsciiString
-    from OCP.TDF import TDF_Label, TDF_LabelSequence
+    from OCP.TDF import TDF_Label, TDF_LabelSequence, TDF_Reference
     from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
 
     tool = XCAFDoc_DocumentTool.DimTolTool_s(doc.Main())
@@ -704,15 +729,15 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
                     tool.SetGeomTolerance(refs[0], at)
                     for letter in spec["geometric_tolerance"]["datums"]:
                         tool.SetDatumToGeomTol(datums[letter], at)
-            TDataStd_AsciiString.Set_s(at, guid, TCollection_AsciiString(_text(_extra(item, part.name))))
+            TDataStd_AsciiString.Set_s(at, guid, TCollection_AsciiString(_text(_extra(item))))
+            TDF_Reference.Set_s(at, label)
 
 
-def _extra(item: Resolved, part: str) -> dict[str, Any]:
+def _extra(item: Resolved) -> dict[str, Any]:
+    """The cadgen attribute's JSON (see the module): what the code says that XCAF has no place for."""
     spec = item.spec
-    return {"id": spec["id"], "label": spec["label"], "presentation": spec["presentation"], "status": item.status,
-            "problem": item.problem, "kind": spec["kind"], "part": part,
-            "refs": [{"role": ref.role, "written": ref.written, "status": ref.status, "candidates": ref.candidates,
-                      "problem": ref.problem, "face": ref.face} for ref in item.refs],
+    return {"schema": SCHEMA, "id": spec["id"], "kind": spec["kind"], "label": spec["label"],
+            "presentation": spec["presentation"], "refs": spec["refs"],
             # What an unlinked annotation meant, for a reader: XCAF links values to geometry alone.
             "unlinked": None if item.status == "ok" else
             {key: spec[key] for key in ("dimension", "datum", "geometric_tolerance") if key in spec}}
@@ -781,24 +806,178 @@ def _tolerance_object(label: Any, spec: dict[str, Any]) -> None:
     XCAFDoc_GeomTolerance.Set_s(label).SetObject(found)
 
 
+def copy(doc: Any, loaded: Any, label_of: Callable[[int], Any]) -> None:
+    """The GD&T of a document read from a file another system wrote (``loaded``, a
+    ``document.Loaded``) copied as read into ``doc``, the document made of it again (an xbf of a
+    STEP): every datum, dimension and geometric tolerance as XCAF holds it, each linked to the same
+    faces, edges and points of the same parts (``label_of(index)``: prototype ``index``'s label in
+    ``doc``), a tolerance to the same datums. One the file links to anything else (an occurrence's
+    face, a whole part) is copied linked to nothing, as reading the file says it is (``missing``):
+    its values kept, nothing approximated."""
+    from OCP.TDF import TDF_Label, TDF_LabelSequence
+    from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_DatumObject, XCAFDimTolObjects_DimensionObject,
+                                        XCAFDimTolObjects_GeomToleranceObject)
+    from OCP.XCAFDoc import (XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_DocumentTool, XCAFDoc_GeomTolerance,
+                             XCAFDoc_ShapeTool)
+
+    from cadgen.engine import refs as grammar
+    from cadgen.engine.document import _entry
+
+    source = _tool(loaded.doc)
+    if source is None:
+        return
+    tool = XCAFDoc_DocumentTool.DimTolTool_s(doc.Main())
+    shapes = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
+    by_entry = {prototype.entry: prototype for prototype in loaded.prototypes}
+    theirs: dict[tuple[int, str], Any] = {}  # each prototype's elements, in the file's document and in ``doc``
+    ours: dict[tuple[int, str], Any] = {}
+
+    def placed(label: Any) -> Any:
+        """A ref label's element as ``doc`` holds it, a sub-shape label of its part; None for none."""
+        hit = _element(label, by_entry, theirs)
+        if hit is None:
+            return None
+        index, kind, ordinal = hit
+        part = label_of(index)
+        if (index, kind) not in ours:
+            ours[(index, kind)] = grammar._map(XCAFDoc_ShapeTool.GetShape_s(part), kind)
+        element = ours[(index, kind)].FindKey(ordinal)
+        found = TDF_Label()
+        if not shapes.FindSubShape(part, element, found):
+            shapes.AddSubShape(part, element, found)
+        return found
+
+    def linked(label: Any) -> list[Any]:
+        """The elements a label links to, first and second, as ``doc``'s labels: none where one of
+        them has no place there."""
+        found = []
+        for sequence in _linked(source, label):
+            labels = TDF_LabelSequence()
+            for at in range(1, sequence.Length() + 1):
+                hit = placed(sequence.Value(at))
+                if hit is None:
+                    return [TDF_LabelSequence(), TDF_LabelSequence()]
+                labels.Append(hit)
+            found.append(labels)
+        return found
+
+    datums: dict[str, Any] = {}
+    for label in _labels(source, "datum"):
+        at = tool.AddDatum()
+        XCAFDoc_Datum.Set_s(at).SetObject(XCAFDimTolObjects_DatumObject(XCAFDoc_Datum.Set_s(label).GetObject()))
+        first, _second = linked(label)
+        if first.Length():
+            tool.SetDatum(first, at)
+        datums[_entry(label)] = at
+    for label in _labels(source, "dimension"):
+        at = tool.AddDimension()
+        XCAFDoc_Dimension.Set_s(at).SetObject(
+            XCAFDimTolObjects_DimensionObject(XCAFDoc_Dimension.Set_s(label).GetObject()))
+        first, second = linked(label)
+        if first.Length():
+            tool.SetDimension(first, second, at)
+    for label in _labels(source, "geometric_tolerance"):
+        at = tool.AddGeomTolerance()
+        XCAFDoc_GeomTolerance.Set_s(at).SetObject(
+            XCAFDimTolObjects_GeomToleranceObject(XCAFDoc_GeomTolerance.Set_s(label).GetObject()))
+        first, _second = linked(label)
+        if first.Length():
+            tool.SetGeomTolerance(first, at)
+        for datum in _datums_of(label):
+            tool.SetDatumToGeomTol(datums[_entry(datum)], at)
+
+
+def _tool(doc: Any) -> Any:
+    """A document's GD&T tool (``XCAFDoc_DimTolTool``), or None where it has none."""
+    from OCP.XCAFDoc import XCAFDoc_DimTolTool
+
+    label = doc.Main().FindChild(DIMTOL_TAG, False)
+    if label.IsNull() or not label.IsAttribute(XCAFDoc_DimTolTool.GetID_s()):
+        return None
+    return XCAFDoc_DimTolTool.Set_s(label)
+
+
+def _labels(tool: Any, kind: str) -> list[Any]:
+    """The GD&T tool's labels of ``kind`` (``datum``, ``dimension``, ``geometric_tolerance``) that hold
+    their object, in the tool's order."""
+    from OCP.TDF import TDF_LabelSequence
+    from OCP.XCAFDoc import XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_GeomTolerance
+
+    listed, attribute = {"datum": (tool.GetDatumLabels, XCAFDoc_Datum),
+                         "dimension": (tool.GetDimensionLabels, XCAFDoc_Dimension),
+                         "geometric_tolerance": (tool.GetGeomToleranceLabels, XCAFDoc_GeomTolerance)}[kind]
+    sequence = TDF_LabelSequence()
+    listed(sequence)
+    return [sequence.Value(at) for at in range(1, sequence.Length() + 1)
+            if sequence.Value(at).IsAttribute(attribute.GetID_s())]
+
+
+def _linked(tool: Any, label: Any) -> tuple[Any, Any]:
+    """The shape labels a GD&T label is linked to: its first and its second (a dimension's ``to``)."""
+    from OCP.TDF import TDF_LabelSequence
+
+    first, second = TDF_LabelSequence(), TDF_LabelSequence()
+    tool.GetRefShapeLabel_s(label, first, second)
+    return first, second
+
+
+def _datums_of(label: Any) -> list[Any]:
+    """The datum labels a geometric tolerance's frame names."""
+    from OCP.TDF import TDF_LabelSequence
+    from OCP.XCAFDoc import XCAFDoc_DimTolTool
+
+    named = TDF_LabelSequence()
+    XCAFDoc_DimTolTool.GetDatumWithObjectOfTolerLabels_s(label, named)
+    return [named.Value(at) for at in range(1, named.Length() + 1)]
+
+
+def _element(label: Any, by_entry: dict[str, Any], maps: dict[tuple[int, str], Any]) -> tuple[int, str, int] | None:
+    """The element a ref label is -- its prototype's index, its kind (``face``, ``edge``, ``vertex``)
+    and its ordinal there -- or None where it is no element of a prototype (``by_entry``: the
+    document's prototypes by their labels' entries; ``maps``: each prototype's elements, made once)."""
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
+    from OCP.XCAFDoc import XCAFDoc_ShapeTool
+
+    from cadgen.engine import refs as grammar
+    from cadgen.engine.document import _entry
+
+    shape = XCAFDoc_ShapeTool.GetShape_s(label)
+    kinds = {TopAbs_FACE: "face", TopAbs_EDGE: "edge", TopAbs_VERTEX: "vertex"}
+    kind = None if shape.IsNull() else kinds.get(shape.ShapeType())
+    owner = label.Father()
+    prototype = by_entry.get(_entry(owner))
+    if kind is None or prototype is None:
+        return None
+    if (prototype.index, kind) not in maps:
+        maps[(prototype.index, kind)] = grammar._map(XCAFDoc_ShapeTool.GetShape_s(owner), kind)
+    ordinal = maps[(prototype.index, kind)].FindIndex(shape)
+    return (prototype.index, kind, ordinal) if ordinal else None
+
+
 # --- read back ---------------------------------------------------------------------------------
 
+# Why a ref of a document another system wrote resolves to nothing.
+_NOT_LINKED = "the file links it to no face, edge or point of a part"
 
-def records_of_document(doc: Any, prototypes: list[Any]) -> list[dict[str, Any]]:
+
+def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict[str, Any]]:
     """A document's annotations as records (``entries``' input): every GD&T object its tool holds,
-    datums, dimensions and geometric tolerances in the tool's order. ``prototypes`` are the
-    document's (``document.Prototype``: each its label's entry and shape)."""
+    datums, dimensions and geometric tolerances in the tool's order, each resolved as the document
+    is now. One the code made (its cadgen attribute) is resolved as its build resolved it
+    (``_resolved``, against its part's faces and their names): its status is derived, never read.
+    One another system wrote is resolved by the elements the file links it to, and what this module
+    does not hold whole is ``unsupported``, with why (``_beyond_*``). ``prototypes`` are the document's
+    (``document.Prototype``: each its label's entry and shape), ``root`` the name of its root."""
     from OCP.Standard import Standard_GUID
     from OCP.TDataStd import TDataStd_AsciiString
-    from OCP.TDF import TDF_LabelSequence
+    from OCP.TDF import TDF_Reference
     from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_DimensionType_Location_LinearDistance,
                                         XCAFDimTolObjects_DimensionType_Size_Diameter,
-                                        XCAFDimTolObjects_GeomToleranceMatReqModif_None,
                                         XCAFDimTolObjects_GeomToleranceType_Flatness,
                                         XCAFDimTolObjects_GeomToleranceType_Position,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_Diameter,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_None)
-    from OCP.XCAFDoc import XCAFDoc_Datum, XCAFDoc_DimTolTool, XCAFDoc_Dimension, XCAFDoc_GeomTolerance
+    from OCP.XCAFDoc import XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_GeomTolerance
 
     from cadgen.engine.document import _entry
 
@@ -806,80 +985,66 @@ def records_of_document(doc: Any, prototypes: list[Any]) -> list[dict[str, Any]]
                   XCAFDimTolObjects_DimensionType_Location_LinearDistance: "distance"}
     characteristics = {XCAFDimTolObjects_GeomToleranceType_Flatness: "flatness",
                        XCAFDimTolObjects_GeomToleranceType_Position: "position"}
-    tool_label = doc.Main().FindChild(DIMTOL_TAG, False)
-    if tool_label.IsNull() or not tool_label.IsAttribute(XCAFDoc_DimTolTool.GetID_s()):
+    tool = _tool(doc)
+    if tool is None:
         return []
-    tool = XCAFDoc_DimTolTool.Set_s(tool_label)
     by_entry = {prototype.entry: prototype for prototype in prototypes}
-    face_maps: dict[int, Any] = {}
+    maps: dict[tuple[int, str], Any] = {}
     guid = Standard_GUID(EXTRA_GUID)
-
-    def located(label: Any) -> tuple[int, int] | None:
-        """A ref label's prototype and face ordinal; None where it is no face of a prototype."""
-        from OCP.TopAbs import TopAbs_FACE
-        from OCP.XCAFDoc import XCAFDoc_ShapeTool
-
-        shape = XCAFDoc_ShapeTool.GetShape_s(label)
-        if shape.IsNull() or shape.ShapeType() != TopAbs_FACE:
-            return None
-        owner = label.Father()
-        prototype = by_entry.get(_entry(owner))
-        if prototype is None:
-            return None
-        faces = face_maps.get(prototype.index)
-        if faces is None:
-            faces = face_maps[prototype.index] = _faces(XCAFDoc_ShapeTool.GetShape_s(owner))
-        ordinal = faces.FindIndex(shape)
-        return (prototype.index, ordinal) if ordinal else None
 
     def extra(label: Any) -> dict[str, Any] | None:
         found = TDataStd_AsciiString()
         if label.IsAttribute(guid) and label.FindAttribute(guid, found):
-            return json.loads(found.Get().ToCString())
+            held = json.loads(found.Get().ToCString())
+            return held if held.get("schema") == SCHEMA else None
         return None
 
-    def linked(label: Any) -> tuple[list, list]:
-        first, second = TDF_LabelSequence(), TDF_LabelSequence()
-        tool.GetRefShapeLabel_s(label, first, second)
-        return ([located(first.Value(at)) for at in range(1, first.Length() + 1)],
-                [located(second.Value(at)) for at in range(1, second.Length() + 1)])
+    def part_of(label: Any) -> int | None:
+        """The prototype an annotation the code made is of: its ``TDF_Reference``'s."""
+        found = TDF_Reference()
+        if not label.FindAttribute(TDF_Reference.GetID_s(), found):
+            return None
+        prototype = by_entry.get(_entry(found.Get()))
+        return None if prototype is None else prototype.index
 
     records: list[dict[str, Any]] = []
-    datum_names: dict[str, str] = {}
 
-    def record(label: Any, kind: str, values: dict[str, Any], first: list, second: list,
-               xcaf_type: str | None) -> None:
+    def add(label: Any, kind: str, values: dict[str, Any], beyond: list[str], xcaf_type: str | None) -> None:
+        """The record of a GD&T label holding an object of ``kind``."""
         held = extra(label)
+        first, second = ([_element(sequence.Value(at), by_entry, maps) for at in range(1, sequence.Length() + 1)]
+                         for sequence in _linked(tool, label))
         if kind == "dimension" and second:
             targets = [("from", hit) for hit in first] + [("to", hit) for hit in second]
         else:
             targets = [("feature", hit) for hit in first]
-        prototypes_held = {hit[0] for _role, hit in targets if hit is not None}
-        record = {"kind": kind, "values": values, "xcaf_type": xcaf_type,
-                  "part": min(prototypes_held) if prototypes_held else None,
-                  "targets": targets, "extra": held, "entry": _entry(label)}
-        records.append(record)
+        found = {"values": values, "targets": targets, "extra": held, "entry": _entry(label), "warnings": []}
+        if held is not None:
+            found.update(kind=held["kind"], xcaf_type=None, reason=None, part=part_of(label))
+            records.append(found)
+            return
+        # Linked to an edge or a point: no annotation on faces, kept and listed, never drawn.
+        beyond = beyond + [f"linked to {'an edge' if element == 'edge' else 'a point'}"
+                           for element in sorted({hit[1] for _role, hit in targets if hit is not None} - {"face"})]
+        refs = [{"role": role, "written": None, "status": "missing" if hit is None else "ok",
+                 "ordinal": None if hit is None else hit[2], "candidates": [],
+                 "problem": _NOT_LINKED if hit is None else None} for role, hit in targets]
+        status = _worst(ref["status"] for ref in refs) if refs else "missing"
+        parts = {hit[0] for _role, hit in targets if hit is not None}
+        found.update(kind="unsupported" if beyond else kind, xcaf_type=xcaf_type if beyond else None,
+                     reason="; ".join(beyond) or None, part=min(parts) if parts else None, status=status,
+                     problem=None if status == "ok" else _NOT_LINKED, refs=refs)
+        records.append(found)
 
-    sequence = TDF_LabelSequence()
-    tool.GetDatumLabels(sequence)
-    for at in range(1, sequence.Length() + 1):
-        label = sequence.Value(at)
-        if not label.IsAttribute(XCAFDoc_Datum.GetID_s()):
-            continue
+    modified: set[str] = set()  # the datums a tolerance cannot be read with: modified, or targets
+    for label in _labels(tool, "datum"):
         found = XCAFDoc_Datum.Set_s(label).GetObject()
-        letter = _name_of(found)
-        datum_names[_entry(label)] = letter
-        first, _second = linked(label)
-        record(label, "datum", {"letter": letter}, first, [], None)
-    sequence = TDF_LabelSequence()
-    tool.GetDimensionLabels(sequence)
-    for at in range(1, sequence.Length() + 1):
-        label = sequence.Value(at)
-        if not label.IsAttribute(XCAFDoc_Dimension.GetID_s()):
-            continue
+        beyond = _beyond_datum(found)
+        if beyond:
+            modified.add(_entry(label))
+        add(label, "datum", {"letter": _name_of(found)}, beyond, "XCAFDimTolObjects_DatumObject")
+    for label in _labels(tool, "dimension"):
         found = XCAFDoc_Dimension.Set_s(label).GetObject()
-        type_name = found.GetType().name
-        first, second = linked(label)
         kind = dimensions.get(found.GetType())
         tolerance = None
         if found.IsDimWithPlusMinusTolerance():
@@ -887,35 +1052,16 @@ def records_of_document(doc: Any, prototypes: list[Any]) -> list[dict[str, Any]]
                          "lower": _as_held(-found.GetLowerTolValue())}
         notes = [(found.GetDescriptionName(at).ToCString(), found.GetDescription(at).ToCString())
                  for at in range(found.NbDescriptions())] if found.HasDescriptions() else []
-        is_basic = THEORETICAL in notes
-        values = {"type": kind, "basic": is_basic, "nominal": _as_held(found.GetValue()), "tolerance": tolerance}
-        # What this module does not model -- a reference (auxiliary) dimension, any other note, a
-        # basic dimension of another type -- is listed as unsupported, with what it holds.
-        other = [note for note in notes if note != THEORETICAL]
-        supported = kind is not None and not other and (kind == "distance" or not is_basic)
+        values = {"type": kind, "basic": THEORETICAL in notes, "nominal": _as_held(found.GetValue()),
+                  "tolerance": tolerance}
         if notes:
             values["notes"] = [list(note) for note in notes]
-        record(label, "dimension" if supported else "unsupported", values, first, second,
-               None if supported else type_name + (f" (notes {other})" if other else " (basic)" if is_basic else ""))
-    sequence = TDF_LabelSequence()
-    tool.GetGeomToleranceLabels(sequence)
-    for at in range(1, sequence.Length() + 1):
-        label = sequence.Value(at)
-        if not label.IsAttribute(XCAFDoc_GeomTolerance.GetID_s()):
-            continue
+        add(label, "dimension", values, _beyond_dimension(found, kind, notes), found.GetType().name)
+    for label in _labels(tool, "geometric_tolerance"):
         found = XCAFDoc_GeomTolerance.Set_s(label).GetObject()
-        type_name = found.GetType().name
-        characteristic = characteristics.get(found.GetType())
-        first, _second = linked(label)
-        named = TDF_LabelSequence()
-        XCAFDoc_DimTolTool.GetDatumWithObjectOfTolerLabels_s(label, named)
-        letters = []
-        for place in range(1, named.Length() + 1):
-            datum_label = named.Value(place)
-            datum = XCAFDoc_Datum.Set_s(datum_label).GetObject()
-            letters.append((datum.GetPosition(), _name_of(datum)))
-        modified = (found.GetModifiers().Length() > 0
-                    or found.GetMaterialRequirementModifier() != XCAFDimTolObjects_GeomToleranceMatReqModif_None)
+        datums = _datums_of(label)
+        letters = sorted((datum.GetPosition(), _name_of(datum))
+                         for datum in (XCAFDoc_Datum.Set_s(named).GetObject() for named in datums))
         value_type = found.GetTypeOfValue()
         if value_type == XCAFDimTolObjects_GeomToleranceTypeValue_Diameter:
             zone = "diameter"
@@ -923,12 +1069,99 @@ def records_of_document(doc: Any, prototypes: list[Any]) -> list[dict[str, Any]]
             zone = None
         else:
             zone = "other"
+        characteristic = characteristics.get(found.GetType())
         values = {"characteristic": characteristic, "value": _as_held(found.GetValue()), "unit": UNIT, "zone": zone,
-                  "modifier": None, "datums": [letter for _place, letter in sorted(letters)]}
-        supported = characteristic is not None and not modified and zone != "other"
-        record(label, "geometric_tolerance" if supported else "unsupported", values, first, [],
-               None if supported else type_name + (" (with modifiers)" if modified else ""))
+                  "modifier": None, "datums": [letter for _place, letter in letters]}
+        beyond = _beyond_tolerance(found, characteristic, zone)
+        if any(_entry(named) in modified for named in datums):
+            beyond.append("a datum it names has modifiers or is a datum target")
+        add(label, "geometric_tolerance", values, beyond, found.GetType().name)
+    # The code's annotations resolved as their build resolved them, each against its part.
+    letters_of: dict[int, set[str]] = {}
+    for record in records:
+        if record["extra"] is not None and record["kind"] == "datum":
+            letters_of.setdefault(record["part"], set()).add(record["values"]["letter"])
+    for record in records:
+        if record["extra"] is not None:
+            prototype = prototypes[record["part"]]
+            faces = _faces(prototype.shape)
+            names = [prototype.face_names.get(at) for at in range(1, faces.Extent() + 1)]
+            given = record["extra"]
+            spec = {"kind": given["kind"], "refs": given["refs"], **(given["unlinked"] or {given["kind"]: record["values"]})}
+            resolved = _resolved(spec, faces, names, {prototype.name, root}, letters_of.get(record["part"], set()))
+            record.update(status=resolved.status, problem=resolved.problem, refs=_refs(resolved))
     return records
+
+
+def _words(name: str) -> str:
+    """An XCAF enumerator's name as words: ``..._Location_LinearDistance`` is ``location linear distance``."""
+    tail = name.split("_", 2)[-1]
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", tail).replace("_", " ").lower()
+
+
+def _beyond_datum(found: Any) -> list[str]:
+    """What a datum of a file says that this module does not hold: modifiers, or a datum target."""
+    from OCP.XCAFDimTolObjects import XCAFDimTolObjects_DatumModifWithValue_None
+
+    beyond = []
+    # The binding hands back a modifier-with-value's value alone (its kind is an out-parameter it
+    # cannot fill): a value says one is set.
+    if found.GetModifiers().Length() or found.GetModifierWithValue(XCAFDimTolObjects_DatumModifWithValue_None)[0]:
+        beyond.append("it has modifiers")
+    if found.IsDatumTarget():
+        beyond.append("it is a datum target")
+    return beyond
+
+
+def _beyond_dimension(found: Any, kind: str | None, notes: list[tuple[str, str]]) -> list[str]:
+    """What a dimension of a file says that this module does not hold: another type, limits, a fit, a
+    qualifier, modifiers, a note other than a basic one's, a basic dimension other than a distance."""
+    beyond = []
+    if kind is None:
+        beyond.append(f"a {_words(found.GetType().name)} dimension is not one this holds")
+    if found.IsDimWithRange():
+        beyond.append("it has limits (a range) in place of a tolerance")
+    if found.IsDimWithClassOfTolerance():
+        beyond.append("it has a class of tolerance (a fit)")
+    if found.HasQualifier():
+        beyond.append(f"it has a qualifier ({_words(found.GetQualifier().name)})")
+    if found.GetModifiers().Length():
+        beyond.append("it has modifiers")
+    other = [list(note) for note in notes if note != THEORETICAL]
+    if other:
+        beyond.append(f"it has notes {other}")
+    if THEORETICAL in notes and kind not in (None, "distance"):
+        beyond.append(f"a basic {kind} is not one this holds")
+    return beyond
+
+
+def _beyond_tolerance(found: Any, characteristic: str | None, zone: str | None) -> list[str]:
+    """What a geometric tolerance of a file says that this module does not hold: another
+    characteristic, modifiers, a material requirement, a zone modifier, a maximum value, a zone
+    other than a width's or a diameter's."""
+    from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_GeomToleranceMatReqModif_None,
+                                        XCAFDimTolObjects_GeomToleranceZoneModif_None)
+
+    beyond = []
+    if characteristic is None:
+        beyond.append(f"{_words(found.GetType().name)} is not a characteristic this holds")
+    if found.GetModifiers().Length():
+        beyond.append("it has modifiers")
+    if found.GetMaterialRequirementModifier() != XCAFDimTolObjects_GeomToleranceMatReqModif_None:
+        beyond.append(f"it has a material requirement ({_words(found.GetMaterialRequirementModifier().name)})")
+    if found.GetZoneModifier() != XCAFDimTolObjects_GeomToleranceZoneModif_None:
+        beyond.append(f"it has a {_words(found.GetZoneModifier().name)} zone")
+    if found.GetMaxValueModifier() > 0:
+        beyond.append("it has a maximum value")
+    if zone == "other":
+        beyond.append(f"its zone is {_words(found.GetTypeOfValue().name)}")
+    return beyond
+
+
+def _refs(item: Resolved) -> list[dict[str, Any]]:
+    """An annotation's refs as a record holds them (``records_of_document``, ``records_of_tree``)."""
+    return [{"role": ref.role, "written": ref.written, "status": ref.status, "ordinal": ref.ordinal,
+             "candidates": list(ref.candidates), "problem": ref.problem} for ref in item.refs]
 
 
 def _name_of(datum: Any) -> str:
@@ -940,7 +1173,8 @@ def _name_of(datum: Any) -> str:
 def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]:
     """A built tree's annotations as the records ``records_of_document`` reads back from its
     document: the same order (each part's datums, then the rest), the same values, as XCAF
-    holds them (``_as_held``)."""
+    holds them (``_as_held``), the same refs resolved; and each one's warnings (``warn``), which
+    are the build's and no document's."""
     records = []
     for part, items in resolve(tree):
         index = index_of[id(part)]
@@ -949,7 +1183,7 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
         for item in ordered:
             spec = item.spec
             linked = item.status == "ok"
-            targets = [(ref.role, (index, ref.ordinal) if linked else None) for ref in item.refs] if linked else []
+            targets = [(ref.role, (index, "face", ref.ordinal)) for ref in item.refs] if linked else []
             if spec["kind"] == "datum":
                 values = {"letter": spec["datum"]["letter"]}
             elif spec["kind"] == "dimension":
@@ -963,9 +1197,11 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
                 given = spec["geometric_tolerance"]
                 values = {"characteristic": given["characteristic"], "value": _as_held(given["value"]), "unit": UNIT,
                           "zone": given["zone"], "modifier": None, "datums": list(given["datums"]) if linked else []}
-            by_kind[spec["kind"]].append({"kind": spec["kind"], "values": values, "xcaf_type": None,
-                                          "part": index if linked else None, "targets": targets,
-                                          "extra": json.loads(_text(_extra(item, part.name))), "entry": None})
+            by_kind[spec["kind"]].append({
+                "kind": spec["kind"], "values": values, "xcaf_type": None, "reason": None, "part": index,
+                "targets": targets, "extra": json.loads(_text(_extra(item))), "entry": None, "status": item.status,
+                "problem": item.problem, "refs": _refs(item),
+                "warnings": list(tree.pmi_warnings.get((part.name, spec["id"])) or ())})
         records.extend(by_kind["datum"] + by_kind["dimension"] + by_kind["geometric_tolerance"])
     # The document's tool lists datums, then dimensions, then tolerances, of every part.
     return sorted(records, key=lambda record: ("datum", "dimension", "geometric_tolerance").index(record["kind"]))
@@ -980,9 +1216,10 @@ def _as_held(value: float) -> float:
 def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[dict[str, Any]]:
     """The structure's ``pmi``: one JSON-plain entry per record -- ``id``, ``kind`` (``dimension``,
     ``datum``, ``geometric_tolerance``, ``unsupported``), ``label``, ``status``, ``problem``,
-    ``part`` (a prototype index), ``refs`` (each ``role``, ``ref`` -- canonical as ``refs`` spells
-    it for this document --, ``written``, ``status``, ``candidates``, ``problem``),
-    ``presentation``, ``xcaf_type``, and the kind's own block of values."""
+    ``warnings``, ``part`` (a prototype index), ``refs`` (each ``role``, ``ref`` -- canonical as
+    ``refs`` spells it for this document --, ``written``, ``status``, ``candidates``, ``problem``),
+    ``presentation``, ``xcaf_type``, an unsupported one's ``reason``, and the kind's own block of
+    values."""
     from cadgen.engine import refs as grammar
 
     root = grammar.structure_tree(structure)
@@ -991,46 +1228,37 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
         first_node.setdefault(node.payload["prototype"], node)
     one_part = len(root.parts()) == 1
     prototypes = structure["prototypes"]
+    named = {"face": "faceNames", "edge": "edgeNames", "vertex": "vertexNames"}
 
-    def canonical(index: int, ordinal: int) -> str:
-        name = (prototypes[index].get("faceNames") or {}).get(str(ordinal))
+    def canonical(index: int, kind: str, ordinal: int) -> str:
+        name = (prototypes[index].get(named[kind]) or {}).get(str(ordinal))
         node = first_node.get(index)
         if node is None:
-            return name or f"face {ordinal}"
-        return grammar._element_ref(root, node, "face", ordinal, name, one_part)
+            return name or f"{kind} {ordinal}"
+        return grammar._element_ref(root, node, kind, ordinal, name, one_part)
 
     found = []
     counters: dict[str, int] = {}
     for record in records:
-        extra = record["extra"]
-        kind = record["kind"]
+        extra, kind = record["extra"], record["kind"]
+        targets = list(record["targets"])
+        refs = []
+        for at, ref in enumerate(record["refs"]):
+            hit = targets[at][1] if at < len(targets) else None
+            refs.append({"role": ref["role"], "written": ref["written"], "status": ref["status"],
+                         "ref": canonical(*hit) if hit is not None else ref["written"],
+                         "candidates": [canonical(record["part"], "face", ordinal)
+                                        for ordinal in ref["candidates"]] or None,
+                         "problem": ref["problem"]})
         if extra is not None:
-            refs = []
-            targets = list(record["targets"])
-            for at, ref in enumerate(extra["refs"]):
-                hit = targets[at][1] if at < len(targets) else None
-                refs.append({"role": ref["role"], "written": ref["written"], "status": ref["status"],
-                             "ref": canonical(*hit) if hit is not None else ref["written"],
-                             # An unlinked annotation names no part of the document: its candidates by ordinal.
-                             "candidates": [canonical(record["part"], ordinal) if record["part"] is not None
-                                            else f"face {ordinal}" for ordinal in ref["candidates"]] or None,
-                             "problem": ref["problem"]})
-            entry = {"id": extra["id"], "kind": kind, "label": extra["label"], "status": extra["status"],
-                     "problem": extra["problem"], "part": record["part"], "refs": refs,
-                     "presentation": extra["presentation"], "xcaf_type": None}
-            unlinked = extra.get("unlinked")
+            ident, label, presentation, unlinked = extra["id"], extra["label"], extra["presentation"], extra["unlinked"]
         else:
             counters[kind] = counters.get(kind, 0) + 1
-            refs = [{"role": role, "written": None, "status": "ok" if hit is not None else "missing",
-                     "ref": canonical(*hit) if hit is not None else None, "candidates": None,
-                     "problem": None if hit is not None else "the file links it to no face of a part"}
-                    for role, hit in record["targets"]]
-            status = _worst(ref["status"] for ref in refs) if refs else "missing"
-            entry = {"id": f"{record['values'].get('letter') or kind}" if kind == "datum" else f"{kind}-{counters[kind]}",
-                     "kind": kind, "label": None, "status": status,
-                     "problem": None if status == "ok" else "the file links it to no face of a part",
-                     "part": record["part"], "refs": refs, "presentation": None, "xcaf_type": record["xcaf_type"]}
-            unlinked = None
+            ident = (record["values"].get("letter") or kind) if kind == "datum" else f"{kind}-{counters[kind]}"
+            label, presentation, unlinked = None, None, None
+        entry = {"id": ident, "kind": kind, "label": label, "status": record["status"], "problem": record["problem"],
+                 "warnings": list(record["warnings"]), "part": record["part"], "refs": refs,
+                 "presentation": presentation, "xcaf_type": record["xcaf_type"]}
         values = record["values"]
         if kind == "datum":
             entry["datum"] = {"letter": values["letter"]}
@@ -1040,12 +1268,15 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
                                       "basic": bool(unlinked["dimension"].get("basic")), "nominal": None,
                                       "tolerance": unlinked["dimension"]["tolerance"]}
             else:
+                # Measured from the geometry where the code made it; as the file says, where another system did.
                 entry["dimension"] = {"type": values["type"], "basic": bool(values.get("basic")),
-                                      "nominal": {"value": values["nominal"], "unit": UNIT, "source": "geometry"},
+                                      "nominal": {"value": values["nominal"], "unit": UNIT,
+                                                  "source": "geometry" if extra is not None else "file"},
                                       "tolerance": values["tolerance"]}
         elif kind == "geometric_tolerance":
             entry["geometric_tolerance"] = dict(unlinked["geometric_tolerance"] if unlinked is not None else values)
         else:
+            entry["reason"] = record["reason"]
             entry["values"] = values
         found.append(entry)
     return found
@@ -1059,3 +1290,51 @@ def read(source: Any) -> list[dict[str, Any]]:
     from cadgen.engine import document
 
     return list(document.Loaded(Path(source)).structure().get("pmi") or [])
+
+
+# --- exports -----------------------------------------------------------------------------------
+
+
+def dropped(view: Any, kind: str) -> list[tuple[dict[str, Any], str]]:
+    """Each annotation of a document that a ``kind`` file written from ``view`` does not carry whole,
+    and why: a posed or partial STEP or xbf, or an xbf of a document this engine wrote, is a document
+    made again from the view (``tree.tree_of``), which carries no PMI; and a STEP drops one linked to
+    no geometry, as an xbf of a STEP (which copies its GD&T as read, ``copy``) keeps one the file links
+    to no element of a part linked to nothing. A mesh carries no B-rep, so no PMI."""
+    entries = view.source.structure.get("pmi") or []
+    if kind not in ("step", "xbf") or not entries:
+        return []
+    shown = "STEP" if kind == "step" else kind
+    if view.posed or view.parted:
+        why = f"a {'posed' if view.posed else 'partial'} {shown} is a document made again, which carries no PMI"
+        return [(entry, why) for entry in entries]
+    if kind == "xbf" and not view.source.foreign:
+        return [(entry, "an xbf written from it is a document made again, which carries no PMI") for entry in entries]
+    return [(entry, f"{entry['status']}: {entry['problem']}") for entry in entries if entry["status"] != "ok"]
+
+
+def refuse_dropped(view: Any, kind: str) -> None:
+    """A ``kind`` file of ``view`` that would not carry whole an annotation the code made
+    (``dropped``), refused by name: it would be no translation of the model's document. One of a
+    document another system wrote is written: ``export.translate`` says what it leaves out."""
+    from cadgen.engine.export import ExportRefused
+
+    lost = [(entry, why) for entry, why in dropped(view, kind) if _from_code(entry)]
+    if not lost:
+        return
+    held = len(view.source.structure["pmi"])
+    if kind == "xbf":
+        raise ExportRefused(f"{view.source.name} holds {held} PMI annotation(s), and an xbf written from it is a "
+                            "document made again, which carries none yet: export it as built, whole")
+    if view.posed or view.parted:
+        raise ExportRefused(f"the document holds {held} PMI annotation(s), and a posed or partial STEP is a "
+                            "document made again, which carries none: export it as built, whole")
+    raise ExportRefused("a STEP would drop PMI linked to no geometry: "
+                        + "; ".join(f"{entry['id']} ({why})" for entry, why in lost)
+                        + ". Fix the refs in the model, or remove the annotations")
+
+
+def _from_code(entry: dict[str, Any]) -> bool:
+    """Whether an entry is an annotation a model's code made (its refs as the code wrote them), not
+    one read from a file another system wrote."""
+    return any(ref.get("written") is not None for ref in entry.get("refs") or ())

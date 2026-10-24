@@ -179,6 +179,23 @@ class Painter:
         inside = (np.abs(outside) <= half) if stroke else (outside <= 0)
         self._over(where, inside, color, alpha)
 
+    def words(self, text: str, face: Any, x: float, middle: float, color: Any, align: str = "left") -> None:
+        """Words in ``face`` (``text.face``) with their em box's middle on ``middle`` (``textBaseline``
+        "middle"), from ``x`` (``align`` "center": centred on it), in viewer pixels."""
+        from cadgen.engine.render.text import coverage
+
+        k = self.scale
+        left, top = x * k, middle * k - face.size * k / 2  # the em box is the font size tall
+        width = face.width(text) * k
+        start = left - width / 2 if align == "center" else left
+        box = (int(max(math.floor(start - 2), 0)), int(max(math.floor(top - 4), 0)))
+        size = (min(int(math.ceil(width)) + 5, self.width - box[0]),
+                min(int(math.ceil(face.size * k)) + 9, self.height - box[1]))
+        if size[0] <= 0 or size[1] <= 0:
+            return
+        cover = coverage([text], face, size, (left - box[0], top - box[1]), 0, scale=k, align=align)
+        self.coverage((slice(box[1], box[1] + size[1]), slice(box[0], box[0] + size[0])), cover, color)
+
 
 def _rgb(color: str) -> tuple[int, int, int]:
     color = color.lstrip("#")
@@ -188,7 +205,7 @@ def _rgb(color: str) -> tuple[int, int, int]:
 def paint_measurements(frame: np.ndarray, marks: list[dict[str, Any]], project: Any) -> None:
     """Measure's marks painted over ``frame`` (sRGB bytes, (h, w, 3), changed in place) as the
     snapshot page paints them: ``project`` maps world points to output pixels (x right, y down)."""
-    from cadgen.engine.render.text import coverage, face as text_face
+    from cadgen.engine.render.text import face as text_face
 
     height, width = frame.shape[:2]
     scale = height / REFERENCE_HEIGHT
@@ -218,11 +235,4 @@ def paint_measurements(frame: np.ndarray, marks: list[dict[str, Any]], project: 
         painter.rounded_box(x, y, chip_w, chip_h, LABEL_RADIUS, LABEL_BACKGROUND[:3], LABEL_BACKGROUND[3])
         painter.rounded_box(x, y, chip_w, chip_h, LABEL_RADIUS, color, stroke=1.0)
         # textBaseline "middle": the em box's middle on the chip's; textAlign "center".
-        middle_x, middle_y = (x + chip_w / 2) * scale, (y + chip_h / 2) * scale
-        top = middle_y - face.size * scale / 2  # the em box is the font size tall
-        box = (int(max(math.floor(middle_x - face.width(label) * scale / 2 - 2), 0)), int(max(math.floor(top - 4), 0)))
-        size = (min(int(math.ceil(face.width(label) * scale)) + 5, width - box[0]), min(int(math.ceil(face.size * scale)) + 9, height - box[1]))
-        if size[0] <= 0 or size[1] <= 0:
-            continue
-        cover = coverage([label], face, size, (middle_x - box[0], top - box[1]), 0, scale=scale, align="center")
-        painter.coverage((slice(box[1], box[1] + size[1]), slice(box[0], box[0] + size[0])), cover, (255, 255, 255))
+        painter.words(label, face, x + chip_w / 2, y + chip_h / 2, (255, 255, 255), align="center")

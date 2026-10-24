@@ -8,6 +8,12 @@ import { PmiGlyph } from "./pmiGlyphs.jsx";
 // the next. Ink on paper, so it reads over any part: the theme's foreground on its background.
 
 const BOX = "inline-flex items-stretch rounded-[2px] border bg-background/95 text-tiny leading-4 tabular-nums text-foreground shadow-sm";
+// A callout whose reference broke is in its status's colour, the theme's: one that names nothing or
+// a face it cannot stand on in the destructive token, one that names several in amber. Its box's
+// border here, and its leader the overlay reads from the same token (`PMI_STATUS_TOKENS`,
+// `PmiOverlay.jsx`), so the two are one colour.
+export const PMI_STATUS_TOKENS = Object.freeze({ missing: "--destructive", invalid: "--destructive", ambiguous: "--color-amber-500" });
+const STATUS_BORDER = Object.freeze({ missing: "border-destructive", invalid: "border-destructive", ambiguous: "border-amber-500" });
 const CELL = "flex items-center px-1";
 const GLYPH = "size-3 shrink-0";
 
@@ -22,7 +28,7 @@ function Tolerance({ tolerance }) {
 /** A callout's words in their box: `pmiCallout`'s pieces, the box in its state's colour. */
 export default function PmiLabel({ callout, status = "ok", selected = false, hovered = false, moved = false, className }) {
   // Picked or moved, in the selection blue the overlay draws its leaders in (`--pmi-selected`, `PmiOverlay.jsx`).
-  const border = status === "missing" || status === "invalid" ? "border-destructive border-dashed" : status === "ambiguous" ? "border-amber-500 border-dashed"
+  const border = STATUS_BORDER[status] ? cn(STATUS_BORDER[status], "border-dashed")
     : selected ? "border-(--pmi-selected) ring-2 ring-(--pmi-selected)/35" : hovered ? "border-foreground" : "border-foreground/60";
   const box = cn(BOX, border, moved && "outline-dashed outline-1 outline-offset-2 outline-(--pmi-selected)", className);
   if (callout.kind === "dimension") {

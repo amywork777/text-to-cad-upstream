@@ -18,6 +18,9 @@ test("size limits preserve signed deviations and never invent an unspecified tol
   assert.deepEqual(dimensionLimits(diameter), { lower: 10, upper: 10.05, unit: "mm", places: 2 });
   assert.deepEqual(dimensionLimits({ ...diameter, dimension: { ...diameter.dimension, tolerance: { lower: -.2, upper: .1 } } }), { lower: 9.8, upper: 10.1, unit: "mm", places: 1 });
   assert.equal(dimensionLimits({ ...diameter, dimension: { ...diameter.dimension, tolerance: null } }), null);
+  // Both limits at the places the nominal is written at: what it needs, where the tolerance needs fewer.
+  assert.deepEqual(dimensionLimits({ ...diameter, dimension: { ...diameter.dimension, nominal: 6.35, tolerance: { lower: -0.1, upper: 0.1 } } }),
+    { lower: 6.25, upper: 6.45, unit: "mm", places: 2 });
   assert.equal(dimensionLimits({ ...diameter, status: "missing" }), null);
 });
 test("a face reveals every attached requirement, and datum links stay on the same part", () => {

@@ -9,6 +9,8 @@ Every script of `models/examples/src`, ported to `cadgen.engine`: one `@xbf` eac
 | `basic_shape_mating_test_fixture.py` | `XBF/basic_shape_mating_test_fixture.xbf` | Seven parts and a sub-assembly seated on a base plate by build123d joints |
 | `electronics_enclosure_base_import.py` | `XBF/electronics_enclosure_base_import.xbf`, `XBF/basic_shape_mating_test_fixture_import.xbf` | `STEP/electronics_enclosure_base.step` and `STEP/basic_shape_mating_test_fixture.step` read back with `read_step` |
 | `electronics_enclosure_base_drawing.py` | `PDF/electronics_enclosure_base_drawing.pdf` | **Engineering drawing** (`@eng_drawing`) of the enclosure, read from its xbf (`read_xbf`): three views with hidden lines and centre marks, measured dimensions, hole callouts, title block. Build the enclosure first. |
+| `pmi_plate.py` | `XBF/pmi_plate.xbf`, `XBF/pmi_plate.step` | **Semantic PMI**: a plate with a through-hole, datums A/B/C, thickness and hole-diameter dimensions with plus-minus tolerances, flatness, and the hole's position to A\|B\|C located by basic dimensions from B and C, exported as AP242 semantic PMI (tolerance values illustrative; Aluminum 6061-T6) |
+| `aerospace_avionics_bracket.py` | `XBF/aerospace_avionics_bracket.xbf`, `XBF/aerospace_avionics_bracket.step` | **Semantic PMI** on a bracket with a back wall, webs, slots and a locating bore: datums A/B/C, toleranced thickness and bore, flatness, and the bore's position located by basic dimensions (geometry and tolerance values illustrative, not a flight part; Aluminum 7075-T6) |
 | `cam_follower_roller.py` | `XBF/cam_follower_roller.xbf` | Cam follower roller with central bearing bore and rounded outer profile (Steel 4140) |
 | `centrifugal_impeller.py` | `XBF/centrifugal_impeller.xbf` | Single solid centrifugal impeller (Aluminum 6061-T6) |
 | `circular_flange.py` | `XBF/circular_flange.xbf` | Circular flange with a six-hole bolt circle (Steel 1018) |
@@ -18,8 +20,6 @@ Every script of `models/examples/src`, ported to `cadgen.engine`: one `@xbf` eac
 | `flywheel_disk.py` | `XBF/flywheel_disk.xbf` | Flywheel disk with central bore, annular rim, and lightening holes (Steel 1018) |
 | `gusset_plate.py` | `XBF/gusset_plate.xbf` | Gusset plate with a triangular web, base holes, and softened perimeter edges (Steel A36) |
 | `keyed_shaft_hub.py` | `XBF/keyed_shaft_hub.xbf` | Keyed shaft hub with central bore, keyway slot, and bolt-hole pattern (Steel 1018) |
-| `pmi_plate.py` | `XBF/pmi_plate.xbf`, `XBF/pmi_plate.step` | **Semantic PMI**: a plate with a through-hole, datums A/B/C, thickness and hole-diameter dimensions with plus-minus tolerances, flatness, and the hole's position to A\|B\|C located by basic dimensions from B and C, exported as AP242 semantic PMI (tolerance values illustrative) |
-| `aerospace_avionics_bracket.py` | `XBF/aerospace_avionics_bracket.xbf`, `XBF/aerospace_avionics_bracket.step` | **Semantic PMI** on a bracket with a back wall, webs, slots and a locating bore: datums A/B/C, toleranced thickness and bore, flatness, and the bore's position located by basic dimensions (geometry and tolerance values illustrative, not a flight part) |
 | `mounting_plate.py` | `XBF/mounting_plate.xbf` | Mounting plate with central cutout, side slot, four corner holes, rounded edges; also `XBF/mounting_plate.stl`, `.3mf`, `.glb` (Aluminum 6061-T6) |
 | `open_top_electronics_enclosure.py` | `XBF/open_top_electronics_enclosure.xbf` | Open-top electronics enclosure with corner bosses (ABS) |
 | `print_in_place_hinge.py` | `XBF/print_in_place_hinge.xbf` | Print-in-place barrel hinge for FDM printing: two leaves, one revolute joint (PLA) |
@@ -36,7 +36,7 @@ Every script of `models/examples/src`, ported to `cadgen.engine`: one `@xbf` eac
 | `stepped_shaft_keyway.py` | `XBF/stepped_shaft_keyway.xbf` | Stepped shaft with keyway (Steel 4140) |
 | `t_slot_slider_block.py` | `XBF/t_slot_slider_block.xbf` | T-slot slider block with central channel, side relief cuts, and mounting holes (Aluminum 6061-T6) |
 
-The 24 parts after the first five are the old project's, ported as they were: `@step`
+The 24 parts after the first seven are the old project's, ported as they were: `@step`
 became `@xbf(out="../XBF/<name>.xbf")`, `build123d` is imported directly, and the two
 that also declared STL, 3MF and GLB keep those as decorators on the same function,
 writing beside the xbf. Their shared builders are `lib/simple_model_library.py` (the
@@ -54,8 +54,8 @@ anodised in each part's own colour (`color=None`). The imports read the STEP
 inputs as they are, without materials.
 
 Each model declares its xbf alone, but the mounting plate and the gear blank (STL, 3MF and
-GLB beside it). The import reads fixed STEP inputs committed in
-`../STEP/`, exported once from the enclosure and the fixture; no model writes them
+GLB beside it) and the two PMI examples (a STEP beside it, its PMI as AP242's). The import
+reads fixed STEP inputs committed in `../STEP/`, exported once from the enclosure and the fixture; no model writes them
 (re-export one with `cadgen export ../XBF/NAME.xbf ../STEP/NAME.step`).
 Build from this folder, in any order: each script builds every model it defines, for example
 

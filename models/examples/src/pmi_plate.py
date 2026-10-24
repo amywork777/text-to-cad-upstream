@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import build123d as bd
 
-from cadgen.engine import pmi, step, xbf
+from cadgen.engine import materials, pmi, step, xbf
 
 
 @xbf(out="../XBF/pmi_plate.xbf")
@@ -18,6 +18,7 @@ from cadgen.engine import pmi, step, xbf
 def pmi_plate():
     body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
     body.label = "plate"
+    body.material = materials.aluminium_6061
     bottom = body.faces().sort_by(bd.Axis.Z)[0]
     top = body.faces().sort_by(bd.Axis.Z)[-1]
     front = body.faces().sort_by(bd.Axis.Y)[0]

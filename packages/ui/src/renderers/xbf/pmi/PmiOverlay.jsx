@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { ANNOTATION_HIDDEN_OPACITY } from "@text-to-cad/core/common/annotation.js";
 import { cn } from "@text-to-cad/ui/utils";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
-import PmiLabel from "./PmiLabel.jsx";
+import PmiLabel, { PMI_STATUS_TOKENS } from "./PmiLabel.jsx";
 import { separateLabels } from "./separateLabels.js";
 
 // An engine document's PMI over the viewport: each annotation's label, a few words at the UI's
@@ -20,8 +20,9 @@ import { separateLabels } from "./separateLabels.js";
 
 // The canvas's inks: what Select has picked, as the annotations and the measurements are, in the one
 // selection blue (the labels' too, `--pmi-selected`); and a reference the engine could not stand the
-// annotation on: it names nothing, or a face it cannot stand on (failed), or several (a warning).
-const COLOR = Object.freeze({ selected: "#2979ff", missing: "#ef4444", invalid: "#ef4444", ambiguous: "#f59e0b" });
+// annotation on, in its status's colour, read from the token its label's box is drawn in
+// (`PMI_STATUS_TOKENS`): it names nothing, or a face it cannot stand on (failed), or several (a warning).
+const SELECTED_COLOR = "#2979ff";
 const ARROW_PX = 7, ARROW_HALF_PX = 2.6, DATUM_PX = 6;
 const FINE_SLOP_PX = 4, COARSE_SLOP_PX = 12;
 // How far a distance's words stand off its dimension line.
@@ -68,8 +69,8 @@ function datumTriangle(context, base, from, hollow = false) {
   if (hollow) context.stroke(); else context.fill();
 }
 
-function drawItem(context, item, at, ink) {
-  const color = item.status !== "ok" ? COLOR[item.status] || ink : item.selected ? COLOR.selected : ink;
+function drawItem(context, item, at, inks) {
+  const color = item.status !== "ok" ? inks[item.status] || inks.ok : item.selected ? SELECTED_COLOR : inks.ok;
   context.strokeStyle = color;
   context.fillStyle = color;
   const alpha = item.hovered || item.selected ? 1 : 0.85;
@@ -121,12 +122,13 @@ function drawItem(context, item, at, ink) {
 
 /**
  * @param {{ viewport: { runtimeRef: object, hostRef: object, viewerReadyTick: number },
- *   items: ReadonlyArray<{ id: string, kind: string, callout: object, status: string, construction: object,
+ *   items: ReadonlyArray<{ key: string, id: string, kind: string, callout: object, status: string, construction: object,
  *     selected: boolean, hovered: boolean, moved: boolean, problem: string }>,
- *   interactive: boolean, onSelect: (id: string) => void, onHover: (id: string) => void,
- *   onMove: (id: string, label: number[]) => void, onLookAt: (id: string) => void,
+ *   interactive: boolean, onSelect: (key: string) => void, onHover: (key: string) => void,
+ *   onMove: (key: string, label: number[]) => void, onLookAt: (key: string) => void,
  *   hiddenAt?: ((point: number[]) => boolean) | null }} props
- *   `construction`: each annotation's points in the scene's coordinates (`pmiConstruction`); `onMove`:
+ *   `key`: an annotation's, what every callback is given (`id`, its author's, what its label says it
+ *   is); `construction`: each annotation's points in the scene's coordinates (`pmiConstruction`); `onMove`:
  *   where a dragged label was let go, in the scene's coordinates; `hiddenAt`: whether the model hides
  *   a point from the camera as it stands (a leader's start, an extension line's), which is drawn faint.
  */
@@ -137,7 +139,7 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
   const labels = useRef(new Map());
   const itemsRef = useRef(items);
   itemsRef.current = items;
-  // A label being dragged: its id and where it is now, in the scene's coordinates.
+  // A label being dragged: its annotation's key and where it is now, in the scene's coordinates.
   const dragRef = useRef(null);
   const repaintRef = useRef(() => {});
   const callbacks = useRef(null);
@@ -171,13 +173,16 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
       if (!context) return;
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       context.clearRect(0, 0, width, height);
-      const ink = getComputedStyle(root).color || "#888";
+      // The theme's inks as they are now: the labels' foreground, and each status's token.
+      const style = getComputedStyle(root);
+      const inks = { ok: style.color || "#888" };
+      for (const [status, token] of Object.entries(PMI_STATUS_TOKENS)) inks[status] = style.getPropertyValue(token).trim() || inks.ok;
       const project = projectWith(runtime.THREE, camera, width, height);
       // Where each label falls, then set apart where two would cover one another (a dimension's
       // stays on its line, and a dragged one where the pointer has it).
       const drawn = itemsRef.current.map((item) => {
-        const element = labels.current.get(item.id);
-        const dragged = drag?.id === item.id;
+        const element = labels.current.get(item.key);
+        const dragged = drag?.key === item.key;
         const label = project(dragged ? drag.label : item.construction?.label);
         return element && label ? { item, element, label, box: { x: label.x, y: label.y, w: element.offsetWidth, h: element.offsetHeight,
           movable: !dragged && item.construction.placed === "default" && !item.construction.dimension } } : { item, element, label: null };
@@ -185,7 +190,7 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
       // A distance's words stand beside its dimension line, out from the part (the side its
       // extension lines run to), clear of the line and its arrows.
       for (const entry of drawn) {
-        const dimension = entry.label && drag?.id !== entry.item.id ? entry.item.construction?.dimension : null;
+        const dimension = entry.label && drag?.key !== entry.item.key ? entry.item.construction?.dimension : null;
         if (!dimension) continue;
         const from = project(dimension.from), to = project(dimension.to), anchor = project(entry.item.construction.anchor);
         if (!from || !to) continue;
@@ -211,13 +216,13 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
         element.style.transform = `translate(${Math.round(box.x)}px, ${Math.round(box.y)}px) translate(-50%, -50%)`;
         const construction = item.construction;
         const behind = point => Boolean(point && hiddenAtRef.current?.(point));
-        const dimension = construction?.dimension && drag?.id !== item.id ? {
+        const dimension = construction?.dimension && drag?.key !== item.key ? {
           from: project(construction.dimension.from), to: project(construction.dimension.to),
           extensions: construction.dimension.extensions.map(([a, b]) => [project(a), project(b)]),
           behind: construction.dimension.extensions.map(([a]) => behind(a))
         } : null;
         drawItem(context, item, { anchor: project(construction?.anchor), box, dimension, broken: Boolean(construction?.broken),
-          behind: !construction?.broken && !construction?.dimension && behind(construction?.anchor) }, ink);
+          behind: !construction?.broken && !construction?.dimension && behind(construction?.anchor) }, inks);
       }
       context.globalAlpha = 1;
       context.setLineDash([]);
@@ -257,7 +262,7 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
       // Only the picked annotation moves: a drag of another is nothing, so a stray press never re-places it.
       if (!item.selected || depth === null) return;
       moved = true;
-      dragRef.current = { id: item.id, label: at(next.clientX, next.clientY) };
+      dragRef.current = { key: item.key, label: at(next.clientX, next.clientY) };
     };
     const end = (last) => {
       element.removeEventListener("pointermove", move);
@@ -266,8 +271,8 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
       releasePointer(element, event.pointerId);
       const drag = dragRef.current;
       dragRef.current = null;
-      if (moved && drag) callbacks.current.onMove(item.id, at(last.clientX, last.clientY));
-      else if (Math.hypot(last.clientX - start.x, last.clientY - start.y) <= slop) callbacks.current.onSelect(item.id);
+      if (moved && drag) callbacks.current.onMove(item.key, at(last.clientX, last.clientY));
+      else if (Math.hypot(last.clientX - start.x, last.clientY - start.y) <= slop) callbacks.current.onSelect(item.key);
     };
     const cancel = () => {
       element.removeEventListener("pointermove", move);
@@ -280,19 +285,19 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
     element.addEventListener("pointercancel", cancel);
   };
 
-  return <div ref={rootRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden text-foreground" style={{ "--pmi-selected": COLOR.selected }} data-cad-pmi="">
+  return <div ref={rootRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden text-foreground" style={{ "--pmi-selected": SELECTED_COLOR }} data-cad-pmi="">
     <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />
-    {items.map(item => <button key={item.id} type="button" ref={node => { if (node) labels.current.set(item.id, node); else labels.current.delete(item.id); }}
+    {items.map(item => <button key={item.key} type="button" ref={node => { if (node) labels.current.set(item.key, node); else labels.current.delete(item.key); }}
       tabIndex={interactive ? 0 : -1} aria-label={`${item.callout.text}${item.problem ? `: ${item.problem}` : ""}`} aria-pressed={item.selected}
       data-pmi-label={item.id} data-pmi-status={item.status} data-selected={item.selected ? "" : undefined}
       className={cn("absolute left-0 top-0 select-none whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
         interactive ? "pointer-events-auto touch-none" : "pointer-events-none", item.selected && interactive && "cursor-move")}
       style={{ visibility: "hidden" }}
       onPointerDown={event => press(event, item)}
-      onPointerEnter={() => { if (interactive) callbacks.current.onHover(item.id); }}
+      onPointerEnter={() => { if (interactive) callbacks.current.onHover(item.key); }}
       onPointerLeave={() => { if (interactive) callbacks.current.onHover(""); }}
-      onDoubleClick={(event) => { if (!interactive) return; event.stopPropagation(); callbacks.current.onLookAt(item.id); }}
-      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); callbacks.current.onSelect(item.id); } }}>
+      onDoubleClick={(event) => { if (!interactive) return; event.stopPropagation(); callbacks.current.onLookAt(item.key); }}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); callbacks.current.onSelect(item.key); } }}>
       <PmiLabel callout={item.callout} status={item.status} selected={item.selected} hovered={item.hovered} moved={item.moved} />
     </button>)}
   </div>;

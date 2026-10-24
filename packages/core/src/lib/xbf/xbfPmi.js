@@ -6,8 +6,12 @@
 // What is said comes from the document alone: a dimension's nominal is the engine's, measured on
 // the geometry; a tolerance is what the model's code supplied, and none where it supplied none --
 // the viewer never fills one in. A basic dimension (`pmi.basic`: theoretically exact, as a position
-// tolerance's true position is located) is a distance that holds no tolerance at all, drawn boxed. Where an annotation stands on screen (`presentation`) is no part of
-// what it means: moving it changes how it is drawn, never what it says.
+// tolerance's true position is located) is a distance that holds no tolerance at all, drawn boxed.
+// Where an annotation stands on screen (`presentation`) is no part of what it means: moving it
+// changes how it is drawn, never what it says.
+//
+// An id is the author's and unique on its part (a datum's is its letter), so an annotation is known
+// by its part and its id (`key`), and asked for by both.
 //
 // The document is made from code (`pmi.annotate(body, pmi.datum("A", ...), ...)` in the model), so
 // a change asked for in the viewer is the call it would write there (`pmiCallText`,
@@ -55,7 +59,8 @@ function readTolerance(value) {
 /**
  * Why an entry the document holds is not one the viewer draws, or "" for one it draws: an unknown
  * kind, a dimension of a type it does not draw, a characteristic it does not draw, or the values
- * its kind needs missing.
+ * its kind needs missing. Where the engine says why (an `unsupported` entry's `reason`), its words
+ * are said instead (`readXbfPmi`).
  */
 function unsupportedReason(entry) {
   if (entry.kind === "unsupported") return entry.xcafType ? `${entry.xcafType} is not one the viewer draws` : "not one the viewer draws";
@@ -74,13 +79,16 @@ function unsupportedReason(entry) {
   return "";
 }
 
+/** What an annotation is known by in its document: its part (`part`, the structure's prototype) and its id. */
+export const pmiKey = (part, id) => `${part ?? ""}:${id}`;
+
 /**
  * The document's PMI as the viewer reads it (`structure.pmi`; none where the key is absent), each
  * entry with every field its kind carries, read defensively: a field missing or of the wrong type
  * is null, never guessed. `supported` is whether the viewer draws it, `unsupported` why not.
  *
  * @param {object | null} structure  A served document's structure.
- * @returns {Array<{ id: string, kind: string, label: string, status: "ok" | "ambiguous" | "missing",
+ * @returns {Array<{ key: string, id: string, kind: string, label: string, status: "ok" | "ambiguous" | "missing" | "invalid",
  *   problem: string, refs: Array<{ role: string, ref: string, written: string, status: string, candidates: string[] }>,
  *   dimension: { type: string, basic: boolean, nominal: number | null, unit: string, source: string,
  *     tolerance: { type: "plus_minus", upper: number, lower: number } | null } | null,
@@ -88,18 +96,23 @@ function unsupportedReason(entry) {
  *   tolerance: { characteristic: string, value: number | null, unit: string, zone: string | null,
  *     modifier: string | null, datums: string[] } | null,
  *   presentation: { anchor: number[], offset: number[] } | null, xcafType: string, part: number | null,
- *   values: Array<[string, string]> | null, supported: boolean, unsupported: string }>}
- *   `part`: the structure's prototype the annotation is of (its presentation is in that part's
- *   frame), null where it is linked to nothing; `values`: what an unsupported one holds, as words.
+ *   warnings: string[], values: Array<[string, string]> | null, supported: boolean, unsupported: string }>}
+ *   `key`: its part's and its id (`pmiKey`), what the viewer knows it by; `part`: the structure's
+ *   prototype the annotation is of (its presentation is in that part's frame), null where it is
+ *   linked to nothing; `warnings`: what the build that served it warned of (a ref that names another
+ *   kind of face than on the last build; a file holds none); `values`: what an unsupported one holds,
+ *   as words; `unsupported`: why it is not drawn, the engine's reason where it gives one.
  */
 export function readXbfPmi(structure) {
   const list = Array.isArray(structure?.pmi) ? structure.pmi : [];
   const seen = new Set();
   return list.filter(item => item && typeof item === "object").map((item, index) => {
-    // An id is the author's and unique; one the document repeats or lacks is kept apart by its place.
-    let id = text(item.id) || `#${index + 1}`;
-    if (seen.has(id)) id = `${id}#${index + 1}`;
-    seen.add(id);
+    // One the document lacks an id for, or repeats on a part, is kept apart by its place.
+    const part = Number.isInteger(item.part) ? item.part : null;
+    const id = text(item.id) || `#${index + 1}`;
+    let key = pmiKey(part, id);
+    if (seen.has(key)) key = `${key}#${index + 1}`;
+    seen.add(key);
     const dimension = item.dimension && typeof item.dimension === "object" ? {
       type: text(item.dimension.type), basic: item.dimension.basic === true, nominal: finite(item.dimension.nominal?.value),
       unit: text(item.dimension.nominal?.unit) || "mm", source: text(item.dimension.nominal?.source),
@@ -115,14 +128,16 @@ export function readXbfPmi(structure) {
     const presentation = item.presentation && point3(item.presentation.anchor) && point3(item.presentation.offset)
       ? { anchor: point3(item.presentation.anchor), offset: point3(item.presentation.offset) } : null;
     const entry = {
-      id, kind: text(item.kind), label: text(item.label), status: statusOf(item.status), problem: text(item.problem),
-      part: Number.isInteger(item.part) ? item.part : null,
+      key, id, kind: text(item.kind), label: text(item.label), status: statusOf(item.status), problem: text(item.problem), part,
       refs: readRefs(item.refs), dimension, datum: item.datum && text(item.datum.letter) ? { letter: text(item.datum.letter) } : null,
       tolerance: gdt, presentation, xcafType: text(item.xcaf_type),
+      warnings: Array.isArray(item.warnings) ? item.warnings.map(text).filter(Boolean) : [],
       // What the document holds of an annotation the viewer does not draw: its plain values, to read.
       values: item.values && typeof item.values === "object" && !Array.isArray(item.values) ? readValues(item.values) : null
     };
-    const unsupported = unsupportedReason(entry);
+    // Whether it is drawn is the viewer's to say; why not, the engine's words where it gives them.
+    const own = unsupportedReason(entry);
+    const unsupported = own && (text(item.reason) || own);
     return { ...entry, supported: !unsupported, unsupported };
   });
 }
@@ -162,9 +177,19 @@ const CHARACTERISTIC_NAMES = Object.freeze({ flatness: "Flatness", position: "Po
 const DIMENSION_NAMES = Object.freeze({ distance: "Distance", diameter: "Diameter" });
 
 /**
- * What a callout says, in pieces a label draws and in words: a dimension's nominal (at the
- * tolerance's places, where it has one), its `⌀` for a diameter and its tolerance, `basic` for one
- * that is exact (a drawing boxes its number); a datum's letter;
+ * The places a dimension's numbers are written at: its tolerance's (none without one) or what its
+ * nominal needs (up to four), whichever is more -- the nominal's on its callout, and both of its
+ * current limits'.
+ */
+export function pmiDimensionPlaces(dimension) {
+  const tolerance = pmiToleranceText(dimension.tolerance);
+  return Math.max(tolerance ? tolerance.places : 0, dimension.nominal === null ? 0 : decimalsOf(dimension.nominal));
+}
+
+/**
+ * What a callout says, in pieces a label draws and in words: a dimension's nominal (at
+ * `pmiDimensionPlaces`), its `⌀` for a diameter and its tolerance, `basic` for one that is exact (a
+ * drawing boxes its number); a datum's letter;
  * a frame's cells -- its characteristic, its value (with `⌀` for a diameter zone) and each datum it
  * refers to. `text` is the one line a row, a hint or a copy carries.
  *
@@ -175,8 +200,7 @@ export function pmiCallout(entry) {
   if (entry.kind === "dimension") {
     const tolerance = pmiToleranceText(entry.dimension.tolerance);
     // No nominal where the reference broke: there is nothing to measure it on.
-    const nominal = entry.dimension.nominal === null ? "?"
-      : pmiNumber(entry.dimension.nominal, tolerance ? Math.max(tolerance.places, 0) : Math.min(decimalsOf(entry.dimension.nominal), 2));
+    const nominal = entry.dimension.nominal === null ? "?" : pmiNumber(entry.dimension.nominal, pmiDimensionPlaces(entry.dimension));
     const diameter = entry.dimension.type === "diameter";
     const basic = entry.dimension.basic;
     return { kind: "dimension", type: entry.dimension.type, diameter, basic, nominal, tolerance, unit: entry.dimension.unit,
@@ -235,15 +259,16 @@ function pmiPlusMinusText(tolerance) {
  * - `{ kind: "dimension", type: "diameter", id, ref, tolerance? }`: `pmi.diameter(id, ref, tolerance=...)`;
  * - `{ kind: "geometric_tolerance", characteristic: "flatness", id, ref, value }`: `pmi.flatness(id, ref, value)`;
  * - `{ kind: "geometric_tolerance", characteristic: "position", id, ref, value, datums, diameterZone }`:
- *   `pmi.position(id, ref, value, datums=[...], diameter_zone=True)`.
+ *   `pmi.position(id, ref, value, datums=[...], diameter_zone=True)`, its zone said either way (the
+ *   engine's is a diameter's unless the call says it is not).
  *
- * A tolerance is written only where one is given. `presentation`, where given, is its `pmi.place`.
- * Null for a call that lacks what its kind needs: nothing is filled in.
+ * A tolerance is written only where one is given. `label`, where given, is its `label=`, and
+ * `presentation` its `pmi.place`. Null for a call that lacks what its kind needs: nothing is filled in.
  */
 export function pmiCallText(call) {
   if (!call?.id) return null;
-  const place = call.presentation ? [`presentation=${pmiPlaceText(call.presentation)}`] : [];
-  const args = (...items) => items.filter(item => item !== null && item !== undefined).concat(place).join(", ");
+  const tail = [call.label ? `label=${pyString(call.label)}` : null, call.presentation ? `presentation=${pmiPlaceText(call.presentation)}` : null];
+  const args = (...items) => [...items, ...tail].filter(item => item !== null && item !== undefined).join(", ");
   if (call.kind === "datum") {
     if (!call.ref || !call.letter) return null;
     return `pmi.datum(${args(pyString(call.letter), pyString(call.ref))})`;
@@ -267,7 +292,7 @@ export function pmiCallText(call) {
     if (call.characteristic === "position") {
       const datums = (call.datums || []).filter(Boolean);
       return `pmi.position(${args(pyString(call.id), pyString(call.ref), pyNumber(call.value),
-        datums.length ? `datums=[${datums.map(pyString).join(", ")}]` : null, call.diameterZone ? "diameter_zone=True" : null)})`;
+        datums.length ? `datums=[${datums.map(pyString).join(", ")}]` : null, `diameter_zone=${call.diameterZone ? "True" : "False"}`)})`;
     }
   }
   return null;
@@ -276,9 +301,10 @@ export function pmiCallText(call) {
 /**
  * An entry the document holds as the call that declares it, with `changes` over its values
  * (`{ tolerance, value, letter, datums, diameterZone, presentation }`, each where given; a tolerance
- * of null takes it away): what an edit in the viewer asks the code to become. Its references are
- * the canonical refs this build resolved them to (`ref`), which name the same elements however the
- * code wrote them (a variable holding a face, say); the code's own where none resolved.
+ * of null takes it away) and its label as it is: what an edit in the viewer asks the code to become.
+ * Its references are the canonical refs this build resolved them to (`ref`), which name the same
+ * elements however the code wrote them (a variable holding a face, say); the code's own where none
+ * resolved.
  */
 export function pmiEntryCall(entry, changes = {}) {
   const given = key => (Object.prototype.hasOwnProperty.call(changes, key) ? changes[key] : undefined);
@@ -287,21 +313,24 @@ export function pmiEntryCall(entry, changes = {}) {
     return (found?.status === "ok" ? found.ref : found?.written) || "";
   };
   const presentation = given("presentation") === undefined ? entry.presentation : given("presentation");
-  if (entry.kind === "datum") return { kind: "datum", id: entry.id, letter: given("letter") ?? entry.datum.letter, ref: refOf("feature"), presentation };
+  const label = entry.label || null;
+  if (entry.kind === "datum") return { kind: "datum", id: entry.id, letter: given("letter") ?? entry.datum.letter, ref: refOf("feature"), label, presentation };
   if (entry.kind === "dimension") {
     const tolerance = given("tolerance") === undefined ? entry.dimension.tolerance : given("tolerance");
-    if (entry.dimension.basic) return { kind: "dimension", type: "distance", basic: true, id: entry.id, from: refOf("from"), to: refOf("to"), tolerance: null, presentation };
+    if (entry.dimension.basic) {
+      return { kind: "dimension", type: "distance", basic: true, id: entry.id, from: refOf("from"), to: refOf("to"), tolerance: null, label, presentation };
+    }
     return entry.dimension.type === "distance"
-      ? { kind: "dimension", type: "distance", id: entry.id, from: refOf("from"), to: refOf("to"), tolerance, presentation }
-      : { kind: "dimension", type: "diameter", id: entry.id, ref: refOf("feature"), tolerance, presentation };
+      ? { kind: "dimension", type: "distance", id: entry.id, from: refOf("from"), to: refOf("to"), tolerance, label, presentation }
+      : { kind: "dimension", type: "diameter", id: entry.id, ref: refOf("feature"), tolerance, label, presentation };
   }
   const tolerance = entry.tolerance;
   return { kind: "geometric_tolerance", characteristic: tolerance.characteristic, id: entry.id, ref: refOf("feature"),
     value: given("value") ?? tolerance.value, datums: given("datums") ?? tolerance.datums,
-    diameterZone: given("diameterZone") ?? tolerance.zone === "diameter", presentation };
+    diameterZone: given("diameterZone") ?? tolerance.zone === "diameter", label, presentation };
 }
 
-/** An id for a new annotation that none of `taken` has: `stem`, else `stem-2`, `stem-3`... */
+/** An id for a new annotation that none of `taken` (its part's) has: `stem`, else `stem-2`, `stem-3`... */
 export function pmiFreshId(stem, taken) {
   const held = new Set(taken);
   if (!held.has(stem)) return stem;
@@ -323,29 +352,30 @@ function pmiEditSettings(values) {
 
 /**
  * A change asked for in the viewer as the request Quick Edit hands the agent: one paragraph of what
- * to do to the model's `pmi.annotate(...)` call, then the call itself, exactly. `change`: a new
- * annotation (`{ kind: "add", call }`) or an edit of one the document holds (`{ kind: "edit", id,
- * values, call, placementOnly }`: what it sets, and the call it makes). "" for a call that lacks what
- * its kind needs.
+ * to do to the `pmi.annotate(...)` call of its part (`partName`, where the part has one), then the
+ * call itself, exactly. `change`: a new annotation (`{ kind: "add", part, partName, id, call }`) or an
+ * edit of one the document holds (`{ kind: "edit", part, partName, id, values, call, placementOnly }`:
+ * what it sets, and the call it makes), `id` the author's. "" for a call that lacks what its kind needs.
  */
 export function pmiChangeRequest(change) {
   const call = pmiCallText(change.call);
   if (!call) return "";
-  if (change.kind === "add") return `Add this PMI to the model's pmi.annotate(...) call (from cadgen.engine import pmi):\n${call}`;
+  const annotate = change.partName ? `the pmi.annotate(...) call of the model's part ${pyString(change.partName)}` : "the model's pmi.annotate(...) call";
+  if (change.kind === "add") return `Add this PMI to ${annotate} (from cadgen.engine import pmi):\n${call}`;
   const what = change.placementOnly
-    ? `Move the PMI "${change.id}" in the model's pmi.annotate(...) call, its placement only (what it says is unchanged)`
-    : `Change the PMI "${change.id}" in the model's pmi.annotate(...) call`;
+    ? `Move the PMI "${change.id}" in ${annotate}, its placement only (what it says is unchanged)`
+    : `Change the PMI "${change.id}" in ${annotate}`;
   return `${what}: ${pmiEditSettings(change.values).join("; ")}. Keep its references as the code writes them. `
     + `The whole call, its references as this build resolves them:\n${call}`;
 }
 
 /**
  * Whether the document now says what `change` asked for, so it has nothing left to ask: a new
- * annotation the document holds, an edit whose call is the one the document's entry makes now.
- * What the viewer drops once a build has it.
+ * annotation its part holds, an edit whose call -- its values, zone, label and placement -- is the
+ * one the part's entry of that id makes now. What the viewer drops once a build has it.
  */
 export function pmiChangeSettled(change, entries) {
-  const entry = entries.find(item => item.id === change.id);
+  const entry = entries.find(item => item.part === change.part && item.id === change.id);
   if (change.kind === "add") return Boolean(entry);
   return Boolean(entry?.supported) && pmiCallText(pmiEntryCall(entry)) === pmiCallText(change.call);
 }

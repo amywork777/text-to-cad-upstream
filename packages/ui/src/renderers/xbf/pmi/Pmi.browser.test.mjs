@@ -5,21 +5,22 @@ import { serveXbfHarness } from '../../harness/xbfScenario.mjs';
 
 // An engine document's PMI in a real browser, over core's bracket (a 40 x 20 x 4 plate on
 // z = -2..2 with a Ø8 hole at the origin) served carrying PMI as `cadgen.engine.pmi` serves it: a
-// datum on the bottom, the thickness toleranced and placed in code, a flatness on the top. Its
+// datum on the bottom, the thickness toleranced and placed in code, a flatness on the top, each of
+// the plate (its part, the structure's first prototype). Its
 // callouts are drawn on the model and stay put on it, a fixed size, as the camera moves; a pick of
-// one lights its face; it hides and shows, kept across a reopen; a value edited, a label moved and a
-// new annotation each go to Quick Edit as the call the model's code should make; and a rebuild that
-// loses a reference says so, where the code placed it.
+// one lights its face; it hides and shows, kept across a reopen, and goes with its part hidden; a
+// value edited, a label moved and a new annotation each go to Quick Edit as the call the model's
+// code should make; and a rebuild that loses a reference says so, where the code placed it.
 
 const TOP = 'plate/f:bracket.fillet1~d3f70920d846';
 const BOTTOM = 'plate/f:bracket.fillet1~908aee34f872';
 const ref = (role, at) => ({ role, ref: at, written: at, status: 'ok', candidates: null });
 const PMI = [
-  { id: 'A', kind: 'datum', label: null, status: 'ok', problem: null, refs: [ref('feature', BOTTOM)], datum: { letter: 'A' }, presentation: null, xcaf_type: null },
-  { id: 'thickness', kind: 'dimension', label: null, status: 'ok', problem: null, refs: [ref('from', BOTTOM), ref('to', TOP)],
+  { id: 'A', kind: 'datum', label: null, status: 'ok', problem: null, part: 0, refs: [ref('feature', BOTTOM)], datum: { letter: 'A' }, presentation: null, xcaf_type: null },
+  { id: 'thickness', kind: 'dimension', label: null, status: 'ok', problem: null, part: 0, refs: [ref('from', BOTTOM), ref('to', TOP)],
     dimension: { type: 'distance', nominal: { value: 4, unit: 'mm', source: 'geometry' }, tolerance: { type: 'plus_minus', upper: 0.2, lower: -0.2 } },
     presentation: { anchor: [20, -10, -2], offset: [8, -6, 2] }, xcaf_type: null },
-  { id: 'top-flat', kind: 'geometric_tolerance', label: null, status: 'ok', problem: null, refs: [ref('feature', TOP)],
+  { id: 'top-flat', kind: 'geometric_tolerance', label: null, status: 'ok', problem: null, part: 0, refs: [ref('feature', TOP)],
     geometric_tolerance: { characteristic: 'flatness', value: 0.05, unit: 'mm', zone: null, modifier: null, datums: [] }, presentation: null, xcaf_type: null },
 ];
 const withPmi = structure => ({ ...structure, pmi: structure.pmi || PMI });
@@ -124,6 +125,13 @@ test('PMI is drawn on the model and stays legible as the camera moves; a pick li
   await pane.getByRole('button', { name: 'Reveal PMI', exact: true }).click();
   await drawn();
   assert.deepEqual(await labels(), ['A', 'thickness']);
+  // Its part hidden in the Model tree, its callouts go with it; shown again, they come back.
+  await pane.getByRole('button', { name: 'Model tree', exact: true }).click();
+  await pane.getByRole('button', { name: 'Hide plate', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('[data-pmi-label]'));
+  await pane.getByRole('button', { name: 'Reveal plate', exact: true }).click();
+  await drawn();
+  assert.deepEqual(await labels(), ['A', 'thickness']);
   assert.deepEqual(errors, []);
 });
 
@@ -184,24 +192,28 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   const value = pane.locator('[data-pmi-new="flatness"]').getByRole('textbox', { name: 'Tolerance' });
   await value.click(); await value.fill('0.02'); await value.press('Enter');
   await pane.locator('[data-pmi-add]').click();
-  await pane.getByRole('button', { name: 'Add flatness flatness', exact: true }).waitFor();
+  await pane.getByRole('button', { name: 'Add flatness', exact: true }).waitFor();
   text = await prompt();
-  assert.ok(text.includes(`Add this PMI to the model's pmi.annotate(...) call (from cadgen.engine import pmi):\npmi.flatness("flatness", "${BOTTOM}", 0.02)`), text);
+  assert.ok(text.includes(`Add this PMI to the pmi.annotate(...) call of the model's part "plate" (from cadgen.engine import pmi):\npmi.flatness("flatness", "${BOTTOM}", 0.02)`), text);
 
   // The model rebuilt without the top's name: the flatness names nothing now. It is drawn where the
-  // code placed it, broken, and its row says why; an annotation the viewer does not draw is listed.
+  // code placed it, broken, and its row says why; an annotation the viewer does not draw is listed,
+  // saying why in the engine's words.
   await pane.getByRole('button', { name: 'Close Quick Edit', exact: true }).click();
   await view({ position: [60, -80, 70], target: [0, 0, 2], up: [0, 0, 1], orthographicHalfHeight: 30 });
   await update(structure => ({ ...structure, pmi: [...PMI.slice(0, 2), {
     ...PMI[2], status: 'missing', problem: `${TOP} names nothing in this build`, presentation: { anchor: [0, 6, 2], offset: [0, 0, 10] },
     refs: [{ role: 'feature', ref: TOP, written: TOP, status: 'missing', candidates: null }] },
-  { id: 'profile', kind: 'unsupported', label: null, status: 'ok', problem: null, refs: [], presentation: null, xcaf_type: 'ProfileOfSurface' }] }));
+  { id: 'profile', kind: 'unsupported', label: null, status: 'ok', problem: null, warnings: [], part: 0, refs: [], presentation: null,
+    xcaf_type: 'XCAFDimTolObjects_GeomToleranceType_ProfileOfSurface', reason: 'profile of surface is not a characteristic this holds', values: {} }] }));
   await page.waitForFunction(() => document.querySelector('[data-pmi-label="top-flat"]')?.getAttribute('data-pmi-status') === 'missing');
   await drawn();
   assert.equal(await label('profile').count(), 0, 'what the viewer does not draw is not drawn');
   await pane.locator('[data-pmi-pick="top-flat"]').click();
   assert.match(await pane.locator('[data-pmi-details="top-flat"]').innerText(), /names nothing in this build/);
   assert.match(await pane.locator('[data-pmi-row="profile"]').innerText(), /not shown/);
+  await pane.locator('[data-pmi-pick="profile"]').click();
+  assert.match(await pane.locator('[data-pmi-details="profile"]').innerText(), /Not shown: profile of surface is not a characteristic this holds\./);
   assert.deepEqual(errors, []);
 });
 
@@ -209,8 +221,9 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
 // engine's element names), served as the engine served it (`pmi_plate/v1`), then rebuilt twice: 10
 // mm thick with a Ø10 hole, located by basic distances from the front and the left side to its axis,
 // then 12 mm with a Ø12 hole (every name kept: the same annotations, measured anew), then with a
-// square cut where the hole was (the hole's name now on a flat face, where a diameter and a position
-// cannot stand, and which the basics to it must not measure to: it named a round face last build).
+// square cut where the hole was (the hole's name now on a flat face, where a diameter, a position
+// and the basic from the front, square to it, cannot stand, and the basic from the left, parallel
+// to it, measures to it as it now is).
 test('PMI the engine built follows the model through edits: nominals measured anew, and a reference that can no longer stand marked', async (t) => {
   const { page, pane, errors, label, drawn, labels, view, settle, capture, update, loaded } = await openBracket(t, { fixture: 'pmi_plate/v1' });
   await view({ position: [120, -160, 140], target: [0, 0, 0], up: [0, 0, 1], orthographicHalfHeight: 60 });
@@ -234,17 +247,20 @@ test('PMI the engine built follows the model through edits: nominals measured an
   assert.equal(await label('hole-diameter').getAttribute('aria-pressed'), 'true');
   assert.deepEqual(await pane.locator('[data-pmi-label]').evaluateAll(elements => elements.map(element => element.dataset.pmiStatus)), ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
 
-  // A square cut where the hole was: its name is a flat face's now, which a diameter cannot stand on.
+  // A square cut where the hole was: its name is a flat face's now, which a diameter, a position
+  // and a distance from a face square to it cannot stand on.
   await update('pmi_plate/v3');
   await page.waitForFunction(() => document.querySelector('[data-pmi-label="hole-diameter"]')?.dataset.pmiStatus === 'invalid');
   assert.equal(await label('hole-position').getAttribute('data-pmi-status'), 'invalid');
   assert.equal(await label('thickness').getAttribute('data-pmi-status'), 'ok');
   assert.equal(await label('hole-from-front').getAttribute('data-pmi-status'), 'invalid');
-  // A basic could stand on the cut's flat face, but its ref named a round one on the last build: marked, not measured to it.
-  assert.equal(await label('hole-from-left').getAttribute('data-pmi-status'), 'invalid');
-  assert.match(await label('hole-from-left').getAttribute('aria-label'), /^\? basic: f:edit_plate\.cut\.1;M:edit_plate\.body named a cylinder face on the last build and names a plane face now/);
-  // Drawn where the code placed it, its nominal unknown; its row says what the engine said.
+  // A distance from a parallel face stands on the cut's flat face: measured to it as it now is.
+  assert.equal(await label('hole-from-left').getAttribute('data-pmi-status'), 'ok');
+  assert.equal(await label('hole-from-left').getAttribute('aria-label'), '44 basic');
+  // Drawn where the code placed it, its nominal unknown; its row says what the engine said. Still
+  // its part's, linked to no geometry, it is still the one picked.
   assert.equal(await label('hole-diameter').getAttribute('aria-label'), '\u2300? +0.1/0: f:edit_plate.cut.1;M:edit_plate.body is a plane face; a diameter is on a cylinder face');
+  assert.equal(await label('hole-diameter').getAttribute('aria-pressed'), 'true');
   await pane.getByRole('button', { name: 'PMI', exact: true }).click();
   assert.match(await pane.locator('[data-pmi-details="hole-diameter"]').innerText(), /is a plane face; a diameter is on a cylinder face/);
 
@@ -281,7 +297,7 @@ test('a file with no PMI has no tile for it, and a face\'s menu starts the first
   const value = form.getByRole('textbox', { name: 'Tolerance' });
   await value.click(); await value.fill('0.05'); await value.press('Enter');
   await pane.locator('[data-pmi-add]').click();
-  await pane.getByRole('button', { name: 'Add flatness flatness', exact: true }).waitFor();
+  await pane.getByRole('button', { name: 'Add flatness', exact: true }).waitFor();
   // Its tile stays while the new one waits in Quick Edit for the agent.
   assert.equal(await pane.getByRole('button', { name: 'PMI', exact: true }).count(), 1);
   assert.deepEqual(errors, []);

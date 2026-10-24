@@ -138,7 +138,7 @@ const DOUBLE_PRESS_MS = 600;
  *   here. `onClearReferences`: the renderer's clear of that selection, as a press on the
  *   background makes it; Quick Edit's X calls it, and clears Annotate's ink too.
  *   `requests`: the changes the renderer was asked for in the view that its file's code should make
- *   (an engine document's PMI: a new annotation, a value, a placement), each a chip in Quick Edit
+ *   (a value or a placement the code holds, say), each a chip in Quick Edit
  *   with what its prompt carries (`request`); `onClearRequests`: drops them all, as Quick Edit's
  *   X does and a note that has gone does.
  *   `copySelection`: the viewer's copy key (⌘C / Ctrl+C) while the renderer's own tool is up and

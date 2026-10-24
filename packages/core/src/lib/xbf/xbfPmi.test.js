@@ -2,6 +2,7 @@
 // `structure.pmi` carries, read defensively; the callout each says; and the `cadgen.engine.pmi` call
 // a change in the viewer is, which Quick Edit hands the agent to write into the model.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { pmiCallText, pmiCallout, pmiChangeRequest, pmiChangeSettled, pmiEntryCall, pmiFreshId, pmiNumber, pmiPlaceText, pmiStatusText, pmiToleranceText, pyNumber, readXbfPmi } from "./xbfPmi.js";
@@ -74,6 +75,31 @@ test("an entry the viewer does not draw is kept and says why, never dropped or g
   assert.match(read[3].unsupported, /no nominal/);
 });
 
+test("one the viewer does not draw says the engine's reason where it gives one, the viewer's own where not", () => {
+  const read = readXbfPmi({ pmi: [
+    { id: "profile", kind: "unsupported", status: "ok", refs: [], xcaf_type: "XCAFDimTolObjects_GeomToleranceType_ProfileOfSurface",
+      reason: "profile of surface is not a characteristic this holds; it has modifiers" },
+    { id: "edge", kind: "unsupported", status: "ok", refs: [], xcaf_type: "XCAFDimTolObjects_DatumObject", reason: null },
+    // What is drawn is the viewer's to say: a reason given beside one it draws makes it no less drawn.
+    { id: "A", kind: "datum", status: "ok", refs: [], datum: { letter: "A" }, reason: "linked to an edge" },
+  ] });
+  assert.deepEqual(read.map(entry => [entry.id, entry.supported, entry.unsupported]), [
+    ["profile", false, "profile of surface is not a characteristic this holds; it has modifiers"],
+    ["edge", false, "XCAFDimTolObjects_DatumObject is not one the viewer draws"],
+    ["A", true, ""]]);
+});
+
+test("a build's warnings on an annotation are read as served, and a file's none are none", () => {
+  const warned = "f:edit_plate.cut.1;M:edit_plate.body named a cylinder face on the last build and names a plane face now: another face "
+    + "than the annotation was made on, measured as it is. Point the ref at the face meant, or remove the annotation";
+  const read = readXbfPmi({ pmi: [
+    { id: "hole-from-left", kind: "datum", status: "ok", refs: [], datum: { letter: "B" }, warnings: [warned, 4, ""] },
+    { id: "A", kind: "datum", status: "ok", refs: [], datum: { letter: "A" }, warnings: [] },
+    { id: "C", kind: "datum", status: "ok", refs: [], datum: { letter: "C" } },
+  ] });
+  assert.deepEqual(read.map(entry => entry.warnings), [[warned], [], []]);
+});
+
 test("a dimension whose reference broke has no nominal, and is said as unknown, not unsupported", () => {
   const [broken] = readXbfPmi({ pmi: [{ id: "thickness", kind: "dimension", status: "missing", problem: null,
     refs: [{ role: "from", ref: BOTTOM, written: BOTTOM, status: "ok" }, { role: "to", ref: "plate/f:gone", written: "plate/f:gone", status: "missing", candidates: null }],
@@ -105,6 +131,17 @@ test("a callout says the nominal at the tolerance's places, and each kind as a d
   assert.deepEqual([flatness.kind, flatness.characteristic, flatness.value, flatness.datums], ["frame", "flatness", "0.05", []]);
   assert.equal(flatness.text, "Flatness 0.05");
   assert.equal(position.text, "Position ⌀0.1 | A");
+});
+
+test("a nominal is written at its tolerance's places or at what it needs, whichever is more", () => {
+  const said = (type, value, tolerance, basic = false) => pmiCallout(readXbfPmi({ pmi: [{ id: "d", kind: "dimension", status: "ok", refs: [],
+    dimension: { type, basic, nominal: { value, unit: "mm", source: "geometry" }, tolerance } }] })[0]).text;
+  const plusMinus = value => ({ type: "plus_minus", upper: value, lower: -value });
+  assert.equal(said("diameter", 6.35, plusMinus(0.1)), "⌀6.35 ±0.1");
+  assert.equal(said("distance", 25.4, plusMinus(0.05)), "25.40 ±0.05");
+  // With no tolerance, and exact: what the value needs, up to four places.
+  assert.equal(said("distance", 3.175, null, true), "3.175 basic");
+  assert.equal(said("distance", 12.345678, null), "12.3457");
 });
 
 test("tolerances and numbers are written with true minus signs and one count of places", () => {
@@ -197,22 +234,59 @@ test("a change the document now says is settled, and one it does not yet say is 
   const read = readXbfPmi({ pmi: PMI });
   const thickness = read[1];
   const values = { tolerance: { type: "plus_minus", upper: 0.1, lower: -0.05 } };
-  const change = { kind: "edit", id: "thickness", values, call: pmiEntryCall(thickness, values) };
+  const change = { kind: "edit", part: null, id: "thickness", values, call: pmiEntryCall(thickness, values) };
   assert.equal(pmiChangeSettled(change, read), false);
   const built = readXbfPmi({ pmi: PMI.map(item => (item.id === "thickness" ? { ...item, dimension: { ...item.dimension, tolerance: values.tolerance } } : item)) });
   assert.equal(pmiChangeSettled(change, built), true);
-  assert.equal(pmiChangeSettled({ kind: "add", id: "flatness", call: {} }, read), false);
-  assert.equal(pmiChangeSettled({ kind: "add", id: "top-flat", call: {} }, read), true);
+  assert.equal(pmiChangeSettled({ kind: "add", part: null, id: "flatness", call: {} }, read), false);
+  assert.equal(pmiChangeSettled({ kind: "add", part: null, id: "top-flat", call: {} }, read), true);
   // An edit of an annotation the document no longer holds is not settled: it is the person's to drop.
   assert.equal(pmiChangeSettled({ ...change, id: "gone" }, read), false);
 });
 
+test("an edit keeps what the code said beside its values: a position's zone, round or not, and its label", () => {
+  const position = (item = {}) => readXbfPmi({ pmi: [{ id: "hole-pos", kind: "geometric_tolerance", label: "Hole location", status: "ok",
+    refs: [ref("feature", HOLE)], geometric_tolerance: { characteristic: "position", value: 0.1, unit: "mm", zone: null, modifier: null, datums: ["A"] }, ...item }] });
+  const values = { value: 0.2 };
+  const call = pmiEntryCall(position()[0], values);
+  // A zone that is not a diameter's says so: the engine's position takes a diameter's unless told.
+  assert.equal(pmiCallText(call), `pmi.position("hole-pos", "${HOLE}", 0.2, datums=["A"], diameter_zone=False, label="Hole location")`);
+  const change = { kind: "edit", part: null, id: "hole-pos", values, call };
+  const built = gdt => position({ geometric_tolerance: { characteristic: "position", value: 0.2, unit: "mm", zone: null, datums: ["A"], ...gdt } });
+  assert.equal(pmiChangeSettled(change, built({})), true);
+  // A build that made the zone round, or dropped the label, has not done what was asked.
+  assert.equal(pmiChangeSettled(change, built({ zone: "diameter" })), false);
+  assert.equal(pmiChangeSettled(change, built({}).map(entry => ({ ...entry, label: "" }))), false);
+});
+
+test("an id is unique on its part only: two parts' datum A are two entries, each asked for by its part and its own id", () => {
+  const PEG_END = "bracket/peg/f:bracket.make_cylinder1.2";
+  const datum = (part, at) => ({ id: "A", kind: "datum", status: "ok", part, refs: [ref("feature", at)], datum: { letter: "A" } });
+  const raw = [datum(0, BOTTOM), datum(1, PEG_END)];
+  const read = readXbfPmi({ pmi: raw });
+  assert.deepEqual(read.map(entry => [entry.key, entry.id, entry.part]), [["0:A", "A", 0], ["1:A", "A", 1]]);
+  // One the document repeats on a part is kept apart by its place.
+  assert.deepEqual(readXbfPmi({ pmi: [...raw, datum(1, PEG_END)] }).map(entry => entry.key), ["0:A", "1:A", "1:A#3"]);
+  // The peg's moved: asked for by its own id, in its part's call, and settled by the peg's alone.
+  const presentation = { anchor: [0, 0, 8], offset: [0, 0, 6] };
+  const values = { presentation };
+  const change = { kind: "edit", part: 1, partName: "peg", id: "A", values, call: pmiEntryCall(read[1], values), placementOnly: true };
+  assert.match(pmiChangeRequest(change), /^Move the PMI "A" in the pmi\.annotate\(\.\.\.\) call of the model's part "peg", its placement only/);
+  const placed = part => readXbfPmi({ pmi: raw.map(item => (item.part === part ? { ...item, presentation } : item)) });
+  assert.equal(pmiChangeSettled(change, placed(1)), true);
+  assert.equal(pmiChangeSettled(change, placed(0)), false, "the plate's A placed there is not the peg's");
+  // A new one is its part's: the plate's A is not the peg's B, nor the peg's A the plate's.
+  assert.equal(pmiChangeSettled({ kind: "add", part: 0, id: "A", call: {} }, readXbfPmi({ pmi: [datum(1, PEG_END)] })), false);
+  assert.match(pmiChangeRequest({ kind: "add", part: 0, partName: "plate", id: "B", call: { kind: "datum", id: "B", letter: "B", ref: TOP } }),
+    /^Add this PMI to the pmi\.annotate\(\.\.\.\) call of the model's part "plate" \(from cadgen\.engine import pmi\):\npmi\.datum\("B"/);
+});
+
 // The engine's own, as it served a plate built with `cadgen.engine.pmi` (`__fixtures__/pmi_plate`,
 // which its `make_fixtures.py` builds and captures again): as made (v1), and after an edit put a
-// square cut where the hole was (v3): the hole's name now on a flat face, which a diameter cannot
-// stand on, and which the basics to it named as a round one last build.
-test("the PMI the engine serves reads whole, and a reference an edit left on the wrong kind of face is invalid", async () => {
-  const { readFileSync } = await import("node:fs");
+// square cut where the hole was (v3): the hole's name now on a flat face, which a diameter, a
+// position and a distance from a face square to it cannot stand on, and a distance from a parallel
+// face measures to as it now is (the build warns that its kind changed; a file carries no warning).
+test("the PMI the engine serves reads whole, and a reference an edit left on the wrong kind of face is invalid", () => {
   const served = version => JSON.parse(readFileSync(new URL(`./__fixtures__/pmi_plate/${version}/structure.json`, import.meta.url), "utf8"));
   const made = readXbfPmi(served("v1"));
   assert.deepEqual(made.map(entry => [entry.id, entry.supported, entry.status, entry.part]), [
@@ -220,13 +294,18 @@ test("the PMI the engine serves reads whole, and a reference an edit left on the
     ["hole-from-left", true, "ok", 0], ["top-flatness", true, "ok", 0], ["hole-position", true, "ok", 0]]);
   assert.deepEqual(made.map(entry => pmiCallout(entry).text), ["Datum A", "10.0 ±0.2", "⌀10.0 +0.1/0", "30 basic", "50 basic", "Flatness 0.05", "Position ⌀0.1 | A"]);
   const cut = readXbfPmi(served("v3"));
+  // What broke is still its part's: linked to no geometry, known by the same key.
+  assert.deepEqual(cut.map(entry => [entry.key, entry.status, entry.warnings]), [
+    ["0:A", "ok", []], ["0:thickness", "ok", []], ["0:hole-diameter", "invalid", []], ["0:hole-from-front", "invalid", []],
+    ["0:hole-from-left", "ok", []], ["0:top-flatness", "ok", []], ["0:hole-position", "invalid", []]]);
   const hole = cut.find(entry => entry.id === "hole-diameter");
-  assert.deepEqual([hole.status, hole.supported, hole.dimension.nominal], ["invalid", true, null]);
+  assert.deepEqual([hole.supported, hole.dimension.nominal], [true, null]);
   assert.match(pmiStatusText(hole), /is a plane face; a diameter is on a cylinder face/);
+  assert.match(pmiStatusText(cut.find(entry => entry.id === "hole-position")), /is a plane face; a position is on a cylinder face/);
   const fromFront = cut.find(entry => entry.id === "hole-from-front");
-  assert.deepEqual([fromFront.status, fromFront.dimension.basic, pmiCallout(fromFront).text], ["invalid", true, "? basic"]);
-  // One that could stand on the flat face is still marked: its ref named a cylinder last build.
+  assert.deepEqual([fromFront.dimension.basic, pmiCallout(fromFront).text], [true, "? basic"]);
+  assert.match(pmiStatusText(fromFront), /are not parallel planes/);
+  // One that can stand on the cut's flat face is measured to it.
   const fromLeft = cut.find(entry => entry.id === "hole-from-left");
-  assert.deepEqual([fromLeft.status, fromLeft.dimension.nominal], ["invalid", null]);
-  assert.match(pmiStatusText(fromLeft), /named a cylinder face on the last build and names a plane face now/);
+  assert.deepEqual([fromLeft.dimension.nominal, pmiCallout(fromLeft).text, pmiStatusText(fromLeft)], [44, "44 basic", ""]);
 });

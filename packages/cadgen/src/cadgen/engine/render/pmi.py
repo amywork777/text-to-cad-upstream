@@ -8,25 +8,33 @@ A port, operation for operation, of the viewer's own: what a callout says (``@te
 ``lib/xbf/xbfEntities.js`` reads them off the part's mesh buffer, the one the viewer reads), and how
 it is drawn (``@text-to-cad/ui``'s ``renderers/xbf/pmi/PmiOverlay.jsx`` and ``PmiLabel.jsx``: the
 label a few words at the UI's size in a ruled box, a leader to its feature with an arrow (a datum's
-on its filled triangle), a distance's dimension and extension lines). One golden made by the
-viewer's own code (``lib/xbf/__fixtures__/pmi_plate/constructions.json``) holds both to one layout.
+on its filled triangle), a distance's dimension and extension lines; every label over every line).
+One golden made by the viewer's own code (``lib/xbf/__fixtures__/pmi_plate/constructions.json``)
+holds both to one layout.
 
 A reference is resolved as the engine resolves one (``refs.resolve_structure``); one the engine
 found broken (``missing``, ``ambiguous``, ``invalid``) is drawn where its code placed it, dashed in
 its status colour with an open ring where it was anchored, its nominal ``?``. A leader or extension
-line whose start the model hides from the camera is faint, its marker hollow. Only the supported
-subset is drawn: distance (a basic one exact, its number boxed, measured to a hole's centre line),
-diameter, datum, flatness and position; anything else is left out of the picture. Everything in
-the scene's coordinates (the document's millimetres), at rest: a still drawn exploded or posed
-draws none (``snapshot.py`` refuses asking for it).
+line whose start the model hides from the camera is faint, its marker hollow. An annotation is drawn
+at its part's first placement the picture shows. Only the supported subset is drawn: distance (a
+basic one exact, its number boxed, measured to a hole's centre line), diameter, datum, flatness and
+position. What is not drawn -- another kind, a part the picture hides, a broken reference its code
+never placed -- is said, and why (``left_out``). Everything in the scene's coordinates (the
+document's millimetres), at rest: a still drawn exploded or posed draws none (``snapshot.py``
+refuses asking for it).
 """
 
 from __future__ import annotations
 
 import math
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import numpy as np
+
+__all__ = ["Hidden", "callout", "construction", "constructions", "decimals", "element", "entries", "face_nodes",
+           "face_surface", "feature_point", "key", "left_out", "number", "paint", "placement", "reach", "rest_bounds",
+           "separate", "to_scene", "tolerance_text"]
 
 KINDS = ("dimension", "datum", "geometric_tolerance")
 DIMENSION_TYPES = ("distance", "diameter")
@@ -34,7 +42,7 @@ CHARACTERISTICS = ("flatness", "position")
 STATUSES = ("ok", "ambiguous", "missing", "invalid")
 MINUS = "−"
 
-# ---- the words (xbfPmi.js) ------------------------------------------------------------------
+# --- the words (xbfPmi.js) -------------------------------------------------------------------
 
 
 def _finite(value: Any) -> float | None:
@@ -101,53 +109,76 @@ def _presentation(value: Any) -> dict[str, list[float]] | None:
     return {"anchor": anchor, "offset": offset} if anchor and offset else None
 
 
+def key(part: int | None, ident: str) -> str:
+    """What an annotation is known by in its document (``pmiKey``): its part and its id, an id being
+    the author's and unique only on its part."""
+    return f"{'' if part is None else part}:{ident}"
+
+
 def entries(structure: dict[str, Any]) -> list[dict[str, Any]]:
     """The document's PMI as the viewer reads it (``readXbfPmi``): each entry with what its kind
-    carries, a field missing or of the wrong type read as nothing, and whether it is drawn."""
+    carries, a field missing or of the wrong type read as nothing, what it is known by (``key``),
+    whether it is drawn (``supported``) and, where it is not, why (``unsupported``)."""
     found, seen = [], set()
-    for index, item in enumerate(structure.get("pmi") or []):
-        if not isinstance(item, dict):
-            continue
-        ident = _text(item.get("id")) or f"#{index + 1}"
-        if ident in seen:
-            ident = f"{ident}#{index + 1}"
-        seen.add(ident)
+    # Counted as the viewer counts them: among the document's objects (a list one, of no fields).
+    items = [item for item in structure.get("pmi") or [] if isinstance(item, (dict, list))]
+    for index, item in enumerate(items):
+        item = item if isinstance(item, dict) else {}
         part = item.get("part")
-        entry = {"id": ident, "kind": _text(item.get("kind")), "status": _status(item.get("status")),
-                 "problem": _text(item.get("problem")),
-                 "part": part if isinstance(part, int) and not isinstance(part, bool) else None,
+        part = part if isinstance(part, int) and not isinstance(part, bool) else None
+        # One the document lacks an id for, or repeats on a part, is kept apart by its place.
+        ident = _text(item.get("id")) or f"#{index + 1}"
+        known = key(part, ident)
+        if known in seen:
+            known = f"{known}#{index + 1}"
+        seen.add(known)
+        entry = {"key": known, "id": ident, "kind": _text(item.get("kind")), "status": _status(item.get("status")),
+                 "problem": _text(item.get("problem")), "part": part,
                  "refs": [_ref(ref) for ref in item.get("refs") or []],
                  "dimension": _dimension(item.get("dimension")), "datum": _datum(item.get("datum")),
                  "tolerance": _geometric_tolerance(item.get("geometric_tolerance")),
-                 "presentation": _presentation(item.get("presentation"))}
-        entry["supported"] = _supported(entry)
+                 "presentation": _presentation(item.get("presentation")), "xcaf_type": _text(item.get("xcaf_type"))}
+        # Why it is not drawn in the document's own words where it has them (``reason``), else the viewer's.
+        unsupported = _unsupported(entry)
+        entry["unsupported"] = (_text(item.get("reason")) or unsupported) if unsupported else ""
+        entry["supported"] = not entry["unsupported"]
         found.append(entry)
     return found
 
 
-def _supported(entry: dict[str, Any]) -> bool:
+def _unsupported(entry: dict[str, Any]) -> str:
+    """Why the viewer does not draw an entry (``unsupportedReason``), or "" for one it draws: an
+    unknown kind, a dimension of a type it does not draw, a characteristic it does not draw, or the
+    values its kind needs missing."""
     kind = entry["kind"]
+    if kind == "unsupported":
+        return f"{entry['xcaf_type']} is not one the viewer draws" if entry["xcaf_type"] else "not one the viewer draws"
+    if kind not in KINDS:
+        return f"{kind or 'an annotation'} is not one the viewer draws"
     if kind == "dimension":
         dimension = entry["dimension"] or {}
-        if dimension.get("basic") and dimension.get("type") != "distance":
-            return False
+        if dimension.get("type") not in DIMENSION_TYPES:
+            return f"a {dimension.get('type') or 'dimension'} dimension is not one the viewer draws"
+        if dimension["basic"] and dimension["type"] != "distance":
+            return f"a basic {dimension['type']} is not one the viewer draws"
         # A broken reference leaves nothing to measure (its nominal said as ``?``); one that resolved has one.
-        said = dimension.get("nominal") is not None or entry["status"] != "ok"
-        return dimension.get("type") in DIMENSION_TYPES and said
-    if kind == "datum":
-        return entry["datum"] is not None
+        if dimension["nominal"] is None and entry["status"] == "ok":
+            return "it has no nominal"
+    if kind == "datum" and entry["datum"] is None:
+        return "it has no letter"
     if kind == "geometric_tolerance":
         tolerance = entry["tolerance"] or {}
-        return tolerance.get("characteristic") in CHARACTERISTICS and tolerance.get("value") is not None
-    return False
+        if tolerance.get("characteristic") not in CHARACTERISTICS:
+            return f"{tolerance.get('characteristic') or 'this characteristic'} is not one the viewer draws"
+        if tolerance["value"] is None:
+            return "it has no tolerance value"
+    return ""
 
 
 def _fixed(value: float, places: int) -> str:
-    # JavaScript's toFixed: the nearer of the two, the larger on a tie (Python's rounds half to even).
-    scaled = abs(value) * 10 ** places
-    whole = math.floor(scaled + 0.5)
-    text = str(whole).rjust(places + 1, "0")
-    return f"{text[:-places]}.{text[-places:]}" if places else text
+    """JavaScript's ``toFixed`` of ``abs(value)``: the double itself rounded, a tie to the larger (8.35's
+    double, a little under 8.35, is 8.3; Python's format rounds a tie to even)."""
+    return str(Decimal(abs(value)).quantize(Decimal(1).scaleb(-places), ROUND_HALF_UP))
 
 
 def decimals(value: float) -> int:
@@ -191,7 +222,8 @@ def callout(entry: dict[str, Any]) -> dict[str, Any]:
         if nominal is None:
             shown = "?"
         else:
-            shown = number(nominal, max(tolerance["places"], 0) if tolerance else min(decimals(nominal), 2))
+            # At the tolerance's places, or more where the nominal needs them (up to four).
+            shown = number(nominal, max(tolerance["places"] if tolerance else 0, decimals(nominal)))
         return {"kind": "dimension", "diameter": dimension["type"] == "diameter", "basic": dimension["basic"],
                 "nominal": shown, "tolerance": tolerance}
     if entry["kind"] == "datum":
@@ -201,7 +233,7 @@ def callout(entry: dict[str, Any]) -> dict[str, Any]:
             "value": number(tolerance["value"]), "datums": list(tolerance["datums"])}
 
 
-# ---- a face, from its part's mesh (xbfEntities.js) ------------------------------------------
+# --- a face, from its part's mesh (xbfEntities.js) -------------------------------------------
 
 PLANE_NORMAL = 1e-6
 SQUARE = 1e-4
@@ -365,7 +397,7 @@ def element(mesh: Any, ordinal: int, matrix: list[float]) -> dict[str, Any] | No
     return {"surface": placed, "points": [_place_point(matrix, point) for point in nodes[0]]}
 
 
-# ---- where it stands (xbfPmiLayout.js) ------------------------------------------------------
+# --- where it stands (xbfPmiLayout.js) -------------------------------------------------------
 
 SPREAD = math.pi / 4.5
 REACH_SHARE, REACH_MIN = 0.18, 4.0
@@ -545,29 +577,33 @@ def to_scene(presentation: dict[str, Any] | None, matrix: list[float] | None) ->
                        + matrix[8 + row] * presentation["offset"][2] for row in range(3)]}
 
 
-def rest_bounds(structure: dict[str, Any], meshes: dict[str, Any]) -> tuple[list[float], list[float]] | None:
+def rest_bounds(structure: dict[str, Any], meshes: dict[str, Any]) -> tuple[Any, Any]:
     """The box of the model at rest that its callouts are laid out by (the viewer's ``restBounds``):
-    each instance's part box where it stands; None for a document with no part to box."""
-    from cadgen.engine.render.explode import part_box, placed_box
+    every placed part's, hidden or shown, as Explode's records measure it (``explode.instance_records``)."""
+    from cadgen.engine.render.explode import instance_records, part_box
 
-    boxes = []
-    for instance in structure["instances"]:
-        # part_box (every node, edge point and vertex), not Scene.rest_bounds: to match the viewer's restBounds.
-        box = part_box(meshes[structure["prototypes"][instance["prototype"]]["key"]])
-        if box is not None:
-            boxes.append(placed_box(box, np.array(instance["matrix"], float).reshape(4, 4).T))
-    if not boxes:
-        return None
-    return ([min(box[0][axis] for box in boxes) for axis in range(3)],
-            [max(box[1][axis] for box in boxes) for axis in range(3)])
+    boxes = [part_box(meshes[prototype["key"]]) for prototype in structure["prototypes"]]
+    matrices = [np.array(instance["matrix"], float).reshape(4, 4).T for instance in structure["instances"]]
+    return instance_records(structure, boxes, matrices)[1]
 
 
-def constructions(structure: dict[str, Any], meshes: dict[str, Any],
-                  bounds: tuple[Any, Any] | None) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
-    """Every supported entry with its construction (``useXbfPmi``'s): its references resolved as
-    the engine resolves them, each that names one face of a part taken from that part's mesh, its
-    placement taken from its part's frame, and each later annotation of a feature turned from the
-    one before it. ``bounds``: the model's at rest (``rest_bounds``)."""
+def placement(structure: dict[str, Any], part: int, hidden: frozenset[int] = frozenset()) -> int | None:
+    """The instance a part's PMI is drawn at: the part's first placement the picture shows
+    (``hidden``: the instances it leaves out, by ``display.hidden`` and ``display.isolated``); None
+    where it shows none."""
+    return next((index for index, instance in enumerate(structure["instances"])
+                 if instance.get("prototype") == part and index not in hidden), None)
+
+
+def constructions(structure: dict[str, Any], meshes: dict[str, Any], bounds: tuple[Any, Any] | None,
+                  hidden: frozenset[int] = frozenset()) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
+    """Every supported entry with its construction (``useXbfPmi``'s), None where it is drawn
+    nowhere: its references resolved as the engine resolves them, each that names one face taken
+    from its part's mesh where the part's first placement shown stands (``placement``), the
+    placement its code gives it taken from that frame, and each later annotation of a feature
+    turned from the one before it. An entry whose part the picture shows nowhere is drawn nowhere.
+    ``bounds``: the model's at rest (``rest_bounds``); ``hidden``: the instances the picture leaves
+    out."""
     from cadgen.engine import refs
 
     prototypes, instances = structure["prototypes"], structure["instances"]
@@ -575,7 +611,13 @@ def constructions(structure: dict[str, Any], meshes: dict[str, Any],
     for entry in entries(structure):
         if not entry["supported"]:
             continue
-        geometry, firsts = {}, []
+        shown = None
+        if entry["part"] is not None:
+            shown = placement(structure, entry["part"], hidden)
+            if shown is None:
+                found.append((entry, None))
+                continue
+        geometry, first = {}, entry["key"]
         for at, ref in enumerate(entry["refs"]):
             face = None
             if ref["status"] == "ok":
@@ -584,24 +626,46 @@ def constructions(structure: dict[str, Any], meshes: dict[str, Any],
                 except refs.RefError:  # a ref the page cannot find names nothing here either
                     hits = []
                 if len(hits) == 1 and hits[0].kind == "face":
-                    instance = hits[0].node.payload["instance"]
+                    # A ref names its part's first occurrence: its face is taken where the part is drawn.
+                    instance = hits[0].node.payload["instance"] if shown is None else shown
                     prototype = prototypes[hits[0].node.payload["prototype"]]
                     face = element(meshes[prototype["key"]], int(hits[0].ordinal), instances[instance]["matrix"])
                     if at == 0:  # what a feature's turns count by: the first reference's element, as the viewer counts
-                        firsts.append(f"i{instance}/face/{hits[0].ordinal}")
+                        first = f"i{instance}/face/{hits[0].ordinal}"
             geometry[ref["role"]] = face
-        frame = None
-        if entry["part"] is not None:
-            frame = next((item["matrix"] for item in instances if item.get("prototype") == entry["part"]), None)
+        frame = None if shown is None else instances[shown]["matrix"]
         placed = {**entry, "presentation": to_scene(entry["presentation"], frame)}
-        first = firsts[0] if firsts else entry["id"]
         turn = turns.get(first, 0)
         turns[first] = turn + 1
         found.append((entry, construction(placed, geometry, bounds, turn)))
     return found
 
 
-# ---- drawn over the picture (PmiOverlay.jsx, PmiLabel.jsx) ----------------------------------
+def left_out(structure: dict[str, Any], found: list[tuple[dict[str, Any], dict[str, Any] | None]],
+             hidden: frozenset[int] = frozenset()) -> list[dict[str, Any]]:
+    """What a picture leaves out of the document's PMI, and why, each ``{id, part, status, reason}``
+    (``part`` its part's name, which with the id names it): an entry the viewer does not draw (as its
+    PMI section says it is not shown), one whose part the picture shows nowhere, and one with no
+    feature to stand on and no placement in its code. ``found``: what ``constructions`` made, with
+    the same ``hidden``."""
+    made = {entry["key"]: construction for entry, construction in found}
+    prototypes = structure["prototypes"]
+    left = []
+    for entry in entries(structure):
+        if made.get(entry["key"]) is not None:
+            continue
+        if not entry["supported"]:
+            reason = entry["unsupported"]
+        elif entry["part"] is not None and placement(structure, entry["part"], hidden) is None:
+            reason = "no placement of its part is shown"
+        else:
+            reason = "no feature to stand it on and no placement in its code"
+        part = prototypes[entry["part"]].get("name") if entry["part"] in range(len(prototypes)) else None
+        left.append({"id": entry["id"], "part": part, "status": entry["status"], "reason": reason})
+    return left
+
+
+# --- drawn over the picture (PmiOverlay.jsx, PmiLabel.jsx) -----------------------------------
 
 # Ink on paper, the light theme's: the foreground on the background, as a label reads over any
 # part. A document's picture is drawn on the light look's backdrop whatever its appearance (which
@@ -617,8 +681,9 @@ DASH, GAP = 4.0, 3.0
 LABEL_CLEAR = 6.0
 LABEL_MARGIN = 4.0
 GAP_PX = 3.0
-# The label: 11 px words (``text-tiny``) on 16 px lines, a 1 px rule and 1 px inside it, cells 4 px in.
-TEXT, SMALL, ROW, PAD, GLYPH = (400, 11), (400, 10), 16.0, 4.0, 12.0
+# The label: 11 px words (``text-tiny``) on 16 px lines, a 1 px rule and 1 px inside it, cells 4 px in;
+# a datum's letter medium (``font-medium``), a tolerance's limits 10 px.
+TEXT, LETTER, SMALL, ROW, PAD, GLYPH = (400, 11), (500, 11), (400, 10), 16.0, 4.0, 12.0
 # A basic dimension's box about its number: a 1 px rule 2 px out from it each side, 14 px words tall.
 BOXED, BOXED_HEIGHT = 3.0, 16.0
 
@@ -644,30 +709,14 @@ def _glyph(painter: Any, name: str, x: float, middle: float, color: Any, alpha: 
         painter.line(at(3, 12), at(21, 12), width, color, alpha)
 
 
-def _words(painter: Any, text: str, face: Any, x: float, middle: float, color: Any) -> None:
-    """Words with their em box's middle on ``middle``, starting at ``x`` (viewer pixels)."""
-    from cadgen.engine.render.text import coverage
-
-    scale = painter.scale
-    top = (middle - face.size / 2) * scale
-    left = x * scale
-    box = (int(max(math.floor(left - 2), 0)), int(max(math.floor(top - 4), 0)))
-    size = (min(int(math.ceil(face.width(text) * scale)) + 5, painter.width - box[0]),
-            min(int(math.ceil(face.size * scale)) + 9, painter.height - box[1]))
-    if size[0] <= 0 or size[1] <= 0:
-        return
-    cover = coverage([text], face, size, (left - box[0], top - box[1]), 0, scale=scale)
-    painter.coverage((slice(box[1], box[1] + size[1]), slice(box[0], box[0] + size[0])), cover, color)
-
-
 def _cells(said: dict[str, Any]) -> list[dict[str, Any]]:
-    """A label's cells, each ``{glyphs, words, small}``: what ``PmiLabel`` lays out in a row."""
+    """A label's cells, each ``{glyphs, words, face, small}``: what ``PmiLabel`` lays out in a row."""
     from cadgen.engine.render.text import face
 
     words, small = face(*TEXT), face(*SMALL)
     if said["kind"] == "dimension":
-        cell = {"glyphs": ["diameter"] if said["diameter"] else [], "words": said["nominal"], "small": None,
-                "boxed": said["basic"]}
+        cell = {"glyphs": ["diameter"] if said["diameter"] else [], "words": said["nominal"], "face": words,
+                "small": None, "boxed": said["basic"]}
         tolerance = said["tolerance"]
         if tolerance and tolerance["symmetric"]:
             cell["words"] += f" {tolerance['text']}"
@@ -675,59 +724,62 @@ def _cells(said: dict[str, Any]) -> list[dict[str, Any]]:
             cell["small"] = (tolerance["upper"], tolerance["lower"])
         cells = [cell]
     elif said["kind"] == "datum":
-        cells = [{"glyphs": [], "words": said["letter"], "small": None, "min": 20.0}]
+        cells = [{"glyphs": [], "words": said["letter"], "face": face(*LETTER), "small": None, "min": 20.0}]
     else:
-        cells = [{"glyphs": [said["characteristic"]], "words": "", "small": None},
-                 {"glyphs": ["diameter"] if said["diameter"] else [], "words": said["value"], "small": None},
-                 *({"glyphs": [], "words": datum, "small": None} for datum in said["datums"])]
+        cells = [{"glyphs": [said["characteristic"]], "words": "", "face": words, "small": None},
+                 {"glyphs": ["diameter"] if said["diameter"] else [], "words": said["value"], "face": words,
+                  "small": None},
+                 *({"glyphs": [], "words": datum, "face": words, "small": None} for datum in said["datums"])]
     for cell in cells:
-        width = PAD * 2 + _content(cell, words)
+        width = PAD * 2 + _content(cell)
         if cell["small"]:
             width += 2 + max(small.width(cell["small"][0]), small.width(cell["small"][1]))
         cell["width"] = max(width, cell.get("min", 0.0))
     return cells
 
 
-def _content(cell: dict[str, Any], words: Any) -> float:
+def _content(cell: dict[str, Any]) -> float:
     """How wide a cell's glyphs and words are, a basic number's box about them: its padding and a
     tolerance's small words apart."""
     glyphs = len(cell["glyphs"]) * (GLYPH + 1)
-    text = words.width(cell["words"]) if cell["words"] else 0
+    text = cell["face"].width(cell["words"]) if cell["words"] else 0
     return glyphs + text + (BOXED * 2 if cell.get("boxed") else 0)
 
 
-def _label(painter: Any, said: dict[str, Any], box: dict[str, float], border: Any, dashed: bool) -> None:
+def _label(painter: Any, box: dict[str, Any]) -> None:
+    """A callout's label in its box: paper ruled in its colour (dashed, a broken reference's), its
+    cells' glyphs and words."""
     from cadgen.engine.render.text import face
 
-    words, small = face(*TEXT), face(*SMALL)
+    small = face(*SMALL)
     x, y, w, h = box["x"] - box["w"] / 2, box["y"] - box["h"] / 2, box["w"], box["h"]
     painter.rounded_box(x, y, w, h, 2.0, PAPER, PAPER_ALPHA)
-    if dashed:
-        _dashed_box(painter, x, y, w, h, border)
+    if box["dashed"]:
+        _dashed_box(painter, x, y, w, h, box["color"])
     else:
-        painter.rounded_box(x, y, w, h, 2.0, border, BORDER_ALPHA if border == INK else 1.0, stroke=1.0)
+        painter.rounded_box(x, y, w, h, 2.0, box["color"], BORDER_ALPHA, stroke=1.0)
     at = x
     for index, cell in enumerate(box["cells"]):
         if index:
             painter.line((at, y + 1), (at, y + h - 1), 1.0, INK, RULE_ALPHA)
         # A datum's letter centred in its box (``min-w-5``); every other cell's content 4 px in.
-        start = at + (cell["width"] - _content(cell, words)) / 2 if cell.get("min") else at + PAD
+        start = at + (cell["width"] - _content(cell)) / 2 if cell.get("min") else at + PAD
         for glyph in cell["glyphs"]:
             _glyph(painter, glyph, start, box["y"], INK, 1.0)
             start += GLYPH + 1
         if cell.get("boxed"):
             # A basic dimension's number in its own box, ruled in the ink (``border px-0.5``).
-            boxed = words.width(cell["words"]) + BOXED * 2
+            boxed = cell["face"].width(cell["words"]) + BOXED * 2
             painter.rounded_box(start, box["y"] - BOXED_HEIGHT / 2, boxed, BOXED_HEIGHT, 0.0, INK, 1.0, stroke=1.0)
             start += BOXED
         if cell["words"]:
-            _words(painter, cell["words"], words, start, box["y"], INK)
-            start += words.width(cell["words"])
+            painter.words(cell["words"], cell["face"], start, box["y"], INK)
+            start += cell["face"].width(cell["words"])
         if cell.get("boxed"):
             start += BOXED
         if cell["small"]:
-            _words(painter, cell["small"][0], small, start + 2, box["y"] - 5.6, INK)
-            _words(painter, cell["small"][1], small, start + 2, box["y"] + 5.6, INK)
+            painter.words(cell["small"][0], small, start + 2, box["y"] - 5.6, INK)
+            painter.words(cell["small"][1], small, start + 2, box["y"] + 5.6, INK)
         at += cell["width"]
 
 
@@ -860,11 +912,12 @@ class Hidden:
 
 def _box(entry: dict[str, Any], made: dict[str, Any], to_px: Any) -> dict[str, Any]:
     """A callout's label box, in viewer pixels: at its label, a distance's beside its dimension line."""
-    said = callout(entry)
-    cells = _cells(said)
+    cells = _cells(callout(entry))
     label = to_px(made["label"])
+    # A broken reference's callout dashed in its status's colour.
     box = {"x": label[0], "y": label[1], "w": sum(cell["width"] for cell in cells), "h": ROW + 4, "cells": cells,
-           "movable": made["placed"] == "default" and not made["dimension"], "entry": entry, "made": made, "said": said}
+           "movable": made["placed"] == "default" and not made["dimension"], "entry": entry, "made": made,
+           "color": STATUS_COLOR.get(entry["status"], INK), "dashed": entry["status"] != "ok"}
     dimension = made["dimension"]
     if dimension:
         # A distance's words beside its dimension line, out from the part, clear of it.
@@ -890,16 +943,13 @@ def _inside(at: float, size: float, edge: float) -> float:
     return min(max(at, least), max(least, edge - size / 2 - LABEL_MARGIN))
 
 
-def _callout(painter: Any, box: dict[str, Any], to_px: Any, hidden: Any) -> None:
-    """A callout drawn at its box: a distance's extension and dimension lines and their arrows, any
-    other's leader from its anchor to the label with its marker; then the label. A broken
-    reference's lines dashed in its status's colour."""
-    entry, made = box["entry"], box["made"]
-    broken = entry["status"] != "ok"
-    color = STATUS_COLOR.get(entry["status"], INK) if broken else INK
+def _lines(painter: Any, box: dict[str, Any], to_px: Any, hidden: Any) -> None:
+    """A callout's lines, to its box: a distance's extension and dimension lines and their arrows,
+    any other's leader from its anchor to the label with its marker."""
+    entry, made, color = box["entry"], box["made"], box["color"]
 
     def line(a: Any, b: Any, alpha: float) -> None:
-        if broken:
+        if box["dashed"]:
             _dashed(painter, a, b, 1.0, color, alpha)
         else:
             painter.line(a, b, 1.0, color, alpha)
@@ -935,7 +985,6 @@ def _callout(painter: Any, box: dict[str, Any], to_px: Any, hidden: Any) -> None
             _datum_triangle(painter, anchor, end, color, alpha, hollow=behind)
         else:
             _arrow(painter, anchor, end, color, alpha, hollow=behind)
-    _label(painter, box["said"], box, color, broken)
 
 
 def paint(frame: np.ndarray, drawn: list[tuple[dict[str, Any], dict[str, Any]]], project: Any, hidden: Any) -> None:
@@ -958,5 +1007,8 @@ def paint(frame: np.ndarray, drawn: list[tuple[dict[str, Any], dict[str, Any]]],
     for box in boxes:
         box["x"] = _inside(box["x"], box["w"], width / scale)
         box["y"] = _inside(box["y"], box["h"], height / scale)
+    # Every label over every callout's lines, as the viewer's labels stand over its canvas.
     for box in boxes:
-        _callout(painter, box, to_px, hidden)
+        _lines(painter, box, to_px, hidden)
+    for box in boxes:
+        _label(painter, box)

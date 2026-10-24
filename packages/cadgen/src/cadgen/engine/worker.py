@@ -319,7 +319,7 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
             from cadgen.engine.export.viewer import original
             size = original(source, target, request["expected"])
         else:
-            size = export.translate(source, None, target, pose=request.get("pose"), part=request.get("part"))
+            size = export.translate(source, None, target, pose=request.get("pose"), part=request.get("part"), log=log)
         seconds = time.perf_counter() - clock
         files.append({"path": str(target), "kind": export.kind_of(target), "bytes": size,
                       "seconds": round(seconds, 4)})

@@ -33,9 +33,9 @@ def check(source, expected: dict) -> None:
 
 
 def options(source, *, pose=None, part=None, original_allowed=True) -> list[dict]:
-    from cadgen.engine.export import ExportRefused, pmi_kept
+    from cadgen.engine import pmi
+    from cadgen.engine.export import ExportRefused
     from cadgen.engine.export.dxf import dxf_bytes
-    from cadgen.engine.export.step import _pmi_written_whole
 
     view = source.view(pose=pose, part=part)
     rows = [{"format": kind, "label": label, "extension": extension, "reason": None}
@@ -46,7 +46,7 @@ def options(source, *, pose=None, part=None, original_allowed=True) -> list[dict
         if row["format"] == "step":
             row["pmi"] = bool(source.structure.get("pmi"))
             try:
-                _pmi_written_whole(view)
+                pmi.refuse_dropped(view, "step")
             except ExportRefused as error:
                 row["reason"] = str(error)
         if row["format"] == "dxf":
@@ -55,13 +55,17 @@ def options(source, *, pose=None, part=None, original_allowed=True) -> list[dict
             except ExportRefused as error:
                 row["reason"] = str(error)
         if row["format"] == "xbf":
+            # Whether the PMI decided this row: only an XBF made again, a part extracted or a
+            # document converted, is one.
+            row["pmi"] = False
             if pose is not None:
                 row["reason"] = "XBF stores the authored document, not a requested pose."
             elif source.path and source.path.suffix.lower() == ".xbf" and part is None and not source.foreign:
                 row["reason"] = "Use Download original XBF, or select a part to extract."
             else:
+                row["pmi"] = bool(source.structure.get("pmi"))
                 try:
-                    pmi_kept(source)
+                    pmi.refuse_dropped(view, "xbf")
                 except ExportRefused as error:
                     row["reason"] = str(error)
     if original_allowed and source.path and source.path.suffix.lower() == ".xbf" and part is None and pose is None:

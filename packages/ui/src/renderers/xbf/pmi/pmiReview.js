@@ -1,4 +1,4 @@
-import { pmiToleranceText } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
+import { pmiDimensionPlaces } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
 
 // What the PMI section reads out to review a requirement by, all of it the document's: a
 // dimension's current limits (its nominal plus each signed deviation, none where the code gave no
@@ -7,13 +7,13 @@ import { pmiToleranceText } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
 
 const clean = value => Number(value.toPrecision(12));
 
-/** A dimension's limits, at its tolerance's places (`pmiToleranceText`), or null where it has none. */
+/** A dimension's limits, at the places its nominal is written at (`pmiDimensionPlaces`), or null where it has no tolerance. */
 export function dimensionLimits(entry) {
   const dimension = entry.dimension;
   if (entry.status !== "ok" || !dimension || !Number.isFinite(dimension.nominal) || !dimension.tolerance
       || !Number.isFinite(dimension.tolerance.lower) || !Number.isFinite(dimension.tolerance.upper)) return null;
   return { lower: clean(dimension.nominal + dimension.tolerance.lower), upper: clean(dimension.nominal + dimension.tolerance.upper),
-    unit: dimension.unit, places: pmiToleranceText(dimension.tolerance).places };
+    unit: dimension.unit, places: pmiDimensionPlaces(dimension) };
 }
 
 /** The annotations on any of `ids` (elements picked). */

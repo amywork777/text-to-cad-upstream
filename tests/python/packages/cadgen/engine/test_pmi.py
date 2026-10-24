@@ -3,8 +3,12 @@ written into its xbf as XCAF's GD&T objects and read back the same from the file
 build; its AP242 STEP read by OCCT and by a reader of no OCCT (``export/ap242.py``),
 which agree on values, units, datum frames and the faces each annotation is on; a warm rebuild,
 an edit of the geometry and of a tolerance, a ref the model no longer satisfies (missing,
-ambiguous, invalid) kept in the document and refused by a STEP; what is not supported refused
-by name; and the committed fixture (``pmi_golden``) the same as a fresh build's."""
+ambiguous, invalid) kept in the document and refused by a STEP, and one that names another kind
+of face than on the last build warned of, the document the code's alone; what is not supported
+refused by name; a STEP another system wrote read, converted and exported as it is, what this does
+not model listed; and the committed fixture (``pmi_golden``) the same as a fresh build's. A
+deliberate change to what a build writes makes the fixture again:
+`CADGEN_RENDER_GOLDENS=write scripts/test/test-python.sh tests/python/packages/cadgen/engine/test_pmi.py`."""
 
 from __future__ import annotations
 
@@ -22,12 +26,13 @@ from cadgen.engine import document, export, pmi
 from cadgen.engine.export import ap242
 
 FIXTURE = Path(__file__).resolve().parent / "pmi_golden"
+WRITE = os.environ.get("CADGEN_RENDER_GOLDENS") == "write"
 
 
 # The fixture's model (``models/examples/src/pmi_plate.py``): tolerance values ILLUSTRATIVE.
 PLATE = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.engine import materials, pmi, step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -35,6 +40,7 @@ from cadgen.engine import pmi, step, xbf
 def pmi_plate():
     body = bd.Box(100, 60, {thickness}) - bd.Cylinder({radius}, {thickness})
     body.label = "plate"
+    body.material = materials.aluminium_6061
     bottom = body.faces().sort_by(bd.Axis.Z)[0]
     top = body.faces().sort_by(bd.Axis.Z)[-1]
     front = body.faces().sort_by(bd.Axis.Y)[0]
@@ -67,12 +73,14 @@ class _Folder(unittest.TestCase):
         self.folder = Path(tempfile.mkdtemp(prefix="engine-pmi-")).resolve()
         self.addCleanup(shutil.rmtree, self.folder, ignore_errors=True)
 
-    def build(self, source: str, name: str = "pmi_plate", *, ok: bool = True) -> dict:
+    def build(self, source: str, name: str = "pmi_plate", *, ok: bool | None = True) -> dict:
+        """The model built from ``source``, its report ``ok`` as said (None: either)."""
         script = self.folder / f"{name}.py"
         script.write_text(textwrap.dedent(source), encoding="utf-8")
         os.utime(script, ns=(time.time_ns(), time.time_ns()))
         report = engine_build.build(script, [name], cwd=self.folder)[0]
-        self.assertEqual(report["ok"], ok, report)
+        if ok is not None:
+            self.assertEqual(report["ok"], ok, report)
         return report
 
     @property
@@ -86,6 +94,16 @@ class _Folder(unittest.TestCase):
 
 def _by_id(entries: list[dict]) -> dict[str, dict]:
     return {entry["id"]: entry for entry in entries}
+
+
+def _said(found: object) -> object:
+    """An AP242 reader's report (``ap242.report``) with the file's name and its record numbers left
+    out (a ``record``, a feature's ``face``): a writer numbering its records otherwise says the same."""
+    if isinstance(found, dict):
+        return {key: _said(value) for key, value in found.items() if key not in ("file", "record", "face")}
+    if isinstance(found, list):
+        return [_said(value) for value in found]
+    return found
 
 
 def _face(loaded: document.Loaded, entry: dict, at: int = 0) -> tuple[str, dict]:
@@ -152,10 +170,16 @@ class PlateTest(_Folder):
         self.assertEqual(len(theirs), len(ours))
 
         def meaning(entry: dict) -> tuple:
-            return (entry["kind"], json.dumps(entry.get("dimension"), sort_keys=True), json.dumps(entry.get("datum")),
+            dimension = entry.get("dimension")
+            if dimension is not None:  # its nominal's value: read from a file, its source is the file
+                dimension = {**dimension, "nominal": dimension["nominal"]["value"]}
+            return (entry["kind"], json.dumps(dimension, sort_keys=True), json.dumps(entry.get("datum")),
                     json.dumps(entry.get("geometric_tolerance"), sort_keys=True), [ref["ref"] for ref in entry["refs"]])
 
         self.assertEqual(sorted(map(meaning, theirs)), sorted(map(meaning, ours.values())))
+        # A nominal the file holds, not one measured here.
+        self.assertEqual({entry["dimension"]["nominal"]["source"] for entry in theirs if entry["kind"] == "dimension"},
+                         {"file"})
         # The reader of no OCCT: AP242's entities, their values, units and faces, and nothing malformed.
         found = ap242.report(self.step)
         self.assertEqual(found["schema"].split(" ")[0], "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF")
@@ -192,9 +216,7 @@ class PlateTest(_Folder):
         self.build(plate())
         again = self.folder / "again.step"
         export.translate(self.xbf, "step", again)
-        fresh, reopened = ap242.report(self.step), ap242.report(again)
-        fresh.pop("file"), reopened.pop("file")
-        self.assertEqual(reopened, fresh)
+        self.assertEqual(_said(ap242.report(again)), _said(ap242.report(self.step)))
 
     def test_a_warm_rebuild_writes_the_same_document(self) -> None:
         self.build(plate())
@@ -371,50 +393,61 @@ class FaceKindTest(_Folder):
         [ordinal] = [at for at in range(1, faces.Extent() + 1) if pmi._surface(faces.FindKey(at))[0] == "cylinder"]
         return loaded.prototypes[0].face_names[ordinal]
 
-    def named(self, cut: str, name: str, *, ok: bool = True) -> dict:
+    def named(self, cut: str, name: str, *, ok: bool | None = True) -> dict:
         return self.build(CUT.format(cut=cut, hole=repr(name)), ok=ok)
 
-    def test_a_name_that_comes_to_name_another_kind_of_face_is_invalid(self) -> None:
+    def test_a_name_that_comes_to_name_another_kind_of_face_is_warned(self) -> None:
         name = self.hole_name()
         report = self.named(ROUND, name)
         self.assertEqual(report["pmi"]["problems"], [])
         self.assertEqual(_by_id(pmi.read(self.xbf))["hole-from-left"]["dimension"]["nominal"]["value"], 50.0)
-        # The hole made a square: the name now names a flat side 44 from the left face. Flagged, not measured.
-        report = self.named(SQUARE, name, ok=False)
-        [problem] = report["pmi"]["problems"]
-        self.assertEqual((problem["id"], problem["status"]), ("hole-from-left", "invalid"))
-        self.assertIn(f"{name} named a cylinder face on the last build and names a plane face now", problem["problem"])
-        self.assertIn("a STEP would drop PMI", report["error"])
+        # The hole made a square: the name now names a flat side 44 from the left face. The build says
+        # so, as a warning of its report and of the structure it serves; the document is the code's.
+        report = self.named(SQUARE, name)
+        self.assertEqual(report["pmi"]["problems"], [])
+        [warning] = report["pmi"]["warnings"]
+        said = f"{name} named a cylinder face on the last build and names a plane face now"
+        self.assertTrue(warning.startswith(f"plate/hole-from-left: {said}"), warning)
+        served = _by_id(engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"])
+        [text] = served["hole-from-left"]["warnings"]
+        self.assertTrue(text.startswith(said), text)
         entry = _by_id(pmi.read(self.xbf))["hole-from-left"]
-        self.assertEqual((entry["status"], entry["dimension"]["nominal"]), ("invalid", None))
-        self.assertEqual(_by_id(pmi.read(self.xbf))["C"]["status"], "ok", "the left face stayed a plane")
+        self.assertEqual((entry["status"], entry["dimension"]["nominal"]["value"], entry["warnings"]), ("ok", 44.0, []))
 
-    def test_after_a_restart_the_saved_document_remembers(self) -> None:
+    def test_after_a_restart_the_saved_document_is_the_last_build(self) -> None:
         name = self.hole_name()
         self.named(ROUND, name)
         engine_build._WRITTEN.clear()  # a fresh process: nothing of the last build but its xbf
-        report = self.named(SQUARE, name, ok=False)
-        self.assertEqual([p["id"] for p in report["pmi"]["problems"]], ["hole-from-left"])
+        report = self.named(SQUARE, name)
+        self.assertEqual([warning.split(":")[0] for warning in report["pmi"]["warnings"]], ["plate/hole-from-left"])
 
-    def test_the_flag_stays_until_the_ref_is_written_anew(self) -> None:
+    def test_the_document_is_the_codes_whatever_was_built_before(self) -> None:
+        """The same code and closure make the same xbf, built fresh or after the round hole: it holds
+        what the code says and this build's geometry resolves, no status, no word of a previous build."""
         name = self.hole_name()
         self.named(ROUND, name)
-        self.named(SQUARE, name, ok=False)
-        report = self.named(SQUARE, name, ok=False)  # built again, unchanged: still flagged
-        self.assertEqual([p["id"] for p in report["pmi"]["problems"]], ["hole-from-left"])
+        self.named(SQUARE, name, ok=None)
+        after = self.xbf.read_bytes()
+        self.xbf.unlink()
+        engine_build._WRITTEN.clear()
+        self.named(SQUARE, name, ok=None)
+        self.assertEqual(self.xbf.read_bytes(), after)
         loaded = document.Loaded(self.xbf)
-        names = loaded.prototypes[0].face_names
-        [ordinal] = [at for at, text in names.items() if text == name]
-        # Written anew (the same face by its ordinal): taken as meant, measured to the plane.
-        report = self.named(SQUARE, f"face {ordinal}")
-        self.assertEqual(report["pmi"]["problems"], [])
-        self.assertEqual(_by_id(pmi.read(self.xbf))["hole-from-left"]["dimension"]["nominal"]["value"], 44.0)
+        for record in pmi.records_of_document(loaded.doc, loaded.prototypes, loaded.name):
+            self.assertEqual(set(record["extra"]), {"schema", "id", "kind", "label", "presentation", "refs", "unlinked"})
+
+    def test_the_warning_is_the_last_builds_alone(self) -> None:
+        name = self.hole_name()
+        self.named(ROUND, name)
+        self.named(SQUARE, name)
+        report = self.named(SQUARE, name)  # built again, unchanged: its last build named the plane
+        self.assertNotIn("warnings", report["pmi"])
 
     def test_a_face_the_code_selects_is_not_held_to_its_kind(self) -> None:
-        """A build123d Face is what the code's own selection picks each build: never flagged."""
+        """A build123d Face is what the code's own selection picks each build: never warned of."""
         self.build(CUT.format(cut=ROUND, hole="body.faces().sort_by(bd.Axis.X)[-1]"))
         report = self.build(CUT.format(cut=ROUND, hole="body.faces().filter_by(bd.GeomType.CYLINDER)[0]"))
-        self.assertEqual(report["pmi"]["problems"], [])
+        self.assertEqual(report["pmi"], {"annotations": 2, "problems": []})
 
 
 class AssemblyTest(_Folder):
@@ -467,6 +500,32 @@ def pmi_plate():
         # OCCT's reader finds a datum through the tolerances naming it only: A, named by none, is in
         # the file (above) but not in what OCCT reads back.
         self.assertEqual(sorted(entry["kind"] for entry in pmi.read(self.step)), ["dimension", "geometric_tolerance"])
+
+    def test_an_annotation_linked_to_nothing_keeps_its_part(self) -> None:
+        """Its presentation is in its part's frame: a broken callout of a placed pin is the pin's."""
+        self.build('''
+import build123d as bd
+from cadgen.engine import pmi, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+def pmi_plate():
+    base = bd.Box(100, 60, 10)
+    base.label = "base"
+    base = pmi.annotate(base, pmi.datum("A", base.faces().sort_by(bd.Axis.Z)[0]))
+    pin = bd.Cylinder(3, 20)
+    pin.label = "pin"
+    pin = pmi.annotate(pin, pmi.diameter("pin-diameter", "face 9", presentation=pmi.place((3, 0, 0), (10, 0, 0))))
+    placed = pin.moved(bd.Pos(30, 0, 15))
+    placed.label = "pin"
+    return bd.Compound(children=[base, placed], label="fixture")
+''')
+        structure = document.Loaded(self.xbf).structure()
+        entry = _by_id(structure["pmi"])["pin-diameter"]
+        self.assertEqual(entry["status"], "missing")
+        self.assertEqual(structure["prototypes"][entry["part"]]["name"], "pin")
+        served = engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"]
+        self.assertEqual(served, structure["pmi"])
 
 
 class UnitsTest(_Folder):
@@ -595,7 +654,7 @@ class RefusedTest(_Folder):
             pmi.diameter("d", top, tolerance={"type": "fit", "class": "H7"})
         with self.assertRaisesRegex(pmi.PMIUnsupported, "assembly-level PMI"):
             pmi.annotate(bd.Compound(children=[box]), pmi.flatness("f", top, 0.1))
-        with self.assertRaisesRegex(pmi.PMIError, "upper deviation"):
+        with self.assertRaisesRegex(pmi.PMIError, r"upper deviation is above its lower \(0.1\), not -0.1"):
             pmi.plus_minus(-0.1, 0.1)
         with self.assertRaisesRegex(pmi.PMIUnsupported, "one position per datum"):
             pmi.annotate(box, pmi.datum("A", top), pmi.datum("B", top),
@@ -604,49 +663,168 @@ class RefusedTest(_Folder):
     def test_an_export_that_makes_the_document_again_is_refused(self) -> None:
         self.build(plate())
         with self.assertRaisesRegex(export.ExportRefused, "PMI annotation"):
-            export.translate(self.step, "xbf", self.folder / "from_step.xbf")
-        with self.assertRaisesRegex(export.ExportRefused, "PMI annotation"):
             export.translate(self.xbf, "step", self.folder / "part.step", part="plate")
+        with self.assertRaisesRegex(export.ExportRefused, "PMI annotation"):
+            export.translate(self.xbf, "xbf", self.folder / "part.xbf", part="plate")
         # A mesh carries no PMI, as it carries no B-rep: written.
         export.translate(self.xbf, "stl", self.folder / "plate.stl")
 
 
+class _Foreign:
+    """A document another system wrote: a box holding XCAF's GD&T, made by OCCT directly."""
+
+    def __init__(self, shape: object) -> None:
+        from OCP.UnitsMethods import UnitsMethods_LengthUnit_Millimeter
+        from OCP.XCAFDoc import XCAFDoc_DocumentTool
+
+        self.shape = shape
+        self.doc = document._new_document()
+        XCAFDoc_DocumentTool.SetLengthUnit_s(self.doc, 1.0, UnitsMethods_LengthUnit_Millimeter)  # as the engine's are
+        self.shapes = XCAFDoc_DocumentTool.ShapeTool_s(self.doc.Main())
+        self.tool = XCAFDoc_DocumentTool.DimTolTool_s(self.doc.Main())
+        self.label = self.shapes.AddShape(shape.wrapped, False, False)
+
+    def sub(self, element: object) -> object:
+        from OCP.TDF import TDF_Label
+
+        found = TDF_Label()
+        self.shapes.AddSubShape(self.label, element.wrapped, found)
+        return found
+
+    def tolerance(self, kind: str, element: object, value: float, **set: object) -> object:
+        from OCP import XCAFDimTolObjects as X
+        from OCP.XCAFDoc import XCAFDoc_GeomTolerance
+
+        at = self.tool.AddGeomTolerance()
+        given = X.XCAFDimTolObjects_GeomToleranceObject()
+        given.SetType(getattr(X, f"XCAFDimTolObjects_GeomToleranceType_{kind}"))
+        given.SetValue(value)
+        for name, argument in set.items():
+            getattr(given, name)(*argument)
+        XCAFDoc_GeomTolerance.Set_s(at).SetObject(given)
+        self.tool.SetGeomTolerance(self.sub(element), at)
+        return at
+
+    def dimension(self, kind: str, elements: list, value: float, **set: object) -> object:
+        from OCP import XCAFDimTolObjects as X
+        from OCP.XCAFDoc import XCAFDoc_Dimension
+
+        at = self.tool.AddDimension()
+        given = X.XCAFDimTolObjects_DimensionObject()
+        given.SetType(getattr(X, f"XCAFDimTolObjects_DimensionType_{kind}"))
+        given.SetValue(value)
+        for name, argument in set.items():
+            getattr(given, name)(*argument)
+        XCAFDoc_Dimension.Set_s(at).SetObject(given)
+        self.tool.SetDimension(*map(self.sub, elements), at)
+        return at
+
+    def step(self, path: Path) -> Path:
+        from cadgen.engine.export.step import write_document
+
+        self.shapes.UpdateAssemblies()
+        write_document(self.doc, path)
+        return path
+
+    def xbf(self, path: Path) -> Path:
+        self.shapes.UpdateAssemblies()
+        document.save(self.doc, path, compare=False)
+        return path
+
+
+def _meaning(entry: dict) -> tuple:
+    """What an entry says, its id and refs' spelling apart."""
+    return (entry["kind"], entry["status"], entry["xcaf_type"], entry.get("reason"),
+            json.dumps({key: entry.get(key) for key in ("datum", "dimension", "geometric_tolerance", "values")},
+                       sort_keys=True), [(ref["role"], ref["status"]) for ref in entry["refs"]])
+
+
 class ForeignTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.folder = Path(tempfile.mkdtemp(prefix="engine-pmi-foreign-")).resolve()
+        self.addCleanup(shutil.rmtree, self.folder, ignore_errors=True)
+
     def test_pmi_this_module_does_not_model_is_listed_as_unsupported(self) -> None:
         """A STEP written with a cylindricity (XCAF's, by OCCT directly) reads back listed. (OCCT's
         writer drops a perpendicularity that names no datum, silently: hence a form tolerance.)"""
         import build123d as bd
-        from OCP import XCAFDimTolObjects as X
-        from OCP.TDF import TDF_Label
-        from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_GeomTolerance
 
-        from cadgen.engine.export.step import write_document
-
-        folder = Path(tempfile.mkdtemp(prefix="engine-pmi-foreign-")).resolve()
-        self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
-        from OCP.UnitsMethods import UnitsMethods_LengthUnit_Millimeter
-
-        doc = document._new_document()
-        XCAFDoc_DocumentTool.SetLengthUnit_s(doc, 1.0, UnitsMethods_LengthUnit_Millimeter)  # as the engine's are
-        shapes = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
         box = bd.Box(10, 10, 10)
-        label = shapes.AddShape(box.wrapped, False, False)
-        face = TDF_Label()
-        shapes.AddSubShape(label, box.faces().sort_by(bd.Axis.Z)[-1].wrapped, face)
-        tool = XCAFDoc_DocumentTool.DimTolTool_s(doc.Main())
-        at = tool.AddGeomTolerance()
-        given = X.XCAFDimTolObjects_GeomToleranceObject()
-        given.SetType(X.XCAFDimTolObjects_GeomToleranceType_Cylindricity)
-        given.SetValue(0.2)
-        XCAFDoc_GeomTolerance.Set_s(at).SetObject(given)
-        tool.SetGeomTolerance(face, at)
-        shapes.UpdateAssemblies()
-        path = folder / "foreign.step"
-        write_document(doc, path)
-        [entry] = pmi.read(path)
+        foreign = _Foreign(box)
+        foreign.tolerance("Cylindricity", box.faces().sort_by(bd.Axis.Z)[-1], 0.2)
+        [entry] = pmi.read(foreign.step(self.folder / "foreign.step"))
         self.assertEqual((entry["kind"], entry["xcaf_type"], entry["status"]),
                          ("unsupported", "XCAFDimTolObjects_GeomToleranceType_Cylindricity", "ok"))
+        self.assertIn("cylindricity", entry["reason"])
         self.assertEqual(entry["values"]["value"], 0.2)
+
+    def test_what_a_file_says_beyond_the_model_is_unsupported_with_why(self) -> None:
+        """A diameter with limits or a flatness with a projected zone says more than a plain one: it
+        is listed unsupported, saying why, never read as the plain one. A nominal read from a file
+        was measured by nothing here: its source is the file."""
+        import build123d as bd
+        from OCP import XCAFDimTolObjects as X
+
+        body = bd.Box(20, 20, 10) - bd.Cylinder(4, 10)
+        top, hole = body.faces().sort_by(bd.Axis.Z)[-1], body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+        foreign = _Foreign(body)
+        foreign.dimension("Size_Diameter", [hole], 8.0, SetLowerBound=(7.9,), SetUpperBound=(8.1,))
+        foreign.dimension("Size_Diameter", [hole], 8.0, SetLowerTolValue=(0.0,), SetUpperTolValue=(0.1,))
+        foreign.tolerance("Flatness", top, 0.2, SetZoneModifier=(X.XCAFDimTolObjects_GeomToleranceZoneModif_Projected,),
+                          SetValueOfZoneModifier=(5.0,))
+        foreign.tolerance("Flatness", top, 0.1, SetMaxValueModifier=(0.3,))
+        ranged, plain, projected, capped = pmi.read(foreign.xbf(self.folder / "foreign.xbf"))
+        self.assertEqual((ranged["kind"], ranged["xcaf_type"]), ("unsupported", "XCAFDimTolObjects_DimensionType_Size_Diameter"))
+        self.assertIn("limits", ranged["reason"])
+        self.assertEqual(plain["kind"], "dimension")
+        self.assertEqual(plain["dimension"]["nominal"], {"value": 8.0, "unit": "mm", "source": "file"})
+        self.assertEqual(plain["dimension"]["tolerance"], {"type": "plus_minus", "upper": 0.1, "lower": 0.0})
+        self.assertEqual((projected["kind"], projected["xcaf_type"]), ("unsupported", "XCAFDimTolObjects_GeomToleranceType_Flatness"))
+        self.assertIn("projected", projected["reason"])
+        self.assertIn("maximum", capped["reason"])
+
+    def test_a_vendor_step_converts_and_exports_its_pmi_as_read(self) -> None:
+        """A vendor's STEP (the skill's vendor workflow): its xbf keeps the file's GD&T as read, and a
+        STEP of either is written. A distance between two edges is no annotation on faces: listed,
+        linked to its edges and kept, never refused and never drawn."""
+        import build123d as bd
+
+        box = bd.Box(10, 10, 10)
+        foreign = _Foreign(box)
+        foreign.tolerance("Flatness", box.faces().sort_by(bd.Axis.Z)[-1], 0.2)
+        edges = box.edges().filter_by(bd.Axis.Z)
+        foreign.dimension("Location_LinearDistance", [edges[0], edges[1]], 10.0)
+        vendor = foreign.step(self.folder / "vendor.step")
+        flatness, distance = sorted(pmi.read(vendor), key=lambda entry: entry["kind"])
+        self.assertEqual((flatness["kind"], flatness["status"]), ("geometric_tolerance", "ok"))
+        self.assertEqual((distance["kind"], distance["status"], distance["reason"]), ("unsupported", "ok", "linked to an edge"))
+        self.assertEqual(distance["xcaf_type"], "XCAFDimTolObjects_DimensionType_Location_LinearDistance")
+        self.assertTrue(all("/edge " in ref["ref"] and ref["status"] == "ok" for ref in distance["refs"]), distance["refs"])
+        read = sorted(map(_meaning, pmi.read(vendor)))
+        export.translate(vendor, "xbf", self.folder / "vendor.xbf")
+        self.assertEqual(sorted(map(_meaning, pmi.read(self.folder / "vendor.xbf"))), read)
+        for source in (vendor, self.folder / "vendor.xbf"):
+            export.translate(source, "step", self.folder / "again.step")
+            self.assertEqual(sorted(map(_meaning, pmi.read(self.folder / "again.step"))), read)
+
+    def test_an_export_of_a_foreign_document_says_what_it_leaves_out(self) -> None:
+        """A partial STEP is a document made again, which carries no PMI: written, and said."""
+        import build123d as bd
+
+        from cadgen.engine.worker import _export
+
+        box = bd.Box(10, 10, 10)
+        foreign = _Foreign(box)
+        foreign.tolerance("Flatness", box.faces().sort_by(bd.Axis.Z)[-1], 0.2)
+        vendor = foreign.step(self.folder / "vendor.step")
+        said: list[str] = []
+        part = self.folder / "part.step"
+        _export({"source": {"path": str(vendor)}, "destinations": [str(part)], "part": document.Loaded(vendor).name},
+                said.append)
+        self.assertTrue(part.is_file())
+        self.assertEqual([text for text in said if text.startswith("warning: pmi:")],
+                         ["warning: pmi: part.step: geometric_tolerance-1 is not carried whole: a partial STEP is a "
+                          "document made again, which carries no PMI"])
 
 
 class FixtureTest(_Folder):
@@ -654,10 +832,11 @@ class FixtureTest(_Folder):
         """``pmi_golden/pmi_plate.step`` says what a build of the example says, to a reader of no OCCT;
         and ``pmi_golden/pmi_plate.pmi.json`` is the structure's ``pmi`` a viewer is served."""
         self.build(plate())
-        fresh, committed = ap242.report(self.step), ap242.report(FIXTURE / "pmi_plate.step")
-        for found in (fresh, committed):
-            found.pop("file")
-        self.assertEqual(committed, fresh)
+        if WRITE:
+            shutil.copyfile(self.step, FIXTURE / "pmi_plate.step")
+            shutil.copyfile(self.xbf, FIXTURE / "pmi_plate.xbf")
+            (FIXTURE / "pmi_plate.pmi.json").write_text(json.dumps(pmi.read(self.xbf), indent=2) + "\n", encoding="utf-8")
+        self.assertEqual(_said(ap242.report(FIXTURE / "pmi_plate.step")), _said(ap242.report(self.step)))
         served = json.loads((FIXTURE / "pmi_plate.pmi.json").read_text(encoding="utf-8"))
         self.assertEqual(served, pmi.read(self.xbf))
         self.assertEqual(served, pmi.read(FIXTURE / "pmi_plate.xbf"))

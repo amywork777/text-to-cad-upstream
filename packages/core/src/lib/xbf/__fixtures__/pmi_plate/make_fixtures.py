@@ -1,13 +1,14 @@
 """Write the PMI tests' plate fixtures: an engine document as ``cadgen serve`` answers it (its
 structure and its part buffer), built in three versions of one model, in one folder, as a person's
-edits are (each build sees the last one's xbf, which is how the engine knows a ref changed kind):
+edits are:
 
 * ``v1``: a 100 x 60 x 10 mm plate with a 10 mm hole, its PMI naming its faces by the engine's
   element names -- datum A on the bottom, the thickness, the hole's diameter, its position to A,
   the top's flatness, and basic distances from the front and the left side to the hole's axis;
 * ``v2``: 12 mm thick with a 12 mm hole, every name kept: the same annotations, measured anew;
 * ``v3``: a square cut where the hole was: the hole's name now on a flat face, where a diameter and
-  a position cannot stand and which the basics to it named as a round one last build.
+  a position cannot stand; the basics to it measure to that face (that it was a round one at the
+  last build is the build's warning, never the document's, so a served file does not carry it).
 
 Tolerance values are illustrative. ``constructions.json`` beside them is the layout the viewer
 makes of them (``xbfPmiLayout.test.js``); write it again after these change. Regenerate, from the
