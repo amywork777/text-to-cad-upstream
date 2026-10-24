@@ -11,7 +11,8 @@ The document is made from code. A model declares its PMI with `cadgen.engine.pmi
 (`pmi.annotate(body, pmi.datum("A", ...), pmi.distance(...), pmi.flatness(...), ...)`), the
 engine writes it into the document's XCAF GD&T attributes, which its AP242 export reads, and the
 served structure carries it (`structure.pmi`, absent where there is none; beside it
-`pmi_views`, `pmi_library` and `pmi_coverage`, the xbf's alone). So the viewer writes
+`pmi_views` and `pmi_library`, the xbf's alone, and `pmi_coverage`, served for a STEP's PMI too).
+So the viewer writes
 nothing: a change asked for in the viewer is the call the model's code should make, which Quick
 Edit hands the agent, and the change reaches the view as the engine's next version.
 
@@ -41,7 +42,7 @@ entry is one of:
   true, to its datums) is its Note 1; its refs are the faces it covers this build.
 - A **note** (`pmi.note`): its number, its words, and a **flag note**'s faces and the annotations it
   names (a general note names neither).
-- Anything else the document holds (a STEP's profile tolerance, an angle) is an entry the viewer
+- Anything else the document holds (a STEP's cylindricity, an angle) is an entry the viewer
   does not draw: listed, saying why (`unsupported`: the engine's `reason` where it gives one, else
   the viewer's own, with its XCAF type), never dropped. Whether it is drawn is the viewer's to say;
   `cadgen snapshot` reads it by the same rule.
@@ -124,7 +125,7 @@ built: while Explode or a pose moves the parts they are not drawn, and the secti
 The PMI section (`xbf/pmi/PmiSection.jsx`) is read as a machinist reads a drawing: under its head
 (New, the eye of them all), four groups, each under a static heading with a rule above all but the
 first, none folding ([settings UI](settings-ui.md)), each there only where it has something (a
-part with no annotation, note or view at all says "No PMI yet" instead):
+document with no annotation, note or view at all says "No PMI yet" instead):
 
 - **Views**: a row per view, its glyph, its name and what it shows ("4 annotations", or "All" for
   one that names none), each part's said where several parts have views (two may share a name).
@@ -147,8 +148,9 @@ part with no annotation, note or view at all says "No PMI yet" instead):
   where several parts have notes. A pick opens its words whole under its row; a flag note's lights
   its faces, and its eye hides its flag.
 - **Coverage**: of each part, "N faces have no requirement" or "Every face has a requirement",
-  then each requirement that cannot hold with another, in the warning colour, by its ids and the
-  engine's words. **Show faces with no requirement**, the checkbox at the heading's right end,
+  then each conflict the engine found, in the warning colour, by its ids and the engine's words: a
+  datum no tolerance's frame names, a flag note linked to nothing, and each requirement that cannot
+  hold with another. **Show faces with no requirement**, the checkbox at the heading's right end,
   lights those faces as a pick is lit; the group's lines stay either way. It warns, as the engine
   does: nothing here fails.
 - **Annotations**: every other entry, as below.

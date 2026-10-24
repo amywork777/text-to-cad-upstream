@@ -219,7 +219,9 @@ return pmi.annotate(
 - **A camera** is a preset's name, the same as `cadgen snapshot --camera`'s: `iso`,
   `front`, `back`, `left`, `right`, `top`, `bottom`. Or your own,
   `pmi.camera(direction, up)`: `direction` points from the part toward the eye, as a
-  preset's does (`front` is `(0, -1, 0)`). Every view is orthographic.
+  preset's does (`front` is `(0, -1, 0)`). Every view is orthographic as
+  `cadgen snapshot` draws it; the viewer keeps the person's projection (its
+  Projection menu).
 - **A section** is the viewer's Clip: `pmi.section(axis, at, invert=False)` cuts
   across `"x"`, `"y"` or `"z"` at `at` millimetres and keeps the lower side
   (`invert=True` the upper). Keep the side away from the camera, so it looks at the

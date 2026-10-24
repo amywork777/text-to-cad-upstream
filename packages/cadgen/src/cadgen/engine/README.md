@@ -1120,11 +1120,12 @@ return pmi.annotate(body,
   module of its own code holds; cadgen ships no note text) with the part, for a viewer to offer;
   a library is no requirement.
 - **Views.** `pmi.view(name, camera=..., shows=None, section=None, place=None, label=None)` is a
-  named view of the part, given among its annotations, seen orthographically down `camera`: a
-  preset's name (`iso`, `front`, `back`, `left`, `right`, `top`, `bottom`: `cadgen snapshot
-  --camera`'s, one table, `render/presets.py`) or `pmi.camera(direction, up)`, whose `direction`
-  means what a preset's does, the way from the part toward the eye (`front` is `(0, -1, 0)`), both
-  made unit vectors (an `up` along the direction is refused). Where it has one, it is cut by
+  named view of the part, given among its annotations, seen orthographically down `camera` (as a
+  still draws it; a viewer keeps the person's projection): a preset's name (`iso`, `front`,
+  `back`, `left`, `right`, `top`, `bottom`: `cadgen snapshot --camera`'s, one table,
+  `render/presets.py`) or `pmi.camera(direction, up)`, whose `direction` means what a preset's
+  does, the way from the part toward the eye (`front` is `(0, -1, 0)`), both made unit vectors
+  (an `up` along the direction is refused). Where it has one, it is cut by
   `section=pmi.section(axis, at, invert=False)`, the viewer's Clip: one plane across `x`, `y` or
   `z` at `at`, keeping the lower side, `invert` the upper (a front view, its eye toward -y, sees
   its cut where it keeps the far side, y above `at`: `invert=True`). It shows the ids of the same
@@ -1291,9 +1292,10 @@ carries, after writing the file the worker reads it back with
 `export/ap242.py` -- a Part 21 reader of AP242's PMI entities with no OCCT in it -- and matches
 every entry but the notes, which it neither expects nor counts (nor the views, which are no
 entries), to one record of the file by face name, kind, values, units, datum order, zone and a
-basic dimension's note (`verify`); a limit dimension by its two limits, in its nominal's unit,
-its nominal value their midpoint; a tolerance on several faces by the same faces, in any order; a
-general profile that covers no face by no record, none being left over. The result,
+basic dimension's note (`verify`); a limit dimension by its two limits, in its nominal's unit
+(millimetres where it has none, as a file's has not), the file's nominal value their midpoint; a
+tolerance on several faces by the same faces, in any order; a general profile that covers no face
+by no record, none being left over. The result,
 `{"matched", "total", "problems", "sha256"}` (the digest of the bytes checked), travels with the
 export job as `pmiVerification`. Nothing is guessed: a face name the file uses twice, two parts
 reusing one, a repeated datum letter, an entity the reader does not read, or a schema other than
