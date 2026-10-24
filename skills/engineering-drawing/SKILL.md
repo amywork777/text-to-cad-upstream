@@ -34,14 +34,31 @@ The first run downloads that installation; later runs reuse it.
 
 0. **Ask before dimensioning.** Which dimensions matter, how tightly and from
    which faces depends on how the part is used and how far along it is, and
-   only the person knows. Ask the stage (concept, prototype, production) and
-   the use; then propose what you think matters, one numbered item at a time,
-   each with a picture of the part with that feature marked (`cadgen
-   snapshot --annotation`); and write into the script only what they confirm.
-   For an assembly, ask joint by joint how each is held. How:
-   [design intent, tolerances and GD&T](references/intent-and-gdt.md). A
-   person who wants a quick sheet of views can skip it; the drawing then
-   states nominal sizes only, and says so.
+   only the person knows. Before any dimension:
+   - **Name the critical interfaces**, read off the model: pins and the bores
+     they run in, bores that take a bearing or bushing, sliding and sealing
+     faces, and the faces the part mounts on. For an assembly, read them off
+     where parts meet: a pin in a bushing in a bore is two fits.
+   - **Ask** the stage (concept, prototype, production) and the use, then
+     propose which interfaces need a requirement, one numbered item at a
+     time, each with a picture of the part with that feature marked (`cadgen
+     snapshot --annotation`). For an assembly, ask joint by joint how each is
+     held.
+   - **Write only what the person confirms** into the script; dimension with
+     it from the start, not as a pass afterwards.
+
+   How: [design intent, tolerances and GD&T](references/intent-and-gdt.md).
+   A person who wants a quick sheet of views can skip the questions; the
+   drawing then states nominal sizes only, and the handoff says so.
+
+   **Refreshing an existing drawing** (the model changed, or the drawing is
+   being regenerated or shown): read its script's stage and requirements
+   first. A `concept` stage or a sheet of nominal sizes records where things
+   stood, not that they are settled: name the interfaces still without a
+   requirement and ask whether to settle them now. Never carry a nominal
+   drawing forward as if it showed tolerancing ("The actuator has nominal
+   dimensions only; to show tolerancing, let's set the pin and bushing fits and
+   the mounting faces first").
 1. **Get the part.** `cadgen.read_step(Path(__file__).parent / "../STEP/part.step")`
    reads the artifact a `@step` model wrote (run `python <model>.py` first); a
    live build123d shape works too. The drawing documents geometry; it does not
@@ -137,6 +154,11 @@ The first run downloads that installation; later runs reuse it.
      assembly, draw it as one (below).
    - *"hides some of the part"*: a break covers a stretch where the part
      changes; move it to where the section is constant.
+   - *"requirements: …"*: one line per part sheet, apart from the `incomplete:`
+     lines: its stage; how many sizes are toleranced, basic, reference or
+     nominal (and under which general tolerance); its datums and frames; and
+     each hole, slot or turned diameter with no fit, tolerance or position. A
+     sheet can have no `incomplete:` line and still read "all nominal".
    - A refusal (an exception, no PDF): a typed size the part contradicts, a
      hole called out where no hole is, views that run off the frame on a sheet
      whose scale you fixed. The message says what the part has, or which scale
@@ -149,6 +171,12 @@ The first run downloads that installation; later runs reuse it.
    sits on line work, that hidden lines and centre lines appear where they
    should, and that the section shows what it was cut for. Fix the script, rerun,
    and read it again.
+7. **Hand off two things, separately.** *Geometry*: what is located and sized,
+   and what the `incomplete:` lines still name (none, at best). *Requirements*:
+   the `requirements:` line for each sheet: what is toleranced and what is
+   nominal, the datums, and the interfaces left without a fit, tolerance or
+   position. "All features dimensioned" and "no tolerances stated" can both be
+   true; say both, and say which requirements came from the person.
 
 Steps 3 and 5 stand on their own: a sheet of views with no dimensions is a
 drawing too, and writes its PDF with a list of everything it leaves unstated.
@@ -229,9 +257,9 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
 ## Limits to state in the handoff
 
 - Every dimension without `tol=`/`fit=`/`limits=` is nominal, governed by the
-  general tolerance or general profile if one is given. Say which requirements
-  came from the person, and which features the stage asks about that they have
-  not decided.
+  general tolerance or general profile if one is given; the `requirements:`
+  line counts them. Say which requirements came from the person, and which
+  interfaces the stage asks about that they have not decided.
 - GD&T: single-segment frames on callouts, dimensions and surfaces, datum
   feature symbols on faces and features of size; no composite frames, datum
   targets, projected zones or all-around symbols. Weld symbols are not drawn:

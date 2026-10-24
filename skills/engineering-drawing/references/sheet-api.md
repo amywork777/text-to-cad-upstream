@@ -302,6 +302,7 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | `top.hole_table(): the top view looks down no hole or slot` | tabulate the view that looks down the holes |
 | `front dim 3: (250, 0, 0) is inside the break ...` | dimension to a point outside the broken stretch |
 | `incomplete: sheet 3 (PIN): the turned diameter ⌀6 ...` | on a drawing of several parts, each line names its sheet |
+| `requirements: concept; 14 sizes, all nominal; no general tolerance; no datums or frames; no fit, tolerance or position on ⌀12 THRU, 4× ⌀6.6 THRU.` | one per part sheet: what it requires, apart from what it draws; report it at the handoff |
 | `incomplete: a prototype drawing states a general tolerance ...` | what the sheet's stage asks for; ask the person |
 | `incomplete: a production drawing locates its features from datums ...` | mark the datums the person gave with `view.datum` |
 | `note: a production drawing marks its key characteristics ...` | ask whether any feature is one; `key=True` marks it |

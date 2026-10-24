@@ -7,6 +7,7 @@ module scope.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -163,6 +164,80 @@ def _unstated(facts: _Facts) -> list[str]:
                 )
     for record in facts.sheets:
         lines.extend(_unstated_for_stage(record, _whose(record, facts.sheets)))
+    return lines
+
+
+def _tally(sheet, work: list, tables: dict) -> dict:
+    """What a sheet states as requirements, for the report: its sizes by kind
+    (toleranced, basic, reference, nominal), its datums, frames and key
+    characteristics, and the holes, slots and turned diameters it leaves with no
+    fit, tolerance or position -- the interfaces a shop asks about first."""
+    sizes = dict.fromkeys(("toleranced", "basic", "reference", "nominal"), 0)
+    loose: list[str] = []
+    frames = keys = 0
+    for view, _proj, _bounds, items, *_rest in work:
+        sizes["reference" if view._overall_reference else "nominal"] += len(view._overall)
+        for dim in items:
+            if dim.kind in ("note", "flag"):
+                continue
+            if dim.kind == "frame":
+                frames += 1
+                continue
+            frames += dim.frame is not None
+            keys += dim.key
+            held = bool(dim.tol or dim.fit or dim.limits or dim.frame is not None or (dim.hole or {}).get("thread"))
+            kind = "basic" if dim.basic else "reference" if dim.reference else "toleranced" if held else "nominal"
+            sizes[kind] += 1
+            if kind != "nominal":
+                continue
+            if dim.kind in ("hole", "slot"):
+                loose.append(_shown(hole_callout_text(dim.hole)))
+            elif dim.kind == "diameter":
+                loose.append(f"⌀{_fmt(2 * dim.radius)}")
+            elif dim.kind == "linear" and (dim.text or "").startswith("%%c"):
+                loose.append(f"⌀{_fmt(math.dist(dim.p1, dim.p2))}")
+    # A hole table lists one row per hole: a kind's rows are counted, as a callout
+    # counts its holes.
+    rows = [_shown(row.size) for table in tables.values() for row in table.rows]
+    sizes["nominal"] += len(rows)
+    loose.extend(f"{rows.count(size)}× {size}" if rows.count(size) > 1 else size for size in dict.fromkeys(rows))
+    datums = sorted({d[0] for view in sheet.views for d in view._datums}
+                    | {d.datum for view in sheet.views for d in view._dims if d.datum})
+    return {"sizes": sizes, "loose": list(dict.fromkeys(loose)), "frames": frames, "keys": keys,
+            "datum_letters": datums, "tolerance": sheet.general_tolerance,
+            "profiled": sheet.general_profile is not None}
+
+
+def _requirements(facts: _Facts) -> list[str]:
+    """What each part's sheet states as requirements, apart from what it draws:
+    a sheet can locate and size every feature and tolerance none of them, and the
+    report says which, so neither is mistaken for the other."""
+    lines = []
+    for record in facts.sheets:
+        if not record["part"] or "sizes" not in record:
+            continue
+        sizes, total = record["sizes"], sum(record["sizes"].values())
+        under = (f" under {record['tolerance']}" if record["tolerance"]
+                 else " under the general profile" if record["profiled"] else "")
+        if total == sizes["nominal"]:
+            stated = f"{total} size{'' if total == 1 else 's'}, all nominal{under}"
+        else:
+            stated = ", ".join(f"{n} {kind}{under if kind == 'nominal' else ''}" for kind, n in sizes.items() if n)
+            stated = f"{total} sizes: {stated}"
+        parts = [record["stage"] or "no stage", stated]
+        if not (record["tolerance"] or record["profiled"]):
+            parts.append("no general tolerance")
+        frames = record["frames"] + record["profiled"]
+        if not record["datum_letters"] and not frames:
+            parts.append("no datums or frames")
+        else:
+            parts.append(f"datums {' '.join(record['datum_letters'])}" if record["datum_letters"] else "no datums")
+            parts.append(f"{frames} frame{'' if frames == 1 else 's'}")
+        if record["keys"]:
+            parts.append(f"{record['keys']} key characteristic{'' if record['keys'] == 1 else 's'}")
+        if record["loose"]:
+            parts.append(f"no fit, tolerance or position on {', '.join(record['loose'])}")
+        lines.append(f"requirements: {_whose(record, facts.sheets)}{'; '.join(parts)}.")
     return lines
 
 

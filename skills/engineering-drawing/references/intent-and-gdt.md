@@ -14,7 +14,9 @@ Ask one thing at a time, in plain words with the standard term in brackets.
    production? Who makes it (a machine shop, a 3D printer, a molder)? What does
    the part mount to, what moves against it, what has to fit? Ask whether their
    company has its own drawing format (a profile, below).
-2. **Propose what matters, one numbered item at a time,** read off the part:
+2. **Name the critical interfaces, then propose what matters, one numbered
+   item at a time,** read off the part (and, for an assembly, off where parts
+   meet: a pin in a bushing in a bore is two fits):
    - the faces it locates on, the ones it is bolted or clamped down by
      (datums A, B, C)
    - pin and fastener holes (position, to those datums)
@@ -37,6 +39,25 @@ Ask one thing at a time, in plain words with the standard term in brackets.
    threadlocker grade, a press fit, a bond (adhesive and its cure), a weld,
    tape, rivets, snaps, or nothing at all. Each answer is a flag note
    (`view.flag(..., joint=...)`, [assemblies](assemblies.md)).
+
+### Refreshing a drawing
+
+A drawing script that already exists records where the requirements stood
+when it was written. Before regenerating it after a model change, or showing
+it to someone, read its stage and the `requirements:` line of its last run. A
+`concept` stage, or sizes that are all nominal, is not a decision that they
+stay that way: name the interfaces still without a requirement and ask
+whether to settle them now. When the point of the drawing is to show
+tolerancing, a nominal drawing cannot show it; say so before redrawing it.
+
+### The handoff
+
+Report geometry and requirements apart. Geometry is what the sheet locates
+and sizes and what its `incomplete:` lines still name. Requirements are what
+its `requirements:` line counts: sizes toleranced, basic, reference and
+nominal, the datums and frames, and the interfaces with no fit, tolerance or
+position. A sheet can locate and size every feature and tolerance none of
+them; say both.
 
 ### A picture per question
 

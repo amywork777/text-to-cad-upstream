@@ -33,7 +33,7 @@ from cadgen._internal.drawing_gdt import (
     _DATUM_REACH, _FRAME_HEIGHT, _check_datums, _datum_toward, _draw_datum, _draw_frame, _draw_mark, _side_of,
     frame_size, mark_width,
 )
-from cadgen._internal.drawing_report import _Facts, _member_key, _merge_facts
+from cadgen._internal.drawing_report import _Facts, _member_key, _merge_facts, _tally
 from cadgen._internal.drawing_sheet import (
     _AIR, _LARGEST_SCALE, _SIZES_CHOSEN, _SIZES_SMALLEST_FIRST, _OffFrame, _arrange_three_views, _assert_views_fit,
     _SheetTable, _choose_for_breaks, _choose_size_and_scale, _draw_furniture, _draw_sheet_table, _furniture,
@@ -491,14 +491,15 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         assemblies.add(id(sheet._parts.parts.assembly))
     if facts is not None:
         # What the sheet's stage asks of it is checked once the drawing is done.
-        facts.sheets.append({
+        sheet_record = {
             "sheet": (index, sheet.title), "stage": sheet._stage(), "mark": key_mark,
             "part": any(id(view.shape) not in assemblies for view in sheet.views),
             "material": sheet.material, "spec": sheet.spec, "finish": sheet.finish,
             "general": bool(sheet.general_tolerance or sheet.general_profile),
             "datums": any(view._datums or any(d.datum for d in view._dims) for view in sheet.views),
             "keyed": any(d.key for view in sheet.views for d in view._dims),
-        })
+        }
+        facts.sheets.append(sheet_record)
     for view in sheet.views:
         if view._detail is not None:
             # A detail shows what its parent shows when the sheet renders, so a
@@ -713,6 +714,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                          spot[1] - size / 2 - room["bottom"], spot[1] + size / 2 + room["top"]))
     _place_auxiliaries(sheet, work, occupied, s)
     _place_hole_tables(sheet, tables, occupied, s)
+    if facts is not None:
+        sheet_record.update(_tally(sheet, work, tables))
     keyed = _sheet_tables(sheet, cuts, work, s)
     keyed_at = _place_sheet_tables(sheet, keyed, occupied, s)
 

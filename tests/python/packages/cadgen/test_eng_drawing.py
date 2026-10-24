@@ -3237,13 +3237,13 @@ class StageProfileTests(unittest.TestCase):
         query = f"TEXT[layer=='{layer}']" if layer else "TEXT"
         return [e.dxf.text for e in doc.modelspace().query(query)]
 
-    def _report(self, sheet) -> list[str]:
+    def _report(self, sheet, kind: str = "unstated") -> list[str]:
         from cadgen._internal.drawing_render import _render_sheet
-        from cadgen._internal.drawing_report import _unstated
+        from cadgen._internal.drawing_report import _requirements, _unstated
 
         facts = _facts()
         _render_sheet(sheet, index=1, count=1, label="staged", warnings=[], facts=facts)
-        return _unstated(facts)
+        return _unstated(facts) if kind == "unstated" else _requirements(facts)
 
     def test_stage_is_closed_and_prints_in_the_title_block(self) -> None:
         from cadgen.eng_drawing import Sheet
@@ -3304,6 +3304,27 @@ class StageProfileTests(unittest.TestCase):
 
             self.assertEqual(bare(), [out])
             self.assertTrue(out.read_bytes().startswith(b"%PDF"))
+
+    def test_the_report_says_what_is_required_apart_from_what_is_drawn(self) -> None:
+        """"All features dimensioned" can stand beside "no tolerance stated": the
+        report says both, so a handoff cannot confuse one for the other."""
+        from cadgen.eng_drawing import Frame
+
+        nominal = self._report(self._sheet(stage="concept")[0], "required")
+        self.assertEqual(len(nominal), 1, nominal)
+        for words in ("concept", "all nominal", "no general tolerance", "no datums", "⌀6 THRU"):
+            self.assertIn(words, nominal[0])
+        sheet, top, front = self._sheet(stage="production", material="AL 6061-T6", spec="AMS 4027", finish="NONE",
+                                        general_tolerance="ISO 2768-m", hole_key=True)
+        front.datum("A", (0, -15, 0))
+        top.dim((-20, -15, 10), (10, -15, 10), basic=True)
+        top.dim((-20, 15, 10), (20, 15, 10), tol=0.1)
+        top.frame((0, 0, 10), Frame("flatness", 0.05))
+        stated = self._report(sheet, "required")
+        self.assertEqual(len(stated), 1, stated)
+        for words in ("production", "1 toleranced", "1 basic", "nominal under ISO 2768-m", "datums A", "1 frame",
+                      "1 key characteristic"):
+            self.assertIn(words, stated[0])
 
     def test_a_finished_production_sheet_reports_nothing_of_its_stage(self) -> None:
         from cadgen.eng_drawing import Frame
@@ -3651,9 +3672,12 @@ class HoleTableTests(unittest.TestCase):
         self.assertTrue({"24 THRU", "10 THRU", "6 THRU", "8 × 24 SLOT THRU"} <= cells, cells)
         # Positions from the lower-left corner: the bore is at the plate's middle.
         self.assertTrue({"80", "50", "140"} <= set(texts))
-        from cadgen._internal.drawing_report import _unstated
+        from cadgen._internal.drawing_report import _requirements, _unstated
 
         self.assertFalse([line for line in _unstated(facts) if "called out" in line], "the table states each hole")
+        (required,) = _requirements(facts)
+        self.assertIn("10× ⌀6 THRU", required, "tabulated holes counted, as a reader reads them")
+        self.assertNotIn("%%c", required)
 
     def test_the_tags_and_the_origin_stand_clear_of_the_line_work(self) -> None:
         import re
