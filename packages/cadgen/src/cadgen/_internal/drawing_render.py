@@ -1220,8 +1220,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             if record is not None and ends is not None and axis is not None and not reference:
                 # What it ties together, along the model axis it measures, what it is
                 # called in a message, what kind of statement it is, and its two ends.
+                # A diameter across a profile is a feature's size, not a step in a chain.
+                kind = "basic" if basic else "diameter" if "%%c" in (override or "").lower() else "size"
                 record["spans"].append((axis, ends[0][axis], ends[1][axis], f"{_fmt(measured)} ({view.name} {name})",
-                                        "basic" if basic else "size", tuple(ends)))
+                                        kind, tuple(ends)))
 
         def on_view(point, margin: float = 1.0) -> bool:
             """Does a projected point land on the view's own drawn extent?"""

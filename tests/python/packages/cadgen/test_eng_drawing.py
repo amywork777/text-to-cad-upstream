@@ -4061,6 +4061,24 @@ class RedundancyTests(unittest.TestCase):
         _render_sheet(sheet, index=1, count=1, label="pairs", warnings=[], facts=facts)
         self.assertEqual(len(_redundant(facts)), 1)
 
+    def test_two_steps_of_one_diameter_are_two_sizes(self) -> None:
+        from build123d import Align, Cylinder, Pos, Rot
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _redundant
+        from cadgen.eng_drawing import Sheet
+
+        up, along_x = (Align.CENTER, Align.CENTER, Align.MIN), Rot(0, 90, 0)
+        shaft = (along_x * Cylinder(10, 30, align=up) + Pos(30, 0, 0) * along_x * Cylinder(15, 60, align=up)
+                 + Pos(90, 0, 0) * along_x * Cylinder(10, 30, align=up))
+        sheet = Sheet("A3", 1.0)
+        _top, front = sheet.three_views(shaft, views=("top", "front"))
+        front.dim((15, 0, -10), (15, 0, 10), text="%%c<>")
+        front.dim((105, 0, -10), (105, 0, 10), text="%%c<>")   # the other end: another ⌀20
+        facts = _facts()
+        _render_sheet(sheet, index=1, count=1, label="shaft", warnings=[], facts=facts)
+        self.assertEqual(_redundant(facts), [])
+
     def test_an_overall_size_the_chain_fixes_is_stated_as_reference(self) -> None:
         from build123d import Align, Box
 

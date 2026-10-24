@@ -283,8 +283,9 @@ def _redundant(facts: _Facts) -> list[str]:
     place it shares with others: two pairs of holes at one spacing are two
     sizes. Hole tables and bolt circles place features without asking a size,
     so they close no loop of their own, though a dimension can close one with
-    them. A basic dimension is the exact target a frame bounds, and a reference
-    dimension asks nothing: neither is part of a loop."""
+    them. A basic dimension is the exact target a frame bounds, a reference
+    dimension asks nothing, and a diameter across a profile is its feature's
+    size, however many steps share it: none of them is part of a loop."""
     from cadgen._internal.drawing_features import bolt_circles, holes as find_holes
 
     lines: list[str] = []
@@ -317,7 +318,7 @@ def _redundant(facts: _Facts) -> list[str]:
                 for mouth in circle.mouths:
                     tie(node(mouth), node(circle.centre), "bolt circle")
             spans = [(node(ends[0]), node(ends[1]), what, kind)
-                     for k, _a, _b, what, kind, ends in record["spans"] if k == axis and kind != "basic"]
+                     for k, _a, _b, what, kind, ends in record["spans"] if k == axis and kind in ("size", "table")]
             for a, b, what, kind in spans:
                 if kind == "table":
                     tie(a, b, what)
