@@ -28,10 +28,13 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+from cadgen.work_instruction import Source
 
 NEW_PART = "#1f6feb"
 SURFACE = "#8250df"
@@ -56,6 +59,8 @@ class Picture:
     tint: tuple[str, ...]
     surfaces: tuple[str, ...]
     camera: str
+    frame: str = "step"
+    focus: tuple[str, ...] = ()  # what a step-framed figure fits: its parts, else its marked faces' parts
 
 
 def picture_plan(wi) -> list[Picture]:
@@ -75,7 +80,9 @@ def picture_plan(wi) -> list[Picture]:
         if not (wi.pictures and step.picture and installed):
             continue
         plan.append(Picture(step.number, tuple(ref for ref in leaves if ref not in installed),
-                            step.install, surfaces, step.camera or wi.camera))
+                            step.install, surfaces, step.camera or wi.camera, step.frame,
+                            step.install or tuple(dict.fromkeys(owner for op in step.ops
+                                                                for _ref, owner in op.surfaces))))
     return plan
 
 
@@ -100,6 +107,19 @@ def _extent(wi) -> tuple[list[float], float]:
                                                     (box.max.X, box.max.Y, box.max.Z))
 
 
+def _fit_step(leaves, picture, diagonal: float) -> tuple[list[float], float]:
+    """Frame a figure on the parts its step installs, with room around them for
+    what they go onto: half-height the parts' own size (about twice their extent
+    across the figure), never under a tenth of the assembly nor over half of it."""
+    from build123d import Compound
+
+    box = Compound([leaves[ref].shape() for ref in picture.focus]).bounding_box()
+    centre = [round((lo + hi) / 2, 4) for lo, hi in ((box.min.X, box.max.X), (box.min.Y, box.max.Y),
+                                                     (box.min.Z, box.max.Z))]
+    size = math.dist((box.min.X, box.min.Y, box.min.Z), (box.max.X, box.max.Y, box.max.Z))
+    return centre, min(max(size, 0.1 * diagonal), 0.5 * diagonal)
+
+
 def render_pictures(wi, folder: Path) -> dict[int, Path]:
     """Render every step's picture in one snapshot packet; {step number: PNG}."""
     plan = picture_plan(wi)
@@ -112,7 +132,10 @@ def render_pictures(wi, folder: Path) -> dict[int, Path]:
     tolerance = max(diagonal * 0.002, 0.01)
     jobs, out = [], {}
     for picture in plan:
-        camera = {"preset": picture.camera, "target": centre, "orthographicHalfHeight": round(0.5 * diagonal, 4)}
+        target, half = centre, 0.5 * diagonal
+        if picture.frame == "step" and picture.focus:
+            target, half = _fit_step(leaves, picture, diagonal)
+        camera = {"preset": picture.camera, "target": target, "orthographicHalfHeight": round(half, 4)}
         marks = [_area(f"step{picture.step}-{ref}", leaves[ref].shape(), NEW_PART, 0.6, tolerance)
                  for ref in picture.tint]
         marks += [_area(f"step{picture.step}-{ref}", wi.scene.resolve(ref)[0].shape(), SURFACE, 0.75, tolerance)
@@ -306,9 +329,22 @@ class _Flow:
         xs = [MARGIN]
         for _title, width in columns[:-1]:
             xs.append(xs[-1] + width)
-        if any(title for title, _width in columns):
+        def header() -> None:
             self._table_row([(_text_cell(self.measure, title, width, SMALL, "bold"), x, width)
                              for (title, width), x in zip(columns, xs)], what, shade=True)
+
+        titled = any(title for title, _width in columns)
+        if titled:
+            header()
+        outer = self.on_new_page
+        if titled:  # a table that runs onto the next page repeats its headings there
+            self.on_new_page = header
+        try:
+            self._rows(rows, columns, xs, what, blank_columns)
+        finally:
+            self.on_new_page = outer
+
+    def _rows(self, rows, columns, xs, what: str, blank_columns: tuple[int, ...]) -> None:
         for row in rows:
             cells = []
             for i, (value, (_title, width), x) in enumerate(zip(row, columns, xs)):
@@ -389,6 +425,48 @@ def _section(flow: _Flow, title: str, *, keep: float = 18.0) -> None:
     flow.rule()
 
 
+_NUMBERED = re.compile(r"(?:_\d+)+$")
+
+
+def _kind(name: str) -> str:
+    """A part's name without the copy number its model gave it: ``planet_pin_2`` is a
+    ``planet_pin``. Only for grouping lines on the page; every ref is still listed."""
+    return _NUMBERED.sub("", name) or name
+
+
+def _group(units) -> list[tuple[str, list[str]]]:
+    """(name, refs) for units of one kind, in first-seen order: a kind with one
+    unit keeps that unit's own name."""
+    groups: dict[str, list[tuple[str, str]]] = {}
+    for ref, name in units:
+        groups.setdefault(_kind(name), []).append((ref, name))
+    return [(kind if len(members) > 1 else members[0][1], [ref for ref, _name in members])
+            for kind, members in groups.items()]
+
+
+def _refs(refs: list[str]) -> str:
+    return " ".join(refs) if len(refs) <= 4 else f"{refs[0]} {refs[1]} … {refs[-1]} ({len(refs)})"
+
+
+def parts(wi) -> list[tuple[str, list[str], list[str]]]:
+    """The parts list at the level the steps install them, in build order: (name,
+    refs, step labels). A subassembly a step installs whole is one line, parts of
+    one kind are one line with their quantity, and parts no step installs come last."""
+    members: dict[str, list[tuple[str, str, str | None]]] = {}  # kind -> (ref, name, step label)
+    for step in wi.steps:
+        for ref, name in step.units:
+            members.setdefault(_kind(name), []).append((ref, name, step.label))
+    for leaf in wi.leaves():
+        if leaf.ref not in wi._installed:
+            name = leaf.label or "(unnamed)"
+            members.setdefault(_kind(name), []).append((leaf.ref, name, None))
+    rows = []
+    for kind, found in members.items():
+        labels = list(dict.fromkeys(label for _ref, _name, label in found if label is not None))
+        rows.append((kind if len(found) > 1 else found[0][1], [ref for ref, _name, _label in found], labels))
+    return rows
+
+
 def _front(flow: _Flow, wi, open_items: list[str]) -> None:
     m = flow.measure
     layout = wi.layout
@@ -426,20 +504,12 @@ def _front(flow: _Flow, wi, open_items: list[str]) -> None:
                        [[document, where, ", ".join(labels)] for document, where, labels in references],
                        "process references")
 
-    if wi.safety:
-        _section(flow, "SAFETY")
-        for line in wi.safety:
-            flow.cell(_text_cell(m, f"• {line}", flow.inner), "safety")
+    _section(flow, "SAFETY")
+    for line in wi.safety or ["None stated."]:
+        flow.cell(_text_cell(m, f"• {line}" if wi.safety else line, flow.inner), "safety")
 
     _section(flow, "PARTS")
-    groups: dict[str, list] = {}
-    for leaf in wi.leaves():
-        groups.setdefault(leaf.label or "(unnamed)", []).append(leaf)
-    rows = []
-    for label, leaves in groups.items():
-        numbers = sorted({wi._installed[leaf.ref] for leaf in leaves if leaf.ref in wi._installed})
-        rows.append([label, str(len(leaves)), ", ".join(wi._label(n) for n in numbers) or None,
-                     " ".join(leaf.ref for leaf in leaves)])
+    rows = [[name, str(len(refs)), ", ".join(steps) or None, _refs(refs)] for name, refs, steps in parts(wi)]
     flow.table([("PART", 70.0), ("QTY", 14.0), (layout.step_label, 22.0), ("OCCURRENCES", flow.inner - 106.0)],
                rows, "parts")
 
@@ -501,9 +571,9 @@ def _columns(flow: _Flow) -> list[tuple[str, float]]:
     """The step column, the instruction, the figure (visual emphasis only), then one
     column per sign-off the layout names."""
     layout = flow.wi.layout
-    figure = flow.wi.emphasis == "visual"
+    figure = flow.wi.emphasis == "visual" and layout.figures
     instruction = flow.inner - STEP_W - (FIG_W if figure else 0.0) - STAMP_W * len(layout.stamps)
-    columns = [(layout.step_label, STEP_W), ("INSTRUCTION", instruction)]
+    columns = [(layout.step_label, STEP_W), (layout.instruction_label, instruction)]
     if figure:
         columns.append(("FIGURE", FIG_W))
     return columns + [(stamp, STAMP_W) for stamp in layout.stamps]
@@ -529,25 +599,31 @@ def _legend(flow: _Flow) -> None:
 def _instruction(flow: _Flow, wi, step, width: float) -> _Cell:
     cell = _Cell(flow.measure, width - 3.0)
     cell.text(step.title, BODY + 0.5, weight="bold")
-    if step.install:
-        names = {leaf.ref: leaf.label or "(unnamed)" for leaf in wi.leaves()}
-        cell.text("Install: " + ", ".join(f"{names[ref]} ({ref})" for ref in step.install), SMALL,
-                  color="#333333")
+    if step.units:
+        cell.text("Install: " + ", ".join(
+            f"{name} ×{len(refs)} ({_refs(refs)})" if len(refs) > 1 else f"{name} ({refs[0]})"
+            for name, refs in _group(step.units)), SMALL, color="#333333")
+    names = {leaf.ref: leaf.label or "(unnamed)" for leaf in wi.leaves()}
+    shown: Source | None = None  # a citation is printed once for the lines it covers
     for op in step.ops:
         cell.gap(0.8)
+        if op.surfaces:
+            cell.text("Surfaces: " + ", ".join(f"{names.get(owner, owner)} ({ref})" for ref, owner in op.surfaces),
+                      SMALL, color="#333333")
         for line in op.lines:
-            if op.kind == "instruct":
-                cell.text(line.value or "")
-                continue
             if line.value is None:
                 cell.not_stated(line.caption)
+            elif op.kind == "instruct":
+                cell.text(line.value)
             else:
                 cell.text(f"{line.caption}: {line.value}")
-            if line.source is not None:
-                cell.text(f"per {line.source.cite()}", SMALL, color="#444444", indent=3.0)
-            elif line.cite:
+            if line.source is not None and line.source != shown:
+                cell.text(_citation(line.source), SMALL, color="#444444", indent=3.0)
+            elif line.source is None and line.cite:
                 cell.not_stated("source", SMALL)
-        captions = (_records(op.kind) if wi.layout.traceability else ()) + ((op.record,) if op.record else ())
+            shown = line.source or shown
+        records = op.records if op.records is not None else _records(op.kind)
+        captions = (records if wi.layout.traceability else ()) + ((op.record,) if op.record else ())
         if captions:
             cell.blanks(captions)
     return cell
@@ -572,10 +648,17 @@ def _figure(path: Path | None, width: float):
     return h, draw
 
 
-def _notice(flow: _Flow, kind: str, text: str) -> _Cell:
+def _citation(source) -> str:
+    """``per PS-3300 Rev B §3.1``, or ``stated by A. Zhou, 2026-10-23`` as it is."""
+    return source.cite() if source.kind == "stated" else f"per {source.cite()}"
+
+
+def _notice(flow: _Flow, kind: str, text: str, source=None) -> _Cell:
     cell = _Cell(flow.measure, flow.inner - 6.0)
     cell.text(kind, BODY, weight="bold")
     cell.text(text)
+    if source is not None:
+        cell.text(_citation(source), SMALL, color="#444444")
     return cell
 
 
@@ -606,7 +689,7 @@ def _procedure(flow: _Flow, wi, pictures: dict[int, Path]) -> None:
         xs.append(xs[-1] + width)
     operation = None
     for step in wi.steps:
-        notices = [_notice(flow, kind, text) for kind, text in step.notices]
+        notices = [_notice(flow, kind, text, source) for kind, text, source in step.notices]
         body = _instruction(flow, wi, step, columns[1][1])
         fig_h, fig = _figure(pictures.get(step.number), FIG_W)
         row_h = max(body.height, fig_h, 10.0) + 3.0

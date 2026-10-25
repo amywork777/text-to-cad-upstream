@@ -64,14 +64,14 @@ import functools
 import math
 from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Iterator, Sequence
 
 __all__ = [
     "work_instruction", "Instruction", "Step",
     "Spec", "Drawing", "Datasheet", "Stated", "Source", "Cited",
     "Torque", "Material", "Adhesive", "Layup", "Cure", "Machining",
     "Format", "TORQUE_UNITS", "CAMERAS", "PAGE_SIZES", "STATUSES", "SOURCE_KINDS", "NOTICES",
-    "RIGORS", "EMPHASES", "NUMBERINGS",
+    "RIGORS", "EMPHASES", "NUMBERINGS", "FRAMES", "Unspecified",
 ]
 
 TORQUE_UNITS = ("in-lbf", "ft-lbf", "N-m")
@@ -80,6 +80,7 @@ PAGE_SIZES = ("LETTER", "A4")
 RIGORS = ("prototype", "production", "controlled")
 EMPHASES = ("visual", "process")
 NUMBERINGS = ("sequential", "by-ten")
+FRAMES = ("step", "assembly")
 NOTICES = ("WARNING", "CAUTION", "NOTE")
 STATUSES = ("draft", "released")
 NOT_STATED = "NOT STATED"
@@ -237,6 +238,29 @@ class Cited:
         _source("Cited", self.per)
 
 
+@dataclass(frozen=True)
+class Unspecified:
+    """A value that does not exist, as opposed to one nobody has stated yet: the
+    user says there is no torque for this joint and says what to do instead
+    (``Unspecified("snug, no torque specified", per=Stated("A. Zhou", on=...))``).
+    It prints the text with its source and is not an open item."""
+
+    text: str
+    _: KW_ONLY
+    per: Source | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "text", _text("Unspecified text", self.text))
+        _source("Unspecified", self.per)
+
+
+def _cited(name: str, value) -> tuple[str | None, Source | None]:
+    """Plain text, or text that names where it came from."""
+    if isinstance(value, Cited):
+        return value.text, value.per
+    return _text(name, value, required=False), None
+
+
 # --- process records ---------------------------------------------------------
 
 
@@ -388,8 +412,9 @@ class Format:
     ``"TRAVELER"``), ``company`` is printed in every header, ``step_label`` heads
     the step column (``"OP"``, ``"SEQ"``), ``numbering`` is ``sequential`` (1, 2,
     3) or ``by-ten`` (10, 20, 30), ``stamps`` are the sign-off columns left to
-    right (``("MECH", "INSP")``), and ``approvals`` the signature roles on the
-    front pages."""
+    right (``("MECH", "INSP")``), ``approvals`` the signature roles on the front
+    pages, ``instruction_label`` heads the instruction column (``"OPERATION
+    DESCRIPTION"``), and ``figures=False`` leaves out the figure column."""
 
     _: KW_ONLY
     title: str | None = None
@@ -398,9 +423,13 @@ class Format:
     numbering: str | None = None
     stamps: Sequence[str] | None = None
     approvals: Sequence[str] | None = None
+    instruction_label: str | None = None
+    figures: bool | None = None
 
     def __post_init__(self) -> None:
-        for name in ("title", "company", "step_label"):
+        if self.figures is not None and not isinstance(self.figures, bool):
+            raise TypeError("Format figures is True or False: whether the step table has a figure column")
+        for name in ("title", "company", "step_label", "instruction_label"):
             object.__setattr__(self, name, _text(f"Format {name}", getattr(self, name), required=False))
         if self.numbering is not None:
             _one_of("Format numbering", self.numbering, NUMBERINGS)
@@ -423,6 +452,8 @@ class Layout:
     numbering: str
     stamps: tuple[str, ...]
     approvals: tuple[str, ...]
+    instruction_label: str
+    figures: bool
     traceability: bool  # work order, serial, lot and expiry, and the actual-reading blanks
     calibration: bool  # equipment with ID and calibration-due blanks
     holds: bool  # an inspection is a hold point in the last sign-off column
@@ -434,14 +465,15 @@ class Layout:
 # the traceability a shop keeps; controlled (aerospace, medical) adds QA hold
 # points, calibration and a cited criterion for every inspection.
 RIGOR_LAYOUTS = {
-    "prototype": Layout("WORK INSTRUCTION", "", "STEP", "sequential", ("DONE",), (),
+    "prototype": Layout("WORK INSTRUCTION", "", "STEP", "sequential", ("DONE",), (), "INSTRUCTION", True,
                         traceability=False, calibration=False, holds=False, close_out=False,
                         cite_inspections=False),
     "production": Layout("WORK INSTRUCTION", "", "STEP", "sequential", ("TECH",), ("Prepared by", "Approved by"),
+                         "INSTRUCTION", True,
                          traceability=True, calibration=True, holds=False, close_out=True,
                          cite_inspections=False),
     "controlled": Layout("WORK INSTRUCTION", "", "STEP", "sequential", ("TECH", "QA"),
-                         ("Prepared by", "Reviewed by", "Approved by"),
+                         ("Prepared by", "Reviewed by", "Approved by"), "INSTRUCTION", True,
                          traceability=True, calibration=True, holds=True, close_out=True,
                          cite_inspections=True),
 }
@@ -454,7 +486,8 @@ def _layout(rigor: str, house: Format | None) -> Layout:
     if not isinstance(house, Format):
         raise TypeError("format= takes a Format(...) read from the user's template or example")
     changes = {name: getattr(house, name) for name in ("title", "company", "step_label", "numbering", "stamps",
-                                                        "approvals") if getattr(house, name) is not None}
+                                                        "approvals", "instruction_label", "figures")
+               if getattr(house, name) is not None}
     from dataclasses import replace
 
     return replace(base, **changes)
@@ -469,13 +502,16 @@ def _layout(rigor: str, house: Format | None) -> Layout:
 # calibration blanks.
 RECORDS = {
     "fasten": ("Actual torque",),
-    "bond": ("Adhesive lot", "Expiry", "Mixed at", "Mated at"),
+    "bond": ("Prepared at", "Adhesive lot", "Expiry", "Mixed at", "Mated at"),
     "layup": ("Material lot", "Out-time"),
     "cure": ("Oven / autoclave ID", "Start", "End", "Chart no."),
     "machine": ("Machine ID",),
 }
-# Equipment a kind of operation implies, for the front pages' equipment list.
+# Equipment a kind of operation implies, for the front pages' equipment list: a torque
+# wrench only where a torque is stated.
 EQUIPMENT = {"fasten": "Torque wrench", "cure": "Oven / autoclave"}
+# Past this many fasteners one actual-torque blank stands for them all.
+TORQUE_BLANKS = 8
 
 
 @dataclass(frozen=True)
@@ -496,6 +532,8 @@ class _Op:
     missing: list[str] = field(default_factory=list)
     record: str | None = None  # an inspection's measured-value caption
     surfaces: tuple[tuple[str, str], ...] = ()  # (face ref, the leaf occurrence it is on)
+    records: tuple[str, ...] | None = None  # the floor's blanks, where not RECORDS[kind]
+    equipment: bool = True  # whether it implies EQUIPMENT[kind]
 
 
 class Step:
@@ -503,64 +541,101 @@ class Step:
     Made by :meth:`Instruction.step`; every method returns the step, so they chain."""
 
     def __init__(self, instruction: "Instruction", number: int, title: str, install: tuple[str, ...],
-                 camera: str | None, picture: bool, operation: int | None) -> None:
+                 camera: str | None, picture: bool, operation: int | None,
+                 units: tuple[tuple[str, str], ...] = (), frame: str = "step") -> None:
         self._instruction = instruction
         self.number = number
         self.label = str(number * 10 if instruction.layout.numbering == "by-ten" else number)
         self.title = title
-        self.install = install
+        self.install = install  # every leaf occurrence, for the figure
+        self.units = units  # (ref, name) at the level the step names them: a subassembly is one
+        self.frame = frame
         self.camera = camera
         self.picture = picture
         self.operation = operation
         self.ops: list[_Op] = []
-        self.notices: list[tuple[str, str]] = []
+        self.notices: list[tuple[str, str, Source | None]] = []
         self.hold = False
         self.record: str | None = None
+
+    def sources(self) -> Iterator[Source]:
+        """Every source the step cites, in the order it prints them."""
+        for _kind, _text_, source in self.notices:
+            if source is not None:
+                yield source
+        for op in self.ops:
+            for line in op.lines:
+                if line.source is not None:
+                    yield line.source
 
     def _add(self, op: _Op) -> "Step":
         self.ops.append(op)
         return self
 
-    def instruct(self, text: str) -> "Step":
-        """A plain instruction, in the words the user gave."""
-        return self._add(_Op("instruct", [_Line("", _text("instruct text", text))]))
+    def instruct(self, text: str, *, per: Source | None = None) -> "Step":
+        """A plain instruction, in the words the user gave, or as the cited document
+        states it (``per=``): a clamping rule, a witness coupon, a lubrication step."""
+        if per is not None:
+            _source("instruct", per)
+        return self._add(_Op("instruct", [_Line("", _text("instruct text", text), per)]))
 
-    def _notice(self, kind: str, text: str) -> "Step":
-        self.notices.append((kind, _text(f"{kind.lower()} text", text)))
+    def not_stated(self, what: str) -> "Step":
+        """Something this step needs that nobody has stated yet -- a retention
+        method, a lubricant: it prints NOT STATED and is an open item."""
+        what = _text("not_stated what", what)
+        return self._add(_Op("ask", [_Line(what, None)], missing=[what.lower()]))
+
+    def _notice(self, kind: str, text: str, per: Source | None) -> "Step":
+        if per is not None:
+            _source(kind.lower(), per)
+        self.notices.append((kind, _text(f"{kind.lower()} text", text), per))
         return self
 
-    def warning(self, text: str) -> "Step":
+    def warning(self, text: str, *, per: Source | None = None) -> "Step":
         """A WARNING (harm to people), boxed above the step it governs."""
-        return self._notice("WARNING", text)
+        return self._notice("WARNING", text, per)
 
-    def caution(self, text: str) -> "Step":
+    def caution(self, text: str, *, per: Source | None = None) -> "Step":
         """A CAUTION (harm to the hardware), boxed above the step it governs."""
-        return self._notice("CAUTION", text)
+        return self._notice("CAUTION", text, per)
 
-    def note(self, text: str) -> "Step":
+    def note(self, text: str, *, per: Source | None = None) -> "Step":
         """A NOTE, boxed above the step."""
-        return self._notice("NOTE", text)
+        return self._notice("NOTE", text, per)
 
-    def fasten(self, hardware: str, *, qty: int | None = None, torque: Torque | None = None,
-               locking: Material | None = None, sequence: str | None = None) -> "Step":
+    def fasten(self, hardware: str, *, qty: int | None = None, torque: Torque | Unspecified | None = None,
+               locking: Material | None = None, sequence: str | Cited | None = None,
+               surfaces: Iterable[str] = ()) -> "Step":
         """Install threaded hardware. ``torque=None`` prints NOT STATED: a threaded
-        joint with no stated torque is an open item, not a default."""
+        joint with no stated torque is an open item, not a default. Where the
+        user says no torque exists, ``torque=Unspecified(what to do, per=...)``.
+        ``surfaces`` are the faces the hardware goes into (``#o1.2.f3``), marked on
+        the figure: hardware the model does not carry is drawn nowhere else."""
         hardware = _text("fasten hardware", hardware)
         if qty is not None and (isinstance(qty, bool) or not isinstance(qty, int) or qty < 1):
             raise ValueError(f"fasten qty must be a positive integer, got {qty!r}")
-        if torque is not None and not isinstance(torque, Torque):
-            raise TypeError("fasten torque= takes a Torque(...)")
+        if torque is not None and not isinstance(torque, (Torque, Unspecified)):
+            raise TypeError("fasten torque= takes a Torque(...), an Unspecified(...) or None")
         if locking is not None and not isinstance(locking, Material):
             raise TypeError("fasten locking= takes a Material(...)")
+        if isinstance(torque, Torque):
+            value = torque.text()
+            n = qty or 1
+            records = ("Actual torque",) if n == 1 or n > TORQUE_BLANKS else \
+                tuple(f"Actual torque {i}" for i in range(1, n + 1))
+        else:
+            value, records = (torque.text if torque else None), ("Actual torque",) if torque is None else ()
         lines = [_Line("Hardware", f"{hardware}{f', qty {qty}' if qty else ''}"),
-                 _Line("Torque", torque.text() if torque else None, torque.per if torque else None)]
+                 _Line("Torque", value, torque.per if torque else None)]
         if locking is not None:
             self._instruction._use(locking)
             lines += [_Line("Locking", locking.name, locking.per)]
             lines += [_Line(caption.capitalize(), value, source) for caption, value, source in locking.fields()]
         if sequence is not None:
-            lines.append(_Line("Sequence", _text("fasten sequence", sequence)))
-        return self._add(_Op("fasten", lines, missing=[] if torque else ["torque"]))
+            text, source = _cited("fasten sequence", sequence)
+            lines.append(_Line("Sequence", text, source))
+        return self._add(_Op("fasten", lines, missing=[] if torque else ["torque"], records=records,
+                             equipment=isinstance(torque, Torque), surfaces=self._faces(surfaces)))
 
     def _record(self, kind: str, record, cls, label: str, surfaces=()) -> "Step":
         if record is None:
@@ -682,7 +757,7 @@ class Instruction:
         self.rigor = _one_of("rigor", rigor, RIGORS)
         self.emphasis = _one_of("emphasis", emphasis, EMPHASES)
         self.layout = _layout(rigor, format)
-        self.pictures = bool(pictures) and self.emphasis == "visual"
+        self.pictures = bool(pictures) and self.emphasis == "visual" and self.layout.figures
         self.scope = _text("scope", scope or None, required=False) or ""
         self.safety = _lines("safety", safety)
         self.tools = _lines("tools", tools)
@@ -711,31 +786,41 @@ class Instruction:
     def leaves(self) -> list:
         return list(self.scene.leaves())
 
-    def _leaf_refs(self, key: str) -> list[str]:
-        """The leaf occurrences a part name or occurrence ref installs."""
+    def _resolve(self, key: str) -> tuple[list[tuple[str, str]], list[str]]:
+        """What a part name or occurrence ref installs: the units at the level it
+        names them (a subassembly is one unit), and every leaf under them."""
         key = _text("install ref", key)
         leaves = self.leaves()
-        by_ref = {leaf.ref: leaf for leaf in leaves}
-        if key in by_ref:
-            return [key]
-        if key.startswith("#o"):
-            under = [leaf.ref for leaf in leaves if leaf.ref.startswith(key + ".")]
-            if under:
-                return under
-        else:
-            named = [leaf.ref for leaf in leaves if leaf.label == key or (leaf.label or "").split(":")[0] == key]
-            if named:
-                return named
-            try:  # a subassembly's label, or a numbered alias of a shared one
-                found = self.scene.resolve(key)
+        under = lambda ref: [leaf.ref for leaf in leaves if leaf.ref == ref or leaf.ref.startswith(ref + ".")]  # noqa: E731
+        named = [leaf for leaf in leaves if leaf.label == key or (leaf.label or "").split(":")[0] == key]
+        if key.startswith("#o") or not named:
+            try:  # an occurrence ref, a subassembly's label, or a numbered alias of a shared one
+                found = [sel for sel in self.scene.resolve(key) if sel.kind == "occurrence"]
             except Exception:  # noqa: BLE001 - not a name the assembly has; refused below with the list
-                found = ()
-            under = [leaf.ref for sel in found if sel.kind == "occurrence"
-                     for leaf in leaves if leaf.ref == sel.ref or leaf.ref.startswith(sel.ref + ".")]
-            if under:
-                return under
-        listing = ", ".join(f"{leaf.ref} {leaf.label or '(unnamed)'}" for leaf in leaves)
-        raise KeyError(f"{key!r} is not a part of {self.step_path.name}; its parts are: {listing}")
+                found = []
+            units = [(sel.ref, sel.label or "(unnamed)") for sel in found if under(sel.ref)]
+            if units:
+                return units, [ref for ref, _name in units for ref in under(ref)]
+        if named:
+            return [(leaf.ref, leaf.label or "(unnamed)") for leaf in named], [leaf.ref for leaf in named]
+        listing = ", ".join(f"{leaf.ref} {leaf.label or '(unnamed)'}" for leaf in leaves[:40])
+        more = f" and {len(leaves) - 40} more" if len(leaves) > 40 else ""
+        raise KeyError(f"{key!r} is not a part or subassembly of {self.step_path.name}; its parts are: "
+                       f"{listing}{more}. wi.tree() lists the subassemblies too.")
+
+    def tree(self) -> str:
+        """The assembly's occurrences, indented: every ref and name ``install=`` takes,
+        subassemblies included."""
+        rows: list[str] = []
+
+        def walk(node, depth: int) -> None:
+            rows.append(f"{'  ' * depth}{node.ref}  {node.label or '(unnamed)'}")
+            for child in node.children:
+                walk(child, depth + 1)
+
+        for root in self.scene.roots:
+            walk(root, 0)
+        return "\n".join(rows)
 
     def operation(self, title: str) -> "Instruction":
         """Start the next operation: a heading over the steps that follow it (and a
@@ -744,10 +829,13 @@ class Instruction:
         return self
 
     def step(self, title: str, *, install: Iterable[str] = (), camera: str | None = None,
-             picture: bool = True) -> Step:
+             picture: bool = True, frame: str = "step") -> Step:
         """Add the next step. ``install`` names the parts this step puts in place
         (labels, or occurrence refs such as ``#o1.2``; a label several parts share
-        installs every one of them). A part is installed by one step only."""
+        installs every one of them; a subassembly's ref or label installs it as one
+        unit). A part is installed by one step only. ``frame`` is ``step`` (the
+        figure fits the parts the step installs, with what is around them) or
+        ``assembly`` (the figure fits the whole assembly, as every such figure does)."""
         if isinstance(install, (str, bytes)):
             raise TypeError(f"install takes a sequence of part names or refs, not one string: install=({install!r},)")
         number = len(self.steps) + 1
@@ -755,18 +843,22 @@ class Instruction:
         # step leaves the parts free for the next one.
         title = _text("step title", title)
         camera = None if camera is None else _one_of("camera", camera, CAMERAS)
+        frame = _one_of("frame", frame, FRAMES)
         refs: list[str] = []
+        units: list[tuple[str, str]] = []
         for key in install:
-            for ref in self._leaf_refs(key):
+            found, leaves = self._resolve(key)
+            for ref in leaves:
                 if ref in self._installed:
                     raise ValueError(f"step {self._label(number)} installs {key!r} ({ref}), "
                                      f"which step {self._label(self._installed[ref])} already installs")
                 if ref not in refs:
                     refs.append(ref)
+            units += [unit for unit in found if unit not in units]
         for ref in refs:
             self._installed[ref] = number
         step = Step(self, number, title, tuple(refs), camera, bool(picture),
-                    len(self.operations) if self.operations else None)
+                    len(self.operations) if self.operations else None, tuple(units), frame)
         self.steps.append(step)
         return step
 
@@ -778,13 +870,11 @@ class Instruction:
         spec, drawing and data sheet section, in first-cited order."""
         found: dict[tuple[str, str], list[str]] = {}
         for step in self.steps:
-            for op in step.ops:
-                for line in op.lines:
-                    source = line.source
-                    if source is not None and source.kind != "stated":
-                        labels = found.setdefault((source.document, source.where), [])
-                        if step.label not in labels:
-                            labels.append(step.label)
+            for source in step.sources():
+                if source.kind != "stated":
+                    labels = found.setdefault((source.document, source.where), [])
+                    if step.label not in labels:
+                        labels.append(step.label)
         return [(document, where, labels) for (document, where), labels in found.items()]
 
     def _use(self, record) -> None:
@@ -793,7 +883,8 @@ class Instruction:
 
     def equipment(self) -> list[str]:
         """The equipment the steps imply, then the tools the user named, each once."""
-        implied = [EQUIPMENT[op.kind] for step in self.steps for op in step.ops if op.kind in EQUIPMENT]
+        implied = [EQUIPMENT[op.kind] for step in self.steps for op in step.ops
+                   if op.kind in EQUIPMENT and op.equipment]
         return list(dict.fromkeys(implied + self.tools))
 
     def open_items(self) -> list[str]:
@@ -813,11 +904,9 @@ class Instruction:
         if self.drawing is not None:
             seen[self.drawing.name] = self.drawing.title or "Assembly drawing"
         for step in self.steps:
-            for op in step.ops:
-                for line in op.lines:
-                    source = line.source
-                    if source is not None and source.kind in ("spec", "drawing", "datasheet"):
-                        seen.setdefault(source.document, source.title)
+            for source in step.sources():
+                if source.kind in ("spec", "drawing", "datasheet"):
+                    seen.setdefault(source.document, source.title)
         return list(seen.items())
 
 

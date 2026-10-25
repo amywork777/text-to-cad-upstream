@@ -375,6 +375,114 @@ class LayoutTests(_Assembly):
                 make()
 
 
+class WhatTheTestsFoundTests(_Assembly):
+    """What agents using the skill on real assemblies tripped over."""
+
+    def test_no_value_is_not_an_open_item_and_needs_no_wrench(self) -> None:
+        from cadgen.work_instruction import Stated, Unspecified
+
+        wi = self.instruction()
+        wi.step("Bolt", install=["base_plate"]).fasten(
+            "M8 bolt", qty=4, torque=Unspecified("Snug; no torque is specified",
+                                                 per=Stated("A. Zhou", on="2026-10-25")))
+        self.assertEqual(wi.open_items()[:1], ["#o1.2 bracket: no step installs it"])
+        self.assertEqual(wi.equipment(), [])
+        text = [t for page in _page_texts(wi) for t in page]
+        self.assertIn("stated by A. Zhou, 2026-10-25", text, "a statement prints as one, never 'per stated by'")
+        self.assertFalse([t for t in text if t.startswith("ACTUAL TORQUE")])
+
+    def test_a_stated_torque_gets_a_blank_per_fastener_and_a_wrench(self) -> None:
+        from cadgen.work_instruction import Cited, Torque
+
+        spec, _ = _sources()
+        wi = self.instruction()
+        wi.step("Bolt", install=["base_plate"]).fasten(
+            "#10-32 screw", qty=4, torque=Torque(32, 36, "in-lbf", per=spec.at("4.2")),
+            sequence=Cited("Cross pattern, two passes", per=spec.at("4.3")))
+        self.assertEqual(wi.equipment(), ["Torque wrench"])
+        text = [t for page in _page_texts(wi) for t in page]
+        self.assertEqual([t for t in text if t.startswith("ACTUAL TORQUE")],
+                         [f"ACTUAL TORQUE {n}" for n in range(1, 5)])
+        self.assertIn(("PS-2001 Rev D", "\u00a74.3", ["1"]), wi.references())
+
+    def test_what_nobody_knows_yet_is_an_open_item(self) -> None:
+        wi = self.instruction()
+        wi.step("Pins", install=["pin"]).not_stated("Pin retention method")
+        self.assertIn("step 1 (ask): pin retention method not stated", wi.open_items())
+
+    def test_instructions_and_notices_cite_and_a_citation_prints_once(self) -> None:
+        from cadgen.work_instruction import Adhesive
+
+        spec, drawing = _sources()
+        wi = self.instruction(emphasis="process")
+        (wi.step("Bond", install=["base_plate"])
+           .caution("Clamp evenly", per=spec.at("5.3"))
+           .instruct("One witness coupon per mix", per=spec.at("3.4"))
+           .bond(Adhesive("A", prep="p", mix="m", pot_life="l", cure="c", per=spec.at("5.1"))))
+        self.assertEqual([where for _doc, where, _steps in wi.references()], ["\u00a75.3", "\u00a73.4", "\u00a75.1"])
+        text = [t for page in _page_texts(wi) for t in page]
+        self.assertEqual(text.count("per PS-2001 Rev D \u00a75.1"), 1, "one citation for the record's five lines")
+
+    def test_a_house_format_renames_the_instruction_column_and_drops_figures(self) -> None:
+        from cadgen.work_instruction import Format
+
+        wi = self.instruction(pictures=True, format=Format(instruction_label="OPERATION DESCRIPTION", figures=False))
+        self.assertFalse(wi.pictures)
+        wi.step("Load", install=["base_plate"])
+        text = [t for page in _page_texts(wi) for t in page]
+        self.assertIn("OPERATION DESCRIPTION", text)
+        self.assertNotIn("FIGURE", text)
+
+    def test_a_table_that_runs_onto_a_new_page_repeats_its_headings(self) -> None:
+        wi = self.instruction(revisions=[(str(n), "2026-10-25", "change") for n in range(80)])
+        wi.step("Load", install=["base_plate"])
+        self.assertGreaterEqual([t for page in _page_texts(wi) for t in page].count("CHANGE"), 2)
+
+    def test_an_empty_safety_section_says_so(self) -> None:
+        wi = self.instruction()
+        wi.step("Load", install=["base_plate"])
+        self.assertIn("None stated.", [t for page in _page_texts(wi) for t in page])
+
+
+class SubassemblyTests(unittest.TestCase):
+    """A subassembly a step installs whole is one line, and copies of a part are one line."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from build123d import Box, Compound, Pos
+        from cadgen.step_export import export_build123d_step_file
+
+        base = Box(100, 60, 10)
+        base.label = "base_plate"
+        hub = Pos(0, 0, 10) * Box(10, 10, 10)
+        hub.label = "hub"
+        rim = Pos(0, 0, 10) * Box(30, 30, 4)
+        rim.label = "rim"
+        pins = []
+        for n, x in enumerate((-40, 40), start=1):
+            pin = Pos(x, 0, 10) * Box(4, 4, 10)
+            pin.label = f"pin_{n}"
+            pins.append(pin)
+        wheel = Compound(children=[hub, rim], label="wheel")
+        cls.step = _FIXTURE["root"] / "nested.step"
+        export_build123d_step_file(Compound(children=[base, wheel, *pins], label="nested"), cls.step)
+
+    def test_units_and_kinds(self) -> None:
+        from cadgen._internal.work_instruction_pages import parts
+        from cadgen.work_instruction import Instruction
+
+        wi = Instruction(self.step, title="T", number="N", revision="A", pictures=False)
+        self.assertIn("wheel", wi.tree())
+        wi.step("Base", install=["base_plate"])
+        wheel = wi.step("Wheel", install=["wheel"])
+        self.assertEqual(len(wheel.units), 1, "the wheel is one unit")
+        self.assertEqual(len(wheel.install), 2, "and two parts in its figure")
+        wi.step("Pin 1", install=["pin_1"])
+        wi.step("Pin 2", install=["pin_2"])
+        rows = [(name, len(refs), steps) for name, refs, steps in parts(wi)]
+        self.assertEqual(rows, [("base_plate", 1, ["1"]), ("wheel", 1, ["2"]), ("pin", 2, ["3", "4"])])
+
+
 class PictureTests(_Assembly):
     def test_each_picture_hides_what_is_still_to_come_and_tints_what_the_step_installs(self) -> None:
         from cadgen._internal.work_instruction_pages import picture_plan
@@ -389,6 +497,7 @@ class PictureTests(_Assembly):
         self.assertEqual(plan[2].hide, ("#o1.2", "#o1.3", "#o1.4"))
         self.assertEqual((plan[3].tint, plan[3].surfaces), (("#o1.2",), ("#o1.2.f5",)))
         self.assertEqual((plan[4].hide, plan[4].camera), ((), "top"))
+        self.assertEqual(plan[3].focus, ("#o1.2",), "a figure is framed on the parts its step installs")
 
     def test_a_surface_on_a_part_not_yet_installed_is_refused(self) -> None:
         from cadgen._internal.work_instruction_pages import picture_plan

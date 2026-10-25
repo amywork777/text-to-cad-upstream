@@ -3,7 +3,7 @@
 ```python
 from cadgen.work_instruction import (
     work_instruction, Instruction, Format, Spec, Drawing, Datasheet, Stated,
-    Cited, Torque, Material, Adhesive, Layup, Cure, Machining,
+    Cited, Unspecified, Torque, Material, Adhesive, Layup, Cure, Machining,
 )
 ```
 
@@ -44,6 +44,8 @@ LOCKING = Material("<threadlocker>", per=FASTENING.at("<section>"),
                    note="<how it is applied>")
 
 
+# Paths are relative to this script: a project with STEP/ and PDF/ beside src/.
+# Match the project's own layout (e.g. ../../STEP/<assembly>/<assembly>.step).
 @work_instruction(out="../PDF/bracket_assembly_wi.pdf")
 def bracket_assembly_wi():
     wi = Instruction(
@@ -112,13 +114,18 @@ earlier one.
 after it and a line in the front pages' overview. Steps keep one sequence
 across operations.
 
-`wi.step(title, *, install=(), camera=None, picture=True)` adds the next step
-and returns it. One step is one action. `install` names the parts the step
-puts in place: a label (every part carrying it, or a subassembly's), or an
-occurrence ref (`#o1.2`; a subassembly ref installs everything under it). A
-part is installed by one step only. A step that installs nothing (a cure, an
-inspection) still has a figure of what is installed so far, and none while
-nothing is.
+`wi.step(title, *, install=(), camera=None, picture=True, frame="step")` adds
+the next step and returns it. One step is one action. `install` names the
+parts the step puts in place: a label (every part carrying it), or a
+subassembly's label or occurrence ref (`#o1.2`), which installs it as ONE unit
+(one line in the parts list) and every part under it in the figure. A part is
+installed by one step only. `frame="step"` fits the figure to the parts the
+step installs with room around them; `frame="assembly"` fits the whole
+assembly. A step that installs nothing (a cure, an inspection) still has a
+figure of what is installed so far, and none while nothing is.
+
+`wi.tree()` returns every part and subassembly, indented, with its ref and
+name: what `install=` takes. Print it before writing the steps.
 
 `wi.open_items()` returns what the run prints: each NOT STATED value, each
 inspection criterion with no source, and each part no step installs.
@@ -135,7 +142,8 @@ inspection criterion with no source, and each part no step installs.
 PROCESS REFERENCES to the front pages: each cited section of each document,
 with the steps that apply it.
 
-`Format(*, title, company, step_label, numbering, stamps, approvals)` is the
+`Format(*, title, company, step_label, numbering, stamps, approvals,
+instruction_label, figures)` is the
 company's own layout, read from the template or example the user gave. Every
 field is optional: give only what that document shows, and the rest keeps the
 rigor's layout.
@@ -148,6 +156,8 @@ rigor's layout.
 | `numbering` | `sequential` (1, 2, 3) or `by-ten` (10, 20, 30) | `"by-ten"` |
 | `stamps` | the sign-off columns, left to right; a hold point uses the last | `("MECH", "INSP")` |
 | `approvals` | the signature roles on the front pages | `("Written by", "Quality")` |
+| `instruction_label` | the instruction column's heading | `"OPERATION DESCRIPTION"` |
+| `figures` | `False` when the template has no figure column | `False` |
 
 ## Step operations
 
@@ -155,18 +165,21 @@ Each returns the step, so they chain, and prints in the order called.
 
 | Method | Prints | The floor records (from `production` up) |
 | --- | --- | --- |
-| `instruct(text)` | the user's words | |
-| `fasten(hardware, *, qty=None, torque=None, locking=None, sequence=None)` | hardware, torque (NOT STATED when `None`), threadlocker, sequence | actual torque |
-| `bond(adhesive, *, surfaces=())` | adhesive, prep, mix, pot life, cure | adhesive lot, expiry, mixed at, mated at |
+| `instruct(text, *, per=None)` | the user's words, or a document's (cited) | |
+| `not_stated(what)` | `what` with NOT STATED: something the step needs that nobody has stated; an open item | |
+| `fasten(hardware, *, qty=None, torque=None, locking=None, sequence=None, surfaces=())` | hardware, torque (NOT STATED when `None`; as said for an `Unspecified`), threadlocker, sequence (text, or `Cited`) | actual torque, one per fastener up to 8 |
+| `bond(adhesive, *, surfaces=())` | adhesive, prep, mix, pot life, cure, the surfaces named | prepared at, adhesive lot, expiry, mixed at, mated at |
 | `layup(layup)` | material, ply schedule, debulk | material lot, out-time |
 | `cure(cure)` | the cycle | oven or autoclave ID, start, end, chart no. |
 | `machine(machining, *, surfaces=())` | operation, tool, speed, feed, coolant | machine ID |
 | `apply(material, *, surfaces=())` | a sealant, primer or other consumable and how it goes on | |
 | `inspect(text, *, per=None, record=None)` | an inspection; when `controlled`, a hold point whose criterion with no `per` prints NOT STATED and is an open item | the measured value `record` names |
-| `warning(text)`, `caution(text)`, `note(text)` | a box above the step, in the user's words | |
+| `warning(text, *, per=None)`, `caution(...)`, `note(...)` | a box above the step, in the user's words or a document's (cited) | |
 
 `bond`, `layup`, `cure` and `machine` take `None` for a record nobody has
-stated yet; it prints NOT STATED. `surfaces` are face refs (`#o1.2.f3`, from
+stated yet; it prints NOT STATED. `surfaces` (on `bond`, `machine`, `apply` and
+`fasten`, where it marks the faces hardware the model does not carry goes
+into) are face refs (`#o1.2.f3`, from
 `cadgen.read_scene(path).resolve("#o1.2")[0].entities("face")`), each resolved
 to exactly one face when the step names it and drawn on the step's figure;
 each must be on a part installed by that step or before.
@@ -184,6 +197,12 @@ Every record and every torque takes `per=`, and nothing else is accepted:
 
 A record's `per` covers every field. A field from a different document is
 `Cited(text, per=...)` in place of the plain text, and prints its own source.
+A citation prints once for the lines it covers.
+
+`Unspecified(text, *, per)` is a value that does not exist, as the user says
+("Snug; no torque is specified"), in place of a `Torque`. It prints as said
+with its source, is not an open item, and needs no torque wrench. A value that
+exists but nobody has stated is left out instead, and prints NOT STATED.
 
 ## Records
 
