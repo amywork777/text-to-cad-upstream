@@ -971,11 +971,35 @@ class MoreVocabularyTests(unittest.TestCase):
             Sheet("A4", revisions="A")
         Sheet("A4", notes=["BREAK EDGES"])  # the right spelling still works
 
-    def test_a_note_wider_than_the_sheet_is_refused(self) -> None:
+    def test_notes_stand_on_the_frame_beside_the_title_block(self) -> None:
+        from cadgen._internal.drawing_base import _MARGIN, _TITLE_W
+        from cadgen._internal.drawing_sheet import _notes_box
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0, notes=["BREAK SHARP EDGES.", "DEBURR."])
+        ((x0, x1, y0, y1),) = _notes_box(sheet)
+        self.assertLess(y0, _MARGIN + 6.0, "on the frame's foot: no empty strip under them")
+        self.assertLessEqual(x1, sheet.width - _MARGIN - _TITLE_W, "beside the title block, not under it")
+
+    def test_a_long_note_wraps_beside_the_title_block(self) -> None:
+        from cadgen._internal.drawing_base import _MARGIN, _TITLE_W
+        from cadgen._internal.drawing_sheet import _notes_box
+        from cadgen.eng_drawing import Sheet
+
+        note = "BREAK ALL SHARP EDGES AND REMOVE BURRS " * 4
+        sheet = Sheet("A4", 1.0, notes=[note.strip()])
+        rows = sheet._note_rows()
+        self.assertGreater(len(rows), 1, "wrapped, not refused")
+        self.assertEqual(" ".join(text.replace("NOTES:  1. ", "").strip() for _dx, text, _note, _first in rows),
+                         note.strip(), "every word once, in order")
+        ((x0, x1, y0, y1),) = _notes_box(sheet)
+        self.assertLessEqual(x1, sheet.width - _MARGIN - _TITLE_W)
+
+    def test_a_word_wider_than_the_sheet_is_refused(self) -> None:
         from cadgen.eng_drawing import Sheet
 
         with self.assertRaisesRegex(ValueError, "wider than"):
-            Sheet("A4", notes=["BREAK ALL SHARP EDGES AND REMOVE BURRS " * 4])
+            Sheet("A4", notes=["X" * 200])
 
     def test_an_ordinary_shop_note_is_accepted(self) -> None:
         """The inverse of the guard above, and the case it used to refuse.
@@ -1003,8 +1027,8 @@ class MoreVocabularyTests(unittest.TestCase):
             sheet.drawn_notes()[0],
             "TOLERANCES PER ISO 2768-m UNLESS OTHERWISE SPECIFIED.",
         )
-        with self.assertRaisesRegex(ValueError, "wider than"):
-            Sheet("A4", general_tolerance="ISO 2768-m AND " + "ASME Y14.5 " * 12)
+        long = Sheet("A4", 1.0, general_tolerance="ISO 2768-m AND " + "ASME Y14.5 " * 12)
+        self.assertGreater(len(long._note_rows()), 1, "as long as it reads, wrapped at its words")
 
     def test_every_accepted_note_fits_between_the_frame_edges(self) -> None:
         """The guard and the ink agree: what it passes, the paper holds."""
@@ -1904,6 +1928,27 @@ class SlotAndBoltCircleTests(unittest.TestCase):
 
 
 class DetailTests(unittest.TestCase):
+    def test_the_detail_letter_on_its_parent_stands_off_the_part(self) -> None:
+        from build123d import Align, Box
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        _top, front = sheet.three_views(Box(120, 30, 40, align=(Align.CENTER, Align.CENTER, Align.MIN)),
+                                        views=("top", "front"))
+        sheet.detail(front, (20, 0, 0), 6, letter="C")     # on the bottom edge: up and right of it is the bar
+        msp = _render_sheet(sheet, index=1, count=1, label="detail", warnings=[]).modelspace()
+        lines = [e for e in msp.query("LINE LWPOLYLINE") if e.dxf.layer == "VISIBLE"]
+        xs = [p[0] for e in lines for p in ([e.dxf.start, e.dxf.end] if e.dxftype() == "LINE" else e.get_points())]
+        ys = [p[1] for e in lines for p in ([e.dxf.start, e.dxf.end] if e.dxftype() == "LINE" else e.get_points())]
+        (letter,) = [e for e in msp.query("TEXT") if e.dxf.text == "C"
+                     and min(xs) - 20 < e.dxf.align_point.x < max(xs) + 20 and min(ys) - 20 < e.dxf.align_point.y]
+        x, y = letter.dxf.align_point.x, letter.dxf.align_point.y
+        bottom = min(py for px, py in zip(xs, ys) if abs(px - x) < 60)   # the front view's lower edge
+        self.assertLess(y, bottom, "below the bar, just off its edge, not on it")
+
+
     def _sheet(self, **detail):
         from cadgen.eng_drawing import Sheet
 
@@ -2281,13 +2326,16 @@ class AssemblyDrawingTests(unittest.TestCase):
             sheet.view(_plate(), "front", at=(150, 150)).balloons(parts)
         front = sheet.view(parts.assembly, "front", at=(150, 150))
         front.section("A")
-        with self.assertRaisesRegex(ValueError, "is a section"):
-            front.balloons(parts)
+        with self.assertRaisesRegex(ValueError, r"parts=parts"):
+            front.balloons(parts)                      # cut whole: no part's cut to land in
         sheet = Sheet("A3")
         front = sheet.view(parts.assembly, "front", at=(150, 150)).balloons(parts)
         front.section("A")
-        with self.assertRaisesRegex(ValueError, "is a section"):
+        with self.assertRaisesRegex(ValueError, r"parts=parts"):
             _render_sheet(sheet, index=1, count=1, label="cut")
+        detail = sheet.detail(front, (0, 0, 0), 10)
+        with self.assertRaisesRegex(ValueError, "is a detail"):
+            detail.balloons(parts)
 
     def test_the_parts_list_stands_on_the_title_block_and_reads_upward(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
@@ -2475,7 +2523,16 @@ class AssemblyDrawingTests(unittest.TestCase):
         sheet.view(_plate(), "top", at=(330, 70))
         with self.assertRaisesRegex(ValueError, "over the parts list"):
             _render_sheet(sheet, index=1, count=1, label="over")
+        from cadgen._internal.drawing_base import _MARGIN, _TITLE_W
+        from cadgen._internal.drawing_sheet import _notes_box
+
         sheet = Sheet("A4", notes=["A NOTE LONG ENOUGH TO RUN PAST THE LEFT HALF OF AN A4 SHEET AND UNDER IT"])
+        sheet.parts_list(parts)
+        sheet.view(_plate(), "top", at=(60, 140))
+        _render_sheet(sheet, index=1, count=1, label="note")
+        ((_x0, x1, _y0, _y1),) = _notes_box(sheet)
+        self.assertLessEqual(x1, sheet.width - _MARGIN - _TITLE_W - 4.0, "wrapped to end before the list")
+        sheet = Sheet("A4", notes=["UNBROKEN" + "X" * 70])
         sheet.parts_list(parts)
         with self.assertRaisesRegex(ValueError, "runs under the parts list"):
             _render_sheet(sheet, index=1, count=1, label="note")
@@ -3564,15 +3621,115 @@ def _stack(*layers):
     return parts
 
 
+class AssemblySectionTests(unittest.TestCase):
+    """A section through an assembly, as drafters draw one: every part in one
+    general-purpose hatch, neighbours told apart by its angle and spacing, solid
+    round parts cut along their axis left uncut, and the parts keyed by balloons."""
+
+    @staticmethod
+    def _rig():
+        from build123d import Align, Box, Compound, Cylinder, Pos
+
+        from cadgen.eng_drawing import parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        housing = Box(60, 40, 30, align=up) - Cylinder(10, 30, align=up)
+        sleeve = Cylinder(10, 30, align=up) - Cylinder(6, 30, align=up)
+        rod = Pos(0, 0, -10) * Cylinder(6, 50, align=up)
+        housing.label, sleeve.label, rod.label = "housing", "sleeve", "rod"
+        parts = parts_list(Compound(children=[housing, sleeve, rod], label="rig"))
+        parts.set("housing", family="aluminium")
+        parts.set("sleeve", family="copper_alloy")
+        parts.set("rod", family="steel")
+        return parts
+
+    def _sheet(self, parts, **section):
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 2.0)
+        front = sheet.view(parts.assembly, "front", at=(150, 140), hidden=False).section("A", parts=parts, **section)
+        sheet.view(parts.assembly, "top", at=(150, 240), hidden=False)
+        return sheet, front
+
+    def test_every_part_takes_one_hatch_and_neighbours_differ(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+
+        sheet, _front = self._sheet(self._rig())
+        doc = _render_sheet(sheet, index=1, count=1, label="rig", warnings=[])
+        hatches = list(doc.modelspace().query("HATCH[layer=='HATCH']"))
+        self.assertTrue(hatches)
+        self.assertEqual({h.dxf.pattern_name for h in hatches}, {"ANSI31"}, "materials are the parts list's")
+        looks = {(round(h.dxf.pattern_angle) % 180, round(h.dxf.pattern_scale, 3)) for h in hatches}
+        self.assertEqual(len(looks), 2, "the housing and the sleeve touch, so they differ")
+        self.assertNotIn("MATERIAL KEY", [e.dxf.text for e in doc.modelspace().query("TEXT")])
+
+    def test_a_solid_rod_cut_along_its_axis_is_not_hatched(self) -> None:
+        from shapely.geometry import Point, Polygon
+
+        from cadgen._internal.drawing_render import _render_sheet
+
+        sheet, front = self._sheet(self._rig())
+        doc = _render_sheet(sheet, index=1, count=1, label="rig", warnings=[])
+        regions = [Polygon([(v[0], v[1]) for v in path.vertices]) for h in doc.modelspace().query("HATCH[layer=='HATCH']")
+                   for path in h.paths if hasattr(path, "vertices")]
+        middle = Point(front.at[0], front.at[1])
+        self.assertFalse([r for r in regions if r.contains(middle)], "the rod on the axis: drawn uncut (ISO 128-50)")
+
+    def test_a_pin_with_a_cotter_hole_is_still_drawn_uncut(self) -> None:
+        from build123d import Align, Box, Compound, Cylinder, Pos, Rot
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet, parts_list
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        block = Box(40, 40, 20, align=up) - Cylinder(5, 20, align=up)
+        pin = Pos(0, 0, -5) * Cylinder(5, 40, align=up) - Pos(0, 0, 28) * Rot(0, 90, 0) * Cylinder(1, 20)
+        block.label, pin.label = "block", "pin"
+        parts = parts_list(Compound(children=[block, pin], label="pinned"))
+        sheet = Sheet("A3", 2.0)
+        front = sheet.view(parts.assembly, "front", at=(150, 140), hidden=False).section("A", parts=parts)
+        sheet.view(parts.assembly, "top", at=(150, 240), hidden=False)
+        msp = _render_sheet(sheet, index=1, count=1, label="pin", warnings=[]).modelspace()
+        from shapely.geometry import Point, Polygon
+
+        regions = [Polygon([(v[0], v[1]) for v in path.vertices]) for h in msp.query("HATCH[layer=='HATCH']")
+                   for path in h.paths if hasattr(path, "vertices")]
+        self.assertFalse([r for r in regions if r.contains(Point(front.at[0], front.at[1]))],
+                         "a cross hole does not make a pin a part to hatch")
+
+    def test_a_section_carries_balloons_inside_each_parts_cut(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+
+        parts = self._rig()
+        sheet, front = self._sheet(parts)
+        front.balloons(parts)
+        doc = _render_sheet(sheet, index=1, count=1, label="rig", warnings=[])
+        from cadgen._internal.drawing_assembly import _BALLOON_R
+
+        circles = [c for c in doc.modelspace().query("CIRCLE") if abs(c.dxf.radius - _BALLOON_R) < 1e-6]
+        self.assertEqual(len(circles), 3, "each part the section cuts, keyed")
+
+    def test_materials_true_hatches_each_part_as_its_material(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+
+        sheet, _front = self._sheet(self._rig(), materials=True)
+        doc = _render_sheet(sheet, index=1, count=1, label="rig", warnings=[])
+        self.assertEqual({h.dxf.pattern_name for h in doc.modelspace().query("HATCH[layer=='HATCH']")},
+                         {"ANSI38", "ANSI33"}, "aluminium and copper alloy; the rod still uncut")
+        self.assertIn("MATERIAL KEY", [e.dxf.text for e in doc.modelspace().query("TEXT")])
+
+
 class MaterialSectionTests(unittest.TestCase):
-    """A section through several materials: each cut hatched as what it is."""
+    """A section hatched by material (``materials=True``): each cut as what it is,
+    for a layered part where the materials are the point."""
 
     def _cut(self, parts, scale: float = 2.0, **table):
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3", scale)
-        front = sheet.view(parts.assembly, "front", at=(150, 120), hidden=False).section("A", parts=parts)
+        front = sheet.view(parts.assembly, "front", at=(150, 120), hidden=False).section("A", parts=parts,
+                                                                                         materials=True)
         sheet.view(parts.assembly, "top", at=(150, 210), hidden=False)
         if table:
             sheet.layer_table(parts, table["rows"])

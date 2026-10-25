@@ -68,9 +68,8 @@ from cadgen._internal.drawing_assembly import (
 )
 from cadgen._internal.drawing_base import (
     _BAND_H, _DETAIL_SIZE, _MARGIN, _NOTE_HEIGHT, _NOTE_INSET, PROJECTIONS, _SAME_PLACE, _SECTION_LETTERS,
-    SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, UNITS, VIEW_DIRECTIONS, _cross, _dirs, _dot, _look, _p3, _places,
-    _scale_label,
-    _text_width, _view_axes, _where,
+    SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, _TITLE_W, UNITS, VIEW_DIRECTIONS, _cross, _dirs, _dot, _look, _p3,
+    _places, _scale_label, _text_width, _view_axes, _where,
 )
 from cadgen._internal.drawing_gdt import Frame, frame_size
 from cadgen._internal.drawing_profile import (
@@ -171,6 +170,7 @@ class View:
     #: and the parts list whose items it hatches each by material, if any.
     _section: tuple | None = None
     _section_parts: Any = None
+    _section_materials: bool = False
     #: ``(label, scale)`` the sheet gave an isometric or an auxiliary view, so the
     #: render knows whether the author has since set their own and leaves it alone.
     _auto_label: tuple | None = None
@@ -461,7 +461,8 @@ class View:
         self._datums.append((letter, self._at(at), None if offset is None else _sheet_offset("datum", offset)))
         return self
 
-    def section(self, letter: str = "A", *, through=None, parts: PartsList | None = None) -> "View":
+    def section(self, letter: str = "A", *, through=None, parts: PartsList | None = None,
+                materials: bool = False) -> "View":
         """Draw this view as a full section, the way a drawing shows what hidden
         lines cannot: the part cut by the plane through ``through`` (a model
         point; the middle of the part by default) square to the line of sight,
@@ -471,12 +472,17 @@ class View:
         part that sees it edge-on, and this view is labelled ``SECTION A-A``.
         Dimensions and callouts are given in model coordinates as on any view.
 
-        ``parts`` cuts an assembly part by part, on a view of ``parts.assembly``:
-        each item is hatched by its material family (``parts.set(n,
-        family=...)``), neighbours of one family at different angles, a part too
-        thin to hatch at the drawing's scale filled solid, and where solids
-        overlap the earlier item takes the region. With two or more families the
-        sheet draws a material key."""
+        ``parts`` cuts an assembly part by part, on a view of ``parts.assembly``,
+        as an assembly section is drawn: every part in the one general-purpose
+        hatch, parts that touch told apart by its angle and then its spacing, a
+        part too thin to hatch at the drawing's scale filled solid, and where
+        solids overlap the earlier item takes the region. A solid turned part the
+        plane cuts along its axis (a shaft, a rod, a pin, a bolt) is drawn uncut,
+        as ISO 128-50 has it. ``balloons(parts)`` keys the parts it cuts. What each
+        part is made of is the parts list's to say; ``materials=True`` hatches
+        each as its material family (``parts.set(n, family=...)``) instead and
+        adds a material key, for a layered part where the materials are the
+        point."""
         if self.name == "iso":
             raise ValueError("section() cuts an orthographic view; an isometric is drawn whole")
         if parts is not None:
@@ -499,6 +505,7 @@ class View:
         _refuse_used_letter(self.sheet, letter, self)
         self._section = (letter, None if through is None else self._at(through))
         self._section_parts = parts
+        self._section_materials = bool(materials)
         self.hidden = False
         if self.label is None:
             self.label = f"SECTION {letter}-{letter}"
@@ -923,28 +930,67 @@ class Sheet:
         return f"{self.material} PER {self.spec}" if self.spec and self.material else self.material
 
     def _check_notes(self, paper: str) -> None:
-        """A note wider than the sheet runs off the paper, and the sheet is the one
-        thing here that cannot be made bigger after the fact. Measure the line the
-        sheet DRAWS -- numbered, prefixed, general tolerance expanded -- at the
-        height it draws it, against the room ``paper`` gives it."""
+        """A note wraps at its words, but a word wider than the sheet runs off the
+        paper, and the sheet is the one thing here that cannot be made bigger after
+        the fact. Measure the rows the sheet DRAWS -- numbered, prefixed, general
+        tolerance expanded -- at the height it draws them, against the room
+        ``paper`` gives them."""
         room = SHEET_SIZES[paper][0] - 2 * (_MARGIN + _NOTE_INSET)
-        for width, note in zip(self._note_widths(), self.drawn_notes()):
-            if width > room:
+        rows = self._wrapped_notes(room)
+        notes = self.drawn_notes()
+        for row in rows:
+            if self._row_width(row, rows) > room:
                 raise ValueError(
-                    f"note {note!r} is wider than the {paper} sheet's note row "
-                    f"({round(room)} mm). Shorten it, or split it across two notes."
+                    f"note {notes[row[2]]!r} is wider than the {paper} sheet's note row "
+                    f"({round(room)} mm), even wrapped at its words. Shorten its longest word."
                 )
 
-    def _note_widths(self) -> list[float]:
-        """Each drawn note line's width at the height the sheet draws it, a general
-        profile's frame included."""
-        widths = []
-        for line, note in zip(self.note_lines(), self.drawn_notes()):
-            width = _text_width(line, _NOTE_HEIGHT)
-            if note == _GENERAL_PROFILE and self.general_profile is not None:
-                width += _NOTE_HEIGHT + frame_size(self.general_profile, _NOTE_HEIGHT)[0]
-            widths.append(width)
-        return widths
+    def _note_layout(self, paper: str | None = None) -> tuple[float, list[tuple[float, str, int, bool]]]:
+        """Where the notes stand and how they wrap: their base above the frame's
+        foot, and each printed row as (its x from the notes' left edge, its text,
+        which note, whether it is that note's first row). They stand on the
+        frame's foot beside the title block, each wrapped at its words to the room
+        there, so no empty strip is left under them; above the title block, on the
+        whole width, only where a word is too long to stand beside it."""
+        width = SHEET_SIZES[paper or self._size()][0]
+        beside = width - _MARGIN - _TITLE_W - 4.0 - (_MARGIN + _NOTE_INSET)
+        rows = self._wrapped_notes(beside)
+        if all(self._row_width(row, rows) <= beside for row in rows):
+            return 0.0, rows
+        return self._title_height(), self._wrapped_notes(width - 2 * (_MARGIN + _NOTE_INSET))
+
+    def _note_rows(self, paper: str | None = None) -> list[tuple[float, str, int, bool]]:
+        return self._note_layout(paper)[1]
+
+    def _wrapped_notes(self, room: float) -> list[tuple[float, str, int, bool]]:
+        """The drawn notes as rows no wider than ``room`` where their words allow:
+        a note's first row carries its prefix and number, the rest stand under its
+        words."""
+        notes = self.drawn_notes()
+        flagged = len(notes) - len(self._flags)
+        rows: list[tuple[float, str, int, bool]] = []
+        for k, note in enumerate(notes):
+            head = f"{'NOTES:  ' if k == 0 else '        '}{_FLAG_ROOM if k >= flagged else f'{k + 1}. '}"
+            indent = _text_width(head, _NOTE_HEIGHT)
+            lines: list[list[str]] = [[]]
+            for word in note.split():
+                if lines[-1] and indent + _text_width(" ".join([*lines[-1], word]), _NOTE_HEIGHT) > room:
+                    lines.append([])
+                lines[-1].append(word)
+            for j, words in enumerate(lines):
+                rows.append((0.0, head + " ".join(words), k, True) if j == 0 else (indent, " ".join(words), k, False))
+        return rows
+
+    def _row_width(self, row: tuple[float, str, int, bool], rows: list) -> float:
+        """A row's width from the notes' left edge: a general profile's frame
+        follows the last row of its note."""
+        dx, text, k, _first = row
+        width = dx + _text_width(text, _NOTE_HEIGHT)
+        last = max(r for r, other in enumerate(rows) if other[2] == k)
+        if (self.drawn_notes()[k] == _GENERAL_PROFILE and self.general_profile is not None
+                and rows[last] is row):
+            width += _NOTE_HEIGHT + frame_size(self.general_profile, _NOTE_HEIGHT)[0]
+        return width
 
     def drawn_notes(self) -> list[str]:
         """The note strings as they reach the paper: a general profile is note 1

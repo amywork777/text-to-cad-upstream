@@ -44,10 +44,18 @@ Ask one thing at a time, in plain words with the standard term in brackets.
    is a flag note (`view.flag(..., joint=...)`); the end play it needs; and
    for a moving joint, its stroke and the mounting distances at each end of
    it. How: [joints and interfaces](assemblies.md#joints-and-interfaces).
-6. **Choose the controlling dimensions.** A size the others add up to is
-   stated twice once it is toleranced: say which one matters (the fit, the
-   gap, the mounting distance) and make the derived one reference, or leave it
-   out. The run's `redundant:` lines name every loop it finds.
+6. **Choose the controlling dimensions, and how they run.** These are design
+   intent; the model cannot say them, so propose and ask, never assume:
+   - **Baseline or chain.** Positions that matter measured from one datum face
+     (baseline, or parallel, dimensioning: tolerances do not add up), or the
+     spacing between neighbours where that is what matters (chain: a hole
+     pitch). Many features, a hole table or ordinates.
+   - **What is reference.** A size the others add up to is stated twice once
+     it is toleranced: say which one matters (the fit, the gap, the mounting
+     distance) and make the derived one reference, or leave it out. The run's
+     `redundant:` lines name every loop it finds.
+   - **The tolerances themselves**, size by size, from the person or a standard
+     fit they confirm by name.
 
 ### Refreshing a drawing
 
@@ -161,6 +169,14 @@ to define:
 
 A concept drawing need not be finished: nominal sizes are fine. Keep GD&T off
 concept and prototype drawings unless the person asks for it.
+
+**Linear tolerances or GD&T.** A simple part keeps linear (±) tolerances: a
+shop checks it with calipers and a micrometer, which costs less than a CMM.
+Propose GD&T where the function needs it: a complex part, features that must
+locate together (a hole pattern to its mounting faces), or a form or
+orientation a ± cannot control (flatness of a sealing face,
+perpendicularity of a bore to its mounting face). Say which, and why, item
+by item.
 
 ## Profiles
 

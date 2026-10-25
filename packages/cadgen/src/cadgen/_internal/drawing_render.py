@@ -147,43 +147,56 @@ def _thin(region) -> bool:
     return region.buffer(-_THIN / 2).is_empty
 
 
-def _section_looks(cut_items, flat) -> list[tuple]:
+def _section_looks(cut_items, flat, materials: bool = False) -> list[tuple]:
     """Each part a section cuts, with how it is hatched: (item, its region on the
-    sheet, whether it is too thin to hatch, its variant of the family's hatch,
-    how much finer its hatch is set). Parts of one family that touch -- regions
-    within a millimetre on the sheet -- never look alike, whatever their order:
-    each takes the first variant its neighbours of that family do not have."""
+    sheet, whether it is too thin to hatch, its variant of the hatch, how much
+    finer its hatch is set, whether it is drawn uncut). Parts that share a
+    pattern and touch -- regions within a millimetre on the sheet -- never look
+    alike, whatever their order: each takes the first variant its neighbours do
+    not have. In one hatch every part shares the pattern; by ``materials``, the
+    parts of one family do."""
     import statistics
 
+    def family(item) -> str:
+        return (item.family or "general") if materials else "general"
+
     looks: list[tuple] = []
-    for item, faces in cut_items:
+    for item, faces, plain in cut_items:
         region = _cut_region(faces, flat)
-        family = item.family or "general"
-        near = {variant for other, other_region, _thin_too, variant, _fine in looks
-                if (other.family or "general") == family and other_region.distance(region) < _NEIGHBOURS}
+        near = {variant for other, other_region, _thin_too, variant, _fine, other_plain in looks
+                if not other_plain and family(other) == family(item) and other_region.distance(region) < _NEIGHBOURS}
         variant = next((k for k in range(len(_HATCH_TURNS)) if k not in near), len(looks) % len(_HATCH_TURNS))
         # A small region is hatched finer so it still shows lines; the part's
         # typical piece sets it, so all of one part is hatched alike.
         pieces = [g.area for g in getattr(region, "geoms", [region]) if g.area > 0]
         size = math.sqrt(statistics.median(pieces)) if pieces else _HATCH_ROOM
-        looks.append((item, region, _thin(region), variant, min(1.0, max(0.35, size / _HATCH_ROOM))))
+        looks.append((item, region, _thin(region), variant, min(1.0, max(0.35, size / _HATCH_ROOM)), plain))
     return looks
 
 
+def _section_pattern(item, materials: bool) -> tuple[str, float]:
+    """The pattern and angle a section hatches a part with: its material family's
+    by ``materials``, else the one general-purpose hatch."""
+    return HATCHES[item.family or "general"] if materials else HATCHES["general"]
+
+
 def _sheet_tables(sheet: Sheet, cuts: dict, work: list, s: float) -> list[_SheetTable]:
-    """The tables a sheet's sections and layers ask for: a material key where its
-    sections cut two or more parts, and the layer table it was given."""
+    """The tables a sheet's sections and layers ask for: a material key where a
+    section hatched by material cuts two or more parts, and the layer table it
+    was given."""
     tables = []
     rows: dict[int, tuple] = {}
     near = None
     for view, proj, *_rest in work:
         cut = cuts.get(id(view))
-        if not cut or not cut[3]:
+        if not cut or not cut[3] or not view._section_materials:
             continue
         near = near or view.at
         sv = view.scale or s
-        for item, _region, thin, variant, _fine in _section_looks(
-                cut[3], lambda p: tuple(c * sv for c in proj.point(p))):
+        for item, _region, thin, variant, _fine, plain in _section_looks(
+                cut[3], lambda p: tuple(c * sv for c in proj.point(p)), materials=True):
+            if plain:
+                continue  # drawn uncut: no hatch to key
             # A row per part, its swatch the look its region has: a section
             # carries no balloons, so the key is what says which region is which.
             rows.setdefault(item.number, (item, "solid" if thin else item.family or "general", variant))
@@ -258,6 +271,68 @@ def _crosses_any(polyline, others) -> bool:
 
     path = LineString(polyline)
     return any(path.crosses(LineString(other)) for other in others)
+
+
+def _drawn_area(work_item, s: float):
+    """The paper a view's part covers: its line work and the regions it closes,
+    on the sheet."""
+    from shapely.geometry import LineString
+    from shapely.ops import polygonize, unary_union
+
+    view, proj, _bounds, _items, _plan, (cx, cy) = work_item
+    sv = view.scale or s
+
+    def to_sheet(p):
+        return (view.at[0] + (p[0] - cx) * sv, view.at[1] + (p[1] - cy) * sv)
+
+    lines = [LineString([to_sheet(p) for p in points]) for points in
+             (_edge_points(edge) for edge in proj.visible) if len(points) > 1]
+    ink = unary_union(lines)
+    return unary_union([ink, *polygonize(ink)])
+
+
+def _annotation_lines(doc):
+    """The line work of a sheet's dimensions (their dimension and extension lines)
+    and leaders, as one shapely geometry."""
+    from shapely.geometry import LineString
+    from shapely.ops import unary_union
+
+    lines = []
+    for dimension in doc.modelspace().query("DIMENSION"):
+        for entity in doc.blocks.get(dimension.dxf.geometry):
+            if entity.dxftype() == "LINE":
+                lines.append(LineString([tuple(entity.dxf.start)[:2], tuple(entity.dxf.end)[:2]]))
+    for leader in doc.modelspace().query("LEADER"):
+        points = [tuple(v)[:2] for v in leader.vertices]
+        if len(points) > 1:
+            lines.append(LineString(points))
+    return unary_union(lines)
+
+
+#: Where a detail's letter may stand round its circle on the parent, in order:
+#: down and to the right first, as drafters set it, then round the circle.
+_LETTER_TURNS = (-45, 0, 45, -90, -135, 90, 180, 135)
+
+
+def _letter_spot(centre, ring: float, letter: str, height: float, area) -> tuple[float, float]:
+    """Where a detail's letter stands on its parent: just outside the circle,
+    clear of the part where any spot round it is (ISO 128-1: annotation off the
+    views), else where it covers the least of the part."""
+    from shapely.geometry import box
+
+    half = (_ink_width(letter, height) / 2 + 0.5, height / 2 + 0.5)
+    best, least = None, None
+    for reach in (ring + max(half) + 1.0, ring + max(half) + 5.0, ring + max(half) + 10.0):
+        for turn in _LETTER_TURNS:
+            x = centre[0] + reach * math.cos(math.radians(turn))
+            y = centre[1] + reach * math.sin(math.radians(turn))
+            patch = box(x - half[0], y - half[1], x + half[0], y + half[1])
+            if not area.intersects(patch):
+                return (x, y)
+            covered = area.intersection(patch).area
+            if least is None or covered < least:
+                best, least = (x, y), covered
+    return best
 
 
 def _draw_aux_arrows(msp, sheet: Sheet, drawn: dict, text, th: float) -> None:
@@ -512,6 +587,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             parent = view._detail.parent
             view._section, view.hidden, view.centre_marks = parent._section, parent.hidden, parent.centre_marks
             view._section_parts = parent._section_parts
+            view._section_materials = parent._section_materials
         if view._balloons:
             _refuse_balloons_on(view)
         if id(view.shape) not in checked:
@@ -768,6 +844,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     for (view, proj, bounds, items, plan, _centre), (_v, _p, _b, cx, cy, own_box) in zip(work, placed):
         sv = view.scale or s
         cut = cuts.get(id(view))
+        section_anchors: dict[int, tuple[float, float]] = {}  # where a section's balloons land, by item
         record = None
         if facts is not None:
             record = facts.parts.setdefault(id(view.shape), {"shape": view.shape, "called": set(), "values": [],
@@ -942,18 +1019,27 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             if cut[3]:
                 from shapely.ops import unary_union
 
-                # Part by part: each as its family is hatched, the next of a family
-                # turned, overlaps left to the first, the thin filled solid.
+                # Part by part: each in its hatch, the next it touches turned,
+                # overlaps left to the first, the thin filled solid, a solid round
+                # part cut along its axis left uncut.
                 taken = None
-                for item, own, is_thin, variant, fine in _section_looks(cut[3], lambda p: to_sheet(proj.point(p))):
-                    pattern, angle = HATCHES[item.family or "general"]
+                for item, own, is_thin, variant, fine, plain in _section_looks(
+                        cut[3], lambda p: to_sheet(proj.point(p)), view._section_materials):
+                    pattern, angle = _section_pattern(item, view._section_materials)
                     turn, spacing = _HATCH_TURNS[variant]
                     if taken is not None:
                         own = own.difference(taken)
                     if region is not None:
                         own = own.intersection(region)
                     taken = own if taken is None else unary_union([taken, own])
-                    if is_thin and not own.is_empty:
+                    if not own.is_empty:
+                        inside = own.representative_point()
+                        section_anchors[item.number] = (inside.x, inside.y)
+                    if plain:
+                        continue
+                    if is_thin and not own.is_empty and view._section_materials:
+                        # Hatched by material, a part too thin to show its hatch is
+                        # named where it is; in one hatch its balloon names it.
                         inside = own.representative_point()
                         thin.append(((inside.x, inside.y),
                                      item.material or item.description or f"ITEM {item.number}"))
@@ -1549,7 +1635,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # Their circles and leaders, which a flag drawn next keeps clear of.
             for path, circle in _draw_balloons(msp, sheet, view, keyed_on_sheet, facts, model_to_sheet, own_box,
                                                reach, text, list(claimed),
-                                               [b for b in boxes if b is not own_box] + furniture, warnings):
+                                               [b for b in boxes if b is not own_box] + furniture, warnings,
+                                               anchors=section_anchors if view._section else None):
                 leaders.append(path)
                 claimed.append(("balloon", circle))
 
@@ -1694,9 +1781,15 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         c = parent_to_sheet(point)
         ring = radius * (parent.scale or s)
         msp.add_circle(c, ring, dxfattribs={"layer": "NOTES"})
-        lean = (math.cos(math.radians(45)), math.sin(math.radians(45)))
-        text(letter, c[0] + lean[0] * (ring + th), c[1] + lean[1] * (ring + th), th + 1.5,
-             TextEntityAlignment.MIDDLE_CENTER, "NOTES")
+        from shapely.geometry import box as rect
+        from shapely.ops import unary_union
+
+        # Clear of the part, and of the annotation already on the sheet: its text,
+        # its dimensions' lines and its leaders.
+        clear_of = unary_union([_drawn_area(next(w for w in work if w[0] is parent), s),
+                                *(rect(*taken) for _value, taken in claimed), _annotation_lines(doc)])
+        spot = _letter_spot(c, ring, letter, th + 1.5, clear_of)
+        text(letter, spot[0], spot[1], th + 1.5, TextEntityAlignment.MIDDLE_CENTER, "NOTES")
     _draw_aux_arrows(msp, sheet, drawn, text, th)
     _merge_centre_lines(msp)
     return doc

@@ -613,12 +613,15 @@ def _spread(desired: Sequence[float], gap: float, lo: float, hi: float) -> list[
 # --- balloons -------------------------------------------------------------------------
 
 def _refuse_balloons_on(view) -> None:
-    """Balloons key a whole view. A section's cut faces are not any part's faces,
-    and a detail is a piece of another view; neither is ballooned yet."""
-    if view._section is not None or view._detail is not None:
-        kind = "a section" if view._detail is None else "a detail"
-        raise ValueError(f"balloons() keys a whole view, and the {view.name} view is {kind}; balloon a view "
-                         "of the assembly that is not cut or enlarged.")
+    """Balloons key a whole view, or a section that cuts the parts one by one
+    (each balloon lands in its part's cut); a detail is a piece of another view,
+    keyed where that view is."""
+    if view._detail is not None:
+        raise ValueError(f"balloons() keys a whole view or a section, and the {view.name} view is a detail; "
+                         "balloon the view it enlarges.")
+    if view._section is not None and view._section_parts is None:
+        raise ValueError(f"balloons() on the {view.name} view's section keys the parts it cuts, and it cuts the "
+                         "assembly whole; cut it part by part with section(..., parts=parts).")
 
 
 #: A balloon: its radius and numeral height, the run of leader between the
@@ -643,7 +646,7 @@ def _balloon_axis(bounds) -> bool:
 
 def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: _Facts | None, model_to_sheet, box,
                    reach: dict, text, printed: Sequence[tuple], obstacles: Sequence[tuple],
-                   warnings: list | None) -> list[tuple]:
+                   warnings: list | None, anchors: dict | None = None) -> list[tuple]:
     """Balloon each item the view shows that this sheet has not yet keyed.
 
     Each leader ends in a dot on a point of the part that the view sees (nothing
@@ -655,7 +658,9 @@ def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: _F
     off ``obstacles`` (other views, the title block, the parts list), and no
     balloon stands where its leader would run through text already ``printed``
     (``(value, box)`` pairs); leaders that would cross are swapped. A column the
-    paper cannot hold is refused, never drawn off the sheet. Returns each
+    paper cannot hold is refused, never drawn off the sheet. On a section,
+    ``anchors`` (item number to sheet point) puts each leader's dot inside the
+    part's cut instead, and only the parts it cuts are keyed. Returns each
     balloon's leader and circle box, ``((start, end), (x0, y0, x1, y1))``.
     """
     from ezdxf.enums import TextEntityAlignment
@@ -669,6 +674,10 @@ def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: _F
     for parts in view._balloons:
         for item in parts:
             if (id(parts), item.number) in keyed_on_sheet:
+                continue
+            if anchors is not None:
+                if item.number in anchors:
+                    keyed.append((item.number, anchors[item.number], parts))
                 continue
             point = visible_point(item.occurrences, cast, look)
             if point is None:

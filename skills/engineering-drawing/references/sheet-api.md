@@ -240,17 +240,22 @@ sheet millimetres.
 - `view.diameter(center, size=None, angle=45, text=None, basic=False, reference=False, frame=None, datum=None, key=False)` and
   `view.radius(center, size=None, ...)`: the circle or arc centred there,
   measured; `size` (a diameter, or a radius) picks one of several.
-- `view.section(letter="A", through=None, parts=None)`: draw the view as a full section
+- `view.section(letter="A", through=None, parts=None, materials=False)`: draw the view as a full section
   through `through` (default: the part's middle), square to the line of sight.
   Cut faces are hatched, hidden lines are left out, the view is labelled
   `SECTION A-A`, and the cutting plane is drawn on a view of the same part
   that sees it edge-on. Letters I, O and Q are refused. `parts=` on a view of
-  an assembly cuts each item on its own and hatches it as its material family
-  (`parts.set(n, family=...)`): neighbours of one family at different angles,
-  parts of one family that touch never hatched alike, a part thinner than 1 mm
-  on the sheet filled solid and named with a leader, solids the model overlaps
-  hatched once; two or more parts add a material key, a row per part with the
-  hatch its region has, its item number and material.
+  an assembly cuts each item on its own, as an assembly section is drawn:
+  every part in the one general-purpose hatch, parts that touch turned a right
+  angle and then spaced wider so no two neighbours look alike, a part thinner
+  than 1 mm on the sheet filled solid, solids the model overlaps hatched once,
+  and a solid turned part the plane cuts along its axis (a shaft, a rod, a pin,
+  a bolt) drawn uncut (ISO 128-50). `balloons(parts)` on it keys each part it
+  cuts. What a part is made of is the parts list's to say. `materials=True`
+  instead hatches each part as its material family (`parts.set(n,
+  family=...)`), names a thin one with a leader and adds a material key: for a
+  layered part, where the materials are the point. On a busy assembly it
+  makes a section hard to read.
 - `view.broken(start, end)`: take the stretch between two model points (along
   one model axis, in the view's plane) out of the view, the two ends drawn 10
   mm apart with a zigzag break line across each cut. The other views of the
@@ -352,7 +357,7 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | CENTER | CENTER | 0.18 | centre marks and centre lines, cutting planes |
 | DIM | continuous | 0.18 | dimensions, callouts, frames, datum symbols, key marks, flags |
 | NOTES | continuous | 0.25 | notes, view labels, leaders, detail circles, balloons |
-| HATCH | continuous | 0.18 | section hatching, a pattern per material family |
+| HATCH | continuous | 0.18 | section hatching: one pattern, or one per material family with `materials=True` |
 
 They exist inside the ezdxf document the page is rendered from; the PDF carries
 their weights and dash patterns, not the layer names.

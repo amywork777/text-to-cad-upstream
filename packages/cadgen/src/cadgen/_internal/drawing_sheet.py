@@ -473,28 +473,31 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
     right = _projection_symbol(msp, x0 + px + 4.0, y0 + py + ph / 2, first_angle=sheet.projection == "FIRST ANGLE")
     text(sheet.projection, right + 4.0, y0 + py + ph / 2, 2.5, A.MIDDLE_LEFT, fit=x0 + px + pw - right - 6.0)
 
-    lines = sheet.note_lines()
+    base, rows = sheet._note_layout()
     if sheet._parts is not None:
-        # The notes share the strip above the title block with the parts list, so
-        # each must end before the list begins.
+        # The notes share the strip beside and above the title block with the
+        # parts list, so each row must end before the list begins.
         room = x0 - 4.0 - (m + _NOTE_INSET)
-        for line, width in zip(lines, sheet._note_widths()):
-            if width > room:
+        notes = sheet.drawn_notes()
+        for row in rows:
+            if sheet._row_width(row, rows) > room:
                 raise ValueError(
-                    f"note {line.strip()!r} runs under the parts list: beside it the {sheet._size()} sheet leaves "
-                    f"{round(room)} mm. Shorten the note or split it across two."
+                    f"note {notes[row[2]]!r} runs under the parts list: beside it the {sheet._size()} sheet leaves "
+                    f"{round(room)} mm, and a word of it is longer. Shorten that word."
                 )
         _draw_parts_list(msp, sheet, text, continued or {})
-    for row, (line, note) in enumerate(zip(lines, sheet.drawn_notes())):
-        y = y0 + _notes_base(sheet) + 4 + (len(lines) - 1 - row) * 5
-        text(line, m + _NOTE_INSET, y, _NOTE_HEIGHT, A.BOTTOM_LEFT, "NOTES")
-        if row >= len(lines) - len(sheet._flags):
+    flagged = len(sheet.drawn_notes()) - len(sheet._flags)
+    for r, (dx, line, k, first) in enumerate(rows):
+        y = y0 + base + 4 + (len(rows) - 1 - r) * 5
+        text(line, m + _NOTE_INSET + dx, y, _NOTE_HEIGHT, A.BOTTOM_LEFT, "NOTES")
+        if first and k >= flagged:
             # A flag note's number stands in its flag, where the others' are printed.
             at = m + _NOTE_INSET + _text_width(line[:8] + "X", _NOTE_HEIGHT) - _text_width("X", _NOTE_HEIGHT)
-            _draw_flag(msp, str(row + 1), at, y + _NOTE_HEIGHT / 2, _FLAG_SIDE * _NOTE_HEIGHT, "NOTES")
-        if row == 0 and sheet.general_profile is not None:
+            _draw_flag(msp, str(k + 1), at, y + _NOTE_HEIGHT / 2, _FLAG_SIDE * _NOTE_HEIGHT, "NOTES")
+        if k == 0 and sheet.general_profile is not None and (r + 1 == len(rows) or rows[r + 1][2] != 0):
             # Note 1's frame follows its words: every surface within this profile.
-            _draw_frame(msp, sheet.general_profile, m + _NOTE_INSET + _text_width(line, _NOTE_HEIGHT) + _NOTE_HEIGHT,
+            _draw_frame(msp, sheet.general_profile,
+                        m + _NOTE_INSET + dx + _text_width(line, _NOTE_HEIGHT) + _NOTE_HEIGHT,
                         y + _NOTE_HEIGHT / 2, _NOTE_HEIGHT, "NOTES")
     revisions = _revisions_box(sheet)
     if revisions is not None:
@@ -638,27 +641,24 @@ def _place_detail(sheet: Sheet, size: float, room: dict, occupied: list, near) -
 def _notes_box(sheet: Sheet) -> list[tuple[float, float, float, float]]:
     """The notes block as ``[(x0, x1, y0, y1)]``, as the furniture draws it; empty
     without notes."""
-    lines = sheet.note_lines()
-    if not lines:
+    base, rows = sheet._note_layout()
+    if not rows:
         return []
-    x0, y0 = _MARGIN + _NOTE_INSET, _MARGIN + _notes_base(sheet) + 4.0
-    width = max(sheet._note_widths())
-    return [(x0, x0 + width, y0 - 1.0, y0 + (len(lines) - 1) * 5.0 + _NOTE_HEIGHT + 1.0)]
+    x0, y0 = _MARGIN + _NOTE_INSET, _MARGIN + base + 4.0
+    width = max(sheet._row_width(row, rows) for row in rows)
+    return [(x0, x0 + width, y0 - 1.0, y0 + (len(rows) - 1) * 5.0 + _NOTE_HEIGHT + 1.0)]
 
 
 def _notes_base(sheet: Sheet, paper: str | None = None) -> float:
-    """How high above the frame the notes stand on ``paper`` (the sheet's own by
-    default): on the title block's own height when every note ends before the
-    title block, the band above it not reaching them; above the band when a note
-    runs on under it."""
-    room = SHEET_SIZES[paper or sheet._size()][0] - _MARGIN - _TITLE_W - 4.0 - (_MARGIN + _NOTE_INSET)
-    widths = sheet._note_widths()
-    return _TITLE_H if not widths or max(widths) <= room else sheet._title_height()
+    """How high above the frame's foot the notes stand on ``paper`` (the sheet's
+    own by default): on it, beside the title block, unless a word is too long
+    to stand there (:meth:`Sheet._note_layout`)."""
+    return sheet._note_layout(paper)[0]
 
 
-def _notes_height(sheet: Sheet) -> float:
-    """How far the notes rise above the title block's top, with air; 0 without notes."""
-    rows = len(sheet.drawn_notes())
+def _notes_height(sheet: Sheet, paper: str | None = None) -> float:
+    """How far the notes rise above their base, with air; 0 without notes."""
+    rows = len(sheet._note_rows(paper))
     return rows * 5.0 + 8.0 if rows else 0.0
 
 
@@ -694,7 +694,7 @@ def _free_band(sheet: Sheet, paper: str | None = None) -> tuple[float, float, fl
     m = _MARGIN
     width, height = SHEET_SIZES[paper or sheet._size()]
     title = sheet._title_height()
-    floor = max(title, _notes_base(sheet, paper) + _notes_height(sheet),
+    floor = max(title, _notes_base(sheet, paper) + _notes_height(sheet, paper),
                 title + _list_height(sheet) + 6.0 if sheet._parts is not None else 0.0)
     return m + 4.0, width - m - 4.0, m + floor + 4.0, height - m - 4.0
 

@@ -64,11 +64,13 @@ def motorcycle_shock_absorber_drawing():
     front.flag("4 FILLET ALL ROUND, GTAW", at=(-25, 0, -140), joint="weld")   # the seam's free side
     front.flag(f"ITEM {grease.number} ON ROD SEAL", at=(-27, 0, 13))
 
-    # The section shows what each part is and where the parts meet.
+    # The section shows where the parts meet: each in one hatch, its neighbours
+    # turned, the rod drawn uncut, and balloons saying which is which.
     cut = Sheet("A3", None, title=TITLE, subtitle="SECTION THROUGH THE DAMPER", part_number=NUMBER, revision="A",
                 author="text-to-cad", stage="prototype", profile=GENERIC, notes=[EXAMPLE])
     side, right = cut.three_views(parts.assembly, views=("front", "right"))
     side.section("A", parts=parts)
+    side.balloons(parts)
     side.flag("4 FILLET ALL ROUND, GTAW", at=(-25, 0, -140), joint="weld")
     side.flag(f"ITEM {locker.number} ON THREAD, TORQUE TO 25 NM", at=(6, 0, 150))
     cut.detail(side, (0, 0, 10), 22)

@@ -165,13 +165,13 @@ parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/case_back.
 parts.set("shell", material="PC/ABS", family="plastic")
 parts.set("tape", material="3M VHB 4910")
 sheet = Sheet("A3", 5.0, title="CASE BACK")
-front = sheet.view(parts.assembly, "front", at=(180, 170), hidden=False).section("A", parts=parts)
+front = sheet.view(parts.assembly, "front", at=(180, 170), hidden=False).section("A", parts=parts, materials=True)
 front.flag("15 PSI, 72 H DWELL", at=(10, 0, 1.6), joint="tape")   # a point on the tape
 sheet.layer_table(parts, [("shell", "3.0", "FULL"), ("tape", "0.2", "PERIMETER 6 WIDE")])
 ```
 
-Each layer is hatched as its family, neighbours of one family at different
-angles (layers that touch never alike); one thinner than 1 mm on the sheet is
+With `materials=True` each layer is hatched as its family, neighbours of one
+family at different angles (layers that touch never alike); one thinner than 1 mm on the sheet is
 filled solid and named with a leader (draw a detail at a larger scale to show
 it hatched); where the model overlaps solids the earlier item takes the region.
 A material key lists each part: its hatch, item number, family and material;
@@ -204,7 +204,9 @@ may run the frame's height clear of other views, the title block and the parts
 list, keep their leaders uncrossed and off dimension text, and stand outside
 any hole callouts. An item already ballooned in an earlier view of the sheet is
 skipped, so balloon the views in order of preference. A column the paper cannot
-hold is refused, naming a larger sheet or scale. Not on a section or a detail.
+hold is refused, naming a larger sheet or scale. On a section cut part by part
+(`section(..., parts=parts)`) each leader ends inside its part's cut; a section
+cut whole, and a detail, are refused.
 
 ## What the script prints
 

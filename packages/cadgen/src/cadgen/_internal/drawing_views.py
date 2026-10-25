@@ -379,7 +379,8 @@ def _plane_cut(shape, point, look) -> tuple:
 def _cut(view: View) -> tuple:
     """The part a section view draws: (the half beyond the plane, its cut faces,
     the point the plane passes through, and for a section through an assembly's
-    parts each item with its own cut faces)."""
+    parts each item with its own cut faces and whether it is drawn uncut: a
+    solid turned part the plane cuts along its axis)."""
     from build123d import Compound
 
     letter, through = view._section
@@ -395,14 +396,16 @@ def _cut(view: View) -> tuple:
         # assembly cut whole does not.
         halves, faces = [], []
         for item in view._section_parts:
-            own = []
+            own, plain = [], False
             for placed in item.occurrences:
                 half, cut = _plane_cut(placed, point, look)
                 if half is not None:
                     halves.append(half)
+                if cut:
+                    plain = plain or _solid_round_along(placed, point, look)
                 own += cut
             if own:
-                items.append((item, own))
+                items.append((item, own, plain))
                 faces += own
         kept = Compound(halves) if halves else None
     if not faces:
@@ -411,6 +414,26 @@ def _cut(view: View) -> tuple:
             "view's line of sight does not cut the part. Give through= a model point inside it."
         )
     return kept, faces, point, items
+
+
+def _solid_round_along(shape, point, look) -> bool:
+    """Whether a part is solid and turned whole, its axis in the cutting plane: a
+    shaft, a rod, a pin, a bolt, which a section shows uncut. A cross hole (a
+    cotter pin's) leaves it solid; a bore along its axis does not."""
+    from cadgen._internal.drawing_features import _surface_segments, revolved
+
+    turned = revolved(shape, bores=True)
+    if turned is None:
+        return False
+    d = tuple(float(k == turned.axis) for k in range(3))
+    if abs(_dot(d, look)) > 1e-6 or abs(_dot(tuple(a - b for a, b in zip(turned.at, point)), look)) > 1e-3:
+        return False  # its axis is not in the plane
+    for line, foot, segments in _surface_segments(shape).values():
+        rel = tuple(a - b for a, b in zip(turned.at, foot))
+        on_axis = abs(abs(_dot(line, d)) - 1) < 1e-6 and math.dist(rel, tuple(_dot(rel, d) * c for c in d)) < 1e-3
+        if on_axis and any(seg.concave for seg in segments):
+            return False  # bored through along its axis: a tube, which is cut
+    return True
 
 
 def _edge_points(edge) -> list[tuple[float, float]]:

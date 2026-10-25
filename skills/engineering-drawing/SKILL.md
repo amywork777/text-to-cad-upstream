@@ -49,6 +49,10 @@ The first run downloads that installation; later runs reuse it.
      axis; and for a moving one, its stroke and the mounting distances at each
      end of it (retracted and extended). A first run of the set, before
      anything is stated, lists the joints in its `interface:` lines.
+   - **Ask how it is dimensioned**: baseline from a datum or chain, which
+     sizes are reference, and the tolerances (linear ± on a simple part,
+     which calipers check; GD&T only where the function needs it). These are
+     design intent, never the model's to assume.
    - **Write only what the person confirms** into the script; dimension with
      it from the start, not as a pass afterwards.
    - **Say where the model is simplified**: a solid where a tube belongs, a
@@ -255,8 +259,13 @@ return sheets
   its cure, weld, rivet), work done at assembly, gaps and orientation that
   matter, marking. The steps themselves belong to work instructions, not the
   drawing.
+- A section through the assembly, `view.section("A", parts=parts)`, is drawn
+  as drafters draw one: every part in one hatch, neighbours turned or spaced
+  apart, solid shafts, rods and pins cut along their axis left uncut, and
+  `balloons(parts)` on it saying which part is which. Keep material-coded
+  hatching off a busy assembly: the parts list says what each part is made of.
 - A layered part (a phone case's shell, tape and lining) is a small assembly:
-  `view.section("A", parts=parts)` hatches each layer as its material family
+  `view.section("A", parts=parts, materials=True)` hatches each layer as its material family
   (`parts.set(n, family="plastic")`), fills a layer too thin to hatch solid
   and names it, and draws a material key, a row per layer; `sheet.layer_table(parts, rows)` lists each layer's
   thickness and coverage as the person states them.
@@ -291,8 +300,11 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
   dot on the part) in even columns whose leaders do not cross, and an ISO 7573
   parts list standing on the title block: ITEM, QTY, DESCRIPTION, PART NO.,
   MATERIAL, SPEC, SUPPLIER and, in a set with part sheets, the SHEET each item
-  is detailed on, read upward from the header. A section through
-  several materials hatches each as its family and carries a material key.
+  is detailed on, read upward from the header. A section through an
+  assembly is hatched in one pattern and ballooned; one hatched by material
+  (`materials=True`) carries a material key.
+- Notes on the frame's foot beside the title block, each wrapped at its words
+  to the room there.
 - PDF bytes that are a function of the content: an unchanged drawing rebuilds
   to an identical file.
 
@@ -331,7 +343,8 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
   of places. Splines, keys, threads modelled as plain bores and faces that
   touch away from a turned joint are not found: ask about them.
 - Millimetres only; one part per arrangement.
-- Assembly sheets: balloons go on whole views, not on sections or details; a
+- Assembly sheets: balloons go on whole views and on sections cut part by
+  part, not on details; a
   part sheet always starts from three views; parts are drawn in their model
   frame. Say which part sheets are still a first pass.
 
