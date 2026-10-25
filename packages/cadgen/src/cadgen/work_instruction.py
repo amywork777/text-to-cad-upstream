@@ -40,11 +40,18 @@ from the section of the user's document it cites)::
     if __name__ == "__main__":
         bracket_assembly_wi()
 
-Running the script writes one PDF at ``out``: a cover page (documents, parts,
-materials, open items) and a page per step, each with a picture of the assembly
-as it stands after that step -- drawn as line art, the step's own parts filled,
-parts still to come left out -- and the fill-ins the floor records
-(lot numbers, mix and cure times, stamps).
+How much paperwork the pages carry is the instruction's ``rigor``: a
+``prototype`` build order, ``production`` (the default) traceability, or
+``controlled`` QA hold points for audited work. Its ``emphasis`` is ``visual``
+(a figure per step) or ``process`` (text-led, with a map of which steps apply
+which document). A company's own template or example becomes a :class:`Format`
+that renames or replaces the layout's title, columns, numbering and sign-offs.
+
+Running the script writes one PDF at ``out``: front pages (documents, parts,
+materials, equipment, open items, approvals) and the procedure as a ruled
+table, one row per step with its values, a figure of the assembly as it stands
+after the step (line art, the step's own parts filled, parts still to come left
+out), the blanks the floor fills in and a column per sign-off.
 
 Like ``@eng_drawing`` this is a document over a document, with no public function
 and no CLI: the script is the program. Import discipline: nothing here pulls in
@@ -63,12 +70,16 @@ __all__ = [
     "work_instruction", "Instruction", "Step",
     "Spec", "Drawing", "Datasheet", "Stated", "Source", "Cited",
     "Torque", "Material", "Adhesive", "Layup", "Cure", "Machining",
-    "TORQUE_UNITS", "CAMERAS", "PAGE_SIZES", "STATUSES", "SOURCE_KINDS", "NOTICES",
+    "Format", "TORQUE_UNITS", "CAMERAS", "PAGE_SIZES", "STATUSES", "SOURCE_KINDS", "NOTICES",
+    "RIGORS", "EMPHASES", "NUMBERINGS",
 ]
 
 TORQUE_UNITS = ("in-lbf", "ft-lbf", "N-m")
 CAMERAS = ("iso", "front", "back", "left", "right", "top", "bottom")
 PAGE_SIZES = ("LETTER", "A4")
+RIGORS = ("prototype", "production", "controlled")
+EMPHASES = ("visual", "process")
+NUMBERINGS = ("sequential", "by-ten")
 NOTICES = ("WARNING", "CAUTION", "NOTE")
 STATUSES = ("draft", "released")
 NOT_STATED = "NOT STATED"
@@ -364,6 +375,91 @@ class Machining(_Record):
     OPTIONAL = ("coolant",)
 
 
+# --- the layout --------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Format:
+    """A company's own layout, read from a template or an example work instruction
+    the user supplied. Give only what that document shows; a field left out keeps
+    what the instruction's ``rigor`` lays out.
+
+    ``title`` is what the document calls itself (``"ASSEMBLY PROCEDURE"``,
+    ``"TRAVELER"``), ``company`` is printed in every header, ``step_label`` heads
+    the step column (``"OP"``, ``"SEQ"``), ``numbering`` is ``sequential`` (1, 2,
+    3) or ``by-ten`` (10, 20, 30), ``stamps`` are the sign-off columns left to
+    right (``("MECH", "INSP")``), and ``approvals`` the signature roles on the
+    front pages."""
+
+    _: KW_ONLY
+    title: str | None = None
+    company: str | None = None
+    step_label: str | None = None
+    numbering: str | None = None
+    stamps: Sequence[str] | None = None
+    approvals: Sequence[str] | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("title", "company", "step_label"):
+            object.__setattr__(self, name, _text(f"Format {name}", getattr(self, name), required=False))
+        if self.numbering is not None:
+            _one_of("Format numbering", self.numbering, NUMBERINGS)
+        if self.stamps is not None:
+            stamps = tuple(_lines("Format stamps", self.stamps))
+            if not stamps:
+                raise ValueError("Format stamps needs at least one sign-off column")
+            object.__setattr__(self, "stamps", stamps)
+        if self.approvals is not None:
+            object.__setattr__(self, "approvals", tuple(_lines("Format approvals", self.approvals)))
+
+
+@dataclass(frozen=True)
+class Layout:
+    """What the pages carry, resolved from a ``rigor`` and a :class:`Format`."""
+
+    title: str
+    company: str
+    step_label: str
+    numbering: str
+    stamps: tuple[str, ...]
+    approvals: tuple[str, ...]
+    traceability: bool  # work order, serial, lot and expiry, and the actual-reading blanks
+    calibration: bool  # equipment with ID and calibration-due blanks
+    holds: bool  # an inspection is a hold point in the last sign-off column
+    close_out: bool
+    cite_inspections: bool  # an inspection criterion with no source is an open item
+
+
+# What each rigor lays out. A prototype is a build order to follow; production adds
+# the traceability a shop keeps; controlled (aerospace, medical) adds QA hold
+# points, calibration and a cited criterion for every inspection.
+RIGOR_LAYOUTS = {
+    "prototype": Layout("WORK INSTRUCTION", "", "STEP", "sequential", ("DONE",), (),
+                        traceability=False, calibration=False, holds=False, close_out=False,
+                        cite_inspections=False),
+    "production": Layout("WORK INSTRUCTION", "", "STEP", "sequential", ("TECH",), ("Prepared by", "Approved by"),
+                         traceability=True, calibration=True, holds=False, close_out=True,
+                         cite_inspections=False),
+    "controlled": Layout("WORK INSTRUCTION", "", "STEP", "sequential", ("TECH", "QA"),
+                         ("Prepared by", "Reviewed by", "Approved by"),
+                         traceability=True, calibration=True, holds=True, close_out=True,
+                         cite_inspections=True),
+}
+
+
+def _layout(rigor: str, house: Format | None) -> Layout:
+    base = RIGOR_LAYOUTS[_one_of("rigor", rigor, RIGORS)]
+    if house is None:
+        return base
+    if not isinstance(house, Format):
+        raise TypeError("format= takes a Format(...) read from the user's template or example")
+    changes = {name: getattr(house, name) for name in ("title", "company", "step_label", "numbering", "stamps",
+                                                        "approvals") if getattr(house, name) is not None}
+    from dataclasses import replace
+
+    return replace(base, **changes)
+
+
 # --- steps -------------------------------------------------------------------
 
 # What the floor writes down in each kind of operation: the actual reading and the
@@ -410,6 +506,7 @@ class Step:
                  camera: str | None, picture: bool, operation: int | None) -> None:
         self._instruction = instruction
         self.number = number
+        self.label = str(number * 10 if instruction.layout.numbering == "by-ten" else number)
         self.title = title
         self.install = install
         self.camera = camera
@@ -510,9 +607,9 @@ class Step:
             try:
                 found = self._instruction.scene.resolve(ref)
             except Exception as exc:  # noqa: BLE001 - re-raised naming the step
-                raise ValueError(f"step {self.number}: {ref} is not on {self._instruction.step_path.name}: {exc}") from exc
+                raise ValueError(f"step {self.label}: {ref} is not on {self._instruction.step_path.name}: {exc}") from exc
             if len(found) != 1 or found[0].kind != "face":
-                raise ValueError(f"step {self.number}: surfaces takes face refs such as '#o1.2.f3'; "
+                raise ValueError(f"step {self.label}: surfaces takes face refs such as '#o1.2.f3'; "
                                  f"{ref} names {len(found)} {found[0].kind if found else 'entity'}(s)")
             out.append((found[0].ref, found[0].occurrence_ref))
         return tuple(out)
@@ -524,9 +621,11 @@ class Step:
         the measured value (``"Pin height, mm"``)."""
         if per is not None:
             _source("inspect", per)
-        self.hold = True
-        line = _Line("Inspect", _text("inspect text", text), per, cite=True)
-        op = _Op("inspect", [line], missing=[] if per else ["criterion source"])
+        layout = self._instruction.layout
+        self.hold = self.hold or layout.holds
+        owed = layout.cite_inspections
+        line = _Line("Inspect", _text("inspect text", text), per, cite=owed)
+        op = _Op("inspect", [line], missing=["criterion source"] if owed and per is None else [])
         op.record = _text("inspect record", record, required=False)
         return self._add(op)
 
@@ -541,6 +640,17 @@ class Instruction:
     its own). ``pictures=False`` writes the document with no pictures and needs
     no browser.
 
+    ``rigor`` is one of :data:`RIGORS`: ``prototype`` (a build order to follow:
+    figures, a done column, no paperwork), ``production`` (the default: tech
+    stamps, work order, serial, lot and actual-reading blanks, calibration,
+    approvals, a close-out) or ``controlled`` (aerospace, medical: production
+    plus a QA column, inspections as hold points and a cited criterion for every
+    inspection). ``emphasis`` is ``visual`` (a figure per step) or ``process``
+    (text-led steps, no figure column, and a table of which steps apply which
+    section of which document). ``format`` is the company's own layout as a
+    :class:`Format`, read from a template or example the user supplied; it
+    overrides what the rigor lays out, and nothing else.
+
     The front pages carry ``scope`` (a sentence: what this instruction builds and
     when it applies), ``safety`` (the PPE and hazards the user's documents state),
     ``tools`` (fixtures and tooling the user names, beside the equipment the steps
@@ -551,7 +661,8 @@ class Instruction:
                  part_number: str = "", drawing: Drawing | None = None, author: str = "",
                  status: str = "draft", size: str = "LETTER", camera: str = "iso", pictures: bool = True,
                  scope: str = "", safety: Sequence[str] = (), tools: Sequence[str] = (),
-                 revisions: Sequence[tuple[str, str, str]] = ()) -> None:
+                 revisions: Sequence[tuple[str, str, str]] = (), rigor: str = "production",
+                 emphasis: str = "visual", format: Format | None = None) -> None:  # noqa: A002
         self.step_path = Path(step_path).resolve()
         if self.step_path.suffix.lower() not in (".step", ".stp"):
             raise ValueError(f"Instruction takes an assembly .step, got {str(step_path)!r}")
@@ -568,7 +679,10 @@ class Instruction:
         self.status = _one_of("status", status, STATUSES)
         self.size = _one_of("size", size, PAGE_SIZES)
         self.camera = _one_of("camera", camera, CAMERAS)
-        self.pictures = bool(pictures)
+        self.rigor = _one_of("rigor", rigor, RIGORS)
+        self.emphasis = _one_of("emphasis", emphasis, EMPHASES)
+        self.layout = _layout(rigor, format)
+        self.pictures = bool(pictures) and self.emphasis == "visual"
         self.scope = _text("scope", scope or None, required=False) or ""
         self.safety = _lines("safety", safety)
         self.tools = _lines("tools", tools)
@@ -590,7 +704,8 @@ class Instruction:
 
             self._scene = read_scene(self.step_path)
             if len(list(self._scene.leaves())) < 2:
-                raise TypeError(f"{self.step_path.name} is a single part: a work instruction is for an assembly")
+                raise TypeError(f"{self.step_path.name} is a single part: work instructions are for an assembly; "
+                                "instructions for machining or processing one detail part are not supported yet")
         return self._scene
 
     def leaves(self) -> list:
@@ -644,7 +759,8 @@ class Instruction:
         for key in install:
             for ref in self._leaf_refs(key):
                 if ref in self._installed:
-                    raise ValueError(f"step {number} installs {key!r} ({ref}), which step {self._installed[ref]} already installs")
+                    raise ValueError(f"step {self._label(number)} installs {key!r} ({ref}), "
+                                     f"which step {self._label(self._installed[ref])} already installs")
                 if ref not in refs:
                     refs.append(ref)
         for ref in refs:
@@ -653,6 +769,23 @@ class Instruction:
                     len(self.operations) if self.operations else None)
         self.steps.append(step)
         return step
+
+    def _label(self, number: int) -> str:
+        return str(number * 10 if self.layout.numbering == "by-ten" else number)
+
+    def references(self) -> list[tuple[str, str, list[str]]]:
+        """(document, where in it, the step labels that apply it), for every cited
+        spec, drawing and data sheet section, in first-cited order."""
+        found: dict[tuple[str, str], list[str]] = {}
+        for step in self.steps:
+            for op in step.ops:
+                for line in op.lines:
+                    source = line.source
+                    if source is not None and source.kind != "stated":
+                        labels = found.setdefault((source.document, source.where), [])
+                        if step.label not in labels:
+                            labels.append(step.label)
+        return [(document, where, labels) for (document, where), labels in found.items()]
 
     def _use(self, record) -> None:
         if record not in self.materials:
@@ -668,7 +801,7 @@ class Instruction:
         items = []
         for step in self.steps:
             for op in step.ops:
-                items += [f"step {step.number} ({op.kind}): {name} not stated" for name in op.missing]
+                items += [f"step {step.label} ({op.kind}): {name} not stated" for name in op.missing]
         for leaf in self.leaves():
             if leaf.ref not in self._installed:
                 items.append(f"{leaf.ref} {leaf.label or '(unnamed)'}: no step installs it")

@@ -70,7 +70,7 @@ def picture_plan(wi) -> list[Picture]:
         for ref, owner in (pair for op in step.ops for pair in op.surfaces):
             if owner not in installed:
                 raise ValueError(
-                    f"step {step.number} marks {ref}, on {owner}, which is not installed by step {step.number}"
+                    f"step {step.label} marks {ref}, on {owner}, which is not installed by step {step.label}"
                 )
         if not (wi.pictures and step.picture and installed):
             continue
@@ -354,6 +354,7 @@ def _fit(measure: _Measure, text: str, size: float, width: float, *, smallest: f
 
 
 def _header(ax, measure: _Measure, wi, w, h, page: int, count: int, open_count: int) -> None:
+    layout = wi.layout
     top = h - MARGIN
     ax.add_patch(_rect(MARGIN, top - 15.0, w - 2 * MARGIN, 15.0, lw=0.6, edge="black"))
     number = f"{wi.number}  REV {wi.revision}"
@@ -361,7 +362,7 @@ def _header(ax, measure: _Measure, wi, w, h, page: int, count: int, open_count: 
     title, size = _fit(measure, wi.title, HEAD + 1, room)
     ax.text(MARGIN + 2.5, top - 6.5, title, fontsize=size, weight="bold", va="baseline")
     ax.text(w - MARGIN - 2.5, top - 6.5, number, fontsize=HEAD, weight="bold", va="baseline", ha="right")
-    detail = "WORK INSTRUCTION"
+    detail = f"{layout.company.upper()}   {layout.title}" if layout.company else layout.title
     if wi.part_number:
         detail += f"   ASSEMBLY P/N {wi.part_number}"
     if wi.drawing is not None:
@@ -390,7 +391,8 @@ def _section(flow: _Flow, title: str, *, keep: float = 18.0) -> None:
 
 def _front(flow: _Flow, wi, open_items: list[str]) -> None:
     m = flow.measure
-    flow.cell(_text_cell(m, "WORK INSTRUCTION", flow.inner, SMALL, "bold"), "the title")
+    layout = wi.layout
+    flow.cell(_text_cell(m, layout.title, flow.inner, SMALL, "bold"), "the title")
     flow.cell(_text_cell(m, wi.title, flow.inner, TITLE, "bold"), "the title")
     flow.y -= 2.0
     info = [["Number", f"{wi.number} Rev {wi.revision}"], ["Assembly", wi.step_path.name]]
@@ -400,9 +402,10 @@ def _front(flow: _Flow, wi, open_items: list[str]) -> None:
         info.append(["Drawing", wi.drawing.name])
     info.append(["Status", wi.status.upper()])
     flow.table([("", 38.0), ("", flow.inner - 38.0)], info, "the title block")
-    blanks = _Cell(m, flow.inner)
-    blanks.blanks(("Work order", "Serial no.", "Started"), per_row=3)
-    flow.cell(blanks, "the title block")
+    if layout.traceability:
+        blanks = _Cell(m, flow.inner)
+        blanks.blanks(("Work order", "Serial no.", "Started"), per_row=3)
+        flow.cell(blanks, "the title block")
 
     if wi.scope:
         _section(flow, "SCOPE")
@@ -415,6 +418,14 @@ def _front(flow: _Flow, wi, open_items: list[str]) -> None:
     else:
         flow.cell(_text_cell(m, "None cited.", flow.inner), "documents")
 
+    if wi.emphasis == "process":
+        references = wi.references()
+        if references:
+            _section(flow, "PROCESS REFERENCES")
+            flow.table([("DOCUMENT", 60.0), ("SECTION", flow.inner - 100.0), ("STEPS", 40.0)],
+                       [[document, where, ", ".join(labels)] for document, where, labels in references],
+                       "process references")
+
     if wi.safety:
         _section(flow, "SAFETY")
         for line in wi.safety:
@@ -426,29 +437,39 @@ def _front(flow: _Flow, wi, open_items: list[str]) -> None:
         groups.setdefault(leaf.label or "(unnamed)", []).append(leaf)
     rows = []
     for label, leaves in groups.items():
-        steps = sorted({wi._installed[leaf.ref] for leaf in leaves if leaf.ref in wi._installed})
-        rows.append([label, str(len(leaves)), ", ".join(map(str, steps)) or None, " ".join(l.ref for l in leaves)])
-    flow.table([("PART", 70.0), ("QTY", 14.0), ("STEP", 22.0), ("OCCURRENCES", flow.inner - 106.0)], rows, "parts")
+        numbers = sorted({wi._installed[leaf.ref] for leaf in leaves if leaf.ref in wi._installed})
+        rows.append([label, str(len(leaves)), ", ".join(wi._label(n) for n in numbers) or None,
+                     " ".join(leaf.ref for leaf in leaves)])
+    flow.table([("PART", 70.0), ("QTY", 14.0), (layout.step_label, 22.0), ("OCCURRENCES", flow.inner - 106.0)],
+               rows, "parts")
 
     if wi.materials:
         _section(flow, "MATERIALS")
-        flow.table([("MATERIAL", 58.0), ("PER", flow.inner - 118.0), ("LOT / BATCH", 34.0), ("EXPIRY", 26.0)],
-                   [[r.name, r.per.cite(), "", ""] for r in wi.materials], "materials", blank_columns=(2, 3))
+        if layout.traceability:
+            flow.table([("MATERIAL", 58.0), ("PER", flow.inner - 118.0), ("LOT / BATCH", 34.0), ("EXPIRY", 26.0)],
+                       [[r.name, r.per.cite(), "", ""] for r in wi.materials], "materials", blank_columns=(2, 3))
+        else:
+            flow.table([("MATERIAL", 58.0), ("PER", flow.inner - 58.0)],
+                       [[r.name, r.per.cite()] for r in wi.materials], "materials")
 
     equipment = wi.equipment()
     if equipment:
         _section(flow, "EQUIPMENT")
-        flow.table([("ITEM", flow.inner - 70.0), ("ID", 36.0), ("CAL DUE", 34.0)],
-                   [[item, "", ""] for item in equipment], "equipment", blank_columns=(1, 2))
+        if layout.calibration:
+            flow.table([("ITEM", flow.inner - 70.0), ("ID", 36.0), ("CAL DUE", 34.0)],
+                       [[item, "", ""] for item in equipment], "equipment", blank_columns=(1, 2))
+        else:
+            flow.table([("ITEM", flow.inner)], [[item] for item in equipment], "equipment")
 
     if wi.operations:
         _section(flow, "OPERATIONS")
         rows = []
         for index, title in enumerate(wi.operations, start=1):
-            numbers = [s.number for s in wi.steps if s.operation == index]
-            span = f"{numbers[0]}–{numbers[-1]}" if len(numbers) > 1 else (str(numbers[0]) if numbers else "")
+            labels = [s.label for s in wi.steps if s.operation == index]
+            span = f"{labels[0]}–{labels[-1]}" if len(labels) > 1 else (labels[0] if labels else "")
             rows.append([str(index), title, span])
-        flow.table([("OP", 14.0), ("OPERATION", flow.inner - 44.0), ("STEPS", 30.0)], rows, "operations")
+        flow.table([("OP", 14.0), ("OPERATION", flow.inner - 44.0), (layout.step_label + "S", 30.0)], rows,
+                   "operations")
 
     if wi.status == "draft":
         _section(flow, "OPEN ITEMS")
@@ -462,21 +483,30 @@ def _front(flow: _Flow, wi, open_items: list[str]) -> None:
         flow.table([("REV", 16.0), ("DATE", 30.0), ("CHANGE", flow.inner - 46.0)],
                    [list(row) for row in wi.revisions], "revisions")
 
-    _section(flow, "APPROVALS", keep=26.0)
-    approvals = _Cell(m, flow.inner)
-    approvals.blanks(("Prepared by" + (f": {wi.author}" if wi.author else ""), "Date",
-                      "Reviewed by", "Date", "Approved by", "Date"), per_row=2)
-    flow.cell(approvals, "approvals")
+    if layout.approvals:
+        _section(flow, "APPROVALS", keep=26.0)
+        approvals = _Cell(m, flow.inner)
+        roles = [role + (f": {wi.author}" if wi.author and index == 0 else "")
+                 for index, role in enumerate(layout.approvals)]
+        approvals.blanks(tuple(cell for role in roles for cell in (role, "Date")), per_row=2)
+        flow.cell(approvals, "approvals")
 
 
 # --- the procedure -----------------------------------------------------------
 
-STEP_W, FIG_W, STAMP_W = 11.0, 46.0, 17.0
+STEP_W, FIG_W, STAMP_W = 12.0, 46.0, 17.0
 
 
 def _columns(flow: _Flow) -> list[tuple[str, float]]:
-    instruction = flow.inner - STEP_W - FIG_W - 2 * STAMP_W
-    return [("STEP", STEP_W), ("INSTRUCTION", instruction), ("FIGURE", FIG_W), ("TECH", STAMP_W), ("QA", STAMP_W)]
+    """The step column, the instruction, the figure (visual emphasis only), then one
+    column per sign-off the layout names."""
+    layout = flow.wi.layout
+    figure = flow.wi.emphasis == "visual"
+    instruction = flow.inner - STEP_W - (FIG_W if figure else 0.0) - STAMP_W * len(layout.stamps)
+    columns = [(layout.step_label, STEP_W), ("INSTRUCTION", instruction)]
+    if figure:
+        columns.append(("FIGURE", FIG_W))
+    return columns + [(stamp, STAMP_W) for stamp in layout.stamps]
 
 
 def _column_header(flow: _Flow) -> None:
@@ -517,7 +547,7 @@ def _instruction(flow: _Flow, wi, step, width: float) -> _Cell:
                 cell.text(f"per {line.source.cite()}", SMALL, color="#444444", indent=3.0)
             elif line.cite:
                 cell.not_stated("source", SMALL)
-        captions = _records(op.kind) + ((op.record,) if op.record else ())
+        captions = (_records(op.kind) if wi.layout.traceability else ()) + ((op.record,) if op.record else ())
         if captions:
             cell.blanks(captions)
     return cell
@@ -542,20 +572,23 @@ def _figure(path: Path | None, width: float):
     return h, draw
 
 
-def _stamp(flow: _Flow, kind: str, required: bool, width: float) -> _Cell:
-    cell = _Cell(flow.measure, width - 3.0)
-    if kind == "QA" and required:
-        cell.text("HOLD", SMALL, weight="bold")
-    elif kind == "QA":
-        cell.text("—", SMALL, color="#888888")
-    return cell
-
-
 def _notice(flow: _Flow, kind: str, text: str) -> _Cell:
     cell = _Cell(flow.measure, flow.inner - 6.0)
     cell.text(kind, BODY, weight="bold")
     cell.text(text)
     return cell
+
+
+def _stamps(flow: _Flow, xs: list[float], hold: bool) -> list[tuple[_Cell, float]]:
+    """The sign-off cells: a hold point writes HOLD in the last, where work stops."""
+    count = len(flow.wi.layout.stamps)
+    cells = []
+    for index in range(count):
+        cell = _Cell(flow.measure, STAMP_W - 3.0)
+        if hold and index == count - 1:
+            cell.text("HOLD", SMALL, weight="bold")
+        cells.append((cell, xs[len(xs) - count + index]))
+    return cells
 
 
 def _procedure(flow: _Flow, wi, pictures: dict[int, Path]) -> None:
@@ -583,9 +616,9 @@ def _procedure(flow: _Flow, wi, pictures: dict[int, Path]) -> None:
             head = _text_cell(flow.measure, f"OPERATION {operation}   {wi.operations[operation - 1]}", flow.inner,
                               BODY, "bold")
             # A heading stays on the page with its first step.
-            flow.room(head.height + 2.4 + notice_h + row_h, f"step {step.number}")
+            flow.room(head.height + 2.4 + notice_h + row_h, f"step {step.label}")
             flow._table_row([(head, MARGIN, flow.inner)], f"operation {operation}", shade=True)
-        flow.room(notice_h + row_h, f"step {step.number}")
+        flow.room(notice_h + row_h, f"step {step.label}")
         for kind_text, n in zip(step.notices, notices):
             top = flow.y
             h = n.height + 3.0
@@ -595,28 +628,29 @@ def _procedure(flow: _Flow, wi, pictures: dict[int, Path]) -> None:
             flow.add(lambda ax, n=n, top=top: n.draw(ax, MARGIN + 3.0, top - 1.5))
             flow.y -= h
         top = flow.y
-        number = _text_cell(flow.measure, str(step.number), STEP_W, BODY, "bold")
-        tech = _stamp(flow, "TECH", True, STAMP_W)
-        qa = _stamp(flow, "QA", step.hold, STAMP_W)
-        _row(flow, xs, top, row_h, ((number, xs[0]), (body, xs[1]), (tech, xs[3]), (qa, xs[4])), step.hold)
+        number = _text_cell(flow.measure, step.label, STEP_W, BODY, "bold")
+        _row(flow, xs, top, row_h, [(number, xs[0]), (body, xs[1])] + _stamps(flow, xs, step.hold), step.hold)
         if fig is not None:
             flow.add(lambda ax, fig=fig, top=top: fig(ax, xs[2] + 1.5, top - 1.5))
         flow.y -= row_h
+    if not wi.layout.close_out:
+        return
     close = _Cell(flow.measure, columns[1][1] - 3.0)
     close.text("Close-out", BODY + 0.5, weight="bold")
-    close.text("Every step above is stamped; any nonconformance is recorded.")
+    close.text("Every step above is signed off; any nonconformance is recorded.")
     close.blanks(("NCR numbers",), per_row=1)
     row_h = close.height + 3.0
     flow.room(row_h, "the close-out")
-    _row(flow, xs, flow.y, row_h, ((close, xs[1]), (_stamp(flow, "QA", True, STAMP_W), xs[4])), True)
+    hold = wi.layout.holds
+    _row(flow, xs, flow.y, row_h, [(close, xs[1])] + _stamps(flow, xs, hold), hold)
     flow.y -= row_h
 
 
 def _row(flow: _Flow, xs: list[float], top: float, height: float, cells, hold: bool) -> None:
     """One procedure row at ``top``: its cells, column rules and bottom rule. A hold
-    point shades QA's cell: work stops there until it is stamped."""
+    point shades the last sign-off cell: work stops there until it is stamped."""
     if hold:
-        flow.add(lambda ax: ax.add_patch(_rect(xs[4], top - height, STAMP_W, height, lw=0, edge="none",
+        flow.add(lambda ax: ax.add_patch(_rect(xs[-1], top - height, STAMP_W, height, lw=0, edge="none",
                                                face="#e6e6e6", zorder=0)))
     for cell, x in cells:
         flow.add(lambda ax, cell=cell, x=x: cell.draw(ax, x + 1.5, top - 1.5))

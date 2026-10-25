@@ -2,8 +2,8 @@
 
 ```python
 from cadgen.work_instruction import (
-    work_instruction, Instruction, Spec, Drawing, Datasheet, Stated, Cited,
-    Torque, Material, Adhesive, Layup, Cure, Machining,
+    work_instruction, Instruction, Format, Spec, Drawing, Datasheet, Stated,
+    Cited, Torque, Material, Adhesive, Layup, Cure, Machining,
 )
 ```
 
@@ -49,6 +49,9 @@ def bracket_assembly_wi():
     wi = Instruction(
         Path(__file__).parent / "../STEP/bracket_assembly.step",
         title="BRACKET ASSEMBLY", number="WI-0001", revision="A", drawing=DWG,
+        rigor="production",   # prototype, production or controlled: as asked
+        emphasis="visual",    # visual or process: as asked
+        # format=Format(...), # only if the user gave a template or example
         scope="<what this builds, as the user puts it>",
         safety=["<PPE and hazards, as the user's documents state them>"],
         tools=["<fixture the user names>"],
@@ -101,6 +104,9 @@ earlier one.
 | `safety` | lines of PPE and hazards, as the user's documents state them |
 | `tools` | fixtures and tooling the user names, listed under EQUIPMENT |
 | `revisions` | `(rev, date, change)` rows |
+| `rigor` | `prototype`, `production` (default) or `controlled`; see below |
+| `emphasis` | `visual` (default) or `process`; see below |
+| `format` | a `Format` read from the user's template or example; see below |
 
 `wi.operation(title)` starts the next operation: a heading row over the steps
 after it and a line in the front pages' overview. Steps keep one sequence
@@ -117,11 +123,37 @@ nothing is.
 `wi.open_items()` returns what the run prints: each NOT STATED value, each
 inspection criterion with no source, and each part no step installs.
 
+## Rigor, emphasis and a house format
+
+| `rigor` | Sign-off columns | Paperwork | Inspections |
+| --- | --- | --- | --- |
+| `prototype` | DONE | none: no work order, lot, actual-reading or calibration blanks, no approvals, no close-out | a row like any other |
+| `production` | TECH | work order, serial and start; lot and expiry; actual readings; equipment ID and cal due; prepared and approved; a close-out | a row like any other; a criterion's source is printed when given |
+| `controlled` | TECH, QA | production's, with reviewed by | a hold point (HOLD in the last sign-off column); a criterion with no source is an open item |
+
+`emphasis="process"` drops the figure column (and renders no figures) and adds
+PROCESS REFERENCES to the front pages: each cited section of each document,
+with the steps that apply it.
+
+`Format(*, title, company, step_label, numbering, stamps, approvals)` is the
+company's own layout, read from the template or example the user gave. Every
+field is optional: give only what that document shows, and the rest keeps the
+rigor's layout.
+
+| Field | Means | Example |
+| --- | --- | --- |
+| `title` | what the document calls itself | `"ASSEMBLY PROCEDURE"`, `"TRAVELER"` |
+| `company` | printed in every header | `"Acme Aerospace"` |
+| `step_label` | the step column's heading | `"OP"`, `"SEQ"` |
+| `numbering` | `sequential` (1, 2, 3) or `by-ten` (10, 20, 30) | `"by-ten"` |
+| `stamps` | the sign-off columns, left to right; a hold point uses the last | `("MECH", "INSP")` |
+| `approvals` | the signature roles on the front pages | `("Written by", "Quality")` |
+
 ## Step operations
 
 Each returns the step, so they chain, and prints in the order called.
 
-| Method | Prints | The floor records |
+| Method | Prints | The floor records (from `production` up) |
 | --- | --- | --- |
 | `instruct(text)` | the user's words | |
 | `fasten(hardware, *, qty=None, torque=None, locking=None, sequence=None)` | hardware, torque (NOT STATED when `None`), threadlocker, sequence | actual torque |
@@ -130,7 +162,7 @@ Each returns the step, so they chain, and prints in the order called.
 | `cure(cure)` | the cycle | oven or autoclave ID, start, end, chart no. |
 | `machine(machining, *, surfaces=())` | operation, tool, speed, feed, coolant | machine ID |
 | `apply(material, *, surfaces=())` | a sealant, primer or other consumable and how it goes on | |
-| `inspect(text, *, per=None, record=None)` | a QA hold point; with no `per` its source prints NOT STATED and is an open item | the measured value `record` names |
+| `inspect(text, *, per=None, record=None)` | an inspection; when `controlled`, a hold point whose criterion with no `per` prints NOT STATED and is an open item | the measured value `record` names |
 | `warning(text)`, `caution(text)`, `note(text)` | a box above the step, in the user's words | |
 
 `bond`, `layup`, `cure` and `machine` take `None` for a record nobody has

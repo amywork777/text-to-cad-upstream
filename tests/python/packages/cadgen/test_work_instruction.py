@@ -209,6 +209,7 @@ class OpenItemTests(_Assembly):
         from cadgen.work_instruction import Adhesive, Torque
 
         spec, drawing = _sources()
+        kwargs.setdefault("rigor", "controlled")
         wi = self.instruction(**kwargs)
         wi.step("Load", install=["base_plate"])
         wi.step("Bond", install=["bracket"]).bond(
@@ -281,7 +282,7 @@ class DocumentTests(_Assembly):
         self.assertNotIn(b"/CreationDate", first)
 
     def test_front_pages_then_a_procedure_table_with_hold_points_and_a_close_out(self) -> None:
-        wi = self.instruction(safety=["Safety glasses"], tools=["Fixture F-12"])
+        wi = self.instruction(safety=["Safety glasses"], tools=["Fixture F-12"], rigor="controlled")
         wi.operation("Load")
         wi.step("Load", install=["base_plate"]).caution("Lift with two people.")
         wi.operation("Fit")
@@ -309,6 +310,69 @@ class DocumentTests(_Assembly):
             work_instruction(out="wi.docx")(lambda: None)
         with self.assertRaisesRegex(TypeError, "must return an Instruction"):
             work_instruction(out=str(self.root / "x.pdf"))(lambda: "steps")()
+
+
+class LayoutTests(_Assembly):
+    """What a rigor lays out, what a process emphasis changes, and a house format."""
+
+    def _texts(self, **kwargs) -> list[str]:
+        wi = self.instruction(**kwargs)
+        wi.step("Load", install=["base_plate"])
+        wi.step("Fit", install=["bracket", "pin"]).inspect("Pins seated")
+        return [t for page in _page_texts(wi) for t in page]
+
+    def test_each_rigor_lays_out_what_it_names(self) -> None:
+        prototype = self._texts(rigor="prototype")
+        self.assertIn("DONE", prototype)
+        for absent in ("WORK ORDER", "APPROVALS", "Close-out", "TECH", "QA", "HOLD"):
+            self.assertNotIn(absent, prototype, absent)
+        production = self._texts()
+        for present in ("WORK ORDER", "TECH", "APPROVALS", "Close-out"):
+            self.assertIn(present, production, present)
+        for absent in ("QA", "HOLD", "NOT STATED"):
+            self.assertNotIn(absent, production, f"{absent}: an uncited inspection is fine outside controlled work")
+        controlled = self._texts(rigor="controlled")
+        self.assertEqual(controlled.count("HOLD"), 2, "the inspection and the close-out")
+        self.assertIn("NOT STATED", controlled, "a controlled inspection cites its criterion")
+
+    def test_a_process_emphasis_drops_the_figures_and_maps_documents_to_steps(self) -> None:
+        from cadgen.work_instruction import Adhesive
+
+        spec, _ = _sources()
+        wi = self.instruction(emphasis="process", pictures=True)
+        self.assertFalse(wi.pictures)
+        wi.step("Load", install=["base_plate"])
+        wi.step("Bond", install=["bracket"]).bond(Adhesive("A", prep="p", mix="m", pot_life="l", cure="c",
+                                                           per=spec.at("5.1")))
+        text = [t for page in _page_texts(wi) for t in page]
+        self.assertNotIn("FIGURE", text)
+        self.assertIn("PROCESS REFERENCES", text)
+        self.assertEqual(wi.references(), [("PS-2001 Rev D", "\u00a75.1", ["2"])])
+
+    def test_a_house_format_overrides_only_what_it_states(self) -> None:
+        from cadgen.work_instruction import Format
+
+        house = Format(title="ASSEMBLY PROCEDURE", company="Acme", step_label="OP", numbering="by-ten",
+                       stamps=("MECH", "INSP"), approvals=("Written by", "Quality"))
+        wi = self.instruction(rigor="controlled", format=house)
+        wi.step("Load", install=["base_plate"])
+        wi.step("Fit", install=["bracket", "pin"]).inspect("Pins seated")
+        self.assertEqual([step.label for step in wi.steps], ["10", "20"])
+        self.assertEqual(wi.open_items(), ["step 20 (inspect): criterion source not stated"])
+        text = [t for page in _page_texts(wi) for t in page]
+        for present in ("ASSEMBLY PROCEDURE", "OP", "MECH", "INSP", "WRITTEN BY", "QUALITY", "10", "20"):
+            self.assertIn(present, text, present)
+        self.assertNotIn("TECH", text)
+        self.assertEqual(text.count("HOLD"), 2, "controlled still holds, in the house's last column")
+
+    def test_a_format_is_a_closed_set(self) -> None:
+        from cadgen.work_instruction import Format
+
+        for make in (lambda: Format(numbering="by-five"), lambda: Format(stamps=()), lambda: Format(stamps="QA"),
+                     lambda: Format(logo="acme.png"), lambda: self.instruction(rigor="aerospace"),
+                     lambda: self.instruction(emphasis="photos"), lambda: self.instruction(format={"stamps": ["QA"]})):
+            with self.subTest(make=make), self.assertRaises((ValueError, TypeError)):
+                make()
 
 
 class PictureTests(_Assembly):

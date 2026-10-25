@@ -1,9 +1,9 @@
 """Work instruction for the planetary gear assembly ($work-instructions sample).
 
-A manual sample, not a test fixture. It cites no process spec, because this
-demo assembly has none; every value a spec or drawing would carry is left out,
-so the draft shows what engineering still owes as NOT STATED and open items.
-Run `python planetary_gear_assembly.py` first to write the STEP.
+A manual sample, not a test fixture, laid out at the default `production`
+rigor. It cites no process spec, because this demo assembly has none, so it
+states no torque, adhesive or cure value either. Run
+`python planetary_gear_assembly.py` first to write the STEP.
 """
 
 from pathlib import Path
