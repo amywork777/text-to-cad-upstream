@@ -16,7 +16,10 @@ from __future__ import annotations
 
 import build123d as bd
 
-from cadgen import materials, pmi, step
+from cadgen import materials, step
+from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, general_profile,
+                          note, place, plus_minus_tolerance, position_tolerance, section, surface_profile_tolerance,
+                          view)
 from lib.notes import NOTES
 
 
@@ -57,43 +60,45 @@ def aerospace_avionics_bracket():
     bottom, top = _plane(body, 2, 0), _plane(body, 2, 8)
     back, left = _plane(body, 1, 40), _plane(body, 0, -60)
     bore = next(face for face in body.faces().filter_by(bd.GeomType.CYLINDER) if abs(face.radius - 5) < 1e-6)
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.datum("A", bottom, presentation=pmi.place((45, -32, 0), (0, -16, -10))),
-        pmi.datum("B", back, presentation=pmi.place((45, 40, 35), (15, 16, 0))),
-        pmi.datum("C", left, presentation=pmi.place((-60, -25, 4), (-18, -10, 0))),
+        datum("A", bottom, presentation=place((45, -32, 0), (0, -16, -10))),
+        datum("B", back, presentation=place((45, 40, 35), (15, 16, 0))),
+        datum("C", left, presentation=place((-60, -25, 4), (-18, -10, 0))),
         # Illustrative: 8 +/-0.1.
-        pmi.distance("base-thickness", bottom, top, tolerance=pmi.plus_minus(0.1),
-                     presentation=pmi.place((60, -15, 4), (22, -8, 0))),
+        dimensional_location("base-thickness", bottom, top, tolerance=plus_minus_tolerance(0.1),
+                             presentation=place((60, -15, 4), (22, -8, 0))),
         # Illustrative: diameter 10 +0.05/0.
-        pmi.diameter("locating-bore", bore, tolerance=pmi.plus_minus(0.05, 0),
-                     presentation=pmi.place((5, -18, 8), (18, -22, 16))),
+        dimensional_size("locating-bore", bore, tolerance=plus_minus_tolerance(0.05, 0),
+                         presentation=place((5, -18, 8), (18, -22, 16))),
         # Illustrative: flatness 0.05.
-        pmi.flatness("mounting-face-flatness", bottom, 0.05,
-                     presentation=pmi.place((-42, -32, 0), (-8, -18, -12))),
+        flatness_tolerance("mounting-face-flatness", bottom, 0.05,
+                           presentation=place((-42, -32, 0), (-8, -18, -12))),
         # Illustrative: position diameter 0.1 to A|B|C.
-        pmi.position("locating-bore-position", bore, 0.1, datums=["A", "B", "C"],
-                     presentation=pmi.place((-5, -18, 8), (-18, -22, 30))),
+        position_tolerance("locating-bore-position", bore, 0.1, datums=["A", "B", "C"],
+                           presentation=place((-5, -18, 8), (-18, -22, 30))),
         # The bore's true position: basic (theoretically exact) distances from B and C, measured.
-        pmi.basic("bore-from-B", back, bore, presentation=pmi.place((0, 11, 8), (8, 0, 0))),
-        pmi.basic("bore-from-C", left, bore, presentation=pmi.place((-30, -18, 8), (0, -8, 0))),
+        dimensional_location("bore-from-B", back, bore, basic=True, presentation=place((0, 11, 8), (8, 0, 0))),
+        dimensional_location("bore-from-C", left, bore, basic=True, presentation=place((-30, -18, 8), (0, -8, 0))),
         # The datum features a general profile leaves to their own controls. Illustrative: B within
         # 0.1 of true to A, C within 0.1 to A|B.
-        pmi.profile("B-profile", back, 0.1, datums=["A"], presentation=pmi.place((-45, 40, 35), (-15, 16, 0))),
-        pmi.profile("C-profile", left, 0.1, datums=["A", "B"], presentation=pmi.place((-60, 10, 4), (-18, 10, 0))),
+        surface_profile_tolerance("B-profile", back, 0.1, datums=["A"],
+                                  presentation=place((-45, 40, 35), (-15, 16, 0))),
+        surface_profile_tolerance("C-profile", left, 0.1, datums=["A", "B"],
+                                  presentation=place((-60, 10, 4), (-18, 10, 0))),
         # Note 1. Illustrative: every face nothing above controls within 0.5 of true to A|B|C.
-        pmi.general_profile("general", 0.5, datums=["A", "B", "C"]),
+        general_profile("general", 0.5, datums=["A", "B", "C"]),
         # Note 2, a general note, and Note 3, a flag note on the bore and its diameter.
-        pmi.note("edges", NOTES["edges"]),
-        pmi.note("mask", NOTES["primer-mask"], faces=[bore], annotations=["locating-bore"],
-                 presentation=pmi.place((0, -23, 8), (0, -16, 16))),
+        note("edges", NOTES["edges"]),
+        note("mask", NOTES["primer-mask"], faces=[bore], annotations=["locating-bore"],
+             presentation=place((0, -23, 8), (0, -16, 16))),
         # Section A-A across y through the bore's axis, keeping the far side (invert) so the front
         # camera, at -Y, looks at the cut; the bore's diameter drawn on it.
-        pmi.view("A-A", camera="front",
-                 shows=["base-thickness", "locating-bore", "locating-bore-position", "bore-from-C", "mask"],
-                 section=pmi.section("y", -18, invert=True),
-                 place={"locating-bore": pmi.place((5, -18, 4), (18, 0, 16))}),
-        pmi.view("iso", camera="iso"),  # shows every annotation and note
+        view("A-A", camera="front",
+             shows=["base-thickness", "locating-bore", "locating-bore-position", "bore-from-C", "mask"],
+             section=section("y", -18, invert=True),
+             place={"locating-bore": place((5, -18, 4), (18, 0, 16))}),
+        view("iso", camera="iso"),  # shows every annotation and note
         library=NOTES,
     )
 

@@ -44,7 +44,10 @@ MODEL = '''from __future__ import annotations
 # illustrative.
 import build123d as bd
 
-from cadgen import pmi, xbf
+from cadgen import xbf
+from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, general_profile,
+                          limits, note, place, plus_minus_tolerance, position_tolerance, section,
+                          surface_profile_tolerance, view)
 
 THICKNESS = {thickness}
 HOLE = "{hole}"
@@ -61,19 +64,21 @@ def edit_plate():
     cut = bd.Cylinder(RADIUS, THICKNESS) if HOLE == "round" else bd.Box(2 * RADIUS, 2 * RADIUS, THICKNESS)
     body = bd.Box(100, 60, THICKNESS) - cut
     body.label = "plate"
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.datum("A", BOTTOM, presentation=pmi.place((40, -20, -THICKNESS / 2), (0, -15, -10))),
-        pmi.distance("thickness", BOTTOM, TOP, tolerance={thickness_tolerance},
-                     presentation=pmi.place((50, 30, 0), (15, 0, 0))),
-        pmi.flatness("top-flatness", TOP, 0.05, presentation=pmi.place((-30, 20, THICKNESS / 2), (0, 15, 0))),
-        pmi.diameter("hole-diameter", HOLE_FACE, tolerance=pmi.plus_minus(0.1, 0),
-                     presentation=pmi.place((RADIUS, 0, THICKNESS / 2), (15, 15, 0))),
-        pmi.position("hole-position", HOLE_FACE, 0.1, datums=["A"],
-                     presentation=pmi.place((-RADIUS, 0, THICKNESS / 2), (-15, 15, 0))),
+        datum("A", BOTTOM, presentation=place((40, -20, -THICKNESS / 2), (0, -15, -10))),
+        dimensional_location("thickness", BOTTOM, TOP, tolerance={thickness_tolerance},
+                             presentation=place((50, 30, 0), (15, 0, 0))),
+        flatness_tolerance("top-flatness", TOP, 0.05, presentation=place((-30, 20, THICKNESS / 2), (0, 15, 0))),
+        dimensional_size("hole-diameter", HOLE_FACE, tolerance=plus_minus_tolerance(0.1, 0),
+                         presentation=place((RADIUS, 0, THICKNESS / 2), (15, 15, 0))),
+        position_tolerance("hole-position", HOLE_FACE, 0.1, datums=["A"],
+                           presentation=place((-RADIUS, 0, THICKNESS / 2), (-15, 15, 0))),
         # The hole's true position: basic distances from the front and the left side to its axis.
-        pmi.basic("hole-from-front", FRONT, HOLE_FACE, presentation=pmi.place((0, -15, THICKNESS / 2), (6, 0, 0))),
-        pmi.basic("hole-from-left", LEFT, HOLE_FACE, presentation=pmi.place((-25, 0, THICKNESS / 2), (0, 6, 0))),{definition}
+        dimensional_location("hole-from-front", FRONT, HOLE_FACE, basic=True,
+                             presentation=place((0, -15, THICKNESS / 2), (6, 0, 0))),
+        dimensional_location("hole-from-left", LEFT, HOLE_FACE, basic=True,
+                             presentation=place((-25, 0, THICKNESS / 2), (0, 6, 0))),{definition}
     )
 
 
@@ -83,22 +88,24 @@ if __name__ == "__main__":
 
 # v4's model-based definition, after the v1 plate's own annotations.
 DEFINITION = '''
-        pmi.profile("hole-profile", HOLE_FACE, 0.2, datums=["A"],
-                    presentation=pmi.place((0, RADIUS, THICKNESS / 2), (0, 15, 15))),
+        surface_profile_tolerance("hole-profile", HOLE_FACE, 0.2, datums=["A"],
+                                  presentation=place((0, RADIUS, THICKNESS / 2), (0, 15, 15))),
         # Note 1: every face nothing else controls (here the four sides) within 0.5 of true, to A.
-        pmi.general_profile("general", 0.5, datums=["A"]),
-        pmi.note("edges", NOTES["edges"]),
-        pmi.note("mask", NOTES["primer-mask"], faces=[HOLE_FACE], annotations=["hole-diameter"],
-                 presentation=pmi.place((0, -RADIUS, THICKNESS / 2), (0, -15, 15))),
+        general_profile("general", 0.5, datums=["A"]),
+        note("edges", NOTES["edges"]),
+        note("mask", NOTES["primer-mask"], faces=[HOLE_FACE], annotations=["hole-diameter"],
+             presentation=place((0, -RADIUS, THICKNESS / 2), (0, -15, 15))),
         # A section through the hole's axis; the far side kept (invert), so the front camera sees the cut.
-        pmi.view("A-A", camera="front", shows=["hole-diameter", "hole-position", "hole-profile", "mask"],
-                 section=pmi.section("y", 0, invert=True),
-                 place={"hole-diameter": pmi.place((RADIUS, 0, 0), (15, 0, 10))}),
-        pmi.view("iso", camera="iso"),
+        view("A-A", camera="front", shows=["hole-diameter", "hole-position", "hole-profile", "mask"],
+             section=section("y", 0, invert=True),
+             place={"hole-diameter": place((RADIUS, 0, 0), (15, 0, 10))}),
+        view("iso", camera="iso"),
         library=NOTES,'''
 
-VERSIONS = {"v1": (10, "round", 5, "pmi.plus_minus(0.2)", ""), "v2": (12, "round", 6, "pmi.plus_minus(0.2)", ""),
-            "v3": (12, "square", 6, "pmi.plus_minus(0.2)", ""), "v4": (10, "round", 5, "pmi.limits(9.8, 10.2)", DEFINITION)}
+VERSIONS = {"v1": (10, "round", 5, "plus_minus_tolerance(0.2)", ""),
+            "v2": (12, "round", 6, "plus_minus_tolerance(0.2)", ""),
+            "v3": (12, "square", 6, "plus_minus_tolerance(0.2)", ""),
+            "v4": (10, "round", 5, "limits(9.8, 10.2)", DEFINITION)}
 
 
 def main() -> None:
