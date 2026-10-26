@@ -109,9 +109,9 @@ class VerificationTest(unittest.TestCase):
     def test_the_committed_fixture_verifies_whole_basic_dimensions_included(self) -> None:
         """The plate's served PMI against its own exported STEP: every annotation, its two basic
         dimensions too (their 'theoretical' note), matched one to one."""
-        from cadgen.engine import pmi
+        from cadgen.engine.pmi import read
 
-        entries = pmi.read(GOLDEN / "pmi_plate.xbf")
+        entries = read(GOLDEN / "pmi_plate.xbf")
         self.assertEqual(sum(1 for entry in entries if (entry.get("dimension") or {}).get("basic")), 2)
         result = verify(entries, GOLDEN / "pmi_plate.step")
         self.assertEqual((result["matched"], result["total"], result["problems"]), (9, 9, []))

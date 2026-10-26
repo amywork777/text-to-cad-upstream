@@ -11,7 +11,7 @@ OCCT's own; a file no document (a mesh file, a robot) from the buffers its reade
   prototype's CLI (``python -m cadgen.engine.render.occt``); ``look.py`` the regular display modes'
   look, which ``occt.py`` draws by and ``serve.py`` serves to the viewer (``GET /api/look``);
   ``text.py`` and ``overlay.py`` the annotation's words and Measure's marks, as the page draws them;
-  ``presets.py`` the camera presets' one table, which ``snapshot.py`` and ``pmi.view`` read too.
+  ``presets.py`` the camera presets' one table, which ``snapshot.py`` and ``pmi.py``'s ``view`` read too.
 - ``explode.py``: the viewer's Explode, ported (held to the viewer by one golden).
 - ``pmi.py``: a document's PMI drawn as the viewer shows it, its layout ported (held to the viewer by
   one golden).

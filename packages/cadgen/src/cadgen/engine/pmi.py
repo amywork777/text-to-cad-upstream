@@ -1,9 +1,13 @@
 """Semantic PMI: manufacturing requirements on a part's own faces, kept in its XCAF document
 as XCAF's GD&T objects and written to STEP AP242 as AP242's semantic entities.
 
-A model gives its part annotations, each on faces of that part, and returns the part::
+A model gives its part annotations, each on faces of that part, and returns the part. The functions
+are defined here and are ``cadgen.ap242``'s, each named after the AP242 entity it writes (the root and
+``cadgen.engine`` export none of them)::
 
-    from cadgen.engine import pmi, step, xbf
+    from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance,
+                              plus_minus_tolerance, position_tolerance)
+    from cadgen.engine import step, xbf
 
     @xbf(out="XBF/plate.xbf")
     @step("plate.step")
@@ -12,12 +16,12 @@ A model gives its part annotations, each on faces of that part, and returns the 
         bottom = body.faces().sort_by(bd.Axis.Z)[0]
         top = body.faces().sort_by(bd.Axis.Z)[-1]
         hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
-        return pmi.annotate(body,
-            pmi.datum("A", bottom),
-            pmi.distance("thickness", bottom, top, tolerance=pmi.plus_minus(0.2)),
-            pmi.diameter("hole", hole, tolerance=pmi.plus_minus(0.1, 0)),
-            pmi.flatness("top-flat", top, 0.05),
-            pmi.position("hole-pos", hole, 0.1, datums=["A"]))
+        return annotate(body,
+            datum("A", bottom),
+            dimensional_location("thickness", bottom, top, tolerance=plus_minus_tolerance(0.2)),
+            dimensional_size("hole", hole, tolerance=plus_minus_tolerance(0.1, 0)),
+            flatness_tolerance("top-flat", top, 0.05),
+            position_tolerance("hole-pos", hole, 0.1, datums=["A"]))
 
 **What is held.** What the code says and what this build's geometry resolves, nothing else: XCAF's
 ``XCAFDimTolObjects`` objects on the GD&T tool's labels (``XCAFDoc_DimTolTool``) hold the kind,
@@ -72,9 +76,9 @@ of it) carries no views, notes or library yet, and is refused for any of them, b
 
 **Values.** A dimension's nominal is the geometry's, measured at document time: a cylinder's
 diameter, the distance between two parallel planes. No nominal is typed in. A tolerance is held
-only where the code gives one (``plus_minus``: signed deviations, upper above lower; ``limits``:
-the least and the greatest size, absolute). XCAF holds a dimension's lower deviation as a
-magnitude and the STEP writer negates it, so ``plus_minus(0.2)`` is written
+only where the code gives one (``plus_minus_tolerance``: signed deviations, upper above lower;
+``limits``: the least and the greatest size, absolute). XCAF holds a dimension's lower deviation as
+a magnitude and the STEP writer negates it, so ``plus_minus_tolerance(0.2)`` is written
 ``TOLERANCE_VALUE(-0.2, 0.2)``; the conversion is this module's, both ways. XCAF holds limits as a
 dimension's two values in place of its nominal, its value then their midpoint, which the STEP
 writer writes as the nominal value beside CAx-IF's ``'lower limit'`` and ``'upper limit'`` items:
@@ -138,9 +142,10 @@ tolerance, marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); f
 with an ordered datum reference frame and a diametral zone; a surface profile on one face or
 several, of any kind, with a frame of up to three datums or none; a part's general profile, on
 the faces nothing else controls; and, in the xbf alone, general and flag notes, a part's notes
-library and its named views. Every
-other XCAF characteristic, dimension type, modifier and tolerance form is refused by name
-(``PMIUnsupported``), never approximated. PMI is part-level: an annotation is on one part, and an
+library and its named views. Each
+is written by the function named after its AP242 entity (``cadgen.ap242``'s); no function writes
+another XCAF characteristic or dimension type, and every other modifier and tolerance form is
+refused by name (``PMIUnsupported``), never approximated. PMI is part-level: an annotation is on one part, and an
 assembly is refused.
 """
 
@@ -152,10 +157,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-__all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "basic", "camera",
-           "coverage", "datum", "diameter", "dimension", "distance", "flatness", "general_profile", "geometric",
-           "limits", "note", "otherwise_controlled", "place", "plus_minus", "position", "profile", "read", "section",
-           "step_entries", "view"]
+__all__ = ["PMIError", "PMIUnsupported", "annotate", "camera", "coverage", "datum", "dimensional_location",
+           "dimensional_size", "flatness_tolerance", "general_profile", "limits", "note", "otherwise_controlled",
+           "place", "plus_minus_tolerance", "position_tolerance", "read", "section", "step_entries",
+           "surface_profile_tolerance", "view"]
 
 # The attribute an annotated shape holds its annotations in (a tuple of plain dicts), as a part's
 # configurations are held (``kernel.memo`` keys it).
@@ -181,16 +186,6 @@ STATUSES = ("ok", "missing", "ambiguous", "invalid")
 THEORETICAL = ("dimensional note", "theoretical")
 UNIT = "mm"
 
-# The dimension types and geometric characteristics written and read back, verified; every other
-# XCAF one is refused by name.
-DIMENSION_TYPES = ("diameter", "distance")
-GEOMETRIC_CHARACTERISTICS = ("flatness", "position", "surface_profile")
-# XCAF's other characteristics, so a request for one is refused as unsupported rather than unknown.
-_XCAF_CHARACTERISTICS = ("angularity", "circular_runout", "circularity_or_roundness", "coaxiality", "concentricity",
-                         "cylindricity", "flatness", "line_profile", "parallelism", "perpendicularity", "position",
-                         "straightness", "surface_profile", "symmetry", "total_runout")
-_XCAF_DIMENSION_TYPES = ("diameter", "distance", "radius", "angle", "curved_distance", "linear_distance",
-                         "spherical_diameter", "spherical_radius", "toroidal_minor_diameter", "thickness")
 # Every kind of face, as ``_surface`` names OCCT's surface types (``GeomAbs_SurfaceType``).
 _EVERY_SURFACE = ("plane", "cylinder", "cone", "sphere", "torus", "beziersurface", "bsplinesurface",
                   "surfaceofrevolution", "surfaceofextrusion", "offsetsurface", "othersurface")
@@ -214,9 +209,10 @@ class PMIUnsupported(PMIError):
 # --- authoring -------------------------------------------------------------------------------
 
 
-def plus_minus(upper: float, lower: float | None = None) -> dict[str, Any]:
-    """A plus-minus tolerance: signed deviations from the nominal, ``lower`` below ``upper``
-    (``-upper`` when not given: ``plus_minus(0.2)`` is ±0.2; ``plus_minus(0.1, 0)`` is +0.1/0)."""
+def plus_minus_tolerance(upper: float, lower: float | None = None) -> dict[str, Any]:
+    """A dimension's ``plus_minus_tolerance``: signed deviations from the nominal, ``lower`` below
+    ``upper`` (``-upper`` when not given: ``plus_minus_tolerance(0.2)`` is ±0.2;
+    ``plus_minus_tolerance(0.1, 0)`` is +0.1/0)."""
     upper = _number(upper, "a tolerance's upper deviation")
     lower = -upper if lower is None else _number(lower, "a tolerance's lower deviation")
     if not upper > lower:
@@ -227,7 +223,8 @@ def plus_minus(upper: float, lower: float | None = None) -> dict[str, Any]:
 def limits(lower: float, upper: float) -> dict[str, Any]:
     """Limits: the least and the greatest size, absolute millimetres, ``upper`` above ``lower``
     (``limits(10.0, 10.05)`` is 10.00–10.05). In place of deviations; the nominal is still
-    measured."""
+    measured. Written as the dimension's ``'lower limit'`` and ``'upper limit'`` values, no entity
+    of their own."""
     lower = _number(lower, "a dimension's lower limit")
     upper = _number(upper, "a dimension's upper limit")
     if not lower > 0:
@@ -249,79 +246,43 @@ def _place(anchor: Any, offset: Any) -> dict[str, Any]:
 
 
 def datum(letter: str, ref: Any, *, label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
-    """Datum ``letter`` (``A``..``Z``) on a planar or cylindrical face. Its id is its letter."""
+    """AP242's ``datum`` ``letter`` (``A``..``Z``) and its ``datum_feature``, on a planar or
+    cylindrical face. Its id is its letter."""
     if not isinstance(letter, str) or len(letter) != 1 or not letter.isascii() or not letter.isupper():
         raise PMIError(f"a datum's letter is one capital A..Z, not {letter!r}")
     return _annotation(letter, "datum", [("feature", ref)], label, presentation, datum={"letter": letter})
 
 
-def dimension(id: str, type: str, *refs: Any, tolerance: dict | None = None, basic: bool = False,
-              label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
-    """A dimension of ``type`` (``DIMENSION_TYPES``) between ``refs``; its nominal is measured
-    from the geometry. ``basic``: theoretically exact (ASME's basic, ISO's theoretical), a
-    distance with no tolerance that locates what a geometric tolerance controls. Other types
-    are refused (``PMIUnsupported``)."""
+def dimensional_size(id: str, ref: Any, *, tolerance: dict | None = None, label: str | None = None,
+                     presentation: dict | None = None) -> dict[str, Any]:
+    """AP242's ``dimensional_size`` named 'diameter': the diameter of a cylindrical face (a hole, a
+    boss), measured from the geometry; ``tolerance`` given explicitly (``plus_minus_tolerance`` or
+    ``limits``)."""
+    return _annotation(id, "dimension", [("feature", ref)], label, presentation,
+                       dimension={"type": "diameter", "basic": False, "tolerance": _tolerance(tolerance, id)})
+
+
+def dimensional_location(id: str, ref_from: Any, ref_to: Any, *, tolerance: dict | None = None, basic: bool = False,
+                         label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
+    """AP242's ``dimensional_location``: the distance between two parallel planar faces, measured
+    from the geometry; ``tolerance`` given explicitly (``plus_minus_tolerance`` or ``limits``).
+    ``basic``: theoretically exact (ASME's basic, ISO's theoretical), with no tolerance -- between
+    two parallel planes, from a plane to a hole's axis parallel to it, or between two parallel axes:
+    what a position tolerance's true position is located by."""
     if basic and tolerance is not None:
-        raise PMIError(f"dimension {id!r}: a basic dimension is theoretically exact: it takes no tolerance")
-    if basic and type != "distance":
-        raise PMIUnsupported(f"dimension {id!r}: a basic {type} is not written verified yet; a basic dimension "
-                             "is a distance")
-    if type not in DIMENSION_TYPES:
-        if type in _XCAF_DIMENSION_TYPES:
-            raise PMIUnsupported(f"dimension {id!r}: a {type} dimension is not written verified yet; "
-                                 f"the types are {', '.join(DIMENSION_TYPES)}")
-        raise PMIError(f"dimension {id!r}: no dimension type {type!r}; the types are {', '.join(DIMENSION_TYPES)}")
-    wanted = 1 if type == "diameter" else 2
-    if len(refs) != wanted:
-        raise PMIError(f"dimension {id!r}: a {type} dimension is on {wanted} face{'s' if wanted > 1 else ''}, "
-                       f"not {len(refs)}")
-    roles = ["feature"] if wanted == 1 else ["from", "to"]
-    return _annotation(id, "dimension", list(zip(roles, refs)), label, presentation,
-                       dimension={"type": type, "basic": bool(basic), "tolerance": _tolerance(tolerance, id)})
-
-
-def diameter(id: str, ref: Any, *, tolerance: dict | None = None, label: str | None = None,
-             presentation: dict | None = None) -> dict[str, Any]:
-    """The diameter of a cylindrical face (a hole, a boss), measured; ``tolerance`` given explicitly."""
-    return dimension(id, "diameter", ref, tolerance=tolerance, label=label, presentation=presentation)
-
-
-def distance(id: str, ref_from: Any, ref_to: Any, *, tolerance: dict | None = None, label: str | None = None,
-             presentation: dict | None = None) -> dict[str, Any]:
-    """The distance between two parallel planar faces, measured; ``tolerance`` given explicitly."""
-    return dimension(id, "distance", ref_from, ref_to, tolerance=tolerance, label=label, presentation=presentation)
-
-
-def basic(id: str, ref_from: Any, ref_to: Any, *, label: str | None = None,
-          presentation: dict | None = None) -> dict[str, Any]:
-    """A basic (theoretically exact) distance, measured, with no tolerance: between two parallel
-    planes, from a plane to a hole's axis parallel to it, or between two parallel axes. What a
-    position tolerance's true position is located by."""
-    return dimension(id, "distance", ref_from, ref_to, basic=True, label=label, presentation=presentation)
-
-
-def geometric(id: str, characteristic: str, ref: Any, value: float, *, datums: Iterable[str] = (),
-              diameter_zone: bool = False, label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
-    """A geometric tolerance of ``characteristic`` (``GEOMETRIC_CHARACTERISTICS``) of ``value``
-    millimetres on one face (a surface profile: on one, or on each of a list of them), referring
-    to ``datums`` in order (primary first); a diametral zone with ``diameter_zone``. Other
-    characteristics are refused (``PMIUnsupported``)."""
-    refs = list(ref) if characteristic == "surface_profile" and isinstance(ref, (list, tuple)) else [ref]
-    if not refs:
-        raise PMIError(f"tolerance {id!r}: a surface profile is on one face or more, not none")
-    return _geometric(id, characteristic, refs, value, datums, diameter_zone, label, presentation, general=False)
+        raise PMIError(f"dimensional_location({id!r}, basic=True): a basic dimension is theoretically exact: it "
+                       "takes no tolerance")
+    return _annotation(id, "dimension", [("from", ref_from), ("to", ref_to)], label, presentation,
+                       dimension={"type": "distance", "basic": bool(basic), "tolerance": _tolerance(tolerance, id)})
 
 
 def _geometric(id: str, characteristic: str, refs: list[Any], value: float, datums: Iterable[str],
                diameter_zone: bool, label: str | None, presentation: dict | None, *, general: bool) -> dict[str, Any]:
-    """A geometric tolerance on ``refs`` (``geometric``); ``general``: the part's general profile,
-    on no ref the code writes (``general_profile``)."""
-    if characteristic not in GEOMETRIC_CHARACTERISTICS:
-        if characteristic in _XCAF_CHARACTERISTICS:
-            raise PMIUnsupported(f"tolerance {id!r}: {characteristic} is not written verified yet; the "
-                                 f"characteristics are {', '.join(GEOMETRIC_CHARACTERISTICS)}")
-        raise PMIError(f"tolerance {id!r}: no characteristic {characteristic!r}; the characteristics are "
-                       f"{', '.join(GEOMETRIC_CHARACTERISTICS)}")
+    """A geometric tolerance of ``characteristic`` (``flatness``, ``position``, ``surface_profile``)
+    of ``value`` millimetres on ``refs``, referring to ``datums`` in order (primary first), a
+    diametral zone with ``diameter_zone``: what ``flatness_tolerance``, ``position_tolerance`` and
+    ``surface_profile_tolerance`` check alike. ``general``: the part's general profile, on no ref
+    the code writes (``general_profile``)."""
     value = _number(value, f"tolerance {id!r}'s value")
     if not value > 0:
         raise PMIError(f"tolerance {id!r}: a tolerance zone is wider than 0, not {value}")
@@ -333,38 +294,37 @@ def _geometric(id: str, characteristic: str, refs: list[Any], value: float, datu
         raise PMIError(f"tolerance {id!r}: a datum is named once in a frame, not {letters}")
     if len(letters) > 3:
         raise PMIError(f"tolerance {id!r}: a datum reference frame has three datums at most, not {len(letters)}")
-    if characteristic == "flatness" and (letters or diameter_zone):
-        raise PMIError(f"tolerance {id!r}: flatness is a form tolerance, with no datum and no diametral zone")
     if characteristic == "position" and not letters:
         raise PMIUnsupported(f"tolerance {id!r}: a position with no datum is not written verified yet; name its datums")
-    if characteristic == "surface_profile" and diameter_zone:
-        raise PMIError(f"tolerance {id!r}: a surface profile's zone is a width about the profile: no diametral zone")
     return _annotation(id, "geometric_tolerance", [("feature", given) for given in refs], label, presentation,
                        geometric_tolerance={"characteristic": characteristic, "value": value, "unit": UNIT,
                                             "zone": "diameter" if diameter_zone else None, "modifier": None,
                                             "datums": letters, "general": general})
 
 
-def flatness(id: str, ref: Any, value: float, *, label: str | None = None,
-             presentation: dict | None = None) -> dict[str, Any]:
-    """Flatness of ``value`` millimetres on a planar face."""
-    return geometric(id, "flatness", ref, value, label=label, presentation=presentation)
+def flatness_tolerance(id: str, ref: Any, value: float, *, label: str | None = None,
+                       presentation: dict | None = None) -> dict[str, Any]:
+    """AP242's ``flatness_tolerance``: flatness of ``value`` millimetres on a planar face, a form
+    tolerance, with no datum."""
+    return _geometric(id, "flatness", [ref], value, (), False, label, presentation, general=False)
 
 
-def position(id: str, ref: Any, value: float, *, datums: Iterable[str], diameter_zone: bool = True,
-             label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
-    """Position of a cylindrical feature (a hole's axis), ``value`` millimetres, a diametral
-    zone by default, relative to ``datums`` in order."""
-    return geometric(id, "position", ref, value, datums=datums, diameter_zone=diameter_zone, label=label,
-                     presentation=presentation)
+def position_tolerance(id: str, ref: Any, value: float, *, datums: Iterable[str], diameter_zone: bool = True,
+                       label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
+    """AP242's ``position_tolerance``: the position of a cylindrical feature (a hole's axis),
+    ``value`` millimetres, a diametral zone by default, relative to ``datums`` in order."""
+    return _geometric(id, "position", [ref], value, datums, diameter_zone, label, presentation, general=False)
 
 
-def profile(id: str, refs: Any, value: float, *, datums: Iterable[str] = (), label: str | None = None,
-            presentation: dict | None = None) -> dict[str, Any]:
-    """The profile of a surface, ``value`` millimetres wide about its true profile: on a face, or
-    on each of a list of faces of any kind (one requirement on all of them), relative to
-    ``datums`` in order (none to three)."""
-    return geometric(id, "surface_profile", refs, value, datums=datums, label=label, presentation=presentation)
+def surface_profile_tolerance(id: str, refs: Any, value: float, *, datums: Iterable[str] = (),
+                              label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
+    """AP242's ``surface_profile_tolerance``: the profile of a surface, ``value`` millimetres wide
+    about its true profile: on a face, or on each of a list of faces of any kind (one requirement on
+    all of them), relative to ``datums`` in order (none to three)."""
+    found = list(refs) if isinstance(refs, (list, tuple)) else [refs]
+    if not found:
+        raise PMIError(f"tolerance {id!r}: a surface profile is on one face or more, not none")
+    return _geometric(id, "surface_profile", found, value, datums, False, label, presentation, general=False)
 
 
 def general_profile(id: str, value: float, *, datums: Iterable[str] = (), label: str | None = None) -> dict[str, Any]:
@@ -372,8 +332,8 @@ def general_profile(id: str, value: float, *, datums: Iterable[str] = (), label:
     (none to three): ASME Y14.5's "unless otherwise noted, all surfaces", a surface profile of every
     face of the part that nothing else controls (``otherwise_controlled``), its faces computed by
     each build from that build's annotations and geometry. Not XCAF's ``All_Over`` modifier (every
-    surface, beside any other requirement): it is written as a surface profile on exactly the faces
-    it covers. One per part."""
+    surface, beside any other requirement): it is written as a ``surface_profile_tolerance`` on
+    exactly the faces it covers. One per part."""
     return _geometric(id, "surface_profile", [], value, datums, False, label, None, general=True)
 
 
@@ -425,10 +385,10 @@ def _section(axis: Any, at: Any, invert: Any) -> dict[str, Any]:
 def view(name: str, *, camera: str | dict, shows: Sequence[str] | None = None, section: dict | None = None,
          place: Mapping[str, dict] | None = None, label: str | None = None) -> dict[str, Any]:
     """A named view of the part, given to ``annotate`` among its annotations: seen down ``camera``
-    (a preset's name, ``cadgen snapshot --camera``'s, or ``pmi.camera(direction, up)``), orthographic,
-    cut by ``section`` (``pmi.section``) where it has one, showing the annotations and notes of the
+    (a preset's name, ``cadgen snapshot --camera``'s, or ``camera(direction, up)``), orthographic,
+    cut by ``section`` (``section``) where it has one, showing the annotations and notes of the
     same call ``shows`` names by id (None: every one, as an iso view does), each it ``place``-s by
-    id drawn there in this view (``pmi.place``) and elsewhere as its own presentation says. Its
+    id drawn there in this view (``place``) and elsewhere as its own presentation says. Its
     name is unique among its part's views. Kept in the xbf as an XCAF view, never in a STEP."""
     from cadgen.engine.render.presets import PRESETS
 
@@ -437,7 +397,7 @@ def view(name: str, *, camera: str | dict, shows: Sequence[str] | None = None, s
     if label is not None and not isinstance(label, str):
         raise PMIError(f"view {name!r}: a label is a string, not {label!r}")
     if not (camera in PRESETS if isinstance(camera, str) else _is_camera(camera)):
-        raise PMIError(f"view {name!r}: a camera is a preset ({', '.join(sorted(PRESETS))}) or pmi.camera(direction, "
+        raise PMIError(f"view {name!r}: a camera is a preset ({', '.join(sorted(PRESETS))}) or camera(direction, "
                        f"up), not {camera!r}")
     named = None if shows is None else [shows] if isinstance(shows, str) else list(shows)
     for at, given in enumerate(named or ()):
@@ -447,14 +407,14 @@ def view(name: str, *, camera: str | dict, shows: Sequence[str] | None = None, s
             raise PMIError(f"view {name!r} shows {given!r} twice; a view shows each annotation once")
     if section is not None:
         if not isinstance(section, dict) or set(section) != {"axis", "at", "invert"}:
-            raise PMIError(f"view {name!r}: a section is pmi.section(axis, at), not {section!r}")
+            raise PMIError(f"view {name!r}: a section is section(axis, at), not {section!r}")
         section = _section(section["axis"], section["at"], section["invert"])
     placed: dict[str, Any] = {}
     for id, given in (place or {}).items():
         if not isinstance(id, str) or not id.strip():
             raise PMIError(f"view {name!r}: an annotation is placed by its id, not {id!r}")
         if not isinstance(given, dict) or set(given) != {"anchor", "offset"}:
-            raise PMIError(f"view {name!r}: a placement is pmi.place(anchor, offset), not {given!r}")
+            raise PMIError(f"view {name!r}: a placement is place(anchor, offset), not {given!r}")
         placed[id] = _place(given["anchor"], given["offset"])
     return {"pmi": 1, "kind": "view", "name": name, "label": label,
             "camera": camera if isinstance(camera, str) else {"direction": list(camera["direction"]),
@@ -499,9 +459,9 @@ def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str
     import build123d as bd
 
     if not isinstance(shape, bd.Shape) or getattr(shape, "wrapped", None) is None:
-        raise PMIError(f"pmi.annotate() takes the part its annotations are on, not {type(shape).__name__}")
+        raise PMIError(f"annotate() takes the part its annotations are on, not {type(shape).__name__}")
     if getattr(shape, "children", None):
-        raise PMIUnsupported("pmi.annotate() is given one part: assembly-level PMI is not written yet; annotate "
+        raise PMIUnsupported("annotate() is given one part: assembly-level PMI is not written yet; annotate "
                              "each part")
     held: list[dict[str, Any]] = []
     views: list[dict[str, Any]] = []
@@ -510,7 +470,7 @@ def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str
     faces = None
     for given in annotations:
         if not isinstance(given, dict) or given.get("pmi") != 1:
-            raise PMIError(f"pmi.annotate() takes annotations made by pmi.datum(), pmi.diameter(), ...: "
+            raise PMIError(f"annotate() takes annotations made by datum(), dimensional_size(), ...: "
                            f"not {given!r}")
         if given["kind"] == "view":
             if any(other["name"] == given["name"] for other in views):
@@ -549,7 +509,7 @@ def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str
     for entry in held:
         for named in (entry.get("note") or {}).get("annotations") or ():
             if named not in kinds:
-                raise PMIError(f"note {entry['id']!r} names {named!r}, which is no annotation of this pmi.annotate() "
+                raise PMIError(f"note {entry['id']!r} names {named!r}, which is no annotation of this annotate() "
                                f"call; its ids are {', '.join(map(repr, kinds))}")
             if kinds[named] == "note":
                 raise PMIError(f"note {entry['id']!r} names note {named!r}: a note names annotations, not notes")
@@ -558,7 +518,7 @@ def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str
         for named in [*(shown or ()), *given["place"]]:
             if named not in kinds:
                 raise PMIError(f"view {given['name']!r} {'shows' if named in (shown or ()) else 'places'} {named!r}, "
-                               f"which is no annotation of this pmi.annotate() call; its ids are "
+                               f"which is no annotation of this annotate() call; its ids are "
                                f"{', '.join(map(repr, kinds)) or 'none'}")
             if shown is not None and named not in shown:
                 raise PMIError(f"view {given['name']!r} places {named!r}, which it does not show; its shows are "
@@ -575,7 +535,7 @@ def _library_entry(library: Any) -> list[dict[str, Any]]:
     """A part's notes library as ``annotate`` holds it among its annotations: one entry of kind
     ``library``, each note's name and text in the project's order; none for an empty one."""
     if not isinstance(library, Mapping):
-        raise PMIError("pmi.annotate(library=...): a library is a project's notes by name, a dict of each note's "
+        raise PMIError("annotate(library=...): a library is a project's notes by name, a dict of each note's "
                        f"name to its text, not {type(library).__name__}")
     found = []
     for name, text in library.items():
@@ -615,7 +575,7 @@ def _annotation(id: str, kind: str, refs: list[tuple[str, Any]], label: str | No
             raise PMIError(f"annotation {id!r}: a ref is a face of the part -- a build123d Face, or a ref such as "
                            f"'f:plate.body.6' or 'face 7' -- not {type(target).__name__}")
     if presentation is not None and (not isinstance(presentation, dict) or set(presentation) != {"anchor", "offset"}):
-        raise PMIError(f"annotation {id!r}: a presentation is pmi.place(anchor, offset)")
+        raise PMIError(f"annotation {id!r}: a presentation is place(anchor, offset)")
     return {"pmi": 1, "id": id, "kind": kind, "label": label, "presentation": presentation,
             "refs": [{"role": role, "target": target} for role, target in refs], **values}
 
@@ -629,7 +589,7 @@ def _tolerance(tolerance: dict | None, id: str) -> dict | None:
     if tolerance is None:
         return None
     if not isinstance(tolerance, dict) or tolerance.get("type") not in ("plus_minus", "limits"):
-        raise PMIUnsupported(f"dimension {id!r}: a tolerance is pmi.plus_minus(...) or pmi.limits(...); fits and "
+        raise PMIUnsupported(f"dimension {id!r}: a tolerance is plus_minus_tolerance(...) or limits(...); fits and "
                              "general tolerances are not written yet")
     return dict(tolerance)
 
@@ -1408,8 +1368,8 @@ def _dimension(label: Any, spec: dict[str, Any], nominal: float | None) -> None:
 
 
 def _xcaf_characteristics() -> dict[str, Any]:
-    """XCAF's type of each characteristic held (``GEOMETRIC_CHARACTERISTICS``): what a tolerance is
-    written as and read back by."""
+    """XCAF's type of each characteristic held (``flatness_tolerance``, ``position_tolerance``,
+    ``surface_profile_tolerance``): what a tolerance is written as and read back by."""
     from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_GeomToleranceType_Flatness,
                                         XCAFDimTolObjects_GeomToleranceType_Position,
                                         XCAFDimTolObjects_GeomToleranceType_ProfileOfSurface)

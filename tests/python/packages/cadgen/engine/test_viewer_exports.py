@@ -65,8 +65,9 @@ class ViewerExportsTest(unittest.TestCase):
                 self.assertNotIn("pmiVerification", result["files"][0])
             root = Path(folder).resolve()
             script = root / "plate.py"
-            script.write_text('from cadgen import pmi, xbf\nimport build123d as bd\n@xbf("plate.xbf")\ndef plate():\n'
-                              '    return pmi.annotate(bd.Box(2, 3, 4), pmi.note("deburr", "Break all sharp edges 0.2 max"))\n',
+            script.write_text('from cadgen import xbf\nfrom cadgen.ap242 import annotate, note\nimport build123d as bd\n'
+                              '@xbf("plate.xbf")\ndef plate():\n'
+                              '    return annotate(bd.Box(2, 3, 4), note("deburr", "Break all sharp edges 0.2 max"))\n',
                               encoding="utf-8")
             reports = building.build(script, ["plate"], cwd=root)
             self.assertTrue(reports[0]["ok"], reports)

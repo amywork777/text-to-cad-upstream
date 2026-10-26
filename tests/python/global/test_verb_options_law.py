@@ -60,7 +60,7 @@ class ExportTakesADocumentAndDestinations(unittest.TestCase):
 
 
 class SnapshotTakesThePictureAlone(unittest.TestCase):
-    # ``view``: a part's named view (``pmi.view``) the picture is drawn as -- its camera, its section
+    # ``view``: a part's named view (``cadgen.ap242``'s ``view``) the picture is drawn as -- its camera, its section
     # and the PMI it shows -- about the picture, as ``camera`` is, never the model.
     PICTURE = ("display", "camera", "grid", "preview", "pose", "width", "height", "size_profile", "daemon",
                "annotation", "measurements", "view")

@@ -3,12 +3,14 @@ and the files they declare.
 
 The root exports exactly the engine's surface -- ``model``, the decorators (``xbf``, ``step``,
 ``glb``, ``stl``, ``threemf``, ``dxf``), ``memo``, materials (``Material``, ``materials``,
-``paint``), PMI (``pmi``), the readers (``read_step``, ``read_xbf``, ``read_mesh``) -- its operations on
+``paint``), the readers (``read_step``, ``read_xbf``, ``read_mesh``) -- its operations on
 documents as functions (``export``, ``snapshot``, ``inspect``) and ``__version__``; process
 control (``cadgen serve``, ``status``, ``stop``, ``server``) is the ``cadgen`` command's alone. Two
 namespaces hold the standards' names: ``cadgen.ap242`` the mechanism's (``mechanism_state``,
 ``configuration_sequence``, ``gear_pair``, ``rack_and_pinion_pair``, ``screw_pair``, ``posed``) and
-``cadgen.gltf`` a GLB's own ``animation``. Every name loads on first use: ``import cadgen``
+PMI's (``annotate``, ``datum``, ``dimensional_size``, ``dimensional_location``,
+``plus_minus_tolerance``, ``flatness_tolerance``, ``position_tolerance``,
+``surface_profile_tolerance``, ...), and ``cadgen.gltf`` a GLB's own ``animation``. Every name loads on first use: ``import cadgen``
 imports no CAD kernel, and ``import build123d`` binds a module the kernel loads into on its
 first attribute (``_internal/lazy_kernel.py``).
 """
@@ -58,7 +60,7 @@ del _install_engine_host
 # The engine's surface (``cadgen.engine.__all__``) and its operations on documents as functions
 # (``cadgen.engine.api``).
 _ENGINE = ("model", "xbf", "memo", "step", "glb", "stl", "threemf", "dxf", "Material", "materials", "paint",
-           "pmi", "read_step", "read_xbf", "read_mesh")
+           "read_step", "read_xbf", "read_mesh")
 _VERBS = ("export", "snapshot", "inspect")
 
 __all__ = [
@@ -93,7 +95,7 @@ if _TYPE_CHECKING:
     # Mirrors the lazy __getattr__ above so type checkers and editors see the root exports
     # without importing OCP. Every name here must have a branch there, and comes from the
     # module that defines it.
-    from cadgen.engine import materials, pmi
+    from cadgen.engine import materials
     from cadgen.engine.api import export, inspect, snapshot
     from cadgen.engine.materials import Material
     from cadgen.engine.model import (

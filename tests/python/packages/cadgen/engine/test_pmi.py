@@ -33,9 +33,14 @@ import time
 import unittest
 from pathlib import Path
 
+from cadgen.ap242 import (annotate, camera, datum, dimensional_location, dimensional_size, flatness_tolerance,
+                          general_profile, limits, note, place, plus_minus_tolerance, position_tolerance, section,
+                          surface_profile_tolerance, view)
 from cadgen.engine import build as engine_build
-from cadgen.engine import document, export, pmi
+from cadgen.engine import document, export
 from cadgen.engine.export import ap242
+from cadgen.engine.pmi import (PMI, PMIError, PMIUnsupported, _faces, _ref, _resolved_part, _surface, coverage, dropped,
+                               otherwise_controlled, read, records_of_document, refuse_dropped)
 
 FIXTURE = Path(__file__).resolve().parent / "pmi_golden"
 WRITE = os.environ.get("CADGEN_RENDER_GOLDENS") == "write"
@@ -46,7 +51,9 @@ WRITE = os.environ.get("CADGEN_RENDER_GOLDENS") == "write"
 # views). Tolerance values ILLUSTRATIVE.
 PLATE = '''
 import build123d as bd
-from cadgen.engine import materials, pmi, step, xbf
+from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, place,
+                          plus_minus_tolerance, position_tolerance)
+from cadgen.engine import materials, step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -60,20 +67,20 @@ def pmi_plate():
     front = body.faces().sort_by(bd.Axis.Y)[0]
     left = body.faces().sort_by(bd.Axis.X)[0]
     hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.datum("A", bottom, presentation=pmi.place((40, -20, -5), (0, -15, -10))),
-        pmi.datum("B", front, presentation=pmi.place((40, -30, 0), (0, -15, 0))),
-        pmi.datum("C", left, presentation=pmi.place((-50, 20, 0), (-15, 0, 0))),
-        pmi.distance("thickness", bottom, top, tolerance=pmi.plus_minus({thickness_tolerance}),
-                     presentation=pmi.place((50, 30, 0), (15, 0, 0))),
-        pmi.diameter("hole-diameter", hole, tolerance=pmi.plus_minus(0.1, 0),
-                     presentation=pmi.place((5, 0, 5), (15, 15, 0))),
-        pmi.flatness("top-flatness", top, 0.05, presentation=pmi.place((-30, 20, 5), (0, 15, 0))),
-        pmi.position("hole-position", hole, 0.1, datums=["A", "B", "C"],
-                     presentation=pmi.place((-5, 0, 5), (-15, 15, 0))),
-        pmi.basic("hole-from-B", front, hole, presentation=pmi.place((0, -15, 5), (6, 0, 0))),
-        pmi.basic("hole-from-C", left, hole, presentation=pmi.place((-25, 0, 5), (0, 6, 0))),
+        datum("A", bottom, presentation=place((40, -20, -5), (0, -15, -10))),
+        datum("B", front, presentation=place((40, -30, 0), (0, -15, 0))),
+        datum("C", left, presentation=place((-50, 20, 0), (-15, 0, 0))),
+        dimensional_location("thickness", bottom, top, tolerance=plus_minus_tolerance({thickness_tolerance}),
+                             presentation=place((50, 30, 0), (15, 0, 0))),
+        dimensional_size("hole-diameter", hole, tolerance=plus_minus_tolerance(0.1, 0),
+                         presentation=place((5, 0, 5), (15, 15, 0))),
+        flatness_tolerance("top-flatness", top, 0.05, presentation=place((-30, 20, 5), (0, 15, 0))),
+        position_tolerance("hole-position", hole, 0.1, datums=["A", "B", "C"],
+                           presentation=place((-5, 0, 5), (-15, 15, 0))),
+        dimensional_location("hole-from-B", front, hole, basic=True, presentation=place((0, -15, 5), (6, 0, 0))),
+        dimensional_location("hole-from-C", left, hole, basic=True, presentation=place((-25, 0, 5), (0, 6, 0))),
     )
 '''
 
@@ -133,7 +140,7 @@ def _face(loaded: document.Loaded, entry: dict, at: int = 0) -> tuple[str, dict]
 
     [hit] = resolve_structure(loaded.structure(), entry["refs"][at]["ref"])
     prototype = loaded.prototypes[hit.node.payload["prototype"]]
-    return pmi._surface(pmi._faces(prototype.shape).FindKey(hit.ordinal))
+    return _surface(_faces(prototype.shape).FindKey(hit.ordinal))
 
 
 class PlateTest(_Folder):
@@ -186,9 +193,9 @@ class PlateTest(_Folder):
 
     def test_the_step_carries_the_same_pmi_to_occt_and_to_a_reader_of_no_occt(self) -> None:
         self.build(plate())
-        ours = _by_id(pmi.read(self.xbf))
+        ours = _by_id(read(self.xbf))
         # OCCT's XCAF reader: the same kinds, values and faces (ids are the engine's, not the file's).
-        theirs = pmi.read(self.step)
+        theirs = read(self.step)
         self.assertEqual(len(theirs), len(ours))
 
         def meaning(entry: dict) -> tuple:
@@ -250,7 +257,7 @@ class PlateTest(_Folder):
     def test_an_edit_of_the_geometry_is_measured_again(self) -> None:
         self.build(plate())
         self.build(plate(thickness=12, radius=6))
-        found = _by_id(pmi.read(self.xbf))
+        found = _by_id(read(self.xbf))
         self.assertEqual(found["thickness"]["dimension"]["nominal"]["value"], 12.0)
         self.assertEqual(found["hole-diameter"]["dimension"]["nominal"]["value"], 12.0)
         # The tolerances are the code's, unchanged by the geometry.
@@ -265,7 +272,7 @@ class PlateTest(_Folder):
     def test_an_edit_of_a_tolerance_alone_is_written(self) -> None:
         self.build(plate())
         self.build(plate(thickness_tolerance=0.3))
-        found = _by_id(pmi.read(self.xbf))
+        found = _by_id(read(self.xbf))
         self.assertEqual(found["thickness"]["dimension"]["tolerance"], {"type": "plus_minus", "upper": 0.3, "lower": -0.3})
         location = next(e for e in ap242.report(self.step)["dimensions"]
                         if e["entity"] == "DIMENSIONAL_LOCATION" and not e["notes"])
@@ -292,7 +299,8 @@ def pmi_plate():
 # A plate whose hole is named by its element name, as a viewer's Quick Edit writes it.
 NAMED = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, datum, dimensional_size, plus_minus_tolerance
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -302,10 +310,10 @@ def pmi_plate():
     {cut}
     body.label = "plate"
     bottom = body.faces().sort_by(bd.Axis.Z)[0]
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.datum("A", bottom),
-        pmi.diameter("hole-diameter", "{ref}", tolerance=pmi.plus_minus(0.1, 0)),
+        datum("A", bottom),
+        dimensional_size("hole-diameter", "{ref}", tolerance=plus_minus_tolerance(0.1, 0)),
     )
 '''
 
@@ -341,20 +349,21 @@ class BasicTest(_Folder):
             (30.0, "mm", None, [["dimensional note", "theoretical"]], ["plane", "cylinder"]),
             (50.0, "mm", None, [["dimensional note", "theoretical"]], ["plane", "cylinder"])])
         theirs = sorted((e["dimension"]["nominal"]["value"], e["dimension"]["basic"])
-                        for e in pmi.read(self.step) if e["kind"] == "dimension")
+                        for e in read(self.step) if e["kind"] == "dimension")
         self.assertEqual(theirs, [(10.0, False), (10.0, False), (30.0, True), (50.0, True)])
 
     def test_a_moved_hole_is_measured_again(self) -> None:
         self.build(plate())
         self.build(plate().replace("bd.Cylinder(5, 10)", "bd.Pos(10, 5, 0) * bd.Cylinder(5, 10)"))
-        found = _by_id(pmi.read(self.xbf))
+        found = _by_id(read(self.xbf))
         self.assertEqual(found["hole-from-B"]["dimension"]["nominal"]["value"], 35.0)
         self.assertEqual(found["hole-from-C"]["dimension"]["nominal"]["value"], 60.0)
 
     def test_between_two_hole_axes_and_refused_where_the_axis_crosses_the_plane(self) -> None:
         report = self.build('''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, dimensional_location
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -364,12 +373,13 @@ def pmi_plate():
     body.label = "plate"
     top = body.faces().sort_by(bd.Axis.Z)[-1]
     left, right = sorted(body.faces().filter_by(bd.GeomType.CYLINDER), key=lambda face: face.center().X)
-    return pmi.annotate(body, pmi.basic("pitch", left, right), pmi.basic("crossing", top, left))
+    return annotate(body, dimensional_location("pitch", left, right, basic=True),
+                    dimensional_location("crossing", top, left, basic=True))
 ''', ok=False)
         [problem] = report["pmi"]["problems"]
         self.assertEqual((problem["id"], problem["status"]), ("crossing", "invalid"))
         self.assertIn("not parallel", problem["problem"])
-        found = _by_id(pmi.read(self.xbf))
+        found = _by_id(read(self.xbf))
         self.assertEqual(found["pitch"]["dimension"]["nominal"]["value"], 40.0)
         self.assertTrue(found["pitch"]["dimension"]["basic"])
         self.assertEqual(found["crossing"]["status"], "invalid")
@@ -380,16 +390,15 @@ def pmi_plate():
 
         box = bd.Box(10, 10, 10)
         faces = box.faces().sort_by(bd.Axis.Z)
-        with self.assertRaisesRegex(pmi.PMIError, "a basic dimension is theoretically exact"):
-            pmi.dimension("b", "distance", faces[0], faces[-1], basic=True, tolerance=pmi.plus_minus(0.1))
-        with self.assertRaisesRegex(pmi.PMIUnsupported, "basic"):
-            pmi.dimension("d", "diameter", faces[0], basic=True)
+        with self.assertRaisesRegex(PMIError, "a basic dimension is theoretically exact"):
+            dimensional_location("b", faces[0], faces[-1], basic=True, tolerance=plus_minus_tolerance(0.1))
 
 
 # A plate whose hole and thickness are given limits: values ILLUSTRATIVE.
 LIMITS = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, dimensional_location, dimensional_size, limits
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -400,10 +409,10 @@ def pmi_plate():
     bottom = body.faces().sort_by(bd.Axis.Z)[0]
     top = body.faces().sort_by(bd.Axis.Z)[-1]
     hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.diameter("hole", hole, tolerance=pmi.limits(10.0, 10.05)),
-        pmi.distance("thickness", bottom, top, tolerance=pmi.limits(9.9, 10.1)),
+        dimensional_size("hole", hole, tolerance=limits(10.0, 10.05)),
+        dimensional_location("thickness", bottom, top, tolerance=limits(9.9, 10.1)),
     )
 '''
 
@@ -412,7 +421,7 @@ class LimitsTest(_Folder):
     def test_a_diameter_given_limits_keeps_them_and_measures_its_nominal(self) -> None:
         self.build(LIMITS)
         served = _by_id(engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"])
-        self.assertEqual(_by_id(pmi.read(self.xbf)), served)
+        self.assertEqual(_by_id(read(self.xbf)), served)
         entry = served["hole"]
         self.assertEqual(entry["status"], "ok", entry)
         self.assertEqual(entry["dimension"]["tolerance"], {"type": "limits", "lower": 10.0, "upper": 10.05})
@@ -422,23 +431,23 @@ class LimitsTest(_Folder):
         self.assertAlmostEqual(served["thickness"]["dimension"]["nominal"]["value"], 10.0)
 
     def test_limits_are_refused_when_not_upper_above_lower(self) -> None:
-        with self.assertRaisesRegex(pmi.PMIError, "upper limit .* is above its lower, not 10.05 and 10.05"):
-            pmi.limits(10.05, 10.05)
+        with self.assertRaisesRegex(PMIError, "upper limit .* is above its lower, not 10.05 and 10.05"):
+            limits(10.05, 10.05)
 
     def test_limits_are_sizes_above_zero(self) -> None:
-        with self.assertRaisesRegex(pmi.PMIError, "lower limit is a size above 0, not 0.0"):
-            pmi.limits(0, 0.05)
+        with self.assertRaisesRegex(PMIError, "lower limit is a size above 0, not 0.0"):
+            limits(0, 0.05)
 
     def test_a_basic_dimension_refuses_limits(self) -> None:
         import build123d as bd
 
         faces = bd.Box(10, 10, 10).faces().sort_by(bd.Axis.Z)
-        with self.assertRaisesRegex(pmi.PMIError, "a basic dimension is theoretically exact"):
-            pmi.dimension("b", "distance", faces[0], faces[-1], basic=True, tolerance=pmi.limits(9.9, 10.1))
+        with self.assertRaisesRegex(PMIError, "a basic dimension is theoretically exact"):
+            dimensional_location("b", faces[0], faces[-1], basic=True, tolerance=limits(9.9, 10.1))
 
     def test_the_step_carries_the_limits_and_the_check_matches_them(self) -> None:
         self.build(LIMITS)
-        result = ap242.verify(pmi.read(self.xbf), self.step)
+        result = ap242.verify(read(self.xbf), self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (2, 2, []))
         text = self.step.read_text(encoding="utf-8")
         for value, role in (("10.", "lower limit"), ("10.05", "upper limit"), ("9.9", "lower limit"),
@@ -460,7 +469,7 @@ class LimitsTest(_Folder):
         document._name(foreign.sub(hole), "f:vendor.hole.1")
         foreign.dimension("Size_Diameter", [hole], 8.0, SetLowerBound=(7.9,), SetUpperBound=(8.1,))
         vendor = foreign.step(self.folder / "vendor.step")
-        [entry] = pmi.read(vendor)
+        [entry] = read(vendor)
         self.assertEqual((entry["kind"], entry["status"]), ("dimension", "ok"), entry)
         self.assertEqual(entry["dimension"]["tolerance"], {"type": "limits", "lower": 7.9, "upper": 8.1})
         # The file states limits, not a nominal: none is served (XCAF's midpoint is no fact of the file).
@@ -483,7 +492,7 @@ class LimitsTest(_Folder):
                                                X.XCAFDimTolObjects_DimensionGrade_IT7))
         foreign.dimension("Size_Diameter", [hole], 8.0, SetLowerBound=(7.9,), SetUpperBound=(8.1,),
                           SetQualifier=(X.XCAFDimTolObjects_DimensionQualifier_Avg,))
-        fitted, qualified = pmi.read(foreign.xbf(self.folder / "foreign.xbf"))
+        fitted, qualified = read(foreign.xbf(self.folder / "foreign.xbf"))
         for entry, other in ((fitted, "class of tolerance"), (qualified, "qualifier")):
             self.assertEqual((entry["kind"], entry["xcaf_type"]),
                              ("unsupported", "XCAFDimTolObjects_DimensionType_Size_Diameter"), entry)
@@ -498,7 +507,8 @@ class LimitsTest(_Folder):
 # magnitude in a bare metre (``UnitsTest``).
 PROFILE = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, datum, surface_profile_tolerance
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -511,11 +521,11 @@ def pmi_plate():
     left = body.faces().sort_by(bd.Axis.X)[0]
     hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
     dimple = body.faces().filter_by(bd.GeomType.SPHERE)[0]
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.datum("A", bottom),
-        pmi.profile("sides", [front, left, hole], 0.5, datums=["A"]),
-        pmi.profile("dimple", dimple, 0.2),
+        datum("A", bottom),
+        surface_profile_tolerance("sides", [front, left, hole], 0.5, datums=["A"]),
+        surface_profile_tolerance("dimple", dimple, 0.2),
     )
 '''
 
@@ -541,7 +551,7 @@ class ProfileTest(_Folder):
 
     def test_a_profile_is_written_as_one_surface_profile_tolerance_and_checked(self) -> None:
         self.build(PROFILE)
-        ours = _by_id(pmi.read(self.xbf))
+        ours = _by_id(read(self.xbf))
         result = ap242.verify(list(ours.values()), self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
         found = ap242.report(self.step)
@@ -562,33 +572,30 @@ class ProfileTest(_Folder):
                                r"SURFACE_PROFILE_TOLERANCE\s*\(\s*\)")
         self.assertNotIn("SI_UNIT($,.METRE.)", text.replace(" ", ""))
         # OCCT's reader: the same characteristic, value and faces.
-        theirs = {entry["geometric_tolerance"]["value"]: entry for entry in pmi.read(self.step)
+        theirs = {entry["geometric_tolerance"]["value"]: entry for entry in read(self.step)
                   if entry["kind"] == "geometric_tolerance"}
         self.assertEqual(sorted(theirs), [0.2, 0.5])
         self.assertEqual(theirs[0.5]["geometric_tolerance"]["characteristic"], "surface_profile")
         self.assertEqual(sorted(ref["ref"] for ref in theirs[0.5]["refs"]), sorted(ref["ref"] for ref in ours["sides"]["refs"]))
 
-    def test_a_profile_refuses_no_faces_a_zone_and_four_datums(self) -> None:
+    def test_a_profile_refuses_no_faces_and_four_datums(self) -> None:
         import build123d as bd
 
         box = bd.Box(10, 10, 10)
         top = box.faces().sort_by(bd.Axis.Z)[-1]
-        with self.assertRaisesRegex(pmi.PMIError, "a surface profile is on one face or more, not none"):
-            pmi.profile("p", [], 0.5)
-        with self.assertRaisesRegex(pmi.PMIError, "a surface profile's zone is a width about the profile: no "
-                                                  "diametral zone"):
-            pmi.geometric("p", "surface_profile", top, 0.5, diameter_zone=True)
-        with self.assertRaisesRegex(pmi.PMIError, "three datums at most, not 4"):
-            pmi.profile("p", top, 0.5, datums=["A", "B", "C", "D"])
+        with self.assertRaisesRegex(PMIError, "a surface profile is on one face or more, not none"):
+            surface_profile_tolerance("p", [], 0.5)
+        with self.assertRaisesRegex(PMIError, "three datums at most, not 4"):
+            surface_profile_tolerance("p", top, 0.5, datums=["A", "B", "C", "D"])
         # A list of faces is a profile's alone.
-        with self.assertRaisesRegex(pmi.PMIError, "a ref is a face of the part"):
-            pmi.flatness("f", [top], 0.05)
+        with self.assertRaisesRegex(PMIError, "a ref is a face of the part"):
+            flatness_tolerance("f", [top], 0.05)
         # One face named twice (here as a Face and by its element name) is no second face.
-        ordinal = pmi._faces(box.wrapped).FindIndex(top.wrapped)
+        ordinal = _faces(box.wrapped).FindIndex(top.wrapped)
         names = [None] * 6
         names[ordinal - 1] = "f:box.top.1"
-        pmi.annotate(box, pmi.profile("p", [top, "f:box.top.1"], 0.5))
-        [item] = pmi._resolved_part(box.__dict__[pmi.PMI], box.wrapped, names, {"box"})
+        annotate(box, surface_profile_tolerance("p", [top, "f:box.top.1"], 0.5))
+        [item] = _resolved_part(box.__dict__[PMI], box.wrapped, names, {"box"})
         self.assertEqual((item.status, [ref.status for ref in item.refs]), ("invalid", ["ok", "invalid"]))
         self.assertEqual(item.problem, f"f:box.top.1 names face {ordinal}, as face {ordinal} does: a surface profile "
                                        "is on each face once")
@@ -603,7 +610,7 @@ class ProfileTest(_Folder):
         sides = body.faces().sort_by(bd.Axis.X)
         foreign = _Foreign(body)
         foreign.tolerance("ProfileOfSurface", [sides[0], sides[-1]], 0.3)
-        [entry] = pmi.read(foreign.step(self.folder / "vendor.step"))
+        [entry] = read(foreign.step(self.folder / "vendor.step"))
         self.assertEqual((entry["kind"], entry["status"], entry["xcaf_type"]), ("geometric_tolerance", "ok", None), entry)
         self.assertEqual(entry["geometric_tolerance"], {
             "characteristic": "surface_profile", "value": 0.3, "unit": "mm", "zone": None, "modifier": None,
@@ -613,7 +620,7 @@ class ProfileTest(_Folder):
         zoned = _Foreign(body)
         zoned.tolerance("ProfileOfSurface", [sides[0]], 0.3,
                         SetTypeOfValue=(X.XCAFDimTolObjects_GeomToleranceTypeValue_Diameter,))
-        [entry] = pmi.read(zoned.xbf(self.folder / "zoned.xbf"))
+        [entry] = read(zoned.xbf(self.folder / "zoned.xbf"))
         self.assertEqual((entry["kind"], entry["xcaf_type"]),
                          ("unsupported", "XCAFDimTolObjects_GeomToleranceType_ProfileOfSurface"), entry)
         self.assertIn("diametral zone", entry["reason"])
@@ -624,7 +631,9 @@ class ProfileTest(_Folder):
 # Values ILLUSTRATIVE.
 GENERAL = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, general_profile,
+                          plus_minus_tolerance, position_tolerance)
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -637,23 +646,24 @@ def pmi_plate():
     front = body.faces().sort_by(bd.Axis.Y)[0]
     left = body.faces().sort_by(bd.Axis.X)[0]
     hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.datum("A", bottom),
-        pmi.datum("B", front),
-        pmi.datum("C", left),
-        pmi.diameter("hole-diameter", hole, tolerance=pmi.plus_minus(0.1, 0)),
-        pmi.position("hole-position", hole, 0.1, datums=["A", "B", "C"]),
-        pmi.basic("hole-from-B", front, hole),
-        pmi.basic("hole-from-C", left, hole),
-        pmi.flatness("top-flatness", top, 0.05),
-        pmi.general_profile("general", 0.5, datums=["A", "B"]),
+        datum("A", bottom),
+        datum("B", front),
+        datum("C", left),
+        dimensional_size("hole-diameter", hole, tolerance=plus_minus_tolerance(0.1, 0)),
+        position_tolerance("hole-position", hole, 0.1, datums=["A", "B", "C"]),
+        dimensional_location("hole-from-B", front, hole, basic=True),
+        dimensional_location("hole-from-C", left, hole, basic=True),
+        flatness_tolerance("top-flatness", top, 0.05),
+        general_profile("general", 0.5, datums=["A", "B"]),
     )
 '''
 # A block each face of which has a size of its own, and a general profile: values ILLUSTRATIVE.
 CONTROLLED = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, datum, dimensional_location, general_profile, limits, plus_minus_tolerance
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -662,20 +672,21 @@ def pmi_plate():
     body = bd.Box(100, 60, 10)
     body.label = "plate"
     x, y, z = (body.faces().sort_by(axis) for axis in (bd.Axis.X, bd.Axis.Y, bd.Axis.Z))
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.datum("A", z[0]),
-        pmi.distance("length", x[0], x[-1], tolerance=pmi.plus_minus(0.2)),
-        pmi.distance("width", y[0], y[-1], tolerance=pmi.limits(59.8, 60.2)),
-        pmi.distance("thickness", z[0], z[-1], tolerance=pmi.plus_minus(0.1)),
-        pmi.general_profile("general", 0.5, datums=["A"]),
+        datum("A", z[0]),
+        dimensional_location("length", x[0], x[-1], tolerance=plus_minus_tolerance(0.2)),
+        dimensional_location("width", y[0], y[-1], tolerance=limits(59.8, 60.2)),
+        dimensional_location("thickness", z[0], z[-1], tolerance=plus_minus_tolerance(0.1)),
+        general_profile("general", 0.5, datums=["A"]),
     )
 '''
 # A plate whose ``cut`` is a round hole and then a square pocket, its thickness toleranced and the
 # rest left to a general profile ({general}): values ILLUSTRATIVE.
 GENERAL_CUT = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, datum, dimensional_location, general_profile, plus_minus_tolerance
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -685,8 +696,8 @@ def pmi_plate():
     body.label = "plate"
     bottom = body.faces().sort_by(bd.Axis.Z)[0]
     top = body.faces().sort_by(bd.Axis.Z)[-1]
-    return pmi.annotate(body, pmi.datum("A", bottom),
-                        pmi.distance("thickness", bottom, top, tolerance=pmi.plus_minus(0.2)), {general})
+    return annotate(body, datum("A", bottom),
+                    dimensional_location("thickness", bottom, top, tolerance=plus_minus_tolerance(0.2)), {general})
 '''
 
 
@@ -714,11 +725,11 @@ class GeneralProfileTest(_Folder):
         # The hole has a size and a location of its own. The basic dimensions locate it, not their
         # datum ends; the top's flatness is form alone, and a datum is no requirement.
         hole = found["hole-position"]["refs"][0]["ref"]
-        self.assertEqual(pmi.otherwise_controlled(served), {hole})
+        self.assertEqual(otherwise_controlled(served), {hole})
         # The datum features it names are controlled on their own: no face is profiled to itself.
         named = [found[letter]["refs"][0]["ref"] for letter in "AB"]
         left = {_ordinal(loaded, ref) for ref in [hole, *named]}
-        count = pmi._faces(loaded.prototypes[0].shape).Extent()
+        count = _faces(loaded.prototypes[0].shape).Extent()
         # Every other face, in the part's order, each a computed ref the code never wrote.
         self.assertEqual([_ordinal(loaded, ref["ref"]) for ref in general["refs"]],
                          [at for at in range(1, count + 1) if at not in left])
@@ -731,7 +742,7 @@ class GeneralProfileTest(_Folder):
 
     def test_the_step_holds_it_on_exactly_those_faces(self) -> None:
         self.build(GENERAL)
-        ours = pmi.read(self.xbf)
+        ours = read(self.xbf)
         result = ap242.verify(ours, self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (9, 9, []))
         general = _by_id(ours)["general"]
@@ -741,14 +752,14 @@ class GeneralProfileTest(_Folder):
         self.assertEqual((profile["magnitude"]["value"], profile["magnitude"]["unit"], profile["datums"]),
                          (0.5, "mm", ["A", "B"]))
         # OCCT's reader: a surface profile on those faces, as any CAM reader gets it.
-        [theirs] = [entry for entry in pmi.read(self.step)
+        [theirs] = [entry for entry in read(self.step)
                     if (entry.get("geometric_tolerance") or {}).get("characteristic") == "surface_profile"]
         self.assertEqual(sorted(ref["ref"] for ref in theirs["refs"]), sorted(ref["ref"] for ref in general["refs"]))
 
     def test_it_covers_no_face_when_every_face_has_its_own(self) -> None:
         report = self.build(CONTROLLED)
         self.assertEqual(report["pmi"], {"annotations": 5, "problems": []})
-        served = pmi.read(self.xbf)
+        served = read(self.xbf)
         self.assertEqual(served, engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"])
         general = _by_id(served)["general"]
         self.assertEqual((general["status"], general["problem"], general["refs"]), ("ok", None, []))
@@ -762,22 +773,22 @@ class GeneralProfileTest(_Folder):
     def test_a_second_general_profile_is_refused(self) -> None:
         import build123d as bd
 
-        with self.assertRaisesRegex(pmi.PMIError, "one general profile, not 'general' and 'outer'"):
-            pmi.annotate(bd.Box(10, 10, 10), pmi.general_profile("general", 0.5), pmi.general_profile("outer", 0.2))
+        with self.assertRaisesRegex(PMIError, "one general profile, not 'general' and 'outer'"):
+            annotate(bd.Box(10, 10, 10), general_profile("general", 0.5), general_profile("outer", 0.2))
 
     def test_one_naming_a_datum_the_part_lacks_covers_nothing_and_is_refused_by_a_step(self) -> None:
         report = self.build(GENERAL_CUT.format(cut=ROUND,
-                                               general='pmi.general_profile("general", 0.5, datums=["B"])'), ok=False)
+                                               general='general_profile("general", 0.5, datums=["B"])'), ok=False)
         [problem] = report["pmi"]["problems"]
         self.assertEqual((problem["id"], problem["status"]), ("general", "invalid"))
         self.assertIn("a STEP would drop PMI", report["error"])
         self.assertIn("general", report["error"])
-        self.assertEqual(_by_id(pmi.read(self.xbf))["general"]["refs"], [])
+        self.assertEqual(_by_id(read(self.xbf))["general"]["refs"], [])
 
     def test_its_faces_follow_an_edit_with_the_same_bytes_whatever_was_built_before(self) -> None:
         def built(cut: str) -> list[str]:
             """The kinds of the faces the general profile covers, built with ``cut``."""
-            self.build(GENERAL_CUT.format(cut=cut, general='pmi.general_profile("general", 0.5, datums=["A"])'))
+            self.build(GENERAL_CUT.format(cut=cut, general='general_profile("general", 0.5, datums=["A"])'))
             loaded = document.Loaded(self.xbf)
             general = _by_id(loaded.structure()["pmi"])["general"]
             return sorted(_face(loaded, general, at)[0] for at in range(len(general["refs"])))
@@ -797,7 +808,8 @@ class GeneralProfileTest(_Folder):
 # Tolerance values and note texts ILLUSTRATIVE.
 NOTES = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, datum, dimensional_size, general_profile, note, plus_minus_tolerance
+from cadgen.engine import step, xbf
 
 LIBRARY = {{"primer-mask": "Mask these features before coating with primer"}}
 
@@ -809,13 +821,13 @@ def pmi_plate():
     {cut}
     body.label = "plate"
     bottom = body.faces().sort_by(bd.Axis.Z)[0]
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.datum("A", bottom),
-        pmi.diameter("hole-dia", {hole}, tolerance=pmi.plus_minus(0.1, 0)),
+        datum("A", bottom),
+        dimensional_size("hole-dia", {hole}, tolerance=plus_minus_tolerance(0.1, 0)),
         {general}
-        pmi.note("deburr", "Break all sharp edges 0.2 max"),
-        pmi.note("mask", LIBRARY["primer-mask"], faces=[{mask}], annotations=["hole-dia"]),
+        note("deburr", "Break all sharp edges 0.2 max"),
+        note("mask", LIBRARY["primer-mask"], faces=[{mask}], annotations=["hole-dia"]),
         library=LIBRARY,
     )
 '''
@@ -826,7 +838,7 @@ MASK = "Mask these features before coating with primer"
 def notes(*, general: bool = True, cut: str = "body = body - bd.Cylinder(5, 10)", hole: str = HOLE,
           mask: str | None = None) -> str:
     """The plate with notes; ``mask``: the flag note's face where it is not the hole's ref."""
-    return NOTES.format(general='pmi.general_profile("general", 0.5, datums=["A"]),' if general else "", cut=cut,
+    return NOTES.format(general='general_profile("general", 0.5, datums=["A"]),' if general else "", cut=cut,
                         hole=hole, mask=hole if mask is None else mask)
 
 
@@ -844,7 +856,7 @@ class NoteTest(_Folder):
     def test_notes_are_numbered_after_the_general_profile(self) -> None:
         report = self.build(notes())
         self.assertEqual(_but_coverage(report), {"annotations": 5, "problems": []})
-        served = pmi.read(self.xbf)
+        served = read(self.xbf)
         self.assertEqual(served, self.served()["pmi"])
         # The part's general profile is Note 1; the notes follow in the order the code gives them.
         self.assertEqual(_numbers(served), [("deburr", 2, True), ("mask", 3, False)])
@@ -854,7 +866,7 @@ class NoteTest(_Folder):
                                           "annotations": []})
         # With no general profile, the first note is Note 1.
         self.build(notes(general=False))
-        self.assertEqual(_numbers(pmi.read(self.xbf)), [("deburr", 1, True), ("mask", 2, False)])
+        self.assertEqual(_numbers(read(self.xbf)), [("deburr", 1, True), ("mask", 2, False)])
 
     def test_a_flag_note_names_its_faces_and_annotations(self) -> None:
         self.build(notes())
@@ -876,11 +888,11 @@ class NoteTest(_Folder):
     def test_a_flag_note_whose_face_is_gone_keeps_its_number_and_says_missing(self) -> None:
         self.build(notes())
         loaded = document.Loaded(self.xbf)
-        faces = pmi._faces(loaded.prototypes[0].shape)
-        [ordinal] = [at for at in range(1, faces.Extent() + 1) if pmi._surface(faces.FindKey(at))[0] == "cylinder"]
+        faces = _faces(loaded.prototypes[0].shape)
+        [ordinal] = [at for at in range(1, faces.Extent() + 1) if _surface(faces.FindKey(at))[0] == "cylinder"]
         name = loaded.prototypes[0].face_names[ordinal]
         self.build(notes(hole=repr(name)))
-        before = _by_id(pmi.read(self.xbf))["mask"]
+        before = _by_id(read(self.xbf))["mask"]
         self.assertEqual((before["status"], before["note"]["number"]), ("ok", 3))
         # The hole removed: the note's face is gone. The build says so; the note keeps its number,
         # its text and its links as written, missing; the STEP is refused for the diameter alone.
@@ -889,7 +901,7 @@ class NoteTest(_Folder):
                          {("hole-dia", "missing"), ("mask", "missing")})
         self.assertIn("hole-dia", report["error"])
         self.assertNotIn("mask", report["error"])
-        served = pmi.read(self.xbf)
+        served = read(self.xbf)
         mask = _by_id(served)["mask"]
         self.assertEqual((mask["status"], mask["note"]), ("missing", before["note"]))
         self.assertIn(f"no face {name}", mask["problem"])
@@ -900,23 +912,23 @@ class NoteTest(_Folder):
 
         box = bd.Box(10, 10, 10)
         top = box.faces().sort_by(bd.Axis.Z)[-1]
-        with self.assertRaisesRegex(pmi.PMIError, "note 'mask' names 'hole-dia', which is no annotation of this "
-                                                  r"pmi.annotate\(\) call"):
-            pmi.annotate(box, pmi.flatness("top-flat", top, 0.05), pmi.note("mask", MASK, faces=[top],
-                                                                            annotations=["hole-dia"]))
-        with self.assertRaisesRegex(pmi.PMIError, "note 'see' names note 'deburr': a note names annotations"):
-            pmi.annotate(box, pmi.note("deburr", "Break all sharp edges 0.2 max"),
-                         pmi.note("see", "See note 2", annotations=["deburr"]))
+        with self.assertRaisesRegex(PMIError, "note 'mask' names 'hole-dia', which is no annotation of this "
+                                              r"annotate\(\) call"):
+            annotate(box, flatness_tolerance("top-flat", top, 0.05), note("mask", MASK, faces=[top],
+                                                                          annotations=["hole-dia"]))
+        with self.assertRaisesRegex(PMIError, "note 'see' names note 'deburr': a note names annotations"):
+            annotate(box, note("deburr", "Break all sharp edges 0.2 max"),
+                     note("see", "See note 2", annotations=["deburr"]))
         for text in ("", "   ", None, 3):
-            with self.assertRaisesRegex(pmi.PMIError, "note 'blank': a note's text is a non-empty string"):
-                pmi.note("blank", text)  # type: ignore[arg-type]
+            with self.assertRaisesRegex(PMIError, "note 'blank': a note's text is a non-empty string"):
+                note("blank", text)  # type: ignore[arg-type]
         # A note's id is one of its part's ids, as its annotations' are.
-        with self.assertRaisesRegex(pmi.PMIError, "two annotations on one part are 'top-flat'"):
-            pmi.annotate(box, pmi.flatness("top-flat", top, 0.05), pmi.note("top-flat", "Lap this face"))
-        with self.assertRaisesRegex(pmi.PMIError, "library note 'primer-mask': its text is a non-empty string"):
-            pmi.annotate(box, library={"primer-mask": ""})
-        with self.assertRaisesRegex(pmi.PMIError, "a library is a project's notes by name"):
-            pmi.annotate(box, library=["primer-mask"])  # type: ignore[arg-type]
+        with self.assertRaisesRegex(PMIError, "two annotations on one part are 'top-flat'"):
+            annotate(box, flatness_tolerance("top-flat", top, 0.05), note("top-flat", "Lap this face"))
+        with self.assertRaisesRegex(PMIError, "library note 'primer-mask': its text is a non-empty string"):
+            annotate(box, library={"primer-mask": ""})
+        with self.assertRaisesRegex(PMIError, "a library is a project's notes by name"):
+            annotate(box, library=["primer-mask"])  # type: ignore[arg-type]
 
     def test_notes_and_the_library_survive_the_xbf_and_make_the_same_bytes(self) -> None:
         from OCP.TDF import TDF_Label, TDF_LabelSequence, TDF_Tool
@@ -953,12 +965,12 @@ class NoteTest(_Folder):
         tool.GetNotes(label(part.entry), found)
         self.assertEqual(texts(found), ["Break all sharp edges 0.2 max"])
         ordinal = _ordinal(loaded, _by_id(structure["pmi"])["mask"]["refs"][0]["ref"])
-        self.assertEqual(pmi._surface(pmi._faces(part.shape).FindKey(ordinal))[0], "cylinder")
-        for at in range(1, pmi._faces(part.shape).Extent() + 1):
+        self.assertEqual(_surface(_faces(part.shape).FindKey(ordinal))[0], "cylinder")
+        for at in range(1, _faces(part.shape).Extent() + 1):
             found = TDF_LabelSequence()
             tool.GetSubshapeNotes(XCAFDoc_AssemblyItemId(part.entry), at, found)
             self.assertEqual(texts(found), [MASK] if at == ordinal else [], at)
-        [diameter] = [record for record in pmi.records_of_document(loaded.doc, loaded.prototypes, loaded.name)
+        [diameter] = [record for record in records_of_document(loaded.doc, loaded.prototypes, loaded.name)
                       if (record["extra"] or {}).get("id") == "hole-dia"]
         found = TDF_LabelSequence()
         tool.GetNotes(label(diameter["entry"]), found)
@@ -976,14 +988,15 @@ class NoteTest(_Folder):
     def test_a_library_alone_is_served_and_a_note_keeps_any_text(self) -> None:
         model = '''
 import build123d as bd
-from cadgen.engine import pmi, xbf
+from cadgen.ap242 import annotate, note
+from cadgen.engine import xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
 def pmi_plate():
     body = bd.Box(100, 60, 10)
     body.label = "plate"
-    return pmi.annotate(body, {notes}library={{"primer-mask": "{mask}", "finish": "Ra 1.6 µm"}})
+    return annotate(body, {notes}library={{"primer-mask": "{mask}", "finish": "Ra 1.6 µm"}})
 '''
         # A project's library before any note is written: the viewer offers what the build saw.
         self.build(model.format(notes="", mask=MASK))
@@ -992,32 +1005,32 @@ def pmi_plate():
         self.assertEqual(structure["pmi_library"], [{"part": 0, "name": "primer-mask", "text": MASK},
                                                     {"part": 0, "name": "finish", "text": "Ra 1.6 µm"}])
         self.assertEqual(self.served()["pmi_library"], structure["pmi_library"])
-        self.build(model.format(notes='pmi.note("finish", "Ra 1.6 µm, ⌀ holes ±0.1"), ', mask=MASK))
-        [finish] = pmi.read(self.xbf)
+        self.build(model.format(notes='note("finish", "Ra 1.6 µm, ⌀ holes ±0.1"), ', mask=MASK))
+        [finish] = read(self.xbf)
         self.assertEqual((finish["note"]["number"], finish["note"]["text"]), (1, "Ra 1.6 µm, ⌀ holes ±0.1"))
 
     def test_a_step_of_a_document_with_notes_is_written_and_checked_without_them(self) -> None:
         """Review Focus 5: a STEP carries no note (OCCT's writer writes none), so a note never stops
         one, and the check matches the GD&T alone."""
         self.build(notes())
-        served = pmi.read(self.xbf)
+        served = read(self.xbf)
         result = ap242.verify(served, self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
         text = self.step.read_text(encoding="utf-8")
         self.assertNotIn("Break all sharp edges", text)
         self.assertNotIn(MASK, text)
-        self.assertNotIn("note", {entry["kind"] for entry in pmi.read(self.step)})
+        self.assertNotIn("note", {entry["kind"] for entry in read(self.step)})
         # A flag note gone missing: the build and its STEP are written, the check the same, and an
         # export of the saved document says nothing of the note.
         report = self.build(notes(mask="'face 99'"))
         self.assertEqual([(problem["id"], problem["status"]) for problem in report["pmi"]["problems"]],
                          [("mask", "missing")])
-        result = ap242.verify(pmi.read(self.xbf), self.step)
+        result = ap242.verify(read(self.xbf), self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
         said: list[str] = []
         export.translate(self.xbf, "step", self.folder / "again.step", log=said.append)
         self.assertEqual([line for line in said if "pmi" in line], [])
-        self.assertEqual(pmi.dropped(export.Source.read(self.xbf).view(), "step"), [])
+        self.assertEqual(dropped(export.Source.read(self.xbf).view(), "step"), [])
 
 
 # A plate (0..100, 0..60, 0..10) with a hole through it at (50, 30) and named views (the values
@@ -1026,7 +1039,9 @@ def pmi_plate():
 # ``{more}``.
 VIEWS = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import (annotate, camera, datum, dimensional_size, note, place, plus_minus_tolerance,
+                          position_tolerance, section, view)
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -1037,22 +1052,23 @@ def pmi_plate():
     body.label = "plate"
     bottom = body.faces().sort_by(bd.Axis.Z)[0]
     hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.datum("A", bottom),
-        pmi.diameter("hole-dia", hole, tolerance=pmi.plus_minus(0.1, 0)),
-        pmi.position("hole-pos", hole, 0.1, datums=["A"]),
-        pmi.note("deburr", "Break all sharp edges 0.2 max"),
-        pmi.view("A-A", camera="front", shows=["hole-dia", "hole-pos"], section=pmi.section("y", 30),
-                 place={"hole-dia": pmi.place((5, 30, 0), (10, 0, 10))}, label="Section A-A"),
-        pmi.view("iso", camera="iso"),
+        datum("A", bottom),
+        dimensional_size("hole-dia", hole, tolerance=plus_minus_tolerance(0.1, 0)),
+        position_tolerance("hole-pos", hole, 0.1, datums=["A"]),
+        note("deburr", "Break all sharp edges 0.2 max"),
+        view("A-A", camera="front", shows=["hole-dia", "hole-pos"], section=section("y", 30),
+             place={"hole-dia": place((5, 30, 0), (10, 0, 10))}, label="Section A-A"),
+        view("iso", camera="iso"),
         {more}
     )
 '''
 # A part given views alone.
 VIEWS_ALONE = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, view
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -1060,7 +1076,7 @@ from cadgen.engine import pmi, step, xbf
 def pmi_plate():
     body = bd.Box(100, 60, 10)
     body.label = "plate"
-    return pmi.annotate(body, pmi.view("iso", camera="iso"), pmi.view("top", camera="top"))
+    return annotate(body, view("iso", camera="iso"), view("top", camera="top"))
 '''
 
 
@@ -1074,15 +1090,15 @@ class ViewTest(_Folder):
         return engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure
 
     def test_a_view_holds_its_camera_section_shows_and_placements(self) -> None:
-        report = self.build(views('pmi.view("down", camera=pmi.camera((0, -1, 1), (0, 0, 1)), shows=["deburr"]),'))
+        report = self.build(views('view("down", camera=camera((0, -1, 1), (0, 0, 1)), shows=["deburr"]),'))
         # Views are no annotations: the report counts the four, and ``pmi`` lists none.
         self.assertEqual(_but_coverage(report), {"annotations": 4, "problems": []})
-        self.assertEqual([entry["kind"] for entry in pmi.read(self.xbf)], ["datum", "dimension", "geometric_tolerance",
-                                                                           "note"])
+        self.assertEqual([entry["kind"] for entry in read(self.xbf)], ["datum", "dimension", "geometric_tolerance",
+                                                                       "note"])
         served = document.Loaded(self.xbf).structure()["pmi_views"]
         self.assertEqual(served, self.served()["pmi_views"])
-        section, iso, down = served
-        self.assertEqual(section, {
+        cut, iso, down = served
+        self.assertEqual(cut, {
             "part": 0, "name": "A-A", "label": "Section A-A",
             "camera": {"preset": "front", "direction": [0.0, -1.0, 0.0], "up": [0.0, 0.0, 1.0],
                        "projection": "orthographic"},
@@ -1092,18 +1108,18 @@ class ViewTest(_Folder):
         self.assertEqual((iso["name"], iso["label"], iso["camera"]["preset"], iso["section"], iso["shows"], iso["place"]),
                          ("iso", None, "iso", None, None, {}))
         # A camera of the code's own: unit vectors, the direction from the part toward the eye.
-        self.assertEqual(pmi.camera((0, -1, 1), (0, 0, 2)), {"direction": [0.0, -1 / math.sqrt(2), 1 / math.sqrt(2)],
-                                                             "up": [0.0, 0.0, 1.0]})
-        self.assertEqual(down["camera"], {"preset": None, **pmi.camera((0, -1, 1), (0, 0, 1)),
+        self.assertEqual(camera((0, -1, 1), (0, 0, 2)), {"direction": [0.0, -1 / math.sqrt(2), 1 / math.sqrt(2)],
+                                                         "up": [0.0, 0.0, 1.0]})
+        self.assertEqual(down["camera"], {"preset": None, **camera((0, -1, 1), (0, 0, 1)),
                                           "projection": "orthographic"})
-        self.assertEqual(pmi.section("z", 4, invert=True), {"axis": "z", "at": 4.0, "invert": True})
+        self.assertEqual(section("z", 4, invert=True), {"axis": "z", "at": 4.0, "invert": True})
 
     def test_a_preset_camera_is_the_snapshot_presets_own(self) -> None:
         from cadgen.engine import snapshot
         from cadgen.engine.render.occt import direction_of
 
         names = sorted(snapshot.CAMERA_PRESETS)
-        self.build(views("".join(f'pmi.view("{name} preset", camera="{name}"),' for name in names)))
+        self.build(views("".join(f'view("{name} preset", camera="{name}"),' for name in names)))
         served = {view["name"]: view["camera"] for view in self.served()["pmi_views"]}
         top = served["top preset"]
         self.assertEqual((top["preset"], top["direction"], top["up"]), ("top", [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]))
@@ -1113,9 +1129,9 @@ class ViewTest(_Folder):
             self.assertEqual(camera["preset"], name)
             for held, drawn in zip(camera["direction"] + camera["up"], list(direction) + list(up)):
                 self.assertAlmostEqual(held, float(drawn), places=15, msg=name)
-        with self.assertRaisesRegex(pmi.PMIError, "view 'A-A': a camera is a preset "
-                                                  rf"\({', '.join(names)}\) or pmi.camera\(direction, up\)"):
-            pmi.view("A-A", camera="30:20")
+        with self.assertRaisesRegex(PMIError, "view 'A-A': a camera is a preset "
+                                              rf"\({', '.join(names)}\) or camera\(direction, up\)"):
+            view("A-A", camera="30:20")
 
     def test_views_survive_the_xbf_as_xcaf_views_and_make_the_same_bytes(self) -> None:
         from OCP.gp import gp_Pln
@@ -1135,7 +1151,7 @@ class ViewTest(_Folder):
                  for at in range(1, labels.Length() + 1)}
         self.assertEqual(list(found), ["A-A", "iso"])
         entries = {(record["extra"] or {}).get("id"): record["entry"]
-                   for record in pmi.records_of_document(loaded.doc, loaded.prototypes, loaded.name)}
+                   for record in records_of_document(loaded.doc, loaded.prototypes, loaded.name)}
 
         def linked(method: object, label: object) -> list[str]:
             sequence = TDF_LabelSequence()
@@ -1190,46 +1206,46 @@ class ViewTest(_Folder):
 
         box = bd.Box(10, 10, 10)
         top = box.faces().sort_by(bd.Axis.Z)[-1]
-        flat = pmi.flatness("top-flat", top, 0.05)
-        with self.assertRaisesRegex(pmi.PMIError, "view 'A-A' shows 'hole-dia', which is no annotation of this "
-                                                  r"pmi.annotate\(\) call; its ids are 'top-flat'"):
-            pmi.annotate(box, flat, pmi.view("A-A", camera="front", shows=["hole-dia"]))
-        with self.assertRaisesRegex(pmi.PMIError, "two views of one part are named 'A-A': a view's name is unique"):
-            pmi.annotate(box, flat, pmi.view("A-A", camera="front"), pmi.view("A-A", camera="back"))
-        lap = pmi.note("lap", "Lap this face", faces=[top])
-        with self.assertRaisesRegex(pmi.PMIError, "view 'A-A' places 'top-flat', which it does not show"):
-            pmi.annotate(box, flat, lap, pmi.view("A-A", camera="front", shows=["lap"],
-                                                  place={"top-flat": pmi.place((0, 0, 5))}))
-        with self.assertRaisesRegex(pmi.PMIError, "view 'iso' places 'gone', which is no annotation of this"):
-            pmi.annotate(box, flat, pmi.view("iso", camera="iso", place={"gone": pmi.place((0, 0, 5))}))
+        flat = flatness_tolerance("top-flat", top, 0.05)
+        with self.assertRaisesRegex(PMIError, "view 'A-A' shows 'hole-dia', which is no annotation of this "
+                                              r"annotate\(\) call; its ids are 'top-flat'"):
+            annotate(box, flat, view("A-A", camera="front", shows=["hole-dia"]))
+        with self.assertRaisesRegex(PMIError, "two views of one part are named 'A-A': a view's name is unique"):
+            annotate(box, flat, view("A-A", camera="front"), view("A-A", camera="back"))
+        lap = note("lap", "Lap this face", faces=[top])
+        with self.assertRaisesRegex(PMIError, "view 'A-A' places 'top-flat', which it does not show"):
+            annotate(box, flat, lap, view("A-A", camera="front", shows=["lap"],
+                                          place={"top-flat": place((0, 0, 5))}))
+        with self.assertRaisesRegex(PMIError, "view 'iso' places 'gone', which is no annotation of this"):
+            annotate(box, flat, view("iso", camera="iso", place={"gone": place((0, 0, 5))}))
         # A view is no annotation: a note names none.
-        with self.assertRaisesRegex(pmi.PMIError, "note 'see' names 'iso', which is no annotation"):
-            pmi.annotate(box, flat, pmi.view("iso", camera="iso"), pmi.note("see", "See view iso", annotations=["iso"]))
+        with self.assertRaisesRegex(PMIError, "note 'see' names 'iso', which is no annotation"):
+            annotate(box, flat, view("iso", camera="iso"), note("see", "See view iso", annotations=["iso"]))
         # Each value is refused by name where it is made.
-        for given, said in ((lambda: pmi.view("", camera="front"), "a view's name is a non-empty string"),
-                            (lambda: pmi.view("A-A", camera="front", shows=["lap", "lap"]),
+        for given, said in ((lambda: view("", camera="front"), "a view's name is a non-empty string"),
+                            (lambda: view("A-A", camera="front", shows=["lap", "lap"]),
                              "view 'A-A' shows 'lap' twice"),
-                            (lambda: pmi.view("A-A", camera="front", place={"lap": (0, 0, 5)}),
-                             r"view 'A-A': a placement is pmi.place\(anchor, offset\)"),
-                            (lambda: pmi.view("A-A", camera="front", section={"axis": "x"}),
-                             r"view 'A-A': a section is pmi.section\(axis, at\)"),
-                            (lambda: pmi.view("A-A", camera={"direction": [0, 0, 2], "up": [0, 1, 0]}),
-                             r"view 'A-A': a camera is a preset .* or pmi.camera\(direction, up\)"),
-                            (lambda: pmi.camera((0, 0, 1), (0, 0, -2)), "a camera's up is not along its direction"),
-                            (lambda: pmi.camera((0, 0, 0), (0, 0, 1)), "a camera's direction is longer than 0"),
-                            (lambda: pmi.section("w", 3), "a section's axis is x, y or z, not 'w'"),
-                            (lambda: pmi.section("x", float("nan")), "a section's place is a finite number"),
-                            (lambda: pmi.section("x", 3, invert=1), "a section's invert is True or False")):
-            with self.assertRaisesRegex(pmi.PMIError, said):
+                            (lambda: view("A-A", camera="front", place={"lap": (0, 0, 5)}),
+                             r"view 'A-A': a placement is place\(anchor, offset\)"),
+                            (lambda: view("A-A", camera="front", section={"axis": "x"}),
+                             r"view 'A-A': a section is section\(axis, at\)"),
+                            (lambda: view("A-A", camera={"direction": [0, 0, 2], "up": [0, 1, 0]}),
+                             r"view 'A-A': a camera is a preset .* or camera\(direction, up\)"),
+                            (lambda: camera((0, 0, 1), (0, 0, -2)), "a camera's up is not along its direction"),
+                            (lambda: camera((0, 0, 0), (0, 0, 1)), "a camera's direction is longer than 0"),
+                            (lambda: section("w", 3), "a section's axis is x, y or z, not 'w'"),
+                            (lambda: section("x", float("nan")), "a section's place is a finite number"),
+                            (lambda: section("x", 3, invert=1), "a section's invert is True or False")):
+            with self.assertRaisesRegex(PMIError, said):
                 given()
         # Views alone are a part's too.
-        self.assertIs(pmi.annotate(box, pmi.view("iso", camera="iso")), box)
+        self.assertIs(annotate(box, view("iso", camera="iso")), box)
 
     def test_a_step_of_a_document_with_views_is_written_and_checked_without_them(self) -> None:
         """Review Focus 5: a STEP carries no view (OCCT's writer writes none), so a view never stops
         one, and the check matches the GD&T alone."""
         self.build(views())
-        result = ap242.verify(pmi.read(self.xbf), self.step)
+        result = ap242.verify(read(self.xbf), self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
         text = self.step.read_text(encoding="utf-8")
         self.assertNotIn("CAMERA_MODEL", text)
@@ -1238,13 +1254,13 @@ class ViewTest(_Folder):
         said: list[str] = []
         export.translate(self.xbf, "step", self.folder / "again.step", log=said.append)
         self.assertEqual([line for line in said if "pmi" in line], [])
-        self.assertEqual(pmi.dropped(export.Source.read(self.xbf).view(), "step"), [])
+        self.assertEqual(dropped(export.Source.read(self.xbf).view(), "step"), [])
         # A part given views alone: its STEP is written, carrying no PMI, and exported again, written.
         report = self.build(VIEWS_ALONE)
         self.assertEqual(report["pmi"], {"annotations": 0, "problems": []})
         structure = document.Loaded(self.xbf).structure()
         self.assertEqual((structure["pmi"], [view["name"] for view in structure["pmi_views"]]), ([], ["iso", "top"]))
-        self.assertEqual(pmi.read(self.step), [])
+        self.assertEqual(read(self.step), [])
         self.assertGreater(export.translate(self.xbf, "step", self.folder / "again.step"), 0)
 
 
@@ -1252,7 +1268,9 @@ class ViewTest(_Folder):
 # ``{more}``: values ILLUSTRATIVE.
 REQUIREMENTS = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, general_profile,
+                          limits, plus_minus_tolerance, position_tolerance, surface_profile_tolerance)
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -1263,24 +1281,24 @@ def pmi_plate():
     bottom, top = body.faces().sort_by(bd.Axis.Z)[0], body.faces().sort_by(bd.Axis.Z)[-1]
     front, left = body.faces().sort_by(bd.Axis.Y)[0], body.faces().sort_by(bd.Axis.X)[0]
     hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
-    return pmi.annotate(
+    return annotate(
         body,
-        pmi.datum("A", bottom),
-        pmi.datum("B", front),
-        pmi.diameter("hole-size", hole, tolerance=pmi.plus_minus(0.1, 0)),
+        datum("A", bottom),
+        datum("B", front),
+        dimensional_size("hole-size", hole, tolerance=plus_minus_tolerance(0.1, 0)),
         {more}
     )
 '''
 # The hole located: datum C on the left face, and the hole's position to A|B|C.
-LOCATED = 'pmi.datum("C", left), pmi.position("hole-position", hole, 0.1, datums=["A", "B", "C"]),'
+LOCATED = 'datum("C", left), position_tolerance("hole-position", hole, 0.1, datums=["A", "B", "C"]),'
 # A requirement of each conflict: B named by no frame; the hole's limits, which its measured 10 mm
 # lies outside, and which miss its size's 10.0–10.1; a flatness wider than the general profile on the
 # top, and one wider than the left face's own profile.
-EACH_CONFLICT = '''pmi.diameter("hole-limits", hole, tolerance=pmi.limits(9.9, 9.95)),
-        pmi.flatness("top-flatness", top, 0.6),
-        pmi.profile("left-profile", left, 0.2),
-        pmi.flatness("left-flatness", left, 0.3),
-        pmi.general_profile("general", 0.5, datums=["A"]),'''
+EACH_CONFLICT = '''dimensional_size("hole-limits", hole, tolerance=limits(9.9, 9.95)),
+        flatness_tolerance("top-flatness", top, 0.6),
+        surface_profile_tolerance("left-profile", left, 0.2),
+        flatness_tolerance("left-flatness", left, 0.3),
+        general_profile("general", 0.5, datums=["A"]),'''
 
 
 def requirements(more: str) -> str:
@@ -1301,8 +1319,8 @@ class CoverageTest(_Folder):
         [found] = structure["pmi_coverage"]
         self.assertEqual((found["part"], found["conflicts"]), (0, []))
         # The six faces of the box, sorted: the hole has a size and a position; a datum is no requirement.
-        faces = pmi._faces(loaded.prototypes[0].shape)
-        planes = [at for at in range(1, faces.Extent() + 1) if pmi._surface(faces.FindKey(at))[0] == "plane"]
+        faces = _faces(loaded.prototypes[0].shape)
+        planes = [at for at in range(1, faces.Extent() + 1) if _surface(faces.FindKey(at))[0] == "plane"]
         self.assertEqual(len(planes), 6)
         self.assertEqual(found["uncovered"], sorted(found["uncovered"]))
         self.assertEqual(sorted(_ordinal(loaded, ref) for ref in found["uncovered"]), planes)
@@ -1310,12 +1328,12 @@ class CoverageTest(_Folder):
                                                       "conflicts": []}])
         # Pure: of a part's entries and its faces alone, in any order.
         hole = _by_id(structure["pmi"])["hole-size"]["refs"][0]["ref"]
-        self.assertEqual(pmi.coverage(structure["pmi"], [hole, *reversed(found["uncovered"])]),
+        self.assertEqual(coverage(structure["pmi"], [hole, *reversed(found["uncovered"])]),
                          {"uncovered": found["uncovered"], "conflicts": []})
 
     def test_a_general_profile_covers_them(self) -> None:
         # A's own flatness, and a general profile to A of every other face nothing controls.
-        general = 'pmi.flatness("bottom-flatness", bottom, 0.05), pmi.general_profile("general", 0.5, datums=["A"]),'
+        general = 'flatness_tolerance("bottom-flatness", bottom, 0.05), general_profile("general", 0.5, datums=["A"]),'
         report = self.build(requirements(LOCATED + general))
         self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": []}])
         self.assertNotIn("coverage", report["pmi"])
@@ -1330,15 +1348,16 @@ class CoverageTest(_Folder):
     def test_a_basic_dimension_covers_no_face(self) -> None:
         """A basic dimension is no requirement: the position it locates covers the hole, and the
         datum features it starts from (B, C) still want controls of their own, as A does."""
-        basics = 'pmi.basic("hole-from-B", front, hole), pmi.basic("hole-from-C", left, hole),'
-        general = 'pmi.general_profile("general", 0.5, datums=["A", "B", "C"]),'
+        basics = ('dimensional_location("hole-from-B", front, hole, basic=True), '
+                  'dimensional_location("hole-from-C", left, hole, basic=True),')
+        general = 'general_profile("general", 0.5, datums=["A", "B", "C"]),'
         self.build(requirements(LOCATED + basics + general))
         structure = self.served()
         found = _by_id(structure["pmi"])
         named = sorted(found[letter]["refs"][0]["ref"] for letter in "ABC")
         self.assertEqual(structure["pmi_coverage"], [{"part": 0, "uncovered": named, "conflicts": []}])
         # Each datum feature given a flatness of its own: every face has a requirement.
-        flatness = "".join(f'pmi.flatness("{letter}-flatness", {face}, 0.05),'
+        flatness = "".join(f'flatness_tolerance("{letter}-flatness", {face}, 0.05),'
                            for letter, face in (("A", "bottom"), ("B", "front"), ("C", "left")))
         report = self.build(requirements(LOCATED + basics + general + flatness))
         self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": []}])
@@ -1382,15 +1401,15 @@ class CoverageTest(_Folder):
         self.assertEqual(unlinked(), [])
         # Its face gone, the diameter it names holds.
         self.build(notes(mask="'face 99'"))
-        self.assertEqual(_by_id(pmi.read(self.xbf))["mask"]["status"], "missing")
+        self.assertEqual(_by_id(read(self.xbf))["mask"]["status"], "missing")
         self.assertEqual(unlinked(), [])
         # The diameter it names broken, its face holds (the STEP is refused for the diameter, not the note).
         self.build(notes(hole="'face 99'", mask=HOLE), ok=False)
         self.assertEqual(unlinked(), [])
         # The hole removed: its face and the diameter both gone, it keeps its number and is said.
         loaded = document.Loaded(self.xbf)
-        faces = pmi._faces(loaded.prototypes[0].shape)
-        [ordinal] = [at for at in range(1, faces.Extent() + 1) if pmi._surface(faces.FindKey(at))[0] == "cylinder"]
+        faces = _faces(loaded.prototypes[0].shape)
+        [ordinal] = [at for at in range(1, faces.Extent() + 1) if _surface(faces.FindKey(at))[0] == "cylinder"]
         name = loaded.prototypes[0].face_names[ordinal]
         report = self.build(notes(hole=repr(name), cut="pass"), ok=False)
         self.assertEqual(unlinked(), [{"kind": "unlinked_note", "ids": ["mask"],
@@ -1421,15 +1440,16 @@ class CoverageTest(_Folder):
         # An assembly of an annotated base and a pin given no PMI: the base's coverage alone.
         report = self.build('''
 import build123d as bd
-from cadgen.engine import pmi, xbf
+from cadgen.ap242 import annotate, datum, flatness_tolerance
+from cadgen.engine import xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
 def pmi_plate():
     base = bd.Box(100, 60, 10)
     base.label = "base"
-    base = pmi.annotate(base, pmi.datum("A", base.faces().sort_by(bd.Axis.Z)[0]),
-                        pmi.flatness("base-top", base.faces().sort_by(bd.Axis.Z)[-1], 0.02))
+    base = annotate(base, datum("A", base.faces().sort_by(bd.Axis.Z)[0]),
+                    flatness_tolerance("base-top", base.faces().sort_by(bd.Axis.Z)[-1], 0.02))
     pin = bd.Cylinder(3, 20).moved(bd.Pos(30, 0, 15))
     pin.label = "pin"
     return bd.Compound(children=[base, pin], label="fixture")
@@ -1459,7 +1479,8 @@ def pmi_plate():
 # gets from it passes to a flat side of the square, parallel to the left face (the viewer's v3).
 CUT = '''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, datum, dimensional_location
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -1470,7 +1491,7 @@ def pmi_plate():
     body = body - cut
     body.label = "plate"
     left = body.faces().sort_by(bd.Axis.X)[0]
-    return pmi.annotate(body, pmi.datum("C", left), pmi.basic("hole-from-left", left, {hole}))
+    return annotate(body, datum("C", left), dimensional_location("hole-from-left", left, {hole}, basic=True))
 '''
 ROUND, SQUARE = "bd.Cylinder(5, 10)", "bd.Box(12, 12, 10)"
 
@@ -1480,8 +1501,8 @@ class FaceKindTest(_Folder):
         """The round hole's element name, as the served document names it."""
         self.build(CUT.format(cut=ROUND, hole="body.faces().filter_by(bd.GeomType.CYLINDER)[0]"))
         loaded = document.Loaded(self.xbf)
-        faces = pmi._faces(loaded.prototypes[0].shape)
-        [ordinal] = [at for at in range(1, faces.Extent() + 1) if pmi._surface(faces.FindKey(at))[0] == "cylinder"]
+        faces = _faces(loaded.prototypes[0].shape)
+        [ordinal] = [at for at in range(1, faces.Extent() + 1) if _surface(faces.FindKey(at))[0] == "cylinder"]
         return loaded.prototypes[0].face_names[ordinal]
 
     def named(self, cut: str, name: str, *, ok: bool | None = True) -> dict:
@@ -1491,7 +1512,7 @@ class FaceKindTest(_Folder):
         name = self.hole_name()
         report = self.named(ROUND, name)
         self.assertEqual(report["pmi"]["problems"], [])
-        self.assertEqual(_by_id(pmi.read(self.xbf))["hole-from-left"]["dimension"]["nominal"]["value"], 50.0)
+        self.assertEqual(_by_id(read(self.xbf))["hole-from-left"]["dimension"]["nominal"]["value"], 50.0)
         # The hole made a square: the name now names a flat side 44 from the left face. The build says
         # so, as a warning of its report and of the structure it serves; the document is the code's.
         report = self.named(SQUARE, name)
@@ -1502,7 +1523,7 @@ class FaceKindTest(_Folder):
         served = _by_id(engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"])
         [text] = served["hole-from-left"]["warnings"]
         self.assertTrue(text.startswith(said), text)
-        entry = _by_id(pmi.read(self.xbf))["hole-from-left"]
+        entry = _by_id(read(self.xbf))["hole-from-left"]
         self.assertEqual((entry["status"], entry["dimension"]["nominal"]["value"], entry["warnings"]), ("ok", 44.0, []))
 
     def test_after_a_restart_the_saved_document_is_the_last_build(self) -> None:
@@ -1524,7 +1545,7 @@ class FaceKindTest(_Folder):
         self.named(SQUARE, name, ok=None)
         self.assertEqual(self.xbf.read_bytes(), after)
         loaded = document.Loaded(self.xbf)
-        for record in pmi.records_of_document(loaded.doc, loaded.prototypes, loaded.name):
+        for record in records_of_document(loaded.doc, loaded.prototypes, loaded.name):
             self.assertEqual(set(record["extra"]), {"schema", "id", "kind", "label", "presentation", "refs", "unlinked"})
 
     def test_the_warning_is_the_last_builds_alone(self) -> None:
@@ -1551,14 +1572,15 @@ class AssemblyTest(_Folder):
     def test_each_part_of_an_assembly_carries_its_own_pmi_once_however_often_it_is_placed(self) -> None:
         self.build('''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, datum, dimensional_size, flatness_tolerance, plus_minus_tolerance
+from cadgen.engine import step, xbf
 
 
 def pin():
     body = bd.Cylinder(3, 20)
     body.label = "pin"
-    return pmi.annotate(body, pmi.diameter("pin-diameter", body.faces().filter_by(bd.GeomType.CYLINDER)[0],
-                                           tolerance=pmi.plus_minus(0, -0.01)))
+    return annotate(body, dimensional_size("pin-diameter", body.faces().filter_by(bd.GeomType.CYLINDER)[0],
+                                               tolerance=plus_minus_tolerance(0, -0.01)))
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -1566,8 +1588,8 @@ def pin():
 def pmi_plate():
     base = bd.Box(100, 60, 10)
     base.label = "base"
-    base = pmi.annotate(base, pmi.datum("A", base.faces().sort_by(bd.Axis.Z)[0]),
-                        pmi.flatness("base-top", base.faces().sort_by(bd.Axis.Z)[-1], 0.02))
+    base = annotate(base, datum("A", base.faces().sort_by(bd.Axis.Z)[0]),
+                    flatness_tolerance("base-top", base.faces().sort_by(bd.Axis.Z)[-1], 0.02))
     first, second = pin().moved(bd.Pos(-30, 0, 15)), pin().moved(bd.Pos(30, 0, 15))
     first.label, second.label = "pin", "pin"
     return bd.Compound(children=[base, first, second], label="fixture")
@@ -1596,23 +1618,24 @@ def pmi_plate():
                          ("FLATNESS_TOLERANCE", 0.02, "mm"))
         # OCCT's reader finds a datum through the tolerances naming it only: A, named by none, is in
         # the file (above) but not in what OCCT reads back.
-        self.assertEqual(sorted(entry["kind"] for entry in pmi.read(self.step)), ["dimension", "geometric_tolerance"])
+        self.assertEqual(sorted(entry["kind"] for entry in read(self.step)), ["dimension", "geometric_tolerance"])
 
     def test_an_annotation_linked_to_nothing_keeps_its_part(self) -> None:
         """Its presentation is in its part's frame: a broken callout of a placed pin is the pin's."""
         self.build('''
 import build123d as bd
-from cadgen.engine import pmi, xbf
+from cadgen.ap242 import annotate, datum, dimensional_size, place
+from cadgen.engine import xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
 def pmi_plate():
     base = bd.Box(100, 60, 10)
     base.label = "base"
-    base = pmi.annotate(base, pmi.datum("A", base.faces().sort_by(bd.Axis.Z)[0]))
+    base = annotate(base, datum("A", base.faces().sort_by(bd.Axis.Z)[0]))
     pin = bd.Cylinder(3, 20)
     pin.label = "pin"
-    pin = pmi.annotate(pin, pmi.diameter("pin-diameter", "face 9", presentation=pmi.place((3, 0, 0), (10, 0, 0))))
+    pin = annotate(pin, dimensional_size("pin-diameter", "face 9", presentation=place((3, 0, 0), (10, 0, 0))))
     placed = pin.moved(bd.Pos(30, 0, 15))
     placed.label = "pin"
     return bd.Compound(children=[base, placed], label="fixture")
@@ -1631,7 +1654,8 @@ class UnitsTest(_Folder):
         metre: the export puts the millimetre back (``export.step._pmi_records``)."""
         self.build('''
 import build123d as bd
-from cadgen.engine import pmi, step, xbf
+from cadgen.ap242 import annotate, flatness_tolerance
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -1639,12 +1663,12 @@ from cadgen.engine import pmi, step, xbf
 def pmi_plate():
     body = bd.Box(100, 60, 10)
     body.label = "plate"
-    return pmi.annotate(body, pmi.flatness("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+    return annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
 ''')
         [tolerance] = ap242.report(self.step)["tolerances"]
         self.assertEqual((tolerance["magnitude"]["value"], tolerance["magnitude"]["unit"]), (0.05, "mm"))
         self.assertNotIn(b"SI_UNIT($,.METRE.)", self.step.read_bytes())
-        self.assertEqual(pmi.read(self.step)[0]["geometric_tolerance"]["value"], 0.05)
+        self.assertEqual(read(self.step)[0]["geometric_tolerance"]["value"], 0.05)
 
 
 class RefTest(_Folder):
@@ -1652,15 +1676,15 @@ class RefTest(_Folder):
         """The hole's element name, as the served document names it."""
         self.build(NAMED.format(cut="body = body - bd.Cylinder(5, 10)", ref="face 1"), ok=False)
         loaded = document.Loaded(self.xbf)
-        faces = pmi._faces(loaded.prototypes[0].shape)
-        [ordinal] = [at for at in range(1, faces.Extent() + 1) if pmi._surface(faces.FindKey(at))[0] == "cylinder"]
+        faces = _faces(loaded.prototypes[0].shape)
+        [ordinal] = [at for at in range(1, faces.Extent() + 1) if _surface(faces.FindKey(at))[0] == "cylinder"]
         return loaded.prototypes[0].face_names[ordinal]
 
     def test_a_named_ref_resolves_and_a_lost_one_is_missing_and_kept(self) -> None:
         hole = self.hole_name()
         report = self.build(NAMED.format(cut="body = body - bd.Cylinder(5, 10)", ref=hole))
         self.assertEqual(report["pmi"]["problems"], [])
-        found = _by_id(pmi.read(self.xbf))
+        found = _by_id(read(self.xbf))
         self.assertEqual(found["hole-diameter"]["refs"][0]["written"], hole)
         self.assertEqual(found["hole-diameter"]["dimension"]["nominal"]["value"], 10.0)
         # The hole removed: the ref names nothing. The build says so, the xbf keeps the annotation
@@ -1670,13 +1694,13 @@ class RefTest(_Folder):
         self.assertEqual(report["pmi"]["problems"][0]["status"], "missing")
         self.assertIn("hole-diameter", report["error"])
         self.assertIn("a STEP would drop PMI", report["error"])
-        kept = _by_id(pmi.read(self.xbf))["hole-diameter"]
+        kept = _by_id(read(self.xbf))["hole-diameter"]
         self.assertEqual(kept["status"], "missing")
         self.assertIn(f"no face {hole}", kept["problem"])
         self.assertEqual(kept["refs"][0]["ref"], hole)
         self.assertEqual(kept["dimension"], {"type": "diameter", "basic": False, "nominal": None,
                                              "tolerance": {"type": "plus_minus", "upper": 0.1, "lower": 0.0}})
-        self.assertEqual(_by_id(pmi.read(self.xbf))["A"]["status"], "ok")
+        self.assertEqual(_by_id(read(self.xbf))["A"]["status"], "ok")
 
     def test_a_face_the_annotation_cannot_stand_on_is_invalid(self) -> None:
         report = self.build(NAMED.format(cut="body = body - bd.Cylinder(5, 10)", ref="face 1"), ok=False)
@@ -1685,27 +1709,28 @@ class RefTest(_Folder):
         self.assertIn("is a plane face; a diameter is on a cylinder face", problem["problem"])
 
     def test_a_ref_naming_several_faces_is_ambiguous(self) -> None:
-        faces = pmi._faces(__import__("build123d").Box(1, 1, 1).wrapped)
-        found = pmi._ref({"role": "feature", "written": "f:box.twin.1", "face": None}, faces,
-                         ["f:box.twin.1", "f:box.other.1", "f:box.twin.1"], {"box"})
+        faces = _faces(__import__("build123d").Box(1, 1, 1).wrapped)
+        found = _ref({"role": "feature", "written": "f:box.twin.1", "face": None}, faces,
+                     ["f:box.twin.1", "f:box.other.1", "f:box.twin.1"], {"box"})
         self.assertEqual((found.status, found.candidates), ("ambiguous", [1, 3]))
-        found = pmi._ref({"role": "feature", "written": "box/f:box.other.1", "face": None}, faces,
-                         ["f:box.twin.1", "f:box.other.1", "f:box.twin.1"], {"box"})
+        found = _ref({"role": "feature", "written": "box/f:box.other.1", "face": None}, faces,
+                     ["f:box.twin.1", "f:box.other.1", "f:box.twin.1"], {"box"})
         self.assertEqual((found.status, found.ordinal), ("ok", 2))
-        found = pmi._ref({"role": "feature", "written": "lid/f:box.other.1", "face": None}, faces,
-                         ["f:box.twin.1", "f:box.other.1", "f:box.twin.1"], {"box"})
+        found = _ref({"role": "feature", "written": "lid/f:box.other.1", "face": None}, faces,
+                     ["f:box.twin.1", "f:box.other.1", "f:box.twin.1"], {"box"})
         self.assertEqual(found.status, "invalid")
 
     def test_a_shape_replaced_after_it_was_annotated_is_said(self) -> None:
         report = self.build('''
 import build123d as bd
-from cadgen.engine import pmi, xbf
+from cadgen.ap242 import annotate, flatness_tolerance
+from cadgen.engine import xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
 def pmi_plate():
     body = bd.Box(100, 60, 10)
-    pmi.annotate(body, pmi.flatness("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+    annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
     body = bd.fillet(body.edges().filter_by(bd.Axis.Z), 2)
     return body
 ''')
@@ -1717,19 +1742,20 @@ def pmi_plate():
         script = self.folder / "two.py"
         script.write_text(textwrap.dedent('''
             import build123d as bd
-            from cadgen.engine import pmi, xbf
+            from cadgen.ap242 import annotate, flatness_tolerance
+            from cadgen.engine import xbf
 
 
             @xbf(out="XBF/whole.xbf")
             def whole():
                 body = bd.Box(100, 60, 10)
-                return pmi.annotate(body, pmi.flatness("kept", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+                return annotate(body, flatness_tolerance("kept", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
 
 
             @xbf(out="XBF/lossy.xbf")
             def lossy():
                 body = bd.Box(100, 60, 10)
-                pmi.annotate(body, pmi.flatness("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+                annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
                 return bd.fillet(body.edges().filter_by(bd.Axis.Z), 2)
         '''), encoding="utf-8")
         reports = {report["source"]["name"]: report for report in engine_build.build(script, None, cwd=self.folder)}
@@ -1743,19 +1769,16 @@ class RefusedTest(_Folder):
 
         box = bd.Box(10, 10, 10)
         top = box.faces().sort_by(bd.Axis.Z)[-1]
-        with self.assertRaisesRegex(pmi.PMIUnsupported, "perpendicularity is not written verified"):
-            pmi.geometric("perp", "perpendicularity", top, 0.1, datums=["A"])
-        with self.assertRaisesRegex(pmi.PMIUnsupported, "a radius dimension is not written verified"):
-            pmi.dimension("r", "radius", top)
-        with self.assertRaisesRegex(pmi.PMIUnsupported, "a tolerance is pmi.plus_minus"):
-            pmi.diameter("d", top, tolerance={"type": "fit", "class": "H7"})
-        with self.assertRaisesRegex(pmi.PMIUnsupported, "assembly-level PMI"):
-            pmi.annotate(bd.Compound(children=[box]), pmi.flatness("f", top, 0.1))
-        with self.assertRaisesRegex(pmi.PMIError, r"upper deviation is above its lower \(0.1\), not -0.1"):
-            pmi.plus_minus(-0.1, 0.1)
-        with self.assertRaisesRegex(pmi.PMIUnsupported, "one position per datum"):
-            pmi.annotate(box, pmi.datum("A", top), pmi.datum("B", top),
-                         pmi.position("p1", top, 0.1, datums=["A", "B"]), pmi.position("p2", top, 0.1, datums=["B", "A"]))
+        with self.assertRaisesRegex(PMIUnsupported, "a tolerance is plus_minus_tolerance"):
+            dimensional_size("d", top, tolerance={"type": "fit", "class": "H7"})
+        with self.assertRaisesRegex(PMIUnsupported, "assembly-level PMI"):
+            annotate(bd.Compound(children=[box]), flatness_tolerance("f", top, 0.1))
+        with self.assertRaisesRegex(PMIError, r"upper deviation is above its lower \(0.1\), not -0.1"):
+            plus_minus_tolerance(-0.1, 0.1)
+        with self.assertRaisesRegex(PMIUnsupported, "one position per datum"):
+            annotate(box, datum("A", top), datum("B", top),
+                     position_tolerance("p1", top, 0.1, datums=["A", "B"]),
+                     position_tolerance("p2", top, 0.1, datums=["B", "A"]))
 
     def unsaved(self, model: str) -> export.Source:
         """``model`` built with no xbf of its own declared: its document as the build holds it."""
@@ -1799,8 +1822,8 @@ class RefusedTest(_Folder):
                                  r"plate holds a notes library \(primer-mask\)")):
             source = SimpleNamespace(structure=structure, foreign=False, xcaf=None, name="plate")
             with self.assertRaisesRegex(export.ExportRefused, said):
-                pmi.refuse_dropped(SimpleNamespace(source=source), "xbf")
-            pmi.refuse_dropped(SimpleNamespace(source=SimpleNamespace(**{**vars(source), "xcaf": object()})), "xbf")
+                refuse_dropped(SimpleNamespace(source=source), "xbf")
+            refuse_dropped(SimpleNamespace(source=SimpleNamespace(**{**vars(source), "xcaf": object()})), "xbf")
 
 
 class _Foreign:
@@ -1890,7 +1913,7 @@ class ForeignTest(unittest.TestCase):
         box = bd.Box(10, 10, 10)
         foreign = _Foreign(box)
         foreign.tolerance("Cylindricity", box.faces().sort_by(bd.Axis.Z)[-1], 0.2)
-        [entry] = pmi.read(foreign.step(self.folder / "foreign.step"))
+        [entry] = read(foreign.step(self.folder / "foreign.step"))
         self.assertEqual((entry["kind"], entry["xcaf_type"], entry["status"]),
                          ("unsupported", "XCAFDimTolObjects_GeomToleranceType_Cylindricity", "ok"))
         self.assertIn("cylindricity", entry["reason"])
@@ -1910,7 +1933,7 @@ class ForeignTest(unittest.TestCase):
         foreign.tolerance("Flatness", top, 0.2, SetZoneModifier=(X.XCAFDimTolObjects_GeomToleranceZoneModif_Projected,),
                           SetValueOfZoneModifier=(5.0,))
         foreign.tolerance("Flatness", top, 0.1, SetMaxValueModifier=(0.3,))
-        plain, projected, capped = pmi.read(foreign.xbf(self.folder / "foreign.xbf"))
+        plain, projected, capped = read(foreign.xbf(self.folder / "foreign.xbf"))
         self.assertEqual(plain["kind"], "dimension")
         self.assertEqual(plain["dimension"]["nominal"], {"value": 8.0, "unit": "mm", "source": "file"})
         self.assertEqual(plain["dimension"]["tolerance"], {"type": "plus_minus", "upper": 0.1, "lower": 0.0})
@@ -1930,17 +1953,17 @@ class ForeignTest(unittest.TestCase):
         edges = box.edges().filter_by(bd.Axis.Z)
         foreign.dimension("Location_LinearDistance", [edges[0], edges[1]], 10.0)
         vendor = foreign.step(self.folder / "vendor.step")
-        flatness, distance = sorted(pmi.read(vendor), key=lambda entry: entry["kind"])
+        flatness, distance = sorted(read(vendor), key=lambda entry: entry["kind"])
         self.assertEqual((flatness["kind"], flatness["status"]), ("geometric_tolerance", "ok"))
         self.assertEqual((distance["kind"], distance["status"], distance["reason"]), ("unsupported", "ok", "linked to an edge"))
         self.assertEqual(distance["xcaf_type"], "XCAFDimTolObjects_DimensionType_Location_LinearDistance")
         self.assertTrue(all("/edge " in ref["ref"] and ref["status"] == "ok" for ref in distance["refs"]), distance["refs"])
-        read = sorted(map(_meaning, pmi.read(vendor)))
+        listed = sorted(map(_meaning, read(vendor)))
         export.translate(vendor, "xbf", self.folder / "vendor.xbf")
-        self.assertEqual(sorted(map(_meaning, pmi.read(self.folder / "vendor.xbf"))), read)
+        self.assertEqual(sorted(map(_meaning, read(self.folder / "vendor.xbf"))), listed)
         for source in (vendor, self.folder / "vendor.xbf"):
             export.translate(source, "step", self.folder / "again.step")
-            self.assertEqual(sorted(map(_meaning, pmi.read(self.folder / "again.step"))), read)
+            self.assertEqual(sorted(map(_meaning, read(self.folder / "again.step"))), listed)
 
     def test_an_export_of_a_foreign_document_says_what_it_leaves_out(self) -> None:
         """A STEP drops what is linked to no geometry: of a document another system wrote, written,
@@ -1957,7 +1980,7 @@ class ForeignTest(unittest.TestCase):
         said: list[str] = []
         part = self.folder / "part.step"
         _export({"source": {"path": str(vendor)}, "destinations": [str(part)]}, said.append)
-        self.assertEqual([(entry["id"], entry["status"]) for entry in pmi.read(part)], [("geometric_tolerance-1", "ok")])
+        self.assertEqual([(entry["id"], entry["status"]) for entry in read(part)], [("geometric_tolerance-1", "ok")])
         self.assertEqual([text for text in said if text.startswith("warning: pmi:")],
                          ["warning: pmi: part.step: geometric_tolerance-2 is not carried whole: missing: the file "
                           "links it to no face, edge or point of a part"])
@@ -1971,11 +1994,11 @@ class FixtureTest(_Folder):
         if WRITE:
             shutil.copyfile(self.step, FIXTURE / "pmi_plate.step")
             shutil.copyfile(self.xbf, FIXTURE / "pmi_plate.xbf")
-            (FIXTURE / "pmi_plate.pmi.json").write_text(json.dumps(pmi.read(self.xbf), indent=2) + "\n", encoding="utf-8")
+            (FIXTURE / "pmi_plate.pmi.json").write_text(json.dumps(read(self.xbf), indent=2) + "\n", encoding="utf-8")
         self.assertEqual(_said(ap242.report(FIXTURE / "pmi_plate.step")), _said(ap242.report(self.step)))
         served = json.loads((FIXTURE / "pmi_plate.pmi.json").read_text(encoding="utf-8"))
-        self.assertEqual(served, pmi.read(self.xbf))
-        self.assertEqual(served, pmi.read(FIXTURE / "pmi_plate.xbf"))
+        self.assertEqual(served, read(self.xbf))
+        self.assertEqual(served, read(FIXTURE / "pmi_plate.xbf"))
 
 
 if __name__ == "__main__":

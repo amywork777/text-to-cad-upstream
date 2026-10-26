@@ -34,7 +34,7 @@ dimensions. ``--camera authored`` draws the picture from the view the ink was dr
 projection -- is a job of the packet (``authored``). Nothing is written but OUT.
 
 ``--view NAME`` (``PART/NAME`` where two parts have one; a job's ``display.view``) draws a part's
-named view (``pmi.view``) as the viewer applies it: down its camera from its part's first placement
+named view (``cadgen.ap242``'s ``view``) as the viewer applies it: down its camera from its part's first placement
 shown, cut by its section (the Clip's), only the PMI it shows, at its own placements (``view_of``).
 An unknown view, one with ``--camera`` or a clip beside it, one with a section on an exploded
 picture, and one whose section its placement turns off the world's axes are refused by name.
@@ -212,7 +212,7 @@ def parse_display(value: str | None, grid: bool) -> dict[str, Any]:
     if "pmi" in display and not isinstance(display["pmi"], bool):
         raise SnapshotRefused("display.pmi is true or false")
     if "view" in display and not (isinstance(display["view"], str) and display["view"].strip()):
-        raise SnapshotRefused("display.view is the name of a view of a part (pmi.view), or PART/NAME")
+        raise SnapshotRefused("display.view is the name of a view of a part (cadgen.ap242's view), or PART/NAME")
     _visibility(display)
     if grid:
         display["grid"] = True
@@ -294,7 +294,7 @@ def asked_view(view: Any, display: dict[str, Any], camera: Any, where: str = "--
     if view is None:
         return None
     if not isinstance(view, str) or not view.strip():
-        raise SnapshotRefused(f"{where} is the name of a view of a part (pmi.view), or PART/NAME")
+        raise SnapshotRefused(f"{where} is the name of a view of a part (cadgen.ap242's view), or PART/NAME")
     if camera is not None:
         raise SnapshotRefused(f"{where} {view} is seen down its own camera; remove --camera")
     return view
@@ -657,7 +657,7 @@ def view_of(still: Still, structure: dict[str, Any], name: str, hidden: frozense
     if not named:
         listed = [full(view) for view in found]
         known = (f"its views are {', '.join(listed[:-1])} and {listed[-1]}" if len(listed) > 1
-                 else f"its view is {listed[0]}" if listed else "it has none (pmi.view)")
+                 else f"its view is {listed[0]}" if listed else "it has none (cadgen.ap242's view)")
         raise SnapshotRefused(f"{name} has no view {still.view!r}; {known}")
     if len(named) > 1:
         raise SnapshotRefused(f"{name}: {still.view!r} is a view of {' and of '.join(map(part_name, named))}; "
@@ -1186,9 +1186,9 @@ def _arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--camera", help="a preset (iso, front, back, left, right, top, bottom), azimuth:elevation, "
                                          "a camera JSON object, or authored: the view --annotation's ink was drawn "
                                          "in, from its Quick Edit packet, exactly")
-    parser.add_argument("--view", metavar="NAME", help="a part's named view (pmi.view; PART/NAME where two parts have "
-                                                       "one): drawn down its camera, cut by its section, its PMI alone "
-                                                       "at its placements; not with --camera")
+    parser.add_argument("--view", metavar="NAME", help="a part's named view (cadgen.ap242's view; PART/NAME where two "
+                                                       "parts have one): drawn down its camera, cut by its section, "
+                                                       "its PMI alone at its placements; not with --camera")
     parser.add_argument("--preview", action="store_true", help="Preview's photographic look instead of the mode")
     parser.add_argument("--width", type=int)
     parser.add_argument("--height", type=int)

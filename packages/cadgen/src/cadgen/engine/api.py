@@ -518,7 +518,7 @@ def snapshot(source: Any = None, out: Any = None, *, job: Any = None, display: A
     annotation: its file's path, its object, or the Quick Edit packet that carries it) and
     ``measurements`` are drawn over the model; ``camera="authored"`` draws it from the view the
     annotation's ink was drawn in, which the packet holds. ``view`` draws a part's named view
-    (``pmi.view``: ``NAME``, or ``PART/NAME`` where two parts have one): its camera, its section, its
+    (``cadgen.ap242``'s ``view``: ``NAME``, or ``PART/NAME`` where two parts have one): its camera, its section, its
     PMI (``snapshot.view_of``), refused with ``camera``. ``out`` a folder (a path ending in a
     separator, or one that is there) is given a name inside it, the source's stem and the time
     (``snapshot.picture_path``). A snapshot refused or failed leaves the file at ``out`` as it
