@@ -1,8 +1,8 @@
 """Exports: a document translated to STEP, GLB, STL, 3MF and xbf by one writer
 (``export.translate``), whether a decorator declares the file or ``cadgen export`` asks
 for it. The STEP reads back through the engine's own reader with its names, colours,
-materials and instance tree; the meshes are parsed and counted; a pose moves a placement and
-a part is a subtree of its own; a build keeps a file its document did not change, writes only
+materials and instance tree; the meshes are parsed and counted; a posed model's STEP is the
+same bytes in every process; a build keeps a file its document did not change, writes only
 the files its flags select, and code built from text writes the files its flags name."""
 
 from __future__ import annotations
@@ -28,7 +28,8 @@ from cadgen.engine.export import ExportRefused, Source, translate
 
 BOARD = """
 import build123d as bd
-from cadgen.engine import configuration, glb, materials, paint, step, stl, threemf, xbf
+from cadgen.ap242 import mechanism_state
+from cadgen.engine import glb, materials, paint, step, stl, threemf, xbf
 
 
 @xbf("XBF/peg.xbf")
@@ -46,11 +47,11 @@ def peg():
 def board():
     plate = bd.Pos(0, -20, 0) * bd.Box(30, 10, 2)
     plate.color = bd.Color(0.2, 0.3, 0.9)
-    plate = paint(plate, plate.faces().sort_by(bd.Axis.Z)[-1], (1, 0, 0))
+    plate = paint(plate, plate.faces().sort_by(bd.Axis.Z)[-1], "#ff0000")
     plate = paint(plate, plate.faces().sort_by(bd.Axis.Z)[0], materials.steel)
     plate.material = materials.aluminium
     plate.label = "plate"
-    pegs = [peg().moved(bd.Location((x, 0, 0))) for x in (-10, 0, 10)]
+    pegs = [peg().shape.moved(bd.Location((x, 0, 0))) for x in (-10, 0, 10)]
     for index, placed in enumerate(pegs):
         placed.label = f"peg{{index}}"
     rack = bd.Compound(children=pegs, label="rack").moved(bd.Location((0, 0, {lift})))
@@ -62,7 +63,7 @@ def board():
     bd.RigidJoint("mount", lid, bd.Location())
     base.joints["flap"].connect_to(lid.joints["mount"], angle=0)
     hinge = bd.Compound(children=[base, lid], label="hinge")
-    configuration(hinge, "open", flap=60)
+    mechanism_state(hinge, "open", flap=60)
     return bd.Compound(children=[plate, rack, hinge], label="board")
 """
 
@@ -81,7 +82,7 @@ def kit():
     for index, rgb in enumerate(looks):
         part = bd.Pos(index * 20, 0, 0) * bd.Box(10, 10, 4 + index)
         part.color = bd.Color(*rgb)
-        part = paint(part, part.faces().sort_by(bd.Axis.Z)[-1], (rgb[2], rgb[0], rgb[1]))
+        part = paint(part, part.faces().sort_by(bd.Axis.Z)[-1], bd.Color(rgb[2], rgb[0], rgb[1]))
         part.material = (materials.aluminium, materials.steel)[index % 2]
         part.label = f"part{index}"
         parts.append(part)
@@ -99,17 +100,12 @@ from pathlib import Path
 from cadgen.engine.export import translate
 translate(Path(sys.argv[1]), None, Path(sys.argv[2]))
 """
-EXPORT_POSED = """
-import sys
-from pathlib import Path
-from cadgen.engine.export import translate
-translate(Path(sys.argv[1]), None, Path(sys.argv[2]), pose=sys.argv[3])
-"""
 # Three hinges of one base and one lid, each placed apart, each lid on a joint of its own: a
-# sub-assembly repeated, posed three ways.
+# sub-assembly repeated, posed three ways by a model of its own.
 HINGES = """
 import build123d as bd
-from cadgen.engine import configuration, xbf
+from cadgen.ap242 import mechanism_state, posed
+from cadgen.engine import xbf
 
 PLATE = bd.Box(10, 10, 2)
 PLATE.color = bd.Color(0.2, 0.3, 0.9)
@@ -131,24 +127,45 @@ def hinge(index):
 @xbf("XBF/hinges.xbf")
 def hinges():
     row = bd.Compound(children=[hinge(0), hinge(1), hinge(2)], label="hinges")
-    configuration(row, "open", flap0=30, flap1=60, flap2=90)
+    mechanism_state(row, "open", flap0=30, flap1=60, flap2=90)
     return row
+
+
+@xbf("XBF/hinges_open.xbf")
+def hinges_open():
+    return posed(hinges().shape, "open")
 """
-# Two axles labelled alike, a wheel on each: two occurrences at the path kit2/axle/wheel.
-AXLES = """
+
+# Twelve rows of nine links, each turned its own way and named at a length of its own, and a
+# plate whose name is longer than a line: 121 assembly occurrences, numbered past 100 by a process
+# that wrote a STEP before, in records the writer breaks where their text puts the breaks (the
+# plate's inside its name); placements a document's read moves by a last bit. ``{noop}`` changes
+# the body and not what it makes.
+ROWS = """
 import build123d as bd
-from cadgen.engine import xbf
+from cadgen.engine import step, xbf
 
 
-def axle(y):
-    wheel = bd.Pos(0, y, 0) * bd.Cylinder(10, 4)
-    wheel.label = "wheel"
-    return bd.Compound(children=[wheel], label="axle")
+@xbf("XBF/rows.xbf")
+@step("rows.step")
+def rows():
+    noop = {noop}  # noqa: F841
+    rows = []
+    for at in range(12):
+        links = []
+        for index in range(9):
+            link = bd.Box(4, 4, 2 + index % 3).moved(bd.Location((index * 7, 0, 0), (17 * index, 31 + at, 7 * index)))
+            link.color = bd.Color(0.1 + index / 10, 0.5, 0.9 - at / 15)
+            link.label = "link-" + "x" * (index * 4 + at % 4)
+            links.append(link)
+        rows.append(bd.Compound(children=links, label="row" + str(at)).moved(bd.Location((0, at * 9, 0))))
+    plate = bd.Pos(0, -10, 0) * bd.Box(60, 4, 1)
+    plate.color = bd.Color(0.8, 0.8, 0.2)
+    plate.label = PLATE
+    return bd.Compound(children=[*rows, plate], label="rows")
 
 
-@xbf("XBF/kit2.xbf")
-def kit2():
-    return bd.Compound(children=[axle(0), axle(50)], label="kit2")
+PLATE = "a plate whose name runs past the end of a line,   " * 3 + "end"
 """
 
 
@@ -269,6 +286,8 @@ class ExportTest(unittest.TestCase):
         self.assertIn([1.0, 0.0, 0.0, 1.0], [look["pbrMetallicRoughness"]["baseColorFactor"] for look in looks])
         rack = next(node for node in placed if node["name"] == "rack/peg0")
         self.assertEqual(rack["matrix"][12:15], [-10.0, 0.0, 6.0])
+        self.assertEqual({gltf["accessors"][primitive["indices"]]["componentType"] for entry in gltf["meshes"]
+                          for primitive in entry["primitives"]}, {5123}, "a small mesh is indexed in 16 bits")
         # The root shows the document's Z-up millimetres in glTF's Y-up metres.
         root = gltf["nodes"][gltf["scenes"][0]["nodes"][0]]
         self.assertEqual(root["scale"], [0.001, 0.001, 0.001])
@@ -310,77 +329,9 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(count, sum(held[placed.prototype].triangles for placed in view.placements))
         self.assertEqual(len(data), 84 + 50 * count)
 
-    def test_a_pose_moves_the_placements_its_mechanism_moves(self) -> None:
-        out = self.folder / "open.glb"
-        translate(self.xbf, None, out, pose="open")
-        nodes = {node["name"]: node for node in _glb_json(out)["nodes"] if "mesh" in node}
-        built = {node["name"]: node for node in _glb_json(self.folder / "board.glb")["nodes"] if "mesh" in node}
-        self.assertEqual(nodes["hinge/base"]["matrix"], built["hinge/base"]["matrix"])
-        self.assertNotEqual(nodes["hinge/lid"]["matrix"], built["hinge/lid"]["matrix"])
-        from cadgen.engine import mechanism
-
-        structure = self.loaded.structure()
-        values, _named = mechanism.resolve(structure["kinematics"], "open")
-        lid = next(at for at, i in enumerate(structure["instances"]) if i["path"].endswith("lid"))
-        np.testing.assert_allclose(nodes["hinge/lid"]["matrix"], mechanism.posed_instances(structure, values)[lid],
-                                   atol=1e-6)
-        with self.assertRaisesRegex(ExportRefused, "no configuration 'shut'"):
-            translate(self.xbf, None, self.folder / "shut.glb", pose="shut")
-        self.assertFalse((self.folder / "shut.glb").exists())
-
-    def test_a_part_is_its_subtree_as_a_document_of_its_own(self) -> None:
-        rack = self.folder / "rack.xbf"
-        translate(self.xbf, None, rack, part="rack")
-        loaded = document.Loaded(rack)
-        self.assertEqual(loaded.name, "rack")
-        self.assertEqual([i.path for i in loaded.instances], [["rack", "peg0"], ["rack", "peg1"], ["rack", "peg2"]])
-        # Its root is the subtree's frame: the rack's lift is not in it.
-        self.assertEqual([i.matrix[12:15] for i in loaded.instances], [[-10.0, 0.0, 0.0], [0.0, 0.0, 0.0],
-                                                                      [10.0, 0.0, 0.0]])
-        self.assertEqual(len(loaded.prototypes), 1)
-        self.assertEqual(loaded.prototypes[0].face_names, next(p for p in self.loaded.prototypes
-                                                               if p.name == "peg0").face_names)
-        self.assertRegex(loaded.writer or "", r"^cadgen\.engine xbf/4")
-        step = self.folder / "rack.step"
-        translate(self.xbf, None, step, part="board/rack")
-        self.assertEqual([i.path for i in document.Loaded(step).instances], [i.path for i in loaded.instances])
-        # A subtree's share of the mechanism goes with it into its xbf.
-        hinge = self.folder / "hinge.xbf"
-        translate(self.xbf, None, hinge, part="hinge")
-        found = document.Loaded(hinge).mechanism
-        self.assertEqual([pair.label for pair in found.pairs], ["flap"])
-        self.assertEqual(found.configurations, {"open": {"flap": (60.0,)}})
-        self.assertIsNone(document.Loaded(rack).mechanism)
-        with self.assertRaisesRegex(ExportRefused, "--part: board has no part or assembly nothing"):
-            translate(self.xbf, None, self.folder / "nothing.step", part="nothing")
-        with self.assertRaisesRegex(ExportRefused, "names one part or assembly"):
-            translate(self.xbf, None, self.folder / "face.step", part="rack/peg0/face 1")
-
-    def test_a_part_is_read_by_the_ref_grammar_and_a_path_two_occurrences_share_is_refused(self) -> None:
-        """``--part kit2/axle/wheel`` took the first of two wheels at that path, silently. A part is
-        an owner of the ref grammar now: ``kit2/axle.2/wheel`` names the second axle's wheel, and a
-        path two occurrences share is refused with each as the grammar tells them apart."""
-        (self.folder / "axles.py").write_text(textwrap.dedent(AXLES), encoding="utf-8")
-        (report,) = engine_build.build(self.folder / "axles.py", ["kit2"], cwd=self.folder)
-        self.assertTrue(report["ok"], report)
-        out = self.folder / "one.step"
-        for part, named in (("kit2/axle/wheel", "kit2/axle.1/wheel, kit2/axle.2/wheel"),
-                            ("axle", "kit2/axle.1, kit2/axle.2")):
-            with self.assertRaises(ExportRefused) as refused:
-                translate(self.folder / "XBF/kit2.xbf", None, out, part=part)
-            self.assertIn(f"--part: {part} names 2 occurrences in kit2: {named}", str(refused.exception))
-        self.assertFalse(out.exists())
-        second = self.folder / "second.xbf"
-        translate(self.folder / "XBF/kit2.xbf", None, second, part="kit2/axle.2/wheel")
-        self.assertEqual(document.Loaded(second).name, "wheel")
-        translate(self.folder / "XBF/kit2.xbf", None, self.folder / "axle.xbf", part="axle.1")
-        self.assertEqual(document.Loaded(self.folder / "axle.xbf").name, "axle")
-
     def test_what_is_no_document_or_no_new_one_is_refused_by_name(self) -> None:
-        with self.assertRaisesRegex(ExportRefused, "only with --part"):
+        with self.assertRaisesRegex(ExportRefused, "not written from another xbf"):
             translate(self.xbf, None, self.folder / "again.xbf")
-        with self.assertRaisesRegex(ExportRefused, "a posed xbf is refused"):
-            translate(self.xbf, None, self.folder / "posed.xbf", pose="open")
         with self.assertRaisesRegex(ExportRefused, "is a mesh"):
             translate(self.folder / "board.glb", None, self.folder / "back.step")
         with self.assertRaisesRegex(ExportRefused, "an export is one of"):
@@ -398,17 +349,17 @@ class ExportTest(unittest.TestCase):
                 status = cli.main(list(argv))
             return status, out.getvalue(), err.getvalue()
 
-        status, out, err = run("export", str(self.xbf), str(self.folder / "json.stl"), "--json", "--no-daemon")
+        status, out, err = run("export", str(self.xbf), str(self.folder / "json.stl"), "--json")
         self.assertEqual(status, 0, err)
         found = json.loads(out)
         self.assertEqual((found["ok"], found["source"], [(row["path"], row["kind"]) for row in found["files"]]),
                          (True, str(self.xbf), [(str(self.folder / "json.stl"), "stl")]))
         self.assertEqual(found["files"][0]["bytes"], (self.folder / "json.stl").stat().st_size)
         # Refused: under --json, its envelope on stdout and exit 1; else its words on stderr, exit 2.
-        status, out, err = run("export", str(self.xbf), str(self.folder / "board.obj"), "--json", "--no-daemon")
+        status, out, err = run("export", str(self.xbf), str(self.folder / "board.obj"), "--json")
         self.assertEqual((status, json.loads(out)["ok"], err), (1, False, ""))
         self.assertIn("an export is one of", json.loads(out)["error"])
-        status, out, err = run("export", str(self.xbf), str(self.folder / "board.obj"), "--no-daemon")
+        status, out, err = run("export", str(self.xbf), str(self.folder / "board.obj"))
         self.assertEqual((status, out), (2, ""))
         self.assertIn("an export is one of", err)
 
@@ -461,6 +412,44 @@ class BuildFilesTest(unittest.TestCase):
         [report] = engine_build.build(script, ["board"], cwd=self.folder)
         self.assertEqual([Path(path).name for path, row in report["files"].items() if row["written"]], ["board.stl"])
 
+    @unittest.skipIf(os.name == "nt", "a folder's mode 0555 does not make it read-only on Windows")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root writes into a read-only folder")
+    def test_a_read_only_folder_takes_its_unchanged_files_and_refuses_a_change_in_one_line(self) -> None:
+        text = """
+            import build123d as bd
+            from cadgen.engine import step, xbf
+
+
+            @xbf("out/plate.xbf")
+            @step("out/plate.step")
+            def plate():
+                return bd.Box(4, 5, {height})
+        """
+        script = self.write("plate.py", text.format(height=6))
+        [report] = engine_build.build(script, ["plate"], cwd=self.folder)
+        self.assertTrue(report["ok"], report)
+        out = self.folder / "out"
+        stats = {path: path.stat().st_mtime_ns for path in out.iterdir()}
+        out.chmod(0o555)
+        self.addCleanup(out.chmod, 0o755)
+        engine_build._WRITTEN.clear()  # a fresh process: the files are compared, not remembered
+        engine_build._PARTS.clear()
+        [report] = engine_build.build(script, ["plate"], cwd=self.folder)
+        self.assertTrue(report["ok"], report)
+        self.assertFalse(any(row["written"] for row in report["files"].values()), report["files"])
+        source = engine_build.held(script, "plate")  # what ``cadgen export`` translates
+        self.assertEqual(translate(source, None, out / "plate.step"), (out / "plate.step").stat().st_size)
+        self.assertEqual({path: path.stat().st_mtime_ns for path in out.iterdir()}, stats)
+        refusal = f"its folder {out} is read-only (mode 0555)"
+        with self.assertRaises(PermissionError) as raised:
+            translate(source, None, out / "plate.glb")
+        self.assertEqual(str(raised.exception), f"plate.glb is new and cannot be written: {refusal}")
+        self.write("plate.py", text.format(height=7))
+        [report] = engine_build.build(script, ["plate"], cwd=self.folder)
+        self.assertFalse(report["ok"])
+        self.assertIn(f"plate.xbf changed and cannot be written: {refusal}", report["error"])
+        self.assertEqual({path: path.stat().st_mtime_ns for path in out.iterdir()}, stats)
+
     def test_a_derived_decorator_alone_writes_its_one_file(self) -> None:
         script = self.write("solo.py", """
             import build123d as bd
@@ -510,160 +499,19 @@ class BuildFilesTest(unittest.TestCase):
 
         script = self.write("board.py", BOARD.format(lift=6))
         out = self.folder / "made/board.stl"
-        # The address selects the declared model, built before exporting.
-        self.assertEqual(api.export(f"{script}::board", out, daemon=False)[0].path, out)
+        # A script is never a source, whatever names it: refused as any file that is no document.
+        for named in (script, f"{script}::board"):
+            with self.assertRaisesRegex(ExportRefused, "is no document"):
+                api.export(named, out, daemon=False)
+        self.assertFalse(out.exists())
         spec = importlib.util.spec_from_file_location("board_script", script)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        written = api.export(module.board, out, self.folder / "made/rack.3mf", part=None, daemon=False)
+        written = api.export(module.board, out, self.folder / "made/rack.3mf", daemon=False)
         self.assertEqual([row.path for row in written], [out, self.folder / "made/rack.3mf"])
         self.assertTrue(out.is_file())
         self.assertIn("XBF/board.xbf", self.files(), "the model's document was built")
         self.assertIn("board.step", self.files(), "a model that runs writes every file it declares")
-
-
-class CodeTest(unittest.TestCase):
-    """Code built from source text: one model, named by ``name``, assigning ``result``."""
-
-    CODE = "import build123d as bd\nbody = bd.Box(4, 4, 2)\nresult = body - bd.Cylinder(1, {height})\n"
-
-    def setUp(self) -> None:
-        self.folder = Path(tempfile.mkdtemp(prefix="engine-code-")).resolve()
-        self.addCleanup(shutil.rmtree, self.folder, ignore_errors=True)
-        self.script = engine_build.code_script("plug", self.folder)
-
-    def build(self, code: str, outputs: dict | None = None) -> dict:
-        [report] = engine_build.build(self.script, ["plug"], cwd=self.folder, outputs=outputs, code=code)
-        return report
-
-    def test_shape_build_keeps_metadata_updates_its_address_and_only_writes_declared_files(self) -> None:
-        import build123d as bd
-        from cadgen import build, materials, paint
-
-        here = Path.cwd()
-        os.chdir(self.folder)
-        self.addCleanup(os.chdir, here)
-        base = bd.Box(4, 5, 2)
-        base.label = "base"
-        base.material = materials.aluminium
-        base = paint(base, base.faces().sort_by(bd.Axis.Z)[-1], (1, 0, 0))
-        arm = bd.Box(3, 2, 1)
-        arm.label = "arm"
-        arm.color = bd.Color(0, 0, 1)
-        bd.RevoluteJoint("hinge", base, axis=bd.Axis.Z, angular_range=(0, 90))
-        bd.RigidJoint("mount", arm, bd.Location())
-        base.joints["hinge"].connect_to(arm.joints["mount"], angle=30)
-        assembly = bd.Compound(children=[base, arm], label="kit")
-        from cadgen import configuration, motion
-        configuration(assembly, "open", hinge=60)
-        motion(assembly, "swing", [(0, {"hinge": 0}), (1, "open")])
-        built = build(assembly, model="shape_part", step="part.step", xbf="part.xbf")
-        self.assertTrue(built.ok, built.report)
-        self.assertEqual(built.report["address"], "code::shape_part")
-        self.assertIn("http://127.0.0.1:", built.report["url"])
-        loaded = document.Loaded(self.folder / "part.xbf")
-        self.assertEqual([i.path[-1] for i in loaded.instances], ["base", "arm"])
-        self.assertEqual(loaded.mechanism.configurations["open"], {"hinge": (60.0,)})
-        self.assertIn("swing", loaded.mechanism.motions)
-        self.assertTrue(loaded.prototypes[0].face_colors)
-        self.assertEqual(loaded.prototypes[0].material.name, materials.aluminium.name)
-        self.assertEqual({p.name for p in self.folder.iterdir()}, {"part.step", "part.xbf"})
-        revised = build(bd.Box(2, 3, 4), model="shape_part")
-        self.assertTrue(revised.ok, revised.report)
-        self.assertEqual(revised.report["url"], built.report["url"])
-        self.assertAlmostEqual(revised.shape.volume, 24)
-        self.assertEqual(revised.files, {})
-        written = revised.export(self.folder / "revised.step")
-        self.assertTrue(written[0].path.is_file())
-        with self.assertRaisesRegex(TypeError, "source text or.*Shape"):
-            build(123, model="invalid_shape")
-        with self.assertRaisesRegex(api.EngineError, "requires source code"):
-            build(base, model="invalid_shape", verify=True)
-
-    def test_shape_build_keeps_its_pmi(self) -> None:
-        """A shape's PMI is its metadata (law 21): annotated, built, its document holds it."""
-        import build123d as bd
-        from cadgen import build, pmi
-
-        plate = bd.Box(40, 20, 4) - bd.Cylinder(3, 4)
-        plate.label = "plate"
-        hole = plate.faces().filter_by(bd.GeomType.CYLINDER)[0]
-        plate = pmi.annotate(plate, pmi.datum("A", plate.faces().sort_by(bd.Axis.Z)[0]),
-                             pmi.diameter("hole", hole, tolerance=pmi.plus_minus(0.1, 0)))
-        built = build(plate, model="shape_pmi", xbf=str(self.folder / "plate.xbf"), daemon=False)
-        self.assertTrue(built.ok, built.report)
-        self.assertEqual((built.report["pmi"]["annotations"], built.report["pmi"]["problems"]), (2, []))
-        found = {entry["id"]: entry for entry in pmi.read(self.folder / "plate.xbf")}
-        self.assertEqual(sorted(found), ["A", "hole"])
-        self.assertEqual(found["hole"]["dimension"]["nominal"]["value"], 6.0)
-
-    def test_code_assigns_result_and_its_flags_are_its_files(self) -> None:
-        with self.assertRaisesRegex(engine_build.BuildError, "assigns no `result`"):
-            self.build("import build123d as bd\nshape = bd.Box(1, 1, 1)\n")
-        # Code declares nothing (law 12): a flag with no path writes where a decorator with none
-        # puts the file, in the working folder; the flags add up.
-        self.assertTrue(self.build(self.CODE.format(height=5), {"xbf": {}, "stl": {}, "step": {"out": "a/p.step"}})["ok"])
-        self.assertEqual({path.relative_to(self.folder).as_posix() for path in self.folder.rglob("*") if path.is_file()},
-                         {"XBF/plug.xbf", "plug.stl", "a/p.step"})
-
-    def test_the_build_verb_takes_code_alone(self) -> None:
-        import contextlib
-        import io
-
-        from cadgen.engine import cli
-
-        here = Path.cwd()
-        os.chdir(self.folder)
-        self.addCleanup(os.chdir, here)
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            status = cli.main(["build", self.CODE.format(height=5), "--name", "plug", "--stl", "--json", "--no-daemon"])
-            self.assertEqual(status, 0, err.getvalue())
-            # Its one argument is code: a script's path is code that assigns no result.
-            self.assertEqual(cli.main(["build", "plug.py", "--stl", "--no-daemon"]), 1)
-            with self.assertRaises(SystemExit):
-                cli.main(["build", "--stl"])
-        self.assertEqual(list(json.loads(out.getvalue().splitlines()[0])["files"]), [str(self.folder / "plug.stl")])
-        self.assertIn("assigns no `result`", err.getvalue())
-        self.assertIn("the following arguments are required: SOURCE", err.getvalue())
-
-    def test_missing_destination_is_rejected_before_code_or_stdin_runs(self) -> None:
-        import contextlib
-        import io
-        from unittest import mock
-        from cadgen.engine import cli
-
-        code = f"from pathlib import Path; Path({str(self.folder / 'ran')!r}).touch(); result = None"
-        for flags in ([], ["--name", "implicit"]):
-            with contextlib.redirect_stderr(io.StringIO()), mock.patch("sys.stdin.read", side_effect=AssertionError("read stdin")):
-                self.assertEqual(cli.main(["build", code, *flags]), 2)
-                self.assertEqual(cli.main(["build", "-", *flags]), 2)
-        self.assertFalse((self.folder / 'ran').exists())
-        with self.assertRaisesRegex(api.EngineError, "requires an output"):
-            api.build(code, daemon=False)
-
-    def test_code_is_named_warm_and_cold_cached_by_its_xbf(self) -> None:
-        outputs = {"xbf": {"out": "plug.xbf"}, "stl": {"out": "plug.stl"}}
-        first = self.build(self.CODE.format(height=5), outputs)
-        self.assertTrue(first["ok"], first)
-        self.assertEqual({path.name for path in self.folder.iterdir()}, {"plug.xbf", "plug.stl"},
-                         "the code's files, and nothing for the code itself")
-        loaded = document.Loaded(self.folder / "plug.xbf")
-        names = list(loaded.prototypes[0].face_names.values())
-        self.assertTrue(names and all(name.startswith(("f:plug.body", "f:plug.result")) for name in names), names)
-        warm = self.build(self.CODE.format(height=5), outputs)
-        self.assertEqual(warm["bodies"], {"plug.py::plug": "replayed"})
-        self.assertFalse(any(row["written"] for row in warm["files"].values()))
-        # A new worker: the xbf holds the code's key, and nothing runs.
-        from cadgen.engine.kernel import memo
-
-        memo.clear()
-        engine_build._WRITTEN.clear()
-        engine_build._PARTS.clear()
-        cold = self.build(self.CODE.format(height=5), outputs)
-        self.assertEqual(cold["cache"], {"used": True, "from": "file"}, cold)
-        edited = self.build(self.CODE.format(height=6), outputs)
-        self.assertTrue(edited["files"][str(self.folder / "plug.xbf")]["written"])
 
 
 class StepTest(unittest.TestCase):
@@ -742,31 +590,6 @@ class StepTest(unittest.TestCase):
         self.assertEqual(sorted(looks), [*(f"part{i}" for i in range(6)), "peg0"])
         self.assertEqual(looks, built)
 
-    def test_a_step_written_again_in_one_process_is_a_fresh_process_s_bytes(self) -> None:
-        # The kernel numbers assembly occurrences on from every STEP the process wrote before: a
-        # warm worker's export is numbered as a fresh process's all the same.
-        import re
-        import subprocess
-        import sys
-
-        (self.folder / "kit.py").write_text(textwrap.dedent(KIT), encoding="utf-8")
-        (report,) = engine_build.build(self.folder / "kit.py", ["kit"], cwd=self.folder)
-        self.assertTrue(report["ok"], report)
-        xbf = self.folder / "XBF/kit.xbf"
-        here = []
-        for at in range(2):
-            out = self.folder / f"here-{at}.step"
-            translate(xbf, None, out)
-            here.append(out.read_bytes())
-        fresh = self.folder / "fresh.step"
-        done = subprocess.run([sys.executable, "-c", EXPORT, str(xbf), str(fresh)], capture_output=True, text=True)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(here[0], here[1])
-        self.assertEqual(here[0], fresh.read_bytes())
-        ids = re.findall(rb"NEXT_ASSEMBLY_USAGE_OCCURRENCE\('(\d+)'", here[1])
-        self.assertEqual(ids, [b"%d" % number for number in range(1, len(ids) + 1)])
-        self.assertGreater(len(ids), 3)
-
     def test_the_presentations_are_settled_in_the_file_whatever_order_the_writer_left(self) -> None:
         # Two writes of one document whose presentations came out in either order, numbered
         # either way: the file's tail is renumbered where it stands, and what is quoted is text.
@@ -799,7 +622,8 @@ class StepTest(unittest.TestCase):
         self.assertEqual(text[:len(head)], head)
         # Red styles #2, which the shapes number first: its presentation comes first, its colour
         # follows it, and the quoted '#1' is the colour's name still.
-        self.assertIn("#5 = MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(\n    #6),#4);", text)
+        # Each record renumbered is on one line: the writer broke it where its old numbers fell.
+        self.assertIn("#5 = MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(#6),#4);\n", text)
         self.assertIn("#6 = STYLED_ITEM('color',(#7),#2);", text)
         self.assertIn("#8 = COLOUR_RGB('red #1',1.,0.,0.);", text)
         self.assertIn("#10 = STYLED_ITEM('color',(#11),#3);", text)
@@ -811,19 +635,19 @@ class StepTest(unittest.TestCase):
         from cadgen.engine import mechanism
 
         (self.folder / "hinges.py").write_text(textwrap.dedent(HINGES), encoding="utf-8")
-        (report,) = engine_build.build(self.folder / "hinges.py", ["hinges"], cwd=self.folder)
+        (report,) = engine_build.build(self.folder / "hinges.py", ["hinges_open"], cwd=self.folder)
         self.assertTrue(report["ok"], report)
         xbf = self.folder / "XBF/hinges.xbf"
         written = []
         for seed in ("1", "2"):
             out = self.folder / f"open-{seed}.step"
-            done = subprocess.run([sys.executable, "-c", EXPORT_POSED, str(xbf), str(out), "open"],
+            done = subprocess.run([sys.executable, "-c", EXPORT, str(self.folder / "XBF/hinges_open.xbf"), str(out)],
                                   env={**os.environ, "PYTHONHASHSEED": seed}, capture_output=True, text=True)
             self.assertEqual(done.returncode, 0, done.stderr)
             written.append(out)
         first, second = (path.read_bytes() for path in written)
         self.assertEqual(first, second)
-        # Each hinge's lid stands where the pose puts it, read back from the file.
+        # Each hinge's lid stands where the sampler poses the hinges' own, read back from the file.
         structure = document.Loaded(xbf).structure()
         values, _named = mechanism.resolve(structure["kinematics"], "open")
         posed = mechanism.posed_instances(structure, values)
@@ -834,6 +658,277 @@ class StepTest(unittest.TestCase):
         self.assertEqual(len(found), 3)
         for at, matrix in zip(lids, found):
             np.testing.assert_allclose(matrix, posed[at], atol=1e-6)
+
+
+def _arms():
+    """One ring placed alike under two arms of other names, once more apart in each, the right
+    arm's ring coloured its own way; and a body of two solids, coloured, under both arms."""
+    import copy
+
+    import build123d as bd
+
+    ring = bd.Cylinder(5, 2) - bd.Cylinder(3, 2)
+    ring.color = bd.Color(0.1, 0.7, 0.2)
+    body = bd.Compound([bd.Box(4, 4, 4), bd.Pos(10, 0, 0) * bd.Box(4, 4, 4)])
+    body.color = bd.Color(0.8, 0.3, 0.1)
+
+    def arm(side: str, y: float) -> "bd.Compound":
+        held = copy.copy(ring)
+        held.label = f"{side}_ring"
+        if side == "right":
+            held.color = bd.Color(0.2, 0.2, 0.9)
+        top = copy.copy(ring).moved(bd.Location((0, 0, 5)))
+        top.label = f"{side}_ring_top"
+        carried = copy.copy(body)
+        carried.label = f"{side}_body"
+        return bd.Compound(children=[held, top, carried], label=f"arm_{side}").moved(bd.Location((0, y, 0)))
+
+    return bd.Compound(children=[arm("left", 0), arm("right", 30)], label="robot")
+
+
+def _usages(doc) -> dict[tuple, dict]:
+    """Each occurrence of an XCAF document by its path of component places: its name (its
+    usage's, else its product's), its product's name, its usage's own colour, a part's colour
+    (its label's, else the one colour its solids are given: what the XCAF reader makes of a STEP
+    styling each solid) and a part's placement."""
+    from OCP.TDF import TDF_Label, TDF_LabelSequence
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
+
+    def part_color(label) -> tuple | None:
+        own = document._label_color(label)
+        if own is not None:
+            return own
+        faces = TopTools_IndexedMapOfShape()
+        TopExp.MapShapes_s(XCAFDoc_ShapeTool.GetShape_s(label), TopAbs_FACE, faces)
+        given, subs = {}, TDF_LabelSequence()
+        XCAFDoc_ShapeTool.GetSubShapes_s(label, subs)
+        for at in range(1, subs.Length() + 1):
+            held, rgba = XCAFDoc_ShapeTool.GetShape_s(subs.Value(at)), document._label_color(subs.Value(at))
+            if rgba is not None and held.ShapeType() != TopAbs_FACE:
+                inner = TopTools_IndexedMapOfShape()
+                TopExp.MapShapes_s(held, TopAbs_FACE, inner)
+                given.update((faces.FindIndex(inner.FindKey(k)), rgba) for k in range(1, inner.Extent() + 1))
+        return given[1] if len(given) == faces.Extent() and len(set(given.values())) == 1 else None
+
+    found: dict[tuple, dict] = {}
+
+    def visit(label, usage, location, path) -> None:
+        name = (document._label_name(usage) if usage is not None else "") or document._label_name(label)
+        own = document._label_color(usage) if usage is not None else None
+        if XCAFDoc_ShapeTool.IsAssembly_s(label):
+            found[path] = {"name": name, "product": document._label_name(label), "own": own}
+            components = TDF_LabelSequence()
+            XCAFDoc_ShapeTool.GetComponents_s(label, components, False)
+            for at in range(1, components.Length() + 1):
+                component, referred = components.Value(at), TDF_Label()
+                XCAFDoc_ShapeTool.GetReferredShape_s(component, referred)
+                visit(referred, component, location.Multiplied(XCAFDoc_ShapeTool.GetLocation_s(component)),
+                      path + (at - 1,))
+            return
+        shape = XCAFDoc_ShapeTool.GetShape_s(label)
+        found[path] = {"name": name, "product": document._label_name(label), "own": own,
+                       "color": part_color(label), "matrix": document._matrix(location.Multiplied(shape.Location()))}
+
+    free = TDF_LabelSequence()
+    XCAFDoc_DocumentTool.ShapeTool_s(doc.Main()).GetFreeShapes(free)
+    visit(free.Value(1), None, document._identity(), ())
+    return found
+
+
+class StepUsagesTest(unittest.TestCase):
+    """A prototype used under two parents of other names keeps one product name and each usage
+    its own NEXT_ASSEMBLY_USAGE_OCCURRENCE name, placement and instance colour; a coloured part of
+    several solids keeps its colour. Read back through the engine's readers and OCCT's XCAF reader
+    alone, a third party's read."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.folder = Path(tempfile.mkdtemp(prefix="engine-step-usages-")).resolve()
+        cls.xbf, cls.step = cls.folder / "arms.xbf", cls.folder / "arms.step"
+        cls.xbf.write_bytes(document.to_bytes(document.to_xcaf(document.collect(_arms(), "robot"))))
+        cls.held = document.load(cls.xbf)
+        cls.placements = cls.components()
+        translate(cls.xbf, None, cls.step)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.folder, ignore_errors=True)
+
+    def third_party(self) -> dict[tuple, dict]:
+        from OCP.IFSelect import IFSelect_RetDone
+        from OCP.STEPCAFControl import STEPCAFControl_Reader
+
+        doc = document._new_document()
+        reader = STEPCAFControl_Reader()
+        reader.SetNameMode(True)
+        reader.SetColorMode(True)
+        self.assertEqual(reader.ReadFile(str(self.step)), IFSelect_RetDone)
+        self.assertTrue(reader.Transfer(doc))
+        return _usages(doc)
+
+    def assert_colour(self, got: tuple | None, want: tuple | None, what: str) -> None:
+        self.assertEqual(got is None, want is None, what)
+        for one, two in zip(got or (), want or ()):
+            self.assertAlmostEqual(one, two, delta=1e-5, msg=what)
+
+    def test_each_usage_reads_back_with_its_name_placement_and_colour_through_occt_s_reader(self) -> None:
+        built, read = _usages(self.held.doc), self.third_party()
+        self.assertEqual(list(read), list(built))
+        self.assertEqual([built[(side, 0)]["name"] for side in (0, 1)], ["left_ring", "right_ring"])
+        self.assertEqual({built[(side, 0)]["product"] for side in (0, 1)}, {"left_ring"}, "one prototype")
+        self.assertIsNotNone(built[(1, 0)]["own"], "the right arm's ring is coloured its own way")
+        for path, want in built.items():
+            got = read[path]
+            self.assertEqual((got["name"], got["product"]), (want["name"], want["product"]), path)
+            self.assert_colour(got["own"], want["own"], f"{path}'s usage colour")
+            if "matrix" in want:
+                self.assert_colour(got["color"], want["color"], f"{path}'s part colour")
+                np.testing.assert_allclose(got["matrix"], want["matrix"], atol=1e-9, err_msg=str(path))
+        import re
+
+        text = self.step.read_text(encoding="ascii")
+        self.assertEqual(text.count("PRODUCT('left_ring'"), 1, "one product, used four times")
+        self.assertEqual(sorted(re.findall(r"NEXT_ASSEMBLY_USAGE_OCCURRENCE\('\d+','([^']*)'", text)), sorted(
+            ["arm_left", "arm_right", *(f"{side}_{part}" for side in ("left", "right")
+                                        for part in ("ring", "ring_top", "body"))]), "a usage, a name")
+
+    def test_the_engine_s_readers_read_each_usage_s_name_and_a_part_of_solids_its_colour(self) -> None:
+        built, read = document.Loaded(self.xbf), document.Loaded(self.step)
+        self.assertEqual([i.path for i in read.instances], [i.path for i in built.instances])
+        self.assertEqual([i.path[-1] for i in read.instances],
+                         ["left_ring", "left_ring_top", "left_body", "right_ring", "right_ring_top", "right_body"])
+        self.assertEqual([p.name for p in read.prototypes], [p.name for p in built.prototypes])
+        for mine, theirs in zip(read.prototypes, built.prototypes):
+            self.assert_colour(mine.color, theirs.color, mine.name)
+            self.assertEqual(mine.face_colors, {}, mine.name)
+        for mine, theirs in zip(read.instances, built.instances):
+            np.testing.assert_allclose(mine.matrix, theirs.matrix, atol=1e-9)
+        imported = document.read_step_shape(self.step)
+        leaves = {(arm.label, leaf.label): tuple(leaf.color) for arm in imported.children for leaf in arm.children}
+        self.assertEqual(sorted(leaves), sorted(
+            (f"arm_{side}", f"{side}_{part}") for side in ("left", "right") for part in ("ring", "ring_top", "body")))
+        for (_arm, label), rgba in leaves.items():
+            want = (0.2, 0.2, 0.9) if label == "right_ring" else (0.8, 0.3, 0.1) if label.endswith("body") else (
+                0.1, 0.7, 0.2)
+            for got, value in zip(rgba, want):
+                self.assertAlmostEqual(got, value, delta=1e-3, msg=label)
+
+    @classmethod
+    def components(cls) -> list:
+        """Each component of the held document with its placement, the datum it holds."""
+        from OCP.TDF import TDF_LabelSequence
+        from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
+
+        labels, found = TDF_LabelSequence(), []
+        XCAFDoc_DocumentTool.ShapeTool_s(cls.held.doc.Main()).GetShapes(labels)
+        for at in range(1, labels.Length() + 1):
+            components = TDF_LabelSequence()
+            XCAFDoc_ShapeTool.GetComponents_s(labels.Value(at), components, False)
+            found += [(document._entry(component), XCAFDoc_ShapeTool.GetLocation_s(component))
+                      for component in (components.Value(place) for place in range(1, components.Length() + 1))]
+        return found
+
+    def test_the_held_document_is_as_it_was_and_writes_the_same_bytes_again(self) -> None:
+        # Each usage was placed apart from its others for the writer, and set back after: the same
+        # datum on every component (a placement is told from another by its datum).
+        after = self.components()
+        self.assertEqual([entry for entry, _ in after], [entry for entry, _ in self.placements])
+        self.assertTrue(all(mine.IsEqual(theirs) for (_, mine), (_, theirs) in zip(after, self.placements)))
+        self.assertTrue(self.placements[3][1].IsEqual(self.placements[0][1]),
+                        "the arms' rings are one placement to the kernel")
+        again = self.folder / "again.step"
+        translate(self.xbf, None, again)
+        self.assertEqual(again.read_bytes(), self.step.read_bytes())
+
+
+class StepBytesTest(unittest.TestCase):
+    """A STEP is a function of its document: a build's, a warm worker's and a fresh process's
+    from the xbf read cold are the same bytes, and a model run again to the same document keeps
+    its file. Each record the file's settling renumbers is on one line, and reads as written."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.folder = Path(tempfile.mkdtemp(prefix="engine-step-bytes-")).resolve()
+        cls.script = cls.folder / "rows.py"
+        cls.write(1)
+        (report,) = engine_build.build(cls.script, ["rows"], cwd=cls.folder)
+        assert report["ok"], report
+        cls.step, cls.xbf = cls.folder / "rows.step", cls.folder / "XBF/rows.xbf"
+        cls.built = cls.step.read_bytes()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.folder, ignore_errors=True)
+
+    @classmethod
+    def write(cls, noop: int) -> None:
+        cls.script.write_text(textwrap.dedent(ROWS.replace("{noop}", str(noop))), encoding="utf-8")
+        os.utime(cls.script, ns=(time.time_ns(), time.time_ns()))
+
+    def fresh(self, name: str) -> bytes:
+        import subprocess
+        import sys
+
+        out = self.folder / name
+        done = subprocess.run([sys.executable, "-c", EXPORT, str(self.xbf), str(out)], capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return out.read_bytes()
+
+    def test_a_warm_worker_s_step_and_a_fresh_process_s_are_the_same_bytes(self) -> None:
+        import re
+
+        here = []
+        for at in range(3):
+            translate(self.xbf, None, self.folder / f"here-{at}.step")
+            here.append((self.folder / f"here-{at}.step").read_bytes())
+        self.assertEqual(here[0], here[1])
+        self.assertEqual(here[0], here[2])
+        self.assertEqual(here[0], self.fresh("fresh.step"))
+        records = re.findall(rb"NEXT_ASSEMBLY_USAGE_OCCURRENCE\('(\d+)'[^;]*;\n", here[0])
+        self.assertEqual(records, [b"%d" % number for number in range(1, 122)])
+        self.assertEqual(here[0].count(b"NEXT_ASSEMBLY_USAGE_OCCURRENCE"), 121, "every occurrence on one line")
+
+    def test_a_build_s_step_is_its_xbf_s_read_cold_in_another_process(self) -> None:
+        self.assertEqual(self.fresh("cold.step"), self.built)
+        # So exporting the xbf over the build's STEP keeps the file (``cadgen export``: unchanged).
+        stamp = self.step.stat().st_mtime_ns
+        translate(self.xbf, None, self.step)
+        self.assertEqual(self.step.stat().st_mtime_ns, stamp)
+
+    def test_a_model_run_again_to_the_same_document_keeps_its_step(self) -> None:
+        stamp = self.step.stat().st_mtime_ns
+        try:
+            self.write(2)
+            (report,) = engine_build.build(self.script, ["rows"], cwd=self.folder)
+        finally:
+            self.write(1)
+        self.assertTrue(report["ok"], report)
+        self.assertEqual(report["memo"]["bodies_run"], 1, "the body ran: its document was made again")
+        self.assertFalse(report["files"][str(self.step)]["written"], report["files"])
+        self.assertEqual(self.step.read_bytes(), self.built)
+        self.assertEqual(self.step.stat().st_mtime_ns, stamp)
+
+    def test_records_on_one_line_read_back_with_their_solids_names_and_colours(self) -> None:
+        import build123d as bd
+
+        read, built = document.Loaded(self.step), document.Loaded(self.xbf)
+        self.assertEqual([(p.name, p.color) for p in read.prototypes], [(p.name, p.color) for p in built.prototypes])
+        self.assertEqual([i.path for i in read.instances], [i.path for i in built.instances])
+        for mine, theirs in zip(read.instances, built.instances):
+            np.testing.assert_allclose(mine.matrix, theirs.matrix, atol=1e-9)
+        plate = "a plate whose name runs past the end of a line,   " * 3 + "end"
+        self.assertEqual(read.instances[-1].path[-1], plate, "a name broken inside its string reads whole")
+        shape = bd.import_step(self.step)
+        self.assertEqual(len(shape.solids()), 109)
+        labels = {leaf.label for leaf in shape.leaves}
+        self.assertIn(plate.replace(" ", "_"), labels, "build123d reads the name whole (a space its underscore)")
+        (leaf,) = [leaf for leaf in shape.leaves if leaf.label == plate.replace(" ", "_")]
+        for got, want in zip(tuple(leaf.color), (0.8, 0.8, 0.2, 1.0)):
+            self.assertAlmostEqual(got, want, delta=1e-6)
+        self.assertIn("link-" + "x" * 35, labels)
 
 
 if __name__ == "__main__":

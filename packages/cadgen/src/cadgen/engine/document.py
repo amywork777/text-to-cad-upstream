@@ -22,7 +22,8 @@ colour per part and per painted face; a material per part and per face given one
 base colour the part's colour too so a reader of colours alone agrees; on each part's face and edge sub-shape labels
 the element names the memo's history gave them (``kernel.trace``), so a face's name
 survives into the file and into a STEP; and on each part the key of its geometry
-(``KEY_GUID``), what a reader caches the part's tessellation by. Saved with the
+(``KEY_GUID``), which a reader caches the part's tessellation by only once the part it
+read makes that key again (``Loaded``). Saved with the
 BinXCAF driver as ``.xbf``, atomically, and only when its bytes changed -- every
 sub-shape's ``Checked`` flag written cleared (``unchecked``), so a cold build and a
 warm one of the same sources write the same bytes.
@@ -53,16 +54,15 @@ from __future__ import annotations
 
 import functools
 import hashlib
-import os
 import re
 import threading
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Callable, Iterable, Iterator
 
-from cadgen.engine.atomic_replace import replace_atomic
+from cadgen.engine.atomic_replace import put
 
 __all__ = ["Assembly", "Component", "Kept", "Loaded", "Part", "Tree", "collect", "geometry_key", "load", "merge",
            "mesh_faces", "read_step_shape", "read_xbf_shape", "save", "to_xcaf", "unchecked"]
@@ -75,6 +75,9 @@ WRITER = "cadgen.engine {format} (cadgen {release})"
 # The model's build closure, on its main label beside the writer (``previous``): its engine,
 # libraries, source, modules and inputs as pointers and digests, and the key over them.
 CLOSURE_GUID = "2f6c9d1e-8a43-4b7e-b5d0-7e1a3c9f4b62"
+# The build's animations, a build record on its main label after the closure (``animations.record``):
+# the compiled tracks a GLB of the document bakes; every other reader ignores them.
+ANIMATIONS_GUID = "196117b9-7763-467d-8c37-7f838602e8a5"
 _XCAF_LOCK = threading.RLock()
 # The last document ``to_xcaf`` made and its tree; per path, the tree last saved there.
 _MADE: list = []
@@ -90,8 +93,8 @@ class Part:
     colour of its first instance, the face colours painted on it by ordinal, its
     material and its faces' by ordinal, and, once named, its element names
     (``faces``/``edges`` lists by ordinal). A part's colour is its base colour: its own
-    material's colour, else its own colour, else the material it inherits' colour,
-    else the colour it inherits; a part with a material and no colour at all is drawn
+    colour, which always wins, else its own material's colour, else the material it
+    inherits' colour, else the colour it inherits; a part with a material and no colour at all is drawn
     in ``DEFAULT_COLOR``. A face given a material is coloured as the material, or as
     the part where the material has no colour."""
 
@@ -138,9 +141,16 @@ class Tree:
     parts: list[Part]
     signature: tuple
     mechanism: Any = None
+    # Its animations (``animations.harvest``), by name, or None: baked into its GLB, and kept on the
+    # document's main label as a build record (``ANIMATIONS_GUID``).
+    animations: Any = None
     # The model's build closure (``previous.manifest``, as text), written on the main label;
     # None for none.
     closure: str | None = None
+    # What ``collect`` made of the result's joints, sequences and animations (``Harvest``), and
+    # whether it was handed back rather than made (``collect``'s ``harvested``).
+    harvest: "Harvest | None" = None
+    reused: bool = False
     # The annotations resolved against the parts as built (``pmi.resolve``), made once; what the
     # build warns of them (``pmi.warn``), its report's and never the document's; and, for a tree
     # made of a document another system wrote, that document and each of its prototypes' part, its
@@ -153,6 +163,18 @@ class Tree:
     def pmi(self) -> list[tuple["Part", tuple]]:
         """Each annotated part with its annotations (``pmi``), in the tree's order."""
         return [(part, part.pmi) for part in self.parts if part.pmi]
+
+
+@dataclass(frozen=True)
+class Harvest:
+    """A result's harvest: its mechanism (``mechanism.harvest``: the pairs, the states and the
+    configuration sequences, a function's sampled), its animations (``animations.harvest``) and
+    what of the tree's signature they are. Plain values, read and never changed by what writes
+    the document or bakes the GLB, so one harvest serves every build of the same result."""
+
+    mechanism: Any
+    animations: Any
+    signature: tuple
 
 
 def _identity() -> Any:
@@ -169,13 +191,14 @@ def _location_key(location: Any) -> tuple:
 
 
 def _rgba(color: Any) -> tuple | None:
+    """A shape's colour as the document holds it, linear RGBA: build123d keeps ``shape.color``
+    as a ``Color``, whose channels are sRGB, and ``colors.linear`` reads it linear, as it reads a
+    hex string ``paint`` is given (the engine README's **Materials**)."""
     if color is None:
         return None
-    try:
-        values = tuple(float(value) for value in color)
-    except TypeError:
-        return None
-    return values if len(values) == 4 else (*values[:3], 1.0)
+    from cadgen.engine.colors import linear
+
+    return tuple(linear(color, "a shape's color"))
 
 
 def _material(value: Any) -> Any:
@@ -203,6 +226,12 @@ def _children(topods: Any) -> list[Any]:
 # once, as the parts a build keeps (``build._PARTS``) are named once.
 _MESH_FACES: "OrderedDict[Any, tuple[int, ...]]" = OrderedDict()
 _MESH_FACES_HELD = 1 << 16
+
+# A document's assembly as the engine reads it: a sub-assembly shared by several components is
+# walked once for each of them, so a few kilobytes can name an exponential tree, and a component
+# that refers to its own assembly names an endless one. A read refuses either.
+MAX_OCCURRENCES = 250_000
+MAX_ASSEMBLY_DEPTH = 64
 
 
 def mesh_faces(shape: Any) -> tuple[int, ...]:
@@ -239,10 +268,13 @@ def _mesh_refused(path: str, ordinals: tuple[int, ...]) -> str:
             "and bounding_box() -- and build B-rep from those")
 
 
-def collect(result: Any, name: str) -> Tree:
+def collect(result: Any, name: str, harvested: Callable[[tuple], "Harvest | None"] | None = None) -> Tree:
     """The prototypes and instances of a model's result (see the module docstring). A part
     holding a face with no surface -- a mesh's triangles -- is refused by its occurrence's path
-    (``mesh_faces``), before anything is made of it."""
+    (``mesh_faces``), before anything is made of it. ``harvested``, given the tree's signature
+    (its structure: every prototype's TShape, label, colour and placement), answers the harvest
+    made of this very result before, or None, and the joints, sequences and animations are
+    harvested again (``build``: kept beside the model body's run)."""
     from OCP.TopAbs import TopAbs_COMPOUND
 
     from cadgen.engine.kernel.memo import FACE_COLORS, FACE_MATERIALS
@@ -284,10 +316,10 @@ def collect(result: Any, name: str) -> Tree:
                 prototypes[signature] = found
                 order.append(found)
             return found, signature, color
-        if own_material is not None and own_material.color is not None:
-            color = own_material.color
-        elif own_color is None and material is not None and material.color is not None:
-            color = material.color
+        # An explicit colour always wins; a material's look colours only a part with none of its own.
+        if own_color is None and material is not None and material.color is not None:
+            color = (own_material if own_material is not None and own_material.color is not None
+                     else material).color
         if material is not None and color is None:
             color = DEFAULT_COLOR
         face_materials = {int(ordinal): given for ordinal, given in (state.get(FACE_MATERIALS) or {}).items()}
@@ -328,9 +360,20 @@ def collect(result: Any, name: str) -> Tree:
         order.append(holder)
         root = holder
     tree = Tree(root, order, parts, (signature, _location_key(location), root_name))
-    # The result's joints, harvested: the result is the holder's one component where it has one.
-    tree.mechanism = mechanism.harvest(result, tree, (0,) if held else ())
-    tree.signature = (*tree.signature, tree.mechanism.signature() if tree.mechanism else None)
+    found = harvested(tree.signature) if harvested is not None else None
+    if found is None:
+        # The result's joints, harvested: the result is the holder's one component where it has one.
+        kinematics = mechanism.harvest(result, tree, (0,) if held else ())
+        # And its animations, a GLB's: a change of one rewrites the GLB and the document's record, never its tree.
+        from cadgen.engine.animations import harvest
+
+        animated = harvest(result, tree, (0,) if held else (), kinematics)
+        found = Harvest(kinematics, animated, (kinematics.signature() if kinematics else None,
+                                               tuple(sorted(animated.items())) if animated else None))
+    else:
+        tree.reused = True
+    tree.harvest, tree.mechanism, tree.animations = found, found.mechanism, found.animations
+    tree.signature = (*tree.signature, *found.signature)
     for part, given in annotated.values():
         part.pmi = given
     if annotated:
@@ -432,18 +475,39 @@ def direct(shape: Any) -> Any:
     return shape if found is None or found.IsNull() else found
 
 
-def geometry_key(shape: Any) -> str:
-    """A key of a part's geometry: a digest of its binary BRep as the document writes
-    it (``unchecked``), no triangulation. Two parts with the same key tessellate
-    alike, in any process."""
-    import io
+def geometry_key(shape: Any, *, read: bool = False) -> str:
+    """A key of a part's geometry: a digest of the bytes it is meshed from
+    (``mesh.shape_bytes``: its binary BRep written and read once, no triangulation). Two
+    parts with the same key tessellate alike, in any process. A part a document read
+    (``read``) makes the key its build gave it, so a reader checks the key a file names
+    for each part against the part itself (``Loaded``)."""
+    from cadgen.engine.mesh import shape_bytes
 
-    from OCP.BinTools import BinTools, BinTools_FormatVersion_VERSION_4
+    return hashlib.blake2b(shape_bytes(shape, read=read), digest_size=16).hexdigest()
 
-    stream = io.BytesIO()
-    with unchecked([shape]):
-        BinTools.Write_s(shape, stream, False, False, BinTools_FormatVersion_VERSION_4)
-    return hashlib.blake2b(stream.getvalue(), digest_size=16).hexdigest()
+
+def _checked_keys(prototypes: list, claims: dict[int, str]) -> None:
+    """Each prototype keyed by what its file names (``claims``, by index) only where the
+    file's word holds: a key every part naming it makes again from its own geometry
+    (``geometry_key``) is kept, and is shared with every document of that geometry. Where
+    one part naming a key does not make it, the parts naming it are keyed apart, by the
+    key and their own geometry's keys together: a file never lends its part the key of
+    another document's, so the daemon's caches -- meshes, facts, shapes -- never answer
+    one document's part with another's geometry. A part's look kept apart from another
+    of its geometry is a copy of its topology (``_apart``), whose bytes are not the
+    first's: the two keep one key all the same, the one made of both. A part the file
+    names no key for keeps its own geometry's."""
+    named: dict[str, list] = {}
+    for prototype in prototypes:
+        claim = claims.get(prototype.index)
+        if claim:
+            named.setdefault(claim, []).append(prototype)
+    for claim, group in named.items():
+        if any(prototype.key != claim for prototype in group):
+            made = "\0".join(["named", claim, *sorted(prototype.key for prototype in group)])
+            claim = hashlib.blake2b(made.encode(), digest_size=16).hexdigest()
+        for prototype in group:
+            prototype.key = claim
 
 
 # --- the XCAF document --------------------------------------------------------------------
@@ -541,7 +605,9 @@ def _read_extra(label: Any) -> dict[str, Any]:
         found["isotropic"] = bool(data.GetInteger(text("isotropic")))
     if data.HasArrayOfReals(text("transmission_color")):
         values = data.GetArrayOfReals(text("transmission_color"))
-        found["transmission_color"] = tuple(values.Value(at) for at in range(values.Lower(), values.Upper() + 1))
+        from cadgen.engine.colors import Linear
+
+        found["transmission_color"] = Linear(values.Value(at) for at in range(values.Lower(), values.Upper() + 1))
     return found
 
 
@@ -700,8 +766,9 @@ class Kept:
         # The last conversion: how many prototypes it converted, and whether it patched.
         self.converted = 0
         self.patched = False
-        # The build closure the document holds (``Tree.closure``).
+        # The build closure the document holds (``Tree.closure``), and its animations' record.
         self.closure: str | None = None
+        self.animations: str | None = None
         # Whether the document holds PMI: one that does, or will, is converted whole (``_patch``).
         self.pmi = False
 
@@ -877,6 +944,10 @@ def _convert(tree: Tree, records: list[_Record], kept: Kept) -> Any:
     if tree.closure is not None:
         TDataStd_AsciiString.Set_s(doc.Main(), Standard_GUID(CLOSURE_GUID), TCollection_AsciiString(tree.closure))
     kept.closure = tree.closure
+    animated = _animations_record(tree)
+    if animated is not None:
+        TDataStd_AsciiString.Set_s(doc.Main(), Standard_GUID(ANIMATIONS_GUID), TCollection_AsciiString(animated))
+    kept.animations = animated
     labels: list = []
     for at, (prototype, record) in enumerate(zip(tree.order, records)):
         if isinstance(prototype, Part):
@@ -894,6 +965,13 @@ def _convert(tree: Tree, records: list[_Record], kept: Kept) -> Any:
     kept.tools = {tag for tag in _held_children(doc.Main()) if tag != mechanism.TAG}
     kept.converted, kept.patched = len(records), False
     return doc
+
+
+def _animations_record(tree: Tree) -> str | None:
+    """The record of a tree's animations its document holds (``animations.record``), or None."""
+    from cadgen.engine.animations import record
+
+    return record(tree.animations)
 
 
 def _patch(kept: Kept, tree: Tree, records: list[_Record]) -> Any:
@@ -926,15 +1004,20 @@ def _patch(kept: Kept, tree: Tree, records: list[_Record]) -> Any:
     converter = _Converter(doc, kept, patching=True)
     labels = [converter.label(at) for at in range(min(len(records), len(old)))] + [None] * (len(records) - len(old))
     kept.converted, kept.patched = len(dirty), True
-    if (tree.closure is None) != (kept.closure is None):
+    animated = _animations_record(tree)
+    if (tree.closure is None) != (kept.closure is None) or (animated is None) != (kept.animations is None):
         return None  # the main label's attributes in a cold conversion's order: made whole
-    if tree.closure != kept.closure:
+    if tree.closure != kept.closure or animated != kept.animations:
         from OCP.Standard import Standard_GUID
         from OCP.TCollection import TCollection_AsciiString
         from OCP.TDataStd import TDataStd_AsciiString
 
-        TDataStd_AsciiString.Set_s(doc.Main(), Standard_GUID(CLOSURE_GUID), TCollection_AsciiString(tree.closure))
-        kept.closure = tree.closure
+        if tree.closure != kept.closure:
+            TDataStd_AsciiString.Set_s(doc.Main(), Standard_GUID(CLOSURE_GUID), TCollection_AsciiString(tree.closure))
+            kept.closure = tree.closure
+        if animated != kept.animations:
+            TDataStd_AsciiString.Set_s(doc.Main(), Standard_GUID(ANIMATIONS_GUID), TCollection_AsciiString(animated))
+            kept.animations = animated
     if not dirty and not gone and tables == kept.tables and converter.mechanism(tree, labels) == kept.mechanism:
         return doc
     # The references a label makes, ordered by their labels' places: each colour's,
@@ -1103,34 +1186,53 @@ def _apart(shape: Any) -> Any:
     return made
 
 
-def save(doc: Any, path: Path, *, compare: bool) -> tuple[bool, int]:
+def write_bytes(path: Path, data: bytes, tree: "Tree | None" = None) -> tuple[bool, int]:
+    """A document's xbf bytes (``to_bytes``: the bytes ``save`` writes) at ``path``, landed whole
+    and only where the file does not hold them already (``atomic_replace.put``). ``tree``, the tree
+    the document was made from, is remembered as the one at ``path`` (``saved``) and, when the file
+    is written, told to ``SAVED_LISTENERS`` as ``save`` tells it. Returns whether the file was
+    written, and its size."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if tree is not None:
+        _SAVED[path.resolve()] = tree
+    written, _size = put(path, lambda temporary: temporary.write_bytes(data))
+    if written and tree is not None:
+        for listener in list(SAVED_LISTENERS):
+            listener(path.resolve(), tree)
+    return written, len(data)
+
+
+def save(doc: Any, path: Path, *, compare: bool, tree: "Tree | None" = None) -> tuple[bool, int]:
     """Save ``doc`` to ``path`` atomically: a temporary file beside it whose name ends in
     ``.xbf`` (BinXCAF appends the suffix to any other name), then replaced over the
-    path. With ``compare``, an existing file with the same bytes is left as it is.
-    Returns whether the file was written, and its size. The tree ``doc`` was made from
-    is remembered as the one at ``path`` (``saved``)."""
+    path. With ``compare``, an existing file with the same bytes is left as it is
+    (``atomic_replace.put``). Returns whether the file was written, and its size. The
+    tree ``doc`` was made from -- the one just made (``to_xcaf``), or ``tree``, a kept document's
+    own, saved again -- is remembered as the one at ``path`` (``saved``): its parts are the shapes
+    written, so a kept document saved again writes the bytes it wrote first."""
     from OCP.PCDM import PCDM_StoreStatus
     from OCP.TCollection import TCollection_ExtendedString
 
-    tree = None
     if _MADE and _MADE[0] is doc:
-        tree = _SAVED[Path(path).resolve()] = _MADE[1]
+        tree = _MADE[1]
         _MADE.clear()
+    if tree is not None:
+        _SAVED[Path(path).resolve()] = tree
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.stem}.{os.getpid()}.{threading.get_ident()}.xbf")
     shapes = [part.shape for part in tree.parts] if tree is not None else _free_shapes(doc)
-    with _XCAF_LOCK, unchecked(shapes):
-        status = _application().SaveAs(doc, TCollection_ExtendedString(str(temporary), True))
-    if status != PCDM_StoreStatus.PCDM_SS_OK or not temporary.exists():
-        temporary.unlink(missing_ok=True)
-        raise OSError(f"could not save {path}: {status}")
-    _fix_date(temporary)
-    size = temporary.stat().st_size
-    if compare and path.exists() and path.stat().st_size == size and _same_bytes(path, temporary):
-        temporary.unlink()
+
+    def write(temporary: Path) -> None:
+        with _XCAF_LOCK, unchecked(shapes):
+            status = _application().SaveAs(doc, TCollection_ExtendedString(str(temporary), True))
+        if status != PCDM_StoreStatus.PCDM_SS_OK or not temporary.exists():
+            raise OSError(f"could not save {path}: {status}")
+        _fix_date(temporary)
+
+    fresh, size = put(path, write, compare=compare, staged=path.with_suffix(".xbf").name)
+    if not fresh:
         return False, size
-    replace_atomic(temporary, path)
     if tree is not None:
         for listener in list(SAVED_LISTENERS):
             listener(path.resolve(), tree)
@@ -1165,16 +1267,6 @@ def _free_shapes(doc: Any) -> list[Any]:
     free = TDF_LabelSequence()
     XCAFDoc_DocumentTool.ShapeTool_s(doc.Main()).GetFreeShapes(free)
     return [XCAFDoc_ShapeTool.GetShape_s(free.Value(at)) for at in range(1, free.Length() + 1)]
-
-
-def _same_bytes(first: Path, second: Path) -> bool:
-    with open(first, "rb") as one, open(second, "rb") as two:
-        while True:
-            a, b = one.read(1 << 22), two.read(1 << 22)
-            if a != b:
-                return False
-            if not a:
-                return True
 
 
 # --- reading ----------------------------------------------------------------------------
@@ -1229,11 +1321,15 @@ class Loaded:
     ``.step``/``.stp`` through the XCAF reader. Its prototypes are its simple-shape labels,
     each once; its instances are every placement of one, through the assembly tree."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, doc: Any = None) -> None:
         self.path = Path(path).resolve()
-        stat = self.path.stat()
-        self.version = (stat.st_mtime_ns, stat.st_size)
-        self.doc = _read(self.path)
+        if doc is None:
+            stat = self.path.stat()
+            self.version = (stat.st_mtime_ns, stat.st_size)
+            self.doc = _read(self.path)
+        else:  # read already, from bytes (``read_bytes``): ``path`` names it, and no file is there
+            self.version = (0, 0)
+            self.doc = doc
         self.writer = _label_text(self.doc.Main(), WRITER_GUID)  # None for a file this engine did not write
         self.prototypes: list[Prototype] = []
         self.instances: list[Instance] = []
@@ -1267,12 +1363,27 @@ class Loaded:
             TDF_Tool.Entry_s(label, text)
             return text.ToCString()
 
+        counted = 0
+        claims: dict[int, str] = {}
+
         def visit(label: Any, location: Any, path: list[str], inherited: tuple | None, name: str,
-                  occurrence: tuple[int, ...], entries: list[str]) -> dict[str, Any]:
+                  occurrence: tuple[int, ...], entries: list[str], ancestors: frozenset = frozenset()) -> dict[str, Any]:
+            nonlocal counted
+            counted += 1
+            if counted > MAX_OCCURRENCES:
+                raise ValueError(f"cannot read {self.path.name}: its assembly names more than "
+                                 f"{MAX_OCCURRENCES} occurrences")
+            if len(occurrence) > MAX_ASSEMBLY_DEPTH:
+                raise ValueError(f"cannot read {self.path.name}: its assembly is deeper than "
+                                 f"{MAX_ASSEMBLY_DEPTH} levels")
             color = _label_color(label) or inherited
             self.worlds[occurrence] = location
             self.occurrences["/".join(entries)] = occurrence
             if XCAFDoc_ShapeTool.IsAssembly_s(label):
+                own = entry_of(label)
+                if own in ancestors:
+                    raise ValueError(f"cannot read {self.path.name}: an assembly contains itself")
+                inner = ancestors | {own}
                 node: dict[str, Any] = {"name": name, "children": []}
                 components = TDF_LabelSequence()
                 XCAFDoc_ShapeTool.GetComponents_s(label, components, False)
@@ -1284,7 +1395,7 @@ class Loaded:
                     child_name = named(component) or named(referred) or f"{name}.{at}"
                     child_color = _label_color(component) or color
                     node["children"].append(visit(referred, placed, path + [child_name], child_color, child_name,
-                                                  occurrence + (at - 1,), entries + [entry_of(component)]))
+                                                  occurrence + (at - 1,), entries + [entry_of(component)], inner))
                 return node
             shape = XCAFDoc_ShapeTool.GetShape_s(label)
             entry = entry_of(label)
@@ -1292,6 +1403,9 @@ class Loaded:
             if index is None:
                 index = by_entry[entry] = len(self.prototypes)
                 self.prototypes.append(_prototype(index, label, shape, entry, self))
+                claim = _label_text(label, KEY_GUID)
+                if claim is not None:
+                    claims[index] = claim
             placed = location.Multiplied(shape.Location())
             prototype = self.prototypes[index]
             self.instances.append(Instance(index, path, _matrix(placed),
@@ -1312,6 +1426,7 @@ class Loaded:
             self.name = roots[0]["name"]
         else:
             self.tree = {"name": self.path.stem, "children": roots}
+        _checked_keys(self.prototypes, claims)
 
     @property
     def closure(self) -> dict[str, Any] | None:
@@ -1321,6 +1436,14 @@ class Loaded:
 
         found = _label_text(self.doc.Main(), CLOSURE_GUID)
         return json.loads(found) if found else None
+
+    @property
+    def animations(self) -> Any:
+        """The build's animations the document records (``animations.record``), by name, as the
+        harvest made them: what a GLB of it bakes. None for a document with none."""
+        from cadgen.engine.animations import from_record
+
+        return from_record(_label_text(self.doc.Main(), ANIMATIONS_GUID))
 
     def structure(self) -> dict[str, Any]:
         """The document as the page reads it (``serve``): its prototypes, its instances
@@ -1349,6 +1472,9 @@ class Loaded:
 
             found["kinematics"] = mechanism.block(self.mechanism, self.instance_paths,
                                                   lambda path: _matrix(self.worlds[path]))
+        animated = _animations_listed(self.animations)
+        if animated:
+            found["animations"] = animated
         from cadgen.engine import pmi
 
         records = pmi.records_of_document(self.doc, self.prototypes, self.name)
@@ -1361,14 +1487,6 @@ class Loaded:
             found["pmi_coverage"] = pmi.coverage_of(found, {prototype.index: prototype.shape
                                                             for prototype in self.prototypes})
         return found
-
-    def root_label(self) -> Any:
-        from OCP.TDF import TDF_LabelSequence
-        from OCP.XCAFDoc import XCAFDoc_DocumentTool
-
-        free = TDF_LabelSequence()
-        XCAFDoc_DocumentTool.ShapeTool_s(self.doc.Main()).GetFreeShapes(free)
-        return free
 
 
 def saved(path: Path) -> "Tree | None":
@@ -1477,6 +1595,9 @@ def tree_structure(tree: Tree, path: Path) -> dict[str, Any]:
 
         found["kinematics"] = mechanism.block(tree.mechanism, paths,
                                               lambda at: _matrix(mechanism._occurrence(tree, at)[0]))
+    animated = _animations_listed(tree.animations)
+    if animated:
+        found["animations"] = animated
     if tree.pmi:
         from cadgen.engine import pmi
 
@@ -1485,6 +1606,12 @@ def tree_structure(tree: Tree, path: Path) -> dict[str, Any]:
         found["pmi_views"] = pmi.views_of_tree(tree, index_of)
         found["pmi_coverage"] = pmi.coverage_of(found, {index_of[id(part)]: part.shape for part, _given in tree.pmi})
     return found
+
+
+def _animations_listed(resolved: Any) -> list[dict[str, Any]]:
+    """A document's animations (``animations.harvest``, by name) as its structure lists them: each
+    its name and duration, in the build's order; the tracks stay the GLB's."""
+    return [{"name": item.name, "duration": item.duration} for item in (resolved or {}).values()]
 
 
 def _read(path: Path) -> Any:
@@ -1519,11 +1646,68 @@ def _read(path: Path) -> Any:
             reader.SetMatMode(True)
             # The reader defines the translator's parameters: set them once it exists.
             Interface_Static.SetIVal_s("read.stepcaf.subshapes.name", 1)
-            if reader.ReadFile(str(path)) != IFSelect_RetDone or not reader.Transfer(doc):
+            if reader.ReadFile(str(path)) != IFSelect_RetDone:
+                raise ValueError(f"cannot read {path}")
+            refuse_external_files(reader, path)
+            if not reader.Transfer(doc):
                 raise ValueError(f"cannot read {path}")
         else:
             raise ValueError(f"not a document the engine reads: {path.name}")
     return doc
+
+
+def refuse_external_files(reader: Any, path: Any) -> None:
+    """A STEP that names another file (an external document: ``DOCUMENT_FILE``) refused, after
+    ``ReadFile`` and before ``Transfer``: the XCAF reader's transfer opens every file such a STEP
+    names -- beside it, above it, or anywhere by an absolute path -- and adds what it reads to the
+    document as the STEP's own parts. A STEP read is the file it is, so a reference to another is
+    an error here, wherever the read is made (``_read``, ``reader._parse``). The model's entities
+    are counted by kind in the kernel (``NbTyped``): fetched into Python one by one, each costs
+    about 0.25 ms, four minutes for a 63 MB STEP of a million entities."""
+    from OCP.StepBasic import StepBasic_DocumentFile
+
+    model = reader.ChangeReader().Model()
+    if model.Entities().NbTyped(StepBasic_DocumentFile.get_type_descriptor_s()):
+        raise ValueError(f"cannot read {Path(path).name}: it names another file to read (an external "
+                         f"reference); the engine reads a STEP's own geometry only")
+
+
+def read_bytes(data: bytes) -> Any:
+    """An xbf's bytes read into a document, in memory: the application's stream read, overwriting
+    into a document made here (``PCDM_ReaderFilter.AppendMode_Overwrite``), since the document a
+    plain stream read makes is one OCP cannot hand back (``_new_document``)."""
+    import io
+
+    from OCP.PCDM import PCDM_ReaderFilter, PCDM_ReaderStatus
+
+    with _XCAF_LOCK:
+        doc = _new_document()
+        status = _application().Open(io.BytesIO(data), doc, PCDM_ReaderFilter(PCDM_ReaderFilter.AppendMode_Overwrite))
+    if status != PCDM_ReaderStatus.PCDM_RS_OK:
+        raise ValueError(f"cannot read the document's bytes: {status.name}")
+    return doc
+
+
+def to_bytes(doc: Any, shapes: Iterable[Any] | None = None) -> bytes:
+    """A document as the bytes ``save`` writes of it, in memory: the application's stream write
+    (which saves a document the application has opened: this one is, from now on), its parts'
+    ``shapes`` written as ``save`` writes them (``unchecked``), with the written date ``WRITTEN_DATE``."""
+    import io
+
+    from OCP.PCDM import PCDM_StoreStatus
+
+    stream = io.BytesIO()
+    with _XCAF_LOCK, unchecked(list(shapes) if shapes is not None else _free_shapes(doc)):
+        if not doc.IsOpened():
+            doc.Open(_application())
+        status = _application().SaveAs(doc, stream)
+    if status != PCDM_StoreStatus.PCDM_SS_OK:
+        raise OSError(f"could not write the document's bytes: {status}")
+    data = stream.getvalue()
+    found = _HEADER_DATE.search(data, 0, _INFO_BYTES)
+    if found is None:
+        raise OSError("the document's bytes have no BinXCAF creation date")
+    return data[:found.start(1)] + WRITTEN_DATE + data[found.end(1):]
 
 
 @functools.cache
@@ -1534,7 +1718,7 @@ def _writer() -> str:
 
 
 def written_format(writer: str | None) -> str | None:
-    """The xbf format a document's writer names (``xbf/4``), or None for another program's."""
+    """The xbf format a document's writer names (``xbf/7``), or None for another program's."""
     import re
 
     found = re.match(r"cadgen\.engine (xbf/[0-9]+) \(cadgen ", writer or "")
@@ -1627,9 +1811,11 @@ def as_read(material: Any, rgba: tuple) -> Any:
     as read), its PBR factors (metallic, roughness, emissive, IOR) as 32-bit floats, its density
     through the kernel's g/cm^3, no emissive where it is black, no description where it is
     empty; every other field as it is (``_write_extra`` keeps doubles)."""
-    emissive = tuple(_f32(value) for value in (material.emissive or (0.0, 0.0, 0.0)))
+    from cadgen.engine.colors import Linear
+
+    emissive = Linear(_f32(value) for value in (material.emissive or (0.0, 0.0, 0.0)))
     return material.but(density=round(material.density / 1000.0 * 1000.0, 6) if material.density else None,
-                        color=rgba, metallic=_f32(material.metallic), roughness=_f32(material.roughness),
+                        color=Linear(rgba), metallic=_f32(material.metallic), roughness=_f32(material.roughness),
                         ior=_f32(material.ior), emissive=emissive if any(emissive) else None,
                         description=material.description or None)
 
@@ -1667,12 +1853,13 @@ def material_from_json(value: dict[str, Any] | None) -> Any:
     """The ``Material`` of ``material_json``'s answer (a black ``emissive`` is none); None for None."""
     if not value:
         return None
+    from cadgen.engine.colors import Linear
     from cadgen.engine.materials import Material
 
     fields = {field: value[key] for field, key in _JSON_FIELDS if value.get(key) is not None}
     for field in ("color", "transmission_color", "emissive"):
         if field in fields:
-            fields[field] = tuple(fields[field])
+            fields[field] = Linear(fields[field])
     if not any(fields.get("emissive") or ()):
         fields.pop("emissive", None)
     return Material(**fields)
@@ -1686,6 +1873,7 @@ def _label_material(label: Any) -> Any:
     from OCP.TDataStd import TDataStd_TreeNode
     from OCP.XCAFDoc import XCAFDoc, XCAFDoc_Material, XCAFDoc_VisMaterialTool
 
+    from cadgen.engine.colors import Linear
     from cadgen.engine.materials import Material
 
     name = description = ""
@@ -1717,13 +1905,12 @@ def _label_material(label: Any) -> Any:
         rgba, emissive, metallic, roughness = _label_color(label), (0.0, 0.0, 0.0), 0.0, 0.5
     else:
         return None
-    return Material(name or "material", density, color=rgba, metallic=metallic, roughness=roughness, ior=ior,
-                    emissive=emissive if any(emissive) else None, description=description or None, **extra)
+    return Material(name or "material", density, color=None if rgba is None else Linear(rgba), metallic=metallic,
+                    roughness=roughness, ior=ior, emissive=Linear(emissive) if any(emissive) else None,
+                    description=description or None, **extra)
 
 
 def _prototype(index: int, label: Any, shape: Any, entry: str, loaded: Loaded) -> Prototype:
-    from OCP.Standard import Standard_GUID
-    from OCP.TDataStd import TDataStd_AsciiString
     from OCP.TDF import TDF_LabelSequence
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
     from OCP.TopExp import TopExp
@@ -1731,18 +1918,14 @@ def _prototype(index: int, label: Any, shape: Any, entry: str, loaded: Loaded) -
     from OCP.XCAFDoc import XCAFDoc_ShapeTool
 
     local = shape.Located(_identity())
-    key = TDataStd_AsciiString()
-    guid = Standard_GUID(KEY_GUID)
-    if _find(label, key, guid):
-        found_key = key.Get().ToCString()
-    else:
-        found_key = f"{loaded.version[0]}-{loaded.version[1]}-{entry}"
+    found_key = geometry_key(local, read=True)  # the file's key is checked against it (``_checked_keys``)
     face_names: dict[int, str] = {}
     edge_names: dict[int, str] = {}
     vertex_names: dict[int, str] = {}
     vertices = None
     face_colors: dict[int, tuple] = {}
     face_materials: dict[int, Any] = {}
+    part_color = _label_color(label)
     subs = TDF_LabelSequence()
     XCAFDoc_ShapeTool.GetSubShapes_s(label, subs)
     if subs.Length():
@@ -1750,13 +1933,18 @@ def _prototype(index: int, label: Any, shape: Any, entry: str, loaded: Loaded) -
         TopExp.MapShapes_s(shape, TopAbs_FACE, faces)
         edges = TopTools_IndexedMapOfShape()
         TopExp.MapShapes_s(shape, TopAbs_EDGE, edges)
+        holding: list[tuple[Any, tuple]] = []  # coloured sub-shapes that hold faces: solids, shells
         for at in range(1, subs.Length() + 1):
             sub = subs.Value(at)
             held = XCAFDoc_ShapeTool.GetShape_s(sub)
             if held.IsNull():
                 continue
             kind = held.ShapeType()
-            if kind == TopAbs_FACE:
+            if kind not in (TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX):
+                rgba = _label_color(sub)
+                if rgba is not None:
+                    holding.append((held, rgba))
+            elif kind == TopAbs_FACE:
                 ordinal = faces.FindIndex(held)
                 if ordinal:
                     name = _label_name(sub)
@@ -1781,10 +1969,45 @@ def _prototype(index: int, label: Any, shape: Any, entry: str, loaded: Loaded) -
                 name = _label_name(sub) if ordinal else ""
                 if name:
                     vertex_names[ordinal] = name
+        if holding:
+            part_color = _held_colors(faces, holding, part_color, face_colors)
     name = step_name(_label_name(label)) if loaded.step else _label_name(label)
-    return Prototype(index, local, name or f"part{index + 1}", _label_color(label), found_key,
+    return Prototype(index, local, name or f"part{index + 1}", part_color, found_key,
                      face_names, edge_names, face_colors, entry, _label_material(label), face_materials,
                      vertex_names=vertex_names)
+
+
+def _held_colors(faces: Any, holding: list[tuple[Any, tuple]], color: tuple | None,
+                 face_colors: dict[int, tuple]) -> tuple | None:
+    """A part's colour, and its faces' (into ``face_colors``), where its file colours the solids or
+    shells that hold its faces: a STEP styles a representation item (``STYLED_ITEM``), and a part of
+    several solids is one ``MANIFOLD_SOLID_BREP`` each, styled each, which the XCAF reader puts on
+    sub-shape labels of the part and none on the part. Each face takes the colour of the innermost
+    coloured shape holding it, under its own. One colour over every face is the part's colour;
+    else each face so coloured, and not the part's colour, is a painted face."""
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+
+    held = []
+    for shape, rgba in holding:
+        inner = TopTools_IndexedMapOfShape()
+        TopExp.MapShapes_s(shape, TopAbs_FACE, inner)
+        held.append((inner, int(shape.ShapeType()), rgba))
+    given: dict[int, tuple] = {}
+    # The outermost first, so an inner shape's colour is the one a face keeps (a shell inside its
+    # solid holds as many faces: a shell comes after a solid in the kernel's order of kinds).
+    for inner, _kind, rgba in sorted(held, key=lambda item: (-item[0].Extent(), item[1])):
+        for at in range(1, inner.Extent() + 1):
+            ordinal = faces.FindIndex(inner.FindKey(at))
+            if ordinal:
+                given[ordinal] = rgba
+    if len(given) == faces.Extent() and len(set(given.values())) == 1:
+        return next(iter(given.values()))
+    for ordinal, rgba in given.items():
+        if ordinal not in face_colors and rgba != color:
+            face_colors[ordinal] = rgba
+    return color
 
 
 def _matrix(location: Any) -> list[float]:

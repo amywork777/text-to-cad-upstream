@@ -74,21 +74,30 @@ HOLE = {hole}
 @xbf("XBF/root.xbf")
 def root():
     before = bd.Box(1, 1, 1)
-    one = left()
-    two = left().moved(bd.Location((0, 20, 0)))
+    one = left().shape
+    two = left().shape.moved(bd.Location((0, 20, 0)))
     two.label = "two"
-    plate = left().moved(bd.Location((0, 40, 0))) - bd.Pos(3, 40, 0) * bd.Cylinder(HOLE, 10)
+    plate = left().shape.moved(bd.Location((0, 40, 0))) - bd.Pos(3, 40, 0) * bd.Cylinder(HOLE, 10)
     plate.label = "plate"
     after = bd.Box(1, 1, 1).moved(bd.Location((0, -20, 0)))
     after.label = "after"
     before.label = "before"
-    return bd.Compound(children=[one, two, plate, right().moved(bd.Location((40, 0, 0))),
-                                 bought().moved(bd.Location((-40, 0, 0))), before, after], label="root")
+    return bd.Compound(children=[one, two, plate, right().shape.moved(bd.Location((40, 0, 0))),
+                                 bought().shape.moved(bd.Location((-40, 0, 0))), before, after], label="root")
 """
 
 
 def _counts(report: dict) -> tuple[int, int]:
     return report["memo"]["bodies_run"], report["memo"]["bodies_skipped"]
+
+
+def _replays_unchanged(case: unittest.TestCase) -> None:
+    """Body retention is what these tests watch, on unchanged builds too: the whole-model skip
+    a warm worker takes when its document holds the model's key (``build._previous``, held by
+    test_previous) is set aside, so an unchanged root is replayed as a body."""
+    patch = mock.patch.object(engine_build, "_previous", return_value=({"used": False, "reason": "set aside"}, None))
+    patch.start()
+    case.addCleanup(patch.stop)
 
 
 class BodiesCase(unittest.TestCase):
@@ -97,6 +106,7 @@ class BodiesCase(unittest.TestCase):
         engine_build._WRITTEN.clear()
         engine_build._PARTS.clear()
         self.addCleanup(memo.clear)
+        _replays_unchanged(self)
         patch = mock.patch.dict(os.environ)
         patch.start()
         self.addCleanup(patch.stop)
@@ -280,7 +290,7 @@ from spacer import spacer
 
 @xbf("XBF/assembly.xbf")
 def assembly():
-    return bd.Compound(children=[bracket(), spacer().moved(bd.Location((30, 0, 0)))], label="assembly")
+    return bd.Compound(children=[bracket().shape, spacer().shape.moved(bd.Location((30, 0, 0)))], label="assembly")
 """
 
 
@@ -384,7 +394,7 @@ def reader():
 
 @xbf("XBF/holder.xbf")
 def holder():
-    return bd.Compound(children=[reader(), bd.Pos(GAP, 0, 0) * bd.Box(1, 1, 1)])
+    return bd.Compound(children=[reader().shape, bd.Pos(GAP, 0, 0) * bd.Box(1, 1, 1)])
 
 
 @xbf("XBF/writer.xbf")
@@ -433,6 +443,32 @@ class UncachedTest(BodiesCase):
                             and "make that shape with build123d's operation" in reason for reason in reasons), reasons)
 
 
+# build123d's sum of sketches starts from an empty one: ``bd.Sketch() + [a, b]`` fuses with an
+# empty shape as the boolean's own operand.
+SUMMED = """
+import build123d as bd
+from cadgen.engine import model
+
+
+@model
+def summed():
+    teeth = bd.Sketch() + [bd.Rot(0, 0, a) * bd.Rectangle(20, 2) for a in (0, 60, 120)]
+    return bd.extrude(teeth, amount=3)
+"""
+
+
+class EmptyShapeTest(BodiesCase):
+    def test_a_sum_that_starts_from_an_empty_sketch_is_keyed_and_replays(self) -> None:
+        self.write("summed.py", SUMMED)
+        statuses = []
+        for _ in range(2):
+            report = engine_build.build(self.folder / "summed.py", ["summed"], cwd=self.folder)[-1]
+            self.assertTrue(report["ok"], report)
+            self.assertEqual((report["memo"]["uncached"], report["retention"]["fallbacks"]), (0, {}))
+            statuses.append(report["bodies"]["summed.py::summed"])
+        self.assertEqual(statuses, ["run", "replayed"])
+
+
 class ReadTracingTest(unittest.TestCase):
     """A file a body reads itself is one of its inputs, by its bytes (``_audited``,
     ``_ReadInput``): the body is replayed while they stay and runs when they change or the
@@ -441,6 +477,7 @@ class ReadTracingTest(unittest.TestCase):
     def setUp(self) -> None:
         memo.clear()
         self.addCleanup(memo.clear)
+        _replays_unchanged(self)
         self.folder = Path(tempfile.mkdtemp(prefix="engine-reads-")).resolve()
         self.addCleanup(shutil.rmtree, self.folder, ignore_errors=True)
         self.script = self.folder / "reader.py"

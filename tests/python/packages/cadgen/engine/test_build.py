@@ -16,6 +16,7 @@ from unittest import mock
 
 from cadgen.engine import build as engine_build
 from cadgen.engine import document, materials
+from cadgen.engine.colors import linear
 from cadgen.engine.model import Model, step, stl, xbf
 
 MODEL = """
@@ -37,11 +38,11 @@ def bracket():
 @xbf(out="out/frame.xbf")
 @step(out="out/frame.step")
 def frame():
-    left = bracket()
-    right = bracket().moved(bd.Location((0, 20, 0)))
+    left = bracket().shape
+    right = bracket().shape.moved(bd.Location((0, 20, 0)))
     right.label = "right"
     rail = bd.Box(4, 40, 4).moved(bd.Location((WIDTH, 10, 0)))
-    rail = paint(rail, rail.faces().sort_by(bd.Axis.Z)[-1], (1, 0, 0))
+    rail = paint(rail, rail.faces().sort_by(bd.Axis.Z)[-1], "#ff0000")
     rail.label = "rail"
     return bd.Compound(children=[left, right, rail], label="frame")
 """
@@ -112,8 +113,15 @@ class DecoratorTest(unittest.TestCase):
         self.assertIsInstance(plain, Model)
         self.assertEqual(plain.targets(), [])
         self.assertIs(model(plain), plain)
-        self.assertIs(step("plain.step")(plain), plain)
-        self.assertEqual([kind for kind, _path in plain.targets()], ["step"])
+        with self.assertRaisesRegex(TypeError, "declared by @model and @step: .* drop @model"):
+            step("plain.step")(plain)
+
+        @step("filed.step")
+        def filed():
+            raise AssertionError("decoration must not execute the body")
+
+        self.assertIsInstance(filed, Model)
+        self.assertEqual([kind for kind, _path in filed.targets()], ["step"])
 
 
 class BuildTest(EngineCase):
@@ -132,7 +140,10 @@ class BuildTest(EngineCase):
         self.assertEqual(structure["instances"][1]["matrix"][12:15], [0.0, 20.0, 0.0])
         bracket, rail = loaded.prototypes
         self.assertEqual(bracket.name, "bracket")
-        self.assertEqual(bracket.color, (0.1, 0.5, 0.9, 1.0))
+        # A build123d Color's channels are sRGB, held linear (``colors``).
+        import build123d as bd
+
+        self.assertEqual(bracket.color, tuple(linear(bd.Color(0.1, 0.5, 0.9))))
         self.assertEqual(list(rail.face_colors.values()), [(1.0, 0.0, 0.0, 1.0)])
         self.assertTrue(bracket.face_names and all(name.startswith("f:bracket.") for name in bracket.face_names.values()))
         # The third assignment to ``plate``, a reassignment: the target and its statement's tag.
@@ -141,7 +152,7 @@ class BuildTest(EngineCase):
         self.assertEqual(len(bracket.key), 32)
         # What wrote it is on the document's main label; where its code is, in its build closure
         # alone, relative to the document; no absolute path anywhere.
-        self.assertRegex(loaded.writer, r"^cadgen\.engine xbf/4 \(cadgen .+\)$")
+        self.assertRegex(loaded.writer, r"^cadgen\.engine xbf/7 \(cadgen .+\)$")
         raw = (self.folder / "out/frame.xbf").read_bytes()
         self.assertEqual(loaded.closure["source"]["path"], "../frame.py")
         self.assertNotIn(b"frame.py", raw.replace(json.dumps(loaded.closure, separators=(",", ":")).encode(), b""))
@@ -176,9 +187,8 @@ class BuildTest(EngineCase):
         reports = self.build()
         frame = reports["frame"]
         self.assertEqual(frame["memo"]["misses"], 0)
-        self.assertEqual((frame["memo"]["bodies_run"], frame["memo"]["bodies_skipped"]), (0, 1),
-                         "an unchanged body is not run: its last run is replayed")
-        self.assertEqual(frame["named"], 0, "an unchanged part is not named again")
+        self.assertEqual((frame["memo"]["bodies_run"], frame["memo"]["bodies_skipped"], frame["cache"]), (0, 0, {
+            "used": True, "from": "memory"}), "an unchanged model is not run nor replayed: its key is its document's")
         self.assertFalse(any(row["written"] for row in frame["files"].values()))
         self.assertEqual([path.stat().st_mtime_ns for path in written], before)
 
@@ -246,6 +256,36 @@ class BuildTest(EngineCase):
         self.assertNotIn("build123d", frame["error"])
         self.assertEqual(target.stat().st_mtime_ns, stamp)
 
+    def test_a_build123d_warning_in_a_wrapped_call_names_the_model_s_line(self) -> None:
+        # build123d's ``clean`` warns at its caller (``stacklevel=2``), which, for a call the memo
+        # wraps, is the memo's frame: the warning names the model's file and line instead.
+        import warnings
+
+        from build123d.topology import shape_core
+
+        self.write(text="""
+            import build123d as bd
+            from cadgen.engine import model
+
+
+            @model
+            def plate():
+                box = bd.Box(1, 2, 3)
+                return box.clean()
+        """)
+
+        class Refusing(shape_core.ShapeUpgrade_UnifySameDomain):
+            def Build(self) -> None:  # noqa: N802 - OCCT's name
+                raise RuntimeError("refused")
+
+        with mock.patch.object(shape_core, "ShapeUpgrade_UnifySameDomain", Refusing), \
+                warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            report = self.build("plate")["plate"]
+        self.assertTrue(report["ok"], report)
+        [warned] = [found for found in caught if "Unable to clean" in str(found.message)]
+        self.assertEqual((Path(warned.filename), warned.lineno), (self.script, 9))
+
     def test_a_file_read_hits_whether_or_not_a_child_reading_it_ran_alone(self) -> None:
         # A child's body runs inline in every build of its parent, so the n-th read of
         # one file in a build is fixed by the code: building the child alone in between
@@ -270,7 +310,7 @@ class BuildTest(EngineCase):
             @xbf("XBF/stand.xbf")
             def stand():
                 part = read_step(BOUGHT).moved(bd.Location((10, 0, 0)))
-                return bd.Compound(children=[holder(), part])
+                return bd.Compound(children=[holder().shape, part])
         """)
         self.assertTrue(self.build("stand")["stand"]["ok"])
         holder = self.build("holder")["holder"]
@@ -320,11 +360,11 @@ def peg():
 
 @xbf("XBF/rig.xbf")
 def rig():
-    left = bracket()
-    right = bracket().moved(bd.Location((0, 20, 0)))
+    left = bracket().shape
+    right = bracket().shape.moved(bd.Location((0, 20, 0)))
     right.label = "right"
     {last}
-    return bd.Compound(children=[left, right, peg()], label="rig")
+    return bd.Compound(children=[left, right, peg().shape], label="rig")
 """
 
 
@@ -354,7 +394,8 @@ class ChildFilesTest(EngineCase):
         self.assertEqual(_files(self.folder), {"bracket.py", "rig.py", "XBF/rig.xbf", "XBF/bracket.xbf", "bracket.stl",
                                                "peg.stl"})
         self.assertEqual(document.load(self.folder / "XBF/bracket.xbf").name, "bracket", "its own document")
-        # A target the build also runs as a child writes once, as the target.
+        # A target the build also runs as a child writes once, as the target (the rig edited, so it runs).
+        self.write(text=RIG.replace("{last}", "right.label = 'right'"))
         peg, rig = self.rig()
         self.assertEqual((peg["model"], list(rig["child_models"])), ("rig.py::peg", ["bracket.py::bracket"]))
         # A child that ran before its caller failed writes its files all the same.
@@ -364,40 +405,34 @@ class ChildFilesTest(EngineCase):
         self.assertIn("no rig", failed["error"])
         self.assertTrue(failed["child_models"]["bracket.py::bracket"]["files"][str(self.folder / "bracket.stl")]["written"])
 
-    def test_a_child_s_files_are_its_own_build_s_and_a_warm_build_keeps_them(self) -> None:
+    def test_a_child_s_files_are_its_own_build_s_and_a_taken_parent_writes_its_own_alone(self) -> None:
         from cadgen.engine import api
-        from cadgen.engine.kernel import memo
+        from tests.python.support import engine_cache
 
         self.rig("rig")
         written = (self.folder / "XBF/bracket.xbf").read_bytes()
-        # Replayed, its children replayed too: kept, and a file gone is written again alone.
+        # Taken by its key, nothing runs: the rig writes its own files, and a child's file gone is
+        # its own model's to write.
         (self.folder / "bracket.stl").unlink()
         [warm] = self.rig("rig")
-        self.assertEqual(warm["bodies"]["bracket.py::bracket"], "replayed")
+        self.assertEqual((warm["cache"], warm["bodies"]), ({"used": True, "from": "memory"}, {"rig.py::rig": "loaded"}))
         self.assertEqual({Path(path).name: row["written"] for path, row in api.Report([warm]).files.items()},
-                         {"rig.xbf": False, "bracket.xbf": False, "bracket.stl": True, "peg.stl": False})
-
-        def fresh() -> None:
-            memo.clear()
-            engine_build._WRITTEN.clear()
-            engine_build._PARTS.clear()
-
-        # The bracket's own build, in a fresh process, takes the file its parent's build wrote:
-        # the same closure; and built cold, it writes the same bytes.
-        fresh()
-        [own] = engine_build.build(self.folder / "bracket.py", None, cwd=self.folder)
-        self.assertEqual(own["cache"], {"used": True, "from": "file"})
-        fresh()
+                         {"rig.xbf": False})
+        self.assertFalse((self.folder / "bracket.stl").exists())
+        # The bracket's own build, in a fresh worker, takes the document its parent's build made (the
+        # engine's cache keeps a child's as any document), writing the file that went, nothing run.
+        cache = self.folder / "cache"
+        engine_cache.restart(cache)
+        [own] = engine_build.build(self.folder / "bracket.py", None, cwd=self.folder, cache=str(cache))
+        self.assertEqual((own["cache"], own["memo"]["bodies_run"]), ({"used": True, "from": "cache"}, 0))
+        self.assertEqual({Path(path).name: row["written"] for path, row in own["files"].items()},
+                         {"bracket.xbf": False, "bracket.stl": True})
+        # Built cold, it writes the same bytes.
+        engine_cache.restart(cache)
+        (cache / own["id"] / "document.xbf").unlink()
         (self.folder / "XBF/bracket.xbf").unlink()
-        engine_build.build(self.folder / "bracket.py", None, cwd=self.folder)
+        engine_build.build(self.folder / "bracket.py", None, cwd=self.folder, cache=str(cache))
         self.assertEqual((self.folder / "XBF/bracket.xbf").read_bytes(), written)
-
-    def test_code_s_flags_are_its_own_files_and_its_children_write_their_declarations(self) -> None:
-        code = "from bracket import bracket\nresult = bracket()\n"
-        [plug] = engine_build.build(engine_build.code_script("plug", self.folder), ["plug"], cwd=self.folder,
-                                    outputs={"step": {"out": "plug.step"}}, code=code)
-        self.assertEqual((plug["ok"], list(plug["child_models"])), (True, ["bracket.py::bracket"]))
-        self.assertEqual(_files(self.folder), {"bracket.py", "rig.py", "plug.step", "XBF/bracket.xbf", "bracket.stl"})
 
 
 KIT = """
@@ -443,11 +478,11 @@ def right():
 @xbf("XBF/kit.xbf")
 @step(out="kit.step")
 def kit():
-    one = right().moved(bd.Location((30, 0, 0)))
+    one = right().shape.moved(bd.Location((30, 0, 0)))
     one.label = "one"
-    two = right().moved(bd.Location((0, 30, 0)))
+    two = right().shape.moved(bd.Location((0, 30, 0)))
     two.label = "two"
-    return bd.Compound(children=[left(), one, two], label="kit")
+    return bd.Compound(children=[left().shape, one, two], label="kit")
 """
 
 
@@ -533,7 +568,9 @@ class PatchTest(EngineCase):
         self.assertEqual(self.xbf.read_bytes(), self.cold(pin="aluminium"))
         self.patched(pin="aluminium", top="0.9, 0.9, 0.1")
         plate = next(p for p in document.Loaded(self.xbf).prototypes if p.name == "plate")
-        self.assertIn((0.9, 0.9, 0.1, 1.0), plate.face_colors.values())
+        import build123d as bd
+
+        self.assertIn(tuple(linear(bd.Color(0.9, 0.9, 0.1))), plate.face_colors.values())
         self.assertEqual(self.xbf.read_bytes(), self.cold(pin="aluminium", top="0.9, 0.9, 0.1"))
         # A field the file keeps beside XCAF's own (a coat) converts it too.
         self.patched(pin="aluminium.but(coat=0.5)", top="0.9, 0.9, 0.1")

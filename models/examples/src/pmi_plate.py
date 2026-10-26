@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import build123d as bd
 
-from cadgen.engine import materials, pmi, step, xbf
+from cadgen import materials, pmi, step
 from lib.notes import NOTES
 
 
-@xbf(out="../XBF/pmi_plate.xbf")
-@step(out="../XBF/pmi_plate.step")
+@step(out="../STEP/pmi_plate.step")
 def pmi_plate():
     body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
     body.label = "plate"

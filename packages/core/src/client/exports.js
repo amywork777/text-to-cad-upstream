@@ -13,7 +13,7 @@ export function exportPause(ms, signal) {
     signal.addEventListener('abort', abort, { once: true });
   });
 }
-/** Job transport only. Local files and browser download gestures belong to the host.
+/** Job transport only. Handing a finished file to the browser's downloads belongs to the host.
  * @param {{ origin?: string, fetch?: typeof globalThis.fetch }} [options]
  * @returns {import('./types.js').ExportService}
  */
@@ -32,18 +32,14 @@ export function createExportService({ origin = '', fetch: fetchImpl = globalThis
   }
   const json = async (path, body, signal) => (await response(path, body, signal)).json();
   return {
-    async options(source, signal) {
-      for (;;) {
-        const answer = await response('/options', source, signal);
-        const body = await answer.json();
-        if (answer.status !== 202) return body;
-        await exportPause(Math.max(250, Number(body.retryMs) || 500), signal);
-      }
-    },
+    // The session's epoch, which a new request names: a request the page kept across a reload is
+    // then refused by a server that has restarted since, never run again by it.
+    epoch: async signal => (await json('', undefined, signal)).epoch,
     create: (request, signal) => json('', request, signal),
     status: (id, sequence, signal) => json('/' + encodeURIComponent(id) + (sequence === undefined ? '' : `?after=${sequence}&wait=25`), undefined, signal),
     cancel: id => json('/' + encodeURIComponent(id) + '/cancel', {}),
     release: id => json('/' + encodeURIComponent(id) + '/release', {}),
-    download: (id, signal) => response('/' + encodeURIComponent(id) + '/file', undefined, signal),
+    // A plain same-origin URL: the page's session cookie authenticates it, so no token rides in it.
+    fileUrl: id => url('/' + encodeURIComponent(id) + '/file'),
   };
 }

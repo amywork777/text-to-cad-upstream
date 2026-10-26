@@ -258,7 +258,12 @@ class Catalog(HttpLayerTestCase):
         self.assertEqual(set(catalog), {"schemaVersion", "entries", "revision"})
         [entry] = catalog["entries"]
         self.assertEqual(entry["file"], str(part).replace(os.sep, "/"))
-        self.assertEqual(list(entry), ["file", "kind", "url", "hash", "bytes"])
+        # Its document's id: the page names the file by it (``/<id>``), and rows join by it.
+        from cadgen.engine.ids import file_id
+
+        self.assertEqual(list(entry), ["file", "kind", "url", "hash", "bytes", "id"])
+        self.assertEqual(entry["id"], file_id(part))
+        self.assertEqual(self.fixture.request("GET", f"/__cad/catalog?id={entry['id']}")[0], 200)
         # The row's URL is how its bytes are read.
         self.assertEqual(self.fixture.request("GET", entry["url"])[::2], (200, part.read_bytes()))
         part.write_bytes(b"solid moved\nendsolid moved\n")
@@ -552,6 +557,15 @@ class MethodHandling(HttpLayerTestCase):
                 self.assertEqual(headers["content-length"], "0")
                 self.assertNotIn("content-type", {k.lower() for k in headers})
 
+    def test_a_route_asked_with_its_other_method_answers_405_naming_its_own(self):
+        for method, path, allowed in (("GET", "/__cad/pick", "POST"), ("GET", "/__cad/reveal", "POST"),
+                                      ("GET", "/__cad/analytics/activity", "POST"), ("POST", "/__cad/server", "GET, HEAD")):
+            with self.subTest(method=method, path=path):
+                status, headers, body = self.fixture.request(method, path, headers={"x-cadgen-viewer": "1"})
+                self.assertEqual(status, 405)
+                self.assertEqual(headers["allow"], allowed)
+                self.assertEqual(json.loads(body), {"ok": False, "error": "Method not allowed"})
+
     def test_unknown_post_route_is_json_404(self):
         status, headers, body = self.fixture.request(
             "POST", "/__cad/export", headers={"x-cadgen-viewer": "1"}
@@ -749,6 +763,39 @@ class EveryRouteAnswersForReal(HttpLayerTestCase):
             with self.subTest(method=method, path=path):
                 _, _, body = self.fixture.request(method, path, headers=headers)
                 self.assertNotIn(b"not yet ported", body)
+
+
+class EngineClientFollowsARestartedEngine(unittest.TestCase):
+    """A long-lived client (the MCP stdio peer) holds the engine's endpoint; an engine restarted on
+    the same --port has a new token, and the client's next call asks the engine for it."""
+
+    def test_a_refused_token_is_asked_again_once(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        from cadgen.viewer import engine_client
+
+        class Engine(BaseHTTPRequestHandler):
+            def do_GET(self):
+                ok = self.headers.get("Authorization") == "Bearer new"
+                body = b"{}" if ok else b'{"error":"engine token required"}'
+                self.send_response(200 if ok else 403)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Engine)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_address[1]}"
+        answers = [{"url": url, "token": "old"}, {"url": url, "token": "new"}]
+        with mock.patch.object(engine_client, "request", side_effect=lambda _message, start=True: answers.pop(0)):
+            client = engine_client.EngineClient()
+            self.assertEqual(client.call("GET", "/__cad/server")[0], 200)
+            self.assertEqual(client.endpoint["token"], "new")
 
 
 if __name__ == "__main__":

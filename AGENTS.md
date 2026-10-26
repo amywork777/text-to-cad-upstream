@@ -66,15 +66,22 @@ the pipeline.
 The standalone `Deploy Docs` workflow redeploys the docs site from a ref
 (default `main`, or a release tag) without running a release.
 
-cadgen runs as ONE launch command everywhere, `uvx --no-config --managed-python
---python 3.13 --from cadgen==<VERSION> <tool>` (`cadgen._internal.launch`): the
-plugin server configs and every cadgen skill's SKILL.md carry it, the release
-stamps every pin (`sync-version.mjs`), and `scripts/release/check-version.sh`
-and the tests assert they all equal `VERSION`. uv keeps one installation per
-requirement and cadgen names its warm daemon after that installation, so the
-server, every thread and every skill command share one daemon. In a checkout,
-install `requirements-dev.txt` (the editable cadgen) and test in agent apps with
-`scripts/install/dev_install.py`, which points both at the checkout.
+cadgen installs as ONE uvx command, `uvx --no-config --managed-python --python
+3.13 --from cadgen==<VERSION> <tool>` (`cadgen._internal.launch`): the plugin
+server configs run it, outside any sandbox. That installation registers itself
+(`installations/<VERSION>.json` in cadgen's state folder) and writes the proxy,
+`~/.local/bin/cadgen` (`cadgen._internal.installations`), and every cadgen
+skill's SKILL.md runs `cadgen +<VERSION>` (and `cadgen +<VERSION> run model.py`)
+through it, which runs that version's installation (`cadgen._internal.proxy`;
+uvx cannot start in an agent's sandbox, the proxy can), naming the uvx command
+once, as the `cadgen doctor` that installs, registers, writes the proxy and
+starts the engine. The release stamps every pin and `+<VERSION>`
+(`sync-version.mjs`), and `scripts/release/check-version.sh` and the tests
+assert they all equal `VERSION`. uv keeps one installation per requirement and
+cadgen names its warm daemon after that installation: one installation, one
+engine, so the server, every thread and every skill command share one daemon. In a checkout, install `requirements-dev.txt` (the
+editable cadgen) and test in agent apps with `scripts/install/dev_install.py`,
+which points both at the checkout.
 `models/` stays on `main` as plain files; nothing installs it.
 `scripts/github-workflows/check-builds.sh` enforces the shipping contract on
 every push: no tracked symlink, no `.gitattributes` rule that rewrites files at
@@ -97,8 +104,8 @@ path, the rehearsal, and local/manual fallbacks.
 - `packages/core`: `@text-to-cad/core`, shared CAD/runtime/client code without React.
 - `packages/ui`: `@text-to-cad/ui`, the shared FileViewer, renderers, controls and styles.
 - `packages/cadgen`: the published distribution — the engine (models built into
-  `.xbf` documents and the STEP, GLB, STL, 3MF and DXF they declare), the skill
-  CLI parsers, the CAD Viewer backend + client, and the browser runtime it serves.
+  documents it holds, and the XBF, STEP, GLB, STL, 3MF and DXF files written from them), the skill
+  CLI parsers, the CAD Viewer backend + client, and the CAD app page it serves.
 - `apps/docs/`: documentation site.
 - `apps/api/`: `api.texttocad.dev`, its own Vercel project: cadgen's version feed (read from PyPI) and the CAD app's consented analytics.
 - `tests/`: root-owned test suites for skills, packages, viewer services, and
@@ -119,7 +126,7 @@ path, the rehearsal, and local/manual fallbacks.
   - `packages/core/docs/`: `render-pipeline.md`, `resource-ownership.md`,
     `tube-skins.md`.
   - `packages/ui/docs/`: `settings-ui.md` (BINDING for any settings control),
-    `render-types.md`, `render-mode.md`, `loading.md`, `storage.md`, `backend.md`.
+    `render-types.md`, `render-mode.md`, `loading.md`, `viewer-host.md`.
 - Ships-alone law: `packages/cadgen` (the built PyPI wheel) works in isolation
   outside this repo, so its markdown must not refer to anything outside the
   package — enforced by `tests/python/global/test_package_boundaries.py`.
@@ -141,8 +148,8 @@ path, the rehearsal, and local/manual fallbacks.
   sibling skill directory to `sys.path`, `PYTHONPATH`, `NODE_PATH`, or any other
   runtime lookup path. Skills are independent of each other, not of everything.
 - Shared runtime comes from the **`cadgen` distribution**. A skill that uses it
-  defines `cadgen` and `python` in its SKILL.md as the launch command above,
-  pinned to `VERSION` (the release stamps every pin); no skill installs cadgen
+  defines `cadgen` and `python` in its SKILL.md as `cadgen +<VERSION>` above
+  (the release stamps every pin); no skill installs cadgen
   any other way (no `requirements.txt` naming it), because a second installation
   is a second daemon. Skills do not vendor it: a skill script is a thin entrypoint whose
   parser and behaviour live in `cadgen.cli`. The engine draws every snapshot with
@@ -176,8 +183,8 @@ path, the rehearsal, and local/manual fallbacks.
   interpreter; raising the declared minimum relaxes the check automatically.
 - Reserve `scripts/` for durable repo commands. Do not write temporary,
   one-off, or local-only helper scripts there; use `tmp/` or `/tmp` instead.
-- cadgen's packaged runtime (`_runtime/browser`, `_runtime/viewer` and
-  `_runtime/mcp`) is BUILT, never committed:
+- cadgen's packaged runtime (`_runtime/viewer` and `_runtime/mcp`) is BUILT,
+  never committed:
   the whole directory is gitignored and ships only inside the wheel. Build it with the one bundle
   entry point, `scripts/bundle/bundle.sh`; `bundle.sh --check` builds it and
   asserts every required output. Call `scripts/bundle/cadgen-runtime.sh`
@@ -201,7 +208,7 @@ path, the rehearsal, and local/manual fallbacks.
   ships in the wheel at `cadgen/_runtime/viewer` (built, never committed; a
   checkout serves `apps/web/dist`). The CAD, DXF and robot-description skills document that verb directly.
   Nothing in `cadgen.viewer` imports the CAD kernel at module scope — a STEP or
-  `.xbf` it shows is read and meshed by the engine's daemon (`viewer/xbf.py`),
+  `.xbf` it shows is read and meshed by the engine (`viewer/documents.py`),
   never by a request's thread.
   Keep repo-level tooling in `scripts/`, not under `apps/web/`.
 - `packages/core` stays non-React. Shared FileViewer/renderers belong in
@@ -285,7 +292,7 @@ what a user gets is the wheel the release builds from it.
 ## CAD Viewer
 
 The app-facing playbook lives in `apps/web/README.md`: launcher contract
-(reuse, ports, `--new`), dev vs prod, and the catalog/link-verification
+(reuse, ports, `/<id>` pages), dev vs prod, and the catalog/link-verification
 gotchas. The repo-side half — the lightweight-worktree recipe and
 root workspace dependencies — lives in `CONTRIBUTING.md` under "Viewer Development
 In This Repo". Read them before starting, stopping, or debugging a Viewer.

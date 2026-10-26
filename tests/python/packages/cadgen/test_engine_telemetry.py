@@ -125,15 +125,16 @@ class EngineTelemetryTest(unittest.TestCase):
         self.assertFalse(self.settings.with_name(analytics.SPOOL).exists(), "the spool is the sender's now")
 
     def test_an_export_counts_a_build_of_each_destination_and_a_snapshot_its_source(self) -> None:
-        exported = facts("export", source="xbf", pose=True, outputs=[
-            {"kind": "step", "seconds": 0.1}, {"kind": "threemf", "seconds": 0.2}, {"kind": "dxf", "seconds": 0.1},
-            {"kind": "cadz", "seconds": 0.0}])
+        exported = facts("export", source="xbf", outputs=[
+            {"kind": "step", "seconds": 0.1}, {"kind": "threemf", "seconds": 0.2}, {"kind": "dxf", "seconds": 0.1}])
         self.assertEqual(engine_telemetry.counts(exported, "command"), {
             "builds": [{"kind": kind, "via": "command", "outcome": "ok", "seconds": 0.5 / 3, "cached": False}
-                       for kind in ("step", "3mf", "dxf")],
-            "features": ["kinematics"]})
+                       for kind in ("step", "3mf", "dxf")]})
         drawn = engine_telemetry.counts(facts("snapshot", source="model", found=True, pose=False), "script")
         self.assertEqual(drawn, {"snapshots": [{"format": "xbf", "ok": True, "seconds": 0.5}]})
+        # A snapshot at a pose is the one use of kinematics a verb tells: an export has no pose.
+        posed = engine_telemetry.counts(facts("snapshot", source="model", found=True, pose=True), "script")
+        self.assertEqual(posed["features"], ["kinematics"])
         # Every kind the stills draw is counted by its name, from the facts the verb tells (``api._facts``):
         # drawings and robot descriptions as documents and meshes are.
         from cadgen.engine import api
@@ -216,7 +217,7 @@ class ThroughTheDaemonTest(unittest.TestCase):
         self.engine = Path(tempfile.mkdtemp(prefix="eng-", dir="/tmp" if os.name != "nt" else None)).resolve()
         self.state = self.folder / "state"
         self.env = engine_daemon.watched({**os.environ, "PYTHONPATH": str(SRC), "CADGEN_STATE_DIR": str(self.state),
-                                          "CADGEN_ENGINE_DIR": str(self.engine), "CADGEN_ENGINE_IDLE": "60",
+                                          "CADGEN_ENGINE_DIR": str(self.engine),
                                           "CADGEN_ENGINE_MESH": "inline", "DO_NOT_TRACK": "", "CADGEN_TELEMETRY": ""},
                                          self.addCleanup)
         self.addCleanup(self._stop)
@@ -272,10 +273,77 @@ class ThroughTheDaemonTest(unittest.TestCase):
                          ("script", "crashed", {"crashes": 1}, [analytics.died(3)]))
         self.assertEqual({build["kind"] for counts in (first, third) for build in counts["builds"]}, {"xbf"})
 
+    def test_a_telemetry_batch_holds_no_id_and_no_path(self) -> None:
+        """Verbs by document id -- a pointer model's and a shape's handed over, one refused, one whose body
+        raised -- count kinds, outcomes and times: no id, script or state folder reaches the spool or the batch."""
+        from cadgen.engine.ids import canonical, model_id
+
+        (self.folder / "part.py").write_text(textwrap.dedent("""
+            import build123d as bd
+            from cadgen.engine import model
+
+
+            @model
+            def part():
+                return bd.Box(3, 2, 1)
+
+
+            @model
+            def broken():
+                raise ValueError(f"broken in {__file__}")
+        """), encoding="utf-8")
+        run = self.run_in("-c", "import part, build123d as bd, cadgen\npart.part()\n"
+                                "print('SHAPE', cadgen.model(bd.Box(1, 2, 3), name='handed').id)\n"
+                                "try:\n    part.broken()\nexcept Exception:\n    pass\n")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        pointer, handed = model_id(self.folder / "part.py", "part"), run.stdout.split("SHAPE ", 1)[1].split()[0]
+        refused = model_id(self.folder / "part.py", "nowhere")
+        for ident in (pointer, handed):
+            done = self.run_in("-m", "cadgen.cli", "export", ident, str(self.folder / f"{ident}.stl"))
+            self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotEqual(self.run_in("-m", "cadgen.cli", "export", refused, str(self.folder / "x.stl")).returncode, 0)
+        from tests.python.packages.cadgen.engine.test_snapshot import gl
+
+        try:
+            gl()
+            drawn = True
+        except unittest.SkipTest:
+            drawn = False
+        if drawn:
+            done = self.run_in("-m", "cadgen.cli", "snapshot", pointer, str(self.folder / "part.png"))
+            self.assertEqual(done.returncode, 0, done.stderr)
+        spool = self.state / analytics.SPOOL
+        spooled = spool.read_text(encoding="utf-8")
+        counted = [json.loads(line)["counts"] for line in spooled.splitlines()]
+        outcomes = [(build["kind"], build["outcome"]) for counts in counted for build in counts.get("builds", [])]
+        self.assertIn(("xbf", "failed"), outcomes, "the body that raised was counted")
+        self.assertEqual(outcomes.count(("stl", "ok")), 2, "both exports by id were counted")
+        if drawn:
+            self.assertTrue(any(counts.get("snapshots") for counts in counted), "the snapshot by id was counted")
+        # What the sender sends: the spool taken into a batch, kept beside the settings when nothing answers.
+        env = {**self.env, "CADGEN_API_URL": "http://127.0.0.1:9"}
+        sent = subprocess.run([sys.executable, "-P", "-m", "cadgen._internal.telemetry_send"], env=env,
+                              capture_output=True, text=True, timeout=120)
+        self.assertEqual(sent.returncode, 0, sent.stderr)
+        batch = (self.state / analytics.KEPT).read_text(encoding="utf-8")
+        self.assertIn('"events"', batch)
+        for text, where in ((spooled, "spool"), (batch, "batch")):
+            for secret in (pointer, handed, refused, canonical(self.folder / "part.py"), str(self.folder),
+                           canonical(self.folder), str(self.state), canonical(self.state), "part.py"):
+                self.assertNotIn(secret, text, f"the {where} holds {secret}")
+
     def test_cadgen_observes_the_engine_once_its_verbs_are_imported_and_never_sooner(self) -> None:
         done = self.run_in("-c", "import sys, cadgen; print(any(name.startswith('cadgen.engine') for name in sys.modules)); "
                                  "from cadgen.engine import api; print([o.__module__ for o in api.observers])")
         self.assertEqual(done.stdout.split("\n")[:2], ["False", "['cadgen._internal.engine_telemetry']"], done.stderr)
+
+
+def setUpModule() -> None:
+    # The registry and cache of every engine this module starts are its own, never the developer's
+    # (``engine_daemon.isolate``); each test still names its own engine folder.
+    from tests.python.support import engine_daemon
+
+    engine_daemon.isolate(unittest.addModuleCleanup)
 
 
 if __name__ == "__main__":

@@ -12,6 +12,13 @@
  * The decision is a pure function so the whole behaviour is testable without a
  * browser: `nextAutoReloadState` takes the state, one poll result and the
  * cadence, and says what to do and when to ask again.
+ *
+ * Only a dev server is followed to another identity (`follow`). A page the engine
+ * serves is not reloaded here: it stops asking and says its engine is gone
+ * (`foreign`). It then asks for its engine as any page that lost one does
+ * (`useEngineReconnect`), which reloads it only once an engine that holds its
+ * token answers -- the installation's own, whose token outlives its restarts --
+ * and never loads another process on its port into the tab.
  */
 
 /** Steady-state poll while the server is the one this page loaded against. */
@@ -24,17 +31,19 @@ export const VIEWER_INSTALL_POLL_MS = 5000;
 export const AUTO_RELOAD_PHASE = Object.freeze({
   WATCHING: "watching",
   RELOADING: "reloading",
+  FOREIGN: "foreign",
 });
 
 /**
  * @param {{phase: string, since: number}} state
  * @param {{ok: boolean, identityToken?: string}} poll
- * @param {{baseline: string, now: number, watchMs?: number, reloadingMs?: number}} context  The cadence:
- *   the default cadence (`VIEWER_WATCH_INTERVAL_MS`, `VIEWER_RELOADING_POLL_MS`).
+ * @param {{baseline: string, now: number, watchMs?: number, reloadingMs?: number, follow?: boolean}} context  The cadence:
+ *   the default cadence (`VIEWER_WATCH_INTERVAL_MS`, `VIEWER_RELOADING_POLL_MS`); `follow`, whether a
+ *   new identity is reloaded into (a dev server's) or refused (`FOREIGN`, every engine-served page's).
  * @returns {{phase: string, since: number, reload: boolean, delayMs: number}}
  */
 export function nextAutoReloadState(state, poll, {
-  baseline, now, watchMs = VIEWER_WATCH_INTERVAL_MS, reloadingMs = VIEWER_RELOADING_POLL_MS
+  baseline, now, watchMs = VIEWER_WATCH_INTERVAL_MS, reloadingMs = VIEWER_RELOADING_POLL_MS, follow = false
 }) {
   const phase = state?.phase === AUTO_RELOAD_PHASE.RELOADING
     ? AUTO_RELOAD_PHASE.RELOADING
@@ -52,8 +61,11 @@ export function nextAutoReloadState(state, poll, {
 
   const answered = String(poll.identityToken || "");
   if (answered && answered !== String(baseline || "")) {
-    // A different process on the same port: reload, whatever the phase was.
-    // The token is start-time identity, so this cannot be a false positive.
+    // A different process on the same port. A dev server's restart is followed; an engine-served
+    // page is not reloaded into a process its credential cannot authenticate: it stops asking.
+    if (!follow) {
+      return { phase: AUTO_RELOAD_PHASE.FOREIGN, since, reload: false, delayMs: 0 };
+    }
     return { ...reloading, since, reload: true };
   }
 

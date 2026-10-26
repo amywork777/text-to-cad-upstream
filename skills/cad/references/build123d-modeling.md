@@ -1,8 +1,16 @@
 # build123d modeling patterns
 
-Read this file when constructing or repairing native CAD geometry. Model scripts
-return build123d shapes; see the [model contract](model-contract.md) for how they
-build and compose.
+Read this file when constructing or repairing native CAD geometry. Models return
+build123d shapes; see [models](model-contract.md) for how they run and compose.
+
+## Contents
+
+- [Selecting edges and faces](#selecting-edges-and-faces)
+- [Labels and assemblies](#labels-and-assemblies)
+- [Colour and materials](#colour-and-materials)
+- [Placement and frame pitfalls](#placement-and-frame-pitfalls)
+- [Kernel pitfalls](#kernel-pitfalls)
+- [Validity and visual artifacts](#validity-and-visual-artifacts)
 
 ## Selecting edges and faces
 
@@ -15,9 +23,9 @@ skips such an edge (and fails when none is left); a chamfer fails on it. Shape
 equality compares native handles, so `edge in solid.edges()` is true only for the
 solid's own edge.
 
-A face or edge a person picked is selected by its name, which stays put across
-edits that leave its making alone: `select(base, "f:plate.body.6;M:plate.relief")`
-in the body ([selecting in a model's body](inspection-and-validation.md#selecting-in-a-models-body)).
+A face or edge a person picked is named by a ref: `cadgen inspect` says what it is
+and which code made it, and the body picks the same element with build123d's
+selectors ([a picked element in a model's body](inspection-and-validation.md#a-picked-element-in-a-models-body)).
 
 ## Labels and assemblies
 
@@ -45,20 +53,22 @@ See [positioning](positioning.md) for datums and joints, and
 ## Colour and materials
 
 A part's colour and material are set on the shape, after its last operation, so
-changing one costs no kernel call. Native `Color` channels are linear RGB;
-`cadgen.srgb` converts a display hex value:
+changing one costs no kernel call. A colour is what you see, in sRGB: a hex string
+(`"#2E3742"`, `"#38414D6B"` with alpha), 0-255 integers, or a build123d `Color`,
+whose channels build123d defines as sRGB (`bd.Color(0.5, 0.5, 0.5)` is `#808080`);
+the engine stores it linear. `shape.color`, `paint` and `Material(color=)` take the
+same values and store the same colour:
 
 ```python
-from cadgen import srgb
-from cadgen.engine import Material, materials, paint
+from cadgen import Material, materials, paint
 
-body.color = srgb("#2E3742")
-glass.color = srgb("#38414D", 0.42)                  # alpha is opacity
+body.color = "#2E3742"
+glass.color = "#38414D6B"                            # alpha (6B: 0.42) is opacity
 
 body.material = materials.aluminium_6061            # the catalogue, by attribute
 insert.material = materials("brass c360")           # or by name or alias, in any case
 seal.material = Material(name="Viton 75A", family="elastomer", density=1850.0,
-                         color=(0.05, 0.05, 0.05, 1.0), roughness=0.8)
+                         color="#3f3f3f", roughness=0.8)
 paint(body, body.faces().filter_by(bd.Axis.Z)[-1:], materials.aluminium_6061.but(roughness=0.15))
 ```
 
@@ -75,7 +85,7 @@ paint(body, body.faces().filter_by(bd.Axis.Z)[-1:], materials.aluminium_6061.but
   whole-model default.
 - **`paint(part, faces, color_or_material)`** gives faces a colour or a material of
   their own.
-- A material's density weighs the model (`cadgen inspect DOC OWNER`), its look is
+- A material's density weighs the model (`cadgen inspect <id> OWNER`), its look is
   drawn in the viewer's Solid, Shaded and Preview modes, and a GLB carries it. A STEP
   keeps a material's name and density only, and a face's colour.
 
@@ -108,7 +118,10 @@ handles placement itself.
   `BRepPrimAPI_MakeCylinder`). The engine keys and names build123d's operations, and
   of the OCCT makers a model drives itself only the transforms, `BRepBuilderAPI_Copy`,
   `ShapeFix_Shape`, `ShapeUpgrade_UnifySameDomain` and `BRepFilletAPI_MakeFillet`; a
-  body built with another cannot be replayed.
+  body built with another cannot be replayed. Where build123d has no construction for
+  it (a hand-built B-spline surface), make that shape in a `@memo` function of values
+  that returns it as OCCT made it, with no build123d operation on it inside: the call
+  keys it, and what the model makes of it replays.
 - **Lofts:** sampled sections need consistent feature order, edge correspondence
   and orientation; equal sample counts alone do not guarantee it. A disconnected
   or self-crossing section produces misleading downstream loft failures, so check
@@ -117,8 +130,8 @@ handles placement itself.
 - **Many tools:** batching independent cuts avoids rebuilding the same
   intersection network; overlapping tools may need staged cuts, and oversized
   tool extents create needless intersections. On large spline surfaces even a
-  batched cut can dominate a build; `report()` labels in the body show which stage
-  the time goes to.
+  batched cut can dominate a run; split the body into `@memo` stages and the progress
+  bar names the stage the time goes to.
 - **Near tangency or coincident boundaries:** a Boolean can return successfully
   with the wrong region or solid count; a direct profile construction of the same
   shape can avoid the intersection.
@@ -127,6 +140,9 @@ handles placement itself.
 - **2D algebra:** a `ShapeList` takes part in Python list operations, which may
   concatenate instead of fusing. Mirroring sampled points can flip wire winding
   and face normals, and an empty intersection used as a cut removes nothing.
+- **A Boolean that removes everything** returns an empty `Compound` (`&` returns None),
+  and placing that (`bd.Pos(...) * empty`) returns a plain empty `list`, so the next line
+  fails with `'list' object has no attribute 'label'`: the cut before it consumed the part.
 - **Dense periodic splines:** OCP 7.9 has failed taper, inward offset and
   coincident-face fusion on some densely sampled profiles; a simpler
   representation or an explicitly constructed offset works around it.

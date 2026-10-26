@@ -1,12 +1,12 @@
 {
  "name": "plate",
  "path": "pmi_plate.xbf",
- "version": "1792827093264345487-22766",
+ "version": "1792977333529672615-22766",
  "units": "mm",
  "prototypes": [
   {
    "index": 0,
-   "key": "0721df66d59cdcaf54dd3800f1a43f81",
+   "key": "e0b5c68b3f6bd8e6632673a239e3ff44",
    "name": "plate",
    "color": null,
    "faceNames": {

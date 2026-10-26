@@ -30,14 +30,14 @@ const GLB_MAGIC = 0x46546c67; // "glTF"
 const JSON_CHUNK = 0x4e4f534a; // "JSON"
 const BIN_CHUNK = 0x004e4942; // "BIN\0"
 
-// The motion the model declares: `motion(assembly, "meshCycle", ..., duration=6, ...)`. Its clip is the
+// The motion the model declares: `configuration_sequence(assembly, "meshCycle", ..., duration=6, ...)`. Its clip is the
 // motion once; the page repeats it.
 function declaredMotion(source) {
-  const call = /\bmotion\(\s*\w+\s*,\s*"([^"]+)"([\s\S]*?)\)\s*$/m.exec(source);
+  const call = /\bconfiguration_sequence\(\s*\w+\s*,\s*"([^"]+)"([\s\S]*?)\)\s*$/m.exec(source);
   assert.ok(call, `${HERO_MODEL} declares no motion for the hero to play`);
   const [, name, rest] = call;
   const duration = /\bduration\s*=\s*([0-9.]+)/.exec(rest);
-  assert.ok(duration, `${HERO_MODEL}: motion ${name} names no duration`);
+  assert.ok(duration, `${HERO_MODEL}: configuration sequence ${name} names no duration`);
   return { name, duration: Number(duration[1]) };
 }
 

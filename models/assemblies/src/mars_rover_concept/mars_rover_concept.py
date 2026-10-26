@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from cadgen.engine import configuration, couple, motion, xbf
+from cadgen import model
+from cadgen.ap242 import configuration_sequence, gear_pair, mechanism_state
+from cadgen.gltf import animation
 
 import math
 from collections.abc import Sequence
@@ -112,31 +114,31 @@ RTG_MOUNT = (-1060.0, 0.0, 1060.0)
 RTG_DIR = (-math.cos(math.radians(8.0)), 0.0, -math.sin(math.radians(8.0)))
 
 COLORS = {
-    "ivory_panel": (0.80, 0.77, 0.70, 1.0),
-    "graphite_panel": (0.045, 0.050, 0.055, 1.0),
-    "satin_titanium": (0.42, 0.43, 0.40, 1.0),
-    "brushed_steel": (0.50, 0.52, 0.54, 1.0),
-    "pale_aluminum": (0.66, 0.68, 0.66, 1.0),
-    "fastener_steel": (0.18, 0.19, 0.20, 1.0),
-    "wheel_graphite": (0.055, 0.058, 0.062, 1.0),
-    "grouser_steel": (0.14, 0.145, 0.15, 1.0),
-    "jpl_orange": (1.00, 0.30, 0.05, 1.0),
-    "copper_band": (0.65, 0.26, 0.10, 1.0),
-    "gold_mli": (0.85, 0.55, 0.12, 1.0),
-    "avionics_blue": (0.07, 0.16, 0.42, 1.0),
-    "solar_cell": (0.015, 0.04, 0.13, 1.0),
-    "science_teal": (0.03, 0.35, 0.32, 1.0),
-    "white_thermal": (0.88, 0.90, 0.92, 1.0),
-    "black_cable": (0.015, 0.015, 0.017, 1.0),
-    "battery_orange": (0.95, 0.38, 0.02, 1.0),
-    "mars_regolith": (0.42, 0.16, 0.07, 1.0),
-    "mars_rock": (0.16, 0.075, 0.045, 1.0),
-    "dust_tan": (0.60, 0.32, 0.16, 1.0),
-    "boot_rubber": (0.03, 0.03, 0.032, 1.0),
-    "dish_white": (0.90, 0.90, 0.88, 1.0),
-    "rtg_core": (0.10, 0.105, 0.11, 1.0),
-    "rtg_fin": (0.78, 0.80, 0.82, 1.0),
-    "camera_lens": (0.02, 0.03, 0.05, 1.0),
+    "ivory_panel": "#e7e3da",
+    "graphite_panel": "#3c3f42",
+    "satin_titanium": "#adafaa",
+    "brushed_steel": "#bcbfc2",
+    "pale_aluminum": "#d4d7d4",
+    "fastener_steel": "#76797c",
+    "wheel_graphite": "#424446",
+    "grouser_steel": "#696a6c",
+    "jpl_orange": "#ff953f",
+    "copper_band": "#d38b59",
+    "gold_mli": "#edc461",
+    "avionics_blue": "#4b6fad",
+    "solar_cell": "#213865",
+    "science_teal": "#30a099",
+    "white_thermal": "#f1f3f6",
+    "black_cable": "#212123",
+    "battery_orange": "#f9a627",
+    "mars_regolith": "#ad6f4b",
+    "mars_rock": "#6f4d3c",
+    "dust_tan": "#cb996f",
+    "boot_rubber": "#303032",
+    "dish_white": "#f3f3f1",
+    "rtg_core": "#595b5d",
+    "rtg_fin": "#e5e7ea",
+    "camera_lens": "#27303f",
 }
 
 
@@ -191,14 +193,14 @@ def _apply_rover_scale(shape: bd.Shape) -> bd.Shape:
 def style(shape: bd.Shape, label: str, color_name: str) -> bd.Shape:
     shape = _apply_rover_scale(shape)
     shape.label = label
-    shape.color = bd.Color(*COLORS[color_name])
+    shape.color = bd.Color(COLORS[color_name])
     return shape
 
 
 def group(label: str, children: Sequence[bd.Shape], color_name: str | None = None) -> bd.Compound:
     compound = bd.Compound(obj=list(children), children=list(children), label=label)
     if color_name is not None:
-        compound.color = bd.Color(*COLORS[color_name])
+        compound.color = bd.Color(COLORS[color_name])
     return compound
 
 
@@ -330,7 +332,7 @@ def terrain() -> bd.Compound:
             obj=list(compound.children), children=list(compound.children), label="terrain"
         ).rotate(bd.Axis((150.0, 0.0, 0.0), (0.0, 1.0, 0.0)), terrain_slope_angle)
         rotated.label = "terrain"
-        rotated.color = bd.Color(*COLORS["mars_regolith"])
+        rotated.color = bd.Color(COLORS["mars_regolith"])
         return rotated
     return compound
 
@@ -1175,24 +1177,18 @@ def _connect(groups: dict[str, bd.Shape]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The clips' joints: the chassis heave and the explode slides.
+# The heave: the chassis on the terrain.
 #
 # `driveAround` heaves the whole body over the terrain, which stays put: the
-# chassis rides a prismatic joint of the terrain (`heave`), so the terrain is
-# the ground, and everything the chassis carries heaves with it -- the jointed
-# groups through their joints, the static ones (body, internals, payloads,
-# harness, dust, antennas, RTG) on their explode slides, which the chassis
-# holds and which stand at 0 but in `explodedAssembly`.
+# chassis rides a prismatic joint of the terrain (`heave`), the rover on the
+# ground, so the terrain is the ground, and everything the chassis carries heaves
+# with it -- the jointed groups through their joints, the static ones (body,
+# internals, payloads, harness, dust, antennas, RTG) fastened to it.
 #
-# `explodedAssembly` moved every group but the chassis and the terrain along
-# its own world vector, the jointed ones too, without their joints: a bogie
-# slides off its rocker by its own vector, not the rocker's plus its own. So a
-# jointed group's CONTENTS slide on a prismatic joint the group compound holds
-# (the group-compound slide): the compound stays a link of its own, posed by its
-# joint and holding the joints the groups hung on it turn on, and its parts --
-# the first the slide's rigid half, the rest fastened to it -- are a second
-# link the slide moves. The HGA mast holds the dish's joint, so it slides the
-# same way, its compound fastened to the chassis.
+# `explodedAssembly` is a GLB animation: every group but the chassis and the
+# terrain moves along its own world vector, the jointed ones too, by its own
+# vector, not its holder's plus its own (the rover's groups are siblings in its
+# tree, so each translation is its group's alone).
 # ---------------------------------------------------------------------------
 
 _HEAVE_RANGE = (-40.0, 40.0)
@@ -1223,59 +1219,29 @@ _EXPLODE_VECTORS = {
     "power_rtg": (-0.95, 0, 0.15),
 }
 _EXPLODE_PEAK = 520.0
-# The groups no joint moves: each slides on a joint of the chassis, whole.
+# The groups no joint moves: each fastened to the chassis.
 _STATIC_GROUPS = (
     "body_core", "body_shell", "access_panels", "thermal_control", "internals_avionics", "internals_power",
     "science_payloads", "cable_harness", "dust_covers", "dust_layer", "antenna_uhf", "antenna_whips", "power_rtg",
 )
 
 
-def _parent_world(node: bd.Shape) -> bd.Location:
-    parent = node.parent
-    return parent.global_location if parent is not None else bd.Location()
+def _fasten(label: str, holder: bd.Shape, rider: bd.Shape) -> None:
+    """``rider`` fastened to ``holder`` where both stand: a rigid pair of one label."""
+    for part in (holder, rider):
+        if not hasattr(part, "joints"):  # `transformed` makes a plain bd.Shape: no joints of its own
+            part.joints = {}
+        bd.RigidJoint(label, part, bd.Location())
 
 
-def _jointable(part: bd.Shape) -> bd.Shape:
-    """``part`` able to hold a joint: `transformed` makes a plain ``bd.Shape``, which has no
-    joints dict of its own (a Solid's or a Compound's); give it an empty one."""
-    if not hasattr(part, "joints"):
-        part.joints = {}
-    return part
-
-
-def _slide(label: str, holder: bd.Shape, lead: bd.Shape, direction: Vector3, limits: tuple[float, float],
-           riders: Sequence[bd.Shape] = ()) -> None:
-    """``lead`` on a prismatic joint of ``holder`` along the world ``direction`` (its axis
-    through the world origin, in the holder's parent frame), ``riders`` fastened to ``lead``.
-    The rigid half stands where the joint holds it at 0: the holder's axes at the axis origin,
-    in ``lead``'s parent frame."""
-    lead, riders = _jointable(lead), [_jointable(rider) for rider in riders]
-    world = bd.Plane(origin=(0.0, 0.0, 0.0), z_dir=direction).location
-    plane = bd.Plane(_parent_world(holder).inverse() * world)
-    bd.LinearJoint(label, holder, axis=bd.Axis(plane.origin, plane.z_dir), linear_range=limits)
-    holder_world = holder.global_location
-    held = bd.Location(holder_world.position).inverse() * holder_world     # its turn, at the origin
-    bd.RigidJoint(label, lead, _parent_world(lead).inverse() * held)
-    for index, rider in enumerate(riders):
-        bd.RigidJoint(f"{label}_{index}", lead, bd.Location())
-        bd.RigidJoint(f"{label}_{index}", rider, bd.Location())
-
-
-def _clip_joints(groups: dict[str, bd.Shape]) -> None:
-    """``heave`` (the chassis on the terrain) and an ``explode_<group>`` slide per group."""
-    chassis = groups["chassis_frame"]
-    _slide("heave", groups["terrain"], chassis, _Z_AXIS, _HEAVE_RANGE)
-    for label, vector in _EXPLODE_VECTORS.items():
-        group_ = groups[label]
-        name, limits = f"explode_{label}", (0.0, math.ceil(v_len(vector) * _EXPLODE_PEAK))
-        if label in _STATIC_GROUPS:
-            _slide(name, chassis, group_, v_norm(vector), limits)
-            continue
-        if label == "antenna_hga_mast":
-            bd.RigidJoint("antenna_hga_mast_rides", chassis, bd.Location())
-            bd.RigidJoint("antenna_hga_mast_rides", group_, bd.Location())
-        parts = list(group_.children)
-        _slide(name, group_, parts[0], v_norm(vector), limits, parts[1:])
+def _ride_joints(groups: dict[str, bd.Shape]) -> None:
+    """``heave`` (the chassis on the terrain), and the groups no joint moves fastened to the
+    chassis, the HGA mast (which holds the dish's joint) with them, so they heave with it."""
+    terrain, chassis = groups["terrain"], groups["chassis_frame"]
+    bd.LinearJoint("heave", terrain, axis=bd.Axis((0.0, 0.0, 0.0), _Z_AXIS), linear_range=_HEAVE_RANGE)
+    bd.RigidJoint("heave", chassis, bd.Location())
+    for label in (*_STATIC_GROUPS, "antenna_hga_mast"):
+        _fasten(f"{label}_rides", chassis, groups[label])
 
 
 # ---------------------------------------------------------------------------
@@ -1353,10 +1319,14 @@ def _deploy_sequence(t: float) -> dict:
     }
 
 
-def _exploded_assembly(t: float) -> dict:
-    """One ramp out and back, each group along its own direction, at the 520 mm peak."""
-    d = _sine(t / 12) * _EXPLODE_PEAK
-    return {f"explode_{label}": v_len(vector) * d for label, vector in _EXPLODE_VECTORS.items()}
+def _exploded_assembly(rover: bd.Compound) -> None:
+    """`explodedAssembly`, a GLB animation: one ramp out and back over 12 s, each group along
+    its own vector, at the 520 mm peak."""
+    show = animation(rover, "explodedAssembly", duration=12)
+    for label, vector in _EXPLODE_VECTORS.items():
+        out = tuple(v * _EXPLODE_PEAK for v in vector)
+        show.translation(label, by=out, start=0, end=6)
+        show.translation(label, by=tuple(-v for v in out), start=6, end=12)
 
 
 # One control each, driving several joints by ratio: name -> (range, ratios).
@@ -1400,7 +1370,7 @@ _POSES = {
 }
 
 
-@xbf(out="../../XBF/mars_rover_concept/mars_rover_concept.xbf")
+@model
 def mars_rover_concept():
     # Top-level children, in order (the joints address them by label):
     #  1 terrain            2 chassis_frame     3 body_core        4 body_shell
@@ -1462,16 +1432,16 @@ def mars_rover_concept():
     ]
     by_label = {child.label: child for child in children}
     _connect(by_label)
-    _clip_joints(by_label)
+    _ride_joints(by_label)
     rover = group("mars_rover_concept", children)
     for name, ratios in _COUPLINGS.items():
-        couple(rover, name, **ratios)
+        gear_pair(rover, name, **ratios)
     for name, values in _POSES.items():
-        configuration(rover, name, **values)
-    motion(rover, "driveAround", _drive_around, duration=18)
-    motion(rover, "armCycle", _arm_cycle, duration=12)
-    motion(rover, "deploySequence", _deploy_sequence, duration=20)
-    motion(rover, "explodedAssembly", _exploded_assembly, duration=12)
+        mechanism_state(rover, name, **values)
+    configuration_sequence(rover, "driveAround", _drive_around, duration=18)
+    configuration_sequence(rover, "armCycle", _arm_cycle, duration=12)
+    configuration_sequence(rover, "deploySequence", _deploy_sequence, duration=20)
+    _exploded_assembly(rover)
     return rover
 
 

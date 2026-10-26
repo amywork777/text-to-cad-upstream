@@ -55,9 +55,10 @@ PLATFORM = context.platform()  # a row a platform draws apart has a golden of it
 # plate's back edge, to pose.
 BENCH = """
 import build123d as bd
-from cadgen.engine import Material, configuration, materials, paint, xbf
+from cadgen.ap242 import mechanism_state
+from cadgen.engine import Material, materials, paint, xbf
 
-LACQUER = Material("Red lacquer", 1200, family="other", color=(0.6, 0.02, 0.02), roughness=0.4, coat=1.0,
+LACQUER = Material("Red lacquer", 1200, family="other", color="#cb2727", roughness=0.4, coat=1.0,
                    coat_roughness=0.05)
 
 
@@ -80,7 +81,7 @@ def bench():
     bd.RigidJoint("foot", pane, joint_location=bd.Location((0, 0, 0), (0, 90, 0)))
     plate.joints["hinge"].connect_to(pane.joints["foot"], angle=0)
     root = bd.Compound(children=[block, plate, print_, pane, left, right], label="bench")
-    return configuration(root, "open", hinge=60)
+    return mechanism_state(root, "open", hinge=60)
 """
 
 # Ink on the plate (instance 1, in its own frame: its top face is z 2) and a dimension along its front.
@@ -384,7 +385,7 @@ class HeldTest(unittest.TestCase):
         np.testing.assert_allclose(top, (45, 0), atol=0.5)
 
     def test_what_the_document_does_not_offer_is_refused_by_name(self) -> None:
-        with self.assertRaisesRegex(SnapshotRefused, "--pose: .*no configuration 'shut'"):
+        with self.assertRaisesRegex(SnapshotRefused, "--pose: .*no mechanism state 'shut'"):
             self.draw(display={}, pose="shut")
         with self.assertRaisesRegex(SnapshotRefused, "--pose: .*hinge"):
             self.draw(display={}, pose={"hinge": 400})
@@ -575,7 +576,7 @@ class RenderProcessTest(unittest.TestCase):
         self.assertEqual((first["done"]["process"]["frames"], second["done"]["process"]["frames"]), (1, 2))
         self.assertNotIn("sceneMs", second["done"]["timings"], "the second picture is drawn on the first's scene")
         refused, _ = process.ask({"op": "frame", "still": {**still, "pose": "shut"}})
-        self.assertIn("no configuration 'shut'", refused["refused"])
+        self.assertIn("no mechanism state 'shut'", refused["refused"])
         capped = self.start("1")
         answer, _ = capped.ask({"op": "frame", "still": still})
         self.assertIn("CADGEN_ENGINE_WORKER_RSS_MB", answer["done"]["retired"])
@@ -605,14 +606,14 @@ if __name__ == "__main__":
 class DaemonRenderTest(unittest.TestCase):
     """`cadgen snapshot` drawn by OCCT through the daemon: a render process per served
     document, warm from its second picture, sent each build's patch with only the parts it
-    lacks, gone with the daemon; and in this process with --no-daemon. Nothing is written but
-    the pictures, and the daemon's socket and lock."""
+    lacks, gone with the daemon; and in this process with ``daemon=False`` from Python. Nothing is written but
+    the pictures, and the daemon's door, lock and clients' pipes."""
 
     def setUp(self) -> None:
         gl()
         self.folder = Path(tempfile.mkdtemp(prefix="engine-render-daemon-")).resolve()
         self.state = Path(tempfile.mkdtemp(prefix="eng-", dir="/tmp" if os.name != "nt" else None)).resolve()
-        self.env = {**os.environ, "PYTHONPATH": str(SRC), "CADGEN_ENGINE_DIR": str(self.state), "CADGEN_ENGINE_IDLE": "60",
+        self.env = {**os.environ, "PYTHONPATH": str(SRC), "CADGEN_ENGINE_DIR": str(self.state),
                     "CADGEN_ENGINE_MESH": "inline"}
         self.addCleanup(shutil.rmtree, self.folder, ignore_errors=True)
         self.addCleanup(shutil.rmtree, self.state, ignore_errors=True)
@@ -662,13 +663,17 @@ class DaemonRenderTest(unittest.TestCase):
         self.assertEqual(edited["process"]["pid"], pid, "the same process, patched")
         self.assertFalse({"meshMs", "holdMs", "sceneMs"} & set(edited["timings"]), "patched before it was asked")
         self.assertNotEqual((self.folder / "edited.png").read_bytes(), (self.folder / "first.png").read_bytes())
-        # A model is drawn from the document its worker holds, in that worker.
-        done = self.cli("snapshot", "pair.py::pair", "model.png", "--width", "200", "--height", "150", "--json")
+        # A model, by its id, is drawn from the document its worker holds, in that worker.
+        from cadgen.engine.ids import model_id
+
+        done = self.cli("snapshot", model_id(self.folder / "pair.py", "pair"), "model.png", "--width", "200", "--height",
+                        "150", "--json")
         self.assertEqual(done.returncode, 0, done.stderr)
         model = json.loads(done.stdout.strip().splitlines()[-1])
         self.assertEqual((model["renderer"], "process" in model), ("occt", False))
         # The daemon's socket (on Windows the port file standing in for it) and its lock, nothing else.
-        self.assertEqual({path.suffix for path in self.state.iterdir()}, {".port" if os.name == "nt" else ".sock", ".lock"})
+        self.assertEqual({path.suffix or path.name for path in self.state.iterdir()},
+                         {".port", ".lock"} if os.name == "nt" else {".door", ".lock", "clients"})
         self.assertEqual(sorted(path.relative_to(self.folder).as_posix() for path in self.folder.rglob("*") if path.is_file()),
                          ["XBF/pair.xbf", "edited.png", "first.png", "model.png", "pair.py", "warm.png"])
         self.cli("stop")
@@ -678,12 +683,18 @@ class DaemonRenderTest(unittest.TestCase):
                 time.sleep(0.1)
             self.assertFalse(_alive(pid), "gone with the daemon")
 
-    def test_no_daemon_draws_in_this_process(self) -> None:
+    def test_daemon_false_draws_in_this_process(self) -> None:
+        # A seam of the Python function's alone: no command draws outside the engine.
         self.build(10, daemon=False)
-        report = self.snapshot("cold.png", "--no-daemon", "--display", "exploded=0.5")
+        code = ("import json; from cadgen.engine import api; print(json.dumps(api.snapshot('XBF/pair.xbf', "
+                "'cold.png', width=200, height=150, display='exploded=0.5', daemon=False).report))")
+        done = subprocess.run([sys.executable, "-c", code], cwd=self.folder, env=self.env, capture_output=True,
+                              text=True, timeout=300)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        report = json.loads(done.stdout.strip().splitlines()[-1])
         self.assertEqual((report["renderer"], report["exploded"]), ("occt", 0.5))
         self.assertNotIn("process", report)
-        self.assertEqual([path for path in self.state.iterdir() if path.suffix == ".sock"], [], "no daemon started")
+        self.assertEqual([path for path in self.state.iterdir() if path.suffix == ".door"], [], "no daemon started")
 
 
 def _alive(pid: int) -> bool:
@@ -694,6 +705,14 @@ def _alive(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def setUpModule() -> None:
+    # The registry and cache of every engine this module starts are its own, never the developer's
+    # (``engine_daemon.isolate``); each test still names its own engine folder.
+    from tests.python.support import engine_daemon
+
+    engine_daemon.isolate(unittest.addModuleCleanup)
 
 
 if __name__ == "__main__":

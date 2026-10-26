@@ -51,7 +51,7 @@ exits, each batch under an id of its own and stamped with the time it was made:
 A command sends nothing itself. What it counts -- a build, a snapshot, a drawing, a crash -- is kept beside
 the settings for the next process that sends (``spool``): only while sharing is on, under the answer in
 force, capped, and deleted by a no. The engine's verbs (``cadgen.engine.api``: a ``python model.py``, a
-``cadgen build``, ``export`` or ``snapshot``, ``cadgen.build()``) are counted into it by cadgen's observer of
+``cadgen export`` or ``snapshot``, ``cadgen.export()``) are counted into it by cadgen's observer of
 them (``cadgen._internal.engine_telemetry``), and with nothing taking it for a window, a command starts a
 sender that sends it and exits (``cadgen._internal.telemetry_send``, the process ``cli``).
 
@@ -110,7 +110,7 @@ Telemetry never gets in the way of CAD:
   makes a second copy the first one, never more counts. One the receiver read and refused
   (``REFUSED``) is dropped: it would be refused again, and take everything after it down with it.
 
-The answer is changed only under the settings lock (``settings.update_section``), so the processes
+The answer is changed only under the state folder's one lock (``settings.update_section``), so the processes
 answering, opting out or making the install's id at once never undo one another. A settings file
 that is there but cannot be read counts as no answer that can be kept ("unavailable"), never as no
 answer yet, and is never written back over.
@@ -138,8 +138,8 @@ from typing import Any, Callable, Mapping
 
 from cadgen._internal.api import api_url
 from cadgen._internal.atomic_replace import replace_atomic, temp_suffix
-from cadgen._internal.file_lock import exclusive
-from cadgen.settings import LOCK, read_section, settings_path, update_section
+from cadgen._internal.file_lock import state
+from cadgen.settings import read_section, settings_path, update_section
 
 LOG = logging.getLogger("cadgen.analytics")
 
@@ -158,8 +158,43 @@ DISCLOSURE = 1
 # What the notice told (``notify``): what is sent by default, without a yes. Raise it when that grows,
 # and the next ``cadgen`` command says it again; nothing is sent by default until it has.
 NOTICE = 1
-NOTICE_TEXT = ("cadgen now sends usage stats and crash reports, tagged with a random ID — never your files, paths or "
-               f"prompts. Turn off: uvx cadgen telemetry off · {PRIVACY_URL}")
+
+
+def notice_text() -> str:
+    """The notice (``notify``), its command to turn telemetry off the one that runs this installation
+    (``off_command``)."""
+    return ("cadgen now sends usage stats and crash reports, tagged with a random ID — never your files, paths or "
+            f"prompts. Turn off: {off_command()} · {PRIVACY_URL}")
+
+
+def off_command() -> str:
+    """``cadgen telemetry off`` as a command that runs this installation when pasted: the pinned ``uvx``
+    line the plugin's server runs (``launch.launch_command``) for an installation uvx made, which
+    that line reuses; ``cadgen`` where the ``cadgen`` on PATH is the script that runs now; else that
+    script by its path, or this interpreter with ``-m cadgen.cli``."""
+    import shlex
+    import shutil
+
+    from cadgen._internal.launch import launch_command
+
+    quote = _windows_quote if os.name == "nt" else shlex.quote
+    if "archive-v0" in Path(sys.prefix).parts:  # uv's cache: an installation of the exact requirement
+        return f"{launch_command('cadgen')} telemetry off"
+    script = Path(sys.argv[0]).resolve() if sys.argv and sys.argv[0] else None
+    if script is not None and script.stem == "cadgen" and script.suffix.lower() in ("", ".exe") and script.is_file():
+        found = shutil.which("cadgen")
+        if found and Path(found).resolve() == script:
+            return "cadgen telemetry off"
+        return f"{quote(str(script))} telemetry off"
+    return f"{quote(sys.executable)} -m cadgen.cli telemetry off"
+
+
+def _windows_quote(text: str) -> str:
+    import subprocess
+
+    return subprocess.list2cmdline([text])
+
+
 # ``0``: what this command says reaches nobody -- a CAD app's own launch of one, its output thrown away.
 NOTICE_ENV = "CADGEN_TELEMETRY_NOTICE"
 # A batch is the counts of a window this long: a few events, however busy the window was.
@@ -191,8 +226,9 @@ KINDS = frozenset(FILE_KINDS.values())  # a format, as every event names it
 # Who sends: the CAD app, the browser viewer, and the sender a command starts when nothing else has taken what
 # commands counted (``cadgen._internal.telemetry_send``).
 PROCESSES = frozenset({"app", "viewer", "cli"})
-# Who asked for a build: a model script (``python model.py``, or a Python caller's ``cadgen.build()``) or a
-# ``cadgen`` command (``cadgen build``, ``cadgen export``, ...).
+# Who asked for a build: a model script (``python model.py``, or a Python caller's ``Model.build()``) or a
+# ``cadgen`` command (``cadgen export``, ...). Releases before 0.8 also sent ``command`` for an xbf built from
+# source text (``cadgen build``); the receiver reads it still, as it reads every schema a release sent.
 VIAS = frozenset({"script", "command"})
 # How a build ended: built; failed (the model raised, or its command refused what it was given); crashed (its
 # worker died under it); or cancelled (whoever asked interrupted it).
@@ -259,7 +295,7 @@ CRASHES_PENDING = 16  # past this many different crashes waiting, a process coun
 # failure to the person anyway -- a build's, a command's -- only these are crashes, and only where Python
 # raised them in cadgen's own code: never at a ``raise`` (``_RAISED``), where cadgen says the person's
 # mistake in these words too ("@step must return a build123d Shape" is a TypeError). So cadgen code that takes what the
-# person gave it -- a value, a name to forward (``cadgen.build123d``) -- checks it and says so at a raise:
+# person gave it -- a value, a colour, a path -- checks it and says so at a raise:
 # Python's error from using it unchecked would read as cadgen's own mistake.
 BUGS = (AttributeError, LookupError, TypeError, NameError, AssertionError, ZeroDivisionError, RecursionError,
         NotImplementedError)
@@ -384,7 +420,7 @@ _UNREAD = object()  # a process's first batch, before its first use: the answer 
 
 
 def _update(path: Path, change: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, Any] | None:
-    """Change the telemetry section under the settings lock: what is kept, or ``None`` when it
+    """Change the telemetry section under the state folder's one lock: what is kept, or ``None`` when it
     could not be read or written -- and then this process stops asking (``_can_keep``)."""
     try:
         return update_section(SECTION, change, path=path)
@@ -493,7 +529,7 @@ _KEEPS: set[Path] = set()  # state files whose folder took a file in this proces
 
 def _can_keep(path: Path) -> bool:
     """Whether an answer could be written to ``path``, found by doing what a write does -- a file
-    beside it, and the settings lock opened and held -- rather than by ``os.access``, which calls
+    beside it, and the state folder's one lock opened and held -- rather than by ``os.access``, which calls
     every folder writable on Windows. A folder that passed is not tried again in this process, one
     that refused is, every time it matters; once a write has failed after all, this process asks
     no more (``_UNKEPT``)."""
@@ -508,7 +544,7 @@ def _can_keep(path: Path) -> bool:
         probe = path.with_name(f"{path.name}{temp_suffix()}")
         probe.write_bytes(b"")
         try:
-            with exclusive(path.with_name(LOCK)):
+            with state(path.parent):
                 pass
         finally:
             with contextlib.suppress(OSError):
@@ -601,7 +637,7 @@ def forget_pending(*, path: Path | None = None, forget: Callable[[str], bool] | 
 
 
 def notify(stream: Any = None, *, path: Path | None = None) -> bool:
-    """Tell the person, once, what is sent by default: ``NOTICE_TEXT``, a line on ``stream`` (stderr)
+    """Tell the person, once, what is sent by default: ``notice_text()``, a line on ``stream`` (stderr)
     from the first ``cadgen`` command that may say it, kept as said (``notifiedAt``): every process
     sends from then on, never what it noted before. Nothing is said where nothing would be sent by
     default: where the environment or the person decided, in CI or from a development install
@@ -616,7 +652,7 @@ def notify(stream: Any = None, *, path: Path | None = None) -> bool:
         if kept is None or _decide(kept, None)[1] is not None or not _can_keep(path):
             return False
         out = stream if stream is not None else sys.stderr
-        out.write(NOTICE_TEXT + "\n")
+        out.write(notice_text() + "\n")
         out.flush()
 
         def tell(section: dict[str, Any]) -> dict[str, Any]:
@@ -880,7 +916,7 @@ def told_failure(found: Mapping[str, Any]) -> str:
             return "bug"
         kind = _builtin(found.get("type"))
         for named, reason in _BUILD_ERRORS:
-            if kind is not None and not isinstance(named, str) and issubclass(kind, named):
+            if kind is not None and issubclass(kind, named):
                 return reason
         if found.get("engine"):
             return "export_error"
@@ -898,13 +934,11 @@ def told_failure(found: Mapping[str, Any]) -> str:
 
 # Why a failure failed, where cadgen named it (``because``): a word of ``BUILD_FAILURES`` or ``SNAPSHOT_FAILURES``.
 _BECAUSE = "__cadgen_failure__"
-# Errors that say why by what they are, whoever raised them, by the first of their classes named here (a class
-# by its module and name: importing it would import what defines it, the CAD kernel among them). Only a module
-# that is not there is the machine's: another ``ImportError`` (``from build123d import Boxx``) is whoever's code
-# asked for the name, decided below.
-_BUILD_ERRORS: tuple[tuple[type[BaseException] | str, str], ...] = (
+# Errors that say why by what they are, whoever raised them, by the first of their classes named here. Only a
+# module that is not there is the machine's: another ``ImportError`` (``from build123d import Boxx``) is whoever's
+# code asked for the name, decided below.
+_BUILD_ERRORS: tuple[tuple[type[BaseException], str], ...] = (
     (SyntaxError, "script_error"), (ModuleNotFoundError, "missing_module"), (FileNotFoundError, "missing_file"),
-    ("cadgen.assets.AssetMissing", "missing_file"),
     (TimeoutError, "timeout"), (MemoryError, "memory"), (OSError, "io_error"))
 
 
@@ -920,12 +954,6 @@ def because(error: BaseException, reason: str) -> BaseException:
 def _named(error: BaseException, vocabulary: frozenset[str]) -> str | None:
     reason = getattr(error, _BECAUSE, None)
     return reason if reason in vocabulary else None
-
-
-def _is(error: BaseException, kind: type[BaseException] | str) -> bool:
-    if not isinstance(kind, str):
-        return isinstance(error, kind)
-    return any(f"{cls.__module__}.{cls.__qualname__}" == kind for cls in type(error).__mro__)
 
 
 def _whose(error: BaseException) -> tuple[str | None, tuple[str, str, int] | None]:
@@ -959,7 +987,7 @@ def build_failure(error: BaseException) -> str:
         if named:
             return named
         for kind, reason in _BUILD_ERRORS:
-            if _is(error, kind):
+            if isinstance(error, kind):
                 return reason
         if decisive is None:
             return "other"
@@ -1085,13 +1113,13 @@ def spool(counts: dict[str, Any], *, path: Path | None = None) -> bool:
 
 def _take_spool(path: Path, name: str = SPOOL, key: str = "counts") -> list[dict[str, Any]]:
     """What commands kept (``spool``), or exiting processes (``KEPT``, each line a ``batch``), taken whole
-    by one process: moved aside under the settings lock, so no line is taken twice or lost to a process
+    by one process: moved aside under the state folder's one lock, so no line is taken twice or lost to a process
     appending meanwhile."""
     kept = path.with_name(name)
     if not kept.exists():
         return []
     taken = path.with_name(f"{name}{temp_suffix()}")
-    with exclusive(path.with_name(LOCK)):
+    with state(path.parent):
         try:
             replace_atomic(kept, taken)
         except FileNotFoundError:
@@ -1111,11 +1139,11 @@ def _take_spool(path: Path, name: str = SPOOL, key: str = "counts") -> list[dict
 
 
 def _keep(path: Path, name: str, entry: dict[str, Any]) -> bool:
-    """One line appended to the kept file ``name`` beside the settings, under the settings lock: past
+    """One line appended to the kept file ``name`` beside the settings, under the state folder's one lock: past
     ``SPOOL_BYTES`` nothing more is kept. A local write, never the network."""
     line = json.dumps(entry, separators=(",", ":"))
     kept = path.with_name(name)
-    with exclusive(path.with_name(LOCK)):
+    with state(path.parent):
         size = kept.stat().st_size if kept.exists() else 0
         if size + len(line) + 1 > SPOOL_BYTES:
             return False
@@ -1126,7 +1154,7 @@ def _keep(path: Path, name: str, entry: dict[str, Any]) -> bool:
 
 def _drop_spool(path: Path) -> None:
     """A no: what commands and exiting processes kept for sending is deleted, not left to be dropped later."""
-    with contextlib.suppress(OSError), exclusive(path.with_name(LOCK)):
+    with contextlib.suppress(OSError), state(path.parent):
         path.with_name(SPOOL).unlink(missing_ok=True)
         path.with_name(KEPT).unlink(missing_ok=True)
 

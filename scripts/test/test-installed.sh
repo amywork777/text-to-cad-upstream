@@ -64,8 +64,8 @@ EMPTY="$WORK/empty"
 DIST="$WORK/dist"
 mkdir -p "$EMPTY" "$DIST"
 # The builds below run on the engine's daemon, as every build does: this run's own, in a private
-# folder, stopped on the way out -- and gone by itself after two idle minutes if it is not.
-export CADGEN_ENGINE_DIR="$WORK/engine" CADGEN_ENGINE_IDLE=120
+# folder, stopped on the way out.
+export CADGEN_ENGINE_DIR="$WORK/engine" CADGEN_CACHE_DIR="$WORK/no-0.7-store"
 cleanup() {
   # The installed cadgen stops the daemon its builds started.
   if [ -x "$VENV/bin/python" ]; then
@@ -77,6 +77,9 @@ cleanup() {
 trap cleanup EXIT
 # What the CAD app remembers (its library, release checks) stays in the throwaway directory too.
 export CADGEN_STATE_DIR="$WORK/state"
+# And the cadgen command the installation writes for the skills: never this machine's ~/.local/bin.
+export CADGEN_LAUNCHER_DIR="$WORK/bin"
+unset CADGEN_INSTALLATION_VERSION CADGEN_VERSION
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 step() { printf '\n== %s\n' "$*"; }
@@ -118,12 +121,26 @@ if "site-packages" not in where.parts:
 print(f"   {cadgen.__version__} at {where.parent}")
 PY
 
+step "import build123d is lazy from interpreter start: the wheel's .pth is in site-packages"
+scratch_sp="$("$VENV/bin/python" -c 'import site; print(site.getsitepackages()[0])')"
+[ -f "$scratch_sp/cadgen-lazy-kernel.pth" ] || fail "cadgen-lazy-kernel.pth is not in $scratch_sp"
+[ "$(cat "$scratch_sp/cadgen-lazy-kernel.pth")" = "import cadgen._internal.lazy_kernel" ] \
+  || fail "cadgen-lazy-kernel.pth does not import the finder"
+# Bound, not loaded: the kernel is untouched until an attribute is read from it.
+lazy="$(cd "$EMPTY" && "$VENV/bin/python" -c "import build123d as bd; import sys; print('OCP' in sys.modules)")"
+[ "$lazy" = "False" ] || fail "import build123d loaded the kernel ($lazy)"
+loaded="$(cd "$EMPTY" && "$VENV/bin/python" -c "import build123d as bd, sys; bd.Box(1, 1, 1); print('OCP' in sys.modules)")"
+[ "$loaded" = "True" ] || fail "the first attribute of build123d did not load the kernel ($loaded)"
+echo "   $scratch_sp/cadgen-lazy-kernel.pth"
+
 step "Assets resolve to the packaged runtime"
 "$VENV/bin/python" - <<'PY' || exit 1
 import sys
-from cadgen.assets import browser_runtime_dir
+from cadgen.assets import viewer_dist_dir
+from cadgen.mcp.ui import app_dir
 for label, resolved in (
-    ("browser runtime", browser_runtime_dir()),
+    ("CAD Viewer client", viewer_dist_dir()),
+    ("CAD app page", app_dir()),
 ):
     if "site-packages" not in str(resolved):
         sys.exit(f"FAIL: {label} resolved outside the wheel: {resolved}")
@@ -189,7 +206,7 @@ if "missing from this install" in page or "<script" not in page:
 mesh = os.path.join(sys.argv[2], "shown.stl")
 with open(mesh, "w", encoding="utf-8") as handle:
     handle.write("solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n")
-shown = call(4, "tools/call", {"name": "cad_show", "arguments": {"path": mesh}})
+shown = call(4, "tools/call", {"name": "cad_show", "arguments": {"source": mesh}})
 launch = (shown.get("structuredContent") or {}).get("launch") or {}
 if shown.get("isError") or launch.get("version") != cadgen.__version__ or launch.get("model") != os.path.abspath(mesh):
     sys.exit(f"FAIL: cad_show answered {shown}")
@@ -199,6 +216,26 @@ if server.wait(30) != 0:
 watchdog.cancel()
 print(f"   {len(tools)} tools; the app is {len(page) // 1024} KiB at {uri}")
 PY
+
+step "Starting the CAD app's server registered it and wrote the cadgen command the skills run"
+VERSION_INSTALLED="$("$VENV/bin/python" -c 'import cadgen; print(cadgen.__version__)')"
+RECORD="$CADGEN_STATE_DIR/installations/$VERSION_INSTALLED.json"
+CADGEN_COMMAND="$CADGEN_LAUNCHER_DIR/cadgen"
+[ -f "$RECORD" ] || fail "no record of cadgen $VERSION_INSTALLED in $CADGEN_STATE_DIR/installations"
+# Compared resolved: the temporary folder's path may be spelled through a symlink (/var, /private/var).
+"$VENV/bin/python" - "$RECORD" "$VENV" <<'PY' || exit 1
+import json, os, sys
+record = json.load(open(sys.argv[1], encoding="utf-8"))
+if os.path.realpath(record["prefix"]) != os.path.realpath(sys.argv[2]):
+    sys.exit(f"FAIL: {sys.argv[1]} names {record['prefix']}, not {sys.argv[2]}")
+PY
+[ -x "$CADGEN_COMMAND" ] && grep -q '^# cadgen proxy: ' "$CADGEN_COMMAND" || fail "$CADGEN_COMMAND is not the cadgen command"
+same() { "$VENV/bin/python" -c 'import os, sys; sys.exit(os.path.realpath(sys.argv[1]) != os.path.realpath(sys.argv[2]))' "$1" "$2"; }
+same "$("$CADGEN_COMMAND" "+$VERSION_INSTALLED" run -c 'import sys; print(sys.prefix)')" "$VENV" \
+  || fail "cadgen +$VERSION_INSTALLED run does not run the installation's python"
+missing="$("$CADGEN_COMMAND" +0.0.1 status 2>&1)" && fail "cadgen +0.0.1 ran"
+case "$missing" in "cadgen 0.0.1 is not installed: run "*) ;; *) fail "cadgen +0.0.1 said: $missing" ;; esac
+echo "   $(basename "$RECORD") and $CADGEN_COMMAND"
 
 step "Build a real model with no repo in sight"
 mkdir -p "$EMPTY/models"
@@ -219,9 +256,9 @@ def probe():
 if __name__ == "__main__":
     probe()
 PY
-# Running the script IS the build: no CLI verb takes its place.
-"$VENV/bin/python" models/probe.py >"$WORK/build.log" 2>&1 \
-  || { cat "$WORK/build.log" >&2; fail "python <model>.py"; }
+# Running the script IS the build: no CLI verb takes its place. Run as a skill runs it: cadgen +V run.
+"$CADGEN_COMMAND" "+$VERSION_INSTALLED" run models/probe.py >"$WORK/build.log" 2>&1 \
+  || { cat "$WORK/build.log" >&2; fail "cadgen +$VERSION_INSTALLED run <model>.py"; }
 for written in XBF/probe.xbf probe.step probe.stl; do
   [ -s "$EMPTY/models/$written" ] \
     || { cat "$WORK/build.log" >&2; fail "the model script did not write models/$written"; }
@@ -231,8 +268,8 @@ echo "   built an xbf and the STEP and STL it declares"
 # The script above wrote the files the model DECLARES. This is the other half: an export of
 # the document to a destination the command names.
 step "Export the document"
-"$VENV/bin/cadgen" export models/XBF/probe.xbf models/exported.step models/exported.stl >"$WORK/export.log" 2>&1 \
-  || { cat "$WORK/export.log" >&2; fail "cadgen export"; }
+"$CADGEN_COMMAND" "+$VERSION_INSTALLED" export models/XBF/probe.xbf models/exported.step models/exported.stl \
+  >"$WORK/export.log" 2>&1 || { cat "$WORK/export.log" >&2; fail "cadgen +$VERSION_INSTALLED export"; }
 for written in exported.step exported.stl; do
   [ -s "$EMPTY/models/$written" ] || { cat "$WORK/export.log" >&2; fail "export wrote no models/$written"; }
 done

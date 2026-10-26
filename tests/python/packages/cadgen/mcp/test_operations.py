@@ -53,22 +53,27 @@ class OperationsTest(unittest.TestCase):
         jobs = Operations()
         invalid = jobs.call('cad_inspect', {'requestId': 'request-0000000001', 'source': 'relative.xbf', 'build': True})
         self.assertEqual(invalid['state'], 'rejected')
-        answer = jobs.call('cad_inspect', {'requestId': 'request-0000000001', 'source': 'relative.xbf'})
         with patch('cadgen.engine.api.inspect', side_effect=AssertionError('must not inspect')):
-            self.assertEqual(self.finish(jobs, answer)['state'], 'failed')
+            answer = jobs.call('cad_inspect', {'requestId': 'request-0000000001', 'source': 'relative.xbf'})
+        # Refused as it starts: nothing is queued that could only fail.
+        self.assertEqual((answer['state'], answer['error']), ('rejected', 'Paths must be absolute on the engine host'))
+        self.assertEqual(jobs.jobs, {})
 
-    def test_build_adapts_explicit_cwd_and_never_leaks_viewer_token(self):
-        from types import SimpleNamespace
+    def test_a_result_never_leaks_the_viewer_token(self):
         jobs = Operations()
-        with tempfile.TemporaryDirectory() as directory:
-            root = str(Path(directory).resolve())
-            args = {'requestId': 'build-request-0001', 'code': 'result = shape', 'name': 'part', 'cwd': root, 'outputs': {'model': True}}
-            with patch('cadgen.engine.api.build', return_value=SimpleNamespace(ok=True, files={}, report={'ok': True, 'url': 'http://host/?token=secret'})) as build:
-                result = self.finish(jobs, jobs.call('cad_build', args))
-            self.assertEqual(build.call_args.kwargs['cwd'], root)
-            self.assertEqual(build.call_args.kwargs['model'], 'part')
-            self.assertEqual(result['state'], 'succeeded')
-            self.assertNotIn('secret', json.dumps(result))
+        args = {'requestId': 'inspect-request-0001', 'source': str(Path('/tmp/part.xbf').resolve())}
+        with patch('cadgen.engine.api.inspect', return_value={'kind': 'face', 'url': 'http://host/?token=secret',
+                                                              'token': 'secret'}):
+            result = self.finish(jobs, jobs.call('cad_inspect', args))
+        self.assertEqual(result['state'], 'succeeded')
+        self.assertEqual(result['result'], {'inspection': {'kind': 'face'}})
+        self.assertNotIn('secret', json.dumps(result))
+
+    def test_no_tool_builds_source_text(self):
+        # A model is built by its script's call (law 12): there is no build tool to call.
+        self.assertNotIn('cad_build', {tool['name'] for tool in catalog()})
+        answer = Operations().call('cad_build', {'requestId': 'build-request-0001', 'code': 'result = 1'})
+        self.assertEqual(answer['state'], 'rejected')
 
     def test_tool_envelope_and_catalog_need_no_view(self):
         server = Server()
@@ -77,14 +82,14 @@ class OperationsTest(unittest.TestCase):
         self.assertTrue(result['isError'])
         self.assertEqual(result['structuredContent']['state'], 'rejected')
         tools = {t['name']: t for t in catalog()}
-        self.assertEqual(len(tools), 4)
+        self.assertEqual(set(tools), {'cad_export', 'cad_snapshot', 'cad_inspect'})
         self.assertTrue(tools['cad_inspect']['annotations']['readOnlyHint'])
         self.assertFalse(tools['cad_export']['annotations']['readOnlyHint'])
         self.assertTrue(all('_meta' not in tool for tool in tools.values()))
 
     def test_snapshot_packet_checks_nested_paths_before_rendering(self):
         jobs = Operations()
-        with patch('cadgen.engine.api.snapshot_job') as snapshot:
+        with patch('cadgen.engine.api.snapshot') as snapshot:
             packet = {'input': str(Path('/tmp/model.xbf').resolve()), 'jobs': [{'input': 'relative.xbf', 'outputs': ['/tmp/out.png']}]}
             answer = jobs.call('cad_snapshot', {'requestId': 'snapshot-request-01', 'packet': packet})
             self.assertEqual(self.finish(jobs, answer)['state'], 'failed')
@@ -119,16 +124,33 @@ class OperationsTest(unittest.TestCase):
             sessions._expire()
             self.assertNotIn('s', sessions.sessions)
 
+    def test_a_long_session_keeps_bounded_history_and_never_refuses_for_it(self):
+        # 128 finished operations once refused every later start for a day ("history is full").
+        from cadgen.mcp import operations
+        jobs = Operations()
+        source = str(Path('/tmp/part.xbf').resolve())
+        with patch('cadgen.engine.api.inspect', return_value={'long': 'x' * (3 * 1024 * 1024)}):
+            answers = [self.finish(jobs, jobs.call('cad_inspect', {'requestId': f'history-request-{i:04d}', 'source': source}))
+                       for i in range(operations.HISTORY_JOBS * 2 + 5)]
+        self.assertTrue(all(answer['state'] == 'succeeded' for answer in answers))
+        self.assertTrue(answers[-1]['result']['truncated'])
+        with jobs.changed:
+            self.assertLessEqual(len(jobs.jobs), operations.HISTORY_JOBS)
+            self.assertLessEqual(sum(job['kept'] for job in jobs.jobs.values()), operations.HISTORY_BYTES)
+            self.assertTrue(all(len(json.dumps(job.get('result'))) < 10000 for job in jobs.jobs.values()))
+        again = jobs.call('cad_inspect', {'requestId': 'history-request-0000', 'source': source})
+        self.assertEqual((again['state'], again['status']), ('rejected', 410))
+
     def test_snapshot_accepts_inline_packet_and_returns_picture_artifacts(self):
         from cadgen.engine.api import Drawn
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             packet = {'input': str(root / 'part.xbf'), 'jobs': [{'outputs': [str(root / 'view.png')]}]}
             jobs = Operations()
-            with patch('cadgen.engine.api.snapshot_job', return_value=[Drawn(root / 'view.png', 40, 30, {})]) as snapshot:
+            with patch('cadgen.engine.api.snapshot', return_value=[Drawn(root / 'view.png', 40, 30, {})]) as snapshot:
                 result = self.finish(jobs, jobs.call('cad_snapshot', {'requestId': 'snapshot-request-01', 'packet': json.dumps(packet)}))
             self.assertEqual(result['state'], 'succeeded')
-            snapshot.assert_called_once_with(packet)
+            snapshot.assert_called_once_with(job=packet)
             self.assertEqual(result['result']['pictures'][0]['path'], str(root / 'view.png'))
 
     def test_failure_reports_possible_outputs_and_long_result_is_explicit(self):

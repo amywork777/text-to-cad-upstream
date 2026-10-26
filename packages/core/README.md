@@ -3,8 +3,9 @@
 The shared JavaScript half of cadgen: everything the distribution and its
 clients need to turn cached geometry into pixels and motion.
 Source builds to ordinary ESM and package-owned declarations in `dist/`.
-Apps and UI consume compiled exports; the snapshot bundler carries a
-self-contained output in the Python distribution. Consumers neither alias
+Apps and UI consume compiled exports; the OCCT parity bench bundles the
+headless entry into a snapshot page of its own, outside the Python
+distribution. Consumers neither alias
 this package's source nor supply ambient module declarations.
 
 **May depend on:** Three.js, three-mesh-bvh, meshoptimizer and framework-independent
@@ -124,7 +125,7 @@ src/
   common/          # rendering + runtime entries shared by every consumer:
                    #   cadScene (a STEP's scene build), renderMeshScene/
                    #   renderModel/renderOptions (stills), headlessRenderEntry
-                   #   (the snapshot browser bundle's entrypoint), headlessScene
+                   #   (the parity bench's snapshot page's entrypoint), headlessScene
                    #   (a GLB, mesh, robot or engine document job through its
                    #   family builder),
                    #   articulation (cadgen's articulation, played),
@@ -168,9 +169,9 @@ Where the mechanism is written:
 
 Use `@text-to-cad/core/client`, `/common/*` and `/lib/*` exports.
 Construct `createCadClient({ origin, fetch })` in a host. Its `exports` service
-(`client/exports.js`) inspects formats, submits idempotent jobs, long-polls their
-status, cancels/releases them, and returns a streamed download response. It carries
-no local file handles or picker effects; those belong to the host. Construction is
+(`client/exports.js`) asks the session's epoch, submits idempotent jobs, long-polls their
+status, cancels/releases them, and names a ready job's file URL (`fileUrl`). It
+starts no download; the host hands that URL to the browser. Construction is
 inert; subscriptions start catalog polling, which the host's `shouldPoll` gates
 (the web's pauses while its page is hidden). The client also carries what every
 CAD view asks of its server, so each host reaches it the same way: the model
@@ -190,7 +191,10 @@ at most. A page's build stamps each chunk with the id its text and its source ma
 which names the code alone: PostHog keeps one map an id. That map leads into the shared
 packages' `src/`, not their `dist/`: the build loads their modules with the maps their own
 builds wrote (`@text-to-cad/core/source-maps`), and fails if a chunk's map still ends in
-compiled code. `dispose()` stops polling, aborts
+compiled code. Each page's build also writes `THIRD_PARTY_LICENSES.txt` beside it
+(`@text-to-cad/core/third-party-licenses`): every `node_modules` package its chunks and its
+workers' chunks hold, by name, version and declared licence, with the licence text the package
+ships, and a build fails on a bundled package that declares no licence. `dispose()` stops polling, aborts
 requests and disposes render sessions. Each render session owns its abort signal and
 worker leases. A body longer than a host's transport carries in one reply is the
 transport's to carry in parts, and the client sees it whole. Request
@@ -200,9 +204,12 @@ error presentation.
 a new request so development restart polling observes identity changes and
 connection failures.
 
-Files are named by absolute path. The catalog holds the files on screen:
-`resolveEntry(file)` reads one (a file the server lacks is an
-`isMissingFileError`), and `createRenderSession({ file })` keeps the displayed
+Files are named by absolute path, and a document the engine holds by its id alone (a model's)
+by that id. The catalog holds the documents on screen, each row carrying its document's `id`,
+by which rows join: one file however its path is spelled (a symlink, a case variant) is one row.
+`resolveEntry(file)` reads one, asking by `?id=` for an id and by `?file=` for a path (one the
+server lacks is an `isMissingFileError`, in the engine's words for an id it does not hold),
+`entryOf(file)` is the row the catalog has, and `createRenderSession({ file })` keeps the displayed
 file's entry current as polling refreshes it. A cancelled or older request
 cannot overwrite a newer file revision. `folder(path)` lists one folder and
 `search(path, query)` finds the CAD files under it, for the explorer.
@@ -210,7 +217,7 @@ cannot overwrite a newer file revision. `folder(path)` lists one folder and
 `CadWorkspaceService` exposes a scoped `resources` provider and, where its host serves
 the cadgen engine, where the page reads a document the engine serves
 (`engineDocument`: an `.xbf`, or a STEP, read through the viewer at
-`/__cad/xbf/api/doc/<id>` with the client's own fetch). Its HTTP adapter owns the protocol; renderers
+`/__cad/api/doc/<id>` with the client's own fetch). Its HTTP adapter owns the protocol; renderers
 consume domain results and resource tickets. See [workspace services and resource
 transport](docs/workspace-resources.md) for worker transfer, nested dependencies,
 cache generations and the standalone static-HTTP default. No client reads model

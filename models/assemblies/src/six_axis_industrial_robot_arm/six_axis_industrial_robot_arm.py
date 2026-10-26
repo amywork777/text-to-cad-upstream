@@ -1,5 +1,5 @@
 from __future__ import annotations
-from cadgen.engine import xbf
+from cadgen import model
 from math import atan2, cos, degrees, radians, sin, tau
 
 import build123d as bd
@@ -31,15 +31,15 @@ TOOL_FLANGE_CENTER = (216.0, 0.0, 128.0)
 
 # Plain RGB(A) tuples / sRGB hex strings: build123d's Shape.color setter
 # builds the Color on assignment.
-MATTE_WHITE = (0.91, 0.92, 0.90, 1.0)
-LIGHT_GRAY = (0.73, 0.76, 0.76, 1.0)
-DARK_GRAPHITE = (0.10, 0.11, 0.12, 1.0)
-DEEP_GRAPHITE = (0.045, 0.048, 0.052, 1.0)
-BRUSHED_STEEL = (0.74, 0.76, 0.76, 1.0)
-DARK_STEEL = (0.24, 0.25, 0.26, 1.0)
-BLUE_ACCENT = (0.02, 0.30, 0.82, 1.0)
-ORANGE_ACCENT = (1.0, 0.46, 0.10, 1.0)
-MATTE_BLACK = (0.005, 0.006, 0.007, 1.0)
+MATTE_WHITE = "#f5f6f3"
+LIGHT_GRAY = "#dee2e2"
+DARK_GRAPHITE = "#595d61"
+DEEP_GRAPHITE = "#3c3e40"
+BRUSHED_STEEL = "#dfe2e2"
+DARK_STEEL = "#86898b"
+BLUE_ACCENT = "#2795ea"
+ORANGE_ACCENT = "#ffb559"
+MATTE_BLACK = "#101214"
 
 
 def _set_metadata(part, label: str, color: bd.Color):
@@ -533,7 +533,7 @@ def _make_axis_label_ring_set(parts: list):
     parts.append(_make_axis_ring("orange_accent_ring_axis6_tool_roll_x", "x", (196.0, 0.0, 128.0), 14.0, 12.0, 2.0, ORANGE_ACCENT))
 
 
-@xbf(out="../../XBF/six_axis_industrial_robot_arm/six_axis_industrial_robot_arm.xbf")
+@model
 def six_axis_industrial_robot_arm():
     """Return a labeled six-axis industrial robot arm display assembly in millimeters."""
     parts = [

@@ -22,13 +22,14 @@ document keeps them:
 - **Views**: `pmi.view`, a named view of the part (a camera, a section, the
   requirements it shows); the iso view shows them all.
 
-The `.xbf` keeps them as the kernel's own GD&T, notes and views, linked to their faces,
-and a STEP export writes the requirements as AP242 semantic PMI: requirements a program
-reads off the faces, not drawn callouts. Notes and views stay in the `.xbf`. A GLB, STL
-or 3MF carries none. The viewer draws datums, dimensions (limits stacked), flatness,
-position, surface profiles and flag notes on the model and lists every annotation and
-note in its PMI section, one it does not draw with why; `cadgen snapshot` draws them as
-the viewer does, and `--view` draws a named view.
+The model's document keeps them as the kernel's own GD&T, notes and views, linked to
+their faces, and a STEP export writes the requirements as AP242 semantic PMI:
+requirements a program reads off the faces, not drawn callouts. Notes and views stay in
+the document: no STEP carries them. A GLB, STL or 3MF carries none. The viewer draws
+datums, dimensions (limits stacked), flatness, position, surface profiles and flag notes
+on the model and lists every annotation and note in its PMI section, one it does not
+draw with why; `cadgen snapshot` draws them as the viewer does, and `--view` draws a
+named view.
 
 ## A model-based definition
 
@@ -52,9 +53,9 @@ user (ask for what they have not given; never pick a tolerance):
    faces ([Notes](#notes)).
 6. **Views**: a section through each feature a reader must see cut, and an iso view
    showing everything ([Views](#views)).
-7. **Build, and read the coverage warnings** ([Coverage](#coverage)): fix each in the
-   model and build again, until the build lists no face without a requirement and no
-   conflict.
+7. **Run the script, and read the coverage warnings** ([Coverage](#coverage)): fix each
+   in the model and run it again, until its run lists no face without a requirement and
+   no conflict.
 
 ```python
 from lib.notes import NOTES   # the project's notes library (Notes, below)
@@ -81,17 +82,17 @@ return pmi.annotate(
 ```
 
 Here the general profile holds the top and the back and right sides; every other face
-has its own requirement, so the build warns of nothing.
+has its own requirement, so the run warns of nothing.
 
 ## Annotate a part
 
 ```python
-from cadgen.engine import pmi, step, xbf
+# src/plate.py
 import build123d as bd
+from cadgen import model, pmi
 
 
-@xbf(out="../XBF/plate.xbf")
-@step(out="../STEP/plate.step")
+@model
 def plate():
     body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
     body.label = "plate"
@@ -111,9 +112,13 @@ def plate():
         pmi.basic("hole-from-B", front, hole),   # the hole's true position: 30 from B
         pmi.basic("hole-from-C", left, hole),    # and 50 from C
     )
+
+
+if __name__ == "__main__":
+    plate()
 ```
 
-Built, this warns that the four sides have no requirement: nothing here holds them.
+Its run warns that the four sides have no requirement: nothing here holds them.
 [A model-based definition](#a-model-based-definition) gives every face one.
 
 - **Annotate the shape that is returned**, after its last boolean: a `Face` given as a
@@ -196,7 +201,7 @@ return pmi.annotate(
   that the models import, and pass the dict as `annotate(..., library=NOTES)`. The
   build keeps it with the part, so the viewer can offer those notes; it is no
   requirement. The text is the user's: ask for it.
-- **Notes are the `.xbf`'s**: no STEP carries them, and no STEP is refused for one.
+- **Notes are the document's**: no STEP carries them, and no STEP is refused for one.
   A flag note on faces is drawn as its flag and number on its first face; a general
   note and the general profile (Note 1) are the viewer's notes alone, which
   `cadgen snapshot` lists among what it leaves out.
@@ -234,7 +239,7 @@ return pmi.annotate(
 - Everything is in the part's frame. A view's name is unique among the part's
   views; an id the call does not have, or a placement of one the view does not
   show, is refused.
-- **Views are the `.xbf`'s**, kept as the kernel's own views: no STEP carries them,
+- **Views are the document's**, kept as the kernel's own views: no STEP carries them,
   and no STEP is refused for one. A view is no annotation: the build report does not
   count it. The viewer applies a view from its PMI section, and `cadgen snapshot
   --view A-A` draws it ([snapshots](snapshot-review.md)); a view whose section the
@@ -250,8 +255,8 @@ nominal measured anew and its tolerance as written. Otherwise its status says wh
 - `ambiguous`: it names several faces;
 - `invalid`: it names a face the annotation cannot stand on (a diameter on a plane).
 
-Such an annotation stays in the `.xbf` with its values, linked to nothing, and is
-listed in the build report's `pmi` (`{"annotations", "problems"}`, with `warnings`,
+Such an annotation stays in the document with its values, linked to nothing, and is
+listed in the run's report, its `pmi` (`{"annotations", "problems"}`, with `warnings`,
 `coverage` and `unattached` where any are). A STEP is refused rather than written
 without it, naming each one. Fix the ref in the code, or remove the annotation. A flag
 note whose face is gone keeps its number and its text and says `missing` too; a STEP
@@ -259,13 +264,13 @@ is not refused for it.
 
 A ref written as text that names a face of another kind than on the last build (a
 hole's name that passed to a flat side of the cut that replaced it) is measured as it
-is now, and the build warns of it once, on that build: `warning: pmi: ...` in its log
+is now, and the run warns of it once, on that run: `warning: pmi: ...` in its log
 and `warnings` in its report's `pmi`. Read the warning, and point the ref at the face
-meant: the next build of the same code no longer says it.
+meant: the next run of the same code no longer says it.
 
 ## Coverage
 
-Every face of a part is to have a requirement. After each build of a part with PMI,
+Every face of a part is to have a requirement. After each run of a part with PMI,
 read its coverage warnings and fix them in the model:
 
 ```text
@@ -292,17 +297,24 @@ warning: pmi: PART: IDS: PROBLEM
   - `apart`: two dimensions of one type on the same faces whose zones do not meet;
   - `form_over_profile`: a flatness wider than a surface profile on its face (its own
     or the general one), which already holds the face's form tighter.
-- **It warns and never fails**: the `.xbf` and the STEP are written all the same. The
-  build report's `pmi` has `coverage` for each part with something to say, and the
-  document's structure has `pmi_coverage`, `{"part", "uncovered", "conflicts"}` for
-  every part with PMI.
+- **It warns and never fails**: the run succeeds and a STEP is written all the same. The
+  run's report has it in its `pmi`, `coverage` for each part with something to say
+  (`plate.build().models[0]["pmi"]`), and the document's structure has `pmi_coverage`,
+  `{"part", "uncovered", "conflicts"}` for every part with PMI.
 
 ## Read and check
 
-```python
-from cadgen.engine import pmi
+`pmi.read` reads the PMI a file holds: the STEP a model was exported to (what a supplier
+reads), an `.xbf`, or a vendor's STEP.
 
-for entry in pmi.read("XBF/plate.xbf"):   # or a .step
+```bash
+cadgen export "$ID" STEP/plate.step
+```
+
+```python
+from cadgen import pmi
+
+for entry in pmi.read("STEP/plate.step"):   # or an .xbf
     print(entry["id"], entry["kind"], entry["status"], entry["problem"])
 ```
 
@@ -326,23 +338,28 @@ has none (`nominal` is null), since the file states limits, not a nominal.
 
 ## Export
 
-`@step`, `cadgen export XBF/plate.xbf STEP/plate.step` and the viewer's Export
-(**STEP (AP242)**) write the PMI. While a document holds PMI the code made, the
-exports that would rebuild it without its PMI are refused: a posed STEP, and a STEP
-or `.xbf` of one part (`--part`).
+A STEP of the model writes the PMI: `cadgen export "$ID" STEP/plate.step`, `export(plate(),
+...)` in an `exports.py`, or the viewer's Export ([exports](exports.md)). A STEP that
+would drop an annotation the code made (one linked to no geometry, [After an
+edit](#after-an-edit)) is refused, naming each. An `.xbf` exported from the model is the
+document made again from what the engine holds, which carries none of its PMI yet, so
+`cadgen export "$ID" plate.xbf` is refused for a part with PMI, naming what it would
+lose; the engine keeps the document itself, PMI and all. No export poses a model or
+takes a part out of it: a posed file or a part on its own is a model of its own
+([exports](exports.md#posed-files-and-parts-on-their-own)).
 
 A vendor's STEP converts as ever (`cadgen export vendor/motor.step vendor/motor.xbf`):
 the `.xbf` keeps the file's GD&T as read, and an export of either writes it. What an
-export of a vendor's document cannot carry whole (a posed or partial one carries no
-PMI) is said in its log, `warning: pmi: ...`, never refused.
+export of a vendor's document cannot carry whole is said in its log, `warning: pmi:
+...`, never refused.
 
 The viewer's Export reads each STEP it writes back with a reader of its own, without
 the kernel, and matches every annotation to the file: values, units, datum order,
-zone, faces and a basic dimension's mark. The export's status says how many matched,
+zone, faces and a basic dimension's mark. The export's toast says how many matched,
 with the file's SHA-256. It checks the file, not a supplier's importer.
 
 A STEP carries no annotation ids, no drawn callouts, no notes and no views: notes,
-views and the library stay in the `.xbf`, and the check neither expects nor counts
+views and the library stay in the document, and the check neither expects nor counts
 them. A general profile is written as a surface profile on exactly the faces it
 covers, so a CAM or inspection program reads the faces themselves; the file does not
 say "general".

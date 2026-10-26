@@ -20,7 +20,9 @@ when a run is slow.
 Each FILE runs in its own interpreter, ``--jobs`` at a time (default one), with an engine
 directory of its own (``CADGEN_ENGINE_DIR``): a build it asks for without naming one runs on
 an engine daemon of that file's alone, never on a developer's own, and a daemon the file left
-running there is stopped once it ends (``stop_engine``). The per-module output is printed as
+running there is stopped once it ends (``stop_engine``). Its ``CADGEN_CACHE_DIR`` is a folder
+of its own that does not exist, so nothing a test starts reaches a developer's cadgen 0.7
+store. The per-module output is printed as
 each finishes and the final ``Ran N tests`` / ``OK`` / ``FAILED`` summary aggregates every
 module. The loaded test set is identical to `python -m unittest <files>` run from --top. A
 file still running ``FILE_HANG_SECONDS`` after it started is hung: its interpreter prints
@@ -47,9 +49,10 @@ import unittest
 # Hung, not slow: the slowest file CI has run took about four minutes. Without this a
 # hang runs out the CI job's timeout and says nothing about where it is.
 FILE_HANG_SECONDS = 15 * 60
-# A file's engine daemon goes when the file ends (``stop_engine``); one a killed run leaves
-# behind goes away on its own after this long idle.
-ENGINE_IDLE_SECONDS = 300
+# A file's engine daemon goes when the file ends (``stop_engine``): an engine never stops on a
+# timer, so one a killed run leaves behind runs until it is stopped (``cadgen stop`` with its
+# folder) or its folder is removed (an engine whose door is gone stops).
+
 # Stopping a file's daemon waits for its workers to exit.
 ENGINE_STOP_SECONDS = 120
 
@@ -159,7 +162,7 @@ def stop_engine(top: str, engine_dir: str) -> None:
         names = os.listdir(engine_dir)
     except FileNotFoundError:
         return
-    if not any(name.endswith((".sock", ".port")) for name in names):
+    if not any(name.endswith((".door", ".port")) for name in names):
         return
     env = {**os.environ, "CADGEN_ENGINE_DIR": engine_dir,
            "PYTHONPATH": os.pathsep.join(filter(None, [os.path.join(top, "packages", "cadgen", "src"),
@@ -207,14 +210,17 @@ def run_files(files: list[str], top: str, jobs: int, verbose: bool, print_weight
     durations: list[tuple[str, float]] = []
     failed_modules: list[str] = []
     unparsed: list[str] = []
-    # Short: a Unix socket path caps near 104 bytes, and the engine's sits in this folder.
+    # Each file's engine folder is in here, its door beside its lock.
     engines = tempfile.mkdtemp(prefix="cgt-")
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
             futures = []
             for index, path in enumerate(files):
+                # A state folder of its own too: the engine's registry of documents (and Recents)
+                # never reaches the person's.
                 env = {**os.environ, "CADGEN_ENGINE_DIR": os.path.join(engines, f"e{index}"),
-                       "CADGEN_ENGINE_IDLE": str(ENGINE_IDLE_SECONDS)}
+                       "CADGEN_STATE_DIR": os.path.join(engines, f"s{index}"),
+                       "CADGEN_CACHE_DIR": os.path.join(engines, f"c{index}")}
                 futures.append(pool.submit(_run_one_file, path, top, verbose, env))
             for future in concurrent.futures.as_completed(futures):
                 path, code, output, seconds = future.result()

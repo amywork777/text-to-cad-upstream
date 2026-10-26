@@ -1,20 +1,23 @@
 """Exports: a document translated to a file. One writer, one document, two triggers.
 
-``translate(document, kind, path, *, pose=None, part=None)`` writes one
+``translate(document, kind, path)`` writes one
 file of ``kind`` (``KINDS``: ``xbf``, ``step``, ``glb``, ``stl``, ``threemf``, ``dxf``) from a
 document: a ``Source`` -- the document a build made, held in the worker's memory
-(``Source.built``), or one read from an ``.xbf`` or a ``.step`` (``Source.read``). A
+(``Source.built``), or one read from an ``.xbf`` or a ``.step`` (``Source.read``), or a mesh
+file's triangles (``.glb``, ``.stl``, ``.3mf``: ``export/mesh_file.py``). A
 derived file a decorator declares and a file ``cadgen export`` asks for are the same
-call, so the same document and the same options write the same bytes.
+call, so the same document writes the same bytes.
 
-``pose`` (a configuration's name or ``{joint: value}``) places the mechanism's links by
-forward kinematics before anything is written; ``part`` (one part or assembly as a ref's
-owner names it, ``refs``: ``hand/finger.2``, ``palm``) writes that subtree alone, as a
-document of its own: its root at the subtree's frame. Meshes are never sources: there is
-no B-rep in them. An xbf is written from a STEP (read into a document
-first), or from an xbf with ``part`` (a sub-assembly extracted); a posed xbf is refused,
-since a pose is a request, never a document. A GLB carries every motion the document defines as a glTF animation of the same
-name, baked by forward kinematics (``export/motion.py``); STEP, STL and 3MF ignore motions. A
+The file holds the document as its code built it: every part, placed where the document
+places it, in its colours, with its motion. No translation selects a part or a state: a
+posed or partial file is a function in the model's code. A mesh file is a source of the other
+two mesh kinds, holding what its format carries (``README``, **Translation formats**), and of
+nothing else: there is no B-rep in it, so no xbf, STEP or DXF; nor is a mesh file written from one
+of its own kind. An xbf is written from a STEP (read into a document first); an xbf is
+never written from another, which already is the document. A GLB carries every configuration sequence the document defines as a glTF
+animation of the same name, baked by forward kinematics (``export/motion.py``), and every
+``animation()`` its code made (``export/animation.py``), from a build's tree or from the record of
+them the xbf carries, so a GLB exported from the xbf is the build's own. STEP, STL and 3MF ignore both. A
 DXF is drawn from a planar document alone (``export/dxf.py``): a 3D one is refused.
 
 Every file is written to a temporary file beside its target and moved over it; a DXF only
@@ -26,15 +29,14 @@ Importing this package imports no kernel: a kind's writer loads on its first use
 from __future__ import annotations
 
 import importlib
-import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from cadgen.engine.atomic_replace import replace_atomic
+from cadgen.engine.atomic_replace import put
 
-__all__ = ["KINDS", "ExportRefused", "Kind", "Source", "View", "kind_of", "translate"]
+__all__ = ["KINDS", "ExportRefused", "Kind", "Source", "View", "kind_of", "refused", "translate"]
 
 
 class ExportRefused(ValueError):
@@ -70,12 +72,29 @@ KINDS: dict[str, Kind] = {
     # A drawing replaces its file itself, and only when its bytes change.
     "dxf": Kind("dxf", (".dxf",), "cadgen.engine.export.dxf:write", atomic=False),
 }
-# What a source file is read as: documents only.
+# What a source file is read as: a document, or a mesh file's triangles.
 SOURCES = (".xbf", ".step", ".stp")
 MESHES = (".glb", ".stl", ".3mf")
-# The date of every entry of a zip the package writes (a 3MF, a .cadz): a file is a function of
+# A kind's name in a sentence.
+LABELS = {"xbf": "xbf", "step": "STEP", "glb": "GLB", "stl": "STL", "threemf": "3MF", "dxf": "DXF"}
+# The date of every entry of a zip the package writes (a 3MF): a file is a function of
 # what it holds, never of the clock it was written by (zipfile stamps each entry with the time).
 ZIP_DATE = (1980, 1, 1, 0, 0, 0)
+
+
+def refused(source: Any, destination: Any) -> str | None:
+    """Why the file at ``source`` (a path) is never translated to ``destination``, by their
+    suffixes alone, or None: a mesh holds no B-rep, so no xbf, STEP or DXF is made from one, and
+    a mesh file is not written from one of its own kind."""
+    source, kind = Path(source), kind_of(destination)
+    if source.suffix.lower() not in MESHES:
+        return None
+    if kind in ("xbf", "step", "dxf"):
+        return f"{source.name} is a mesh: it has no B-rep, and no {LABELS[kind]} export is made from one"
+    if kind == kind_of(source):
+        article = "an" if kind == "stl" else "a"
+        return f"{article} {LABELS[kind]} is not written from another {LABELS[kind]}: the file already is one"
+    return None
 
 
 def kind_of(path: Any) -> str:
@@ -98,21 +117,32 @@ class Source:
     XCAF document when one is held, each assembly occurrence's placement, and the
     mechanism itself. ``live`` shapes are a build's (written and read once to be meshed,
     as saving their document does: ``mesh.shape_bytes``); the others were read from a file
-    and are meshed from their bytes as read."""
+    and are meshed from their bytes as read. A mesh file's source (``mesh``: its kind) has no
+    shapes: each part's mesh is held as the file has it (``meshes``, by key)."""
 
     def __init__(self, structure: dict[str, Any], shapes: dict[str, Any], *, live: bool, xcaf: Any = None,
                  world: Callable[[tuple[int, ...]], Any] | None = None, mechanism: Any = None,
-                 foreign: bool = False, path: Path | None = None) -> None:
+                 foreign: bool = False, path: Path | None = None, animations: Any = None,
+                 meshes: dict[str, Any] | None = None, mesh: str | None = None, data: bytes | None = None) -> None:
         self.structure = structure
         self.shapes = shapes
         self.live = live
         self.xcaf = xcaf
         self._world = world
         self.mechanism = mechanism
+        # The animations the build's code made (``animations.harvest``): a built source's from its
+        # tree, a read one's from the document's record of them (``document.Loaded.animations``). A
+        # GLB bakes them (``export/animation.py``); no other export reads them.
+        self.animations = animations
         # A document this engine did not write (a foreign STEP): its keys are its reader's,
         # made again from the geometry before an xbf holds them.
         self.foreign = foreign
         self.path = path
+        self.meshes = meshes
+        self.mesh = mesh
+        # The document's own xbf bytes, for one read from them (a retired worker's, the engine's
+        # cache's: ``build.held_source``): what an xbf of it is (``tree.write_xbf``).
+        self.data = data
         self._bytes: dict[str, bytes] = {}
         self._lock = threading.Lock()
 
@@ -123,21 +153,25 @@ class Source:
     @classmethod
     def read(cls, path: Any) -> "Source":
         """A document read from its file (``document.load``: held while the file stays as it
-        was): an ``.xbf``, or a ``.step``/``.stp`` read into a document first."""
-        from cadgen.engine import document
-
+        was): an ``.xbf``, or a ``.step``/``.stp`` read into a document first; or a mesh file's
+        triangles (``mesh_file.read``: no kernel)."""
         path = Path(path)
         suffix = path.suffix.lower()
         if suffix in MESHES:
-            raise ExportRefused(f"{path.name} is a mesh: it has no B-rep, and no export is made from one")
+            from cadgen.engine.export.mesh_file import read
+
+            return read(path)
         if suffix not in SOURCES:
-            raise ExportRefused(f"{path.name} is no document: an export reads an .xbf or a .step")
+            raise ExportRefused(f"{path.name} is no document: an export reads an .xbf, a .step or a mesh "
+                                f"({', '.join(MESHES)})")
+        from cadgen.engine import document
+
         if not path.is_file():
             raise ExportRefused(f"no document {path}")
         loaded = document.load(path)
         return cls(loaded.structure(), {p.key: p.shape for p in loaded.prototypes}, live=False, xcaf=loaded.doc,
                    world=lambda occurrence: loaded.worlds.get(occurrence), mechanism=loaded.mechanism,
-                   foreign=loaded.writer is None, path=loaded.path)
+                   foreign=loaded.writer is None, path=loaded.path, animations=loaded.animations)
 
     @classmethod
     def built(cls, doc: Any, tree: Any, path: Path | None) -> "Source":
@@ -151,7 +185,8 @@ class Source:
             shapes.setdefault(part.key, part.shape)
         return cls(structure, shapes, live=True, xcaf=doc,
                    world=lambda occurrence: kinematics._occurrence(tree, occurrence)[0],
-                   mechanism=tree.mechanism, path=None if path is None else Path(path))
+                   mechanism=tree.mechanism, path=None if path is None else Path(path),
+                   animations=getattr(tree, "animations", None))
 
     def world(self, occurrence: tuple[int, ...]) -> Any:
         """An occurrence's placement as built, a 4x4 matrix (numpy), or None."""
@@ -177,20 +212,21 @@ class Source:
                 self._bytes[key] = found
         return found
 
-    def view(self, pose: Any = None, part: str | None = None) -> "View":
-        return View.of(self, pose=pose, part=part)
+    def view(self) -> "View":
+        return View.of(self)
 
     def shape(self) -> Any:
         """The document as a build123d compound tree: an assembly node a ``Compound`` of its
         components, a part a shape of its own on the prototype's geometry, placed where the
         document places it, labelled, coloured and given its material."""
         import numpy as np
-        from build123d import Color, Compound, Location
+        from build123d import Compound, Location
         from build123d.importers import topods_lut
         from build123d.topology.shape_core import downcast
         from OCP.gp import gp_Trsf
         from OCP.TopLoc import TopLoc_Location
 
+        from cadgen.engine.colors import color as as_color
         from cadgen.engine.export.tree import _material
         from cadgen.engine.mesh import read_shape
 
@@ -206,7 +242,7 @@ class Source:
             made = topods_lut[type(topods)](topods)
             made.label = tree["name"]
             rgba = instance.get("color") or prototype.get("color")
-            made.color = Color(*rgba) if rgba else None
+            made.color = as_color(rgba) if rgba else None
             material = _material(prototype.get("material"))
             if material is not None:
                 made.material = material
@@ -254,20 +290,14 @@ class Placed:
 
 @dataclass
 class View:
-    """A document as one translation writes it: posed (``pose``) and cut to a subtree
-    (``part``), or as it is. ``tree`` is the structure's tree from the root written (its
-    nodes' ``instance`` indices the structure's), ``root`` that root's occurrence in the
-    document, ``rerooted`` the matrix that takes the document's frame to the root's."""
+    """A document as one translation writes it: as it is. ``tree`` is the structure's tree
+    (its nodes' ``instance`` indices the structure's)."""
 
     source: Source
     name: str
     placements: list[Placed]
     tree: dict[str, Any]
-    root: tuple[int, ...]
-    rerooted: Any
-    posed: bool
-    parted: bool
-    matrices: list[Any]  # every instance's world matrix in the root's frame, by instance index
+    matrices: list[Any]  # every instance's world matrix, by instance index
 
     @property
     def prototypes(self) -> list[dict[str, Any]]:
@@ -281,42 +311,19 @@ class View:
         return list(found)
 
     @classmethod
-    def of(cls, source: Source, *, pose: Any = None, part: str | None = None) -> "View":
+    def of(cls, source: Source) -> "View":
         import numpy as np
 
         structure = source.structure
         instances = structure["instances"]
-        columns = [instance["matrix"] for instance in instances]
-        if pose is not None:
-            from cadgen.engine import mechanism
-
-            try:
-                values, _named = mechanism.resolve(structure.get("kinematics"), pose)
-                mechanism.link_worlds(structure["kinematics"], values)
-                columns = mechanism.posed_instances(structure, values)
-            except ValueError as error:
-                raise ExportRefused(f"--pose: {error}") from None
-        matrices = [np.array(values, dtype=float).reshape(4, 4).T for values in columns]
-        tree, root, name = structure["tree"], (), structure["name"]
-        rerooted = np.eye(4)
-        if part is not None:
-            tree, root = _subtree(structure, str(part))
-            name = tree["name"]
-            if "children" in tree:
-                world = source.world(root)
-                if world is None:
-                    raise ExportRefused(f"--part {part}: the document does not say where {name!r} stands")
-            else:
-                world = np.array(instances[tree["instance"]]["matrix"], dtype=float).reshape(4, 4).T
-            rerooted = np.linalg.inv(world)
-            matrices = [rerooted @ matrix for matrix in matrices]
+        matrices = [np.array(instance["matrix"], dtype=float).reshape(4, 4).T for instance in instances]
+        tree = structure["tree"]
         placements = []
         for index in _instances(tree):
             instance = instances[index]
-            names = instance["path"].split("/")
-            placements.append(Placed(instance["prototype"], matrices[index], names[len(root):] if root else names,
+            placements.append(Placed(instance["prototype"], matrices[index], instance["path"].split("/"),
                                      tuple(instance["color"]) if instance.get("color") else None, index))
-        return cls(source, name, placements, tree, root, rerooted, pose is not None, part is not None, matrices)
+        return cls(source, structure["name"], placements, tree, matrices)
 
 
 def _instances(node: dict[str, Any]) -> list[int]:
@@ -325,38 +332,17 @@ def _instances(node: dict[str, Any]) -> list[int]:
     return [index for child in node["children"] for index in _instances(child)]
 
 
-def _subtree(structure: dict[str, Any], part: str) -> tuple[dict[str, Any], tuple[int, ...]]:
-    """The node ``part`` names, as a ref's owner names one (``refs``): ``hand/finger.2``, the second
-    component labelled ``finger`` of ``hand``; ``palm``, where one occurrence is so labelled; the
-    root's name may be left off. A ref naming nothing, several occurrences, an element or a
-    document is refused by name; the node's occurrence is its child indices from the root."""
-    from cadgen.engine import refs
-
-    try:
-        file, selectors = refs.parse(part)
-    except refs.RefError as error:
-        raise ExportRefused(f"--part {part!r}: {error}") from None
-    if file is not None or len(selectors) != 1 or selectors[0].owner is None or selectors[0].element is not None:
-        raise ExportRefused(f"--part {part!r} names one part or assembly, as a ref's owner does (hand/finger.2, "
-                            "palm): no element, no document")
-    try:
-        [hit] = refs.resolve_structure(structure, part)
-    except refs.RefError as error:
-        raise ExportRefused(f"--part: {error}") from None
-    steps = hit.node.path()
-    occurrence = tuple(parent.children.index(child) for parent, child in zip(steps, steps[1:]))
-    return hit.node.payload, occurrence
-
-
 # --- the one call ------------------------------------------------------------------------------
 
 
-def translate(document: Any, kind: str | None, path: Any, *, pose: Any = None, part: str | None = None,
-              log: Callable[[str], None] | None = None) -> int:
-    """Write ``document`` (a ``Source``, or the path of an ``.xbf``/``.step``) to ``path``
-    as ``kind`` (from the suffix when None); returns the file's size. A file that would not carry
-    whole the PMI the code made is refused by name (``pmi.refuse_dropped``); what one of a document
-    another system wrote leaves out is said to ``log``."""
+def translate(document: Any, kind: str | None, path: Any, *, log: Callable[[str], None] | None = None) -> int:
+    """Write ``document`` (a ``Source``, or the path of an ``.xbf``/``.step`` or a mesh file) to ``path``
+    as ``kind`` (from the suffix when None); returns the file's size. The translation lands only where
+    the file does not hold its bytes already (``put``): a file written again the same is left as it
+    is. Every declared file is written this way too, after the build or the take-up that made its
+    document (``build``). A file that would not carry whole the PMI the code made is refused by name
+    (``pmi.refuse_dropped``); what one of a document another system wrote leaves out is said to
+    ``log``."""
     from cadgen.engine import pmi
 
     path = Path(path)
@@ -365,13 +351,17 @@ def translate(document: Any, kind: str | None, path: Any, *, pose: Any = None, p
         raise ExportRefused(f"no export {kind!r}; the kinds are {', '.join(KINDS)}")
     if path.suffix.lower() not in KINDS[kind].suffixes:
         raise ExportRefused(f"{path.name}: a {kind} export ends in {' or '.join(KINDS[kind].suffixes)}")
+    if not isinstance(document, Source):
+        why = refused(document, path)
+        if why:
+            raise ExportRefused(why)
     source = document if isinstance(document, Source) else Source.read(document)
-    if kind == "xbf":
-        if pose is not None:
-            raise ExportRefused("a posed xbf is refused: a pose is a request, never a document")
-        if not source.foreign and part is None and source.path is not None and source.path.suffix.lower() == ".xbf":
-            raise ExportRefused("an xbf is written from another xbf only with --part: the document already is one")
-    view = source.view(pose=pose, part=part)
+    why = refused(source.path, path) if source.mesh and source.path is not None else None
+    if why:
+        raise ExportRefused(why)
+    if kind == "xbf" and not source.foreign and source.path is not None and source.path.suffix.lower() == ".xbf":
+        raise ExportRefused("an xbf is not written from another xbf: the document already is one")
+    view = source.view()
     pmi.refuse_dropped(view, kind)
     for entry, why in pmi.dropped(view, kind) if log is not None else ():
         log(f"warning: pmi: {path.name}: {entry['id']} is not carried whole: {why}")
@@ -380,12 +370,5 @@ def translate(document: Any, kind: str | None, path: Any, *, pose: Any = None, p
     if not spec.atomic:
         spec.write(view, path)
         return path.stat().st_size
-    temporary = path.with_name(f".{path.stem}.{os.getpid()}.{threading.get_ident()}.tmp{path.suffix}")
-    try:
-        spec.write(view, temporary)
-        size = temporary.stat().st_size
-        replace_atomic(temporary, path)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
+    _written, size = put(path, lambda temporary: spec.write(view, temporary))
     return size

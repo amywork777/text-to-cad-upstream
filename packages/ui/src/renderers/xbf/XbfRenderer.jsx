@@ -14,7 +14,8 @@ import RendererShell from "../kit/shell/RendererShell.jsx";
 import { usePreviewState, useRendererShell } from "../kit/shell/useRendererShell.js";
 import { usePreviewScene } from "../kit/shell/usePreviewScene.js";
 import { useViewportLoadStatus } from "../kit/shell/useViewportLoadStatus.js";
-import { buildFailedAlert, noGeometryAlert } from "../kit/status/loadAlerts.js";
+import { buildFailedAlert, noGeometryAlert, staleBuildAlert } from "../kit/status/loadAlerts.js";
+import { useI18n } from "@text-to-cad/ui/i18n";
 import { useModelTools } from "../kit/tools/model-effects/ModelTools.jsx";
 import { useMotionExclusion } from "../kit/tools/model-effects/motionExclusion.js";
 import { useMeasureSession } from "../kit/tools/measure/useMeasureSession.js";
@@ -43,6 +44,7 @@ import { XBF_DECLINED_LIVE_COMMANDS, XBF_TOOL, XBF_TOOL_MODES } from "./tools.js
 import { xbfLookSubject } from "./xbfLookAt.js";
 import { readXbfView, xbfViewSignatures, xbfViewSlices } from "./xbfViewSlices.js";
 import { useXbfScene } from "./useXbfScene.js";
+import { useXbfMotion } from "./useXbfMotion.js";
 import PmiOverlay from "./pmi/PmiOverlay.jsx";
 import PmiSection from "./pmi/PmiSection.jsx";
 import { useXbfPmi } from "./pmi/useXbfPmi.jsx";
@@ -54,16 +56,19 @@ import { createHiddenTest } from "./pmi/pmiHidden.js";
 // (Select with its filter, Pencil, Shapes, Measure, Explode, Clip), the same selection (Parts, Faces and
 // Edges as the filter ticks them, a collapsed assembly picked as a unit, a part's faces and edges
 // once it is open, Group faces and Group edges), the same file sidebar (Model tree, Position), the
-// same menus, the same Quick Edit chips. What differs is underneath: the document is read from
-// the engine that serves it, and every face and edge is to hand from the start, so nothing waits
-// on topology. And what only a document has: its PMI, drawn on the model and read and asked for in
-// the file sidebar's PMI section (`pmi/`).
+// same menus, the same Quick Edit chips; and, for a document with motions, the file sidebar's
+// Motion section, the shell's routine transport playing them (`useXbfMotion.js`). What differs is
+// underneath: the document is read from the engine that serves it, and every face and edge is to
+// hand from the start, so nothing waits on topology. And what only a document has: its PMI, drawn
+// on the model and read and asked for in the file sidebar's PMI section (`pmi/`).
 
 const NO_REFERENCES = Object.freeze([]);
 const EMPTY = Object.freeze([]);
 const NO_HOVER = Object.freeze({ parts: EMPTY, element: null });
 const EXPLODE_OFF = Object.freeze({ exploded: { enabled: false, amount: 0 } });
 const isElementId = id => String(id).includes("/");
+// How far off z=0 a point may be, in the document's millimetres, for its DXF: the writer's own test.
+const PLANAR = 1e-6;
 
 /** The selection after a pick of a part or subassembly, as a STEP's: a plain pick drops the faces and edges. */
 function pickNode(current, id, multiSelect) {
@@ -97,13 +102,17 @@ function XbfSurface({ view, data }) {
   const source = loaded.document?.source?.url || "";
   // What every later read of the document's engine is made with: the fetch it was read with.
   const engineFetch = loaded.document?.fetch;
+  const { t } = useI18n();
   // A failed build of the file is said over the version on screen, the last that built; the view
-  // updates by itself when one succeeds.
+  // updates by itself when one succeeds. A model shown from its last build though its code changed
+  // since (the engine's `stale`) says so, with the command that builds it again.
+  const stale = loaded.document?.structure?.stale || null;
   const loadAlert = useMemo(() => workspaceLoadAlert({
     catalogError: document.catalogError, error: loaded.error, modelKey: document.modelKey, hasScene: Boolean(scene)
   }) || (loaded.failed ? buildFailedAlert(document.modelKey, loaded.failed, Boolean(scene)) : null)
+    || (stale && scene ? staleBuildAlert(stale, t) : null)
     || (loaded.empty ? noGeometryAlert(document.modelKey) : null),
-  [document.catalogError, loaded.error, loaded.failed, loaded.empty, document.modelKey, scene]);
+  [document.catalogError, loaded.error, loaded.failed, loaded.empty, document.modelKey, scene, stale, t]);
   const tree = useMemo(() => presentXbfTree(scene?.structure || null), [scene?.structure]);
   // The model's two readiness moments, as a STEP's are published (`window.__cadViewerLoad`): its
   // first scene, and the whole of it -- one moment here, every part is in the first scene.
@@ -168,8 +177,28 @@ function XbfSurface({ view, data }) {
   const pose = useXbfPose(kinematics);
   const { values: poseValues, applied: poseApplied, preset: posePreset, couplings: poseCouplings,
     setValues: setPoseValues, choosePreset, reset: resetPose } = pose;
+  // ---- Motion: the document's motions played (`useXbfMotion.js`) ------------------------------
+  // While a motion owns the pose (playing, or paused off its start, until Reset lets go of it) its
+  // frames pose the scene and Position shows them, read-only. It is a motion as Explode and the
+  // pose are (below): playing it puts both at rest, and Explode used puts it at rest.
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
+  const positionRef = useRef(null);
+  positionRef.current = { values: poseValues, applied: poseApplied };
+  const poseFrame = useCallback((values) => {
+    const now = sceneRef.current;
+    if (!now) return;
+    const position = positionRef.current;
+    now.setPose(values || (position.applied ? position.values : null));
+    if (!values) shellRef.current?.syncSceneBounds?.();
+    shellRef.current?.requestRender?.();
+  }, []);
+  const motion = useXbfMotion(kinematics, poseFrame);
+  const motionOwns = Boolean(motion?.enabled);
+  const motionRef = useRef(motion);
+  motionRef.current = motion;
   useEffect(() => {
-    if (!scene || !poseValues) return;
+    if (!scene || !poseValues || motionRef.current?.enabled) return;
     scene.setPose(poseApplied ? poseValues : null);
     shellRef.current?.syncSceneBounds?.();
     requestRender();
@@ -180,13 +209,21 @@ function XbfSurface({ view, data }) {
   // built, as `cadgen snapshot --pose` takes it (`jointValues`), and the parts hidden and isolated as
   // its `--display` takes them (`hidden`, `isolated`), each node as Copy Prompt copies it and the
   // hidden parts by the fewest nodes that name them, and the PMI where it is off (`pmi`) -- so the
-  // view ink was drawn in is drawn as it was.
-  const poseGiven = useMemo(() => (poseApplied && kinematics && poseValues ? xbfPoseGiven(kinematics, poseValues, poseCouplings) : null),
+  // view ink was drawn in is drawn as it was. While a motion owns the pose, the pose on screen is its frame.
+  const positionGiven = useMemo(() => (poseApplied && kinematics && poseValues ? xbfPoseGiven(kinematics, poseValues, poseCouplings) : null),
     [poseApplied, kinematics, poseValues, poseCouplings]);
+  const motionGiven = useCallback((at) => {
+    const values = motionRef.current?.valuesAt(at);
+    return values && kinematics ? xbfPoseGiven(kinematics, values) : null;
+  }, [kinematics]);
+  const poseGiven = useMemo(() => (motionOwns ? motionGiven(motion.elapsedSec) : positionGiven),
+    [motionOwns, motion?.elapsedSec, motion?.activeClipId, motionGiven, positionGiven]);
   const viewState = useCallback(() => {
     const refs = ids => xbfNodeRefs({ scene, tree, resource: shellRef.current?.frame.resource, ids });
-    return { jointValues: poseGiven, hidden: refs(xbfCoveringIds(tree, hiddenIds)), isolated: refs(isolatedIds), pmi: !pmiViewRef.current.slice?.off };
-  }, [poseGiven, scene, tree, hiddenIds, isolatedIds]);
+    const playing = motionRef.current?.enabled && motionRef.current.playing;
+    return { jointValues: playing ? motionGiven(motionRef.current.clock.getAnimationClock()) : poseGiven,
+      hidden: refs(xbfCoveringIds(tree, hiddenIds)), isolated: refs(isolatedIds), pmi: !pmiViewRef.current.slice?.off };
+  }, [poseGiven, motionGiven, scene, tree, hiddenIds, isolatedIds]);
 
   // ---- this document's own slices of the file's view: the tree and the pose --------------------
   // As a STEP's were (`xbfViewSlices.js`): what is open, hidden and isolated in the Model tree, and
@@ -245,7 +282,7 @@ function XbfSurface({ view, data }) {
   const [edgesDrawn, setEdgesDrawn] = useState(true);
   const shell = useRendererShell({
     view, services: document.services, resource: document.resource, modelKey: document.modelKey, revisionKey: loaded.revision,
-    features, toolModes: XBF_TOOL_MODES, tool, previewable: true, preview, scene, sceneEffects: true,
+    features, toolModes: XBF_TOOL_MODES, tool, previewable: true, preview, scene, sceneEffects: true, animation: motion,
     // A build writing the file is the model on screen updating, its stage the progress
     // (`progress.py`'s frame), until it lands or fails.
     load: { busy: loaded.busy && !scene, updating: loaded.busy && Boolean(scene), editPending: Boolean(loaded.building),
@@ -254,13 +291,6 @@ function XbfSurface({ view, data }) {
     // A prompt's annotation is in the scene's coordinates: the document's millimetres.
     annotationUnits: scene?.units?.unit || "mm"
   });
-  const exportView = useMemo(() => loaded.document && !host.environment.compact ? {
-    doc: loaded.document.source.doc, revision: loaded.revision, file: view.file.path, name: view.file.name,
-    part: !shell.previewing && selected.length === 1 && selectedNodeIds.length === 1 ? tree.refOf(selectedNodeIds[0]) : null,
-    pose: shell.previewing ? null : poseGiven, preview: shell.previewing
-  } : null, [loaded.document, loaded.revision, host.environment.compact, view.file.path, view.file.name,
-    shell.previewing, selected, selectedNodeIds, tree, poseGiven]);
-  useExportView(exportView);
   // A measurement taken, deleted or cleared is a step of the view's one history, with the ink's.
   measure.history.current = shell.frame.history;
   shellRef.current = shell;
@@ -278,19 +308,22 @@ function XbfSurface({ view, data }) {
   useDeclinedSelectReference(document);
   const ensureSelect = useCallback(() => { if (shellRef.current?.toolMode !== XBF_TOOL.SELECT) shellRef.current?.selectTool(XBF_TOOL.SELECT); }, []);
 
-  // ---- one motion at a time: Explode and the pose ------------------------------------------
+  // ---- one motion at a time: Explode, the pose and a motion, nothing set aside -----------------
   const { view: viewSettings, store } = shell.viewSettings;
   const explodeApplied = Boolean(viewSettings.exploded?.enabled && viewSettings.exploded.amount > 0);
   useMotionExclusion(document.modelKey, {
     explode: { applied: explodeApplied, reset: () => store.patch(EXPLODE_OFF) },
-    position: { applied: poseApplied, reset: resetPose }
+    position: { applied: poseApplied, reset: resetPose },
+    motion: { applied: motionOwns, reset: () => motionRef.current?.onRelease() }
   });
 
   // ---- PMI: the document's manufacturing annotations ------------------------------------------
-  // Drawn on the model as built: while Explode or a pose moves the parts, not at all; and each at the
-  // first occurrence of its part the hidden parts and the isolation leave shown. Asked for in code,
-  // so only a document made from code (an .xbf) takes changes; a STEP's are read alone.
-  const restBounds = scene ? sceneFramingBounds(scene) : null;
+  // Drawn on the model as built: while Explode, a pose or a motion moves the parts, not at all; and
+  // each at the first occurrence of its part the hidden parts and the isolation leave shown. Asked
+  // for in code, so only a document made from code (an .xbf) takes changes; a STEP's are read alone.
+  const moving = explodeApplied || poseApplied || motionOwns;
+  // The model's box with its parts as built.
+  const restBounds = scene?.restBounds;
   const isolatedParts = useMemo(() => leavesOf(isolatedIds), [leavesOf, isolatedIds]);
   // PMI's "View from here": the viewport's camera now, and the Clip's plane where it stands (its
   // `at` in the file's unit, else the middle of the model at rest, as the Clip cuts), none while it is off.
@@ -300,12 +333,28 @@ function XbfSurface({ view, data }) {
     return { camera: shellRef.current?.frame.viewerRef.current?.getPerspective?.() || null,
       clip: clip.enabled ? { axis: clip.axis, at: clipAxisPosition(box, clip), invert: clip.invert } : null };
   }, [store, scene]);
-  const pmi = useXbfPmi({ scene, tree, bounds: restBounds, moving: explodeApplied || poseApplied, editable: isEngineRefFile(view.file.path),
+  const pmi = useXbfPmi({ scene, tree, bounds: restBounds || null, moving, editable: isEngineRefFile(view.file.path),
     hiddenParts: hiddenIds, isolatedParts, selectedKey: pmiPicked, onSelect: setPmiPicked, here: pmiHere });
   const pmiRef = useRef(pmi);
   pmiRef.current = pmi;
   pmiViewRef.current = { restore: pmi.restore, slice: pmi.slice };
   useEffect(() => { if (viewRestored) shellRef.current?.scheduleStateSave(); }, [viewRestored, pmi.slice]);
+
+  // Export writes the document as its code built it: the displayed document and revision alone,
+  // never the selection, the pose or Preview (`docs/viewer-host.md`, Export destinations and jobs).
+  // A document the scene draws flat on z=0 at rest holds no solid, so it writes a DXF too. And what
+  // a STEP of it carries of its PMI, as the engine writes one: its GD&T, written and checked in the
+  // file; its notes (its notes library's too) and named views, which stay in the XBF.
+  const planar = Boolean(restBounds && Math.abs(restBounds.min[2]) <= PLANAR && Math.abs(restBounds.max[2]) <= PLANAR);
+  const pmiGdt = pmi.entries.some(entry => entry.kind !== "note");
+  const pmiNotes = pmi.entries.some(entry => entry.kind === "note") || pmi.library.length > 0;
+  const pmiViews = pmi.views.length > 0;
+  const exportView = useMemo(() => loaded.document && !host.environment.compact ? {
+    doc: loaded.document.source.doc, revision: loaded.revision, file: view.file.path, name: view.file.name, planar,
+    ...(pmiGdt || pmiNotes || pmiViews ? { pmi: { gdt: pmiGdt, kept: [...(pmiNotes ? ["notes"] : []), ...(pmiViews ? ["views"] : [])] } } : {})
+  } : null, [loaded.document, loaded.revision, host.environment.compact, view.file.path, view.file.name, planar, pmiGdt, pmiNotes, pmiViews]);
+  useExportView(exportView);
+
   // What is lit: the parts and the faces and edges picked and under the pointer, and a PMI picked's
   // features with them (the one under the pointer, its first).
   const pmiLit = pmi.highlight;
@@ -335,7 +384,15 @@ function XbfSurface({ view, data }) {
   useEffect(() => { scene?.setLineRegistry(viewportRef.current?.runtimeRef.current || null); });
   const previewScene = usePreviewScene(scene, previewing);
   useEffect(() => { previewScene?.setEdgeLook({ enabled: false }); }, [previewScene]);
-  const previewView = useMemo(() => ({ scene: previewScene }), [previewScene]);
+  // Preview's own motion, on its own scene: at rest as Preview opens, let go as it closes.
+  const previewSceneRef = useRef(previewScene);
+  previewSceneRef.current = previewScene;
+  const previewFrame = useCallback((values) => {
+    previewSceneRef.current?.setPose(values);
+    shellRef.current?.frame.previewViewRef.current?.requestRender?.();
+  }, []);
+  const previewMotion = useXbfMotion(previewScene?.kinematics || null, previewFrame);
+  const previewView = useMemo(() => ({ scene: previewScene, animation: previewMotion }), [previewScene, previewMotion]);
 
   // ---- the tree's actions --------------------------------------------------------------------
   const toggleExpanded = useCallback(id => setExpandedIds(now => (now.includes(id) ? now.filter(item => item !== id) : [...now, id])), []);
@@ -666,8 +723,8 @@ function XbfSurface({ view, data }) {
   const runtimeOf = () => viewportRef.current?.runtimeRef.current;
   const measureSelect = measureSelectHandlers(measure, runtimeOf, clearSelection, { picks: selects(selectFilter, "measurement") });
 
-  // Position's knobs: Select's, while its filter ticks Position, with nothing exploded.
-  const knobsShown = selectActive && posable && selects(selectFilter, "position") && !explodeApplied;
+  // Position's knobs: Select's, while its filter ticks Position, with nothing exploded and no motion owning the pose.
+  const knobsShown = selectActive && posable && selects(selectFilter, "position") && !explodeApplied && !motionOwns;
   const handles = useMemo(() => (knobsShown && poseValues ? xbfJointHandles({ kinematics, rows: positionRows, values: poseValues, scene,
     onChange: (row, value) => { const written = writeXbfPosition(poseValues, row, value); if (written) setPoseValues(written); } }) : null),
   [knobsShown, kinematics, positionRows, poseValues, scene, setPoseValues]);
@@ -691,9 +748,9 @@ function XbfSurface({ view, data }) {
   const sidebar = scene && (assembly || kinematics || pmiShown) ? <>
     {assembly ? <XbfModelTree key={document.modelKey} tree={tree} active={!previewing} disabled={shell.idle} mode={shape}
       selectedIds={selected} onClearSelection={clearSelection} partControls={partControls} /> : null}
-    {kinematics ? <XbfPositionSection kinematics={kinematics} values={poseValues || {}} couplings={poseCouplings} preset={posePreset}
+    {kinematics ? <XbfPositionSection kinematics={kinematics} motion={motionOwns ? motion : null} values={poseValues || {}} couplings={poseCouplings} preset={posePreset}
       changed={poseApplied} onValues={setPoseValues} onPreset={choosePreset} onReset={resetPose} /> : null}
-    {pmiShown ? <PmiSection pmi={pmi} picked={pmiPickedFaces} selectedFeatureIds={selectedElementIds} moving={explodeApplied || poseApplied}
+    {pmiShown ? <PmiSection pmi={pmi} picked={pmiPickedFaces} selectedFeatureIds={selectedElementIds} moving={moving}
       request={pmiRequest} onRequestDone={() => setPmiRequest(null)} /> : null}
   </> : null;
   // Whether the model hides a point of a callout from the camera now (its leader's start, an

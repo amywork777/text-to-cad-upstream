@@ -281,9 +281,8 @@ class MemoTest(MemoCase):
     def test_verify_reaches_the_build_through_the_api(self) -> None:
         import contextlib
         import io
-        import json
 
-        from cadgen.engine import api, cli
+        from cadgen.engine import api
         from cadgen.engine.model import xbf
 
         self.build()
@@ -293,38 +292,114 @@ class MemoTest(MemoCase):
         here = Path.cwd()
         os.chdir(self.folder)
         self.addCleanup(os.chdir, here)
-        # Code calling the model: a verifying build of it runs the model's bodies again too.
-        printed = io.StringIO()
-        with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(io.StringIO()):
-            status = cli.main(["build", "from root import root\nresult = root()", "--no-daemon", "--xbf", "--verify", "--json"])
-        self.assertEqual(status, 0)
-        found = json.loads(printed.getvalue().splitlines()[-1])["verify"]
+        # A model calling the model: a verifying build of it runs the called model's bodies again too.
+        self.write("caller.py", "from cadgen.engine import xbf\nfrom root import root\n\n\n"
+                                "@xbf(\"XBF/caller.xbf\")\ndef caller():\n    return root().shape\n")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            report = api.build_script(self.folder / "caller.py", ["caller"], verify=True, daemon=False)
+        self.assertTrue(report.ok, report.models)
+        found = report.models[0]["verify"]
         self.assertEqual(found["mismatches"], ["parts.py::jitter"], found)
 
         @xbf("XBF/probe.xbf")
         def probe():
             return None
 
-        # Through the daemon, the request carries it to the worker's build: code's and a model's.
+        # Through the daemon, the request carries it to the worker's build.
         asked = []
         answer = {"done": [{"ok": True, "model": "probe"}], "worker": {}}
         with mock.patch.object(api, "_ask", side_effect=lambda message, *_relays: asked.append(message) or answer), \
                 contextlib.redirect_stdout(io.StringIO()):
-            cli.main(["build", "result = 1", "--model", "probe", "--verify"])
-            cli.main(["build", "result = 1", "--model", "probe"])
+            probe.build(verify=True)
+            probe.build()
             probe.build(verify=True)
         self.assertEqual([message["verify"] for message in asked], [True, False, True])
 
     def test_the_restart_cache_folds_a_memo_function_into_the_model_key(self) -> None:
-        self.build()
-        self.restart()
-        report = self.build()
-        self.assertEqual(report["cache"], {"used": True, "from": "file"})
+        from tests.python.support import engine_cache
+
+        cache = self.folder / "cache"
+
+        def build() -> dict:
+            report = engine_build.build(self.folder / "root.py", None, cwd=self.folder, cache=str(cache))[-1]
+            self.assertTrue(report["ok"], report)
+            return report
+
+        build()
+        engine_cache.restart(cache)
+        report = build()
+        self.assertEqual(report["cache"], {"used": True, "from": "cache"})
         self.assertEqual(report["memo"]["bodies_loaded"], 6)
         self.write("parts.py", PARTS.format(thickness=3))
-        self.restart()
-        report = self.build()
+        engine_cache.restart(cache)
+        report = build()
         self.assertEqual(report["cache"]["reason"], "../parts.py: plate changed")
+
+
+# A shape made with OCCT's own makers, which no key names: alone in a model's body it keeps
+# the body running; marked @memo, the call keys it.
+NATIVE = """
+from pathlib import Path
+
+import build123d as bd
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+from cadgen.engine import memo, model
+
+HERE = Path(__file__).resolve().parent
+HOLE = {hole}
+
+
+def _note(name):
+    with open(HERE / "calls.log", "a") as handle:
+        handle.write(name + "\\n")
+
+
+{marker}
+def native_block(size):
+    _note("native_block")
+    return bd.Solid(BRepPrimAPI_MakeBox(size, size, size).Shape())
+
+
+@model
+def drilled():
+    _note("drilled")
+    part = native_block(4.0) - bd.Pos(2, 2, 0) * bd.Cylinder(HOLE, 10)
+    part.label = "part"
+    return bd.Compound(children=[part], label="drilled")
+"""
+
+
+class MemoNativeTest(MemoCase):
+    def native(self, marker: str, hole: float = 1.0) -> dict:
+        self.write("native.py", NATIVE.format(marker=marker, hole=hole))
+        return self.build("native.py")
+
+    def test_a_memo_call_keys_the_shapes_it_made_with_occt_s_own_makers(self) -> None:
+        # Unmarked, the box no key names keeps the body from being kept: a no-op takes the document
+        # by its key, but an edit runs the body whole, the box made again, and the report says why.
+        self.native("")
+        self.calls()
+        report = self.native("")
+        self.assertEqual((self.calls(), report["cache"]), ([], {"used": True, "from": "memory"}))
+        report = self.native("", hole=1.25)
+        self.assertEqual((self.calls(), self.statuses(report)), (["drilled", "native_block"],
+                                                                 {"native.py::drilled": ["run"]}))
+        self.assertIn("no keyed call made", " ".join(report["retention"]["fallbacks"]["native.py::drilled"]))
+        # Marked, the call keys its result, with no fallback: an edit of the caller runs it on the
+        # very box the replayed call hands back; then a no-op takes the document.
+        self.native("@memo")
+        self.calls()
+        report = self.native("@memo", hole=1.5)
+        self.assertEqual((self.calls(), report["retention"]["fallbacks"]), (["drilled"], {}))
+        self.assertEqual(self.statuses(report)["native.py::native_block"], ["replayed"])
+        self.native("@memo", hole=1.5)
+        self.assertEqual(self.calls(), [])
+        # A worker that holds nothing runs both, keyed again.
+        self.restart()
+        report = self.native("@memo", hole=1.5)
+        self.assertEqual((self.calls(), report["retention"]["fallbacks"]), (["drilled", "native_block"], {}))
+        report = self.native("@memo", hole=1.5)
+        self.assertEqual((self.calls(), report["memo"]["bodies_run"]), ([], 0))
 
 
 class MemoNamesTest(MemoCase):

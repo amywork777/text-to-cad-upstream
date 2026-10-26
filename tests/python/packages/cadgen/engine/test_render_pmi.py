@@ -501,7 +501,7 @@ class PmiAskedTest(unittest.TestCase):
                 snapshot.snapshot(document, folder / "out.png", camera=camera, view="A-A", daemon=False)
         said = io.StringIO()
         with contextlib.redirect_stderr(said):
-            code = snapshot.main([str(document), str(folder / "out.png"), "--view", "A-A", "--camera", "top", "--no-daemon"])
+            code = snapshot.main([str(document), str(folder / "out.png"), "--view", "A-A", "--camera", "top"])
         self.assertEqual(code, 2)
         self.assertIn("its own camera", said.getvalue())
         self.assertFalse((folder / "out.png").exists())
@@ -581,7 +581,9 @@ class PmiStillTest(unittest.TestCase):
 
         cls.folder = Path(tempfile.mkdtemp(prefix="engine-render-pmi-")).resolve()
         # The engine's own state, should anything here reach for it, is the test's: never the person's.
-        cls.state = mock.patch.dict(os.environ, {"CADGEN_ENGINE_DIR": str(cls.folder / "engine")})
+        cls.state = mock.patch.dict(os.environ, {"CADGEN_ENGINE_DIR": str(cls.folder / "engine"),
+                                                 "CADGEN_STATE_DIR": str(cls.folder / "state"),
+                                                 "CADGEN_CACHE_DIR": str(cls.folder / "cache")})
         cls.state.start()
         cls.document = build(cls.folder, PLATE, "plate")
         cls.structure, cls.buffers = served(cls.document)

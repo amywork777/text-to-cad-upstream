@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from cadgen.viewer.engine_app import SessionApp
+from cadgen.viewer.engine_app import ViewerApp
 from .protocol import INVALID_REQUEST, INVALID_PARAMS, PARSE_ERROR, INTERNAL_ERROR, RequestContext, RpcError
 from .server import Server, _PROTOCOL_VERSIONS
 from .sidebar import SidebarViews
@@ -31,6 +31,8 @@ class Session:
     client: str
     touched: float = field(default_factory=time.monotonic)
     active: int = 0
+    holder: str | None = None  # the name of the stdio server's hold it was opened under (``release``)
+    released: bool = False  # that hold is gone: the session ends once nothing runs in it
 
     def close(self):
         self.server.sidebar_views.close()
@@ -52,9 +54,20 @@ class Sessions:
     def _expire(self):
         for ident, session in list(self.sessions.items()):
             if (not session.active and not session.server.operations.keeps_alive()
-                    and time.monotonic() - session.touched > IDLE and session.server.operations.idle_seconds() > IDLE):
+                    and (session.released or time.monotonic() - session.touched > IDLE
+                         and session.server.operations.idle_seconds() > IDLE)):
                 del self.sessions[ident]
                 session.close()
+
+    def release(self, holder):
+        """The hold ``holder`` names gone (``EngineApp.hold_ended``): its stdio server exited, or was
+        killed before it could end its sessions itself (``DELETE``). Each session it opened ends now,
+        or once its running operations finish."""
+        with self.lock:
+            for session in self.sessions.values():
+                if session.holder == holder:
+                    session.released = True
+            self._expire()
 
     def active(self):
         with self.lock:
@@ -75,23 +88,26 @@ class Sessions:
         options = options if isinstance(options, dict) else {}
         directory = options.get('appDir')
         page = AppPage(Path(directory)) if isinstance(directory, str) and directory else AppPage()
-        app = SessionApp(self.engine.server, host=self.engine.host, port=self.engine.server.port,
+        app = ViewerApp(self.engine.server, host=self.engine.host, port=self.engine.server.port,
                          start=options.get('cwd') if isinstance(options.get('cwd'), str) else None)
         app.analytics = self.engine.analytics
         app.consent_by = "app"
-        def viewer_url():
+        def viewer_url(model=None):
             from .browser import ViewerUnavailable
-            answer = self.engine.launch({'start': app.start})
+            answer = self.engine.launch({'start': app.start, 'files': [model] if model else []})
             if 'failed' in answer:
                 raise ViewerUnavailable(answer['failed'])
             return answer['url']
         server = Server(page=page, tunnel=ViewerTunnel(app=app), analytics=self.engine.analytics,
                         sidebar_views=SidebarViews(self.sidebar), viewer_url=viewer_url,
-                        sync_document=self.engine.server.sync)
+                        sync_document=self.engine.server.sync, warm=self.engine.server.warm,
+                        in_browser=self.engine.server.in_page, browser_opened=self.engine.server.page_opening)
         result = server.handle('initialize', params, RequestContext(None, {}))
         client = params.get('clientInfo')
         client = client if isinstance(client, dict) else {}
-        return Session(server, result['protocolVersion'], str(client.get('name', 'unknown'))), result
+        holder = options.get('holder')
+        holder = holder if isinstance(holder, str) and 0 < len(holder) <= 64 else None
+        return Session(server, result['protocolVersion'], str(client.get('name', 'unknown')), holder=holder), result
 
     def handle(self, request, response):
         origin = request.header('origin')

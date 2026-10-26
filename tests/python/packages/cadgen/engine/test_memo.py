@@ -17,9 +17,9 @@ def _delta(before: dict, after: dict) -> dict:
                                                                              "unreplayable", "errors")}
 
 
-def _run(function, *args):
+def _run(function, *args, program=None, model=None):
     before = memo.stats()
-    with memo.run(None) as run:
+    with memo.run(None, program=program, model=model) as run:
         result = function(*args)
     return result, _delta(before, memo.stats()), run
 
@@ -30,6 +30,19 @@ def _bytes(shape) -> bytes:
     stream = io.BytesIO()
     BinTools.Write_s(shape, stream)
     return stream.getvalue()
+
+
+def _counted(cls, name):
+    """Count the runs of an OCCT class's own method ``name`` (the class the memo's subclass
+    wraps): what an answered query never calls."""
+    original = getattr(cls, name)
+    calls = []
+
+    def counting(self, *args):
+        calls.append(1)
+        return original(self, *args)
+
+    return mock.patch.object(cls, name, counting), calls
 
 
 class MemoCase(unittest.TestCase):
@@ -266,6 +279,23 @@ class RetentionTest(MemoCase):
         # What is held is what those runs made: the box, and a cylinder and a cut per radius.
         self.assertLessEqual(memo.stats()["entries"], 2 * memo.RUNS_KEPT + 1 + memo.RUNS_KEPT)
 
+    def test_a_programs_pass_over_more_models_than_the_runs_kept_is_one_run(self) -> None:
+        # A script building a robot and its links: each model's next run finds what this one used.
+        radii = [1.0 + i / 10 for i in range(memo.RUNS_KEPT + 2)]
+        for i, radius in enumerate(radii):
+            _run(self._model, radius, program="first", model=f"link_{i}")
+        for i, radius in enumerate(radii):
+            _, again, _ = _run(self._model, radius, program="second", model=f"link_{i}")
+            self.assertEqual(again["misses"], 0, f"link_{i}: kept across the program's pass")
+
+    def test_a_program_building_one_model_again_begins_another_pass(self) -> None:
+        # An edit loop in one process: each build of the model is a run of its own.
+        _run(self._model, 1.0, program="loop", model="part")
+        for radius in [2.0 + i / 10 for i in range(memo.RUNS_KEPT + 1)]:
+            _run(self._model, radius, program="loop", model="part")
+        _, gone, _ = _run(self._model, 1.0, program="loop", model="part")
+        self.assertEqual(gone["misses"], 2, "unused for longer than the runs kept: forgotten")
+
 
 class QueryTest(MemoCase):
     def test_a_bounding_box_of_a_shape_the_memo_handed_back_is_not_measured_again(self) -> None:
@@ -285,6 +315,246 @@ class QueryTest(MemoCase):
             edited, _, _ = _run(model, 5.0)
             self.assertEqual(add.call_count, 1, "a new shape is measured")
         self.assertAlmostEqual(edited[3] - edited[0], 5.0, places=5)
+
+    @staticmethod
+    def _part(radius):
+        from build123d import Solid
+
+        return Solid.make_box(10, 10, 10) - Solid.make_cylinder(radius, 20)
+
+    def test_a_bop_check_of_a_shape_the_memo_handed_back_is_not_run_again(self) -> None:
+        from OCP import BRepAlgoAPI
+
+        own = BRepAlgoAPI.BRepAlgoAPI_Check.__kernel_memo_class__
+
+        def model(radius, fuzzy=None):
+            part = self._part(radius)
+            check = BRepAlgoAPI.BRepAlgoAPI_Check()
+            if fuzzy is not None:
+                check.SetFuzzyValue(fuzzy)
+            check.SetData(part.wrapped)
+            check.Perform()
+            return BRepAlgoAPI.BRepAlgoAPI_Check(part.wrapped).IsValid(), check.IsValid(), part
+
+        counted, runs = _counted(own, "Perform")
+        with counted:
+            (cold, _, part), _, cold_run = _run(model, 3.0)
+            self.assertEqual((len(runs), cold_run.tally["queries_answered"]), (1, 1), "one key, asked twice")
+            (warm, warm_set, again), _, warm_run = _run(model, 3.0)
+            self.assertIs(again, part)
+            self.assertEqual((len(runs), warm_run.tally["queries_answered"]), (1, 2), "the same shape: answered")
+            _run(model, 3.0, 1e-3)
+            self.assertEqual(len(runs), 2, "another fuzzy value is another key")
+            _run(model, 3.0, 1e-3)
+            self.assertEqual(len(runs), 2)
+            _run(model, 3.5)
+            self.assertEqual(len(runs), 3, "a new shape is checked")
+        self.assertEqual((warm, warm_set), (cold, cold))
+        self.assertEqual(warm, own(part.wrapped).IsValid(), "the kept verdict is a fresh check's")
+
+    def test_a_check_of_a_shape_made_past_the_memo_runs_every_time(self) -> None:
+        from OCP import BRepAlgoAPI
+
+        own = BRepAlgoAPI.BRepAlgoAPI_Check.__kernel_memo_class__
+        part = self._part(3.0)  # outside a run: no operation of the memo made it
+        counted, runs = _counted(own, "Perform")
+        with counted:
+            for _ in range(2):
+                verdict, _, run = _run(lambda: BRepAlgoAPI.BRepAlgoAPI_Check(part.wrapped).IsValid())
+                self.assertEqual(run.tally["queries_answered"], 0)
+        self.assertEqual(len(runs), 2)
+        self.assertTrue(verdict)
+
+    def test_an_answered_check_asked_for_more_runs_as_it_was_given(self) -> None:
+        from OCP import BRepAlgoAPI
+
+        own = BRepAlgoAPI.BRepAlgoAPI_Check.__kernel_memo_class__
+
+        def model():
+            part = self._part(3.0)
+            check = BRepAlgoAPI.BRepAlgoAPI_Check(part.wrapped)
+            check.SetFuzzyValue(0.5)  # after its run: not what it ran with
+            return check.IsValid(), check.Result().Size(), check.FuzzyValue()
+
+        counted, runs = _counted(own, "Perform")
+        with counted:
+            cold, _, _ = _run(model)
+            warm, _, _ = _run(model)
+        self.assertEqual(warm, cold)
+        self.assertEqual(len(runs), 2, "Result() runs the check the memo answered")
+
+    def test_validity_is_answered_by_geometry_whatever_the_shape_is_labelled(self) -> None:
+        from build123d.topology import shape_core
+
+        def model(label):
+            part = self._part(3.0)
+            part.label = label
+            return part.is_valid, part.is_manifold, part
+
+        counted, runs = _counted(shape_core.BRepCheck_Analyzer, "IsValid")
+        with counted:
+            (valid, manifold, part), _, cold = _run(model, "a")
+            self.assertEqual((len(runs), cold.tally["queries_run"]), (1, 2))
+            (again, again_manifold, _), _, warm = _run(model, "b")
+            self.assertEqual((len(runs), warm.tally["queries_answered"]), (1, 2), "a label is no input of a query")
+        self.assertEqual((again, again_manifold), (valid, manifold))
+        part.label = "c"
+        self.assertEqual((valid, manifold), (part.is_valid, part.is_manifold), "outside a run: a fresh answer")
+
+    def test_an_analyzer_s_run_is_keyed_by_its_settings(self) -> None:
+        from OCP import BRepCheck
+
+        own = BRepCheck.BRepCheck_Analyzer.__kernel_memo_class__
+
+        def model(exact):
+            part = self._part(3.0)
+            return BRepCheck.BRepCheck_Analyzer(part.wrapped, True, False, exact).IsValid(), part
+
+        counted, runs = _counted(own, "Init")
+        with counted:
+            (cold, part), _, _ = _run(model, False)
+            (warm, _), _, run = _run(model, False)
+            self.assertEqual((len(runs), run.tally["queries_answered"]), (1, 1))
+            _run(model, True)
+            self.assertEqual(len(runs), 2, "the exact method is another key")
+        self.assertEqual(warm, cold)
+        self.assertEqual(warm, own(part.wrapped).IsValid())
+        loose = self._part(3.0)
+        with counted:
+            for _ in range(2):
+                _run(lambda: BRepCheck.BRepCheck_Analyzer(loose.wrapped).IsValid())
+        self.assertEqual(len(runs), 4, "a shape made past the memo is analysed every time")
+
+    def test_the_volume_of_an_interference_is_answered_once_its_common_is_a_hit(self) -> None:
+        from build123d import Pos, Solid
+        from build123d.topology import Shape
+        from OCP.TopAbs import TopAbs_SOLID
+
+        def model(gap):
+            a = Solid.make_box(10, 10, 10)
+            b = Pos(10 - gap, 2, 2) * Solid.make_box(5, 5, 5)
+            common = a & b
+            return [solid.volume for solid in common.solids()], common
+
+        measured = Shape.shape_properties_LUT[TopAbs_SOLID]
+        runs = []
+        counted = mock.patch.dict(Shape.shape_properties_LUT,
+                                  {TopAbs_SOLID: lambda *args: (runs.append(1), measured(*args))[1]})
+        with counted:
+            (cold, common), _, _ = _run(model, 1.0)
+            (warm, again), hot, run = _run(model, 1.0)
+            self.assertIs(again, common)
+            self.assertEqual((len(runs), hot["misses"], run.tally["queries_answered"]), (1, 0, 1))
+            edited, _, _ = _run(model, 2.0)
+            self.assertEqual(len(runs), 2, "another common is measured")
+        self.assertEqual(warm, cold)
+        self.assertEqual(warm, [solid.volume for solid in common.solids()], "a fresh volume of the same solid")
+        self.assertAlmostEqual(edited[0][0], 2 * 5 * 5, places=6)
+
+    def test_mass_properties_are_answered_as_new_values_keyed_by_their_arguments(self) -> None:
+        from build123d import CenterOf
+
+        def model(center_of):
+            part = self._part(3.0)
+            return part.center(center_of), part.area, part.edges()[0].length, part.matrix_of_inertia, part
+
+        (centre, area, length, inertia, part), _, cold = _run(model, CenterOf.MASS)
+        self.assertEqual(cold.tally["queries_run"], 4)
+        centre.X = 1e9  # the model's own Vector: what was kept is not it
+        inertia[0][0] = -1.0
+        (again, area2, length2, inertia2, _), _, warm = _run(model, CenterOf.MASS)
+        self.assertEqual((warm.tally["queries_run"], warm.tally["queries_answered"]), (0, 4))
+        self.assertIsNot(again, centre)
+        fresh = part.center(CenterOf.MASS)  # outside a run: computed
+        self.assertEqual(tuple(again), tuple(fresh))
+        self.assertEqual((area2, length2, inertia2), (part.area, part.edges()[0].length, part.matrix_of_inertia))
+        (boxed, *_), _, other = _run(model, CenterOf.BOUNDING_BOX)
+        self.assertEqual(other.tally["queries_answered"], 3, "another argument is another key")
+        self.assertEqual(tuple(boxed), tuple(part.center(CenterOf.BOUNDING_BOX)))
+
+    def test_a_volume_of_a_shape_made_past_the_memo_is_measured_every_time(self) -> None:
+        part = self._part(3.0)
+        for _ in range(2):
+            volume, _, run = _run(lambda: part.volume)
+            self.assertEqual((run.tally["queries_run"], run.tally["queries_answered"]), (1, 0))
+        self.assertEqual(volume, part.volume)
+
+    def test_a_clearance_of_shapes_the_memo_handed_back_is_answered(self) -> None:
+        from build123d import Pos, Solid
+        from OCP import BRepExtrema
+
+        own = BRepExtrema.BRepExtrema_DistShapeShape.__kernel_memo_class__
+
+        def model(gap, deflection=None):
+            a = Solid.make_box(10, 10, 10)
+            b = Pos(10 + gap, 0, 0) * Solid.make_sphere(3)
+            found = BRepExtrema.BRepExtrema_DistShapeShape(a.wrapped, b.wrapped) if deflection is None else (
+                BRepExtrema.BRepExtrema_DistShapeShape(a.wrapped, b.wrapped, deflection))
+            found.Perform()
+            return a.distance_to(b), a.distance_to((20 + gap, 5, 5)), found.Value() if found.IsDone() else None, a, b
+
+        counted, runs = _counted(own, "Perform")
+        with counted:
+            (to_b, to_point, direct, a, b), _, cold = _run(model, 5.0)
+            self.assertEqual((len(runs), cold.tally["queries_answered"]), (3, 1), "a second Perform is answered")
+            (*warm, _a, _b), _, run = _run(model, 5.0)
+            self.assertEqual((len(runs), run.tally["queries_answered"]), (3, 4))
+            _run(model, 5.0, 1e-3)
+            self.assertEqual(len(runs), 4, "another deflection is another key")
+            _run(model, 6.0)
+            self.assertEqual(len(runs), 7, "another shape is measured")
+        self.assertEqual(warm, [to_b, to_point, direct])
+        self.assertEqual((to_b, to_point), (a.distance_to(b), a.distance_to((25.0, 5, 5))))
+        self.assertEqual(direct, own(a.wrapped, b.wrapped).Value())
+        self.assertAlmostEqual(direct, 2.0, places=6)
+
+    def test_an_answered_distance_asked_for_its_points_runs_as_it_was_given(self) -> None:
+        from build123d import Pos, Solid
+        from OCP import BRepExtrema
+
+        own = BRepExtrema.BRepExtrema_DistShapeShape.__kernel_memo_class__
+
+        def model():
+            a, b = Solid.make_box(10, 10, 10), Pos(15, 2, 3) * Solid.make_sphere(3)
+            found = BRepExtrema.BRepExtrema_DistShapeShape()
+            found.LoadS1(a.wrapped)
+            found.LoadS2(b.wrapped)
+            done = found.Perform()
+            point = found.PointOnShape1(1)
+            return done, found.Value(), (point.X(), point.Y(), point.Z())
+
+        counted, runs = _counted(own, "Perform")
+        with counted:
+            cold, _, _ = _run(model)
+            warm, _, _ = _run(model)
+        self.assertEqual(warm, cold)
+        self.assertEqual(len(runs), 2, "a point is no answer the memo keeps: asking one runs it")
+        loose_a, loose_b = Solid.make_box(1, 1, 1), Pos(3, 0, 0) * Solid.make_box(1, 1, 1)
+        with counted:
+            for _ in range(2):
+                _run(lambda: loose_a.distance_to(loose_b))
+        self.assertEqual(len(runs), 4, "a distance of shapes made past the memo is measured every time")
+
+    def test_a_point_test_is_answered_per_point_and_tolerance(self) -> None:
+        from build123d.topology import three_d
+
+        def model(points, tolerance=1e-6):
+            part = self._part(3.0)
+            return [part.is_inside(point, tolerance) for point in points], part
+
+        points = [(4, 4, 0), (0, 0, 0), (4, 4, 5), (20, 0, 0)]
+        counted, runs = _counted(three_d.BRepClass3d_SolidClassifier, "Perform")
+        with counted:
+            (cold, part), _, _ = _run(model, points)
+            (warm, _), _, run = _run(model, points)
+            self.assertEqual((len(runs), run.tally["queries_answered"]), (4, 4))
+            _run(model, points[:1], 0.1)
+            self.assertEqual(len(runs), 5, "another tolerance is another key")
+            _run(model, [(4, 4, 1)])
+            self.assertEqual(len(runs), 6, "another point is another key")
+        self.assertEqual(warm, cold)
+        self.assertEqual(cold, [True, False, True, False])
+        self.assertEqual(warm, [part.is_inside(point) for point in points], "a fresh test of the same solid")
 
 
 class VertexTest(MemoCase):
@@ -311,7 +581,7 @@ class ConfigurationTest(MemoCase):
 
         def model(angle):
             assembly = bd.Compound(children=[bd.Solid.make_box(1, 2, 3)], label="arm")
-            mechanism.configuration(assembly, "open", hinge=angle)
+            mechanism.mechanism_state(assembly, "open", hinge=angle)
             placed = assembly.moved(bd.Location((5, 0, 0)))
             return placed.__dict__.get(mechanism.CONFIGURATIONS)
 

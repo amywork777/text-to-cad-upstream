@@ -67,9 +67,9 @@ class XbfRouteTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.base = Path(os.path.realpath(tempfile.mkdtemp(prefix="viewer-xbf-")))
         cls.state = Path(tempfile.mkdtemp(prefix="eng-", dir="/tmp" if os.name != "nt" else None)).resolve()
-        cls.saved = {name: os.environ.get(name) for name in ("CADGEN_ENGINE_DIR", "CADGEN_ENGINE_MESH", "CADGEN_ENGINE_IDLE")}
+        cls.saved = {name: os.environ.get(name) for name in ("CADGEN_ENGINE_DIR", "CADGEN_ENGINE_MESH")}
         # The daemon this test starts is its own: its own socket folder, one part meshed at a time.
-        os.environ.update({"CADGEN_ENGINE_DIR": str(cls.state), "CADGEN_ENGINE_MESH": "inline", "CADGEN_ENGINE_IDLE": "60"})
+        os.environ.update({"CADGEN_ENGINE_DIR": str(cls.state), "CADGEN_ENGINE_MESH": "inline"})
         (cls.base / "models.py").write_text(textwrap.dedent(MODEL), encoding="utf-8")
         env = engine_daemon.watched({**os.environ, "PYTHONPATH": str(SRC)}, cls.addClassCleanup)
         # Built as a script runs: through this test's own engine daemon.
@@ -88,7 +88,7 @@ class XbfRouteTest(unittest.TestCase):
         subprocess.run([sys.executable, "-m", "cadgen.engine", "stop"], env={**os.environ, "PYTHONPATH": str(SRC)},
                        capture_output=True, timeout=120)
         deadline = time.monotonic() + 20
-        while any(cls.state.glob("*.sock")) and time.monotonic() < deadline:
+        while any(cls.state.glob("*.door")) and time.monotonic() < deadline:
             time.sleep(0.05)
         for name, value in cls.saved.items():
             if value is None:
@@ -101,34 +101,48 @@ class XbfRouteTest(unittest.TestCase):
     def test_request_process_never_imports_kernel(self):
         code = r"""
 import http.client, json, sys
+from urllib.parse import quote
 from cadgen._internal.engine_host import http_factory
 from cadgen.engine.serve import Server
 server = Server(isolated=True, mesh_mode='inline', http_factory=http_factory)
 server.start()
 try:
-    ident = server.add(sys.argv[1])
     token = server.http.app.token
     def get(path, body=None, status=200):
         connection = http.client.HTTPConnection('127.0.0.1', server.port, timeout=90)
-        connection.request('POST' if body else 'GET', path, body=body,
+        connection.request('POST' if body is not None else 'GET', path, body=body,
                            headers={'Authorization': 'Bearer '+token, 'x-cadgen-viewer': '1'})
         response = connection.getresponse()
         data = response.read()
-        assert response.status == status, (response.status, data)
+        assert response.status == status, (path, response.status, data)
         connection.close()
         return data
-    document = json.loads(get('/__cad/api/doc/'+ident))
-    part = document['prototypes'][0]['key']
-    get('/__cad/api/doc/'+ident+'/part/'+part)
-    get('/__cad/api/doc/'+ident+'/part/'+part+'/volume')
-    get('/__cad/api/doc/'+ident+'/pose', b'{"pose":{}}', status=400)
+    # Every document route a page reads, of an xbf and of a STEP, opened as the page opens them.
+    for document_path in sys.argv[1:]:
+        while True:
+            connection = http.client.HTTPConnection('127.0.0.1', server.port, timeout=90)
+            connection.request('GET', '/__cad/xbf?file='+quote(document_path), headers={'Authorization': 'Bearer '+token})
+            response = connection.getresponse()
+            opened = json.loads(response.read())
+            connection.close()
+            if response.status != 202:
+                break
+        assert response.status == 200, opened
+        doc = opened['url']
+        document = json.loads(get(doc))
+        part = doc+'/part/'+document['prototypes'][0]['key']
+        for tail in ('', '/face/1', '/edge/1', '/vertex/1', '/groups', '/volume'):
+            get(part+tail)
+        get(doc+'/version?after='+quote(document['version'])+'&wait=0')
+        get(doc+'/mesh', b'')
+        get(doc+'/pose', b'{"pose":{}}', status=400)
     get('/__cad/server')
     assert not any(n == 'OCP' or n.startswith('OCP.') or n == 'build123d'
                    or n.startswith('build123d.') for n in sys.modules), sorted(sys.modules)
 finally:
     server.stop()
 """
-        done = subprocess.run([sys.executable, '-c', code, str(self.document)],
+        done = subprocess.run([sys.executable, '-c', code, str(self.document), str(self.step)],
                               capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
@@ -196,7 +210,8 @@ finally:
         structure = self.structure(self.open(self.step))
         by_name = {prototype["name"]: prototype for prototype in structure["prototypes"]}
         self.assertEqual(set(by_name), {"plate", "peg"})
-        self.assertEqual([round(value, 2) for value in by_name["plate"]["color"][:3]], [0.8, 0.1, 0.1])
+        # The plate's Color(0.8, 0.1, 0.1), sRGB, held linear.
+        self.assertEqual([round(value, 2) for value in by_name["plate"]["color"][:3]], [0.6, 0.01, 0.01])
         self.assertEqual((by_name["peg"]["material"]["name"], by_name["peg"]["material"]["density"]),
                          ("Aluminum 6061-T6", 2700.0))
         self.assertEqual(sorted(instance["path"] for instance in structure["instances"]), ["pair/peg", "pair/plate"])
@@ -247,7 +262,7 @@ finally:
         copy = self.base / "tunnelled.step"
         shutil.copyfile(self.step, copy)
 
-        token = proxy.handle('tools/call', {'name': 'cad_show', 'arguments': {'path': str(copy)}}, context)['_meta']['dev.texttocad/httpToken']
+        token = proxy.handle('tools/call', {'name': 'cad_show', 'arguments': {'source': str(copy)}}, context)['_meta']['dev.texttocad/httpToken']
 
         def get(url: str):
             reply = proxy.handle('tools/call', {'name': 'cad_http', 'arguments':
@@ -293,6 +308,14 @@ finally:
         from cadgen.engine.client import request
 
         return int((request({"op": "status"}, start=False) or {}).get("pid") or 0)
+
+
+def setUpModule() -> None:
+    # The registry and cache of every engine this module starts are its own, never the developer's
+    # (``engine_daemon.isolate``); each test still names its own engine folder.
+    from tests.python.support import engine_daemon
+
+    engine_daemon.isolate(unittest.addModuleCleanup)
 
 
 if __name__ == "__main__":

@@ -128,7 +128,7 @@ from bracket import bracket
 
 @dxf("flat.dxf")
 def flat():
-    return bd.Pos(0, 0, -3) * bracket().faces().sort_by(bd.Axis.Z)[-1]
+    return bd.Pos(0, 0, -3) * bracket().shape.faces().sort_by(bd.Axis.Z)[-1]
 """
 
 
@@ -201,10 +201,10 @@ class DrawingTest(unittest.TestCase):
         self.assertEqual({Path(path).name: row["written"] for path, row in files.items()},
                          {"plate.xbf": True, "plate.dxf": False})
         self.assertEqual((xbf.read_bytes(), self.plate.stat().st_mtime_ns), (document, stat))
-        # Warm: a file gone is written again from the replayed body, the same bytes.
+        # Warm: taken by its key, nothing run, and a file gone written again from the document, the same bytes.
         self.plate.unlink()
         warm = _built(self.script, "plate")["plate"]
-        self.assertEqual(warm["bodies"], {"drawings.py::plate": "replayed"})
+        self.assertEqual(warm["bodies"], {"drawings.py::plate": "loaded"})
         self.assertEqual(self.plate.read_bytes(), self.bytes)
         # And an export of the xbf, read from the file, writes them: `cadgen export plate.xbf
         # plate.dxf` in a process that never built it.
@@ -238,8 +238,8 @@ class DrawingEditTest(unittest.TestCase):
         self.assertGreater(edited["plate"]["memo"]["hits"], edited["plate"]["memo"]["misses"])
         self.assertTrue(edited["plate"]["files"][str(self.folder / "plate.dxf")]["written"])
         self.assertNotEqual((self.folder / "plate.dxf").read_bytes(), first)
-        # A model the edit does not reach is replayed, its file kept.
-        self.assertEqual(edited["gasket"]["bodies"], {"drawings.py::gasket": "replayed"})
+        # A model the edit does not reach is taken by its key, its file compared and kept.
+        self.assertEqual(edited["gasket"]["bodies"], {"drawings.py::gasket": "loaded"})
         self.assertFalse(edited["gasket"]["files"][str(self.folder / "gasket.dxf")]["written"])
         # Put back, it is the first drawing again, every call a hit.
         _write(script, DRAWINGS.format(hole=5))
@@ -256,13 +256,6 @@ class DrawingEditTest(unittest.TestCase):
         self.assertEqual(sorted(path.relative_to(self.folder).as_posix() for path in self.folder.rglob("*")
                                 if path.is_file()), ["XBF/bracket.xbf", "bracket.py", "flat.dxf", "flat.py"])
         self.assertEqual(_entities(self.folder / "flat.dxf"), Counter({("LINE", "CUT"): 4, ("CIRCLE", "CUT"): 1}))
-
-    def test_code_declares_a_drawing_with_its_flag(self) -> None:
-        script = engine_build.code_script("tab", self.folder)
-        [report] = engine_build.build(script, ["tab"], cwd=self.folder, outputs={"dxf": {}},
-                                      code="import build123d as bd\nresult = bd.Rectangle(10, 5).face()\n")
-        self.assertTrue(report["ok"], report)
-        self.assertEqual([path.name for path in self.folder.iterdir()], ["tab.dxf"])
 
 
 class RefusedTest(unittest.TestCase):

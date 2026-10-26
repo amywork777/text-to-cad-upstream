@@ -1,35 +1,42 @@
 """Models: the decorators, a model's identity, and what calling one does.
 
-A model is a parameterless function that returns a build123d shape, decorated with
-``@xbf`` and any of the derived-file decorators ``@step``, ``@glb``, ``@stl``, ``@threemf``
-and ``@dxf`` (the drawing of a planar result: a sketch, a face, wires or edges). Its
-identity is ``script.py::function``. Every file decorator requires its output path:
-``@xbf("XBF/part.xbf")`` or ``@step(out="part.step")``. Relative paths are relative
-to the script. Bare ``@model`` declares a document with no file. Everything else is the model's code: its material, colours, joints, the pose
-its joints are connected at (the pose every file shows), its configurations and its
-motions (``configuration``, ``motion``). A picture is the ``snapshot`` verb's, never a
-declaration. The outputs are kept in the order the decorators are written, top to
-bottom, and the xbf, when declared, is always written first.
+A model is a parameterless function that returns a build123d shape. It becomes a document
+through exactly one of two declarations: bare ``@model`` (a document with no file), or one or
+more file decorators -- ``@xbf``, ``@step``, ``@glb``, ``@stl``, ``@threemf`` and ``@dxf`` (the
+drawing of a planar result: a sketch, a face, wires or edges) -- a document with those files;
+``@model`` stacked with a file decorator is refused. Its identity is ``script.py::function``: the
+function's name is the model's name, and renaming the function renames it. Every file decorator
+requires its output path: ``@xbf("XBF/part.xbf")`` or ``@step(out="part.step")``. Relative paths
+are relative to the script. Everything else is the model's code: its material, colours, joints,
+the pose its joints are connected at (the pose every file shows), its mechanism states, couplings
+and configuration sequences (``mechanism_state``, ``gear_pair`` and its siblings,
+``configuration_sequence``). A picture is the ``snapshot`` verb's, never a declaration. The outputs
+are kept in the order the decorators are written, top to bottom, and the xbf, when declared, is
+always written first.
 
-The decorated function is a ``Model``: ``.build()``, ``.export(*destinations)``,
-``.snapshot(out)`` and ``.document`` run the engine's verbs on it, through the daemon.
-Decoration only declares: imports and definitions never build or exit the caller.
-An explicit model call asks the daemon to build that model, then returns its shape.
-The script's own Python control flow, including its main block, selects calls.
+The decorated function is a ``Model``: the function, its id (``.id``: ``ids.model_id`` of its
+script and function, or ``ids.key_id`` of the ``key=`` its declaration gives) and the debug seam
+``.build(verify=, profile=)``. Decoration only declares: imports and definitions never build or
+exit the caller. A call builds the model through the engine and returns its document's handle
+(``api.Document``: ``.id``, ``.url``, ``.name``, ``.shape``, ``.export``, ``.snapshot``), never a
+bare shape. The script's own Python control flow, including its main block, selects calls.
 
-Called inside a build, a model is a child: its body runs in the same run, with the
-same memo, and its result is a sub-assembly of whatever the caller makes of it,
-labelled with the child's function name when its body gave it no label. A model is
-a pure function of its source, so a second call in one build hands back a new
-placement of the same result -- new objects sharing the first call's geometry --
-rather than running the body again: a child used four times is one prototype placed
-four times. A child writes the files it declares, as a target does: once a build, from
-its own document (``BuildContext.children``, ``build``). Called outside a build, a model asks its warm worker to build it.
+Called inside a build, a model is a child: its body runs in the same run, with the same memo,
+and the call returns the child document's handle, whose ``.shape`` is the result in this process:
+a sub-assembly of whatever the caller makes of it, labelled with the child's function name when
+its body gave it no label. A model is a pure function of its source, so a second call in one
+build hands back a new placement of the same result -- new objects sharing the first call's
+geometry -- rather than running the body again: a child used four times is one prototype placed
+four times. A child writes the files it declares, as a target does: once a build, from its own
+document (``BuildContext.children``, ``build``). Called outside a build, a model asks its warm
+worker to build it.
+
+``model(shape, name=...)`` hands a shape over from a script or a REPL: no function, no body to
+run again (``api.hand_over``).
 """
 
 from __future__ import annotations
 
-import dis
 import functools
 import sys
 import inspect
@@ -39,8 +46,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-__all__ = ["KINDS", "Memo", "Model", "Output", "Target", "configuration", "dxf", "glb", "memo", "model", "motion", "paint",
-           "read_step", "read_xbf", "step", "stl", "threemf", "xbf", "models_in"]
+from cadgen.engine.ids import canonical, check_key, key_id, model_id
+
+__all__ = ["KINDS", "Memo", "Model", "Output", "Target", "configuration_sequence", "dxf", "glb", "mechanism_state", "memo",
+           "model", "paint", "read_step", "read_xbf", "step", "stl", "threemf", "xbf", "models_in"]
 
 # The suffix each output kind writes, and the default file name's.
 SUFFIXES = {"xbf": ".xbf", "step": ".step", "glb": ".glb", "stl": ".stl", "threemf": ".3mf", "dxf": ".dxf"}
@@ -83,50 +92,26 @@ def check_output(kind: str, out: Any, where: str) -> None:
         raise ValueError(f"{where}: the file must end in {' or '.join(_ACCEPTED[kind])}, not {os.fspath(out)!r}")
 
 
-def _caller_discards_model_result() -> bool:
-    """Whether this wrapper's real-file ``__main__`` caller immediately POP_TOPs.
+def _told(error: BaseException, said: str | None = None) -> None:
+    """A failed build the program's own call reported (its model's frames and the ``failed`` line,
+    ``cli._reported``), or a call the engine never served (none runs and none can start, a sandbox's
+    refusal, its port held) whose one line is ``said``: raised as ever, so a caller may catch it,
+    and, left uncaught, ending the program with status 1 and nothing more said than ``said`` on
+    stderr, as a ``cadgen`` verb says it -- not a traceback of this process's client code."""
+    error._told = True  # type: ignore[attr-defined]
+    error._said = said  # type: ignore[attr-defined]
+    hook = sys.excepthook
+    if getattr(hook, "_cadgen_told", False):
+        return
 
-    This is deliberately a one-way proof: every observer, unfamiliar runtime,
-    synthetic module and bytecode uncertainty keeps the historical materialized
-    return. The caller is two frames above this helper (helper -> model wrapper
-    -> call site).
-    """
-    if sys.implementation.name != "cpython":
-        return False
-    if sys.gettrace() is not None or sys.getprofile() is not None:
-        return False
-    monitoring = getattr(sys, "monitoring", None)
-    if monitoring is not None:
-        try:
-            if any(monitoring.get_tool(tool_id) is not None for tool_id in range(6)):
-                return False
-        except Exception:
-            return False
-    try:
-        caller = sys._getframe(2)
-        if caller.f_trace is not None:
-            return False
-        if caller.f_code.co_name != "<module>" or caller.f_globals.get("__name__") != "__main__":
-            return False
-        main_module = sys.modules.get("__main__")
-        if main_module is None or caller.f_globals is not vars(main_module):
-            return False
-        filename = Path(caller.f_code.co_filename)
-        declared_filename = Path(str(caller.f_globals.get("__file__", "")))
-        if (
-            filename.suffix.lower() != ".py"
-            or not filename.is_file()
-            or declared_filename.resolve() != filename.resolve()
-        ):
-            return False
-        following = next(
-            (instruction for instruction in dis.get_instructions(caller.f_code)
-             if instruction.offset > caller.f_lasti),
-            None,
-        )
-        return following is not None and following.opname == "POP_TOP"
-    except Exception:
-        return False
+    def quiet(kind: type[BaseException], value: BaseException, trace: Any) -> None:
+        if not getattr(value, "_told", False):
+            hook(kind, value, trace)
+        elif getattr(value, "_said", None):
+            print(value._said, file=sys.stderr, flush=True)
+
+    quiet._cadgen_told = True  # type: ignore[attr-defined]
+    sys.excepthook = quiet
 
 
 class Model:
@@ -142,11 +127,49 @@ class Model:
         functools.update_wrapper(self, function)
         self.function = function
         self.name = function.__name__
-        source = inspect.getsourcefile(function) or inspect.getfile(function)
-        self.script = Path(source).resolve()
+        filename = function.__code__.co_filename
+        if not os.path.isfile(filename):
+            raise ValueError(f"model {self.name!r} is defined in {filename}, no saved .py file: a function becomes a "
+                             "document from the file it is in. Where the code is in no file (a notebook cell, a "
+                             f"REPL), build the shape and hand it over: model(shape, name={self.name!r})")
+        self.script = Path(canonical(filename))
         self.outputs: list[Output] = []
+        # The ``key=`` its declaration gives (``ids.key_id``), else None: its id is derived.
+        self.key: str | None = None
+        self._bare = False  # declared by ``@model``
         self.__xbf_model__ = True
         _MODELS[f"{self.script}::{self.name}"] = self
+
+    @property
+    def id(self) -> str:
+        """This model's document id, worked out here, never asked of the engine: ``ids.key_id`` of
+        its ``key=``, else ``ids.model_id`` of its script and function -- the same in any process
+        that knows them."""
+        return key_id(self.key) if self.key is not None else model_id(self.script, self.name)
+
+    def declared(self, by: str) -> "Model":
+        """One declaration more on this function: ``model`` (bare ``@model``) or a file kind. A
+        function becomes a document through ``@model`` or through its file decorators, never both."""
+        kinds = [output.kind for output in self.outputs] if by == "model" else [by] if self._bare else []
+        if kinds:
+            raise TypeError(f"model {self.name!r} is declared by @model and @{kinds[0]}: a function becomes a "
+                            "document through @model (a document with no file) or through its file decorators "
+                            f"(a document with those files), never both; drop @model")
+        if by == "model":
+            self._bare = True
+        return self
+
+    def keyed(self, key: Any) -> "Model":
+        """The ``key=`` a declaration gives: its id becomes ``ids.key_id(key)``, global; one key per
+        model, and in this process one declaration per key (``claim``)."""
+        if key is None:
+            return self
+        check_key(key)
+        if self.key is not None and self.key != key:
+            raise TypeError(f"model {self.name!r} declares two keys, {self.key!r} and {key!r}")
+        claim(key, self.address)
+        self.key = key
+        return self
 
     @property
     def address(self) -> str:
@@ -168,20 +191,31 @@ class Model:
 
         # Decoration only declares. The caller's control flow reaches this build,
         # and resumes after it; importing the engine never runs or exits a script.
-        program = self.function.__module__ == "__main__"
+        # A call the program's own code makes (``python caller.py``) is reported, wherever the
+        # model is defined: ``caller.py`` calling ``parts.cube()`` prints cube's id and view.
+        program = sys._getframe(1).f_globals.get("__name__") == "__main__"
         previous = getattr(_CONTEXT, "program", False)
         _CONTEXT.program = program
         try:
             built = self.build(log=_log if program else None)
+        except (ConnectionError, api.EngineError) as error:
+            # The engine not reached, or refusing the call before any build (``api._ask``): one line,
+            # said only if nothing catches it (``_told``).
+            _told(error, f"cadgen: {error}")
+            raise
         finally:
             _CONTEXT.program = previous
         if program:
             _reported(built.models, built.wall, built.fresh, False)
         if not built.ok:
-            raise api.EngineError(next(row.get("error", "model failed") for row in built.models if not row.get("ok")))
-        if _caller_discards_model_result():
-            return None
-        return api.Built(self.name, self.script, built.models[0], Path.cwd(), source_kind="script").shape
+            error = api.EngineError(next(row.get("error", "model failed") for row in built.models if not row.get("ok")))
+            if program:
+                # Said only if nothing catches it: the program stops here, and Python, not the
+                # engine, decides which calls run (law 11), so the models it calls after this one
+                # are not built -- and say ``stale`` until it runs again.
+                _told(error, f"the run stopped at {self.name}: a model it calls after this one is not built")
+            raise error
+        return api.Document(self.name, self.script, built.models[0], Path.cwd())
 
     def _path(self, kind: str, out: Any) -> Path:
         if out is None:
@@ -214,33 +248,6 @@ class Model:
         from cadgen.engine import api
 
         return api.build_script(self.script, [self.name], verify=verify, profile=profile, log=log, daemon=daemon)
-
-    def export(self, *destinations: Any, pose: Any = None, part: str | None = None) -> Any:
-        """Build this model, then write its document to each destination (by suffix)."""
-        from cadgen.engine import api
-
-        return api.export(self, *destinations, pose=pose, part=part)
-
-    def snapshot(self, out: Any, **options: Any) -> Any:
-        """Build this model, then draw its document, from the worker's memory, into ``out``
-        (a ``.png``) as the viewer does; ``options`` are the ``snapshot`` verb's."""
-        from cadgen.engine import api
-
-        return api.snapshot(self, out, **options)
-
-    @property
-    def document(self) -> Any:
-        """The last built document: from its declared XBF, or the live worker for a bare model."""
-        from cadgen.engine import document
-
-        found = next((target.path for target in self.plan() if target.kind == "xbf"), None)
-        if found is None:
-            from cadgen.engine.api import Built
-
-            return Built(self.name, self.script, {}, Path.cwd(), source_kind="script").document
-        if not found.is_file():
-            raise FileNotFoundError(f"model {self.identity} is not built yet: {found} is missing (.build() it)")
-        return document.load(found)
 
 
 def _normalized(path: Path) -> str:
@@ -304,30 +311,81 @@ def as_package_module(main: Any) -> None:
     main.__spec__, main.__package__ = spec, package
 
 
-def model(function: Any) -> Model:
-    """Declare a model without an output file. A call builds its document."""
-    return function if isinstance(function, Model) else Model(function)
+# Where a model's document is kept: ``pointer``, a model in a saved file, which the engine's registry
+# points at and knows the program that builds it again; ``memory``, kept in its worker's memory only,
+# gone when the worker is. A shape handed over (``model(shape, name=...)``) is a third, ``shape``: its
+# document is the bytes handed over, held and cached as a drained document is, with nothing to run.
+
+# Each key a declaration in this process gives, and the declaration (``script::function``, or a
+# shape's ``scope::name``) that gave it: one key names one document. A build forgets them before
+# it loads the script, as it forgets the models (``_MODELS``).
+_KEYS: dict[str, str] = {}
+
+
+def claim(key: str, declaration: str) -> None:
+    """``declaration`` takes ``key``; refused, naming the other, when another declaration of this
+    process has it (the engine refuses one its records hold: ``models.Models.claimed``)."""
+    other = _KEYS.setdefault(key, declaration)
+    if other != declaration:
+        raise ValueError(f"key {key!r} is claimed by two declarations, {other} and {declaration}: one key names "
+                         "one document; give one of them another key")
+
+
+def _no_shape_options(name: Any, animations: Any) -> None:
+    if name is not None:
+        raise TypeError("a model decorator takes no name=: the function's name is the model's name (rename the "
+                        "function to rename it); name= names a shape handed over, model(shape, name=...)")
+    if animations is not None:
+        raise TypeError("a model decorator takes no animations=: a model's body declares its animations "
+                        "(animation(...)); animations= goes with a shape handed over, model(shape, name=...)")
+
+
+def model(target: Any = None, /, *, key: str | None = None, name: str | None = None,
+          animations: Any = None) -> Any:
+    """Declare a model without an output file: ``@model``, or ``@model(key="arm")`` for an id of its
+    key's (``ids.key_id``). A call builds its document. ``model(shape, name="arm")`` instead hands a shape
+    over: a document made of it, held by the engine as a built one is, its handle returned
+    (``api.hand_over``); ``key=`` and ``animations=[...]`` (the ``animation()`` builders of the GLB's
+    choreography) go with it."""
+    if target is None:
+        _no_shape_options(name, animations)
+        if key is not None:
+            check_key(key)
+        return lambda function: model(function, key=key)
+    if isinstance(target, Model) or inspect.isfunction(target):
+        _no_shape_options(name, animations)
+        found = target if isinstance(target, Model) else Model(target)
+        return found.declared("model").keyed(key)
+    from cadgen.engine import api
+
+    caller = sys._getframe(1)
+    while caller.f_back is not None and caller.f_code.co_filename == __file__:
+        caller = caller.f_back  # ``cadgen.model(...)``: the module's own ``__call__`` is not the caller
+    return api.hand_over(target, name, key=key, animations=animations, frame=caller)
 
 
 def _decorator(kind: str) -> Callable[..., Any]:
-    def decorate(out: Any) -> Any:
+    def decorate(out: Any, *, key: str | None = None) -> Any:
         if out is None:
             raise TypeError(f"@{kind} requires an output path")
         check_output(kind, out, f"@{kind}(out=...)")
+        if key is not None:
+            check_key(key)
 
         def apply(target: Any) -> Model:
             model = target if isinstance(target, Model) else Model(target)
+            model.declared(kind)
             if any(output.kind == kind for output in model.outputs):
                 raise TypeError(f"model {model.name!r} declares @{kind} twice")
             model.outputs.insert(0, Output(kind, os.fspath(out)))
-            return model
+            return model.keyed(key)
 
         return apply
 
     decorate.__name__ = kind
     decorate.__qualname__ = kind
-    decorate.__doc__ = (f"Declare an explicit output: @{kind}(out='path{SUFFIXES[kind]}'). "
-                        "The output path is required; decoration builds nothing.")
+    decorate.__doc__ = (f"Declare an explicit output: @{kind}(out='path{SUFFIXES[kind]}'), its document's id "
+                        "given by key=. The output path is required; decoration builds nothing.")
     return decorate
 
 
@@ -366,7 +424,7 @@ class Memo:
         self.function = function
         self.name = function.__qualname__
         source = inspect.getsourcefile(function) or inspect.getfile(function)
-        self.script = Path(source).resolve()
+        self.script = Path(canonical(source))
         self.__xbf_memo__ = True
 
     @property
@@ -387,7 +445,7 @@ def memo(function: Any = None, /, **options: Any) -> Any:
     """Mark a function worth replaying: ``@memo``, bare. Its arguments are keyed by value
     (plain values, build123d's value types, materials, shapes the engine made); it returns
     geometry (a shape, or a tuple, list or dict of shapes); it writes nothing outside
-    itself. A verifying build (``Model.build(verify=True)``, ``cadgen build SOURCE --verify``)
+    itself. A verifying build (``Model.build(verify=True)``)
     runs every call the engine would replay and compares what it makes with what was logged."""
     if options or function is None:
         raise TypeError("@memo takes no arguments: write @memo")
@@ -412,8 +470,10 @@ def models_in(namespace: dict[str, Any], script: Path) -> list[Model]:
 
 def paint(shape: Any, faces: Any, color: Any) -> Any:
     """Colour faces of a part, or give them a material: ``faces`` (a face, or several) of
-    ``shape`` take ``color`` -- anything ``build123d.Color`` takes, or a ``Material`` --
-    in the document, by their ordinal in the part. A face holds one paint: a colour
+    ``shape`` take ``color`` -- an sRGB hex string (``"#e68019"``, ``"#e68019cc"``), 0-255
+    integers (three, or four with alpha), a build123d ``Color``, or a ``Material`` -- in the
+    document, by their ordinal in the part. The colour is the one ``shape.color`` would give
+    the same value (``colors``). A face holds one paint: a colour
     replaces its material, a material its colour. Returns ``shape``, whose paints the
     memo keys like its label.
 
@@ -430,12 +490,12 @@ def paint(shape: Any, faces: Any, color: Any) -> Any:
     from OCP.TopExp import TopExp
     from OCP.TopTools import TopTools_IndexedMapOfShape
 
+    from cadgen.engine.colors import linear
     from cadgen.engine.kernel.memo import FACE_COLORS, FACE_MATERIALS
     from cadgen.engine.materials import Material
 
     material = color if isinstance(color, Material) else None
-    rgba = None if material is not None else tuple(
-        float(value) for value in (color if isinstance(color, bd.Color) else bd.Color(color)))
+    rgba = None if material is not None else tuple(linear(color, "paint's color"))
     mapped = TopTools_IndexedMapOfShape()
     TopExp.MapShapes_s(shape.wrapped, TopAbs_FACE, mapped)
     painted = dict(shape.__dict__.get(FACE_COLORS) or {})
@@ -458,41 +518,68 @@ def paint(shape: Any, faces: Any, color: Any) -> Any:
     return shape
 
 
-def configuration(assembly: Any, name: str, **values: Any) -> Any:
-    """Name a configuration of an assembly's mechanism: ``configuration(arm, "raised",
-    elbow=90)`` sets the joint labelled ``elbow`` to 90 degrees in the configuration
-    ``raised`` (a number per joint, or for a joint of several values a sequence: a
-    cylindrical joint's angle and position, a ball joint's three angles). The joints are
-    build123d's, placed with ``connect_to``; the values they were connected at are the
-    as-built configuration, and a joint a configuration does not name stays as built. The
-    document keeps every configuration (AP242's mechanism states); the viewer offers them
-    as presets, ``--pose NAME`` poses a snapshot or an export at one, and a motion's
-    waypoint may name one. A configuration never changes the build: every file shows the
-    model as built. Returns ``assembly``."""
+def mechanism_state(assembly: Any, name: str, **values: Any) -> Any:
+    """Name a state of an assembly's mechanism (AP242's ``mechanism_state_representation``):
+    ``mechanism_state(arm, "raised", elbow=90)`` sets the joint labelled ``elbow`` to 90
+    degrees in the state ``raised`` (a number per joint, or for a joint of several values a
+    sequence: a cylindrical joint's angle and position, a ball joint's three angles). The
+    joints are build123d's, placed with ``connect_to``; the values they were connected at are
+    the as-built state, and a joint a mechanism state does not name stays as built. The
+    document keeps every mechanism state; the viewer offers them as presets, ``--pose NAME``
+    draws a snapshot at one, and a configuration sequence's waypoint may name
+    one. A mechanism state never changes the build: every file shows the model as built. A
+    value outside its joint's range fails the build, in one line naming the state, the joint,
+    the value and the range; one on a bound is within it. Returns ``assembly``."""
     from cadgen.engine import mechanism
 
-    return mechanism.configuration(assembly, name, **values)
+    return mechanism.mechanism_state(assembly, name, **values)
 
 
-def motion(assembly: Any, name: str, waypoints_or_fn: Any = None, *, sweep: Any = None, duration: Any = None,
-           ease: str = "cubic", **removed: Any) -> Any:
-    """Name a motion of an assembly's mechanism, by joint label: waypoints ``[(t, pose),
-    ...]`` (``t`` in seconds from 0, ``pose`` a configuration's name or ``{joint: value}``,
-    the rest as built), ``sweep={joint: (from, to)}`` with ``duration``, or a function ``t ->
-    {joint: value}`` with ``duration``. ``ease`` is ``cubic`` (eased in and out at every
-    waypoint: AP242's synchronous interpolation) or ``linear``. A motion is a finite clip; a
-    player repeats it::
+def configuration_sequence(assembly: Any, name: str, waypoints_or_fn: Any = None, *, sweep: Any = None,
+                           duration: Any = None, ease: str = "cubic", **removed: Any) -> Any:
+    """Name a configuration sequence of an assembly's mechanism (AP242's
+    ``interpolated_configuration_sequence``), by joint label: waypoints ``[(t, pose), ...]``
+    (``t`` in seconds from 0, ``pose`` a mechanism state's name or ``{joint: value}``, the rest
+    as built), ``sweep={joint: (from, to)}`` with ``duration``, or a function ``t -> {joint:
+    value}`` with ``duration``. ``ease`` is ``cubic`` (eased in and out at every waypoint:
+    AP242's synchronous interpolation) or ``linear``. A sequence is a finite clip; a player
+    repeats it::
 
-        motion(arm, "cycle", [(0, "folded"), (2, "reach"), (5, "folded")])
-        motion(arm, "wave", [(0, {"wrist": -30}), (1, {"wrist": 30}), (2, {"wrist": -30})])
-        motion(arm, "nod", lambda t: {"elbow": 45 + 20 * math.sin(t)}, duration=6)
+        configuration_sequence(arm, "cycle", [(0, "folded"), (2, "reach"), (5, "folded")])
+        configuration_sequence(arm, "wave", [(0, {"wrist": -30}), (1, {"wrist": 30}), (2, {"wrist": -30})])
+        configuration_sequence(arm, "nod", lambda t: {"elbow": 45 + 20 * math.sin(t)}, duration=6)
 
     The document keeps the definition, never frames (a function as its samples); a GLB
     export bakes it into a clip of the same name, and STEP, STL and 3MF ignore it. It never
     moves the build: the model is as its joints connect it. Returns ``assembly``."""
     from cadgen.engine import mechanism
 
-    return mechanism.motion(assembly, name, waypoints_or_fn, sweep=sweep, duration=duration, ease=ease, **removed)
+    return mechanism.configuration_sequence(assembly, name, waypoints_or_fn, sweep=sweep, duration=duration, ease=ease,
+                                            **removed)
+
+
+def animation(assembly: Any, name: str, *, duration: Any) -> Any:
+    """Name an animation of an assembly: a GLB's own choreography, ``duration`` seconds long,
+    returned as a builder of glTF channels; its calls chain::
+
+        show = animation(car, "showcase", duration=6)
+        show.channel("lid", path="translation", keys=[(0, (0, 0, 0)), (1, (0, 0, 40))])
+        show.rotation("wheel*", axis=(0, 1, 0), turns=3, start=1, interpolation="LINEAR")
+        show.translation("door", by=(0, 300, 0), start=2, end=4)
+        show.explode("body/*", radial=True, distance=40, end=2)       # helpers, compiled to channels
+        show.hide("roof", at=3)                                       # a STEP scale channel to 0
+        show.pose(at={0: "shut", 5: {"doors": 1}})                    # the mechanism, by its FK
+
+    ``.channel(parts, path=, keys=, interpolation=)`` is glTF's channel (``path``
+    ``translation``, ``rotation`` or ``scale``; ``interpolation`` ``CUBICSPLINE``, ``LINEAR`` or
+    ``STEP``); ``.translation``, ``.rotation`` and ``.scale`` are channels from a start to an end.
+    Parts are named as a ref's owner names them (a label, ``hand/finger.2``), or by a glob
+    (``wheel*``). A configuration sequence is the mechanism's and the document keeps it; an animation is the GLB's:
+    never written into the xbf, baked into every GLB the model declares when that GLB is written.
+    Returns the builder."""
+    from cadgen.engine.animations import animation as build
+
+    return build(assembly, name, duration=duration)
 
 
 def _read_step(path: Any) -> Any:
@@ -630,7 +717,7 @@ class BuildContext:
         # The first-party modules the script's load imported (``build`` sets it), the
         # build's symbol resolution, the time keys took and each body's fallbacks.
         self.loaded: set[str] | None = None
-        # The build's folder: the script's, or the working folder of code (``build`` sets it).
+        # The build's folder: the script's (``build`` sets it).
         self.base: Path | None = None
         self.symbols: Any = None
         self.key_seconds = 0.0
@@ -743,11 +830,16 @@ class BuildContext:
             memo.used(key)  # the calling body's replay needs this one's run
             made = instance(found[1])
         else:
+            _say("entering", model.name)
             made = self.run(model)
+            _say("leaving", model.name)
             self.results[key] = (made, instance(made))
         if not made.__dict__.get("label"):
             made.label = model.name
-        return made
+        from cadgen.engine.api import Document
+
+        # The child's document, whose shape is this process's result: the caller composes ``.shape``.
+        return Document.inside(model, made)
 
     def children(self, model: Model, run: Any, before: set[str]) -> list[tuple[Model, Any]]:
         """The models that ran as children in ``model``'s run, each once, in the order they
@@ -792,18 +884,23 @@ class BuildContext:
             raise RecursionError(f"{marked.identity} calls itself with the same arguments")
         self.stack.append(name)
         started = time.perf_counter()
+        _say("entering", marked.name)
         try:
             with kernel.scope(name):
                 result = kernel.body(name, lambda: self.source(marked), lambda: marked.function(*args, **kwargs),
                                      inputs=inputs, family=family)
         finally:
             self.stack.pop()
+        _say("leaving", marked.name)
         self.timings[marked.identity] = self.timings.get(marked.identity, 0.0) + time.perf_counter() - started
         if not kernel.geometric(result):
             kernel.direct(name)
             self._fallback(marked, f"runs on every call: it returned {type(result).__name__}, not geometry "
                                    "(a shape, or a tuple, list or dict of shapes)")
             return result
+        # Shapes it made past the engine (OCCT's own makers) are keyed by the call itself, so
+        # what this caller makes of them is kept too.
+        result = kernel.adopt(name, result)
         self.results[name] = (result, _placement(result))
         return result
 
@@ -812,6 +909,21 @@ class BuildContext:
         if reason not in reasons:
             reasons.append(reason)
         self.timings.setdefault(marked.identity, 0.0)
+
+
+def _say(stage: str, name: str) -> None:
+    """A body inside the model's begins or ends (``progress.Progress.entering``, ``leaving``):
+    said to this process's build, by its function's name; nothing outside a build, and never a
+    failure. A body that raises says no end: the build's last frame is where it failed."""
+    from cadgen.engine import progress
+
+    said = progress.current()
+    if said is None:
+        return
+    try:
+        getattr(said, stage)(name)
+    except Exception:  # noqa: BLE001 - saying where a build is never fails it
+        pass
 
 
 def _placement(value: Any) -> Any:
@@ -839,8 +951,8 @@ from types import ModuleType as _ModuleType
 
 
 class _ModelModule(_ModuleType):
-    def __call__(self, function: Any) -> Model:
-        return model(function)
+    def __call__(self, function: Any = None, /, **options: Any) -> Any:
+        return model(function, **options)
 
 
 _sys.modules[__name__].__class__ = _ModelModule

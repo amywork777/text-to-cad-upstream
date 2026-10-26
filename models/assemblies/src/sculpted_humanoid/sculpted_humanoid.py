@@ -22,7 +22,7 @@ the as-built configuration of the document's mechanism.
 """
 
 from __future__ import annotations
-from cadgen.engine import xbf
+from cadgen import model
 
 from dataclasses import dataclass
 from math import cos, pi, sin, sqrt
@@ -40,8 +40,8 @@ CARBON = "#343B40"
 ALUMINUM = "#AEB6BC"
 TITANIUM = "#747E86"
 OFF_WHITE = "#D8D9D4"
-SMOKED_GLASS = (0.025, 0.075, 0.095, 0.82)
-OPTIC_GLASS = (0.01, 0.055, 0.065, 0.94)
+SMOKED_GLASS = "#2c4d57d1"
+OPTIC_GLASS = "#194248f0"
 STATUS_AMBER = "#B8893A"
 
 JOINT_CLEARANCE = 1.8
@@ -1523,7 +1523,7 @@ def _palm_module(side: str, sign: float, wrist: Point) -> tuple[bd.Compound, Poi
     ), palm_center
 
 
-@xbf(out="../../XBF/sculpted_humanoid/sculpted_humanoid.xbf")
+@model
 def sculpted_humanoid():
     """Return the complete labeled humanoid assembly in its athletic pose."""
 

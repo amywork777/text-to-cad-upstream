@@ -17,11 +17,9 @@ Clearances target a tuned 0.4 mm-nozzle FDM printer:
 - 0.2 mm radial scallop between each knuckle and the opposite plate
 """
 from __future__ import annotations
-from cadgen.engine import materials, xbf
+from cadgen import materials, model
 
 import build123d as bd
-
-from lib.color import srgb
 
 
 HINGE_LENGTH = 40.0
@@ -124,7 +122,7 @@ def _make_leaf_a():
     )
     leaf = leaf - [_bore_tool(*KNUCKLE_A1), _bore_tool(*KNUCKLE_A2), _notch_tool(-1.0, *KNUCKLE_B)]
     leaf.label = "leaf_a_barrel_bores"
-    leaf.color = srgb("#5B6B7A")
+    leaf.color = "#5B6B7A"
     return leaf
 
 
@@ -135,11 +133,11 @@ def _make_leaf_b():
     )
     leaf = leaf - [_notch_tool(1.0, *KNUCKLE_A1), _notch_tool(1.0, *KNUCKLE_A2)]
     leaf.label = "leaf_b_captive_pin"
-    leaf.color = srgb("#C98056")
+    leaf.color = "#C98056"
     return leaf
 
 
-@xbf(out="../XBF/print_in_place_hinge.xbf")
+@model
 def print_in_place_hinge():
     """Return the print-in-place hinge as a labeled two-leaf assembly compound."""
     leaf_a = _make_leaf_a()

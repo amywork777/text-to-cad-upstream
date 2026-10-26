@@ -19,6 +19,7 @@ from __future__ import annotations
 import socket
 import socketserver
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import url_norm
@@ -35,6 +36,12 @@ _ALLOWED_METHODS = ("GET", "HEAD", "POST")
 
 # How long a closing connection waits for each piece of a body its route never read (`_linger`).
 LINGER_SECONDS = 1.0
+# How long any one read of a connection may wait -- a request's line, its headers, a piece of its
+# body, or the next request on a kept-alive connection -- before the connection is closed: a peer
+# that sends nothing, or trickles a request, holds no thread past it, before the token gate or after.
+REQUEST_TIMEOUT_SECONDS = 30.0
+# The most connections served at once; one more is closed as it is accepted, not queued behind them.
+MAX_CONNECTIONS = 256
 
 
 class CadHTTPServer(ThreadingHTTPServer):
@@ -54,7 +61,24 @@ class CadHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, address, handler_class, app):
         self.app = app
+        self._slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
         super().__init__(address, handler_class)
+
+    def process_request(self, request, client_address):  # noqa: D102
+        if not self._slots.acquire(blocking=False):
+            self.shutdown_request(request)  # past MAX_CONNECTIONS: closed now, never a waiting thread
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):  # noqa: D102
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
     def server_bind(self):  # noqa: D102
         # Not HTTPServer's: it names the host by reverse DNS (socket.getfqdn),
@@ -80,6 +104,7 @@ def make_handler_class(app):
         # component pays a fresh connection. Safe because every response here
         # carries an explicit content-length.
         protocol_version = "HTTP/1.1"
+        timeout = REQUEST_TIMEOUT_SECONDS  # every read of the connection (``StreamRequestHandler.setup``)
 
         # No Server header is emitted anywhere: every response goes through
         # send_response_only + explicit send_header, and version_string() feeds
@@ -145,8 +170,8 @@ def make_handler_class(app):
         def _drain_body(self) -> None:
             """Discard an unread body so the NEXT request on this connection parses.
 
-            ``POST /__cad/artifact`` never reads its body — every parameter
-            rides the query string, so a body sent with it goes unread.
+            A route whose parameters ride the query string never reads its
+            body, so a body sent with it goes unread.
             Node discards them harmlessly; an HTTP/1.1 handler that leaves
             content-length bytes in the buffer mis-parses the next request, and
             the symptom is intermittent garbage under the client's parallel

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from cadgen.engine import xbf
+from cadgen import model
 
 from math import cos, hypot, sin, tau
 
@@ -15,8 +15,8 @@ MODEL_LABEL = "six_blade_open_propeller_from_reference"
 
 # Plain RGB(A) tuples / sRGB hex strings: build123d's Shape.color setter
 # builds the Color on assignment.
-WARM_IVORY = (0.82, 0.78, 0.65, 1.0)
-WARM_TAUPE = (0.72, 0.70, 0.61, 1.0)
+WARM_IVORY = "#eae5d3"
+WARM_TAUPE = "#dddacd"
 
 BLADE_COUNT = 6
 BLADE_ROOT_RADIUS = 10.8
@@ -350,7 +350,7 @@ def _make_hub_shell():
     )
 
 
-@xbf(out="../../XBF/six_blade_open_propeller/six_blade_open_propeller.xbf")
+@model
 def six_blade_open_propeller():
     parts = [_make_hub_shell()]
 

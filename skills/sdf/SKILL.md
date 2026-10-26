@@ -18,13 +18,19 @@ The `.sdf` file is the source of truth: author and edit the XML directly. There 
 
 ## Setup
 
-Run cadgen through [uv](https://docs.astral.sh/uv/), so this skill's commands share
-one installation, and its engine daemon, with the CAD app's server:
+Run cadgen through the `cadgen` command its installation writes, so this skill's commands
+share one installation, and its engine server, with the CAD app's:
 
-- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.0 cadgen`
-- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.0 python`
+- `cadgen` below means `cadgen +0.8.0` (`~/.local/bin/cadgen +0.8.0` where `~/.local/bin` is not on your PATH)
+- `python` below means `cadgen +0.8.0 run`
 
-The first run downloads that installation; later runs reuse it.
+If `cadgen` is not on your PATH, or it says 0.8.0 is not installed, run
+`uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.0 cadgen doctor` once,
+outside any sandbox or with its permission: it installs cadgen, registers it, writes the
+`cadgen` command and starts the engine. With the CAD app's server running, nothing else
+needs the sandbox's permission: it starts the engine and holds it. Without it, a sandboxed
+shell cannot start the engine; when a command says no engine is running, run `cadgen server`
+outside the sandbox once.
 
 ## Core rules
 
@@ -47,21 +53,30 @@ Use this skill for SDFormat outputs. Do not use it for signed-distance-field mod
 
 ## Show the model
 
-Show the user each file you create or change, and any they ask to see. Snapshots and
-validation don't replace this.
+Show the user each model and file you create or change, and any they ask to see.
+Snapshots and validation don't replace this. Never screenshot the viewer to confirm your
+own work; review with `cadgen snapshot`.
 
-- If your tools include `cad_show` (your host may prefix it), use it with the file's
-  absolute path, and follow its description for when to call it again. `cad_view` reads
-  what the user selected; `cad_screenshot` shows you what they see.
-- Otherwise run the CAD Viewer, from any folder:
+- If your tools include `cad_show` (your host may prefix it), call it with the model's id
+  or the file's absolute path, and follow its description for when to call it again.
+  The other tools depend on the host. A host that draws CAD cards or tabs (Claude
+  Desktop, the Codex app) also has `cad_view`, which reads what the user selected, and
+  `cad_screenshot`, which shows you what they see, for when they ask about it. A text host
+  (Claude Code in a terminal, `codex exec`) draws nothing: its `cad_show` opens the
+  model's page in the user's browser and answers with the URL to give them, and it has no
+  view to read. `cad_inspect`, `cad_snapshot` and `cad_export` are on every host. Call
+  only the tools you have, and never say a card shows a model when your host drew none.
+- Otherwise give the user the page's link once: a model's page is the `view:` line its
+  run prints. For a file, run the CAD Viewer, from any folder:
 
   ```bash
-  cadgen viewer --host 127.0.0.1 --json
+  cadgen viewer --host 127.0.0.1 --json FILE [FILE ...]
   ```
 
-  The command ensures this installation's engine, prints a page-session URL and
-  exits. Read `url` from its one JSON line (never guess the port). Add each file's
-  URL-encoded absolute path with `&file=`, preserving the URL's token query.
+  The command ensures this installation's engine, registers each file and prints
+  its page, `/<id>`, then exits. Read each file's `url` from `documents` in its one
+  JSON line (never guess the port); the URL carries its token query. A page follows
+  every later run of its model and every rewrite of its file, so share it once.
   Return that link to the user. If it fails to launch, say so.
 
 Review placement, resources and joints. The viewer does not execute simulator
@@ -98,7 +113,7 @@ cadgen sdf validate path/to/model.sdf --gz-check required
 cadgen sdf validate path/to/model.sdf --gz-check never
 ```
 
-`gz sdf --check` is target-consumer validation. `--gz-check auto` is the default: it runs when `gz` is on PATH, reporting `gz_check_passed` or the tool's own output as the error `gz_check_failed`, and otherwise notes `info: gz_check_unavailable` and carries on. An absent optional tool says nothing about the file, so it never fails a clean document and `--strict` does not change that. `--gz-check required` makes the tool mandatory — a missing `gz` is then an error — and `--gz-check never` skips it outright.
+`gz sdf --check` is target-consumer validation. `--gz-check auto` is the default: it runs when `gz` is on PATH, reporting `gz_check_passed` or the tool's own output as the error `gz_check_failed`, and otherwise notes `info: gz_check_unavailable` and carries on. An absent optional tool says nothing about the file, so it never fails a clean document and `--strict` does not change that. `--gz-check required` makes the tool mandatory — a missing `gz` is then an error — and `--gz-check never` skips it outright. gz resolves a document's `<include>`/`<uri>` references itself, so it does not run on a document that names a remote one (`http`, `https`, `fuel`): that is `info: gz_check_remote` (an error under `required`), and `--gz-remote` lets gz fetch them.
 
 ## Required report shape
 

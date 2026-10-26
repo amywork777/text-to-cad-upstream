@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import build123d as bd
 
-from cadgen.engine import materials, pmi, step, xbf
+from cadgen import materials, pmi, step
 from lib.notes import NOTES
 
 
@@ -51,8 +51,7 @@ def _plane(body, axis, at):
                key=lambda face: face.area)
 
 
-@xbf(out="../XBF/aerospace_avionics_bracket.xbf")
-@step(out="../XBF/aerospace_avionics_bracket.step")
+@step(out="../STEP/aerospace_avionics_bracket.step")
 def aerospace_avionics_bracket():
     body = _body()
     bottom, top = _plane(body, 2, 0), _plane(body, 2, 8)

@@ -1,13 +1,14 @@
 """Kinematics: build123d's joints harvested into the xbf's mechanism (AP242's links, pairs,
 ground and configurations) and read back; a chain's links and a prismatic pair; a pair the
-built tree contradicts refused by name; poses by a configuration's name and by joint values
-placing a part where the closed form says, in a posed STEP that carries no mechanism; what a pose
-names wrong refused by name; the structure's ``kinematics`` the same from the file and from the
+built tree contradicts refused by name; ``posed`` by a configuration's name and by joint values
+placing a part where the closed form and the sampler say, a model of its own whose STEP carries no
+mechanism and whose xbf keeps it at the asked values; what a pose names wrong refused by name; a
+mechanism state outside its joint's range failing the build in one line, one on a bound built; the structure's ``kinematics`` the same from the file and from the
 build; a document served at a pose; the mechanism subtree AP242's names and nothing else."""
 
 from __future__ import annotations
 
-import contextlib
+import dataclasses
 import io
 import json
 import math
@@ -18,6 +19,7 @@ import tempfile
 import textwrap
 import time
 import unittest
+from typing import Any
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -25,13 +27,14 @@ from pathlib import Path
 import numpy as np
 
 from cadgen.engine import build as engine_build
-from cadgen.engine import cli, document, mechanism
+from cadgen.engine import document, mechanism
 from cadgen.engine.serve import Server
 from tests.python.support import opengl
 
 HINGE = """
 import build123d as bd
-from cadgen.engine import configuration, step, xbf
+from cadgen.ap242 import mechanism_state
+from cadgen.engine import step, xbf
 
 
 @xbf("XBF/hinge.xbf")
@@ -46,15 +49,16 @@ def hinge():
     {connect}
     root = bd.Compound(children=[base, arm], label="hinge")
     {after}
-    configuration(root, "raised", elbow=90)
-    configuration(root, "flat", {flat})
+    mechanism_state(root, "raised", elbow=90)
+    mechanism_state(root, "flat", {flat})
     return root
 """
 CONNECT = 'base.joints["elbow"].connect_to(arm.joints["mount"], angle=30)'
 
 CHAIN = """
 import build123d as bd
-from cadgen.engine import configuration, xbf
+from cadgen.ap242 import mechanism_state
+from cadgen.engine import xbf
 
 
 @xbf("XBF/lift.xbf")
@@ -77,9 +81,77 @@ def lift():
     bd.RigidJoint("hub", arm, bd.Location())
     clamp.joints["wrist"].connect_to(arm.joints["hub"], angle=0)
     root = bd.Compound(children=[base, carriage, clamp, arm], label="lift")
-    configuration(root, "top", lift=90, wrist=45)
+    mechanism_state(root, "top", lift=90, wrist=45)
     return root
 """
+
+# A wheel steered about its kingpin, the joint's range the steering lock, and a state of the
+# model's own turning it to {turned} degrees.
+CAR = """
+import build123d as bd
+from cadgen.ap242 import mechanism_state
+from cadgen.engine import xbf
+
+
+@xbf("XBF/car.xbf")
+def car():
+    body = bd.Box(400, 200, 50)
+    body.label = "body"
+    wheel = bd.Pos(150, 120, 0) * bd.Cylinder(30, 20, rotation=(90, 0, 0))
+    wheel.label = "wheel"
+    kingpin = bd.Axis((150, 120, 0), (0, 0, 1))
+    bd.RevoluteJoint("steer", body, axis=kingpin, angular_range=(-30, 30))
+    bd.RigidJoint("steer", wheel, bd.Plane(origin=kingpin.position, z_dir=kingpin.direction).location)
+    body.joints["steer"].connect_to(wheel.joints["steer"], angle=0)
+    return mechanism_state(bd.Compound(children=[body, wheel], label="car"), "turned_left", steer={turned})
+"""
+
+
+# A base built 300 mm out and a rotor on its joint's axis, given in world coordinates ({axis}).
+ROTOR = """
+import build123d as bd
+from cadgen.engine import xbf
+
+
+@xbf("XBF/rotor.xbf")
+def rotor():
+    base = bd.Pos(300, 0, 0) * bd.Box(40, 40, 10)
+    base.label = "base"
+    disc = bd.Pos(300, 0, 10) * bd.Cylinder(15, 4)
+    disc.label = "disc"
+    bd.RevoluteJoint("spin", base, axis={axis})
+    bd.RigidJoint("hub", disc, bd.Location(disc.location.position))
+    base.joints["spin"].connect_to(disc.joints["hub"], angle=0)
+    return bd.Compound(children=[base, disc], label="rotor")
+"""
+
+# tom's wrist pitch: a forearm built 500 mm out, a small servo near its elbow end ({mount}: fastened
+# to the tube by rigid joints) holding the wrist's joint, on {axis}. In world coordinates the axis
+# crosses the tube's far end, 162 mm from the servo; in the forearm's own, it lands by the origin.
+WRIST = """
+import build123d as bd
+from cadgen.engine import xbf
+
+
+@xbf("XBF/forearm.xbf")
+def forearm():
+    at = bd.Pos(500, 0, 300)
+    tube = at * bd.Box(200, 30, 30, align=(bd.Align.MIN, bd.Align.CENTER, bd.Align.CENTER))
+    tube.label = "tube"
+    servo = at * bd.Pos(20, 0, 25) * bd.Box(20, 10, 15)
+    servo.label = "servo"
+    hand = at * bd.Pos(200, 0, 0) * bd.Box(40, 20, 20, align=(bd.Align.MIN, bd.Align.CENTER, bd.Align.CENTER))
+    hand.label = "hand"
+    {mount}
+    wrist = {axis}
+    bd.RevoluteJoint("wrist", servo, axis=wrist, angular_range=(-90, 90))
+    bd.RigidJoint("wrist", hand, bd.Plane(origin=wrist.position, z_dir=wrist.direction).location)
+    servo.joints["wrist"].connect_to(hand.joints["wrist"], angle=0)
+    return bd.Compound(children=[tube, servo, hand], label="forearm")
+"""
+MOUNT = """bd.RigidJoint("mount", tube, at * bd.Location((20, 0, 15)))
+    bd.RigidJoint("mount", servo, at * bd.Location((20, 0, 15)))
+    tube.joints["mount"].connect_to(servo.joints["mount"])"""
 
 
 def _arm_tip(q: float) -> np.ndarray:
@@ -90,19 +162,20 @@ def _arm_tip(q: float) -> np.ndarray:
     return np.array([40 + 120 * s + 10 * c, 10, 20 + 120 * c - 10 * s])
 
 
-def _vertices(loaded: document.Loaded, name: str) -> np.ndarray:
-    """Every vertex of the instance named ``name``, where the document places it."""
+def _vertices(loaded: document.Loaded, name: str, matrices: list | None = None) -> np.ndarray:
+    """Every vertex of the instance named ``name``, where the document places it (or where
+    ``matrices``, the structure's instance matrices at a pose, do)."""
     from OCP.TopAbs import TopAbs_VERTEX
     from OCP.TopExp import TopExp
     from OCP.TopTools import TopTools_IndexedMapOfShape
     from OCP.BRep import BRep_Tool
     from OCP.TopoDS import TopoDS
 
-    instance = next(i for i in loaded.instances if i.path[-1] == name)
+    index, instance = next((at, i) for at, i in enumerate(loaded.instances) if i.path[-1] == name)
     shape = loaded.prototypes[instance.prototype].shape
     mapped = TopTools_IndexedMapOfShape()
     TopExp.MapShapes_s(shape, TopAbs_VERTEX, mapped)
-    matrix = np.array(instance.matrix).reshape(4, 4).T
+    matrix = np.array(instance.matrix if matrices is None else matrices[index]).reshape(4, 4).T
     points = []
     for at in range(1, mapped.Extent() + 1):
         point = BRep_Tool.Pnt_s(TopoDS.Vertex_s(mapped.FindKey(at)))
@@ -114,11 +187,25 @@ def _has_point(points: np.ndarray, point: np.ndarray) -> bool:
     return bool(np.min(np.linalg.norm(points - point, axis=1)) < 1e-6)
 
 
-def _run(*argv: str) -> tuple[int, str, str]:
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        code = cli.main(list(argv))
-    return code, out.getvalue(), err.getvalue()
+def _sampled(path: Path, pose: Any) -> list:
+    """Every instance's matrix at ``pose``, as the viewer and the snapshot pose a document
+    (``mechanism.posed_structure``)."""
+    posed = mechanism.posed_structure(document.Loaded(path).structure(), pose)
+    return [instance["matrix"] for instance in posed["instances"]]
+
+
+# A posed file is a model of its own: the hinge at a state, never an export's option.
+POSED = """
+from cadgen.ap242 import posed
+from cadgen.engine import step, xbf
+from hinge import hinge
+
+
+@xbf("XBF/{name}.xbf")
+@step(out="{name}.step")
+def {name}():
+    return posed(hinge().shape, {state})
+"""
 
 
 class _Folder(unittest.TestCase):
@@ -183,54 +270,41 @@ class HingeTest(_Folder):
         self.assertTrue(report["files"][str(self.folder / "XBF/hinge.xbf")]["written"])
         self.assertEqual(document.Loaded(self.folder / "XBF/hinge.xbf").mechanism.configurations["flat"], {"elbow": (-5.0,)})
 
-    def test_poses_by_name_and_by_value_place_the_arm_where_the_closed_form_says(self) -> None:
+    def test_posed_places_the_arm_where_the_sampler_and_the_closed_form_say(self) -> None:
         self.hinge()
-        path = str(self.folder / "XBF/hinge.xbf")
-        for pose, q in (("raised", 90.0), ('{"elbow": 45}', 45.0), ("flat", 0.0)):
-            out = self.folder / f"posed-{q:g}.step"
-            code, _out, err = _run("export", path, str(out), "--no-daemon", "--pose", pose)
-            self.assertEqual(code, 0, err)
-            posed = document.Loaded(out)
-            self.assertTrue(_has_point(_vertices(posed, "arm"), _arm_tip(q)), pose)
-            self.assertFalse(_has_point(_vertices(posed, "arm"), _arm_tip(30)), pose)
-            self.assertTrue(_has_point(_vertices(posed, "base"), np.array([50.0, 30.0, 10.0])), "the ground stays")
-            # The STEP carries none of the mechanism: OCCT writes no AP242 kinematics.
-            text = out.read_text(encoding="utf-8", errors="replace")
+        hinge = self.folder / "XBF/hinge.xbf"
+        for name, state, q in (("raised", '"raised"', 90.0), ("by_value", '{"elbow": 45}', 45.0)):
+            self.build(name, POSED.format(name=name, state=state))
+            made = document.Loaded(self.folder / f"XBF/{name}.xbf")
+            arm = next(at for at, instance in enumerate(made.instances) if instance.path[-1] == "arm")
+            # The posed model's arm is where the sampler poses the hinge's.
+            np.testing.assert_allclose(made.instances[arm].matrix, _sampled(hinge, json.loads(state))[arm], atol=1e-9)
+            self.assertTrue(_has_point(_vertices(made, "arm"), _arm_tip(q)), name)
+            self.assertTrue(_has_point(_vertices(made, "base"), np.array([50.0, 30.0, 10.0])), "the ground stays")
+            # Its xbf keeps the mechanism, the asked values its as-built state, its states as they were.
+            self.assertAlmostEqual(made.mechanism.as_built["elbow"][0], q, places=9)
+            self.assertEqual(made.mechanism.configurations, {"flat": {"elbow": (0.0,)}, "raised": {"elbow": (90.0,)}})
+            # The STEP is placed alike and carries none of the mechanism: OCCT writes no AP242 kinematics.
+            step = self.folder / f"{name}.step"
+            self.assertTrue(_has_point(_vertices(document.Loaded(step), "arm"), _arm_tip(q)), name)
+            text = step.read_text(encoding="utf-8", errors="replace")
             self.assertEqual([word for word in ("_PAIR", "MECHANISM", "KINEMATIC") if word in text], [])
-        # The build's own STEP is as built, and carries none either.
-        built = document.Loaded(self.folder / "hinge.step")
-        self.assertTrue(_has_point(_vertices(built, "arm"), _arm_tip(30)))
-        self.assertNotIn("MECHANISM", (self.folder / "hinge.step").read_text(encoding="utf-8", errors="replace"))
-        # A mesh export at a pose: the arm's node placed as the pair places it.
-        glb = self.folder / "posed.glb"
-        self.assertEqual(_run("export", path, str(glb), "--no-daemon", "--pose", "raised")[0], 0)
-        data = glb.read_bytes()
-        length = int.from_bytes(data[12:16], "little")
-        nodes = json.loads(data[20:20 + length])["nodes"]
-        arm = np.array(next(node for node in nodes if node.get("name") == "arm")["matrix"]).reshape(4, 4).T
-        np.testing.assert_allclose((arm @ np.array([120.0, 10.0, 10.0, 1.0]))[:3], _arm_tip(90), atol=1e-6)
+        # The hinge's own STEP is as built.
+        self.assertTrue(_has_point(_vertices(document.Loaded(self.folder / "hinge.step"), "arm"), _arm_tip(30)))
 
-    def test_what_a_pose_names_wrong_is_refused_by_name_before_anything_is_written(self) -> None:
+    def test_what_a_pose_names_wrong_is_refused_by_name(self) -> None:
         self.hinge()
-        path = str(self.folder / "XBF/hinge.xbf")
-        out = self.folder / "refused.step"
-        for pose, words in (('{"elbw": 10}', ["'elbw'", "elbow"]), ('{"elbow": 150}', ["'elbow'", "150", "[-10, 120]"]),
-                            ("folded", ["'folded'", "flat, raised"]), ('{"elbow": [1, 2]}', ["'elbow'", "a number"])):
-            code, _out, err = _run("export", path, str(out), "--no-daemon", "--pose", pose)
-            self.assertEqual(code, 2, pose)
+        for state, words in (('{"elbw": 10}', ["'elbw'", "elbow"]), ('{"elbow": 150}', ["'elbow'", "150", "[-10, 120]"]),
+                             ('"folded"', ["'folded'", "flat, raised"]), ('{"elbow": [1, 2]}', ["'elbow'", "a number"])):
+            report = self.build("refused", POSED.format(name="refused", state=state), ok=False)
             for word in words:
-                self.assertIn(word, err, pose)
-            self.assertFalse(out.exists(), pose)
+                self.assertIn(word, report["error"], state)
+            self.assertFalse((self.folder / "refused.step").exists(), state)
 
-    def test_a_configuration_naming_no_joint_fails_the_build_and_one_out_of_range_warns(self) -> None:
-        # The one harvest error: a configuration naming a joint its assembly does not hold.
+    def test_a_configuration_naming_no_joint_fails_the_build(self) -> None:
         report = self.hinge(flat="elbw=0", ok=False)
         self.assertIn("names no joint 'elbw'", report["error"])
         self.assertIn("elbow", report["error"])
-        report = self.hinge(flat="elbow=200")
-        self.assertIn("'elbow' at 200 deg is outside its range [-10, 120] deg: the value is left out",
-                      " ".join(report["kinematics"]["warnings"]))
-        self.assertEqual(document.Loaded(self.folder / "XBF/hinge.xbf").mechanism.configurations["flat"], {})
 
     def test_a_part_moved_after_it_was_connected_is_refused_by_name(self) -> None:
         # Connected after the compound holding the arm was made: the arm is not where the joint
@@ -251,11 +325,11 @@ class HingeTest(_Folder):
         path = self.folder / "XBF/hinge.xbf"
         out = self.folder / "stale.png"
         for pose, words in (({"elbw": 1}, "names no joint 'elbw'"), ({"elbow": 150}, "'elbow' at 150 deg is outside"),
-                            ("folded", "no configuration 'folded'")):
+                            ("folded", "no mechanism state 'folded'")):
             out.write_bytes(b"before")
             with self.assertRaisesRegex(SnapshotRefused, words):
                 snapshot(path, out, pose=pose, size=(160, 120), daemon=False)
-            self.assertFalse(out.exists(), "a refused snapshot leaves no picture at OUT")
+            self.assertEqual(out.read_bytes(), b"before", "a refused snapshot keeps the picture at OUT")
         opengl.require(context.available(), "the pose is refused; drawing it needs an OpenGL context")
         rest = snapshot(path, self.folder / "rest.png", camera="front", size=(160, 120), daemon=False)
         raised = snapshot(path, self.folder / "raised.png", camera="front", size=(160, 120), daemon=False, pose="raised")
@@ -290,10 +364,83 @@ class HingeTest(_Folder):
         self.assertEqual(refused.exception.code, 400)
         self.assertIn("'elbw'", json.loads(refused.exception.read())["error"])
 
+    def test_a_pose_body_is_bounded_and_the_engine_keeps_only_its_latest_poses(self) -> None:
+        from unittest import mock
+
+        from cadgen.engine import serve
+
+        self.hinge()
+        server = Server(port=0, mesh_mode="inline")
+        server.start()
+        self.addCleanup(server.stop)
+        ident = server.add(self.folder / "XBF/hinge.xbf")
+
+        def call(path: str, body: bytes | None = None) -> dict:
+            request = urllib.request.Request(server.url + path, data=body, method="GET" if body is None else "POST")
+            with urllib.request.urlopen(request, timeout=60) as answer:
+                return json.loads(answer.read())
+
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            call(f"/api/doc/{ident}/pose", b'{"pose": {"elbow": 90}, "pad": "' + b"x" * serve.POSE_BODY_LIMIT + b'"}')
+        self.assertEqual(refused.exception.code, 400)
+        self.assertIn("at most", json.loads(refused.exception.read())["error"])
+        with mock.patch.object(serve, "POSES_HELD", 2):
+            made = [call(f"/api/doc/{ident}/pose", json.dumps({"pose": {"elbow": angle}}).encode())["id"]
+                    for angle in (40, 60, 90)]
+            self.assertEqual(list(server.poses), made[1:])
+            self.assertEqual(call(f"/api/doc/{made[2]}")["kinematics"]["pose"]["values"], {"elbow": 90.0})
+            with self.assertRaises(urllib.error.HTTPError) as gone:
+                call(f"/api/doc/{made[0]}")
+            self.assertEqual(gone.exception.code, 404)
+
+
+class RangeTest(_Folder):
+    def test_a_state_outside_its_joint_s_range_fails_the_build_in_one_line_and_one_on_a_bound_builds(self) -> None:
+        self.build("car", CAR.format(turned=30))  # the lock itself: within the range
+        xbf = self.folder / "XBF/car.xbf"
+        self.assertEqual(document.Loaded(xbf).mechanism.configurations, {"turned_left": {"steer": (30.0,)}})
+        before = xbf.read_bytes()
+        report = self.build("car", CAR.format(turned=32), ok=False)
+        self.assertEqual(report["error"].splitlines()[-1],
+                         "cadgen.engine.mechanism.KinematicsError: mechanism state 'turned_left' of car puts joint "
+                         "'steer' at 32 deg, outside its range -30 to 30")
+        self.assertEqual(xbf.read_bytes(), before, "the refused build leaves the file the build before wrote")
+        # Past a bound by less than the six digits a value shows: every digit.
+        report = self.build("car", CAR.format(turned=-30.0000002), ok=False)
+        self.assertIn("puts joint 'steer' at -30.0000002 deg, outside its range -30 to 30", report["error"])
+        self.build("car", CAR.format(turned=-30))
+        self.assertEqual(document.Loaded(xbf).mechanism.configurations, {"turned_left": {"steer": (-30.0,)}})
+
+    def test_a_pose_outside_its_joint_s_range_keeps_its_refusal(self) -> None:
+        from cadgen.engine.snapshot import SnapshotRefused, snapshot
+
+        self.build("car", CAR.format(turned=30))
+        path = self.folder / "XBF/car.xbf"
+        refusal = "the pose: joint 'steer' at 32 deg is outside its range [-30, 30] deg"
+        with self.assertRaises(mechanism.KinematicsError) as refused:
+            mechanism.resolve(document.Loaded(path).structure()["kinematics"], {"steer": 32})
+        self.assertEqual(str(refused.exception), refusal)
+        previous = os.environ.get("CADGEN_ENGINE_MESH")
+        os.environ["CADGEN_ENGINE_MESH"] = "inline"  # one part at a time on this thread: no pool
+        self.addCleanup(lambda: os.environ.pop("CADGEN_ENGINE_MESH") if previous is None
+                        else os.environ.__setitem__("CADGEN_ENGINE_MESH", previous))
+        out = self.folder / "stale.png"
+        out.write_bytes(b"before")
+        with self.assertRaises(SnapshotRefused) as refused:
+            snapshot(path, out, pose={"steer": 32}, size=(160, 120), daemon=False)
+        self.assertEqual(str(refused.exception), f"--pose: {refusal}")
+        self.assertEqual(out.read_bytes(), b"before", "a refused snapshot keeps the picture at OUT")
+
 
 class JointMemoTest(_Folder):
     def test_a_body_with_joints_is_retained_and_an_edited_joint_runs_it_again(self) -> None:
-        # A joint on a part keys the compound that holds it: an unchanged build replays the body.
+        from unittest import mock
+
+        # A joint on a part keys the compound that holds it: an unchanged build replays the body
+        # (the whole-model skip of a warm worker, held by test_previous, set aside to see it).
+        skip = mock.patch.object(engine_build, "_previous", return_value=({"used": False, "reason": "set aside"}, None))
+        skip.start()
+        self.addCleanup(skip.stop)
         self.hinge()
         warm = self.hinge()
         self.assertEqual((warm["memo"]["uncached"], warm["memo"]["bodies_run"], warm["memo"]["bodies_skipped"]),
@@ -342,7 +489,7 @@ class JointMemoTest(_Folder):
 
             @xbf("XBF/pegs.xbf")
             def pegs():
-                first, second, third = peg(), bd.Pos(10, 0, 0) * peg(), peg()
+                first, second, third = peg().shape, bd.Pos(10, 0, 0) * peg().shape, peg().shape
                 bd.RigidJoint("front", first, bd.Location())
                 bd.RigidJoint("rear", third, bd.Location())
                 SEEN.update(shared=first.joints is third.joints, first=sorted(first.joints), third=sorted(third.joints),
@@ -425,11 +572,8 @@ class NestedTest(_Folder):
         self.assertTrue(_has_point(_vertices(loaded, "arm"), _arm_tip(30)))
         self.assertEqual(loaded.structure()["kinematics"],
                          document.tree_structure(document.saved(path), path)["kinematics"])
-        for pose, q in (('{"elbow": 90}', 90.0), ('{"elbow": -10}', -10.0)):
-            out = self.folder / "posed.step"
-            code, _out, err = _run("export", str(path), str(out), "--no-daemon", "--pose", pose)
-            self.assertEqual(code, 0, err)
-            self.assertTrue(_has_point(_vertices(document.Loaded(out), "arm"), _arm_tip(q)), pose)
+        for pose, q in (({"elbow": 90}, 90.0), ({"elbow": -10}, -10.0)):
+            self.assertTrue(_has_point(_vertices(loaded, "arm", _sampled(path, pose)), _arm_tip(q)), pose)
 
     def test_a_mounted_sub_assembly_carries_its_inner_pairs_base(self) -> None:
         # The plate holds the inner pair's moving joint and no pair moves it: it is the
@@ -440,10 +584,20 @@ class NestedTest(_Folder):
         links = {link.name: link.members for link in found.links}
         self.assertEqual(links, {"base": [(0,)], "sub": [(1,), (1, 0)], "wheel": [(1, 1)]})
         self.assertEqual({pair.label: pair.links for pair in found.pairs}, {"mount": (0, 1), "spin": (1, 2)})
-        out = self.folder / "posed.step"
-        code, _out, err = _run("export", str(path), str(out), "--no-daemon", "--pose", '{"mount": 90}')
-        self.assertEqual(code, 0, err)
-        plate = _vertices(document.Loaded(out), "plate")
+        # ``posed`` moves the sub-assembly and the plate inside it once, as the sampler does.
+        self.build("mounted_up", """
+from cadgen.ap242 import posed
+from cadgen.engine import xbf
+from mounted import mounted
+
+
+@xbf("XBF/mounted_up.xbf")
+def mounted_up():
+    return posed(mounted().shape, {"mount": 90})
+""")
+        plate = _vertices(document.Loaded(self.folder / "XBF/mounted_up.xbf"), "plate")
+        np.testing.assert_allclose(plate, _vertices(document.Loaded(path), "plate", _sampled(path, {"mount": 90})),
+                                   atol=1e-9)
         # A quarter turn about +X through z 10: the plate's corner (15, 15, 11) stands at (15, -1, 25).
         self.assertTrue(_has_point(plate, np.array([15.0, -1.0, 25.0])), plate)
         self.assertFalse(_has_point(plate, np.array([15.0, 15.0, 11.0])), "the plate left where it was built")
@@ -533,6 +687,34 @@ class RefusalTest(_Folder):
         self.assertIn("not one revolute motion apart within its range", report["error"])
         self.assertFalse((self.folder / "XBF/bike.xbf").exists(), "a refused document is not written")
 
+    def test_a_joint_axis_far_from_the_part_holding_it_is_warned_as_a_local_axis(self) -> None:
+        # The base's own frame's Z, as if Axis were local: connect_to moves the disc to the origin.
+        report = self.build("rotor", ROTOR.format(axis="bd.Axis((0, 0, 5), (0, 0, 1))"))
+        self.assertEqual(report["kinematics"]["warnings"], [
+            "joint 'spin''s axis passes 300 mm from rotor/base, which holds it, farther than the part's own size: an "
+            "Axis is in world coordinates, so a local one lands near the origin and connect_to moves the other part "
+            "there; give the world axis, axis.located(part.location)"])
+        report = self.build("rotor", ROTOR.format(axis="bd.Axis((0, 0, 5), (0, 0, 1)).located(base.location)"))
+        self.assertNotIn("kinematics", report)
+
+    def test_a_joint_axis_on_the_body_its_part_is_fixed_to_is_no_local_axis(self) -> None:
+        world, local = "bd.Axis((680, 0, 300), (0, 1, 0))", "bd.Axis((180, 0, 0), (0, 1, 0))"
+        warning = ("Axis is in world coordinates, so a local one lands near the origin and connect_to moves the other "
+                   "part there; give the world axis, axis.located(part.location)")
+        # The servo alone: the axis passes far from it.
+        report = self.build("forearm", WRIST.format(mount="pass", axis=world))
+        self.assertEqual(report["kinematics"]["warnings"], [
+            "joint 'wrist''s axis passes 162 mm from forearm/servo, which holds it, farther than the part's own size: an "
+            + warning])
+        # Fastened to the tube, the servo holds the axis through the tube's end, as tom's does.
+        report = self.build("forearm", WRIST.format(mount=MOUNT, axis=world))
+        self.assertNotIn("kinematics", report)
+        # Given in the forearm's own frame, the axis passes near neither the servo nor the tube.
+        report = self.build("forearm", WRIST.format(mount=MOUNT, axis=local))
+        self.assertEqual(report["kinematics"]["warnings"], [
+            "joint 'wrist''s axis passes 470 mm from forearm/servo, which holds it, farther than the part's own size, "
+            "and near no part fixed to it: an " + warning])
+
     def test_two_unmoved_parts_with_a_revolute_between_them_are_two_links(self) -> None:
         report = self.build("bike", PIVOT.format(at=ON_AXIS, extra="pass"))
         self.assertNotIn("kinematics", report)
@@ -588,13 +770,14 @@ class ChainTest(_Folder):
         np.testing.assert_allclose(top[1][:3, 3], [0, 0, 95], atol=1e-9)  # at lift 90 on the axis through z = 5
 
 
-# Every kind of pair, coupler and motion segment on one plate: a pinion geared to a wheel and
-# driving a rack, a lead screw whose turn drives its own travel and a slide, a free ball.
+# Every kind of pair, coupler and sequence segment on one plate: a pinion geared to a wheel, a
+# crank driving a rack and a slide, a lead screw whose turn drives its own travel, a free ball.
 BENCH = """
 import math
 
 import build123d as bd
-from cadgen.engine import configuration, couple, motion, xbf
+from cadgen.ap242 import configuration_sequence, gear_pair, mechanism_state, rack_and_pinion_pair, screw_pair
+from cadgen.engine import xbf
 
 
 @xbf("XBF/bench.xbf")
@@ -608,7 +791,8 @@ def bench():
         joint.connect_to(part.joints[joint.label], **connect)
         parts.append(part)
 
-    for name, at, limits in (("pinion", (0, 0, 0), (-360, 360)), ("wheel", (60, 0, 0), (-720, 720))):
+    for name, at, limits in (("pinion", (0, 0, 0), (-360, 360)), ("wheel", (60, 0, 0), (-720, 720)),
+                             ("crank", (120, 40, 0), (-360, 360))):
         wheel = bd.Pos(*at) * bd.Cylinder(20, 8, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
         wheel.label = name
         mount(bd.RevoluteJoint(name, plate, axis=bd.Axis(at, (0, 0, 1)), angular_range=limits), wheel, at, (0, 0, 1),
@@ -626,12 +810,13 @@ def bench():
     mount(bd.BallJoint("ball", plate, bd.Location((0, -60, 10)), angular_range=((-30, 30), (-30, 30), (-30, 30))),
           ball, (0, -60, 10), (0, 0, 1), angles=(0, 0, 0))
     bench = bd.Compound(children=parts, label="bench")
-    couple(bench, "drive", pinion=1, wheel=-0.5, rack=0.1)
-    couple(bench, "feed", screw=(36, 1), slide=2)
-    configuration(bench, "home", drive=10, ball=(5, 0, 0))
-    motion(bench, "run", [(0, "home"), (1, {"drive": 100}), (2, {"drive": -100, "feed": 5})], ease="linear")
-    motion(bench, "ease", sweep={"feed": (0, 10)}, duration=1)
-    return motion(bench, "wobble", lambda t: {"ball": (20 * math.sin(math.pi * t), 0, 0)}, duration=2)
+    gear_pair(bench, "drive", pinion=1, wheel=-0.5)
+    rack_and_pinion_pair(bench, "traverse", crank=1, rack=0.1, slide=0.2)
+    screw_pair(bench, "feed", screw=10)
+    mechanism_state(bench, "home", drive=10, ball=(5, 0, 0))
+    configuration_sequence(bench, "run", [(0, "home"), (1, {"drive": 100}), (2, {"drive": -100, "feed": 180})], ease="linear")
+    configuration_sequence(bench, "ease", sweep={"feed": (0, 360)}, duration=1)
+    return configuration_sequence(bench, "wobble", lambda t: {"ball": (20 * math.sin(math.pi * t), 0, 0)}, duration=2)
 """
 # AP242's names, as Part 21 writes them (edition 4's domain model's where Part 21 has none):
 # the entities the subtree may hold, each attribute it may set, and the enumerations' values.
@@ -665,7 +850,7 @@ class ConformanceTest(_Folder):
         self.assertNotIn("kinematics", report, "no warning")
         loaded = document.Loaded(self.folder / "XBF/bench.xbf")
         found = loaded.mechanism
-        self.assertEqual(sorted(found.couplings), ["drive", "feed"])
+        self.assertEqual(sorted(found.couplings), ["drive", "feed", "traverse"])
         self.assertEqual(sorted(found.motions), ["ease", "run", "wobble"])
         root = next(label for label in mechanism._children_of(loaded.doc.Main())
                     if label.IsAttribute(Standard_GUID(mechanism.GUID)))
@@ -717,9 +902,181 @@ class ConformanceTest(_Folder):
         self.assertLessEqual({"REVOLUTE_PAIR_WITH_RANGE", "PRISMATIC_PAIR_WITH_RANGE", "CYLINDRICAL_PAIR_WITH_RANGE",
                               "SPHERICAL_PAIR_WITH_RANGE", "SCREW_PAIR", "KinematicPairWithMotionCoupling",
                               "INTERPOLATED_CONFIGURATION_SEGMENT"}, entities)
-        self.assertEqual(kinds - {None}, {"gear_pair", "rack_and_pinion_pair", "two_joint_coupler"})
+        self.assertEqual(kinds - {None}, {"gear_pair", "rack_and_pinion_pair"})
         self.assertEqual(interpolations - {None}, {"discontinuous_interpolation_type",
                                                    "synchronous_interpolation_type", "linear_interpolation_type"})
+
+
+# Every authoring name the mechanism has, on boxes only (no curved face, so no tessellation a
+# platform's maths could move): a gear pair, a rack and pinion, a screw, a mechanism state and two
+# configuration sequences (waypoints naming the state, and a sweep).
+NAMED = """
+import build123d as bd
+from cadgen.ap242 import configuration_sequence, gear_pair, mechanism_state, rack_and_pinion_pair, screw_pair
+from cadgen.engine import xbf
+
+PARTS = (("wheel_a", 20, "revolute"), ("wheel_b", 60, "revolute"), ("pinion", 100, "revolute"),
+         ("rack", 140, "linear"), ("nut", 180, "cylindrical"))
+
+
+@xbf("XBF/mechanism.xbf")
+def mechanism():
+    base = bd.Box(200, 40, 10, align=(bd.Align.MIN, bd.Align.MIN, bd.Align.MAX))
+    base.label = "base"
+    parts = []
+    for name, x, kind in PARTS:
+        part = bd.Pos(x, 20, 0) * bd.Box(16, 16, 8, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
+        part.label = name
+        axis = bd.Axis((x, 20, 0), (1, 0, 0) if kind == "linear" else (0, 0, 1))
+        if kind == "revolute":
+            bd.RevoluteJoint(name, base, axis=axis, angular_range=(-360, 360))
+        elif kind == "linear":
+            bd.LinearJoint(name, base, axis=axis, linear_range=(-40, 40))
+        else:
+            bd.CylindricalJoint(name, base, axis=axis, angular_range=(-720, 720), linear_range=(-20, 20))
+        bd.RigidJoint(name, part, bd.Plane(origin=axis.position, z_dir=axis.direction).location)
+        at = {"angle": 0} if kind == "revolute" else {"position": 0} if kind == "linear" else {"angle": 0, "position": 0}
+        base.joints[name].connect_to(part.joints[name], **at)
+        parts.append(part)
+    assembly = bd.Compound(children=[base, *parts], label="mechanism")
+    gear_pair(assembly, "mesh", wheel_a=1.0, wheel_b=-2.0)
+    rack_and_pinion_pair(assembly, "slide", pinion=1.0, rack=0.25)
+    screw_pair(assembly, "lead", nut=22.5)
+    mechanism_state(assembly, "quarter", mesh=90, slide=40, lead=180)
+    configuration_sequence(assembly, "cycle", [(0, "quarter"), (1, {"mesh": 0, "slide": -40}), (2, "quarter")])
+    return configuration_sequence(assembly, "spin", sweep={"lead": (0, 300)}, duration=2, ease="linear")
+"""
+# NAMED's document as cadgen 0.8.0 wrote it when its functions were ``couple``, ``configuration``
+# and ``motion`` (the same source with those three names), before the AP242 names replaced them;
+# its parts' keys since rewritten as the engine makes them now (``document.geometry_key``).
+NAMED_GOLDEN = Path(__file__).resolve().parent / "kinematics_golden" / "mechanism.xbf"
+_RECORD = b'{"schema":"cadgen.engine closure/1",'
+
+
+def _cut_record(data: bytes) -> tuple[bytes, int, bytes]:
+    """An xbf as the bytes before its provenance record (the closure: the engine's and the
+    source's digests and symbol names, which any edit to either changes), the record's length,
+    and the bytes after it and its padding."""
+    at = data.index(_RECORD)
+    end = data.index(b"\x00", at)
+    length = json.JSONDecoder().raw_decode(data[at:end].decode("ascii"))[1]
+    return data[:at], length, data[at + length:].lstrip(b"\x00")
+
+
+def _close(new: Any, old: Any, where: str = "document") -> None:
+    """``new`` is ``old`` to a rounding: every float within 1e-9 of it, everything else equal. A
+    platform's arithmetic leaves its own last bits in a computed frame: the golden, written on macOS
+    arm64, holds 1e-15 in three pairs' link frames where Linux and Windows write 0.0 (the same bytes
+    on both), and some zeros as -0.0. On macOS the renamed functions write the golden's bytes exactly."""
+    if dataclasses.is_dataclass(new) and not isinstance(new, type):
+        new, old = dataclasses.asdict(new), dataclasses.asdict(old)
+    if isinstance(new, np.ndarray):
+        new, old = new.tolist(), np.asarray(old).tolist()
+    if isinstance(new, dict):
+        assert isinstance(old, dict) and set(new) == set(old), f"{where}: keys {sorted(new)} != {sorted(old)}"
+        for key in new:
+            _close(new[key], old[key], f"{where}.{key}")
+    elif isinstance(new, (list, tuple)):
+        assert isinstance(old, (list, tuple)) and len(new) == len(old), f"{where}: {new!r} != {old!r}"
+        for at, (a, b) in enumerate(zip(new, old)):
+            _close(a, b, f"{where}[{at}]")
+    elif isinstance(new, float) and isinstance(old, (int, float)) and not isinstance(old, bool):
+        assert math.isclose(new, old, rel_tol=1e-12, abs_tol=1e-9), f"{where}: {new!r} != {old!r}"
+    else:
+        assert new == old, f"{where}: {new!r} != {old!r}"
+
+
+def _topology(shape: Any) -> dict[str, Any]:
+    """A part's shape as the document holds it: how many of each sub-shape, and its vertices."""
+    from OCP.BRep import BRep_Tool
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_SHELL, TopAbs_SOLID, TopAbs_VERTEX
+    from OCP.TopExp import TopExp
+    from OCP.TopoDS import TopoDS
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+
+    found: dict[str, Any] = {}
+    for name, kind in (("solids", TopAbs_SOLID), ("shells", TopAbs_SHELL), ("faces", TopAbs_FACE),
+                       ("edges", TopAbs_EDGE), ("vertices", TopAbs_VERTEX)):
+        mapped = TopTools_IndexedMapOfShape()
+        TopExp.MapShapes_s(shape, kind, mapped)
+        found[name] = mapped.Extent()
+        if kind == TopAbs_VERTEX:
+            points = [BRep_Tool.Pnt_s(TopoDS.Vertex_s(mapped.FindKey(at))) for at in range(1, mapped.Extent() + 1)]
+            found["points"] = [[point.X(), point.Y(), point.Z()] for point in points]  # in the file's order
+    return found
+
+
+class AuthoringNamesTest(_Folder):
+    def test_the_document_is_the_one_the_old_names_wrote_but_for_its_provenance(self) -> None:
+        # The functions' names are no part of the document: renamed, it is what the old names
+        # wrote -- every name, part, placement and the whole mechanism, read back -- and its header
+        # moves only where its provenance record's size does. Its bytes past the record are the
+        # golden's on the platform that wrote it (macOS) alone: a frame the mechanism computes keeps
+        # that platform's last bits (``_close``), so the documents are compared read, not as bytes.
+        self.build("mechanism", NAMED)
+        written = self.folder / "XBF/mechanism.xbf"
+        new_head, new_length, new_body = _cut_record(written.read_bytes())
+        old_head, old_length, old_body = _cut_record(NAMED_GOLDEN.read_bytes())
+        self.assertEqual(len(new_body), len(old_body))
+        new, old = document.Loaded(written), document.Loaded(NAMED_GOLDEN)
+        _close({key: value for key, value in new.structure().items() if key not in ("path", "version")},
+               {key: value for key, value in old.structure().items() if key not in ("path", "version")})
+        self.assertIsNotNone(new.mechanism)
+        _close(new.mechanism, old.mechanism, "mechanism")
+        self.assertEqual(len(new.prototypes), len(old.prototypes))
+        for made, golden in zip(new.prototypes, old.prototypes):
+            _close(_topology(made.shape), _topology(golden.shape), f"part {made.name}")
+        # The golden's writer names the format it was written in; a format bump since moves that name alone.
+        from cadgen.engine.previous import FORMAT
+
+        old_head = old_head.replace(b"cadgen.engine xbf/5 ", f"cadgen.engine {FORMAT} ".encode())
+        self.assertEqual(len(new_head), len(old_head))
+        # The header's words end where the record starts (its length is the last of them).
+        moved = sorted({len(new_head) - 4 * -(-(len(new_head) - at) // 4)
+                        for at, (a, b) in enumerate(zip(old_head, new_head)) if a != b})
+        self.assertEqual(moved[-1], len(new_head) - 4)  # the record's padded length, just before it
+
+        def word(head: bytes, at: int) -> int:
+            return int.from_bytes(head[at:at + 4], "little")
+
+        delta = word(new_head, len(new_head) - 4) - word(old_head, len(old_head) - 4)
+        self.assertNotEqual(new_length, old_length)  # the names are in the record, so it moved
+        for at in moved[:-1]:  # a section's offset, past the record
+            self.assertEqual(word(new_head, at) - word(old_head, at), delta, f"the header's word at {at}")
+
+
+class ReaderTest(unittest.TestCase):
+    """The mechanism reader never iterates a bound label list from Python: the iterator ends in
+    a C++ exception, about 3 ms a list, which over a large mechanism's thousands of reference
+    lists was ten seconds of every read. Round-trips a mechanism with every reference list kind
+    (ground, pair links, states, a motion's configuration and values, a coupling) unchanged."""
+
+    def test_read_copies_reference_lists_without_iterating(self) -> None:
+        from OCP.TDF import TDF_LabelList
+
+        pairs = [mechanism.Pair("a", "revolute", (0, 1), None, ((0.0, 90.0),)),
+                 mechanism.Pair("b", "revolute", (1, 2), None, ((None, None),))]
+        written = mechanism.Mechanism(
+            "arm", [mechanism.Link("base", []), mechanism.Link("upper", []), mechanism.Link("lower", [])], 0, pairs,
+            {"a": (10.0,), "b": (0.0,)}, {"up": {"a": (45.0,), "b": (30.0,)}},
+            motions={"wave": mechanism.Motion("wave", [(0.0, "up", {}), (1.0, None, {"a": (5.0,), "b": (6.0,)})], "linear")},
+            couplings={"pair": mechanism.Coupling("pair", {"a": (1.0,), "b": (-2.0,)})})
+        doc = document._new_document()
+        mechanism.write(doc, written, lambda path: [])
+        iterate = TDF_LabelList.__iter__
+
+        def refused(_self: Any) -> Any:
+            raise AssertionError("a reference list iterated from Python")
+
+        TDF_LabelList.__iter__ = refused
+        try:
+            read = mechanism.read(doc, {})
+        finally:
+            TDF_LabelList.__iter__ = iterate
+        self.assertEqual(read.signature(), written.signature())
+        self.assertEqual((read.as_built, read.configurations), (written.as_built, written.configurations))
+        self.assertEqual(read.motions, written.motions)
+        self.assertEqual(read.couplings, written.couplings)
 
 
 if __name__ == "__main__":

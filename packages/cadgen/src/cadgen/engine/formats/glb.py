@@ -36,6 +36,7 @@ import numpy as np
 
 from cadgen.engine.formats import Foreign, FormatError, Part, Placed, assemble, files_of
 from cadgen.engine.formats.buffer import buffer
+from cadgen.engine.formats.gltf import look_extensions
 
 __all__ = ["glb_file", "read_glb"]
 
@@ -74,6 +75,18 @@ def _quiet() -> Any:
 def _loud(kept: Any) -> None:
     for printer, level in kept:
         printer.SetTraceLevel(level)
+
+
+def _whole_from_itself(path: Path, gltf: dict[str, Any]) -> None:
+    """Refuse a GLB that names a buffer or image outside itself. OCCT's reader would resolve
+    such a ``uri`` against the file's folder and read that file as the model's bytes; a GLB is
+    read whole from itself, as the numpy reader (``gltf._buffers``) already requires."""
+    for kind in ("buffers", "images"):
+        for index, item in enumerate(gltf.get(kind) or []):
+            uri = (item or {}).get("uri") if isinstance(item, dict) else None
+            if uri is not None and not (isinstance(uri, str) and uri.startswith("data:") and ";base64," in uri):
+                raise FormatError(f"{path.name}: {kind[:-1]} {index} is a file outside the GLB ({uri}); "
+                                  "a GLB is read whole from itself")
 
 
 def _document(path: Path, z_up: bool) -> Any:
@@ -219,22 +232,7 @@ def _vis_material(label: Any, authored: list[dict[str, Any]]) -> tuple[tuple, di
     name = raw.ToCString() if raw is not None else _name(label)
     found: dict[str, Any] = {"name": name or "glTF material", "color": list(colour), "metallic": round(metallic, 6),
                              "roughness": round(roughness, 6), "ior": round(ior, 6), "emissive": emissive}
-    extensions = _extensions(authored, name, colour, metallic, roughness)
-    if "KHR_materials_ior" in extensions:
-        found["ior"] = float(extensions["KHR_materials_ior"].get("ior", 1.5))
-    if "KHR_materials_transmission" in extensions:
-        found["transmission"] = float(extensions["KHR_materials_transmission"].get("transmissionFactor", 0.0))
-        volume = extensions.get("KHR_materials_volume") or {}
-        if volume.get("attenuationColor"):
-            found["transmissionColor"] = [float(c) for c in volume["attenuationColor"]]
-    if "KHR_materials_clearcoat" in extensions:
-        coat = extensions["KHR_materials_clearcoat"]
-        found["coat"] = float(coat.get("clearcoatFactor", 0.0))
-        found["coatRoughness"] = float(coat.get("clearcoatRoughnessFactor", 0.0))
-    if "KHR_materials_anisotropy" in extensions:
-        found["anisotropy"] = float(extensions["KHR_materials_anisotropy"].get("anisotropyStrength", 0.0))
-    if "KHR_materials_emissive_strength" in extensions:
-        found["emissiveStrength"] = float(extensions["KHR_materials_emissive_strength"].get("emissiveStrength", 1.0))
+    found.update(look_extensions(_extensions(authored, name, colour, metallic, roughness)))
     aspect = Graphic3d_AspectFillArea3d()
     material.FillAspect(aspect)
     texture = aspect.TextureSet() if aspect.ToMapTexture() else None
@@ -266,6 +264,7 @@ def read_glb(path: Path) -> tuple[list[Part], list[Placed], dict[str, Any], list
 
     path = Path(path)
     gltf = _json(path)
+    _whole_from_itself(path, gltf)
     z_up = any(str(((node or {}).get("extras") or {}).get("cadUpAxis") or "").lower() == "z"
                for node in gltf.get("nodes") or [] if isinstance(node, dict))
     document = _document(path, z_up)
@@ -284,7 +283,19 @@ def read_glb(path: Path) -> tuple[list[Part], list[Placed], dict[str, Any], list
         TDF_Tool.Entry_s(label, text)
         return text.ToCString()
 
+    # OCCT keeps a node listed by several parents as one label they share; the walk places it once
+    # for each, so a small file can name an exponential tree: bounded as a document's assembly is.
+    from cadgen.engine.document import MAX_ASSEMBLY_DEPTH, MAX_OCCURRENCES
+
+    visited = 0
+
     def visit(label: Any, world: np.ndarray, names: list[str], name: str) -> dict[str, Any]:
+        nonlocal visited
+        visited += 1
+        if visited > MAX_OCCURRENCES:
+            raise FormatError(f"{path.name}: its node tree names more than {MAX_OCCURRENCES} occurrences")
+        if len(names) > MAX_ASSEMBLY_DEPTH:
+            raise FormatError(f"{path.name}: its node tree is deeper than {MAX_ASSEMBLY_DEPTH} levels")
         if XCAFDoc_ShapeTool.IsReference_s(label):
             referred = TDF_Label()
             XCAFDoc_ShapeTool.GetReferredShape_s(label, referred)

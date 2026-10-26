@@ -1228,8 +1228,6 @@ class ViewTest(_Folder):
     def test_a_step_of_a_document_with_views_is_written_and_checked_without_them(self) -> None:
         """Review Focus 5: a STEP carries no view (OCCT's writer writes none), so a view never stops
         one, and the check matches the GD&T alone."""
-        from cadgen.engine.export import viewer
-
         self.build(views())
         result = ap242.verify(pmi.read(self.xbf), self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
@@ -1241,14 +1239,13 @@ class ViewTest(_Folder):
         export.translate(self.xbf, "step", self.folder / "again.step", log=said.append)
         self.assertEqual([line for line in said if "pmi" in line], [])
         self.assertEqual(pmi.dropped(export.Source.read(self.xbf).view(), "step"), [])
-        # A part given views alone: its STEP is written, carrying no PMI, and the viewer offers it.
+        # A part given views alone: its STEP is written, carrying no PMI, and exported again, written.
         report = self.build(VIEWS_ALONE)
         self.assertEqual(report["pmi"], {"annotations": 0, "problems": []})
         structure = document.Loaded(self.xbf).structure()
         self.assertEqual((structure["pmi"], [view["name"] for view in structure["pmi_views"]]), ([], ["iso", "top"]))
         self.assertEqual(pmi.read(self.step), [])
-        [step_row] = [row for row in viewer.options(export.Source.read(self.xbf)) if row["format"] == "step"]
-        self.assertEqual((step_row["reason"], step_row["pmi"]), (None, False))
+        self.assertGreater(export.translate(self.xbf, "step", self.folder / "again.step"), 0)
 
 
 # A plate with a hole through it, datums A and B on its bottom and front, the hole's size, and
@@ -1534,7 +1531,13 @@ class FaceKindTest(_Folder):
         name = self.hole_name()
         self.named(ROUND, name)
         self.named(SQUARE, name)
-        report = self.named(SQUARE, name)  # built again, unchanged: its last build named the plane
+        # Built again unchanged, the model is not run (its document is held with the closure it has
+        # now) and says nothing; run again, its code edited to the same square, its last build named
+        # the plane.
+        report = self.named(SQUARE, name)
+        self.assertEqual((report["cache"]["used"], report.get("pmi")), (True, None))
+        report = self.named(SQUARE.replace("12, 12", "12.0, 12"), name)
+        self.assertEqual(report["bodies"], {"pmi_plate.py::pmi_plate": "run"})
         self.assertNotIn("warnings", report["pmi"])
 
     def test_a_face_the_code_selects_is_not_held_to_its_kind(self) -> None:
@@ -1754,38 +1757,50 @@ class RefusedTest(_Folder):
             pmi.annotate(box, pmi.datum("A", top), pmi.datum("B", top),
                          pmi.position("p1", top, 0.1, datums=["A", "B"]), pmi.position("p2", top, 0.1, datums=["B", "A"]))
 
-    def test_an_export_that_makes_the_document_again_is_refused(self) -> None:
-        self.build(plate())
-        with self.assertRaisesRegex(export.ExportRefused, "PMI annotation"):
-            export.translate(self.xbf, "step", self.folder / "part.step", part="plate")
-        with self.assertRaisesRegex(export.ExportRefused, "PMI annotation"):
-            export.translate(self.xbf, "xbf", self.folder / "part.xbf", part="plate")
+    def unsaved(self, model: str) -> export.Source:
+        """``model`` built with no xbf of its own declared: its document as the build holds it."""
+        self.build(model.replace('@xbf(out="XBF/pmi_plate.xbf")\n', ""))
+        held = engine_build.held(self.folder / "pmi_plate.py", "pmi_plate")
+        self.assertIsNone(held.path)
+        return held
+
+    def test_an_xbf_of_a_models_document_is_its_own_and_carries_its_pmi(self) -> None:
+        """An xbf written from a model's document (Save As, ``cadgen export ID m.xbf``) is the
+        document's own bytes, the ones its declared xbf would hold: its annotations, notes, views and
+        notes library all kept. Its STEP is the document's own, its GD&T checked in the file."""
+        for model in (plate(), views()):
+            held = self.unsaved(model)
+            written = self.folder / "part.xbf"
+            export.translate(held, "xbf", written)
+            structure = document.Loaded(written).structure()
+            for key in ("pmi", "pmi_views", "pmi_library"):
+                self.assertTrue(held.structure.get(key) or key != "pmi", key)
+                self.assertEqual(structure.get(key), held.structure.get(key), key)
+        held = self.unsaved(plate())
+        export.translate(held, "step", self.folder / "part.step")
+        checked = ap242.verify(held.structure["pmi"], self.folder / "part.step")
+        self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (9, 9, []))
         # A mesh carries no PMI, as it carries no B-rep: written.
-        export.translate(self.xbf, "stl", self.folder / "plate.stl")
+        export.translate(held, "stl", self.folder / "plate.stl")
 
-    def test_an_xbf_made_again_is_refused_for_views_or_a_library_alone(self) -> None:
-        """An xbf made again carries none of the code's PMI: views alone, or a notes library alone,
-        would be lost as annotations would (law 17), so it is refused, naming them; a STEP carries
-        neither, whole or not, and is written."""
-        from cadgen.engine.export import viewer
+    def test_an_xbf_made_again_is_refused_for_what_it_would_drop(self) -> None:
+        """A document this engine wrote held without its XCAF document would be made again (law 17),
+        carrying none of the code's PMI -- annotations, views alone, or a notes library alone -- so its
+        xbf is refused, naming them."""
+        from types import SimpleNamespace
 
-        library = VIEWS_ALONE.replace('pmi.view("iso", camera="iso"), pmi.view("top", camera="top")',
-                                      'library={"primer-mask": "Mask these features before coating with primer"}')
-        for model, said in ((VIEWS_ALONE, r"plate holds 2 named view\(s\) \(iso, top\), and an xbf written from "
-                                          r"it is a document made again, which carries none yet: export it as built, "
-                                          r"whole"),
-                            (library, r"plate holds a notes library \(primer-mask\), and an xbf written from it")):
-            self.build(model)
+        entry = {"id": "hole", "kind": "dimension", "status": "ok", "problem": None,
+                 "refs": [{"role": "target", "written": "face 7", "status": "ok"}]}
+        for structure, said in (({"pmi": [entry]}, r"plate holds 1 PMI annotation\(s\), and an xbf written from it is a "
+                                                    r"document made again, which carries none yet"),
+                                ({"pmi": [], "pmi_views": [{"name": "iso"}, {"name": "top"}]},
+                                 r"plate holds 2 named view\(s\) \(iso, top\)"),
+                                ({"pmi": [], "pmi_library": [{"name": "primer-mask"}]},
+                                 r"plate holds a notes library \(primer-mask\)")):
+            source = SimpleNamespace(structure=structure, foreign=False, xcaf=None, name="plate")
             with self.assertRaisesRegex(export.ExportRefused, said):
-                export.translate(self.xbf, "xbf", self.folder / "part.xbf", part="plate")
-            self.assertFalse((self.folder / "part.xbf").exists())
-            xbf_row = next(row for row in viewer.options(export.Source.read(self.xbf), part="plate")
-                           if row["format"] == "xbf")
-            self.assertTrue(xbf_row["pmi"])
-            self.assertRegex(xbf_row["reason"], said)
-            for part in (None, "plate"):
-                export.translate(self.xbf, "step", self.folder / "again.step", part=part)
-                self.assertTrue((self.folder / "again.step").is_file())
+                pmi.refuse_dropped(SimpleNamespace(source=source), "xbf")
+            pmi.refuse_dropped(SimpleNamespace(source=SimpleNamespace(**{**vars(source), "xcaf": object()})), "xbf")
 
 
 class _Foreign:
@@ -1928,7 +1943,8 @@ class ForeignTest(unittest.TestCase):
             self.assertEqual(sorted(map(_meaning, pmi.read(self.folder / "again.step"))), read)
 
     def test_an_export_of_a_foreign_document_says_what_it_leaves_out(self) -> None:
-        """A partial STEP is a document made again, which carries no PMI: written, and said."""
+        """A STEP drops what is linked to no geometry: of a document another system wrote, written,
+        and said."""
         import build123d as bd
 
         from cadgen.engine.worker import _export
@@ -1936,15 +1952,15 @@ class ForeignTest(unittest.TestCase):
         box = bd.Box(10, 10, 10)
         foreign = _Foreign(box)
         foreign.tolerance("Flatness", box.faces().sort_by(bd.Axis.Z)[-1], 0.2)
-        vendor = foreign.step(self.folder / "vendor.step")
+        foreign.tolerance("Flatness", [], 0.3)
+        vendor = foreign.xbf(self.folder / "vendor.xbf")
         said: list[str] = []
         part = self.folder / "part.step"
-        _export({"source": {"path": str(vendor)}, "destinations": [str(part)], "part": document.Loaded(vendor).name},
-                said.append)
-        self.assertTrue(part.is_file())
+        _export({"source": {"path": str(vendor)}, "destinations": [str(part)]}, said.append)
+        self.assertEqual([(entry["id"], entry["status"]) for entry in pmi.read(part)], [("geometric_tolerance-1", "ok")])
         self.assertEqual([text for text in said if text.startswith("warning: pmi:")],
-                         ["warning: pmi: part.step: geometric_tolerance-1 is not carried whole: a partial STEP is a "
-                          "document made again, which carries no PMI"])
+                         ["warning: pmi: part.step: geometric_tolerance-2 is not carried whole: missing: the file "
+                          "links it to no face, edge or point of a part"])
 
 
 class FixtureTest(_Folder):

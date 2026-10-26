@@ -2,16 +2,17 @@
 ordinary Python scripts call decorated models explicitly.
 
     python SCRIPT.py                                 the models the script explicitly calls
-    cadgen build SOURCE | - [--model NAME] [--name N]  source text (stdin with -), an output required
-        [--xbf [F]] [--step [F]] [--glb [F]] [--stl [F]] [--threemf [F]] [--dxf [F]] [--json] [--verify]
-        [--no-daemon]
-    cadgen export SRC DST [DST ...] [--pose NAME|JSON] [--part OWNER] [--no-inputs] [--no-daemon] [--json]
+    cadgen export SRC DST [DST ...] [--json]
     cadgen snapshot SRC OUT.png [--display MODE|exploded=A|JSON] [--camera PRESET|az:el|JSON|authored] [--grid]
         [--preview] [--pose NAME|JSON] [--annotation FILE] [--measurements FILE] [--width N] [--height N]
         [--size-profile P] [--json]
     cadgen serve DOC [--port N] [--three DIR]
-    cadgen status [--json] | stop | daemon
-    cadgen inspect DOC [REF]                           a document's build closure, or what a ref names (``refs``)
+    cadgen status [--json] | stop [--json] | server [--port N] [--rotate-token]
+    cadgen delete DOC [DOC ...] [--json]             documents deleted: record, cached document, the engine's copy
+    cadgen inspect DOC [REF]                           what a document holds and its build closure, or what a ref names (``refs``)
+
+SRC and DOC are an on-disk CAD file's path or a document's id (``ids``): a model's id is what
+``python SCRIPT.py`` prints for it. A script is never a source: no verb imports or builds one.
 
 cadgen's command line runs each verb by its name (``parser_for``, ``run``); the engine's own entry,
 ``python -m cadgen.engine VERB ...``, takes the same verbs as subcommands (``main``). A verb's failure
@@ -32,71 +33,64 @@ from typing import Any, Callable
 __all__ = ["VERBS", "Failed", "answered", "build_parser", "main", "parser_for", "run", "weighed",
            "inspect_main", "inspect_parser"]
 
-FILE_FLAGS = ("xbf", "step", "glb", "stl", "threemf", "dxf")
-_SUFFIX = {"xbf": ".xbf", "step": ".step", "glb": ".glb", "stl": ".stl", "threemf": ".3mf", "dxf": ".dxf"}
-# Where a file flag with no path writes, in the working folder.
-_DEFAULT = {"xbf": "XBF/<name>.xbf", "step": "<name>.step", "glb": "<name>.glb", "stl": "<name>.stl",
-            "threemf": "<name>.3mf", "dxf": "<name>.dxf"}
-
-
-def _build_arguments(build: argparse.ArgumentParser) -> None:
-    build.usage = ("%(prog)s SOURCE [--model NAME] [--name N] [--xbf [F]] [--step [F]] [--glb [F]] [--stl [F]] [--threemf [F]] "
-                   "[--dxf [F]] [--json] [--verify] [--profile] [--no-daemon]")
-    build.add_argument("source", metavar="SOURCE", help="the code (- reads it from stdin)")
-    build.add_argument("--model", metavar="NAME", help="build or update the named document in memory")
-    build.add_argument("--name", metavar="N",
-                       help="the code's name: its model, its files' default names and its warm worker (default: model)")
-    for kind in FILE_FLAGS:
-        build.add_argument(f"--{kind}", nargs="?", const=True, metavar="F",
-                           help=f"write the {kind} at F (default: {_DEFAULT[kind]} in the working folder)")
-    build.add_argument("--profile", action="store_true", help="profile actual worker execution, preserving cache hits")
-    build.add_argument("--json", action="store_true", help="print the report as JSON")
-    build.add_argument("--verify", action="store_true",
-                       help="run every function the engine would replay and compare its result with the logged one")
-    build.add_argument("--no-daemon", action="store_true", help="build in this process (cold, no worker kept)")
-
 
 def _export_arguments(export: argparse.ArgumentParser) -> None:
-    export.add_argument("source", metavar="SRC", help="a model address (SCRIPT::NAME or code::NAME), an .xbf, or a .step")
+    export.add_argument("source", metavar="SRC", help="an .xbf, a .step, a document id (a model's, which "
+                                                      "python SCRIPT.py prints), or a mesh file (.glb, .stl, "
+                                                      ".3mf), which exports to the other two mesh kinds")
     export.add_argument("destinations", nargs="+", metavar="DST",
-                        help=".xbf (from a STEP, or with --part), .step, .glb, .stl, .3mf or .dxf (of a planar "
-                             "document); or .cadz (from an xbf: it, its build closure's source files and its inputs, "
-                             "zipped)")
-    export.add_argument("--no-inputs", action="store_true", help="a .cadz without the closure's input files")
-    export.add_argument("--pose", help="a configuration's name, or joint and coupling values as JSON "
-                                       "('{\"elbow\": 45}', '{\"curl\": 0.6}'): the mechanism posed there; as built "
-                                       "without it")
-    export.add_argument("--part", metavar="OWNER",
-                        help="one part or assembly, as a ref names it (hand/finger.2, palm; cadgen.engine.refs): that "
-                             "subtree as a document of its own")
-    export.add_argument("--no-daemon", action="store_true", help="export in this process (cold, no worker kept)")
+                        help=".xbf (from a STEP), .step, .glb, .stl, .3mf or .dxf (of a planar document): the "
+                             "document as its code built it")
     export.add_argument("--json", action="store_true", help="print what was written as JSON")
 
 
 def _serve_arguments(serve: argparse.ArgumentParser) -> None:
-    serve.add_argument("document", help="a model address (SCRIPT::NAME or code::NAME), an .xbf, or a STEP")
+    serve.add_argument("document", help="an .xbf, a STEP, or a document id")
     serve.add_argument("--port", type=int, default=0)
     serve.add_argument("--three", help="the three.js package folder (default: the nearest node_modules/three)")
 
 
 def _status_arguments(status: argparse.ArgumentParser) -> None:
-    status.add_argument("--json", action="store_true", help="the daemon's answer as JSON")
+    status.add_argument("--json", action="store_true", help="the server's answer as JSON")
 
 
-def _no_arguments(_parser: argparse.ArgumentParser) -> None:
-    return None
+def _stop_arguments(stop: argparse.ArgumentParser) -> None:
+    stop.add_argument("--json", action="store_true", help="what was stopped as JSON")
+
+
+def _delete_arguments(delete: argparse.ArgumentParser) -> None:
+    delete.add_argument("documents", nargs="+", metavar="DOC",
+                        help="a document's id, a model's script (every document recorded of it), or a CAD file "
+                             "a page opened; your own files -- a script, its declared files, an opened file -- "
+                             "are never touched")
+    delete.add_argument("--json", action="store_true", help="what was deleted as JSON")
+
+
+def _server_arguments(server: argparse.ArgumentParser) -> None:
+    server.add_argument("--port", type=int, default=None,
+                        help="the HTTP port the engine takes, refused when another process holds it (else "
+                             "CADGEN_ENGINE_PORT, else 3245 or the port this installation rolled to); 0 takes "
+                             "any free port")
+    server.add_argument("--rotate-token", action="store_true",
+                        help="replace this installation's page token first: every link shared before stops working")
 
 
 def _inspect_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--query", choices=("closure", "geometry", "build"),
-                        help="inspect closure, geometry (requires REF), or build metadata; never builds a model")
-    parser.add_argument("document", help="a model address (SCRIPT::NAME or code::NAME), or an .xbf")
+    parser.add_argument("--query", choices=("summary", "closure", "geometry", "build"),
+                        help="inspect a summary and the closure (the default without REF), the closure alone, "
+                             "geometry (requires REF), or build metadata; never builds a model")
+    parser.add_argument("--json", action="store_true",
+                        help="without REF, the summary and the closure as one JSON object (a REF's answer is JSON)")
+    parser.add_argument("document", help="an .xbf, a STEP, or a document id; a GLB says its nodes, meshes and "
+                                          "animations")
     parser.add_argument("ref", nargs="?", help="[FILE#][OWNER/]ELEMENT or [FILE#]OWNER (cadgen.engine.refs): OWNER a "
                                                "part's or an assembly's label, or its occurrence path (hand/finger.2); "
                                                "ELEMENT an element name (f:..., e:..., v:...) or face N (edge, vertex). "
                                                "An element answers what the kernel measures of it, placed where its "
-                                               "occurrence stands, and what made it; a part or an assembly its volume "
-                                               "and mass. Without it: the build closure")
+                                               "occurrence stands, and what made it; a part or an assembly its volume, "
+                                               "mass and world bounds, a part its placement. Without it: what the document holds (its state, parts, "
+                                               "bounds, volume, materials, joints, couplings, states, sequences, animations and "
+                                               "declared files), then its build closure")
 
 
 def _snapshot_arguments(parser: argparse.ArgumentParser) -> None:
@@ -113,7 +107,7 @@ def _snapshot(args: argparse.Namespace, prog: str) -> int:
 
 def build_parser(prog: str = "python -m cadgen.engine") -> argparse.ArgumentParser:
     """The engine's own command: its verbs as subcommands, each with its options."""
-    parser = argparse.ArgumentParser(prog=prog, description="Build, export, draw and serve cadgen engine documents.")
+    parser = argparse.ArgumentParser(prog=prog, description="Export, draw and serve cadgen engine documents.")
     verbs = parser.add_subparsers(dest="verb", required=True)
     for verb, (help_text, arguments, _runner) in VERBS.items():
         arguments(verbs.add_parser(verb, help=help_text, description=help_text))
@@ -121,7 +115,7 @@ def build_parser(prog: str = "python -m cadgen.engine") -> argparse.ArgumentPars
 
 
 def parser_for(verb: str, prog: str | None = None) -> argparse.ArgumentParser:
-    """One verb's parser, as a command of its own (``cadgen build``, ``cadgen export``, ...)."""
+    """One verb's parser, as a command of its own (``cadgen export``, ``cadgen snapshot``, ...)."""
     help_text, arguments, _runner = VERBS[verb]
     parser = argparse.ArgumentParser(prog=prog or f"cadgen {verb}", description=help_text)
     arguments(parser)
@@ -151,24 +145,25 @@ def answered(runner: Callable[[argparse.Namespace, str], int], args: argparse.Na
     status 1; else its words on stderr and its own status. A failure no verb expected is said in
     JSON too, then raised as ever (its traceback the person's, and a crash the command reports)."""
     as_json = bool(getattr(args, "json", False))
+    from cadgen.engine import client
+
+    # A verb that starts the engine says so, once, on stderr: a person can tell a fresh engine (its
+    # first build cold, every document read again) from the one they had.
+    client.on_started = lambda: print("engine started", file=sys.stderr, flush=True)
     try:
         return runner(args, prog)
-    except Failed as failure:
+    except (Failed, ConnectionError) as failure:
+        # ``ConnectionError``: the engine not reached (none runs and none can start: a sandbox, a
+        # folder refused), said in its one line, never as a crash.
         if as_json:
             print(json.dumps({"ok": False, "error": str(failure)}, separators=(",", ":")))
             return 1
         print(f"{prog}: {failure}", file=sys.stderr)
-        return failure.status
+        return getattr(failure, "status", 1)
     except Exception as error:
         if as_json:
             print(json.dumps({"ok": False, "error": f"{type(error).__name__}: {error}"}, separators=(",", ":")))
         raise
-
-
-def _pose(value: str | None) -> Any:
-    from cadgen.engine.snapshot import parse_pose
-
-    return parse_pose(value)
 
 
 def _shown(path: Any) -> str:
@@ -180,11 +175,30 @@ def _shown(path: Any) -> str:
         return str(path)
 
 
+def _given(path: Any, given: Any = ()) -> str:
+    """A path a ``wrote`` line names, as the command was given it: the argument that names it,
+    as typed (absolute stays absolute, a relative one stays relative to the working folder);
+    one no argument names, relative where it lies under the working folder and whole where it
+    does not. A job's pictures are named whole: its packet, not the command, gave them."""
+    for typed in [given] if isinstance(given, (str, os.PathLike)) else given:
+        try:
+            if os.path.realpath(os.path.expanduser(typed)) == os.path.realpath(path):
+                return os.fspath(typed)
+        except (TypeError, ValueError, OSError):
+            continue
+    text = os.fspath(path)
+    try:
+        relative = os.path.relpath(text)
+    except ValueError:
+        return text
+    return text if relative == os.pardir or relative.startswith(os.pardir + os.sep) else relative
+
+
 def _files(report: dict[str, Any]) -> list[str]:
     found = []
     for path, row in (report.get("files") or {}).items():
         state = "written" if row.get("written") else "kept"
-        found.append(f"{_shown(path)} ({state}, {row.get('bytes', 0) / 1e6:.1f} MB)")
+        found.append(f"{_shown(path)} ({state}, {_bytes(row.get('bytes'))})")
     return found
 
 
@@ -194,23 +208,31 @@ def _describe(report: dict[str, Any], wall: float, fresh: bool | None) -> str:
                        + "".join(f"\n    {text}" for text in _files(row))
                        for name, row in (report.get("child_models") or {}).items())
     if not report.get("ok"):
-        return f"failed {report.get('model')}" + children
+        refused = report.get("failedAt")  # an OCCT exception: the call the kernel refused
+        return (f"failed {report.get('model')}" + (f" at {refused}: the kernel refused it" if refused else "")
+                + ("; serving its previous good build" if report.get("previous") else "") + children)
     timings = report.get("timings", {})
     memo = report.get("memo", {})
     bodies = list((report.get("bodies") or {}).values())
     files = _files(report)
     worker = "" if fresh is None else (" cold" if fresh else " warm")
     if memo.get("bodies_loaded"):
-        line = (f"took {report['model']}{worker} in {wall:.2f}s: its file holds the model's key, "
-                f"{memo.get('bodies_loaded', 0)} bodies loaded, nothing ran")
+        taken = (report.get("cache") or {}).get("from")
+        holder = "the engine's cache" if taken == "cache" else "its document in memory"
+        line = (f"took {report['model']}{worker} in {wall:.2f}s: {holder} holds the model's key, "
+                f"{memo.get('bodies_loaded', 0)} bodies loaded, nothing ran") + _waited(report, "took")
+        line += _delta(report.get("delta"))
     else:
         counted = {status: bodies.count(status) for status in ("run", "replayed") if bodies.count(status)}
         shown = ", ".join(f"{count} {status}" for status, count in counted.items()) or "none"
         stages = ", ".join(f"{name} {timings[name]:.2f}s" for name in ("body", "names", "document", "xbf", "step",
                                                                         "glb", "stl", "threemf", "dxf")
                            if timings.get(name))
-        line = (f"built {report['model']}{worker} in {wall:.2f}s: bodies {shown}; {memo.get('misses', 0)} misses, "
-                f"{memo.get('hits', 0)} hits" + (f"; {stages}" if stages else ""))
+        misses, hits = memo.get("misses", 0), memo.get("hits", 0)
+        line = (f"built {report['model']}{worker} in {wall:.2f}s: bodies {shown}; {misses} miss{'' if misses == 1 else 'es'}, "
+                f"{hits} hit{'' if hits == 1 else 's'}" + (f"; {stages}" if stages else ""))
+        line += _waited(report, "replayed" if counted.get("replayed") and not counted.get("run") else "ran after")
+        line += _delta(report.get("delta"))
         if (report.get("cache") or {}).get("changed"):
             line += f"\n  rebuilt: {report['cache']['reason']}"
     if report.get("retired"):
@@ -218,6 +240,54 @@ def _describe(report: dict[str, Any], wall: float, fresh: bool | None) -> str:
     return (line + "".join(f"\n  {text}" for text in files) + children
             + "".join(f"\n  warning: kinematics: {text}" for text in report.get("kinematics", {}).get("warnings", ()))
             + _verified(report.get("verify")))
+
+
+def _waited(report: dict[str, Any], how: str) -> str:
+    """The end of the run line of a build that waited for its script's running one (``waited``,
+    ``Daemon.behind``): what it did with what that build left, ``how`` (``took``, ``replayed``,
+    ``ran after``) the build of which script, waited how long for. Nothing for one that did not wait."""
+    waited = report.get("waited")
+    if not waited:
+        return ""
+    return f"; {how} the build of {waited.get('script')} it waited {waited.get('seconds', 0):.0f}s for"
+
+
+def _delta(found: dict[str, Any] | None) -> str:
+    """The line under the run line: the model's parts, bounds, joints, configuration sequences and
+    warnings, each with what it was where the build before it held another (``delta.delta``,
+    the engine's); warnings only where there are or were some; then how many parts' geometry
+    changed (``changed N``), or ``materials changed`` when only colours or materials did, so an
+    edit that keeps the bounds is still seen. Nothing without one."""
+    if not found:
+        return ""
+    times, dot = " × ", " · "
+    try:  # a stdout that cannot write them (a Windows pipe in another code page) is given ASCII
+        (times + dot).encode(getattr(sys.stdout, "encoding", None) or "utf-8")
+    except (UnicodeEncodeError, LookupError):
+        times, dot = " x ", " | "
+
+    def size(value: Any) -> str:
+        return times.join(_number(axis) for axis in value) if value else "none"
+
+    said = []
+    for name in ("parts", "bounds", "joints", "sequences", "warnings"):
+        row = found.get(name) or {}
+        now, changed = row.get("now"), "was" in row
+        if name == "warnings" and not now and not row.get("was"):
+            continue
+        if name == "bounds":
+            text = f"bounds {size(now)}" + (" mm" if now else "") + (f" (was {size(row['was'])})" if changed else "")
+        elif name == "warnings":
+            text = f"warnings {now}" + (f" (was {row['was']})" if changed else "")
+        else:
+            text = f"{name} {now}" + (f" ({now - (row['was'] or 0):+d})" if changed else "")
+        said.append(text)
+    changed = found.get("changed") or {}
+    if changed.get("parts"):
+        said.append(f"changed {changed['parts']}")
+    elif changed.get("looks"):
+        said.append("materials changed")
+    return "\n  " + dot.join(said)
 
 
 def _verified(found: dict[str, Any] | None) -> str:
@@ -228,99 +298,117 @@ def _verified(found: dict[str, Any] | None) -> str:
     return "".join(lines)
 
 
-def _file_flags(args: argparse.Namespace) -> dict[str, Any]:
-    """The file flags, each True (its default path) or a path ending in its kind's suffix."""
-    flags = {}
-    for kind in FILE_FLAGS:
-        value = getattr(args, kind)
-        if isinstance(value, str) and Path(value).suffix.lower() != _SUFFIX[kind] and not (
-                kind == "step" and Path(value).suffix.lower() == ".stp"):
-            raise Failed(f"--{kind} {value}: the file must end in {_SUFFIX[kind]}")
-        flags[kind] = value
-    return flags
-
-
 def _reported(reports: list[dict[str, Any]], wall: float, fresh: bool | None, as_json: bool) -> int:
-    """Each report on stdout, described or as JSON, a failed one's error on stderr; 1 if any failed."""
+    """Each report on stdout, described or as JSON; a failed one's error and the line naming it on
+    stderr, and nothing more of it; 1 if any failed."""
     failed = False
     for report in reports:
         if as_json:
             print(json.dumps({**report, "wall": round(wall, 4)}))
+        elif not report.get("ok"):
+            # The model's frames, once, then the line that names what failed: nothing else.
+            failed = True
+            sys.stdout.flush()
+            print(report.get("error", ""), file=sys.stderr)
+            print(_describe(report, wall, fresh), file=sys.stderr)
+            continue
         else:
             print(_describe(report, wall, fresh))
             if report.get("profile"):
                 from cadgen.engine.profiling import describe
 
                 print(describe(report["profile"]))
-            if report.get("address"):
-                print(f"  model: {report['address']}")
-                if report.get("url"):
-                    print(f"  view: {report['url']}")
+            if report.get("id"):
+                print(f"  id: {report['id']}")
+            if report.get("url"):
+                # Only a build the engine holds has a page to open: a daemon=False
+                # build's document went with its process.
+                print(f"  view: {report['url']}")
         if not report.get("ok"):
             failed = True
             print(report.get("error", ""), file=sys.stderr)
     return 1 if failed else 0
 
 
+def told_state(source: Any, doing: str) -> None:
+    """A model document read by its id, said once on stderr once a verb has read it, when it is not
+    what its code makes now: its last run failed, so the previous good build is read, or its code
+    changed since it was built (``stale``). Both from what the engine reports of it (``model_info``);
+    the verb goes on: a notice, never a refusal, and nothing reruns."""
+    from cadgen.engine.ids import is_id
+
+    ident = os.fspath(source).partition("#")[0]
+    if not is_id(ident):
+        return
+    from cadgen.engine.client import request
+
+    try:
+        model = (request({"op": "model_info", "id": ident}, start=False) or {}).get("model")
+    except (OSError, ValueError):
+        return
+    words = state_notice(model, doing) if isinstance(model, dict) else None
+    if words:
+        print(words, file=sys.stderr)
+
+
+def state_notice(model: dict[str, Any], doing: str) -> str | None:
+    """The words ``told_state`` says of a model document (``model_info``'s record), or None when it
+    is what its code makes now."""
+    from cadgen.engine.registry import rerun
+
+    name = (model.get("source") or {}).get("name") or model.get("id")
+    if model.get("state") == "failed":
+        program = (model.get("source") or {}).get("script")  # the script that defines it, never a caller
+        fix = f"; fix it and run `{rerun(program)}` to update it" if program else ""
+        return f"the last run of {name} failed; {doing} its previous good build{fix}"
+    stale = model.get("stale")
+    if stale:
+        changed = " and ".join(text.replace(" is missing", " went missing") for text in stale.get("changes") or [])
+        return (f"{doing} the build of {name} from before {changed or 'its code changed'}; "
+                f"run `{stale['rebuild']}` to update it")
+    return None
+
+
 def _log(text: str) -> None:
     print(text, file=sys.stderr)
 
 
-def _build(args: argparse.Namespace, prog: str) -> int:
-    """``cadgen build SOURCE``: code, its flags its declarations (law 12)."""
-    from cadgen.engine import api
-
-    flags = _file_flags(args)
-    if not args.model and not any(flags.values()):
-        raise Failed("build requires an output: --model NAME or --xbf/--step/--glb/--stl/--threemf/--dxf", 2)
-    if args.model and args.no_daemon:
-        raise Failed("--model needs the engine to hold its document; omit --no-daemon", 2)
-    code = sys.stdin.read() if args.source == "-" else args.source
-    try:
-        built = api.build(code, model=args.model, name=args.name, **flags, verify=args.verify, profile=args.profile, log=_log, daemon=not args.no_daemon)
-    except api.EngineError as error:
-        raise Failed(str(error)) from None
-    return _reported([built.report], built.report.get("wall", 0.0), None, args.json)
-
-
 def _export(args: argparse.Namespace, prog: str) -> int:
-    """``cadgen export SRC DST...``: an ``.xbf`` or a ``.step`` written to each destination; with
-    ``--json``, what was written as one JSON object."""
+    """``cadgen export SRC DST...``: an ``.xbf``, a ``.step``, a document id or a mesh file written
+    to each destination (``api.export`` refuses any other source); with ``--json``, what was written
+    as one JSON object."""
     from cadgen.engine import api
-    from cadgen.engine.export import SOURCES, ExportRefused
+    from cadgen.engine.addresses import key
+    from cadgen.engine.export import ExportRefused
 
-    from cadgen.engine.addresses import key, parse
-
-    if parse(args.source) is None and Path(args.source).suffix.lower() not in SOURCES:
-        raise Failed(f"{args.source} is no document: an export reads an .xbf or a .step", 2)
     try:
-        written = api.export(args.source, *args.destinations, pose=_pose(args.pose), part=args.part,
-                             inputs=not args.no_inputs, log=lambda text: print(text, file=sys.stderr),
-                             daemon=not args.no_daemon)
+        written = api.export(args.source, *args.destinations,
+                             log=lambda text: print(text, file=sys.stderr))
     except (ExportRefused, ValueError) as error:
         raise Failed(str(error), 2) from None
     except api.EngineError as error:
         raise Failed(str(error)) from None
+    told_state(args.source, "exporting")
     if args.json:
         print(json.dumps({"ok": True, "source": str(key(args.source)),
-                          "files": [{"path": str(row.path), "kind": row.kind, "bytes": row.bytes, "seconds": row.seconds}
-                                    for row in written]}))
+                          "files": [{"path": str(row.path), "kind": row.kind, "bytes": row.bytes, "seconds": row.seconds,
+                                     "written": row.written} for row in written]}))
         return 0
     for row in written:
-        print(f"wrote {_shown(row.path)} ({row.bytes / 1e6:.1f} MB) in {row.seconds:.2f}s")
+        if row.written:
+            print(f"wrote {_given(row.path, args.destinations)} ({_bytes(row.bytes)}) in {row.seconds:.2f}s")
+        else:
+            print(f"unchanged {_given(row.path, args.destinations)} ({_bytes(row.bytes)}): it holds these bytes already")
     return 0
 
 
 def _serve(args: argparse.Namespace, prog: str) -> int:
-    from cadgen.engine.addresses import key
-
-    path = key(args.document)
-    if isinstance(path, Path) and not path.is_file():
-        raise Failed(f"no document {args.document}", 2)
     from cadgen.engine import api
 
     try:
-        print(api.serve(path, args.port, args.three).url)
+        print(api.serve(args.document, args.port, args.three).url)
+    except ValueError as error:
+        raise Failed(str(error), 2) from None
     except api.EngineError as error:
         raise Failed(str(error)) from None
     return 0
@@ -375,28 +463,147 @@ def inspect_main(argv: list[str] | None = None, prog: str = "cadgen inspect") ->
 def _inspect(args: argparse.Namespace, prog: str) -> int:
     from cadgen.engine import api
 
+    query = args.query or (None if args.ref is not None or "#" in str(args.document) else "summary")
     try:
-        found = api.inspect(args.document, args.ref, query=args.query)
+        found = api.inspect(args.document, args.ref, query=query)
     except ValueError as error:
         raise Failed(str(error), 2) from None
     except api.EngineError as error:
         raise Failed(str(error)) from None
-    print(json.dumps(found, indent=2))
+    told_state(args.document, "inspecting")
+    if "mesh" in found and not args.json:
+        mesh = found["mesh"]
+        print(plain(f"{mesh['name']}  a mesh (GLB)"))
+        print(f"nodes       {mesh['nodes']}")
+        print(f"meshes      {mesh['meshes']}")
+        rows = [plain(f"{row['name']}  {_number(row['duration'])} s") for row in mesh["animations"]]
+        print("animations" + "".join(f"\n  {row}" for row in rows) if rows else "animations  none")
+        print("closure     none: a mesh carries none, only an .xbf does")
+    elif query == "summary" and not args.json:
+        print(summary_text(found["summary"]))
+        path = Path(str(found["summary"]["state"].get("path") or ""))
+        if found["closure"] is None and path.suffix.lower() in (".step", ".stp"):
+            print("closure     none: a STEP file carries none, only an .xbf does (a model's document, inspected by its "
+                  "id, has one)")
+        elif found["closure"] is None:
+            print("closure     none: no cadgen build wrote this document")
+        else:
+            print("closure")
+            print(json.dumps(found["closure"], indent=2))
+    else:
+        print(json.dumps(found, indent=2))
     return 0
 
 
-def _daemon(_args: argparse.Namespace, _prog: str) -> int:
+def _number(value: float) -> str:
+    """A measure at a glance: four significant figures below a thousand, whole above, never an exponent."""
+    return f"{value:.4g}" if abs(value) < 1000 else f"{value:,.0f}"
+
+
+def summary_text(summary: dict[str, Any]) -> str:
+    """``cadgen inspect DOC``'s first screen (``api._summary``): a line per fact the document
+    holds, its lists one item per line under it; a fact it has none of says so."""
+    import time
+
+    lines = [f"{summary['name']}  {summary['id']}"]
+    state = summary["state"]
+    if state["state"] == "file":
+        said = f"file {state.get('path')}"
+    else:
+        said = state["state"]
+        if state.get("held"):
+            said += f" (in {state['held']})"
+        said += ", cached" if state.get("cached") else ", not cached"
+        if state.get("builtAt"):
+            said += f", built {_span(time.time() - state['builtAt'])} ago"
+        said += f"; stale: {state['stale']}" if state.get("stale") else ""
+    lines.append(f"state       {said}")
+    parts = summary["parts"]
+    lines.append(f"parts       {parts['occurrences']} in {parts['root']}"
+                 + (f" ({parts['distinct']} distinct)" if parts["distinct"] != parts["occurrences"] else ""))
+    bounds = summary.get("bounds")
+    if bounds:
+        size = " x ".join(_number(value) for value in bounds["size"])
+        corner = ", ".join(_number(value) for value in bounds["min"])
+        lines.append(f"bounds      {size} mm, from ({corner})")
+    else:
+        lines.append("bounds      none: no geometry")
+    lines.append(f"volume      {_number(summary['volume'])} mm^3")
+    if summary["materials"]:
+        mass = summary.get("mass")
+        lines.append("materials" + (f"   {_number(mass)} kg in all" if mass is not None else ""))
+        for row in summary["materials"]:
+            weight = f"{_number(row['mass'])} kg" if row["mass"] is not None else "no density"
+            lines.append(f"  {row['name']}: {weight}, {', '.join(row['parts'])}")
+        if summary["unweighed"]:
+            lines.append(f"  no material: {', '.join(summary['unweighed'])}")
+    else:
+        lines.append("materials   none set")
+
+    def listed(title: str, rows: list[str]) -> None:
+        if not rows:
+            lines.append(f"{title:<11} none")
+            return
+        lines.append(title)
+        lines.extend(f"  {row}" for row in rows)
+
+    def joint(row: dict[str, Any]) -> str:
+        units = row.get("units") or []
+        ranges = []
+        for at, limits in enumerate(row.get("range") or []):
+            unit = units[at] if at < len(units) else ""
+            ranges.append("free" if not limits else f"{_number(limits[0])} to {_number(limits[1])} {unit}".rstrip())
+        built = row.get("asBuilt")
+        as_built = "" if built is None else f", as built {built if isinstance(built, (list, dict)) else _number(built)}"
+        return f"{row['name']}  {row['type']}  {'; '.join(ranges) or 'no range'}{as_built}"
+
+    listed("joints", [joint(row) for row in summary["joints"]])
+
+    def coupling(row: dict[str, Any]) -> str:
+        joints = ", ".join(f"{joint['name']} {_number(joint['ratio'])}" if isinstance(joint["ratio"], (int, float))
+                           else f"{joint['name']} {' '.join(_number(value) for value in joint['ratio'])}"
+                           for joint in row["joints"])
+        ratio = f", ratio {_number(row['ratio'])}" if row.get("ratio") is not None else ""
+        return f"{row['name']}  {row['kind']}  {joints}{ratio}"
+
+    listed("couplings", [coupling(row) for row in summary.get("couplings") or []])
+    listed("states", [f"{row['name']}  " + ", ".join(f"{name} {_number(value) if isinstance(value, (int, float)) else value}"
+                                                       for name, value in row["values"].items())
+                      for row in summary["states"]])
+    listed("sequences", [f"{row['name']}  {_number(row['duration'])} s" for row in summary["sequences"]])
+    listed("animations", [f"{row['name']}  {_number(row['duration'])} s" for row in summary["animations"]])
+    # The files the model's decorators declare, not what an export wrote beside it.
+    listed("declared files", summary["files"])
+    return "\n".join(plain(line) for line in lines)
+
+
+# The control characters a name read from a file may carry (C0 but tab, DEL, C1), each shown as its
+# escape: a terminal reads ESC and its kin as commands (clear the screen, write the clipboard).
+_CONTROLS = {code: f"\\x{code:02x}" for code in (*range(0x00, 0x09), *range(0x0a, 0x20), *range(0x7f, 0xa0))}
+
+
+def plain(text: str) -> str:
+    """``text`` as a terminal may print it: names a document carries (a STEP's product, a GLB's
+    node or animation, a material, a joint) are anyone's who wrote the file."""
+    return text.translate(_CONTROLS)
+
+
+def _server(args: argparse.Namespace, prog: str) -> int:
     from cadgen.engine.daemon import main as daemon
 
-    return daemon([])
+    if args.port is not None and not 0 <= args.port <= 65535:
+        raise Failed("--port must be between 0 and 65535", 2)
+    return daemon([], port=args.port, rotate=args.rotate_token, foreground=True)
 
 
 def _status(args: argparse.Namespace, _prog: str) -> int:
-    from cadgen.engine.client import request
+    from cadgen.engine.client import request, sweep
 
+    swept = sweep(stop=False)
+    _told_swept(swept)
     answer = request({"op": "status"}, start=False)
     if answer is None:
-        print("null" if args.json else "no engine daemon is running")
+        print("null" if args.json else "no engine server is running")
         return 0
     if args.json:
         print(json.dumps(answer, indent=2))
@@ -405,17 +612,53 @@ def _status(args: argparse.Namespace, _prog: str) -> int:
     return 0
 
 
-def _stop(_args: argparse.Namespace, prog: str) -> int:
-    from cadgen.engine.client import request, wait_gone
+def _told_swept(swept: dict[str, list[str]]) -> None:
+    """What a sweep found besides this protocol's server, on stderr (stdout is the answer's): the
+    stale files it removed, and a server of an older protocol, which ``stop`` stops."""
+    for path in swept["removed"]:
+        print(f"removed stale engine file {path}", file=sys.stderr)
+    from cadgen.engine.daemon import address
 
-    answer = request({"op": "stop"}, start=False)
-    if answer is None:
-        print("no engine daemon is running")
+    current = str(address())
+    for address in swept["running"]:
+        if address != current:
+            print(f"an engine server of an older cadgen runs at {address}; cadgen stop stops it", file=sys.stderr)
+
+
+def _stop(args: argparse.Namespace, prog: str) -> int:
+    from cadgen.engine.client import sweep
+
+    # Every server of this installation, whatever protocol it speaks; stopped means gone: the next
+    # command starts a fresh one, never reaches these.
+    try:
+        swept = sweep(stop=True)
+    except ConnectionError as error:
+        raise Failed(str(error)) from None
+    _told_swept(swept)
+    if args.json:
+        print(json.dumps({"ok": True, "stopped": swept["stopped"]}, indent=2))
         return 0
-    # Stopped means gone: the next command starts a fresh daemon, never reaches this one.
-    if not wait_gone():
-        raise Failed("the engine daemon did not exit")
-    print(json.dumps(answer, indent=2))
+    if not swept["stopped"]:
+        print("no engine server is running")
+    # A line per server stopped, for a person or an agent; JSON only under ``--json``.
+    for address in swept["stopped"]:
+        print(f"stopped the engine server at {address}")
+    return 0
+
+
+def _delete(args: argparse.Namespace, _prog: str) -> int:
+    from cadgen.engine.api import delete
+
+    try:
+        deleted = delete(args.documents)
+    except ValueError as error:
+        raise Failed(str(error), 2) from None
+    if args.json:
+        print(json.dumps({"ok": True, "deleted": deleted}, indent=2))
+        return 0
+    # A line per document deleted, for a person or an agent; JSON only under ``--json``.
+    for row in deleted:
+        print(f"deleted {row['name']} {row['id']}")
     return 0
 
 
@@ -436,23 +679,71 @@ def _span(seconds: Any) -> str:
     return f"{hours}h{minutes:02d}m" if minutes else f"{hours}h"
 
 
+def _bytes(count: Any) -> str:
+    """A size at a glance: ``8.6 KB``, ``12.4 MB``, ``1.2 GB``."""
+    count = float(count or 0)
+    for unit, scale in (("GB", 2**30), ("MB", 2**20), ("KB", 2**10)):
+        if count >= scale:
+            return f"{count / scale:.1f} {unit}"
+    return f"{int(count)} B"
+
+
 def _gb(megabytes: Any) -> str:
     return "-" if megabytes is None else f"{float(megabytes) / 1024:.1f} GB"
 
 
+def _port(serving: dict[str, Any]) -> str:
+    """Where the served port came from, in words -- the default, ``--port``, ``CADGEN_ENGINE_PORT``
+    or a roll from a held default -- as the serving line's parenthesis; nothing for an answer that
+    does not say."""
+    port, default = serving.get("port"), serving.get("defaultPort")
+    if port is None or default is None:
+        return ""
+    if port == default:
+        return " (the default port)"
+    source = serving.get("portSource") or ""
+    if source == "rolled":
+        return f" (rolled from {default} because {serving.get('portBecause') or 'another process'} holds it)"
+    return " (" + {"--port": "the port --port named", "CADGEN_ENGINE_PORT": "the port CADGEN_ENGINE_PORT names"
+                   }.get(source, f"not the default {default}") + ")"
+
+
+def cache_text(root: Any, documents: Any, size: Any) -> str:
+    """The engine's document cache as ``cadgen status`` and ``cadgen doctor`` say it, after the word
+    ``cache``: its folder, and the documents and bytes it keeps, which stay until a person deletes
+    them (no cap)."""
+    return (f"{root}: {documents or 0} document{'' if documents == 1 else 's'} · {_bytes(size)}, "
+            "kept until deleted")
+
+
+def workers_text(answer: dict[str, Any]) -> str:
+    """The workers against their count cap, as ``cadgen status`` (and ``cadgen doctor``) says them:
+    the standby holds a slot of the cap, counted with the workers, never one of them."""
+    counted = len(answer.get("workers") or []) + (1 if answer.get("standby") else 0)
+    return f"workers {counted}/{answer.get('cap')}" + (" with the standby" if answer.get("standby") else "")
+
+
 def status_text(answer: dict[str, Any]) -> str:
-    """``cadgen status``: the daemon and its pool's rules, a line per worker -- busy or idle,
-    its script, process, builds and memory after its last build, where a busy one's build is
-    (its last progress frame), how long it has been busy or idle -- the builds waiting for a
-    worker, the last retirements, and what it serves."""
+    """``cadgen status``: the server and its pool's rules -- its workers against their count cap,
+    their memory against its cap -- a line per worker -- busy or idle, its script, process, builds
+    and memory after its last build, where a busy one's build is (its last progress frame), how long
+    it has been busy or idle -- the standby's line (its process and memory: no script), the builds
+    waiting for a worker, the last retirements, what it serves and holds under its memory budget,
+    and each model document's state, with the command that builds again one not held."""
     import time
 
     workers = answer.get("workers") or []
+    standby = answer.get("standby")
     cap = answer.get("rssCapMb")
-    lines = [" · ".join([f"engine daemon {answer.get('pid')}, up {_span(answer.get('up'))}",
-                         f"workers {len(workers)}/{answer.get('cap')}",
-                         f"idle timeout {_span(answer.get('idleTimeout'))}",
-                         f"RSS cap {_gb(cap)}" if cap else "no RSS cap"])]
+    resident = answer.get("rssMb")
+    memory = (f"RSS {_gb(resident)} of {_gb(cap)}" if resident is not None else f"RSS cap {_gb(cap)}") if cap \
+        else "no RSS cap"
+    version = answer.get("installation") or answer.get("version")  # the installation's: two are told apart
+    lines = [" · ".join([f"engine server {answer.get('pid')}" + (f" (cadgen {version})" if version else "")
+                         + f", up {_span(answer.get('up'))}", workers_text(answer),
+                         *([f"held by {answer['holders']} app server{'' if answer['holders'] == 1 else 's'}"]
+                           if answer.get("holders") else []),
+                         memory])]
     names = [Path(str(worker["script"])).name for worker in workers]
     width = max((len(name) for name in names), default=0)
     for worker, name in zip(workers, names):
@@ -466,6 +757,11 @@ def status_text(answer: dict[str, Any]) -> str:
             doing = f"building {frame.get('model')} · {describe(frame)} · {doing}"
         lines.append(f"  {'busy' if worker.get('busy') else 'idle'}  {name:<{width}}  {str(worker.get('pid')):>6}  "
                      f"{builds:>10}  {_gb(worker.get('rssMb')):>7}  {doing}")
+    if standby:
+        # The kernel loaded and no script: the next new script's worker.
+        lines.append(f"  standby  {'':<{width}}  {str(standby.get('pid') or ''):>6}  {'':>10}  "
+                     f"{_gb(standby.get('rssMb')):>7}  "
+                     + ("starting" if standby.get("starting") else f"kernel loaded · {_span(standby.get('seconds'))}"))
     if answer.get("waiting"):
         waiting = answer["waiting"]
         lines.append(f"  waiting  {waiting} build{'' if waiting == 1 else 's'}, first come first served")
@@ -476,17 +772,47 @@ def status_text(answer: dict[str, Any]) -> str:
                                               f"{_span(now - row['at'])} ago" for row in retired))
     serving = answer.get("serving")
     if serving:
-        documents = len(serving.get("documents") or [])
+        # What the server has loaded because a page or a command opened it -- not the documents the
+        # engine holds, which the ``documents:`` lines list -- an evicted file's row left out.
+        opened = sum(1 for row in serving.get("documents") or [] if row.get("state", "held") == "held")
         renders = len(answer.get("renders") or [])
-        lines.append(f"serving {serving['url']}: {documents} document{'' if documents == 1 else 's'}"
-                     + (f" · {renders} render process{'' if renders == 1 else 'es'}" if renders else ""))
+        memory = serving.get("memory") or {}
+        held = (memory.get("documents") or 0) + (memory.get("meshes") or 0)
+        lines.append(f"serving {serving['url']}{_port(serving)}: {opened} document{'' if opened == 1 else 's'} opened by a page or a command"
+                     + (f" · {renders} render process{'' if renders == 1 else 'es'}" if renders else "")
+                     + (f" · {_gb(held / 2**20)} of {_gb(memory['budget'] / 2**20)} held" if memory.get("budget") else ""))
+        # What this engine's start said: the older engines it retired, a move of its port.
+        lines.extend(f"  {said}" for said in (serving.get("portNotice") or "").splitlines())
+    cache = answer.get("cache") or {}
+    if cache.get("enabled"):
+        failures = cache.get("failures") or []
+        lines.append("cache " + cache_text(cache.get("root"), cache.get("documents"), cache.get("bytes"))
+                     + (f" · last save failed: {failures[0]['error']}" if failures else ""))
+    elif cache:
+        lines.append("cache off: no cache folder")
+    models = answer.get("models") or []
+    if models:
+        # Each model document, its state, and for one not held the command that builds it again.
+        width = max(len(str(row.get("name"))) for row in models)
+        lines.append("documents:")
+        for row in models:
+            line = f"  {row.get('state', ''):<8}  {str(row.get('name')):<{width}}  {row.get('id')}"
+            if row.get("held"):
+                line += f"  {row['held']}"  # where: memory, disk (the cache), or both
+            if row.get("rebuild"):
+                line += f"  run `{row['rebuild']}`"
+            elif row.get("kind") == "shape":
+                line += "  a shape handed over: no script to rerun"
+            if row.get("state") == "failed":
+                line += "  serving its previous good build"
+            elif row.get("stale"):
+                line += f"  stale: run `{row['stale']['rebuild']}`"
+            lines.append(line)
     return "\n".join(lines)
 
 
 # Each verb: its help, the function adding its arguments to a parser, and the function running it.
 VERBS: dict[str, tuple[str, Callable[[argparse.ArgumentParser], None], Callable[[argparse.Namespace, str], int]]] = {
-    "build": ("build source text into the files its flags name (a script builds by running it)", _build_arguments,
-              _build),
     "export": ("write an .xbf or a .step to STEP, GLB, STL, 3MF, DXF or xbf files, by suffix; a GLB carries the "
                "document's motions as clips, a DXF draws a planar one", _export_arguments, _export),
     "snapshot": ("draw a document or a file the viewer opens as the CAD Viewer does, into a PNG", _snapshot_arguments,
@@ -494,10 +820,12 @@ VERBS: dict[str, tuple[str, Callable[[argparse.ArgumentParser], None], Callable[
     "serve": ("serve a document over HTTP and print its URL", _serve_arguments, _serve),
     "inspect": ("a document's build closure (its source, modules, inputs and key), or what one thing a ref names is "
               "and what made it", _inspect_arguments, _inspect),
-    "status": ("the engine daemon's workers, what each is building, and its served documents", _status_arguments,
+    "status": ("the engine server's workers, what each is building, and its served documents", _status_arguments,
                _status),
-    "stop": ("stop the engine daemon", _no_arguments, _stop),
-    "daemon": ("run the engine daemon in this process", _no_arguments, _daemon),
+    "stop": ("stop the engine server", _stop_arguments, _stop),
+    "delete": ("delete documents: each one's record and its document in the engine's cache, and what the engine "
+               "holds of it; never a file of yours", _delete_arguments, _delete),
+    "server": ("run the engine server in this process", _server_arguments, _server),
 }
 
 

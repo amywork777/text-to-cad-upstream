@@ -1,8 +1,8 @@
 """What a model imports: ``read_step`` and ``read_xbf`` copy a file's geometry with its names,
 colours and materials (an xbf's mechanism stays behind); a STEP is parsed in a reader process
 of the build's, so the parse's working memory never stays in the worker. ``read_mesh`` reads an
-STL as data, keyed by its bytes; a file read past the engine's readers runs its body on every
-build, and the build names the call."""
+STL as data, keyed by its bytes, as build123d's importers are; a file read past the engine's
+readers (OCCT's, driven directly) runs its body on every build, and the build names the call."""
 
 from __future__ import annotations
 
@@ -19,10 +19,12 @@ from unittest import mock
 from cadgen.engine import build as engine_build
 from cadgen.engine import cli
 from cadgen.engine import document
+from tests.python.support import engine_cache
 
 KIT = """
 import build123d as bd
-from cadgen.engine import configuration, materials, paint, step, xbf
+from cadgen.ap242 import mechanism_state
+from cadgen.engine import materials, paint, step, xbf
 
 
 @xbf("XBF/kit.xbf")
@@ -41,11 +43,11 @@ def kit():
 def hinge():
     base, arm = bd.Box(100, 60, 20), bd.Box(120, 20, 10, align=(bd.Align.MIN, bd.Align.CENTER, bd.Align.MIN))
     base.label, arm.label = "base", "arm"
-    paint(base, base.faces().sort_by(bd.Axis.Z)[-1], (0.1, 0.8, 0.1))
+    paint(base, base.faces().sort_by(bd.Axis.Z)[-1], "#1ae61a")
     bd.RevoluteJoint("elbow", base, axis=bd.Axis((40, 0, 20), (0, 1, 0)), angular_range=(-10, 120))
     bd.RigidJoint("mount", arm)
     base.joints["elbow"].connect_to(arm.joints["mount"], angle=30)
-    return configuration(bd.Compound(children=[base, arm], label="hinge"), "raised", elbow=90)
+    return mechanism_state(bd.Compound(children=[base, arm], label="hinge"), "raised", elbow=90)
 """
 
 USE = """
@@ -162,6 +164,7 @@ class ImportTest(unittest.TestCase):
             import sys, json
             import build123d, OCP.STEPCAFControl, OCP.BinTools
             from cadgen.engine import reader
+            build123d.Shape  # the kernel loaded before the measure, where cadgen's .pth makes the import lazy
 
             def parse():
                 if sys.argv[2] == "reader":
@@ -245,7 +248,7 @@ from OCP.BRepTools import BRepTools
 from OCP.gp import gp_Pnt
 from OCP.Poly import Poly_Triangle, Poly_Triangulation
 from OCP.TopoDS import TopoDS_Face, TopoDS_Shape
-from cadgen.engine import read_mesh, xbf
+from cadgen.engine import model, read_mesh, xbf
 
 HERE = Path(__file__).resolve().parent
 
@@ -264,6 +267,11 @@ def by_import_stl():
 @xbf("XBF/by_import_step.xbf")
 def by_import_step():
     return bd.import_step(HERE / "part.step")
+
+
+@model
+def by_import_brep():
+    return bd.import_brep(HERE / "part.brep")
 
 
 @xbf("XBF/by_occt.xbf")
@@ -308,8 +316,8 @@ def sized():
 
 
 class ReadsTest(unittest.TestCase):
-    """A mesh read as data, keyed by its bytes; a file read past the engine's readers, in C++
-    where no hook hears it, runs its body on every build."""
+    """A mesh read as data, keyed by its bytes, as build123d's importers are; a file read past
+    the engine's readers, in C++ where no hook hears it, runs its body on every build."""
 
     def setUp(self) -> None:
         import build123d as bd
@@ -332,16 +340,11 @@ class ReadsTest(unittest.TestCase):
         bd.export_stl(bd.Box(length, 30, 2), str(self.stl))
 
     def restart(self) -> None:
-        """What a new worker holds: nothing."""
-        from cadgen.engine.kernel import memo
-
-        memo.clear()
-        engine_build._WRITTEN.clear()
-        engine_build._PARTS.clear()
-        engine_build._BUILT.clear()
+        """What a new worker holds: nothing but what the engine's cache kept (``engine_cache``)."""
+        engine_cache.restart(self.folder / "cache")
 
     def built(self, name: str) -> dict:
-        (report,) = engine_build.build(self.folder / "reads.py", [name], cwd=self.folder)
+        (report,) = engine_build.build(self.folder / "reads.py", [name], cwd=self.folder, cache=str(self.folder / "cache"))
         self.assertTrue(report["ok"], report)
         return report
 
@@ -354,6 +357,18 @@ class ReadsTest(unittest.TestCase):
             BRepBndLib.Add_s(prototype.shape, box)
         low, high = box.CornerMin(), box.CornerMax()
         return tuple(round(b - a, 3) for a, b in ((low.X(), high.X()), (low.Y(), high.Y()), (low.Z(), high.Z())))
+
+    def test_read_mesh_parses_with_the_one_stl_reader_and_names_an_ascii_solid(self) -> None:
+        from cadgen.engine.reader import _read_mesh
+
+        ascii_stl = self.folder / "tile.stl"
+        ascii_stl.write_text("solid tile plate\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\n"
+                             "vertex 0 1 0\nendloop\nendfacet\nendsolid tile plate\n", encoding="ascii")
+        mesh = _read_mesh(str(ascii_stl))
+        self.assertEqual((mesh.name, mesh.vertices.shape, mesh.triangles.tolist()), ("tile plate", (3, 3), [[0, 1, 2]]))
+        ascii_stl.write_text("solid broken\nvertex 0 0 0\nvertex 1 0 0\n", encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "come three to a facet"):  # formats/stl.read_stl's words
+            _read_mesh(str(ascii_stl))
 
     def test_read_mesh_is_data_keyed_by_the_file_s_bytes(self) -> None:
         from cadgen.engine import previous, read_mesh
@@ -368,7 +383,7 @@ class ReadsTest(unittest.TestCase):
         self.built("enclosure")
         self.assertEqual(self.size("enclosure"), (46.0, 36.0, 6.0))
         again = self.built("enclosure")
-        self.assertEqual((again["bodies"], again["retention"]["fallbacks"]), ({"reads.py::enclosure": "replayed"}, {}))
+        self.assertEqual((again["bodies"], again["retention"]["fallbacks"]), ({"reads.py::enclosure": "loaded"}, {}))
         _writer, record = previous.scan(self.folder / "XBF/enclosure.xbf")
         closure = json.loads(record)
         self.assertEqual([row[:2] for row in closure["inputs"]], [["file", "../scans/pcb.stl"]])
@@ -382,12 +397,34 @@ class ReadsTest(unittest.TestCase):
         self.assertEqual(self.built("enclosure")["cache"]["changed"], ["../scans/pcb.stl changed"])
         self.assertEqual(self.size("enclosure"), (66.0, 36.0, 6.0))
 
+    def test_build123d_s_importers_are_inputs_by_their_bytes_and_keep_their_bodies(self) -> None:
+        import build123d as bd
+
+        from cadgen.engine import previous
+
+        for name, path in (("by_import_stl", "scans/pcb.stl"), ("by_import_step", "part.step")):
+            report = self.built(name)
+            self.assertEqual((report["bodies"], report["retention"]["fallbacks"]), ({f"reads.py::{name}": "run"}, {}))
+            _writer, record = previous.scan(self.folder / f"XBF/{name}.xbf")
+            closure = json.loads(record)
+            self.assertIsNotNone(closure["key"], name)
+            self.assertIn(["file", f"../{path}"], [row[:2] for row in closure["inputs"]], name)
+        # A model with no file: kept (no fallback), its document taken by its key while the brep's
+        # bytes are the same, and its body run once they changed.
+        for status in ("run", "loaded"):
+            report = self.built("by_import_brep")
+            self.assertEqual((report["bodies"], report["retention"]["fallbacks"]),
+                             ({"reads.py::by_import_brep": status}, {}))
+        bd.export_brep(bd.Box(12, 10, 10), str(self.folder / "part.brep"))
+        report = self.built("by_import_brep")
+        self.assertEqual((report["bodies"], report["cache"]["changed"]),
+                         ({"reads.py::by_import_brep": "run"}, ["part.brep changed"]))
+        self.assertEqual(self.built("by_import_brep")["bodies"], {"reads.py::by_import_brep": "loaded"})
+
     def test_a_file_read_past_the_engine_is_an_input_by_its_bytes_and_its_body_never_retained(self) -> None:
         from cadgen.engine import previous
 
-        for name, call, path in (("by_import_stl", "build123d's import_stl", "scans/pcb.stl"),
-                                 ("by_import_step", "build123d's import_step", "part.step"),
-                                 ("by_occt", "OCCT's BRepTools.Read_s", "part.brep")):
+        for name, call, path in (("by_occt", "OCCT's BRepTools.Read_s", "part.brep"),):
             for status in ("run", "loaded"):
                 report = self.built(name)
                 self.assertEqual(report["bodies"], {f"reads.py::{name}": status}, name)
@@ -405,25 +442,30 @@ class ReadsTest(unittest.TestCase):
             self.assertIsNotNone(closure["key"], name)
             self.assertIn(f"../{path}", [row[1] for row in closure["inputs"]], name)
             self.restart()
-            self.assertEqual(self.built(name)["cache"], {"used": True, "from": "file"}, name)
+            self.assertEqual(self.built(name)["cache"], {"used": True, "from": "cache"}, name)
 
-    def test_a_model_reading_its_inputs_beside_it_restarts_from_its_file_wherever_it_is_copied(self) -> None:
+    def test_a_model_reading_its_inputs_beside_it_restarts_from_the_cache_wherever_it_is_copied(self) -> None:
         # tom reads vendor parts past the engine (import_brep) from beside its sources: copied
-        # elsewhere with them, a restart with nothing changed takes the document, and an edited
-        # input builds it.
+        # elsewhere with them, it is another document (its id is its script's), built once there;
+        # then a restart with nothing changed takes the document, and an edited input builds it.
         self.built("by_occt")
         moved = Path(tempfile.mkdtemp(prefix="engine-reads-moved-")).resolve() / "copy"
         self.addCleanup(shutil.rmtree, moved.parent, ignore_errors=True)
         shutil.copytree(self.folder, moved)
         self.restart()
-        (report,) = engine_build.build(moved / "reads.py", ["by_occt"], cwd=moved)
-        self.assertEqual(report["cache"], {"used": True, "from": "file"}, report)
+
+        def build() -> dict:
+            (report,) = engine_build.build(moved / "reads.py", ["by_occt"], cwd=moved, cache=str(self.folder / "cache"))
+            return report
+
+        self.assertEqual(build()["cache"]["reason"], "the engine's cache holds none of it", "a copy is a document of its own")
+        self.restart()
+        self.assertEqual(build()["cache"], {"used": True, "from": "cache"})
         import build123d as bd
 
         bd.export_brep(bd.Box(12, 10, 10), str(moved / "part.brep"))
         self.restart()
-        (report,) = engine_build.build(moved / "reads.py", ["by_occt"], cwd=moved)
-        self.assertEqual(report["cache"]["changed"], ["../part.brep changed"])
+        self.assertEqual(build()["cache"]["changed"], ["../part.brep changed"])
 
     def test_a_model_sized_by_import_stl_builds_again_when_the_stl_changes(self) -> None:
         """The probe: a model sized from cube.stl by build123d's import_stl kept its 40 mm box

@@ -63,8 +63,9 @@ none.
   menu's.
 
   *Design note: the strip is for tools; the view's controls are the navbar's.* What a host or
-  the file adds (the update, an alert's icon, Full size) is the navbar's right end, and last
-  after them the view's own controls, **Display** and **Preview** (`navbarSlot`): they act on
+  the file adds (the update, an alert's icon, Full size) is the navbar's right end, after
+  them the view's own controls, **Display** and **Preview** (`navbarSlot`), and last the
+  host's **Open in browser**, where it has one (the CAD app's). The view's controls act on
   the whole view, whatever tool is in hand, so they are no tools. In Preview the same place
   holds its own controls, **Preview settings** and **Exit preview**. A host with no navbar has
   them over the view instead: Display and Preview ending the strip after a thin rule, the
@@ -220,7 +221,8 @@ pose back at rest, and using either puts the routine back at rest; paused, its f
 model as a pose does. Preview's routine is its own and moves nothing of the tools view's.
 Another file has the motions its tools have, under the same rule, decided by value
 (`kit/tools/model-effects/motionExclusion.js`): a GLB's Explode, routine and Clip; a robot's
-Position and Clip.
+Position and Clip; an engine document's Explode, Position and its motions (its **Motion**
+section, where Position shows a motion's frame read-only while it owns the pose).
 
 A tree is the file sidebar's, on screen under every tool; a pick in it takes Select up
 before it acts.
@@ -406,7 +408,7 @@ Notes, Coverage and Annotations under static headings, each a list of the trees'
 **Position**, where a joint can be driven; a drawing's **Layers**, where it has four or more
 layers or any block reference (a flat pattern's CUT and BEND has none): each layer's pen, name,
 entity count and eye, its block references under it; and, after them, the shell's own **Animation** for a
-file with routines (`kit/tools/playbar/AnimationSection.jsx`). A file with none of them has no
+file with routines (`kit/tools/playbar/AnimationSection.jsx`), headed **Motion** for an engine document's motions. A file with none of them has no
 sidebar. It is a toolbar of its own at the view's top-left, 8px in, on the strip's line and of
 its surface, padding and 24px tiles (`data-file-sidebar-tools`, "File sidebar"): one tile per
 section, a tree's a tree icon named for it (Model tree, Links), Position's a spline, Animation's a
@@ -905,7 +907,8 @@ Preview alike (`kit/tools/playbar/AnimationSection.jsx`): its heading holds **Re
 which stops the routine and puts the model at rest, disabled while it is; its body is the
 routine in hand, a dropdown of the routines where there are two or more, then **Play** or
 **Pause**, the scrubber (`AnimationTimeControl`) and **Playback settings** (a cog: the routine's
-Speed, a submenu, then Loop and Autoplay). In the tools view a routine is a motion as a pose is
+Speed, a submenu, then Loop and Autoplay). Each routine in the dropdown says its duration at its
+right, muted, in tabular figures. In the tools view a routine is a motion as a pose is
 (see [one motion at a time](#tools-and-lifecycle)): paused, its frame stays on the model. A
 routine opens at rest. Each view's routine is its own: entering Preview sets the
 tools view's untouched and starts its own at rest, playing only under Autoplay (off by default);
@@ -1004,12 +1007,25 @@ pending one. A hint appears on focus only for keyboard navigation (a Tab), never
 when a closing menu hands focus back.
 
 Copy, snapshot and prompt actions complete silently, the Copy and Quick Edit
-buttons showing a tick for a moment. Explicit export jobs are the exception: each
-has a persistent toast at the top-right below the navbar, with its own progress,
-Cancel and save/retry actions. Multiple jobs stack and scroll within the viewport;
-dismissing one only hides it, and Export's Show exports restores the stack. Export
-belongs in the navbar's right-hand controls, never the tool strip. The host supplies
-the local destination picker; no source bundle is an export format.
+buttons showing a tick for a moment. Explicit export jobs are the one exception: each
+has a persistent toast at the top-right below the navbar, with its state, elapsed time,
+Cancel, Download again (Export again once the file is gone) and Remove, in the menu's one size (`text-tiny`); on a phone
+the stack sits at the view's bottom, the view's width less 8px each side, and its buttons are 36px. Multiple jobs
+stack and scroll within the viewport; dismissing one only hides it, and Export's Show
+exports restores the stack. No other action earns a toast. Export is an icon button at
+the navbar's right end, named on hover as the view controls are, never in the tool strip.
+It opens a dropdown as the file's ⋯ does, on Display's surface and in its type, Display's
+width (`export/ExportControls.tsx`): the formats the file's kind writes, plain items, known
+from the kind and the scene the view already holds, so nothing loads before it shows
+(`export/formats.ts`: a STEP's, an xbf's and a held model's STEP, STL, 3MF, GLB and XBF, and
+DXF where the view draws it flat on z=0, an xbf's XBF its own bytes; a GLB's, an STL's or a
+3MF's the other two mesh kinds); after a rule, Show exports while there are
+any; last, after a rule, one muted line: the model goes as authored, not as shown, and an
+engine document's GLB with its animations. A view with neither formats nor exports has no
+Export. A format chosen closes the menu and starts its export at once; nothing is asked
+first, and what the server refuses is said in that export's toast.
+A finished file is a plain browser download, started once by itself; where it lands is
+the browser's setting. No source bundle is an export format.
 Progress stays in the viewport; a failed action is the
 viewport's alert card, whose **Retry** reloads the file and whose **Report Issue**,
 where the host has a tracker, opens a new issue titled "Issue: ", labelled `bug`, filled

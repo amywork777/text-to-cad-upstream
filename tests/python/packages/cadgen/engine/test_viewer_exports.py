@@ -5,8 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cadgen.engine import build as building
-from cadgen.engine.export import Source, ExportRefused
-from cadgen.engine.export.viewer import fingerprint, options
+from cadgen.engine.export import Source, ExportRefused, translate
+from cadgen.engine.export.viewer import fingerprint
 from cadgen.engine.worker import _export
 
 
@@ -17,7 +17,7 @@ class ViewerExportsTest(unittest.TestCase):
     def test_step_result_checks_the_written_file(self):
         from types import SimpleNamespace
         entry = {"id": "A", "kind": "datum"}
-        source = SimpleNamespace(structure={"pmi": [entry]})
+        source = SimpleNamespace(structure={"pmi": [entry]}, mesh=None, path=None)
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "result.step"
             def write(source, _unused, target, **kwargs):
@@ -42,12 +42,12 @@ class ViewerExportsTest(unittest.TestCase):
 
     def test_notes_are_no_pmi_of_a_step(self):
         """A note is the xbf's (OCCT's STEP writer writes none): a document whose PMI is notes alone
-        offers a STEP that carries no PMI, and its file is not checked; beside GD&T, the check is
+        writes a STEP that carries no PMI, and its file is not checked; beside GD&T, the check is
         given the document's PMI and matches the GD&T alone (``ap242.compare``)."""
         from types import SimpleNamespace
         note = {"id": "deburr", "kind": "note", "status": "ok", "refs": [],
                 "note": {"number": 1, "text": "Break all sharp edges 0.2 max", "general": True, "annotations": []}}
-        source = SimpleNamespace(structure={"pmi": [note]})
+        source = SimpleNamespace(structure={"pmi": [note]}, mesh=None, path=None)
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "result.step"
 
@@ -70,49 +70,10 @@ class ViewerExportsTest(unittest.TestCase):
                               encoding="utf-8")
             reports = building.build(script, ["plate"], cwd=root)
             self.assertTrue(reports[0]["ok"], reports)
-            step = next(row for row in options(Source.read(root / "plate.xbf")) if row["format"] == "step")
-            self.assertEqual((step["pmi"], step["reason"]), (False, None))
+            # Its STEP is written, never refused for the notes it does not carry (``pmi.refuse_dropped``).
+            self.assertGreater(translate(Source.read(root / "plate.xbf"), None, root / "plate.step"), 0)
 
-    def test_a_step_row_says_what_stays_in_the_xbf(self):
-        """Notes and named views are the xbf's (a notes library is its notes too): the STEP row's
-        ``kept`` names the kinds the document holds that a STEP does not carry, none where none."""
-        calls = {"both": 'pmi.note("deburr", "Break all sharp edges 0.2 max"), pmi.view("iso", camera="iso")',
-                 "views": 'pmi.view("iso", camera="iso")',
-                 "library": 'library={"primer-mask": "Mask these features before coating with primer"}'}
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder).resolve()
-            for name, given in calls.items():
-                script = root / f"{name}.py"
-                script.write_text(f'from cadgen import pmi, xbf\nimport build123d as bd\n@xbf("{name}.xbf")\n'
-                                  f'def {name}():\n    return pmi.annotate(bd.Box(2, 3, 4), {given})\n', encoding="utf-8")
-                reports = building.build(script, [name], cwd=root)
-                self.assertTrue(reports[0]["ok"], reports)
-            kept = {name: next(row for row in options(Source.read(root / f"{name}.xbf")) if row["format"] == "step")["kept"]
-                    for name in calls}
-        self.assertEqual(kept, {"both": ["notes", "views"], "views": ["views"], "library": ["notes"]})
-        whole = next(row for row in options(Source.read(Path(__file__).resolve().parent / "pmi_golden" / "pmi_plate.xbf"))
-                     if row["format"] == "step")
-        self.assertEqual(whole["kept"], [])
-
-    def test_a_pmi_document_offers_step_as_carrying_its_pmi(self):
-        fixture = Path(__file__).resolve().parent / "pmi_golden" / "pmi_plate.xbf"
-        source = Source.read(fixture)
-        request = {"source": {"path": str(fixture)}, "expected": {"version": source.structure["version"]},
-                   "destinations": [], "inspect": True}
-        step = next(r for r in _export(request, lambda _: None)["formats"] if r["format"] == "step")
-        self.assertEqual((step["label"], step["pmi"], step["reason"]), ("STEP (AP242)", True, None))
-
-    def test_a_row_says_when_the_pmi_decided_it(self):
-        # Opened whole, the plate's XBF is its original's to download, which is no PMI matter; a
-        # part extracted would be an XBF made again, which the PMI decides.
-        source = Source.read(Path(__file__).resolve().parent / "pmi_golden" / "pmi_plate.xbf")
-        whole = {row["format"]: row for row in options(source)}
-        self.assertEqual((whole["step"]["pmi"], whole["xbf"]["pmi"]), (True, False))
-        extracted = {row["format"]: row for row in options(source, part="plate")}
-        self.assertIs(extracted["xbf"]["pmi"], True)
-        self.assertIn("PMI", extracted["xbf"]["reason"])
-
-    def test_formats_version_pinning_and_live_model_never_rebuilds(self):
+    def test_version_pinning_original_bytes_and_live_model_never_rebuilds(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()
             script = root / "part.py"
@@ -121,13 +82,8 @@ class ViewerExportsTest(unittest.TestCase):
             self.assertTrue(reports[0]["ok"], reports)
             source = Source.read(root / "part.xbf")
             expected = {"version": source.structure["version"]}
-            request = {"source": {"path": str(source.path)}, "expected": expected, "destinations": [], "inspect": True}
-            formats = _export(request, lambda _: None)["formats"]
-            allowed = {r["format"] for r in formats if not r["reason"]}
-            self.assertEqual(allowed, {"step", "glb", "stl", "threemf", "original"})
-            self.assertIs(next(r for r in formats if r["format"] == "step")["pmi"], False)
             output = root / "export.stl"
-            request.update(inspect=False, destinations=[str(output)])
+            request = {"source": {"path": str(source.path)}, "expected": expected, "destinations": [str(output)]}
             self.assertGreater(_export(request, lambda _: None)["files"][0]["bytes"], 84)
             with self.assertRaisesRegex(ExportRefused, "source changed"):
                 _export({**request, "expected": {"version": "old"}}, lambda _: None)
@@ -143,7 +99,7 @@ class ViewerExportsTest(unittest.TestCase):
                     _export({**request, "source": {"script": str(script), "function": "part"},
                              "expected": {"digest": "old"}}, lambda _: None)
 
-    def test_planar_dxf_and_no_posed_xbf(self):
+    def test_a_planar_document_writes_its_dxf_and_no_xbf_of_an_xbf(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()
             script = root / "plate.py"
@@ -152,12 +108,12 @@ class ViewerExportsTest(unittest.TestCase):
             self.assertTrue(reports[0]["ok"], reports)
             source = Source.read(root / "plate.xbf")
             request = {"source": {"path": str(source.path)}, "expected": {"version": source.structure["version"]},
-                       "destinations": [], "inspect": True}
-            rows = _export(request, lambda _: None)["formats"]
-            self.assertIsNone(next(r for r in rows if r["format"] == "dxf")["reason"])
-            with self.assertRaises(ValueError):
-                _export({**request, "inspect": False, "pose": {}, "destinations": [str(root / "posed.xbf")]}, lambda _: None)
-            self.assertFalse((root / "posed.xbf").exists())
+                       "destinations": [str(root / "plate.dxf")]}
+            self.assertGreater(_export(request, lambda _: None)["files"][0]["bytes"], 0)
+            with self.assertRaisesRegex(ExportRefused, "not written from another xbf"):
+                _export({**request, "destinations": [str(root / "again.xbf")]}, lambda _: None)
+            self.assertFalse((root / "again.xbf").exists())
+
 
 class ViewerExportHttpTest(unittest.TestCase):
     def setUp(self):
@@ -173,8 +129,13 @@ class ViewerExportHttpTest(unittest.TestCase):
 
     def stop_engine(self):
         from cadgen.engine.client import request, wait_gone
+        from tests.python.support import engine_daemon
+
+        answer = request({"op": "pid"}, start=False)
         request({"op": "stop"}, start=False)
         self.assertTrue(wait_gone(30), "test engine must release its Windows working directories")
+        self.assertTrue(engine_daemon.await_exit(answer["pid"] if answer else None),
+                        "the stopped engine leaves the test's folder")
 
     def test_live_model_export_through_authenticated_session_and_worker(self):
         import contextlib
@@ -187,11 +148,15 @@ class ViewerExportHttpTest(unittest.TestCase):
 
         with contextlib.chdir(self.root):
             root = self.root
-            built = api.build('import build123d as bd; result = bd.Box(2, 3, 4)', model='export_http')
+            # A bare model: its document is the worker's memory alone.
+            script = root / 'export_http.py'
+            script.write_text('import build123d as bd\nfrom cadgen import model\n\n\n@model\n'
+                              'def export_http():\n    return bd.Box(2, 3, 4)\n', encoding='utf-8')
+            built = api.build_script(script, ['export_http'])
             self.assertEqual(built.files, {})
-            url = urlparse(built.report['url'])
-            doc = parse_qs(url.query)['doc'][0]
-            session = request({'op': 'viewer', 'start': str(root), 'api_only': True, 'new': True})
+            url = urlparse(built.models[0]['url'])
+            doc = url.path.strip('/')
+            session = request({'op': 'viewer', 'start': str(root), 'api_only': True})
             self.assertTrue(session.get('ok'), session)
 
             def http(path, body=None, *, headers=None):
@@ -209,21 +174,16 @@ class ViewerExportHttpTest(unittest.TestCase):
             _, _, data = http('/api/doc/' + doc)
             structure = json.loads(data)
             source = {'doc': doc, 'revision': structure['version']}
-            code, _, _ = http('/__cad/exports/options', source, headers={'Authorization': ''})
-            self.assertEqual(code, 403)
-            code, _, _ = http('/__cad/exports/options', source, headers={'x-cadgen-viewer': ''})
-            self.assertEqual(code, 403)
-            # Inspection is asynchronous. A real export shares its worker and completes
-            # after it; long-polling the job waits for observable changes, not a sleep.
-            code, _, data = http('/__cad/exports/options', source)
-            self.assertIn(code, (200, 202))
-            # Epoch is public only once inspection has settled. The session's job
-            # capability response is bounded by the worker, which status can observe.
-            while code == 202:
-                code, _, data = http('/__cad/exports/options', source)
+            # Nothing is inspected first: the session's epoch is one read, behind its credential.
+            self.assertEqual(http('/__cad/exports', headers={'Authorization': ''})[0], 403)
+            code, _, data = http('/__cad/exports')
             self.assertEqual(code, 200, data)
             payload = {'requestId': 'http-export-request-0001', 'epoch': json.loads(data)['epoch'],
                        'source': source, 'format': 'stl'}
+            # A job is a POST that needs the credential and the viewer's header too.
+            self.assertEqual(http('/__cad/exports', payload, headers={'Authorization': ''})[0], 403)
+            self.assertEqual(http('/__cad/exports', payload, headers={'x-cadgen-viewer': ''})[0], 403)
+            # Long-polling the job waits for observable changes, not a sleep.
             code, _, data = http('/__cad/exports', payload)
             self.assertEqual(code, 202, data)
             job = json.loads(data)
@@ -238,10 +198,10 @@ class ViewerExportHttpTest(unittest.TestCase):
             self.assertEqual(len(data), job['bytes'])
             self.assertGreater(len(data), 84)
             self.assertIn('attachment;', headers['content-disposition'])
-            http(f"/__cad/exports/{job['id']}/release", {})
+            self.assertEqual(http(f"/__cad/exports/{job['id']}/release", {})[0], 200)
             self.assertEqual(http(f"/__cad/exports/{job['id']}/file")[0], 410)
             # Even a rebuild with identical geometry is a different displayed generation.
-            api.build('import build123d as bd; result = bd.Box(2, 3, 4)', model='export_http')
+            api.build_script(script, ['export_http'])
             payload['requestId'] = 'http-export-request-0002'
             _, _, data = http('/__cad/exports', payload)
             job = json.loads(data)
@@ -252,7 +212,15 @@ class ViewerExportHttpTest(unittest.TestCase):
             self.assertIn('source changed', job['error'])
             _, _, data = http('/api/doc/' + doc + '/version')
             self.assertIsNone(json.loads(data)['failed'], 'an export failure is not a model build failure')
-            self.assertEqual(list(root.iterdir()), [], 'no implicit source or intermediate artifact')
+            self.assertEqual(list(root.iterdir()), [script], 'no implicit source or intermediate artifact')
+
+
+def setUpModule() -> None:
+    # The registry and cache of every engine this module starts are its own, never the developer's
+    # (``engine_daemon.isolate``); each test still names its own engine folder.
+    from tests.python.support import engine_daemon
+
+    engine_daemon.isolate(unittest.addModuleCleanup)
 
 
 if __name__ == "__main__":

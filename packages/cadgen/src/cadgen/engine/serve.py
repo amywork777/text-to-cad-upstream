@@ -1,6 +1,7 @@
 """Serving documents over HTTP: the structure as JSON, each part as one binary buffer.
 
-``GET /api/docs`` lists the documents served; ``GET /api/doc/<id>`` is one document's
+``GET /api/docs`` lists the documents served, each by its id (``ids``: a file's ``file_id``,
+a model's ``model_id``, by which every map here is keyed); ``GET /api/doc/<id>`` is one document's
 structure (``document.Loaded.structure``): its parts with their names, keys, colours,
 materials and element names, its instances with world matrices, its tree, and its version, and
 for each part already meshed the faces its mesher left without triangles
@@ -55,7 +56,8 @@ page keeps the old version until the new one is in. Its structure says how long 
 took and which process made it (``read``).
 
 Meshing runs off the request's thread (``Mesher``): by default on a pool of processes
-started with the server and kept warm, each handed one part's shape bytes; or ``inline``
+started with the first page or view (``warm``) or the first mesh, topology or pose asked, and
+kept warm, each handed one part's shape bytes; or ``inline``
 (``CADGEN_ENGINE_MESH=inline``, or ``?mode=inline``), one part after another on one thread,
 each spread over the kernel's own threads. A document's parts go to the pool largest
 first, by their shape bytes (of face count, bounding diagonal and bytes, the bytes
@@ -69,9 +71,12 @@ from __future__ import annotations
 
 import concurrent.futures
 import hashlib
+import itertools
 import json
+import math
 import mimetypes
 import os
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -84,9 +89,10 @@ from urllib.parse import parse_qs, unquote, urlparse
 from cadgen.engine.access import allow_origin
 from cadgen.engine.render.look import LOOK
 
-__all__ = ["MeshCache", "PARALLEL_BYTES", "Served", "Server", "find_three"]
+__all__ = ["MeshCache", "NotHeld", "PARALLEL_BYTES", "Pressure", "Served", "Server", "find_three", "memory_budget"]
 
-from cadgen.engine.addresses import key as document_key, parse as model_address
+from cadgen.engine.addresses import document_id, key as document_key
+from cadgen.engine.ids import canonical, file_id, is_id
 
 PAGE = Path(__file__).resolve().parent / "page"
 # A part whose shape bytes reach this is meshed with the kernel's face parallelism inside
@@ -97,8 +103,14 @@ PAGE = Path(__file__).resolve().parent / "page"
 PARALLEL_BYTES = 500_000
 # How long a version request waits for a new version at most, in seconds.
 WAIT_LIMIT = 60.0
+# A pose request's body at most, in bytes, and how many posed ids the engine keeps (the most
+# recently made; an older one's page asks again): a pose is a name or a few joint values.
+POSE_BODY_LIMIT = 64 << 10
+POSES_HELD = 1024
 # A page remains connected between successive version reads, including a suspended poll.
 LIVE = 90.0
+# How long a browser opened on a document's page counts as showing it before the page reads it.
+PAGE_OPENING = 30.0
 # A file this engine did not write, read by a reader process (the module docstring).
 FOREIGN = (".step", ".stp")
 # How many STEP reads are held by their bytes: a read a served document holds stays in memory
@@ -121,16 +133,19 @@ def find_three(start: Path | None = None) -> Path | None:
 
 
 class MeshCache:
-    """Part tessellations in memory, by geometry key, least recently used dropped past
-    ``cap`` bytes; with each, the faces its mesher left without triangles and why."""
+    """Part tessellations in memory, by geometry key; with each, the faces its mesher left
+    without triangles and why. On its own (a worker's, a render process's) the least recently
+    used is dropped past ``cap`` bytes. The daemon's server holds it under its one memory budget
+    instead (``cap`` None, ``Server.trim``), told of every buffer put (``grown``)."""
 
-    def __init__(self, cap: int = 2 << 30) -> None:
+    def __init__(self, cap: int | None = 2 << 30) -> None:
         self.cap = cap
         self.items: "OrderedDict[str, bytes]" = OrderedDict()
         self.notes: dict[str, dict[int, str]] = {}
         self.size = 0
         self.lock = threading.Lock()
         self.pending: dict[str, concurrent.futures.Future] = {}
+        self.grown: Callable[[], None] | None = None
 
     def get(self, key: str) -> bytes | None:
         with self.lock:
@@ -166,10 +181,28 @@ class MeshCache:
             self.items[key] = data
             self.notes[key] = dict(unmeshed or {})
             self.size += len(data)
-            while self.size > self.cap and len(self.items) > 1:
+            while self.cap is not None and self.size > self.cap and len(self.items) > 1:
                 old, dropped = self.items.popitem(last=False)
                 self.notes.pop(old, None)
                 self.size -= len(dropped)
+        grown = self.grown
+        if grown is not None:
+            grown()
+
+    def oldest(self) -> list[str]:
+        """The keys held, the least recently used first."""
+        with self.lock:
+            return list(self.items)
+
+    def evict(self, key: str) -> int:
+        """Forget one part's tessellation: the bytes it held."""
+        with self.lock:
+            found = self.items.pop(key, None)
+            self.notes.pop(key, None)
+            if found is None:
+                return 0
+            self.size -= len(found)
+            return len(found)
 
 
 # The process's one mesh cache: the daemon's server serves from it, and in a worker the
@@ -177,12 +210,175 @@ class MeshCache:
 MESHES = MeshCache()
 
 
+# --- the memory budget ---------------------------------------------------------------------
+#
+# Everything the daemon holds -- every served document's structure, shape bytes and data, and
+# the tessellations -- is held under one budget (the engine's **Document lifetime**). Past it,
+# what is held is evicted down to ``TRIM`` of it; on the operating system's memory-pressure
+# signal, down to the low-water mark, ``LOW_WATER`` of it.
+
+TRIM = 0.8
+LOW_WATER = 0.5
+# How often the pressure signal is asked, in seconds.
+PRESSURE_PERIOD = 2.0
+
+
+def _cgroup_limit() -> int | None:
+    """The memory limit of this process's cgroup (v2), in bytes; None where it has none."""
+    try:
+        with open("/proc/self/cgroup", encoding="utf-8") as handle:
+            group = next((line.split(":", 2)[2].strip() for line in handle if line.startswith("0::")), None)
+        if group is None:
+            return None
+        with open(f"/sys/fs/cgroup{group}/memory.max", encoding="utf-8") as handle:
+            text = handle.read().strip()
+    except (OSError, IndexError):
+        return None
+    return int(text) if text.isdigit() else None
+
+
+def memory_budget() -> int:
+    """The daemon's memory budget, in bytes: ``CADGEN_ENGINE_MEMORY_MB``, else a quarter of the
+    machine's physical memory (of its cgroup's limit, when that is less), else 4 GiB where neither
+    can be read."""
+    try:
+        given = float(os.environ.get("CADGEN_ENGINE_MEMORY_MB", "").strip() or 0)
+    except ValueError:
+        given = 0.0
+    if given > 0:
+        return int(given * 2**20)
+    from cadgen.engine.worker import _physical_mb
+
+    physical = _physical_mb()
+    total = None if physical is None else int(physical * 2**20)
+    limit = _cgroup_limit() if sys.platform.startswith("linux") else None
+    if limit is not None:
+        total = limit if total is None else min(total, limit)
+    return total // 4 if total else 4 << 30
+
+
+class Pressure:
+    """The operating system's memory-pressure signal, polled (``under``): macOS's
+    ``kern.memorystatus_vm_pressure_level`` (``sysctlbyname``: 1 normal, 2 warning, 4 critical),
+    Windows' low-memory resource notification (``CreateMemoryResourceNotification``, asked with
+    ``QueryMemoryResourceNotification``), Linux's pressure stall information (the cgroup's
+    ``memory.pressure``, else ``/proc/pressure/memory``: ``some avg10`` past ``PSI_SOME``). None of
+    them anywhere else, or unreadable: never under pressure, and the budget alone applies.
+    ``simulate`` is the test hook: it answers in place of the system's signal and wakes the poller.
+    ``CADGEN_ENGINE_PRESSURE`` is its form for a daemon in another process (``from_environment``):
+    ``0`` never under pressure, ``1`` always, unset measured; any other value is refused."""
+
+    PSI_SOME = 10.0
+    ENVIRONMENT = "CADGEN_ENGINE_PRESSURE"
+
+    def __init__(self) -> None:
+        self.simulated: bool | None = None
+        self.wake = threading.Event()
+        self._windows: Any = None
+
+    def simulate(self, under: bool | None) -> None:
+        self.simulated = under
+        self.wake.set()
+
+    @classmethod
+    def from_environment(cls, environ: Any = None) -> "Pressure":
+        """A daemon's signal: ``simulate``d as ``CADGEN_ENGINE_PRESSURE`` says (``override``)."""
+        found = cls()
+        found.simulate(cls.override(os.environ if environ is None else environ))
+        return found
+
+    @classmethod
+    def override(cls, environ: Any) -> bool | None:
+        """``CADGEN_ENGINE_PRESSURE``'s answer: False for ``0``, True for ``1``, None (measured) unset
+        or empty. ``ValueError``, in one line, for anything else."""
+        text = (environ.get(cls.ENVIRONMENT) or "").strip()
+        if text in ("", "0", "1"):
+            return None if not text else text == "1"
+        raise ValueError(f"{cls.ENVIRONMENT} is {text!r}: 0 (never under memory pressure), 1 (always), or unset "
+                         "(measured)")
+
+    def under(self) -> bool:
+        if self.simulated is not None:
+            return self.simulated
+        try:
+            if sys.platform == "darwin":
+                return self._darwin()
+            if os.name == "nt":
+                return self._windows_low()
+            if sys.platform.startswith("linux"):
+                return self._linux()
+        except (AttributeError, OSError, ValueError):
+            return False
+        return False
+
+    @staticmethod
+    def _darwin() -> bool:
+        import ctypes
+
+        system = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+        level, length = ctypes.c_int(0), ctypes.c_size_t(ctypes.sizeof(ctypes.c_int))
+        if system.sysctlbyname(b"kern.memorystatus_vm_pressure_level", ctypes.byref(level), ctypes.byref(length),
+                               None, 0) != 0:
+            return False
+        return level.value >= 2
+
+    def _windows_low(self) -> bool:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel = ctypes.windll.kernel32
+        if self._windows is None:
+            kernel.CreateMemoryResourceNotification.argtypes = [ctypes.c_int]
+            kernel.CreateMemoryResourceNotification.restype = wintypes.HANDLE
+            kernel.QueryMemoryResourceNotification.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+            kernel.QueryMemoryResourceNotification.restype = wintypes.BOOL
+            self._windows = kernel.CreateMemoryResourceNotification(0) or False  # LowMemoryResourceNotification
+        if not self._windows:
+            return False
+        state = wintypes.BOOL(0)
+        return bool(kernel.QueryMemoryResourceNotification(self._windows, ctypes.byref(state))) and bool(state.value)
+
+    def _linux(self) -> bool:
+        paths = []
+        try:
+            with open("/proc/self/cgroup", encoding="utf-8") as handle:
+                group = next((line.split(":", 2)[2].strip() for line in handle if line.startswith("0::")), None)
+            if group:
+                paths.append(f"/sys/fs/cgroup{group}/memory.pressure")
+        except (OSError, IndexError):
+            pass
+        paths.append("/proc/pressure/memory")
+        for path in paths:
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    for line in handle:
+                        if line.startswith("some "):
+                            fields = dict(item.split("=", 1) for item in line.split()[1:])
+                            return float(fields.get("avg10", 0)) > self.PSI_SOME
+            except OSError:
+                continue
+        return False
+
+
+class NotHeld(ValueError):
+    """A document the engine knows but no longer holds: its ``state`` (``unsaved``, ``detached``)
+    and the command that builds it again (``rebuild``), which the engine never runs."""
+
+    def __init__(self, text: str, state: str = "unsaved", rebuild: str | None = None) -> None:
+        super().__init__(text)
+        self.state, self.rebuild = state, rebuild
+
+    def payload(self) -> dict[str, Any]:
+        return {"error": str(self), "state": self.state, "rebuild": self.rebuild}
+
+
 # --- the pools ---------------------------------------------------------------------------
 #
 # The kernel's mesher holds the interpreter's lock for the whole of a call (measured: ten
 # threads mesh no faster than one), so parts are meshed in parallel two ways: ``inline``,
 # one part after another, each call spreading that part's faces over the kernel's own
-# threads; or ``processes``, a pool started with the server and kept warm, each job one
+# threads; or ``processes``, a pool started on its first job or ``Server.warm`` -- never
+# with the server, which every build starts -- and kept warm, each job one
 # part's shape handed over as the kernel's binary shape bytes -- no process reads a
 # document, so a large document costs its parts' bytes, not one read per process.
 
@@ -195,6 +391,23 @@ def _timed(shape: Any, parallel: bool) -> tuple[bytes, dict[int, str], float]:
     started = time.perf_counter()
     found = mesh_shape(shape, parallel=parallel)
     return found.to_bytes(), found.unmeshed, time.perf_counter() - started
+
+
+def exit_with_parent() -> None:
+    """A pool process's start (meshing, reading): it exits once the process that started it is
+    gone, however that one ended -- ``cadgen stop``, a signal, a crash -- so no pool process
+    outlives its engine (or its worker) holding the kernel's memory."""
+    import multiprocessing
+
+    parent = multiprocessing.parent_process()
+    if parent is None:
+        return
+
+    def watch() -> None:
+        parent.join()
+        os._exit(0)
+
+    threading.Thread(target=watch, name="cadgen-parent-watch", daemon=True).start()
 
 
 def _ready() -> bool:
@@ -217,16 +430,19 @@ class Mesher:
         self._inline = concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="mesh")
         self._processes: concurrent.futures.ProcessPoolExecutor | None = None
         self.lock = threading.Lock()
-        if self.mode == "processes":
-            self.processes()
 
     def processes(self) -> concurrent.futures.ProcessPoolExecutor:
+        """The pool, started on its first use: a build serves its document with no page open,
+        and a pool started then would hold ``workers`` kernels nobody asked for."""
         with self.lock:
+            if self._processes is not None and getattr(self._processes, "_broken", False):
+                self._processes.shutdown(wait=False, cancel_futures=True)  # a child died; rebuild on next use
+                self._processes = None
             if self._processes is None:
                 import multiprocessing
 
                 self._processes = concurrent.futures.ProcessPoolExecutor(
-                    self.workers, mp_context=multiprocessing.get_context("spawn"))
+                    self.workers, mp_context=multiprocessing.get_context("spawn"), initializer=exit_with_parent)
                 for _ in range(self.workers):
                     self._processes.submit(_ready)
             return self._processes
@@ -265,7 +481,7 @@ def _read_document(path: str) -> tuple:
 
     loaded = Loaded(Path(path))
     return (loaded.structure(), loaded.version,
-            {p.key: shape_bytes(p.shape) for p in loaded.prototypes},
+            {p.key: shape_bytes(p.shape, read=True) for p in loaded.prototypes},
             {p.key: p.name for p in loaded.prototypes})
 
 
@@ -302,6 +518,7 @@ def _pose_structure(structure: dict, pose: Any) -> dict:
 
 def _reader_ready() -> None:
     """A reader process's start: the kernel and the reader imported, so its read waits on nothing."""
+    exit_with_parent()
     import cadgen.engine.document  # noqa: F401
     import cadgen.engine.mesh  # noqa: F401
 
@@ -354,10 +571,25 @@ class Served:
     names: dict[str, str]
     patch: dict[str, Any] | None = None
     data: dict[str, bytes] = field(default_factory=dict)  # shape bytes made from live shapes
+    # A model's whole document, as the xbf bytes its worker made of it before it retired (the
+    # drain): what an export, a snapshot or an inspection of it reads once no worker holds it.
+    xbf: bytes | None = None
+    _size: int | None = field(default=None, repr=False, compare=False)
 
     @property
     def version(self) -> str:
         return self.structure["version"]
+
+    @property
+    def size(self) -> int:
+        """The bytes it holds, as the memory budget counts them: its structure as JSON, its shape
+        bytes, the bytes made from its live shapes (a live shape itself is not counted) and its
+        whole document's xbf bytes (its animations' record among them)."""
+        if self._size is None:
+            self._size = (len(json.dumps(self.structure, separators=(",", ":"), default=str))
+                          + sum(len(shape) for shape in self.shapes.values() if isinstance(shape, (bytes, bytearray)))
+                          + sum(len(made) for made in self.data.values()) + len(self.xbf or b""))
+        return self._size
 
     def shape_data(self, key: str) -> bytes | None:
         """A part's shape bytes: made once from the shape its file read gave."""
@@ -367,6 +599,7 @@ class Served:
         made = self.data.get(key)
         if made is None:
             made = self.data[key] = shape_bytes(found, read=True)
+            self._size = None
         return made
 
 
@@ -383,19 +616,71 @@ def _stat(path: Path | str) -> tuple | None:
 # --- the server --------------------------------------------------------------------------
 
 
+def reachable_host(host: str) -> str:
+    """Where a client on this machine reaches a listener bound on ``host``, as a URL spells it.
+
+    A wildcard bind (every interface: ``0.0.0.0``, ``""``, ``::``) is reached at loopback: a
+    browser refuses to open ``http://0.0.0.0:...``. The bind itself is unchanged."""
+    if host in ("", "0.0.0.0"):
+        return "127.0.0.1"
+    if host == "::":
+        return "[::1]"
+    return f"[{host}]" if ":" in host else host
+
+
 class Server:
     def __init__(self, port: int = 0, three: str | None = None, touch: Callable[[], None] = lambda: None,
                  host: str = "127.0.0.1", mesh_mode: str | None = None,
                  provenance: Callable[[str, str, str, int], dict[str, Any] | None] | None = None,
-                 cache: MeshCache | None = None, isolated: bool = False, http_factory=None) -> None:
+                 cache: MeshCache | None = None, isolated: bool = False, http_factory=None,
+                 budget: int | None = None, token: str | None = None) -> None:
+        # The page token its HTTP application admits (``daemon.bind``: the installation's, kept
+        # across restarts), or None: the application makes one of its own.
+        self.token = token
+        # Every document by its id (``ids``): a file's ``file_id``, a model's ``model_id``. A model
+        # registered but not opened yet is a loader (its name, its load and its version) until
+        # a page asks for it.
         self.served: dict[str, Served] = {}
-        self.idents: dict[Path | str, str] = {}
-        self.model_loaders: dict[str, tuple[Callable, int]] = {}
+        self.model_loaders: dict[str, tuple[str, Callable, int]] = {}
+        # Every on-disk file a page or a launcher opened, by its id: its canonical path (``remember``).
+        # Process memory only: what a page's ``/<id>`` names and an evicted file is read again
+        # from, under the same id; never a record on disk.
+        self.files: dict[str, str] = {}
         self.model_versions: dict[str, int] = {}
         self.model_locks: dict[str, threading.Lock] = {}
         # The daemon's server and a worker's snapshot serve from the process's one cache
         # (``MESHES``); a server of its own (a test's) holds its own.
         self.cache = cache if cache is not None else MeshCache()
+        # The one memory budget (bytes) over the documents and the tessellations held, or None:
+        # a server of its own (a worker's snapshot, a test's) keeps the cache's own cap.
+        self.budget = budget
+        self.used: dict[str, int] = {}  # each served document's last use, for least recently used
+        self.uses = itertools.count(1)
+        self.trim_lock = threading.Lock()
+        self.evictions = 0
+        self.pressure = Pressure()
+        # Told after each trim under pressure: the daemon's pool sheds its workers too (``daemon.Pool.shed``).
+        self.pressed: Callable[[], Any] = lambda: None
+        self.stopping = threading.Event()
+        # What the engine knows of a document it no longer holds (``NotHeld.payload``), else None.
+        self.lost: Callable[[str], dict[str, Any] | None] = lambda _ident: None
+        # A document id this server does not hold yet, taken up from the engine's cache where it has
+        # it (``models.Models.adopt``): registered, and read when it is asked for.
+        self.revive: Callable[[str], None] = lambda _ident: None
+        # Whether a model document no worker holds was built from code that changed since
+        # (``models.Models.stale``): ``{"text", "changes", "rebuild"}``, said in its structure, or None.
+        self.stale: Callable[[str], dict[str, Any] | None] = lambda _ident: None
+        # Told of a model document as the budget takes it out of memory, its id, its generation and
+        # its xbf bytes (``Served.xbf``): the daemon's cache keeps them when it does not hold them
+        # yet (``models.Models.leaving``), so the document is read again from there.
+        self.leaving: Callable[[str, Any, bytes], None] = lambda _ident, _version, _xbf: None
+        # A document deleted (the home's Delete): the daemon's ``models.Models.delete``, which drops what
+        # the engine holds of it and then its record and its cached document; None for a server of
+        # its own (a test's), whose application deletes the record alone.
+        self.delete: Callable[[str], dict[str, Any] | None] | None = None
+        if budget is not None:
+            self.cache.cap = None
+            self.cache.grown = self._grown
         self.isolated = isolated
         self.mesher = Mesher("processes" if isolated else mesh_mode,
                              workers=1 if isolated and (mesh_mode or os.environ.get("CADGEN_ENGINE_MESH")) == "inline" else None)
@@ -403,18 +688,23 @@ class Server:
         self.touch = touch
         self.clients_active = lambda: False
         self.on_close = lambda: None
+        # A hold's client gone (``Daemon.hold``), by the name it held with: its MCP sessions end.
+        self.on_hold_end: Callable[[str], None] = lambda _holder: None
         self.provenance = provenance
         self.load_lock = threading.RLock()
-        self.held: dict[Path, int] = {}
+        self.held: dict[str, int] = {}
         self.changed = threading.Condition()
         self.watch_lock = threading.Lock()
-        self.watchers: dict[Path | str, int] = {}
-        self.synced: dict[Path | str, float] = {}
+        self.watchers: dict[str, int] = {}
+        self.synced: dict[str, float] = {}
+        # Per document, when a browser page last read its version, and when one was opened on it.
+        self.paged: dict[str, float] = {}
+        self.opening: dict[str, float] = {}
         self.generation = 0
         self.topologies: "OrderedDict[str, Any]" = OrderedDict()
         self.topology_lock = threading.Lock()
         # A document served at a pose (``POST /api/doc/<id>/pose``): its id, the document's and the pose.
-        self.poses: dict[str, tuple[str, Any]] = {}
+        self.poses: OrderedDict[str, tuple[str, Any]] = OrderedDict()  # at most POSES_HELD
         # STEP reads (the module docstring): held by the file's bytes, each read once however
         # many ask for it at a time, by a reader process started on the first.
         self.foreign: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
@@ -425,9 +715,9 @@ class Server:
         # as it stands (by its state): it is read again once the file changes.
         self.rereading: set[str] = set()
         self.unreadable: dict[str, tuple | None] = {}
-        # Per served path, its build: the last progress frame of the build writing it now, the
-        # last build of it that failed, and a count that moves with either (``build_of``).
-        self.builds: dict[Path, dict[str, Any]] = {}
+        # Per served document (its id), its build: the last progress frame of the build writing it
+        # now, the last build of it that failed, and a count that moves with either (``build_of``).
+        self.builds: dict[str, dict[str, Any]] = {}
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -444,20 +734,41 @@ class Server:
                 server.touch()
                 server.route(self, "POST")
 
-        self.http = (http_factory(self, host, port) if http_factory is not None
-                     else ThreadingHTTPServer((host, port), Handler))
+        try:
+            self.http = (http_factory(self, host, port) if http_factory is not None
+                         else ThreadingHTTPServer((host, port), Handler))
+        except BaseException:
+            self.mesher.stop()  # a listener that could not bind leaves no meshing pool behind
+            raise
         self.http.daemon_threads = True
         self.port = self.http.server_address[1]
-        self.url = f"http://{host}:{self.port}"
+        self.url = f"http://{reachable_host(host)}:{self.port}"
         self.thread: threading.Thread | None = None
 
     def start(self) -> None:
         self.thread = threading.Thread(target=self.http.serve_forever, daemon=True)
         self.thread.start()
+        if self.budget is not None:
+            threading.Thread(target=self._pressured, name="cadgen-memory-pressure", daemon=True).start()
+
+    def _pressured(self) -> None:
+        """The pressure poller: each ``PRESSURE_PERIOD`` (or when woken), the system's signal; under
+        pressure, what is held is evicted down to the low-water mark, and ``pressed`` is told."""
+        while not self.stopping.is_set():
+            self.pressure.wake.wait(PRESSURE_PERIOD)
+            self.pressure.wake.clear()
+            if self.stopping.is_set():
+                return
+            if self.pressure.under():
+                self.trim(int(self.budget * LOW_WATER))
+                try:
+                    self.pressed()
+                except Exception:  # noqa: BLE001 - the poller outlives what it tells
+                    pass
 
     def warm(self) -> None:
-        """The processes a first document waits on, started now (the viewer's launch asks it):
-        the meshing pool, warming since the server started, and a STEP reader when none has read
+        """The processes a first document waits on, started now (a viewer's launch and an app's
+        view ask it): the meshing pool, and a STEP reader when none has read
         yet -- a reader takes one read and goes, so a no-op takes the first and the one a read
         takes starts warm meanwhile."""
         if self.mesher.mode == "processes":
@@ -468,6 +779,8 @@ class Server:
             self._readers().submit(int)
 
     def stop(self) -> None:
+        self.stopping.set()
+        self.pressure.wake.set()
         if self.thread is not None:  # shutdown waits for a loop that runs
             self.http.shutdown()
         self.http.server_close()
@@ -481,12 +794,14 @@ class Server:
     # --- documents -------------------------------------------------------------------
 
     def add(self, path: Path) -> str:
+        """Serve the document at ``path`` (or a live model's id): its id."""
         path = document_key(path)
-        ident = hashlib.blake2b(str(path).encode(), digest_size=6).hexdigest()
+        ident = document_id(path)
         if isinstance(path, str):
-            if path not in self.idents:
-                raise ValueError(f"no live model {path}")
-            return self.idents[path]
+            if not self.holds(ident):
+                raise ValueError(f"no document {path} is held")
+            return ident
+        self.remember(path)
         if path.suffix.lower() in FOREIGN:
             # Read outside the lock: a STEP's read is long, and every other document is served
             # meanwhile. Two first opens of one file share its one read (``_foreign``).
@@ -497,56 +812,191 @@ class Server:
             with self.load_lock:
                 if ident not in self.served:
                     self.served[ident] = served
-                    self.idents[path] = ident
+                    self.used[ident] = next(self.uses)
+            self._grown(ident)
             return ident
         with self.load_lock:
             if ident not in self.served:
                 self.served[ident] = self._read(ident, path)  # a document that cannot be read is the caller's error
-                self.idents[path] = ident
+                self.used[ident] = next(self.uses)
+        self._grown(ident)
         return ident
 
-    def put(self, path: Path, structure: dict[str, Any], shapes: dict[str, Any]) -> str:
-        """Serve a document held in memory (a build's, which a worker draws): its structure
-        and each part's shape (or shape bytes) by key. No file is read for it."""
+    def put(self, path: Path | str, structure: dict[str, Any], shapes: dict[str, Any], *, grow: bool = True) -> str:
+        """Serve a document held in memory (a build's, which a worker draws), at ``path`` (a
+        file, or a model's id): its structure and each part's shape (or shape bytes) by
+        key. No file is read for it. Its id."""
         path = document_key(path)
-        ident = hashlib.blake2b(str(path).encode(), digest_size=6).hexdigest()
+        ident = document_id(path)
         with self.load_lock:
             self.served[ident] = Served(ident, path, structure, _stat(path), dict(shapes),
                                         {p["key"]: p["name"] for p in structure["prototypes"]})
-            self.idents[path] = ident
+            self.used[ident] = next(self.uses)
         self._changed()
+        if grow:
+            self._grown(ident)
         return ident
 
-    def register_model(self, address: str, load: Callable, version: int) -> str:
-        ident = hashlib.blake2b(address.encode(), digest_size=6).hexdigest()
+    def keep(self, ident: str, structure: dict[str, Any], shapes: dict[str, Any], version: int,
+             xbf: bytes) -> None:
+        """A model's document, version ``version``, held from now on whatever becomes of its worker
+        (the daemon's drain: ``models.Models.drain``): its served structure and shapes, and the whole
+        document as ``xbf`` bytes, its animations' record with it. Evicted, all of it goes."""
+        lock = self.model_locks.setdefault(ident, threading.Lock())
+        with lock:
+            with self.load_lock:
+                doc = self.served[self.put(ident, structure, shapes, grow=False)]
+                doc.xbf, doc._size = xbf, None  # counted again, its xbf bytes with it
+                self.model_versions[ident] = version
+        self._grown()
+
+    def has(self, ident: str, version: int, whole: bool = False) -> bool:
+        """Whether a model's document is held at ``version`` (``whole``: with its xbf bytes)."""
         with self.load_lock:
-            self.idents[address] = ident
-            self.model_loaders[ident] = (load, version)
+            found = self.served.get(ident)
+            return (found is not None and self.model_versions.get(ident) == version
+                    and (not whole or found.xbf is not None))
+
+    def holds(self, ident: str) -> bool:
+        """Whether a document of this id is served, or registered to be (a live model's), or is a
+        file this server read once, read again when asked (``document``)."""
+        return ident in self.served or ident in self.model_loaders or ident in self.files
+
+    def path_of(self, ident: str) -> Path | str:
+        """The path of a file served, or the id of a model served or registered."""
+        with self.load_lock:
+            found = self.served.get(ident)
+            if found is not None:
+                return found.path
+            if ident in self.model_loaders:
+                return ident
+            raise KeyError(ident)
+
+    def remember(self, path: Path | str) -> str:
+        """An on-disk file a page or a launcher opens, known by its id from now on: its id."""
+        found = canonical(path)
+        ident = file_id(found)
+        with self.load_lock:
+            self.files[ident] = found
+        return ident
+
+    def file_of(self, ident: str) -> str | None:
+        """The canonical path of the on-disk file of id ``ident`` this server knows, else None."""
+        with self.load_lock:
+            found = self.files.get(ident)
+            served = self.served.get(ident)
+        if found is None and served is not None and not isinstance(served.path, str):
+            found = str(served.path)
+        return found
+
+    def register_model(self, ident: str, label: str, load: Callable, version: int) -> str:
+        """A live model's document, by its id, opened on demand: ``load`` asks its worker.
+        ``label`` names it (its function's name)."""
+        with self.load_lock:
+            self.model_loaders[ident] = (label, load, version)
             self.model_locks.setdefault(ident, threading.Lock())
         self._changed()
         return ident
 
-    def forget_model(self, address: str) -> None:
+    def forget_model(self, ident: str) -> None:
         with self.load_lock:
-            ident = self.idents.pop(address, None)
             self.served.pop(ident, None)
             self.model_loaders.pop(ident, None)
             self.model_versions.pop(ident, None)
+            self.used.pop(ident, None)
         self._changed()
 
-    def listing(self) -> list[dict[str, str]]:
-        return [{"id": ident, "path": str(doc.path)} for ident, doc in self.served.items()]
+    def listing(self, every: bool = False) -> list[dict[str, Any]]:
+        """The documents served, each its id and path; ``every``: with each the bytes it holds, and
+        the files it read and evicted too (``state`` ``held`` or ``evicted``)."""
+        with self.load_lock:
+            if not every:
+                return [{"id": ident, "path": str(doc.path)} for ident, doc in self.served.items()]
+            found = [{"id": ident, "path": str(doc.path), "state": "held", "bytes": doc.size}
+                     for ident, doc in self.served.items()]
+            found += [{"id": ident, "path": path, "state": "evicted", "bytes": 0}
+                      for ident, path in self.files.items() if ident not in self.served]
+            return found
+
+    def memory(self) -> dict[str, Any]:
+        """What the budget counts: the documents' bytes, the tessellations' and the budget's."""
+        with self.load_lock:
+            documents = sum(doc.size for doc in self.served.values())
+        return {"budget": self.budget, "documents": documents, "meshes": self.cache.size,
+                "evictions": self.evictions}
+
+    # --- the memory budget -------------------------------------------------------------
+
+    def holding(self) -> int:
+        """The bytes held under the budget: every served document's and every tessellation's."""
+        with self.load_lock:
+            documents = sum(doc.size for doc in self.served.values())
+        return documents + self.cache.size
+
+    def _grown(self, spare: str | None = None) -> None:
+        """Something was put: past the budget, what is held is evicted (``trim``), never ``spare``
+        (the document being served now)."""
+        if self.budget is not None and self.holding() > self.budget:
+            self.trim(int(self.budget * TRIM), spare)
+
+    def trim(self, target: int, spare: str | None = None) -> list[str]:
+        """Evict from memory until what is held is ``target`` bytes or less (the engine's **Document
+        lifetime**): tessellations first, least recently used first, then documents, least recently
+        used first -- never a document a page watches, nor its tessellations, nor ``spare``. Every
+        document is read again from where it is kept (a file from its file, a model's from the
+        engine's cache, which is handed its bytes as it leaves: ``leaving``). The ids evicted."""
+        evicted: list[str] = []
+        leaving: list[tuple[str, Any, bytes]] = []
+        with self.trim_lock:
+            watched = self.watched()
+            with self.load_lock:
+                kept = {ident for ident in watched if ident in self.served}
+                if spare is not None:
+                    kept.add(spare)
+                spared = {key for ident in kept if ident in self.served for key in self.served[ident].shapes}
+            total = self.holding()
+            for key in self.cache.oldest():
+                if total <= target:
+                    break
+                if key not in spared:
+                    total -= self.cache.evict(key)
+            with self.load_lock:
+                order = sorted((ident for ident in self.served if ident not in kept),
+                               key=lambda ident: self.used.get(ident, 0))
+                for ident in order:
+                    if total <= target:
+                        break
+                    doc = self.served.pop(ident)
+                    if doc.xbf is not None:
+                        leaving.append((ident, self.model_versions.get(ident), doc.xbf))
+                    self.model_versions.pop(ident, None)
+                    self.used.pop(ident, None)
+                    self.evictions += 1
+                    total -= doc.size
+                    evicted.append(ident)
+                if evicted:
+                    # A STEP read is held by its bytes for the documents served of it: theirs go with them.
+                    with self.foreign_lock:
+                        self.foreign.clear()
+        for ident, version, xbf in leaving:
+            try:
+                self.leaving(ident, version, xbf)
+            except Exception:  # noqa: BLE001 - a save never fails the trim that asked it
+                pass
+        if evicted:
+            self._changed()
+        return evicted
 
     def versions(self) -> dict[str, str]:
-        """Every served path and the version served of it."""
+        """Every served document's id and the version served of it."""
         with self.load_lock:
-            return {str(doc.path): doc.version for doc in self.served.values()}
+            return {ident: doc.version for ident, doc in self.served.items()}
 
     def served_keys(self) -> dict[str, list[str]]:
-        """Every served path and the keys of the parts the document served of it holds:
-        what a build of it changed is what these lack."""
+        """Every served document's id and the keys of the parts it holds: what a build of it
+        changed is what these lack."""
         with self.load_lock:
-            return {str(doc.path): sorted(doc.shapes) for doc in self.served.values()}
+            return {ident: sorted(doc.shapes) for ident, doc in self.served.items()}
 
     def shape_keys(self) -> list[str]:
         """The keys of every part whose shape a served document holds."""
@@ -557,7 +1007,12 @@ class Server:
         if path.suffix.lower() in FOREIGN:
             return self._read_step(ident, path)
         if self.isolated:
-            structure, version, shapes, names = self._readers().submit(_read_document, str(path)).result()
+            try:
+                structure, version, shapes, names = self._readers().submit(_read_document, str(path)).result()
+            except concurrent.futures.BrokenExecutor:  # the reader died mid-read
+                with self.foreign_lock:
+                    self.reader = None  # the next read starts a reader afresh
+                raise ValueError(f"the reader exited reading {path.name}") from None
             return Served(ident, path, structure, version, shapes, names)
         from cadgen.engine.document import Loaded
 
@@ -580,6 +1035,9 @@ class Server:
         """The reader processes: one at a time, each gone after its read (with what the parse
         left in its memory), the next started and warm meanwhile."""
         with self.foreign_lock:
+            if self.reader is not None and getattr(self.reader, "_broken", False):
+                self.reader.shutdown(wait=False, cancel_futures=True)  # a child died; it serves no one now
+                self.reader = None
             if self.reader is None:
                 import multiprocessing
 
@@ -631,17 +1089,31 @@ class Server:
         other process rewrote the file (and no build is writing it now). A STEP is read
         again in the background (the module docstring): until it is in, this is the last."""
         if ident in self.model_loaders:
-            # No kernel work on the HTTP thread: the loader asks the owning worker.
+            # No kernel work on the HTTP thread: the loader asks the owning worker, and one no
+            # worker holds any more says so (``NotHeld``): nothing is run to bring it back.
             with self.model_locks[ident]:
-                load, version = self.model_loaders[ident]
-                if self.model_versions.get(ident) != version:
-                    structure, shapes = load()
-                    self.put(structure["address"], structure, shapes)
-                    self.model_versions[ident] = version
-            return self.served[ident]
+                _label, load, version = self.model_loaders[ident]
+                with self.load_lock:
+                    doc = self.served.get(ident) if self.model_versions.get(ident) == version else None
+                    if doc is not None:
+                        self.used[ident] = next(self.uses)
+                if doc is None:
+                    # Its structure and shapes; and, read from the engine's cache, its xbf bytes third.
+                    loaded = load()
+                    structure, shapes = loaded[0], loaded[1]
+                    with self.load_lock:  # held at its version before it can be evicted
+                        doc = self.served[self.put(ident, structure, shapes, grow=False)]
+                        if len(loaded) > 2:
+                            doc.xbf, doc._size = loaded[2], None
+                        self.model_versions[ident] = version
+                    self._grown(ident)
+            return doc
+        if ident not in self.served and ident in self.files:
+            self.add(Path(self.files[ident]))  # an evicted file, read again: reading runs no code
         with self.load_lock:
             doc = self.served[ident]
-            if self.held.get(doc.path):
+            self.used[ident] = next(self.uses)
+            if self.held.get(ident):
                 return doc
             stat = _stat(doc.path)
             if stat is None or stat == doc.stat:
@@ -653,6 +1125,7 @@ class Server:
                 return doc
             doc = self.served[ident] = self._read(ident, doc.path)
         self._changed()
+        self._grown(ident)
         return doc
 
     def _reread(self, ident: str, doc: Served, stat: tuple) -> None:
@@ -674,25 +1147,35 @@ class Server:
                     self.served[ident] = fresh
         self._changed()
 
-    def hold(self, paths: list[str]) -> list[Path]:
-        """Paths a build is writing: their files are not read again until ``release``."""
-        held = []
+    def _ids(self, texts: Any) -> list[str]:
+        """The served documents among ``texts`` (ids or paths), by id."""
+        found = []
+        for text in texts:
+            try:
+                ident = document_id(text)
+            except (OSError, ValueError):
+                continue
+            if self.holds(ident):
+                found.append(ident)
+        return found
+
+    def hold(self, documents: list[str]) -> list[str]:
+        """Documents a build is writing (ids or paths): their files are not read again until
+        ``release``. The ids held."""
         with self.load_lock:
-            for text in paths:
-                path = document_key(text)
-                if path in self.idents:
-                    self.held[path] = self.held.get(path, 0) + 1
-                    held.append(path)
+            held = self._ids(documents)
+            for ident in held:
+                self.held[ident] = self.held.get(ident, 0) + 1
         return held
 
-    def release(self, paths: list[Path]) -> None:
+    def release(self, held: list[str]) -> None:
         with self.load_lock:
-            for path in paths:
-                left = self.held.get(path, 0) - 1
+            for ident in held:
+                left = self.held.get(ident, 0) - 1
                 if left > 0:
-                    self.held[path] = left
+                    self.held[ident] = left
                 else:
-                    self.held.pop(path, None)
+                    self.held.pop(ident, None)
         self._changed()
 
     def _changed(self) -> None:
@@ -707,8 +1190,8 @@ class Server:
         a path not served."""
         started = time.perf_counter()
         path = document_key(header["path"])
-        ident = self.idents.get(path)
-        if ident is None:
+        ident = file_id(path)
+        if ident not in self.served:
             return None
         view = memoryview(payload)
         at = 0
@@ -731,11 +1214,13 @@ class Server:
                 names[key] = prototype["name"]
             data = {key: made for key, made in old.data.items() if key in shapes}
             doc = self.served[ident] = Served(ident, path, structure, (int(mtime), int(size)), shapes, names, None, data)
+            self.used[ident] = next(self.uses)
             applied = time.perf_counter()
             doc.patch = {"worker": header.get("timings") or {}, "arrived": arrived, "applied": time.time(),
                          "seconds": round(applied - started, 4), "meshes": len(header.get("meshes") or []),
                          "shapes": len(brought), "bytes": len(payload)}
         self._changed()
+        self._grown(ident)
         self.prefetch(doc)
         return doc.patch
 
@@ -757,6 +1242,7 @@ class Server:
                     doc.shapes.setdefault(missing, shape)
                     if doc.shapes[missing] is None:
                         doc.shapes[missing] = shape
+                doc._size = None
             found = doc.shape_data(key)
         if found is None:
             raise KeyError(f"no shape for part {key}")
@@ -778,79 +1264,97 @@ class Server:
     def building(self, frame: dict[str, Any]) -> None:
         """A build's progress frame (``progress.py``): each served document among its
         ``outputs`` is being built, as the frame says, and its pages are woken."""
-        paths = []
-        for text in frame.get("outputs") or []:
-            try:
-                paths.append(document_key(text))
-            except (OSError, ValueError):
-                continue
         with self.load_lock:
-            hit = [path for path in paths if path in self.idents]
-            for path in hit:
-                state = self.builds.setdefault(path, {"building": None, "failed": None, "progress": 0})
+            hit = self._ids(frame.get("outputs") or [])
+            for ident in hit:
+                state = self.builds.setdefault(ident, {"building": None, "failed": None, "progress": 0})
                 state.update(building=frame, failed=None, progress=state["progress"] + 1)
         if hit:
             self._changed()
 
     def built(self, outcomes: dict[str, dict[str, Any] | None]) -> None:
-        """Builds that answered: per path they wrote, None when its model built, else what failed
-        (``{"model", "error", "progress"}``). Those served are built no longer; their pages are woken."""
+        """Builds that answered: per document they wrote (a path, or a model's id), None when its
+        model built, else what failed (``{"model", "error", "progress"}``). Those served are built
+        no longer; their pages are woken."""
         hit = False
         with self.load_lock:
             for text, failed in outcomes.items():
-                try:
-                    path = document_key(text)
-                except (OSError, ValueError):
-                    continue
-                if path not in self.idents:
-                    continue
-                state = self.builds.setdefault(path, {"building": None, "failed": None, "progress": 0})
-                state.update(building=None, failed=failed, progress=state["progress"] + 1)
-                hit = True
+                for ident in self._ids([text]):
+                    state = self.builds.setdefault(ident, {"building": None, "failed": None, "progress": 0})
+                    state.update(building=None, failed=failed, progress=state["progress"] + 1)
+                    hit = True
         if hit:
             self._changed()
 
-    def build_of(self, path: Path) -> dict[str, Any]:
-        """A served document's build: ``building``, ``failed`` and their ``progress`` count."""
+    def build_of(self, ident: str) -> dict[str, Any]:
+        """A served document's build, by its id: ``building``, ``failed`` and their ``progress`` count."""
         with self.load_lock:
-            return dict(self.builds.get(path) or {"building": None, "failed": None, "progress": 0})
+            return dict(self.builds.get(ident) or {"building": None, "failed": None, "progress": 0})
 
-    def wait(self, ident: str, after: str | None, seconds: float, progress: int | None = None) -> Served:
+    def wait(self, ident: str, after: str | None, seconds: float, progress: int | None = None, *,
+             page: bool = False) -> Served:
         """The document once its version is not ``after``, or its build's ``progress`` count is
-        not ``progress`` (when given), or after ``seconds``."""
-        path = next(path for path, value in self.idents.items() if value == ident)
+        not ``progress`` (when given), or after ``seconds``. ``page``: a browser page asks."""
         with self.watch_lock:
-            self.watchers[path] = self.watchers.get(path, 0) + 1
-            self.synced[path] = time.monotonic()
+            self.watchers[ident] = self.watchers.get(ident, 0) + 1
+            self.synced[ident] = time.monotonic()
+            if page:
+                self.paged[ident] = self.synced[ident]
         try:
             return self._wait(ident, after, seconds, progress)
         finally:
             with self.watch_lock:
-                left = self.watchers[path] - 1
+                left = self.watchers[ident] - 1
                 if left:
-                    self.watchers[path] = left
+                    self.watchers[ident] = left
                 else:
-                    del self.watchers[path]
-                self.synced[path] = time.monotonic()
+                    del self.watchers[ident]
+                self.synced[ident] = time.monotonic()
+                if page:
+                    self.paged[ident] = self.synced[ident]
             self.touch()
 
-    def sync(self, path: Path | str) -> None:
-        """A connected app's heartbeat, even when its document version has not changed."""
-        path = document_key(path)
-        if path in self.idents:
+    def page_opening(self, document: str) -> None:
+        """A browser was opened on ``document``'s page (its id or path): it counts as shown there
+        for ``PAGE_OPENING`` seconds, until the page reads it."""
+        try:
+            ident = document_id(document)
+        except (OSError, ValueError):
+            return
+        with self.watch_lock:
+            self.opening[ident] = time.monotonic()
+
+    def in_page(self, document: str) -> bool:
+        """Whether a browser page shows ``document`` (its id or path) now: it read the document's
+        version within ``LIVE`` seconds, or a browser was opened on it within ``PAGE_OPENING``. An MCP
+        app's view is not a browser page (``Server.sync``)."""
+        try:
+            ident = document_id(document)
+        except (OSError, ValueError):
+            return False
+        now = time.monotonic()
+        with self.watch_lock:
+            self.paged = {key: at for key, at in self.paged.items() if now - at < LIVE}
+            self.opening = {key: at for key, at in self.opening.items() if now - at < PAGE_OPENING}
+            return ident in self.paged or ident in self.opening
+
+    def sync(self, document: str) -> None:
+        """A connected app's heartbeat (its document's id, path or address), even when its
+        document version has not changed."""
+        for ident in self._ids([document]):
             with self.watch_lock:
-                self.synced[path] = time.monotonic()
+                self.synced[ident] = time.monotonic()
             self.touch()
 
-    def watched(self) -> set[Path | str]:
-        """Documents with an outstanding version read or a sync in the last LIVE seconds.
+    def watched(self) -> set[str]:
+        """The ids of documents with an outstanding version read or a sync in the last LIVE seconds.
 
         This lock is independent of document loading and the worker pool: retirement must
         not wait for a document's reader, nor take their locks in the opposite order.
         """
         now = time.monotonic()
         with self.watch_lock:
-            self.synced = {path: at for path, at in self.synced.items() if now - at < LIVE}
+            self.synced = {ident: at for ident, at in self.synced.items() if now - at < LIVE}
             return set(self.watchers) | self.synced.keys()
 
     def _wait(self, ident: str, after: str | None, seconds: float, progress: int | None) -> Served:
@@ -860,7 +1364,7 @@ class Server:
             doc = self.document(ident)
             left = deadline - time.monotonic()
             if after is None or doc.version != after or left <= 0 or (
-                    progress is not None and self.build_of(doc.path)["progress"] != progress):
+                    progress is not None and self.build_of(ident)["progress"] != progress):
                 return doc
             with self.changed:
                 # Woken by a patch, a release or a build's progress; the file is looked at twice a second.
@@ -959,8 +1463,8 @@ class Server:
                 if handler.command != "HEAD":
                     handler.wfile.write(body)
                 return
-            if not parts:
-                return self.file(handler, PAGE / "index.html")
+            if not parts or (len(parts) == 1 and is_id(parts[0])):
+                return self.file(handler, PAGE / "index.html")  # ``/<id>``: the document's page
             if parts[0] == "page" and len(parts) == 2:
                 return self.file(handler, PAGE / parts[1])
             if parts[0] == "three" and self.three is not None:
@@ -974,18 +1478,34 @@ class Server:
             if parts == ["api", "look", "environment"]:
                 return self.send(handler, 200, LOOK.environment_path.read_bytes(), "image/vnd.radiance")
             ident, pose = self.poses.get(parts[2], (parts[2], None)) if len(parts) >= 3 else ("", None)
-            if parts[:2] == ["api", "doc"] and (ident in self.served or ident in self.model_loaders):
+            if parts[:2] == ["api", "doc"] and ident and not self.holds(ident) and is_id(ident):
+                self.revive(ident)  # a document the engine's cache holds, after a restart
+            if parts[:2] == ["api", "doc"] and ident and not self.holds(ident):
+                lost = self.lost(ident)  # a document the engine knows but holds no more: what rebuilds it
+                if lost is not None:
+                    return self.send(handler, 404, json.dumps(lost).encode(), "application/json")
+            if parts[:2] == ["api", "doc"] and self.holds(ident):
                 if len(parts) == 4 and parts[3] == "version":
                     after = (query.get("after") or [None])[0]
-                    seconds = min(float((query.get("wait") or ["0"])[0] or 0), WAIT_LIMIT)
+                    seconds = float((query.get("wait") or ["0"])[0] or 0)
+                    if not math.isfinite(seconds):  # a NaN would never time out, an infinity never end
+                        raise ValueError("wait is a number of seconds")
+                    seconds = min(max(seconds, 0.0), WAIT_LIMIT)
                     given = (query.get("progress") or [""])[0]
-                    doc = self.wait(ident, after, seconds, int(given) if given.isdigit() else None)
-                    build = self.build_of(doc.path)
+                    doc = self.wait(ident, after, seconds, int(given) if given.isdigit() else None,
+                                    page=bool(getattr(handler, "page", False)))
+                    build = self.build_of(ident)
                     return self.json(handler, {"version": doc.version, "patch": doc.patch, **build})
                 doc = self.document(ident)
                 if len(parts) == 3:
+                    from cadgen.engine.mesh_format import TESSELLATION
+
                     self.prefetch(doc)  # a page is about to ask for every part
-                    return self.json(handler, self.posed(doc, pose))
+                    found = self.posed(doc, pose)
+                    stale = self.stale(ident) if ident in self.model_loaders else None
+                    # A part's buffer is sent immutable: its URL names the tessellation it was made at.
+                    found = {**found, "tessellation": TESSELLATION}
+                    return self.json(handler, {**found, "stale": stale} if stale else found)
                 if len(parts) == 4 and parts[3] == "pose" and method == "POST":
                     return self.pose(handler, doc)
                 if len(parts) >= 5 and parts[3] == "part":
@@ -1010,6 +1530,8 @@ class Server:
             self.error(handler, 404, "not found")
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except NotHeld as error:  # no worker, no bytes, no cache file: the command that builds it again
+            self.send(handler, 404, json.dumps(error.payload()).encode(), "application/json")
         except ValueError as error:  # a pose refused by name (``mechanism.KinematicsError``), a body not JSON
             self.error(handler, 400, str(error))
         except Exception as error:  # noqa: BLE001 - a request's failure is its answer
@@ -1030,7 +1552,12 @@ class Server:
         document served at that pose under an id of its own, its parts the document's. An unknown
         configuration, joint or coupling, a value out of range and a mechanism that is not a tree
         are refused by name (400) before the id exists."""
-        length = int(handler.headers.get("Content-Length") or 0)
+        try:
+            length = int(handler.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ValueError("a pose request's Content-Length is a number") from None
+        if not 0 <= length <= POSE_BODY_LIMIT:
+            raise ValueError(f"a pose request is at most {POSE_BODY_LIMIT} bytes")
         try:
             pose = json.loads(handler.rfile.read(length) or b"{}").get("pose")
         except (json.JSONDecodeError, AttributeError):
@@ -1043,6 +1570,9 @@ class Server:
         digest = hashlib.blake2b(json.dumps(pose, sort_keys=True).encode(), digest_size=6).hexdigest()
         ident = f"{doc.ident}~{digest}"
         self.poses[ident] = (doc.ident, pose)
+        self.poses.move_to_end(ident)
+        while len(self.poses) > POSES_HELD:
+            self.poses.popitem(last=False)
         self.json(handler, {"id": ident, "url": f"{self.url}/api/doc/{ident}", **posed["kinematics"]["pose"]})
 
     def part(self, handler: BaseHTTPRequestHandler, doc: Served, key: str) -> None:
@@ -1071,7 +1601,7 @@ class Server:
         if self.provenance is None:
             return None
         try:
-            found = self.provenance(str(doc.path), key, kind, ordinal)
+            found = self.provenance(doc.ident, key, kind, ordinal)
         except Exception:  # noqa: BLE001 - provenance never fails the facts
             return None
         prototype = next((p for p in doc.structure["prototypes"] if p["key"] == key), None)
@@ -1088,6 +1618,36 @@ class Server:
         if path.suffix == ".js":
             kind = "text/javascript"
         self.send(handler, 200, path.read_bytes(), kind)
+
+    def read(self, path: str) -> tuple[int, bytes]:
+        """A document read (``GET /api/doc/<id>...``) answered in process, as a page would be
+        answered over HTTP: its status and body. What a client of the daemon asks through its door
+        (``inspect``), so a shell that may not open a loopback socket reads it all the same."""
+        import io
+
+        class Reading:
+            command = "GET"
+            headers: dict[str, str] = {}
+
+            def __init__(self) -> None:
+                self.path = path
+                self.status = 200
+                self.rfile = io.BytesIO()
+                self.wfile = io.BytesIO()
+
+            def send_response(self, status: int) -> None:
+                self.status = status
+
+            def send_header(self, _name: str, _value: str) -> None:
+                pass
+
+            def end_headers(self) -> None:
+                pass
+
+        reading = Reading()
+        self.touch()
+        self.route(reading, "GET")  # type: ignore[arg-type]
+        return reading.status, reading.wfile.getvalue()
 
     def json(self, handler: BaseHTTPRequestHandler, payload: Any) -> None:
         self.send(handler, 200, json.dumps(payload, separators=(",", ":")).encode(), "application/json")

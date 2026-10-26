@@ -15,7 +15,9 @@ Three properties that only hold if something checks them:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib
+import io
 import inspect
 import subprocess
 import sys
@@ -48,7 +50,7 @@ MIRRORS: dict[str, tuple[str, str]] = {
 # The engine snapshot's options (``cadgen.engine.snapshot``), which every format's snapshot
 # command takes: one parser, one picture.
 SNAPSHOT = frozenset({"document", "out", "job", "display", "grid", "camera", "preview", "width", "height",
-                      "size_profile", "pose", "view", "annotation", "measurements", "no_daemon", "json"})
+                      "size_profile", "pose", "view", "annotation", "measurements", "json"})
 
 # Commands with a HAND-WRITTEN parser, and the option surface each one owns. An adapter has no
 # generated parser to compare against a signature, so the declaration IS the contract, and a
@@ -67,20 +69,21 @@ ADAPTERS: dict[str, frozenset[str]] = {
     # The person's telemetry choice: status, on or off.
     "telemetry": frozenset({"action"}),
     # The engine's verbs (cadgen.engine.cli), each a command of its own.
-    "build": frozenset({"source", "model", "name", "xbf", "step", "glb", "stl", "threemf", "dxf", "json", "verify", "profile",
-                        "no_daemon"}),
-    "export": frozenset({"source", "destinations", "no_inputs", "pose", "part", "no_daemon", "json"}),
+    "export": frozenset({"source", "destinations", "json"}),
     "snapshot": SNAPSHOT,
     "serve": frozenset({"document", "port", "three"}),
-    "inspect": frozenset({"document", "ref", "query"}),
+    "inspect": frozenset({"document", "ref", "query", "json"}),
     "status": frozenset({"json"}),
-    "stop": frozenset(),
-    "daemon": frozenset(),
+    "stop": frozenset({"json"}),
+    "delete": frozenset({"documents", "json"}),
+    "server": frozenset({"port", "rotate_token"}),
 }
 
 # Commands that own their parser outright and mirror no function.
 UNCLASSIFIED = {
     "doctor",
+    # The installation's python with the arguments, whatever they are: no parser of its own.
+    "run",
     # The viewer launcher owns its parser: the launch contract (reuse, replace or start on its
     # one port, the --json announce line) is not a function signature to mirror.
     "viewer",
@@ -135,11 +138,11 @@ class Manifest(unittest.TestCase):
     def test_the_retired_commands_are_gone(self):
         # No backwards compatibility: a retired command has no entry and no module, so it gets the
         # same answer as any unknown command.
-        for command in ("step build", "step compile", "step snapshot", "stl build", "stl snapshot", "3mf build",
-                        "3mf snapshot", "glb build", "glb snapshot", "store", "daemon status", "xbf", "where"):
+        for command in ("build", "step build", "step compile", "step snapshot", "stl build", "stl snapshot", "3mf build",
+                        "3mf snapshot", "glb build", "glb snapshot", "store", "daemon", "daemon status", "xbf", "where"):
             self.assertNotIn(command, cli._COMMANDS)
-        for module in ("cadgen.cli.step_build", "cadgen.cli.step_snapshot", "cadgen.cli.stl_build",
-                       "cadgen.cli.where", "cadgen.cli.store", "cadgen.cli.daemon_status", "cadgen.step", "cadgen.store", "cadgen.daemon"):
+        for module in ("cadgen.cli.build", "cadgen.engine.shape_input", "cadgen.cli.step_build", "cadgen.cli.step_snapshot", "cadgen.cli.stl_build",
+                       "cadgen.cli.where", "cadgen.cli.store", "cadgen.cli.daemon", "cadgen.cli.daemon_status", "cadgen.step", "cadgen.store", "cadgen.daemon"):
             with self.subTest(module=module), self.assertRaises(ModuleNotFoundError):
                 importlib.import_module(module)
 
@@ -175,10 +178,10 @@ class Manifest(unittest.TestCase):
         self.assertNotIn("sdf validate", out)
 
     def test_an_unknown_noun_lists_every_command(self):
-        code, out, err = self._dispatch("frobnicate", "build")
+        code, out, err = self._dispatch("frobnicate", "export")
         self.assertEqual(2, code)
         self.assertIn("unknown command 'frobnicate'", err)
-        for command in ("build", "export", "snapshot", "dxf snapshot", "urdf validate", "viewer", "inspect"):
+        for command in ("export", "snapshot", "dxf snapshot", "urdf validate", "viewer", "inspect"):
             self.assertIn(command, err)
 
     def test_a_name_that_is_not_a_verb_raises_the_plain_attribute_error(self):
@@ -191,13 +194,34 @@ class Manifest(unittest.TestCase):
 
     def test_the_engines_verbs_are_commands_of_their_own(self):
         # One parser per verb, the engine's (cadgen.engine.cli), named by the command that runs it.
-        for verb in ("build", "export", "snapshot", "serve", "inspect", "status", "stop", "daemon"):
+        for verb in ("export", "snapshot", "serve", "inspect", "status", "stop", "delete", "server"):
             with self.subTest(verb=verb):
                 module = importlib.import_module(cli._COMMANDS[verb][0])
                 self.assertEqual(module.build_parser().prog, f"cadgen {verb}")
+
+    def test_every_verb_goes_through_the_engine(self):
+        # No command runs a build or a verb in its own process: --no-daemon is an unrecognized argument like any
+        # other. daemon=False is the Python functions' seam for tests and debugging alone.
+        for argv in (("export", "a.xbf", "a.stl", "--no-daemon"), ("snapshot", "a.xbf", "a.png", "--no-daemon"),
+                     ("dxf", "snapshot", "a.dxf", "a.png", "--no-daemon")):
+            with self.subTest(argv=argv):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()), \
+                        self.assertRaises(SystemExit) as caught:
+                    cli.main(list(argv))
+                self.assertEqual(caught.exception.code, 2)
+                self.assertIn("unrecognized arguments: --no-daemon", err.getvalue())
+        from cadgen.engine import api
+
+        for verb in (api.export, api.snapshot):
+            self.assertIn("daemon", inspect.signature(verb).parameters)
+
+    def test_no_command_builds_source_text(self):
+        # A model is a script, built by running it (law 12): `build` is an unknown command like any
+        # other, said by the dispatcher's ordinary words and nothing about what it once was.
         code, out, err = self._dispatch("build", "raise AssertionError('must not run')")
         self.assertEqual((code, out), (2, ""))
-        self.assertIn("cadgen build: build requires an output: --model NAME", err)
+        self.assertTrue(err.startswith("cadgen: unknown command 'build'\n"), err)
 
     def test_a_format_snapshot_draws_its_own_files_alone(self):
         # `cadgen dxf snapshot` is the engine's snapshot for a .dxf: any other file is refused by

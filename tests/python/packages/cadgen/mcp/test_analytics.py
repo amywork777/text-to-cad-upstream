@@ -22,8 +22,8 @@ from unittest import mock
 
 from cadgen import cli
 from cadgen._internal import channel as install_channel
-from cadgen.analytics import (KEPT, NOTICE_ENV, NOTICE_TEXT, PRIVACY_URL, Recorder, _post, choose, forget_pending,
-                              notify, status)
+from cadgen.analytics import (KEPT, NOTICE_ENV, PRIVACY_URL, Recorder, _post, choose, forget_pending,
+                              notice_text, notify, status)
 from cadgen.cli import telemetry as telemetry_cli
 from cadgen.mcp.shim import initialize_params
 from cadgen.mcp.protocol import RequestContext, RpcError
@@ -73,7 +73,10 @@ class _Tmp(unittest.TestCase):
 
     def call(self, server: Server, name: str, arguments: dict | None = None) -> dict:
         context = RequestContext(1, {"threadId": "t"})
-        return server.handle("tools/call", {"name": name, "arguments": arguments or {}}, context)
+        arguments = dict(arguments or {})
+        if name in ("cad_sync", "cad_capture_reply"):  # as the page sends them: with its app capability
+            arguments.setdefault("app", server._app_token)
+        return server.handle("tools/call", {"name": name, "arguments": arguments}, context)
 
     def http(self, server: Server, method: str, url: str, body: dict | None = None, *, agent: bool = False) -> tuple[int, dict | None]:
         """A request the page sends through ``cad_http`` (a POST with the header its client sends)."""
@@ -263,7 +266,7 @@ class ServerCountsTest(_Tmp):
         secret, plate = self.tmp / "secret-bracket.step", self.tmp / "secret-plate.STL"
         secret.write_text("ISO-10303-21;", encoding="utf-8")
         plate.write_bytes(b"solid t\nendsolid t\n")
-        self.call(server, "cad_open", {"path": str(secret)})  # the agent opens one
+        self.call(server, "cad_open", {"source": str(secret)})  # the agent opens one
         # The view adds the models it shows to the library (one a person browsed to as well): files
         # worked on. The home's re-reads of the library are plumbing, never counted.
         for model in (secret, plate):
@@ -393,11 +396,11 @@ class ServerCountsTest(_Tmp):
         self.consent(server, True)
         notes = self.tmp / "secret-notes.txt"
         notes.write_text("not CAD", encoding="utf-8")
-        for arguments in ({}, {"path": "secret.step"}, {"path": str(self.tmp / "secret-missing.step")}, {"path": str(notes)}):
+        for arguments in ({}, {"source": "secret.step"}, {"source": str(self.tmp / "secret-missing.step")}, {"source": str(notes)}):
             self.assertTrue(self.call(server, "cad_open", arguments)["isError"])
         self.assertTrue(self.call(server, "cad_screenshot", {"view": "cad-1-gone"})["isError"])  # no viewer in this thread
         with mock.patch.object(Server, "_tool_cad_view", side_effect=KeyError("secret")), self.assertRaises(KeyError):
-            self.call(server, "cad_view", {"view": "v"})  # cadgen's own bug: a crash, and a reason
+            self.call(server, "cad_view", {})  # cadgen's own bug: a crash, and a reason
         self.assertTrue(server.analytics.flush())
         [payload] = sent
         failures = {(event["tool"], event["reason"]): event["count"] for event in payload["events"] if event["name"] == "tool_failure"}
@@ -514,7 +517,7 @@ class ServerCountsTest(_Tmp):
 
     def test_counts_go_from_the_notice_on_without_a_restart(self) -> None:
         server, sent = self.serve("claude-github")
-        self.call(server, "cad_show", {"path": "a.step"})
+        self.call(server, "cad_show", {"source": "a.step"})
         self.assertEqual(self.consent(server), {"sharing": False, "reason": "untold", "policy": PRIVACY_URL})
         self.assertFalse(server.analytics.flush())
         self.call(server, "cad_view")  # noted before anyone was told
@@ -704,7 +707,7 @@ class NoticeTest(_Tmp):
         said = io.StringIO()
         self.assertTrue(notify(said, path=self.path))
         self.assertFalse(notify(said, path=self.path))  # once
-        self.assertEqual(said.getvalue(), NOTICE_TEXT + "\n")
+        self.assertEqual(said.getvalue(), notice_text() + "\n")
         found = status(path=self.path)
         self.assertEqual((found["sharing"], found["reason"]), (True, "default"))
         # A choice, either way, keeps when it was said: a yes to less than is sent later falls back to the default.
@@ -713,6 +716,28 @@ class NoticeTest(_Tmp):
             self.assertEqual(status(path=self.path)["reason"], "default")
         choose(False, by="cli", path=self.path, forget=lambda id: True)
         self.assertIn("notifiedAt", json.loads(self.path.read_text(encoding="utf-8"))["telemetry"])
+
+    def test_its_off_command_runs_the_installation_that_said_it_when_pasted(self) -> None:
+        from cadgen import __version__
+        from cadgen.analytics import off_command
+
+        script = self.tmp / "bin" / ("cadgen.exe" if os.name == "nt" else "cadgen")
+        script.parent.mkdir()
+        script.write_text("#!/bin/sh\n", encoding="utf-8")
+        script.chmod(0o755)
+        # uvx made it: the plugin's own pinned line, which reuses this installation.
+        with mock.patch("sys.prefix", str(self.tmp / "uv" / "archive-v0" / "abc")):
+            self.assertEqual(off_command(), "uvx --no-config --managed-python --python 3.13 "
+                                            f"--from cadgen=={__version__} cadgen telemetry off")
+        # The cadgen on PATH is the one that runs; one off PATH is named by its path.
+        with mock.patch("sys.argv", [str(script)]):
+            with mock.patch.dict("os.environ", {"PATH": str(script.parent)}):
+                self.assertEqual(off_command(), "cadgen telemetry off")
+            with mock.patch.dict("os.environ", {"PATH": str(self.tmp)}):
+                self.assertEqual(off_command(), f"{script.resolve()} telemetry off")
+        with mock.patch("sys.argv", ["/x/cadgen/cli/__main__.py"]), mock.patch("sys.executable", "/venv/bin/python"):
+            self.assertEqual(off_command(), "/venv/bin/python -m cadgen.cli telemetry off")
+        self.assertIn(f"Turn off: {off_command()} · {PRIVACY_URL}", notice_text())
 
     def test_a_larger_default_is_said_again_before_it_is_sent(self) -> None:
         notify(io.StringIO(), path=self.path)
@@ -739,7 +764,7 @@ class NoticeTest(_Tmp):
     def test_every_command_says_it_but_the_servers_and_telemetry_itself(self) -> None:
         with mock.patch("cadgen.analytics.notify") as told, mock.patch.object(cli, "_run", return_value=0), \
                 mock.patch("sys.stdout", io.StringIO()):
-            for argv in (["doctor"], ["dxf", "snapshot", "a.dxf"], ["viewer"], ["mcp"], ["daemon"], ["telemetry", "off"]):
+            for argv in (["doctor"], ["dxf", "snapshot", "a.dxf"], ["viewer"], ["mcp"], ["server"], ["telemetry", "off"]):
                 cli.main(argv)
             cli.main(["--help"])
         self.assertEqual(told.call_count, 3)
@@ -749,7 +774,7 @@ class NoticeTest(_Tmp):
         with mock.patch.dict("os.environ", {"CADGEN_STATE_DIR": str(self.tmp)}), \
                 mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
             self.assertEqual(telemetry_cli.main([]), 0)
-        self.assertEqual(err.getvalue(), NOTICE_TEXT + "\n")
+        self.assertEqual(err.getvalue(), notice_text() + "\n")
         self.assertRegex(out.getvalue(), r"^Telemetry is on: by default, since cadgen said so on \d{4}-\d{2}-\d{2}\.\n")
 
 
@@ -770,7 +795,7 @@ class NeverInTheWayTest(_Tmp):
             self.assertFalse(self.http(server, "GET", "/__cad/analytics", agent=True)[1]["sharing"])
             self.assertFalse(self.http(server, "POST", "/__cad/analytics", {"share": False}, agent=True)[1]["sharing"])
             # CAD's own tools are untouched, and the recorder's own methods return quietly.
-            self.assertIn("isError", self.call(server, "cad_show", {"path": "missing.step"}))
+            self.assertIn("isError", self.call(server, "cad_show", {"source": "missing.step"}))
             server.analytics.called("cad_show", True)
             self.assertFalse(server.analytics.flush())
             server.analytics.close()

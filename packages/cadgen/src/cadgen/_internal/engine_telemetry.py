@@ -7,7 +7,8 @@ the moment the engine's verbs are imported, never sooner, so a process that does
 imports none of it. It counts these events (``analytics.EVENTS``):
 
 - a ``build`` of kind ``xbf``, by who asked (``via``): ``python model.py``, or a Python caller's
-  ``cadgen.build()``, is ``script``; a ``cadgen`` command ``command``. How it ended (``crashed``: its
+  ``Model.build()``, is ``script`` (no command builds one now; ``command`` is still a value
+  ``analytics.VIAS`` reads, which releases before 0.8 sent). How it ended (``crashed``: its
   worker died under it; ``cancelled``: interrupted), whether its documents were their xbfs taken whole
   (``cached``: every model's ``cache.used``), how long it took, and why it failed (``build_failure``,
   ``analytics.told_failure``);
@@ -39,7 +40,7 @@ from typing import Any
 # Python caller.
 command: str | None = None
 # Commands that serve others and count their own work: a verb one asks for is a view's, not a build.
-SERVERS = frozenset({"viewer", "mcp", "daemon"})
+SERVERS = frozenset({"viewer", "mcp", "server"})
 API = "cadgen.engine.api"
 # An engine kind as telemetry names a format (``analytics.KINDS``); a model's document is an xbf.
 KINDS = {"xbf": "xbf", "step": "step", "glb": "glb", "stl": "stl", "threemf": "3mf", "dxf": "dxf", "urdf": "urdf",
@@ -163,7 +164,7 @@ def counts(facts: dict[str, Any], via: str) -> dict[str, Any]:
         ok = outcome == "ok"
         snapshots.append({"format": KINDS[facts["source"]], "ok": ok, "seconds": seconds,
                           **({} if ok else {"reason": _snapshot_failure(facts, error, outcome)})})
-    if verb in ("export", "snapshot") and facts.get("pose"):
+    if verb == "snapshot" and facts.get("pose"):
         features.append("kinematics")
     health = {name: 1 for name, happened in (("workers", worker.get("fresh") is True),
                                              ("crashes", worker.get("died") is not None),

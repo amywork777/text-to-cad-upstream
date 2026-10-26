@@ -1,7 +1,7 @@
 """The canonical gripper frame: one centered part at both the gripper and the
 shoulder-yaw mount. Supersedes the end-for-end template in end_effector/."""
 import build123d as bd
-from cadgen.engine import memo, read_step
+from cadgen import memo, read_step
 from lib import sheet_rule_scs as scs
 from lib.materials import ALUMINUM_5052_COLOR
 from lib.booleans import as_single_shape
@@ -51,7 +51,7 @@ def centered_frame(legacy):
         if len(holes) != 2:
             raise ValueError('Expected two occupied holes per jaw case face')
         side = 'lower' if sign > 0 else 'upper'
-        seat = getattr(SERVO, f'case_{side}_y_mm')
+        seat = SERVO.case_lower_y_mm if side == 'lower' else SERVO.case_upper_y_mm
         edges = []
         for kind, *coords in gripper_case_outline(side):
             pts = [(x, seat, y) for x,y in coords]
@@ -78,7 +78,3 @@ def centered_frame(legacy):
 @memo
 def gripper_frame():
     return centered_frame(mirrored_frame(read_step(INPUTS/'gripper.step').children[0]))
-
-
-if __name__ == '__main__':
-    gripper_frame()

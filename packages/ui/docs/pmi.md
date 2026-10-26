@@ -166,8 +166,8 @@ The section's eyes hide one annotation, or all of them; what is hidden is the fi
 (`xbfViewSlices.js`'s `pmi` slice, by each annotation's key, kept across a rebuild of the same
 parts), never the document. Turned off, PMI is off in a prompt's views too (`display.pmi` false).
 
-Where the document is an `.xbf` (made from code), what the person changes is asked for, never
-written (`xbf/pmi/useXbfPmi.jsx`), each a chip in Quick Edit (its `requests`) that carries one
+Where the document is made from code (a model's, by its id, or an `.xbf`), what the person
+changes is asked for, never written (`xbf/pmi/useXbfPmi.jsx`), each a chip in Quick Edit (its `requests`) that carries one
 paragraph of what to do to its part's `pmi.annotate(...)` call, the annotation by its author's id
 and the part by its name, and the call itself (`pmiChangeRequest`), what it does not change as the
 document says it (a label, a position's zone, round or not):
@@ -232,21 +232,24 @@ These buttons highlight the datum's geometry without changing its assignment or 
 Quick Edit. Selecting a datum lists the tolerances that use it under **Used by**. Both
 directions resolve within the annotation's part.
 
-**Export** in the top-right toolbar offers **STEP (AP242)**, written from the built document
-with its GD&T; a Quick Edit request not yet built is not in it. Its notes (and notes library) and
-named views are the XBF's: a STEP carries neither, and is not refused for them. Where the document
-carries PMI, the menu says so under the format, and where it holds notes or views, which of them
-stay in the XBF (the STEP row's `kept`: "Notes and named views stay in the XBF: a STEP carries the
-GD&T."). The export service pins the revision on screen,
-holds the job and its file, and never runs the model's code. A STEP of a pose or of one part, and
-an XBF made again from the document, would drop the PMI, so they are unavailable; the menu says why
-for each row the PMI decided (`pmi` with a `reason`), STEP and XBF alike.
+**Export** in the top-right toolbar lists the formats the file's kind writes, STEP among them,
+written from the built document with its GD&T; a Quick Edit request not yet built is not in it.
+Its notes (and notes library) and named views are the document's: a STEP carries neither, and is
+not refused for them. Where the document carries PMI, the menu's muted lines under the formats
+say so, and where it holds notes or views, which of them stay in the XBF ("Notes and named views
+stay in the XBF: a STEP carries the GD&T."), from what the view already holds (`ExportView.pmi`, `export/context.ts`: `gdt` and `kept`),
+nothing inspected first. The export service pins the
+revision on screen, holds the job and its file, and never runs the model's code. A file that
+would not carry the PMI the code made whole is refused by its job, and its toast says why: a STEP
+that would drop an annotation linked to no geometry, and an XBF of a model held by its id, which
+the engine writes as the document made again, carrying none of its PMI yet. There is no STEP of a
+pose or of one part to refuse: those are models of their own.
 
 Once the STEP is written, the worker reads that same file back on its own and compares its
 supported annotations with the document's, one to one: values, units, datum order, tolerance-zone
 form and the faces each is on, by name. The result and the file's SHA-256 go with the export job,
-and stay with it when another model opens: the check is part of the export, with no endpoint or
-export of its own. The browser's save writes that file; a save that fails never says Saved.
+said in its toast once the file is ready, and stay with it when another model opens: the check is
+part of the export, with no endpoint or export of its own. The browser's save writes that file; a save that fails never says Saved.
 
 Missing or extra annotations, no PMI, a parser problem or a schema other than AP242 fail the
 check. Both signed deviations' units are checked. Face names are looked for across all the

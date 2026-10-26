@@ -14,21 +14,24 @@ kernel memo makes an edit cost what it changed; the document is written to
 ``XBF/arm.xbf`` beside the script, and the derived files it declares after it, each a
 translation of that document (``cadgen export``). ``cadgen serve XBF/arm.xbf``
 shows it. Nothing but those files is written: every cache lives in a process's memory.
-The verbs as functions are ``cadgen.engine.api`` (``cadgen.build``, ``cadgen.export``, ...).
+The verbs as functions are ``cadgen.engine.api`` (``cadgen.export``, ``cadgen.snapshot``, ...).
 
 A function worth replaying on a later build -- an assembly's part, a derivation's stage --
 is marked ``@memo``: it writes no file, and a build whose edit does not reach it replays it
 instead of running it. A part's material is a value set on the shape: ``part.material = materials.aluminium``
 (``Material`` for any other). An assembly's mechanism is build123d's joints, placed with
-``connect_to``, as built where the joints place the parts; ``configuration(assembly, name,
-**values)`` names a configuration of it, ``couple(assembly, name, **joints)`` a constraint moving
-several joints by ratio (their only way to move, its range their limits'), and ``motion(assembly,
-name, ...)`` a motion, which a GLB export bakes into a clip. ``read_step(path)`` and ``read_xbf(path)`` copy a file's geometry into
+``connect_to``, as built where the joints place the parts. The functions that say more are
+``cadgen.ap242``'s and ``cadgen.gltf``'s, defined here (``model``, ``mechanism``, ``animations``)
+and exported there: ``mechanism_state(assembly, name, **values)`` names a state of it, ``gear_pair``, ``rack_and_pinion_pair`` and ``screw_pair(assembly,
+name, **joints)`` a constraint moving joints by ratio (their only way to move, its range their
+limits'), and ``configuration_sequence(assembly, name, ...)`` a sequence of states over time, which a
+GLB export bakes into a clip; ``animation(assembly, name, duration=)``
+a GLB's own choreography, never in the document, baked into the GLBs the model declares. ``read_step(path)`` and ``read_xbf(path)`` copy a file's geometry into
 the model, named, coloured and given its materials as the file has them; ``read_mesh(path)`` reads
-an STL as data -- vertices, triangles, ``bounding_box()`` -- never a shape. ``select(source, ref,
-kind=None)`` is the geometry a ref names -- ``hand/finger.2/f:finger.tip.1``, ``base/face 3`` --
-as build123d shapes in world coordinates (``refs``). ``pmi.annotate(part, pmi.datum(...),
-pmi.diameter(...), ...)`` gives a part semantic PMI, written to STEP as AP242's (``pmi``).
+an STL as data -- vertices, triangles, ``bounding_box()`` -- never a shape. A build says where it
+is without a word from the model: each body it runs, by name (``progress``). ``pmi.annotate(part,
+pmi.datum(...), pmi.diameter(...), ...)`` gives a part semantic PMI, written to STEP as AP242's
+(``pmi``).
 Importing this package imports no kernel: the names below load on first use. Decoration only declares: imports and definitions never build or exit the caller.
 Imported by a
 script run by its path from inside a package (``python proj/parts/model.py``), it gives the
@@ -39,8 +42,8 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["Material", "configuration", "couple", "dxf", "glb", "materials", "memo", "model", "motion", "paint",
-           "pmi", "read_mesh", "read_step", "read_xbf", "report", "select", "step", "stl", "threemf", "track", "xbf"]
+__all__ = ["Material", "dxf", "glb", "materials", "memo", "model", "paint", "pmi", "read_mesh", "read_step", "read_xbf",
+           "step", "stl", "threemf", "xbf"]
 
 
 def _main_in_a_package() -> None:
@@ -72,18 +75,6 @@ def __getattr__(name: str) -> Any:
         from cadgen.engine.materials import Material
 
         return Material
-    if name in ("report", "track"):
-        from cadgen.engine import progress
-
-        return getattr(progress, name)
-    if name == "select":
-        from cadgen.engine.refs import select
-
-        return select
-    if name == "couple":
-        from cadgen.engine.mechanism import couple
-
-        return couple
     if name == "read_mesh":
         from cadgen.engine.reader import read_mesh
 
@@ -94,3 +85,10 @@ def __getattr__(name: str) -> Any:
         declarations = importlib.import_module("cadgen.engine.model")
         return declarations if name == "model" else getattr(declarations, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """Its public names (``__all__``) and the submodules imported so far: what ``dir()`` and
+    completion offer, without loading any of them, nor the kernel."""
+    return sorted({*__all__, *(name for name, value in globals().items() if name.startswith("__")
+                               or getattr(value, "__name__", "").startswith(__name__ + "."))})

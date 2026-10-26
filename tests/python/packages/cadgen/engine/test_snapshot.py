@@ -38,7 +38,7 @@ from cadgen.engine import paint, xbf
 @xbf("XBF/stand.xbf")
 def stand():
     plate = bd.Box(40, 20, 4) - bd.Cylinder(4, 10)
-    plate = paint(plate, plate.faces().sort_by(bd.Axis.Z)[-1], "orange")
+    plate = paint(plate, plate.faces().sort_by(bd.Axis.Z)[-1], "#ffa500")
     plate.label = "plate"
     peg = bd.Cylinder(3, 12)
     peg.label = "peg"
@@ -107,7 +107,7 @@ class SnapshotTest(unittest.TestCase):
         out = self.folder / "wire.png"
         env = {**os.environ, "PYTHONPATH": str(SRC), "CADGEN_ENGINE_MESH": "inline"}
         done = subprocess.run([sys.executable, "-m", "cadgen.engine", "snapshot", str(self.document), str(out),
-                               "--display", "wireframe", "--grid", "--width", "200", "--height", "160", "--no-daemon",
+                               "--display", "wireframe", "--grid", "--width", "200", "--height", "160",
                                "--json"], env=env, capture_output=True, text=True, timeout=300)
         self.assertEqual(done.returncode, 0, done.stderr)
         report = json.loads(done.stdout.strip().splitlines()[-1])
@@ -115,9 +115,9 @@ class SnapshotTest(unittest.TestCase):
         self.assertGreater(report["timings"]["totalMs"], 0)
         self.assertEqual(out.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
 
-    def test_what_a_document_does_not_offer_is_refused_by_name_and_leaves_no_picture(self) -> None:
-        # A picture an earlier run wrote at OUT is gone once a run is refused (law 16); an OUT
-        # that is no .png is refused, and kept.
+    def test_what_a_document_does_not_offer_is_refused_by_name_and_keeps_the_earlier_picture(self) -> None:
+        # A refused or failed run leaves the picture an earlier run wrote at OUT byte for byte,
+        # and nothing beside it; an OUT that is no .png is refused, and kept.
         out = self.folder / "stale.png"
 
         def stale() -> Path:
@@ -151,15 +151,51 @@ class SnapshotTest(unittest.TestCase):
                                                                            daemon=False))):
             with self.assertRaisesRegex(SnapshotRefused, said):
                 call()
-            self.assertFalse(out.exists(), said)
+            self.assertEqual(out.read_bytes(), b"before", said)
         env = {**os.environ, "PYTHONPATH": str(SRC)}
         stale()
         done = subprocess.run([sys.executable, "-m", "cadgen.engine", "snapshot", str(self.single), str(out),
-                               "--display", '{"exploded": {"enabled": true}}', "--no-daemon"],
+                               "--display", '{"exploded": {"enabled": true}}'],
                               env=env, capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 2)
         self.assertIn("display.exploded", done.stderr)
-        self.assertFalse(out.exists())
+        self.assertEqual(out.read_bytes(), b"before")
+
+    def test_a_failed_render_keeps_every_earlier_picture_and_a_job_moves_its_pictures_in_together(self) -> None:
+        from unittest import mock
+
+        from cadgen.engine import snapshot as drawing
+        from cadgen.engine.render import service
+
+        folder = Path(tempfile.mkdtemp(prefix="engine-kept-")).resolve()
+        self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
+        first, second = folder / "first.png", folder / "second.png"
+        first.write_bytes(b"first, earlier")
+        second.write_bytes(b"second, earlier")
+        with mock.patch.object(service, "draw_here", side_effect=RuntimeError("the render broke")), \
+                self.assertRaisesRegex(RuntimeError, "the render broke"):
+            snapshot(self.document, first, daemon=False)
+        self.assertEqual(first.read_bytes(), b"first, earlier")
+        still = drawing.Still({}, None, False, False, (8, 8), None, None, None)
+        pictures = [(self.document, first, still), (self.document, second, still)]
+        drawn = {"timings": {}}
+        written = drawing._written
+
+        def second_fails(document, out, data, report, started):
+            if len(list(folder.glob(".*.tmp/*.png"))) == 1:  # the first picture is in its staging folder
+                raise OSError("the disk is full")
+            return written(document, out, data, report, started)
+
+        with mock.patch.object(service, "draw_here_each", return_value=[(b"new 1", dict(drawn)), (b"new 2", dict(drawn))]):
+            with mock.patch.object(drawing, "_written", side_effect=second_fails), \
+                    self.assertRaisesRegex(OSError, "disk is full"):
+                drawing.draw_pictures(pictures, daemon=False)
+            self.assertEqual((first.read_bytes(), second.read_bytes()), (b"first, earlier", b"second, earlier"))
+            self.assertEqual(sorted(path.name for path in folder.iterdir()), ["first.png", "second.png"])
+            done = drawing.draw_pictures(pictures, daemon=False)
+        self.assertEqual((first.read_bytes(), second.read_bytes()), (b"new 1", b"new 2"))
+        self.assertEqual([found["output"] for found in done], [str(first), str(second)])
+        self.assertEqual(sorted(path.name for path in folder.iterdir()), ["first.png", "second.png"])
 
     def test_an_out_that_is_a_folder_is_given_the_source_s_stem_and_the_time(self) -> None:
         import re
@@ -173,7 +209,8 @@ class SnapshotTest(unittest.TestCase):
         self.assertRegex(picture_path(folder, self.document).name, rf"^stand{timed}$")  # a folder that is there
         fresh = picture_path(f"{folder / 'stills'}{os.sep}", self.document)  # a separator: a folder to be
         self.assertEqual(fresh.parent, folder / "stills")
-        self.assertRegex(picture_path(folder, f"{folder / 'stand.py'}::post").name, rf"^post{timed}$")  # a model's name
+        ident = "6f1c2a4e-1b2c-5d3e-8f4a-0123456789ab"
+        self.assertRegex(picture_path(folder, ident).name, rf"^{ident}{timed}$")  # a document's id
         self.assertEqual(picture_path(folder / "named.png", self.document), folder / "named.png")
         # A packet's pictures share one time, told apart by their job and output where they have several.
         self.assertEqual(picture_path(folder, self.document, at="T", job=(1, 3), output=(0, 2)).name, "stand_j2_1_T.png")
@@ -205,8 +242,7 @@ class SnapshotTest(unittest.TestCase):
 
         out = str(self.folder / "enveloped.png")
         for argv, said, status in ((["snapshot", str(self.folder / "missing.xbf"), out], "no document", 2),
-                                   (["snapshot", str(self.document), out, "--display", "sideways"], "sideways", 2),
-                                   (["build", "result = 1", "--xbf", "a.txt"], "must end in .xbf", 1)):
+                                   (["snapshot", str(self.document), out, "--display", "sideways"], "sideways", 2)):
             with self.subTest(argv=argv):
                 code, printed, err = run(lambda: cli.main([*argv, "--json"]))
                 found = json.loads(printed)
@@ -319,14 +355,14 @@ class SnapshotTest(unittest.TestCase):
         packet, _camera = self.packet(folder)
         path = folder / "stand-1.snapshot.json"
         path.write_text(json.dumps(packet), encoding="utf-8")
-        done = subprocess.run([sys.executable, "-m", "cadgen.engine", "snapshot", "--job", str(path), "--no-daemon"],
+        done = subprocess.run([sys.executable, "-m", "cadgen.engine", "snapshot", "--job", str(path)],
                               env={**os.environ, "PYTHONPATH": str(SRC), "CADGEN_ENGINE_MESH": "inline"},
                               capture_output=True, text=True, timeout=300)
         self.assertEqual(done.returncode, 0, done.stderr)
         [top] = (folder / "tops").iterdir()
         self.assertRegex(top.name, r"^stand_j2_1_\d{8}T\d{6}Z\.png$")
         self.assertEqual([line.split(" (")[0] for line in done.stdout.splitlines()],
-                         [f"wrote {os.path.relpath(found)}" for found in (folder / "view-1.png", top, folder / "front.png")])
+                         [f"wrote {found}" for found in (folder / "view-1.png", top, folder / "front.png")])
 
         def rgba(found: Path) -> np.ndarray:
             with Image.open(found) as image:
@@ -352,7 +388,7 @@ class SnapshotTest(unittest.TestCase):
         job = {**packet["jobs"][1], "output": {"padding": 0.15, "renderScale": 2},
                "outputs": [{"path": str(folder / "opaque.png"), "width": 200, "height": 150}]}
         opaque.write_text(json.dumps({"input": str(self.document), "jobs": [job]}), encoding="utf-8")
-        self.assertEqual(cli.main(["snapshot", "--job", str(opaque), "--no-daemon", "--json"]), 0)
+        self.assertEqual(cli.main(["snapshot", "--job", str(opaque), "--json"]), 0)
         drawn, clear = rgba(folder / "opaque.png")[..., :3], rgba(top)
 
         def linear(srgb: np.ndarray) -> np.ndarray:
@@ -367,7 +403,7 @@ class SnapshotTest(unittest.TestCase):
         tight = folder / "tight.json"
         tight.write_text(json.dumps({"input": str(self.document), "jobs": [{**job, "output": {"padding": 0}, "outputs": [
             {"path": str(folder / "tight.png"), "width": 200, "height": 150}]}]}), encoding="utf-8")
-        self.assertEqual(cli.main(["snapshot", "--job", str(tight), "--no-daemon"]), 0)
+        self.assertEqual(cli.main(["snapshot", "--job", str(tight)]), 0)
 
         def reach(found: Path) -> int:
             picture = rgba(found)[..., :3]
@@ -411,8 +447,12 @@ class SnapshotTest(unittest.TestCase):
             with self.subTest(said=said), self.assertRaisesRegex(SnapshotRefused, said):
                 job_pictures(broken)
         self.assertEqual(stale.read_bytes(), b"an earlier run's", "a refused job writes nothing, and takes nothing away")
-        model = f"{self.folder / 'stand.py'}::stand"
-        self.assertEqual(str(job_pictures(packet, model)[0][0]), model)
+        # A document's id is drawn in place of the job's input, as the engine holds it; a script never is.
+        ident = "6f1c2a4e-1b2c-5d3e-8f4a-0123456789ab"
+        self.assertEqual(str(job_pictures(packet, ident)[0][0]), ident)
+        for script in (self.folder / "stand.py", f"{self.folder / 'stand.py'}::stand"):
+            with self.subTest(script=str(script)), self.assertRaisesRegex(SnapshotRefused, "is neither a document"):
+                job_pictures(packet, script)
         import contextlib
         import io
 
@@ -466,11 +506,12 @@ class SnapshotTest(unittest.TestCase):
         # model declares (law 10), its GLB; the snapshot, no file but the picture.
         script.write_text(textwrap.dedent(MODEL).replace("@xbf(\"XBF/stand.xbf\")\ndef stand", "@glb(\"stand.glb\")\ndef stand")
                           .replace("import paint, xbf", "import glb, paint, xbf"), encoding="utf-8")
-        drawn = api.snapshot(f"{script}::stand", folder / "stand.png", display="xray", camera="iso", width=200,
+        drawn = api.snapshot(_model(script, "stand"), folder / "stand.png", display="xray", camera="iso", width=200,
                              height=150, daemon=False)
         self.assertEqual((drawn.width, drawn.height), (200, 150))
         self.drawn(folder / "stand.png", (200, 150))
-        self.assertEqual(sorted(path.name for path in folder.rglob("*") if path.is_file()),
+        # The importing program's own bytecode of stand.py (``_model``: Python's import) is not cadgen's.
+        self.assertEqual(sorted(path.name for path in folder.rglob("*") if path.is_file() and "__pycache__" not in path.parts),
                          ["stand.glb", "stand.png", "stand.py"])
 
     def test_a_model_taken_from_its_file_is_drawn_from_that_file(self) -> None:
@@ -490,11 +531,21 @@ class SnapshotTest(unittest.TestCase):
             held.clear()
         memo.clear()
         self.addCleanup(memo.clear)
-        drawn = api.snapshot(f"{script}::stand", folder / "stand.png", camera="iso", width=200, height=150,
+        drawn = api.snapshot(_model(script, "stand"), folder / "stand.png", camera="iso", width=200, height=150,
                              daemon=False)
         self.assertEqual((drawn.width, drawn.height), (200, 150))
         self.drawn(folder / "stand.png", (200, 150))
         self.assertEqual(xbf.stat().st_mtime_ns, written, "taken, not written again")
+
+
+def _model(script: Path, name: str):
+    """The ``Model`` a script defines, as the program importing it has it (Python's own import)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(f"{script.stem}_{name}_model", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return getattr(module, name)
 
 
 class AccessTest(unittest.TestCase):

@@ -43,7 +43,7 @@
      "page": "viewer",
      "pick": "<pick>",
      "platform": "<platform>",
-     "protocol": 8,
+     "protocol": 9,
      "surface": "file",
      "version": "<version>"
     }
@@ -66,7 +66,7 @@
      "page": "home",
      "pick": "<pick>",
      "platform": "<platform>",
-     "protocol": 8,
+     "protocol": 9,
      "recents": [],
      "surface": "sidebar",
      "version": "<version>"
@@ -90,7 +90,7 @@
      "page": "viewer",
      "pick": "<pick>",
      "platform": "<platform>",
-     "protocol": 8,
+     "protocol": 9,
      "surface": "agent",
      "version": "<version>"
     }
@@ -108,12 +108,13 @@
   "cad_show": {
    "content": [
     {
-     "text": "No CAD viewer is open in this thread. Call cad_open to open one.",
+     "text": "The CAD tab cad_open opened is still opening; it shows <tmp>/project/parts/bracket.stl once it opens.",
      "type": "text"
     }
    ],
    "structuredContent": {
-    "delivered": 0
+    "delivered": 0,
+    "opening": true
    }
   },
   "cad_tab": {
@@ -133,7 +134,7 @@
      "page": "viewer",
      "pick": "<pick>",
      "platform": "<platform>",
-     "protocol": 8,
+     "protocol": 9,
      "surface": "tab",
      "version": "<version>"
     }
@@ -381,13 +382,13 @@
    "inputSchema": {
     "additionalProperties": false,
     "properties": {
-     "path": {
-      "description": "A CAD file or script path, script.py::MODEL, or code::NAME.",
+     "source": {
+      "description": "A CAD file's absolute path, or a document id (a model's, which running its script prints).",
       "type": "string"
      }
     },
     "required": [
-     "path"
+     "source"
     ],
     "type": "object"
    },
@@ -413,8 +414,8 @@
    "inputSchema": {
     "additionalProperties": false,
     "properties": {
-     "path": {
-      "description": "A CAD file or script path, script.py::MODEL, or code::NAME.",
+     "source": {
+      "description": "A CAD file's absolute path, or a document id (a model's, which running its script prints).",
       "type": "string"
      },
      "view": {
@@ -423,7 +424,7 @@
      }
     },
     "required": [
-     "path"
+     "source"
     ],
     "type": "object"
    },
@@ -546,6 +547,10 @@
    "inputSchema": {
     "additionalProperties": false,
     "properties": {
+     "app": {
+      "description": "The view's capability, from its launch's metadata.",
+      "type": "string"
+     },
      "closed": {
       "type": "boolean"
      },
@@ -582,7 +587,8 @@
     },
     "required": [
      "view",
-     "surface"
+     "surface",
+     "app"
     ],
     "type": "object"
    },
@@ -606,6 +612,10 @@
    "inputSchema": {
     "additionalProperties": false,
     "properties": {
+     "app": {
+      "description": "The view's capability, from its launch's metadata.",
+      "type": "string"
+     },
      "error": {
       "type": "string"
      },
@@ -617,7 +627,8 @@
      }
     },
     "required": [
-     "requestId"
+     "requestId",
+     "app"
     ],
     "type": "object"
    },
@@ -631,282 +642,7 @@
     "openWorldHint": true,
     "readOnlyHint": false
    },
-   "description": "Build Python source assigning result, in the named working directory. Declare a live model and/or absolute file outputs. Does not select a script or execute its __main__; imported code and called decorated models may write their declared outputs. Start requires requestId. Returns an asynchronous operation: call this same tool with action=status, operationId and epoch (optionally afterSequence and waitMs) for progress/result, or action=cancel while queued. Disconnect does not cancel. Status lasts up to 24 hours in this MCP session; restart loses it. Running file writes cannot be cancelled.",
-   "inputSchema": {
-    "additionalProperties": false,
-    "anyOf": [
-     {
-      "additionalProperties": false,
-      "properties": {
-       "action": {
-        "enum": [
-         "start"
-        ],
-        "type": "string"
-       },
-       "code": {
-        "maxLength": 1000000,
-        "minLength": 1,
-        "type": "string"
-       },
-       "cwd": {
-        "minLength": 1,
-        "type": "string"
-       },
-       "name": {
-        "minLength": 1,
-        "type": "string"
-       },
-       "outputs": {
-        "additionalProperties": false,
-        "properties": {
-         "dxf": {
-          "minLength": 1,
-          "type": "string"
-         },
-         "glb": {
-          "minLength": 1,
-          "type": "string"
-         },
-         "model": {
-          "enum": [
-           true
-          ],
-          "type": "boolean"
-         },
-         "step": {
-          "minLength": 1,
-          "type": "string"
-         },
-         "stl": {
-          "minLength": 1,
-          "type": "string"
-         },
-         "threemf": {
-          "minLength": 1,
-          "type": "string"
-         },
-         "xbf": {
-          "minLength": 1,
-          "type": "string"
-         }
-        },
-        "required": [],
-        "type": "object"
-       },
-       "profile": {
-        "type": "boolean"
-       },
-       "requestId": {
-        "description": "Unique 16\u2013100 character request ID. Reuse only for an identical start in this session.",
-        "minLength": 1,
-        "type": "string"
-       },
-       "verify": {
-        "type": "boolean"
-       }
-      },
-      "required": [
-       "requestId",
-       "code",
-       "name",
-       "cwd",
-       "outputs"
-      ],
-      "type": "object"
-     },
-     {
-      "additionalProperties": false,
-      "properties": {
-       "action": {
-        "enum": [
-         "status",
-         "cancel"
-        ],
-        "type": "string"
-       },
-       "afterSequence": {
-        "minimum": 0,
-        "type": "integer"
-       },
-       "epoch": {
-        "description": "Session epoch returned by start; required for status/cancel.",
-        "minLength": 1,
-        "type": "string"
-       },
-       "operationId": {
-        "minLength": 1,
-        "type": "string"
-       },
-       "waitMs": {
-        "maximum": 25000,
-        "minimum": 0,
-        "type": "integer"
-       }
-      },
-      "required": [
-       "action",
-       "operationId",
-       "epoch"
-      ],
-      "type": "object"
-     }
-    ],
-    "properties": {
-     "action": {
-      "default": "start",
-      "enum": [
-       "start",
-       "status",
-       "cancel"
-      ],
-      "type": "string"
-     },
-     "afterSequence": {
-      "minimum": 0,
-      "type": "integer"
-     },
-     "code": {
-      "maxLength": 1000000,
-      "minLength": 1,
-      "type": "string"
-     },
-     "cwd": {
-      "minLength": 1,
-      "type": "string"
-     },
-     "epoch": {
-      "description": "Session epoch returned by start; required for status/cancel.",
-      "minLength": 1,
-      "type": "string"
-     },
-     "name": {
-      "minLength": 1,
-      "type": "string"
-     },
-     "operationId": {
-      "minLength": 1,
-      "type": "string"
-     },
-     "outputs": {
-      "additionalProperties": false,
-      "properties": {
-       "dxf": {
-        "minLength": 1,
-        "type": "string"
-       },
-       "glb": {
-        "minLength": 1,
-        "type": "string"
-       },
-       "model": {
-        "enum": [
-         true
-        ],
-        "type": "boolean"
-       },
-       "step": {
-        "minLength": 1,
-        "type": "string"
-       },
-       "stl": {
-        "minLength": 1,
-        "type": "string"
-       },
-       "threemf": {
-        "minLength": 1,
-        "type": "string"
-       },
-       "xbf": {
-        "minLength": 1,
-        "type": "string"
-       }
-      },
-      "required": [],
-      "type": "object"
-     },
-     "profile": {
-      "type": "boolean"
-     },
-     "requestId": {
-      "description": "Unique 16\u2013100 character request ID. Reuse only for an identical start in this session.",
-      "minLength": 1,
-      "type": "string"
-     },
-     "verify": {
-      "type": "boolean"
-     },
-     "waitMs": {
-      "maximum": 25000,
-      "minimum": 0,
-      "type": "integer"
-     }
-    },
-    "required": [],
-    "type": "object"
-   },
-   "name": "cad_build",
-   "outputSchema": {
-    "properties": {
-     "cancellable": {
-      "type": "boolean"
-     },
-     "epoch": {
-      "minLength": 1,
-      "type": "string"
-     },
-     "error": {
-      "type": "string"
-     },
-     "id": {
-      "minLength": 1,
-      "type": "string"
-     },
-     "operation": {
-      "minLength": 1,
-      "type": "string"
-     },
-     "requestId": {
-      "minLength": 1,
-      "type": "string"
-     },
-     "result": {
-      "type": "object"
-     },
-     "sequence": {
-      "type": "integer"
-     },
-     "stage": {
-      "minLength": 1,
-      "type": "string"
-     },
-     "state": {
-      "enum": [
-       "queued",
-       "running",
-       "succeeded",
-       "failed",
-       "cancelled",
-       "rejected"
-      ],
-      "type": "string"
-     }
-    },
-    "required": [
-     "state"
-    ],
-    "type": "object"
-   },
-   "title": "Build CAD"
-  },
-  {
-   "annotations": {
-    "destructiveHint": true,
-    "idempotentHint": true,
-    "openWorldHint": true,
-    "readOnlyHint": false
-   },
-   "description": "Export a document to explicit absolute destinations on the engine host (.xbf/.step/.glb/.stl/.3mf/.dxf/.cadz). Reuses the Python export operation, including building a script model source first. Viewer downloads instead choose a destination in the user's browser and use temporary artifacts. Start requires requestId. Returns an asynchronous operation: call this same tool with action=status, operationId and epoch (optionally afterSequence and waitMs) for progress/result, or action=cancel while queued. Disconnect does not cancel. Status lasts up to 24 hours in this MCP session; restart loses it. Running file writes cannot be cancelled.",
+   "description": "Export a document to explicit absolute destinations on the engine host (.xbf/.step/.glb/.stl/.3mf/.dxf). The source is an absolute CAD file path or a document id (a model's, which running its script prints); a document id is exported as the engine holds it. A mesh source (.glb/.stl/.3mf) exports to the other two mesh kinds only, each holding what its format carries. Reuses the Python export operation. Viewer downloads instead choose a destination in the user's browser and use temporary artifacts. To start: {requestId, source, destinations}, optionally with waitMs. To follow one: {action: status or cancel, operationId, epoch}, optionally with afterSequence, waitMs. A start returns an asynchronous operation (waitMs waits for its result): call this same tool with action=status, operationId and epoch (optionally afterSequence and waitMs) for progress/result, or action=cancel while queued. Disconnect does not cancel. Status of this MCP session's 64 most recent finished operations lasts up to 24 hours; restart loses it. Running file writes cannot be cancelled.",
    "inputSchema": {
     "additionalProperties": false,
     "anyOf": [
@@ -928,19 +664,6 @@
         "minItems": 1,
         "type": "array"
        },
-       "inputs": {
-        "type": "boolean"
-       },
-       "part": {
-        "minLength": 1,
-        "type": "string"
-       },
-       "pose": {
-        "type": [
-         "object",
-         "string"
-        ]
-       },
        "requestId": {
         "description": "Unique 16\u2013100 character request ID. Reuse only for an identical start in this session.",
         "minLength": 1,
@@ -949,6 +672,12 @@
        "source": {
         "minLength": 1,
         "type": "string"
+       },
+       "waitMs": {
+        "description": "Milliseconds to wait before answering: for the operation to finish, or with afterSequence for its next change.",
+        "maximum": 25000,
+        "minimum": 0,
+        "type": "integer"
        }
       },
       "required": [
@@ -982,6 +711,7 @@
         "type": "string"
        },
        "waitMs": {
+        "description": "Milliseconds to wait before answering: for the operation to finish, or with afterSequence for its next change.",
         "maximum": 25000,
         "minimum": 0,
         "type": "integer"
@@ -1023,22 +753,9 @@
       "minLength": 1,
       "type": "string"
      },
-     "inputs": {
-      "type": "boolean"
-     },
      "operationId": {
       "minLength": 1,
       "type": "string"
-     },
-     "part": {
-      "minLength": 1,
-      "type": "string"
-     },
-     "pose": {
-      "type": [
-       "object",
-       "string"
-      ]
      },
      "requestId": {
       "description": "Unique 16\u2013100 character request ID. Reuse only for an identical start in this session.",
@@ -1050,6 +767,7 @@
       "type": "string"
      },
      "waitMs": {
+      "description": "Milliseconds to wait before answering: for the operation to finish, or with afterSequence for its next change.",
       "maximum": 25000,
       "minimum": 0,
       "type": "integer"
@@ -1119,7 +837,7 @@
     "openWorldHint": true,
     "readOnlyHint": false
    },
-   "description": "Render an explicit source/output PNG or a Quick Edit packet, using the Python snapshot operation. Paths must be absolute on the engine host. A script model source may build first. A failed packet removes its requested pictures. Start requires requestId. Returns an asynchronous operation: call this same tool with action=status, operationId and epoch (optionally afterSequence and waitMs) for progress/result, or action=cancel while queued. Disconnect does not cancel. Status lasts up to 24 hours in this MCP session; restart loses it. Running file writes cannot be cancelled.",
+   "description": "Render an explicit source/output PNG or a Quick Edit packet, using the Python snapshot operation. The source is an absolute CAD file path or a document id; paths must be absolute on the engine host. A failed snapshot or packet leaves existing pictures unchanged. To start: {requestId, source, output} or {requestId, packet}, optionally with display, camera, grid, preview, pose, width, height, size_profile, annotation, measurements, waitMs. To follow one: {action: status or cancel, operationId, epoch}, optionally with afterSequence, waitMs. A start returns an asynchronous operation (waitMs waits for its result): call this same tool with action=status, operationId and epoch (optionally afterSequence and waitMs) for progress/result, or action=cancel while queued. Disconnect does not cancel. Status of this MCP session's 64 most recent finished operations lasts up to 24 hours; restart loses it. Running file writes cannot be cancelled.",
    "inputSchema": {
     "additionalProperties": false,
     "anyOf": [
@@ -1168,10 +886,12 @@
         ]
        },
        "output": {
+        "description": "The PNG's absolute path; required with source unless a packet names the outputs.",
         "minLength": 1,
         "type": "string"
        },
        "packet": {
+        "description": "A Quick Edit packet (its absolute path or object), which declares its outputs: give it in place of output; a source with it replaces its input.",
         "type": [
          "object",
          "array",
@@ -1199,6 +919,12 @@
        "source": {
         "minLength": 1,
         "type": "string"
+       },
+       "waitMs": {
+        "description": "Milliseconds to wait before answering: for the operation to finish, or with afterSequence for its next change.",
+        "maximum": 25000,
+        "minimum": 0,
+        "type": "integer"
        },
        "width": {
         "minimum": 1,
@@ -1234,6 +960,7 @@
         "type": "string"
        },
        "waitMs": {
+        "description": "Milliseconds to wait before answering: for the operation to finish, or with afterSequence for its next change.",
         "maximum": 25000,
         "minimum": 0,
         "type": "integer"
@@ -1306,10 +1033,12 @@
       "type": "string"
      },
      "output": {
+      "description": "The PNG's absolute path; required with source unless a packet names the outputs.",
       "minLength": 1,
       "type": "string"
      },
      "packet": {
+      "description": "A Quick Edit packet (its absolute path or object), which declares its outputs: give it in place of output; a source with it replaces its input.",
       "type": [
        "object",
        "array",
@@ -1339,6 +1068,7 @@
       "type": "string"
      },
      "waitMs": {
+      "description": "Milliseconds to wait before answering: for the operation to finish, or with afterSequence for its next change.",
       "maximum": 25000,
       "minimum": 0,
       "type": "integer"
@@ -1412,7 +1142,7 @@
     "openWorldHint": false,
     "readOnlyHint": true
    },
-   "description": "Read closure, geometry (requires ref), or build metadata of an existing file or live model. Never builds source or writes declared model outputs; an unbuilt or expired model must be explicitly built first. Defaults to geometry with a ref, otherwise closure. Start requires requestId. Returns an asynchronous operation: call this same tool with action=status, operationId and epoch (optionally afterSequence and waitMs) for progress/result, or action=cancel while queued. Disconnect does not cancel. Status lasts up to 24 hours in this MCP session; restart loses it. Running file writes cannot be cancelled.",
+   "description": "Inspect an existing CAD file (.xbf, .step, a mesh) or a document id. Without a ref it answers what `cadgen inspect SOURCE` prints: the summary (parts, bounds, volume, materials and mass, joints, states, sequences, animations) as data and as its text, with the build closure where there is one. With a ref (or SOURCE#REF), that element's or part's geometry. query picks one answer instead: summary, closure, geometry (requires ref) or build (file metadata or live build metadata). Never builds a model or writes its declared outputs; a document the engine no longer holds is refused with the command that builds it again. To start: {requestId, source}, optionally with ref, query, waitMs. To follow one: {action: status or cancel, operationId, epoch}, optionally with afterSequence, waitMs. A start returns an asynchronous operation (waitMs waits for its result): call this same tool with action=status, operationId and epoch (optionally afterSequence and waitMs) for progress/result, or action=cancel while queued. Disconnect does not cancel. Status of this MCP session's 64 most recent finished operations lasts up to 24 hours; restart loses it. Running file writes cannot be cancelled.",
    "inputSchema": {
     "additionalProperties": false,
     "anyOf": [
@@ -1427,6 +1157,7 @@
        },
        "query": {
         "enum": [
+         "summary",
          "closure",
          "geometry",
          "build"
@@ -1445,6 +1176,12 @@
        "source": {
         "minLength": 1,
         "type": "string"
+       },
+       "waitMs": {
+        "description": "Milliseconds to wait before answering: for the operation to finish, or with afterSequence for its next change.",
+        "maximum": 25000,
+        "minimum": 0,
+        "type": "integer"
        }
       },
       "required": [
@@ -1477,6 +1214,7 @@
         "type": "string"
        },
        "waitMs": {
+        "description": "Milliseconds to wait before answering: for the operation to finish, or with afterSequence for its next change.",
         "maximum": 25000,
         "minimum": 0,
         "type": "integer"
@@ -1515,6 +1253,7 @@
      },
      "query": {
       "enum": [
+       "summary",
        "closure",
        "geometry",
        "build"
@@ -1535,6 +1274,7 @@
       "type": "string"
      },
      "waitMs": {
+      "description": "Milliseconds to wait before answering: for the operation to finish, or with afterSequence for its next change.",
       "maximum": 25000,
       "minimum": 0,
       "type": "integer"

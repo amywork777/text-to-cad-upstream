@@ -1,4 +1,4 @@
-"""Material language for the radial, authored as sRGB hex (`lib/color.py`).
+"""Material language for the radial, authored as the sRGB hex a shape takes.
 
 The brief's finishes, kept distinct:
   ENAMEL_BLACK     gloss black enamel — cylinder barrels, mount ring
@@ -15,37 +15,36 @@ that colour names: an engine `Material` set on the part (`FINISHES`).
 
 from __future__ import annotations
 
-from cadgen.engine import Material, materials
+from cadgen import Material, materials
 
 import build123d as bd
 
-from lib.color import srgb
 
-ENAMEL_BLACK = srgb("#0f1012")
-ENAMEL_GREY = srgb("#383c42")        # dark-grey enamel (barrels): keeps every fin legible
-CAST_ALU = srgb("#dcdfe1")
-MACHINED_ALU = srgb("#dcdfe2")
-CASE_SILVER = srgb("#9fa5ac")
-STEEL_POLISHED = srgb("#e2e4e7")
-STEEL_MACHINED = srgb("#b8bbc1")
-STEEL_DARK = srgb("#4a4d52")
-BLUED_STEEL = srgb("#3e495b")
-FASTENER = srgb("#cfcab8")          # cadmium-plated AN hardware
-SAFETY_WIRE = srgb("#d3d6d9")
-SECTION_RED = srgb("#d4382a")        # museum paint on every cut face
-HEAT_TINT = srgb("#c8c2b6")           # heat-tinted stainless: warm steel grey (bands carry the straw/blue)
-HEAT_TINT_BLUE = srgb("#7c7aa8")
-HEAT_TINT_STRAW = srgb("#cdb27c")
-COPPER = srgb("#d08a62")
-BRAID = srgb("#a8a69e")
-POLISHED_ALU = srgb("#eceef0")
-BRONZE = srgb("#c49658")
-BRASS = srgb("#c09a55")
-MAGNETO_BLACK = srgb("#19191a")
-CARB_ALU = srgb("#b4b8bc")
-RUBBER = srgb("#202224")
-GASKET = srgb("#3b3a36")
-CERAMIC = srgb("#e6e2d8")
+ENAMEL_BLACK = "#0f1012"
+ENAMEL_GREY = "#383c42"        # dark-grey enamel (barrels): keeps every fin legible
+CAST_ALU = "#dcdfe1"
+MACHINED_ALU = "#dcdfe2"
+CASE_SILVER = "#9fa5ac"
+STEEL_POLISHED = "#e2e4e7"
+STEEL_MACHINED = "#b8bbc1"
+STEEL_DARK = "#4a4d52"
+BLUED_STEEL = "#3e495b"
+FASTENER = "#cfcab8"          # cadmium-plated AN hardware
+SAFETY_WIRE = "#d3d6d9"
+SECTION_RED = "#d4382a"        # museum paint on every cut face
+HEAT_TINT = "#c8c2b6"           # heat-tinted stainless: warm steel grey (bands carry the straw/blue)
+HEAT_TINT_BLUE = "#7c7aa8"
+HEAT_TINT_STRAW = "#cdb27c"
+COPPER = "#d08a62"
+BRAID = "#a8a69e"
+POLISHED_ALU = "#eceef0"
+BRONZE = "#c49658"
+BRASS = "#c09a55"
+MAGNETO_BLACK = "#19191a"
+CARB_ALU = "#b4b8bc"
+RUBBER = "#202224"
+GASKET = "#3b3a36"
+CERAMIC = "#e6e2d8"
 
 # Aliases the shared fastener vocabulary (lib/fasteners.py) speaks.
 TITANIUM = FASTENER
@@ -135,14 +134,15 @@ MATERIAL_COLORS = {
 def _color_key(color):
     # OpenCascade stores colours as single-precision floats; round so the
     # last-place round trip still maps every palette colour to one material.
-    return tuple(round(float(channel), 5) for channel in color)
+    return tuple(round(float(channel), 5) for channel in bd.Color(color))
 
 
-_MATERIAL_BY_COLOR = {_color_key(color): material for material, color in MATERIAL_COLORS.items()}
+def _material_by_color():
+    return {_color_key(color): material for material, color in MATERIAL_COLORS.items()}
 
 
-def material_of(part) -> str:
-    material = _MATERIAL_BY_COLOR.get(_color_key(part.color))
+def material_of(part, by_color=None) -> str:
+    material = (by_color or _material_by_color()).get(_color_key(part.color))
     if material is None:
         raise ValueError(f"{part.label!r} has no named radial material for colour {part.color}")
     return material
@@ -157,8 +157,9 @@ def material_compound(parts, label, finishes):
     compounds) for its decorator's `materials=` to target; a material is set on the
     part itself here, so the leaves sit directly under the system."""
     grouped: dict[str, list] = {}
+    by_color = _material_by_color()
     for part in parts:
-        grouped.setdefault(material_of(part), []).append(part)
+        grouped.setdefault(material_of(part, by_color), []).append(part)
     labels = [p.label for p in parts]
     if any(not l for l in labels):
         raise ValueError(f"{label}: unlabelled leaf")

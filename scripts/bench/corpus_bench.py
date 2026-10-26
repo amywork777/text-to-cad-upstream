@@ -15,21 +15,28 @@ A model (``corpus.json``, beside this script) is a project folder (``root``, rel
 repository), the folder its builds run from (``cwd``, relative to the project), the folders put
 on ``PYTHONPATH`` beside cadgen's (``pythonpath``), its ``targets`` (``script.py``, as ``python
 script.py`` builds it, or ``script.py::model`` for one model of a script), its document
-(``xbf``), one ``edit`` (``{file, from, to}``: ``from`` occurs exactly once in ``file``), the
+(``xbf``: where the batch saves the model its stem names, whose document the serve and
+snapshot steps read), one ``edit`` (``{file, from, to}``: ``from`` occurs exactly once in ``file``), the
 inputs a build reads that are never committed (``needs``) and a ``note``. Each is copied to
 ``<out>/work/<name>`` without its outputs (``XBF/``, ``DXF/``; an APFS clone on macOS), so the
-checkout is never written, and built on a daemon of its own (``CADGEN_ENGINE_DIR``, a folder of
-``--engine-dir`` per model, emptied first; telemetry off) in these steps:
+checkout is never written, and the copy's model (the function its ``xbf`` stem names) declares
+that document, ``@xbf(out=...)`` above its ``@model`` (``with_xbf``), so each build saves it and a
+restart takes it, as the old engine reloaded its store. It is built on a daemon of its own
+(``CADGEN_ENGINE_DIR``, a folder of ``--engine-dir`` per model, emptied first; telemetry off) in
+these steps:
 
 1. ``cold``: the first build, on a fresh daemon, with no xbf to take;
 2. ``noop``: the same build again, warm;
 3. ``edit``: the configured edit, built;
 4. ``revert``: the file's original bytes, built;
-5. ``restart``: the daemon stopped, the unchanged model built again (its xbf the only cache);
-6. ``serve``, ``mesh-cold``, ``mesh-warm``, ``structure``: the document served (``cadgen
-   serve``), every part meshed on the server's pool (``POST /api/doc/<id>/mesh``), again with
-   its meshes dropped, and the structure a page reads first;
-7. ``snapshot-first``, ``snapshot``: ``cadgen snapshot --json`` of the document, twice.
+5. ``restart``: the daemon stopped, the unchanged model built again, its xbf taken;
+6. ``restart-cold``: the daemon stopped and the xbf deleted, the model built again: a restart
+   with nothing to take;
+7. ``serve``, ``mesh-cold``, ``mesh-warm``, ``structure``: the document served
+   (``cadgen serve``), every part meshed on the server's pool (``POST /api/doc/<id>/mesh``),
+   again with its meshes dropped, and the structure a page reads first (``export``, the document
+   saved by ``cadgen export <id>``, only when a build left none);
+8. ``snapshot-first``, ``snapshot``: ``cadgen snapshot --json`` of the document, twice.
 
 A build is what ``python script.py`` asks for (``cadgen.engine.api.build_script``, which
 ``Model.build()`` calls too), in a process of its own: its ``wall`` is that process's, from
@@ -39,7 +46,8 @@ daemon's round trip. Its row sums the engine's report over every model the targe
 taken from its file: ``key``, ``read``), memo ``hits``, ``misses`` and ``uncached`` calls,
 ``bodies_run``, ``bodies_replayed`` and ``bodies_loaded``, ``cache`` (``file`` or ``memory`` when
 every model was taken whole, else why not: ``cache_reason``), ``parts``, ``files`` (per kind:
-written, kept, bytes, seconds), ``xbf_bytes`` (the configured document's), the workers'
+written, kept, bytes, seconds), ``xbf_bytes`` (the configured document's, where a model
+declares it; the ``export`` step's otherwise), the workers'
 resident memory after it (``rss_mb``, from ``cadgen status --json``) and the 1- and 5-minute load
 average before it (``load``, ``load5``). The first row (``"kind": "run"``) says what ran: the
 commit, the cadgen imported, the interpreter, the machine.
@@ -58,6 +66,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -65,7 +74,7 @@ from typing import Any, Iterable, NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = Path(__file__).with_name("corpus.json")
-BUILDS = ("cold", "noop", "edit", "revert", "restart")
+BUILDS = ("cold", "noop", "edit", "revert", "restart", "restart-cold")
 NOT_COPIED = frozenset({"XBF", "DXF", "__pycache__", ".DS_Store"})  # a cold build starts with no xbf
 MODEL_KEYS = frozenset({"name", "root", "cwd", "pythonpath", "targets", "xbf", "edit", "needs", "note"})
 REQUIRED = ("name", "root", "targets", "xbf", "edit")
@@ -153,6 +162,11 @@ def _file_problems(model: dict[str, Any], root: Path) -> list[str]:
     found += [f"no folder {folder} (pythonpath)" for folder in model.get("pythonpath", []) if not (project / folder).is_dir()]
     found += [f"no {need}: an input the build reads that is never committed (the model's README says how to "
               "put it there)" for need in model.get("needs", []) if not (project / need).exists()]
+    script = cwd / declared_script(model)
+    if script.is_file() and with_xbf(script.read_text(encoding="utf-8"), Path(model["xbf"]).stem, "x.xbf") is None:
+        found.append(f"{declared_script(model)} has no `@model` directly above `def {Path(model['xbf']).stem}(` "
+                     "(the model the xbf stem names) or no `from cadgen import` line before it: its work copy "
+                     "cannot declare the xbf")
     edit = model["edit"]
     path = project / edit["file"]
     if not path.is_file():
@@ -162,6 +176,36 @@ def _file_problems(model: dict[str, Any], root: Path) -> list[str]:
         if count != 1:
             found.append(f"the edit's `from` occurs {count} times in {edit['file']}, not once")
     return found
+
+
+XBF_IMPORT = "from cadgen import xbf as _corpus_bench_xbf  # corpus_bench: the work copy declares its xbf"
+
+
+def with_xbf(source: str, function: str, out: str) -> str | None:
+    """A script's ``source`` with the model ``function`` declaring its document,
+    ``@xbf(out=out)`` on the line above its ``@model``, and that decorator imported after the
+    script's first ``from cadgen import`` line; None when the script has no top-level ``@model``
+    directly above ``def function(`` or no single-line ``from cadgen import``."""
+    lines = source.splitlines(keepends=True)
+    at = next((index for index in range(1, len(lines))
+               if lines[index].startswith(f"def {function}(") and lines[index - 1].strip() == "@model"), None)
+    imported = next((index for index, line in enumerate(lines)
+                     if line.startswith("from cadgen import ") and "(" not in line), None)
+    if at is None or imported is None or imported > at:
+        return None
+    lines.insert(at - 1, f"@_corpus_bench_xbf(out={out!r})\n")
+    lines.insert(imported + 1, XBF_IMPORT + "\n")
+    return "".join(lines)
+
+
+def declared_script(model: dict[str, Any]) -> str:
+    """The target script (relative to the model's ``cwd``) whose model the ``xbf`` stem names."""
+    stem = Path(model["xbf"]).stem
+    for target in model["targets"]:
+        script, _sep, function = target.partition("::")
+        if (function or Path(script).stem) == stem:
+            return script
+    return model["targets"][0].partition("::")[0]
 
 
 def problems(config: Any, root: Path | None = None) -> list[str]:
@@ -293,7 +337,7 @@ def last_json(stdout: str) -> Any:
 # --- the table ----------------------------------------------------------------------------------
 
 COLUMNS = ("model", "cold wall / body", "no-op", "edit wall / body (misses; run+replayed)", "revert", "restart",
-           "xbf MB", "mesh cold / warm", "snapshot", "worker MB", "load")
+           "cold restart", "xbf MB", "mesh cold / warm", "snapshot", "worker MB", "load")
 
 
 def seconds(value: Any) -> str:
@@ -321,9 +365,17 @@ def _body(row: dict[str, Any] | None) -> str:
     return f" / {seconds(((row or {}).get('timings') or {}).get('body'))}"
 
 
+def _taken(row: dict[str, Any] | None) -> str:
+    """After a restart's wall: what it took whole (``file``, the xbf), or that it took nothing."""
+    if row is None or "cache" not in row:
+        return ""
+    return f" ({row['cache']})" if row["cache"] else " (not taken)"
+
+
 def table(rows: Iterable[dict[str, Any]]) -> str:
     """The batch as Markdown, a line a model in the order they ran: each build's wall (and the cold's
-    and the edit's body, the edit's memo misses and bodies run and replayed), the document's size,
+    and the edit's body, the edit's memo misses and bodies run and replayed, and what the restart
+    took whole), the document's size,
     the whole-document mesh cold and warm, the warm snapshot, the largest worker memory after a build
     and the range of the 1-minute load average. A step that failed says so; one not run is a dash."""
     steps: dict[str, dict[str, dict[str, Any]]] = {}
@@ -333,7 +385,8 @@ def table(rows: Iterable[dict[str, Any]]) -> str:
     lines = ["| " + " | ".join(COLUMNS) + " |", "|" + "---|" * len(COLUMNS)]
     for model, done in steps.items():
         edit = done.get("edit") or {}
-        sizes = [row["xbf_bytes"] for row in (done.get(step) for step in BUILDS) if row and row.get("xbf_bytes")]
+        sizes = [row["xbf_bytes"] for row in (done.get(step) for step in (*BUILDS, "export"))
+                 if row and row.get("xbf_bytes")]
         memory = [row["rss_mb"] for row in done.values() if isinstance(row.get("rss_mb"), (int, float))]
         load = [row["load"] for row in done.values() if isinstance(row.get("load"), (int, float))]
         mesh = _wall(done.get("mesh-cold"))
@@ -346,7 +399,8 @@ def table(rows: Iterable[dict[str, Any]]) -> str:
             _wall(done.get("edit"), _body(edit) + f" ({edit.get('misses')}; {edit.get('bodies_run')}+"
                                                    f"{edit.get('bodies_replayed')})"),
             _wall(done.get("revert")),
-            _wall(done.get("restart")),
+            _wall(done.get("restart"), _taken(done.get("restart"))),
+            _wall(done.get("restart-cold")),
             megabytes(sizes[0]) if sizes else "—",
             mesh,
             _wall(done.get("snapshot")),
@@ -506,10 +560,11 @@ def prepare(spec: dict[str, Any], out: Path, engine_dir: Path, cadgen_src: Path)
 class Bench:
     """One batch: its rows, appended to ``rows.jsonl`` as each step ends."""
 
-    def __init__(self, out: Path, python: str, timeout: float) -> None:
-        self.out, self.python, self.timeout = out, python, timeout
+    def __init__(self, out: Path, python: str, timeout: float, limit: float | None = None) -> None:
+        self.out, self.python, self.timeout, self.limit = out, python, timeout, limit
         self.rows: list[dict[str, Any]] = []
         self.failed = False
+        self.ids: dict[str, dict[str, str]] = {}  # per model: the id of each model its last build built
 
     def emit(self, row: dict[str, Any]) -> None:
         row = {**row, "at": datetime.now().isoformat(timespec="seconds")}
@@ -550,35 +605,73 @@ class Bench:
         self.emit(row)
         return row
 
+    def daemon(self, model: Model) -> list[int]:
+        """The pid of the model's own engine daemon, if one holds its door open."""
+        done, _wall = self.run(model, ["-c", "from cadgen.engine.daemon import address; print(address())"], 60)
+        path = done.stdout.strip() if done is not None and done.returncode == 0 else ""
+        if not path or not os.path.exists(path):
+            return []
+        found = subprocess.run(["lsof", "-t", path], capture_output=True, text=True).stdout.split()
+        return [int(pid) for pid in found if pid.isdigit()]
+
+    def quiet(self, model: Model) -> dict[str, float]:
+        """``--max-load``'s guard before a step: the load at most the limit and no other cadgen
+        build busy; then the load the step starts at."""
+        wait_until_quiet(self.limit, self.daemon(model) if self.limit is not None else ())
+        return loads()
+
     def build(self, model: Model, step: str) -> dict[str, Any]:
-        load = loads()
+        top = {"top": top_three()} if step in ("cold", "restart-cold") and self.limit is not None else {}
+        load = self.quiet(model)
         done, wall = self.run(model, ["-c", DRIVER, json.dumps(model.targets)])
         if done is None:
             row = {"ok": False, "error": f"no answer in {self.timeout:.0f} s"}
         else:
-            row = build_row(driver_answer(done.stdout), str(model.document))
+            answer = driver_answer(done.stdout)
+            row = build_row(answer, str(model.document))
+            self.ids[model.name] = {report["source"]["name"]: report["id"]
+                                    for build in (answer or {}).get("builds") or [] for report in build.get("models") or []
+                                    if isinstance(report.get("source"), dict) and report.get("id")}
             if done.returncode and row["ok"]:
                 row = {**row, "ok": False, "error": f"the build process exited {done.returncode}"}
             if not row["ok"]:
                 row["stderr"] = done.stderr[-3000:]
         row["rss_mb"] = worker_memory(self.status(model), model.scripts)
-        return self.step(model, step, wall, load, **row)
+        return self.step(model, step, wall, load, **row, **top)
 
     def document(self, model: Model) -> None:
-        """The document served and meshed whole, its structure read, and two snapshots."""
-        load = loads()
+        """The document saved, served and meshed whole, its structure read, and two snapshots."""
+        if not model.document.is_file():
+            # A model that declares no xbf: its document saved from the engine, by its id.
+            load = loads()
+            ident = self.ids.get(model.name, {}).get(model.document.stem)
+            done, wall = (None, 0.0) if ident is None else self.run(
+                model, ["-m", "cadgen.cli", "export", ident, str(model.document), "--json"], timeout=1800)
+            if done is None or done.returncode or not model.document.is_file():
+                self.step(model, "export", wall, load, ok=False,
+                          error=(done.stderr[-2000:] if done else f"no model {model.document.stem} was built"))
+                return
+            self.step(model, "export", wall, load, ok=True, xbf_bytes=model.document.stat().st_size)
+        load = self.quiet(model)
         done, wall = self.run(model, ["-m", "cadgen.cli", "serve", str(model.document)], timeout=600)
         url = (done.stdout.strip().splitlines() or [""])[-1] if done is not None else ""
-        if done is None or done.returncode or "/?doc=" not in url:
+        page = urllib.parse.urlsplit(url)
+        ident = page.path.strip("/")
+        if done is None or done.returncode or not page.netloc or not ident:
             self.step(model, "serve", wall, load, ok=False, error=(done.stderr[-2000:] if done else "no answer"))
         else:
             self.step(model, "serve", wall, load, ok=True)
-            base, _sep, ident = url.partition("/?doc=")
-            api = f"{base}/api/doc/{ident}"
+            # The page is ``<engine>/<id>?token=...``: the document's routes are under
+            # ``/api/doc/<id>``, and take the page's token as a bearer.
+            api = f"{page.scheme}://{page.netloc}/api/doc/{ident}"
+            token = (urllib.parse.parse_qs(page.query).get("token") or [""])[0]
+            auth = {"Authorization": f"Bearer {token}"} if token else {}
             for step, query in (("mesh-cold", ""), ("mesh-warm", "?drop=1")):
                 load, started = loads(), time.perf_counter()
                 try:
-                    with urllib.request.urlopen(urllib.request.Request(f"{api}/mesh{query}", data=b"", method="POST"),
+                    # A POST carries the viewer's guard header, as the page's do.
+                    with urllib.request.urlopen(urllib.request.Request(f"{api}/mesh{query}", data=b"", method="POST",
+                                                                       headers={**auth, "x-cadgen-viewer": "1"}),
                                                 timeout=self.timeout) as response:  # noqa: S310 - the engine, on loopback
                         answer = json.loads(response.read())
                 except Exception as error:  # noqa: BLE001 - a bench row, not a program
@@ -591,7 +684,7 @@ class Bench:
                           slowest=(answer.get("per_part") or {}).get("slowest"))
             load, started = loads(), time.perf_counter()
             try:
-                with urllib.request.urlopen(api, timeout=600) as response:  # noqa: S310 - the engine, on loopback
+                with urllib.request.urlopen(urllib.request.Request(api, headers=auth), timeout=600) as response:  # noqa: S310 - the engine, on loopback
                     data = response.read()
                 structure = json.loads(data)
                 self.step(model, "structure", time.perf_counter() - started, load, ok=True, bytes=len(data),
@@ -604,7 +697,7 @@ class Bench:
         pictures.mkdir(exist_ok=True)
         for step in ("snapshot-first", "snapshot"):
             png = pictures / f"{model.name}{'-first' if step == 'snapshot-first' else ''}.png"
-            load = loads()
+            load = self.quiet(model)
             done, wall = self.run(model, ["-m", "cadgen.cli", "snapshot", str(model.document), str(png), "--json"],
                                   timeout=1800)
             report = last_json(done.stdout) if done is not None else None
@@ -620,6 +713,12 @@ class Bench:
         and the copy removed unless kept."""
         model = prepare(spec, self.out, engine_dir, cadgen_src)
         copy_project(ROOT / spec["root"], model.work)
+        script = model.cwd / declared_script(spec)
+        declared = with_xbf(script.read_text(encoding="utf-8"), model.document.stem,
+                            Path(os.path.relpath(model.document, script.parent)).as_posix())
+        if declared is None:
+            raise SystemExit(f"corpus_bench: {script} cannot declare its xbf")
+        script.write_text(declared, encoding="utf-8")
         self.stop(model)  # one a previous batch left in this model's own folder
         remove(Path(model.env["CADGEN_ENGINE_DIR"]))
         original = model.edit.read_bytes()
@@ -631,6 +730,10 @@ class Bench:
                     model.edit.write_bytes(original)
                 elif step == "restart":
                     self.stop(model)
+                elif step == "restart-cold":
+                    self.stop(model)
+                    if model.document.exists():
+                        model.document.unlink()
                 if not self.build(model, step)["ok"]:
                     return
             self.document(model)
@@ -642,12 +745,67 @@ class Bench:
                 remove(model.work)
 
 
-def wait_until_quiet(limit: float | None) -> None:
-    """Wait while the 1-minute load average is over ``limit``."""
+def _processes() -> dict[int, tuple[int, float, str]]:
+    """Every process: its parent, CPU seconds so far and command line (``ps``)."""
+    try:
+        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,time=,command="], capture_output=True, text=True).stdout
+    except OSError:
+        return {}
+    found: dict[int, tuple[int, float, str]] = {}
+    for line in out.splitlines():
+        fields = line.split(None, 3)
+        if len(fields) == 4:
+            days, _sep, clock = fields[2].rpartition("-")
+            seconds = 0.0
+            for part in clock.split(":"):
+                seconds = seconds * 60 + float(part)
+            found[int(fields[0])] = (int(fields[1]), seconds + (float(days) * 86400 if days else 0.0), fields[3])
+    return found
+
+
+def busy_builds(own: Iterable[int], seconds: float = 2.0, share: float = 0.05) -> list[str]:
+    """The cadgen processes outside ``own`` (a daemon's pid and its descendants are left out) using
+    more than ``share`` of a core over ``seconds``: another build on the machine."""
+    first = _processes()
+    time.sleep(seconds)
+    second = _processes()
+    mine = {pid for pid in own if pid in second} | {os.getpid()}
+    grew = True
+    while grew:
+        grew = False
+        for pid, (parent, _cpu, _command) in second.items():
+            if parent in mine and pid not in mine:
+                mine.add(pid)
+                grew = True
+    return [f"{pid} {command[:120]}" for pid, (_parent, cpu, command) in second.items()
+            if pid not in mine and "cadgen" in command and pid in first
+            and (cpu - first[pid][1]) / seconds > share]
+
+
+def top_three() -> list[str]:
+    """The three processes using the most CPU now (macOS ``top``, its second sample)."""
+    try:
+        out = subprocess.run(["top", "-l", "2", "-o", "cpu", "-n", "3", "-stats", "pid,command,cpu"],
+                             capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    lines = [line.split() for line in out.splitlines()]
+    rows = [line for line in lines if len(line) >= 3 and line[0].isdigit()]
+    return [" ".join(row) for row in rows[-3:]]
+
+
+def wait_until_quiet(limit: float | None, own: Iterable[int] = ()) -> None:
+    """Wait while the 1-minute load average is over ``limit`` or another cadgen build is busy."""
     if limit is None or not hasattr(os, "getloadavg"):
         return
-    while (load := os.getloadavg()[0]) > limit:
-        print(f"load {load:.1f} is over {limit:g}: waiting", file=sys.stderr, flush=True)
+    own = list(own)
+    while True:
+        load = os.getloadavg()[0]
+        others = busy_builds(own) if load <= limit else []
+        if load <= limit and not others:
+            return
+        why = f"load {load:.1f} is over {limit:g}" if load > limit else f"another build is busy: {others[0]}"
+        print(f"{why}: waiting", file=sys.stderr, flush=True)
         time.sleep(15)
 
 
@@ -662,7 +820,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--python", default=sys.executable, help="the interpreter that builds (default: this one)")
     parser.add_argument("--cadgen-src", type=Path, default=ROOT / "packages/cadgen/src",
                         help="the cadgen it imports (default: this checkout's)")
-    parser.add_argument("--max-load", type=float, help="before each model, wait until the load is at most this")
+    parser.add_argument("--max-load", type=float, help="before each step, wait until the 1-minute load is at most this and no other cadgen build "
+                        "uses more than 5%% of a core")
     parser.add_argument("--timeout", type=float, default=3600, help="seconds a build may take (default 3600)")
     parser.add_argument("--keep", action="store_true", help="keep each model's work copy")
     args = parser.parse_args(argv)
@@ -692,7 +851,7 @@ def main(argv: list[str] | None = None) -> int:
             edit = model["edit"]
             print(f"{model['name']:16s} {model['root']}/{model.get('cwd', '.')}: {' '.join(model['targets'])}; "
                   f"edit {edit['file']}: {edit['from']!r} -> {edit['to']!r}")
-        print(f"steps: {', '.join(BUILDS)}, serve, mesh-cold, mesh-warm, structure, snapshot-first, snapshot")
+        print(f"steps: {', '.join(BUILDS)}, export, serve, mesh-cold, mesh-warm, structure, snapshot-first, snapshot")
         if isinstance(found_cadgen, dict):
             print(f"cadgen {found_cadgen['cadgen']} (Python {found_cadgen['python']}, {args.python})")
         print(f"daemons in {args.engine_dir}/<model>")
@@ -707,7 +866,7 @@ def main(argv: list[str] | None = None) -> int:
 
     out = (args.out or ROOT / "tmp" / "bench" / f"corpus-{datetime.now():%Y%m%d-%H%M%S}").resolve()
     out.mkdir(parents=True, exist_ok=True)
-    bench = Bench(out, args.python, args.timeout)
+    bench = Bench(out, args.python, args.timeout, args.max_load)
     run = {"kind": "run", "started": datetime.now().isoformat(timespec="seconds"), "commit": git("rev-parse", "HEAD"),
            "branch": git("rev-parse", "--abbrev-ref", "HEAD"), "dirty": bool(git("status", "--porcelain")),
            "cadgen": found_cadgen["cadgen"], "python": found_cadgen["python"], "interpreter": args.python,
@@ -717,7 +876,6 @@ def main(argv: list[str] | None = None) -> int:
     bench.emit(run)
     print(f"corpus_bench: {len(chosen)} model{'s' if len(chosen) != 1 else ''} into {out}", file=sys.stderr, flush=True)
     for spec in chosen:
-        wait_until_quiet(args.max_load)
         bench.model(spec, args.engine_dir, args.cadgen_src, args.keep)
         (out / "table.md").write_text(heading(run) + "\n" + table(bench.rows), encoding="utf-8")
     work = out / "work"

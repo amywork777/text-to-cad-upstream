@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -67,11 +68,11 @@ class HttpSessionsTest(unittest.TestCase):
         info = request({'op': 'status'})
         sessions = {item['id'] for item in info['sessions'] if item['kind'] == 'mcp'}
         self.assertTrue({first.session, second.session} <= sessions)
+        token = self.tool(first, 'cad_tab')['_meta']['dev.texttocad/httpToken']
         self.tool(first, 'cad_sync', {'view': 'one', 'surface': 'agent', 'model': str(self.model),
-                  'state': {'selection': ['part#f1']}, 'focused': True})
+                  'state': {'selection': ['part#f1']}, 'focused': True, 'app': token})
         self.assertEqual(self.tool(first, 'cad_view')['structuredContent']['views'][0]['selection'], ['part#f1'])
         self.assertEqual(self.tool(second, 'cad_view')['structuredContent']['views'], [])
-        token = self.tool(first, 'cad_tab')['_meta']['dev.texttocad/httpToken']
         reply = self.tool(first, 'cad_http', {'method': 'GET', 'url': '/__cad/server', 'headers': {'x-cadgen-app': token}})['structuredContent']
         self.assertEqual(reply['status'], 200)
         self.assertEqual(json.loads(base64.b64decode(reply['body']))['pid'], info['pid'])
@@ -80,31 +81,48 @@ class HttpSessionsTest(unittest.TestCase):
         self.assertEqual(request({'op': 'status'})['pid'], info['pid'])
         self.assertFalse((self.root / 'state' / 'sidebar-views').exists())
 
-    def test_build_inspect_export_tools_run_without_a_view(self):
+    def test_inspect_export_tools_run_without_a_view(self):
         proxy = self.proxy()
-        def operation(name, arguments):
-            reply = self.tool(proxy, name, arguments)
-            self.assertFalse(reply.get('isError'), reply)
-            status = reply['structuredContent']
+        def finished(name, arguments):
+            status = self.tool(proxy, name, arguments)['structuredContent']
             for _ in range(30):
-                if status['state'] in ('succeeded', 'failed', 'cancelled'):
+                if status['state'] in ('succeeded', 'failed', 'cancelled', 'rejected'):
                     break
                 status = self.tool(proxy, name, {'action': 'status', 'operationId': status['id'],
                     'epoch': status['epoch'], 'afterSequence': status['sequence'], 'waitMs': 25000})['structuredContent']
+            return status
+
+        def operation(name, arguments):
+            status = finished(name, arguments)
             self.assertEqual(status['state'], 'succeeded', status)
             return status['result']
-        cwd = self.root / 'tool-working-directory'
-        cwd.mkdir()
-        built = operation('cad_build', {'requestId': 'build-request-0001',
-            'code': 'from build123d import Box; result = Box(2, 3, 4)', 'name': 'http_part',
-            'cwd': str(cwd.resolve()), 'outputs': {'model': True}})
-        self.assertEqual(built['address'], 'code::http_part')
-        self.assertNotIn('url', built['report'])
-        self.assertEqual(list(cwd.iterdir()), [])
-        facts = operation('cad_inspect', {'requestId': 'inspect-request-01', 'source': built['address'], 'ref': 'face 1'})
+        # A model is built by its script's call, never by a tool: a bare model, held in memory alone.
+        folder = (self.root / 'tool-models').resolve()
+        folder.mkdir()
+        script = folder / 'http_part.py'
+        script.write_text('from build123d import Box\nfrom cadgen import model\n\n\n@model\n'
+                          'def http_part():\n    return Box(2, 3, 4)\n', encoding='utf-8')
+        from cadgen.engine.api import build_script
+        built = build_script(script, ['http_part'])
+        self.assertTrue(built.ok)
+        ident = built.models[0]['id']  # what `python http_part.py` prints, `id:`
+        self.assertNotIn('cad_build', {tool['name'] for tool in self.call(proxy, 'tools/list')['tools']})
+        facts = operation('cad_inspect', {'requestId': 'inspect-request-01', 'source': f'{ident}#face 1'})
         self.assertEqual(facts['inspection']['kind'], 'face')
         target = (self.root / 'tool-export.step').resolve()
-        written = operation('cad_export', {'requestId': 'export-request-001', 'source': built['address'], 'destinations': [str(target)]})
+        written = operation('cad_export', {'requestId': 'export-request-001', 'source': ident, 'destinations': [str(target)]})
+        # A script is never a source, whatever names it: each tool refuses it as it refuses any
+        # file that is no document, and nothing is built or written.
+        for at, named in enumerate((str(script), f'{script}::http_part')):
+            for name, arguments in (('cad_export', {'destinations': [str(self.root / 'refused.step')]}),
+                                    ('cad_snapshot', {'output': str(self.root / 'refused.png')}),
+                                    ('cad_inspect', {})):
+                with self.subTest(tool=name, source=named):
+                    status = finished(name, {'requestId': f'refused-{name}-{at:02d}-request', 'source': named, **arguments})
+                    self.assertIn(status['state'], ('failed', 'rejected'), status)
+                    self.assertRegex(status.get('error', ''), 'is no document|is neither a document')
+        self.assertFalse((self.root / 'refused.step').exists() or (self.root / 'refused.png').exists())
+        self.assertEqual([path.name for path in folder.iterdir()], ['http_part.py'])
         self.assertEqual(written['files'][0]['bytes'], target.stat().st_size)
         self.assertGreater(target.stat().st_size, 0)
 
@@ -129,6 +147,25 @@ class HttpSessionsTest(unittest.TestCase):
         self.assertEqual(client.call('DELETE', '/mcp', headers=headers)[0], 200)
         self.assertEqual(post({'jsonrpc': '2.0', 'id': 2, 'method': 'ping'}, **headers)[0], 404)
 
+    def test_shim_opens_a_new_session_when_the_engine_session_ends(self):
+        # A host initializes once: an expired session or a restarted engine must not leave the
+        # server answering every later call with an error until the host reconnects it.
+        proxy = self.proxy()
+        proxy.notify('notifications/initialized', {})
+        first = proxy.session
+        self.assertEqual(EngineClient().call('DELETE', '/mcp', headers={'Mcp-Session-Id': first})[0], 200)
+        status = self.tool(proxy, 'cad_http', {'method': 'GET', 'url': '/__cad/analytics'})
+        self.assertEqual(status['structuredContent']['status'], 200)
+        second = proxy.session
+        self.assertNotEqual(second, first)
+        from cadgen.engine.api import stop
+        pid = request({'op': 'status'})['pid']
+        self.assertTrue(stop())
+        self.assertEqual(self.call(proxy, 'ping'), {})
+        self.assertNotEqual(proxy.session, second)
+        self.assertNotEqual(request({'op': 'status'})['pid'], pid)
+        self.assertIn('cad_open', [tool['name'] for tool in self.call(proxy, 'tools/list')['tools']])
+
     def test_stdio_shim_serves_resource_and_exits_without_stopping_engine(self):
         process = subprocess.Popen([sys.executable, '-m', 'cadgen.cli', 'mcp'],
                     env={**self.env, 'CADGEN_MCP_APP_DIR': str(self.page)},
@@ -146,6 +183,8 @@ class HttpSessionsTest(unittest.TestCase):
             self.assertNotIn('error', result)
             return result['result']
         self.assertEqual(rpc(1, 'initialize', INIT)['protocolVersion'], '2025-11-25')
+        # The server holds the engine while its host runs.
+        self.await_holders(1)
         resources = rpc(2, 'resources/list', {})['resources']
         document = rpc(3, 'resources/read', {'uri': resources[0]['uri']})['contents'][0]['text']
         self.assertIn('<title>test app</title>', document)
@@ -155,6 +194,45 @@ class HttpSessionsTest(unittest.TestCase):
         process.stdin = None
         self.assertEqual(process.wait(timeout=20), 0)
         self.assertTrue(request({'op': 'status'})['ok'])
+        self.await_holders(0)  # let go with the host; the engine runs on
+
+    def test_a_shim_ended_by_a_signal_or_killed_leaves_no_session_behind(self):
+        # A host (codex exec) may end its MCP server with SIGTERM, or kill it outright, rather than
+        # close its input: the shim ends its session on SIGTERM itself, and the engine ends the
+        # session of a shim whose hold is gone, which a killed one cannot say.
+        import signal
+
+        def mcp():
+            return [row for row in request({'op': 'status'})['sessions'] if row.get('kind') == 'mcp']
+
+        # Windows has no SIGTERM a process can catch: its ending is TerminateProcess, as a kill is.
+        endings = ((signal.SIGTERM, 128 + signal.SIGTERM), (signal.SIGKILL, -signal.SIGKILL)) if os.name != 'nt' \
+            else ((signal.SIGTERM, 1),)
+        for ending, code in endings:
+            before = len(mcp())
+            process = subprocess.Popen([sys.executable, '-m', 'cadgen.cli', 'mcp'], env=self.env, stdin=subprocess.PIPE,
+                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            self.addCleanup(lambda process=process: process.poll() is None and process.kill())
+            process.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': INIT}) + '\n')
+            process.stdin.flush()
+            self.assertNotIn('error', json.loads(process.stdout.readline()))
+            self.assertEqual(len(mcp()), before + 1)
+            self.await_holders(1)  # its hold taken: the name its session ends with
+            process.send_signal(ending)
+            self.assertEqual(process.wait(timeout=20), code, f'{ending.name}: the shim left as it should')
+            process.stdin.close()
+            process.stdout.close()
+            deadline = time.monotonic() + 30
+            while len(mcp()) != before:
+                self.assertLess(time.monotonic(), deadline, f'{ending.name}: the session ended')
+                time.sleep(0.05)
+            self.await_holders(0)
+
+    def await_holders(self, count):
+        deadline = time.monotonic() + 60
+        while request({'op': 'status'})['holders'] != count:
+            self.assertLess(time.monotonic(), deadline, f'the engine came to {count} holders')
+            time.sleep(0.05)
 
     def test_shim_imports_no_tool_server_or_viewer_application(self):
         code = "import sys; from cadgen.mcp.shim import Proxy; assert not {'cadgen.mcp.server', 'cadgen.mcp.ui', 'cadgen.viewer.http_app', 'OCP', 'build123d'} & sys.modules.keys()"
@@ -164,3 +242,11 @@ class HttpSessionsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def setUpModule() -> None:
+    # The registry and cache of every engine this module starts are its own, never the developer's
+    # (``engine_daemon.isolate``); each test still names its own engine folder.
+    from tests.python.support import engine_daemon
+
+    engine_daemon.isolate(unittest.addModuleCleanup)

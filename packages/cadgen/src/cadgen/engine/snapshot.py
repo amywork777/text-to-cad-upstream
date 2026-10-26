@@ -2,7 +2,7 @@
 drawn by OCCT as the CAD Viewer draws it. One dispatcher by SRC's suffix:
 
 - ``.xbf``, ``.step``: a document, served by the engine (the daemon, so its meshes are the ones
-  the viewer and every build share, or ``--no-daemon`` a server in this process; a model's own
+  the viewer and every build share, or with ``daemon=False`` a server in this process; a model's own
   document, which ``Model.snapshot`` and ``cadgen.snapshot(model, ...)`` draw, from its worker's
   memory over its one mesh cache), meshed there and drawn from those meshes (``render/service.py``).
 - ``.stl``, ``.3mf``, ``.glb``: a mesh file, read by its reader (``formats/``: numpy, zip and XML,
@@ -13,7 +13,7 @@ drawn by OCCT as the CAD Viewer draws it. One dispatcher by SRC's suffix:
 - ``.dxf``: a drawing, from above, in its pens, in the viewer's 2D look (``render/drawing.py``).
 
 Through the daemon each file drawn gets a render process of its own, warm, read again when a file
-it read changes; ``--no-daemon`` draws in this process. Every kind is drawn in the engine's one
+it read changes; ``daemon=False`` (Python's alone) draws in this process. Every kind is drawn in the engine's one
 look (``render/look.py``). The modes, the camera fit, clip, grid and Preview are the viewer's, in
 the look the viewer's viewport resolves for the same display settings. The answer is PNG bytes,
 which this writes to OUT.
@@ -52,7 +52,7 @@ robot's, the visuals it hid (``selection.hide``), the packet's ink and dimension
 the output settings the job gives (``output``: ``padding``, ``tightFrame``, ``transparent``,
 ``renderScale``, ``sizeProfile``). A view's own camera with the tight frame off is drawn exactly;
 any other camera is fitted with the job's padding. Every request is checked before anything
-renders, and a failure leaves none of the job's pictures.
+renders, and a failure writes none of the job's pictures, leaving every output as it was.
 """
 
 from __future__ import annotations
@@ -67,9 +67,9 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
-from cadgen.engine.atomic_replace import replace_atomic
+from cadgen.engine.atomic_replace import replace_atomic, staging
 from cadgen.engine.render.presets import PRESETS
 
 __all__ = ["SnapshotRefused", "Still", "add_parser", "asked_view", "authored", "build_parser", "draw", "draw_pictures",
@@ -96,6 +96,9 @@ PACKETS = "*.snapshot.json"
 # The viewer's annotation file (``@text-to-cad/core`` ``common/annotation.js``) and Measure's marks.
 ANNOTATION_KEYS = frozenset({"units", "parts", "marks"})
 MARK_KINDS = ("stroke", "area", "text")
+MARK_MAX = 8192  # a still's annotation holds at most this many marks
+TEXT_MAX_CHARS, TEXT_MAX_LINES = 10000, 256  # a text mark's words
+FONT_PX_MAX, STROKE_WIDTH_MAX = 512.0, 256.0  # a mark sizes a raster from these; bound them
 MEASUREMENT_KEYS = frozenset({"start", "end", "label", "color"})
 MAX_MEASUREMENTS = 64
 # The snapshot contract's size profiles; a request names one or a width and a height.
@@ -378,6 +381,8 @@ def parse_annotation(value: Any) -> dict[str, Any] | None:
     unknown = sorted(set(found) - ANNOTATION_KEYS)
     if unknown:
         raise SnapshotRefused(f"--annotation has no {', '.join(unknown)}; an annotation has {', '.join(sorted(ANNOTATION_KEYS))}")
+    if len(found["marks"]) > MARK_MAX:
+        raise SnapshotRefused(f"--annotation has at most {MARK_MAX} marks")
     for name, part in (found.get("parts") or {}).items():
         if not isinstance(part, dict) or not _numbers(part.get("placement"), 16):
             raise SnapshotRefused(f"--annotation: parts.{name}.placement is a 4x4 matrix of 16 numbers")
@@ -396,6 +401,15 @@ def parse_annotation(value: Any) -> dict[str, Any] | None:
             raise SnapshotRefused(f"{at}: a text mark's points are its four corners")
         if mark.get("view") is not None and not isinstance(mark["view"], str):
             raise SnapshotRefused(f"{at}.view is the label of the view it was drawn in")
+        text = mark.get("text")
+        if text is not None and (not isinstance(text, str) or len(text) > TEXT_MAX_CHARS
+                                 or text.count("\n") + 1 > TEXT_MAX_LINES):
+            raise SnapshotRefused(f"{at}.text is at most {TEXT_MAX_CHARS} characters on {TEXT_MAX_LINES} lines")
+        for key, high in (("fontPx", FONT_PX_MAX), ("width", STROKE_WIDTH_MAX)):
+            value = mark.get(key)
+            if value is not None and not (isinstance(value, (int, float)) and not isinstance(value, bool)
+                                          and math.isfinite(value) and 0 <= value <= high):
+                raise SnapshotRefused(f"{at}.{key} is a number from 0 to {high:g}")
     return found
 
 
@@ -687,12 +701,12 @@ def names_a_folder(text: str) -> bool:
 
 
 def stem_of(source: Any) -> str:
-    """What a generated picture name starts with: the drawn file's stem, or a model's name."""
+    """What a generated picture name starts with: the drawn file's stem, a model's name, or a
+    document's id."""
     named = getattr(source, "name", None)
     if isinstance(named, str) and not isinstance(source, Path):
-        return named  # a Model, built code
-    script, _sep, model = os.fspath(source).partition("::")
-    return model or Path(script).stem or "snapshot"
+        return named  # a Model
+    return Path(os.fspath(source)).stem or "snapshot"
 
 
 def picture_path(out: Any, source: Any, *, at: str | None = None, job: tuple[int, int] = (0, 1),
@@ -710,25 +724,11 @@ def picture_path(out: Any, source: Any, *, at: str | None = None, job: tuple[int
 
 
 def write_png(out: Path, data: bytes) -> None:
-    """The one file a snapshot writes: beside ``out`` first, then moved over it."""
-    temporary = out.with_name(f".{out.stem}.{os.getpid()}.tmp.png")
-    temporary.write_bytes(data)
-    replace_atomic(temporary, out)
-
-
-@contextlib.contextmanager
-def nothing_left(*outs: Path) -> Iterator[None]:
-    """A snapshot that fails or is refused leaves no picture at an ``out``, not even one an earlier
-    run wrote there: a stale picture at exit 1 reads as this run's (law 16) -- a job's, none of its
-    pictures. Only a ``.png`` is taken away; an OUT of another kind is refused before anything is
-    written, and kept."""
-    try:
-        yield
-    except BaseException:
-        for out in outs:
-            if Path(out).suffix.lower() == ".png" and Path(out).is_file():
-                Path(out).unlink(missing_ok=True)
-        raise
+    """The one file a snapshot writes: beside ``out`` first, then moved over it, so a failure
+    leaves whatever was at ``out`` as it was, and no temporary file beside it."""
+    with staging(out) as temporary:
+        temporary.write_bytes(data)
+        replace_atomic(temporary, out)
 
 
 def options(display: Any = None, camera: Any = None, grid: bool = False, width: int | None = None,
@@ -777,22 +777,20 @@ def snapshot(document: Path, out: Path, *, display: dict[str, Any] | None = None
     and its size and projection unless ``size`` and ``display.camera`` say otherwise. ``size`` None
     is the default size. ``view`` (or ``display.view``): a part's named view it is drawn as
     (``view_of``), refused with a camera. Raises ``SnapshotRefused`` for a request it will not
-    draw, before rendering, and leaves no picture at ``out`` when it refuses or fails
-    (``nothing_left``)."""
+    draw, before rendering; one refused or failed leaves the file at ``out`` as it was
+    (``write_png``)."""
     started = time.perf_counter()
     document, out = Path(document).resolve(), Path(out).resolve()
-    with nothing_left(out):
-        return _snapshot(document, out, display=display, camera=camera, preview=preview, size=size, daemon=daemon,
-                         pose=pose, source=source, annotation=annotation, measurements=measurements,
-                         annotation_source=annotation_source, started=started, view=view)
+    return _snapshot(document, out, display=display, camera=camera, preview=preview, size=size, daemon=daemon,
+                     pose=pose, source=source, annotation=annotation, measurements=measurements,
+                     annotation_source=annotation_source, started=started, view=view)
 
 
 def _checked(document: Path, out: Path, source: Any = None) -> str:
     """What a picture draws and where it goes, checked before anything renders: SRC a file the
-    stills draw, and there (unless a build's ``source`` holds it), OUT a ``.png``. SRC's suffix."""
-    from cadgen.engine.addresses import parse as model_address
-
-    if model_address(document) is not None:
+    stills draw, and there (unless a build's ``source`` holds it), or a document's id, OUT a
+    ``.png``. SRC's suffix (an id's document is drawn as an ``.xbf``)."""
+    if _by_id(document):
         if out.suffix.lower() != ".png":
             raise SnapshotRefused(f"a snapshot is a .png; {out.name} is not one")
         return ".xbf"
@@ -832,17 +830,17 @@ def _snapshot(document: Path, out: Path, *, display: dict[str, Any] | None, came
 def _occt(document: Path, out: Path, still: Still, daemon: bool, source: Any, started: float) -> dict[str, Any]:
     """A document drawn by OCCT from the engine's meshes, or a file from what its reader read
     (``render/service.py``): by the daemon's render process for it, warm, or in this process
-    (``--no-daemon``, a model's own document from its worker's memory). The answer is the PNG's
-    bytes; this writes the one file."""
-    from cadgen.engine.addresses import parse as model_address
-
-    if model_address(document) is not None and source is None:
+    (``daemon=False``, a model's own document from its worker's memory). The answer is the PNG's
+    bytes; this writes the one file. A document named by its id is drawn by the engine from what
+    it holds (``api._source``): read, never built."""
+    if _by_id(document) and source is None:
         from cadgen.engine import api
 
-        spec = api._source(str(document), scripts=True)
-        return api._exported({"op": "export", "source": spec, "destinations": [],
-                              "draw_still": {"out": str(out), "still": still.as_json()},
-                              "cwd": os.getcwd()}, spec, lambda _text: None, daemon)["drawn"]
+        spec = api._source(str(document))
+        drawn = api._exported({"op": "export", "source": spec, "destinations": [],
+                               "draw_still": {"out": str(out), "still": still.as_json()},
+                               "cwd": os.getcwd()}, spec, lambda _text: None, daemon)["drawn"]
+        return {**drawn, "document": str(document)}  # the id it was named by, not the worker's stand-in
     if daemon and source is None:
         from cadgen.engine.client import request
 
@@ -862,25 +860,36 @@ def _occt(document: Path, out: Path, still: Still, daemon: bool, source: Any, st
             data, report = draw_here(document, still, source=source)
         except FormatError as error:
             raise SnapshotRefused(str(error)) from None
-    return _written(document, out, data, report, started)
+    # A build's document held in memory, no file of it (``draw``), is served under a name made from
+    # ``out``: a path no file is at, which the report never names.
+    stand_in = source is not None and getattr(source, "path", None) is None
+    return _written(document, out, data, report, started, named=None if stand_in else str(document))
 
 
-def _written(document: Path, out: Path, data: bytes, report: dict[str, Any], started: float) -> dict[str, Any]:
-    """A picture drawn, written to ``out``: its warnings said, and what was drawn."""
+def _written(document: Path, out: Path, data: bytes, report: dict[str, Any], started: float, *,
+             named: str | None = "") -> dict[str, Any]:
+    """A picture drawn, written to ``out``: its warnings said, and what was drawn -- ``named``, the
+    document's file (``document`` by default), or None for a document no file holds."""
+    named = str(document) if named == "" else named
     _warn(report.get("unmeshed") or {})
-    _warn_left_out(document, report.get("pmiLeftOut") or [])
+    shown = Path(named).name if named else "the document"
+    _warn_left_out(shown, report.get("pmiLeftOut") or [])
     for warning in report.get("warnings") or []:
-        print(f"warning: {document.name}: {warning}", file=sys.stderr)
+        print(f"warning: {shown}: {warning}", file=sys.stderr)
     write_png(out, data)
     report["timings"]["totalMs"] = round((time.perf_counter() - started) * 1000)
-    return {"ok": True, "document": str(document), "output": str(out), **report, "bytes": out.stat().st_size}
+    found = {"ok": True, "output": str(out), **report, "bytes": out.stat().st_size}
+    return {"document": named, **found} if named else found
 
 
 # --- a job: a Quick Edit packet's views, drawn ---------------------------------------------------
 
 
-def _model(text: str) -> bool:
-    return "::" in text or text.endswith(".py")
+def _by_id(document: Any) -> bool:
+    """Whether a picture's document is named by its id: drawn from what the engine holds."""
+    from cadgen.engine.ids import is_id
+
+    return is_id(os.fspath(document))
 
 
 def job_input(job: Any) -> str | None:
@@ -1007,10 +1016,9 @@ def job_pictures(job: Any, source: Any = None, *, display: Any = None, camera: A
         named = source if source is not None else view.get("input") or shared.get("input")
         if not named:
             raise SnapshotRefused(f"{where} names no input, and no SRC is given")
-        from cadgen.engine.addresses import parse as model_address
-
-        address = model_address(os.fspath(named))
-        document = Path(str(address)) if address else Path(os.fspath(named)).expanduser().resolve()
+        document = Path(os.fspath(named))
+        if not _by_id(document):
+            document = document.expanduser().resolve()
         drawing = document.suffix.lower() == ".dxf"
         settings = _settings(view.get("output"), f"{where}.output", drawing)
         tight, padding = settings.get("tightFrame", True), float(settings.get("padding", PADDING))
@@ -1092,31 +1100,45 @@ def job_pictures(job: Any, source: Any = None, *, display: Any = None, camera: A
 def draw_pictures(pictures: list[tuple[Path, Path, Still]], *, daemon: bool = True) -> list[dict[str, Any]]:
     """A job's pictures drawn (``job_pictures``), each written to its file: through the daemon, a
     render process warm for each file, or in this process, each file served once for all its
-    pictures. A picture that fails leaves none of the job's (``nothing_left``)."""
-    with nothing_left(*(out for _document, out, _still in pictures)):
-        for _document, out, _still in pictures:
+    pictures. All or nothing: every picture is drawn into a staged file beside its output, and
+    the staged files are moved over the outputs only once every one is drawn. A picture that
+    fails leaves every output as it was and removes only the staged files (``_staged``)."""
+    with contextlib.ExitStack() as stages:  # each picture's staging folder, gone with the job
+        staged = []
+        for document, out, still in pictures:
             out.parent.mkdir(parents=True, exist_ok=True)
-        if daemon or any(_model(str(document)) for document, _out, _still in pictures):
-            return [_occt(document, out, still, daemon, None, time.perf_counter()) for document, out, still in pictures]
-        from cadgen.engine.formats import FormatError
-        from cadgen.engine.render.service import draw_here_each
-
-        drawn: list[dict[str, Any]] = []
-        at = 0
-        while at < len(pictures):
-            document = pictures[at][0]
-            # The pictures of one file in a row, drawn from one serve of it.
-            group = pictures[at:at + next((n for n, picture in enumerate(pictures[at:]) if picture[0] != document),
-                                          len(pictures) - at)]
-            started = time.perf_counter()
-            try:
-                answers = draw_here_each(document, [still for _document, _out, still in group])
-            except FormatError as error:
-                raise SnapshotRefused(str(error)) from None
-            drawn += [_written(document, out, data, report, started)
-                      for (_document, out, _still), (data, report) in zip(group, answers)]
-            at += len(group)
+            staged.append((document, out, stages.enter_context(staging(out)), still))
+        drawn = _draw_staged(staged, daemon)
+        for (_document, out, stage, _still), found in zip(staged, drawn):
+            replace_atomic(stage, out)
+            found["output"] = str(out)
         return drawn
+
+
+def _draw_staged(staged: list[tuple[Path, Path, Path, Still]], daemon: bool) -> list[dict[str, Any]]:
+    """Each picture of a job drawn into its staged file (``draw_pictures``)."""
+    if daemon or any(_by_id(document) for document, _out, _stage, _still in staged):
+        return [_occt(document, stage, still, daemon, None, time.perf_counter())
+                for document, _out, stage, still in staged]
+    from cadgen.engine.formats import FormatError
+    from cadgen.engine.render.service import draw_here_each
+
+    drawn: list[dict[str, Any]] = []
+    at = 0
+    while at < len(staged):
+        document = staged[at][0]
+        # The pictures of one file in a row, drawn from one serve of it.
+        group = staged[at:at + next((n for n, picture in enumerate(staged[at:]) if picture[0] != document),
+                                    len(staged) - at)]
+        started = time.perf_counter()
+        try:
+            answers = draw_here_each(document, [still for _document, _out, _stage, still in group])
+        except FormatError as error:
+            raise SnapshotRefused(str(error)) from None
+        drawn += [_written(document, stage, data, report, started)
+                  for (_document, _out, stage, _still), (data, report) in zip(group, answers)]
+        at += len(group)
+    return drawn
 
 
 def _warn(unmeshed: dict[str, list[int]]) -> dict[str, list[int]]:
@@ -1128,12 +1150,13 @@ def _warn(unmeshed: dict[str, list[int]]) -> dict[str, list[int]]:
     return unmeshed
 
 
-def _warn_left_out(document: Path, left: list[dict[str, Any]]) -> None:
+def _warn_left_out(document: str, left: list[dict[str, Any]]) -> None:
     """A warning for each of the document's PMI the picture leaves out (``render/pmi.left_out``),
-    and why: its part's name first, the document's for one on no part; a broken one's status said."""
+    and why: its part's name first, the document's (as its warnings name it) for one on no part; a
+    broken one's status said."""
     for item in left:
         status = "" if item["status"] == "ok" else f" ({item['status']})"
-        print(f"warning: {item['part'] or document.name}: the picture does not draw PMI {item['id']}{status}: "
+        print(f"warning: {item['part'] or document}: the picture does not draw PMI {item['id']}{status}: "
               f"{item['reason']}", file=sys.stderr)
 
 
@@ -1141,8 +1164,8 @@ def _arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.usage = "%(prog)s SRC OUT.png [options] | --job PACKET [SRC] [options]"
     parser.add_argument("document", metavar="SRC", nargs="?",
                         help="a document (.xbf, .step), a mesh file (.glb, .stl, .3mf), a robot (.urdf, .sdf, .srdf), "
-                             "a drawing (.dxf), or SCRIPT.py::MODEL (built first, drawn from its worker); with --job, "
-                             "a file drawn in place of every job's input")
+                             "a drawing (.dxf), or a document id (a model's, which python SCRIPT.py prints: drawn "
+                             "from what the engine holds); with --job, a file drawn in place of every job's input")
     parser.add_argument("out", metavar="OUT.png", nargs="?",
                         help="the .png to write, or a folder (one that is there, or a path ending in a separator) to "
                              "write <SRC's stem>_<UTC time>.png into")
@@ -1178,7 +1201,6 @@ def _arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
                                                               "model, on the parts it was drawn on")
     parser.add_argument("--measurements", metavar="FILE", help="Measure's dimensions (a JSON list of {start, end, label, "
                                                                 "color}), drawn over the model")
-    parser.add_argument("--no-daemon", action="store_true", help="serve the document from this process")
     parser.add_argument("--json", action="store_true", help="print what was drawn and its timings as JSON")
     return parser
 
@@ -1219,66 +1241,69 @@ def run(args: argparse.Namespace, prog: str = "cadgen snapshot") -> int:
         return _run_job(args, prog)
     if args.document is None or args.out is None:
         raise Failed("the following arguments are required: SRC, OUT.png (or --job PACKET)", 2)
-    if "::" in args.document or args.document.endswith(".py"):
-        return _run_model(args, prog)
+    if _by_id(args.document):
+        return _run_held(args, prog)
     from cadgen.engine import api
-    from cadgen.engine.cli import _shown
+    from cadgen.engine.cli import _given
 
     try:
         # The verb as a function (``api.snapshot``), which checks the flags as ``snapshot`` does.
         report = api.snapshot(Path(args.document), args.out, display=args.display, camera=args.camera, grid=args.grid,
                               preview=args.preview, pose=args.pose, width=args.width, height=args.height,
-                              size_profile=args.size_profile, daemon=not args.no_daemon, annotation=args.annotation,
+                              size_profile=args.size_profile, annotation=args.annotation,
                               measurements=args.measurements, view=args.view).report
     except SnapshotRefused as error:
         raise Failed(str(error), 2) from None
+    except ConnectionError:
+        raise  # the engine not reached: its one line, as every verb says it (``cli.answered``)
     except Exception as error:  # noqa: BLE001 - a failed render is the command's answer
         raise Failed(f"{type(error).__name__}: {error}") from None
     if args.json:
         print(json.dumps(report))
     else:
         timings = report["timings"]
-        print(f"wrote {_shown(report['output'])} ({report['width']}x{report['height']}, {report['displayMode']}"
+        print(f"wrote {_given(report['output'], args.out)} ({report['width']}x{report['height']}, {report['displayMode']}"
               f"{', preview' if report['preview'] else ''}) in {timings['totalMs'] / 1000:.2f}s")
     return 0
 
 
-def _run_model(args: argparse.Namespace, prog: str) -> int:
-    """``cadgen snapshot SCRIPT.py::MODEL OUT.png``: the model built in its worker, its
-    document drawn from that worker's memory (``api.snapshot``)."""
+def _run_held(args: argparse.Namespace, prog: str) -> int:
+    """``cadgen snapshot ID OUT.png``: the document the engine holds of that id, drawn from the
+    memory of the worker holding it (``api.snapshot``); nothing is built."""
     from cadgen.engine import api
-    from cadgen.engine.cli import Failed, _shown
+    from cadgen.engine.cli import Failed, _given, told_state
 
     try:
         drawn = api.snapshot(args.document, args.out, display=args.display, camera=args.camera, grid=args.grid,
                              preview=args.preview, pose=args.pose, width=args.width, height=args.height,
-                             size_profile=args.size_profile, daemon=not args.no_daemon, annotation=args.annotation,
+                             size_profile=args.size_profile, annotation=args.annotation,
                              measurements=args.measurements, view=args.view)
     except (SnapshotRefused, ValueError) as error:
         raise Failed(str(error), 2) from None
     except api.EngineError as error:
         raise Failed(str(error)) from None
+    told_state(args.document, "drawing")
     if args.json:
         print(json.dumps(drawn.report))
     else:
-        print(f"wrote {_shown(drawn.path)} ({drawn.width}x{drawn.height}) in "
+        print(f"wrote {_given(drawn.path, args.out)} ({drawn.width}x{drawn.height}) in "
               f"{drawn.report['timings']['totalMs'] / 1000:.2f}s")
     return 0
 
 
 def _run_job(args: argparse.Namespace, prog: str) -> int:
-    """``cadgen snapshot --job PACKET [SRC]``: every picture the job names (``api.snapshot_job``),
+    """``cadgen snapshot --job PACKET [SRC]``: every picture the job names (``api.snapshot(job=)``),
     a line each; with ``--json``, ``{"ok": true, "pictures": [what each drew]}``."""
     from cadgen.engine import api
-    from cadgen.engine.cli import Failed, _shown
+    from cadgen.engine.cli import Failed
 
     if args.out is not None:
         raise Failed(f"--job writes the pictures its outputs name, so it takes no OUT ({args.out})", 2)
     started = time.perf_counter()
     try:
-        drawn = api.snapshot_job(args.job, args.document, display=args.display, camera=args.camera, grid=args.grid,
+        drawn = api.snapshot(args.document, job=args.job, display=args.display, camera=args.camera, grid=args.grid,
                                  preview=args.preview, pose=args.pose, width=args.width, height=args.height,
-                                 size_profile=args.size_profile, daemon=not args.no_daemon, annotation=args.annotation,
+                                 size_profile=args.size_profile, annotation=args.annotation,
                                  measurements=args.measurements, view=args.view)
     except SnapshotRefused as error:
         raise Failed(str(error), 2) from None
@@ -1290,6 +1315,6 @@ def _run_job(args: argparse.Namespace, prog: str) -> int:
     else:
         for picture in drawn:
             report = picture.report
-            print(f"wrote {_shown(picture.path)} ({report['width']}x{report['height']}, {report['displayMode']}"
+            print(f"wrote {os.fspath(picture.path)} ({report['width']}x{report['height']}, {report['displayMode']}"
                   f"{', preview' if report['preview'] else ''}) in {report['timings']['totalMs'] / 1000:.2f}s")
     return 0

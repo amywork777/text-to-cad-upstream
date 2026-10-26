@@ -43,14 +43,13 @@ from __future__ import annotations
 
 import contextlib
 import io
-import os
 import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from cadgen.engine.atomic_replace import replace_atomic
+from cadgen.engine.atomic_replace import put
 from cadgen.engine.export import ExportRefused
 
 __all__ = ["DEFAULT_LAYER", "DrawingFinding", "DrawingValidationError", "DxfDeterminismError", "document_is_drawing",
@@ -90,13 +89,7 @@ def write(view: Any, path: Path) -> None:
             return
     except OSError:
         pass
-    temporary = path.with_name(f".{path.stem}.{os.getpid()}.{threading.get_ident()}.tmp{path.suffix}")
-    try:
-        temporary.write_bytes(data)
-        replace_atomic(temporary, path)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
+    put(path, lambda temporary: temporary.write_bytes(data), compare=False)
 
 
 def dxf_bytes(view: Any) -> bytes:

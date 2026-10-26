@@ -20,9 +20,10 @@ import os
 import threading
 from pathlib import Path
 
-from cadgen.assets import runtime_build_hint, runtime_root
+from cadgen.assets import checkout_root, runtime_build_hint, runtime_root
 
-MIME = "text/html;profile=mcp-app"
+from .host import MIME  # the page's type, which a host that renders MCP Apps lists
+
 _PREFIX, _SUFFIX = "ui://cad/", "/app.html"
 
 # What the page needs from its sandbox: blob workers and modules (the bundle
@@ -41,12 +42,9 @@ def app_dir() -> Path:
     override = str(os.environ.get("CADGEN_MCP_APP_DIR") or "").strip()
     if override:
         return Path(override).expanduser().resolve()
-    for parent in Path(__file__).resolve().parents:
-        app = parent / "apps" / "mcp"
-        if (app / "package.json").is_file():
-            if (app / "dist" / "index.html").is_file():
-                return app / "dist"
-            break
+    root = checkout_root()
+    if root is not None and (root / "apps" / "mcp" / "dist" / "index.html").is_file():
+        return root / "apps" / "mcp" / "dist"
     return runtime_root() / "mcp"
 
 

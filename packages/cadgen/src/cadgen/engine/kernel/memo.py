@@ -4,7 +4,7 @@ it remembers, in the worker's memory for the worker's life.
 Installed in the worker beside ``determinism.install()``, idempotently, the layer
 patches every kernel construction build123d's topology modules offer -- primitives,
 booleans, fillets and chamfers, sweeps and lofts, faces and wires, copies and moves,
-``clean``, ``is_valid``, ``split``, ``project_faces``, the constructors that build a
+``clean``, ``split``, ``project_faces``, the constructors that build a
 face from wires, a wire from edges, a shell from faces, a solid from a shell and a
 compound from shapes, and the file importers -- so that every call made from a
 model's own code inside a run (``run()``) is seen once, at the boundary.
@@ -17,14 +17,17 @@ subclasses, each run of one an operation (``_maker_class``) and a feature
 file the engine reads for a model (``wrap_function``: ``read_step``, ``read_xbf``,
 ``read_mesh``) is an operation keyed by the file's bytes.
 
-**Reads past the engine.** build123d's importers (``import_step``, ``import_brep``,
-``import_stl``: operations keyed by the file's bytes too) and the readers a model may drive
-itself (``_READER_TARGETS``: OCCT's, patched in place on their classes, and build123d's
-``Mesher.read``) read their file in C or C++, where the audit hook on Python's ``open`` hears
-nothing. A body that calls one is not kept (``_bypassed``): it runs on every build, and the
-build names the call and the file (``_Run.bypassed``). The file is one of its inputs all the same,
-held to its bytes as a file it opened itself is, so its closure keeps a key: a restart with nothing
-changed takes its document, and one after the file changed builds it.
+build123d's importers (``import_step``, ``import_brep``, ``import_stl``) are operations keyed by
+the file's bytes as the engine's readers are: the body that calls one holds the file to its bytes
+(its ``checks``), and is kept and replayed while they are the same.
+
+**Reads past the engine.** The readers a model may drive itself (``_READER_TARGETS``: OCCT's,
+patched in place on their classes, and build123d's ``Mesher.read``) read their file in C or C++,
+where the audit hook on Python's ``open`` hears nothing, and make what no key names. A body that
+calls one is not kept (``_bypassed``): it runs on every build, and the build names the call and
+the file (``_Run.bypassed``). The file is one of its inputs all the same, held to its bytes as a
+file it opened itself is, so its closure keeps a key: a restart with nothing changed takes its
+document, and one after the file changed builds it.
 
 **Keys.** A call is keyed by its operation, every setting it runs with, its
 canonical parameters and the keys of the shapes it was given. The settings are what
@@ -43,7 +46,8 @@ afresh from a compound -- what iterating one hands back, as build123d's intersec
 and ``unwrap`` do -- has no ancestor to name it by; when a root holds its TShape
 (``_SUBS``) it is keyed as that root's sub-shape, by its kind and its ordinal among the
 root's sub-shapes of that kind (``_held``). A shape no operation of this process made
-has no key, and a call given one runs uncached. The n-th call with one key in a
+has no key, and a call given one runs uncached. An empty shape (``bd.Sketch()``, what
+build123d's ``+`` sums onto) holds no geometry: it is keyed by its class, and is no input. The n-th call with one key in a
 model's body is its own entry (``scope``), so two identical constructions in one body
 are two objects, as in plain Python; and the body's ordinals are its own, the same
 whether it runs as a build's root or as a child and whatever the build ran before it
@@ -97,12 +101,25 @@ what a foreign wrapper embeds, and where a ledger row is indexed. The walk stops
 shape a root already holds, so registering a container of registered parts costs its
 direct children, not the parts' sub-shapes.
 
-**Queries.** A bounding box is no operation and no feature -- it makes no shape -- but a
-model asks for one of the same unchanged shapes on every build, and the precise box
-build123d takes by default costs milliseconds a shape. build123d measures the bare
-geometry (it clears any mesh first and takes no tolerance), so a box is a function of the
-TShape, its placement and the arguments: one of a TShape this process made is kept by
-those, with the effects applied to it so far, and answered again (``_bounding_box``).
+**Queries.** A query answers a question of shapes and makes nothing of them: a bounding
+box, a validity check, a volume, an area, a length, a centre, inertia, a distance, a point
+test (build123d's: ``_QUERY_TARGETS``), and the OCCT analyses a model may run itself past
+build123d -- ``BRepAlgoAPI_Check``, ``BRepCheck_Analyzer``, ``BRepExtrema_DistShapeShape``
+(``_ANALYSES``, each the layer's subclass, ``_analysis_class``). It is no operation and no
+feature, but a model asks it of the same unchanged shapes on every build, and one BOP check
+of a big casting costs seconds. Its answer is a plain value -- a bool, a number, a point, a
+box's corners, a tuple or list of them (``_kept``) -- and a function of the shapes it reads
+and its settings alone (each target says why). So a query is keyed by its name, the class it
+is asked of, the memo key of every shape it reads -- the operation that made its TShape and
+the effects applied to it since, its location and orientation, never its label or colour
+(``_query_shape``, ``_query_handle``) -- and every argument and setting that can change its
+answer; its answer is kept on the first shape's record (``_Made.answers``), for as long as
+the memo holds that shape, and handed back, as a new object, when the same key is asked of
+the very same TShapes (``_ask``, ``_analyse``). A query of a shape no operation made, or
+with an argument no key names, runs and keeps nothing; with the memo off every query runs.
+Its own kernel calls are cadgen's, so a run's trace is the same whether it was answered or
+ran. An OCCT analysis the memo answered has not run: anything asked of it but the answers
+kept runs it first, as it was given then (``_materialize``).
 
 **Bodies.** A model's body is one coarse entry above its calls (``body``): keyed by the
 bytes it is made of -- the source its caller names, the files it read, by their bytes -- it
@@ -115,6 +132,15 @@ leave, so the names of what a caller makes of it compose as if it had run, and a
 body makes no call, so its caller's ordinals are what they would be. A body that ran a call
 plain, or whose entries are gone, runs.
 
+**Motions.** A function motion's function is sampled after its body returned (``listened``):
+the files it opens are heard as a body's are, held to their bytes, and are the model's inputs
+(``MotionReads``), so a document is not taken while one of them changed.
+
+**Warnings.** build123d warns with a ``stacklevel`` that names its caller, which, for a call
+this layer wraps, is this layer's frame. Its modules' ``warnings`` is ``_Warnings``: a warning
+that would name a frame of the engine's names the model's line instead (``warn_explicit`` with
+the first model frame's file, line and module), and every other passes on as it would.
+
 **History.** While a call from the model's code runs, the OCCT makers it runs record
 what they were given and what they made (``history``), and right after it the call's
 history is composed from them. The feature carries it, and so does the entry: a hit
@@ -124,7 +150,10 @@ gives are the same either way.
 The memo lives in this process's memory for the life of the process and holds what
 the last ``RUNS_KEPT`` builds used (``_sweep``): a build is a scan of every call the
 model makes, so a bound by count would evict, on a model larger than the bound, each
-entry just before the next build asks for it. Nothing of it is ever written anywhere,
+entry just before the next build asks for it. A build is one program's pass over the
+models it builds (``_mark``): a script building more models than ``RUNS_KEPT`` (a robot
+and its links) is one build, so each model's next run finds what this one used, and a
+program building a model again in one pass begins another. Nothing of it is ever written anywhere,
 and a new process computes everything. ``CADGEN_ENGINE_MEMO=0`` turns hits off and nothing else.
 """
 
@@ -141,7 +170,9 @@ import itertools
 import numbers
 import os
 import struct
+import sys
 import threading
+import warnings
 import weakref
 from collections import OrderedDict
 from pathlib import Path
@@ -153,9 +184,11 @@ from OCP.TopExp import TopExp
 from OCP.TopTools import TopTools_IndexedMapOfShape
 
 from cadgen.engine.kernel import history as kernel_history
+from cadgen.engine.kernel import trace as kernel_trace
 from cadgen.engine.kernel.trace import Trace
 
-__all__ = ["CAPACITY", "RUNS_KEPT", "clear", "enabled", "install", "run", "stats", "uninstall", "wrap_function"]
+__all__ = ["CAPACITY", "RUNS_KEPT", "clear", "enabled", "install", "listened", "motion_reads", "run", "stats",
+           "uninstall", "wrap_function"]
 
 # What a build keeps: every entry and key the last RUNS_KEPT outermost runs used, so an
 # edit, its revert and a second edit in between all find the first run's steps. The
@@ -176,12 +209,15 @@ _KEY_IDS_NEXT = itertools.count(1)
 # key table, behind which everything it touched is moved (``_sweep``).
 _GENERATIONS = itertools.count(1)
 _MARKS: list[int] = []
+# The pass the last marker began: its program's run and the models it has built so far.
+_PASS: dict[str, Any] = {"program": None, "models": set()}
 _MAPS: "OrderedDict[tuple[int, int], tuple[Any, Any]]" = OrderedDict()
 # A root's sub-shapes of one kind, TShape to its first ordinal (``_held``), for the roots a
 # model keeps casting shapes out of.
 _ORDINALS: "OrderedDict[tuple[Any, int], dict]" = OrderedDict()
 _STATS = {"hits": 0, "misses": 0, "unkeyable": 0, "unreplayable": 0, "errors": 0, "tainted": 0,
-          "bodies_run": 0, "bodies_skipped": 0, "copied_on_write": 0, "shared_reads": 0}
+          "bodies_run": 0, "bodies_skipped": 0, "copied_on_write": 0, "shared_reads": 0, "queries_answered": 0,
+          "queries_run": 0}
 _RUN_IDS = itertools.count(1)
 _EFFECT_IDS = itertools.count(1)
 # Every row applied takes the next stamp: a maker's reset undoes the rows applied
@@ -192,9 +228,10 @@ _EDGE, _VERTEX, _FACE, _COMPOUND = int(TopAbs_EDGE), int(TopAbs_VERTEX), int(Top
 # The attribute a model's painted face colours live in (``cadgen.engine.paint``).
 FACE_COLORS = "xbf_face_colors"
 FACE_MATERIALS = "xbf_face_materials"
-CONFIGURATIONS = "xbf_configurations"  # an assembly's poses by name (``mechanism.configuration``)
-COUPLINGS = "xbf_couplings"  # and its couplings by name (``mechanism.couple``)
-PMI = "xbf_pmi"  # a part's semantic PMI (``pmi.annotate``)
+CONFIGURATIONS = "xbf_configurations"  # an assembly's mechanism states by name (``mechanism.mechanism_state``)
+COUPLINGS = "xbf_couplings"  # and its couplings by name (``mechanism.gear_pair`` and its two siblings)
+ANIMATIONS = "xbf_animations"  # and its animations by name (``animations.animation``): plain values
+PMI = "xbf_pmi"  # and a part's semantic PMI (``pmi.annotate``)
 
 
 class _Unkeyable(Exception):
@@ -260,7 +297,6 @@ _INSTANCE_TARGETS = (
     ("Edge", "reversed", "reversed"),
     ("Edge", "close", "close"),
 )
-_PROPERTY_TARGETS = (("Shape", "is_valid", "is_valid"),)
 _CLASSMETHOD_TARGETS = tuple(
     (cls, name, name)
     for cls, names in (
@@ -296,7 +332,6 @@ _IMPORTER_TARGETS = ("import_step", "import_brep", "import_stl")
 # Operations whose first argument is a file, keyed by the file's bytes: the importers,
 # and the engine's own readers (``wrap_function``: ``read_step``, ``read_xbf``, ``read_mesh``).
 _FILE_OPS = {"import_step", "import_brep", "import_stl", "read_step", "read_xbf", "read_mesh"}
-_IMPORTERS = frozenset(_IMPORTER_TARGETS)
 # Readers past the engine's (see the module), patched in place on their classes: (module,
 # class, method, whether it is static). XSControl_Reader's is IGES's readers' too, and
 # RWMesh_CafReader's glTF's and OBJ's; ``Mesher.read`` is build123d's 3MF and STL reader (lib3mf).
@@ -353,8 +388,6 @@ def install() -> bool:
 
         for cls_name, attr, label in _INSTANCE_TARGETS:
             _patch(getattr(topology, cls_name), attr, label, "instance")
-        for cls_name, attr, label in _PROPERTY_TARGETS:
-            _patch(getattr(topology, cls_name), attr, label, "property")
         for cls_name, attr, label in _CLASSMETHOD_TARGETS:
             _patch(getattr(topology, cls_name), attr, label, "classmethod")
         for cls_name, _slot in _CONSTRUCTOR_TARGETS:
@@ -377,7 +410,18 @@ def install() -> bool:
             setattr(importers, name, wrapped)
             if getattr(build123d, name, None) is original:
                 setattr(build123d, name, wrapped)
-        topology.Shape.bounding_box = _bounding_box(topology.Shape.bounding_box)
+        for cls_name, attr in _QUERY_TARGETS:
+            cls = getattr(topology, cls_name)
+            if attr not in cls.__dict__:
+                raise TypeError(f"{cls_name}.{attr} is not {cls_name}'s own")
+            static = cls.__dict__[attr]
+            if isinstance(static, property):
+                if not getattr(static.fget, "__kernel_memo__", False):
+                    setattr(cls, attr, property(_query(f"{cls_name}.{attr}", static.fget), static.fset, static.fdel))
+            elif not inspect.isfunction(static):
+                raise TypeError(f"{cls_name}.{attr} is neither a property nor a plain method")
+            elif not getattr(static, "__kernel_memo__", False):
+                setattr(cls, attr, _query(f"{cls_name}.{attr}", static))
         kernel_history.install()
         # After the history's patches, which read these modules' classes: build123d keeps
         # the classes it imported, and a model importing one now is handed its subclass.
@@ -386,6 +430,10 @@ def install() -> bool:
             original = getattr(module, class_name)
             if not getattr(original, "__kernel_memo__", False):
                 setattr(module, class_name, _maker_class(original, perform, idle, builds, setters))
+        for spec in _ANALYSES:
+            module = importlib.import_module(spec.module)
+            if not getattr(getattr(module, spec.name), "__kernel_memo__", False):
+                setattr(module, spec.name, _analysis_class(spec))
         for module_name, class_name, method, static in _READER_TARGETS:
             cls = getattr(importlib.import_module(module_name), class_name)
             if method not in cls.__dict__:
@@ -396,9 +444,51 @@ def install() -> bool:
                 owner = "OCCT's" if module_name.startswith("OCP.") else "build123d's"
                 hooked = _reader(f"{owner} {class_name}.{method}", original, static)
                 setattr(cls, method, staticmethod(hooked) if static else hooked)
+        for module in list(sys.modules.values()):
+            if getattr(module, "__name__", "").startswith("build123d") and getattr(module, "warnings", None) is warnings:
+                module.warnings = _WARNINGS
         _audit_reads()
         _installed = True
         return True
+
+
+class _Warnings:
+    """``warnings`` as build123d's modules see it: ``warn`` attributes a warning whose
+    ``stacklevel`` lands in an engine frame (a call this layer wraps) to the first frame of the
+    model's code outside it, by its file and line; the rest is the ``warnings`` module."""
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(warnings, name)
+
+    def warn(self, message: Any, category: Any = None, stacklevel: int = 1, source: Any = None, **options: Any) -> None:
+        frame = sys._getframe(1)
+        for _level in range(stacklevel - 1):
+            if frame.f_back is None:
+                break
+            frame = frame.f_back
+        model = frame if _engine_file(frame.f_code.co_filename) else None
+        while model is not None and kernel_trace._classify(model.f_code.co_filename) != "model":
+            model = model.f_back
+        if model is None:
+            warnings.warn(message, category, stacklevel + 1, source, **options)
+            return
+        if isinstance(message, Warning):
+            category = type(message)
+        named = model.f_globals
+        warnings.warn_explicit(message, category or UserWarning, model.f_code.co_filename, model.f_lineno,
+                               module=named.get("__name__"), registry=named.setdefault("__warningregistry__", {}),
+                               module_globals=named, source=source)
+
+
+_WARNINGS = _Warnings()
+
+
+@functools.lru_cache(maxsize=4096)
+def _engine_file(filename: str) -> bool:
+    try:
+        return kernel_trace._ENGINE in Path(filename).resolve().parents
+    except (OSError, RuntimeError, ValueError):
+        return False
 
 
 # --- files a body opens itself --------------------------------------------------------------
@@ -428,8 +518,10 @@ def _audited(event: str, args: tuple) -> None:
     heard."""
     if event != "open":
         return
+    # A motion's function being sampled (``listened``) reads for its samples, whatever runs.
+    log = getattr(_LOCAL, "sampling", None)
     state = getattr(_LOCAL, "run", None)
-    if state is None or state.depth or not state.bodies:
+    if log is None and (state is None or state.depth or not state.bodies):
         return
     try:
         path, mode = args[0], args[1]
@@ -449,7 +541,8 @@ def _audited(event: str, args: tuple) -> None:
     import stat as stat_module
 
     path = os.path.abspath(name)
-    log = state.bodies[-1]
+    if log is None:
+        log = state.bodies[-1]
     if path in log.reads:
         return
     try:
@@ -509,8 +602,10 @@ def _read_digest(path: str) -> str:
 def _hold_reads(log: "_BodyLog", state: "_Run") -> None:
     """When a body returns: each regular file it read held to its bytes (``_ReadInput``),
     one of its checks. A file whose stat moved while the body ran may have been read in two
-    states: the body is not retained. The engine's own reads here are not the body's."""
-    state.depth += 1
+    states: the body is not retained. The engine's own reads here are not the body's (a
+    sampling's ``state`` is None: its log is no longer listening)."""
+    if state is not None:
+        state.depth += 1
     try:
         for path, opened in log.reads.items():
             if opened is None:
@@ -534,7 +629,8 @@ def _hold_reads(log: "_BodyLog", state: "_Run") -> None:
                     continue
             log.checks.append((held, held.digest))
     finally:
-        state.depth -= 1
+        if state is not None:
+            state.depth -= 1
 
 
 def _library_file(name: str) -> bool:
@@ -600,6 +696,11 @@ def _reader(call: str, original: Any, static: bool) -> Any:
     reader's, and is not marked."""
     @functools.wraps(original)
     def hooked(*args: Any, **kwargs: Any) -> Any:
+        sampling = getattr(_LOCAL, "sampling", None)
+        if sampling is not None:
+            # A motion's function reads past the engine's readers: its samples are not kept.
+            sampling.bypassed.append((call, _path_argument(args if static else args[1:], kwargs)))
+            return original(*args, **kwargs)
         state = getattr(_LOCAL, "run", None)
         if state is not None and not state.depth and state.bodies:
             path = _path_argument(args if static else args[1:], kwargs)
@@ -622,7 +723,7 @@ def uninstall() -> bool:
         from build123d import importers, topology
         from build123d.topology import two_d
 
-        targets = (_INSTANCE_TARGETS + _PROPERTY_TARGETS + _CLASSMETHOD_TARGETS
+        targets = (_INSTANCE_TARGETS + _CLASSMETHOD_TARGETS
                    + tuple((cls_name, "__init__", cls_name) for cls_name, _slot in _CONSTRUCTOR_TARGETS)
                    + tuple((cls_name, attr, slot) for cls_name, attr, slot in _HELPER_CLASSMETHODS))
         for cls_name, attr, _label in targets:
@@ -652,62 +753,682 @@ def uninstall() -> bool:
             maker = getattr(module, class_name)
             if getattr(maker, "__kernel_memo__", False):
                 setattr(module, class_name, maker.__kernel_memo_class__)
+        for spec in _ANALYSES:
+            module = importlib.import_module(spec.module)
+            analysis = getattr(module, spec.name)
+            if getattr(analysis, "__kernel_memo__", False):
+                setattr(module, spec.name, analysis.__kernel_memo_class__)
         for module_name, class_name, method, static in _READER_TARGETS:
             cls = getattr(importlib.import_module(module_name), class_name)
             found = inspect.getattr_static(cls, method)
             hooked = found.__func__ if static else found
             if getattr(hooked, "__kernel_memo__", False):
                 setattr(cls, method, staticmethod(hooked.__wrapped__) if static else hooked.__wrapped__)
-        if getattr(topology.Shape.bounding_box, "__kernel_memo__", False):
-            topology.Shape.bounding_box = topology.Shape.bounding_box.__wrapped__
+        for cls_name, attr in _QUERY_TARGETS:
+            cls = getattr(topology, cls_name)
+            static = cls.__dict__[attr]
+            if isinstance(static, property):
+                if getattr(static.fget, "__kernel_memo__", False):
+                    setattr(cls, attr, property(static.fget.__wrapped__, static.fset, static.fdel))
+            elif getattr(static, "__kernel_memo__", False):
+                setattr(cls, attr, static.__wrapped__)
         kernel_history.uninstall()
         _installed = False
         return True
 
 
-# Bounding boxes asked of shapes this process made: (TShape, placement, orientation,
-# arguments, effects applied) to the box's corners, the least recently asked dropped.
-_BOXES: "OrderedDict[tuple, tuple]" = OrderedDict()
-_BOXES_HELD = 1 << 16
+# --- queries ------------------------------------------------------------------------------
+#
+# A query answers a question of the shapes it is given and makes nothing of them (see
+# **Queries**): build123d's (``_QUERY_TARGETS``: the class that defines it, the attribute)
+# and the OCCT analyses a model may run itself (``_ANALYSES``). Its answer is kept on the
+# record of the first shape it reads (``_Made.answers``), so it lives as long as the memo
+# holds that shape, and it is no feature and no entry: a query makes nothing to name or to
+# replay.
+
+_QUERY_TARGETS: tuple[tuple[str, str], ...] = (
+    ("Shape", "bounding_box"),
+    ("Shape", "is_valid"), ("Shape", "is_manifold"),
+    # Mass properties (``BRepGProp``, of the bare B-rep: no triangulation read): a solid's
+    # volume, a shape's area, an edge's or a wire's length, centres, inertia and moments.
+    ("Solid", "volume"), ("Shape", "area"), ("Mixin1D", "length"),
+    ("Mixin3D", "center"), ("Compound", "center"), ("Shell", "center"), ("Face", "center"), ("Mixin1D", "center"),
+    ("Shape", "matrix_of_inertia"), ("Shape", "principal_properties"), ("Shape", "static_moments"),
+    ("Shape", "radius_of_gyration"),
+    # Clearances (``BRepExtrema_DistShapeShape``'s minimum distance alone, no points): to a
+    # shape or a point.
+    ("Shape", "distance"), ("Shape", "distance_to"),
+    # Point tests (``BRepClass3d_SolidClassifier``): whether a point is inside a solid or on a face.
+    ("Mixin3D", "is_inside"), ("Face", "is_inside"),
+)
+# The answers one shape's record keeps, the oldest dropped past them: a model asking one
+# shape about many points keeps the last of them.
+_ANSWERS_HELD = 1 << 10
 
 
-def _bounding_box(function: Any) -> Any:
-    """``Shape.bounding_box`` answered from ``_BOXES`` for a shape the memo made (see
-    **Queries**); any other shape, or a box asked outside a run, is measured."""
+def _query(label: str, function: Any) -> Any:
+    """build123d's ``label`` (``Class.attribute``) as a query: inside a run, keyed by the class
+    it is asked of, the memo keys of the shapes it reads and its other arguments (``_ask``)."""
     @functools.wraps(function)
-    def bounding_box(self: Any, tolerance: float | None = None, optimal: bool = True) -> Any:
+    def query(self: Any, *args: Any, **kwargs: Any) -> Any:
         state = getattr(_LOCAL, "run", None)
-        wrapped = self.__dict__.get("_wrapped")
-        if state is None or wrapped is None:
-            return function(self, tolerance, optimal)
-        tshape = wrapped.TShape()
-        made = _made_of(tshape, state)
-        if made is None or not made.persistent():
-            return function(self, tolerance, optimal)
-        key = (tshape, _location_key(wrapped), int(wrapped.Orientation()), tolerance, bool(optimal),
-               tuple(effect.id for effect in made.effects))
+        if state is None:
+            return function(self, *args, **kwargs)
+        return _ask(state, (label, type(self).__qualname__), (self, *args), kwargs,
+                    lambda: function(self, *args, **kwargs))
+
+    query.__kernel_memo__ = True
+    return query
+
+
+def _ask(state: "_Run", name: tuple, given: tuple, kwargs: dict, compute: Callable[[], Any]) -> Any:
+    """A query's answer: the one kept on the first shape's record for this key, when it was
+    asked of these very shapes (each later shape's TShape too, as a hit requires); else
+    ``compute()``, its answer kept as a plain value (``_kept``). A query of a shape no
+    operation of this process made, or with an argument no key names, is computed and keeps
+    nothing; so is one whose answer is no plain value."""
+    read: list[_Made] = []
+    try:
+        parts = _query_parts(given, kwargs, state, read)
+    except _Unkeyable:
+        return _queried(state, compute)
+    except Exception:  # noqa: BLE001 - the memo is never the reason a query fails
+        _STATS["errors"] += 1
+        return _queried(state, compute)
+    made, others = read[0], tuple(found.tshape for found in read[1:])
+    key = (name, parts)
+    if enabled():
         with _LOCK:
-            corners = _BOXES.get(key)
-            if corners is not None:
-                _BOXES.move_to_end(key)
-        if corners is None:
-            box = function(self, tolerance, optimal)
-            corners = None if box.wrapped is None else box.wrapped.Get()
-            with _LOCK:
-                _BOXES[key] = corners if corners is not None else ()
-                while len(_BOXES) > _BOXES_HELD:
-                    _BOXES.popitem(last=False)
-            return box
-        from build123d.geometry import BoundBox
-        from OCP.Bnd import Bnd_Box
+            found = None if made.answers is None else made.answers.get(key)
+        if found is not None and found[0] == others:
+            _STATS["queries_answered"] += 1
+            state.tally["queries_answered"] += 1
+            return _revived(found[1])
+    value = _queried(state, compute)
+    try:
+        kept = _kept(value)
+    except Exception:  # noqa: BLE001 - an answer that cannot be kept is handed on, and asked again
+        return value
+    _answer(made, key, others, kept)
+    return value
 
-        bnd = Bnd_Box()
-        if corners:
-            bnd.Update(*corners)
-        return BoundBox(bnd)
 
-    bounding_box.__kernel_memo__ = True
-    return bounding_box
+def _answer(made: _Made, key: tuple, others: tuple, kept: Any) -> None:
+    """Keep ``kept`` on ``made``'s record as the answer to ``key``, newest last."""
+    with _LOCK:
+        answers = made.answers
+        if answers is None:
+            answers = made.answers = {}
+        answers.pop(key, None)
+        answers[key] = (others, kept)
+        if len(answers) > _ANSWERS_HELD:
+            del answers[next(iter(answers))]
+
+
+def _queried(state: "_Run", compute: Callable[[], Any]) -> Any:
+    """``compute()``, a query run: its own kernel calls are cadgen's, no feature and no
+    entry (``_decoding``), so a run's trace is the same whether its queries ran or were
+    answered."""
+    _STATS["queries_run"] += 1
+    state.tally["queries_run"] += 1
+    return _decoding(compute, state)
+
+
+def _query_parts(given: tuple, kwargs: dict, state: "_Run", read: list) -> tuple:
+    """A query's arguments as key parts: each shape by its memo key, geometry alone
+    (``_query_shape``; its record appended to ``read``), each other argument as an
+    operation's (``_normalize``)."""
+    from OCP.TopoDS import TopoDS_Shape
+
+    shape_type = _build123d().Shape
+
+    def part(value: Any) -> Any:
+        if isinstance(value, shape_type):
+            made, placed = _query_shape(value, state)
+        elif isinstance(value, TopoDS_Shape):
+            made, placed = _query_handle(value, state)
+        else:
+            return _normalize(value, state)
+        read.append(made)
+        return placed
+
+    parts = (tuple(part(value) for value in given),
+             tuple((name, part(value)) for name, value in sorted(kwargs.items())))
+    if not read:
+        raise _Unkeyable("a query of no shape")
+    return parts
+
+
+def _query_shape(shape: Any, state: "_Run") -> tuple["_Made", tuple]:
+    """A shape a query reads: its record and its memo key as an operation's input has it
+    (``_placed_key``) -- where its geometry came from, the effects applied to it, its location
+    and orientation -- without the attributes an operation copies (a label, a colour): what a
+    question of its geometry is asked of."""
+    wrapped = _wrapped(shape)
+    if wrapped is None:
+        raise _Unkeyable("an empty shape")
+    tshape = wrapped.TShape()
+    made = _made_of(tshape, state)
+    if made is None:
+        made = _register_sub(shape, wrapped, tshape, state)
+    return made, ("shape", made.base(shape, state), _location_key(wrapped), int(wrapped.Orientation()))
+
+
+def _query_handle(handle: Any, state: "_Run") -> tuple["_Made", tuple]:
+    """A ``TopoDS_Shape`` an OCCT analysis reads, as ``_query_shape`` reads a shape: a TShape
+    an operation made, by its key, or one a root the memo holds holds, by that root
+    (``_held``), since a bare handle names no ancestor."""
+    if handle.IsNull():
+        raise _Unkeyable("an empty shape")
+    tshape, kind = handle.TShape(), int(handle.ShapeType())
+    made = _made_of(tshape, state)
+    if made is None:
+        made = _held(tshape, kind, state)
+    if made.parent is None or made.held:
+        head = made.base(None, state)
+    else:
+        head = ("held", *_held_head(tshape, kind), tuple(effect.id for effect in made.effects))
+    return made, ("shape", head, _location_key(handle), int(handle.Orientation()))
+
+
+def _kept(value: Any) -> Any:
+    """A query's answer as its record keeps it: a bool, a number or None as it is; a list or
+    tuple of answers, a build123d ``Vector`` by its coordinates, a ``BoundBox`` by its
+    corners. Anything else cannot be kept (``_Unkeyable``)."""
+    kind = type(value)
+    if value is None or kind is bool or kind is int or kind is float:
+        return value
+    if kind is list or kind is tuple:
+        return ("seq", kind, tuple(_kept(item) for item in value))
+    if (kind.__module__ or "").startswith("build123d"):
+        if kind.__name__ == "Vector":
+            return ("vector", (value.X, value.Y, value.Z))
+        if kind.__name__ == "BoundBox":
+            return ("box", None if value.wrapped is None else value.wrapped.Get())
+    raise _Unkeyable(f"an answer that is no plain value: {kind.__name__}")
+
+
+def _revived(kept: Any) -> Any:
+    """A kept answer as the query returns it: a new list, vector or box each time, so a model
+    changing what it was handed changes nothing kept."""
+    if type(kept) is not tuple:
+        return kept
+    if kept[0] == "seq":
+        return kept[1](_revived(item) for item in kept[2])
+    if kept[0] == "vector":
+        from build123d.geometry import Vector
+
+        return Vector(*kept[1])
+    from build123d.geometry import BoundBox
+    from OCP.Bnd import Bnd_Box
+
+    bnd = Bnd_Box()
+    if kept[1]:
+        bnd.Update(*kept[1])
+    return BoundBox(bnd)
+
+
+# The OCCT analyses a model may run itself, past build123d (``_analysis_class``), each by
+# its spec: where it lives, the answers a run of it records, how its inputs are given and
+# run, and the settings its key names.
+
+
+class _Spec:
+    """One OCCT analysis class as the memo meets it. ``answers``: the methods, asked with no
+    argument, whose results a run records; ``perform``: the method that runs it on the
+    inputs it holds, or None; ``runs``: the methods that take inputs and run it; ``loads``:
+    those that take inputs and do not; ``settings``: (getter or None, setter, default) for
+    every setting its answer may depend on."""
+
+    module = name = ""
+    answers: tuple[str, ...] = ()
+    perform: str | None = None
+    runs: tuple[str, ...] = ()
+    loads: tuple[str, ...] = ()
+    # (getter or None, setter, the default where no getter reads it: a function, called when asked)
+    settings: tuple[tuple[str | None, str, Callable[[], Any] | None], ...] = ()
+
+    def parse(self, args: tuple) -> tuple[tuple | None, dict]:
+        """A constructor's arguments: the inputs it runs on (None for one that does not run)
+        and the settings it sets. ``_Unkeyable`` for one no key names."""
+        raise NotImplementedError
+
+    def idle(self, cls: type, instance: Any, settings: dict) -> None:
+        """Construct ``instance`` as one that has not run, with ``settings``."""
+        cls.__init__(instance)
+        self.apply(cls, instance, settings)
+
+    def data(self, method: str, args: tuple, current: tuple | None) -> tuple:
+        """The inputs a ``loads`` or ``runs`` method is given, as ``current`` stands."""
+        raise NotImplementedError
+
+    def load(self, cls: type, instance: Any, data: tuple) -> None:
+        """Give ``instance`` these inputs, without running it."""
+
+    def run(self, cls: type, instance: Any, data: tuple) -> None:
+        """Run ``instance`` on these inputs, as OCCT runs it."""
+        raise NotImplementedError
+
+    def read(self, cls: type, instance: Any) -> dict:
+        """What a run answered, by method."""
+        return {name: getattr(cls, name)(instance) for name in self.answers}
+
+    def performed(self, cls: type, instance: Any, answers: dict | None) -> Any:
+        """What ``perform`` returns: of the answers the memo gave, or asked of the object, which ran."""
+        return None
+
+    def apply(self, cls: type, instance: Any, settings: dict) -> None:
+        for setter, args in settings.items():
+            getattr(cls, setter)(instance, *args)
+
+    def current(self, cls: type, instance: Any, given: dict) -> dict:
+        """Every setting ``instance`` holds: what a getter reads, else what was given, else
+        the default."""
+        found = {}
+        for getter, setter, default in self.settings:
+            if getter is not None:
+                found[setter] = (getattr(cls, getter)(instance),)
+            elif setter in given:
+                found[setter] = given[setter]
+            elif default is not None:
+                found[setter] = (default(),)
+        return found
+
+
+def _occt(module: str, name: str) -> Any:
+    return getattr(importlib.import_module(module), name)
+
+
+class _Analysis:
+    """One OCCT analysis a model's code constructed inside a run (``_analysis_class``): the
+    inputs and settings it holds now, those its last run was given (``ran``), and, while
+    that run was answered by the memo rather than made, its answers (``answers``): then the
+    OCCT object itself has not run, and anything asked of it but those answers runs it first,
+    as it was given then (``_materialize``)."""
+
+    __slots__ = ("spec", "data", "settings", "ran", "answers")
+
+    def __init__(self, spec: _Spec, data: tuple | None, settings: dict) -> None:
+        self.spec = spec
+        self.data = data
+        self.settings = settings
+        self.ran: tuple | None = None
+        self.answers: dict | None = None
+
+
+def _analysis_class(spec: _Spec) -> type:
+    """``spec``'s OCCT class as a model's code meets it: a subclass whose instances are the
+    class's own outside a run, and a query inside it: each run of one keyed by the memo keys
+    of the shapes it reads and every setting it runs with, and answered, where it was asked
+    of the very same shapes before, without running (``_analyse``)."""
+    cls = getattr(importlib.import_module(spec.module), spec.name)
+    setters = {setter for _getter, setter, _default in spec.settings}
+    own = frozenset((*spec.answers, *spec.runs, *spec.loads, *setters,
+                     *(getter for getter, _setter, _default in spec.settings if getter is not None),
+                     *((spec.perform,) if spec.perform else ())))
+
+    def record_of(instance: Any) -> _Analysis | None:
+        return object.__getattribute__(instance, "__dict__").get("_kernel_analysis")
+
+    def plain(instance: Any) -> None:
+        """From now on OCCT's own: run first, where the memo answered its last run."""
+        record = record_of(instance)
+        if record is not None and record.answers is not None:
+            _materialize(record, cls, instance)
+        instance.__dict__["_kernel_analysis"] = None
+
+    def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
+        self.__dict__["_kernel_analysis"] = None
+        if getattr(_LOCAL, "run", None) is None or kwargs:
+            cls.__init__(self, *args, **kwargs)
+            return
+        try:
+            data, given = spec.parse(args)
+        except _Unkeyable:
+            cls.__init__(self, *args)
+            return
+        spec.idle(cls, self, given)
+        record = _Analysis(spec, data, spec.current(cls, self, given))
+        self.__dict__["_kernel_analysis"] = record
+        if data is not None:
+            _analyse(record, cls, self, data)
+
+    def answer(name: str) -> Any:
+        def call(self: Any, *args: Any, **kwargs: Any) -> Any:
+            record = record_of(self)
+            if record is not None and record.answers is not None:
+                if not args and not kwargs and name in record.answers:
+                    return record.answers[name]
+                _materialize(record, cls, self)
+            return getattr(cls, name)(self, *args, **kwargs)
+
+        call.__name__ = name
+        return call
+
+    def setter(name: str) -> Any:
+        def call(self: Any, *args: Any, **kwargs: Any) -> Any:
+            record = record_of(self)
+            if record is not None:
+                if kwargs:
+                    plain(self)
+                else:
+                    record.settings[name] = args
+            return getattr(cls, name)(self, *args, **kwargs)
+
+        call.__name__ = name
+        return call
+
+    def loader(name: str, runs: bool) -> Any:
+        def call(self: Any, *args: Any, **kwargs: Any) -> Any:
+            record = record_of(self)
+            data = None
+            if record is not None and not kwargs:
+                try:
+                    data = spec.data(name, args, record.data)
+                except _Unkeyable:
+                    data = None
+            if data is None:
+                if record is not None:
+                    plain(self)
+                return getattr(cls, name)(self, *args, **kwargs)
+            record.data = data
+            if not runs:
+                return getattr(cls, name)(self, *args)
+            _analyse(record, cls, self, data)
+            return None
+
+        call.__name__ = name
+        return call
+
+    def perform(self: Any, *args: Any, **kwargs: Any) -> Any:
+        record = record_of(self)
+        if record is None or args or kwargs or record.data is None:
+            if record is not None:
+                plain(self)
+            return getattr(cls, spec.perform)(self, *args, **kwargs)
+        _analyse(record, cls, self, record.data)
+        return spec.performed(cls, self, record.answers)
+
+    def __getattribute__(self: Any, name: str) -> Any:
+        if name not in own and not name.startswith("_"):
+            record = record_of(self)
+            if record is not None and record.answers is not None:
+                _materialize(record, cls, self)
+        return object.__getattribute__(self, name)
+
+    namespace: dict[str, Any] = {name: answer(name) for name in spec.answers}
+    namespace.update({name: setter(name) for name in setters})
+    namespace.update({name: loader(name, False) for name in spec.loads})
+    namespace.update({name: loader(name, True) for name in spec.runs})
+    if spec.perform:
+        namespace[spec.perform] = perform
+    namespace.update(__init__=__init__, __getattribute__=__getattribute__, __kernel_memo__=True,
+                     __kernel_memo_class__=cls, __doc__=cls.__doc__, __module__=cls.__module__,
+                     __qualname__=cls.__qualname__)
+    return type(cls.__name__, (cls,), namespace)
+
+
+def _analyse(record: _Analysis, cls: type, instance: Any, data: tuple) -> None:
+    """A run of an analysis on ``data``, with the settings it holds: answered by the memo
+    where the same key was asked of the very same TShapes before -- the OCCT object then has
+    not run -- else run, and what it answered kept (``_answer``). One whose inputs no key
+    names runs and keeps nothing."""
+    spec = record.spec
+    record.ran, record.answers = (data, dict(record.settings)), None
+    state = getattr(_LOCAL, "run", None)
+    if state is None:
+        spec.run(cls, instance, data)
+        return
+    read: list[_Made] = []
+    try:
+        parts = tuple(_analysis_part(value, state, read) for value in data)
+        settings = tuple(sorted((setter, tuple(_analysis_part(value, state, None) for value in args))
+                                for setter, args in record.settings.items()))
+        if not read:
+            raise _Unkeyable("an analysis of no shape")
+    except _Unkeyable:
+        _queried(state, lambda: spec.run(cls, instance, data))
+        return
+    except Exception:  # noqa: BLE001 - the memo is never the reason an analysis fails
+        _STATS["errors"] += 1
+        _queried(state, lambda: spec.run(cls, instance, data))
+        return
+    made, others = read[0], tuple(found.tshape for found in read[1:])
+    key = (("analysis", spec.name), parts, settings)
+    if enabled():
+        with _LOCK:
+            found = None if made.answers is None else made.answers.get(key)
+        if found is not None and found[0] == others:
+            _STATS["queries_answered"] += 1
+            state.tally["queries_answered"] += 1
+            record.answers = dict(found[1])
+            return
+    _queried(state, lambda: spec.run(cls, instance, data))
+    try:
+        answers = spec.read(cls, instance)
+        if not all(value is None or type(value) in (bool, int, float) for value in answers.values()):
+            return
+    except Exception:  # noqa: BLE001 - what cannot be read is asked of the OCCT object, which ran
+        return
+    _answer(made, key, others, answers)
+
+
+def _materialize(record: _Analysis, cls: type, instance: Any) -> None:
+    """Run an analysis the memo answered, as its last run was given -- those inputs, those
+    settings -- for what its answers do not hold, then give it back the settings and inputs
+    it holds now."""
+    spec = record.spec
+    data, settings = record.ran
+    record.answers = None
+    current = dict(record.settings)
+    spec.apply(cls, instance, settings)
+    state = getattr(_LOCAL, "run", None)
+    if state is None:
+        spec.run(cls, instance, data)
+    else:
+        _queried(state, lambda: spec.run(cls, instance, data))
+    spec.apply(cls, instance, current)
+    if record.data is not data and record.data is not None:
+        spec.load(cls, instance, record.data)
+
+
+def _analysis_part(value: Any, state: "_Run", read: list | None) -> Any:
+    """One input or setting of an OCCT analysis as a key part: a shape by its memo key
+    (``_query_handle``), a number, a bool or None as an operation's, an OCCT enumeration by
+    its value."""
+    from OCP.TopoDS import TopoDS_Shape
+
+    if isinstance(value, TopoDS_Shape):
+        if read is None:
+            raise _Unkeyable("a setting that is a shape")
+        made, placed = _query_handle(value, state)
+        read.append(made)
+        return placed
+    if value is None or isinstance(value, (bool, str, numbers.Real)):
+        return _normalize(value, state)
+    if hasattr(type(value), "__members__") and (type(value).__module__ or "").startswith("OCP"):
+        return ("enum", type(value).__name__, int(value))
+    raise _Unkeyable(f"unkeyable analysis argument: {type(value).__name__}")
+
+
+def _shape_argument(value: Any) -> Any:
+    """A shape an analysis is given, or ``_Unkeyable``: what no key names, a progress range
+    included, keeps it OCCT's own."""
+    from OCP.TopoDS import TopoDS_Shape
+
+    if not isinstance(value, TopoDS_Shape):
+        raise _Unkeyable(f"not a shape: {type(value).__name__}")
+    return value
+
+
+def _flag(value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise _Unkeyable(f"not a bool: {type(value).__name__}")
+    return value
+
+
+class _CheckSpec(_Spec):
+    """``BRepAlgoAPI_Check``: whether a shape, or two, are valid arguments of a boolean
+    (``BOPAlgo_ArgumentAnalyzer``). Its verdict reads the shapes -- their geometry and
+    tolerances, which their memo keys hold -- the operation, whether small edges and
+    self-interference are tested, and the options it hands the analyzer: the fuzzy value, the
+    parallel mode (the global default included: the constructor reads it into the object, and
+    the key reads it from there) and the oriented boxes. Nothing else: no global tolerance,
+    no randomness; it copies nothing into its arguments."""
+
+    module, name = "OCP.BRepAlgoAPI", "BRepAlgoAPI_Check"
+    answers = ("IsValid",)
+    perform = "Perform"
+    loads = ("SetData",)
+    settings = (("FuzzyValue", "SetFuzzyValue", None), ("RunParallel", "SetRunParallel", None),
+                ("UseOBB", "SetUseOBB", None))
+
+    def parse(self, args: tuple) -> tuple[tuple | None, dict]:
+        return (self.data("SetData", args, None) if args else None), {}
+
+    def data(self, method: str, args: tuple, current: tuple | None) -> tuple:
+        from OCP.BOPAlgo import BOPAlgo_Operation
+        from OCP.TopoDS import TopoDS_Shape
+
+        if len(args) > 1 and isinstance(args[1], TopoDS_Shape):
+            if len(args) > 5:
+                raise _Unkeyable("a progress range")
+            first, second, operation, small, interfering = (*args, *(BOPAlgo_Operation.BOPAlgo_UNKNOWN, True, True)[len(args) - 2:])
+            if not isinstance(operation, BOPAlgo_Operation):
+                raise _Unkeyable("an operation that is no BOPAlgo_Operation")
+            return (_shape_argument(first), _shape_argument(second), operation, _flag(small), _flag(interfering))
+        if not args or len(args) > 3:
+            raise _Unkeyable("a progress range")
+        first, small, interfering = (*args, *(True, True)[len(args) - 1:])
+        return (_shape_argument(first), None, None, _flag(small), _flag(interfering))
+
+    def load(self, cls: type, instance: Any, data: tuple) -> None:
+        first, second, operation, small, interfering = data
+        if second is None:
+            cls.SetData(instance, first, small, interfering)
+        else:
+            cls.SetData(instance, first, second, operation, small, interfering)
+
+    def run(self, cls: type, instance: Any, data: tuple) -> None:
+        self.load(cls, instance, data)
+        cls.Perform(instance)
+
+
+@functools.cache
+def _idle_vertex() -> Any:
+    """A vertex at the origin: what an analyzer the memo answered was constructed on, since
+    ``BRepCheck_Analyzer`` has no constructor that does not run."""
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+    from OCP.gp import gp_Pnt
+
+    return BRepBuilderAPI_MakeVertex(gp_Pnt(0, 0, 0)).Vertex()
+
+
+class _AnalyzerSpec(_Spec):
+    """``BRepCheck_Analyzer``: whether a shape is valid (its topology, and with the geometric
+    controls its edges' curves on their faces, its wires, its faces' orientation). Its verdict
+    reads the shape -- its geometry, tolerances and its edges' SameParameter and SameRange
+    flags, which its memo key holds (each sub-shape's state: tolerance, flags,
+    representations) -- whether the geometric controls run, and the exact method. The
+    parallel mode only spreads the sub-shapes over threads; keyed all the same. Nothing else:
+    no global tolerance, no randomness, and it writes nothing into the shape."""
+
+    module, name = "OCP.BRepCheck", "BRepCheck_Analyzer"
+    answers = ("IsValid",)
+    runs = ("Init",)
+    settings = (("IsParallel", "SetParallel", None), ("IsExactMethod", "SetExactMethod", None))
+
+    def parse(self, args: tuple) -> tuple[tuple | None, dict]:
+        if not args or len(args) > 4:
+            raise _Unkeyable("not an analyzer's arguments")
+        shape, geometric, parallel, exact = (*args, *(True, False, False)[len(args) - 1:])
+        return (_shape_argument(shape), _flag(geometric)), {"SetParallel": (_flag(parallel),),
+                                                            "SetExactMethod": (_flag(exact),)}
+
+    def idle(self, cls: type, instance: Any, settings: dict) -> None:
+        cls.__init__(instance, _idle_vertex(), False, settings["SetParallel"][0], settings["SetExactMethod"][0])
+
+    def data(self, method: str, args: tuple, current: tuple | None) -> tuple:
+        if not args or len(args) > 2:
+            raise _Unkeyable("not Init's arguments")
+        shape, geometric = (*args, *(True,)[len(args) - 1:])
+        return (_shape_argument(shape), _flag(geometric))
+
+    def run(self, cls: type, instance: Any, data: tuple) -> None:
+        cls.Init(instance, *data)
+
+
+class _DistanceSpec(_Spec):
+    """``BRepExtrema_DistShapeShape``: the minimum distance between two shapes. It records
+    whether it was found and its value: the least distance over every pair of the shapes'
+    vertices, edges and faces, each pair's computed from their geometry alone, under the
+    deflection, the flag, the algorithm and the parallel mode it is given, all keyed. The
+    bounding boxes it prunes pairs with may read a mesh the shapes hold, which no key names,
+    but they only drop a pair whose box lies farther than the least distance found: the
+    pair that holds the minimum is never dropped, whatever order the pairs come in, so the
+    value is the same. Which of several equally near points it hands back (``PointOnShape1``,
+    ``NbSolution``) does depend on that order, so a point is not recorded: asking one runs it.
+    No global tolerance, no randomness; it writes nothing into the shapes."""
+
+    module, name = "OCP.BRepExtrema", "BRepExtrema_DistShapeShape"
+    answers = ("IsDone", "Value")
+    perform = "Perform"
+    loads = ("LoadS1", "LoadS2")
+
+    settings = ((None, "SetDeflection", lambda: _occt("OCP.Precision", "Precision").Confusion_s()),
+                (None, "SetFlag", lambda: _occt("OCP.Extrema", "Extrema_ExtFlag").Extrema_ExtFlag_MINMAX),
+                (None, "SetAlgo", lambda: _occt("OCP.Extrema", "Extrema_ExtAlgo").Extrema_ExtAlgo_Grad),
+                ("IsMultiThread", "SetMultiThread", None))
+
+    def parse(self, args: tuple) -> tuple[tuple | None, dict]:
+        from OCP.Extrema import Extrema_ExtAlgo, Extrema_ExtFlag
+
+        if not args:
+            return None, {}
+        if len(args) < 2:
+            raise _Unkeyable("one shape")
+        first, second, *rest = args
+        given = {}
+        if rest and isinstance(rest[0], numbers.Real) and not isinstance(rest[0], bool):
+            given["SetDeflection"] = (float(rest.pop(0)),)
+        if len(rest) > 2:
+            raise _Unkeyable("a progress range")
+        if rest:
+            if not isinstance(rest[0], Extrema_ExtFlag):
+                raise _Unkeyable("a flag that is no Extrema_ExtFlag")
+            given["SetFlag"] = (rest[0],)
+        if len(rest) > 1:
+            if not isinstance(rest[1], Extrema_ExtAlgo):
+                raise _Unkeyable("an algorithm that is no Extrema_ExtAlgo")
+            given["SetAlgo"] = (rest[1],)
+        return (_shape_argument(first), _shape_argument(second)), given
+
+    def data(self, method: str, args: tuple, current: tuple | None) -> tuple:
+        if len(args) != 1:
+            raise _Unkeyable("not one shape")
+        first, second = current or (None, None)
+        shape = _shape_argument(args[0])
+        return (shape, second) if method == "LoadS1" else (first, shape)
+
+    def load(self, cls: type, instance: Any, data: tuple) -> None:
+        if data[0] is not None:
+            cls.LoadS1(instance, data[0])
+        if data[1] is not None:
+            cls.LoadS2(instance, data[1])
+
+    def run(self, cls: type, instance: Any, data: tuple) -> None:
+        self.load(cls, instance, data)
+        cls.Perform(instance)
+
+    def read(self, cls: type, instance: Any) -> dict:
+        done = cls.IsDone(instance)
+        return {"IsDone": done, "Value": cls.Value(instance)} if done else {"IsDone": done}
+
+    def performed(self, cls: type, instance: Any, answers: dict | None) -> Any:
+        return answers["IsDone"] if answers is not None else cls.IsDone(instance)
+
+
+_ANALYSES: tuple[_Spec, ...] = (_CheckSpec(), _AnalyzerSpec(), _DistanceSpec())
 
 
 def _patch(cls: type, attr: str, label: str, kind: str) -> None:
@@ -718,11 +1439,6 @@ def _patch(cls: type, attr: str, label: str, kind: str) -> None:
         function = static.__func__
         if not getattr(function, "__kernel_memo__", False):
             setattr(cls, attr, classmethod(_wrap(label, function, kind)))
-    elif kind == "property":
-        if not isinstance(static, property):
-            raise TypeError(f"{cls.__name__}.{attr} is not a property")
-        if not getattr(static.fget, "__kernel_memo__", False):
-            setattr(cls, attr, property(_wrap(label, static.fget, kind), static.fset, static.fdel))
     else:
         if not inspect.isfunction(static):
             raise TypeError(f"{cls.__name__}.{attr} is not a plain method")
@@ -910,7 +1626,8 @@ class _Run:
         self.id = next(_RUN_IDS)
         self.trace = Trace(Path(script_path).resolve().parent if script_path is not None else None)
         self.counts: dict[int, int] = {}
-        self.tally = {"hits": 0, "misses": 0, "uncached": 0, "bodies_run": 0, "bodies_skipped": 0}
+        self.tally = {"hits": 0, "misses": 0, "uncached": 0, "bodies_run": 0, "bodies_skipped": 0,
+                      "queries_answered": 0, "queries_run": 0}
         self.depth = 0
         self.transient: dict[Any, _Made] = {}
         # Foreign inputs walked once and found to embed no persistent root, by
@@ -1039,17 +1756,19 @@ def scope(name: str) -> Iterator[None]:
 
 
 @contextlib.contextmanager
-def run(script_path: Path | None = None) -> Iterator[_Run]:
+def run(script_path: Path | None = None, *, program: str | None = None, model: Any = None) -> Iterator[_Run]:
     """A model run on this thread: inside it every patched call from the
     model's code is a feature, and a hit when the memo has one. ``script_path``
     is the model's script, whose folder feature paths are relative to. The run's
-    ``tally`` says how its calls went: hits, misses, calls that ran uncached."""
+    ``tally`` says how its calls went: hits, misses, calls that ran uncached.
+    ``program`` names the calling program's run and ``model`` what this run builds: runs of
+    one program building models it has not built in its pass count as one (``_mark``)."""
     install()
     state = _Run(script_path)
     previous = getattr(_LOCAL, "run", None)
     outermost = previous is None
     if outermost:
-        _mark()
+        _mark(program, model)
     _LOCAL.run = state
     try:
         yield state
@@ -1060,9 +1779,17 @@ def run(script_path: Path | None = None) -> Iterator[_Run]:
             _sweep()
 
 
-def _mark() -> None:
+def _mark(program: str | None = None, model: Any = None) -> None:
     """A run begins: a marker at the end of both LRU orders. What the run hits, makes or
-    keys moves behind it."""
+    keys moves behind it. A run of the program whose pass the last marker began, building a
+    model that pass has not built, joins the pass: the marker stands, and what the run
+    touches moves behind it, so the pass is one of the ``RUNS_KEPT`` however many models it
+    builds."""
+    with _LOCK:
+        if program is not None and program == _PASS["program"] and model not in _PASS["models"] and _MARKS:
+            _PASS["models"].add(model)
+            return
+        _PASS["program"], _PASS["models"] = program, {model}
     generation = next(_GENERATIONS)
     with _LOCK:
         _MEMO[(-generation, 0)] = None  # type: ignore[assignment]
@@ -1106,6 +1833,7 @@ def clear() -> None:
     with _LOCK:
         _MEMO.clear()
         _MARKS.clear()
+        _PASS["program"], _PASS["models"] = None, set()
         _BODIES.clear()
         _ALWAYS.clear()
         _REGISTRY.clear()
@@ -1113,7 +1841,6 @@ def clear() -> None:
         _KEY_IDS.clear()
         _MAPS.clear()
         _ORDINALS.clear()
-        _BOXES.clear()
         _STATE.clear()
         _SUBS.clear()
 
@@ -1164,17 +1891,25 @@ class _Body:
     of it may be replayed (``direct``: false for a ``@memo`` function that returned no
     geometry, whose log is kept only for the bodies that called it)."""
 
-    __slots__ = ("name", "source", "log", "snapshot", "generation", "inputs", "direct")
+    __slots__ = ("name", "source", "log", "snapshot", "generation", "inputs", "direct", "serial", "harvest")
 
     def __init__(self, name: str, source: str, log: _BodyLog, snapshot: Any, generation: int,
                  inputs: tuple = ()) -> None:
         self.name, self.source, self.log, self.snapshot, self.generation = name, source, log, snapshot, generation
         self.inputs, self.direct = inputs, True
+        # Which run of the body this is, process-wide: a replay keeps it, a run makes another
+        # (``adopt``: what the shapes its run made past the engine are keyed by).
+        self.serial = next(_SERIALS)
+        # A model body's harvest (``harvest_of``): what the build made of its result's joints,
+        # sequences and animations, with the tree it was made of and the files the sequences'
+        # functions read. A run of the body makes a record without one.
+        self.harvest: tuple | None = None
 
 
 # Per model body, by its caller's name for it: the body's last run, kept while one of the
 # last ``RUNS_KEPT`` outermost runs used it (``_sweep``).
 _BODIES: dict[str, _Body] = {}
+_SERIALS = itertools.count(1)
 # Per function a verifying build found impure (``body``'s ``family``): it runs on every
 # call for the worker's life, and so do the bodies that call it. With why.
 _ALWAYS: dict[str, str] = {}
@@ -1295,9 +2030,132 @@ def direct(name: str) -> None:
         record.direct = False
 
 
+def adopt(name: str, result: Any) -> Any:
+    """A kept ``@memo`` call's result whose shapes its run made past the engine -- OCCT's own
+    makers, which no key names -- as one operation of the caller's: keyed by the call (its
+    name, which holds its arguments' digest) and by which run of it made them (``_Body.serial``),
+    and registered, so what the caller makes of them is keyed and kept too. A replay of the call
+    hands back those very shapes, and the operation is a hit; a run of it makes others, and a
+    miss. A result any shape of which the memo made already, a call not kept, or none running:
+    ``result`` as it is."""
+    state = getattr(_LOCAL, "run", None)
+    if state is None or state.depth or not enabled() or os.environ.get("CADGEN_ENGINE_BODIES", "1").strip() == "0":
+        return result
+    record = _BODIES.get(name)
+    if record is None or not record.direct:
+        return result
+    Shape = _build123d().Shape
+    shapes = list(result.values()) if isinstance(result, dict) else list(result) if isinstance(result, (list, tuple)) else [result]
+    for shape in shapes:
+        wrapped = _wrapped(shape) if isinstance(shape, Shape) else None
+        if wrapped is None or _made_of(wrapped.TShape(), state) is not None or wrapped.TShape() in _SUBS:
+            return result
+    if isinstance(result, dict):
+        names = list(result)
+        made = _call(state, "memo", "function", lambda _name, _serial: [result[key] for key in names],
+                     (name, record.serial), {})
+        return dict(zip(names, made))
+    return _call(state, "memo", "function", lambda _name, _serial: result, (name, record.serial), {})
+
+
 def always() -> dict[str, str]:
     """The functions a verification found impure, each with why: they run on every call."""
     return dict(_ALWAYS)
+
+
+# --- a model body's harvest -----------------------------------------------------------------
+
+
+def harvest_of(state: _Run, name: str, tree: Any) -> tuple[Any, list] | None:
+    """What the build made of model body ``name``'s result the last time (``keep_harvest``):
+    the harvest and the checks of the files its sequences' functions read. Only when this run
+    replayed the very run the harvest was made from (``_Body.serial``: a run makes another
+    record), ``tree`` (the result's structure, as ``document.collect`` keys it) is the one it
+    was made of, and every file those functions read has its bytes still. Else None: a run,
+    a verifying run, a run with retention off, a file changed. ``state`` is the build's run,
+    asked as its files are written, after it."""
+    if (state.verify or not enabled() or state.statuses.get(name) != "replayed"
+            or os.environ.get("CADGEN_ENGINE_BODIES", "1").strip() == "0"):
+        return None
+    record = _BODIES.get(name)
+    if record is None or record.harvest is None or state.records.get(name) is not record:
+        return None
+    held_tree, harvest, checks = record.harvest
+    if held_tree != tree:
+        return None
+    state.depth += 1
+    try:
+        for check, expected in checks:
+            try:
+                if check() != expected:
+                    return None
+            except _Unkeyable:
+                return None
+    finally:
+        state.depth -= 1
+    return harvest, checks
+
+
+def keep_harvest(state: _Run, name: str, tree: Any, harvest: Any, checks: list, keyed: bool) -> None:
+    """Keep the harvest of body ``name``'s result beside the body's run in this process
+    (``harvest_of``), in memory only: gone with the record. Not kept where the sampled
+    functions read what cannot be held to its bytes (``keyed``), or where this run's record of
+    the body is not the one in the memo (a body not retained)."""
+    if state.verify or not keyed or not enabled():
+        return
+    record = _BODIES.get(name)
+    if record is None or state.records.get(name) is not record:
+        return
+    record.harvest = (tree, harvest, list(checks))
+
+
+# --- the files a motion's function reads ---------------------------------------------------
+
+
+class MotionReads:
+    """The files the function motions of one model's document opened while they were sampled
+    (``listened``), each held to its bytes as a body's reads are (``checks``), and whether they
+    say all the functions read (``keyed``: false for a read of what is no regular file, past the
+    engine's readers, or of a file that moved while it was read): inputs of the model's closure."""
+
+    def __init__(self) -> None:
+        self.checks: list[tuple[Callable[[], Any], Any]] = []
+        self.keyed = True
+
+
+@contextlib.contextmanager
+def motion_reads() -> Iterator[MotionReads]:
+    """Inside it, what this thread's harvest samples (``listened``) is heard into the one
+    ``MotionReads`` it yields."""
+    found = MotionReads()
+    previous = getattr(_LOCAL, "motions", None)
+    _LOCAL.motions = found
+    try:
+        yield found
+    finally:
+        _LOCAL.motions = previous
+
+
+def listened(sample: Callable[[], list]) -> list:
+    """A function motion's samples (``sample()``), the files its function opens heard while it
+    is sampled (``_audited``) and held to their bytes in the ``motion_reads`` around it; outside
+    one, or with retention off, just sampled."""
+    held_by = getattr(_LOCAL, "motions", None)
+    if held_by is None or not enabled() or os.environ.get("CADGEN_ENGINE_BODIES", "1").strip() == "0":
+        return sample()
+    log = _BodyLog()
+    previous = getattr(_LOCAL, "sampling", None)
+    _LOCAL.sampling = log
+    try:
+        keys = sample()
+    finally:
+        _LOCAL.sampling = previous
+    if log.reads:
+        _hold_reads(log, None)
+    held_by.checks.extend(log.checks)
+    if log.unread or log.bypassed or not log.retainable:
+        held_by.keyed = False
+    return keys
 
 
 # --- a ``@memo`` call's arguments ------------------------------------------------------------
@@ -1413,7 +2271,7 @@ def _shape_geometry(kind: str, attrs: dict, wrapped: Any, children: list) -> tup
 
 class _Leaf:
     """A leaf shape a verification compares: the same TShape is the same geometry; another
-    the same binary BRep (``document.geometry_key``), else the same geometry in another order
+    the same binary BRep (``_brep``), else the same geometry in another order
     of the BRep's entries (``_measured``): OCCT's parallel booleans and a replayed body can
     write one shape's sub-shapes in another order, the faces, edges and vertices alike."""
 
@@ -1425,9 +2283,22 @@ class _Leaf:
     def same(self, other: "_Leaf") -> bool:
         if self.shape.TShape() == other.shape.TShape():
             return True
-        from cadgen.engine.document import geometry_key
+        return _brep(self.shape) == _brep(other.shape) or _measured(self.shape) == _measured(other.shape)
 
-        return geometry_key(self.shape) == geometry_key(other.shape) or _measured(self.shape) == _measured(other.shape)
+
+def _brep(shape: Any) -> bytes:
+    """A shape's binary BRep as a document writes it (``document.unchecked``): one shape's
+    bytes, compared with another's in this process, never a key."""
+    import io
+
+    from OCP.BinTools import BinTools, BinTools_FormatVersion_VERSION_4
+
+    from cadgen.engine.document import unchecked
+
+    stream = io.BytesIO()
+    with unchecked([shape]):
+        BinTools.Write_s(shape, stream, False, False, BinTools_FormatVersion_VERSION_4)
+    return stream.getvalue()
 
 
 def _measured(shape: Any) -> tuple:
@@ -1586,6 +2457,34 @@ def _replayable(record: _Body) -> bool:
     return True
 
 
+def keep(name: str) -> None:
+    """Body ``name`` and every body it called count as used by this run, as a replay counts
+    them, and are not replayed: their entries and keys move behind this run's marker and
+    their records take its generation. A build that takes its model's document from memory
+    (``build._previous``) so leaves the memo holding what an edit after it replays."""
+    record = _BODIES.get(name)
+    if record is None:
+        return
+    generation = _MARKS[-1] if _MARKS else 0
+    pending, seen = [record], set()
+    with _LOCK:
+        while pending:
+            current = pending.pop()
+            if current.name in seen:
+                continue
+            seen.add(current.name)
+            for event in current.log.events:
+                if event[0] == "body":
+                    pending.append(event[1])
+                elif _MEMO.get(event[1].key) is event[1]:
+                    _MEMO.move_to_end(event[1].key)
+            for key, found in zip(current.log.keys, current.log.ids):
+                _KEY_IDS[key] = found
+                _KEY_IDS.move_to_end(key)
+            if _BODIES.get(current.name) is current:
+                current.generation = generation
+
+
 def _replay(record: _Body, state: _Run) -> Any:
     """The body's last run, again, without its code: each entry bound to this run as a hit
     binds it and each feature recorded as it was; the result restored as it returned."""
@@ -1665,10 +2564,6 @@ def _call(state: _Run, label: str, kind: str, function: Any, args: tuple, kwargs
     frame = state.trace.frame()
     if frame is None:
         return function(*args, **kwargs)
-    if label in _IMPORTERS:
-        # build123d's importer reads its file in C++: keyed by the file's bytes as an
-        # operation, but its body runs on every build (see the module).
-        _bypassed(state, f"build123d's {label}", _path_argument(args, kwargs))
     state.depth += 1
     try:
         op = _op_name(label, kind, args, kwargs)
@@ -1732,7 +2627,7 @@ def _call(state: _Run, label: str, kind: str, function: Any, args: tuple, kwargs
         # The inputs as given, before the call: an in-place operation (clean)
         # leaves its input wrapping the result's TShape.
         given = [_wrapped(shape).TShape() for shape in shapes]
-        with kernel_history.recording() as makers:
+        with kernel_history.recording() as makers, _refusal(op, kind, args, kwargs):
             function_result = function(*args, **kwargs)
         result = args[0] if kind == "constructor" else function_result
         _STATS["misses"] += 1
@@ -1882,7 +2777,7 @@ def _plain(state: _Run, op: str, frame: tuple, kind: str, shapes: list, function
         _STATS["errors"] += 1
         captured = []
         verified = False
-    with kernel_history.recording() as makers:
+    with kernel_history.recording() as makers, _refusal(op, kind, args, kwargs):
         function_result = function(*args, **kwargs)
     result = args[0] if kind == "constructor" else function_result
     feature = state.trace.record(op, frame, inputs, _result_shapes(result), _returned_shapes(result))
@@ -1901,6 +2796,62 @@ def _plain(state: _Run, op: str, frame: tuple, kind: str, shapes: list, function
             copied = _reject_copies(feature, copied, state)
     _register(result, None, feature.index, state, None, copied)
     return function_result
+
+
+@contextlib.contextmanager
+def _refusal(op: str, kind: str, args: tuple, kwargs: dict) -> Iterator[None]:
+    """A kernel call the model made, which an OCCT exception leaves -- whatever its class, which
+    differs by OCCT build (a zero-size box is ``Standard_Failure`` on macOS, ``Standard_DomainError``
+    on Linux and Windows), and words or none: the exception is given the call, as the model wrote
+    it at a glance (``kernel_call``, read by ``refused_call``), so the build's failure names where
+    the kernel refused. The innermost call the memo saw is kept: one whose exception already names
+    one is left as it is."""
+    try:
+        yield
+    except Exception as error:
+        if type(error).__module__.startswith("OCP") and getattr(error, "kernel_call", None) is None:
+            try:
+                error.kernel_call = _shown_call(op, kind, args, kwargs)
+            except Exception:  # noqa: BLE001 - naming the call never hides the failure
+                pass
+        raise
+
+
+def refused_call(error: BaseException) -> str | None:
+    """The kernel call the exception a build failed with says the kernel refused (``_refusal``),
+    or None. Only that exception's own: one build123d raised in its own words from an OCCT one
+    (a fillet's ``ValueError``) already says what went wrong, whatever it was raised from."""
+    found = getattr(error, "kernel_call", None)
+    return found if isinstance(found, str) else None
+
+
+def _shown_call(op: str, kind: str, args: tuple, kwargs: dict) -> str:
+    """``Solid.make_box(80, 30, 0, Plane)``: the call's name and its arguments, numbers as
+    written, a shape or any other object by its type, a list by its length."""
+    def shown(value: Any, deep: bool = True) -> str:
+        if isinstance(value, bool) or value is None:
+            return repr(value)
+        if isinstance(value, (int, float)):
+            return f"{value:g}"
+        if isinstance(value, str):
+            return repr(value) if len(value) <= 24 else repr(value[:21] + "...")
+        if isinstance(value, (list, tuple)):
+            if deep and len(value) <= 4:
+                inner = ", ".join(shown(item, False) for item in value)
+                return f"({inner})" if isinstance(value, tuple) else f"[{inner}]"
+            kinds = sorted({type(item).__name__ for item in value})
+            return f"[{len(value)} {kinds[0] if len(kinds) == 1 else 'items'}]"
+        return type(value).__name__
+
+    if kind == "instance" and args:
+        name, given = f"{type(args[0]).__name__}.{op}", args[1:]
+    elif kind in ("classmethod", "constructor"):
+        name, given = op, args[1:]
+    else:
+        name, given = op, args
+    parts = [shown(value) for value in given] + [f"{key}={shown(value)}" for key, value in kwargs.items()]
+    text = f"{name}({', '.join(parts)})"
+    return text if len(text) <= 120 else text[:117] + "..."
 
 
 def _history(feature: Any, makers: list) -> "kernel_history.History | None":
@@ -2633,6 +3584,10 @@ def _normalize(value: Any, state: _Run) -> Any:
     if isinstance(value, dict):
         return ("map", tuple(sorted((str(key), _normalize(item, state)) for key, item in value.items())))
     if isinstance(value, _build123d().Shape):
+        if _wrapped(value) is None:
+            # An empty shape -- ``bd.Sketch()``, ``bd.Part()``, what ``+`` starts from -- holds no
+            # geometry: it is keyed by its class, and is no input of the call (``_shape_args``).
+            return ("empty", type(value).__module__, type(value).__qualname__)
         return ("shape", _shape_key(value, state))
     type_name = type(value).__name__
     if type_name.startswith("BRepAlgoAPI"):
@@ -2698,7 +3653,8 @@ def _build123d() -> Any:
 
 
 def _shape_args(args: tuple, kwargs: dict) -> list:
-    """The shapes a call was given, in call order, lists and tuples opened."""
+    """The shapes a call was given, in call order, lists and tuples opened; an empty shape
+    holds no geometry and is none of them (``_normalize`` keys it by its class)."""
     shape = _build123d().Shape
     found: list = []
     pending = [value for _name, value in sorted(kwargs.items(), reverse=True)] if kwargs else []
@@ -2706,7 +3662,8 @@ def _shape_args(args: tuple, kwargs: dict) -> list:
     while pending:
         value = pending.pop()
         if isinstance(value, shape):
-            found.append(value)
+            if _wrapped(value) is not None:
+                found.append(value)
         elif isinstance(value, (list, tuple)):
             pending.extend(reversed(value))
     return found
@@ -2756,11 +3713,12 @@ def _shape_key(shape: Any, state: _Run) -> int:
         tuple(sorted((int(ordinal), _normalize(tuple(rgba), state)) for ordinal, rgba in face_colors.items())),
         tuple(sorted((int(ordinal), _normalize(value, state)) for ordinal, value in dict(face_materials).items())),
         _normalize(state_dict.get("joints") or {}, state),  # a hit hands back the joints the first run held
-        # and the configurations an assembly was given (``mechanism.configuration``): a hit of an
-        # operation on it hands back what the first run held, so a configuration is its input,
-        # and a coupling (``mechanism.couple``) too.
+        # and the mechanism states an assembly was given (``mechanism.mechanism_state``): a hit of an
+        # operation on it hands back what the first run held, so a state is its input, and a
+        # coupling (``mechanism.gear_pair`` and its two siblings) too, and an animation (``animations.animation``).
         _normalize(state_dict.get(CONFIGURATIONS) or {}, state),
         _normalize(state_dict.get(COUPLINGS) or {}, state),
+        _normalize(state_dict.get(ANIMATIONS) or {}, state),
         # and its PMI (``pmi.annotate``), which a hit's restored children would otherwise bring back.
         _normalize(state_dict.get(PMI) or (), state),
     )
@@ -2946,7 +3904,7 @@ class _Made:
     registered sub-shapes. Runs bind their own features to this shared record."""
 
     __slots__ = ("tshape", "key", "position", "entry", "parent", "kind", "index", "effects",
-                 "subs", "born", "origin", "tainted", "rowed", "held", "placed")
+                 "subs", "born", "origin", "tainted", "rowed", "held", "placed", "answers")
 
     def __init__(self, tshape: Any, *, key: tuple[int, int] | None,
                  entry: "_Entry | None", parent: "_Made | None" = None, kind: int | None = None,
@@ -2976,6 +3934,9 @@ class _Made:
         # A placement shares this TShape (``_sharing``): a maker that changes what it is
         # given in place is given a copy of it (``_unshared``).
         self.placed = False
+        # What the queries asked of this TShape answered (``_ask``), by their keys: kept as
+        # long as the memo holds the record.
+        self.answers: dict[tuple, tuple] | None = None
 
     def root(self) -> "_Made":
         made = self

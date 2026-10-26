@@ -34,7 +34,8 @@ OCCURRENCE ORDER IS FROZEN — top to bottom below.
 
 from __future__ import annotations
 
-from cadgen.engine import configuration, motion, xbf
+from cadgen import model
+from cadgen.ap242 import configuration_sequence, mechanism_state
 
 import build123d as bd
 
@@ -88,43 +89,43 @@ def _rigid_mate(fixed_part, fixed_name, moving_part, moving_name, location):
     fixed_part.joints[fixed_name].connect_to(moving_part.joints[moving_name])
 
 
-@xbf(out="../XBF/motorbike.xbf")
+@model
 def motorbike():
     fx, fy, fz = S.FRONT_SIGNAL_POS
     rx, ry, rz = S.REAR_SIGNAL_POS
 
     # --- fixed root + front body ------------------------------------------
-    chassis = _label(frame(), "frame")
-    shroud = _label(steering_cover(), "steering_cover")
-    shield = _label(leg_shield(), "leg_shield")
+    chassis = _label(frame().shape, "frame")
+    shroud = _label(steering_cover().shape, "steering_cover")
+    shield = _label(leg_shield().shape, "leg_shield")
 
     # --- steering front end -------------------------------------------------
-    fork = _label(front_fork(), "front_fork")
-    bars = _label(handlebar(), "handlebar")
-    fender_front = _label(front_fender(), "front_fender")
-    wheel_front = _label(front_wheel(), "front_wheel")
-    lamp = _label(headlight(), "headlight")
-    signal_fl = _label(turn_signal_left(), "turn_signal", "front_left")
-    signal_fr = _label(turn_signal_right(), "turn_signal", "front_right")
+    fork = _label(front_fork().shape, "front_fork")
+    bars = _label(handlebar().shape, "handlebar")
+    fender_front = _label(front_fender().shape, "front_fender")
+    wheel_front = _label(front_wheel().shape, "front_wheel")
+    lamp = _label(headlight().shape, "headlight")
+    signal_fl = _label(turn_signal_left().shape, "turn_signal", "front_left")
+    signal_fr = _label(turn_signal_right().shape, "turn_signal", "front_right")
 
     # --- powertrain ---------------------------------------------------------
-    motor = _label(engine(), "engine")
-    pipe = _label(exhaust(), "exhaust")
-    shock = _label(rear_shock(), "rear_shock")
-    wheel_rear = _label(rear_wheel(), "rear_wheel")
+    motor = _label(engine().shape, "engine")
+    pipe = _label(exhaust().shape, "exhaust")
+    shock = _label(rear_shock().shape, "rear_shock")
+    wheel_rear = _label(rear_wheel().shape, "rear_wheel")
 
     # --- rear body + trim ---------------------------------------------------
-    body = _label(under_seat_body(), "under_seat_body")
-    fender_rear = _label(rear_fender(), "rear_fender")
-    saddle = _label(seat(), "seat")
-    lamp_rear = _label(tail_light(), "tail_light")
-    signal_rl = _label(bd.Pos(rx - fx, ry - fy, rz - fz) * turn_signal_left(),
+    body = _label(under_seat_body().shape, "under_seat_body")
+    fender_rear = _label(rear_fender().shape, "rear_fender")
+    saddle = _label(seat().shape, "seat")
+    lamp_rear = _label(tail_light().shape, "tail_light")
+    signal_rl = _label(bd.Pos(rx - fx, ry - fy, rz - fz) * turn_signal_left().shape,
                        "turn_signal", "rear_left")
-    signal_rr = _label(bd.Pos(rx - fx, -(ry - fy), rz - fz) * turn_signal_right(),
+    signal_rr = _label(bd.Pos(rx - fx, -(ry - fy), rz - fz) * turn_signal_right().shape,
                        "turn_signal", "rear_right")
-    mirror_l = _label(mirror_left(), "mirror", "left")
-    mirror_r = _label(mirror_right(), "mirror", "right")
-    stand = _label(center_stand(), "center_stand")
+    mirror_l = _label(mirror_left().shape, "mirror", "left")
+    mirror_r = _label(mirror_right().shape, "mirror", "right")
+    stand = _label(center_stand().shape, "center_stand")
 
     # --- joints: motion ------------------------------------------------------
     # Order matters: connect_to() repositions the moving part, and a part that
@@ -198,11 +199,11 @@ def motorbike():
     # The old typed mates' poses, by the joints that carry them now (steering is
     # head_tube_axis, engine_swing engine_pivot, center_stand_pivot stand_bracket;
     # same axes, same senses). "ride" set nothing: it is the bike as built.
-    configuration(bike, "stand_down", stand_bracket=-76.2)
-    configuration(bike, "turned_left", head_tube_axis=32.0)
-    configuration(bike, "bump", engine_pivot=12.0)
+    mechanism_state(bike, "stand_down", stand_bracket=-76.2)
+    mechanism_state(bike, "turned_left", head_tube_axis=32.0)
+    mechanism_state(bike, "bump", engine_pivot=12.0)
     # The bars swung from 20 degrees right to 20 left and back, 2 s each way.
-    return motion(bike, "steer", [(0, {"head_tube_axis": -20}), (2, {"head_tube_axis": 20}),
+    return configuration_sequence(bike, "steer", [(0, {"head_tube_axis": -20}), (2, {"head_tube_axis": 20}),
                                   (4, {"head_tube_axis": -20})])
 
 

@@ -37,7 +37,7 @@ later build's read of the same bytes this very object.
 export, a child's, a sibling's. Read, the file would be an input the build rewrites -- its
 key moving on every build, so the model would never be taken from its file -- or, keyed by
 anything but its bytes, a model depending on its own past. A model takes what it makes from
-the live shape instead (``select(shape, ref)``, or the child it calls).
+the live shape instead: the shape a body returns, or the child model it calls.
 """
 
 from __future__ import annotations
@@ -70,8 +70,9 @@ def describe(doc: Any, step: bool) -> tuple[dict[str, Any], list[Any], list[Any]
     """An XCAF document as data (see the module), the shapes its parts are, and the locations
     its components are placed at. ``step``: a STEP's names decoded as the file means them,
     and a part's colour, where its label has none, its shape's or its largest coloured
-    face's (as build123d's importer takes it); an xbf's names as the engine wrote them, its
-    colours its labels', its painted faces and face materials carried."""
+    face's (as build123d's importer takes it), a face coloured by the solid or shell holding
+    it; an xbf's names as the engine wrote them, its colours its labels', its painted faces
+    and face materials carried."""
     import unicodedata
 
     from OCP.Bnd import Bnd_Box
@@ -79,7 +80,8 @@ def describe(doc: Any, step: bool) -> tuple[dict[str, Any], list[Any], list[Any]
     from OCP.Quantity import Quantity_ColorRGBA
     from OCP.TDF import TDF_Label, TDF_LabelSequence
     from OCP.TopAbs import TopAbs_FACE
-    from OCP.TopExp import TopExp, TopExp_Explorer
+    from OCP.TopExp import TopExp
+    from OCP.TopoDS import TopoDS_Iterator
     from OCP.TopTools import TopTools_IndexedMapOfShape
     from OCP.XCAFDoc import XCAFDoc_ColorCurv, XCAFDoc_ColorGen, XCAFDoc_ColorSurf, XCAFDoc_ColorTool
     from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
@@ -118,16 +120,26 @@ def describe(doc: Any, step: bool) -> tuple[dict[str, Any], list[Any], list[Any]
         if found is not None:
             return found
         best, extent = None, -1.0
-        explorer = TopExp_Explorer(shape, TopAbs_FACE)
-        while explorer.More():
-            face = explorer.Current()
-            color = own_color(face)
-            if color is not None:
-                box = Bnd_Box()
-                BRepBndLib.Add_s(face, box)
-                if box.SquareExtent() > extent:
-                    best, extent = color, box.SquareExtent()
-            explorer.Next()
+        # Each face in the explorer's order, coloured as itself, else as the innermost coloured
+        # shape holding it: a STEP styles each solid of a part of several, and none of the part.
+        stack = [(shape, None)]
+        while stack:
+            current, held = stack.pop()
+            color = own_color(current) if current is not shape else None
+            color = color if color is not None else held
+            if current.ShapeType() == TopAbs_FACE:
+                if color is not None:
+                    box = Bnd_Box()
+                    BRepBndLib.Add_s(current, box)
+                    if box.SquareExtent() > extent:
+                        best, extent = color, box.SquareExtent()
+                continue
+            inner = TopoDS_Iterator(current)
+            below = []
+            while inner.More():
+                below.append((inner.Value(), color))
+                inner.Next()
+            stack.extend(reversed(below))
         return best
 
     def faces_given(label: Any, shape: Any) -> tuple[dict[str, list[float]], dict[str, Any]]:
@@ -217,22 +229,35 @@ def _material(found: dict[str, Any] | None) -> Any:
 def assemble(header: dict[str, Any], shapes: list[Any], locations: list[Any]) -> Any:
     """The build123d tree a description makes (see the module): the free shape's node, or a
     ``Compound`` of the free shapes' nodes when the document has several."""
-    from build123d import Color, Compound, Location
+    from build123d import Compound, Location
     from build123d.importers import topods_lut
     from build123d.topology.shape_core import downcast
 
+    from cadgen.engine.colors import color as as_color
     from cadgen.engine.kernel import imported
     from cadgen.engine.kernel.memo import FACE_COLORS, FACE_MATERIALS
 
-    products = header["products"]
+    from cadgen.engine.document import MAX_ASSEMBLY_DEPTH, MAX_OCCURRENCES
 
-    def build(entries: list[dict[str, Any]]) -> list[Any]:
+    products = header["products"]
+    counted = 0
+
+    def build(entries: list[dict[str, Any]], ancestors: frozenset = frozenset()) -> list[Any]:
+        # A shared product is built once per placement: bound the tree (as Loaded's walk does).
+        nonlocal counted
+        if len(ancestors) > MAX_ASSEMBLY_DEPTH:
+            raise ValueError(f"the document's assembly is deeper than {MAX_ASSEMBLY_DEPTH} levels")
         made = []
         for entry in entries:
+            counted += 1
+            if counted > MAX_OCCURRENCES:
+                raise ValueError(f"the document's assembly names more than {MAX_OCCURRENCES} occurrences")
             found = products[entry["product"]]
             if found["assembly"]:
+                if entry["product"] in ancestors:
+                    raise ValueError("the document's assembly contains itself")
                 node = Compound()
-                node.children = build(found["components"])
+                node.children = build(found["components"], ancestors | {entry["product"]})
             else:
                 topods = downcast(shapes[found["shape"]])
                 node = topods_lut[type(topods)](downcast(topods.Located(topods.Location())))
@@ -249,7 +274,7 @@ def assemble(header: dict[str, Any], shapes: list[Any], locations: list[Any]) ->
                     node.__dict__[FACE_MATERIALS] = {int(o): _material(given)
                                                      for o, given in found["face_materials"].items()}
             color = entry["color"] or found["color"]
-            node.color = None if color is None else Color(*color)
+            node.color = None if color is None else as_color(color)
             node.label = entry["name"] or found["name"]
             node.move(Location(locations[entry["location"]]))
             made.append(node)
@@ -320,6 +345,9 @@ def _parse(path: str) -> tuple[dict[str, Any], bytes]:
     Interface_Static.SetIVal_s("read.stepcaf.subshapes.name", 1)  # the names the file gives elements
     if reader.ReadFile(os.fspath(path)) != IFSelect_RetDone:
         raise ValueError(f"cannot read the STEP file {path}")
+    from cadgen.engine.document import refuse_external_files
+
+    refuse_external_files(reader, path)
     reader.Transfer(doc)
     header, shapes, locations = describe(doc, step=True)
     header["shapes"] = len(shapes)
@@ -462,7 +490,7 @@ def refuse_written(path: Any, verb: str) -> None:
     writer = written_by_build(path)
     if writer is not None:
         raise ValueError(f"{verb} {os.fspath(path)}: this build writes it ({writer}), and a model reads no file "
-                         "its own build writes; select from the live shape instead, select(shape, ref)")
+                         "its own build writes; take it from the live shape instead, or call the model that makes it")
 
 
 def read_step(path: Any) -> Any:
@@ -538,31 +566,19 @@ class Mesh:
 
 
 def _stl(path: Any) -> tuple[Any, str]:
-    """An STL's corners, (M, 3, 3) float64, and its name. Binary or ASCII is told as three's
-    ``STLLoader`` tells it: binary when the size is the header, the count and that many 50-byte
-    facets; else ASCII when ``solid`` opens it (within its first five bytes); else binary. A
-    facet's own normal is not read."""
+    """An STL's corners, (M, 3, 3) float64, read by the engine's one STL parser
+    (``formats/stl.read_stl``: binary or ASCII told as three's ``STLLoader`` tells them), and its
+    name: an ASCII STL's solid's, else the file's stem."""
     import re
 
-    import numpy as np
+    from cadgen.engine.formats.stl import read_stl
 
-    data = path.read_bytes()
-    count = int.from_bytes(data[80:84], "little") if len(data) >= 84 else -1
-    if 84 + 50 * count == len(data) or not any(data[at:at + 5] == b"solid" for at in range(5)):
-        if len(data) < 84:
-            raise ValueError(f"{path.name} is too short to be an STL")
-        facet = np.dtype([("normal", "<f4", 3), ("corners", "<f4", (3, 3)), ("attribute", "<u2")])
-        facets = np.frombuffer(data, facet, min(count, (len(data) - 84) // 50), 84)
-        return facets["corners"].astype(np.float64), path.stem
-    found = re.findall(rb"vertex\s+(\S+)\s+(\S+)\s+(\S+)", data)
-    if len(found) % 3:
-        raise ValueError(f"{path.name}: an ASCII STL's vertices come three to a facet, and it has {len(found)}")
-    try:
-        corners = np.array(found, dtype=np.float64).reshape(-1, 3, 3)
-    except ValueError:
-        raise ValueError(f"{path.name}: a vertex of it is not three numbers") from None
-    named = re.match(rb"[^s]{0,4}solid[ \t]*([^\r\n]*)", data)
-    name = named[1].strip().decode("utf-8", "replace") if named else ""
+    corners = read_stl(path)
+    with open(path, "rb") as handle:
+        head = handle.read(4096)
+    named = re.match(rb"[^s]{0,4}solid[ \t]*([^\r\n]*)", head)
+    binary = len(head) >= 84 and 84 + 50 * int.from_bytes(head[80:84], "little") == path.stat().st_size
+    name = named[1].strip().decode("utf-8", "replace") if named and not binary else ""
     return corners, name or path.stem
 
 

@@ -44,7 +44,7 @@ MODEL = '''from __future__ import annotations
 # illustrative.
 import build123d as bd
 
-from cadgen.engine import pmi, xbf
+from cadgen import pmi, xbf
 
 THICKNESS = {thickness}
 HOLE = "{hole}"
@@ -108,7 +108,9 @@ def main() -> None:
             source = MODEL.format(thickness=thickness, hole=hole, radius=radius, thickness_tolerance=tolerance,
                                   definition=definition)
             (folder / "edit_plate.py").write_text(source, encoding="utf-8")
-            reports = engine_build.build(folder / "edit_plate.py", None, cwd=folder)
+            # Its one model built as a program's call of it builds it, its declared xbf written (as the
+            # engine's own goldens are: ``tests/python/packages/cadgen/engine/test_kinematics.py``).
+            reports = engine_build.build(folder / "edit_plate.py", ["edit_plate"], cwd=folder)
             assert all(report["ok"] for report in reports), reports
             server = Server(port=0, mesh_mode="inline")
             try:

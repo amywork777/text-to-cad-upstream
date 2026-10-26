@@ -78,7 +78,7 @@ class PackageScriptTest(unittest.TestCase):
         modules = {path for path, _digest in previous.of(self.xbf)["modules"]}
         self.assertLessEqual({"../lib.py", "../helper.py", "../../common/dims.py", "../../__init__.py"}, modules)
         warm = self.build(self.script)
-        self.assertEqual(warm["bodies"], {"model.py::bracket": "replayed"})
+        self.assertEqual((warm["bodies"], warm["cache"]), ({"model.py::bracket": "loaded"}, {"used": True, "from": "memory"}))
         self.assertFalse(warm["files"][str(self.xbf)]["written"])
         write(self.root, {"proj/common/dims.py": "HEIGHT = 7\n"})
         edited = self.build(self.script)
@@ -105,7 +105,7 @@ class PackageScriptTest(unittest.TestCase):
         xbf = self.root / "craft/XBF/f14.xbf"
         self.build(script)
         self.assertIn("../lib/empennage.py", {path for path, _digest in previous.of(xbf)["modules"]})
-        self.assertEqual(self.build(script)["bodies"], {"f14.py::f14": "replayed"})
+        self.assertEqual(self.build(script)["bodies"], {"f14.py::f14": "loaded"})
         write(self.root, {"craft/lib/empennage.py": "SPAN = 9\n"})
         edited = self.build(script)
         self.assertEqual(edited["bodies"], {"f14.py::f14": "run"})
@@ -175,13 +175,13 @@ class PackageScriptRunTest(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix="engine-package-run-")).resolve()
         self.state = Path(tempfile.mkdtemp(prefix="eng-", dir="/tmp" if os.name != "nt" else None)).resolve()
         self.env = engine_daemon.watched({**os.environ, "PYTHONPATH": str(SRC), "CADGEN_ENGINE_DIR": str(self.state),
-                                          "CADGEN_ENGINE_IDLE": "60", "CADGEN_ENGINE_MESH": "inline"}, self.addCleanup)
+                                          "CADGEN_ENGINE_MESH": "inline"}, self.addCleanup)
         self.addCleanup(self._stop)
 
     def _stop(self) -> None:
         self.python("-m", "cadgen.engine", "stop")
         deadline = time.monotonic() + 20
-        while any(self.state.glob("*.sock")) and time.monotonic() < deadline:
+        while any(self.state.glob("*.door")) and time.monotonic() < deadline:
             time.sleep(0.05)
         shutil.rmtree(self.root, ignore_errors=True)
         shutil.rmtree(self.state, ignore_errors=True)
@@ -224,6 +224,14 @@ class LibraryRootsTest(unittest.TestCase):
                               capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stdout.split(), ["False", "True"])
+
+
+def setUpModule() -> None:
+    # The registry and cache of every engine this module starts are its own, never the developer's
+    # (``engine_daemon.isolate``); each test still names its own engine folder.
+    from tests.python.support import engine_daemon
+
+    engine_daemon.isolate(unittest.addModuleCleanup)
 
 
 if __name__ == "__main__":

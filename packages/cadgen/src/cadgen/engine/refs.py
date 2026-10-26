@@ -1,6 +1,6 @@
 """References to geometry: one grammar that names a part, an assembly or one element of a
-document by the names the engine gives them, and ``select``, which resolves a ref into
-build123d shapes in world coordinates.
+document by the names the engine gives them, resolved against a document's structure
+(``resolve_structure``, what ``cadgen inspect`` and the viewer read).
 
 A ref is resolved by name in the document as it is now -- the latest build -- never in the one
 it was copied from, and nothing of an earlier build is kept: an element a later build moved or
@@ -15,8 +15,10 @@ its atom is named now -- never picking one.
     ELEMENT   = NAME | ("face" | "edge" | "vertex") " " N    NAME: f:..., e:..., v:... (``trace.ELEMENT_NAME``)
 
 ``FILE`` is the document, everything before the first ``#`` (JSON-quoted when it holds one, or a
-quote); a source given as a path or a model must be that document (an absolute ``FILE`` the same
-file, a relative one the last segments of its path). An occurrence is named by the labels on the
+quote): an on-disk CAD file's absolute path, the last segments of its path, or a document's id
+(``ids``; a model's id, which ``python script.py`` prints, or a file's). A source given as a path,
+an id or a model must be that document (an absolute ``FILE`` the same file, a relative one the
+last segments of its path, an id that id). A script is never a ``FILE``. An occurrence is named by the labels on the
 way to it: ``hand/finger.2`` is the second component labelled ``finger`` of ``hand``, a label
 its siblings do not share needs no number (``hand/palm``), and an owner may start at any level
 (``finger.2``, ``palm``) when what it names is one occurrence. A path whose first segment names the
@@ -30,12 +32,6 @@ names, ``faceNames`` and the XBM2 buffer use.
 The canonical ref of each thing resolved (``Hit.ref``): the element's name, else its ordinal,
 under its part's owner -- the part's label where that names it alone, else its path from the
 root -- or, in a document of one part, under the document's name.
-
-``select(source, ref, kind=None)`` resolves a ref against an xbf or a STEP (a path), a shape tree
-(``read_xbf``'s, ``read_step``'s, or a live shape in a model's body) or a model (in a build, its
-result in this run; outside one, built warm through the daemon, then its xbf read). Inside a
-build the read is the model's own call, keyed by the file's bytes as ``read_xbf`` is; a file a
-model of the build writes is never read (``reader.written_by_build``).
 """
 
 from __future__ import annotations
@@ -47,20 +43,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-__all__ = ["Hit", "RefError", "Selector", "parse", "path_text", "placed_facts", "resolve_structure", "select"]
+__all__ = ["Hit", "RefError", "Selector", "parse", "path_text", "placed_facts", "resolve_structure"]
 
-KINDS = ("face", "edge", "vertex")
-# Each kind's dimension, so a kind is only asked of what holds it (a face's edges, never an edge's faces).
-_DIMENSION = {"vertex": 0, "edge": 1, "face": 2}
 _LETTERS = {"f": "face", "e": "edge", "v": "vertex"}
-# ``kernel.imported.ELEMENT_NAMES``' kinds, and the trace lineage's lists.
-_KIND_INDEX = {"vertex": 0, "edge": 1, "face": 2}
+# The trace lineage's lists.
 _PLURAL = {"face": "faces", "edge": "edges", "vertex": "vertices"}
 _ORDINAL = re.compile(r"(face|edge|vertex)\s*([1-9][0-9]*)")
 _INDEXED = re.compile(r"(.+)\.([1-9][0-9]*)", re.S)
 _NUMBER = re.compile(r"\.([1-9][0-9]*)")
-_DOCUMENTS = (".xbf", ".step", ".stp")
-_MESHES = (".glb", ".stl", ".3mf")
 
 
 class RefError(ValueError):
@@ -267,24 +257,6 @@ def _segments(root: Node) -> None:
             if not _plain(node.label) or _group(group, Segment(text)) != [node]:
                 text = str(Segment(node.label, True, n if shared else None))
             node.segment = text
-
-
-def shape_tree(shape: Any, name: str = "") -> Node:
-    """A build123d shape as an occurrence tree: a compound with children an assembly of them, in
-    order; anything else a part. An unlabelled node is named as a served document names an
-    occurrence its file leaves unnamed (``document.Loaded``): the root by ``name`` (the
-    document's stem), a component by its parent's name and its place (``asm.3``)."""
-
-    def visit(obj: Any, parent: Node | None, fallback: str) -> Node:
-        kids = list(getattr(obj, "children", ()) or ())
-        node = Node(str(obj.__dict__.get("label") or "") or fallback, obj, not kids, parent)
-        node.children = [visit(child, node, f"{node.label}.{at}" if node.label else "")
-                         for at, child in enumerate(kids, 1)]
-        return node
-
-    root = visit(shape, None, name)
-    _segments(root)
-    return root
 
 
 def structure_tree(structure: dict[str, Any]) -> Node:
@@ -525,7 +497,7 @@ def _resolve(root: Node, selector: Selector, names: _Names, document: str, one_p
     if unknown and len(unknown) == len(parts):
         raise RefError(f"{shown}: the elements of {owner_text(root, unknown[0]) or 'this shape'} have no names here -- "
                        "a document's are its own, a live shape's its build's -- so name it by its ordinal "
-                       f"({kind} N), or select from the document")
+                       f"({kind} N), or name it in the document")
     raise RefError(_missing(root, owner, parts, names, kind, name, document))
 
 
@@ -551,12 +523,14 @@ def _element_ref(root: Node, part: Node, kind: str, ordinal: int, name: str | No
 
 
 def _same_document(file: str, document: Path) -> bool:
-    """Whether a ref's ``FILE`` is the document: the same file, or the last segments of its path."""
-    from cadgen.engine.addresses import parse
+    """Whether a ref's ``FILE`` is the document: the same id, the same file, or the last segments
+    of its path. A document known by its id alone (a model's) is named by that id alone."""
+    from cadgen.engine.ids import file_id, is_id
 
-    given_model, held_model = parse(file), parse(document)
-    if given_model is not None or held_model is not None:
-        return given_model == held_model
+    if is_id(str(document)):
+        return file == str(document)
+    if is_id(file):
+        return file == file_id(document)
     given = Path(file).expanduser()
     if given.is_absolute():
         return os.path.normcase(str(given.resolve())) == os.path.normcase(str(document.resolve()))
@@ -590,7 +564,10 @@ def resolve_structure(structure: dict[str, Any], ref: str, document: Path | None
         held = prototypes[node.payload["prototype"]].get(f"{kind}Names") or {}
         return {int(ordinal): text for ordinal, text in held.items()}
 
-    shown = os.path.basename(str(document)) if document is not None else str(structure.get("name") or "the document")
+    from cadgen.engine.ids import is_id
+
+    shown = (os.path.basename(str(document)) if document is not None and not is_id(str(document))
+             else str(structure.get("name") or "the document"))
     return resolve(root, selectors, _Names(named, lambda _node, _kind: None), shown)
 
 
@@ -619,293 +596,4 @@ def placed_facts(facts: dict[str, Any], matrix: list[float]) -> dict[str, Any]:
         corners = [point([(box["min"], box["max"])[i >> axis & 1][axis] for axis in range(3)]) for i in range(8)]
         found["box"] = {"min": [min(c[axis] for c in corners) for axis in range(3)],
                         "max": [max(c[axis] for c in corners) for axis in range(3)]}
-    return found
-
-
-# --- select -------------------------------------------------------------------------------
-
-
-def _current_run() -> Any:
-    """The memo run of a build on this thread, or None."""
-    from cadgen.engine.kernel import memo
-
-    return getattr(memo._LOCAL, "run", None)
-
-
-def _in_build() -> bool:
-    from cadgen.engine import model
-
-    return getattr(model._CONTEXT, "build", None) is not None
-
-
-def _shape_names(run: Any) -> Callable[[Node, str], dict[int, str] | None]:
-    """A part's element names: those its file gives it (a read), else the build's own (the
-    run's trace, as the document will name them); None outside a build for a shape no file
-    named."""
-    from cadgen.engine.kernel.imported import ELEMENT_NAMES
-
-    accounts: dict[Any, Any] = {}
-
-    def names(node: Node, kind: str) -> dict[int, str] | None:
-        obj = node.payload
-        held = obj.__dict__.get(ELEMENT_NAMES)
-        if held is not None:
-            return dict(held.get(_KIND_INDEX[kind]) or {})
-        wrapped = obj.__dict__.get("_wrapped")
-        if run is None or wrapped is None:
-            return None
-        key = wrapped.TShape()
-        if key not in accounts:
-            try:
-                accounts[key] = run.account(wrapped)[0]
-            except Exception:  # noqa: BLE001 - naming never fails a build: the names are not known
-                accounts[key] = None
-        lineage = accounts[key]
-        if lineage is None:
-            return {}
-        return {ordinal: text for ordinal, text in enumerate(lineage.get(_PLURAL[kind]) or (), 1) if text}
-
-    return names
-
-
-def _map(shape: Any, kind: str) -> Any:
-    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
-    from OCP.TopExp import TopExp
-    from OCP.TopTools import TopTools_IndexedMapOfShape
-
-    found = TopTools_IndexedMapOfShape()
-    TopExp.MapShapes_s(shape, {"face": TopAbs_FACE, "edge": TopAbs_EDGE, "vertex": TopAbs_VERTEX}[kind], found)
-    return found
-
-
-def placed(obj: Any) -> Any:
-    """A shape's ``TopoDS`` where its tree puts it: its own location under its ancestors',
-    composed as the kernel composes them (``TopLoc_Location.Multiplied``, which keeps each
-    location's datum: an element taken from it is the same element, ``IsSame``, as the
-    kernel finds it in the shape and in the compounds above it). A shape no compound holds is
-    where it is: its own ``TopoDS``."""
-    wrapped = obj.wrapped
-    parent = obj.parent
-    if parent is None:
-        return wrapped
-    location = wrapped.Location()
-    while parent is not None:
-        location = parent.wrapped.Location().Multiplied(location)
-        parent = parent.parent
-    return wrapped.Located(location)
-
-
-class _World:
-    """A tree's parts in world coordinates (``placed``), their element maps, and the shape an
-    element's ``topo_parent`` is."""
-
-    def __init__(self) -> None:
-        self._placed: dict[int, Any] = {}
-        self._maps: dict[tuple[int, str], Any] = {}
-        self._parents: dict[int, Any] = {}
-
-    def placed(self, node: Node) -> Any:
-        found = self._placed.get(id(node))
-        if found is None:
-            found = self._placed[id(node)] = placed(node.payload)
-        return found
-
-    def map(self, node: Node, kind: str) -> Any:
-        key = (id(node), kind)
-        found = self._maps.get(key)
-        if found is None:
-            found = self._maps[key] = _map(self.placed(node), kind)
-        return found
-
-    def parent(self, node: Node) -> Any:
-        """What an element of the part is extracted from: the part itself where no compound holds
-        it, else a placement of it where its tree puts it."""
-        found = self._parents.get(id(node))
-        if found is None:
-            obj = node.payload
-            found = self._parents[id(node)] = obj if obj.parent is None else _placement(obj, self.placed(node))
-        return found
-
-
-def _placement(obj: Any, where: Any = None) -> Any:
-    """A new placement of a shape -- new objects on the same geometry, its subtree's too
-    (``model.instance``) -- at ``where`` (a ``TopoDS`` of it), by default where its tree puts it
-    (``placed``). Every node's ``TopoDS`` is of its own type (a compound a ``TopoDS_Compound``),
-    as build123d's queries want it: a relocated handle is a bare ``TopoDS_Shape``."""
-    from build123d.topology.shape_core import downcast
-
-    from cadgen.engine.model import instance
-
-    made = instance(obj)
-    made.__dict__["_wrapped"] = placed(obj) if where is None else where
-    for node in (made, *made.descendants):
-        held = node.__dict__.get("_wrapped")
-        if held is not None:
-            node.__dict__["_wrapped"] = downcast(held)
-    return made
-
-
-def _element(world: _World, node: Node, kind: str, ordinal: int) -> Any:
-    from build123d import Edge, Face, Vertex
-    from build123d.topology.shape_core import downcast
-
-    mapped = world.map(node, kind)
-    if not 1 <= ordinal <= mapped.Extent():
-        raise RefError(f"the part has no {kind} {ordinal} (it has {mapped.Extent()})")
-    made = {"face": Face, "edge": Edge, "vertex": Vertex}[kind](downcast(mapped.FindKey(ordinal)))
-    made.topo_parent = world.parent(node)
-    return made
-
-
-def _under(world: _World, names: _Names, root: Node, hit: Hit, kind: str, one_part: bool) -> list[tuple[Any, str]]:
-    """Every element of ``kind`` under a hit, each with its canonical ref: of every part below an
-    occurrence, or of one element (a face's edges and vertices, an edge's vertices)."""
-    found: list[tuple[Any, str]] = []
-    if hit.kind is None:
-        for part in hit.node.parts():
-            named = names.names(part, kind) or {}
-            for ordinal in range(1, world.map(part, kind).Extent() + 1):
-                found.append((_element(world, part, kind, ordinal),
-                              _element_ref(root, part, kind, ordinal, named.get(ordinal), one_part)))
-        return found
-    if _DIMENSION[kind] > _DIMENSION[hit.kind]:
-        raise RefError(f"{hit.ref} is {'an' if hit.kind == 'edge' else 'a'} {hit.kind}: it holds no {_PLURAL[kind]}")
-    assert hit.ordinal is not None
-    element = world.map(hit.node, hit.kind).FindKey(hit.ordinal)
-    if kind == hit.kind:
-        return [(_element(world, hit.node, kind, hit.ordinal), hit.ref)]
-    mapped = world.map(hit.node, kind)
-    named = names.names(hit.node, kind) or {}
-    below = _map(element, kind)
-    ordinals = sorted(mapped.FindIndex(below.FindKey(at)) for at in range(1, below.Extent() + 1))
-    for ordinal in ordinals:
-        found.append((_element(world, hit.node, kind, ordinal),
-                      _element_ref(root, hit.node, kind, ordinal, named.get(ordinal), one_part)))
-    return found
-
-
-def _read(path: Path) -> Any:
-    """A document's tree, read as a model reads one (``read_xbf``, ``read_step``): in a build, the
-    model's own call, keyed by the file's bytes."""
-    from cadgen.engine import model
-    from cadgen.engine.reader import refuse_written
-
-    suffix = path.suffix.lower()
-    if suffix in _MESHES:
-        raise RefError(f"{path.name} is a mesh: it has no faces, edges or vertices to select")
-    if suffix not in _DOCUMENTS:
-        raise RefError(f"select reads an .xbf, a .step or a .stp, not {path.name}")
-    refuse_written(path, "select")
-    if not path.is_file():
-        raise FileNotFoundError(f"no document {path}")
-    return model.read_xbf(path) if suffix == ".xbf" else model.read_step(path)
-
-
-def _document(source: Any) -> Path | None:
-    """The document a source is read from: a path's, a model's xbf outside a build; None for a
-    shape, and for a model in a build (its result in this run)."""
-    from build123d import Shape
-
-    from cadgen.engine.model import Model
-
-    if isinstance(source, Model):
-        if _in_build():
-            return None
-        found = next((target.path for target in source.plan() if target.kind == "xbf"), None)
-        return found if found is not None else Path(source.address)
-    if isinstance(source, (str, os.PathLike)):
-        from cadgen.engine.addresses import key
-
-        return Path(key(source))
-    if isinstance(source, Shape):
-        if source.__dict__.get("_wrapped") is None:
-            raise RefError("select from an empty shape")
-        return None
-    raise TypeError(f"select takes a document's path, a shape or a model, not {type(source).__name__}")
-
-
-def _tree(source: Any, document: Path | None) -> Any:
-    """The tree a source is: a document read, a model built warm through the daemon first and its
-    xbf read (outside a build) or its result in this run (a child), or the shape given."""
-    from cadgen.engine.model import Model
-
-    if isinstance(source, Model):
-        if document is None:
-            return source()  # a child of this build: its result in this run
-        report = source.build()
-        if not report.ok:
-            from cadgen.engine.api import EngineError
-
-            failed = next(found for found in report.models if not found.get("ok"))
-            raise EngineError(failed.get("error") or f"the build of {source.identity} failed")
-    if document is not None:
-        from cadgen.engine.addresses import parse as address
-        from cadgen.engine import api
-
-        target = address(document)
-        if target is not None:
-            if target.script is not None and not isinstance(source, Model):
-                report = api.build_script(target.script, [target.name])
-                if not report.ok:
-                    raise api.EngineError(next(row["error"] for row in report.models if not row.get("ok")))
-            spec = api._source(str(target))
-            return api.Built(target.name, Path(spec["script"]), {}, Path.cwd(),
-                             source_kind="code" if target.script is None else "script").shape
-    return source if document is None else _read(document)
-
-
-def select(source: Any, ref: str, kind: str | None = None) -> Any:
-    """The geometry ``ref`` names in ``source``, as build123d shapes in world coordinates, one per
-    selector (``refs``): an element a ``Face``, ``Edge`` or ``Vertex``; a part its shape; an
-    assembly a ``Compound`` of its components. ``kind`` (``"face"``, ``"edge"``, ``"vertex"``)
-    gives every such element under each instead: of every part below an occurrence, or of an
-    element (a face's edges). ``source`` is a document's path (``.xbf``, ``.step``), a shape --
-    ``read_xbf``'s or ``read_step``'s tree, or a live shape in a model's body, whose elements are
-    named as this build names them -- or a model: in a build its result in this run, outside one
-    built warm through the daemon first, then its xbf read.
-
-    Outside a build every shape carries its canonical ref as its ``label``. Inside one a label
-    names what is made of the shape it is on (**Element names**), so an element comes unlabelled,
-    as ``faces()`` gives it, and a part or an assembly with its own label; an element's
-    ``topo_parent`` is its part in world coordinates. Inside a build a document's read is the
-    model's call, keyed by the file's bytes (a changed file runs the body again); a file a model
-    of the build writes -- its own, a child's, a sibling's -- is refused, never read: select from
-    the live shape instead (``select(shape, ref)``)."""
-    from build123d import ShapeList
-
-    if kind is not None and kind not in KINDS:
-        raise ValueError(f"kind is face, edge or vertex, not {kind!r}")
-    file, selectors = parse(ref)
-    document = _document(source)
-    check_file(file, document)
-    tree = _tree(source, document)
-    building = _in_build()
-    run = _current_run() if building else None
-    root = shape_tree(tree, document.stem if document is not None else "")
-    world = _World()
-
-    def count(node: Node, kind: str) -> int:
-        return world.map(node, kind).Extent()
-
-    names = _Names(_shape_names(run), count)
-    shown = os.path.basename(str(document)) if document is not None else (f"shape {root.segment}" if root.label else "the shape")
-    hits = resolve(root, selectors, names, shown)
-    one_part = len(root.parts()) == 1
-    labelled = not building
-    found = ShapeList()
-    for hit in hits:
-        if kind is not None:
-            for shape, text in _under(world, names, root, hit, kind, one_part):
-                if labelled:
-                    shape.label = text
-                found.append(shape)
-            continue
-        if hit.kind is None:
-            shape = _placement(hit.node.payload)
-        else:
-            assert hit.ordinal is not None
-            shape = _element(world, hit.node, hit.kind, hit.ordinal)
-        if labelled:
-            shape.label = hit.ref
-        found.append(shape)
     return found

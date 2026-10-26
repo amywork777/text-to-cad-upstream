@@ -2,21 +2,28 @@
 
 The daemon starts one per script and talks to it over the worker's stdin and its
 original stdout. A request is one JSON object per line: ``{"id", "op": "build", "script",
-"functions", "cwd"}``, and, when the daemon serves documents, ``served`` (each served
-path and the version served of it), ``served_keys`` (each served path and the keys of the
-parts its served document holds), ``held`` (the geometry keys it holds a mesh for) and
+"functions", "cwd", "run", "env"}`` (``run``: the calling process's run, ``build.build``; ``env``: its environment, ``adopt``), and, when the daemon serves documents, ``served`` (each served
+document's id and the version served of it), ``served_keys`` (each served document's id and
+the keys of the parts it holds), ``held`` (the geometry keys it holds a mesh for) and
 ``shapes`` (the keys it holds a shape for). The answers are frames: a JSON object on one
 line and, when it has ``bytes``, exactly that many bytes after it. A build is answered by
 ``{"id", "log"}`` frames while it builds and ``{"id", "progress"}`` frames saying where it is
-(``progress.py``: each stage, ``report`` and ``track``), a ``{"id", "patch", "bytes"}`` frame (below) for
+(``progress.py``: each stage, and each body a build runs), a ``{"id", "patch", "bytes"}`` frame (below) for
 each served xbf the moment the build has put it in place -- before the build goes on to
 its exports -- one ``{"id", "done", "rssMb"}`` (the build's reports, and the worker's resident
-memory after it, in MiB) or ``{"id", "failed"}``, and last ``{"id", "settled"}``. What the
+memory after it, in MiB) or ``{"id", "failed"}`` (with ``kind`` where it is a refusal: ``refusal``),
+and last ``{"id", "settled"}``. What the
 model prints goes to the worker's stderr, which the daemon passes on. The worker exits when
-its stdin closes: the daemon's pool closes it to retire the worker (``daemon.Pool``).
+its stdin closes: the daemon's pool closes it to retire the worker (``daemon.Pool``). Its first
+frame, ``{"ready": pid, "rssMb"}``, says it is up and its resident memory then.
 
-A ``{"id", "op": "where", "path", "key", "kind", "ordinal"}`` request asks what made one
-element of a document this worker built (``build.made_by``): it is answered at once,
+A worker started with ``--standby`` is the pool's standby: it loads the kernel before it says it is
+ready (``load_kernel``) and builds nothing until a build takes it, when the daemon sends
+``{"op": "adopt", "home"}`` -- the folder a fresh worker of that script would have started in, where
+a request with no ``cwd`` runs -- and the build after it; it answers nothing to the adoption.
+
+A ``{"id", "op": "where", "doc", "key", "kind", "ordinal"}`` request asks what made one
+element of a document this worker built (``doc``, its id) (``build.made_by``): it is answered at once,
 ``{"id", "where": {...} | null}``, by the thread that reads the requests -- during a
 build too, from the last build that named the document -- so a page asking about an
 element never waits on a build.
@@ -36,15 +43,42 @@ parts of a served one the build did not change are meshed by the daemon's pool, 
 are asked for -- the build's answer never waits on a whole document's mesh. Each report
 says how many parts the build meshed (``meshed``).
 
-A worker whose resident memory is over its cap after a build (``CADGEN_ENGINE_WORKER_RSS_MB``,
-by default a quarter of the machine's memory) is retired: its reports say so (``retired``),
-and it exits once it has answered. The daemon starts a fresh one for the next build, a
-restart: a model whose xbf holds its closure unchanged is taken in seconds.
+A worker whose resident memory alone is over the workers' memory cap after a build
+(``CADGEN_ENGINE_WORKER_RSS_MB``, by default a quarter of the machine's memory, which the daemon holds
+all its workers to together: ``daemon.Pool.shed``) is retired: its reports say so (``retired``),
+and the daemon, once it has taken the worker's documents from it (``models.Models.drain``),
+closes its stdin. The daemon starts a fresh one for the next build, a restart: a model whose
+xbf holds its closure unchanged is taken in seconds.
 
-A build runs with the cyclic collector off, and the worker collects once after it has
-answered: the memo keeps every live result of the last builds, millions of objects, and a
-full collection walks all of them -- a second on a large model, paid inside whichever call
-allocates when it falls due. Off the build's path it is paid while the worker is idle.
+A request may carry bytes after its line (``{"bytes": N}``, the frame's form): an export of a
+document the daemon holds and no worker does (``{"document", "name"}``: the whole document's xbf
+bytes, which its worker made of it before it retired: a ``result`` request with ``whole``) reads
+them as an on-disk xbf, so the documents worker exports, inspects and draws it, kinematics and
+all, with no worker of its script started.
+
+A ``build`` or ``export`` request carries its caller's environment (``env``), and the worker adopts it
+before it runs (``adopt``): its ``os.environ`` becomes the caller's, but for what started this
+interpreter (``daemon.RESTARTS``, which a request shares with its worker or is given another) and
+what the worker set for itself. A run is the script in its caller's environment, as under
+``python SCRIPT``; the worker is the interpreter, kept warm across them.
+
+A ``{"id", "op": "save", "ident", "script", "name", "generation"}`` request asks for a document
+this worker built as the engine's cache keeps it (``cache``): the whole document's xbf bytes
+(``document.to_bytes``), answered ``{"id", "saved": {"ident", "generation"}, "bytes"}`` and the
+bytes, or ``{"id", "saved": {"ident", "generation", "error"}}``. It is never on the run path: the
+worker does it only when no other request waits (a request that comes meanwhile waits for the one
+serialisation), and it answers no ``done`` or ``settled``. A ``result`` request with ``document``
+reads the bytes after its line (the cache's file) as ``export`` does a held document's: its
+structure and shape bytes, as a built document's.
+
+A build runs with the cyclic collector off, and the worker collects once it is idle: the memo
+keeps every live result of the last builds, millions of objects, and a full collection walks
+all of them -- a second on a large model, paid inside whichever call allocates when it falls
+due. It is paid after the worker has answered and no request has come for ``COLLECT_IDLE``
+seconds, so a script calling its models one after another (each call a request) never waits
+on the collection its last call left; the worker says it collected (``{"collected": seconds}``).
+Only a worker over its memory cap after a build collects first, inside the build's answer, and
+measures again: the cap judges what the worker holds, not the cycles it has yet to collect.
 """
 
 from __future__ import annotations
@@ -54,15 +88,27 @@ import json
 import os
 import queue
 import sys
+import tempfile
 import threading
 import time
 import traceback
 from pathlib import Path
 from typing import Any, Callable
 
+from cadgen.engine.ids import canonical, file_id
+
 # How long a build waits for the daemon to say it holds a patch before it writes its
 # derived files: the viewer is woken first, unless the daemon is too slow to say so.
 PATCH_WAIT = 30.0
+# How long the worker waits for a next request, once it has answered, before it collects.
+COLLECT_IDLE = 0.5
+# A build on a worker whose kernel is not loaded (a fresh worker, or one that came before the
+# standby was ready) loads it first (``kernel``); a load still going after this many seconds is said
+# to the caller, once (a ``{"id", "notice"}`` frame): the operating system's first look at a fresh
+# installation's native libraries (macOS checks each once) takes up to about 50 s, where a load
+# it has already looked at takes 2 to 3.
+KERNEL_PATIENCE = 5.0
+KERNEL_NOTICE = "loading the CAD kernel for the first time in this environment, up to a minute"
 # The daemon's word that it holds the patch of a path (``{"op": "patched", "path"}``).
 _PATCHED: dict[str, threading.Event] = {}
 
@@ -75,9 +121,10 @@ class Patcher:
 
     def __init__(self, request: dict[str, Any], send: Callable[[dict[str, Any], bytes], None], *,
                  acknowledged: bool = False) -> None:
-        self.served = {Path(path).resolve(): version for path, version in (request.get("served") or {}).items()}
+        # By document id (``ids.file_id`` of each xbf the daemon serves).
+        self.served = dict(request.get("served") or {})
         self.held = set(request.get("held") or [])
-        self.served_keys = {Path(path).resolve(): set(keys) for path, keys in (request.get("served_keys") or {}).items()}
+        self.served_keys = {ident: set(keys) for ident, keys in (request.get("served_keys") or {}).items()}
         self.meshed = 0
         self.have = set(request.get("shapes") or [])
         self.send = send
@@ -85,7 +132,7 @@ class Patcher:
 
     def saved(self, path: Path, tree: Any) -> None:
         try:
-            self._patch(Path(path).resolve(), tree)
+            self._patch(Path(canonical(path)), tree)
         except Exception:  # noqa: BLE001 - without a patch the daemon reads the file
             traceback.print_exc()
 
@@ -94,10 +141,11 @@ class Patcher:
         from cadgen.engine.mesh import mesh_shape, shape_bytes
         from cadgen.engine.serve import MESHES
 
-        if path not in self.served:
+        ident = file_id(path)
+        if ident not in self.served:
             return
         stat = path.stat()
-        if self.served[path] == f"{stat.st_mtime_ns}-{stat.st_size}":
+        if self.served[ident] == f"{stat.st_mtime_ns}-{stat.st_size}":
             return  # the daemon serves this very file
         clock = time.perf_counter()
         structure = structure_of(tree, path)
@@ -106,7 +154,7 @@ class Patcher:
         parts = {}
         for part in tree.parts:
             parts.setdefault(part.key, part)
-        served = self.served_keys.get(path, set())
+        served = self.served_keys.get(ident, set())
         for key, part in parts.items():
             fresh = key not in served and key not in self.held
             if not fresh and key in self.have:
@@ -129,7 +177,7 @@ class Patcher:
                 shapes.append([key, len(shape)])
                 self.have.add(key)
         done = time.perf_counter()
-        self.served[path] = structure["version"]
+        self.served[ident] = structure["version"]
         waiting = _PATCHED.setdefault(str(path), threading.Event()) if self.acknowledged else None
         if waiting is not None:
             waiting.clear()
@@ -229,8 +277,10 @@ def _physical_mb() -> float | None:
 
 
 def rss_cap_mb() -> float | None:
-    """The resident memory a worker may hold after a build: ``CADGEN_ENGINE_WORKER_RSS_MB``
-    (``0`` for no cap), else a quarter of the machine's memory, at least 2 GiB. None: no cap."""
+    """The resident memory the daemon's workers, its standby and its render processes may hold
+    together (``daemon.Pool.shed``), and so one of them alone after a build or a frame:
+    ``CADGEN_ENGINE_WORKER_RSS_MB`` (``0`` for no cap), else a quarter of the machine's memory, at
+    least 2 GiB. None: no cap."""
     given = os.environ.get("CADGEN_ENGINE_WORKER_RSS_MB", "").strip()
     if given:
         try:
@@ -245,9 +295,9 @@ def rss_cap_mb() -> float | None:
 
 def retirement(reports: list[dict[str, Any]], resident: float | None = None) -> bool:
     """After a build: this worker's resident memory (``resident``, else measured now) against its
-    cap. Over it, each report says so (``retired``) and the worker is retired: it exits once it
-    has answered, and the next build is a fresh worker's -- a restart, which takes a model's xbf
-    when nothing changed."""
+    cap. Over it, each report says so (``retired``) and the worker is retired: the daemon drains
+    and stops it once it has answered, and the next build is a fresh worker's -- a restart, which
+    takes a model's xbf when nothing changed."""
     resident, cap = resident if resident is not None else resident_mb(), rss_cap_mb()
     if resident is None or cap is None or resident <= cap:
         return False
@@ -257,10 +307,95 @@ def retirement(reports: list[dict[str, Any]], resident: float | None = None) -> 
     return True
 
 
+def resident_after_build() -> float | None:
+    """This worker's resident memory after a build (``resident_mb``), measured again after a
+    collection where it is over the cap: the cycles the build and the uncollected ones before it
+    left are not what the worker holds. Under the cap nothing is collected here: that is paid
+    once the worker is idle (the module docstring)."""
+    resident, cap = resident_mb(), rss_cap_mb()
+    if resident is not None and cap is not None and resident > cap:
+        gc.collect()
+        resident = resident_mb()
+    return resident
+
+
+def load_kernel() -> None:
+    """The kernel loaded, as a standby loads it before it is ready: OCP's native libraries and
+    build123d imported, the engine's kernel layer with them (imported, never installed: a build
+    installs it in its run's environment, ``build._build``), and one shape made. A fresh
+    worker pays this in its first build; the operating system's first look at a fresh
+    installation's native libraries (macOS checks each once) is paid here, while nobody waits."""
+    import build123d
+    import OCP.TopoDS  # noqa: F401
+
+    from cadgen.engine.kernel import determinism, history, memo, trace  # noqa: F401
+
+    build123d.Box(1, 1, 1)
+    global _KERNEL_LOADED
+    _KERNEL_LOADED = True
+
+
+_KERNEL_LOADED = False
+
+
+def kernel(say: Callable[[str], None]) -> None:
+    """The kernel loaded before a build of this worker, unless it is (``load_kernel``): a load that
+    takes longer than ``KERNEL_PATIENCE`` is said once, while it goes on (``KERNEL_NOTICE``), and
+    a warm worker says nothing."""
+    if _KERNEL_LOADED:
+        return
+    told = threading.Timer(KERNEL_PATIENCE, say, (KERNEL_NOTICE,))
+    told.daemon = True
+    told.start()
+    try:
+        load_kernel()
+    finally:
+        told.cancel()
+
+
+def kept() -> dict[str, str]:
+    """What of this worker's environment no run's replaces (``adopt``): what started its
+    interpreter (``daemon.RESTARTS``; the engine's own folder is on its PYTHONPATH) and what it
+    set for itself."""
+    from cadgen.engine.daemon import BYTECODE, RESTARTS
+
+    return {name: os.environ[name] for name in (*RESTARTS, *BYTECODE, "CADGEN_ENGINE_WORKER") if name in os.environ}
+
+
+def adopt(environment: dict[str, str] | None, own: dict[str, str]) -> None:
+    """A run's environment (its caller's) as ``os.environ``, but for ``own`` (``kept``); a
+    request with none leaves it as it is. Only what differs is set or unset."""
+    if not environment:
+        return
+    from cadgen.engine.daemon import BYTECODE, RESTARTS
+
+    # The worker's bytecode is the daemon's (``daemon.bytecode``), never a run's.
+    wanted = {name: value for name, value in environment.items() if name not in (*RESTARTS, *BYTECODE)}
+    wanted.update(own)
+    for name in [name for name in os.environ if name not in wanted]:
+        del os.environ[name]
+    for name, value in wanted.items():
+        if os.environ.get(name) != value:
+            os.environ[name] = value
+
+
+def _neutral_folder() -> str:
+    """Where an idle worker stands: the engine's folder on POSIX when it is this user's alone,
+    else the temporary folder (``main``)."""
+    from cadgen.engine import daemon
+
+    folder = daemon.state_dir()
+    if not daemon.WINDOWS and folder.is_dir() and daemon.folder_refusal(folder) is None:
+        return str(folder)
+    return tempfile.gettempdir()
+
+
 def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, Any]:
-    """An ``export`` request: the document -- a script's model built first, code this worker
-    built, or a file (the document this worker last built of it while the file is as the
-    build left it, else read) -- written to each destination, and drawn into ``draw``'s
+    """An ``export`` request: the document -- one this worker holds (``held``: a document named
+    by its id, read as it is and never built), a ``Model`` this program built first (its own
+    explicit call), or a file (the document this worker last built of it while the file is as
+    the build left it, else read; a mesh file read as its triangles, no kernel loaded) -- written
+    to each destination, and drawn into ``draw``'s
     PNG where the request has one (``{"out", option: value}``, the snapshot verb's: a
     model's picture is drawn from the document in this worker's memory). Answers what was
     written."""
@@ -269,32 +404,38 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
 
     source_spec = request["source"]
     built: list[dict[str, Any]] = []
-    if request.get("expected") and "script" in source_spec:
-        source = engine_build.held(Path(source_spec["script"]), source_spec.get("code") or source_spec.get("function"))
+    if "id" in source_spec:
+        # The daemon names a held document's worker or bytes (``Daemon.document``); in this process, none is.
+        raise export.ExportRefused(f"no document {source_spec['id']} is held in this process: a document id is "
+                                   "the engine's, read through its server")
+    if "document" in source_spec:
+        source = engine_build.held_source(request.get("payload") or b"", str(source_spec.get("name") or "document"))
+    elif (request.get("expected") or source_spec.get("held")) and "script" in source_spec:
+        source = engine_build.held(Path(source_spec["script"]), source_spec.get("function"))
         if source is None:
-            raise export.ExportRefused("The viewed model is no longer held. Reopen it before exporting.")
-    elif "script" in source_spec and "code" not in source_spec:
+            raise export.ExportRefused("The viewed model is no longer held. Reopen it before exporting."
+                                       if request.get("expected") else
+                                       f"{source_spec.get('function')} is no longer held: run the program that "
+                                       "builds it again")
+    elif "script" in source_spec:
+        # ``daemon=False`` alone (``api._called``): a model named by its function, built here, cold.
         script = Path(source_spec["script"])
         function = source_spec.get("function")
         # Built as it declares, its children as theirs (law 10); the exports are this request's.
         reports = engine_build.build(script, [function] if function else None, log=log,
                                      cwd=Path(request["cwd"]) if request.get("cwd") else None)
         if len(reports) != 1:
-            raise engine_build.BuildError(f"{script.name} defines {len(reports)} models: name one (SCRIPT::MODEL)")
+            raise engine_build.BuildError(f"{script.name} defines {len(reports)} models: export one of them")
         built = reports
         if not reports[0].get("ok"):
             return {"reports": reports, "files": []}
-        function = reports[0]["model"].rpartition("::")[2]
+        function = reports[0]["source"]["name"]
         source = engine_build.held(script.resolve(), function)
         if source is None:
             xbf = next((path for path, row in reports[0]["files"].items() if row.get("kind") == "xbf"), None)
             if xbf is None:
-                raise engine_build.BuildError(f"{script.name}::{function}: the build left no document")
+                raise engine_build.BuildError(f"{function} of {script.name}: the build left no document")
             source = export.Source.read(xbf)
-    elif "code" in source_spec:
-        source = engine_build.held(Path(source_spec["script"]), source_spec["code"])
-        if source is None:
-            raise engine_build.BuildError(f"no code named {source_spec['code']!r} is built in this worker")
     else:
         path = Path(source_spec["path"])
         source = engine_build.held(path=path)
@@ -302,11 +443,14 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
             clock = time.perf_counter()
             source = export.Source.read(path)
             log(f"read {path.name} in {time.perf_counter() - clock:.2f}s")
-    if request.get("expected"):
-        from cadgen.engine.export.viewer import check, options
-        check(source, request["expected"])
-        if request.get("inspect"):
-            return {"reports": [], "files": [], "formats": options(source, pose=request.get("pose"), part=request.get("part"), original_allowed="version" in request["expected"])}
+    if source.mesh and source.path is not None:
+        for destination in request["destinations"]:  # every one, before anything is written
+            why = export.refused(source.path, destination)
+            if why:
+                raise export.ExportRefused(why)
+    if request.get("expected") and "document" not in source_spec:
+        from cadgen.engine.export.viewer import check
+        check(source, request["expected"])  # a held document's revision is the daemon's to check
     files = []
     for destination in request["destinations"]:
         clock = time.perf_counter()
@@ -315,14 +459,16 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
         progress = current()
         if progress is not None:
             progress.stage("write", detail=target.name)
+        before = _stat(target)
         if request.get("original"):
             from cadgen.engine.export.viewer import original
             size = original(source, target, request["expected"])
         else:
-            size = export.translate(source, None, target, pose=request.get("pose"), part=request.get("part"), log=log)
+            size = export.translate(source, None, target, log=log)
         seconds = time.perf_counter() - clock
+        # A file that held these bytes already is left as it was (``atomic_replace.put``): unchanged.
         files.append({"path": str(target), "kind": export.kind_of(target), "bytes": size,
-                      "seconds": round(seconds, 4)})
+                      "seconds": round(seconds, 4), "written": before is None or _stat(target) != before})
         # A STEP of a document with PMI is checked in the file written (``export/ap242.py``): with the
         # PMI a STEP carries, its notes being the xbf's alone (``pmi.step_entries``).
         carried = pmi.step_entries(source.structure.get("pmi") or [])
@@ -351,26 +497,73 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
     return {"reports": built, "files": files, "drawn": drawn}
 
 
+def _stat(path: Path) -> tuple[int, int, int] | None:
+    try:
+        found = path.stat()
+    except OSError:
+        return None
+    return found.st_ino, found.st_size, found.st_mtime_ns
+
+
 def _result(request: dict[str, Any]) -> tuple[dict[str, Any], bytes]:
-    """A ``result`` request: the document code this worker built, as its structure and each
+    """A ``result`` request: the document of a model this worker built, as its structure and each
     part's shape bytes (``[key, size]`` in ``shapes``, the bytes after the line in order)."""
     from cadgen.engine import build as engine_build
 
-    source = engine_build.held(Path(request["script"]), request["code"])
+    if request.get("document"):
+        # The engine's cache file of a document no worker holds: read as a held document's bytes are.
+        source = engine_build.held_source(request.get("payload") or b"", str(request.get("name") or "document"))
+    else:
+        source = engine_build.held(Path(request["script"]), request["name"])
     if source is None:
-        raise engine_build.BuildError(f"no code named {request['code']!r} is built in this worker")
+        raise engine_build.BuildError(f"no model named {request['name']!r} is built in this worker")
     keys = [prototype["key"] for prototype in source.structure["prototypes"]]
     data = [source.shape_data(key) for key in keys]
     from cadgen.engine import previous
 
     _writer, closure = previous.read_record(source.xcaf)
-    return {"structure": source.structure, "closure": json.loads(closure) if closure else None,
-            "shapes": [[key, len(part)] for key, part in zip(keys, data)]}, \
-        b"".join(data)
+    answer = {"structure": source.structure, "closure": json.loads(closure) if closure else None,
+              "shapes": [[key, len(part)] for key, part in zip(keys, data)]}
+    if request.get("whole"):
+        # The drain's: the whole document as the xbf bytes ``@xbf`` writes, after the shapes -- for
+        # one taken from the engine's cache, the bytes it was taken with (a read is never written).
+        from cadgen.engine import document
 
+        whole = (None if request.get("document") else engine_build.taken(Path(request["script"]), request["name"])) \
+            or document.to_bytes(source.xcaf, source.shapes.values())
+        answer["xbf"] = len(whole)
+        data.append(whole)
+    return answer, b"".join(data)
+
+
+def _save(request: dict[str, Any]) -> tuple[dict[str, Any], bytes]:
+    """A ``save`` request: the document of a model this worker built, as the xbf bytes the engine's
+    cache keeps (``document.to_bytes``, the drain's bytes)."""
+    from cadgen.engine import build as engine_build
+    from cadgen.engine import document
+
+    header = {"ident": request.get("ident"), "generation": request.get("generation")}
+    taken = engine_build.taken(Path(request["script"]), request["name"])
+    if taken is not None:
+        return header, taken  # taken from the cache: those bytes, never the read document written again
+    source = engine_build.held(Path(request["script"]), request["name"])
+    if source is None:
+        return {**header, "error": f"no model named {request['name']!r} is built in this worker"}, b""
+    return header, document.to_bytes(source.xcaf, source.shapes.values())
+
+
+def refusal(error: BaseException) -> dict[str, str]:
+    """A refusal's type, carried beside its words: a ``ValueError`` (an ``ExportRefused``, a
+    ``SnapshotRefused``, a ``KinematicsError``, ...) answered as ``kind``, ``module:name``, so the
+    caller raises it as that type (``api._failed``) and a refused export or snapshot is refused the
+    same through the daemon as in the caller's own process (``daemon=False``). Anything else is
+    no refusal: its words alone."""
+    if not isinstance(error, ValueError):
+        return {}
+    kind = type(error)
+    return {"kind": f"{kind.__module__}:{kind.__qualname__}"}
 
 def main() -> int:
-    sys.dont_write_bytecode = True
     os.environ["CADGEN_ENGINE_WORKER"] = "1"
     protocol = os.fdopen(os.dup(1), "wb")
     os.dup2(2, 1)  # the model's prints go where the daemon reads logs from
@@ -416,11 +609,13 @@ def main() -> int:
                 if not line.strip():
                     continue
                 request = json.loads(line)
+                if request.get("bytes"):
+                    request["payload"] = asked.read(int(request["bytes"]))
                 if request.get("op") == "patched":
                     _PATCHED.setdefault(str(request.get("path")), threading.Event()).set()
                 elif request.get("op") == "where":
                     try:
-                        found = made_by(request["path"], request["key"], request["kind"], int(request["ordinal"]))
+                        found = made_by(request["doc"], request["key"], request["kind"], int(request["ordinal"]))
                     except Exception:  # noqa: BLE001 - a question it cannot answer is answered with nothing
                         found = None
                     send({"id": request.get("id"), "where": found})
@@ -429,46 +624,92 @@ def main() -> int:
         finally:
             requests.put(None)
 
-    send({"ready": os.getpid()})
+    # A request runs in its folder (its ``cwd``, else the one this worker started in: its script's),
+    # so a model's relative reads resolve as before; between requests the worker stands in the
+    # engine's own folder where it is this user's alone (``daemon.folder_refusal``), else the
+    # temporary folder, so an idle worker holds no project folder open (on Windows, a folder a
+    # process stands in cannot be renamed or deleted) and never stands in a folder others write.
+    home, neutral = os.getcwd(), _neutral_folder()
+    os.chdir(neutral)
+    own = kept()
+
+    def leave() -> None:
+        try:
+            os.chdir(neutral)
+        except OSError:
+            pass
+
+    if "--standby" in sys.argv[1:]:
+        load_kernel()
+    resident = resident_mb()
+    send({"ready": os.getpid(), "rssMb": None if resident is None else round(resident)})
     gc.disable()
     threading.Thread(target=read, daemon=True).start()
+    owed = False  # a collection, since the last request answered
+    deferred: list[dict[str, Any]] = []  # saves, done when no other request waits
     while True:
-        request = requests.get()
+        if deferred and requests.empty():
+            request = deferred.pop(0)
+        elif owed:
+            try:
+                request = requests.get(timeout=COLLECT_IDLE)
+            except queue.Empty:
+                clock = time.perf_counter()
+                gc.collect()  # idle: the cycles the last builds left
+                owed = False
+                send({"collected": round(time.perf_counter() - clock, 4)})
+                continue
+        else:
+            request = requests.get()
         if request is None:
             break
         ident = request.get("id")
         op = request.get("op")
-        if op in ("export", "result"):
-            retire = False
+        if op == "save":
+            if not requests.empty():
+                deferred.append(request)  # never on the run path: after what waits
+                continue
             try:
+                header, payload = _save(request)
+            except BaseException as error:  # noqa: BLE001 - a save never fails the worker
+                header, payload = {"ident": request.get("ident"), "generation": request.get("generation"),
+                                   "error": f"{type(error).__name__}: {error}"}, b""
+            send({"id": ident, "saved": header}, payload)
+            owed = True
+            continue
+        if op in ("export", "result"):
+            try:
+                adopt(request.get("env"), own)
                 cwd = request.get("cwd")
-                if cwd:
-                    os.chdir(cwd)
+                os.chdir(cwd or home)
                 if op == "export":
                     source = request["source"]
-                    said = progress(ident, script=source.get("script"), cwd=cwd, code="code" in source)
+                    said = progress(ident, script=source.get("script"), cwd=cwd)
                     said.model = said.name(source.get("script") or source.get("path"))
                     with building(said):
                         done = _export(request, lambda text: send({"id": ident, "log": text}))
                     said.attach(done.get("reports") or [])
-                    resident = resident_mb()
-                    retire = retirement(done.get("reports") or [], resident) if done.get("reports") else False
+                    resident = resident_after_build()
+                    if done.get("reports"):
+                        retirement(done["reports"], resident)  # said in its reports; the daemon retires it
                     send({"id": ident, "done": done, "rssMb": None if resident is None else round(resident)})
                 else:
                     answer, payload = _result(request)
                     send({"id": ident, "done": answer}, payload)
             except (BuildError, ValueError, OSError) as error:
-                send({"id": ident, "failed": str(error)})
+                send({"id": ident, "failed": str(error), **refusal(error)})
             except BaseException as error:  # noqa: BLE001 - the worker answers every request
                 send({"id": ident, "failed": "".join(traceback.format_exception(type(error), error,
                                                                                 error.__traceback__))})
                 if isinstance(error, (KeyboardInterrupt, SystemExit)):
                     return 1
             finally:
+                leave()
                 send({"id": ident, "settled": True, "op": op})
-            if retire:
-                return 0
-            gc.collect()
+            owed = True
+            continue
+        if op == "adopt":
+            home = str(request.get("home") or home)  # the standby, taken: its script's folder from now on
             continue
         if op != "build":
             send({"id": ident, "failed": f"unknown request {op!r}"})
@@ -477,25 +718,24 @@ def main() -> int:
         patcher = Patcher(request, lambda message, payload: send({"id": ident, **message}, payload),
                           acknowledged=bool(request.get("acknowledged")))
         document.SAVED_LISTENERS.append(patcher.saved)
-        retire = False
         try:
+            adopt(request.get("env"), own)
             cwd = request.get("cwd")
-            if cwd:
-                os.chdir(cwd)
+            os.chdir(cwd or home)
             script = Path(request["script"])
             # Where the build is, frame by frame; each report holds its model's last.
-            said = progress(ident, script=script, cwd=cwd, code=request.get("code") is not None)
+            said = progress(ident, script=script, cwd=cwd)
             with building(said):
                 said.load()
+                kernel(lambda text: send({"id": ident, "notice": text}))
                 reports = build(script, request.get("functions") or None,
                                 log=lambda text: send({"id": ident, "log": text}), cwd=Path(cwd) if cwd else None,
-                                outputs=request.get("outputs"), code=request.get("code"),
                                 verify=bool(request.get("verify")), profile=bool(request.get("profile")),
-                                shape=request.get("shape"))
+                                run=request.get("run"), cache=request.get("cache"))
             said.attach(reports)
             patcher.finish(reports)
-            resident = resident_mb()
-            retire = retirement(reports, resident)
+            resident = resident_after_build()
+            retirement(reports, resident)  # said in its reports: the daemon drains it, then retires it
             # Its memory now, which the daemon's status shows (``rssMb``).
             send({"id": ident, "done": reports, "rssMb": None if resident is None else round(resident)})
         except BuildError as error:
@@ -505,11 +745,10 @@ def main() -> int:
             if isinstance(error, (KeyboardInterrupt, SystemExit)):
                 return 1
         finally:
+            leave()
             document.SAVED_LISTENERS.remove(patcher.saved)
             send({"id": ident, "settled": True})
-        if retire:
-            return 0  # over its memory cap: gone, with all it held
-        gc.collect()  # answered: the cycles the build left, collected while idle
+        owed = True  # answered: the cycles the build left, collected once idle
     return 0
 
 

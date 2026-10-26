@@ -1,17 +1,13 @@
-"""A view made a document again: the tree ``document.to_xcaf`` converts, for a STEP posed
-or cut to a subtree, and for an xbf written from a STEP or extracted from an xbf.
+"""A view made a document again: the tree ``document.to_xcaf`` converts, for a STEP of a
+document held without its XCAF document, and for an xbf written from a STEP.
 
 Every prototype the view places is a part with the document's name, colour, face colours,
 materials and element names; every assembly node of the view's tree is an assembly of its
-own here (two placements of one sub-assembly may stand two ways once posed), each
-component placed in its parent's frame. A part read from a STEP this engine did not
-write takes the geometry key a build would give it, so an xbf of it caches like any, and a
-whole STEP's GD&T is copied into the xbf as read (``pmi.copy``).
-
-An xbf extracted with ``part`` carries the mechanism's share of the subtree: the links
-every member of which is in it, the pairs between two such links, the configurations'
-values of those pairs, the couplings' terms on those pairs, and the motions that move those
-pairs alone; the ground is the document's when it is kept, else the first link kept.
+own here, each component placed in its parent's frame. A part read from a STEP this engine
+did not write takes the geometry key a build would give it, so an xbf of it caches like any,
+and its GD&T is copied into the xbf as read (``pmi.copy``).
+The mechanism is the document's, whole, and so are its animations (``animations.record``): the
+tree's occurrences are the view's, so their paths are the ones the tracks name.
 """
 
 from __future__ import annotations
@@ -83,7 +79,7 @@ def tree_of(view: Any) -> Any:
 
     def world(occurrence: tuple[int, ...]) -> np.ndarray:
         found = source.world(occurrence)
-        return view.rerooted @ (np.eye(4) if found is None else found)
+        return np.eye(4) if found is None else found
 
     def leaf(node: dict[str, Any], parent: np.ndarray) -> Any:
         instance = source.structure["instances"][node["instance"]]
@@ -104,7 +100,7 @@ def tree_of(view: Any) -> Any:
         return made
 
     if "children" in view.tree:
-        root = assembly(view.tree, view.root, np.eye(4))
+        root = assembly(view.tree, (), np.eye(4))
     else:
         component = leaf(view.tree, np.eye(4))
         if np.allclose(view.matrices[view.tree["instance"]], np.eye(4), rtol=0, atol=1e-12) and component.color is None:
@@ -113,53 +109,29 @@ def tree_of(view: Any) -> Any:
             root = document.Assembly(view.tree["name"], [component])
             order.append(root)
     tree = document.Tree(root, order, list(parts.values()), ("exported", view.name))
-    if view.parted and not view.posed and source.mechanism is not None:
-        tree.mechanism = _mechanism(source.mechanism, view.root)
-    elif not view.parted and not view.posed:
-        tree.mechanism = source.mechanism
-    if source.foreign and not view.parted and not view.posed and source.structure.get("pmi"):
-        # A STEP another system wrote, whole: its GD&T copied as read (``pmi.copy``).
+    tree.mechanism = source.mechanism
+    tree.animations = source.animations
+    if source.foreign and source.structure.get("pmi"):
+        # A STEP another system wrote: its GD&T copied as read (``pmi.copy``).
         tree.pmi_source = (document.load(source.path), parts)
     return tree
 
 
-def _mechanism(mechanism: Any, root: tuple[int, ...]) -> Any:
-    """The mechanism's share of the subtree at ``root`` (see the module docstring), or None."""
-    from dataclasses import replace
-
-    from cadgen.engine.mechanism import Link, Mechanism
-
-    size = len(root)
-    kept: dict[int, int] = {}
-    links = []
-    for at, link in enumerate(mechanism.links):
-        if link.members and all(tuple(member[:size]) == root for member in link.members):
-            kept[at] = len(links)
-            links.append(Link(link.name, [tuple(member[size:]) for member in link.members]))
-    pairs = [replace(pair, links=(kept[pair.links[0]], kept[pair.links[1]])) for pair in mechanism.pairs
-             if pair.links[0] in kept and pair.links[1] in kept]
-    if not pairs:
-        return None
-    labels = {pair.label for pair in pairs}
-
-    def share(values: dict[str, Any]) -> dict[str, Any]:
-        return {label: value for label, value in values.items() if label in labels}
-
-    configurations = {name: share(values) for name, values in mechanism.configurations.items() if share(values)}
-    # A motion every joint of which is in the subtree, and every configuration it names.
-    motions = {name: motion for name, motion in mechanism.motions.items()
-               if motion.labels() <= labels and all(configuration in configurations and set(
-                   mechanism.configurations[configuration]) <= labels
-                   for _t, configuration, _values in motion.keys if configuration is not None)}
-    # A coupling every joint of which is in the subtree: a coupler relates its joints whole.
-    couplings = {name: coupling for name, coupling in mechanism.couplings.items() if set(coupling.ratios) <= labels}
-    return Mechanism(mechanism.name, links, kept.get(mechanism.ground, 0), pairs, share(mechanism.as_built),
-                     configurations, list(mechanism.warnings), motions, couplings)
-
-
 def write_xbf(view: Any, path: Path) -> None:
-    """The view as an xbf of its own, saved atomically (``document.save``)."""
+    """The view as an xbf of its own, saved atomically. A document this engine wrote, held with its
+    XCAF document -- a model's as built, or read from the bytes the engine keeps (``Source.data``,
+    written as they are) -- is that document's own bytes (``document.to_bytes``), the ones its
+    declared xbf and the engine's cache hold: every attribute it holds kept, its PMI -- annotations,
+    notes, views and notes library -- with them, and the same bytes from a live worker and after a
+    restart. Any other (a STEP another system wrote) is made a document again (``tree_of``), its
+    GD&T copied as read (``pmi.copy``)."""
     from cadgen.engine import document
 
+    source = view.source
+    if source.xcaf is not None and not source.foreign:
+        data = source.data if source.data is not None else \
+            document.to_bytes(source.xcaf, source.shapes.values() if source.live else None)
+        document.write_bytes(Path(path), data)
+        return
     doc = document.to_xcaf(tree_of(view))
     document.save(doc, Path(path), compare=True)

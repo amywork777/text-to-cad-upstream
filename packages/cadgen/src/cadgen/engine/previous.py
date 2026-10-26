@@ -9,8 +9,7 @@ When a build writes a model's xbf, the document's main label carries its closure
   digest of the engine's own code;
 - ``libs``: the versions of build123d and OCP, which decide the geometry;
 - ``source``: ``{"kind": "script", "path", "function"}`` -- the script relative to the
-  document's folder and the model's function -- or, for code built from text, ``{"kind":
-  "code", "name", "digest"}``, the code never written;
+  document's folder and the model's function;
 - ``modules``: ``[path, digest]`` per first-party module the script's load imported or the
   model reaches, each a digest of what the model reaches in it (its functions' code objects
   with no line tables, its classes, the values its bindings hold: ``sources.Symbols.modules``);
@@ -66,7 +65,10 @@ SCHEMA = "cadgen.engine closure/1"
 # xbf/3: the kinematics are AP242's alone: couplings as its couplers, motions' interpolation, no
 # cadgen-only attribute, no gear pair.
 # xbf/4: a function motion's samples are checked at every eighth of a step and held to half the tolerance there.
-FORMAT = "xbf/4"
+# xbf/5: files read by motion functions join the closure.
+# xbf/6: the closure counts the build's animations, and a document with any is not taken.
+# xbf/7: the build's animations are a record on the main label (``animations.record``); the closure counts none.
+FORMAT = "xbf/7"
 # The libraries a key covers: what decides the geometry.
 KEYED_LIBRARIES = ("build123d", "OCP")
 # The start of a closure's text: the schema first, so a head scan finds it.
@@ -158,11 +160,6 @@ def absolute(path: str | None, folder: Path) -> str | None:
 
 
 def _source(model: Any, folder: Path) -> dict[str, Any]:
-    from cadgen.engine import sources
-
-    held = sources.MEMORY.get(str(model.script))
-    if held is not None:
-        return {"kind": "code", "name": model.name, "digest": hashlib.sha256(held).hexdigest()[:32]}
     return {"kind": "script", "path": _relative(str(model.script), folder), "function": model.name}
 
 
@@ -257,8 +254,7 @@ def again(record: dict[str, Any], model: Any, folder: Path, modules: dict[str, s
             changes.append(f"{name} {record['libs'].get(name)} became {now['libs'].get(name)}")
     if now["source"] != record["source"]:
         source = now["source"]
-        changes.append("the code changed" if source["kind"] == "code"
-                       else f"the model is now {source['path']}::{source['function']}")
+        changes.append(f"the model is now {source['path']}::{source['function']}")
     held, current = dict(map(tuple, record["modules"])), dict(map(tuple, now["modules"]))
     named = _named(symbols or {}, folder)
     for path in sorted(set(held) | set(current)):
@@ -284,6 +280,19 @@ def again(record: dict[str, Any], model: Any, folder: Path, modules: dict[str, s
         inputs.append([*row[:-1], value])
     now["inputs"] = inputs if record["inputs"] is not None else None
     return key(now), changes
+
+
+def located(record: dict[str, Any], folder: Path) -> dict[str, Any]:
+    """What a build's report says of its closure (``record``, its paths relative to ``folder``):
+    its key, and its modules and inputs by absolute path -- what the engine's registry records."""
+    inputs = []
+    for row in record.get("inputs") or []:
+        row = list(row)
+        at = 1 if row[0] in ("file", "read") else 2
+        row[at] = absolute(row[at], folder)
+        inputs.append(row)
+    return {"key": record.get("key"), "modules": [[absolute(path, folder), digest] for path, digest in record.get("modules") or []],
+            "inputs": inputs}
 
 
 def scan(path: Path) -> tuple[str | None, str | None]:

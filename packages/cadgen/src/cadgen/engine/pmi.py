@@ -652,9 +652,9 @@ def _point(value: Any, what: str) -> list[float]:
 
 def _note_call(held: list[dict[str, Any]]) -> None:
     """``annotate``'s annotations, kept on the build's run under the model whose body gave them."""
-    from cadgen.engine.refs import _current_run
+    from cadgen.engine.kernel import memo
 
-    run = _current_run()
+    run = getattr(memo._LOCAL, "run", None)  # the memo run of a build on this thread, or None
     if run is not None:
         run.pmi.setdefault(run.scope, []).extend(_text(entry) for entry in held)
 
@@ -1046,10 +1046,20 @@ def _worst(statuses: Iterable[str]) -> str:
 
 
 def _faces(shape: Any) -> Any:
-    """A part's faces by their ordinals, as the ref grammar numbers them (``refs._map``)."""
-    from cadgen.engine import refs as grammar
+    """A part's faces by their ordinals, as the ref grammar numbers them (``_map``)."""
+    return _map(shape, "face")
 
-    return grammar._map(shape, "face")
+
+def _map(shape: Any, kind: str) -> Any:
+    """A shape's elements of ``kind`` (``face``, ``edge``, ``vertex``) by their ordinals: the kernel's
+    indexed map, as the ref grammar and the document's sub-shape labels number them."""
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+
+    found = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(shape, {"face": TopAbs_FACE, "edge": TopAbs_EDGE, "vertex": TopAbs_VERTEX}[kind], found)
+    return found
 
 
 def _surface(face: Any) -> tuple[str, dict[str, Any]]:
@@ -1438,7 +1448,6 @@ def copy(doc: Any, loaded: Any, label_of: Callable[[int], Any]) -> None:
     from OCP.XCAFDoc import (XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_DocumentTool, XCAFDoc_GeomTolerance,
                              XCAFDoc_ShapeTool)
 
-    from cadgen.engine import refs as grammar
     from cadgen.engine.document import _entry
 
     source = _tool(loaded.doc)
@@ -1458,7 +1467,7 @@ def copy(doc: Any, loaded: Any, label_of: Callable[[int], Any]) -> None:
         index, kind, ordinal = hit
         part = label_of(index)
         if (index, kind) not in ours:
-            ours[(index, kind)] = grammar._map(XCAFDoc_ShapeTool.GetShape_s(part), kind)
+            ours[(index, kind)] = _map(XCAFDoc_ShapeTool.GetShape_s(part), kind)
         element = ours[(index, kind)].FindKey(ordinal)
         found = TDF_Label()
         if not shapes.FindSubShape(part, element, found):
@@ -1568,7 +1577,6 @@ def _element(label: Any, by_entry: dict[str, Any], maps: dict[tuple[int, str], A
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
     from OCP.XCAFDoc import XCAFDoc_ShapeTool
 
-    from cadgen.engine import refs as grammar
     from cadgen.engine.document import _entry
 
     shape = XCAFDoc_ShapeTool.GetShape_s(label)
@@ -1579,7 +1587,7 @@ def _element(label: Any, by_entry: dict[str, Any], maps: dict[tuple[int, str], A
     if kind is None or prototype is None:
         return None
     if (prototype.index, kind) not in maps:
-        maps[(prototype.index, kind)] = grammar._map(XCAFDoc_ShapeTool.GetShape_s(owner), kind)
+        maps[(prototype.index, kind)] = _map(XCAFDoc_ShapeTool.GetShape_s(owner), kind)
     ordinal = maps[(prototype.index, kind)].FindIndex(shape)
     return (prototype.index, kind, ordinal) if ordinal else None
 
@@ -2075,21 +2083,20 @@ def step_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def dropped(view: Any, kind: str) -> list[tuple[dict[str, Any], str]]:
     """Each annotation of a document that a ``kind`` file written from ``view`` does not carry whole,
-    and why: a posed or partial STEP or xbf, or an xbf of a document this engine wrote, is a document
-    made again from the view (``tree.tree_of``), which carries no PMI; and a STEP drops one linked to
-    no geometry, as an xbf of a STEP (which copies its GD&T as read, ``copy``) keeps one the file links
-    to no element of a part linked to nothing. A STEP carries no note, whole or not, and is never
-    refused for one (``step_entries``). A mesh carries no B-rep, so no PMI."""
+    and why: an xbf of a document this engine wrote held without its XCAF document is a document
+    made again from the view (``tree.tree_of``), which carries no PMI (one held with it is its own
+    bytes, ``tree.write_xbf``, which carry it all); and a STEP drops one linked to no geometry, as an
+    xbf of a STEP (which copies its GD&T as read, ``copy``) keeps one the file links to no element of
+    a part linked to nothing. A STEP carries no note, whole or not, and is never refused for one
+    (``step_entries``). A mesh carries no B-rep, so no PMI."""
     entries = view.source.structure.get("pmi") or []
     if kind == "step":
         entries = step_entries(entries)
     if kind not in ("step", "xbf") or not entries:
         return []
-    shown = "STEP" if kind == "step" else kind
-    if view.posed or view.parted:
-        why = f"a {'posed' if view.posed else 'partial'} {shown} is a document made again, which carries no PMI"
-        return [(entry, why) for entry in entries]
     if kind == "xbf" and not view.source.foreign:
+        if view.source.xcaf is not None:
+            return []
         return [(entry, "an xbf written from it is a document made again, which carries no PMI") for entry in entries]
     return [(entry, f"{entry['status']}: {entry['problem']}") for entry in entries if entry["status"] != "ok"]
 
@@ -2105,7 +2112,7 @@ def refuse_dropped(view: Any, kind: str) -> None:
     lost = [(entry, why) for entry, why in dropped(view, kind) if _from_code(entry)]
     structure = view.source.structure
     if kind == "xbf":
-        again = view.posed or view.parted or not view.source.foreign
+        again = not view.source.foreign and view.source.xcaf is None
         views = [given["name"] for given in structure.get("pmi_views") or []] if again else []
         library = [given["name"] for given in structure.get("pmi_library") or []] if again else []
         held = [f"{len(structure['pmi'])} PMI annotation(s)"] if lost else []
@@ -2116,14 +2123,10 @@ def refuse_dropped(view: Any, kind: str) -> None:
         if held:
             said = held[0] if len(held) == 1 else f"{', '.join(held[:-1])} and {held[-1]}"
             raise ExportRefused(f"{view.source.name} holds {said}, and an xbf written from it is a document made "
-                                "again, which carries none yet: export it as built, whole")
+                                "again, which carries none yet: declare the model's xbf (@xbf), its own document")
         return
     if not lost:
         return
-    held = len(step_entries(structure["pmi"]))
-    if view.posed or view.parted:
-        raise ExportRefused(f"the document holds {held} PMI annotation(s), and a posed or partial STEP is a "
-                            "document made again, which carries none: export it as built, whole")
     raise ExportRefused("a STEP would drop PMI linked to no geometry: "
                         + "; ".join(f"{entry['id']} ({why})" for entry, why in lost)
                         + ". Fix the refs in the model, or remove the annotations")

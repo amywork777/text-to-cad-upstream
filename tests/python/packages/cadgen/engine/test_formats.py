@@ -504,6 +504,21 @@ class BufferTest(unittest.TestCase):
         mesh, _uv = buffer(flat, np.arange(len(flat)).reshape(-1, 3), normals=given)
         self.assertGreater(float(np.linalg.norm(mesh.normals, axis=1).min()), 0.99)
 
+    def test_many_corners_in_one_cell_fall_back_to_flat_normals(self) -> None:
+        """A mesh whose corners pile into one hash cell must not make the crease pass allocate the
+        square of the group size; past the pair budget it draws flat (per-face) normals instead."""
+        from cadgen.engine.formats.buffer import CREASE_PAIRS_MAX, _unit_normals, creased_normals
+
+        clustered = np.random.default_rng(0).uniform(1e-4, 9e-3, (1200, 3, 3))  # all corners in one 1e-2 cell
+        group = len(clustered) * 3
+        self.assertGreater(group * group, CREASE_PAIRS_MAX, "the fixture must exceed the pair budget")
+        normals = creased_normals(clustered)
+        self.assertEqual(normals.shape, (group, 3))
+        flat = np.repeat(_unit_normals(clustered), 3, axis=0)
+        self.assertTrue(np.array_equal(normals, flat), "over the budget the crease is dropped for flat normals")
+        spread = np.array([[[0, 0, 0], [1, 0, 0], [0, 1, 0]], [[10, 0, 0], [11, 0, 0], [10, 1, 0]]], float)
+        self.assertEqual(creased_normals(spread).shape, (6, 3))  # a small spread mesh still creases
+
     def test_normals_crease_at_thirty_degrees_and_a_dense_mesh_is_flat(self) -> None:
         cylinder = cylinder_soup(5, 10, segments=24)
         mesh, _uv = buffer(cylinder.reshape(-1, 3), np.arange(len(cylinder) * 3).reshape(-1, 3))
@@ -516,6 +531,23 @@ class BufferTest(unittest.TestCase):
         mesh, _uv = buffer(dense.reshape(-1, 3), np.arange(len(dense) * 3).reshape(-1, 3))
         flat = mesh.normals.reshape(-1, 3, 3)
         self.assertTrue(np.allclose(flat[:, 0], flat[:, 1]) and np.allclose(flat[:, 0], flat[:, 2]))
+
+
+class GlbWholeFromItselfTest(unittest.TestCase):
+    """The OCCT GLB reader refuses a file that names a buffer or image outside itself."""
+
+    def test_an_embedded_buffer_passes_and_an_external_uri_is_refused(self) -> None:
+        from cadgen.engine.formats import FormatError
+        from cadgen.engine.formats.glb import _whole_from_itself
+
+        _whole_from_itself(Path("m.glb"), {"buffers": [{"byteLength": 36}]})  # embedded BIN chunk: no uri
+        _whole_from_itself(Path("m.glb"), {"buffers": [{"uri": "data:application/octet-stream;base64,AAAA"}]})
+        for item in ({"buffers": [{"uri": "../outside.bin"}]},
+                     {"buffers": [{"uri": "side.bin"}]},
+                     {"images": [{"uri": "/etc/hosts"}]},
+                     {"buffers": [{"uri": "data:text/plain,not-base64"}]}):
+            with self.assertRaisesRegex(FormatError, "outside the GLB"):
+                _whole_from_itself(Path("m.glb"), item)
 
 
 class MeshFileTest(FixtureTest):
@@ -870,7 +902,7 @@ class PictureTest(FixtureTest):
             with self.subTest(camera=camera), self.assertRaisesRegex(SnapshotRefused, "its camera is a plan view"):
                 job_pictures({**packet, "jobs": [{**packet["jobs"][0], "camera": camera}]})
 
-    def test_what_a_kind_does_not_offer_is_refused_by_name_and_leaves_no_picture(self) -> None:
+    def test_what_a_kind_does_not_offer_is_refused_by_name_and_keeps_the_earlier_picture(self) -> None:
         out = self.folder / "stale.png"
         for path, options, why in (
                 (self.folder / "part.stl", {"pose": {"a": 1}}, "is a mesh and has none"),
@@ -881,7 +913,7 @@ class PictureTest(FixtureTest):
             out.write_bytes(b"before")
             with self.subTest(path=path.name, options=options), self.assertRaisesRegex(SnapshotRefused, why):
                 snapshot(path, out, size=SIZE, daemon=False, **options)
-            self.assertFalse(out.exists(), f"{path.name}: a refused snapshot leaves no picture at OUT")
+            self.assertEqual(out.read_bytes(), b"before", f"{path.name}: a refused snapshot keeps the picture at OUT")
 
 
 class DaemonFileTest(unittest.TestCase):
@@ -896,7 +928,7 @@ class DaemonFileTest(unittest.TestCase):
         self.folder = Path(tempfile.mkdtemp(prefix="engine-formats-daemon-")).resolve()
         self.state = Path(tempfile.mkdtemp(prefix="eng-", dir="/tmp" if os.name != "nt" else None)).resolve()
         source = Path(__file__).resolve().parents[5] / "packages" / "cadgen" / "src"
-        env = {**os.environ, "PYTHONPATH": str(source), "CADGEN_ENGINE_DIR": str(self.state), "CADGEN_ENGINE_IDLE": "60"}
+        env = {**os.environ, "PYTHONPATH": str(source), "CADGEN_ENGINE_DIR": str(self.state)}
         self.addCleanup(shutil.rmtree, self.folder, ignore_errors=True)
         self.addCleanup(shutil.rmtree, self.state, ignore_errors=True)
 
@@ -927,7 +959,16 @@ class DaemonFileTest(unittest.TestCase):
         self.assertNotEqual((self.folder / "changed.png").read_bytes(), (self.folder / "first.png").read_bytes())
         self.assertEqual(sorted(path.name for path in self.folder.iterdir()), ["changed.png", "first.png", "part.stl", "warm.png"])
         # The daemon's socket (on Windows the port file standing in for it) and its lock, nothing else.
-        self.assertEqual({path.suffix for path in self.state.iterdir()}, {".port" if os.name == "nt" else ".sock", ".lock"})
+        self.assertEqual({path.suffix or path.name for path in self.state.iterdir()},
+                         {".port", ".lock"} if os.name == "nt" else {".door", ".lock", "clients"})
+
+
+def setUpModule() -> None:
+    # The registry and cache of every engine this module starts are its own, never the developer's
+    # (``engine_daemon.isolate``); each test still names its own engine folder.
+    from tests.python.support import engine_daemon
+
+    engine_daemon.isolate(unittest.addModuleCleanup)
 
 
 if __name__ == "__main__":

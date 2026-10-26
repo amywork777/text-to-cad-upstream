@@ -34,6 +34,35 @@ TIMEOUT_SECONDS = 300.0
 STACK_LINES = 30  # a thread's innermost frames: where it waits
 
 
+def isolate(cleanup: Callable[..., Any]) -> dict[str, str]:
+    """A state and a cache folder of the caller's own (``CADGEN_STATE_DIR``, ``CADGEN_CACHE_DIR``)
+    in ``os.environ`` until ``cleanup`` (a module's ``unittest.addModuleCleanup``, a test's
+    ``addCleanup``) puts it back and removes them: so an engine a test starts, and every
+    environment built from ``os.environ`` after, records and caches its documents there, never in
+    the developer's. The runner gives each file its own (``scripts/test/unittest_files.py``); this
+    is the same for a file run directly. The variables set."""
+    from unittest import mock
+
+    folder = tempfile.mkdtemp(prefix="cadgen-test-")
+    given = {"CADGEN_STATE_DIR": os.path.join(folder, "state"), "CADGEN_CACHE_DIR": os.path.join(folder, "cache")}
+    patch = mock.patch.dict(os.environ, given)
+    patch.start()
+    cleanup(shutil.rmtree, folder, True)
+    cleanup(patch.stop)
+    return given
+
+
+def unwritable(folder: Path | str) -> str:
+    """A cache folder (``CADGEN_CACHE_DIR``) no one can write, under ``folder``: a file in its place,
+    which refuses a folder below it on every platform and to root too. The engine keeps no document
+    there and does everything else as ever (an unwritable cache saves nothing): what a test names
+    whose restart must find no document kept. Its path."""
+    path = Path(folder) / "cache-unwritable"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")
+    return str(path)
+
+
 def watched(env: dict[str, str], cleanup: Callable[..., Any]) -> dict[str, str]:
     """``env`` with a journal of its own; ``cleanup`` (a test's ``addCleanup`` or
     ``addClassCleanup``) removes it."""
@@ -80,6 +109,8 @@ def communicate(process: subprocess.Popen, env: dict[str, str],
             if not any(reader.is_alive() for reader in readers):
                 for stream in (process.stdout, process.stderr):
                     stream.close()
+                if process.returncode:
+                    _say_stacks(env)
                 return _text(b"".join(read["out"])), _text(b"".join(read["err"]))
             if now - exited > HELD_SECONDS:
                 why = (f"exited with {process.returncode} but its output stayed open {HELD_SECONDS:.0f} s: a process "
@@ -93,6 +124,33 @@ def communicate(process: subprocess.Popen, env: dict[str, str],
     for reader in readers:
         reader.join(5)
     raise AssertionError(f"{process.args!r} {why}.\n" + report(env, started, read))
+
+
+def stacks(env: dict[str, str]) -> str:
+    """The stacks the journal holds of every process that died and of each daemon (its own as it
+    stood): a native fault's (``faulthandler.enable``) and the last periodic dump. Empty when none
+    wrote any -- a command that exits failing on its own (a refusal) leaves none."""
+    folder = env.get(JOURNAL)
+    lines: list[str] = []
+    for role, pid in sorted(_processes(env)):
+        path = Path(folder or "") / f"{role}-{pid}.stacks.txt"
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            continue
+        if text and (role == "daemon" or not _alive(pid)):
+            lines.append(f"--- {role} {pid} ({'alive' if _alive(pid) else 'gone'}): its stacks")
+            lines.extend(text.splitlines()[-200:])
+    return "\n".join(lines)
+
+
+def _say_stacks(env: dict[str, str]) -> None:
+    """A failed command's stacks, on the test's stderr, before the journal goes with the test."""
+    said = stacks(env)
+    if said:
+        import sys
+
+        print(f"engine journal stacks after a failed command:\n{said}", file=sys.stderr)
 
 
 def _text(data: bytes) -> str:
@@ -138,6 +196,33 @@ def _alive(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def await_exit(pid: int | None, within: float = 30.0) -> bool:
+    """Whether the stopped engine's process ``pid`` has exited, waited for up to ``within`` s. Its lock
+    goes before its process does (``client.wait_gone``), and on Windows that process stands in the
+    parent of the engine's folder (``client._working_folder``) -- a test's temporary folder, which
+    cannot be removed while it does. On POSIX, where the folder can go and an unreaped child would
+    look alive, nothing is waited for."""
+    if os.name != "nt" or pid is None:
+        return True
+    deadline = time.monotonic() + within
+    while _alive(pid):
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.05)
+    return True
+
+
+def engine_pid(env: dict[str, str]) -> int | None:
+    """The pid of the engine ``env`` names, or None when none answers."""
+    from unittest import mock
+
+    from cadgen.engine.client import request
+
+    with mock.patch.dict(os.environ, env, clear=True):
+        answer = request({"op": "pid"}, start=False)
+    return answer.get("pid") if answer else None
 
 
 def report(env: dict[str, str], started: float, read: dict[str, list[bytes]]) -> str:

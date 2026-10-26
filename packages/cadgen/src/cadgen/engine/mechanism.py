@@ -3,11 +3,11 @@
 Authoring is build123d's joints and nothing else. A model puts ``RevoluteJoint``,
 ``LinearJoint``, ``CylindricalJoint``, ``BallJoint`` and ``RigidJoint`` on its parts and
 places them with ``connect_to(..., angle=, position=, angles=)``; the values it connects
-them at are the **as-built configuration**. ``configuration(assembly, name, **values)``
-names another one. At document time the engine harvests every joint on every part of the
-result (``harvest``) and pairs them two ways: by ``connect_to``, where the author used it; and,
-for every joint no ``connect_to`` joined, by label -- a moving joint and a ``RigidJoint`` of the
-same label on another part are a pair (the nearest in the tree, a tie refused), and so are two
+them at are the **as-built state**. ``mechanism_state(assembly, name, **values)`` names
+another one (AP242's ``mechanism_state_representation``). At document time the engine
+harvests every joint on every part of the result (``harvest``) and pairs them two ways: by
+``connect_to``, where the author used it; and, for every joint no ``connect_to`` joined, by
+label -- a moving joint and a ``RigidJoint`` of the same label on another part are a pair (the nearest in the tree, a tie refused), and so are two
 rigid joints of one label each the other's nearest. ``connect_to`` wins: a joint it joined is
 never matched by label. build123d's ``connect_to`` composes locations in each part's own
 compound, so in a nested assembly it cannot place a part; there a model authors both joints
@@ -31,41 +31,47 @@ built tree. The pairs make a mechanism in ISO 10303-105's terms, the kinematics 
   about Z (revolute), a slide along Z (prismatic), both (cylindrical: angle, then
   distance) or build123d's intrinsic X-Y-Z rotation (spherical: three angles). Angles are
   degrees, distances millimetres.
-- A **coupling** (``couple(assembly, name, **joints)``) is a constraint, never a control: its
-  joints move together, each by its ratio, and only through it. Its value ``c`` is the
+- A **coupling** is a constraint, never a control, made by the function named after the pair
+  it is written as: ``gear_pair(assembly, name, **joints)`` (revolute joints),
+  ``rack_and_pinion_pair(...)`` (a revolute joint and prismatic ones, or a prismatic joint and
+  revolute ones) or ``screw_pair(assembly, name, joint=pitch)`` (one cylindrical joint, its
+  value the turn); a joint of another kind is refused at document time (``_fits``). Its joints
+  move together, each by its ratio, and only through it. Its value ``c`` is the
   displacement that puts each joint at its as-built value plus its ratio times ``c`` (a pair of
   several values takes a ratio per value), so ``c = 0`` is as built and a coupling never moves
   the build; its range is derived, never given: the tightest interval in which every joint
   stays within its own limits (a joint with no limits bounds nothing). Its name poses wherever a
-  joint's does -- configurations, motions and ``--pose`` -- which resolve it to pair values at
-  document time; a pose setting one of its joints alone is refused. In the document a
-  coupling is the standard's coupler: AP242 edition 4's ``KinematicPairWithMotionCoupling``
-  between pairs, of kind ``gear_pair`` (two revolute rotations), ``rack_and_pinion_pair`` (a
-  revolute rotation and a prismatic translation) or ``two_joint_coupler`` (any two other
-  values), each holding ``s1 * d1 + s2 * d2 = 0`` over the two values' displacements from the
-  as-built state (``s1 = r2``, ``s2 = -r1``, so the ratios read back as written); and Part
-  105's ``SCREW_PAIR`` (``pitch``, travel per 360 degrees of turn) for one cylindrical pair's
-  turn and travel. A coupling of more than two values is a chain of them from its first-named
-  value. A coupling cannot drive a spherical pair (no coupler relates its three angles), and a
+  joint's does -- mechanism states, configuration sequences and ``--pose`` -- which resolve it
+  to pair values at document time; a pose setting one of its joints alone is refused. In the
+  document a coupling is the standard's coupler: AP242 edition 4's
+  ``KinematicPairWithMotionCoupling`` between pairs, of kind ``gear_pair`` (two revolute rotations) or ``rack_and_pinion_pair`` (a
+  revolute rotation and a prismatic translation), each holding ``s1 * d1 + s2 * d2 = 0`` over
+  the two values' displacements from the as-built state (``s1 = r2``, ``s2 = -r1``, so the
+  ratios read back as written); and Part 105's ``SCREW_PAIR`` (``pitch``, travel per 360
+  degrees of turn) for one cylindrical pair's turn and travel. A coupling of more than two values is a chain of them from its first-named
+  value. No coupling drives a spherical pair (no coupler relates its three angles), and a
   joint takes at most one coupling.
 
 A link's frame is its first member occurrence's placement as built (the ground's, the
 world's when it has none). A pair the built tree contradicts -- its two joints on one rigid
 link, or its rigid joint's frame not one motion of the pair from its moving joint's -- is
 refused at document time, by name. A loop's pairs are kept and not posed (no solver), and a
-non-linear relation (a function coupling, a cam) is no part of the mechanism: a motion says it.
+non-linear relation (a function coupling, a cam) is no part of the mechanism: a configuration
+sequence says it.
 
-**Motions** (``motion(assembly, name, ...)``) are definitions, kept beside the configurations:
-waypoints -- each a time and a configuration's name or joint values, the rest as built -- and an
+**Configuration sequences** (``configuration_sequence(assembly, name, ...)``, AP242's
+``interpolated_configuration_sequence``; the structure and the viewer call them motions) are
+definitions, kept beside the mechanism states: waypoints -- each a time and a mechanism state's
+name or joint values, the rest as built -- and an
 ease between them, AP242's ``interpolation`` on each segment: ``linear``
 (``linear_interpolation_type``, constant speed) or ``cubic``
 (``synchronous_interpolation_type``: each step eased in and out, every pair arriving together),
-the last segment ``discontinuous_interpolation_type``: a motion is a finite clip, and a player
+the last segment ``discontinuous_interpolation_type``: a sequence is a finite clip, and a player
 repeats it. A sweep is two waypoints. A function of time is stored as its samples, linear, at
 times chosen until the samples' linear interpolation stays within the tolerance of the function
 at every check point between them: 1e-3 radian for an angle, 1e-3 of the model's size (its
 bounding box's diagonal, from the B-rep's geometry) for a distance. So the document holds poses
-and motion definitions, never baked frames or clips; a GLB export bakes each motion into a clip
+and sequence definitions, never baked frames or clips; a GLB export bakes each into a clip
 (``export/motion.py``) from the same nodes.
 
 In the document the mechanism is a subtree under ``Main():100``, marked by a
@@ -95,7 +101,7 @@ name (``test_kinematics``' conformance test holds it):
                                and its state: ReferenceList[the configuration it names], or as "as built"
         :6 "couplings"
           :c <name>            the coupling
-            :k                 NamedData{entity: KinematicPairWithMotionCoupling, Kind, Scales or
+            :k                 NamedData{entity: KinematicPairWithMotionCoupling, Kind,
                                          CouplingRatios[2], CouplingTypes}, ReferenceList[pair, pair]
                                | NamedData{entity: SCREW_PAIR, pitch}, ReferenceList[the cylindrical pair]
 
@@ -105,21 +111,23 @@ document, and cadgen's OCP reaches neither.
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import numpy as np
 
-__all__ = ["CONFIGURATIONS", "COUPLINGS", "GUID", "MOTIONS", "Coupling", "KinematicsError", "Link", "Mechanism",
-           "Motion", "Pair", "Timeline", "block", "configuration", "couple", "harvest", "motion", "posed_structure",
-           "read", "resolve", "write"]
+__all__ = ["CONFIGURATIONS", "COUPLINGS", "GUID", "MOTIONS", "Coupling", "KinematicsError", "Link", "LinkWorlds", "Mechanism",
+           "Motion", "Pair", "Timeline", "block", "configuration_sequence", "gear_pair", "harvest", "mechanism_state",
+           "posed", "posed_structure", "rack_and_pinion_pair", "read", "resolve", "screw_pair", "write"]
 
 GUID = "5b0e7a64-3c1d-4f8e-a2b9-6d4c1e7f9a20"
 TAG = 100  # Main():100, clear of XCAFDoc_DocumentTool's tool labels (1..10)
 SCHEMA = "cadgen.kinematics/2"
-# The attribute ``configuration`` keeps a shape's named configurations in, ``motion`` its motions
-# and ``couple`` its couplings.
+# The attribute ``mechanism_state`` keeps a shape's named states in, ``configuration_sequence`` its
+# sequences and ``gear_pair``, ``rack_and_pinion_pair`` and ``screw_pair`` its couplings (each its kind
+# and its ratios).
 CONFIGURATIONS = "xbf_configurations"
 MOTIONS = "xbf_motions"
 COUPLINGS = "xbf_couplings"
@@ -155,6 +163,9 @@ _STRING_KEYS = ("schema", "angle_unit", "length_unit", "entity")
 
 class KinematicsError(ValueError):
     """A mechanism the engine will not keep or pose, said by name."""
+
+    # A joint's value outside its range (``_checked``): the joint, the value, its unit and the range.
+    outside: tuple[str, float, str, tuple[float | None, float | None]] | None = None
 
 
 @dataclass
@@ -317,79 +328,117 @@ def _number_values(values: Any) -> tuple[float, ...] | None:
     return tuple(float(value) for value in found)
 
 
-def configuration(assembly: Any, name: str, **values: Any) -> Any:
-    """A named configuration of ``assembly``'s mechanism: a value for each joint it names,
-    by the joint's label -- a number, or for a joint of several values a sequence of them
-    (a cylindrical joint's angle and position, a ball joint's three angles). A joint it
-    does not name stays as built. Kept in the document beside the as-built configuration,
-    offered by the viewer as a preset and by ``--pose NAME``. A label names the joint in
+def mechanism_state(assembly: Any, name: str, **values: Any) -> Any:
+    """A named state of ``assembly``'s mechanism, AP242's ``mechanism_state_representation``: a
+    value for each joint it names, by the joint's label -- a number, or for a joint of several
+    values a sequence of them (a cylindrical joint's angle and position, a ball joint's three
+    angles). A joint it does not name stays as built. Kept in the document beside the as-built
+    state, offered by the viewer as a preset and by ``--pose NAME``. A label names the joint in
     each placement of a sub-assembly placed several times. Returns ``assembly``."""
     import build123d as bd
 
     if not isinstance(assembly, bd.Shape):
-        raise TypeError(f"configuration() takes the assembly whose joints it sets, not {type(assembly).__name__}")
+        raise TypeError(f"mechanism_state() takes the assembly whose joints it sets, not {type(assembly).__name__}")
     if not isinstance(name, str) or not name.strip():
-        raise ValueError("a configuration's name is a non-empty string")
+        raise ValueError("a mechanism state's name is a non-empty string")
     checked = {}
     for label, value in values.items():
         found = _number_values(value)
         if found is None or not all(math.isfinite(v) for v in found):
-            raise TypeError(f"configuration {name!r}: joint {label!r} takes a number, or a sequence of numbers "
+            raise TypeError(f"mechanism state {name!r}: joint {label!r} takes a number, or a sequence of numbers "
                             f"for a joint of several values, not {value!r}")
         checked[label] = found
     if not checked:
-        raise ValueError(f"configuration {name!r} sets no joint")
+        raise ValueError(f"mechanism state {name!r} sets no joint")
     held = dict(assembly.__dict__.get(CONFIGURATIONS) or {})
     held[name] = checked
     assembly.__dict__[CONFIGURATIONS] = held
     return assembly
 
 
-def couple(assembly: Any, name: str, **joints: Any) -> Any:
-    """A coupling of ``assembly``'s mechanism, ``name``: a constraint among several joints, each
-    moving by its ratio and only through the coupling, by the joint's label -- a number, or for a
-    cylindrical joint the ratios of its turn and travel. At value ``c`` each joint stands at its
-    as-built value plus its ratio times ``c``: ``c = 0`` is as built, so a coupling never moves
-    the build. Its range is its joints' limits: the tightest interval in which each stays
-    within its own. Its name poses wherever a joint's does: ``configuration(..., curl=0.5)``, a
-    motion's waypoints and sweeps, and ``--pose``; its joints alone are not posed. Kept in the
-    document as AP242's couplers (see the module); a label names the joint in each placement of a
-    sub-assembly placed several times. Returns ``assembly``."""
+# A coupling's kind, as the function that makes it is named: the AP242 pair it is written as.
+GEAR_KIND = "gear_pair"
+RACK_KIND = "rack_and_pinion_pair"
+SCREW_KIND = "screw_pair"
+_KIND_NAMES = {GEAR_KIND: "gear pair", RACK_KIND: "rack and pinion pair", SCREW_KIND: "screw pair"}
+
+
+def _coupling(kind: str, assembly: Any, name: str, joints: dict[str, Any]) -> Any:
+    """``gear_pair``, ``rack_and_pinion_pair`` and ``screw_pair``: what the three check alike, and
+    the coupling kept on ``assembly`` with its kind, as each joint's ratios (a screw's pitch made
+    its turn's 1 and its travel's ``pitch / 360``). The joints' kinds are checked at document
+    time, where the labels are pairs (``_fits``)."""
     import build123d as bd
 
     if not isinstance(assembly, bd.Shape):
-        raise TypeError(f"couple() takes the assembly whose joints it drives, not {type(assembly).__name__}")
+        raise TypeError(f"{kind}() takes the assembly whose joints it drives, not {type(assembly).__name__}")
+    what = _KIND_NAMES[kind]
     if not isinstance(name, str) or not name.strip():
-        raise ValueError("a coupling's name is a non-empty string")
-    where = f"coupling {name!r}"
-    for removed, why in (("range", "a coupling's range is its joints' limits, the tightest interval where each "
-                                   "stays within its own"),
-                         ("lock", "a coupling is always a constraint: its joints move only through it")):
-        if removed in joints:
-            raise TypeError(f"{where}: {removed}= is gone: {why}")
+        raise ValueError(f"a {what}'s name is a non-empty string")
+    where = f"{what} {name!r}"
     ratios = {}
     for label, value in joints.items():
         found = _number_values(value)
-        if found is None or not all(math.isfinite(v) for v in found):
-            raise TypeError(f"{where}: joint {label!r} takes a ratio, or for a cylindrical joint the ratios of its "
-                            f"turn and travel, not {value!r}")
-        if not any(found):
-            raise ValueError(f"{where}: joint {label!r} has no ratio but 0, which no constraint relates")
-        ratios[label] = found
+        if found is None or len(found) != 1 or not math.isfinite(found[0]):
+            taken = "its pitch, the millimetres it travels per turn" if kind == SCREW_KIND else "a ratio"
+            raise TypeError(f"{where}: joint {label!r} takes {taken}, a number, not {value!r}")
+        if not found[0]:
+            raise ValueError(f"{where}: joint {label!r} has {'a pitch' if kind == SCREW_KIND else 'no ratio but'} 0, "
+                             "which no constraint relates")
+        ratios[label] = (1.0, found[0] / 360.0) if kind == SCREW_KIND else found
     if not ratios:
         raise ValueError(f"{where} drives no joint")
+    if kind == SCREW_KIND and len(ratios) != 1:
+        raise TypeError(f"{where} drives one cylindrical joint, not {', '.join(map(repr, ratios))}")
+    if kind != SCREW_KIND and len(ratios) < 2:
+        raise ValueError(f"{where} drives {next(iter(ratios))!r} alone; it relates two joints or more")
     held = dict(assembly.__dict__.get(COUPLINGS) or {})
-    held[name] = ratios
+    held[name] = (kind, ratios)
     assembly.__dict__[COUPLINGS] = held
     return assembly
 
 
-def motion(assembly: Any, name: str, waypoints_or_fn: Any = None, *, sweep: Any = None, duration: Any = None,
-           ease: str = "cubic", **removed: Any) -> Any:
-    """A named motion of ``assembly``'s mechanism, one of:
+def gear_pair(assembly: Any, name: str, **joints: Any) -> Any:
+    """A gear train of ``assembly``'s mechanism, ``name``: revolute joints, by label, each turning
+    by its ratio (degrees per unit of the coupling's value) and only through it -- written as
+    AP242's ``gear_pair`` couplers, from the first-named joint to each other one. At value ``c``
+    each joint stands at its as-built angle plus its ratio times ``c``: ``c = 0`` is as built, so
+    it never moves the build. Its range is its joints' limits: the tightest interval in which each
+    stays within its own. Its name poses wherever a joint's does: ``mechanism_state(..., drive=90)``,
+    a configuration sequence's waypoints and sweeps, and ``--pose``; its joints alone are not posed.
+    A joint that is not revolute is refused when the document is made; a label names the joint
+    in each placement of a sub-assembly placed several times. Returns ``assembly``."""
+    return _coupling(GEAR_KIND, assembly, name, joints)
+
+
+def rack_and_pinion_pair(assembly: Any, name: str, **joints: Any) -> Any:
+    """A rack and pinion of ``assembly``'s mechanism, ``name``: the first-named joint, by label,
+    on one side -- a revolute joint (the pinion) or a prismatic one (the rack) -- and every other
+    joint of the other kind, each moving by its ratio (degrees or millimetres per unit of the
+    coupling's value) and only through it; written as AP242's ``rack_and_pinion_pair`` couplers,
+    from the first-named joint to each other one. Its value, range and naming are a gear pair's
+    (``gear_pair``). A joint of the wrong kind is refused when the document is made. Returns
+    ``assembly``."""
+    return _coupling(RACK_KIND, assembly, name, joints)
+
+
+def screw_pair(assembly: Any, name: str, **joints: Any) -> Any:
+    """A screw of ``assembly``'s mechanism, ``name``: one cylindrical joint, by label, given its
+    pitch, ``lead=1.5`` (the millimetres it travels per 360 degrees of turn, negative for a left
+    hand) -- Part 105's ``SCREW_PAIR``, which holds the pitch and nothing else. The coupling's value
+    is the joint's turn from as built, in degrees; its travel follows. Its range and naming are a
+    gear pair's (``gear_pair``). A joint that is not cylindrical is refused when the document is
+    made. Returns ``assembly``."""
+    return _coupling(SCREW_KIND, assembly, name, joints)
+
+
+def configuration_sequence(assembly: Any, name: str, waypoints_or_fn: Any = None, *, sweep: Any = None,
+                           duration: Any = None, ease: str = "cubic", **removed: Any) -> Any:
+    """A named configuration sequence of ``assembly``'s mechanism, AP242's
+    ``interpolated_configuration_sequence``, one of:
 
     - waypoints, ``[(t, pose), ...]``: ``t`` in seconds (the first 0, then increasing), ``pose``
-      a configuration's name or ``{joint: value}`` (the rest as built); the duration is the
+      a mechanism state's name or ``{joint: value}`` (the rest as built); the duration is the
       last waypoint's time;
     - ``sweep={joint: (from, to)}`` with ``duration``: the two waypoints ``(0, from)`` and
       ``(duration, to)``;
@@ -398,23 +447,24 @@ def motion(assembly: Any, name: str, waypoints_or_fn: Any = None, *, sweep: Any 
 
     ``ease`` is ``cubic`` (each step eased in and out, resting at every waypoint: AP242's
     ``synchronous_interpolation_type``) or ``linear`` (constant speed:
-    ``linear_interpolation_type``). A motion is a finite clip; a player repeats it. Kept in the
-    document beside the configurations, as a definition; a GLB export bakes it into a clip of
+    ``linear_interpolation_type``). A sequence is a finite clip; a player repeats it. Kept in the
+    document beside the mechanism states, as a definition; a GLB export bakes it into a clip of
     the same name. Returns ``assembly``."""
     import build123d as bd
 
     if not isinstance(assembly, bd.Shape):
-        raise TypeError(f"motion() takes the assembly whose joints it moves, not {type(assembly).__name__}")
+        raise TypeError(f"configuration_sequence() takes the assembly whose joints it moves, not "
+                        f"{type(assembly).__name__}")
     if not isinstance(name, str) or not name.strip():
-        raise ValueError("a motion's name is a non-empty string")
-    where = f"motion {name!r}"
+        raise ValueError("a configuration sequence's name is a non-empty string")
+    where = f"configuration sequence {name!r}"
     if "loop" in removed:
-        raise TypeError(f"{where}: loop= is gone: a motion is a finite clip, and a player repeats it")
+        raise TypeError(f"{where}: loop= is gone: a configuration sequence is a finite clip, and a player repeats it")
     if removed:
-        raise TypeError(f"motion() takes no {', '.join(sorted(removed))}")
+        raise TypeError(f"configuration_sequence() takes no {', '.join(sorted(removed))}")
     if ease == "spline":
-        raise ValueError(f"{where}: ease 'spline' is gone: AP242 interpolates a motion linearly or synchronously, "
-                         "ease 'linear' or 'cubic'")
+        raise ValueError(f"{where}: ease 'spline' is gone: AP242 interpolates a configuration sequence linearly "
+                         "or synchronously, ease 'linear' or 'cubic'")
     if ease not in EASES:
         raise ValueError(f"{where}: ease is one of {', '.join(EASES)}, not {ease!r}")
     if (waypoints_or_fn is None) == (sweep is None):
@@ -427,7 +477,7 @@ def motion(assembly: Any, name: str, waypoints_or_fn: Any = None, *, sweep: Any 
 
     def joints(values: Any, at: str) -> dict[str, tuple[float, ...]]:
         if not isinstance(values, dict) or not values:
-            raise TypeError(f"{where}: {at} is a configuration's name or a dict of joint values, not {values!r}")
+            raise TypeError(f"{where}: {at} is a mechanism state's name or a dict of joint values, not {values!r}")
         found = {}
         for label, value in values.items():
             numbers = _number_values(value)
@@ -485,6 +535,138 @@ def motion(assembly: Any, name: str, waypoints_or_fn: Any = None, *, sweep: Any 
 
 
 # --- harvest -----------------------------------------------------------------------------
+
+
+def posed(assembly: Any, state: Any) -> Any:
+    """``assembly`` with every part where ``state`` puts it: a mechanism state's name, or
+    ``{joint label or coupling name: value}`` (the values ``mechanism_state`` takes, the rest as
+    built). The parts move by the forward kinematics the viewer and the snapshot use
+    (``link_worlds``): each link's placement at the asked values over its placement as built,
+    applied to that link's parts. An unknown state, joint or coupling, or a value out of range, is
+    refused by name (``resolve``).
+
+    ``assembly`` is what the model call returned, its document's handle, or a shape. Inside a body
+    (``return posed(arm(), "folded")``: a posed file is this) the result is a copy of the shape that
+    shares its geometry and keeps the joints, couplings, mechanism states and configuration
+    sequences, the asked values its as-built state. From a plain script (a check) the handle's
+    document is posed where the engine holds its mechanism (``posed_structure``), and the answer is
+    the tree ``.shape`` is, at that pose: placed parts, no joints. A shape a plain script read
+    through ``.shape`` has no joints left to pose, and is refused with what to pass instead."""
+    from collections.abc import Mapping
+
+    import build123d as bd
+    from build123d.topology.shape_core import _make_topods_compound_from_shapes, downcast
+    from OCP.gp import gp_Trsf
+    from OCP.TopAbs import TopAbs_COMPOUND
+    from OCP.TopLoc import TopLoc_Location
+
+    from cadgen.engine import document
+    from cadgen.engine.api import Document
+    from cadgen.engine.model import instance
+
+    if isinstance(state, Mapping):
+        pose: Any = dict(state)
+    elif isinstance(state, str):
+        pose = state
+    else:
+        raise TypeError("posed() takes a mechanism state's name or a mapping of joint labels to values, "
+                        f"not {type(state).__name__}")
+    if isinstance(assembly, Document):
+        if not assembly._inside:
+            return _posed_document(assembly, pose)
+        assembly = assembly.shape
+    if not isinstance(assembly, bd.Shape):
+        raise TypeError(f"posed() takes a model call's handle or the assembly whose joints it sets, "
+                        f"not {type(assembly).__name__}")
+    made = instance(assembly)
+    tree = document.collect(made, made.__dict__.get("label") or "posed")
+    children = made.__dict__.get("_NodeMixin__children") or ()
+    whole = (children and int(made.wrapped.ShapeType()) == int(TopAbs_COMPOUND)
+             and len(document._children(made.wrapped)) == len(children))
+    root_path = () if whole and made.wrapped.Location().IsIdentity() else (0,)
+    kinematics = None if tree.mechanism is None else block(
+        tree.mechanism, [], lambda at: _column(_numpy(_occurrence(tree, at)[0])))
+    if kinematics is None:
+        transferred = assembly.__dict__.get(TRANSFERRED)
+        if transferred is not None:
+            raise KinematicsError(f"posed() was given {transferred}'s .shape, which carries its parts and not its "
+                                  f"joints: pass the handle the model call returns, posed({transferred}(), {pose!r})")
+    values, _named = resolve(kinematics, pose)
+    if kinematics is None:
+        return made
+    now = link_worlds(kinematics, values)
+    then = link_worlds(kinematics, {label: _as_tuple(value) for label, value in kinematics["asBuilt"].items()})
+    moved = {tuple(path): now[at] @ np.linalg.inv(then[at])
+             for at, link in enumerate(tree.mechanism.links) for path in link.members}
+
+    def located(matrix: np.ndarray) -> Any:
+        trsf = gp_Trsf()
+        trsf.SetValues(*(float(matrix[row, column]) for row in range(3) for column in range(4)))
+        return TopLoc_Location(trsf)
+
+    # Every node from the root down: where it stood, where it stands now, its place in its parent.
+    objects = sorted(_objects(made, root_path), key=lambda item: len(item[1]))
+    built = {path: _numpy(_occurrence(tree, path)[0]) if path else np.eye(4) for _obj, path in objects}
+    worlds: dict[tuple[int, ...], np.ndarray] = {}
+    changed: set[tuple[int, ...]] = set()
+    for obj, path in objects:
+        above = path[:-1] if path != root_path else None
+        parent_then = built[above] if above is not None else np.eye(4)
+        parent_now = worlds[above] if above is not None else np.eye(4)
+        local = np.linalg.inv(parent_then) @ built[path]
+        if path in moved:
+            worlds[path] = moved[path] @ built[path]
+            local_now = np.linalg.inv(parent_now) @ worlds[path]
+        else:
+            local_now = local
+            worlds[path] = parent_now @ local
+        if not np.allclose(local_now, local, rtol=0, atol=1e-12):
+            obj.__dict__["_wrapped"] = downcast(obj.wrapped.Located(located(local_now)))
+            changed.add(path)
+    # Each compound holding a moved node is made again around its children, where it stood.
+    for obj, path in reversed(objects):
+        held = obj.__dict__.get("_NodeMixin__children") or ()
+        if held and any(path + (at,) in changed for at in range(len(held))):
+            own = obj.wrapped
+            compound = _make_topods_compound_from_shapes([child.wrapped for child in held]).Located(own.Location())
+            compound.Orientation(own.Orientation())
+            obj.__dict__["_wrapped"] = downcast(compound)
+            changed.add(path)
+    # The joints say the values they now stand at, as ``connect_to`` would have left them.
+    naming = {path: "/".join(_occurrence(tree, path)[1]) for _obj, path in objects}
+    for obj, path in objects:
+        for joint in (obj.__dict__.get("joints") or {}).values():
+            kind = _joint_kind(joint)
+            label = next((key for key in (joint.label, f"{naming[path]}:{joint.label}") if key in values), None)
+            if label is None or kind in (None, "rigid", "spherical"):
+                continue
+            value = values[label]
+            if kind == "revolute":
+                joint._angle = value[0]
+            elif kind == "prismatic":
+                joint.position = value[0]
+            else:
+                joint.angle, joint.position = value
+    return made
+
+
+# Set on the tree a plain script's ``.shape`` brings out of the engine (``api.Document.shape``): the
+# model's name, for ``posed`` to say what to pass in place of a shape with no joints.
+TRANSFERRED = "_cadgen_transferred"
+
+
+def _posed_document(handle: Any, pose: Any) -> Any:
+    """``posed(handle, pose)`` outside the body that builds it: the document's structure as the
+    engine holds it, mechanism included, placed at ``pose`` (``posed_structure``), as the
+    build123d tree ``.shape`` makes of it."""
+    from cadgen.engine.export import Source
+
+    source = handle._transferred()
+    if source.structure.get("kinematics") is None:
+        raise KinematicsError(f"{handle.name} has no joints to pose")
+    shape = Source(posed_structure(source.structure, pose), source.shapes, live=False).shape()
+    shape.__dict__[TRANSFERRED] = handle.name
+    return shape
 
 
 def _objects(result: Any, root_path: tuple[int, ...]) -> list[tuple[Any, tuple[int, ...]]]:
@@ -709,6 +891,7 @@ def harvest(result: Any, tree: Any, root_path: tuple[int, ...]) -> Mechanism | N
     connected joint. ``root_path`` is the result's own occurrence in ``tree`` (``()``, or
     ``(0,)`` where the document holds it in a component of its own)."""
     objects = _objects(result, root_path)
+    by_path = {path: obj for obj, path in objects}
     holders: dict[int, list[tuple[int, ...]]] = {}
     jointed: list[tuple[tuple[int, ...], Any]] = []
     configured: list[tuple[tuple[int, ...], Any, dict]] = []
@@ -762,37 +945,39 @@ def harvest(result: Any, tree: Any, root_path: tuple[int, ...]) -> Mechanism | N
         found = f"its joints are {', '.join(sorted(labels))}" if labels else "it holds no joint"
         return found + (f"; its couplings are {', '.join(sorted(controls))}" if controls else "")
 
-    # A configuration, a motion or a coupling naming a joint no part of its assembly holds means
+    # A mechanism state, a configuration sequence or a coupling naming a joint no part of its assembly holds means
     # nothing, nor does a coupling named as a joint is (a pose could not tell them apart): the
-    # harvest's errors, as is a pair the built tree contradicts (below); a value no pair can take is warned.
+    # harvest's errors, as are a pair the built tree contradicts (below) and a mechanism state putting a joint
+    # outside its range (``_configurations``); any other value no pair can take is warned.
     for path, _obj, held in configured:
         labels, controls = labels_below(path), controls_below(path)
         for name, values in held.items():
             for key in values:
                 if unknown(key, labels, controls):
-                    raise KinematicsError(f"configuration {name!r} of {name_of(path)} names no joint {key!r}; "
+                    raise KinematicsError(f"mechanism state {name!r} of {name_of(path)} names no joint {key!r}; "
                                           + known(labels, controls))
     for path, _obj, held in motioned:
         labels, controls = labels_below(path), controls_below(path)
         for name, spec in held.items():
             for key in (label for _t, _name, values in (spec[1] if spec[0] == "keys" else ()) for label in values):
                 if unknown(key, labels, controls):
-                    raise KinematicsError(f"motion {name!r} of {name_of(path)} names no joint {key!r}; "
+                    raise KinematicsError(f"configuration sequence {name!r} of {name_of(path)} names no joint "
+                                          f"{key!r}; "
                                           + known(labels, controls))
     for path, _obj, held in coupled:
         labels = labels_below(path)
-        for name, ratios in held.items():
+        for name, (kind, ratios) in held.items():
             if not unknown(name, labels):
-                raise KinematicsError(f"coupling {name!r} of {name_of(path)} has a joint's name, which a pose could "
-                                      "not tell from it: give it a name of its own")
+                raise KinematicsError(f"{_KIND_NAMES[kind]} {name!r} of {name_of(path)} has a joint's name, which a "
+                                      "pose could not tell from it: give it a name of its own")
             for key in ratios:
                 if unknown(key, labels):
-                    raise KinematicsError(f"coupling {name!r} of {name_of(path)} names no joint {key!r}; "
+                    raise KinematicsError(f"{_KIND_NAMES[kind]} {name!r} of {name_of(path)} names no joint {key!r}; "
                                           + known(labels, set()))
     if not pairings:
         if configured or motioned or coupled:
-            warnings.append("the configurations, couplings or motions name joints, and no joint is paired with "
-                            "another")
+            warnings.append("the mechanism states, couplings or configuration sequences name joints, and no "
+                            "joint is paired with another")
         return Mechanism(tree.root.name, [], 0, [], {}, {}, warnings) if warnings else None
 
     parent: dict[tuple[int, ...], tuple[int, ...]] = {}
@@ -826,7 +1011,8 @@ def harvest(result: Any, tree: Any, root_path: tuple[int, ...]) -> Mechanism | N
         moving_pairs.append((moving, held_by, rigid, rigid_by, moves))
     if not moving_pairs:
         if configured or motioned or coupled:
-            warnings.append("the configurations, couplings or motions name joints, and no moving joint is paired")
+            warnings.append("the mechanism states, couplings or configuration sequences name joints, and no moving "
+                            "joint is paired")
         return Mechanism(tree.root.name, [], 0, [], {}, {}, warnings) if warnings else None
 
     _enclose(parent, find, moving_pairs)
@@ -849,6 +1035,16 @@ def harvest(result: Any, tree: Any, root_path: tuple[int, ...]) -> Mechanism | N
     worlds = {path: _numpy(_occurrence(tree, path)[0]) for path in parent}
     frames = [worlds[link.members[0]] if link.members else np.eye(4) for link in links]
     scale = max([1.0] + [float(np.abs(matrix[:3, 3]).max()) for matrix in worlds.values()])
+    # The tree's parts (its leaves), each part's bounding sphere once: what a joint's axis is
+    # measured against (``_axis_off``, ``_fixed``).
+    nodes = {path[:-1] for path in by_path if path != root_path}
+    leaves = [path for path in sorted(by_path) if path not in nodes]
+    spheres: dict[tuple[int, ...], tuple[np.ndarray, float] | None] = {}
+
+    def sphere(path: tuple[int, ...]) -> tuple[np.ndarray, float] | None:
+        if path not in spheres:
+            spheres[path] = _sphere(by_path[path])
+        return spheres[path]
 
     # The pairs, named by their moving joints' labels; a label two share takes its part's path.
     counts: dict[str, int] = {}
@@ -888,6 +1084,22 @@ def harvest(result: Any, tree: Any, root_path: tuple[int, ...]) -> Mechanism | N
         as_built[label] = value
         pairs.append(pair)
         joint_labels.append((moving.label, held_by))
+        # A moving joint's axis far from the part holding it and from every part fixed to it is a
+        # local axis (``_axis_off``): ``item_1`` in the holder's frame, and in a fixed part's, that
+        # part's placement as built over the holder's.
+        body = sphere(held_by) if kind != "spherical" else None
+        off = None if body is None else _axis_off(body, item_1)
+        fixed = _fixed(held_by, leaves, parent, find) if off is not None else []
+        axis = worlds[held_by] @ item_1
+        if off is not None and not any(
+                (other := sphere(leaf)) is not None
+                and _axis_off(other, np.linalg.inv(_numpy(_occurrence(tree, leaf)[0])) @ axis) is None
+                for leaf in fixed):
+            beside = ", and near no part fixed to it" if fixed else ""
+            warnings.append(f"joint {label!r}'s axis passes {off:.0f} mm from {name_of(held_by)}, which holds it, "
+                            f"farther than the part's own size{beside}: an Axis is in world coordinates, so a local "
+                            "one lands near the origin and connect_to moves the other part there; give the world "
+                            "axis, axis.located(part.location)")
 
     couplings, controls = _couplings(coupled, pairs, joint_labels, name_of, warnings, as_built)
     found = Mechanism(tree.root.name, links, 0, pairs, as_built, {}, warnings, couplings=couplings)
@@ -899,7 +1111,7 @@ def harvest(result: Any, tree: Any, root_path: tuple[int, ...]) -> Mechanism | N
 
 
 class _Unfit(KinematicsError):
-    """A motion value its pair cannot take: the motion is left out, and warned."""
+    """A configuration sequence's value its pair cannot take: the sequence is left out, and warned."""
 
 
 def _matching(path: tuple[int, ...], key: str, pairs: list[Pair], joint_labels: list) -> list[Pair]:
@@ -914,12 +1126,12 @@ def _couplings(coupled: list, pairs: list[Pair], joint_labels: list, name_of: Ca
     """Each coupling, by name, its joints made pairs: a joint label names the pair of every joint
     below its assembly so labelled (each placement's, for a sub-assembly placed several times).
     A name two couplings share takes the path of the assembly holding each (``hand/index:curl``),
-    as a label two pairs share does. A joint in no pair, or given as many ratios as its pair has
-    no values, is left out of the coupling, and warned; a coupling left with no joint is left out.
-    A coupling named as a pair is, one driving a spherical pair is, one whose joints' limits leave
-    it no range holding 0 is, and a joint two couplings drive is: they fail the harvest. Returns
-    the couplings and, for each, its assembly's path, its own name and the name it is kept by
-    (what a configuration or a motion may call it)."""
+    as a label two pairs share does. A joint in no pair is left out of the coupling, and warned; a
+    coupling left with no joint is left out. A coupling named as a pair is, one driving a pair its
+    kind does not relate (``_fits``) is, one whose joints' limits leave it no range holding 0 is,
+    and a joint two couplings drive is: they fail the harvest. Returns the couplings and, for each,
+    its assembly's path, its own name and the name it is kept by (what a mechanism state or a
+    configuration sequence may call it)."""
     counts: dict[str, int] = {}
     for _path, _obj, held in coupled:
         for name in held:
@@ -929,27 +1141,21 @@ def _couplings(coupled: list, pairs: list[Pair], joint_labels: list, name_of: Ca
     found: dict[str, Coupling] = {}
     controls: list[tuple[tuple[int, ...], str, str]] = []
     for path, _obj, held in coupled:
-        for name, given in held.items():
+        for name, (kind, given) in held.items():
             kept = name if counts[name] == 1 else f"{name_of(path)}:{name}"
-            where = f"coupling {name!r} of {name_of(path)}"
+            where = f"{_KIND_NAMES[kind]} {name!r} of {name_of(path)}"
             if kept in labels:
                 raise KinematicsError(f"{where} is named {kept!r}, as a joint is, which a pose could not tell from it: "
                                       "give it a name of its own")
             ratios: dict[str, tuple[float, ...]] = {}
+            driven: list[Pair] = []
             for key, value in given.items():
                 matches = _matching(path, key, pairs, joint_labels)
                 if not matches:
                     warnings.append(f"{where} drives joint {key!r}, which is in no pair: the joint is left out of it")
                 for pair in matches:
-                    if pair.kind == "spherical":
-                        raise KinematicsError(f"{where} drives the spherical joint {pair.label!r}: AP242's couplers "
-                                              "relate rotations and translations, not a ball's three angles")
-                    if len(value) != pair.dofs:
-                        need = ("a ratio" if pair.dofs == 1
-                                else f"{pair.dofs} ratios ({', '.join(_dof_names(pair.kind))})")
-                        warnings.append(f"{where}: joint {pair.label!r} ({pair.kind}) takes {need}, not "
-                                        f"{_shown(value)}: the joint is left out of it")
-                        continue
+                    _fits(kind, where, pair, driven)
+                    driven.append(pair)
                     ratios[pair.label] = tuple(float(ratio) for ratio in value)
             if not ratios:
                 warnings.append(f"{where} drives no pair: it is left out")
@@ -972,6 +1178,31 @@ def _couplings(coupled: list, pairs: list[Pair], joint_labels: list, name_of: Ca
             raise KinematicsError(f"joint {label!r} is driven by the couplings {names[0]!r} and {names[1]!r}: a "
                                   "coupling is a constraint, its joints' only way to move")
     return {name: found[name] for name in sorted(found)}, controls
+
+
+def _fits(kind: str, where: str, pair: Pair, before: list[Pair]) -> None:
+    """Refuses ``pair`` in a coupling of ``kind`` after the pairs ``before`` it: a gear pair turns
+    revolute pairs; a rack and pinion pair takes a revolute or a prismatic pair first and every
+    other of the other kind (each coupler is from the first to another); a screw pair is one
+    cylindrical pair's turn and travel."""
+    if kind == GEAR_KIND and pair.kind != "revolute":
+        raise KinematicsError(f"{where} drives the {pair.kind} joint {pair.label!r}: a gear pair turns revolute "
+                              "joints")
+    if kind == RACK_KIND:
+        if pair.kind not in ("revolute", "prismatic"):
+            raise KinematicsError(f"{where} drives the {pair.kind} joint {pair.label!r}: a rack and pinion pair "
+                                  "relates a revolute joint and a prismatic one")
+        if before and (pair.kind == before[0].kind):
+            raise KinematicsError(f"{where} drives {before[0].label!r} and {pair.label!r}, both {pair.kind}: a rack "
+                                  f"and pinion pair relates its first joint, {before[0].label!r}, to joints of the "
+                                  "other kind")
+    if kind == SCREW_KIND:
+        if pair.kind != "cylindrical":
+            raise KinematicsError(f"{where} drives the {pair.kind} joint {pair.label!r}: a screw pair is a "
+                                  "cylindrical joint's turn and travel")
+        if before:
+            raise KinematicsError(f"{where} drives {before[0].label!r} and {pair.label!r}: a screw pair drives one "
+                                  "cylindrical joint")
 
 
 def _derived_range(coupling: Coupling, pairs: dict[str, Any], as_built: dict[str, Any]) -> tuple[Any, Any]:
@@ -1049,47 +1280,74 @@ def _coupled(given: dict[str, Any], couplings: dict[str, Any], as_built: dict[st
 
 def _converted(path: tuple[int, ...], values: dict[str, Any], mechanism: Mechanism, joint_labels: list,
                controls: list, where: str) -> tuple[dict[str, tuple[float, ...]], list[str]]:
-    """``values`` -- joints by label and couplings by name, as the assembly at ``path`` sets them
-    -- as the pair values they put the pairs at, and what could not be taken, each said by name:
+    """``values`` as :func:`_converter`'s pair values, and what could not be taken."""
+    return _converter(path, mechanism, joint_labels, controls)(values, where)
+
+
+def _converter(path: tuple[int, ...], mechanism: Mechanism, joint_labels: list,
+               controls: list) -> Callable[[dict[str, Any], str], tuple[dict[str, tuple[float, ...]], list[str]]]:
+    """For the assembly at ``path``: ``values`` -- joints by label and couplings by name, as it
+    sets them -- as the pair values they put the pairs at, and what could not be taken, each said by name:
     a joint in no pair, a value its pair cannot take, a locked coupling's joint set alone, a
     coupling set with one of its joints, a coupling's value outside its range or putting a joint
     past its limits. What a configuration and a motion name is made pair values here, at
-    document time."""
+    document time. What the mechanism holds is read once, here: a motion's function converts
+    every sample through the one converter, each key a lookup."""
     pairs = mechanism.pairs
     by_label = {pair.label: pair for pair in pairs}
     couplings = {name: _coupling_json(coupling, pairs, mechanism.as_built)
                  for name, coupling in mechanism.couplings.items()}
     locked = _locked(couplings)
+    # The couplings (by kept name) and pairs each key names, in their order, as the scans found them.
+    naming: dict[str, list[str]] = {}
+    for holder, own, kept in controls:
+        if holder[:len(path)] == path:
+            for key in {own, kept}:
+                naming.setdefault(key, []).append(kept)
+    matching: dict[str, list[Pair]] = {}
+    for pair, (raw, holder) in zip(pairs, joint_labels):
+        if holder[:len(path)] == path:
+            for key in {pair.label, raw}:
+                matching.setdefault(key, []).append(pair)
+    as_built = mechanism.as_built
+    checked = lambda label, row, at: _checked(by_label[label], row, at)  # noqa: E731
+    return lambda values, where: _convert(values, where, mechanism, naming, matching, couplings, locked, as_built,
+                                          checked)
+
+
+def _convert(values: dict[str, Any], where: str, mechanism: Mechanism, naming: dict[str, list[str]],
+             matching: dict[str, list[Pair]], couplings: dict[str, Any], locked: dict[str, str],
+             as_built: dict[str, tuple[float, ...]],
+             checked: Callable) -> tuple[dict[str, tuple[float, ...]], list[KinematicsError]]:
     found: dict[str, tuple[float, ...]] = {}
-    problems: list[str] = []
+    problems: list[KinematicsError] = []
     driving: dict[str, Any] = {}
     for key, value in values.items():
-        named = [kept for holder, own, kept in controls if holder[:len(path)] == path and key in (own, kept)]
+        named = naming.get(key)
         if named:
             driving.update(dict.fromkeys(named, value))
             continue
-        matches = _matching(path, key, pairs, joint_labels)
+        matches = matching.get(key, [])
         if not matches:
-            problems.append(f"{where} sets joint {key!r}, which is in no pair")
+            problems.append(KinematicsError(f"{where} sets joint {key!r}, which is in no pair"))
         for pair in matches:
             if pair.label in locked:
-                problems.append(f"{where}: joint {pair.label!r} moves only with its coupling "
-                                f"{locked[pair.label]!r}; set {locked[pair.label]!r}")
+                problems.append(KinematicsError(f"{where}: joint {pair.label!r} moves only with its coupling "
+                                                f"{locked[pair.label]!r}; set {locked[pair.label]!r}"))
                 continue
             try:
                 found[pair.label] = _checked(pair, value, where)
             except KinematicsError as error:
-                problems.append(str(error))
-    as_built = mechanism.as_built
-    checked = lambda label, row, at: _checked(by_label[label], row, at)  # noqa: E731
+                problems.append(error)
     for name in list(driving):
         clash = [label for label in mechanism.couplings[name].ratios if label in found]
-        problem = f"{where} sets coupling {name!r} and its joint {clash[0]!r}: set one of them" if clash else None
+        problem = (KinematicsError(f"{where} sets coupling {name!r} and its joint {clash[0]!r}: set one of them")
+                   if clash else None)
         if problem is None:
             try:
                 _coupled({name: driving[name]}, couplings, as_built, checked, where)
             except KinematicsError as error:
-                problem = str(error)
+                problem = error
         if problem is not None:
             problems.append(problem)
             del driving[name]
@@ -1097,8 +1355,55 @@ def _converted(path: tuple[int, ...], values: dict[str, Any], mechanism: Mechani
         try:
             found.update(_coupled(driving, couplings, as_built, checked, where))
         except KinematicsError as error:  # each alone within the limits, together past them
-            problems.append(str(error))
-    return {pair.label: found[pair.label] for pair in pairs if pair.label in found}, problems
+            problems.append(error)
+    return {pair.label: found[pair.label] for pair in mechanism.pairs if pair.label in found}, problems
+
+
+def _sphere(part: Any) -> tuple[np.ndarray, float] | None:
+    """A part's bounding sphere in its own frame, from its geometry (never a mesh): its box's
+    centre and half its diagonal. None for a part with no geometry."""
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+
+    from cadgen.engine.document import _identity
+
+    box = Bnd_Box()
+    BRepBndLib.Add_s(part.wrapped.Located(_identity()), box, False)
+    if box.IsVoid():
+        return None
+    low, high = (np.array([corner.X(), corner.Y(), corner.Z()]) for corner in (box.CornerMin(), box.CornerMax()))
+    return (low + high) / 2, float(np.linalg.norm(high - low)) / 2
+
+
+def _axis_off(sphere: tuple[np.ndarray, float], axis: np.ndarray) -> float | None:
+    """How far an axis -- ``axis``'s Z through its origin, in the frame of a part's bounding
+    ``sphere`` -- passes from the part, when that is more than the part's own size (its box's
+    diagonal) beyond its box: a local axis given where build123d reads a world one. None for an
+    axis that passes near."""
+    centre, radius = sphere
+    offset = centre - axis[:3, 3]
+    direction = axis[:3, 2]
+    distance = float(np.linalg.norm(offset - offset.dot(direction) * direction))
+    return distance if distance - radius > 2 * radius else None
+
+
+def _fixed(holder: tuple[int, ...], leaves: list[tuple[int, ...]], parent: dict,
+           find: Callable[[tuple[int, ...]], tuple[int, ...]]) -> list[tuple[int, ...]]:
+    """The parts fixed to ``holder``, the rigid body its joint is held by: each part of the tree
+    (``leaves``) outside it whose deepest joint-holding node, itself or above it, is of
+    ``holder``'s class -- fastened to it by rigid joints, or carried with it -- the node
+    ``block`` places an instance on a link by. The ground's other bodies, and parts no joint
+    places, are not fixed to it; nor is the pair's other part, which ``connect_to`` puts on the
+    axis wherever the axis is."""
+    own = find(holder)
+    found = []
+    for leaf in leaves:
+        if leaf[:len(holder)] == holder:
+            continue
+        above = next((leaf[:depth] for depth in range(len(leaf), -1, -1) if leaf[:depth] in parent), None)
+        if above is not None and find(above) == own:
+            found.append(leaf)
+    return found
 
 
 def _size(result: Any) -> float:
@@ -1129,18 +1434,23 @@ def _motions(motioned: list, mechanism: Mechanism, joint_labels: list, controls:
     found: dict[str, Motion] = {}
     for path, _obj, held in sorted(motioned, key=lambda item: -len(item[0])):
         for name, spec in held.items():
-            where = f"motion {name!r} of {name_of(path)}"
+            where = f"configuration sequence {name!r} of {name_of(path)}"
+            converter = _converter(path, mechanism, joint_labels, controls)
 
             def convert(values: dict[str, Any], at: str) -> dict[str, tuple[float, ...]]:
-                converted, problems = _converted(path, values, mechanism, joint_labels, controls, f"{where}: {at}")
+                converted, problems = converter(values, f"{where}: {at}")
                 if problems:
-                    raise _Unfit(problems[0])
+                    raise _Unfit(str(problems[0]))
                 return converted
 
             try:
                 if spec[0] == "function":
+                    from cadgen.engine.kernel import memo
+
                     _kind, function, duration, _ease = spec
-                    keys = _sampled(function, duration, convert, tolerances, where, path, joint_labels, controls)
+                    # The files the function opens are the model's inputs (``memo.listened``).
+                    keys = memo.listened(lambda: _sampled(function, duration, convert, tolerances, where, path,
+                                                          joint_labels, controls))
                     ease = "linear"
                 else:
                     _kind, rows, ease = spec
@@ -1149,8 +1459,8 @@ def _motions(motioned: list, mechanism: Mechanism, joint_labels: list, controls:
                         if configuration is not None:
                             if configuration not in mechanism.configurations:
                                 known = ", ".join(sorted(mechanism.configurations)) or "none"
-                                raise KinematicsError(f"{where}: the waypoint at {t:g} s names no configuration "
-                                                      f"{configuration!r}; the configurations: {known}")
+                                raise KinematicsError(f"{where}: the waypoint at {t:g} s names no mechanism state "
+                                                      f"{configuration!r}; the mechanism states: {known}")
                             keys.append((t, configuration, {}))
                         else:
                             keys.append((t, None, convert(values, f"the waypoint at {t:g} s")))
@@ -1162,7 +1472,7 @@ def _motions(motioned: list, mechanism: Mechanism, joint_labels: list, controls:
                 if stopped:
                     raise _Unfit(f"{where} moves joint {stopped[0]!r}, which cannot be posed: {blocked[stopped[0]]}")
             except _Unfit as error:
-                warnings.append(f"{error}: the motion is left out")
+                warnings.append(f"{error}: the configuration sequence is left out")
                 found.pop(name, None)
                 continue
             found[name] = motion
@@ -1185,6 +1495,12 @@ def _sampled(function: Callable, duration: float, convert: Callable, tolerances:
     one. A function of the code: the same function samples at the same times."""
     held: dict[float, dict[str, tuple[float, ...]]] = {}
     names = {name for holder, own, kept in controls if holder[:len(path)] == path for name in (own, kept)}
+    # The joints under ``path``, once: a key names one by its raw label, or ends ``:<raw label>``.
+    raws = {raw for raw, holder in joint_labels if holder[:len(path)] == path}
+
+    def known(key: str) -> bool:
+        return key in names or key in raws or any(key[colon + 1:] in raws
+                                                  for colon, char in enumerate(key) if char == ":")
 
     def at(t: float) -> dict[str, tuple[float, ...]]:
         found = held.get(t)
@@ -1196,9 +1512,8 @@ def _sampled(function: Callable, duration: float, convert: Callable, tolerances:
             if not isinstance(given, dict) or not given:
                 raise KinematicsError(f"{where}: the function returns {{joint: value}}, not {given!r} (at {t:g} s)")
             for key in given:
-                if key not in names and not any(key in (raw,) or key.endswith(f":{raw}") for raw, holder in joint_labels
-                                                if holder[:len(path)] == path):
-                    labels = sorted({raw for raw, holder in joint_labels if holder[:len(path)] == path})
+                if not known(key):
+                    labels = sorted(raws)
                     raise KinematicsError(f"{where} names no joint {key!r}; its joints are {', '.join(labels)}"
                                           + (f"; its couplings are {', '.join(sorted(names))}" if names else ""))
             found = held[t] = convert(given, f"the function at {t:g} s")
@@ -1259,12 +1574,26 @@ def _configurations(configured: list, mechanism: Mechanism, joint_labels: list, 
                     name_of: Callable) -> dict:
     """Each named configuration as pair values (a coupling's value made its joints'), every
     assembly's that names it merged, a deeper one's values first and a shallower one's over
-    them. What a value cannot be taken for (``_converted``) is left out, and warned."""
+    them. A value putting a joint outside its range fails the harvest in one line naming the
+    state, the joint, the value and the range (a value on a bound is within it): left out, the
+    state would be another design than the one the model declares. Anything else a value cannot
+    be taken for (``_converted``) is left out, and warned -- a coupling's value outside its range
+    among them: a posed copy (``posed``) is built at its pose, which moves each coupling's zero,
+    so a value the original's state gives a coupling stands for another pose in the copy."""
     merged: dict[str, dict[str, tuple[float, ...]]] = {}
     for path, _obj, held in sorted(configured, key=lambda item: -len(item[0])):
         for name, values in held.items():
-            found, problems = _converted(path, values, mechanism, joint_labels, controls,
-                                         f"configuration {name!r} of {name_of(path)}")
+            where = f"mechanism state {name!r} of {name_of(path)}"
+            found, problems = _converted(path, values, mechanism, joint_labels, controls, where)
+            outside = next((problem.outside for problem in problems if problem.outside is not None), None)
+            if outside is not None:
+                label, value, unit, (lower, upper) = outside
+                bounds = (_bound(lower, "-"), _bound(upper, ""))
+                shown = f"{value:g}"
+                if shown in bounds:  # past a bound by less than six digits show: every digit
+                    shown = repr(value)
+                raise KinematicsError(f"{where} puts joint {label!r} at {shown} {unit}, outside its range "
+                                      f"{bounds[0]} to {bounds[1]}")
             mechanism.warnings.extend(f"{problem}: the value is left out" for problem in problems)
             merged.setdefault(name, {}).update(found)
     return {name: merged[name] for name in sorted(merged)}
@@ -1280,8 +1609,10 @@ def _checked(pair: Pair, value: Any, where: str) -> tuple[float, ...]:
         if not _within(value_at, limits):
             lower = "-inf" if limits[0] is None else f"{limits[0]:g}"
             upper = "inf" if limits[1] is None else f"{limits[1]:g}"
-            raise KinematicsError(f"{where}: joint {pair.label!r} at {value_at:g} {unit} is outside its range "
-                                  f"[{lower}, {upper}] {unit}")
+            error = KinematicsError(f"{where}: joint {pair.label!r} at {value_at:g} {unit} is outside its range "
+                                    f"[{lower}, {upper}] {unit}")
+            error.outside = (pair.label, value_at, unit, limits)  # what a mechanism state's refusal says
+            raise error
     return found
 
 
@@ -1445,8 +1776,8 @@ def _couplers(coupling: Coupling, pairs: dict[str, Pair]) -> list[tuple[str, dic
     its first-named value. Between that value ``1`` and each other ``k`` (``r`` their ratios): a
     cylindrical pair's turn and travel are a ``SCREW_PAIR`` (``pitch``: travel per 360 degrees);
     two revolute rotations a ``gear_pair``, a revolute rotation and a prismatic translation a
-    ``rack_and_pinion_pair``, each ``CouplingRatios``; any other two a ``two_joint_coupler``
-    (``Scales``); ``CouplingTypes`` says which value of each pair, in the pairs' order. Over the two values' displacements from as built, ``s_a d_a
+    ``rack_and_pinion_pair``, each ``CouplingRatios`` (``_fits`` admits no other two);
+    ``CouplingTypes`` says which value of each pair, in the pairs' order. Over the two values' displacements from as built, ``s_a d_a
     + s_b d_b = 0``, written ``s_a = r_b``, ``s_b = -r_a``."""
     terms = [(label, index, ratio) for label, ratios in coupling.ratios.items()
              for index, ratio in enumerate(ratios) if ratio]
@@ -1460,13 +1791,12 @@ def _couplers(coupling: Coupling, pairs: dict[str, Pair]) -> list[tuple[str, dic
             continue
         kinds = [(pairs[end[0]].kind, _value_type(pairs[end[0]], end[1])) for end in ends]
         if all(kind == ("revolute", "rotation") for kind in kinds):
-            kind, scale_name = "gear_pair", "CouplingRatios"
-        elif sorted(kinds) == [("prismatic", "translation"), ("revolute", "rotation")]:
-            kind, scale_name = "rack_and_pinion_pair", "CouplingRatios"
+            kind = GEAR_KIND
         else:
-            kind, scale_name = "two_joint_coupler", "Scales"
+            assert sorted(kinds) == [("prismatic", "translation"), ("revolute", "rotation")], kinds
+            kind = RACK_KIND
         (a, a_index, a_ratio), (b, b_index, b_ratio) = ends
-        found.append((COUPLER, {"Kind": kind, scale_name: (b_ratio, -a_ratio),
+        found.append((COUPLER, {"Kind": kind, "CouplingRatios": (b_ratio, -a_ratio),
                                 "CouplingTypes": ",".join(_value_type(pairs[end[0]], end[1]) for end in ends)},
                       [a, b]))
     return found
@@ -1486,7 +1816,7 @@ def _read_couplers(name: str, label: Any, pair_at: dict[str, int], pairs: list[P
             continue
         if entity != COUPLER or len(ends) != 2:
             continue
-        scales = _array(data, "Scales") or _array(data, "CouplingRatios")
+        scales = _array(data, "CouplingRatios")
         types = (_string(data, "CouplingTypes") or "").split(",")
         if scales is None or len(scales) != 2 or len(types) != 2:
             continue
@@ -1548,22 +1878,34 @@ def _array(data: Any, key: str) -> tuple[float, ...] | None:
 
 
 def _references(label: Any) -> list[str]:
+    """The label's reference list as entries, in order. Read off a copy with ``First``/
+    ``RemoveFirst``: the bound list's Python iterator ends in a C++ exception, about 3 ms a
+    list, which over a large mechanism's thousands of lists was most of a read."""
     from OCP.TDataStd import TDataStd_ReferenceList
+    from OCP.TDF import TDF_LabelList
 
     from cadgen.engine.document import _entry, _find
 
     found = TDataStd_ReferenceList()
     if not _find(label, found, TDataStd_ReferenceList.GetID_s()):
         return []
-    return [_entry(item) for item in found.List()]
+    rest = TDF_LabelList()
+    rest.Assign(found.List())
+    entries = []
+    while not rest.IsEmpty():
+        entries.append(_entry(rest.First()))
+        rest.RemoveFirst()
+    return entries
 
 
-def _read_state(label: Any, pair_at: dict[str, int], pairs: list[Pair]) -> dict[str, tuple[float, ...]]:
+def _read_state(label: Any, references: list[str], pair_at: dict[str, int],
+                pairs: list[Pair]) -> dict[str, tuple[float, ...]]:
+    """A state held on ``label``: its values, one row per entry of ``references`` (its own
+    reference list, read once by the caller)."""
     from OCP.TDataStd import TDataStd_IntegerArray, TDataStd_RealArray
 
     from cadgen.engine.document import _find
 
-    references = _references(label)
     reals, dofs = TDataStd_RealArray(), TDataStd_IntegerArray()
     if not references or not _find(label, reals, TDataStd_RealArray.GetID_s()) \
             or not _find(label, dofs, TDataStd_IntegerArray.GetID_s()):
@@ -1615,9 +1957,11 @@ def read(doc: Any, occurrences: dict[str, tuple[int, ...]]) -> Mechanism | None:
         pairs.append(Pair(_label_name(label), kind, (ends[0], ends[1]),
                           (first, second) if first is not None and second is not None else None, limits))
     ground = link_at.get(next(iter(_references(top)), ""), 0)
-    as_built = _read_state(top.FindChild(3, False), pair_at, pairs)
+    held_state = top.FindChild(3, False)
+    as_built = _read_state(held_state, _references(held_state), pair_at, pairs)
     configuration_labels = _children_of(top.FindChild(4, False))
-    configurations = {_label_name(label): _read_state(label, pair_at, pairs) for label in configuration_labels}
+    configurations = {_label_name(label): _read_state(label, _references(label), pair_at, pairs)
+                      for label in configuration_labels}
     named = {_entry(label): _label_name(label) for label in configuration_labels}
     motions = {}
     held_motions = top.FindChild(5, False)
@@ -1632,7 +1976,7 @@ def read(doc: Any, occurrences: dict[str, tuple[int, ...]]) -> Mechanism | None:
             if references and references[0] in named:
                 keys.append((t, named[references[0]], {}))
             else:
-                keys.append((t, None, _read_state(segment, pair_at, pairs)))
+                keys.append((t, None, _read_state(segment, references, pair_at, pairs)))
         motions[_label_name(label)] = Motion(_label_name(label), keys, ease)
     couplings = {}
     held_couplings = top.FindChild(6, False)
@@ -1809,6 +2153,49 @@ def _block_checked(pair: dict[str, Any], value: Any, where: str) -> tuple[float,
     return _checked(as_pair, value, where)
 
 
+def _no_state(kinematics: dict[str, Any], pose: str) -> str:
+    """The refusal of a pose by a name no mechanism state has: the document's states and its
+    configuration sequences, each by name -- a sequence plays over time and is no pose -- and the
+    joint-value form, with a joint of its own at a value its range allows."""
+    states = ", ".join(sorted(kinematics.get("configurations") or {})) or "none"
+    sequences = kinematics.get("motions") or {}
+    pairs = _block_pairs(kinematics)
+    said = f"the document has no mechanism state {pose!r}"
+    if pose in sequences:
+        said += f" ({pose!r} is a configuration sequence, which plays over time: a pose is a state or joint values)"
+    said += f"; its states: {states}; its sequences: {', '.join(sorted(sequences)) or 'none'}"
+    if not pairs:
+        return said
+    couplings = kinematics.get("couplings") or {}
+    locked = _locked(couplings)
+    if pose in locked:  # a coupling's joint moves only through it: the coupling is what poses it
+        name = locked[pose]
+        return (said + f"; it is a joint its coupling {name!r} moves: pose the coupling by value, "
+                f"--pose '{json.dumps({name: _example(tuple(couplings[name].get('range') or (None, None)))})}'")
+    free = [label for label in sorted(pairs) if label not in locked]
+    listed = ", ".join(sorted(pairs)) + "".join(f"; {', '.join(sorted(label for label in locked if locked[label] == name))} "
+                                                f"moved by their coupling {name!r}" for name in sorted(couplings))
+    if pose in pairs or free:
+        joint = pose if pose in pairs else free[0]
+        values = [_example(limits) for limits in pairs[joint].get("limits") or [[None, None]]]
+        value: Any = values[0] if len(values) == 1 else values
+        return (said + f"; {'it is a joint' if joint == pose else 'its joints: ' + listed}: pose "
+                f"{'it' if joint == pose else 'one'} by value, --pose '{json.dumps({joint: value})}'")
+    name = sorted(couplings)[0]
+    return (said + f"; its joints: {listed}: pose a coupling by value, "
+            f"--pose '{json.dumps({name: _example(tuple(couplings[name].get('range') or (None, None)))})}'")
+
+
+def _example(limits: Any) -> float | int:
+    """A value to show a joint posed at: 90 where its range allows, else its range's middle, else
+    the one bound it has."""
+    if _within(90, limits):
+        return 90
+    lower, upper = limits
+    found = (lower + upper) / 2 if lower is not None and upper is not None else lower if lower is not None else upper
+    return int(found) if float(found).is_integer() else round(found, 3)
+
+
 def resolve(kinematics: dict[str, Any] | None, pose: Any, *,
             own: bool = False) -> tuple[dict[str, tuple[float, ...]], str | None]:
     """The values a pose sets every pair to, and the configuration it names: ``pose`` is
@@ -1831,8 +2218,7 @@ def resolve(kinematics: dict[str, Any] | None, pose: Any, *,
     if isinstance(pose, str):
         configurations = kinematics.get("configurations") or {}
         if pose not in configurations:
-            known = ", ".join(sorted(configurations)) or "none"
-            raise KinematicsError(f"the document has no configuration {pose!r}; its configurations: {known}")
+            raise KinematicsError(_no_state(kinematics, pose))
         named, given, where = pose, configurations[pose], f"configuration {pose!r}"
     elif isinstance(pose, dict):
         given, where = pose, "the pose"
@@ -1881,34 +2267,76 @@ def link_worlds(kinematics: dict[str, Any], values: dict[str, tuple[float, ...]]
     """Each link's placement at ``values``: the ground where it is, every other link by its
     pairs from the ground down (a pair that closes a loop is not followed; a pair with no value
     holds its links as built)."""
-    links = kinematics["links"]
-    if not links:
-        return []
-    found: list[np.ndarray | None] = [None] * len(links)
-    found[kinematics["ground"]] = _from_column(links[kinematics["ground"]]["matrix"])
-    pending = [pair for pair in kinematics["pairs"] if pair.get("frames")]
-    progress = True
-    while pending and progress:
-        progress = False
-        for pair in list(pending):
+    return LinkWorlds(kinematics)(values)
+
+
+class LinkWorlds:
+    """``link_worlds`` of one kinematics, asked again and again (a motion's every sample): its
+    frames, their inverses and the order its pairs are followed in are worked out once, so a call
+    is each pair's motion and the products along the chain, the same arithmetic in the same order."""
+
+    def __init__(self, kinematics: dict[str, Any]) -> None:
+        links = kinematics["links"]
+        self.count = len(links)
+        self.ground = kinematics.get("ground")
+        self.built = [_from_column(link["matrix"]) for link in links]
+        self.pairs = [pair for pair in kinematics["pairs"] if pair.get("frames")]
+        self.eye = np.eye(4)
+        # Per pair: its frames (item_1, item_2) and their inverses, with a value and without one
+        # (the two links as they stand: the second's placement as built over the first's).
+        self.posed: list[tuple[np.ndarray, ...]] = []
+        self.held: list[tuple[np.ndarray, ...]] = []
+        for pair in self.pairs:
             first, second = pair["links"]
-            if pair["label"] not in values:
-                # The two links as they stand: the second's placement as built over the first's.
-                item_1 = np.linalg.inv(_from_column(links[first]["matrix"]))
-                item_2 = np.linalg.inv(_from_column(links[second]["matrix"]))
-                moved = np.eye(4)
+            item_1, item_2 = (_from_column(frame) for frame in pair["frames"])
+            self.posed.append((item_1, np.linalg.inv(item_2), item_2, np.linalg.inv(item_1)))
+            item_1, item_2 = np.linalg.inv(self.built[first]), np.linalg.inv(self.built[second])
+            self.held.append((item_1, np.linalg.inv(item_2), item_2, np.linalg.inv(item_1)))
+        self.orders: dict[frozenset, list[tuple[int, bool, bool]]] = {}
+
+    def _order(self, valued: frozenset) -> list[tuple[int, bool, bool]]:
+        """The pairs in the order ``link_worlds`` follows them, given which carry a value: each
+        ``(pair, forward, valued)``, forward from its first link to its second."""
+        found = [False] * self.count
+        found[self.ground] = True
+        pending = list(range(len(self.pairs)))
+        steps: list[tuple[int, bool, bool]] = []
+        progress = True
+        while pending and progress:
+            progress = False
+            for at in list(pending):
+                first, second = self.pairs[at]["links"]
+                if found[first] and not found[second]:
+                    steps.append((at, True, self.pairs[at]["label"] in valued))
+                    found[second] = True
+                elif found[second] and not found[first]:
+                    steps.append((at, False, self.pairs[at]["label"] in valued))
+                    found[first] = True
+                elif not found[first]:
+                    continue
+                pending.remove(at)
+                progress = True
+        return steps
+
+    def __call__(self, values: dict[str, tuple[float, ...]]) -> list[np.ndarray]:
+        if not self.count:
+            return []
+        valued = frozenset(pair["label"] for pair in self.pairs if pair["label"] in values)
+        steps = self.orders.get(valued)
+        if steps is None:
+            steps = self.orders[valued] = self._order(valued)
+        found: list[np.ndarray | None] = [None] * self.count
+        found[self.ground] = self.built[self.ground].copy()
+        for at, forward, posed in steps:
+            pair = self.pairs[at]
+            first, second = pair["links"]
+            item_1, unitem_2, item_2, unitem_1 = (self.posed if posed else self.held)[at]
+            moved = pair_motion(pair["type"], values[pair["label"]]) if posed else self.eye
+            if forward:
+                found[second] = found[first] @ item_1 @ moved @ unitem_2
             else:
-                item_1, item_2 = (_from_column(frame) for frame in pair["frames"])
-                moved = pair_motion(pair["type"], values[pair["label"]])
-            if found[first] is not None and found[second] is None:
-                found[second] = found[first] @ item_1 @ moved @ np.linalg.inv(item_2)
-            elif found[second] is not None and found[first] is None:
-                found[first] = found[second] @ item_2 @ np.linalg.inv(moved) @ np.linalg.inv(item_1)
-            elif found[first] is None:
-                continue
-            pending.remove(pair)
-            progress = True
-    return [matrix if matrix is not None else _from_column(links[at]["matrix"]) for at, matrix in enumerate(found)]
+                found[first] = found[second] @ item_2 @ np.linalg.inv(moved) @ unitem_1
+        return [matrix if matrix is not None else self.built[at].copy() for at, matrix in enumerate(found)]
 
 
 def posed_instances(structure: dict[str, Any], values: dict[str, tuple[float, ...]]) -> list[list[float]]:

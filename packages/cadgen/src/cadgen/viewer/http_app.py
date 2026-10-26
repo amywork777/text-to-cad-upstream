@@ -28,6 +28,8 @@ import stat
 import sys
 from pathlib import Path
 
+from cadgen.engine.ids import canonical, file_id, is_id
+
 from .backend import absolute_path, asset_path
 from .content_types import content_type_for_path, content_type_for_static_asset, extension_of
 from .encoding import UriError, strict_decode_uri_component
@@ -177,6 +179,8 @@ def catalog_revision(entries) -> str:
 # header in reach -- and ``nosniff`` keeps a browser from reading it as anything but its type. The
 # viewer's renderers fetch these bytes, and neither header applies to a fetch.
 RAW_FILE_HEADERS = (("x-content-type-options", "nosniff"), ("content-security-policy", "default-src 'none'; sandbox"))
+# Every page the server answers may be framed by its own origin alone.
+PAGE_HEADERS = (("content-security-policy", "frame-ancestors 'self'"),)
 
 
 def _working_folder() -> str:
@@ -187,6 +191,14 @@ def _working_folder() -> str:
         return os.path.expanduser("~")
 
 
+# Routes one method reaches: the other one answers 405 naming it, never a 404 that reads as no route.
+_GET_ONLY_ROUTES = frozenset({"/__cad/server", "/__cad/catalog", "/__cad/folder", "/__cad/search",
+                              "/__cad/thumbnail", "/__cad/drawing", "/__cad/robot", "/__cad/xbf", "/__cad/asset",
+                              "/__cad/version"})
+_POST_ONLY_ROUTES = frozenset({"/__cad/pick", "/__cad/reveal", "/__cad/clipboard",
+                               "/__cad/analytics/activity"})
+
+
 class CadApp:
     """``handle(request, response)`` writes exactly one response.
 
@@ -194,9 +206,11 @@ class CadApp:
     serves the client itself, and the dev proxy forwards only the two API
     prefixes, so nothing else can be waiting behind this.
 
-    One app serves every file on this machine, by absolute path (``backend``). ``start`` is the
-    folder it was started in (the working folder by default): the page resolves a developer's
-    relative ``?file=`` against it, and it bounds nothing.
+    One app serves every file on this machine, by absolute path (``backend``). The page names
+    each document it shows by id, ``/<id>`` (``cadgen.engine.ids``): a model's, or a file's once it
+    is registered here (``remember``: by the launcher, or by the catalog's answer for its path).
+    ``start`` is the folder of the most recent launch (the working folder by default): the home
+    shows it, and it bounds nothing.
     """
 
     def __init__(self, *, host: str, port: int, dist_dir: str = "", start: str | None = None, identity: str | None = None, documents=None):
@@ -220,12 +234,13 @@ class CadApp:
         # dist_dir is compared as a string prefix, so resolve it ONCE here and
         # never re-resolve at request time.
         self.dist_dir = os.path.abspath(dist_dir) if dist_dir else ""
-        self.viewer_version = read_viewer_version()
         # Computed ONCE, at start (or handed in by the launcher, which computed it to ask the port):
         # the identity this instance announces is the identity of the code it is actually running.
         self.identity_token = identity if identity is not None else identity_token(self.dist_dir)
         self._recents = None
         self._picker = None
+        # The files this app knows by id (``remember``); the engine's app keeps them in its server.
+        self._files: dict[str, str] = {}
         # The engine shares one recorder across its page and MCP sessions.
         self.analytics = None
         self.consent_by = "viewer"
@@ -254,25 +269,73 @@ class CadApp:
             "platform": sys.platform if sys.platform in ("darwin", "win32") else "linux",
             # The OS identity of the engine serving this page.
             "user": os_user(),
-            # Where a developer's relative ?file= resolves, in the page. Not a boundary.
+            # The folder of the most recent launch, which the home shows. Not a boundary.
             "start": self.start,
             "pick": self.pick,
             "port": self.port,
             "pid": os.getpid(),
         }
 
-    def read_catalog(self, file=None) -> dict:
-        """The catalog of ``file``, an absolute path: its row, or none when it has none (or no file
-        is named), and its revision -- a digest of the entries, which a client that only watches for
-        change compares instead of reading the catalog again. A file is written whole, by rename,
-        by every writer cadgen has, so a read never meets one half written."""
-        from cadgen.engine.addresses import parse
-        from .model_catalog import entry as model_entry
+    def remember(self, path) -> str:
+        """An on-disk file the page or a launcher opens, known by its id from now on: its id."""
+        found = canonical(path)
+        ident = file_id(found)
+        self._files[ident] = found
+        return ident
 
-        path = str(parse(file)) if file and parse(file) is not None else absolute_path(file) if file else None
-        entry = (model_entry(path) or catalog_entry(path)) if path else None
+    def file_of(self, ident: str) -> str | None:
+        """The canonical path of the on-disk file of id ``ident`` this app knows, else None."""
+        return self._files.get(ident)
+
+    def _file_of(self, ident: str) -> str | None:
+        """A file's path by its id: one registered here, else one in Recents (a page reloaded after
+        the engine restarted)."""
+        found = self.file_of(ident)
+        if found is not None:
+            return found
+        try:
+            record = self.recents.registry.get(ident)
+        except OSError:
+            record = None
+        if record is not None and record.get("kind") == "file":
+            from cadgen.engine.registry import home
+
+            return self.file_of(self.remember(home(self.recents.registry, record)))
+        return None
+
+    def read_catalog(self, file=None, ident=None) -> dict:
+        """The catalog of one document -- ``file``, an absolute path, registered by its id
+        (``remember``), or ``ident``, a document's id: a file's or a model's the engine holds -- its
+        row, with its ``id``, or none when it has none (``missing`` says why for an id), and its
+        revision -- a digest of the entries, which a client that only watches for change compares
+        instead of reading the catalog again. A file is written whole, by rename, by every writer
+        cadgen has, so a read never meets one half written."""
+        from .model_catalog import entry as model_entry, held
+
+        missing = ""
+        entry = None
+        if ident:
+            if not is_id(ident):
+                raise ValueError(f"{ident} is not a document id")
+            path = self._file_of(ident)
+            if path is not None:
+                entry = catalog_entry(path)
+            else:
+                entry = model_entry(ident)
+                if entry is None:
+                    missing = held(ident)[1] if self.engine_documents.server is not None else f"no document {ident} is held"
+        elif file:
+            path = absolute_path(file)
+            entry = catalog_entry(path)
+            if entry is not None:
+                self.remember(path)
+        if entry is not None and "id" not in entry:
+            entry["id"] = file_id(entry["file"])
         entries = [entry] if entry else []
-        return {"schemaVersion": CAD_CATALOG_SCHEMA_VERSION, "entries": entries, "revision": catalog_revision(entries)}
+        answer = {"schemaVersion": CAD_CATALOG_SCHEMA_VERSION, "entries": entries, "revision": catalog_revision(entries)}
+        if missing:
+            answer["missing"] = missing
+        return answer
 
     # --- gates ------------------------------------------------------------
 
@@ -316,7 +379,8 @@ class CadApp:
             return False
         if not os.path.isfile(file_path):
             return False
-        response.stream_file(file_path, stat_result, content_type or "")
+        page = (content_type or "").startswith("text/html")
+        response.stream_file(file_path, stat_result, content_type or "", PAGE_HEADERS if page else ())
         return True
 
     def _serve_dist(self, request, response) -> None:
@@ -394,13 +458,9 @@ class CadApp:
                 if pathname == "/__cad/server":
                     response.send_json(200, self.server_info())
                 elif pathname == "/__cad/catalog":
-                    response.send_json(200, self.read_catalog(query.get("file")))
+                    response.send_json(200, self.read_catalog(query.get("file"), query.get("id")))
                 elif pathname in ("/__cad/folder", "/__cad/search"):
                     self._handle_folder(response, pathname, query)
-                elif pathname == "/__cad/models":
-                    from .model_catalog import in_memory
-
-                    response.send_json(200, {"models": in_memory()})
                 elif pathname == "/__cad/recents":
                     response.send_json(200, self._recents_payload())
                 elif pathname == "/__cad/thumbnail":
@@ -429,6 +489,9 @@ class CadApp:
                     response.send_json(200, language.read())
                 elif pathname == "/__cad/version":
                     response.send_json(200, self._version())
+                elif pathname in _POST_ONLY_ROUTES:
+                    response.send_bytes(405, b'{"ok":false,"error":"Method not allowed"}',
+                                        "application/json", [("allow", "POST")])
                 else:
                     # An unrecognised /__cad/* path is a bad API call, not a
                     # page: a 404 a client doing res.json() can read, never the
@@ -506,9 +569,7 @@ class CadApp:
                         return
                     status, body = self.prompt_files.create(request.body())
                     response.send_json(status, body)
-                elif pathname in {"/__cad/server", "/__cad/catalog", "/__cad/folder", "/__cad/search",
-                                  "/__cad/models", "/__cad/thumbnail", "/__cad/drawing", "/__cad/robot",
-                                  "/__cad/xbf", "/__cad/asset", "/__cad/version"}:
+                elif pathname in _GET_ONLY_ROUTES:
                     response.send_bytes(405, b'{"ok":false,"error":"Method not allowed"}',
                                         "application/json", [("allow", "GET, HEAD")])
                 else:
@@ -549,36 +610,59 @@ class CadApp:
         return self._picker
 
     def _recents_payload(self) -> dict:
-        return {"recents": [entry.public() for entry in self.recents.list()]}
+        # Recents, the registry's view (``recents.py``): the CAD files the viewer opens, and the models.
+        return {"recents": [entry.public() for entry in self.recents.list()
+                            if entry.kind != "file" or extension_of(entry.path) in VIEWER_EXTENSIONS]}
 
     def _change_recents(self, payload) -> dict:
-        """A change to the library -- ``{action, path, png?}``, the model by its absolute path --
-        answered with the library as it now is. A model opened is also counted for analytics."""
+        """A change to the library -- ``{action, path, png?}``, a file by its absolute path, a model by
+        its id (its entry's ``path``) -- answered with the library as it now is. A file opened is
+        also counted for analytics; a model's entry is the engine's, written when it builds, so only
+        pinning, its picture and its deletion (``delete``: the document, ``delete_document``) change
+        it. A file's entry is removed (``remove``), its file untouched."""
         from .recents import thumbnail_png
 
         if type(payload) is not dict:
             raise ValueError("a recents change is {action, path}")
-        from cadgen.engine.addresses import parse
-
-        # In-memory addresses and their pictures never enter the persistent library.
-        if payload.get("path") and parse(payload["path"]) is not None:
+        action = payload.get("action")
+        if is_id(payload.get("path")):
+            ident = payload["path"]
+            if action in ("pin", "unpin"):
+                self.recents.pin(ident, action == "pin")
+            elif action == "delete":
+                self.delete_document(ident)
+            elif action == "thumbnail":
+                self.recents.thumbnail(ident, thumbnail_png(payload.get("png")))
+            elif action != "open":
+                raise ValueError(f"unknown recents action {action!r}")
             return self._recents_payload()
-        action, path = payload.get("action"), absolute_path(payload.get("path"))
+        path = absolute_path(payload.get("path"))
+        # The library keys a model by its canonical path, the engine's (``ids.canonical``): a
+        # symlink, its target and a case variant of one file are one entry.
+        key = canonical(path)
         if action == "open":
-            if extension_of(path) not in (*VIEWER_EXTENSIONS, ".py") or not os.path.isfile(path):
+            if extension_of(path) not in VIEWER_EXTENSIONS or not os.path.isfile(path):
                 raise ValueError(f"no CAD file at {path}")
-            self.recents.opened(path)
+            self.recents.opened(key)
             if self.analytics is not None:
                 self.analytics.opened(path)
         elif action in ("pin", "unpin"):
-            self.recents.pin(path, action == "pin")
+            self.recents.pin(key, action == "pin")
         elif action == "remove":
-            self.recents.remove(path)
+            self.recents.remove(key)
         elif action == "thumbnail":
-            self.recents.thumbnail(path, thumbnail_png(payload.get("png")))
+            self.recents.thumbnail(key, thumbnail_png(payload.get("png")))
         else:
             raise ValueError(f"unknown recents action {action!r}")
         return self._recents_payload()
+
+    def delete_document(self, ident):
+        """A model's Delete: the one deletion ``cadgen delete`` is too (``cadgen.engine.models.delete``)
+        -- its record and its document in the engine's cache, and, from the engine's own page
+        (``engine_app.ViewerApp``), what the engine holds of it first. Never a file of the person's."""
+        from cadgen.engine.models import delete
+
+        delete(self.recents.registry, ident)
 
     def _handle_thumbnail(self, response, query):
         """A library picture, by the content name the library gives it."""

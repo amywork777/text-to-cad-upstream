@@ -1,9 +1,13 @@
 export type CadJson = null | boolean | number | string | CadJson[] | { [key: string]: CadJson };
-export interface CadMemoryModel { address: string; script: string; name: string; builtAt: number; version: number; state: string }
 export interface CadEntry {
-  /** The file's absolute path, `/`-separated. */
+  /** The document's id (`cadgen.engine.ids`): rows join by it, so one file is one row however its path is spelled. */
+  id?: string;
+  /** The file's absolute path, `/`-separated; a document known by its id alone (a model's): its id. */
   file: string;
-  models?: { name: string; address: string }[];
+  /** The document's name where its file does not give it (a model's function). */
+  name?: string;
+  /** The file to browse from; null for a document with no file of its own (a model's). */
+  sourcePath?: string | null;
   kind?: string;
   format?: string;
   sourceFormat?: string;
@@ -16,7 +20,7 @@ export interface CadEntry {
 export interface CadServerInfo {
   autoReload?: boolean;
   identityToken?: string;
-  /** The folder the server was started in, where a developer's relative `?file=` resolves. */
+  /** The folder of the most recent launch (`cadgen viewer`), which the home shows. */
   start?: string;
   /** Whether this computer has a file chooser for the home's Open. */
   pick?: boolean;
@@ -32,12 +36,19 @@ export interface CadRecent {
   pinned: boolean; missing: boolean;
   /** The picture's name, for `thumbnail()`, and when it was taken. */
   thumbnail: string | null; pictured: number | null;
+  /** A CAD file on disk, or a document built from code: a model's, or a shape a program handed over. */
+  kind: 'file' | 'model' | 'shape';
 }
 /** Whether the person's usage stats are sent (`/__cad/analytics`; nothing asks): `reason` says who decided. */
 export interface CadConsent { sharing: boolean; reason: 'default' | 'untold' | 'choice' | 'environment' | 'unavailable'; policy: string; saved?: boolean }
 /** A newer text-to-cad, as cadgen's version check says it (`/__cad/version`). */
 export interface CadUpdateNotice { latest: string; version: string; text: string; prompt: string; instructions: string }
-export interface CadCatalog { entries: CadEntry[]; [key: string]: unknown }
+export interface CadCatalog {
+  entries: CadEntry[];
+  /** Why an id asked for has no row: the engine holds no such document (its words name the command that builds it again). */
+  missing?: string;
+  [key: string]: unknown;
+}
 /** One folder's subfolders and CAD files (`GET /__cad/folder`). */
 export interface CadFolder { path: string; entries: { name: string; kind: 'directory' | 'file' }[]; truncated: boolean }
 /** The CAD files nested under a folder whose path below it holds the query (`GET /__cad/search`). */
@@ -48,6 +59,10 @@ export interface CadCatalogSnapshot {
   hydrated: boolean;
   refreshing: boolean;
   error: string;
+  /** The last read failed because the engine is gone (`isEngineGone`); cleared by the next that answers. */
+  engineGone: boolean;
+  /** Of an engine gone, whether one answered and refused the page's token (`isEngineRefused`). */
+  engineRefused: boolean;
   /** The server's digest of the last catalog applied ('' before one is): what a change watcher compares. */
   catalogRevision: string;
 }
@@ -94,7 +109,7 @@ export interface CadDrawingPayload {
  */
 /**
  * Where a page reads a document the cadgen engine serves (an `.xbf`, a STEP): its id, its API URL
- * through the viewer (`/__cad/xbf/api/doc/<id>`, on the client's origin), and the fetch every read
+ * through the viewer (`/__cad/api/doc/<id>`, on the client's origin), and the fetch every read
  * of it is made with (the client's own: the CAD app's travels over its tunnel).
  */
 export interface CadEngineDocument {
@@ -148,15 +163,20 @@ export interface CadWorkspaceService {
   getSnapshot(): CadCatalogSnapshot;
   subscribe(listener: () => void): () => void;
   refresh(options?: CadRequestOptions & {file?: string;markRefreshing?: boolean}): Promise<CadCatalog>;
+  /** The row of a document, by its absolute path or its id, read when the catalog has none yet. */
   resolveEntry(path: string, options?: CadRequestOptions): Promise<CadEntry>;
+  /** The row the catalog has of a document (its path, or its id), joined by the document's id; null when it has none. */
+  entryOf?(path: string): CadEntry | null;
   serverInfo(options?: CadRequestOptions & { fresh?: boolean }): Promise<CadServerInfo>;
-  models?(options?: CadRequestOptions): Promise<CadMemoryModel[]>;
   folder(path: string, options?: CadRequestOptions): Promise<CadFolder>;
   search(path: string, query: string, options?: CadRequestOptions): Promise<CadSearch>;
   /** The home's library, newest first. */
   recents(options?: CadRequestOptions): Promise<CadRecent[]>;
-  /** A change to the library (`open`, `pin`, `unpin`, `remove`, `thumbnail`): the library as it now is. */
-  changeRecents(change: { action: 'open' | 'pin' | 'unpin' | 'remove' | 'thumbnail'; path: string; png?: string }): Promise<CadRecent[]>;
+  /**
+   * A change to the library (`open`, `pin`, `unpin`, `thumbnail`; `remove` a file's entry, its file
+   * untouched; `delete` a model, its entry and the engine's copy): the library as it now is.
+   */
+  changeRecents(change: { action: 'open' | 'pin' | 'unpin' | 'remove' | 'delete' | 'thumbnail'; path: string; png?: string }): Promise<CadRecent[]>;
   /** Keep a model's picture in the library. */
   keepThumbnail(png: Blob, path: string): Promise<CadRecent[]>;
   /** A library picture, by the name the library gives it, as a data URL; null when there is none. */
@@ -225,31 +245,26 @@ export interface CadActivity {
 }
 
 export type ExportFormat = 'step' | 'glb' | 'stl' | 'threemf' | 'dxf' | 'xbf' | 'original';
-export interface ExportSource { doc: string; revision: string; part: string | null; pose: Record<string, number> | null }
-export interface ExportOption {
-  format: ExportFormat; label: string; extension: string; reason: string | null;
-  /**
-   * Whether the PMI decided the row: STEP's wherever the document carries PMI (which the export
-   * writes and checks in the file), XBF's where it is made again (a part, a converted document).
-   * With a `reason`, the format would not carry the PMI whole.
-   */
-  pmi?: boolean;
-  /** STEP's: what the document holds that a STEP does not carry, which stays in the XBF (none where none). */
-  kept?: ('notes' | 'views')[];
-}
+export interface ExportSource { doc: string; revision: string }
+/** One export: `epoch` is the session's (`ExportService.epoch`), `''` until the page has asked it. */
 export interface ExportRequest { requestId: string; epoch: string; source: ExportSource; format: ExportFormat }
 export interface ExportJob {
   id: string; requestId: string; epoch: string; filename: string;
   state: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'failed' | 'ready' | 'expired';
   stage: string; sequence: number; createdAt: number; finishedAt: number; expiresAt: number;
   bytes?: number; error?: string;
+  /** Expired because the browser fetched the whole file (it is deleted then), not by its window. */
+  fetched?: boolean;
+  /** A STEP's PMI, checked in the file as written (none where the format carries none). */
   pmiVerification?: { matched: number; total: number; problems: string[]; sha256: string } | null;
 }
 export interface ExportService {
-  options(source: ExportSource, signal: AbortSignal): Promise<{ epoch: string; formats: ExportOption[] }>;
+  /** The session's epoch, which a request names so that a server restarted since refuses it. */
+  epoch(signal?: AbortSignal): Promise<string>;
   create(request: ExportRequest, signal?: AbortSignal): Promise<ExportJob>;
   status(id: string, sequence?: number, signal?: AbortSignal): Promise<ExportJob>;
   cancel(id: string): Promise<ExportJob>;
   release(id: string): Promise<ExportJob>;
-  download(id: string, signal: AbortSignal): Promise<Response>;
+  /** Where the browser downloads a ready job's file: the session's own origin, never a token. */
+  fileUrl(id: string): string;
 }

@@ -98,16 +98,16 @@ async function newPage() {
       return;
     }
     const parsed = new URL(url);
-    // A file is named by its absolute path in every request: the page resolves a relative
-    // `?file=` (as this suite opens them) against where the viewer started before it asks.
-    if (["/__cad/catalog", "/__cad/artifact", "/__cad/preview"].includes(parsed.pathname)) {
+    // A file is named by its absolute path in every request: the page addresses documents by id
+    // (`/<id>`) and asks for a file by the path its row gives.
+    if (parsed.pathname === "/__cad/catalog") {
       const file = parsed.searchParams.get("file") || "";
       if (file && !/^(?:\/|[a-z]:\/)/i.test(file)) {
         errors.push(`a relative file reached ${parsed.pathname}: ${file}`);
       }
     }
     // The page reads its own origin alone: a document the cadgen engine serves is read through
-    // the viewer (`/__cad/xbf/api/...`), never from the engine's own port.
+    // the viewer (`/__cad/api/...`), never from the engine's own port.
     if (["http:", "https:"].includes(parsed.protocol) && parsed.origin !== viewerOrigin) {
       errors.push(`a request to another origin: ${request.method()} ${url} (${request.resourceType()})`);
       await route.abort("blockedbyclient");
@@ -191,7 +191,13 @@ async function newPage() {
 }
 
 async function openFile(page, file) {
-  await page.goto(`${args.url.replace(/\/$/, "")}/?file=${encodeURIComponent(file)}`, {
+  // A page names its document by id, `/<id>`: the file's, which the server derives from its canonical
+  // path and registers when the catalog is asked for it (as Select File and the home do).
+  const base = args.url.replace(/\/$/, "");
+  const catalog = await page.request.get(`${base}/__cad/catalog?file=${encodeURIComponent(path.join(root, file))}`);
+  const id = (await catalog.json()).entries?.[0]?.id;
+  if (!id) fail(`the catalog gave ${file} no document id`);
+  await page.goto(`${base}/${id}`, {
     waitUntil: "domcontentloaded",
     timeout: 60_000,
   });
@@ -395,8 +401,8 @@ async function resetView(page) {
   const box = await page.locator("canvas").first().boundingBox();
   await page.mouse.click(box.x + box.width * 0.12, box.y + box.height * 0.86, { button: "right" });
   await page.getByRole("menuitem", { name: "Zoom to fit", exact: true }).click();
-  // Reset changes framing on the presented model: presentation and camera
-  // stability are what it waits for.
+  // Reset changes framing on the presented model: presentation and a camera at
+  // rest are what it waits for.
   await settledCameraFrame(page, { stage: "reset view" });
 }
 
@@ -404,47 +410,31 @@ async function resetView(page) {
 // Inspect (the tools view, Solid) and Render (Preview) look at one model: Preview converts
 // the camera to its perspective, keeping what it looks at, and leaving it gives the tools view's
 // camera back exactly. A model opens framed against its own zero pose.
-async function settledCameraFrame(page, { projection = null, stage, requireSettledLod = true, timeout = 60_000 } = {}) {
+async function settledCameraFrame(page, { projection = null, stage, timeout = 60_000 } = {}) {
   const startedAt = Date.now();
   cameraReadiness.set(page, { ...cameraReadiness.get(page), pending: { stage, projection } });
   // Projection is published during scene reconciliation, before Render's
   // environment and first frame are necessarily ready. The presentation host
   // clears aria-busy only after drawing that destination scene. The whole model
-  // must be loaded, and camera damping must settle, for every framing assertion.
+  // must be loaded, and the camera at rest by the controller's own account
+  // (`settling`: no gesture, transition, held key or damping still moves it),
+  // for every framing assertion. The frame the poll runs in was drawn at rest.
   const ready = await page.waitForFunction(({ want }) => {
-    const read = () => {
-      const canvas = document.querySelector("canvas");
-      const camera = window.__cadCamera?.();
-      if (!canvas || !camera || (want && camera.projection !== want)
-        || canvas.closest("[aria-busy]")?.getAttribute("aria-busy") !== "false"
-        || getComputedStyle(canvas).visibility !== "visible"
-        || document.querySelector("[data-viewer-transition]")
-        || !window.__cadViewerLoad?.complete) return null;
-      return { canvas, camera };
-    };
-    const after = read();
-    if (!after) {
-      delete window.__viewerTestCameraFrame;
-      return false;
-    }
-    const coordinates = camera => [...camera.position, ...camera.target, ...camera.up, camera.zoom, camera.zoomPercent,
-      ...(camera.projection === "orthographic" ? [camera.halfHeight] : [])];
-    const before = window.__viewerTestCameraFrame;
-    const a = before ? coordinates(before.camera) : [], b = coordinates(after.camera);
-    const stable = before?.canvas === after.canvas
-      && a.every((value, index) => Math.abs(value - b[index]) <= 1e-9 * Math.max(1, Math.abs(value)));
-    const stableFrames = stable ? before.stableFrames + 1 : 0;
-    window.__viewerTestCameraFrame = { ...after, stableFrames };
-    if (stableFrames < 2) return false;
+    const canvas = document.querySelector("canvas");
+    const camera = window.__cadCamera?.();
+    if (!canvas || !camera || camera.settling !== false || (want && camera.projection !== want)
+      || canvas.closest("[aria-busy]")?.getAttribute("aria-busy") !== "false"
+      || getComputedStyle(canvas).visibility !== "visible"
+      || document.querySelector("[data-viewer-transition]")
+      || !window.__cadViewerLoad?.complete) return false;
     // A view draws through the page's GPU device and is handed its frames as bitmaps; a browser
     // without one draws in a context of the canvas's own.
-    const gl = after.canvas.getContext("webgl2");
+    const gl = canvas.getContext("webgl2");
     if (gl) {
       if (gl.isContextLost()) throw new Error('camera: presented canvas has lost its WebGL2 context');
       gl.finish();
     } else if (!(window.__cadGpuDevice?.().views > 0)) throw new Error('camera: presented canvas draws through no GPU device');
-    delete window.__viewerTestCameraFrame;
-    return { camera: after.camera, width: after.canvas.width, height: after.canvas.height };
+    return { camera, width: canvas.width, height: canvas.height };
   }, { want: projection }, { timeout, polling: "raf" });
   try {
     const state = { stage, waitMs: Date.now() - startedAt, ...await ready.jsonValue() };

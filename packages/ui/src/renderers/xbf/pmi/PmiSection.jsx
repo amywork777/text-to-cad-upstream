@@ -3,10 +3,11 @@ import { CircleAlert, Eye, EyeOff, Pin, Plus } from "lucide-react";
 import { pmiCallText, pmiNumber, pmiToleranceText } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
 import { Button } from "@text-to-cad/ui/primitives/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@text-to-cad/ui/primitives/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@text-to-cad/ui/primitives/select";
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
 import { ROW_NAME_UNDER_ACTIONS, TreeRowLabel, TreeRowSurface, treeRowActionsClass } from "@text-to-cad/ui/primitives/tree-row";
 import { cn } from "@text-to-cad/ui/utils";
-import { FileSheetSelectRow, FileSheetSettingsSection, FileSheetStatusText, FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
+import { FILE_SHEET_SELECT_TRIGGER_CLASSES, FileSheetSettingsSection, FileSheetStatusText, FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
 import { InfoRow, MonoValue } from "../../kit/inspector/referenceRows.jsx";
 import ToolPanel, { TOOL_PANEL_BUTTON_CLASS, ToolPanelHeadAction } from "../../kit/tools/ToolPanel.jsx";
 import { ToolStackContext } from "../../kit/tools/ToolStack.jsx";
@@ -206,6 +207,17 @@ function TextField({ label, ariaLabel, value, onCommit, error = "" }) {
   </>;
 }
 
+/** A part's notes library, an entry picked by its name (its words its hint): the note's words become the entry's. */
+function LibraryField({ library, value, onPick }) {
+  return <div className="flex items-center justify-between gap-3 py-0.5">
+    <span className="shrink-0 text-tiny text-muted-foreground">Library</span>
+    <Select value={value} onValueChange={onPick}>
+      <SelectTrigger aria-label="Notes library" size="sm" className={cn(FILE_SHEET_SELECT_TRIGGER_CLASSES, "w-fit min-w-20 max-w-44")}><SelectValue placeholder="None" /></SelectTrigger>
+      <SelectContent>{library.map(item => <TooltipHint key={item.name} content={item.text}><SelectItem value={item.name}>{item.name}</SelectItem></TooltipHint>)}</SelectContent>
+    </Select>
+  </div>;
+}
+
 /** A view's section in words: the Clip's axis and where it stands, and whether it keeps the upper side (the Clip's Reverse). */
 const sectionText = section => `${section.axis.toUpperCase()} at ${pmiNumber(section.at)} mm${section.invert ? ", reversed" : ""}`;
 
@@ -241,8 +253,7 @@ function NewEntry({ option, onAdd, onCancel }) {
     {call.characteristic === "position" || call.characteristic === "surface_profile"
       ? <DatumPicker letters={option.datums} value={call.datums} onChange={datums => setCall(now => ({ ...now, datums }))} /> : null}
     {call.kind === "note" ? <>
-      {option.library.length ? <FileSheetSelectRow label="Library" ariaLabel="Notes library" placeholder="None" className="px-0" value={call.library || ""}
-        options={option.library.map(item => ({ value: item.name, label: item.name, title: item.text }))} onValueChange={fromLibrary} /> : null}
+      {option.library.length ? <LibraryField library={option.library} value={call.library || ""} onPick={fromLibrary} /> : null}
       <TextField label="Text" ariaLabel="Note text" value={call.text} onCommit={write} />
       <FileSheetStatusText className="px-0">{call.faces.length ? "A flag note on the faces picked." : "A general note, on no face."}</FileSheetStatusText>
     </> : null}
