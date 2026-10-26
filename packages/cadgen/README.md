@@ -56,7 +56,7 @@ the two disagree, the engine's README is right.
 ## The design laws
 
 These are LAWS, not conventions: a change that violates them is wrong even when it works.
-Laws 1 to 13 and 19 to 22 are the engine's; 14 to 18 hold for the whole package.
+Laws 1 to 13 and 19 to 23 are the engine's; 14 to 18 hold for the whole package.
 
 1. **An xbf carries its build closure as pointers and digests** -- script and function,
    modules, data inputs, versions and the key; never source, never lines on elements, never
@@ -80,8 +80,9 @@ Laws 1 to 13 and 19 to 22 are the engine's; 14 to 18 hold for the whole package.
    -- and made again by a run of its script (a shape's by the program that handed it over), so a
    restart opens every project at once; and under `pycache/` the bytecode its own processes compile of the libraries they load
    (`PYTHONPYCACHEPREFIX`, a folder per installation), regenerable too, so nothing is written
-   beside a library or a model. The code stays the only source of truth: a document whose code changed since says so,
-   with the command that builds it again, and nothing reruns. It writes no
+   beside a library or a model. The code stays the only source of truth: a document is what its
+   last run made, the engine never checks the code on disk against it, and nothing reruns -- when
+   to run the code again is the agent's call. It writes no
    sidecar, record of a build beside a model, index, memo, mesh or parsed document, and no derived file
    beside an input. A model whose document -- in its warm worker, else the cache -- holds the closure the
    model has now is not run, whatever files it declares: they are exports of the document, written
@@ -237,6 +238,23 @@ Laws 1 to 13 and 19 to 22 are the engine's; 14 to 18 hold for the whole package.
     is drawn in); `serve`'s and `status`'s the process. Anything that changes what a document
     is, is a function in the model's code: a part's own model, or a model returning the
     assembly in a state (`cadgen.ap242.posed`).
+
+23. **Push, not pull: a model is what its last run told the engine.** The engine's knowledge of a
+    model comes from a run an agent or a person starts (`python model.py`, `cadgen run model.py`),
+    which pushes the model's code, its key and its document to the engine. The engine never reads a
+    script to learn what a model is, never watches one, never infers a document from a path on
+    disk, and never runs code on its own: a script edited and not run changes nothing the engine
+    holds or says, until the next run tells it. What it reads at a run is what that run executes
+    and declares -- the script and the modules its program imports, the files its bodies read,
+    their digests for the build closure, and the files its decorators declare (law 10) -- and none
+    of it again once the run is over. Two reads are not the engine reading code: a file document,
+    which is the disk by definition and is read again when its bytes change; and the registry's
+    record, which a run wrote. An existence check that only words a state reads no code (a model
+    whose script is gone is `detached`, the engine's **Document lifetime**).
+    *Pressure-test*: build a model, then edit its script, its modules and the files its bodies
+    read, without running it: every page, the home, every verb and tool and `cadgen status` answer
+    as they did before the edit, and no process of the engine has opened a file of the model's code
+    since its run.
 
 
 ## Agent operations

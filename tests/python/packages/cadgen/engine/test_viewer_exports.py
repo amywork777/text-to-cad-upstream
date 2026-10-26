@@ -23,7 +23,7 @@ class ViewerExportsTest(unittest.TestCase):
             def write(source, _unused, target, **kwargs):
                 target.write_bytes(b"written step")
                 return target.stat().st_size
-            with patch.object(building, "held", return_value=source), \
+            with patch.object(Source, "read", return_value=source), \
                  patch("cadgen.engine.export.viewer.check"), \
                  patch("cadgen.engine.export.translate", side_effect=write), \
                  patch("cadgen.engine.export.ap242.verify", return_value={"matched": 1}) as check:
@@ -32,7 +32,7 @@ class ViewerExportsTest(unittest.TestCase):
                 self.assertEqual(result["files"][0]["pmiVerification"]["matched"], 1)
             # A document without PMI: its STEP is not checked, and its result carries no verification.
             source.structure = {}
-            with patch.object(building, "held", return_value=source), \
+            with patch.object(Source, "read", return_value=source), \
                  patch("cadgen.engine.export.viewer.check"), \
                  patch("cadgen.engine.export.translate", side_effect=write), \
                  patch("cadgen.engine.export.ap242.verify") as check:
@@ -55,7 +55,7 @@ class ViewerExportsTest(unittest.TestCase):
                 target.write_bytes(b"written step")
                 return target.stat().st_size
 
-            with patch.object(building, "held", return_value=source), \
+            with patch.object(Source, "read", return_value=source), \
                  patch("cadgen.engine.export.viewer.check"), \
                  patch("cadgen.engine.export.translate", side_effect=write), \
                  patch("cadgen.engine.export.ap242.verify") as check:

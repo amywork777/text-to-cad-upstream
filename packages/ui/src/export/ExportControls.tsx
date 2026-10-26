@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowDownToLine, X, Check, CircleAlert } from 'lucide-react';
+import { useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { ArrowDownToLine } from 'lucide-react';
+import { toast } from 'sonner';
 import { ExportRequestError, exportPause, type ExportJob, type ExportRequest, type ExportService } from '@text-to-cad/core/client';
 import type { DownloadPort, ExportRecord } from '../host/types.js';
+import { ViewerElementContext } from '../host/context.js';
 import { Button } from '../primitives/button.jsx';
-import { Spinner } from '../primitives/spinner.js';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '../primitives/dropdown-menu.jsx';
+import { Toaster } from '../primitives/sonner.jsx';
 import { TooltipHint } from '../primitives/tooltip.jsx';
 import { FLOATING_SURFACE_CLASS } from '../lib/floatingSurface.js';
 import { NAVBAR_CONTROL_CLASS } from '../lib/navbarRow.js';
@@ -14,165 +16,124 @@ import { useViewerMobile } from '../file-viewer/responsive.js';
 import { ExportContext, type ExportView } from './context.js';
 import { exportChoices, type ExportChoice } from './formats.js';
 
-const active = (job: ExportJob | null) => !job || ['queued', 'running', 'cancelling'].includes(job.state);
+type Translate = ReturnType<typeof useI18n>['t'];
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+// A refusal (4xx) is the export's answer; a dropped connection or a 5xx is asked again.
 const retryable = (error: unknown) => !(error instanceof ExportRequestError) || error.status >= 500;
-// What the toast says is the job's state in the page's language; the server's stage is English.
-const STATE_TEXT: Record<ExportJob['state'], string> = {
-  queued: 'export.queued', running: 'export.running', cancelling: 'export.cancelling', cancelled: 'export.cancelled',
-  failed: 'export.failed', expired: 'export.expired', ready: 'export.downloaded',
-};
+const running = (job: ExportJob) => job.state === 'queued' || job.state === 'running' || job.state === 'cancelling';
 
-/** Each toast owns one job subscription and hands its file to the browser once; siblings never cancel each other. */
-function ExportToast({ attempt, service, downloads, reveal, onDelivered, onRequest, onRemove, onActivity, onExportAgain }: {
-  attempt: ExportRecord; service: ExportService; downloads: DownloadPort; reveal: number;
-  onDelivered(): void; onRequest(request: ExportRequest): void; onRemove(): void; onActivity(id: string, busy: boolean): void; onExportAgain(): void;
-}) {
-  const { t } = useI18n();
-  // A phone's buttons are its 36px touch tiles (`docs/settings-ui.md`, Mobile); a desktop's the menu's.
-  const mobile = useViewerMobile();
-  const button = mobile ? { size: 'default' as const, className: 'px-3 text-tiny' } : { size: 'xs' as const, className: 'text-tiny' };
-  const [job, setJob] = useState<ExportJob | null>(null);
-  const [error, setError] = useState('');
-  const [fatal, setFatal] = useState(false);
-  const [connection, setConnection] = useState('');
-  const [hidden, setHidden] = useState(false);
-  const [now, setNow] = useState(Date.now());
-  const cancelWanted = useRef(false);
-  // A file is handed to the browser once by itself; again only when the person asks.
-  const delivered = useRef(attempt.delivered);
-  const latestJob = useRef(job); latestJob.current = job;
-  const latest = useRef({ downloads, onDelivered, onRequest }); latest.current = { downloads, onDelivered, onRequest };
-  // The request as it was handed over (a new one is a new toast: they are keyed by its id); one a
-  // menu item made learns its session's epoch below, once, before it is submitted.
-  const asked = useRef(attempt.request);
-  useEffect(() => { setHidden(false); }, [reveal]);
-  const expired = job?.state === 'expired' || (job?.state === 'ready' && now / 1000 >= job.expiresAt);
-  useEffect(() => {
-    if (job?.state === 'ready' && !expired) {
-      const timer = setTimeout(() => setNow(Date.now()), Math.max(0, job.expiresAt * 1000 - Date.now()) + 50);
-      return () => clearTimeout(timer);
-    }
-    if (!active(job) || fatal) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [job, expired, fatal]);
-
-  const deliver = useCallback((ready: ExportJob) => {
-    delivered.current = true;
-    // The server's name for the file: the one its Content-Disposition gives every browser.
-    latest.current.downloads.save(service.fileUrl(ready.id), ready.filename || attempt.filename);
-    latest.current.onDelivered();
-  }, [service, attempt.filename]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const { signal } = controller;
-    (async () => {
-      let found: ExportJob | null = null;
-      let failures = 0;
-      for (;;) {
-        try {
-          if (!asked.current.epoch) {
-            // The request names the session it is made in, and the page keeps it so: after a reload,
-            // a server that has restarted since refuses it rather than running it again.
-            const epoch = await service.epoch(signal);
-            if (signal.aborted) return;
-            asked.current = { ...asked.current, epoch };
-            latest.current.onRequest(asked.current);
-          }
-          found = found ? await service.status(found.id, found.sequence, signal) : await service.create(asked.current, signal);
-          if (signal.aborted) return;
-          failures = 0; setConnection(''); setJob(found);
-          if (cancelWanted.current && active(found) && found.state !== 'cancelling') {
-            found = await service.cancel(found.id);
-            if (signal.aborted) return;
-            setJob(found);
-          }
-          if (!active(found)) {
-            if (found.state !== 'ready') return;
-            if (!delivered.current && !cancelWanted.current) deliver(found);
-            // Ready, its status waits for the file to go: fetched whole by the browser, or past its
-            // window (`cadgen/viewer/exports.py`). Then Download again becomes Export again.
-          }
-        } catch (failure) {
-          if (signal.aborted) return;
-          if (!retryable(failure)) { setError(message(failure)); setFatal(true); setConnection(''); return; }
-          setConnection(t('export.reconnecting'));
-          await exportPause(Math.min(1000 * 2 ** failures++, 10000), signal);
-        }
-      }
-    })().catch(() => {});
-    return () => controller.abort();
-  }, [service, deliver, t]);
-
-  const cancel = async () => {
-    cancelWanted.current = true;
-    setConnection(t('export.cancelRequested'));
-    const found = latestJob.current;
-    if (!found || !active(found)) return;
-    try { setJob(await service.cancel(found.id)); setConnection(''); }
-    catch (failure) { setError(t('export.cancelError', { message: message(failure) })); }
-  };
-  // In the press itself, so the browser counts it as the person's own download.
-  const again = () => { if (job?.state === 'ready' && !expired) deliver(job); };
-  const remove = async () => {
-    if (job && !fatal) {
-      try { await service.release(job.id); } catch (failure) {
-        if (!(failure instanceof ExportRequestError && failure.status === 404)) { setError(message(failure)); return; }
-      }
-    }
-    onRemove();
-  };
-  const busy = active(job) && !fatal;
-  useEffect(() => { onActivity(attempt.request.requestId, busy); }, [onActivity, attempt.request.requestId, busy]);
-  if (hidden) return null;
-  const failure = error || job?.error;
-  const title = !job ? (failure ? t('export.failed') : t('export.submitting'))
-    : t(job.fetched ? 'export.fetched' : expired ? 'export.expired' : STATE_TEXT[job.state]);
-  const seconds = Math.max(0, Math.floor(((job?.finishedAt || now / 1000) - (job?.createdAt || now / 1000))));
-  const ready = job?.state === 'ready' && !expired;
-  // A STEP's PMI, checked in the file as written: said once the file is ready, and after it went.
-  const verification = job && (job.state === 'ready' || job.fetched) ? job.pmiVerification : null;
-  const verified = verification && verification.total > 0 && verification.matched === verification.total && !verification.problems.length;
-  return <section className="rounded-lg border border-border bg-popover p-3 text-tiny text-popover-foreground shadow-lg" aria-label={t('export.toast', { name: job?.filename || attempt.filename })} data-export-toast="">
-    <div className="flex items-start gap-2">
-      {failure ? <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" /> : busy ? <Spinner className="mt-0.5 size-4 shrink-0" />
-        : ready ? <Check className="mt-0.5 size-4 shrink-0" /> : <ArrowDownToLine className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
-      <div className="min-w-0 flex-1"><p className="truncate">{job?.filename || attempt.filename}</p><p className="mt-1 text-muted-foreground" role="status" aria-live="polite">{title}{busy ? ` · ${seconds}s` : ''}</p></div>
-      <Button variant="ghost" size={mobile ? 'icon' : 'icon-xs'} aria-label={t('export.dismiss')} onClick={() => setHidden(true)}><X /></Button>
-    </div>
-    {connection ? <p className="mt-2">{connection}</p> : null}
-    {failure ? <p className="mt-2 break-words text-destructive" role="alert">{failure}</p> : null}
-    {verification ? <div className="mt-2 space-y-1 border-t border-border pt-2" aria-live="polite">
-      <p>{verification.total === 0 ? t('export.pmiNone') : verified ? t('export.pmiVerified', { matched: verification.matched, total: verification.total }) : t('export.pmiInconclusive')}</p>
-      <p className="text-muted-foreground">{verified ? t('export.pmiMatches') : t('export.pmiReview')}</p>
-      <details className="text-muted-foreground"><summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('export.pmiDetails')}</summary>
-        {verification.problems.length ? <ul className="mt-1 list-disc space-y-1 pl-4">{verification.problems.map((problem, i) => <li key={i}>{problem}</li>)}</ul> : null}
-        <p className="mt-1">{t('export.pmiLimits')}</p>
-        <p className="mt-1 break-all">{t('export.sha256', { digest: verification.sha256 })}</p>
-      </details>
-      <p className="text-muted-foreground">{t('export.pmiImporter')}</p>
-    </div> : null}
-    {ready ? <p className="mt-2 text-muted-foreground">{t('export.until', { time: new Date(job.expiresAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })}</p> : null}
-    <div className="mt-2 flex justify-end gap-2">
-      {busy ? <Button {...button} variant="outline" disabled={job?.state === 'cancelling'} onClick={() => { void cancel(); }}>{t('export.cancel')}</Button> : null}
-      {ready ? <Button {...button} onClick={again}>{t('export.again')}</Button> : null}
-      {expired ? <Button {...button} onClick={onExportAgain}>{t('export.exportAgain')}</Button> : null}
-      {!busy ? <Button {...button} variant="ghost" onClick={() => { void remove(); }}>{t('export.remove')}</Button> : null}
-    </div>
-  </section>;
+/**
+ * What an exported STEP's check of its PMI found (`pmiVerification`, read in the file as written),
+ * said under its toast's line: every annotation matched, or the check incomplete with what it found,
+ * and that no factory's importer was tried. Null where the job checked none (any other format).
+ */
+function pmiCheck(job: ExportJob, t: Translate) {
+  const check = job.pmiVerification;
+  if (!check) return null;
+  const verified = check.total > 0 && check.matched === check.total && !check.problems.length;
+  const headline = check.total === 0 ? t('export.pmiNone') : verified
+    ? t('export.pmiVerified', { matched: check.matched, total: check.total }) : t('export.pmiInconclusive');
+  return { verified, description: <span className="block space-y-0.5" data-export-pmi-check="">
+    <span className="block">{headline}. {t(verified ? 'export.pmiMatches' : 'export.pmiReview')}</span>
+    {check.problems.map((problem, i) => <span key={i} className="block">{problem}</span>)}
+    <span className="block">{t('export.pmiImporter')}</span>
+  </span> };
 }
 
-/** Where the toasts stand: under the navbar at the view's top-right on a desktop; at a phone's
- * bottom, the view's width less its margins, where a thumb reaches them. Rendered inside the
- * viewer, so it reads the viewer's own width (`useViewerMobile`). */
-function ToastStack({ label, children }: { label: string; children: ReactNode }) {
-  const mobile = useViewerMobile();
-  return <div className={`pointer-events-none absolute inset-x-2 z-40 flex max-h-[calc(100%-1rem)] flex-col overflow-y-auto ${mobile ? 'bottom-2 items-stretch' : 'top-2 items-end'}`}
-    aria-label={label} data-export-stack={mobile ? 'bottom' : 'top'}>
-    <div className={`pointer-events-auto flex max-w-full flex-col gap-2 ${mobile ? 'w-full' : 'w-80'}`}>{children}</div>
-  </div>;
+/**
+ * One export, as a browser download is: its toast spins while the job is queued or running, and
+ * also while the connection is down and asked again; once the file is ready it is handed to the
+ * browser (whose own downloads decide where it goes) and the toast says it was exported, or the
+ * toast is the engine's one-line reason, kept until dismissed. A request made from the menu learns
+ * its session's epoch first and is kept with it (`onRequest`), so a reload reconnects to its job
+ * by it, and a server restarted since refuses it rather than running it again.
+ */
+async function runExport({ record, service, downloads, t, signal, onRequest }: {
+  record: ExportRecord; service: ExportService; downloads: DownloadPort; t(): Translate; signal: AbortSignal;
+  onRequest(request: ExportRequest): void;
+}) {
+  const id = record.request.requestId;
+  let request = record.request;
+  // The page's name for the file while it is made (a queued job's is a placeholder); then the
+  // ready job's, the one its Content-Disposition gives every browser.
+  toast.loading(t()('export.preparing', { name: record.filename }), { id });
+  const fail = (reason: string) => toast.error(reason || t()('export.failed'), { id, duration: Infinity, closeButton: true });
+  let job: ExportJob | null = null;
+  let failures = 0;
+  for (;;) {
+    try {
+      if (!request.epoch) {
+        request = { ...request, epoch: await service.epoch(signal) };
+        if (signal.aborted) return;
+        onRequest(request);
+      }
+      job = job ? await service.status(job.id, job.sequence, signal) : await service.create(request, signal);
+      if (signal.aborted) return;
+      failures = 0;
+      if (running(job)) continue;
+      const name = job.filename || record.filename;
+      // A STEP's PMI check goes with what the export did; one that found a problem stays until dismissed.
+      const check = pmiCheck(job, t());
+      const exported = check ? { id, description: check.description, ...(check.verified ? {} : { duration: Infinity, closeButton: true }) } : { id };
+      if (job.state === 'ready') {
+        downloads.save(service.fileUrl(job.id), name);
+        toast.success(t()('export.exported', { name }), exported);
+      } else if (job.fetched) {
+        // A request kept across a reload whose file the browser had already fetched whole.
+        toast.success(t()('export.exported', { name }), exported);
+      } else fail(job.error || job.stage);
+      return;
+    } catch (failure) {
+      if (signal.aborted) return;
+      if (!retryable(failure)) { fail(message(failure)); return; }
+      // The toast keeps spinning: the job may still be running, and the poll resumes on its own.
+      await exportPause(Math.min(1000 * 2 ** failures++, 10000), signal);
+    }
+  }
+}
+
+const GUTTER = 16;
+/**
+ * A toast as small as a menu item: one line of the menu's text (`text-tiny`, regular weight), its
+ * padding, a 14px icon, and as wide as its text above Sonner's narrow-screen layout (a window up to
+ * 600px, where Sonner spans its toasts across the screen). Sonner's own stylesheet is unlayered, so
+ * each of these is `!important` to win over it; `primitives/sonner.jsx` stays shadcn's.
+ */
+const TOAST_CLASSES = {
+  toast: 'gap-1.5! px-2.5! py-1.5! text-tiny! min-[601px]:w-max! min-[601px]:max-w-[calc(100vw-2rem)]!',
+  title: 'font-normal! leading-4!',
+  icon: 'size-3.5! [&_svg]:size-3.5!',
+};
+
+/** Where the toasts start: under the viewer's navbar (its top where it has none), by the gutter. */
+function useBelowNavbar(mobile: boolean) {
+  const viewer = useContext(ViewerElementContext);
+  const [top, setTop] = useState(GUTTER);
+  useEffect(() => {
+    const element = viewer?.current;
+    if (!element) return;
+    const measure = () => {
+      const bar = element.querySelector('[data-viewer-navbar]');
+      setTop(Math.round(bar ? bar.getBoundingClientRect().bottom : element.getBoundingClientRect().top) + GUTTER);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    const bar = element.querySelector('[data-viewer-navbar]');
+    if (bar) observer.observe(bar);
+    return () => observer.disconnect();
+  }, [viewer, mobile]);
+  return top;
+}
+
+/** The exports' toasts, at the view's top right under its navbar. Rendered inside the viewer, so it
+ * reads the viewer's own width (`useViewerMobile`), its navbar and its host's colour scheme. */
+function ExportToaster() {
+  const { t } = useI18n();
+  const top = useBelowNavbar(useViewerMobile());
+  const offset = { top, right: GUTTER, left: GUTTER };
+  return <Toaster position="top-right" offset={offset} mobileOffset={offset}
+    toastOptions={{ closeButtonAriaLabel: t('export.dismiss'), classNames: TOAST_CLASSES }} />;
 }
 
 export function ExportControls({ service, downloads, file, children }: {
@@ -182,65 +143,69 @@ export function ExportControls({ service, downloads, file, children }: {
   const { t } = useI18n();
   const [source, setSource] = useState<ExportView | null>(null);
   const [open, setOpen] = useState(false);
-  const [reveal, setReveal] = useState(0);
-  const [activity, setActivity] = useState<Record<string, boolean>>({});
-  const reportActivity = useCallback((id: string, busy: boolean) => setActivity(old => old[id] === busy ? old : { ...old, [id]: busy }), []);
-  const [attempts, setAttempts] = useState<ExportRecord[]>(() => downloads?.restore?.() || []);
-  useEffect(() => { downloads?.remember?.(attempts); }, [attempts, downloads]);
+  const translate = useRef(t); translate.current = t;
+  // The exports still under way, kept in the tab so that a reload picks each up again; one leaves
+  // as its file is handed over or it fails.
+  const pending = useRef(new Map<string, ExportRecord>());
+  const runs = useRef(new Set<AbortController>());
+  const keep = useCallback(() => { downloads?.remember?.([...pending.current.values()]); }, [downloads]);
+  const start = useCallback((record: ExportRecord) => {
+    if (!service || !downloads) return;
+    const controller = new AbortController();
+    runs.current.add(controller);
+    pending.current.set(record.request.requestId, record);
+    keep();
+    void runExport({ record, service, downloads, t: () => translate.current, signal: controller.signal,
+      onRequest: request => { pending.current.set(request.requestId, { ...record, request }); keep(); } })
+      .catch(() => {})
+      .finally(() => {
+        runs.current.delete(controller);
+        if (controller.signal.aborted) return;
+        pending.current.delete(record.request.requestId);
+        keep();
+      });
+  }, [service, downloads, keep]);
+  useEffect(() => {
+    for (const record of downloads?.restore?.() || []) start(record);
+    const live = runs.current;
+    return () => { for (const controller of live) controller.abort(); live.clear(); };
+  }, [downloads, start]);
   const displayed = source?.file === file ? source : null;
   // What the file on screen saves as, known from its kind: the menu has nothing to wait for.
   const choices = displayed ? exportChoices(displayed) : [];
   const begin = (choice: ExportChoice) => {
     if (!displayed) return;
     // The document as its code built it, at the revision on screen: never a selection or a pose.
-    // Its toast asks the session's epoch and submits it at once.
     const request: ExportRequest = { requestId: crypto.randomUUID(), epoch: '', source: { doc: displayed.doc, revision: displayed.revision }, format: choice.format };
     const stem = (displayed.name.split('::').pop() || 'model').replace(/\.[^.]+$/, '').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 100);
-    setAttempts(old => [...old, { request, filename: (stem || 'model') + choice.extension, delivered: false }]);
-    setReveal(n => n + 1);
+    start({ request, filename: (stem || 'model') + choice.extension });
   };
   const enabled = Boolean(service && downloads);
   const label = t('export.button');
-  // A dropdown of the formats, the file menu's own: a choice closes it and starts that export.
-  // After them, Show exports while there are any; last, muted, what an export holds, and what a
-  // STEP holds of a document's PMI (`ExportPmi`): its GD&T checked in the file, what stays in the XBF.
+  // A dropdown of the formats, the file menu's own: a choice closes it and starts that export. Under
+  // them, muted, only where the document holds PMI: what its STEP carries of it (`ExportPmi`), its
+  // GD&T checked in the file, and what stays in the XBF.
   const pmi = choices.find(choice => choice.pmi)?.pmi;
   const held = new Set(pmi?.kept || []);
   const kept = held.has('notes') && held.has('views') ? 'export.pmiKeptNotesViews' : held.has('notes') ? 'export.pmiKeptNotes'
     : held.has('views') ? 'export.pmiKeptViews' : '';
-  const navbar = enabled && (choices.length || attempts.length) ? <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+  const navbar = enabled && choices.length ? <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
     <TooltipHint content={label} side="bottom" disabled={open}>
       <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon-xs" aria-label={label} className={NAVBAR_CONTROL_CLASS} data-export-menu="">
-        {attempts.some(row => activity[row.request.requestId]) ? <Spinner className="size-3.5" /> : <ArrowDownToLine className="size-3.5" />}
+        <ArrowDownToLine className="size-3.5" />
       </Button></DropdownMenuTrigger>
     </TooltipHint>
     {/* Closes with no exit animation, so a quick second press always reaches the button. */}
     <DropdownMenuContent align="end" sideOffset={6} collisionPadding={8} aria-label={label}
       className={cn(FLOATING_SURFACE_CLASS, 'w-44 data-[state=closed]:animate-none!')}>
       {choices.map(choice => <DropdownMenuItem key={choice.format} onSelect={() => begin(choice)} data-export-format={choice.format}>{choice.label}</DropdownMenuItem>)}
-      {attempts.length ? <>
-        {choices.length ? <DropdownMenuSeparator /> : null}
-        <DropdownMenuItem onSelect={() => setReveal(n => n + 1)}>{t('export.show', { count: attempts.length })}</DropdownMenuItem>
-      </> : null}
-      {choices.length ? <>
+      {pmi?.gdt || kept ? <>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-muted-foreground" data-export-note="">
-          {t(choices.some(choice => choice.animations) ? 'export.noteAnimated' : 'export.note')}
-        </DropdownMenuLabel>
         {pmi?.gdt ? <DropdownMenuLabel className="text-muted-foreground" data-export-pmi="">{t('export.pmiIncluded')}</DropdownMenuLabel> : null}
         {kept ? <DropdownMenuLabel className="text-muted-foreground" data-export-pmi="">{t(kept)}</DropdownMenuLabel> : null}
       </> : null}
     </DropdownMenuContent>
   </DropdownMenu> : null;
-  const overlay = enabled && attempts.length ? <ToastStack label={t('export.jobs')}>
-    {attempts.map(attempt => <ExportToast key={attempt.request.requestId} attempt={attempt} service={service!} downloads={downloads!} reveal={reveal} onActivity={reportActivity}
-      onDelivered={() => setAttempts(old => old.map(row => row.request.requestId === attempt.request.requestId ? { ...row, delivered: true } : row))}
-      // The request with its session's epoch, kept so that a reload reconnects to its job by it.
-      onRequest={request => setAttempts(old => old.map(row => row.request.requestId === request.requestId ? { ...row, request } : row))}
-      onRemove={() => setAttempts(old => old.filter(row => row.request.requestId !== attempt.request.requestId))}
-      // The file is gone (downloaded, or past its window): the same export run again, in its place.
-      onExportAgain={() => setAttempts(old => old.map(row => row.request.requestId === attempt.request.requestId
-        ? { request: { ...row.request, requestId: crypto.randomUUID() }, filename: row.filename, delivered: false } : row))} />)}
-  </ToastStack> : null;
+  const overlay = enabled ? <ExportToaster /> : null;
   return <ExportContext.Provider value={enabled ? setSource : null}>{children({ navbar, overlay })}</ExportContext.Provider>;
 }

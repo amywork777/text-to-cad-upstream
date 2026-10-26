@@ -78,7 +78,7 @@ none.
   host shows the view small — the same buttons, sizes and places as over a file. Under it,
   the page: the TEXTTOCAD wordmark and byline, then GitHub (its mark, a link to the project:
   it is open source), Discord and X, as icon links (GitHub and Discord are the app menu's
-  too, X its footer's "Made by"; no light/dark button: Theme is the menu's), then Recent Files with its search, grid/list switch
+  too, X its footer's "Made by"; no light/dark button: Theme is the menu's), then Recent with its search, grid/list switch
   and Open where the host has a file chooser: the models opened before, pinned first, as cards
   or rows.
   The update shows only for a release
@@ -1007,25 +1007,30 @@ pending one. A hint appears on focus only for keyboard navigation (a Tab), never
 when a closing menu hands focus back.
 
 Copy, snapshot and prompt actions complete silently, the Copy and Quick Edit
-buttons showing a tick for a moment. Explicit export jobs are the one exception: each
-has a persistent toast at the top-right below the navbar, with its state, elapsed time,
-Cancel, Download again (Export again once the file is gone) and Remove, in the menu's one size (`text-tiny`); on a phone
-the stack sits at the view's bottom, the view's width less 8px each side, and its buttons are 36px. Multiple jobs
-stack and scroll within the viewport; dismissing one only hides it, and Export's Show
-exports restores the stack. No other action earns a toast. Export is an icon button at
+buttons showing a tick for a moment. An export is the one exception, and it works as a
+browser's download does: one toast, shadcn's Sonner as it ships (`primitives/sonner.jsx`,
+mounted once with the export controls), at the view's top right, 16px under the navbar and
+16px from the edge, at every width. It is as small as a menu item: one line of the menu's text
+(`text-tiny`, regular weight), its padding (6px by 10px), a 14px icon, under 32px tall and as
+wide as its line (above a 600px window; under it Sonner spans the screen less its 16px insets),
+set through the Toaster's `toastOptions` and `offset` in `export/ExportControls.tsx`. Its icon
+is Sonner's own state: its spinner while the job is queued or running and while a
+dropped connection is asked again (**Preparing part.step…**), its check once the file is handed
+to the browser (**Exported part.step**, gone after Sonner's default), or its error icon with the
+engine's one-line reason, kept until its dismiss, the one button a toast has. No other action
+earns a toast. Export is an icon button at
 the navbar's right end, named on hover as the view controls are, never in the tool strip.
 It opens a dropdown as the file's ⋯ does, on Display's surface and in its type, Display's
 width (`export/ExportControls.tsx`): the formats the file's kind writes, plain items, known
 from the kind and the scene the view already holds, so nothing loads before it shows
 (`export/formats.ts`: a STEP's, an xbf's and a held model's STEP, STL, 3MF, GLB and XBF, and
 DXF where the view draws it flat on z=0, an xbf's XBF its own bytes; a GLB's, an STL's or a
-3MF's the other two mesh kinds); after a rule, Show exports while there are
-any; last, after a rule, one muted line: the model goes as authored, not as shown, and an
-engine document's GLB with its animations. A view with neither formats nor exports has no
-Export. A format chosen closes the menu and starts its export at once; nothing is asked
-first, and what the server refuses is said in that export's toast.
+3MF's the other two mesh kinds), and nothing else: no job list, no rule, no note. A view
+whose file writes nothing has no Export. A format chosen closes the menu and starts its export
+at once; nothing is asked first, and choosing it again is another export.
 A finished file is a plain browser download, started once by itself; where it lands is
-the browser's setting. No source bundle is an export format.
+the browser's setting (its download bubble, or its Save dialog), and the page never says it
+was saved. No source bundle is an export format.
 Progress stays in the viewport; a failed action is the
 viewport's alert card, whose **Retry** reloads the file and whose **Report Issue**,
 where the host has a tracker, opens a new issue titled "Issue: ", labelled `bug`, filled
