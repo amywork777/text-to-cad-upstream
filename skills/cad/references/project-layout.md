@@ -109,7 +109,7 @@ what it was built from.
 | Subassembly | A model that calls its child models. |
 | Motion | build123d joints in the assembly's body, then `cadgen.ap242`. See [kinematics](kinematics.md). |
 | An explode or a showcase | `cadgen.gltf`'s `animation()`. See [animation](animation.md). |
-| Datums, tolerances or GD&T | `pmi.annotate` on the part in its body; a STEP of it carries them as AP242's. See [PMI](pmi.md). |
+| Datums, tolerances or GD&T | `annotate` (`cadgen.ap242`) on the part in its body; a STEP of it carries them as AP242's. See [PMI](pmi.md). |
 | Materials | `part.material = materials.aluminium_6061`. See [colour and materials](build123d-modeling.md#colour-and-materials). |
 | 2D drawing | A separate drawing script using `$dxf`. |
 | Vendor CAD | The vendor STEP under `vendor/`, converted once with `cadgen export vendor/motor.step vendor/motor.xbf` and read with `read_xbf` (an anchored path). |

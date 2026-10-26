@@ -27,7 +27,7 @@ Nothing is written to disk until someone asks for a file.
 | **See a model, a view or a pose** | `cadgen snapshot <id> out.png`. | [Snapshots](references/snapshot-review.md) |
 | **Articulate a mechanism** | build123d joints in the body, then `cadgen.ap242`. | [Kinematics](references/kinematics.md) |
 | **Explode, reveal or showcase a model** | `cadgen.gltf`'s `animation()` in the body. | [Animation](references/animation.md) |
-| **Add datums, tolerances, GD&T, notes or named views** (a model-based definition) | `pmi.annotate` on the part, in the body. | [PMI](references/pmi.md) |
+| **Add datums, tolerances, GD&T, notes or named views** (a model-based definition) | `annotate` (`cadgen.ap242`) on the part, in the body. | [PMI](references/pmi.md) |
 | **Open an existing XBF, STEP/STP, STL, 3MF or GLB** | Show it to the user. | [Show the model](#show-the-model) |
 | **Code or commands written for an older cadgen fail** | Their migration. | [Migrations](references/migrations.md) |
 

@@ -77,7 +77,7 @@ inline or as a JSON file: `mode`, `grid`, `appearance` (`light` or `dark`), `cam
 (`{"enabled": true, "amount": 0.5}`). `parts` and `exploded` are refused for a
 document of one part. Unknown keys and out-of-range values are refused.
 
-A document carrying PMI ([`pmi.annotate`](pmi.md)) has it drawn as the
+A document carrying PMI ([`annotate`](pmi.md)) has it drawn as the
 viewer shows it: each callout at its placement, its leader to the feature, a callout
 whose reference broke in red (missing, invalid) or amber (ambiguous) at the place the
 code gave it. Read those before the picture: the reference no longer names what the
@@ -94,7 +94,7 @@ the code never placed. Read it with the red callouts. `pmi=off`
 (`display.pmi` false) draws the model alone; an exploded, posed or Preview picture draws
 no PMI, and asking for it there is refused.
 
-`--view NAME` draws a part's named view ([`pmi.view`](pmi.md#views)) as the viewer
+`--view NAME` draws a part's named view ([`view`](pmi.md#views)) as the viewer
 applies it: down its camera from the part's first placement the picture shows, cut by
 its section, and only the PMI it shows, at the view's own placements (`PART/NAME`
 where two parts have a view of that name). With `--json`, `view` names it; what the

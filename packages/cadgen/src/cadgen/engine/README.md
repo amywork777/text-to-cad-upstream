@@ -469,7 +469,7 @@ only, and a file's id is derived again from its path after a restart.
 | `previous.py` | the model's build closure on its xbf's main label (`manifest`), the release from the version beside the code, and the closure made again before the body runs (`again`) |
 | `document.py` | result to XCAF (prototypes, instances, names, colours, materials, element names; a mesh face refused, `mesh_faces`), a warm build's patch of the document it kept, atomic BinXCAF save, read-back of an xbf or a foreign STEP |
 | `reader.py` | what a model imports: an XCAF document described as data and assembled into a build123d tree (`read_step`, `read_xbf`); the reader process a build's STEP files are parsed in; a mesh file as data (`read_mesh`, `Mesh`); a read of a file the build writes refused (`refuse_written`) |
-| `pmi.py` | semantic PMI: datums, dimensions and geometric tolerances on a part's faces (`pmi.annotate`), resolved each build (ok, missing, ambiguous, invalid), written as XCAF's GD&T objects, read back as the structure's `pmi`; its notes, notes library and named views (`pmi_views`), the xbf's alone; each part's faces no requirement is on and its requirements that cannot both hold (`pmi_coverage`), warned of; another system's GD&T listed as read, and copied into an xbf of its STEP (**PMI**) |
+| `pmi.py` | semantic PMI: datums, dimensions and geometric tolerances on a part's faces (`annotate`, `cadgen.ap242`'s calls defined here), resolved each build (ok, missing, ambiguous, invalid), written as XCAF's GD&T objects, read back as the structure's `pmi`; its notes, notes library and named views (`pmi_views`), the xbf's alone; each part's faces no requirement is on and its requirements that cannot both hold (`pmi_coverage`), warned of; another system's GD&T listed as read, and copied into an xbf of its STEP (**PMI**) |
 | `refs.py` | references to geometry: the ref grammar, occurrence paths, resolution by name in the latest build, for `inspect` and the viewer (**References**) |
 | `export/` | `translate` and the kind registry (`__init__`); STEP through the XCAF writer (`step`); a STEP's semantic PMI read back without OCCT and checked against the document's (`ap242`); placements and meshes from the one mesh cache (`mesh`); a mesh file read as a document of triangles, no kernel (`mesh_file`); GLB, 3MF, binary STL (`glb`, `threemf`, `stl`); a planar document's drawing through build123d's DXF exporter, with the drawing checks (`dxf`); a motion baked into a glTF clip (`motion`); a view made a document again, for a STEP of a document held without its XCAF document and an xbf written from a STEP (`tree`) |
 | `mesh.py`, `mesh_format.py` | per-part tessellation at a quarter per cent tolerance, element facts; the part buffer, its wire format and edge classes (`mesh_format`, kernel-free) |
@@ -477,7 +477,7 @@ only, and a file's id is derived again from its path after a restart.
 | `access.py` | which pages may read a served document from another origin: loopback ones |
 | `snapshot.py` | `cadgen snapshot`: one dispatcher by suffix -- a document, a mesh file, a robot or a DXF drawn by OCCT (`render/`) into a PNG; a script's model drawn from its worker's memory |
 | `formats/` | the files the stills draw that are not documents, each read into a structure and part buffers: STL (numpy), 3MF (zip + XML), GLB (OCCT's glTF reader, textures and all; and numpy's, for a conversion: `gltf`), URDF/SDF/SRDF (XML, the viewer's forward kinematics), DXF (group codes, flattened as the viewer's pane draws it) |
-| `render/` | the stills drawn by OCCT from the engine's meshes: a document held and drawn, and the daemon's render process per served document and per file (`service.py`); the scene (`occt.py`); the camera presets' one table, which `snapshot.py` and `pmi.view` read too (`presets.py`); a DXF drawn in the 2D look (`drawing.py`); the viewer's Explode, ported (`explode.py`); a document's PMI drawn as the viewer shows it, its layout ported (`pmi.py`); a part's buffer as OCCT shapes (`shapes.py`); the headless OpenGL context per platform (`context.py`) |
+| `render/` | the stills drawn by OCCT from the engine's meshes: a document held and drawn, and the daemon's render process per served document and per file (`service.py`); the scene (`occt.py`); the camera presets' one table, which `snapshot.py` and `pmi.py`'s `view` read too (`presets.py`); a DXF drawn in the 2D look (`drawing.py`); the viewer's Explode, ported (`explode.py`); a document's PMI drawn as the viewer shows it, its layout ported (`pmi.py`); a part's buffer as OCCT shapes (`shapes.py`); the headless OpenGL context per platform (`context.py`) |
 | `daemon.py`, `worker.py`, `client.py` | one daemon per installation, one warm worker per model script, at most one per core alive (`Pool`), connect-or-start, a hold; a worker's memory cap |
 | `door.py` | how a client reaches the daemon on POSIX: the door, a named pipe, and a pair of pipes per connection (**The door**) |
 | `progress.py` | where a build is: the engine's stages heard where they begin, each body a model's body runs by name, the frames, and the terminal's bar |
@@ -1905,30 +1905,37 @@ channel but a STEP one as LINEAR keys within a tenth of a millimetre and of a de
 A part's manufacturing requirements, on its own faces (`pmi.py`): datums, measured dimensions
 with explicit tolerances, basic dimensions and geometric tolerances, a general profile for every
 face nothing else controls, numbered notes and named views -- a model-based definition, authored
-in the model and kept in its document. `pmi.read` returns them as the structure's `pmi`, the
-contract a viewer and a downstream reader build on, served with each part's notes library
-(`pmi_library`), views (`pmi_views`) and coverage (`pmi_coverage`):
+in the model and kept in its document. The functions that author them are named after the AP242
+entities they write, and are `cadgen.ap242`'s, beside the mechanism's (the root and
+`cadgen.engine` hold none of them); those that write no entity of their own keep plain names:
+`limits` (a dimension's 'lower limit' and 'upper limit' values), `general_profile`, `note` and
+`view` (with `camera` and `section`), and `place`. `pmi.read` returns them as the structure's
+`pmi`, the contract a viewer and a downstream reader build on, served with each part's notes
+library (`pmi_library`), views (`pmi_views`) and coverage (`pmi_coverage`):
 
 ```python
+from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, general_profile,
+                          limits, note, place, plus_minus_tolerance, position_tolerance, section,
+                          surface_profile_tolerance, view)
 from my_project.notes import NOTES  # the project's notes by name, in its words: cadgen ships none
 
 # bottom, top, front, left: the plate's faces; hole: its bore, on the origin. Values illustrative.
-return pmi.annotate(body,
-    pmi.datum("A", bottom), pmi.datum("B", front), pmi.datum("C", left),
-    pmi.distance("thickness", bottom, top, tolerance=pmi.plus_minus(0.2)),
-    pmi.diameter("hole", hole, tolerance=pmi.limits(10.0, 10.05)),  # its least and greatest size
-    pmi.flatness("top-flat", top, 0.05),
-    pmi.position("hole-pos", hole, 0.1, datums=["A", "B", "C"]),
-    pmi.basic("hole-from-B", front, hole),         # the true position: basic, no tolerance
-    pmi.basic("hole-from-C", left, hole),
-    pmi.profile("B-and-C", [front, left], 0.1, datums=["A"]),     # one requirement on both faces
-    pmi.general_profile("general", 0.5, datums=["A", "B", "C"]),  # Note 1: every face left over
-    pmi.note("edges", NOTES["edges"]),                            # a general note: Note 2
-    pmi.note("mask", NOTES["primer-mask"], faces=[hole], annotations=["hole"]),  # a flag note
-    pmi.view("A-A", camera="front", shows=["hole", "hole-pos", "mask"],
-             section=pmi.section("y", 0, invert=True),  # keeps y > 0: its cut faces the front
-             place={"hole": pmi.place((5, 0, 0), (15, 0, 10))}),
-    pmi.view("iso", camera="iso"),                                # shows everything
+return annotate(body,
+    datum("A", bottom), datum("B", front), datum("C", left),
+    dimensional_location("thickness", bottom, top, tolerance=plus_minus_tolerance(0.2)),
+    dimensional_size("hole", hole, tolerance=limits(10.0, 10.05)),   # its least and greatest size
+    flatness_tolerance("top-flat", top, 0.05),
+    position_tolerance("hole-pos", hole, 0.1, datums=["A", "B", "C"]),
+    dimensional_location("hole-from-B", front, hole, basic=True),  # the true position: basic, no tolerance
+    dimensional_location("hole-from-C", left, hole, basic=True),
+    surface_profile_tolerance("B-and-C", [front, left], 0.1, datums=["A"]),  # one requirement on both faces
+    general_profile("general", 0.5, datums=["A", "B", "C"]),       # Note 1: every face left over
+    note("edges", NOTES["edges"]),                                 # a general note: Note 2
+    note("mask", NOTES["primer-mask"], faces=[hole], annotations=["hole"]),  # a flag note
+    view("A-A", camera="front", shows=["hole", "hole-pos", "mask"],
+         section=section("y", 0, invert=True),  # keeps y > 0: its cut faces the front
+         place={"hole": place((5, 0, 0), (15, 0, 10))}),
+    view("iso", camera="iso"),                                     # shows everything
     library=NOTES)
 ```
 
@@ -1940,15 +1947,16 @@ return pmi.annotate(body,
   position per datum). A ref is a `Face` or a ref of the grammar (**References**). A nominal is
   measured from the geometry: a cylinder's diameter, or a distance between parallel planes, from
   a plane to a hole's axis, or between parallel axes. A tolerance is held only where the code
-  gives one: `plus_minus(upper, lower=None)`, signed deviations, or `limits(lower, upper)`, the
-  least and the greatest size, absolute (`limits(10.0, 10.05)` is 10.00–10.05). A basic dimension
-  (`pmi.basic`) has none, and a tolerance on one is refused. `presentation=pmi.place(anchor,
-  offset)` (millimetres, the part's frame) is where a viewer draws the callout, never a
+  gives one: `plus_minus_tolerance(upper, lower=None)`, signed deviations, or `limits(lower,
+  upper)`, the least and the greatest size, absolute (`limits(10.0, 10.05)` is 10.00–10.05). A
+  basic dimension (`dimensional_location(..., basic=True)`) has none, and a tolerance on one is
+  refused; a diameter is never basic. `presentation=place(anchor, offset)` (millimetres, the
+  part's frame) is where a viewer draws the callout, never a
   requirement and never in a STEP.
-- **Surface profiles.** `pmi.profile(id, refs, value, datums=())` is one requirement on a face
-  or on a list of faces, of any kind, to up to three datums or none; its zone is a width about
-  the true profile, so a diametral one is refused, as is a profile on no face. The general
-  profile (`pmi.general_profile(id, value, datums=())`, one per part: a second is refused by
+- **Surface profiles.** `surface_profile_tolerance(id, refs, value, datums=())` is one
+  requirement on a face or on a list of faces, of any kind, to up to three datums or none; its
+  zone is a width about the true profile (no diametral one), and a profile on no face is refused.
+  The general profile (`general_profile(id, value, datums=())`, one per part: a second is refused by
   name) is ASME Y14.5's "unless otherwise noted, all surfaces": a surface profile of every face of
   the part that nothing else controls, the code naming none of them. A face is otherwise
   controlled when it has a size or location requirement of its own
@@ -1958,7 +1966,7 @@ return pmi.annotate(body,
   datum leave a face to it, but the datum features it names are controlled on their own and left
   out of it: no face is profiled relative to itself. It is not XCAF's `All_Over` modifier, which
   in ASME means every surface beside any other requirement.
-- **Notes.** `pmi.note(id, text, faces=(), annotations=())` says what to do in the code's words:
+- **Notes.** `note(id, text, faces=(), annotations=())` says what to do in the code's words:
   a general note where it names no face and no annotation, a flag note on its faces (of any
   kind) and on the annotations of the same `annotate` call it names by id (an id no annotation of
   the call has, or a note's, is refused by name, as is an empty text). Notes are numbered per
@@ -1966,18 +1974,18 @@ return pmi.annotate(body,
   code gives them. `annotate(..., library=NOTES)` keeps the project's notes by name (the dict a
   module of its own code holds; cadgen ships no note text) with the part, for a viewer to offer;
   a library is no requirement.
-- **Views.** `pmi.view(name, camera=..., shows=None, section=None, place=None, label=None)` is a
+- **Views.** `view(name, camera=..., shows=None, section=None, place=None, label=None)` is a
   named view of the part, given among its annotations, seen orthographically down `camera` (as a
   still draws it; a viewer keeps the person's projection): a preset's name (`iso`, `front`,
   `back`, `left`, `right`, `top`, `bottom`: `cadgen snapshot --camera`'s, one table,
-  `render/presets.py`) or `pmi.camera(direction, up)`, whose `direction` means what a preset's
+  `render/presets.py`) or `camera(direction, up)`, whose `direction` means what a preset's
   does, the way from the part toward the eye (`front` is `(0, -1, 0)`), both made unit vectors
   (an `up` along the direction is refused). Where it has one, it is cut by
-  `section=pmi.section(axis, at, invert=False)`, the viewer's Clip: one plane across `x`, `y` or
+  `section=section(axis, at, invert=False)`, the viewer's Clip: one plane across `x`, `y` or
   `z` at `at`, keeping the lower side, `invert` the upper (a front view, its eye toward -y, sees
   its cut where it keeps the far side, y above `at`: `invert=True`). It shows the ids of the same
   call `shows` names, annotations and notes (None: every one, as an iso view does), and draws
-  each id it `place`s (`{id: pmi.place(...)}`) there in that view, as its own presentation says
+  each id it `place`s (`{id: place(...)}`) there in that view, as its own presentation says
   elsewhere. All in the part's frame. A view's name is unique among its part's views; an id the
   call does not have, and a placement of one the view does not show, are refused by name. A view
   is no annotation: the report counts none and a note names none. `cadgen snapshot --view NAME`
@@ -2078,7 +2086,7 @@ return pmi.annotate(body,
   "orthographic"}, "section": {"axis", "at", "invert"} or null, "shows": [ids] or null (every
   one), "place": {id: {"anchor", "offset"}}}`, the camera's direction and up unit vectors, the
   direction from the part toward the eye (a preset's from the stills' table, `preset` its name;
-  null for `pmi.camera`'s), and all of it in the part's frame, which a viewer places through the
+  null for `camera`'s), and all of it in the part's frame, which a viewer places through the
   part's placement (empty where none); both served wherever `pmi` is, as `pmi_coverage` is
   (**Coverage**).
 - **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its

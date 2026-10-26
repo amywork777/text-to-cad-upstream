@@ -7,9 +7,10 @@ drawn on the model, picked, hidden, walked view by view, and asked for. It is th
 not the person's: ink (Pencil and Shapes, [annotation](annotation.md)) is a note on a view and goes
 with a prompt; PMI is what the part is made to, and goes with the part.
 
-The document is made from code. A model declares its PMI with `cadgen.engine.pmi`
-(`pmi.annotate(body, pmi.datum("A", ...), pmi.distance(...), pmi.flatness(...), ...)`), the
-engine writes it into the document's XCAF GD&T attributes, which its AP242 export reads, and the
+The document is made from code. A model declares its PMI with `cadgen.ap242`'s calls, each named
+after the AP242 entity it writes (`annotate(body, datum("A", ...), dimensional_location(...),
+flatness_tolerance(...), ...)`), the engine writes it into the document's XCAF GD&T attributes,
+which its AP242 export reads, and the
 served structure carries it (`structure.pmi`, absent where there is none; beside it
 `pmi_views` and `pmi_library`, the xbf's alone, and `pmi_coverage`, served for a STEP's PMI too).
 So the viewer writes
@@ -29,18 +30,19 @@ entry is one of:
 - A **dimension** (`distance` between two parallel flat faces, `diameter` of a round one): its
   nominal is the engine's, measured on the geometry (`source: "geometry"`), or as another system's
   file gives it (`source: "file"`, said so in its values); its tolerance is what
-  the code supplied (`pmi.plus_minus(upper, lower)`, or its **limits**, `pmi.limits(lower, upper)`:
+  the code supplied (`plus_minus_tolerance(upper, lower)`, or its **limits**, `limits(lower, upper)`:
   its least size and its greatest, which need no nominal, a file's having none), and none where it
-  supplied none. The viewer never fills a tolerance in, not even a default. A **basic** dimension (`pmi.basic`,
+  supplied none. The viewer never fills a tolerance in, not even a default. A **basic** dimension
+  (`dimensional_location(..., basic=True)`,
   `dimension.basic`: theoretically exact, as a position tolerance's true position is located) is a
   distance between flat faces and holes, a hole by its axis; it holds no tolerance at all, and its
   number is drawn boxed, as a drawing draws it.
 - A **datum**: its letter.
 - A **geometric tolerance** (`flatness`, `position`, `surface_profile` on one face or several):
   its value, a diameter zone, the datums it refers to. A part's **general profile**
-  (`pmi.general_profile`, `general: true`: every face nothing else controls, within its value of
+  (`general_profile`, `general: true`: every face nothing else controls, within its value of
   true, to its datums) is its Note 1; its refs are the faces it covers this build.
-- A **note** (`pmi.note`): its number, its words, and a **flag note**'s faces and the annotations it
+- A **note** (`note`): its number, its words, and a **flag note**'s faces and the annotations it
   names (a general note names neither).
 - Anything else the document holds (a STEP's cylindricity, an angle) is an entry the viewer
   does not draw: listed, saying why (`unsupported`: the engine's `reason` where it gives one, else
@@ -89,7 +91,7 @@ a leader starts from (a flat face's own node nearest its middle, so never in a h
 where its label stands, and a distance's dimension and extension lines: along what it measures (the
 first flat face's normal; between two holes, square to both), each extension line from its end's
 plane, or from a hole's centre line.
-`presentation` (`pmi.place(anchor, offset)`: the anchor on the feature and the label's offset from
+`presentation` (`place(anchor, offset)`: the anchor on the feature and the label's offset from
 it, in millimetres in its part's frame, `part` the structure's prototype; drawn where the part
 stands, `pmiPresentationToScene`, and written back in its frame) is where the code
 placed it; one the code never placed stands out from its feature, each of a
@@ -168,8 +170,9 @@ parts), never the document. Turned off, PMI is off in a prompt's views too (`dis
 
 Where the document is made from code (a model's, by its id, or an `.xbf`), what the person
 changes is asked for, never written (`xbf/pmi/useXbfPmi.jsx`), each a chip in Quick Edit (its `requests`) that carries one
-paragraph of what to do to its part's `pmi.annotate(...)` call, the annotation by its author's id
-and the part by its name, and the call itself (`pmiChangeRequest`), what it does not change as the
+paragraph of what to do to its part's `annotate(...)` call, the annotation by its author's id,
+the part by its name and the names it and the call take from `cadgen.ap242` (`from cadgen.ap242
+import annotate, ...`), and the call itself (`pmiChangeRequest`), what it does not change as the
 document says it (a label, a position's zone, round or not):
 
 - **Move**: a drag of the picked label, on the plane facing the view through where it stood. It
@@ -179,7 +182,7 @@ document says it (a label, a position's zone, round or not):
   for none), a geometric tolerance's value and a position's datums, committed as the section's
   fields are. Limits are two unsigned sizes, the least first, between an en dash (the field's own
   text for them, so a limits dimension's field reads back as its limits), a hyphen or "to"
-  (`10.00-10.05`, `10.00 to 10.05`: `pmi.limits(10, 10.05)`); a signed or slashed pair stays
+  (`10.00-10.05`, `10.00 to 10.05`: `limits(10, 10.05)`); a signed or slashed pair stays
   deviations (`+0.1/-0.05`, `0.1 -0.05`). The label keeps saying what the document says until the
   code does.
 - **New**: from a face's menu ("Add datum", "Add flatness"... whatever it and the faces picked with
@@ -187,26 +190,26 @@ document says it (a label, a position's zone, round or not):
   the faces Select has picked: one of the supported subset — a datum on one flat or round face, a
   flatness on one flat face, a distance between two parallel ones, a basic dimension between two
   of flat faces and holes, all parallel, a diameter or a position on a round one, a **surface
-  profile** on one face or several of one part, of any kind (`pmi.profile`, its datums its
+  profile** on one face or several of one part, of any kind (`surface_profile_tolerance`, its datums its
   part's, none to three) —
   with an id and a letter its part has none of, its references the faces' canonical refs, its
   datums its part's, and its values given (a geometric tolerance's value required; a dimension's
   tolerance only if given). A kind the pick cannot make is off in the menu, saying what it needs.
   Until it is built it is called by its id ("Add flatness"), a datum by its letter ("Add datum B").
   After a rule, what is of the faces' part, or, with nothing picked, of the document's one part:
-  - **Note**: a flag note on the faces picked, a general note where none are (`pmi.note`). Its
+  - **Note**: a flag note on the faces picked, a general note where none are (`note`). Its
     words are typed, or one of its part's notes library entries picked by its name (**Library**);
     nothing starts them, cadgen ships none. A library entry's request asks the agent to write that
     entry of the dict the call's `library=` is given, by its name, the call carrying its words (the
     page knows the entry, not what the model's module calls the dict). A face's menu offers it as
     "Add note", a flag note.
-  - **General profile**: no face to pick (`pmi.general_profile`, its faces each build's), its value
+  - **General profile**: no face to pick (`general_profile`, its faces each build's), its value
     and its datums given; offered while its part has none, built or asked for ("Its part has one").
   - **View from here**: the view the viewport shows now, as a named view of the part
-    (`pmi.view`), seen from the first occurrence of the part that is shown and taken back through
+    (`view`), seen from the first occurrence of the part that is shown and taken back through
     its placement into the part's frame, as `pmiViews.js` places a view (`pmiViewFromHere`): the
-    camera as `pmi.camera(direction, up)`, `direction` from the target toward the eye (as the
-    stills' presets), `up` the screen's; the Clip, while it is on, as `pmi.section(axis, at,
+    camera as `camera(direction, up)`, `direction` from the target toward the eye (as the
+    stills' presets), `up` the screen's; the Clip, while it is on, as `section(axis, at,
     invert=True)` where it keeps the upper side; `shows` the part's annotations drawn now, by id.
     Its name is fresh among its part's views ("view", "view-2"...) and the person's to change. Where
     the placement turns the Clip's axis off the part's axes it is refused, saying "Its section is
