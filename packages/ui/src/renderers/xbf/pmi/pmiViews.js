@@ -70,7 +70,7 @@ export function pmiViewAt(view, instances, shown = {}) {
 }
 
 /**
- * The view the viewport shows now, as its part's `pmi.view` call (`pmiCallText`'s input): seen
+ * The view the viewport shows now, as its part's `view` call (`pmiCallText`'s input): seen
  * from the first occurrence of `part` that is shown, its camera the viewport's taken into the
  * part's frame through that occurrence's placement -- `direction` from the target toward the eye,
  * as a preset's, and `up` the screen's (the camera's up made square to it) -- and its section the

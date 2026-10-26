@@ -159,7 +159,7 @@ function defaultOffset({ anchor, out, centre, reach, turn }) {
  * - `label`: where its text stands.
  * - `dimension`: a distance's dimension line (`from`, `to`: at each end's plane or axis, through the label)
  *   and its extension lines (`extensions`), else null; a distance has no leader.
- * - `presentation`: the placement drawn (`{ anchor, offset }`), as `pmi.place` would write it.
+ * - `presentation`: the placement drawn (`{ anchor, offset }`), as `place` would write it.
  * - `placed`: `"given"` (its `placement` here, or the code's), or `"default"`.
  *
  * @param {import("./xbfPmi.js").XbfPmiEntry} entry
@@ -226,7 +226,7 @@ const turnedBy = (m, d) => [0, 1, 2].map(row => m[row] * d[0] + m[4 + row] * d[1
 const isMatrix = m => Array.isArray(m) && m.length === 16 && m.every(Number.isFinite);
 
 /**
- * A presentation in its part's frame (as `pmi.place` writes it) where the part stands in the scene
+ * A presentation in its part's frame (as `place` writes it) where the part stands in the scene
  * (`matrix`, the part's placement), and `pmiPresentationToPart` back: the anchor is a point, the
  * offset a direction. No placement, or one that is no matrix: the frames are one.
  */

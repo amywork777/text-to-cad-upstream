@@ -64,9 +64,9 @@ test("the view from here is the camera and the Clip in its part's frame, through
   const { call } = fromHere({ clip: { axis: "y", at: 30, invert: true } });
   assert.deepEqual(call, { kind: "view", name: "view", camera: { direction: [0, -1, 0], up: [0, 0, 1] }, shows: ["hole-diameter"],
     section: { axis: "y", at: 0, invert: true } });
-  assert.equal(pmiCallText(call), `pmi.view("view", camera=pmi.camera((0, -1, 0), (0, 0, 1)), shows=["hole-diameter"], section=pmi.section("y", 0, invert=True))`);
+  assert.equal(pmiCallText(call), `view("view", camera=camera((0, -1, 0), (0, 0, 1)), shows=["hole-diameter"], section=section("y", 0, invert=True))`);
   // The Clip off: no section.
-  assert.equal(pmiCallText(fromHere({}).call), `pmi.view("view", camera=pmi.camera((0, -1, 0), (0, 0, 1)), shows=["hole-diameter"])`);
+  assert.equal(pmiCallText(fromHere({}).call), `view("view", camera=camera((0, -1, 0), (0, 0, 1)), shows=["hole-diameter"])`);
   // Placed again where its part stands, it is the camera and the Clip it was made from.
   const turned = fromHere({ camera: { position: [80, -40, 90], target: [0, 0, 0], up: [0, 0, 1] }, clip: { axis: "x", at: 4, invert: false },
     instances: instances(moved(0, 0, 0), QUARTER_Z), shown: { hidden: ["i0"] } }).call;

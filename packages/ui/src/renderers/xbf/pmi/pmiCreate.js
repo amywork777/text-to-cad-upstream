@@ -144,7 +144,7 @@ export function parseToleranceInput(text) {
   const limits = value.match(LIMITS);
   if (limits) {
     const [lower, upper] = [Number(limits[1]), Number(limits[2])];
-    // As the engine's `pmi.limits` holds them: a size above 0, then a greater one.
+    // As `cadgen.ap242`'s `limits` holds them: a size above 0, then a greater one.
     if (!(lower > 0)) return { error: "A size is more than 0" };
     return upper > lower ? { tolerance: { type: "limits", lower, upper } } : { error: "The least size comes first, then the greatest" };
   }

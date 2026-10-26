@@ -179,8 +179,8 @@ test('PMI is drawn on the model and stays legible as the camera moves; a pick li
   await pane.locator('[data-pmi-new="view"] [data-pmi-add]').click();
   await pane.getByRole('button', { name: 'Add view', exact: true }).waitFor();
   const asked = await prompt();
-  assert.ok(asked.includes('\npmi.view("view", camera=pmi.camera((0, -1, 0), (0, 0, 1)), shows=["hole-diameter", "hole-position", "hole-profile", "mask"], '
-    + 'section=pmi.section("y", 0, invert=True))\n'), asked);
+  assert.ok(asked.includes('\nview("view", camera=camera((0, -1, 0), (0, 0, 1)), shows=["hole-diameter", "hole-position", "hole-profile", "mask"], '
+    + 'section=section("y", 0, invert=True))\n'), asked);
   await pane.getByRole('button', { name: 'Close Quick Edit', exact: true }).click();
   await section.click();
   await page.waitForFunction(count => document.querySelectorAll('[data-pmi-label]').length === count && window.__cadStage().cut === 0, every.length);
@@ -210,7 +210,7 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   assert.ok(Math.hypot(moved.x - picked.x - 60, moved.y - picked.y - 30) < 3, 'it stands where it was let go');
   let text = await prompt();
   assert.match(text, /Move the PMI "top-flat"[^\n]*placement only/);
-  assert.ok(text.includes(`pmi.flatness("top-flat", "${TOP}", 0.05, presentation=pmi.place(anchor=(`), text);
+  assert.ok(text.includes(`flatness_tolerance("top-flat", "${TOP}", 0.05, presentation=place(anchor=(`), text);
 
   // A tolerance edited in the section: the call, its references as the code wrote them, the new tolerance.
   await pane.getByRole('button', { name: 'PMI', exact: true }).click();
@@ -219,7 +219,7 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   await tolerance.click(); await tolerance.fill('+0.1/-0.05'); await tolerance.press('Enter');
   await pane.getByRole('button', { name: 'Change thickness', exact: true }).waitFor();
   text = await prompt();
-  assert.ok(text.includes(`pmi.distance("thickness", "${BOTTOM}", "${TOP}", tolerance=pmi.plus_minus(0.1, -0.05), presentation=pmi.place(anchor=(20, -10, -2), offset=(8, -6, 2)))`), text);
+  assert.ok(text.includes(`dimensional_location("thickness", "${BOTTOM}", "${TOP}", tolerance=plus_minus_tolerance(0.1, -0.05), presentation=place(anchor=(20, -10, -2), offset=(8, -6, 2)))`), text);
   // What the document says is unchanged until the code is: the label still says the document's tolerance.
   assert.equal(await label('thickness').getAttribute('aria-label'), '4.0 ±0.2');
 
@@ -243,7 +243,7 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   await pane.locator('[data-pmi-add]').click();
   await pane.getByRole('button', { name: 'Add flatness', exact: true }).waitFor();
   text = await prompt();
-  assert.ok(text.includes(`Add this PMI to the pmi.annotate(...) call of the model's part "plate" (from cadgen.engine import pmi):\npmi.flatness("flatness", "${BOTTOM}", 0.02)`), text);
+  assert.ok(text.includes(`Add this PMI to the annotate(...) call of the model's part "plate" (from cadgen.ap242 import annotate, flatness_tolerance):\nflatness_tolerance("flatness", "${BOTTOM}", 0.02)`), text);
 
   // The model rebuilt without the top's name: the flatness names nothing now. It is drawn where the
   // code placed it, broken, and its row says why; an annotation the viewer does not draw is listed,
@@ -266,7 +266,7 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   assert.deepEqual(errors, []);
 });
 
-// The engine's own: a plate built with `cadgen.engine.pmi` (`pmi.annotate`, its faces named by the
+// The engine's own: a plate built with `cadgen.ap242`'s calls (`annotate`, its faces named by the
 // engine's element names), served as the engine served it (`pmi_plate/v1`), then rebuilt twice: 10
 // mm thick with a Ø10 hole, located by basic distances from the front and the left side to its axis,
 // then 12 mm with a Ø12 hole (every name kept: the same annotations, measured anew), then with a

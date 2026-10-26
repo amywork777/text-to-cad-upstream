@@ -53,8 +53,8 @@ test("a surface profile is on one face or several of one part, of any kind, its 
   const profile = of(pmiCreateOptions({ picked: [TOP, HOLE], entries: [] }), "profile");
   assert.equal(profile.available, true);
   assert.deepEqual(profile.call, { kind: "geometric_tolerance", characteristic: "surface_profile", id: "profile", refs: [TOP.ref, HOLE.ref], value: null, datums: [] });
-  assert.equal(pmiCallText({ ...profile.call, value: 0.1, datums: ["A"] }), `pmi.profile("profile", ["${TOP.ref}", "${HOLE.ref}"], 0.1, datums=["A"])`);
-  assert.equal(pmiCallText({ ...of(pmiCreateOptions({ picked: [HOLE], entries: [] }), "profile").call, value: 0.2 }), `pmi.profile("profile", "${HOLE.ref}", 0.2)`);
+  assert.equal(pmiCallText({ ...profile.call, value: 0.1, datums: ["A"] }), `surface_profile_tolerance("profile", ["${TOP.ref}", "${HOLE.ref}"], 0.1, datums=["A"])`);
+  assert.equal(pmiCallText({ ...of(pmiCreateOptions({ picked: [HOLE], entries: [] }), "profile").call, value: 0.2 }), `surface_profile_tolerance("profile", "${HOLE.ref}", 0.2)`);
   // Faces of two parts, or none: no profile.
   const across = of(pmiCreateOptions({ picked: [TOP, PEG], entries: [] }), "profile");
   assert.deepEqual([across.available, across.need], [false, "Pick faces of one part"]);
@@ -66,7 +66,7 @@ test("the general profile takes no face, and is offered while its part has none"
   const lone = of(pmiCreateOptions({ picked: [], entries: [], parts: [0] }), "general_profile");
   assert.deepEqual([lone.available, lone.part], [true, 0]);
   assert.deepEqual(lone.call, { kind: "geometric_tolerance", characteristic: "surface_profile", general: true, id: "general", value: null, datums: [] });
-  assert.equal(pmiCallText({ ...lone.call, value: 0.5, datums: ["A"] }), `pmi.general_profile("general", 0.5, datums=["A"])`);
+  assert.equal(pmiCallText({ ...lone.call, value: 0.5, datums: ["A"] }), `general_profile("general", 0.5, datums=["A"])`);
   // Of several parts, a face picked says which.
   assert.deepEqual([of(pmiCreateOptions({ picked: [], entries: [], parts: [0, 1] }), "general_profile").need,
     of(pmiCreateOptions({ picked: [PEG], entries: [], parts: [0, 1] }), "general_profile").part], ["Pick a face of its part", 1]);
@@ -88,9 +88,9 @@ test("a note is general where no face is picked, a flag note on the faces picked
   assert.deepEqual(general.library, [{ name: "edges", text: "Break all sharp edges 0.2 max" }], "its part's library alone");
   // No words given, no call: cadgen offers no starter text.
   assert.equal(pmiCallText(general.call), null);
-  assert.equal(pmiCallText({ ...general.call, text: general.library[0].text }), `pmi.note("note", "Break all sharp edges 0.2 max")`);
+  assert.equal(pmiCallText({ ...general.call, text: general.library[0].text }), `note("note", "Break all sharp edges 0.2 max")`);
   const flag = of(pmiCreateOptions({ picked: [HOLE, TOP], entries: [], library }), "note");
-  assert.equal(pmiCallText({ ...flag.call, text: "Mask these" }), `pmi.note("note", "Mask these", faces=["${HOLE.ref}", "${TOP.ref}"])`);
+  assert.equal(pmiCallText({ ...flag.call, text: "Mask these" }), `note("note", "Mask these", faces=["${HOLE.ref}", "${TOP.ref}"])`);
   assert.deepEqual(of(pmiCreateOptions({ picked: [PEG], entries: [], library }), "note").library, [{ name: "peg-mask", text: "Mask the peg" }]);
   // Its id is one of the part's ids, with the rest.
   const noted = readXbfPmi({ pmi: [{ id: "note", kind: "note", status: "ok", part: 0, refs: [], note: { number: 1, text: "x", general: true, annotations: [] } }] }).entries;

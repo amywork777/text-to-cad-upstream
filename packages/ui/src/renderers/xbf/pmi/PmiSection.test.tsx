@@ -258,7 +258,8 @@ it('a flag note naming annotations alone is listed with its flag, drawn nowhere,
 // ---- New: what a model-based definition adds, each the call it asks the code for -------------------
 const V4_HOLE = 'plate/f:edit_plate.cut.1;M:edit_plate.body';
 const HOLE_FACE = { id: 'i0/face/7', part: 0, ref: V4_HOLE, surface: { type: 'cylinder', axis: [0, 0, 1], origin: [0, 0, 0], radius: 5 } };
-const ADD = `Add this PMI to the pmi.annotate(...) call of the model's part "plate" (from cadgen.engine import pmi)`;
+// A new annotation's request, of the names its call takes from cadgen.ap242.
+const ADD = (...names: string[]) => `Add this PMI to the annotate(...) call of the model's part "plate" (from cadgen.ap242 import ${['annotate', ...names].join(', ')})`;
 const requests = () => live.changeChips.map((chip: any) => chip.request);
 const form = () => document.querySelector<HTMLElement>('[data-pmi-new]')!;
 async function openNew(user: ReturnType<typeof userEvent.setup>, edit?: (structure: any) => any, props: Record<string, unknown> = {}) {
@@ -293,7 +294,7 @@ it('a surface profile on the faces picked, to its part\'s datums, and a general 
   await choose(user, 'general_profile');
   await user.type(within(form()).getByRole('textbox', { name: 'Tolerance' }), '0.5{Enter}');
   await add(user);
-  expect(requests()).toEqual([`${ADD}:\npmi.profile("profile", "${V4_HOLE}", 0.1, datums=["A"])`, `${ADD}:\npmi.general_profile("general", 0.5)`]);
+  expect(requests()).toEqual([`${ADD('surface_profile_tolerance')}:\nsurface_profile_tolerance("profile", "${V4_HOLE}", 0.1, datums=["A"])`, `${ADD('general_profile')}:\ngeneral_profile("general", 0.5)`]);
   // Asked for, the part has one.
   await user.click(screen.getByRole('button', { name: 'New PMI', exact: true }));
   expect(document.querySelector('[data-pmi-new-kind="general_profile"]')!.hasAttribute('data-disabled')).toBe(true);
@@ -314,9 +315,9 @@ it("a note's words come from its part's library, by name, and ask for that entry
   await user.type(within(form()).getByRole('textbox', { name: 'Note text' }), 'Deburr all holes{Enter}');
   await add(user);
   expect(requests()).toEqual([
-    `${ADD}, its text the project's notes library entry "primer-mask" (the dict given as library=), written as that entry rather than these words:\n`
-      + 'pmi.note("note", "Mask these features before coating with primer")',
-    `${ADD}:\npmi.note("note-2", "Deburr all holes")`]);
+    `${ADD('note')}, its text the project's notes library entry "primer-mask" (the dict given as library=), written as that entry rather than these words:\n`
+      + 'note("note", "Mask these features before coating with primer")',
+    `${ADD('note')}:\nnote("note-2", "Deburr all holes")`]);
 });
 
 it('a view from here is the camera and the Clip now, in its part\'s frame, showing what is drawn; its name the person\'s to give', async () => {
@@ -334,8 +335,8 @@ it('a view from here is the camera and the Clip now, in its part\'s frame, showi
   await add(user);
   const shows = 'shows=["A", "thickness", "hole-diameter", "hole-from-front", "hole-from-left", "top-flatness", "hole-position", "hole-profile", "mask"]';
   expect(requests()).toEqual([
-    `${ADD}:\npmi.view("front-cut", camera=pmi.camera((0, -1, 0), (0, 0, 1)), ${shows}, section=pmi.section("y", 0, invert=True))`,
-    `${ADD}:\npmi.view("view", camera=pmi.camera((0, -1, 0), (0, 0, 1)), ${shows})`]);
+    `${ADD('camera', 'section', 'view')}:\nview("front-cut", camera=camera((0, -1, 0), (0, 0, 1)), ${shows}, section=section("y", 0, invert=True))`,
+    `${ADD('camera', 'view')}:\nview("view", camera=camera((0, -1, 0), (0, 0, 1)), ${shows})`]);
   expect(live.changeChips.map((chip: any) => chip.label)).toEqual(['Add front-cut', 'Add view']);
 });
 
@@ -348,7 +349,7 @@ it("a view from here is refused where its part's placement turns the Clip off th
   expect((within(form()).getByRole('button', { name: 'Add to Quick Edit' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-it("a limits dimension's tolerance field reads back as its limits, and limits typed are asked for as pmi.limits", async () => {
+it("a limits dimension's tolerance field reads back as its limits, and limits typed are asked for as limits()", async () => {
   const user = userEvent.setup();
   openMbd();
   fireEvent.click(screen.getByRole('button', { name: '9.8–10.2', exact: true }));
@@ -361,5 +362,5 @@ it("a limits dimension's tolerance field reads back as its limits, and limits ty
   expect(live.changes).toEqual([]);
   await user.clear(field);
   await user.type(field, '9.9 to 10.2{Enter}');
-  expect(requests()).toEqual([expect.stringMatching(/^Change the PMI "thickness" .*: tolerance=pmi\.limits\(9\.9, 10\.2\)\. .*tolerance=pmi\.limits\(9\.9, 10\.2\)/s)]);
+  expect(requests()).toEqual([expect.stringMatching(/^Change the PMI "thickness" .*: tolerance=limits\(9\.9, 10\.2\)\. .*tolerance=limits\(9\.9, 10\.2\)/s)]);
 });

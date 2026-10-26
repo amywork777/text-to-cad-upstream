@@ -10,7 +10,7 @@ const clean = value => Number(value.toPrecision(12));
 
 /**
  * A dimension's limits, at the places its nominal is written at (`pmiDimensionPlaces`), or null
- * where it has no tolerance. Limits given are its limits, nominal or none (`pmi.limits`).
+ * where it has no tolerance. Limits given are its limits, nominal or none (`limits`).
  */
 export function dimensionLimits(entry) {
   const dimension = entry.dimension;

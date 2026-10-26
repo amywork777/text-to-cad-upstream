@@ -13,7 +13,7 @@ import { pmiViewAt, pmiViewFromHere, pmiViewPlacements, pmiViewShows } from "./p
 // (`readXbfPmi`); which of it the person has hidden (the file's view, `xbfViewSlices`), the view
 // picked and whether the faces no requirement is on are lit; and the changes asked for it -- a new
 // annotation or note, a view from where the viewport looks now, a value edited, a label moved --
-// each the `cadgen.engine.pmi` call it would make the code say, which Quick Edit hands the agent
+// each the `cadgen.ap242` call it would make the code say, which Quick Edit hands the agent
 // (`changeChips`). The viewer writes nothing: the model's code is the document's source, and a
 // change reaches the view as the engine's next version.
 //

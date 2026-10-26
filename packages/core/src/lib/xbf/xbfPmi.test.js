@@ -1,5 +1,5 @@
 // An engine document's PMI as the viewer reads, says and asks for it (`xbfPmi.js`): the entries
-// `structure.pmi` carries, read defensively; the callout each says; and the `cadgen.engine.pmi` call
+// `structure.pmi` carries, read defensively; the callout each says; and the `cadgen.ap242` call
 // a change in the viewer is, which Quick Edit hands the agent to write into the model.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -10,7 +10,7 @@ import { pmiConstruction } from "./xbfPmiLayout.js";
 
 // The annotations of a document as the viewer reads them (`readXbfPmi`'s `entries`).
 const entriesOf = structure => readXbfPmi(structure).entries;
-// The engine's own, as it served a plate built with `cadgen.engine.pmi` (`__fixtures__/pmi_plate`,
+// The engine's own, as it served a plate built with `cadgen.ap242`'s calls (`__fixtures__/pmi_plate`,
 // which its `make_fixtures.py` builds and captures again).
 const served = version => JSON.parse(readFileSync(new URL(`./__fixtures__/pmi_plate/${version}/structure.json`, import.meta.url), "utf8"));
 
@@ -46,7 +46,7 @@ test("the document's PMI is read as it is served, and a document without any has
   assert.deepEqual(read[4].tolerance, { characteristic: "position", value: 0.1, unit: "mm", zone: "diameter", modifier: null, datums: ["A"], general: false });
 });
 
-test("a basic dimension is an exact distance: boxed, with no tolerance, made by pmi.basic", () => {
+test("a basic dimension is an exact distance: boxed, with no tolerance, made by dimensional_location(basic=True)", () => {
   const SIDE = "plate/f:bracket.make_box1.1;M:bracket.fillet1";
   const [basic] = entriesOf({ pmi: [{ id: "hole-from-side", kind: "dimension", status: "ok", refs: [ref("from", SIDE), ref("to", HOLE)],
     // A tolerance a document puts on one is not read: it is exact.
@@ -56,9 +56,9 @@ test("a basic dimension is an exact distance: boxed, with no tolerance, made by 
   assert.deepEqual([basic.dimension.basic, basic.dimension.tolerance], [true, null]);
   const said = pmiCallout(basic);
   assert.deepEqual([said.basic, said.nominal, said.tolerance, said.title, said.text], [true, "20", null, "Basic distance", "20 basic"]);
-  assert.equal(pmiCallText(pmiEntryCall(basic, { presentation: null })), `pmi.basic("hole-from-side", "${SIDE}", "${HOLE}")`);
+  assert.equal(pmiCallText(pmiEntryCall(basic, { presentation: null })), `dimensional_location("hole-from-side", "${SIDE}", "${HOLE}", basic=True)`);
   assert.equal(pmiCallText(pmiEntryCall(basic)),
-    `pmi.basic("hole-from-side", "${SIDE}", "${HOLE}", presentation=pmi.place(anchor=(-10, -10, 2), offset=(0, -6, 0)))`);
+    `dimensional_location("hole-from-side", "${SIDE}", "${HOLE}", basic=True, presentation=place(anchor=(-10, -10, 2), offset=(0, -6, 0)))`);
   // Exact: a tolerance given one makes no call, rather than one the engine refuses.
   assert.equal(pmiCallText({ kind: "dimension", type: "distance", basic: true, id: "b", from: SIDE, to: HOLE, tolerance: { type: "plus_minus", upper: 0.1, lower: -0.1 } }), null);
   // A basic of another type is told, not drawn.
@@ -176,17 +176,17 @@ test("a reference that names nothing, or several things, is said in words", () =
   assert.equal(pmiStatusText({ status: "ok", refs: [] }), "");
 });
 
-test("a new annotation is the cadgen.engine.pmi call that declares it, its refs verbatim", () => {
-  assert.equal(pmiCallText({ kind: "datum", id: "B", letter: "B", ref: TOP }), `pmi.datum("B", "${TOP}")`);
+test("a new annotation is the cadgen.ap242 call that declares it, its refs verbatim", () => {
+  assert.equal(pmiCallText({ kind: "datum", id: "B", letter: "B", ref: TOP }), `datum("B", "${TOP}")`);
   assert.equal(pmiCallText({ kind: "dimension", type: "distance", id: "thickness", from: BOTTOM, to: TOP, tolerance: { upper: 0.2, lower: -0.2 } }),
-    `pmi.distance("thickness", "${BOTTOM}", "${TOP}", tolerance=pmi.plus_minus(0.2))`);
+    `dimensional_location("thickness", "${BOTTOM}", "${TOP}", tolerance=plus_minus_tolerance(0.2))`);
   assert.equal(pmiCallText({ kind: "dimension", type: "diameter", id: "hole-dia", ref: HOLE, tolerance: { upper: 0.1, lower: 0 } }),
-    `pmi.diameter("hole-dia", "${HOLE}", tolerance=pmi.plus_minus(0.1, 0))`);
+    `dimensional_size("hole-dia", "${HOLE}", tolerance=plus_minus_tolerance(0.1, 0))`);
   // No tolerance given, none written: a dimension is not toleranced by the viewer.
-  assert.equal(pmiCallText({ kind: "dimension", type: "diameter", id: "hole-dia", ref: HOLE, tolerance: null }), `pmi.diameter("hole-dia", "${HOLE}")`);
-  assert.equal(pmiCallText({ kind: "geometric_tolerance", characteristic: "flatness", id: "top-flat", ref: TOP, value: 0.05 }), `pmi.flatness("top-flat", "${TOP}", 0.05)`);
+  assert.equal(pmiCallText({ kind: "dimension", type: "diameter", id: "hole-dia", ref: HOLE, tolerance: null }), `dimensional_size("hole-dia", "${HOLE}")`);
+  assert.equal(pmiCallText({ kind: "geometric_tolerance", characteristic: "flatness", id: "top-flat", ref: TOP, value: 0.05 }), `flatness_tolerance("top-flat", "${TOP}", 0.05)`);
   assert.equal(pmiCallText({ kind: "geometric_tolerance", characteristic: "position", id: "hole-pos", ref: HOLE, value: 0.1, datums: ["A"], diameterZone: true }),
-    `pmi.position("hole-pos", "${HOLE}", 0.1, datums=["A"], diameter_zone=True)`);
+    `position_tolerance("hole-pos", "${HOLE}", 0.1, datums=["A"], diameter_zone=True)`);
   // What a kind needs and lacks is never filled in.
   assert.equal(pmiCallText({ kind: "geometric_tolerance", characteristic: "flatness", id: "top-flat", ref: TOP, value: null }), null);
   assert.equal(pmiCallText({ kind: "dimension", type: "distance", id: "x", from: BOTTOM, to: "" }), null);
@@ -196,18 +196,18 @@ test("a new annotation is the cadgen.engine.pmi call that declares it, its refs 
 test("an edit names its references as this build resolves them and changes only what was changed", () => {
   const [, thickness, , flatness] = entriesOf({ pmi: PMI });
   assert.equal(pmiCallText(pmiEntryCall(thickness, { tolerance: { upper: 0.1, lower: -0.05 } })),
-    `pmi.distance("thickness", "${BOTTOM}", "${TOP}", tolerance=pmi.plus_minus(0.1, -0.05), presentation=pmi.place(anchor=(20, 0, -2), offset=(6, 0, 2)))`);
-  assert.equal(pmiCallText(pmiEntryCall(thickness, { tolerance: null, presentation: null })), `pmi.distance("thickness", "${BOTTOM}", "${TOP}")`);
-  assert.equal(pmiCallText(pmiEntryCall(flatness, { value: 0.02 })), `pmi.flatness("top-flat", "${TOP}", 0.02)`);
+    `dimensional_location("thickness", "${BOTTOM}", "${TOP}", tolerance=plus_minus_tolerance(0.1, -0.05), presentation=place(anchor=(20, 0, -2), offset=(6, 0, 2)))`);
+  assert.equal(pmiCallText(pmiEntryCall(thickness, { tolerance: null, presentation: null })), `dimensional_location("thickness", "${BOTTOM}", "${TOP}")`);
+  assert.equal(pmiCallText(pmiEntryCall(flatness, { value: 0.02 })), `flatness_tolerance("top-flat", "${TOP}", 0.02)`);
   // A placement is where it is drawn: the call says the same, placed.
   assert.equal(pmiCallText(pmiEntryCall(flatness, { presentation: { anchor: [1.23456, 0, 2], offset: [0, -0.00001, 8] } })),
-    `pmi.flatness("top-flat", "${TOP}", 0.05, presentation=pmi.place(anchor=(1.2346, 0, 2), offset=(0, 0, 8)))`);
+    `flatness_tolerance("top-flat", "${TOP}", 0.05, presentation=place(anchor=(1.2346, 0, 2), offset=(0, 0, 8)))`);
 });
 
 test("numbers are written without float noise, and fresh ids never collide", () => {
   assert.equal(pyNumber(0.1 + 0.2), "0.3");
   assert.equal(pyNumber(-0.00001), "0");
-  assert.equal(pmiPlaceText({ anchor: [1, 2, 3], offset: [0.5, 0, -1] }), "pmi.place(anchor=(1, 2, 3), offset=(0.5, 0, -1))");
+  assert.equal(pmiPlaceText({ anchor: [1, 2, 3], offset: [0.5, 0, -1] }), "place(anchor=(1, 2, 3), offset=(0.5, 0, -1))");
   assert.equal(pmiFreshId("flatness", ["top-flat"]), "flatness");
   assert.equal(pmiFreshId("flatness", ["flatness", "flatness-2"]), "flatness-3");
 });
@@ -215,25 +215,26 @@ test("numbers are written without float noise, and fresh ids never collide", () 
 test("a reference the code wrote as a face of the body is called by its canonical ref, which names the same face", () => {
   const [entry] = entriesOf({ pmi: [{ id: "top-flat", kind: "geometric_tolerance", status: "ok", refs: [{ role: "feature", ref: TOP, written: "face 2", status: "ok" }],
     geometric_tolerance: { characteristic: "flatness", value: 0.05, unit: "mm", datums: [] } }] });
-  assert.equal(pmiCallText(pmiEntryCall(entry, { value: 0.02 })), `pmi.flatness("top-flat", "${TOP}", 0.02)`);
+  assert.equal(pmiCallText(pmiEntryCall(entry, { value: 0.02 })), `flatness_tolerance("top-flat", "${TOP}", 0.02)`);
   // One that names nothing now is called as the code wrote it: there is nothing else to call it.
   const [broken] = entriesOf({ pmi: [{ id: "top-flat", kind: "geometric_tolerance", status: "missing", refs: [{ role: "feature", ref: "plate/f:gone", written: "plate/f:gone", status: "missing" }],
     geometric_tolerance: { characteristic: "flatness", value: 0.05, unit: "mm", datums: [] } }] });
-  assert.equal(pmiCallText(pmiEntryCall(broken)), `pmi.flatness("top-flat", "plate/f:gone", 0.05)`);
+  assert.equal(pmiCallText(pmiEntryCall(broken)), `flatness_tolerance("top-flat", "plate/f:gone", 0.05)`);
 });
 
-test("a change goes to the agent as what to do to the model's pmi.annotate call, then the call exactly", () => {
+test("a change goes to the agent as what to do to the model's annotate call, its cadgen.ap242 names, then the call exactly", () => {
   const [, thickness] = entriesOf({ pmi: PMI });
   const add = { kind: "geometric_tolerance", characteristic: "flatness", id: "flatness", ref: BOTTOM, value: 0.02 };
   assert.equal(pmiChangeRequest({ kind: "add", call: add }),
-    `Add this PMI to the model's pmi.annotate(...) call (from cadgen.engine import pmi):\npmi.flatness("flatness", "${BOTTOM}", 0.02)`);
+    `Add this PMI to the model's annotate(...) call (from cadgen.ap242 import annotate, flatness_tolerance):\nflatness_tolerance("flatness", "${BOTTOM}", 0.02)`);
   const values = { tolerance: { upper: 0.1, lower: -0.05 } };
   assert.equal(pmiChangeRequest({ kind: "edit", id: "thickness", values, call: pmiEntryCall(thickness, values), placementOnly: false }),
-    `Change the PMI "thickness" in the model's pmi.annotate(...) call: tolerance=pmi.plus_minus(0.1, -0.05). Keep its references as the code writes them. `
-    + `The whole call, its references as this build resolves them:\npmi.distance("thickness", "${BOTTOM}", "${TOP}", tolerance=pmi.plus_minus(0.1, -0.05), presentation=pmi.place(anchor=(20, 0, -2), offset=(6, 0, 2)))`);
+    `Change the PMI "thickness" in the model's annotate(...) call (from cadgen.ap242 import annotate, dimensional_location, place, plus_minus_tolerance): `
+    + `tolerance=plus_minus_tolerance(0.1, -0.05). Keep its references as the code writes them. `
+    + `The whole call, its references as this build resolves them:\ndimensional_location("thickness", "${BOTTOM}", "${TOP}", tolerance=plus_minus_tolerance(0.1, -0.05), presentation=place(anchor=(20, 0, -2), offset=(6, 0, 2)))`);
   const moved = { presentation: { anchor: [20, 0, -2], offset: [10, 0, 2] } };
   assert.match(pmiChangeRequest({ kind: "edit", id: "thickness", values: moved, call: pmiEntryCall(thickness, moved), placementOnly: true }),
-    /^Move the PMI "thickness" in the model's pmi.annotate\(\.\.\.\) call, its placement only \(what it says is unchanged\): presentation=pmi\.place\(anchor=\(20, 0, -2\), offset=\(10, 0, 2\)\)\./);
+    /^Move the PMI "thickness" in the model's annotate\(\.\.\.\) call \(from cadgen\.ap242 import annotate, dimensional_location, place, plus_minus_tolerance\), its placement only \(what it says is unchanged\): presentation=place\(anchor=\(20, 0, -2\), offset=\(10, 0, 2\)\)\./);
   assert.equal(pmiChangeRequest({ kind: "add", call: { ...add, value: null } }), "");
 });
 
@@ -273,7 +274,7 @@ test("an edit keeps what the code said beside its values: a position's zone, rou
   const values = { value: 0.2 };
   const call = pmiEntryCall(position()[0], values);
   // A zone that is not a diameter's says so: the engine's position takes a diameter's unless told.
-  assert.equal(pmiCallText(call), `pmi.position("hole-pos", "${HOLE}", 0.2, datums=["A"], diameter_zone=False, label="Hole location")`);
+  assert.equal(pmiCallText(call), `position_tolerance("hole-pos", "${HOLE}", 0.2, datums=["A"], diameter_zone=False, label="Hole location")`);
   const change = { kind: "edit", part: null, id: "hole-pos", values, call };
   const built = gdt => position({ geometric_tolerance: { characteristic: "position", value: 0.2, unit: "mm", zone: null, datums: ["A"], ...gdt } });
   assert.equal(pmiChangeSettled(change, built({})), true);
@@ -294,14 +295,14 @@ test("an id is unique on its part only: two parts' datum A are two entries, each
   const presentation = { anchor: [0, 0, 8], offset: [0, 0, 6] };
   const values = { presentation };
   const change = { kind: "edit", part: 1, partName: "peg", id: "A", values, call: pmiEntryCall(read[1], values), placementOnly: true };
-  assert.match(pmiChangeRequest(change), /^Move the PMI "A" in the pmi\.annotate\(\.\.\.\) call of the model's part "peg", its placement only/);
+  assert.match(pmiChangeRequest(change), /^Move the PMI "A" in the annotate\(\.\.\.\) call of the model's part "peg" \(from cadgen\.ap242 import annotate, datum, place\), its placement only/);
   const placed = part => entriesOf({ pmi: raw.map(item => (item.part === part ? { ...item, presentation } : item)) });
   assert.equal(pmiChangeSettled(change, placed(1)), true);
   assert.equal(pmiChangeSettled(change, placed(0)), false, "the plate's A placed there is not the peg's");
   // A new one is its part's: the plate's A is not the peg's B, nor the peg's A the plate's.
   assert.equal(pmiChangeSettled({ kind: "add", part: 0, id: "A", call: {} }, entriesOf({ pmi: [datum(1, PEG_END)] })), false);
   assert.match(pmiChangeRequest({ kind: "add", part: 0, partName: "plate", id: "B", call: { kind: "datum", id: "B", letter: "B", ref: TOP } }),
-    /^Add this PMI to the pmi\.annotate\(\.\.\.\) call of the model's part "plate" \(from cadgen\.engine import pmi\):\npmi\.datum\("B"/);
+    /^Add this PMI to the annotate\(\.\.\.\) call of the model's part "plate" \(from cadgen\.ap242 import annotate, datum\):\ndatum\("B"/);
 });
 
 // The engine's plate as made (v1), and after an edit put a square cut where the hole was (v3): the
@@ -440,27 +441,27 @@ test("views carry their camera, section, shows and placements, keyed by part", (
 test("each new kind's call is the engine's call exactly", () => {
   const read = readXbfPmi(served("v4"));
   const call = (id, changes) => pmiCallText(pmiEntryCall(read.entries.find(entry => entry.id === id), changes));
-  assert.equal(call("thickness"), `pmi.distance("thickness", "${V4_BOTTOM}", "${V4_TOP}", tolerance=pmi.limits(9.8, 10.2), presentation=pmi.place(anchor=(50, 30, 0), offset=(15, 0, 0)))`);
-  assert.equal(call("hole-profile"), `pmi.profile("hole-profile", "${V4_HOLE}", 0.2, datums=["A"], presentation=pmi.place(anchor=(0, 5, 5), offset=(0, 15, 15)))`);
-  assert.equal(call("general"), `pmi.general_profile("general", 0.5, datums=["A"])`);
-  assert.equal(call("edges"), `pmi.note("edges", "Break all sharp edges 0.2 max")`);
-  assert.equal(call("mask"), `pmi.note("mask", "Mask these features before coating with primer", faces=["${V4_HOLE}"], annotations=["hole-diameter"], `
-    + "presentation=pmi.place(anchor=(0, -5, 5), offset=(0, -15, 15)))");
+  assert.equal(call("thickness"), `dimensional_location("thickness", "${V4_BOTTOM}", "${V4_TOP}", tolerance=limits(9.8, 10.2), presentation=place(anchor=(50, 30, 0), offset=(15, 0, 0)))`);
+  assert.equal(call("hole-profile"), `surface_profile_tolerance("hole-profile", "${V4_HOLE}", 0.2, datums=["A"], presentation=place(anchor=(0, 5, 5), offset=(0, 15, 15)))`);
+  assert.equal(call("general"), `general_profile("general", 0.5, datums=["A"])`);
+  assert.equal(call("edges"), `note("edges", "Break all sharp edges 0.2 max")`);
+  assert.equal(call("mask"), `note("mask", "Mask these features before coating with primer", faces=["${V4_HOLE}"], annotations=["hole-diameter"], `
+    + "presentation=place(anchor=(0, -5, 5), offset=(0, -15, 15)))");
   const [section, iso] = read.views;
-  assert.equal(pmiCallText(pmiEntryCall(section)), `pmi.view("A-A", camera="front", shows=["hole-diameter", "hole-position", "hole-profile", "mask"], `
-    + `section=pmi.section("y", 0, invert=True), place={"hole-diameter": pmi.place(anchor=(5, 0, 0), offset=(15, 0, 10))})`);
-  assert.equal(pmiCallText(pmiEntryCall(iso)), `pmi.view("iso", camera="iso")`);
+  assert.equal(pmiCallText(pmiEntryCall(section)), `view("A-A", camera="front", shows=["hole-diameter", "hole-position", "hole-profile", "mask"], `
+    + `section=section("y", 0, invert=True), place={"hole-diameter": place(anchor=(5, 0, 0), offset=(15, 0, 10))})`);
+  assert.equal(pmiCallText(pmiEntryCall(iso)), `view("iso", camera="iso")`);
   // A camera of the code's own, a section keeping the lower side, a view showing nothing; a profile on several faces lists them.
   assert.equal(pmiCallText({ kind: "view", name: "side", camera: { direction: [1, 0, 0], up: [0, 0, 1] }, shows: [], section: { axis: "x", at: 12.5, invert: false }, place: {}, label: "Side" }),
-    `pmi.view("side", camera=pmi.camera((1, 0, 0), (0, 0, 1)), shows=[], section=pmi.section("x", 12.5), label="Side")`);
-  assert.equal(pmiCallText(pmiEntryCall({ ...iso, camera: { ...iso.camera, preset: null } })), `pmi.view("iso", camera=pmi.camera((0.6155, -0.6155, 0.4924), (0, 0, 1)))`);
-  assert.equal(pmiCallText({ kind: "geometric_tolerance", characteristic: "surface_profile", id: "both", refs: [TOP, HOLE], value: 0.1, datums: [] }), `pmi.profile("both", ["${TOP}", "${HOLE}"], 0.1)`);
+    `view("side", camera=camera((1, 0, 0), (0, 0, 1)), shows=[], section=section("x", 12.5), label="Side")`);
+  assert.equal(pmiCallText(pmiEntryCall({ ...iso, camera: { ...iso.camera, preset: null } })), `view("iso", camera=camera((0.6155, -0.6155, 0.4924), (0, 0, 1)))`);
+  assert.equal(pmiCallText({ kind: "geometric_tolerance", characteristic: "surface_profile", id: "both", refs: [TOP, HOLE], value: 0.1, datums: [] }), `surface_profile_tolerance("both", ["${TOP}", "${HOLE}"], 0.1)`);
   // Limits edited to deviations and back, as a change asks for them.
-  assert.equal(call("thickness", { tolerance: { type: "plus_minus", upper: 0.2, lower: -0.2 }, presentation: null }), `pmi.distance("thickness", "${V4_BOTTOM}", "${V4_TOP}", tolerance=pmi.plus_minus(0.2))`);
+  assert.equal(call("thickness", { tolerance: { type: "plus_minus", upper: 0.2, lower: -0.2 }, presentation: null }), `dimensional_location("thickness", "${V4_BOTTOM}", "${V4_TOP}", tolerance=plus_minus_tolerance(0.2))`);
   const values = { tolerance: { type: "limits", lower: 9.9, upper: 10.1 } };
   const thickness = read.entries.find(entry => entry.id === "thickness");
   assert.match(pmiChangeRequest({ kind: "edit", id: "thickness", values, call: pmiEntryCall(thickness, values), placementOnly: false }),
-    /^Change the PMI "thickness" in the model's pmi\.annotate\(\.\.\.\) call: tolerance=pmi\.limits\(9\.9, 10\.1\)\. .*tolerance=pmi\.limits\(9\.9, 10\.1\), presentation=/s);
+    /^Change the PMI "thickness" in the model's annotate\(\.\.\.\) call \(from cadgen\.ap242 import annotate, dimensional_location, limits, place\): tolerance=limits\(9\.9, 10\.1\)\. .*tolerance=limits\(9\.9, 10\.1\), presentation=/s);
   // What a kind needs and lacks makes no call: a note with no words, a profile on no face, a view seen down nothing, a general profile placed (it takes no placement).
   assert.equal(pmiCallText({ kind: "note", id: "n", text: " " }), null);
   assert.equal(pmiCallText({ kind: "geometric_tolerance", characteristic: "surface_profile", id: "p", refs: [], value: 0.1 }), null);
@@ -472,9 +473,9 @@ test("each new kind's call is the engine's call exactly", () => {
 test("a note from the project's library asks for that entry by its name, its call carrying the words", () => {
   const call = { kind: "note", id: "edges", text: "Break all sharp edges 0.2 max", faces: [], library: "edges" };
   assert.equal(pmiChangeRequest({ kind: "add", part: 0, partName: "plate", id: "edges", call }),
-    `Add this PMI to the pmi.annotate(...) call of the model's part "plate" (from cadgen.engine import pmi), its text the project's notes library entry "edges" `
-    + `(the dict given as library=), written as that entry rather than these words:\npmi.note("edges", "Break all sharp edges 0.2 max")`);
+    `Add this PMI to the annotate(...) call of the model's part "plate" (from cadgen.ap242 import annotate, note), its text the project's notes library entry "edges" `
+    + `(the dict given as library=), written as that entry rather than these words:\nnote("edges", "Break all sharp edges 0.2 max")`);
   // Typed, the words are the person's own.
   assert.equal(pmiChangeRequest({ kind: "add", part: 0, partName: "plate", id: "edges", call: { ...call, library: null } }),
-    `Add this PMI to the pmi.annotate(...) call of the model's part "plate" (from cadgen.engine import pmi):\npmi.note("edges", "Break all sharp edges 0.2 max")`);
+    `Add this PMI to the annotate(...) call of the model's part "plate" (from cadgen.ap242 import annotate, note):\nnote("edges", "Break all sharp edges 0.2 max")`);
 });

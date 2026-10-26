@@ -7,8 +7,8 @@
 // What is said comes from the document alone: a dimension's nominal is the engine's, measured on
 // the geometry; a tolerance is what the model's code supplied (deviations from the nominal, or its
 // limits: the least size and the greatest), and none where it supplied none -- the viewer never
-// fills one in. A basic dimension (`pmi.basic`: theoretically exact, as a position tolerance's
-// true position is located) is a distance that holds no tolerance at all, drawn boxed. A part's
+// fills one in. A basic dimension (`dimensional_location(..., basic=True)`: theoretically exact, as a
+// position tolerance's true position is located) is a distance that holds no tolerance at all, drawn boxed. A part's
 // general profile ("unless otherwise noted, all surfaces") is its Note 1, then its notes in their
 // numbers: a general note and the general profile are said in the notes, a flag note drawn on its
 // faces. Where an annotation stands on screen (`presentation`) is no part of what it means: moving
@@ -17,9 +17,10 @@
 // An id is the author's and unique on its part (a datum's is its letter), so an annotation is known
 // by its part and its id (`key`), and asked for by both; a view by its part and its name.
 //
-// The document is made from code (`pmi.annotate(body, pmi.datum("A", ...), ...)` in the model), so
-// a change asked for in the viewer is the call it would write there (`pmiCallText`,
-// `pmiPlaceText`): what Quick Edit hands the agent, which writes it into the model and builds.
+// The document is made from code (`annotate(body, datum("A", ...), ...)` in the model, each call
+// `cadgen.ap242`'s, named after the AP242 entity it writes), so a change asked for in the viewer is
+// the call it would write there (`pmiCallText`, `pmiPlaceText`): what Quick Edit hands the agent,
+// which writes it into the model and builds.
 
 /** The kinds the viewer reads and says; any other an entry names is told, not drawn. */
 const PMI_KINDS = Object.freeze(["dimension", "datum", "geometric_tolerance", "note"]);
@@ -44,7 +45,7 @@ const statusOf = value => (PMI_STATUSES.includes(value) ? value : "missing");
 const partOf = value => (Number.isInteger(value) ? value : null);
 const isRecord = value => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const words = value => (Array.isArray(value) ? value.map(text).filter(Boolean) : []);
-// A presentation (`{ anchor, offset }`, as `pmi.place` writes it), or null.
+// A presentation (`{ anchor, offset }`, as `place` writes it), or null.
 const readPlacement = value => (value && point3(value.anchor) && point3(value.offset) ? { anchor: point3(value.anchor), offset: point3(value.offset) } : null);
 
 function readRefs(refs) {
@@ -379,28 +380,29 @@ const pyString = value => JSON.stringify(String(value));
 const pyTuple = point => `(${point.map(pyNumber).join(", ")})`;
 const pyList = items => `[${items.map(pyString).join(", ")}]`;
 
-/** The `pmi.place(...)` an annotation's presentation is in code: where it is drawn, never what it means. */
+/** The `place(...)` an annotation's presentation is in code: where it is drawn, never what it means. */
 export function pmiPlaceText(presentation) {
-  return `pmi.place(anchor=${pyTuple(presentation.anchor)}, offset=${pyTuple(presentation.offset)})`;
+  return `place(anchor=${pyTuple(presentation.anchor)}, offset=${pyTuple(presentation.offset)})`;
 }
 
 /**
- * The tolerance a dimension's call gives it: `pmi.limits(lower, upper)`, or `pmi.plus_minus(...)`,
+ * The tolerance a dimension's call gives it: `limits(lower, upper)`, or `plus_minus_tolerance(...)`,
  * its lower deviation left out where it is the upper's negative.
  */
 function pmiToleranceCallText(tolerance) {
-  if (tolerance.type === "limits") return `pmi.limits(${pyNumber(tolerance.lower)}, ${pyNumber(tolerance.upper)})`;
+  if (tolerance.type === "limits") return `limits(${pyNumber(tolerance.lower)}, ${pyNumber(tolerance.upper)})`;
   const symmetric = Math.abs(tolerance.upper + tolerance.lower) < 1e-12;
-  return symmetric ? `pmi.plus_minus(${pyNumber(tolerance.upper)})` : `pmi.plus_minus(${pyNumber(tolerance.upper)}, ${pyNumber(tolerance.lower)})`;
+  return symmetric ? `plus_minus_tolerance(${pyNumber(tolerance.upper)})`
+    : `plus_minus_tolerance(${pyNumber(tolerance.upper)}, ${pyNumber(tolerance.lower)})`;
 }
 
-// A view's camera as its call gives it: a preset's name, or `pmi.camera(direction, up)`; null for neither.
+// A view's camera as its call gives it: a preset's name, or `camera(direction, up)`; null for neither.
 function pmiCameraText(camera) {
   if (typeof camera === "string") return camera ? pyString(camera) : null;
-  return camera && point3(camera.direction) && point3(camera.up) ? `pmi.camera(${pyTuple(camera.direction)}, ${pyTuple(camera.up)})` : null;
+  return camera && point3(camera.direction) && point3(camera.up) ? `camera(${pyTuple(camera.direction)}, ${pyTuple(camera.up)})` : null;
 }
 
-// `pmi.view(...)`: its name, its camera, then what it shows (every one where it names none), its
+// `view(...)`: its name, its camera, then what it shows (every one where it names none), its
 // section (`invert=` only where it keeps the upper side, the engine's default the lower), its own
 // placements by id and its label, each where given.
 function pmiViewText(call) {
@@ -409,40 +411,42 @@ function pmiViewText(call) {
   const placed = Object.entries(call.place || {});
   if (!text(call.name).trim() || !camera || (section && !(SECTION_AXES.includes(section.axis) && finite(section.at) !== null))
     || (Array.isArray(call.shows) && !call.shows.every(Boolean)) || !placed.every(([id, at]) => id && readPlacement(at))) return null;
-  return `pmi.view(${[pyString(call.name), `camera=${camera}`, Array.isArray(call.shows) ? `shows=${pyList(call.shows)}` : null,
-    section ? `section=pmi.section(${pyString(section.axis)}, ${pyNumber(section.at)}${section.invert ? ", invert=True" : ""})` : null,
+  return `view(${[pyString(call.name), `camera=${camera}`, Array.isArray(call.shows) ? `shows=${pyList(call.shows)}` : null,
+    section ? `section=section(${pyString(section.axis)}, ${pyNumber(section.at)}${section.invert ? ", invert=True" : ""})` : null,
     placed.length ? `place={${placed.map(([id, at]) => `${pyString(id)}: ${pmiPlaceText(at)}`).join(", ")}}` : null,
     call.label ? `label=${pyString(call.label)}` : null].filter(Boolean).join(", ")})`;
 }
 
 /**
- * The call that declares an annotation in the model's `pmi.annotate(body, ...)`, as `cadgen.engine.pmi`
- * takes it: its id first, then its references (each its canonical ref, verbatim), then its values:
+ * The call that declares an annotation in the model's `annotate(body, ...)`, as `cadgen.ap242` takes
+ * it, named after the AP242 entity it writes: its id first, then its references (each its canonical
+ * ref, verbatim), then its values:
  *
- * - `{ kind: "datum", id, letter, ref }`: `pmi.datum("A", ref)` (a datum's id is its letter);
- * - `{ kind: "dimension", type: "distance", id, from, to, tolerance? }`: `pmi.distance(id, from, to, tolerance=...)`;
- * - `{ kind: "dimension", type: "distance", basic: true, id, from, to }`: `pmi.basic(id, from, to)` (exact: a
- *   tolerance given it makes no call);
- * - `{ kind: "dimension", type: "diameter", id, ref, tolerance? }`: `pmi.diameter(id, ref, tolerance=...)`;
- *   a dimension's tolerance `pmi.plus_minus(...)`, or `pmi.limits(lower, upper)` for limits;
- * - `{ kind: "geometric_tolerance", characteristic: "flatness", id, ref, value }`: `pmi.flatness(id, ref, value)`;
+ * - `{ kind: "datum", id, letter, ref }`: `datum("A", ref)` (a datum's id is its letter);
+ * - `{ kind: "dimension", type: "distance", id, from, to, tolerance? }`:
+ *   `dimensional_location(id, from, to, tolerance=...)`;
+ * - `{ kind: "dimension", type: "distance", basic: true, id, from, to }`:
+ *   `dimensional_location(id, from, to, basic=True)` (exact: a tolerance given it makes no call);
+ * - `{ kind: "dimension", type: "diameter", id, ref, tolerance? }`: `dimensional_size(id, ref, tolerance=...)`;
+ *   a dimension's tolerance `plus_minus_tolerance(...)`, or `limits(lower, upper)` for limits;
+ * - `{ kind: "geometric_tolerance", characteristic: "flatness", id, ref, value }`: `flatness_tolerance(id, ref, value)`;
  * - `{ kind: "geometric_tolerance", characteristic: "position", id, ref, value, datums, diameterZone }`:
- *   `pmi.position(id, ref, value, datums=[...], diameter_zone=True)`, its zone said either way (the
- *   engine's is a diameter's unless the call says it is not);
+ *   `position_tolerance(id, ref, value, datums=[...], diameter_zone=True)`, its zone said either way
+ *   (the engine's is a diameter's unless the call says it is not);
  * - `{ kind: "geometric_tolerance", characteristic: "surface_profile", id, refs, value, datums? }`:
- *   `pmi.profile(id, ref, value, datums=[...])`, its faces a list where it is on several;
+ *   `surface_profile_tolerance(id, ref, value, datums=[...])`, its faces a list where it is on several;
  * - `{ kind: "geometric_tolerance", characteristic: "surface_profile", general: true, id, value, datums? }`:
- *   `pmi.general_profile(id, value, datums=[...])`, on no ref (its faces are each build's) and never
+ *   `general_profile(id, value, datums=[...])`, on no ref (its faces are each build's) and never
  *   placed (a presentation given it makes no call);
- * - `{ kind: "note", id, text, faces?, annotations?, library? }`: `pmi.note(id, text, faces=[...], annotations=[...])`,
+ * - `{ kind: "note", id, text, faces?, annotations?, library? }`: `note(id, text, faces=[...], annotations=[...])`,
  *   a general note naming neither; `library`, the name of the project's notes library entry its
  *   text is, which the call writes as its words (a request asks for the entry, `pmiChangeRequest`);
- * - `{ kind: "view", name, camera, shows?, section?, place? }`: `pmi.view(name, camera="front", shows=[...],
- *   section=pmi.section(axis, at, invert=True), place={id: pmi.place(...)})`, its camera a preset's
- *   name or `{ direction, up }` (`pmi.camera(direction, up)`), its shows null for every one.
+ * - `{ kind: "view", name, camera, shows?, section?, place? }`: `view(name, camera="front", shows=[...],
+ *   section=section(axis, at, invert=True), place={id: place(...)})`, its camera a preset's
+ *   name or `{ direction, up }` (`camera(direction, up)`), its shows null for every one.
  *
  * A tolerance is written only where one is given, a frame's datums where it names some. `label`,
- * where given, is its `label=`, and `presentation` its `pmi.place`. Null for a call that lacks what
+ * where given, is its `label=`, and `presentation` its `place`. Null for a call that lacks what
  * its kind needs: nothing is filled in.
  */
 export function pmiCallText(call) {
@@ -452,18 +456,18 @@ export function pmiCallText(call) {
   const args = (...items) => [...items, ...tail].filter(item => item !== null && item !== undefined).join(", ");
   if (call.kind === "datum") {
     if (!call.ref || !call.letter) return null;
-    return `pmi.datum(${args(pyString(call.letter), pyString(call.ref))})`;
+    return `datum(${args(pyString(call.letter), pyString(call.ref))})`;
   }
   if (call.kind === "dimension") {
     const tolerance = call.tolerance ? `tolerance=${pmiToleranceCallText(call.tolerance)}` : null;
     if (call.type === "distance") {
       if (!call.from || !call.to) return null;
-      if (call.basic) return call.tolerance ? null : `pmi.basic(${args(pyString(call.id), pyString(call.from), pyString(call.to))})`;
-      return `pmi.distance(${args(pyString(call.id), pyString(call.from), pyString(call.to), tolerance)})`;
+      if (call.basic) return call.tolerance ? null : `dimensional_location(${args(pyString(call.id), pyString(call.from), pyString(call.to), "basic=True")})`;
+      return `dimensional_location(${args(pyString(call.id), pyString(call.from), pyString(call.to), tolerance)})`;
     }
     if (call.type === "diameter") {
       if (!call.ref) return null;
-      return `pmi.diameter(${args(pyString(call.id), pyString(call.ref), tolerance)})`;
+      return `dimensional_size(${args(pyString(call.id), pyString(call.ref), tolerance)})`;
     }
     return null;
   }
@@ -472,21 +476,21 @@ export function pmiCallText(call) {
     const datums = (call.datums || []).filter(Boolean);
     const frame = datums.length ? `datums=${pyList(datums)}` : null;
     if (call.characteristic === "surface_profile") {
-      if (call.general) return call.presentation ? null : `pmi.general_profile(${args(pyString(call.id), pyNumber(call.value), frame)})`;
+      if (call.general) return call.presentation ? null : `general_profile(${args(pyString(call.id), pyNumber(call.value), frame)})`;
       const refs = call.refs || [];
       if (!refs.length || !refs.every(Boolean)) return null;
-      return `pmi.profile(${args(pyString(call.id), refs.length === 1 ? pyString(refs[0]) : pyList(refs), pyNumber(call.value), frame)})`;
+      return `surface_profile_tolerance(${args(pyString(call.id), refs.length === 1 ? pyString(refs[0]) : pyList(refs), pyNumber(call.value), frame)})`;
     }
     if (!call.ref) return null;
-    if (call.characteristic === "flatness") return `pmi.flatness(${args(pyString(call.id), pyString(call.ref), pyNumber(call.value))})`;
+    if (call.characteristic === "flatness") return `flatness_tolerance(${args(pyString(call.id), pyString(call.ref), pyNumber(call.value))})`;
     if (call.characteristic === "position") {
-      return `pmi.position(${args(pyString(call.id), pyString(call.ref), pyNumber(call.value), frame, `diameter_zone=${call.diameterZone ? "True" : "False"}`)})`;
+      return `position_tolerance(${args(pyString(call.id), pyString(call.ref), pyNumber(call.value), frame, `diameter_zone=${call.diameterZone ? "True" : "False"}`)})`;
     }
   }
   if (call.kind === "note") {
     const faces = call.faces || [], annotations = call.annotations || [];
     if (!text(call.text).trim() || !faces.every(Boolean) || !annotations.every(Boolean)) return null;
-    return `pmi.note(${args(pyString(call.id), pyString(call.text), faces.length ? `faces=${pyList(faces)}` : null,
+    return `note(${args(pyString(call.id), pyString(call.text), faces.length ? `faces=${pyList(faces)}` : null,
       annotations.length ? `annotations=${pyList(annotations)}` : null)})`;
   }
   return null;
@@ -499,7 +503,7 @@ export function pmiCallText(call) {
  * Its references are the canonical refs this build resolved them to (`ref`), which name the same
  * elements however the code wrote them (a variable holding a face, say); the code's own where none
  * resolved. A general profile names no face (its faces are each build's) and takes no placement. A
- * view (`readXbfPmi`'s `views`) is its `pmi.view` call, with changes over `{ camera, shows, section,
+ * view (`readXbfPmi`'s `views`) is its `view` call, with changes over `{ camera, shows, section,
  * place }`.
  */
 export function pmiEntryCall(entry, changes = {}) {
@@ -558,27 +562,36 @@ function pmiEditSettings(values) {
   return set;
 }
 
+// The names a request's call and its `annotate` take from `cadgen.ap242`, in order: the import its
+// request names. The call's strings (refs, ids, a note's words) are left out, so a name in one is none.
+function pmiCallNames(call) {
+  const code = call.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  return [...new Set(["annotate", ...[...code.matchAll(/\b([a-z_]+)\(/g)].map(found => found[1])])].sort();
+}
+
 /**
  * A change asked for in the viewer as the request Quick Edit hands the agent: one paragraph of what
- * to do to the `pmi.annotate(...)` call of its part (`partName`, where the part has one), then the
- * call itself, exactly. `change`: a new annotation (`{ kind: "add", part, partName, id, call }`) or an
- * edit of one the document holds (`{ kind: "edit", part, partName, id, values, call, placementOnly }`:
- * what it sets, and the call it makes), `id` the author's. A new note whose words are the project's
+ * to do to the `annotate(...)` call of its part (`partName`, where the part has one), with the names
+ * it and the call take from `cadgen.ap242`, then the call itself, exactly. `change`: a new annotation
+ * (`{ kind: "add", part, partName, id, call }`) or an edit of one the document holds
+ * (`{ kind: "edit", part, partName, id, values, call, placementOnly }`: what it sets, and the call it
+ * makes), `id` the author's. A new note whose words are the project's
  * notes library entry (`call.library`, its name) asks for that entry: the page knows its name and
  * its words, not what the model's module calls the dict. "" for a call that lacks what its kind needs.
  */
 export function pmiChangeRequest(change) {
   const call = pmiCallText(change.call);
   if (!call) return "";
-  const annotate = change.partName ? `the pmi.annotate(...) call of the model's part ${pyString(change.partName)}` : "the model's pmi.annotate(...) call";
+  const annotate = change.partName ? `the annotate(...) call of the model's part ${pyString(change.partName)}` : "the model's annotate(...) call";
+  const names = `(from cadgen.ap242 import ${pmiCallNames(call).join(", ")})`;
   if (change.kind === "add") {
     const library = change.call.kind === "note" && text(change.call.library)
       ? `, its text the project's notes library entry ${pyString(change.call.library)} (the dict given as library=), written as that entry rather than these words` : "";
-    return `Add this PMI to ${annotate} (from cadgen.engine import pmi)${library}:\n${call}`;
+    return `Add this PMI to ${annotate} ${names}${library}:\n${call}`;
   }
   const what = change.placementOnly
-    ? `Move the PMI "${change.id}" in ${annotate}, its placement only (what it says is unchanged)`
-    : `Change the PMI "${change.id}" in ${annotate}`;
+    ? `Move the PMI "${change.id}" in ${annotate} ${names}, its placement only (what it says is unchanged)`
+    : `Change the PMI "${change.id}" in ${annotate} ${names}`;
   return `${what}: ${pmiEditSettings(change.values).join("; ")}. Keep its references as the code writes them. `
     + `The whole call, its references as this build resolves them:\n${call}`;
 }
@@ -586,7 +599,7 @@ export function pmiChangeRequest(change) {
 /**
  * Whether the document now says what `change` asked for, so it has nothing left to ask: a new
  * annotation its part holds, an edit whose call -- its values, zone, label and placement -- is the
- * one the part's entry of that id makes now. A change to a view (its call `pmi.view`) is settled by
+ * one the part's entry of that id makes now. A change to a view (its call `view`) is settled by
  * the part's view of that name in `views` (`readXbfPmi`'s), never by an annotation: a view and an
  * annotation may share a name. What the viewer drops once a build has it.
  */
