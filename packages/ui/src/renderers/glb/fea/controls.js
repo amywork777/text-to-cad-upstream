@@ -61,10 +61,10 @@ export function deforms(result) {
  * a harmonic sweep, a load stepped); RMS fields on the field and the sigma level (random vibration);
  * anything else on the field and, where it deforms, the deformation (a temperature has no deformation).
  */
-export function seriesControls(result) {
-  const [field, deformation] = fieldAndDeformation(result);
+export function seriesControls(result, t = english) {
+  const [field, deformation] = fieldAndDeformation(result, t);
   const moves = deforms(result);
-  const frames = frameControl(result);
+  const frames = frameControl(result, undefined, {}, t);
   if (result.series?.kind === "mode" && frames) return moves ? [frames, deformation] : [frames, field];
   const sigma = sigmaControl(result);
   if (sigma) return [field, sigma];
