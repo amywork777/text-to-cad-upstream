@@ -490,7 +490,7 @@ class Cantilever(unittest.TestCase):
         self.assertEqual(set(study["material"]), {"name", "yield_MPa", "youngs_GPa", "poisson"})
         self.assertAlmostEqual(study["material"]["youngs_GPa"], 200.0, delta=15)
         self.assertEqual(study["fixtures"], [{"type": "fixed", "faces": [self.fixed_ref]}])
-        self.assertTrue(self.fixed_ref.startswith("#o"))
+        self.assertIn("/face ", self.fixed_ref)
         self.assertEqual(study["loads"], [{"type": "force", "faces": [self.load_ref], "vector_N": [0, 0, -FORCE]}])
         self.assertEqual(study["mesh"]["size_mm"], self.result.mesh["size_mm"])
         self.assertEqual((study["mesh"]["order"], study["mesh"]["elements"], study["mesh"]["refined_from_mm"]),
@@ -539,7 +539,7 @@ class Cantilever(unittest.TestCase):
 
     def test_a_face_on_a_different_part_or_a_non_face_is_refused(self):
         self.assertIn("faces", value_error(self, solve, self.step, None, {
-            **self.study, "fixtures": [{"faces": [self.fixed_ref.rsplit(".", 1)[0]]}]}))
+            **self.study, "fixtures": [{"faces": [self.fixed_ref.rsplit("/", 1)[0]]}]}))
         value_error(self, solve, self.step, None, {**self.study, "loads": [{"faces": ["face 99"], "type": "force", "vector_N": [1, 0, 0]}]})
 
     def test_out_must_be_a_glb(self):
