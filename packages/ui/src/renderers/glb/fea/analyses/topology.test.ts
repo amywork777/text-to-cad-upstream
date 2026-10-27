@@ -16,7 +16,7 @@ function lightened(extras: Record<string, unknown> = {}) {
     position: [0, 0, 0, 0.06, 0, 0, 0, 0.02, 0], _material_kept: [0.3, 0.3, 0.3], _material_kept_f1: [0.8, 0.2, 0.5],
     _material_kept_f2: [1, 0, 1], _von_mises: [40, 0, 22], _displacement: vec(9), _face: [0, 0, 1],
   }, {
-    generator: 'cadgen fea', name: 'bracket topology', deformation_scale: 1, faces: ['#o1.f1', '#o1.f2', '#o1.f7'], occurrence: '#o1',
+    generator: 'cadgen fea', name: 'bracket topology', deformation_scale: 1, faces: ['bracket/face 1', 'bracket/face 2', 'bracket/face 7'], occurrence: 'bracket',
     mass_saved_percent: 69.4, volume_fraction: 0.3,
     analysis: { type: 'topology', tier: 3, word: 'Lighten it', estimate: false, limits: [LIMIT], noun: 'this load', reference_C: null, warnings: [] },
     fields: [
@@ -30,15 +30,15 @@ function lightened(extras: Record<string, unknown> = {}) {
       { value: 91, label: 'Final design', attributes: { material_kept: '_MATERIAL_KEPT_F2' } }] },
     study: {
       material: { name: 'Steel (structural, generic)', yield_MPa: 250, youngs_GPa: 200, poisson: 0.3 },
-      fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }], loads: [{ type: 'force', faces: ['#o1.f2'], vector_N: [0, 0, -100] }],
-      objective: 'stiffest', volume_fraction: 0.3, keep: ['#o1.f7'], kept_solid: ['#o1.f1', '#o1.f2', '#o1.f7'], penalty: 3,
+      fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }], loads: [{ type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -100] }],
+      objective: 'stiffest', volume_fraction: 0.3, keep: ['bracket/face 7'], kept_solid: ['bracket/face 1', 'bracket/face 2', 'bracket/face 7'], penalty: 3,
       mesh: { size_mm: 2, order: 1, elements: 2072, refined_from_mm: null },
     },
     checks: [
       { kind: 'mass_saved', label: 'Mass saved', value: 69.4, limit: 25, unit: '%', ratio: 0.36, close_at: 0.9, status: 'passes',
         where: { ref: null, at: [0, 0, 0] } },
       { kind: 'stress', label: 'Strength', value: 40, limit: 250, unit: 'MPa', ratio: 0.16, close_at: 0.5, margin: 2, status: 'passes',
-        where: { ref: '#o1.f2', at: [0, 0, 0] } },
+        where: { ref: 'bracket/face 2', at: [0, 0, 0] } },
     ],
     findings: [],
     ...extras,
@@ -75,12 +75,12 @@ describe('topology', () => {
   it('says what it keeps in Study: "Keep 30% of the material", "Kept solid: face 1, face 2, face 7"', () => {
     expect(keepWords(0.3)).toBe('Keep 30% of the material');
     expect(keepWords(null)).toBe('');
-    expect(keptSolidWords(['#o1.f2', '#o1.f7'])).toBe('Kept solid: face 2, face 7');
+    expect(keptSolidWords(['bracket/face 2', 'bracket/face 7'])).toBe('Kept solid: face 2, face 7');
     const rows = studyRows(lightened());
     expect(rows.slice(0, 4).map((row: { label: string }) => row.label)).toEqual(['Held at', 'Pushed', 'Lighten', 'Made of']);
     const lighten = rows.find((row: { id: string }) => row.id === 'lighten');
     expect(lighten.children.map((row: { label: string }) => row.label)).toEqual(['Keep 30% of the material', 'Kept solid: face 1, face 2, face 7']);
-    expect(lighten.children[1].faces).toEqual(['#o1.f1', '#o1.f2', '#o1.f7']);
+    expect(lighten.children[1].faces).toEqual(['bracket/face 1', 'bracket/face 2', 'bracket/face 7']);
   });
 
   it('leads its verdict with "Lite · " and words its mass check as cadgen writes it', () => {

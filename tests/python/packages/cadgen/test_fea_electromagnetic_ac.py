@@ -52,7 +52,7 @@ class StudyFile(unittest.TestCase):
 
         parsed = parse({"frequency_Hz": 50000, "coils": [{"turns": 10, "A": 2, "axis": {"direction": [0, 0, 1]}}],
                         "applied_field": {"mT": 10, "direction": [1, 0, 0]}, "probes": [{"at_mm": [0, 0, 0]}],
-                        "electro_thermal": {"convection": [{"faces": ["#o1.f1"], "h_W_m2K": 10, "ambient_C": 20}]},
+                        "electro_thermal": {"convection": [{"faces": ["face 1"], "h_W_m2K": 10, "ambient_C": 20}]},
                         "view": {"checks": [{"kind": "temperature", "max_C": 80}]}})
         inputs = parsed.inputs
         self.assertEqual((inputs.mode, inputs.frequency_Hz, inputs.air_mm), ("ac_magnetic", 50000.0, 0.0))
@@ -75,10 +75,10 @@ class StudyFile(unittest.TestCase):
             ({"coils": coil}, "frequency_Hz: an AC study needs its frequency"),
             ({"frequency_Hz": 0, "coils": coil}, "frequency_Hz"),
             ({"frequency_Hz": 50}, "an AC study needs a source"),
-            ({"frequency_Hz": 50, "currents": [{"faces": ["#o1.f1"], "A": 5}]}, "needs its return"),
-            ({"frequency_Hz": 50, "currents": [{"faces": ["#o1.f1"], "A": 5}], "voltages": [{"faces": ["#o1.f2"], "V": 1}]},
+            ({"frequency_Hz": 50, "currents": [{"faces": ["face 1"], "A": 5}]}, "needs its return"),
+            ({"frequency_Hz": 50, "currents": [{"faces": ["face 1"], "A": 5}], "voltages": [{"faces": ["face 2"], "V": 1}]},
              "driven by its current"),
-            ({"frequency_Hz": 50, "coils": coil, "voltages": [{"faces": ["#o1.f2"], "V": 0}]}, "only as the return"),
+            ({"frequency_Hz": 50, "coils": coil, "voltages": [{"faces": ["face 2"], "V": 0}]}, "only as the return"),
             ({"frequency_Hz": 50, "applied_field": {"mT": 10}}, "applied_field.direction"),
             ({"frequency_Hz": 50, "applied_field": {"mT": 10, "direction": [0, 0, 0]}}, "the direction is zero"),
             ({"frequency_Hz": 50, "coils": coil, "view": {"checks": [{"kind": "temperature", "max_C": 80}]}},
@@ -281,7 +281,7 @@ class InductionHeatedPart(unittest.TestCase):
         disc.label = "disc"
         step = directory / "induction.step"
         export_step(Compound(children=[coil, disc]), str(step))
-        disc_faces = [face.ref for face in fea.faces(step, occurrence="#o1.2").faces]
+        disc_faces = [face.ref for face in fea.faces(step, occurrence="disc").faces]
         cls.result = solve(step, directory / "induction.glb", {
             "analysis": "electromagnetic", "mode": "ac_magnetic", "frequency_Hz": 2000, "material": ALUMINIUM,
             "parts": {"coil": {"material": "brass"}, "disc": {"material": ALUMINIUM}},
@@ -305,7 +305,7 @@ class InductionHeatedPart(unittest.TestCase):
         # results of its own, so they come from the assembly's plan.
         extras = glb_extras(self.result.glb)
         self.assertEqual([(part["ref"], part["name"], part["material"]) for part in extras["parts"]],
-                         [("#o1.1", "coil", "Brass (C36000)"), ("#o1.2", "disc", "Aluminum 6061-T6")])
+                         [("coil", "coil", "Brass (C36000)"), ("disc", "disc", "Aluminum 6061-T6")])
 
     def test_the_coil_no_heat_reaches_reads_the_ambient_not_zero(self):
         extras = glb_extras(self.result.glb)

@@ -15,7 +15,7 @@ function overTime(study: Record<string, unknown> = {}, series = true) {
     position: [0, 0, 0, 0.1, 0, 0, 0.1, 0, 0.006], _von_mises: [0, 0, 0], _displacement: vec(9), _von_mises_peak: [63.6, 20, 0],
     _displacement_peak: [0, 0.1, 0.31], _face: [0, 1, 1], ...frames,
   }, {
-    generator: 'cadgen fea', name: 'beam over time', deformation_scale: 80, faces: ['#o1.f1', '#o1.f2'],
+    generator: 'cadgen fea', name: 'beam over time', deformation_scale: 80, faces: ['bracket/face 1', 'bracket/face 2'],
     analysis: { type: 'transient', tier: 1, word: 'Over time', estimate: false, limits: [], noun: 'this load', reference_C: null, warnings: [] },
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 63.6, attribute_scale: 1, field: 'von_mises', per_frame: true },
@@ -27,14 +27,14 @@ function overTime(study: Record<string, unknown> = {}, series = true) {
       von_mises: index ? `_VON_MISES_F${index}` : '_VON_MISES', displacement: index ? `_DISPLACEMENT_F${index}` : '_DISPLACEMENT' } })) } } : {}),
     study: {
       material: { name: 'Steel', yield_MPa: 250 },
-      fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }],
-      loads: [{ type: 'force', faces: ['#o1.f2'], vector_N: [0, 0, -50], history: { shape: 'half_sine', duration_s: 0.002 } }],
+      fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }],
+      loads: [{ type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -50], history: { shape: 'half_sine', duration_s: 0.002 } }],
       end_s: 0.006, step_s: 'auto', damping_ratio: 0.02, method: 'modal',
       mesh: { size_mm: 3, order: 2, elements: 699, refined_from_mm: null }, margin: 2,
       ...study,
     },
     checks: [{ kind: 'stress', label: 'Strength', value: 63.6, limit: 250, unit: 'MPa', ratio: 0.2544, close_at: 0.5, status: 'passes',
-      where: { ref: '#o1.f1', at: [0, -3, 3] }, at: { frame: 1, value: 0.00102, unit: 's', time_s: 0.00102 } }],
+      where: { ref: 'bracket/face 1', at: [0, -3, 3] }, at: { frame: 1, value: 0.00102, unit: 's', time_s: 0.00102 } }],
     findings: [],
   });
 }
@@ -67,7 +67,7 @@ describe('transient', () => {
   it('says the load with its history: how much, how it changes over time, which way it points', () => {
     const rows = studyRows(overTime());
     expect(rows.slice(0, 3).map((row: { label: string }) => row.label)).toEqual(['Held at', 'Pushed', 'Made of']);
-    expect(rows[1].children[0]).toMatchObject({ label: '50 N half-sine, 2 ms', hint: 'Pointing down', faces: ['#o1.f2'] });
+    expect(rows[1].children[0]).toMatchObject({ label: '50 N half-sine, 2 ms', hint: 'Pointing down', faces: ['bracket/face 2'] });
     expect(rows[1].children[0].summary).toMatch(/half-sine, 2 ms$/);
   });
 

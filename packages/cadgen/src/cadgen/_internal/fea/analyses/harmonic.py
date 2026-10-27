@@ -179,7 +179,7 @@ class HarmonicAnalysis(ModalResponse):
                                  "the loads are its amplitudes")
             if "loads" not in document:
                 raise ValueError('loads: a force shake needs the forces it swings with, as amplitudes, like '
-                                 '[{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, 10]}]')
+                                 '[{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 10]}]')
             loads = parse_loads(document, body=False)
         sweep = document.get("sweep_Hz")
         if not isinstance(sweep, list) or len(sweep) != 2:

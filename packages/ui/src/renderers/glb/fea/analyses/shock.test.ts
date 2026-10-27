@@ -10,7 +10,7 @@ function shocked(study: Record<string, unknown> = {}, checks: unknown[] = []) {
   return feaFile({
     position: [0, 0, 0, 0.1, 0, 0, 0.1, 0, 0.006], _von_mises: [16.7, 2, 0], _displacement: vec(9), _face: [0, 1, 1],
   }, {
-    generator: 'cadgen fea', name: 'beam shock', deformation_scale: 80, faces: ['#o1.f1', '#o1.f2'], safety_factor: 14.98,
+    generator: 'cadgen fea', name: 'beam shock', deformation_scale: 80, faces: ['bracket/face 1', 'bracket/face 2'], safety_factor: 14.98,
     analysis: { type: 'shock', tier: 1, word: 'Shock', estimate: false, limits: [], noun: 'this shock', reference_C: null, warnings: [] },
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress (peak, modes combined)', units: 'MPa', min: 0, max: 16.7, attribute_scale: 1, field: 'von_mises' },
@@ -18,13 +18,13 @@ function shocked(study: Record<string, unknown> = {}, checks: unknown[] = []) {
     ],
     study: {
       material: { name: 'Steel', yield_MPa: 250 },
-      fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }], loads: [],
+      fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }], loads: [],
       srs: { direction: [0, 0, 1], table: [[10, 5], [100, 50], [2000, 50]], damping_ratio: 0.05 }, combination: 'srss',
       mesh: { size_mm: 2, order: 2, elements: 1708, refined_from_mm: null }, margin: 2,
       ...study,
     },
     checks: checks.length ? checks : [{ kind: 'stress', label: 'Shock', value: 16.7, limit: 250, unit: 'MPa', ratio: 0.0668, close_at: 0.5,
-      status: 'passes', where: { ref: '#o1.f1', at: [0, 3, 3] } }],
+      status: 'passes', where: { ref: 'bracket/face 1', at: [0, 3, 3] } }],
     findings: [],
   });
 }
@@ -50,7 +50,7 @@ describe('shock', () => {
     expect(rows.slice(0, 3).map((row: { label: string }) => row.label)).toEqual(['Held at', 'Shocked', 'Made of']);
     expect(rows[1]).toMatchObject({ glyph: 'wave' });
     expect(rows[1].children[0]).toMatchObject({ label: '50 g above 100 Hz along Z, 5% damping', hint: 'Modes combined by SRSS',
-      faces: ['#o1.f1'], summary: 'Shocked where it is held: 50 g above 100 Hz along Z, 5% damping' });
+      faces: ['bracket/face 1'], summary: 'Shocked where it is held: 50 g above 100 Hz along Z, 5% damping' });
     expect(shockedRows(shocked({ combination: 'cqc' }))[0].children[0].hint).toBe('Modes combined by CQC');
     expect(shockedRows(shocked({ srs: null }))).toEqual([]);
   });

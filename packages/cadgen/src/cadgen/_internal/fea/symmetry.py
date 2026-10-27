@@ -116,7 +116,8 @@ def cut(geometry: "Geometry", prepared: "Prepared | None", planes: list[Plane]) 
     from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
     from OCP.gp import gp_Pnt
 
-    from cadgen._internal.fea.defeature import Prepared, face_map, trace
+    from cadgen._internal.fea.defeature import Prepared, trace
+    from cadgen._internal.fea.document import face_map
 
     shape = geometry.shape if prepared is None else prepared.shape
     origin = list(range(1, face_map(shape).Extent() + 1)) if prepared is None else list(prepared.origin)

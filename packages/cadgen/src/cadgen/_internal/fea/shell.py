@@ -112,11 +112,11 @@ def face_records(shape) -> list[FaceRecord]:
     from OCP.gp import gp_Pnt, gp_Vec
     from OCP.TopoDS import TopoDS
 
-    from cadgen._internal.entity_ordinals import entity_map
+    from cadgen._internal.fea.document import face_map
     from cadgen._internal.fea.mesh import area_center
 
     records = []
-    faces = entity_map(shape, "face")
+    faces = face_map(shape)
     for ordinal in range(1, faces.Extent() + 1):
         face = TopoDS.Face_s(faces.FindKey(ordinal))
         area, centre = area_center(face)
@@ -538,7 +538,7 @@ def mesh_mid_surface(plate: Plate, h: float) -> ShellModel:
     from OCP.BRepTools import BRepTools
     from OCP.TopoDS import TopoDS_Compound
 
-    from cadgen._internal.step_scene_loader import kernel_messages_on_stderr
+    from cadgen._internal.fea.mesh import kernel_messages_on_stderr
 
     builder = BRep_Builder()
     compound = TopoDS_Compound()

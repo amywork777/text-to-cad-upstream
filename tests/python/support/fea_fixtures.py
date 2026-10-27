@@ -198,7 +198,7 @@ def box_volume(lengths=(4.0, 1.0, 1.0), cells=(4, 1, 1)):
         centre = [size / 2 for size in lengths]
         centre[axis] = lengths[axis] if high else 0.0
         area = float(np.prod([size for i, size in enumerate(lengths) if i != axis]))
-        faces[o] = FaceFingerprint(f"#o1.f{o}", o, area, tuple(centre))
+        faces[o] = FaceFingerprint(f"face {o}", o, area, tuple(centre))
     diagonal = float(np.linalg.norm(lengths))
     return VolumeMesh(nodes=nodes, tets=np.array(tets, dtype=np.int64), boundary=np.array(boundary, dtype=np.int64),
                       boundary_ordinal=ordinal, faces=faces, max_h=max(lengths) / max(cells), bbox_diagonal=diagonal, seconds=0.0)

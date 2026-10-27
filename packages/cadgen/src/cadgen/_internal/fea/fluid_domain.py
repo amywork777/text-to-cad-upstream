@@ -14,7 +14,7 @@ the free stream enters through is an inlet, each it leaves through an outlet,
 each it runs along a slip wall.
 
 Each face of the fluid is classified: a wall (an image of one of the part's
-faces through the boolean's history, so it carries the part's ``#o1.fN`` ref
+faces through the boolean's history, so it carries the part's face ref
 and the wall pressure lands on the face the viewer shows), an inlet, an outlet
 or a slip side. The mesh is netgen's, through the same BREP hand-off and the
 same fingerprint matcher as the part's own mesh (:mod:`.mesh`, read only), and
@@ -229,25 +229,20 @@ def compound(solids):
 def classify_faces(shape, cut, part, refs: dict[int, str], role_of) -> list[FluidFace]:
     """Each face of ``shape``: a wall where it is an image of a part face through ``cut``'s history (its
     ordinal and ref), else ``role_of(face)`` -> (kind, box side) or None for a wall no part face traces to."""
-    from OCP.TopAbs import TopAbs_FACE
-    from OCP.TopExp import TopExp
-    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from cadgen._internal.fea.document import face_map
 
-    from cadgen._internal.entity_ordinals import entity_map
-
-    face_map = TopTools_IndexedMapOfShape()
-    TopExp.MapShapes_s(shape, TopAbs_FACE, face_map)
-    part_faces = entity_map(part, "face")
+    shape_faces = face_map(shape)
+    part_faces = face_map(part)
     wall_of: dict[int, int] = {}
     for ordinal in range(1, part_faces.Extent() + 1):
         face = part_faces.FindKey(ordinal)
         for image in list(cut.Modified(face)) or ([] if cut.IsDeleted(face) else [face]):
-            index = face_map.FindIndex(image)
+            index = shape_faces.FindIndex(image)
             if index > 0:
                 wall_of[index] = ordinal
     faces: list[FluidFace] = []
-    for index in range(1, face_map.Extent() + 1):
-        face = face_map.FindKey(index)
+    for index in range(1, shape_faces.Extent() + 1):
+        face = shape_faces.FindKey(index)
         area, centre, perimeter = _area_centre_perimeter(face)
         if index in wall_of:
             ordinal = wall_of[index]
@@ -268,7 +263,7 @@ def build_domain(part, kind: str, *, openings: dict[str, str] | None = None,
 
     Internal: ``openings`` maps each named side ("x_min") to "inlet" or "outlet". External:
     ``velocity`` is the free stream's direction (any length). ``refs`` names the part's faces by
-    cadgen ordinal (``{3: "#o1.f3"}``). ValueError for an opening the part does not have there.
+    ordinal (``{3: "duct/face 3"}``). ValueError for an opening the part does not have there.
     """
     started = time.perf_counter()
     low, high = bounds(part)
@@ -427,7 +422,7 @@ def netgen_mesh(shape, prints: list, diagonal: float, size: float, order: int, s
     import numpy as np
 
     from cadgen._internal.fea import mesh as part_mesh
-    from cadgen._internal.step_scene_loader import kernel_messages_on_stderr
+    from cadgen._internal.fea.mesh import kernel_messages_on_stderr
 
     import netgen.meshing as ngmesh
     import netgen.occ as ngocc

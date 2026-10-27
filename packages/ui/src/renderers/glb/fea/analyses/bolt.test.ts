@@ -18,7 +18,7 @@ function boltedResult(extras: Record<string, unknown> = {}) {
     _von_mises_f1: [170, 20, 40], _displacement_f1: vec([0, 0, 0.001, 0, 0, 0, 0, 0, 0]), _contact_pressure_f1: [220, 0, 30],
     _face: [0, 0, 1],
   }, {
-    generator: 'cadgen fea', name: 'joint bolt', deformation_scale: 1, faces: ['#o1.1.f1', '#o1.2.f6'], load_percent: 100, collapsed: false,
+    generator: 'cadgen fea', name: 'joint bolt', deformation_scale: 1, faces: ['part1/face 1', 'part2/face 6'], load_percent: 100, collapsed: false,
     analysis: { type: 'bolt', tier: 3, word: 'Bolted joint', estimate: false, limits: [LIMIT], noun: 'this load', reference_C: null, warnings: [] },
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 170, attribute_scale: 1, field: 'von_mises', per_frame: true },
@@ -28,20 +28,20 @@ function boltedResult(extras: Record<string, unknown> = {}) {
     series: { kind: 'time', unit: '%', default: 1, frames: [
       { value: 0, label: 'Preload', attributes: { von_mises: '_VON_MISES', displacement: '_DISPLACEMENT', contact_pressure: '_CONTACT_PRESSURE' } },
       { value: 100, label: '100 % load', attributes: { von_mises: '_VON_MISES_F1', displacement: '_DISPLACEMENT_F1', contact_pressure: '_CONTACT_PRESSURE_F1' } }] },
-    parts: [{ ref: '#o1.1', name: 'plate' }, { ref: '#o1.2', name: 'bracket' }],
+    parts: [{ ref: 'part1', name: 'plate' }, { ref: 'part2', name: 'bracket' }],
     contacts: [
       { kind: 'pair', name: 'plate on bracket', words: 'plate presses on bracket, friction 0.2', friction: 0.2, between: ['plate', 'bracket'],
-        refs: ['#o1.1', '#o1.2'], touching: true, force_N: 3057, peak_MPa: 130 },
+        refs: ['part1', 'part2'], touching: true, force_N: 3057, peak_MPa: 130 },
     ],
-    bolts: [{ name: 'bolt 1', size: 'M6', between: ['plate', 'bracket'], refs: ['#o1.1', '#o1.2'], preload_N: 5000, force_N: 6057, proof_N: 11658,
+    bolts: [{ name: 'bolt 1', size: 'M6', between: ['plate', 'bracket'], refs: ['part1', 'part2'], preload_N: 5000, force_N: 6057, proof_N: 11658,
       slack: false }],
     joints: [{ name: 'plate and bracket', clamp_N: 3057, preload_clamp_N: 5000, open: false, slips: false }],
     study: {
       material: { name: 'Steel (structural, generic)', yield_MPa: 250, youngs_GPa: 200, poisson: 0.3 },
-      fixtures: [{ type: 'fixed', faces: ['#o1.2.f6'] }], loads: [{ type: 'force', faces: ['#o1.1.f1'], vector_N: [0, 0, 3000] }], steps: 1,
+      fixtures: [{ type: 'fixed', faces: ['part2/face 6'] }], loads: [{ type: 'force', faces: ['part1/face 1'], vector_N: [0, 0, 3000] }], steps: 1,
       contact_pairs: [], rigid_planes: [],
       bolts: [{ between: ['plate', 'bracket'], size: 'M6', diameter_mm: 6, preload_N: 5000, torque_Nm: null, nut_factor: null, grade: '8.8',
-        friction: 0.2, holes: ['#o1.1.f7', '#o1.2.f7'], words: 'M6 bolt, 5 kN preload, clamps plate and bracket' }],
+        friction: 0.2, holes: ['part1/face 7', 'part2/face 7'], words: 'M6 bolt, 5 kN preload, clamps plate and bracket' }],
       mesh: { size_mm: 1.5, order: 2, elements: 800, refined_from_mm: null },
     },
     checks: [{ kind: 'bolt_load', label: 'Bolt load', value: 12500, limit: 11658, unit: 'N', ratio: 1.072, close_at: 0.9, status: 'fails',
@@ -94,11 +94,11 @@ describe('bolt', () => {
     const [bolted] = boltRows(boltedResult());
     expect(bolted).toMatchObject({ id: 'bolts', label: 'Bolted', glyph: 'load' });
     expect(bolted.children).toEqual([{ id: 'bolt:0', label: 'M6 bolt, 5 kN preload, clamps plate and bracket', detail: '', wrap: true,
-      hint: '6.1 kN after loading', refs: ['#o1.1', '#o1.2'], summary: 'Bolt: M6 bolt, 5 kN preload, clamps plate and bracket' }]);
+      hint: '6.1 kN after loading', refs: ['part1', 'part2'], summary: 'Bolt: M6 bolt, 5 kN preload, clamps plate and bracket' }]);
     // The bolted pair's own contact is not a second "Pressed together" row.
     expect(contactRows(boltedResult())).toEqual([]);
     expect(boltWords({ size: 'M10', between: ['lid', 'base_plate'], preload_N: 12500 })).toBe('M10 bolt, 13 kN preload, clamps lid and base plate');
-    const slack = boltedResult({ bolts: [{ refs: ['#o1.1', '#o1.2'], force_N: 0, slack: true }] });
+    const slack = boltedResult({ bolts: [{ refs: ['part1', 'part2'], force_N: 0, slack: true }] });
     expect(boltRows(slack)[0].children[0].hint).toBe('goes slack');
     expect(boltRows(boltedResult({ study: { fixtures: [], loads: [] } }))).toEqual([]);
   });

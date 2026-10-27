@@ -17,7 +17,7 @@ function twoFluids(multiphaseStudy: Record<string, unknown> = {}, checks?: unkno
   const frames = Object.fromEntries(FRAMES.flatMap((_, index) => [[`_water_fraction${index ? `_f${index}` : ''}`, [1, 1, 0]],
     [`_pressure${index ? `_f${index}` : ''}`, [245, 240, 0]]]));
   return feaFile({ position: [0, 0, 0, 0.064, 0, 0, 0, 0, 0.052], _displacement: vec(9), _face: [0, 0, 1], ...frames }, {
-    generator: 'cadgen fea', name: 'tank two fluids', deformation_scale: null, faces: ['#o1.f7', '#o1.f8'], occurrence: '#o1',
+    generator: 'cadgen fea', name: 'tank two fluids', deformation_scale: null, faces: ['bracket/face 7', 'bracket/face 8'], occurrence: 'bracket',
     analysis: { type: 'multiphase', tier: 3, word: 'Two fluids', estimate: false, limits: [LIMIT], noun: 'this shake', reference_C: null,
       warnings: [], fill: { fraction: 0.5, level_mm: 25, liquid: 'water', gas: 'air' } },
     fields: [

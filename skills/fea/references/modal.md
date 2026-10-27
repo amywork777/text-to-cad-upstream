@@ -36,7 +36,7 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis); reads den
 
 ```json
 {"analysis": "modal", "material": "aluminum-6061-t6",
- "fixtures": [{"faces": ["#o1.f1"], "type": "fixed"}],
+ "fixtures": [{"faces": ["bracket/face 1"], "type": "fixed"}],
  "modes": 6,
  "view": {"checks": [
    {"kind": "frequency", "min_Hz": 60, "label": "First mode"},

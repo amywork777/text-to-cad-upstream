@@ -15,8 +15,8 @@ function crackedResult(extras: Record<string, unknown> = {}) {
   return feaFile({
     position: [0, 0, 0, 0.04, 0, 0, 0, 0.006, 0], _von_mises: [67, 10, 30], _displacement: vec(9), _face: [0, 0, 1],
   }, {
-    generator: 'cadgen fea', name: 'plate crack', deformation_scale: 40, faces: ['#o1.f3', '#o1.f4'], occurrence: '#o1',
-    crack: { kind: 'edge', words: '2 mm edge crack on #o1.f4', face: '#o1.f4', size_mm: 2, K_max_MPa_sqrt_m: 18.04, K_point: 'the deepest point',
+    generator: 'cadgen fea', name: 'plate crack', deformation_scale: 40, faces: ['bracket/face 3', 'bracket/face 4'], occurrence: 'bracket',
+    crack: { kind: 'edge', words: '2 mm edge crack on bracket/face 4', face: 'bracket/face 4', size_mm: 2, K_max_MPa_sqrt_m: 18.04, K_point: 'the deepest point',
       toughness_MPa_sqrt_m: 29, front_mm: [[0, 2, 0], [0, 2, 1], [0, 2, 2]], K_front: [17.1, 18.04, 17.2] },
     analysis: { type: 'fracture', tier: 3, word: 'Cracks', estimate: false, limits: [LIMIT], noun: 'this load', reference_C: null, warnings: [] },
     fields: [
@@ -25,8 +25,8 @@ function crackedResult(extras: Record<string, unknown> = {}) {
     ],
     study: {
       material: { name: 'Aluminum 6061-T6', yield_MPa: 276, youngs_GPa: 68.9, poisson: 0.33 },
-      fixtures: [{ type: 'roller', faces: ['#o1.f3'] }], loads: [{ type: 'pressure', faces: ['#o1.f4'], pressure_MPa: -100 }],
-      crack: { kind: 'edge', face: '#o1.f4', at_mm: [0, 0, 1], normal: [0, 1, 0], size_mm: 2, words: '2 mm edge crack on #o1.f4' },
+      fixtures: [{ type: 'roller', faces: ['bracket/face 3'] }], loads: [{ type: 'pressure', faces: ['bracket/face 4'], pressure_MPa: -100 }],
+      crack: { kind: 'edge', face: 'bracket/face 4', at_mm: [0, 0, 1], normal: [0, 1, 0], size_mm: 2, words: '2 mm edge crack on bracket/face 4' },
       mesh: { size_mm: 3, order: 2, elements: 400, refined_from_mm: null },
     },
     checks: [{ kind: 'fracture', label: 'Crack', value: 18.04, limit: 29, unit: 'MPa√m', ratio: 0.622, close_at: 0.666667, margin: 1.5,
@@ -64,7 +64,7 @@ describe('fracture', () => {
     const rows = studyRows(crackedResult());
     expect(rows.slice(0, 4).map((row: { label: string }) => row.label)).toEqual(['Slides on', 'Pushed', 'Crack', 'Made of']);
     const crack = rows.find((row: { id: string }) => row.id === 'crack');
-    expect(crack.children[0]).toMatchObject({ label: '2 mm edge crack on face 4', hint: 'K 18 MPa√m at the deepest point', faces: ['#o1.f4'],
+    expect(crack.children[0]).toMatchObject({ label: '2 mm edge crack on face 4', hint: 'K 18 MPa√m at the deepest point', faces: ['bracket/face 4'],
       summary: 'Crack: 2 mm edge crack on face 4 (K 18 MPa√m at the deepest point)' });
     const details = rows.find((row: { id: string }) => row.id === 'details');
     expect(details.children.find((row: { id: string }) => row.id === 'limits').children.map((row: { label: string }) => row.label)).toEqual([LIMIT]);
@@ -72,11 +72,11 @@ describe('fracture', () => {
   });
 
   it('says every kind of crack in words', () => {
-    const crack = (kind: string, more: Record<string, unknown> = {}) => crackOf({ study: { crack: { kind, size_mm: 1.5, face: '#o1.f4', ...more } }, mesh: { userData: {} } });
+    const crack = (kind: string, more: Record<string, unknown> = {}) => crackOf({ study: { crack: { kind, size_mm: 1.5, face: 'bracket/face 4', ...more } }, mesh: { userData: {} } });
     expect(crackWords(crack('edge'))).toBe('1.5 mm edge crack on face 4');
     expect(crackWords(crack('surface', { length_mm: 6 }))).toBe('1.5 mm deep surface crack, 6 mm long, on face 4');
     expect(crackWords(crack('surface'))).toBe('1.5 mm deep surface crack, 3 mm long, on face 4');
-    expect(crackWords(crack('through', { face: '#o1.f6' }))).toBe('3 mm through crack across face 6');
+    expect(crackWords(crack('through', { face: 'bracket/face 6' }))).toBe('3 mm through crack across face 6');
     expect(crackWords(crack('embedded', { face: null }))).toBe('3 mm embedded crack');
     expect(crackOf({ study: { crack: { kind: 'notch', size_mm: 1 } }, mesh: { userData: {} } })).toBeNull();
   });

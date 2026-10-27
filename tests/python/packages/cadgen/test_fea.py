@@ -99,7 +99,7 @@ def _vtu_von_mises(path: Path) -> "tuple[np.ndarray, np.ndarray]":
     return block("<Points><DataArray").reshape(-1, 3), block('Name="von_mises"')
 
 
-BASE = {"material": "steel", "fixtures": [{"faces": ["#o1.f1"]}], "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [1, 0, 0]}]}
+BASE = {"material": "steel", "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [1, 0, 0]}]}
 
 
 class StudyFile(unittest.TestCase):
@@ -108,20 +108,20 @@ class StudyFile(unittest.TestCase):
     def test_a_named_material_and_one_fixture_and_load_parse(self):
         study = parse_study({
             "material": "6061-T6",
-            "fixtures": [{"faces": ["#o1.f1"]}],
-            "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -10]}],
+            "fixtures": [{"faces": ["face 1"]}],
+            "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -10]}],
         })
         self.assertEqual(study.material.name, "Aluminum 6061-T6")
         self.assertEqual(study.fixtures[0].type, "fixed")
         self.assertEqual(study.loads[0].vector, (0.0, 0.0, -10.0))
-        self.assertEqual(study.face_refs, ("#o1.f1", "#o1.f2"))
+        self.assertEqual(study.face_refs, ("face 1", "face 2"))
         self.assertIsNone(study.mesh_size)
 
     def test_a_custom_material_overrides_the_table(self):
         study = parse_study({
             "material": {"name": "steel", "yield_MPa": 900},
-            "fixtures": [{"faces": "#o1.f1"}],
-            "loads": [{"faces": ["#o1.f2"], "type": "pressure", "pressure_MPa": 2.5}],
+            "fixtures": [{"faces": "face 1"}],
+            "loads": [{"faces": ["face 2"], "type": "pressure", "pressure_MPa": 2.5}],
         })
         self.assertEqual(study.material.E, STEEL.E)
         self.assertEqual(study.material.yield_strength, 900.0)
@@ -142,8 +142,8 @@ class StudyFile(unittest.TestCase):
         cases = [
             ({**BASE, "material": "unobtainium"}, "unknown material"),
             ({**BASE, "fixtures": []}, "fixtures"),
-            ({**BASE, "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, 0]}]}, "vector_N"),
-            ({**BASE, "loads": [{"faces": ["#o1.f2"], "type": "torque"}]}, "loads[0].type"),
+            ({**BASE, "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 0]}]}, "vector_N"),
+            ({**BASE, "loads": [{"faces": ["face 2"], "type": "torque"}]}, "loads[0].type"),
             ({**BASE, "mesh": {"size_mm": -1}}, "mesh.size_mm"),
             ({**BASE, "bogus": 1}, "unknown keys"),
         ]
@@ -159,7 +159,7 @@ class StudyFile(unittest.TestCase):
                 self.assertIn("margin", value_error(self, parse_study, {**BASE, "margin": bad}))
 
     def test_inline_json_and_a_file_are_accepted(self):
-        text = json.dumps({"material": "pla", "fixtures": [{"faces": ["#o1.f1"]}], "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 1, 0]}]})
+        text = json.dumps({"material": "pla", "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 1, 0]}]})
         self.assertEqual(parse_study(text).material.name, "PLA")
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "study.json"
@@ -260,16 +260,16 @@ class StudyView(unittest.TestCase):
 
     def test_checks_sections_and_when_parse_as_written(self):
         view = {
-            "checks": [{"kind": "stress", "margin": 2, "label": "Strength"}, {"kind": "displacement", "limit_mm": 0.5, "faces": ["#o1.f2"], "label": "Tip sag"}],
+            "checks": [{"kind": "stress", "margin": 2, "label": "Strength"}, {"kind": "displacement", "limit_mm": 0.5, "faces": ["face 2"], "label": "Tip sag"}],
             "sections": ["verdict", "controls"],
             "controls": [{"drives": "load_scale", "max": 2, "when": "failing"}],
         }
         study = parse_study({**BASE, "view": view})
         self.assertEqual(study.view["checks"], [
-            {"kind": "stress", "margin": 2.0, "label": "Strength"}, {"kind": "displacement", "limit_mm": 0.5, "faces": ["#o1.f2"], "label": "Tip sag"}])
+            {"kind": "stress", "margin": 2.0, "label": "Strength"}, {"kind": "displacement", "limit_mm": 0.5, "faces": ["face 2"], "label": "Tip sag"}])
         self.assertEqual(study.view["sections"], ["verdict", "controls"])
         self.assertEqual(study.view["controls"][0]["when"], "failing")
-        self.assertEqual(study.check_faces, ("#o1.f2",))
+        self.assertEqual(study.check_faces, ("face 2",))
         # The stress check's margin is the study's.
         self.assertEqual(study.margin, 2.0)
         self.assertEqual(parse_study({**BASE, "view": {"checks": [{"kind": "stress", "margin": 3}]}}).margin, 3.0)
@@ -318,7 +318,7 @@ class GlbJson(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "result.glb"
             with self.assertRaises(ValueError):
-                write_glb(path, extras={"faces": ["#o1.f1"], "view": {"max": math.inf}}, **mesh)
+                write_glb(path, extras={"faces": ["face 1"], "view": {"max": math.inf}}, **mesh)
             self.assertFalse(path.exists())
 
 
@@ -356,7 +356,7 @@ class Cantilever(unittest.TestCase):
 
     def test_the_face_listing_names_the_six_faces_with_hints(self):
         self.assertEqual(len(self.listing.faces), 6)
-        self.assertTrue(all(face.ref.endswith(f".f{i + 1}") for i, face in enumerate(self.listing.faces)))
+        self.assertTrue(all(face.ref.endswith(f"/face {i + 1}") for i, face in enumerate(self.listing.faces)))
         end = next(face for face in self.listing.faces if face.ref == self.load_ref)
         self.assertAlmostEqual(end.area_mm2, WIDTH * HEIGHT, places=3)
         self.assertIn("normal +X", end.hint)
@@ -542,7 +542,7 @@ class Cantilever(unittest.TestCase):
     def test_a_face_on_a_different_part_or_a_non_face_is_refused(self):
         self.assertIn("faces", value_error(self, solve, self.step, None, {
             **self.study, "fixtures": [{"faces": [self.fixed_ref.rsplit(".", 1)[0]]}]}))
-        value_error(self, solve, self.step, None, {**self.study, "loads": [{"faces": ["#o1.f99"], "type": "force", "vector_N": [1, 0, 0]}]})
+        value_error(self, solve, self.step, None, {**self.study, "loads": [{"faces": ["face 99"], "type": "force", "vector_N": [1, 0, 0]}]})
 
     def test_out_must_be_a_glb(self):
         self.assertIn(".glb", value_error(self, solve, self.step, self.out.with_suffix(".vtu"), self.study))
@@ -564,7 +564,7 @@ class Yielding(unittest.TestCase):
         # The fixture names its face with the document prefix, as the viewer copies it.
         cls.study = {
             "material": "steel",
-            "fixtures": [{"faces": [f"{cls.step.name}{cls.fixed_ref}"], "type": "fixed"}],
+            "fixtures": [{"faces": [f"{cls.step.name}#{cls.fixed_ref}"], "type": "fixed"}],
             "loads": [{"faces": [cls.load_ref], "type": "force", "vector_N": [0, 0, -100.0]}],
             "mesh": {"size_mm": cls.SIZE},
         }
@@ -746,7 +746,7 @@ class PeakFace(unittest.TestCase):
         # Two triangles on f1, one on f2, sharing node 2 (an edge between them); node 9 is inside.
         volume = SimpleNamespace(
             boundary_ordinal=np.array([1, 1, 2]),
-            faces={ordinal: SimpleNamespace(ref=f"#o1.f{ordinal}") for ordinal in (1, 2)},
+            faces={ordinal: SimpleNamespace(ref=f"face {ordinal}") for ordinal in (1, 2)},
             max_h=1.0,
         )
         outcome = SimpleNamespace(
@@ -761,11 +761,11 @@ class PeakFace(unittest.TestCase):
         self.assertIsNone(self._peak_face(9, {1}))
 
     def test_a_peak_on_an_unfixed_face_names_it(self):
-        self.assertEqual(self._peak_face(4, {1}), "#o1.f2")
+        self.assertEqual(self._peak_face(4, {1}), "face 2")
 
     def test_a_peak_on_an_edge_names_the_fixed_face(self):
-        self.assertEqual(self._peak_face(2, {2}), "#o1.f2")
-        self.assertEqual(self._peak_face(2, set()), "#o1.f1")
+        self.assertEqual(self._peak_face(2, {2}), "face 2")
+        self.assertEqual(self._peak_face(2, set()), "face 1")
 
     def _near_miss(self, distance: float):
         """A peak node on free face f2, ``distance`` mm (elements of 1 mm) from fixed face f1's nodes."""
@@ -775,7 +775,7 @@ class PeakFace(unittest.TestCase):
 
         volume = SimpleNamespace(
             boundary_ordinal=np.array([1, 2]),
-            faces={ordinal: SimpleNamespace(ref=f"#o1.f{ordinal}") for ordinal in (1, 2)},
+            faces={ordinal: SimpleNamespace(ref=f"face {ordinal}") for ordinal in (1, 2)},
             max_h=1.0,
         )
         outcome = SimpleNamespace(
@@ -786,10 +786,10 @@ class PeakFace(unittest.TestCase):
         return _peak_face(volume, outcome, 6, {1})
 
     def test_a_peak_within_half_an_element_of_a_fixed_face_is_at_it(self):
-        self.assertEqual(self._near_miss(0.4), "#o1.f1")
+        self.assertEqual(self._near_miss(0.4), "face 1")
 
     def test_a_peak_two_elements_from_a_fixed_face_is_on_its_own_face(self):
-        self.assertEqual(self._near_miss(2.0), "#o1.f2")
+        self.assertEqual(self._near_miss(2.0), "face 2")
 
 
 class DofWarning(unittest.TestCase):
@@ -826,14 +826,14 @@ class SmallFeatures(unittest.TestCase):
         from build123d import Box, export_step, fillet
 
         from cadgen._internal.fea.mesh import mesh_occurrence
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
         tmp = class_directory(cls)
         plain, rounded = Box(60, 40, 10), fillet(Box(60, 40, 10).edges(), 0.3)
         meshes = []
         for name, shape in (("plain", plain), ("rounded", rounded)):
             export_step(shape, str(tmp / f"{name}.step"))
-            occurrence = next(iter(read_scene(tmp / f"{name}.step").leaves()))
+            occurrence = next(iter(read_document(tmp / f"{name}.step").leaves()))
             meshes.append(mesh_occurrence(occurrence, max_h=15.0))
         cls.plain, cls.rounded = meshes
 
@@ -938,11 +938,11 @@ class FinerAtCurves(unittest.TestCase):
         from build123d import Box, export_step, fillet
 
         from cadgen._internal.fea.mesh import mesh_occurrence
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
         step = class_directory(cls) / "rounded.step"
         export_step(fillet(Box(30, 20, 6).edges(), 0.5), str(step))
-        occurrence = next(iter(read_scene(step).leaves()))
+        occurrence = next(iter(read_document(step).leaves()))
         cls.first = len(mesh_occurrence(occurrence, max_h=8.0).tets)
         cls.halved = len(mesh_occurrence(occurrence, max_h=4.0).tets)
         cls.refined = len(mesh_occurrence(occurrence, max_h=4.0, refine=2.0).tets)
@@ -1047,7 +1047,7 @@ class HumanLine(unittest.TestCase):
         from cadgen.results import FeaResult
 
         result = FeaResult(
-            ok=True, document=Path("p.step"), occurrence="#o1", glb=Path("p.glb"), sidecar=Path("p.json"),
+            ok=True, document=Path("p.step"), occurrence="part", glb=Path("p.glb"), sidecar=Path("p.json"),
             summary={"safety_factor": 1.684}, mesh={},
         )
         self.assertIn("safety factor 1.6", result.human_lines()[1])
@@ -1137,8 +1137,8 @@ class CurvedFacetLoads(unittest.TestCase):
         """Before the fix this solve raised "Newton iteration didn't converge" building the pin hole's facet basis."""
         with tempfile.TemporaryDirectory() as tmp:
             # Light enough to keep a safety factor over 3: one solve, at the size that met the stalling element.
-            study = {"material": "aluminum-7075-t6", "fixtures": [{"faces": ["#o1.f7"]}],
-                     "loads": [{"faces": ["#o1.f8"], "type": "force", "vector_N": [3600, 0, 0]}], "mesh": {"size_mm": 3.585}}
+            study = {"material": "aluminum-7075-t6", "fixtures": [{"faces": ["face 7"]}],
+                     "loads": [{"faces": ["face 8"], "type": "force", "vector_N": [3600, 0, 0]}], "mesh": {"size_mm": 3.585}}
             result = solve(_write_link_bar(Path(tmp)), Path(tmp) / "bar.fea.glb", study)
         self.assertTrue(result.ok)
         self.assertEqual(result.summary["applied_force_N"], [3600.0, 0.0, 0.0])

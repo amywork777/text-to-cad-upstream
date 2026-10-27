@@ -363,7 +363,7 @@ class ContactAnalysis(NonlinearAnalysis):
             return 0
         from cadgen._internal.fea.run import find_part
 
-        return find_part(ctx.assembly.parts, ctx.assembly.names, name, where)
+        return find_part(ctx.assembly.parts, ctx.assembly.names, name, where, ctx.assembly.document)
 
     def _part_names(self, ctx: SolveContext) -> list[str]:
         return list(ctx.assembly.names) if ctx.assembly is not None else [ctx.part_name or "the part"]

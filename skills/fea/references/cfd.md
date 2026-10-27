@@ -29,7 +29,7 @@ this `flow` and link here for it. Internal flow (through the part):
  "flow": {"kind": "internal", "fluid": "water",
           "inlets": [{"opening": "x_min", "velocity_m_s": 0.5}],
           "outlets": [{"opening": "x_max", "pressure_Pa": 0}]},
- "map_to_structure": {"material": "aluminum-6061-t6", "fixtures": [{"faces": ["#o1.f1"]}]},
+ "map_to_structure": {"material": "aluminum-6061-t6", "fixtures": [{"faces": ["bracket/face 1"]}]},
  "view": {"checks": [{"kind": "pressure_drop", "limit_Pa": 2000},
                      {"kind": "velocity", "limit_m_s": 3},
                      {"kind": "stress"}]}}

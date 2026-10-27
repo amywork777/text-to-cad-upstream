@@ -400,7 +400,7 @@ class MultiphaseAnalysis(AnalysisBase):
     def _setup(self, ctx: SolveContext, inputs: MultiphaseInputs) -> _Setup:
         from cadgen._internal.fea.analyses.cfd import cached_setup
 
-        return cached_setup(self._setups, ctx, inputs, "a two-fluid study fills one part: name it with --occurrence (#o1.2)",
+        return cached_setup(self._setups, ctx, inputs, "a two-fluid study fills one part: name it with --occurrence (its part's name, like arm)",
                             lambda shape, refs: self._build_setup(shape, refs, inputs))
 
     @staticmethod

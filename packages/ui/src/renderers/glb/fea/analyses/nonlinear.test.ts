@@ -17,7 +17,7 @@ function bentResult(extras: Record<string, unknown> = {}) {
     position: [0, 0, 0, 0.08, 0, 0, 0, 0.006, 0], _von_mises: [80, 10, 40], _displacement: vec(9), _plastic_strain: [0, 0, 0], ...frames,
     _face: [0, 0, 1],
   }, {
-    generator: 'cadgen fea', name: 'cantilever nonlinear', deformation_scale: 1, faces: ['#o1.f1', '#o1.f2'], occurrence: '#o1',
+    generator: 'cadgen fea', name: 'cantilever nonlinear', deformation_scale: 1, faces: ['bracket/face 1', 'bracket/face 2'], occurrence: 'bracket',
     load_percent: 69.7, collapsed: true,
     analysis: { type: 'nonlinear', tier: 3, word: 'Permanent bend / Stretch', estimate: false, limits: [LIMIT], noun: 'this load',
       reference_C: null, warnings: ['Collapses at about 70 % of the load'] },
@@ -32,11 +32,11 @@ function bentResult(extras: Record<string, unknown> = {}) {
       { value: 69.7, label: '69.7 % load', attributes: { von_mises: '_VON_MISES_F2', displacement: '_DISPLACEMENT_F2', plastic_strain: '_PLASTIC_STRAIN_F2' } }] },
     study: {
       material: { name: 'Steel (structural, generic)', yield_MPa: 250, youngs_GPa: 200, poisson: 0.3 },
-      fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }], loads: [{ type: 'force', faces: ['#o1.f2'], vector_N: [0, 0, -126.6] }],
+      fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }], loads: [{ type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -126.6] }],
       steps: 10, material_model: 'plasticity', mesh: { size_mm: 2, order: 2, elements: 978, refined_from_mm: null },
     },
     checks: [{ kind: 'plastic_strain', label: 'Permanent bend', value: 5.2, limit: 0.2, unit: '%', ratio: 26, close_at: 0.9, status: 'fails',
-      where: { ref: '#o1.f6', at: [3.4, -0.75, 3] }, at: { frame: 2, value: 69.7, unit: '%' }, collapsed_at_percent: 69.7 }],
+      where: { ref: 'bracket/face 6', at: [3.4, -0.75, 3] }, at: { frame: 2, value: 69.7, unit: '%' }, collapsed_at_percent: 69.7 }],
     findings: [],
     ...extras,
   });

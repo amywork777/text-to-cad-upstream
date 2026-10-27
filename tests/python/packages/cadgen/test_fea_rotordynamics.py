@@ -45,7 +45,7 @@ I_SHAFT = math.pi * D_SHAFT ** 4 / 64.0
 
 def _study(**more) -> dict:
     return {"analysis": "rotordynamics", "material": "steel", "spin": {"axis": "Z", "rpm": [0, 8000]},
-            "bearings": [{"faces": ["#o1.f2"], "rigid": True}, {"faces": ["#o1.f3"], "k": 20000, "c": 5}], **more}
+            "bearings": [{"faces": ["face 2"], "rigid": True}, {"faces": ["face 3"], "k": 20000, "c": 5}], **more}
 
 
 class StudyFile(unittest.TestCase):
@@ -58,8 +58,8 @@ class StudyFile(unittest.TestCase):
         parsed = parse_study(_study())
         inputs = parsed.inputs
         self.assertEqual((inputs.axis, inputs.axis_name, inputs.rpm, inputs.modes, inputs.disc_model), ((0.0, 0.0, 1.0), "Z", (0.0, 8000.0), 4, "rigid"))
-        self.assertEqual(inputs.face_refs, ("#o1.f2", "#o1.f3"))
-        self.assertEqual(inputs.anchor_refs, ("#o1.f2", "#o1.f3"))
+        self.assertEqual(inputs.face_refs, ("face 2", "face 3"))
+        self.assertEqual(inputs.anchor_refs, ("face 2", "face 3"))
         self.assertFalse(inputs.requires_anchor)
         rigid, springy = inputs.bearings
         self.assertTrue(rigid.rigid)
@@ -81,9 +81,9 @@ class StudyFile(unittest.TestCase):
             ({"spin": {"rpm": [500, 100]}}, "must be 0 or more and no more than high"),
             ({"spin": {"rpm": [0, 1000], "sweep_rpm": 500}}, "must reach the top operating speed"),
             ({"bearings": []}, "a rotor needs the bearings it runs in"),
-            ({"bearings": [{"faces": ["#o1.f2"]}]}, "a bearing needs its stiffness across the shaft"),
-            ({"bearings": [{"faces": ["#o1.f2"], "rigid": True, "k": 5}]}, "takes no springs or dampers"),
-            ({"bearings": [{"faces": ["#o1.f2"], "at_mm": 3, "rigid": True}]}, "one of them"),
+            ({"bearings": [{"faces": ["face 2"]}]}, "a bearing needs its stiffness across the shaft"),
+            ({"bearings": [{"faces": ["face 2"], "rigid": True, "k": 5}]}, "takes no springs or dampers"),
+            ({"bearings": [{"faces": ["face 2"], "at_mm": 3, "rigid": True}]}, "one of them"),
             ({"bearings": [{"at_mm": 0, "k": 10, "kxx": 5}]}, "give it or them, not both"),
             ({"bearings": [{"at_mm": 0, "k": [[100, 1], [50, 2]]}]}, "the table's speeds must climb"),
             ({"bearings": [{"at_mm": 0, "k": 10, "c": -1}]}, "a damper takes energy out"),
@@ -92,7 +92,7 @@ class StudyFile(unittest.TestCase):
             ({"modes": 0}, "how many whirl curves"),
             ({"disc_model": "soft"}, "disc_model"),
             ({"spin": {"rpm": 100, "solid_modes": 3}, "bearings": [{"at_mm": 0, "rigid": True}]}, "held at its bearing faces"),
-            ({"fixtures": [{"faces": ["#o1.f1"]}]}, "rotordynamics studies take"),
+            ({"fixtures": [{"faces": ["face 1"]}]}, "rotordynamics studies take"),
         ]
         for change, words in cases:
             study = _study(**change)
@@ -453,7 +453,7 @@ class Wording(unittest.TestCase):
         from cadgen.results import FeaResult
 
         def lines(check):
-            return FeaResult(ok=True, document=Path("r.step"), occurrence="#o1", glb=Path("r.glb"), sidecar=Path("r.json"),
+            return FeaResult(ok=True, document=Path("r.step"), occurrence="part", glb=Path("r.glb"), sidecar=Path("r.json"),
                              analysis="rotordynamics", summary={"checks": [check]}, mesh={}).human_lines()
 
         lowest = {"value": 0.000552, "rpm": 8000.0, "forward": False, "mode": 1}

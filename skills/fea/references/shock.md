@@ -49,14 +49,14 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis); reads den
 
 ```json
 {"analysis": "shock", "material": "aluminum-6061-t6",
- "fixtures": [{"faces": ["#o1.f1"]}],
+ "fixtures": [{"faces": ["bracket/face 1"]}],
  "srs": {"direction": [0, 0, 1],
          "table": [[10, 5], [100, 50], [2000, 50]],
          "damping_ratio": 0.05},
  "combination": "srss",
  "view": {"checks": [
    {"kind": "stress"},
-   {"kind": "displacement", "limit_mm": 0.5, "faces": ["#o1.f7"], "label": "Clearance"}]}}
+   {"kind": "displacement", "limit_mm": 0.5, "faces": ["bracket/face 7"], "label": "Clearance"}]}}
 ```
 
 ## How it is solved

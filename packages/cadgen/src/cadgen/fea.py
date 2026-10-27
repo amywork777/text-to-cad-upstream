@@ -1,4 +1,5 @@
-"""The public ``fea`` namespace: finite element analysis of a STEP part or assembly.
+"""The public ``fea`` namespace: finite element analysis of a part or assembly in a STEP
+or an engine document (``.xbf``), its faces named by the engine's refs (``bracket/face 17``).
 
 A study names its analysis (``"analysis"``; ``static`` when it names none):
 static strength, with face and body loads; and, registered with it, modal
@@ -8,8 +9,8 @@ estimate), and the lite cfd, impact, nonlinear and contact solvers. A name
 this cadgen does not have built yet says so plainly.
 
 Three verbs, each mirrored by a generated CLI (``cadgen fea faces``,
-``cadgen fea parts``, ``cadgen fea solve``; design/format-doors.md): ``faces`` lists a part's faces
-with the ``#o1.fN`` selectors a study names them by, ``parts`` lists an
+``cadgen fea parts``, ``cadgen fea solve``): ``faces`` lists a part's faces
+with the refs a study names them by (``bracket/face 17``), ``parts`` lists an
 assembly's parts and the pairs that touch, ``solve`` runs one study
 and writes a result GLB the viewer renders (von Mises as vertex colour on the
 deformed shape) beside a JSON sidecar with the numbers.
@@ -18,7 +19,7 @@ deformed shape) beside a JSON sidecar with the numbers.
 for the mesh, scikit-fem and pyamg for the solve; ``faces`` and ``parts`` do
 not. Import discipline: nothing here may
 pull in OCP, build123d or the solver stack at module scope (see
-:mod:`cadgen.step`) -- ``--help`` must stay cheap, and the extra may be absent.
+:mod:`cadgen.urdf`) -- ``--help`` must stay cheap, and the extra may be absent.
 """
 
 from __future__ import annotations
@@ -33,8 +34,8 @@ __all__ = ["faces", "parts", "solve"]
 def faces(target: Path, *, occurrence: str | None = None, verbose: bool = False) -> FeaFacesResult:
     """List one part's faces: selector, area, centre, surface type and a hint.
 
-    target: the STEP/STP document.
-    occurrence: which part occurrence to list (``#o1``) when the document is an
+    target: the STEP/STP or .xbf document.
+    occurrence: which part occurrence to list (its name or ref, ``arm``) when the document is an
         assembly. Omitted, the document must hold one part.
     verbose: show progress on stderr.
     """
@@ -46,7 +47,7 @@ def faces(target: Path, *, occurrence: str | None = None, verbose: bool = False)
 def parts(target: Path, *, contact_tolerance_mm: float = 0.1, verbose: bool = False) -> FeaPartsResult:
     """List an assembly's parts and the pairs that touch, before writing a study.
 
-    target: the STEP/STP document.
+    target: the STEP/STP or .xbf document.
     contact_tolerance_mm: faces this close (or closer) count as touching and are
         bonded by default; a pair a little farther apart is listed as not connected.
     verbose: show progress on stderr.
@@ -68,7 +69,7 @@ def solve(
 ) -> FeaResult:
     """Run one study (static unless it names another analysis) and write its result GLB and JSON sidecar.
 
-    target: the STEP/STP document holding the part.
+    target: the STEP/STP or .xbf document holding the part.
     out: the result .glb path. Omitted, writes ``<document>.fea.glb`` beside the
         document; the sidecar is the same name with ``.json``.
     study: the study: a JSON file path, inline JSON, or (library callers) a
@@ -79,7 +80,7 @@ def solve(
         prints. A document of several parts is solved as one bonded assembly:
         ``parts`` gives each its material, ``connections`` overrides which
         touching pairs are bonded (``cadgen fea parts`` lists them).
-    occurrence: solve only this part occurrence (``#o1.2``), alone, even when the
+    occurrence: solve only this part occurrence (its name or ref, ``arm``), alone, even when the
         document has several parts: the study's faces must all be on it and
         ``parts``/``connections`` are not used. Omitted, a document of several
         parts is solved as one assembly.

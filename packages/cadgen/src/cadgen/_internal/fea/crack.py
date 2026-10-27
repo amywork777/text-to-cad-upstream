@@ -137,7 +137,7 @@ class CrackSpec:
 
 def parse_crack(raw: Any, where: str = "crack") -> CrackSpec:
     """The study's ``crack`` block, checked (stdlib). A ValueError names the field and says what to give."""
-    example = '{"kind": "edge", "face": "#o1.f4", "at_mm": [0, 0, 5], "normal": [0, 1, 0], "size_mm": 2}'
+    example = '{"kind": "edge", "face": "face 4", "at_mm": [0, 0, 5], "normal": [0, 1, 0], "size_mm": 2}'
     if not isinstance(raw, dict):
         raise ValueError(f"{where}: describe the crack, like {example}")
     unknown = set(raw) - CRACK_KEYS
@@ -171,7 +171,7 @@ def parse_crack(raw: Any, where: str = "crack") -> CrackSpec:
             raise ValueError(f"{where}.face: an embedded crack opens from no face; leave face out (at_mm is its centre)")
     elif not isinstance(face, str) or not face.strip():
         words = "the face the crack crosses (its thickness direction)" if kind == "through" else "the face the crack opens from"
-        raise ValueError(f'{where}.face: {words}, like "#o1.f4"')
+        raise ValueError(f'{where}.face: {words}, like "face 4"')
     length = None
     if "length_mm" in raw:
         if kind not in ("surface", "embedded"):
@@ -391,7 +391,8 @@ def cut(geometry: CrackGeometry, shape, origin: list[int] | None, *, base=None, 
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Splitter
     from OCP.TopTools import TopTools_ListOfShape
 
-    from cadgen._internal.fea.defeature import face_map, trace
+    from cadgen._internal.fea.defeature import trace
+    from cadgen._internal.fea.document import face_map
 
     crack = crack_face(geometry)
     plane = _rectangle(geometry, (-geometry.reach, geometry.reach), (-geometry.reach, geometry.reach))

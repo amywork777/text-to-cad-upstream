@@ -71,7 +71,7 @@ class Parsing(unittest.TestCase):
         from cadgen._internal.fea.study import parse_study
 
         base = {"analysis": "composite", "laminae": {"cfrp": CFRP}, "layup": _layup((0, 90, 90, 0), 0.25),
-                "fixtures": [{"faces": ["#o1.f1"]}], "loads": [{"faces": ["#o1.f2"], "type": "pressure", "pressure_MPa": 0.01}]}
+                "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "pressure", "pressure_MPa": 0.01}]}
         parsed = parse_study(base)
         self.assertIsNone(parsed.material)
         self.assertEqual(len(parsed.inputs.laminate.plies), 4)
@@ -199,10 +199,10 @@ class LaminateTheory(unittest.TestCase):
 
 def _block_volume(directory: Path, size=(10.0, 10.0, 20.0), h=4.0):
     from cadgen._internal.fea.mesh import mesh_occurrence
-    from cadgen.step_scene import read_scene
+    from cadgen._internal.fea.document import read_document
 
     step = box_step(directory, "block", size, "corner")
-    volume = mesh_occurrence(next(iter(read_scene(step).leaves())), max_h=h)
+    volume = mesh_occurrence(next(iter(read_document(step).leaves())), max_h=h)
 
     def face(axis: int, level: float) -> int:
         return next(o for o, fp in volume.faces.items() if abs(fp.center[axis] - level) < 1e-6
@@ -230,8 +230,8 @@ class OrthotropicSolid(unittest.TestCase):
 
         top = self.face(2, 20.0)
         rollers = [((self.face(0, 0.0),), 0), ((self.face(1, 0.0),), 1), ((self.face(2, 0.0),), 2)]
-        ordinal_of = {f"#o1.f{top}": top}
-        return solve.solve_linear_static(self.volume, material, (), (Load((f"#o1.f{top}",), "force", vector=(0.0, 0.0, 1000.0)),),
+        ordinal_of = {f"face {top}": top}
+        return solve.solve_linear_static(self.volume, material, (), (Load((f"face {top}",), "force", vector=(0.0, 0.0, 1000.0)),),
                                          ordinal_of, rollers=rollers, **({"solver": solver} if solver else {}))
 
     def _strains(self, outcome):

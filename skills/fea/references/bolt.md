@@ -64,10 +64,10 @@ A [`contact`](contact.md) study whose `connections` name bolts. Keys beyond the
 A plate bolted to a bracket with one M6, tightened to 9 N·m, pulled off by 3 kN:
 
 ```json
-{"analysis": "bolt", "material": "steel", "fixtures": [{"faces": ["#o1.2.f1"]}],
+{"analysis": "bolt", "material": "steel", "fixtures": [{"faces": ["bracket/face 1"]}],
  "connections": [{"between": ["plate", "bracket"], "type": "bolt", "size": "M6", "torque_Nm": 9,
-                  "grade": "8.8", "friction": 0.2, "holes": ["#o1.1.f7", "#o1.2.f7"]}],
- "loads": [{"faces": ["#o1.1.f2"], "type": "force", "vector_N": [0, 0, 3000]}],
+                  "grade": "8.8", "friction": 0.2, "holes": ["plate/face 7", "bracket/face 7"]}],
+ "loads": [{"faces": ["plate/face 2"], "type": "force", "vector_N": [0, 0, 3000]}],
  "view": {"checks": [{"kind": "bolt_load"}, {"kind": "joint_separation"}, {"kind": "joint_slip"},
                      {"kind": "stress"}]}}
 ```

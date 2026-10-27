@@ -5,7 +5,7 @@ coarse the study asked for. Far from every load, fixture and check such a featur
 may remove it for meshing with OpenCascade's ``BRepAlgoAPI_Defeaturing`` (the faces grow back over it). Named faces are
 never removed, and nothing within three element sizes of one is. The faces that remain keep their cadgen ordinals: each
 face of the defeatured shape is traced back through the operation's history to the face it came from
-(:class:`Prepared`), so a study's ``#o1.f17`` means the same face on the simplified part. OCP imports live inside the
+(:class:`Prepared`), so a study's ``bracket/face 17`` means the same face on the simplified part. OCP imports live inside the
 functions.
 """
 
@@ -14,6 +14,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from cadgen._internal.fea.document import face_map
 
 if TYPE_CHECKING:
     from cadgen._internal.fea.fit import FaceInfo, Geometry
@@ -43,12 +45,6 @@ class Feature:
     kind: str
     faces: "tuple[FaceInfo, ...]"
     size_mm: float
-
-
-def face_map(shape):
-    from cadgen._internal.entity_ordinals import entity_map
-
-    return entity_map(shape, "face")
 
 
 def _u_span(face) -> float:

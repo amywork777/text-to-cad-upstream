@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
-import { build } from 'esbuild';
+import { harnessBundle } from '../harness/bundle.mjs';
+import { pressInPreview } from '../harness/preview.mjs';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
 import { strToU8, zipSync } from 'three/examples/jsm/libs/fflate.module.js';
@@ -55,12 +54,10 @@ const HARNESS_SIZE = '<style>#root > div { width: 800px !important; height: 500p
 
 // One harness bundle, one server and one browser for the file; every test opens its own page.
 // (A browser's first WebGL page pays for compiling the viewer's shaders; later pages reuse them.)
-let temporary, server, browser;
+let server, browser;
 const requests = [];
 before(async () => {
-  temporary = await mkdtemp(join(tmpdir(), 'text-to-cad-mesh-browser-'));
-  await build({ entryPoints: [fileURLToPath(new URL('../harness/index.tsx', import.meta.url))], outfile: join(temporary, 'harness.js'), bundle: true, format: 'esm', platform: 'browser', conditions: ['production'], jsx: 'automatic', loader: { '.webp': 'dataurl', '.avif': 'dataurl', '.svg': 'dataurl' } });
-  const bundle = await readFile(join(temporary, 'harness.js'));
+  const { bundle } = await harnessBundle();
   const css = await readFile(new URL('../../../dist/styles.css', import.meta.url));
   server = createServer((request, response) => {
     const url = new URL(request.url, 'http://test');
@@ -85,7 +82,6 @@ before(async () => {
 after(async () => {
   await browser?.close();
   if (server) await new Promise(resolve => server.close(resolve));
-  if (temporary) await rm(temporary, { recursive: true, force: true });
 });
 
 async function open(t, file) {
@@ -105,11 +101,20 @@ async function open(t, file) {
 }
 
 const ready = pane => pane.locator('[aria-busy="false"] > div > canvas').first().waitFor();
-// A mesh file's strip: an STL's Select (in hand, picking nothing), Annotate and Clip; a 3MF's Select (in hand),
-// Annotate, Measure and Clip. Its view's controls end the strip after its rule: Projection,
-// Display, then Preview.
-const STL_TOOLS = ['Select:true', 'Annotate:false', 'Clip:false'];
-const THREE_MF_TOOLS = ['Select:true', 'Annotate:false', 'Measure:false', 'Clip:false'];
+// What the view handed Export (the harness's ExportContext records it): the file it shows, named by
+// its path, at the bytes on screen (their catalog hash), which Export converts to the other mesh kinds.
+async function exported(page, file) {
+  await page.waitForFunction(() => window.cadHarness.exportViews.at(-1));
+  const shown = await page.evaluate(() => window.cadHarness.exportViews.at(-1));
+  assert.deepEqual(Object.keys(shown).sort(), ['doc', 'file', 'name', 'revision']);
+  assert.deepEqual([shown.doc, shown.file, shown.name], [`/models/${file}`, `/models/${file}`, file]);
+  assert.ok(shown.revision.endsWith(`-${file}`), `the catalog hash of the bytes shown: ${shown.revision}`);
+}
+// A mesh file's strip: an STL's Select (in hand, picking nothing), Pencil, Shapes and Clip; a 3MF's Select (in hand),
+// Pencil, Shapes, Measure and Clip. Clip is a popover from its tile, never in hand: it has no pressed state. Its
+// view's controls end the strip, in Clip's section: Projection, Display, then Preview.
+const STL_TOOLS = ['Select:true', 'Pencil:false', 'Shapes:false'];
+const THREE_MF_TOOLS = ['Select:true', 'Pencil:false', 'Shapes:false', 'Measure:false'];
 const meshTools = async (pane, expected) => {
   assert.deepEqual(await pane.getByRole('group', { name: 'Interaction tools' }).getByRole('button')
     .evaluateAll(buttons => buttons.filter(button => button.hasAttribute('aria-pressed') && !button.closest('[data-view-controls]')).map(button => `${button.getAttribute('aria-label')}:${button.getAttribute('aria-pressed')}`)),
@@ -117,7 +122,8 @@ const meshTools = async (pane, expected) => {
   const strip = pane.getByRole('group', { name: 'Interaction tools' });
   assert.deepEqual(await strip.locator('[data-view-controls]').getByRole('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label'))),
     ['Projection: Orthographic', 'Display mode: Solid', 'Preview'], 'its view\'s controls end the strip');
-  assert.equal(await strip.locator('[data-strip-rule] + [data-view-controls]').count(), 1, 'after the strip\'s rule');
+  assert.equal(await strip.locator('[data-strip-rule]').count(), 1, 'one rule, after the tools that pick');
+  assert.equal(await strip.locator('[data-view-controls]').evaluate(element => element.previousElementSibling?.getAttribute('aria-label')), 'Clip', 'the view\'s controls follow Clip, no rule between');
   assert.equal(await pane.locator('[data-viewer-navbar] [data-view-controls] button').count(), 0, 'nothing of the view in the navbar');
   for (const name of ['Orbit', 'Draw', 'Explode', 'Position', 'Animation']) assert.equal(await pane.getByRole('button', { name, exact: true }).count(), 0, name);
 };
@@ -192,10 +198,11 @@ const differingPixels = (left, right) => {
   return count;
 };
 const settle = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-// Render is Preview's: in by Preview at the strip's end and out by Exit preview in the navbar, each once the view has
+// Render is Preview's: in by Preview at the strip's end and out by Exit preview in Preview's bar, each once the view has
 // come together under its cover.
 async function togglePreview(page, pane, enter) {
-  await pane.getByRole('button', { name: enter ? 'Preview' : 'Exit preview', exact: true }).click();
+  const press = pane.getByRole('button', { name: enter ? 'Preview' : 'Exit preview', exact: true });
+  if (enter) await press.click(); else await pressInPreview(page, pane, press);
   await pane.getByRole('button', { name: enter ? 'Exit preview' : 'Preview', exact: true }).waitFor();
   await page.waitForFunction(() => !document.querySelector('[data-testid="one"] [data-preview-cover]')
     && document.querySelector('[data-testid="one"] [aria-busy="false"]'));
@@ -214,6 +221,7 @@ test('an STL opens as one mesh in Select, which picks nothing: display settings,
   const { page, pane, errors } = await open(t, 'part.stl');
   await ready(pane);
   assert.deepEqual(errors, []);
+  await exported(page, 'part.stl');
 
   // An STL is one mesh in no unit: Select navigates and picks nothing, nothing to measure; it is drawn on and cut.
   await meshTools(pane, STL_TOOLS);
@@ -297,11 +305,11 @@ test('an STL opens as one mesh in Select, which picks nothing: display settings,
   assert.deepEqual(camera.position.map(Math.round), [90, -70, 60]);
   const state = await page.evaluate(() => window.cadHarness.a.controller.readState());
   assert.deepEqual([state.resource.path, state.revision, state.loading, state.selection], ['/models/part.stl', 'one-part.stl', false, []]);
-  const declined = await page.evaluate(() => window.cadHarness.a.controller.select({ selectors: ['o1.f1'] }).then(() => '', error => error.message));
+  const declined = await page.evaluate(() => window.cadHarness.a.controller.select({ selectors: ['f:part.make_box1.1'] }).then(() => '', error => error.message));
   assert.match(declined, /A mesh file has no references a command can select/);
   assert.equal(await page.evaluate(() => window.cadHarness.a.controller.clearSelection().then(() => '', error => error.message)), '', 'a selection clears, an STL\'s empty one too');
   // A host's request to select a reference is consumed without a notification.
-  await page.evaluate(() => window.cadHarness.selectReference('o1.f1'));
+  await page.evaluate(() => window.cadHarness.selectReference('f:part.make_box1.1'));
   await page.waitForFunction(() => !window.cadHarness.a.commands.getSnapshot().selectReference);
   assert.equal(await page.evaluate(() => window.cadHarness.a.commands.getSnapshot().selectReference ?? null), null, 'the declined request is acknowledged');
 
@@ -337,6 +345,7 @@ test('an STL opens as one mesh in Select, which picks nothing: display settings,
 test('a 3MF is one mesh per object with its source colour; an uncoloured one takes the viewer\'s', async (t) => {
   const { page, pane, errors } = await open(t, 'pair.3mf');
   await ready(pane);
+  await exported(page, 'pair.3mf');
   await page.waitForFunction(() => window.cadHarness.a.controller?.readState().loading === false);
   await meshTools(pane, THREE_MF_TOOLS);
   // Display shut as it opens, the same dropdown an STL has, with Parts: a 3MF of two objects has two to colour.
@@ -387,10 +396,14 @@ test('a 3MF\'s tools: Select picks an object by its place in the build, Measure 
   assert.deepEqual(await chips(), ['base'], 'the object, by its name: pair.3mf#o1');
 
   await pane.getByRole('button', { name: 'Measure', exact: true }).click();
-  assert.equal(await pane.locator('[data-measure-size], [data-model-tool="measure"]').count(), 0, 'Measure has no row under the strip');
-  for (const corner of [[0.2, 0.2, 20], [19.8, 0.2, 20]]) { await page.mouse.click(...at(corner)); await settle(page); }
-  await page.waitForFunction(() => document.querySelectorAll('[data-quick-edit-box] [data-quick-edit-ref]').length === 2);
-  assert.ok((await chips()).includes('Measurement 1: ≈ 20.0 mm (approximate)'), JSON.stringify(await chips()));
+  assert.equal(await pane.locator('[data-measurements]').count(), 0, 'no row under the strip until something is measured');
+  for (const corner of [[2, 10, 20], [18, 10, 20]]) { await page.mouse.click(...at(corner)); await settle(page); }
+  // Its chip is Measure's row's, under the strip; Quick Edit carries the pick alone.
+  const measured = pane.locator('[data-measurements] [data-quick-edit-ref]');
+  await measured.waitFor();
+  assert.deepEqual(await measured.locator('> button:first-child').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label'))),
+    ['Measurement 1: ≈ 16.0 mm (approximate)']);
+  assert.deepEqual(await pane.locator('[data-quick-edit-box] [data-quick-edit-ref]').count(), 1);
 
   await display(page, { clip: { enabled: true, axis: 'x' } });
   await page.waitForFunction(() => window.__cadStage().cut === 1);

@@ -17,8 +17,8 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis): the stati
 and `loads` (as in a static study), and:
 
 ```json
-{"analysis": "fatigue", "material": "aluminum-6061-t6", "fixtures": [{"faces": ["#o1.f1"]}],
- "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -150]}],
+{"analysis": "fatigue", "material": "aluminum-6061-t6", "fixtures": [{"faces": ["bracket/face 1"]}],
+ "loads": [{"faces": ["bracket/face 2"], "type": "force", "vector_N": [0, 0, -150]}],
  "fatigue": {"from": "static", "loading": "fully_reversed", "cycles": 1e6, "surface": "machined"},
  "view": {"checks": [{"kind": "fatigue", "cycles": 1e6, "margin": 1.5}]}}
 ```
@@ -48,7 +48,7 @@ The harmonic study's keys sit at the top level (`fixtures`, `excitation`, `sweep
 `damping_ratio`, `loads` for a force shake; [harmonic.md](harmonic.md)), plus:
 
 ```json
-{"analysis": "fatigue", "material": "steel", "fixtures": [{"faces": ["#o1.f1"]}],
+{"analysis": "fatigue", "material": "steel", "fixtures": [{"faces": ["bracket/face 1"]}],
  "excitation": {"type": "base", "direction": [0, 0, 1], "amplitude_g": 5}, "sweep_Hz": [10, 2000],
  "fatigue": {"from": "harmonic", "dwell_s": 3600, "surface": "machined"}}
 ```
@@ -63,7 +63,7 @@ The random vibration study's keys sit at the top level (`fixtures`, `psd`, `damp
 `sigma`; [random-vibration.md](random-vibration.md)), plus:
 
 ```json
-{"analysis": "fatigue", "material": "aluminum-6061-t6", "fixtures": [{"faces": ["#o1.f1"]}],
+{"analysis": "fatigue", "material": "aluminum-6061-t6", "fixtures": [{"faces": ["bracket/face 1"]}],
  "psd": {"direction": [0, 0, 1], "table": [[20, 0.01], [80, 0.04], [350, 0.04], [2000, 0.007]]},
  "fatigue": {"from": "random_vibration", "duration_s": 28800}}
 ```

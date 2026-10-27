@@ -42,8 +42,8 @@ AREA = 100.0
 
 
 def _study(**more) -> dict:
-    return {"analysis": "contact", "material": "steel", "fixtures": [{"faces": ["#o1.1.f1"]}],
-            "loads": [{"faces": ["#o1.2.f2"], "type": "force", "vector_N": [0, 0, -100]}],
+    return {"analysis": "contact", "material": "steel", "fixtures": [{"faces": ["base/face 1"]}],
+            "loads": [{"faces": ["top/face 2"], "type": "force", "vector_N": [0, 0, -100]}],
             "connections": [{"between": ["pin", "plate"], "type": "contact", "friction": 0.2}], **more}
 
 
@@ -58,12 +58,12 @@ class StudyFile(unittest.TestCase):
         self.assertEqual((plane.point, plane.normal, plane.parts, plane.friction), ((0, 0, -5), (0, 0, 1), ("plate",), 0.0))
         self.assertEqual([(c.between, c.type) for c in parsed.connections], [(("pin", "plate"), "contact")])
         self.assertEqual(parsed.checks, ({"kind": "stress"},))
-        checks = parse_study(_study(steps=3, view={"checks": [{"kind": "contact_pressure", "limit_MPa": 400, "faces": ["#o1.1.f3"]}]}))
-        self.assertEqual(checks.checks, ({"kind": "contact_pressure", "limit_MPa": 400.0, "faces": ["#o1.1.f3"]},))
+        checks = parse_study(_study(steps=3, view={"checks": [{"kind": "contact_pressure", "limit_MPa": 400, "faces": ["base/face 3"]}]}))
+        self.assertEqual(checks.checks, ({"kind": "contact_pressure", "limit_MPa": 400.0, "faces": ["base/face 3"]},))
         self.assertEqual(checks.inputs.steps, 3)
         # A rigid plane alone holds a part: no fixture needed, and no pair.
         alone = parse_study({"analysis": "contact", "material": "steel", "rigid_planes": [{"point_mm": [0, 0, 0], "normal": [0, 0, 1]}],
-                             "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -1]}]})
+                             "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -1]}]})
         self.assertEqual((alone.inputs.fixtures, alone.inputs.pairs), ((), ()))
 
     def test_only_contact_accepts_contact_pairs_and_bonded_stays_the_default(self):
@@ -114,7 +114,7 @@ def _stack(directory: Path, *, cap: bool = False) -> tuple[Path, dict[str, str],
     """base 10 x 10 x 20 at the origin, top 10 x 10 x 10 on it, and (``cap``) a 10 x 10 x 5 cap on top."""
     from build123d import Align, Box, Compound, Pos, export_step
 
-    from cadgen.step_scene import read_scene
+    from cadgen._internal.fea.document import read_document
 
     base = Box(10, 10, 20, align=Align.MIN)
     base.label = "base"
@@ -127,7 +127,7 @@ def _stack(directory: Path, *, cap: bool = False) -> tuple[Path, dict[str, str],
         children.append(lid)
     step = directory / ("capped.step" if cap else "stack.step")
     export_step(Compound(children=children), str(step))
-    scene = read_scene(step)
+    scene = read_document(step)
     return step, {leaf.label: leaf.ref for leaf in scene.leaves()}, scene
 
 
@@ -290,7 +290,7 @@ class Hertz(unittest.TestCase):
     def test_the_contact_radius_and_peak_pressure_are_hertz_s(self):
         from build123d import Align, Box, Compound, Pos, Sphere, export_step
 
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
         R, height = self.R, 6.0
         with tempfile.TemporaryDirectory() as name:
@@ -300,7 +300,7 @@ class Hertz(unittest.TestCase):
             block.label = "block"
             step = Path(name) / "hertz.step"
             export_step(Compound(children=[ball, block]), str(step))
-            scene = read_scene(step)
+            scene = read_document(step)
             refs = {leaf.label: leaf.ref for leaf in scene.leaves()}
             planes = [_face(scene, refs[part], axis, 0.0) for part in ("ball", "block") for axis in (0, 1)]
             study = {
@@ -491,9 +491,9 @@ class PushedSideways(unittest.TestCase):
     def _push(self, sideways: float, name: str):
         study = {"analysis": "contact", "material": "steel", "mesh": {"size_mm": 5}, "steps": 3,
                  "connections": [{"between": ["block", "base"], "type": "contact", "friction": 0.2}],
-                 "fixtures": [{"faces": ["#o1.1.f5"]}],
-                 "loads": [{"faces": ["#o1.2.f6"], "type": "force", "vector_N": [0, 0, -3000]},
-                           {"faces": ["#o1.2.f1"], "type": "force", "vector_N": [sideways, 0, 0]}]}
+                 "fixtures": [{"faces": ["base/face 5"]}],
+                 "loads": [{"faces": ["block/face 6"], "type": "force", "vector_N": [0, 0, -3000]},
+                           {"faces": ["block/face 1"], "type": "force", "vector_N": [sideways, 0, 0]}]}
         return _solve(self.step, study, name)
 
     def test_under_what_friction_holds_it_sticks_and_settles_in_a_few_updates(self):

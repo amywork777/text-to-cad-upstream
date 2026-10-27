@@ -5,7 +5,7 @@ The study (spec 2.1, Y5) is a contact study (static's ``fixtures`` and
 ``connections`` name bolts::
 
     {"between": ["plate", "bracket"], "type": "bolt", "size": "M6",
-     "preload_N": 5000, "holes": ["#o1.1.f7", "#o1.2.f7"]}
+     "preload_N": 5000, "holes": ["plate/face 7", "bracket/face 7"]}
 
 - ``between``: the part under the head, then the part under the nut.
 - ``size``: a metric size, ``"M3"`` to ``"M30"``, or ``{"diameter_mm": 6}``.
@@ -169,7 +169,7 @@ def _bolt(entry: dict, where: str) -> Bolt:
     if isinstance(holes, str):
         holes = [holes]
     if not isinstance(holes, list) or not holes or not all(isinstance(ref, str) and ref.strip() for ref in holes):
-        raise ValueError(f'{where}.holes: the hole walls the bolt passes through, like ["#o1.1.f7", "#o1.2.f7"] (or the flat '
+        raise ValueError(f'{where}.holes: the hole walls the bolt passes through, like ["plate/face 7", "bracket/face 7"] (or the flat '
                          "faces its head and nut sit on)")
     return Bolt(between, size, preload, tuple(dict.fromkeys(ref.strip() for ref in holes)), torque, factor,
                 grade.strip().upper(), parse_friction(entry, where, DEFAULT_FRICTION))
@@ -238,7 +238,7 @@ class BoltAnalysis(ContactAnalysis):
         if not bolts:
             raise ValueError(
                 'study: a bolt study needs a bolt: connections like [{"between": ["plate", "bracket"], "type": "bolt", '
-                '"size": "M6", "preload_N": 5000, "holes": ["#o1.1.f7", "#o1.2.f7"]}]'
+                '"size": "M6", "preload_N": 5000, "holes": ["plate/face 7", "bracket/face 7"]}]'
             )
         require_held(fixtures, planes)
         bolted = {frozenset(bolt.between) for bolt in bolts}

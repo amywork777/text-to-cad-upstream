@@ -55,7 +55,7 @@ def faces(entry: dict, *, where: str) -> tuple[str, ...]:
     if isinstance(refs, str):
         refs = [refs]
     if not isinstance(refs, list) or not refs or not all(isinstance(f, str) and f.strip() for f in refs):
-        raise ValueError(f"{where}: 'faces' must be a non-empty list of face references like \"#o1.f17\"")
+        raise ValueError(f"{where}: 'faces' must be a non-empty list of face references like \"bracket/face 17\"")
     return tuple(f.strip() for f in refs)
 
 
@@ -390,7 +390,7 @@ class FieldMax:
     at: tuple[float, float, float]
     #: The face the node is on (one of the asked faces), or ``None`` when it is on none of them.
     ref: str | None
-    #: The asked faces, as the scene names them (bare ``#o1.fN``).
+    #: The asked faces, as the document names them (canonical refs).
     faces: tuple[str, ...]
 
 

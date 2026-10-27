@@ -35,8 +35,8 @@ E, YIELD = 200_000.0, 250.0
 
 
 def _study(**more) -> dict:
-    return {"analysis": "nonlinear", "material": STEEL_PLASTIC, "fixtures": [{"faces": ["#o1.f1"]}],
-            "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -100]}], **more}
+    return {"analysis": "nonlinear", "material": STEEL_PLASTIC, "fixtures": [{"faces": ["face 1"]}],
+            "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -100]}], **more}
 
 
 class StudyFile(unittest.TestCase):
@@ -44,7 +44,7 @@ class StudyFile(unittest.TestCase):
         parsed = parse_study(_study())
         inputs = parsed.inputs
         self.assertEqual((parsed.analysis, inputs.steps, inputs.model, inputs.requires_anchor), ("nonlinear", 10, "plasticity", True))
-        self.assertEqual(inputs.face_refs, ("#o1.f1", "#o1.f2"))
+        self.assertEqual(inputs.face_refs, ("face 1", "face 2"))
         self.assertEqual(parsed.checks, ({"kind": "plastic_strain", "limit_percent": 0.2},))
         self.assertEqual(parse_study(_study(steps=40)).inputs.steps, 40)
         checks = parse_study(_study(view={"checks": [{"kind": "plastic_strain", "limit_percent": 0.5},

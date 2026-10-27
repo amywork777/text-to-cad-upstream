@@ -53,8 +53,8 @@ Metal (perfectly plastic steel, pushed past its collapse load), then rubber (a p
 
 ```json
 {"analysis": "nonlinear", "material": {"name": "steel", "plasticity": {"tangent_MPa": 0}},
- "mesh": {"size_mm": 2}, "steps": 10, "fixtures": [{"faces": ["#o1.f1"]}],
- "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -127]}],
+ "mesh": {"size_mm": 2}, "steps": 10, "fixtures": [{"faces": ["bracket/face 1"]}],
+ "loads": [{"faces": ["bracket/face 2"], "type": "force", "vector_N": [0, 0, -127]}],
  "view": {"checks": [{"kind": "plastic_strain", "limit_percent": 0.2},
                      {"kind": "displacement", "limit_mm": 2}]}}
 ```
@@ -63,8 +63,8 @@ Metal (perfectly plastic steel, pushed past its collapse load), then rubber (a p
 {"analysis": "nonlinear",
  "material": {"name": "rubber 50A (estimate)",
               "hyperelastic": {"model": "neo_hookean", "mu_MPa": 0.82, "bulk_MPa": 409}},
- "steps": 8, "fixtures": [{"faces": ["#o1.f5"]}],
- "loads": [{"faces": ["#o1.f6"], "type": "force", "vector_N": [0, 0, 30]}],
+ "steps": 8, "fixtures": [{"faces": ["bracket/face 5"]}],
+ "loads": [{"faces": ["bracket/face 6"], "type": "force", "vector_N": [0, 0, 30]}],
  "view": {"checks": [{"kind": "displacement", "limit_mm": 5}]}}
 ```
 

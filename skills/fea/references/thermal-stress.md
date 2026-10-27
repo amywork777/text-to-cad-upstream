@@ -15,9 +15,9 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis):
 
 ```json
 {"analysis": "thermal_stress", "material": "steel",
- "fixtures": [{"faces": ["#o1.f1"]}, {"faces": ["#o1.f2"]}],
- "temperatures": [{"faces": ["#o1.f2"], "C": 120}],
- "convection": [{"faces": ["#o1.f3", "#o1.f4"], "h_W_m2K": 10, "ambient_C": 25}],
+ "fixtures": [{"faces": ["bracket/face 1"]}, {"faces": ["bracket/face 2"]}],
+ "temperatures": [{"faces": ["bracket/face 2"], "C": 120}],
+ "convection": [{"faces": ["bracket/face 3", "bracket/face 4"], "h_W_m2K": 10, "ambient_C": 25}],
  "reference_C": 20,
  "view": {"checks": [{"kind": "stress"}, {"kind": "displacement", "limit_mm": 0.1}]}}
 ```

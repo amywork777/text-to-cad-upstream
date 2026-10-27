@@ -18,7 +18,7 @@ function impactResult(drop: Record<string, unknown> = {}, extras: Record<string,
     _displacement_peak: [0, 0.02, 0.04], _face: [0, 0, 1], ...frames,
   }, {
     generator: 'cadgen fea', name: 'bar drop impact', deformation_scale: 100, safety_factor: 1.385, peak_g: 22848,
-    faces: ['#o1.f5', '#o1.f6'], occurrence: '#o1',
+    faces: ['bracket/face 5', 'bracket/face 6'], occurrence: 'bracket',
     analysis: { type: 'impact', tier: 3, word: 'Drop impact', estimate: false, limits: [LIMITS], noun: 'this drop', reference_C: null, warnings: [] },
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 180, attribute_scale: 1, field: 'von_mises', per_frame: true },
@@ -33,11 +33,11 @@ function impactResult(drop: Record<string, unknown> = {}, extras: Record<string,
       { value: 1.19e-4, label: '119 µs', attributes: { von_mises: '_VON_MISES_F3', displacement: '_DISPLACEMENT_F3' } }] },
     checks: [
       { kind: 'stress', label: 'Strength', value: 180.5, limit: 250, unit: 'MPa', ratio: 0.722, close_at: 0.5, margin: 2, status: 'close',
-        where: { ref: '#o1.f5', at: [0, 0, 0] }, at: { frame: 2, value: 1.01e-5, unit: 's', time_s: 1.01e-5 } },
+        where: { ref: 'bracket/face 5', at: [0, 0, 0] }, at: { frame: 2, value: 1.01e-5, unit: 's', time_s: 1.01e-5 } },
       { kind: 'acceleration', label: 'Peak g', value: 22848, limit: 30000, unit: 'g', ratio: 0.7616, close_at: 0.9, status: 'passes',
         where: { ref: null, at: [0, 0, 50] }, at: { frame: 2, value: 1.34e-5, unit: 's', time_s: 1.34e-5 } }],
     study: { material: { name: 'Steel (structural, generic)', yield_MPa: 250 },
-      drop: { height_mm: 1000, direction: [0, 0, -1], floor: 'rigid', friction: 0, onto: ['#o1.f5'], ...drop },
+      drop: { height_mm: 1000, direction: [0, 0, -1], floor: 'rigid', friction: 0, onto: ['bracket/face 5'], ...drop },
       window_ms: 'auto', mesh: { size_mm: 3, order: 1, elements: 2209, refined_from_mm: null } },
     findings: [],
     ...extras,
@@ -109,14 +109,14 @@ describe('impact', () => {
     const result = impactResult();
     const [dropped, material] = studyRows(result);
     expect(dropped).toMatchObject({ id: 'drop', label: 'Dropped', glyph: 'drop', children: [
-      { id: 'drop:0', label: '1 m drop onto a rigid floor', hint: 'Falling down, no friction', faces: ['#o1.f5'],
+      { id: 'drop:0', label: '1 m drop onto a rigid floor', hint: 'Falling down, no friction', faces: ['bracket/face 5'],
         summary: '1 m drop onto a rigid floor, landing on face 5' }] });
     expect(material).toMatchObject({ id: 'material', label: 'Made of' });
     expect(studyRows(result).map((row: { id: string }) => row.id)).toEqual(['drop', 'material', 'details']);
     expect(fallWords(impactResult({ direction: [1, 0, 0], friction: 0.3 }))).toBe('Falling along +X, friction 0.3');
     // No faces met the floor (none recorded): the drop is chosen with the whole part.
     const [whole] = impactDroppedRows(impactResult({ onto: [], height_mm: 500 }));
-    expect(whole.children[0]).toMatchObject({ label: '500 mm drop onto a rigid floor', refs: ['#o1'] });
+    expect(whole.children[0]).toMatchObject({ label: '500 mm drop onto a rigid floor', refs: ['bracket'] });
   });
 
   it('lists its limits in Details', () => {

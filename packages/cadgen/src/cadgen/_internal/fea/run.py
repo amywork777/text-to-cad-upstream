@@ -6,53 +6,67 @@ import dataclasses
 import json
 import math
 import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cadgen._internal.fea.checks import quoted
-from cadgen.cli_logging import CliLogger
 from cadgen.results import FeaFace, FeaFacesResult, FeaPair, FeaPart, FeaPartsResult, FeaResult
 
 if TYPE_CHECKING:
-    from cadgen.step_scene import Occurrence, Selection, StepScene
+    from cadgen._internal.fea.document import Document, Occurrence, Selection
 
 __all__ = ["list_assembly_parts", "list_faces", "progress_log", "solve_study"]
 
 _AXES = {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0), "Z": (0.0, 0.0, 1.0)}
 
 
-def _open(target: Path) -> "StepScene":
-    from cadgen._internal.doors import STEP_SUFFIXES, document_target
-    from cadgen.step_scene import read_scene
+@dataclasses.dataclass
+class Narration:
+    """What a verb says on stderr as it works (``[fea] ...``), never on stdout, where its result is: ``info``
+    always, ``debug`` with ``verbose``."""
 
-    return read_scene(document_target(target, suffixes=STEP_SUFFIXES))
+    verbose: bool = False
+
+    def info(self, message: str) -> None:
+        print(f"[fea] {message}", file=sys.stderr)
+
+    def debug(self, message: str) -> None:
+        if self.verbose:
+            self.info(message)
 
 
-def _resolve_one(scene: "StepScene", ref: str) -> "Selection":
-    """The one face, part or occurrence ``ref`` names. A study names one per entry: a line the viewer copies with
-    several (``#o1.f1,o1.f2``) is refused with the entries to write instead."""
-    found = scene.resolve(ref)
+def _open(target: Path) -> "Document":
+    from cadgen._internal.fea.document import read_document
+
+    return read_document(target)
+
+
+def _resolve_one(document: "Document", ref: str) -> "Selection":
+    """The one face or part ``ref`` names. A study names one per entry: a line the viewer copies with
+    several (``bracket/face 1,face 2``) is refused with the entries to write instead."""
+    found = document.resolve(ref)
     if len(found) != 1:
         entries = ", ".join(f'"{selection.ref}"' for selection in found)
         raise ValueError(f"{ref} names {len(found)} references; give each its own entry in the study's list: {entries}")
     return found[0]
 
 
-def _resolve_faces(scene: "StepScene", refs: "tuple[str, ...]") -> tuple[dict[str, "Selection"], set[str]]:
+def _resolve_faces(document: "Document", refs: "tuple[str, ...]") -> tuple[dict[str, "Selection"], set[str]]:
     """Each face ref resolved, and the occurrences they belong to."""
     resolved: dict[str, Selection] = {}
     owners: set[str] = set()
     for ref in refs:
-        selection = _resolve_one(scene, ref)
+        selection = _resolve_one(document, ref)
         if selection.kind != "face":
-            raise ValueError(f"{ref} is a {selection.kind} reference; fixtures, loads and checks take faces (#o1.f17)")
+            raise ValueError(f"{ref} names a part; fixtures, loads and checks take faces ({selection.ref}/face 17)")
         resolved[ref] = selection
         owners.add(selection.occurrence_ref)
     return resolved, owners
 
 
-def _single_occurrence(scene: "StepScene", owners: set[str], chosen: str | None = None) -> "Occurrence":
-    """The one leaf occurrence every face ref belongs to. A study that names no face (a free-free modal study) solves
+def _single_occurrence(document: "Document", owners: set[str], chosen: str | None = None) -> "Occurrence":
+    """The one part occurrence every face ref belongs to. A study that names no face (a free-free modal study) solves
     ``chosen`` (``--occurrence``), else the document's only part."""
     if len(owners) > 1:
         raise ValueError(
@@ -60,14 +74,14 @@ def _single_occurrence(scene: "StepScene", owners: set[str], chosen: str | None 
             "a study solves one part, so every face must be on the same occurrence"
         )
     if owners:
-        return _resolve_one(scene, next(iter(owners)))  # type: ignore[return-value]
-    if chosen is None:
-        leaves = list(scene.leaves())
+        chosen = next(iter(owners))
+    elif chosen is None:
+        leaves = document.leaves()
         if len(leaves) != 1:
             raise ValueError(f"the study names no face and the document has {len(leaves)} parts; "
                              "choose one with --occurrence")
-        chosen = leaves[0].ref
-    return _resolve_one(scene, chosen)  # type: ignore[return-value]
+        return leaves[0]
+    return next(leaf for leaf in document.leaves() if leaf.ref == chosen)
 
 
 def _axis_word(normal: tuple[float, float, float]) -> str:
@@ -90,14 +104,15 @@ def _rank_word(rank: int) -> str:
 def list_faces(target: Path, *, occurrence: str | None = None, verbose: bool = False) -> FeaFacesResult:
     from cadgen._internal.fea.mesh import face_area_center
 
-    logger = CliLogger("fea", verbose=verbose)
-    scene = _open(Path(target))
+    logger = Narration(verbose=verbose)
+    document = _open(Path(target))
     if occurrence:
-        owner = _resolve_one(scene, occurrence)
+        owner = _resolve_one(document, occurrence)
         if owner.kind != "occurrence":
-            raise ValueError(f"{occurrence} is not an occurrence reference")
+            raise ValueError(f"{occurrence} names a face, not a part")
+        owner = owner.occurrence
     else:
-        leaves = list(scene.leaves())
+        leaves = document.leaves()
         if len(leaves) != 1:
             raise ValueError(
                 f"the document has {len(leaves)} part occurrences; pass --occurrence "
@@ -134,7 +149,7 @@ def list_faces(target: Path, *, occurrence: str | None = None, verbose: bool = F
 _NEAR_MISS_MM = 1.0
 
 
-def _detect_pairs(parts: list, tolerance: float, reach: float, logger: CliLogger) -> tuple[list, list, int]:
+def _detect_pairs(parts: list, tolerance: float, reach: float, logger: Narration) -> tuple[list, list, int]:
     """The pairs within ``reach`` and the interferences within ``tolerance``, in part order; the overlaps; how many
     pairs are within ``reach``."""
     from cadgen._internal.fea.assembly import detect_contacts, detect_overlaps, interferences
@@ -154,7 +169,7 @@ def list_assembly_parts(target: Path, *, contact_tolerance_mm: float = 0.1, verb
 
     if not contact_tolerance_mm >= 0:
         raise ValueError("contact_tolerance_mm must be zero or more")
-    logger = CliLogger("fea", verbose=verbose)
+    logger = Narration(verbose=verbose)
     logger.info("reading the parts")
     parts = list_parts(_open(Path(target)))
     logger.info(f"read {len(parts)} parts; looking for pairs within {max(contact_tolerance_mm, _NEAR_MISS_MM)} mm")
@@ -197,26 +212,39 @@ class _Plan:
     group_of: list[int]
     #: The pairs (part indices) a contact or bolt study's ``contact`` and ``bolt`` connections name: meshed apart, like free ones.
     contact: set = dataclasses.field(default_factory=set)
+    #: The document the parts are of: a part named by a ref other than its canonical one is resolved in it.
+    document: "Document | None" = None
 
 
-def find_part(parts: list, names: list[str], key: str, where: str) -> int:
-    """The part a study names by occurrence ref or by name; ``names`` are the display names, for the error."""
+def find_part(parts: list, names: list[str], key: str, where: str, document: "Document | None" = None) -> int:
+    """The part a study names by its ref or by its name; ``names`` are the display names, for the error. A ref
+    other than the part's canonical one (``bar.2`` for ``kit/bar.2``) is resolved in ``document``."""
     for index, part in enumerate(parts):
-        if key in (part.ref, f"#{key}"):
+        if key == part.ref:
             return index
     named = [index for index, part in enumerate(parts) if part.name == key]
     if len(named) > 1:
         raise ValueError(f"{where}: {key!r} names {len(named)} parts ({', '.join(parts[i].ref for i in named)}); use a ref")
+    if not named and document is not None:
+        try:
+            found = document.resolve(key)
+        except ValueError:
+            found = ()
+        refs = [selection.ref for selection in found if selection.kind == "occurrence"]
+        if len(refs) == 1:
+            for index, part in enumerate(parts):
+                if part.ref == refs[0]:
+                    return index
     if not named:
         raise ValueError(f"{where}: no part named {key!r}; the parts are {', '.join(quoted(name) for name in names)}")
     return named[0]
 
 
-def _plan_assembly(scene: "StepScene", parsed, logger: CliLogger) -> _Plan:
+def _plan_assembly(doc: "Document", parsed, logger: Narration) -> _Plan:
     from cadgen._internal.fea.assembly import display_names, joined_groups, list_parts
 
     logger.info("reading the parts")
-    parts = list_parts(scene)
+    parts = list_parts(doc)
     logger.info(f"read {len(parts)} parts; looking for contacts within {parsed.contact_tolerance_mm:g} mm")
     names = display_names(parts)
     index_of = {part.ref: i for i, part in enumerate(parts)}
@@ -224,7 +252,7 @@ def _plan_assembly(scene: "StepScene", parsed, logger: CliLogger) -> _Plan:
     materials = [parsed.material] * len(parts)
     given: set[int] = set()
     for key, material in parsed.parts.items():
-        index = find_part(parts, names, key, f"parts[{key!r}]")
+        index = find_part(parts, names, key, f"parts[{key!r}]", doc)
         if index in given:
             raise ValueError(f"parts[{key!r}]: {quoted(names[index])} is named twice in 'parts'")
         given.add(index)
@@ -241,7 +269,7 @@ def _plan_assembly(scene: "StepScene", parsed, logger: CliLogger) -> _Plan:
     bolted: set[frozenset[int]] = set()
     for n, connection in enumerate(parsed.connections):
         where = f"connections[{n}]"
-        i, j = (find_part(parts, names, key, f"{where}.between") for key in connection.between)
+        i, j = (find_part(parts, names, key, f"{where}.between", doc) for key in connection.between)
         pair = frozenset((i, j))
         if i == j:
             raise ValueError(f"{where}.between: both names are {quoted(names[i])}")
@@ -289,7 +317,7 @@ def _plan_assembly(scene: "StepScene", parsed, logger: CliLogger) -> _Plan:
                 "between them can't be freed on its own (not yet supported); free the parts' other connections too"
             )
     return _Plan(parts, names, materials, sorted(set(range(len(parts))) - given), contacts, bonded, overlaps, freed_overlaps, group_of,
-                 contact)
+                 contact, doc)
 
 
 def _joined_through(pairs: list[tuple[int, int]], start: int, end: int) -> list[int]:
@@ -312,7 +340,7 @@ def _joined_through(pairs: list[tuple[int, int]], start: int, end: int) -> list[
     return chain[::-1]
 
 
-def _not_connected(plan: _Plan, unheld: list[list[int]], logger: CliLogger) -> list[dict]:
+def _not_connected(plan: _Plan, unheld: list[list[int]], logger: Narration) -> list[dict]:
     """One error per group of parts nothing holds: which parts, and the nearest part that is not among them.
 
     The nearest part is found nearest-box first: the exact distance is only
@@ -402,6 +430,8 @@ def _connections(plan: _Plan, volume) -> list[dict]:
     """
     name_of = {part.ref: plan.names[i] for i, part in enumerate(plan.parts)}
     index_of = {part.ref: i for i, part in enumerate(plan.parts)}
+    # Faces in the mesh's order: part by part, each part's by ordinal.
+    order = {fp.ref: position for position, fp in volume.faces.items()}
     bonded = {(c.a, c.b) for c in plan.bonded}
     return [
         {
@@ -411,16 +441,10 @@ def _connections(plan: _Plan, volume) -> list[dict]:
             "area_mm2": round(c.area_mm2, 4),
             "gap_mm": round(c.gap_mm, 6),
             "interference_mm": round(c.interference_mm, 6),
-            "faces": sorted(volume.joint_faces.get(tuple(sorted((index_of[c.a], index_of[c.b]))), ()), key=_face_key),
+            "faces": sorted(volume.joint_faces.get(tuple(sorted((index_of[c.a], index_of[c.b]))), ()), key=order.__getitem__),
         }
         for c in plan.contacts
     ]
-
-
-def _face_key(ref: str) -> tuple:
-    """Sorts ``#o1.2.f10`` after ``#o1.2.f9`` and ``#o1.10`` after ``#o1.2``, parts in order."""
-    owner, _, face = ref.rpartition(".f")
-    return tuple(int(part) for part in owner.removeprefix("#o").split(".")), int(face)
 
 
 class _NotConnected(Exception):
@@ -439,13 +463,13 @@ def _unsolved(document: Path, occurrence_ref: str, findings: list[dict]) -> FeaR
                      verdict=verdict(findings))
 
 
-def _mesh_assembly(mesh_assembly, scene, plan: _Plan, parsed, resolved, ordinal_of: dict[str, int], max_h: float | None, log, refine: float = 1.0, **mesh_options):
+def _mesh_assembly(mesh_assembly, doc, plan: _Plan, parsed, resolved, ordinal_of: dict[str, int], max_h: float | None, log, refine: float = 1.0, **mesh_options):
     """The glued, meshed assembly with its faces numbered by position, and the study's checks on it.
 
     Raises ``ValueError`` for a fixture or load on a face that is wholly a bonded joint, and :class:`_NotConnected`
     when the glue left a part apart from every fixed face.
     """
-    volume = mesh_assembly(scene, [part.ref for part in plan.parts], plan.bonded, parsed.contact_tolerance_mm, max_h, log, refine=refine, **mesh_options)
+    volume = mesh_assembly(doc, [part.ref for part in plan.parts], plan.bonded, parsed.contact_tolerance_mm, max_h, log, refine=refine, **mesh_options)
     # Boundary triangles carry a face's 1-based position; `faces` is keyed by it, as for one occurrence.
     position = {ref: n for n, ref in enumerate(volume.faces, 1)}
     volume = dataclasses.replace(volume, faces={position[ref]: fp for ref, fp in volume.faces.items()})
@@ -543,7 +567,7 @@ def _analysis_extras(analysis, result) -> dict:
     }
 
 
-def progress_log(logger: CliLogger):
+def progress_log(logger: Narration):
     """What an analysis's ``ctx.log`` (and the meshing lines) print: with --verbose every line; without, a line only once
     nine tenths of ``timestep.PROGRESS_S`` have passed since the last one printed (the run's start the first), so a
     long solve says how far it has got about every ten seconds and a short one stays quiet."""
@@ -617,7 +641,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     analysis = parsed.analysis_object or get_analysis(parsed.analysis)
     inputs = parsed.inputs
     static = parsed.analysis == _STATIC
-    logger = CliLogger("fea", verbose=verbose)
+    logger = Narration(verbose=verbose)
     progress = progress_log(logger)
     glb_path = Path(out) if out is not None else document.with_name(f"{document.stem}.fea.glb")
     if glb_path.suffix.lower() != ".glb":
@@ -629,12 +653,12 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     from cadgen._internal.fea.mesh import default_mesh_size, mesh_assembly, mesh_occurrence, require_fea_stack, small_feature_mm
 
     require_fea_stack()
-    scene = _open(document)
-    resolved, owners = _resolve_faces(scene, tuple(dict.fromkeys((*parsed.face_refs, *parsed.check_faces))))
+    doc = _open(document)
+    resolved, owners = _resolve_faces(doc, tuple(dict.fromkeys((*parsed.face_refs, *parsed.check_faces))))
     # A document of several parts is an assembly, whichever faces the study names; one part's study keeps the one-part path.
     plan = None
-    if occurrence is None and (len(list(scene.leaves())) > 1 or parsed.parts or parsed.connections):
-        plan = _plan_assembly(scene, parsed, logger)
+    if occurrence is None and (len(doc.leaves()) > 1 or parsed.parts or parsed.connections):
+        plan = _plan_assembly(doc, parsed, logger)
     ordinal_of: dict[str, int] = {}
     ignored_note = None
     if plan is None:
@@ -644,20 +668,19 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
                     f"--occurrence {occurrence} solves that part alone: the study's "
                     f"{' and '.join(k for k, v in (('parts', parsed.parts), ('connections', parsed.connections)) if v)} are ignored"
                 )
-            chosen = _resolve_one(scene, occurrence)
-            if chosen.kind != "occurrence" or chosen.ref not in {leaf.ref for leaf in scene.leaves()}:
+            chosen = _resolve_one(doc, occurrence)
+            if chosen.kind != "occurrence":
                 raise ValueError(f"{occurrence} is not a part occurrence of {document.name}")
             if stray := sorted(owners - {chosen.ref}):
                 raise ValueError(
                     f"--occurrence {chosen.ref}: the study's faces are also on {', '.join(stray)}; "
                     f"every face must be on {chosen.ref}"
                 )
-        occurrence = _single_occurrence(scene, owners, chosen.ref if occurrence is not None else None)
+        occurrence = _single_occurrence(doc, owners, chosen.ref if occurrence is not None else None)
         occurrence_ref = occurrence.ref
         ordinal_of.update({ref: int(selection.ordinal) for ref, selection in resolved.items()})
     else:
-        roots = scene.roots
-        occurrence_ref = roots[0].ref if len(roots) == 1 else ", ".join(part.ref for part in plan.parts)
+        occurrence_ref = doc.name
         part_index = {part.ref: i for i, part in enumerate(plan.parts)}
         held = {part_index[resolved[ref].occurrence_ref] for ref in inputs.anchor_refs}
         if inputs.requires_anchor and (unheld := _unheld_groups(plan, held)):
@@ -685,10 +708,11 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     )
     if plan is None:
         part_shape = occurrence.shape()
-        geometry = fit.geometry_of(part_shape.wrapped, occurrence.ref)
+        geometry = fit.geometry_of(part_shape.wrapped, occurrence.ref, face_refs=occurrence.face_refs())
         geometry.bbox_diagonal_mm = float(part_shape.bounding_box().diagonal)
     else:
-        geometry = fit.merge_geometry([fit.geometry_of(part.shape, part.ref, keep_shape=False) for part in plan.parts])
+        geometry = fit.merge_geometry([fit.geometry_of(part.shape, part.ref, face_refs=part.face_refs, keep_shape=False)
+                                       for part in plan.parts])
     fit_plan.requested_mm = requested or default_mesh_size(geometry.bbox_diagonal_mm)
 
     def context(volume, *, space=None, automatic=False, meshed=None):
@@ -717,7 +741,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
                 options["prepared"] = fit_plan.prepared
             volume = mesh_occurrence(occurrence, max_h=max_h, refine=refine, **options)
         else:
-            volume = _mesh_assembly(mesh_assembly, scene, plan, parsed, resolved, ordinal_of, max_h, logger.info, refine, **options)
+            volume = _mesh_assembly(mesh_assembly, doc, plan, parsed, resolved, ordinal_of, max_h, logger.info, refine, **options)
         progress(f"meshed: {len(volume.tets)} tets, {len(volume.nodes)} nodes, size {volume.max_h:.3g} mm in {volume.seconds:.1f}s")
         return volume
 
@@ -910,12 +934,12 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     face_of_triangle = np.array([face_index.get(int(o), -1) for o in volume.boundary_ordinal], dtype=np.int64)
 
     if plan is not None:
-        # Each surface triangle's part: a face is one part's, and the part's ref prefixes the face's.
-        owner = {position: next(i for i, part in enumerate(plan.parts) if fp.ref.startswith(f"{part.ref}.f"))
-                 for position, fp in volume.faces.items()}
+        # Each surface triangle's part: a face is one part's.
+        part_of_ref = {ref: i for i, part in enumerate(plan.parts) for ref in part.face_refs}
+        owner = {position: part_of_ref[fp.ref] for position, fp in volume.faces.items()}
         part_of_triangle = np.array([owner[int(o)] for o in volume.boundary_ordinal], dtype=np.int64)
 
-    def bare(refs):  # the scene's own `#o1.fN`, whatever form the study named them in
+    def bare(refs):  # the canonical refs, whatever form the study named them in
         return [volume.faces[ordinal_of[ref]].ref for ref in refs]
 
     extras["faces"] = [volume.faces[ordinal].ref for ordinal in face_ordinals]

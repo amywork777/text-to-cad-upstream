@@ -24,13 +24,13 @@ function sound(kind: 'modes' | 'response', acousticStudy: Record<string, unknown
     : { kind: 'frequency', unit: 'Hz', default: 2, frames: values.map((value, index) => ({ value, label: `${value} Hz`, attributes: {
       sound_level: index ? `_SOUND_LEVEL_F${index}` : '_SOUND_LEVEL', sound_pressure: index ? `_SOUND_PRESSURE_F${index}` : '_SOUND_PRESSURE' } })) };
   return feaFile({ position: [0, 0, 0, 0.1, 0, 0, 0.1, 0, 0.006], _displacement: vec(9), _face: [0, 1, 1], ...frames }, {
-    generator: 'cadgen fea', name: 'duct sound', deformation_scale: null, faces: ['#o1.f1', '#o1.f2'],
+    generator: 'cadgen fea', name: 'duct sound', deformation_scale: null, faces: ['bracket/face 1', 'bracket/face 2'],
     analysis: { type: 'acoustic', tier: 3, word: 'Sound', estimate: false, limits: ['Linear acoustics: small sound pressures.'], noun: 'this sound',
       reference_C: null, warnings: [], acoustic: { solve: kind, domain: 'inside' } },
     fields, series,
     study: {
       acoustic: { solve: kind, domain: 'inside', fluid: { name: 'air', density_kg_m3: 1.204, speed_m_s: 343.2 },
-        sources: kind === 'modes' ? [] : [{ faces: ['#o1.f1'], velocity_mm_s: 1 }], absorbers: [], open: [], probes: [], ...acousticStudy },
+        sources: kind === 'modes' ? [] : [{ faces: ['bracket/face 1'], velocity_mm_s: 1 }], absorbers: [], open: [], probes: [], ...acousticStudy },
       mesh: { size_mm: 20, order: 2, elements: 114, refined_from_mm: null },
       ...extra,
     },
@@ -71,13 +71,13 @@ describe('acoustic', () => {
 
   it('says where the air is, what makes the sound, what soaks it up and where it is listened to', () => {
     const rows = studyRows(sound('response', {
-      absorbers: [{ faces: ['#o1.f2'], absorption: 0.3 }], open: [{ faces: ['#o1.f2'] }],
-      sources: [{ faces: ['#o1.f1'], velocity_mm_s: 1 }, { point_mm: [0, 0, 10], volume_velocity_m3_s: 1e-6 }],
+      absorbers: [{ faces: ['bracket/face 2'], absorption: 0.3 }], open: [{ faces: ['bracket/face 2'] }],
+      sources: [{ faces: ['bracket/face 1'], velocity_mm_s: 1 }, { point_mm: [0, 0, 10], volume_velocity_m3_s: 1e-6 }],
       probes: [{ label: 'ear', at_mm: [0, 0, 100] }],
     }));
     expect(rows.slice(0, 4).map((row: { label: string }) => row.label)).toEqual(['Air', 'Sound from', 'Soaks up', 'Listening at']);
     expect(rows[0].children[0]).toMatchObject({ label: 'Air inside', hint: 'Sound at 343 m/s' });
-    expect(rows[1].children[0]).toMatchObject({ label: 'Speaker face 1 mm/s', faces: ['#o1.f1'], summary: 'A speaker on face 1, moving 1 mm/s' });
+    expect(rows[1].children[0]).toMatchObject({ label: 'Speaker face 1 mm/s', faces: ['bracket/face 1'], summary: 'A speaker on face 1, moving 1 mm/s' });
     expect(rows[1].children[1]).toMatchObject({ label: 'Point source 1 cm³/s', hint: 'at (0, 0, 10) mm' });
     expect(rows[2].children.map((row: { label: string }) => row.label)).toEqual(['Absorbs 30%', 'Open']);
     expect(rows[3].children[0]).toMatchObject({ label: 'ear', hint: '(0, 0, 100) mm' });
@@ -87,7 +87,7 @@ describe('acoustic', () => {
 
   it('driven by a harmonic shake, says the part vibrates, where it is held and shaken, and what it is made of', () => {
     const rows = studyRows(sound('response', { from: 'harmonic', sources: [], domain: 'outside' }, {
-      material: { name: 'Aluminum 6061-T6', yield_MPa: 276 }, fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }], loads: [],
+      material: { name: 'Aluminum 6061-T6', yield_MPa: 276 }, fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }], loads: [],
       excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 }, sweep_Hz: [100, 900], damping_ratio: 0.02,
     }));
     expect(rows.slice(0, 5).map((row: { label: string }) => row.label)).toEqual(['Air', 'Sound from', 'Held at', 'Shaken', 'Made of']);

@@ -1,10 +1,10 @@
-"""One STEP occurrence, or an assembly's glued parts -> quadratic (or linear) tetrahedra, faces kept under their cadgen ordinal.
+"""One part occurrence, or an assembly's glued parts -> quadratic (or linear) tetrahedra, faces kept under their ordinal.
 
 The mesher is netgen (LGPL-2.1, the ``netgen-mesher`` wheel with its own OpenCascade). It cannot take an OCP shape
 object directly -- two pybind11 OCC builds are foreign to each other -- so the placed occurrence is written to a BREP
-file, which netgen reads. Both sides walk the B-rep in explorer order, so netgen's face ``i`` is cadgen's face ordinal
+file, which netgen reads. Both sides walk the B-rep in explorer order, so netgen's face ``i`` is the engine's face ordinal
 ``i+1`` in practice; that is an implementation property, not a contract, so every face a study names is VERIFIED by area
-and centre of mass against the OCP face the scene resolved, and matched geometrically when the order differs.
+and centre of mass against the OCP face the document resolved, and matched geometrically when the order differs.
 
 An assembly (:func:`mesh_assembly`) is glued first (:mod:`.assembly`), so the order no longer holds: gluing splits a
 face where another part sits on it. Each part's face is then followed through the glue's history to the faces it became,
@@ -16,20 +16,45 @@ so the CAD kernel (OCP) is imported first, here, before netgen ever is.
 
 from __future__ import annotations
 
+import contextlib
 import itertools
+import os
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     import numpy as np
 
     from cadgen._internal.fea.assembly import Contact
-    from cadgen.step_scene import Occurrence, StepScene
+    from cadgen._internal.fea.document import Document, Occurrence
 
-__all__ = ["FaceFingerprint", "VolumeMesh", "default_mesh_size", "face_area_center", "mesh_assembly", "mesh_occurrence", "occurrence_fingerprints", "require_fea_stack", "small_feature_mm"]
+__all__ = ["FaceFingerprint", "VolumeMesh", "default_mesh_size", "face_area_center", "kernel_messages_on_stderr", "mesh_assembly",
+           "mesh_occurrence", "occurrence_fingerprints", "require_fea_stack", "small_feature_mm"]
+
+
+@contextlib.contextmanager
+def kernel_messages_on_stderr() -> Iterator[None]:
+    """netgen's C++ messages to stderr while it reads and meshes: it prints to file descriptor 1, which is where a
+    command's result belongs (``--json``'s line). The redirect is at the descriptor, as the kernel does not write
+    through Python's ``sys.stdout``."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    try:
+        saved = os.dup(1)
+    except OSError:
+        yield
+        return
+    try:
+        os.dup2(2, 1)
+        yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved, 1)
+        os.close(saved)
 
 
 def require_fea_stack() -> None:
@@ -53,9 +78,9 @@ def require_fea_stack() -> None:
 class FaceFingerprint:
     """What identifies a B-rep face across two OpenCascade builds."""
 
-    #: The viewer's selector for this face (``#o1.f17``).
+    #: The face's canonical ref (``bracket/face 17``), as the viewer copies it.
     ref: str
-    #: 1-based cadgen ordinal.
+    #: 1-based ordinal in its part (the engine's ``face N``).
     ordinal: int
     area: float
     center: tuple[float, float, float]
@@ -73,7 +98,7 @@ class VolumeMesh:
     #: For an assembly, the 1-based position of its face in ``faces`` instead.
     boundary_ordinal: "np.ndarray"
     #: Every face fingerprint of the occurrence, by ordinal. For an assembly,
-    #: every face of every part by its ref (``#o1.2.f6``), parts in order.
+    #: every face of every part by its ref (``arm/face 6``), parts in order.
     faces: "dict[int, FaceFingerprint] | dict[str, FaceFingerprint]"
     max_h: float
     bbox_diagonal: float
@@ -148,7 +173,7 @@ def area_center(shape) -> tuple[float, tuple[float, float, float]]:
 
 
 def occurrence_fingerprints(occurrence: "Occurrence") -> list[FaceFingerprint]:
-    """Area and centre of mass of every face, by the scene's own ordinals."""
+    """Area and centre of mass of every face, by the document's own ordinals."""
     out = []
     for selection in occurrence.entities("face"):
         area, centre = face_area_center(selection.shape())
@@ -276,8 +301,6 @@ def _netgen(shape, name: str, prints: list[FaceFingerprint], diagonal: float, h:
     import numpy as np
     import netgen.meshing as ngmesh
     import netgen.occ as ngocc
-
-    from cadgen._internal.step_scene_loader import kernel_messages_on_stderr
 
     with tempfile.TemporaryDirectory(prefix="cadgen-fea-") as tmp:
         brep = Path(tmp) / name
@@ -430,14 +453,14 @@ def check_domains(nodes, tets, domain, parts) -> None:
             raise RuntimeError(f"the mesh's volume {index} lies outside part {part.ref}; the mesher's volumes do not follow the parts")
 
 
-def mesh_assembly(scene: "StepScene", part_refs: list[str], bonded: "list[Contact]", tolerance_mm: float,
+def mesh_assembly(document: "Document", part_refs: list[str], bonded: "list[Contact]", tolerance_mm: float,
                   max_h: float | None = None, log=None, refine: float = 1.0, order: int = 2,
                   size_field: dict | None = None) -> VolumeMesh:
     """Mesh the parts ``part_refs`` as one conforming mesh, bonded parts sharing nodes.
 
     ``bonded`` are the contacts to glue; parts not in any of them stay apart. The mesh's ``domain`` is the index into
     ``part_refs`` of each element's part, and ``faces`` holds every face of every part under its own ref, so a study's
-    ``#o2.f6`` means the same face it does in the viewer. ``log`` is told when gluing and meshing start; ``refine``,
+    ``arm/face 6`` means the same face it does in the viewer. ``log`` is told when gluing and meshing start; ``refine``,
     ``order`` and ``size_field`` are :func:`mesh_occurrence`'s, a size field's faces keyed by ref.
     """
     require_fea_stack()
@@ -449,7 +472,7 @@ def mesh_assembly(scene: "StepScene", part_refs: list[str], bonded: "list[Contac
     from OCP.TopExp import TopExp
     from OCP.TopTools import TopTools_IndexedMapOfShape
 
-    by_ref = {part.ref: part for part in list_parts(scene)}
+    by_ref = {part.ref: part for part in list_parts(document)}
     missing = [ref for ref in part_refs if ref not in by_ref]
     if missing:
         raise ValueError(f"not a part of this document: {', '.join(missing)}")
@@ -480,7 +503,7 @@ def mesh_assembly(scene: "StepScene", part_refs: list[str], bonded: "list[Contac
     for i, part in enumerate(parts):
         for ordinal, face in enumerate(part_faces(part.shape), 1):
             area, centre = area_center(face)
-            ref = f"{part.ref}.f{ordinal}"
+            ref = part.face_refs[ordinal - 1]
             faces[ref] = FaceFingerprint(ref, ordinal, area, centre)
             position_of[(i, ordinal)] = len(faces)
     refs = list(faces)

@@ -15,10 +15,10 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis):
 
 ```json
 {"analysis": "thermal", "material": "aluminum-6061-t6",
- "temperatures": [{"faces": ["#o1.f1"], "C": 25}],
- "heat": [{"faces": ["#o1.f7"], "W": 15}, {"faces": ["#o1.f8"], "W_per_m2": 2000}],
- "convection": [{"faces": ["#o1.f3", "#o1.f4"], "h_W_m2K": 10, "ambient_C": 25}],
- "view": {"checks": [{"kind": "temperature", "max_C": 85, "faces": ["#o1.f7"], "label": "Chip side"}]}}
+ "temperatures": [{"faces": ["bracket/face 1"], "C": 25}],
+ "heat": [{"faces": ["bracket/face 7"], "W": 15}, {"faces": ["bracket/face 8"], "W_per_m2": 2000}],
+ "convection": [{"faces": ["bracket/face 3", "bracket/face 4"], "h_W_m2K": 10, "ambient_C": 25}],
+ "view": {"checks": [{"kind": "temperature", "max_C": 85, "faces": ["bracket/face 7"], "label": "Chip side"}]}}
 ```
 
 - `temperatures`: faces held at `C` (a cold plate, a wall the part is bolted to, water at a known
@@ -41,8 +41,8 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis):
 ## Radiation
 
 ```json
-{"radiation": [{"faces": ["#o1.f3"], "emissivity": 0.9, "ambient_C": 25},
-               {"faces": ["#o1.f8", "#o1.f9"], "emissivity": 0.8, "ambient_C": 25, "surface_to_surface": true}]}
+{"radiation": [{"faces": ["bracket/face 3"], "emissivity": 0.9, "ambient_C": 25},
+               {"faces": ["bracket/face 8", "bracket/face 9"], "emissivity": 0.8, "ambient_C": 25, "surface_to_surface": true}]}
 ```
 
 - Each entry's faces radiate as a grey, diffuse surface: `emissivity` (0 to 1, required) and the
@@ -64,7 +64,7 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis):
 - Summary `radiation` (counted in `heat_out_W`): each entry's `net_W` out (negative where it takes
   heat in), `radiated_W`; with surface-to-surface, the `view_factors` between entries (row i: the
   share of entry i's radiation reaching entry j), `patches`, the method and the rays cast. CLI:
-  "radiated 100 W from #o1.f6 (emissivity 0.9, to 25 °C)".
+  "radiated 100 W from bracket/face 6 (emissivity 0.9, to 25 °C)".
 - Hand checks: a plate radiating Q from area A to surroundings at T∞ (kelvin) settles at
   T = (Q / (ε σ A) + T∞⁴)^¼: 100 W from 0.01 m² at ε 0.9 into 25 °C is 398.8 °C; the solver matches
   the closed form to 0.001 % of the rise. Two black, directly opposed 50 mm squares 50 mm apart see

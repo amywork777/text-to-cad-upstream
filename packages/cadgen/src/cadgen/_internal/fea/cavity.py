@@ -8,7 +8,7 @@ largest solid of the cut that touches no side but the part's own openings: a
 sealed tank's inside touches none, an open tank's touches its open top.
 
 Each face of the cavity is a wall (an image of one of the part's faces through
-the boolean's history, carrying the part's ``#o1.fN`` ref, so the pressure
+the boolean's history, carrying the part's face ref, so the pressure
 lands on the face the viewer shows) or an opening (flat on one of the part's
 open sides, ``x_min`` ... ``z_max``). The mesh is netgen's linear tetrahedra,
 through the fluid region's mesher (:mod:`.fluid_domain`), optionally finer in a

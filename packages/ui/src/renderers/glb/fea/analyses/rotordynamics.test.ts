@@ -18,7 +18,7 @@ function spinningResult(extras: Record<string, unknown> = {}) {
     _whirl_f1: vec([0, 0.001, 0, 0, 0.0005, 0, 0, 0, 0]), _displacement_im_f0: vec([0, -0.001, 0, 0, -0.0005, 0, 0, 0, 0]),
     _displacement_im_f1: vec([0.001, 0, 0, 0.0005, 0, 0, 0, 0, 0]), _face: [0, 0, 1],
   }, {
-    generator: 'cadgen fea', name: 'rotor spinning', deformation_scale: 20, faces: ['#o1.f3', '#o1.f9'], occurrence: '#o1',
+    generator: 'cadgen fea', name: 'rotor spinning', deformation_scale: 20, faces: ['bracket/face 3', 'bracket/face 9'], occurrence: 'bracket',
     analysis: { type: 'rotordynamics', tier: 3, word: 'Spinning', estimate: false, limits: [LIMIT], noun: 'this spin', reference_C: null, warnings: [] },
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress (spinning at the top speed)', units: 'MPa', min: 0, max: 30, attribute_scale: 1, field: 'von_mises' },
@@ -31,15 +31,15 @@ function spinningResult(extras: Record<string, unknown> = {}) {
     study: {
       material: { name: 'Steel', yield_MPa: 250, youngs_GPa: 200, poisson: 0.29 },
       spin: { axis: 'Z', rpm: [0, 10800], sweep_rpm: 16200 },
-      bearings: [{ faces: ['#o1.f3'], kxx: 20000, kyy: 20000, cxx: 5, cyy: 5 }, { faces: ['#o1.f9'], kxx: 20000, kyy: 20000, cxx: 5, cyy: 5 }],
-      unbalance: [{ faces: ['#o1.f5'], g_mm: 50, phase_deg: 0 }],
+      bearings: [{ faces: ['bracket/face 3'], kxx: 20000, kyy: 20000, cxx: 5, cyy: 5 }, { faces: ['bracket/face 9'], kxx: 20000, kyy: 20000, cxx: 5, cyy: 5 }],
+      unbalance: [{ faces: ['bracket/face 5'], g_mm: 50, phase_deg: 0 }],
       discs: [{ at_mm: 150, mass_kg: 2.5, polar_kg_mm2: 3000, diametral_kg_mm2: 1600 }],
       disc_model: 'rigid', modes_requested: 4,
       mesh: { size_mm: 3, order: 2, elements: 400, refined_from_mm: null },
     },
     checks: [
       { kind: 'critical_speed', label: 'Critical speed', value: 12400, limit: 10800, reference: 0, unit: 'rpm', ratio: 0.871, close_at: 0.869565,
-        status: 'passes', mode: 1, where: { ref: '#o1.f5', at: [0, 0, 150] }, at: { frame: 0, value: 12400, unit: 'rpm' } },
+        status: 'passes', mode: 1, where: { ref: 'bracket/face 5', at: [0, 0, 150] }, at: { frame: 0, value: 12400, unit: 'rpm' } },
       { kind: 'stability', label: 'Stability', value: 0.42, limit: 0.1, unit: '', ratio: 0.214, close_at: 0.9, status: 'passes', mode: 1,
         where: { ref: null, at: null } },
       { kind: 'stress', label: 'Spin stress', value: 30, limit: 250, unit: 'MPa', ratio: 0.12, close_at: 0.5, margin: 2, status: 'passes',
@@ -124,13 +124,13 @@ describe('rotordynamics', () => {
     expect(spinWords({ axis: 'Z', rpm: [2000, 12000] })).toBe('Spins 2,000 to 12,000 rpm about Z');
     const rows = studyRows(result);
     expect(rows.slice(0, 5).map((row: { label: string }) => row.label)).toEqual(['Spins', 'Bearings', 'Discs added', 'Unbalance', 'Made of']);
-    expect(rows[0].children[0]).toMatchObject({ label: 'Spins 0 to 10,800 rpm about Z', refs: ['#o1'] });
-    expect(rows[1].children[0]).toMatchObject({ label: 'Bearings at face 3 and face 9', faces: ['#o1.f3', '#o1.f9'],
+    expect(rows[0].children[0]).toMatchObject({ label: 'Spins 0 to 10,800 rpm about Z', refs: ['bracket'] });
+    expect(rows[1].children[0]).toMatchObject({ label: 'Bearings at face 3 and face 9', faces: ['bracket/face 3', 'bracket/face 9'],
       hint: '20,000 N/mm, 5 N·s/mm', summary: 'Bearings at face 3 and face 9' });
     expect(rows[2].children[0]).toMatchObject({ label: '2.5 kg disc at 150 mm along Z' });
-    expect(rows[3].children[0]).toMatchObject({ label: '50 g·mm at face 5', faces: ['#o1.f5'] });
+    expect(rows[3].children[0]).toMatchObject({ label: '50 g·mm at face 5', faces: ['bracket/face 5'] });
     // A rigid bearing at a station rather than a face; no study spin, no rows.
-    const atStation = spinningResult({ study: { spin: { axis: 'Z', rpm: [0, 6000] }, bearings: [{ at_mm: 0, rigid: true }, { faces: ['#o1.f9'], clamped: true }] } });
+    const atStation = spinningResult({ study: { spin: { axis: 'Z', rpm: [0, 6000] }, bearings: [{ at_mm: 0, rigid: true }, { faces: ['bracket/face 9'], clamped: true }] } });
     expect(bearingRows(atStation)[0].children[0]).toMatchObject({ label: 'Bearings at 0 mm along Z and face 9', hint: 'Rigid; Clamped: holds the shaft and its tilt' });
     expect(spinRows(spinningResult({ study: {} }))).toEqual([]);
     const details = rows.find((row: { id: string }) => row.id === 'details');

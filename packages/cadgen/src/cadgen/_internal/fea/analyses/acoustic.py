@@ -221,7 +221,7 @@ def parse_fluid(raw: Any):
 
 def _sources(document: dict) -> tuple[Source, ...]:
     out = []
-    for index, entry in enumerate(kinds.entries(document, "sources", '{"faces": ["#o1.f3"], "velocity_mm_s": 1}')):
+    for index, entry in enumerate(kinds.entries(document, "sources", '{"faces": ["face 3"], "velocity_mm_s": 1}')):
         where = f"sources[{index}]"
         kinds.known(entry, {"faces", "velocity_mm_s", "point_mm", "volume_velocity_m3_s"}, where,
                "a source is a vibrating face (faces, velocity_mm_s) or a point (point_mm, volume_velocity_m3_s)")
@@ -249,7 +249,7 @@ def _sources(document: dict) -> tuple[Source, ...]:
 
 def _absorbers(document: dict) -> tuple[Absorber, ...]:
     out = []
-    for index, entry in enumerate(kinds.entries(document, "absorbers", '{"faces": ["#o1.f5"], "absorption": 0.3}')):
+    for index, entry in enumerate(kinds.entries(document, "absorbers", '{"faces": ["face 5"], "absorption": 0.3}')):
         where = f"absorbers[{index}]"
         kinds.known(entry, {"faces", "absorption", "impedance_rayl"}, where,
                "an absorber takes faces and absorption (0 to 1) or impedance_rayl (Pa·s/m)")
@@ -379,7 +379,7 @@ class AcousticAnalysis(AnalysisBase):
         sources = _sources(document)
         absorbers = _absorbers(document)
         open_faces: tuple[str, ...] = ()
-        for index, entry in enumerate(kinds.entries(document, "open", '{"faces": ["#o1.f2"]}')):
+        for index, entry in enumerate(kinds.entries(document, "open", '{"faces": ["face 2"]}')):
             kinds.known(entry, {"faces"}, f"open[{index}]", "an open face takes faces (held at zero sound pressure, an open pipe end)")
             open_faces += kinds.faces(entry, where=f"open[{index}]")
         probes = _probes(document)
@@ -772,7 +772,7 @@ class AcousticAnalysis(AnalysisBase):
         from cadgen._internal.fea import acoustic_ops
 
         if ctx.assembly is not None:
-            raise ValueError("an acoustic study solves one part: name it with --occurrence (#o1.2), or fuse the parts into one")
+            raise ValueError("an acoustic study solves one part: name it with --occurrence (its part's name, like arm), or fuse the parts into one")
         size = self._air_size(ctx, inputs)
         top = self._top_Hz(ctx, inputs)
         box = self._part_box(ctx)

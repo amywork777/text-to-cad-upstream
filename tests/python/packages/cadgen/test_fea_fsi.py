@@ -112,7 +112,7 @@ def bore_swelling(own, x0: float):
 
 
 class StudyFile(unittest.TestCase):
-    STUDY = {"analysis": "fsi", "material": "aluminum-6061-t6", "fixtures": [{"faces": ["#o1.f1"]}],
+    STUDY = {"analysis": "fsi", "material": "aluminum-6061-t6", "fixtures": [{"faces": ["face 1"]}],
              "flow": {"kind": "internal", "fluid": "water", "inlets": [{"opening": "x_min", "velocity_m_s": 0.5}],
                       "outlets": [{"opening": "x_max", "pressure_Pa": 0}]}}
 
@@ -130,7 +130,7 @@ class StudyFile(unittest.TestCase):
         self.assertEqual((inputs.flow.kind, inputs.flow.fluid.name, inputs.regime), ("internal", "water", "auto"))
         self.assertFalse(inputs.flow.mapped)
         self.assertEqual([(i.opening, i.velocity_m_s) for i in inputs.flow.inlets], [("x_min", 0.5)])
-        self.assertEqual((parsed.face_refs, inputs.anchor_refs), (("#o1.f1",), ("#o1.f1",)))
+        self.assertEqual((parsed.face_refs, inputs.anchor_refs), (("face 1",), ("face 1",)))
         self.assertEqual((inputs.method, inputs.relaxation, inputs.tolerance, inputs.max_iterations), ("fixed_point", 0.5, 1e-4, 40))
         self.assertEqual([check["kind"] for check in parsed.checks], ["stress", "displacement", "pressure_drop"])
         defaults = self.parse().inputs

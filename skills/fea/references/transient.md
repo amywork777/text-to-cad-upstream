@@ -55,8 +55,8 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis); reads den
 
 ```json
 {"analysis": "transient", "material": "steel",
- "fixtures": [{"faces": ["#o1.f1"]}],
- "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -50],
+ "fixtures": [{"faces": ["bracket/face 1"]}],
+ "loads": [{"faces": ["bracket/face 2"], "type": "force", "vector_N": [0, 0, -50],
             "history": {"shape": "half_sine", "duration_s": 0.002}}],
  "end_s": 0.02, "step_s": "auto", "damping_ratio": 0.02, "method": "modal",
  "view": {"checks": [{"kind": "stress"}, {"kind": "displacement", "limit_mm": 1}]}}
@@ -66,7 +66,7 @@ A jolt at the mount:
 
 ```json
 {"analysis": "transient", "material": "aluminum-6061-t6",
- "fixtures": [{"faces": ["#o1.f1"]}],
+ "fixtures": [{"faces": ["bracket/face 1"]}],
  "excitation": {"type": "base", "direction": [0, 0, 1], "amplitude_g": 30,
                 "history": {"shape": "half_sine", "duration_s": 0.006}},
  "end_s": 0.03}

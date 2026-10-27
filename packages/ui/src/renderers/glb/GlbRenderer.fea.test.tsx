@@ -169,9 +169,9 @@ it('the colour bar stands on Preview\'s playbar line, and a stored scale is held
 
 // What the result's checks found stays in the file for the agent; the viewer's status is Study's verdict.
 const PEAK = { check: 'fea', severity: 'error', type: 'peak', summary: 'The peak stress, 120 MPa, is above the 100 MPa this material yields at',
-  description: 'The peak stress is above yield.', items: [{ text: 'the peak stress', ref: '#o1.f3', at: [10, 20, 30] }] };
+  description: 'The peak stress is above yield.', items: [{ text: 'the peak stress', ref: 'bracket/face 3', at: [10, 20, 30] }] };
 const SOFT = { check: 'fea', severity: 'warning', type: 'bend', summary: 'The part bends visibly: 0.4 mm', description: 'It bends.', items: [{ text: 'the tip', ref: null }] };
-const FOUND = { ...RESULT, document: 'part.step', occurrence: 'o1' };
+const FOUND = { ...RESULT, document: 'part.step', occurrence: 'bracket' };
 
 it('a result with findings raises no alert card and puts no findings icon in the navbar', () => {
   const actions = vi.fn();
@@ -200,13 +200,13 @@ it('lays the deformation slider out as Display\'s sliders are: under its label, 
 // What S1 adds: the study the result was solved for, and the face each vertex lies on.
 const STUDY = {
   material: { name: '6061-T6', yield_MPa: 276, youngs_GPa: 68.9, poisson: 0.33 },
-  fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }],
-  loads: [{ type: 'force', faces: ['#o1.f2'], vector_N: [0, 0, -2500] }],
+  fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }],
+  loads: [{ type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -2500] }],
   mesh: { size_mm: 1.9205, order: 2, elements: 52271, refined_from_mm: 2.7686 },
   margin: 2,
 };
-const STUDIED = { ...FOUND, study: STUDY, faces: ['#o1.f1', '#o1.f2'] };
-// Vertices 0-2 lie on face index 0 (#o1.f1), vertex 3 on face index 1 (#o1.f2).
+const STUDIED = { ...FOUND, study: STUDY, faces: ['bracket/face 1', 'bracket/face 2'] };
+// Vertices 0-2 lie on face index 0 (bracket/face 1), vertex 3 on face index 1 (bracket/face 2).
 const FACES = [0, 0, 0, 1];
 async function copiedPrompt(copied: string[]) {
   // The note is an editable field: written as typing would write it.
@@ -244,10 +244,10 @@ it('Study reads in plain words: where it is held, what pushes it and what it is 
 
 it('a face both fixed and loaded is named for both, chosen from either row or picked', async () => {
   const copied: string[] = [];
-  const both = { ...STUDY, loads: [{ type: 'force', faces: ['#o1.f1'], vector_N: [0, 0, -2500] }] };
+  const both = { ...STUDY, loads: [{ type: 'force', faces: ['bracket/face 1'], vector_N: [0, 0, -2500] }] };
   mount({ ...STUDIED, study: both }, undefined, { faces: FACES, host: clipboardHost(copied) });
   act(() => { fireEvent.click(screen.getAllByRole('button', { name: 'Select Face 1' })[0]); });
-  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nFixed and loaded face 1 · /models/part.step#o1.f1');
+  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nFixed and loaded face 1 · /models/part.step#bracket/face 1');
 });
 
 it('a result written before its study was recorded shows Study with the Result alone', () => {
@@ -268,7 +268,7 @@ it('choosing a fixed face tints only its triangles and carries it into Quick Edi
   expect(tinted.slice(12)).toEqual(plain.slice(12));
   expect(screen.getByRole('button', { name: 'Select Face 1' }).getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByRole('region', { name: 'Quick Edit' }).textContent).toContain('Face 1');
-  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nFixed face 1 · /models/part.step#o1.f1');
+  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nFixed face 1 · /models/part.step#bracket/face 1');
   // Escape lets go, and the colours come back.
   act(() => { fireEvent.keyDown(document.querySelector('[data-stand-in-viewport]')!, { key: 'Escape' }); });
   expect(colourBytes(mesh)).toEqual(plain);
@@ -282,7 +282,7 @@ it('choosing a load tints its face and says how much, on which face', async () =
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Select 2500 N down' })); });
   expect(colourBytes(mesh).slice(0, 12)).toEqual(plain.slice(0, 12));
   expect(colourBytes(mesh).slice(12, 15)).not.toEqual(plain.slice(12, 15));
-  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\n2500 N load on face 2 · /models/part.step#o1.f2');
+  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\n2500 N load on face 2 · /models/part.step#bracket/face 2');
 });
 
 it('a press on the result with Select picks the face under it into Quick Edit\'s chip, its card its ref and its role, and the copy key copies it', async () => {
@@ -306,9 +306,9 @@ it('a press on the result with Select picks the face under it into Quick Edit\'s
   const chip = screen.getByRole('button', { name: /^Face 1/ });
   act(() => { fireEvent.click(chip); });
   const card = document.querySelector<HTMLElement>('[data-quick-edit-ref-card]')!;
-  expect(Array.from(card.querySelectorAll('[data-info-row]')).map(row => row.textContent)).toEqual(['ID#o1.f1', 'Studyfixed']);
+  expect(Array.from(card.querySelectorAll('[data-info-row]')).map(row => row.textContent)).toEqual(['IDbracket/face 1', 'Studyfixed']);
   await act(async () => { fireEvent.keyDown(document.querySelector('[data-slot="cad-file-view"]')!, { key: 'c', metaKey: true, ctrlKey: true }); });
-  expect(copied.at(-1)).toBe('/models/part.step#o1.f1');
+  expect(copied.at(-1)).toBe('/models/part.step#bracket/face 1');
   expect(screen.getByRole('button', { name: 'Select Face 1' }).getAttribute('aria-pressed')).toBe('true');
   host.remove();
 });
@@ -334,12 +334,12 @@ function pressOnTheResult(mounting: () => void) {
 }
 
 const ASSEMBLED = {
-  ...STUDIED, faces: ['#o1.1.f1', '#o1.2.f1', '#o1.1.f9'], weakest_part: 'post', weakest_part_peak_MPa: 180, safety_factor: 1.46, max_displacement_mm: 0.2,
+  ...STUDIED, faces: ['part1/face 1', 'part2/face 1', 'part1/face 9'], weakest_part: 'post', weakest_part_peak_MPa: 180, safety_factor: 1.46, max_displacement_mm: 0.2,
   parts: [
-    { ref: '#o1.1', name: 'post', material: '6061-T6', yield_MPa: 276, peak_MPa: 180, safety_factor: 1.46, max_displacement_mm: 0.2 },
-    { ref: '#o1.2', name: 'base', material: 'Steel', yield_MPa: 250, peak_MPa: 40, safety_factor: 2.5, max_displacement_mm: 0.01 },
+    { ref: 'part1', name: 'post', material: '6061-T6', yield_MPa: 276, peak_MPa: 180, safety_factor: 1.46, max_displacement_mm: 0.2 },
+    { ref: 'part2', name: 'base', material: 'Steel', yield_MPa: 250, peak_MPa: 40, safety_factor: 2.5, max_displacement_mm: 0.01 },
   ],
-  connections: [{ between: ['#o1.1', '#o1.2'], names: ['post', 'base'], type: 'bonded', area_mm2: 100, gap_mm: 0, faces: ['#o1.1.f1', '#o1.2.f1'] }],
+  connections: [{ between: ['part1', 'part2'], names: ['post', 'base'], type: 'bonded', area_mm2: 100, gap_mm: 0, faces: ['part1/face 1', 'part2/face 1'] }],
 };
 // Two parts would have no Parts panel (it shows from six up); the view asks for it.
 function mountAssembly(copied: string[], extras: Record<string, unknown> = { view: { show: { parts: true } } }) {
@@ -378,7 +378,7 @@ it('an assembly\'s Parts and Study are two sections of the file sidebar, each wi
 });
 
 it('an assembly shows Parts from six parts up, and its view can show or hide it either way', () => {
-  const more = (count: number) => Array.from({ length: count }, (_, index) => ({ ...ASSEMBLED.parts[index % 2], ref: `#o1.${index + 1}`, name: `part ${index + 1}` }));
+  const more = (count: number) => Array.from({ length: count }, (_, index) => ({ ...ASSEMBLED.parts[index % 2], ref: `bracket.${index + 1}`, name: `part ${index + 1}` }));
   for (const [count, view, shown] of [[4, undefined, false], [6, undefined, true], [4, { show: { parts: true } }, true], [6, { show: { parts: false } }, false]] as const) {
     mountAssembly([], { parts: more(count), ...(view ? { view } : {}) });
     expect(Boolean(partsPanel())).toBe(shown);
@@ -399,7 +399,7 @@ it('with Parts hidden, a face picked on an assembly names its part, and its chip
   act(() => { fireEvent.click(screen.getByRole('button', { name: /^post · face 1/ })); });
   const card = document.querySelector<HTMLElement>('[data-quick-edit-ref-card]')!;
   const rows = Array.from(card.querySelectorAll('[data-info-row]')).map(row => row.textContent!.replace(/\u2011/g, '-').replace(/\u00a0/g, ' '));
-  expect(rows).toEqual(['ID#o1.1.f1', 'Studyfree', 'Part6061-T6 · holds 1.4×']);
+  expect(rows).toEqual(['IDpart1/face 1', 'Studyfree', 'Part6061-T6 · holds 1.4×']);
   release();
 });
 
@@ -411,7 +411,7 @@ it('choosing a part tints its triangles and carries it into Quick Edit', async (
   const tinted = colourBytes(mesh);
   for (const vertex of [0, 1, 2]) expect(tinted.slice(vertex * 4, vertex * 4 + 3)).not.toEqual(plain.slice(vertex * 4, vertex * 4 + 3));
   expect(tinted.slice(12)).toEqual(plain.slice(12));
-  expect(await copiedPrompt(copied)).toBe("move it\n\nFile: /models/part.glb\nReferences:\nPart 'post' · /models/part.step#o1.1");
+  expect(await copiedPrompt(copied)).toBe("move it\n\nFile: /models/part.glb\nReferences:\nPart 'post' · /models/part.step#part1");
 });
 
 it('choosing a joint tints both sides\' interface faces and carries both parts into Quick Edit', async () => {
@@ -426,7 +426,7 @@ it('choosing a joint tints both sides\' interface faces and carries both parts i
   expect(joint.slice(8, 11)).not.toEqual(plain.slice(8, 11));
   for (const vertex of [0, 1, 3]) expect(joint.slice(vertex * 4, vertex * 4 + 3)).not.toEqual(plain.slice(vertex * 4, vertex * 4 + 3));
   expect(Math.abs(channel(2))).toBeLessThan(Math.abs(channel(0)));
-  expect(await copiedPrompt(copied)).toBe("move it\n\nFile: /models/part.glb\nReferences:\nBonded joint between 'post' and 'base' · /models/part.step#o1.1.f1,o1.2.f1");
+  expect(await copiedPrompt(copied)).toBe("move it\n\nFile: /models/part.glb\nReferences:\nBonded joint between 'post' and 'base' · /models/part.step#part1/face 1,part2/face 1");
 });
 
 it('a joint chosen under either of its parts is the same choice: both copies pressed, the same refs', async () => {
@@ -437,7 +437,7 @@ it('a joint chosen under either of its parts is the same choice: both copies pre
   expect(copies).toHaveLength(2);
   act(() => { fireEvent.click(copies[1]); });
   for (const copy of screen.getAllByRole('button', { name: 'Select post ↔ base' })) expect(copy.getAttribute('aria-pressed')).toBe('true');
-  expect(await copiedPrompt(copied)).toBe("move it\n\nFile: /models/part.glb\nReferences:\nBonded joint between 'post' and 'base' · /models/part.step#o1.1.f1,o1.2.f1");
+  expect(await copiedPrompt(copied)).toBe("move it\n\nFile: /models/part.glb\nReferences:\nBonded joint between 'post' and 'base' · /models/part.step#part1/face 1,part2/face 1");
 });
 
 // The study's view: the agent chooses What you see's controls, their order, ranges and words, and named presets.
@@ -512,7 +512,7 @@ it('each slider\'s thumb stands at its control\'s value, and the slider takes th
 });
 
 it('at twice the load, the bar and the deformation are twice the solved ones, what each part holds is half, and a part flips to yields', () => {
-  const parts = [{ ref: '#o1.1', name: 'post', material: 'Steel', safety_factor: 5.83 }, { ref: '#o1.2', name: 'base', material: 'Steel', safety_factor: 1.5 }];
+  const parts = [{ ref: 'part1', name: 'post', material: 'Steel', safety_factor: 5.83 }, { ref: 'part2', name: 'base', material: 'Steel', safety_factor: 1.5 }];
   const { container, mesh } = mount({ ...VIEWED, view: { controls: [VIEWED.view.controls[0], VIEWED.view.controls[5]], show: { parts: true } }, parts });
   const colours = colourBytes(mesh);
   const tip = mesh.geometry.getAttribute('position').getZ(2);
@@ -553,7 +553,7 @@ it('a preset sets the values it names, and moving any control is Custom', () => 
 });
 
 it('draws the loads and fixtures on the model, the chosen load\'s arrows in the chosen colour, and Study\'s checkbox hides them', () => {
-  const both = { ...STUDY, loads: [{ type: 'force', faces: ['#o1.f1'], vector_N: [0, 0, -2500] }] };
+  const both = { ...STUDY, loads: [{ type: 'force', faces: ['bracket/face 1'], vector_N: [0, 0, -2500] }] };
   const { mesh, unmount } = mount({ ...STUDIED, study: both }, undefined, { faces: [0, 0, 0, 0] });
   const group = mesh.children.find(child => child.name === 'fea-markers')!;
   const [shafts, heads, cones] = group.children as THREE.InstancedMesh[];
@@ -583,7 +583,7 @@ it('draws the loads and fixtures on the model, the chosen load\'s arrows in the 
 
 it('a roller fixture reads as Slides on, after Held at, with its own glyph and marker, and is chosen as it slides', async () => {
   const copied: string[] = [];
-  const rolling = { ...STUDY, fixtures: [{ type: 'fixed', faces: ['#o1.f2'] }, { type: 'roller', faces: ['#o1.f1'] }], loads: [] };
+  const rolling = { ...STUDY, fixtures: [{ type: 'fixed', faces: ['bracket/face 2'] }, { type: 'roller', faces: ['bracket/face 1'] }], loads: [] };
   const { mesh } = mount({ ...STUDIED, study: rolling }, undefined, { faces: FACES, host: clipboardHost(copied) });
   const study = studyPanel()!;
   expect(rowTexts(study).map(text => text!.replace(/\u2011/g, '-')).slice(0, 4)).toEqual(['Held at', 'Face 2', 'Slides on', 'Face 1']);
@@ -605,11 +605,11 @@ it('a roller fixture reads as Slides on, after Held at, with its own glyph and m
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Select Face 1' })); });
   rollerCones.getColorAt(0, colour);
   expect(colour.getHexString()).toBe('ff40f2');
-  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nSlides on face 1 · /models/part.step#o1.f1');
+  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nSlides on face 1 · /models/part.step#bracket/face 1');
 });
 
 it('a view that turns the markers off opens with the checkbox off', () => {
-  const both = { ...STUDY, loads: [{ type: 'force', faces: ['#o1.f1'], vector_N: [0, 0, -2500] }] };
+  const both = { ...STUDY, loads: [{ type: 'force', faces: ['bracket/face 1'], vector_N: [0, 0, -2500] }] };
   const { mesh } = mount({ ...STUDIED, study: both, view: { show: { loads: false, fixtures: false } } }, undefined, { faces: [0, 0, 0, 0] });
   const group = mesh.children.find(child => child.name === 'fea-markers')!;
   expect(group.children.map(child => child.visible)).toEqual([false, false, false, false, false, false]);
@@ -695,8 +695,8 @@ it('a slider\'s thumb stands where its value is on its range, not at the left en
 });
 
 // The checks the study picked, as cadgen judged them: the stress check and a sag on the loaded face.
-const STRESS_CHECK = { kind: 'stress', label: 'Strength', value: 47.3, limit: 276, unit: 'MPa', ratio: 0.171527, close_at: 0.5, margin: 2, status: 'passes', where: { ref: '#o1.f1', at: [0, 0, 0] } };
-const SAG_CHECK = { kind: 'displacement', label: 'Tip sag', value: 0.62, limit: 0.5, unit: 'mm', ratio: 1.24, close_at: 0.9, status: 'fails', where: { ref: '#o1.f2', at: [1, 0, 0] }, faces: ['#o1.f2'] };
+const STRESS_CHECK = { kind: 'stress', label: 'Strength', value: 47.3, limit: 276, unit: 'MPa', ratio: 0.171527, close_at: 0.5, margin: 2, status: 'passes', where: { ref: 'bracket/face 1', at: [0, 0, 0] } };
+const SAG_CHECK = { kind: 'displacement', label: 'Tip sag', value: 0.62, limit: 0.5, unit: 'mm', ratio: 1.24, close_at: 0.9, status: 'fails', where: { ref: 'bracket/face 2', at: [1, 0, 0] }, faces: ['bracket/face 2'] };
 const LOAD_WHEN_FAILING = { drives: 'load_scale', type: 'number', label: 'Load', min: 0.1, max: 2, default: 1, unit: '×', when: 'failing' };
 
 it('heads the verdict with how many checks fail and the load the weakest takes, then each check the same way, all following the load', () => {
@@ -723,11 +723,11 @@ it('every part of Study is chattable: a check in the verdict, the material and t
   };
   // A check by the faces it is over, which it tints; another by the face it peaks on.
   expect(await prompt(['Select Tip sag'])).toEqual({ tinted: true, pressed: 'true',
-    text: 'Tip sag fails: moves 0.62 mm, limit 0.5 mm (OK only to 0.8× this load) · /models/part.step#o1.f2' });
-  expect((await prompt(['Select Strength'])).text).toBe('Strength passes: peak 47 MPa, limit 276 MPa (OK up to 5.8× this load) · /models/part.step#o1.f1');
+    text: 'Tip sag fails: moves 0.62 mm, limit 0.5 mm (OK only to 0.8× this load) · /models/part.step#bracket/face 2' });
+  expect((await prompt(['Select Strength'])).text).toBe('Strength passes: peak 47 MPa, limit 276 MPa (OK up to 5.8× this load) · /models/part.step#bracket/face 1');
   // The material and the mesh are about the whole part, so they tint nothing.
-  expect(await prompt(['Select 6061-T6'])).toEqual({ tinted: false, pressed: 'true', text: 'Made of 6061-T6 (yield 276 MPa) · /models/part.step#o1' });
-  expect((await prompt(['Expand Details', 'Select Mesh'])).text).toBe('Mesh of 1.9 mm elements, refined from 2.8 mm · /models/part.step#o1');
+  expect(await prompt(['Select 6061-T6'])).toEqual({ tinted: false, pressed: 'true', text: 'Made of 6061-T6 (yield 276 MPa) · /models/part.step#bracket' });
+  expect((await prompt(['Expand Details', 'Select Mesh'])).text).toBe('Mesh of 1.9 mm elements, refined from 2.8 mm · /models/part.step#bracket');
 });
 
 it('a result with no checks in the file has today\'s verdict: its one check, from the safety factor', () => {
@@ -790,7 +790,7 @@ const MODAL = {
   checks: [
     { kind: 'frequency', label: '', value: 85.2, limit: 60, unit: 'Hz', ratio: 0.704, close_at: 0.9, status: 'passes', mode: 1, at: { frame: 0, value: 85.2, unit: 'Hz' } },
     { kind: 'frequency', label: 'Motor speed', value: 118.4, limit: 110, unit: 'Hz', ratio: 1.08, close_at: 0.9, status: 'fails', mode: 2, avoid_Hz: [110, 130],
-      at: { frame: 1, value: 118.4, unit: 'Hz' }, where: { ref: '#o1.f2' } }],
+      at: { frame: 1, value: 118.4, unit: 'Hz' }, where: { ref: 'bracket/face 2' } }],
 };
 const MODE_2 = { ...NO_STRESS, _mode_shape_f1: [[0, 0, 0, 0, 0, -0.001, 0, 0, -0.004, 0, 0, 0], 3] as [number[], number] };
 
@@ -830,12 +830,12 @@ it('a modal result picks its mode, deforms by that mode\'s shape, jumps to the m
 
 // A steady thermal result: a signed temperature and a heat flow, no displacement to deform by.
 const THERMAL = {
-  ...FOUND, deformation_scale: 1, safety_factor: null, analysis: { type: 'thermal', tier: 1, word: 'Heat', reference_C: 20 }, faces: ['#o1.f1', '#o1.f2'],
+  ...FOUND, deformation_scale: 1, safety_factor: null, analysis: { type: 'thermal', tier: 1, word: 'Heat', reference_C: 20 }, faces: ['bracket/face 1', 'bracket/face 2'],
   fields: [{ attribute: '_TEMPERATURE', name: 'temperature', units: '°C', min: 20, max: 84, signed: true },
     { attribute: '_HEAT_FLUX', name: 'heat flux', units: 'W/m²', min: 0, max: 5000 }],
-  study: { material: STUDY.material, fixtures: [], loads: [], mesh: STUDY.mesh, temperatures: [{ faces: ['#o1.f1'], C: 25 }],
-    heat: [{ faces: ['#o1.f1'], W: 15 }], convection: [{ faces: ['#o1.f1'], h_W_m2K: 10, ambient_C: 25 }] },
-  checks: [{ kind: 'temperature', label: '', value: 84.2, limit: 100, unit: '°C', ratio: 0.79, close_at: 0.9, status: 'passes', faces: ['#o1.f2'], reference: 20 }],
+  study: { material: STUDY.material, fixtures: [], loads: [], mesh: STUDY.mesh, temperatures: [{ faces: ['bracket/face 1'], C: 25 }],
+    heat: [{ faces: ['bracket/face 1'], W: 15 }], convection: [{ faces: ['bracket/face 1'], h_W_m2K: 10, ambient_C: 25 }] },
+  checks: [{ kind: 'temperature', label: '', value: 84.2, limit: 100, unit: '°C', ratio: 0.79, close_at: 0.9, status: 'passes', faces: ['bracket/face 2'], reference: 20 }],
 };
 const HEAT_FIELDS = { _von_mises: null, _displacement: null, _temperature: [[20, 40, 60, 84], 1] as [number[], number], _heat_flux: [[0, 1000, 2000, 5000], 1] as [number[], number] };
 
@@ -863,7 +863,7 @@ it('a thermal result reads its setup as Kept at, Heated and Cooled by air, shows
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Select 15 W' })); });
   heads.getColorAt(0, colour);
   expect(colour.getHexString()).toBe('ff40f2');
-  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\n15 W of heat into face 1 · /models/part.step#o1.f1');
+  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\n15 W of heat into face 1 · /models/part.step#bracket/face 1');
   // Study's gate for the markers is titled for heat and says what it draws.
   expect(screen.getByText('Dots where its temperature is fixed, wavy arrows where heat goes in, strokes where air cools it.')).toBeTruthy();
   toggleMarkers('Heat inputs and temperatures');
@@ -879,7 +879,7 @@ const TRANSIENT = {
     { value: 0, label: '0 ms', attributes: { von_mises: '_VON_MISES', displacement: '_DISPLACEMENT' } },
     { value: 0.01, label: '10 ms', attributes: { von_mises: '_VON_MISES_F1', displacement: '_DISPLACEMENT_F1' } },
     { value: 0.02, label: '20 ms', attributes: { von_mises: '_VON_MISES_F2', displacement: '_DISPLACEMENT_F2' } }] },
-  checks: [{ kind: 'stress', label: 'Start', value: 90, limit: 276, unit: 'MPa', ratio: 0.326, close_at: 0.5, margin: 2, status: 'passes', where: { ref: '#o1.f1' },
+  checks: [{ kind: 'stress', label: 'Start', value: 90, limit: 276, unit: 'MPa', ratio: 0.326, close_at: 0.5, margin: 2, status: 'passes', where: { ref: 'bracket/face 1' },
     at: { frame: 0, value: 0, unit: 's' } }],
 };
 const vectorsUp = (z: number[]) => [[0, 0, z[0], 0, 0, z[1], 0, 0, z[2], 0, 0, z[3]], 3] as [number[], number];
@@ -932,7 +932,7 @@ it('a random vibration\'s RMS fields show at the sigma chosen, the bar saying th
 it('a result that took steps to fit says so: "adapted" in the verdict and a Details row per step, chosen with its faces', async () => {
   const copied: string[] = [];
   const words = 'Coarsened the mesh away from the hole to fit: the peak is still meshed at 0.8 mm';
-  const fit = [{ rung: 'local_refine', words, accuracy: 'peak stress moved 2.1 % between passes', accuracy_pct: 2.1, faces: ['#o1.f2'], detail: '' },
+  const fit = [{ rung: 'local_refine', words, accuracy: 'peak stress moved 2.1 % between passes', accuracy_pct: 2.1, faces: ['bracket/face 2'], detail: '' },
     { rung: 'iterative', words: 'Used an iterative solver to fit in memory', accuracy: '', accuracy_pct: null, faces: [], detail: '' }];
   const { mesh } = mount({ ...STUDIED, fit }, undefined, { faces: FACES, host: clipboardHost(copied) });
   expect(verdictOf().caption).toBe('OK up to 5.8× this load · adapted');
@@ -942,13 +942,13 @@ it('a result that took steps to fit says so: "adapted" in the verdict and a Deta
   act(() => { fireEvent.click(screen.getByRole('button', { name: `Select ${words}` })); });
   expect(colourBytes(mesh).slice(12, 15)).not.toEqual(plain.slice(12, 15));
   expect(colourBytes(mesh).slice(0, 12)).toEqual(plain.slice(0, 12));
-  expect(await copiedPrompt(copied)).toBe(`move it\n\nFile: /models/part.glb\nReferences:\nAdapted to fit: ${words} (peak stress moved 2.1 % between passes) · /models/part.step#o1.f2`);
+  expect(await copiedPrompt(copied)).toBe(`move it\n\nFile: /models/part.glb\nReferences:\nAdapted to fit: ${words} (peak stress moved 2.1 % between passes) · /models/part.step#bracket/face 2`);
   // A step with no faces carries the whole part.
   cleanup();
   mount({ ...STUDIED, fit }, undefined, { faces: FACES, host: clipboardHost(copied) });
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Expand Details' })); });
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Select Used an iterative solver to fit in memory' })); });
-  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nAdapted to fit: Used an iterative solver to fit in memory · /models/part.step#o1');
+  expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nAdapted to fit: Used an iterative solver to fit in memory · /models/part.step#bracket');
 });
 
 it('a static result keeps its Load ramp, drawn as it always was', () => {

@@ -69,7 +69,7 @@ class StudyFile(unittest.TestCase):
                          ["temperature", "fluid_temperature", "wall_heat_flux", "heat_transfer_coefficient", "pressure", "speed"])
 
     def test_it_reads_the_flow_the_inlet_temperatures_and_the_parts_heat(self):
-        study = self.parse(heat=[{"faces": ["#o1.f3"], "W": 2}], convection=[{"faces": ["#o1.f4"], "h_W_m2K": 10, "ambient_C": 25}])
+        study = self.parse(heat=[{"faces": ["face 3"], "W": 2}], convection=[{"faces": ["face 4"], "h_W_m2K": 10, "ambient_C": 25}])
         inputs = study.inputs
         self.assertEqual(study.analysis, "conjugate_heat")
         self.assertEqual(inputs.inlet_C, (20.0,))

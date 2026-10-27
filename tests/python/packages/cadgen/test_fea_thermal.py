@@ -21,7 +21,7 @@ from tests.python.support.fea_fixtures import (
 from cadgen._internal.fea.materials import lookup_material  # noqa: E402
 
 ALUMINIUM = lookup_material("aluminum-6061-t6")
-BASE = {"analysis": "thermal", "material": "aluminum-6061-t6", "temperatures": [{"faces": ["#o1.f1"], "C": 25}]}
+BASE = {"analysis": "thermal", "material": "aluminum-6061-t6", "temperatures": [{"faces": ["face 1"], "C": 25}]}
 
 
 class StudyFile(unittest.TestCase):
@@ -32,36 +32,36 @@ class StudyFile(unittest.TestCase):
 
     def test_it_reads_held_temperatures_heat_and_air(self):
         study = self.parse(
-            heat=[{"faces": ["#o1.f7"], "W": 15}, {"faces": ["#o1.f8"], "W_per_m2": 2000}],
-            convection=[{"faces": ["#o1.f3", "#o1.f4"], "h_W_m2K": 10, "ambient_C": 20}],
-            view={"checks": [{"kind": "temperature", "max_C": 85, "faces": ["#o1.f7"], "label": "Chip side"}]},
+            heat=[{"faces": ["face 7"], "W": 15}, {"faces": ["face 8"], "W_per_m2": 2000}],
+            convection=[{"faces": ["face 3", "face 4"], "h_W_m2K": 10, "ambient_C": 20}],
+            view={"checks": [{"kind": "temperature", "max_C": 85, "faces": ["face 7"], "label": "Chip side"}]},
         )
         inputs = study.inputs
         self.assertEqual(study.analysis, "thermal")
         self.assertEqual([(h.watts, h.per_m2) for h in inputs.heat], [(15.0, None), (None, 2000.0)])
         self.assertEqual(inputs.convection[0].h, 10.0)
         self.assertEqual(inputs.reference_C, 20.0)  # the coolest temperature the study sets: the air's
-        self.assertEqual(inputs.anchor_refs, ("#o1.f1", "#o1.f3", "#o1.f4"))
-        self.assertEqual(set(study.face_refs), {"#o1.f1", "#o1.f7", "#o1.f8", "#o1.f3", "#o1.f4"})
+        self.assertEqual(inputs.anchor_refs, ("face 1", "face 3", "face 4"))
+        self.assertEqual(set(study.face_refs), {"face 1", "face 7", "face 8", "face 3", "face 4"})
         self.assertEqual(study.checks[0]["max_C"], 85.0)
         self.assertEqual(study.fixtures, ())
 
     def test_a_part_only_heated_has_no_steady_temperature(self):
-        message = value_error(self, self.parse, temperatures=[], heat=[{"faces": ["#o1.f7"], "W": 15}])
+        message = value_error(self, self.parse, temperatures=[], heat=[{"faces": ["face 7"], "W": 15}])
         self.assertIn("nowhere for the heat to go, has no steady temperature", message)
         self.assertIn("'convection'", message)
 
     def test_the_errors_name_the_field_in_plain_words(self):
         cases = [
-            ({"heat": [{"faces": ["#o1.f7"], "W": 15, "W_per_m2": 3}]}, "heat[0]: give W"),
-            ({"heat": [{"faces": ["#o1.f7"], "W": 0}]}, "heat[0].W: the heat is zero"),
-            ({"convection": [{"faces": ["#o1.f3"], "ambient_C": 20}]}, "convection[0].h_W_m2K"),
-            ({"convection": [{"faces": ["#o1.f3"], "h_W_m2K": -1, "ambient_C": 20}]}, "must be > 0"),
-            ({"temperatures": [{"faces": ["#o1.f1"]}]}, "temperatures[0].C"),
-            ({"temperatures": [{"faces": ["#o1.f1"], "C": 25, "history": [[0, 1]]}]}, "for thermal_transient studies"),
+            ({"heat": [{"faces": ["face 7"], "W": 15, "W_per_m2": 3}]}, "heat[0]: give W"),
+            ({"heat": [{"faces": ["face 7"], "W": 0}]}, "heat[0].W: the heat is zero"),
+            ({"convection": [{"faces": ["face 3"], "ambient_C": 20}]}, "convection[0].h_W_m2K"),
+            ({"convection": [{"faces": ["face 3"], "h_W_m2K": -1, "ambient_C": 20}]}, "must be > 0"),
+            ({"temperatures": [{"faces": ["face 1"]}]}, "temperatures[0].C"),
+            ({"temperatures": [{"faces": ["face 1"], "C": 25, "history": [[0, 1]]}]}, "for thermal_transient studies"),
             ({"view": {"checks": [{"kind": "temperature", "max_C": 25}]}}, "is not above 25 °C"),
             ({"view": {"checks": [{"kind": "stress"}]}}, "is not a check this cadgen makes"),
-            ({"fixtures": [{"faces": ["#o1.f2"]}]}, "thermal studies take"),
+            ({"fixtures": [{"faces": ["face 2"]}]}, "thermal studies take"),
             ({"material": {"name": "mystery", "E_MPa": 1000, "nu": 0.3, "yield_MPa": 10}}, "conductivity_W_mK"),
         ]
         for changes, fragment in cases:

@@ -20,9 +20,9 @@ function compositeResult({ check = {}, layup = undefined as unknown } = {}) {
       { attribute: '_FAILURE_INDEX', name: 'failure index', units: '', min: 0, max: 0.82, attribute_scale: 1, field: 'failure_index' }],
     analysis: { type: 'composite', tier: 3, word: 'Composite', estimate: false, limits: ['Linear: ... no delamination ...'], noun: 'this load', reference_C: null, warnings: [] },
     checks: [{ kind: 'ply_failure', label: 'Ply failure', value: 0.82, limit: 1, unit: '', ratio: 0.82, close_at: 0.9, status: 'passes',
-      where: { ref: '#o1.f5', at: [0, 0, 0] }, ply: 3, angle_deg: 45, criterion: 'tsai_wu', ...check }],
-    faces: ['#o1.f5', '#o1.f6'], occurrence: '#o1',
-    study: { fixtures: [{ type: 'fixed', faces: ['#o1.f6'] }], loads: [{ type: 'pressure', faces: ['#o1.f5'], pressure_MPa: 0.01 }],
+      where: { ref: 'bracket/face 5', at: [0, 0, 0] }, ply: 3, angle_deg: 45, criterion: 'tsai_wu', ...check }],
+    faces: ['bracket/face 5', 'bracket/face 6'], occurrence: 'bracket',
+    study: { fixtures: [{ type: 'fixed', faces: ['bracket/face 6'] }], loads: [{ type: 'pressure', faces: ['bracket/face 5'], pressure_MPa: 0.01 }],
       mesh: { size_mm: 8, refined_from_mm: null },
       layup: layup === undefined ? { plies: [ply(0), ply(90), ply(90), ply(0)], notation: '[0/90]s', thickness_mm: 2 } : layup },
   }, { index: false, color: false });
@@ -55,7 +55,7 @@ describe('composite', () => {
     const rows = studyRows(result);
     expect(rows.map((row: any) => row.id)).toEqual(['fixed', 'loads', 'layup', 'details']);
     expect(rows[2]).toMatchObject({ id: 'layup', label: 'Layup', glyph: 'material',
-      children: [{ id: 'layup:0', label: '4 plies, [0/90]s, 2 mm', hint: 'cfrp', refs: ['#o1'], summary: 'Layup 4 plies, [0/90]s, 2 mm of cfrp' }] });
+      children: [{ id: 'layup:0', label: '4 plies, [0/90]s, 2 mm', hint: 'cfrp', refs: ['bracket'], summary: 'Layup 4 plies, [0/90]s, 2 mm of cfrp' }] });
     expect(layupRows(compositeResult({ layup: null }))).toEqual([]);
     // An echo with no notation is written from its plies.
     const own = readLayup(compositeResult({ layup: { plies: [ply(0, 0.25), ply(45, 0.25), ply(-45, 0.25), ply(90, 0.25)] } }))!;

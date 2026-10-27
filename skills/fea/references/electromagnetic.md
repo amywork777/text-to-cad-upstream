@@ -92,7 +92,7 @@ A 1 kV gap between two plates in air, with a capacitance and an arcing check:
 ```json
 {"analysis": "electromagnetic", "mode": "electrostatic", "material": "aluminum-6061-t6", "air": {"around_mm": 10},
  "mesh": {"size_mm": 1},
- "voltages": [{"faces": ["#o1.1.f3"], "V": 1000, "name": "hot"}, {"faces": ["#o1.2.f2"], "V": 0, "name": "ground"}],
+ "voltages": [{"faces": ["upper/face 3"], "V": 1000, "name": "hot"}, {"faces": ["lower/face 2"], "V": 0, "name": "ground"}],
  "view": {"checks": [{"kind": "electric_field", "limit_kV_mm": 3}]}}
 ```
 
@@ -100,8 +100,8 @@ A busbar carrying 50 A, cooled by still air:
 
 ```json
 {"analysis": "electromagnetic", "mode": "current", "material": "aluminum-6061-t6",
- "currents": [{"faces": ["#o1.f1"], "A": 50, "name": "in"}], "voltages": [{"faces": ["#o1.f2"], "V": 0, "name": "out"}],
- "electro_thermal": {"convection": [{"faces": ["#o1.f3", "#o1.f4", "#o1.f5", "#o1.f6"], "h_W_m2K": 10, "ambient_C": 25}]},
+ "currents": [{"faces": ["bracket/face 1"], "A": 50, "name": "in"}], "voltages": [{"faces": ["bracket/face 2"], "V": 0, "name": "out"}],
+ "electro_thermal": {"convection": [{"faces": ["bracket/face 3", "bracket/face 4", "bracket/face 5", "bracket/face 6"], "h_W_m2K": 10, "ambient_C": 25}]},
  "view": {"checks": [{"kind": "temperature", "max_C": 90}]}}
 ```
 
@@ -167,8 +167,8 @@ A busbar fed 100 A at 50 Hz, its AC resistance and how hot it runs:
 ```json
 {"analysis": "electromagnetic", "mode": "ac_magnetic", "material": "aluminum-6061-t6", "frequency_Hz": 50,
  "mesh": {"size_mm": 2}, "air": {"around_mm": 30},
- "currents": [{"faces": ["#o1.f1"], "A": 100, "name": "in"}], "voltages": [{"faces": ["#o1.f2"], "V": 0, "name": "out"}],
- "electro_thermal": {"convection": [{"faces": ["#o1.f3", "#o1.f4", "#o1.f5", "#o1.f6"], "h_W_m2K": 10, "ambient_C": 25}]},
+ "currents": [{"faces": ["bracket/face 1"], "A": 100, "name": "in"}], "voltages": [{"faces": ["bracket/face 2"], "V": 0, "name": "out"}],
+ "electro_thermal": {"convection": [{"faces": ["bracket/face 3", "bracket/face 4", "bracket/face 5", "bracket/face 6"], "h_W_m2K": 10, "ambient_C": 25}]},
  "view": {"checks": [{"kind": "temperature", "max_C": 90}]}}
 ```
 
@@ -178,7 +178,7 @@ workpiece cooled by air):
 ```json
 {"analysis": "electromagnetic", "mode": "ac_magnetic", "material": "aluminum-6061-t6", "frequency_Hz": 50000,
  "mesh": {"size_mm": 1}, "coils": [{"part": "coil", "turns": 10, "A": 2, "axis": {"direction": [0, 0, 1]}}],
- "electro_thermal": {"convection": [{"faces": ["#o1.2.f1", "#o1.2.f2", "#o1.2.f3"], "h_W_m2K": 10, "ambient_C": 25}]},
+ "electro_thermal": {"convection": [{"faces": ["workpiece/face 1", "workpiece/face 2", "workpiece/face 3"], "h_W_m2K": 10, "ambient_C": 25}]},
  "view": {"checks": [{"kind": "temperature", "max_C": 200}]}}
 ```
 

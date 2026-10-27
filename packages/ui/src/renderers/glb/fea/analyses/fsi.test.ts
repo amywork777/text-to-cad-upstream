@@ -14,8 +14,8 @@ function fsiResult(coupling: Record<string, unknown> = {}, analysis: Record<stri
     position: [0, 0, 0, 0.012, 0, 0, 0, 0.003, 0], _von_mises: [0.27, 0.01, 0.1], _displacement: vec([0, 0, 0, 0, 0, 0, 0.0005, 0, 0]),
     _pressure: [1400, 0, 700], _wall_shear: [20, 20, 20], _face: [0, 0, 0],
   }, {
-    generator: 'cadgen fea', name: 'flap flow and bending', deformation_scale: 5, safety_factor: 3.7, faces: ['#o1.f4', '#o1.f9'],
-    occurrence: '#o1',
+    generator: 'cadgen fea', name: 'flap flow and bending', deformation_scale: 5, safety_factor: 3.7, faces: ['bracket/face 4', 'bracket/face 9'],
+    occurrence: 'bracket',
     analysis: { type: 'fsi', tier: 3, word: 'Flow and bending', estimate: false, limits: [LIMIT], noun: 'this flow', reference_C: null,
       warnings: [], regime: 'laminar', reynolds: { value: 0.25, limit: 2000, kind: 'internal', laminar: true },
       coupling: { iterations: 4, converged: true, residual: 2.2e-5, tolerance: 0.001, method: 'aitken', ...coupling }, ...analysis },
@@ -27,7 +27,7 @@ function fsiResult(coupling: Record<string, unknown> = {}, analysis: Record<stri
     ],
     study: {
       material: { name: 'soft', yield_MPa: 1 },
-      fixtures: [{ type: 'fixed', faces: ['#o1.f9'] }], loads: [],
+      fixtures: [{ type: 'fixed', faces: ['bracket/face 9'] }], loads: [],
       flow: { kind: 'internal', regime: 'auto', fluid: { name: 'water', density_kg_m3: 998.2, viscosity_Pa_s: 0.001002 },
         inlets: [{ opening: 'x_min', velocity_m_s: 0.5, profile: 'developed' }], outlets: [{ opening: 'x_max', pressure_Pa: 0 }] },
       coupling: { method: 'aitken', relaxation: 1, tolerance: 0.001, max_iterations: 25 },
@@ -35,7 +35,7 @@ function fsiResult(coupling: Record<string, unknown> = {}, analysis: Record<stri
     },
     checks: [
       { kind: 'stress', label: 'Strength', value: 0.27, limit: 1, unit: 'MPa', ratio: 0.27, close_at: 0.8, status: 'passes',
-        where: { ref: '#o1.f4', at: [4, 0, 0.5] } },
+        where: { ref: 'bracket/face 4', at: [4, 0, 0.5] } },
       { kind: 'pressure_drop', label: 'Flow resistance', value: 1412, limit: 5000, unit: 'Pa', ratio: 0.28, close_at: 0.9,
         status: 'passes', where: { ref: null, at: [0, 0, 0] } },
     ],
@@ -66,7 +66,7 @@ describe('fsi', () => {
     expect(FSI_SETUP).toEqual([bentRows, flowRows, heldRows, madeOfRows]);
     const rows = studyRows(fsiResult());
     expect(rows[0]).toMatchObject({ id: 'bent', label: 'Bent by the flow' });
-    expect(rows[0].children[0]).toMatchObject({ label: 'Water at 0.5 m/s bends the flap', refs: ['#o1'] });
+    expect(rows[0].children[0]).toMatchObject({ label: 'Water at 0.5 m/s bends the flap', refs: ['bracket'] });
     expect(rows[0].children[0].summary).toContain('two-way');
     expect(rows.map((row: { label: string }) => row.label).slice(0, 4)).toEqual(['Bent by the flow', 'Flow in/out', 'Held at', 'Made of']);
   });

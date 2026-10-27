@@ -119,7 +119,7 @@ def _drop(document: dict) -> dict:
     raw = document.get("drop")
     where = "drop"
     if not isinstance(raw, dict):
-        raise ValueError('study.drop: expected an object like {"height_mm": 1000, "onto": ["#o1.f5"], "stop_mm": 2}')
+        raise ValueError('study.drop: expected an object like {"height_mm": 1000, "onto": ["face 5"], "stop_mm": 2}')
     unknown = set(raw) - DROP_KEYS
     if unknown:
         raise ValueError(f"{where}: unknown keys {sorted(unknown)}; a drop takes {sorted(DROP_KEYS)}")
@@ -130,7 +130,7 @@ def _drop(document: dict) -> dict:
         raise ValueError(f"{where}.height_mm: how far it falls, in mm (1000 for 1 m)")
     height = kinds.number(raw["height_mm"], where=f"{where}.height_mm", positive=True)
     if "onto" not in raw:
-        raise ValueError(f'{where}.onto: the faces that hit the floor, like ["#o1.f5"]; they are held while the rest is loaded')
+        raise ValueError(f'{where}.onto: the faces that hit the floor, like ["face 5"]; they are held while the rest is loaded')
     onto = kinds.faces({"faces": raw["onto"]}, where=f"{where}.onto")
     given = [key for key in ("stop_mm", "impact_ms") if key in raw]
     if len(given) != 1:

@@ -16,7 +16,7 @@ function pressedResult(extras: Record<string, unknown> = {}) {
     _von_mises_f1: [80, 20, 40], _displacement_f1: vec([0, 0, -0.001, 0, 0, 0, 0, 0, 0]), _contact_pressure_f1: [10, 0, 4],
     _face: [0, 0, 1],
   }, {
-    generator: 'cadgen fea', name: 'press contact', deformation_scale: 1, faces: ['#o1.1.f1', '#o1.2.f6'], load_percent: 100, collapsed: false,
+    generator: 'cadgen fea', name: 'press contact', deformation_scale: 1, faces: ['part1/face 1', 'part2/face 6'], load_percent: 100, collapsed: false,
     analysis: { type: 'contact', tier: 3, word: 'Contact', estimate: false, limits: [LIMIT], noun: 'this load', reference_C: null, warnings: [] },
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 80, attribute_scale: 1, field: 'von_mises', per_frame: true },
@@ -26,21 +26,21 @@ function pressedResult(extras: Record<string, unknown> = {}) {
     series: { kind: 'time', unit: '%', default: 1, frames: [
       { value: 50, label: '50 % load', attributes: { von_mises: '_VON_MISES', displacement: '_DISPLACEMENT', contact_pressure: '_CONTACT_PRESSURE' } },
       { value: 100, label: '100 % load', attributes: { von_mises: '_VON_MISES_F1', displacement: '_DISPLACEMENT_F1', contact_pressure: '_CONTACT_PRESSURE_F1' } }] },
-    parts: [{ ref: '#o1.1', name: 'pin' }, { ref: '#o1.2', name: 'plate' }],
+    parts: [{ ref: 'part1', name: 'pin' }, { ref: 'part2', name: 'plate' }],
     contacts: [
-      { kind: 'pair', name: 'pin on plate', words: 'pin presses on plate, friction 0.2', friction: 0.2, between: ['pin', 'plate'], refs: ['#o1.1', '#o1.2'],
+      { kind: 'pair', name: 'pin on plate', words: 'pin presses on plate, friction 0.2', friction: 0.2, between: ['pin', 'plate'], refs: ['part1', 'part2'],
         touching: true, force_N: 1000, peak_MPa: 10 },
-      { kind: 'plane', name: 'the rigid plane', words: 'plate on the rigid plane', friction: 0, refs: ['#o1.2'], touching: true, force_N: 1000, peak_MPa: 2.5 },
+      { kind: 'plane', name: 'the rigid plane', words: 'plate on the rigid plane', friction: 0, refs: ['part2'], touching: true, force_N: 1000, peak_MPa: 2.5 },
     ],
     study: {
       material: { name: 'Steel (structural, generic)', yield_MPa: 250, youngs_GPa: 200, poisson: 0.3 },
-      fixtures: [], loads: [{ type: 'force', faces: ['#o1.1.f1'], vector_N: [0, 0, -1000] }], steps: 2,
+      fixtures: [], loads: [{ type: 'force', faces: ['part1/face 1'], vector_N: [0, 0, -1000] }], steps: 2,
       contact_pairs: [{ between: ['pin', 'plate'], friction: 0.2 }],
       rigid_planes: [{ point_mm: [0, 0, 0], normal: [0, 0, 1], parts: ['plate'], friction: 0 }],
       mesh: { size_mm: 2, order: 2, elements: 900, refined_from_mm: null },
     },
     checks: [{ kind: 'contact_pressure', label: 'Contact', value: 10, limit: 8, unit: 'MPa', ratio: 1.25, close_at: 0.9, status: 'fails',
-      where: { ref: '#o1.2.f6', at: [0, 0, 0] }, at: { frame: 1, value: 100, unit: '%' } }],
+      where: { ref: 'part2/face 6', at: [0, 0, 0] }, at: { frame: 1, value: 100, unit: '%' } }],
     findings: [],
     ...extras,
   });
@@ -80,12 +80,12 @@ describe('contact', () => {
     const [pressed] = contactRows(pressedResult());
     expect(pressed).toMatchObject({ id: 'contacts', label: 'Pressed together', glyph: 'load' });
     expect(pressed.children).toEqual([{ id: 'contact:0', label: 'pin presses on plate, friction 0.2', detail: '', wrap: true,
-      hint: '1000 N, peak 10 MPa', refs: ['#o1.1', '#o1.2'], summary: 'Contact: pin presses on plate, friction 0.2' }]);
+      hint: '1000 N, peak 10 MPa', refs: ['part1', 'part2'], summary: 'Contact: pin presses on plate, friction 0.2' }]);
     const floor = rows.find((row: { id: string }) => row.id === 'rigid');
     expect(floor.children.map((row: { label: string }) => row.label)).toEqual(['Facing up']);
     // A pair that separated says so; a frictionless one says it has none.
     const apart = pressedResult({
-      contacts: [{ kind: 'pair', between: ['pin', 'plate'], refs: ['#o1.1', '#o1.2'], touching: false, force_N: 0, peak_MPa: 0 }],
+      contacts: [{ kind: 'pair', between: ['pin', 'plate'], refs: ['part1', 'part2'], touching: false, force_N: 0, peak_MPa: 0 }],
       study: { fixtures: [], loads: [], contact_pairs: [{ between: ['pin', 'plate'], friction: 0 }], rigid_planes: [] },
     });
     expect(contactRows(apart)[0].children[0]).toMatchObject({ label: 'pin presses on plate, no friction', hint: 'no longer touching' });
@@ -111,7 +111,7 @@ describe('contact', () => {
       analysis: { type: 'contact', tier: 3, word: 'Contact', estimate: false, limits: [LIMIT], noun: 'this load', reference_C: null,
         warnings: [sentence], unsettled: { at_percent: [80], first_percent: 80 } },
       checks: [{ kind: 'contact_pressure', label: 'Contact', value: 4, limit: 8, unit: 'MPa', ratio: 0.5, close_at: 0.9, status: 'fails',
-        unsettled_at_percent: 80, where: { ref: '#o1.2.f6', at: [0, 0, 0] } }],
+        unsettled_at_percent: 80, where: { ref: 'part2/face 6', at: [0, 0, 0] } }],
     });
     expect(result.analysis.unsettled).toEqual({ atPercent: [80], firstPercent: 80 });
     const verdict = feaVerdict(result);

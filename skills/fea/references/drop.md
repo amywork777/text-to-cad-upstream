@@ -17,7 +17,7 @@ sets the answer). For a deeper check, [`impact`](impact.md) simulates the impact
 Keys beyond the [shared ones](study-file.md#shared-by-every-analysis); reads density:
 
 ```json
-{"analysis": "drop", "material": "abs", "drop": {"height_mm": 1000, "onto": ["#o1.f5"], "stop_mm": 2},
+{"analysis": "drop", "material": "abs", "drop": {"height_mm": 1000, "onto": ["bracket/face 5"], "stop_mm": 2},
  "view": {"checks": [{"kind": "stress", "label": "Drop"}]}}
 ```
 

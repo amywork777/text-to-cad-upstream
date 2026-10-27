@@ -51,11 +51,11 @@ class StudyFile(unittest.TestCase):
         self.assertEqual(parsed.face_refs, ())
 
     def test_map_to_structure_brings_its_material_fixtures_and_the_static_checks(self):
-        parsed = self.parse(map_to_structure={"material": "aluminum-6061-t6", "fixtures": [{"faces": ["#o1.f1"]}]},
+        parsed = self.parse(map_to_structure={"material": "aluminum-6061-t6", "fixtures": [{"faces": ["face 1"]}]},
                             view={"checks": [{"kind": "pressure_drop", "limit_Pa": 1000}, {"kind": "stress"}]})
         self.assertTrue(parsed.inputs.mapped)
         self.assertEqual(parsed.inputs.structure_material.name, "Aluminum 6061-T6")
-        self.assertEqual((parsed.face_refs, parsed.inputs.anchor_refs), (("#o1.f1",), ("#o1.f1",)))
+        self.assertEqual((parsed.face_refs, parsed.inputs.anchor_refs), (("face 1",), ("face 1",)))
         self.assertEqual([check["kind"] for check in parsed.checks], ["pressure_drop", "stress"])
 
     def test_external_flow_takes_a_free_stream(self):
@@ -73,7 +73,7 @@ class StudyFile(unittest.TestCase):
             ({"flow": {**flow, "inlets": [{"opening": "x_min", "velocity_m_s": 1, "profile": "plug"}]}}, "profile"),
             ({"flow": {"kind": "external", "fluid": "air"}}, "flow.velocity_m_s"),
             ({"view": {"checks": [{"kind": "stress"}]}}, "add map_to_structure"),
-            ({"map_to_structure": {"fixtures": [{"faces": ["#o1.f1"]}]}}, "map_to_structure.material"),
+            ({"map_to_structure": {"fixtures": [{"faces": ["face 1"]}]}}, "map_to_structure.material"),
             ({"flow": None}, "study.flow"),
         ):
             with self.subTest(fragment=fragment):

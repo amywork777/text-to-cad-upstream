@@ -5,9 +5,9 @@
  */
 import { plainNumber } from "./numbers.js";
 
-/** A face ref's own number ("#o1.1.f17": 17), or null for a ref that names no face. */
+/** A face ref's own number ("bracket/face 17": 17), or null for a ref that names no face by its number. */
 function faceNumber(ref) {
-  const match = /\.f(\d+)$/.exec(String(ref || ""));
+  const match = /(?:^|\/)face (\d+)$/.exec(String(ref || ""));
   return match ? Number(match[1]) : null;
 }
 
@@ -88,7 +88,7 @@ export function faceSummary(study, ref) {
 }
 
 /** The index into the result's `parts` of the part a face is on; -1 for a single part's face. */
-export const facePartIndex = (result, ref) => result.parts.findIndex((entry) => entry.ref && String(ref).startsWith(`${entry.ref}.`));
+export const facePartIndex = (result, ref) => result.parts.findIndex((entry) => entry.ref && String(ref).startsWith(`${entry.ref}/`));
 
 /** A face's heading: "Face 17", and in an assembly "post · face 17", the part it is on (a long name's underscores spaced). */
 export function faceTitle(result, ref) {

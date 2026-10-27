@@ -99,7 +99,7 @@ class StudyFile(unittest.TestCase):
         for bad, words in (
             ({"drop": None}, "expected an object like"),
             ({"drop": {}}, "how far it falls"),
-            ({"drop": {"height_mm": 1000, "onto": ["#o1.f1"]}}, "unknown keys \\['onto'\\]"),
+            ({"drop": {"height_mm": 1000, "onto": ["face 1"]}}, "unknown keys \\['onto'\\]"),
             ({"drop": {"height_mm": 1000, "floor": "carpet"}}, "only a rigid floor is modelled"),
             ({"drop": {"height_mm": 1000, "friction": -1}}, "0 or more"),
             ({"drop": {"height_mm": 1000, "direction": [0, 0, 0]}}, "the direction is zero"),
@@ -108,7 +108,7 @@ class StudyFile(unittest.TestCase):
             ({"mesh": {"order": 2}}, "impact studies take order 1"),
             ({"view": {"checks": [{"kind": "plastic_strain", "limit_percent": 1}]}}, "needs plasticity"),
             ({"view": {"checks": [{"kind": "frequency", "min_Hz": 60}]}}, "not a check this cadgen makes"),
-            ({"fixtures": [{"faces": ["#o1.f1"]}]}, "impact studies take"),
+            ({"fixtures": [{"faces": ["face 1"]}]}, "impact studies take"),
         ):
             study = {key: value for key, value in {**_study(), **bad}.items() if value is not None}
             with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, words):

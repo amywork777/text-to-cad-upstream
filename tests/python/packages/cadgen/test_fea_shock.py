@@ -24,7 +24,7 @@ from cadgen._internal.fea.study import parse_study  # noqa: E402
 
 LENGTH, SIDE = 100.0, 6.0
 G0 = 9806.65
-FIXED = "#o1.f1"
+FIXED = "face 1"
 TABLE = [[10, 5], [100, 50], [4000, 50]]
 
 

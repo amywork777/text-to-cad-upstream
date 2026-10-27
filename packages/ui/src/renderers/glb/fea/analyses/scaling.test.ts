@@ -12,14 +12,14 @@ function resultOf(type: string, check: Record<string, unknown>) {
   return feaFile({
     position: [0, 0, 0, 0.04, 0, 0, 0, 0.006, 0], _von_mises: [67, 10, 30], _displacement: vec(9), _face: [0, 0, 1],
   }, {
-    generator: 'cadgen fea', name: 'part', deformation_scale: 10, faces: ['#o1.f1', '#o1.f2'], occurrence: '#o1', safety_factor: 2.5,
+    generator: 'cadgen fea', name: 'part', deformation_scale: 10, faces: ['bracket/face 1', 'bracket/face 2'], occurrence: 'bracket', safety_factor: 2.5,
     analysis: { type, tier: 3, word: type, estimate: false, limits: ['x'], warnings: [] },
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 67, attribute_scale: 1, field: 'von_mises' },
       { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 0.1, attribute_scale: 1000, field: 'displacement' },
     ],
     study: { material: { name: 'Steel', yield_MPa: 250, youngs_GPa: 200, poisson: 0.3 }, fixtures: [], loads: [] },
-    checks: [{ label: 'Check', status: 'passes', close_at: 0.5, where: { ref: '#o1.f1', at: [0, 0, 0] }, ...check }],
+    checks: [{ label: 'Check', status: 'passes', close_at: 0.5, where: { ref: 'bracket/face 1', at: [0, 0, 0] }, ...check }],
     findings: [],
   });
 }

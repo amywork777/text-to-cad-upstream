@@ -120,13 +120,13 @@ describe('legend helpers', () => {
 });
 
 describe('a result\'s findings', () => {
-  const finding = { check: 'fea', severity: 'error', type: 'peak', summary: 'Too much', description: 'Far too much.', items: [{ text: 'the peak', ref: '#o1.f3', at: [1, 2, 3] }, { text: 'a face', ref: null }] };
+  const finding = { check: 'fea', severity: 'error', type: 'peak', summary: 'Too much', description: 'Far too much.', items: [{ text: 'the peak', ref: 'bracket/face 3', at: [1, 2, 3] }, { text: 'a face', ref: null }] };
   it('are read in the file\'s order with their places, malformed ones left out', () => {
     const { mesh, root } = resultMesh();
     mesh.userData.findings = [finding, 'nope', { severity: 'note', summary: 'Soft', items: [{ at: [1, 2] }, { ref: '', at: [0, 0, NaN] }] }];
     const found = readFeaResult(root)!.findings;
     expect(found.map(entry => [entry.index, entry.severity, entry.summary])).toEqual([[0, 'error', 'Too much'], [1, 'warning', 'Soft']]);
-    expect(found[0].items).toEqual([{ text: 'the peak', ref: '#o1.f3', at: [1, 2, 3] }, { text: 'a face', ref: null, at: null }]);
+    expect(found[0].items).toEqual([{ text: 'the peak', ref: 'bracket/face 3', at: [1, 2, 3] }, { text: 'a face', ref: null, at: null }]);
     expect(found[1].items.map(item => [item.ref, item.at])).toEqual([[null, null], [null, null]]);
     expect(readFeaResult(resultMesh().root)!.findings).toEqual([]);
   });
@@ -143,15 +143,15 @@ describe('a result\'s findings', () => {
 // What S1 adds: the study the result was solved for, and the face each vertex came from.
 const STUDY = {
   material: { name: '6061-T6', yield_MPa: 276, youngs_GPa: 68.9, poisson: 0.33 },
-  fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }],
+  fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }],
   loads: [
-    { type: 'force', faces: ['#o1.f2'], vector_N: [0, 0, -2500] },
-    { type: 'pressure', faces: ['#o1.f3', '#o1.f4'], pressure_MPa: 2 },
+    { type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -2500] },
+    { type: 'pressure', faces: ['bracket/face 3', 'bracket/face 4'], pressure_MPa: 2 },
   ],
   mesh: { size_mm: 1.9205, order: 2, elements: 52271, refined_from_mm: 2.7686 },
   margin: 2,
 };
-function studyResult(extras: Record<string, unknown> = { study: STUDY, faces: ['#o1.f1', '#o1.f2', '#o1.f3', '#o1.f4'] }) {
+function studyResult(extras: Record<string, unknown> = { study: STUDY, faces: ['bracket/face 1', 'bracket/face 2', 'bracket/face 3', 'bracket/face 4'] }) {
   const built = resultMesh();
   built.mesh.geometry.setAttribute('_face', new BufferAttribute(new Float32Array([0, 0, 0, 1]), 1));
   Object.assign(built.mesh.userData, extras);
@@ -164,15 +164,15 @@ describe('a result\'s study', () => {
   it('reads as Study\'s rows in plain words: where it is held, what pushes it, what it is made of, then Details, shut', () => {
     expect(strip(studyRows(studyResult().result))).toEqual([
       { id: 'fixed', label: 'Held at', detail: '', glyph: 'fixture', children: [
-        { id: 'fixed:0:#o1.f1', label: 'Face 1', detail: '', summary: 'Fixed face 1', faces: ['#o1.f1'] },
+        { id: 'fixed:0:bracket/face 1', label: 'Face 1', detail: '', summary: 'Fixed face 1', faces: ['bracket/face 1'] },
       ] },
       { id: 'loads', label: 'Pushed', detail: '', glyph: 'load', children: [
-        { id: 'load:0', label: '2500 N down', detail: '', collapsed: true, summary: '2500 N load on face 2', faces: ['#o1.f2'], children: [
-          { id: 'load:0:#o1.f2', label: 'Face 2', detail: '', summary: '2500 N load on face 2', faces: ['#o1.f2'] },
+        { id: 'load:0', label: '2500 N down', detail: '', collapsed: true, summary: '2500 N load on face 2', faces: ['bracket/face 2'], children: [
+          { id: 'load:0:bracket/face 2', label: 'Face 2', detail: '', summary: '2500 N load on face 2', faces: ['bracket/face 2'] },
         ] },
-        { id: 'load:1', label: '2 MPa pressure', detail: '', collapsed: true, summary: '2 MPa pressure on faces 3, 4', faces: ['#o1.f3', '#o1.f4'], children: [
-          { id: 'load:1:#o1.f3', label: 'Face 3', detail: '', summary: '2 MPa pressure on face 3', faces: ['#o1.f3'] },
-          { id: 'load:1:#o1.f4', label: 'Face 4', detail: '', summary: '2 MPa pressure on face 4', faces: ['#o1.f4'] },
+        { id: 'load:1', label: '2 MPa pressure', detail: '', collapsed: true, summary: '2 MPa pressure on faces 3, 4', faces: ['bracket/face 3', 'bracket/face 4'], children: [
+          { id: 'load:1:bracket/face 3', label: 'Face 3', detail: '', summary: '2 MPa pressure on face 3', faces: ['bracket/face 3'] },
+          { id: 'load:1:bracket/face 4', label: 'Face 4', detail: '', summary: '2 MPa pressure on face 4', faces: ['bracket/face 4'] },
         ] },
       ] },
       { id: 'material', label: 'Made of', detail: '', glyph: 'material', children: [{ id: 'material:name', label: '6061-T6', detail: '' }] },
@@ -201,41 +201,41 @@ describe('a result\'s study', () => {
 
   it('names a face by its number, and says what the study does to it', () => {
     const { result } = studyResult();
-    expect(faceLabel('#o1.1.f17')).toBe('Face 17');
-    expect(faceLabel('#o1')).toBe('#o1');
-    expect(faceRole(result, '#o1.f1')).toBe('fixed');
-    expect(faceRole(result, '#o1.f2')).toBe('2500 N load, down');
-    expect(faceRole(result, '#o1.f4')).toBe('2 MPa pressure');
-    expect(faceRole(result, '#o1.f9')).toBe('free');
+    expect(faceLabel('part1/face 17')).toBe('Face 17');
+    expect(faceLabel('bracket')).toBe('bracket');
+    expect(faceRole(result, 'bracket/face 1')).toBe('fixed');
+    expect(faceRole(result, 'bracket/face 2')).toBe('2500 N load, down');
+    expect(faceRole(result, 'bracket/face 4')).toBe('2 MPa pressure');
+    expect(faceRole(result, 'bracket/face 9')).toBe('free');
   });
 
   it('reads a roller fixture as "Slides on", right after Held at, which keeps only the fixed ones; a picked face says it slides', () => {
-    const rolling = { ...STUDY, fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }, { faces: ['#o1.f3'] }, { type: 'roller', faces: ['#o1.f2', '#o1.f4'] }],
+    const rolling = { ...STUDY, fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }, { faces: ['bracket/face 3'] }, { type: 'roller', faces: ['bracket/face 2', 'bracket/face 4'] }],
       excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 } };
-    const { result } = studyResult({ study: rolling, faces: ['#o1.f1', '#o1.f2', '#o1.f3', '#o1.f4'] });
+    const { result } = studyResult({ study: rolling, faces: ['bracket/face 1', 'bracket/face 2', 'bracket/face 3', 'bracket/face 4'] });
     const rows = strip(studyRows(result));
     expect(rows.slice(0, 2)).toEqual([
       { id: 'fixed', label: 'Held at', detail: '', glyph: 'fixture', children: [
-        { id: 'fixed:0:#o1.f1', label: 'Face 1', detail: '', summary: 'Fixed face 1', faces: ['#o1.f1'] },
-        { id: 'fixed:1:#o1.f3', label: 'Face 3', detail: '', summary: 'Fixed and loaded face 3', faces: ['#o1.f3'] },
+        { id: 'fixed:0:bracket/face 1', label: 'Face 1', detail: '', summary: 'Fixed face 1', faces: ['bracket/face 1'] },
+        { id: 'fixed:1:bracket/face 3', label: 'Face 3', detail: '', summary: 'Fixed and loaded face 3', faces: ['bracket/face 3'] },
       ] },
       { id: 'roller', label: 'Slides on', detail: '', glyph: 'roller', children: [
-        { id: 'roller:2:#o1.f2', label: 'Face 2', detail: '', hint: 'May slide along the face, not move off it', summary: 'Sliding and loaded face 2', faces: ['#o1.f2'] },
-        { id: 'roller:2:#o1.f4', label: 'Face 4', detail: '', hint: 'May slide along the face, not move off it', summary: 'Sliding and loaded face 4', faces: ['#o1.f4'] },
+        { id: 'roller:2:bracket/face 2', label: 'Face 2', detail: '', hint: 'May slide along the face, not move off it', summary: 'Sliding and loaded face 2', faces: ['bracket/face 2'] },
+        { id: 'roller:2:bracket/face 4', label: 'Face 4', detail: '', hint: 'May slide along the face, not move off it', summary: 'Sliding and loaded face 4', faces: ['bracket/face 4'] },
       ] },
     ]);
     expect(rows[2].id).toBe('loads');
-    expect(faceRole(result, '#o1.f2')).toBe('slides along it; 2500 N load, down');
-    expect(facePromptSummary(result, '#o1.f2')).toBe('Sliding and loaded face 2');
-    const unloaded = studyResult({ study: { ...rolling, loads: [] }, faces: ['#o1.f2'] }).result;
-    expect(facePromptSummary(unloaded, '#o1.f2')).toBe('Slides on face 2');
-    expect(faceRole(unloaded, '#o1.f2')).toBe('slides along it');
+    expect(faceRole(result, 'bracket/face 2')).toBe('slides along it; 2500 N load, down');
+    expect(facePromptSummary(result, 'bracket/face 2')).toBe('Sliding and loaded face 2');
+    const unloaded = studyResult({ study: { ...rolling, loads: [] }, faces: ['bracket/face 2'] }).result;
+    expect(facePromptSummary(unloaded, 'bracket/face 2')).toBe('Slides on face 2');
+    expect(faceRole(unloaded, 'bracket/face 2')).toBe('slides along it');
     // The shaker is on every face that holds it, rollers too.
-    expect(shakenRows(result)[0].children[0].faces).toEqual(['#o1.f1', '#o1.f3', '#o1.f2', '#o1.f4']);
+    expect(shakenRows(result)[0].children[0].faces).toEqual(['bracket/face 1', 'bracket/face 3', 'bracket/face 2', 'bracket/face 4']);
   });
 
   it('names a face both fixed and loaded for both, in either row', () => {
-    const { result } = studyResult({ study: { ...STUDY, loads: [{ type: 'force', faces: ['#o1.f1'], vector_N: [0, 0, -2500] }] }, faces: ['#o1.f1'] });
+    const { result } = studyResult({ study: { ...STUDY, loads: [{ type: 'force', faces: ['bracket/face 1'], vector_N: [0, 0, -2500] }] }, faces: ['bracket/face 1'] });
     const rows = studyRows(result);
     expect(rows[0].children[0].summary).toBe('Fixed and loaded face 1');
     expect(rows[1].children[0].children[0].summary).toBe('Fixed and loaded face 1');
@@ -268,7 +268,7 @@ describe('a result\'s study', () => {
     mesh.updateMatrixWorld(true);
     // Above the first triangle (vertices 0, 1, 2: face index 0) and the second (1, 3, 2: its first vertex is face 0's too).
     const down = (x: number, y: number) => new Ray(new Vector3(x, y, 1), new Vector3(0, 0, -1));
-    expect(pickFace(result, down(0.2, 0.2))).toMatchObject({ id: '#o1.f1', ref: '#o1.f1' });
+    expect(pickFace(result, down(0.2, 0.2))).toMatchObject({ id: 'bracket/face 1', ref: 'bracket/face 1' });
     expect(pickFace(result, down(5, 5))).toBeNull();
   });
 });
@@ -276,15 +276,15 @@ describe('a result\'s study', () => {
 // A two-part assembly: the post is vertices 0-2 (face index 0), the base vertex 3 (face index 1).
 const ASSEMBLY = {
   study: STUDY,
-  faces: ['#o1.1.f1', '#o1.2.f1'],
+  faces: ['part1/face 1', 'part2/face 1'],
   weakest_part: 'post', weakest_part_peak_MPa: 180, safety_factor: 1.46, max_displacement_mm: 0.2,
   parts: [
-    { ref: '#o1.1', name: 'post', material: '6061-T6', yield_MPa: 276, peak_MPa: 180, safety_factor: 1.46, max_displacement_mm: 0.2 },
-    { ref: '#o1.2', name: 'base', material: 'Steel', yield_MPa: 250, peak_MPa: 40, safety_factor: 2.5, max_displacement_mm: 0.01 },
+    { ref: 'part1', name: 'post', material: '6061-T6', yield_MPa: 276, peak_MPa: 180, safety_factor: 1.46, max_displacement_mm: 0.2 },
+    { ref: 'part2', name: 'base', material: 'Steel', yield_MPa: 250, peak_MPa: 40, safety_factor: 2.5, max_displacement_mm: 0.01 },
   ],
   connections: [
-    { between: ['#o1.1', '#o1.2'], names: ['post', 'base'], type: 'bonded', area_mm2: 100, gap_mm: 0, faces: ['#o1.1.f1', '#o1.2.f1'] },
-    { between: ['#o1.1', '#o1.3'], names: ['post', 'lid'], type: 'free', area_mm2: 0, gap_mm: 0.5, faces: [] },
+    { between: ['part1', 'part2'], names: ['post', 'base'], type: 'bonded', area_mm2: 100, gap_mm: 0, faces: ['part1/face 1', 'part2/face 1'] },
+    { between: ['part1', 'part3'], names: ['post', 'lid'], type: 'free', area_mm2: 0, gap_mm: 0.5, faces: [] },
   ],
 };
 function assemblyResult() {
@@ -304,16 +304,16 @@ describe('an assembly result', () => {
       ['part:0', 'post', '6061-T6 · holds 1.4×', [['joint:0', '↔ base', 'bonded · 100 mm²'], ['joint:1', '↔ lid', 'not connected · 0.5 mm apart']]],
       ['part:1', 'base', 'Steel · holds 2.5×', [['joint:0', '↔ post', 'bonded · 100 mm²']]],
     ]);
-    expect(rows[0]).toMatchObject({ refs: ['#o1.1'], parts: [0], summary: "Part 'post'" });
+    expect(rows[0]).toMatchObject({ refs: ['part1'], parts: [0], summary: "Part 'post'" });
     // Either copy of a joint is the same choice: the same id, faces, tint and summary.
     const [underPost, underBase] = [rows[0].children[0], rows[1].children[0]];
     const { label: _a, ...post } = underPost;
     const { label: _b, ...base } = underBase;
     expect(post).toEqual(base);
-    expect(underPost).toMatchObject({ faces: ['#o1.1.f1', '#o1.2.f1'], softParts: [0, 1], name: 'post ↔ base', summary: "Bonded joint between 'post' and 'base'" });
+    expect(underPost).toMatchObject({ faces: ['part1/face 1', 'part2/face 1'], softParts: [0, 1], name: 'post ↔ base', summary: "Bonded joint between 'post' and 'base'" });
     expect(underPost.refs).toBeUndefined();
     // A free pair has no faces: both parts' refs go instead.
-    expect(rows[0].children[1]).toMatchObject({ refs: ['#o1.1', '#o1.3'], summary: "'post' and 'lid' aren't connected" });
+    expect(rows[0].children[1]).toMatchObject({ refs: ['part1', 'part3'], summary: "'post' and 'lid' aren't connected" });
     expect(rows[0].children[1].faces).toBeUndefined();
     expect(studyRows(result).map((row) => row.id)).toEqual(['fixed', 'loads', 'material', 'details']);
     expect(weakestPartIndex(result)).toBe(0);
@@ -322,8 +322,8 @@ describe('an assembly result', () => {
   it('says a part that yields, and names a picked face\'s part', () => {
     const { result } = studyResult({ ...ASSEMBLY, parts: [{ ...ASSEMBLY.parts[0], safety_factor: 0.8 }, ASSEMBLY.parts[1]] });
     expect((partRows(result)[0] as any).detail).toBe('6061-T6 · yields');
-    expect(faceTitle(result, '#o1.1.f1')).toBe('post · face 1');
-    expect(faceTitle(studyResult().result, '#o1.f1')).toBe('Face 1');
+    expect(faceTitle(result, 'part1/face 1')).toBe('post · face 1');
+    expect(faceTitle(studyResult().result, 'bracket/face 1')).toBe('Face 1');
   });
 
   it('notes a gap that was closed to bond a pair', () => {
@@ -364,11 +364,11 @@ describe('an assembly result', () => {
     expect(post).toMatchObject({ label: 'bulkhead right support block', summary: "Part 'bulkhead_right_support_block'" });
     expect(base.children[0]).toMatchObject({ label: '↔ bulkhead right support block', name: 'bulkhead right support block ↔ base',
       summary: "Bonded joint between 'bulkhead_right_support_block' and 'base'" });
-    expect(faceTitle(result, '#o1.1.f1')).toBe('bulkhead right support block · face 1');
+    expect(faceTitle(result, 'part1/face 1')).toBe('bulkhead right support block · face 1');
   });
 
   it('names the part on an assembly\'s fixed and load rows, and leaves a single part\'s as Face N', () => {
-    const study = { ...STUDY, fixtures: [{ type: 'fixed', faces: ['#o1.2.f9'] }], loads: [{ type: 'force', faces: ['#o1.1.f23'], vector_N: [0, 0, -5] }] };
+    const study = { ...STUDY, fixtures: [{ type: 'fixed', faces: ['part2/face 9'] }], loads: [{ type: 'force', faces: ['part1/face 23'], vector_N: [0, 0, -5] }] };
     const { result } = studyResult({ ...ASSEMBLY, study });
     const rows = studyRows(result) as any[];
     const fixed = rows.find((row) => row.id === 'fixed');
@@ -482,7 +482,7 @@ describe('the study\'s view', () => {
 describe('a load other than the solved one', () => {
   it('halves what each part holds at twice the load, and a part can flip to yields', () => {
     const { mesh, root } = resultMesh();
-    mesh.userData.parts = [{ ref: '#o1.1', name: 'post', material: 'Steel', safety_factor: 3.1 }, { ref: '#o1.2', name: 'base', material: 'Steel', safety_factor: 1.5 }];
+    mesh.userData.parts = [{ ref: 'part1', name: 'post', material: 'Steel', safety_factor: 3.1 }, { ref: 'part2', name: 'base', material: 'Steel', safety_factor: 1.5 }];
     const result = readFeaResult(root)!;
     expect(partRows(result).map((row: any) => row.detail)).toEqual(['Steel · holds 3.1×', 'Steel · holds 1.5×']);
     expect(partRows(result, 2).map((row: any) => row.detail)).toEqual(['Steel · holds 1.5×', 'Steel · yields']);
@@ -579,12 +579,12 @@ describe('the verdict', () => {
   });
 
   it('names two or three materials inline with their parts, a part with no material of its own taking the study\'s', () => {
-    const parts = [...ASSEMBLY.parts, { ...ASSEMBLY.parts[0], ref: '#o1.3', name: 'lid', material: '' }];
+    const parts = [...ASSEMBLY.parts, { ...ASSEMBLY.parts[0], ref: 'part3', name: 'lid', material: '' }];
     const made = (list: object[]) => (studyRows(studyResult({ ...ASSEMBLY, parts: list }).result) as any[]).find((row) => row.id === 'material').children[0];
     expect(made(parts)).toMatchObject({ label: '6061-T6 post and lid, Steel base' });
     expect(made(parts).hint).toBeUndefined();
     expect(made([ASSEMBLY.parts[0], { ...ASSEMBLY.parts[1], material: '6061-T6' }]).label).toBe('6061-T6');
-    const part = (name: string, material: string) => ({ ...ASSEMBLY.parts[0], ref: `#o1.${name}`, name, material });
+    const part = (name: string, material: string) => ({ ...ASSEMBLY.parts[0], ref: `bracket.${name}`, name, material });
     // Three parts or more of one material say how many; three materials still inline.
     expect(made([part('a', 'Steel'), part('b', 'Steel'), part('c', 'Steel'), part('d', 'Copper'), part('e', 'PZT-5A')]).label)
       .toBe('Steel (3 parts), Copper d, PZT-5A e');
@@ -606,9 +606,9 @@ describe('the verdict', () => {
 // The checks cadgen judged, as it writes them into the extras: the stress check (one over the safety
 // factor) and a displacement check named in the person's words.
 const STRESS_CHECK = { kind: 'stress', label: 'Strength', value: 47.3, limit: 276, unit: 'MPa', ratio: 0.171527, close_at: 0.5, margin: 2, status: 'passes',
-  where: { ref: '#o1.f1', at: [0, 0, 0] } };
+  where: { ref: 'bracket/face 1', at: [0, 0, 0] } };
 const SAG_CHECK = { kind: 'displacement', label: 'Tip sag', value: 0.62, limit: 0.5, unit: 'mm', ratio: 1.24, close_at: 0.9, status: 'fails',
-  where: { ref: '#o1.f2', at: [60, 0, 0] }, faces: ['#o1.f2'] };
+  where: { ref: 'bracket/face 2', at: [60, 0, 0] }, faces: ['bracket/face 2'] };
 const checked = (checks: unknown, extras: Record<string, unknown> = {}) => studyResult({ study: STUDY, faces: [], safety_factor: 5.83, checks, ...extras }).result;
 const plain = (text: string) => text.replace(/\u00a0/g, ' ');
 
@@ -702,7 +702,7 @@ function analysisResult(extras: Record<string, unknown>, { stress = true } = {})
 }
 const FIRST_MODE = { kind: 'frequency', label: '', value: 85.2, limit: 60, unit: 'Hz', ratio: 0.704, close_at: 0.9, status: 'passes', mode: 1, at: { frame: 0, value: 85.2, unit: 'Hz' } };
 const BAND = { kind: 'frequency', label: 'Motor speed', value: 118.4, limit: 110, unit: 'Hz', ratio: 1.08, close_at: 0.9, status: 'fails', mode: 2, avoid_Hz: [110, 130],
-  at: { frame: 1, value: 118.4, unit: 'Hz' }, where: { ref: '#o1.f2' } };
+  at: { frame: 1, value: 118.4, unit: 'Hz' }, where: { ref: 'bracket/face 2' } };
 
 describe('another analysis', () => {
   it('reads what the file says it is, its series and the steps it took to fit; a result with none is static', () => {
@@ -734,7 +734,7 @@ describe('another analysis', () => {
     expect(verdict.rows.map((row: any) => [row.label, plain(row.line), row.margin])).toEqual([
       ['Motor speed', 'Mode 2 at 118 Hz, inside 110–130 Hz', null], ['Vibration', 'First mode 85 Hz, must stay above 60 Hz', null]]);
     // Chosen, a check carries its sentence, with no load to speak of.
-    expect(verdict.rows[0].choice).toEqual({ id: 'check:1', faces: ['#o1.f2'], summary: 'Motor speed fails: mode 2 at 118 Hz, inside 110–130 Hz' });
+    expect(verdict.rows[0].choice).toEqual({ id: 'check:1', faces: ['bracket/face 2'], summary: 'Motor speed fails: mode 2 at 118 Hz, inside 110–130 Hz' });
     expect(feaVerdict(analysisResult({ analysis: { type: 'modal' }, checks: [FIRST_MODE] }, { stress: false }))).toMatchObject({
       status: 'strong', title: 'Clear of vibration', caption: 'First mode 85 Hz, must stay above 60 Hz' });
     // A frequency does not move with the load.
@@ -768,7 +768,7 @@ describe('another analysis', () => {
   });
 
   it('composes Study\'s setup from its analysis, and What you see from its defaults', () => {
-    const thermalStress = analysisResult({ analysis: { type: 'thermal_stress' }, faces: ['#o1.f1', '#o1.f2', '#o1.f3', '#o1.f4'] });
+    const thermalStress = analysisResult({ analysis: { type: 'thermal_stress' }, faces: ['bracket/face 1', 'bracket/face 2', 'bracket/face 3', 'bracket/face 4'] });
     expect(studyRows(thermalStress).map((row: any) => row.id)).toEqual(['fixed', 'loads', 'material', 'details']);
     expect(feaControls(thermalStress).map((control: any) => control.id)).toEqual(['field', 'deformation']);
   });
@@ -798,7 +798,7 @@ describe('another analysis', () => {
 const MODE_SERIES = { kind: 'mode', unit: 'Hz', default: 0, frames: [{ value: 85.2, label: 'Mode 1 · 85 Hz', attributes: { mode_shape: '_DISPLACEMENT' } },
   { value: 118.4, label: 'Mode 2 · 118 Hz', attributes: { mode_shape: '_MODE_SHAPE_F1' } }] };
 const REFINED = { rung: 'local_refine', words: 'Coarsened the mesh away from the hole to fit: the peak is still meshed at 0.8 mm',
-  accuracy: 'peak stress moved 2.1 % between passes', accuracy_pct: 2.1, faces: ['#o1.f2'], detail: '' };
+  accuracy: 'peak stress moved 2.1 % between passes', accuracy_pct: 2.1, faces: ['bracket/face 2'], detail: '' };
 const ITERATIVE = { rung: 'iterative', words: 'Used an iterative solver to fit in memory', accuracy: '', accuracy_pct: null, faces: [], detail: '' };
 
 describe('a frame of a series, drawn', () => {
@@ -883,13 +883,13 @@ describe('the takeaway by tier', () => {
 
 describe('Details', () => {
   it('lists each step taken to fit the run, its accuracy its hint, chosen with its faces, else the whole part', () => {
-    const result = studyResult({ study: STUDY, faces: ['#o1.f1', '#o1.f2'], occurrence: 'o1', fit: [REFINED, ITERATIVE] }).result;
+    const result = studyResult({ study: STUDY, faces: ['bracket/face 1', 'bracket/face 2'], occurrence: 'bracket', fit: [REFINED, ITERATIVE] }).result;
     const details = studyRows(result).at(-1)!;
     expect(details.children!.map((row: any) => row.id)).toEqual(['mesh', 'fit']);
     expect(details.children![1]).toMatchObject({ label: 'Adapted to fit', children: [
-      { id: 'fit:0', label: REFINED.words, hint: 'peak stress moved 2.1 % between passes', faces: ['#o1.f2'], wrap: true,
+      { id: 'fit:0', label: REFINED.words, hint: 'peak stress moved 2.1 % between passes', faces: ['bracket/face 2'], wrap: true,
         summary: `Adapted to fit: ${REFINED.words} (peak stress moved 2.1 % between passes)` },
-      { id: 'fit:1', label: ITERATIVE.words, refs: ['o1'], summary: `Adapted to fit: ${ITERATIVE.words}` }] });
+      { id: 'fit:1', label: ITERATIVE.words, refs: ['bracket'], summary: `Adapted to fit: ${ITERATIVE.words}` }] });
     expect(details.children![1].children[1].hint).toBeUndefined();
     // A result whose study was not recorded still says what was adapted.
     const old = resultMesh();
@@ -900,46 +900,46 @@ describe('Details', () => {
   it('gives a Tier 3 analysis its limits, one row each, and a flow past the laminar range its own row first', () => {
     const past = 'Re 4200 is past the laminar range: real flow is likely turbulent.';
     const result = analysisResult({ analysis: { type: 'cfd', tier: 3, word: 'Flow', limits: ['Laminar, steady, incompressible; no turbulence model.'], warnings: [past] },
-      occurrence: 'o1' });
+      occurrence: 'bracket' });
     const details = studyRows(result).at(-1)!;
     expect(details.children!.map((row: any) => row.id)).toEqual(['reynolds', 'mesh', 'limits']);
-    expect(details.children![0]).toMatchObject({ label: past, refs: ['o1'], summary: past, wrap: true });
+    expect(details.children![0]).toMatchObject({ label: past, refs: ['bracket'], summary: past, wrap: true });
     expect(details.children![2].children).toEqual([{ id: 'limit:0', label: 'Laminar, steady, incompressible; no turbulence model.', detail: '', wrap: true,
-      refs: ['o1'], summary: 'Limits of this flow result: Laminar, steady, incompressible; no turbulence model.' }]);
+      refs: ['bracket'], summary: 'Limits of this flow result: Laminar, steady, incompressible; no turbulence model.' }]);
     // A Tier 1 analysis's limits, if any, are not a row.
     expect(studyRows(analysisResult({ analysis: { type: 'modal', limits: ['x'] } })).at(-1)!.children!.map((row: any) => row.id)).toEqual(['mesh']);
   });
 });
 
 describe('another analysis\'s setup', () => {
-  const HEATED = { material: { name: '6061-T6' }, fixtures: [], loads: [], temperatures: [{ faces: ['#o1.f1'], C: 25 }],
-    heat: [{ faces: ['#o1.f2'], W: 15 }, { faces: ['#o1.f3'], W_per_m2: 2000 }], convection: [{ faces: ['#o1.f3', '#o1.f4'], h_W_m2K: 10, ambient_C: 25 }] };
+  const HEATED = { material: { name: '6061-T6' }, fixtures: [], loads: [], temperatures: [{ faces: ['bracket/face 1'], C: 25 }],
+    heat: [{ faces: ['bracket/face 2'], W: 15 }, { faces: ['bracket/face 3'], W_per_m2: 2000 }], convection: [{ faces: ['bracket/face 3', 'bracket/face 4'], h_W_m2K: 10, ambient_C: 25 }] };
   const ids = (rows: any[]) => rows.map((row) => [row.label, row.children.map((child: any) => child.label)]);
 
   it('reads a heated part as Kept at, Heated and Cooled by air, each entry chosen with its faces', () => {
-    const result = studyResult({ analysis: { type: 'thermal' }, study: HEATED, faces: ['#o1.f1', '#o1.f2', '#o1.f3', '#o1.f4'] }).result;
+    const result = studyResult({ analysis: { type: 'thermal' }, study: HEATED, faces: ['bracket/face 1', 'bracket/face 2', 'bracket/face 3', 'bracket/face 4'] }).result;
     const rows = studyRows(result) as any[];
     expect(ids(rows)).toEqual([['Kept at', ['25 °C']], ['Heated', ['15 W', '2000 W/m²']], ['Cooled by air', ['Air at 25 °C']], ['Made of', ['6061-T6']]]);
     expect(rows.slice(0, 3).map((row) => row.glyph)).toEqual(['temperature', 'heat', 'convection']);
-    expect(rows[1].children[0]).toMatchObject({ id: 'heat:0', faces: ['#o1.f2'], summary: '15 W of heat into face 2', collapsed: true });
+    expect(rows[1].children[0]).toMatchObject({ id: 'heat:0', faces: ['bracket/face 2'], summary: '15 W of heat into face 2', collapsed: true });
     expect(rows[2].children[0]).toMatchObject({ summary: 'Cooled by air at 25 °C (10 W/m²K) on faces 3, 4', hint: 'Heat transfer coefficient 10 W/m²K' });
-    expect(faceRole(result, '#o1.f3')).toBe('2000 W/m² of heat in; cooled by air at 25 °C');
-    expect(faceRole(result, '#o1.f1')).toBe('kept at 25 °C');
+    expect(faceRole(result, 'bracket/face 3')).toBe('2000 W/m² of heat in; cooled by air at 25 °C');
+    expect(faceRole(result, 'bracket/face 1')).toBe('kept at 25 °C');
   });
 
   it('says a body load in Pushed, a shaker, a drop, a flow\'s openings and a rigid floor', () => {
     const study = { ...STUDY, loads: [...STUDY.loads, { type: 'gravity', vector_g: [0, 0, -1] }],
-      excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 }, drop: { height_mm: 1000, onto: ['#o1.f2'], stop_mm: 2 },
+      excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 }, drop: { height_mm: 1000, onto: ['bracket/face 2'], stop_mm: 2 },
       flow: { kind: 'internal', inlets: [{ opening: 'x_min', velocity_m_s: 0.5 }], outlets: [{ opening: 'x_max', pressure_Pa: 0 }] },
       rigid_planes: [{ point_mm: [0, 0, 0], normal: [0, 0, 1] }] };
-    const result = studyResult({ analysis: { type: 'cfd_multiphase' }, study, faces: ['#o1.f1', '#o1.f2', '#o1.f3', '#o1.f4'], occurrence: 'o1' }).result;
+    const result = studyResult({ analysis: { type: 'cfd_multiphase' }, study, faces: ['bracket/face 1', 'bracket/face 2', 'bracket/face 3', 'bracket/face 4'], occurrence: 'bracket' }).result;
     expect(ids(studyRows(result) as any[]).slice(0, -2)).toEqual([['Held at', ['Face 1']], ['Pushed', ['2500 N down', '2 MPa pressure', '1 g down']],
       ['Shaken', ['1 g along Z']], ['Dropped', ['1 m drop']], ['Flow in/out', ['In 0.5 m/s at the low X side', 'Out at 0 Pa, the high X side']],
       ['Rigid floor', ['Facing up']]]);
     const rows = studyRows(result) as any[];
-    expect(rows[1].children[2]).toMatchObject({ id: 'body:0', refs: ['o1'], summary: 'Its weight, 1 g down' });
-    expect(rows[2].children[0]).toMatchObject({ id: 'shaken:0', faces: ['#o1.f1'], summary: 'Shaken where it is held: 1 g along Z' });
-    expect(rows[3].children[0]).toMatchObject({ id: 'drop:0', faces: ['#o1.f2'], summary: '1 m drop, stopping in 2 mm, landing on face 2', hint: 'stopping in 2 mm' });
+    expect(rows[1].children[2]).toMatchObject({ id: 'body:0', refs: ['bracket'], summary: 'Its weight, 1 g down' });
+    expect(rows[2].children[0]).toMatchObject({ id: 'shaken:0', faces: ['bracket/face 1'], summary: 'Shaken where it is held: 1 g along Z' });
+    expect(rows[3].children[0]).toMatchObject({ id: 'drop:0', faces: ['bracket/face 2'], summary: '1 m drop, stopping in 2 mm, landing on face 2', hint: 'stopping in 2 mm' });
     // Static's setup is as it was: its own three groups, a body load its one addition.
     expect(studyRows(studyResult({ study, faces: [] }).result).map((row: any) => row.id)).toEqual(['fixed', 'loads', 'material', 'details']);
   });
