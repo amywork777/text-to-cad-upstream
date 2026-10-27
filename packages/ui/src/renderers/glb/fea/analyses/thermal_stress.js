@@ -23,7 +23,7 @@ export default planned({
   // Heat up: from the reference temperature to the solved one, on a Heat row (`../poses.js`); a file with no
   // temperature field ramps its load as static does.
   motion: heatMotion,
-  routine: (result) => poseRoutine(heatMotion(result)) || LOAD_RAMP,
+  routine: (result, t) => poseRoutine(heatMotion(result, t)) || LOAD_RAMP,
   markers: ["load", "fixture", "body_load", "temperature", "heat", "convection"], displayTitle: "Loads, fixtures and heat",
   /** The stress check's hint where the file finds its peak on a clamped edge; "" for anything else. */
   checkHint: (result, check) => {

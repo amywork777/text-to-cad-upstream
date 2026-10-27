@@ -8,7 +8,7 @@ import { heldRows, madeOfRows, pushedRows } from "../setup.js";
 import { planned } from "./stub.js";
 
 /** Buckle: the load going on, from none to the load chosen, until the shape gives (GlbRenderer plays it as a load ramp). */
-export const BUCKLE = Object.freeze({ id: "fea:buckle", label: "Buckle", kind: "load_ramp" });
+export const BUCKLE = Object.freeze({ id: "fea:buckle", label: "Buckle", key: "fea.buckle", kind: "load_ramp" });
 
 export default planned({
   name: "buckling", word: "Buckling", scalesWithLoad: true,

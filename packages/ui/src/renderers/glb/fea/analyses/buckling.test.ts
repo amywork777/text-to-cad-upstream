@@ -19,7 +19,7 @@ describe('buckling', () => {
     expect(buckling).toMatchObject({ name: 'buckling', tier: 1, word: 'Buckling', noun: 'this load', family: null, scalesWithLoad: true,
       checks: ['buckling'], markers: ['load', 'fixture', 'body_load'], displayTitle: 'Loads and fixtures' });
     expect(buckling.routine(result)).toBe(BUCKLE);
-    expect(BUCKLE).toEqual({ id: 'fea:buckle', label: 'Buckle', kind: 'load_ramp' });
+    expect(BUCKLE).toEqual({ id: 'fea:buckle', label: 'Buckle', key: 'fea.buckle', kind: 'load_ramp' });
   });
 
   it('opens on the mode picker over its shapes and the deformation', () => {

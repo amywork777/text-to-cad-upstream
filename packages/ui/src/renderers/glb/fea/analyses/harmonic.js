@@ -10,6 +10,7 @@ import { plainNumber } from "../numbers.js";
 import { frameControl } from "../series.js";
 import { heldRows, madeOfRows, mapRows, pushedRows, shakenRows } from "../setup.js";
 import { planned, routineOf } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 /** Vibrate: a one-second loop of the chosen frequency's motion through its cycle, the real part then the imaginary. */
 export const VIBRATE = routineOf("Vibrate", "vibrate");
@@ -36,9 +37,9 @@ export function shakenSweepRows(result) {
 }
 
 /** Study's "Pushed" for a force shake: each load row says it swings, back and forth at every frequency of the sweep. */
-export function swingingRows(result) {
+export function swingingRows(result, t = english) {
   if (result.study?.excitation?.kind !== "force") return [];
-  return mapRows(pushedRows(result), (row) => ({ ...row, hint: "Swinging back and forth across the sweep" }));
+  return mapRows(pushedRows(result, t), (row) => ({ ...row, hint: t("fea.swingingHint") }));
 }
 
 export default planned({

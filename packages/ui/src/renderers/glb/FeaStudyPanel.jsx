@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { cn } from "@text-to-cad/ui/utils";
+import { useI18n } from "@text-to-cad/ui/i18n";
 import { TREE_INDENT_PX, TreeRowChevron, TreeRowGuides, TreeRowLabel, TreeRowSurface } from "@text-to-cad/ui/primitives/tree-row";
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
 import { Button } from "@text-to-cad/ui/primitives/button";
@@ -30,10 +31,11 @@ const controlText = (value, control) => frameText(control, value)
  * `text`, what it draws), a checkbox after the controls.
  */
 function FeaResultControls({ controls, values, presets, preset, onChange, onPreset, onReset, motionPlay = null, markers = null }) {
+  const { t } = useI18n();
   // A motion's Time row has a play/pause beside its value: it plays the timeline in place, the row following it.
-  const playButton = motionPlay ? <TooltipHint content={motionPlay.playing ? "Pause" : "Play the motion"}>
+  const playButton = motionPlay ? <TooltipHint content={motionPlay.playing ? t("fea.pause") : t("fea.playMotion")}>
     <Button type="button" variant="ghost" size="icon-xs" className="size-6 text-muted-foreground" data-fea-motion-play=""
-      aria-label={motionPlay.playing ? "Pause" : "Play the motion"} aria-pressed={motionPlay.playing} onClick={motionPlay.onToggle}>
+      aria-label={motionPlay.playing ? t("fea.pause") : t("fea.playMotion")} aria-pressed={motionPlay.playing} onClick={motionPlay.onToggle}>
       {motionPlay.playing ? <Pause className="size-3" aria-hidden="true" /> : <Play className="size-3" aria-hidden="true" />}
     </Button>
   </TooltipHint> : null;
@@ -42,7 +44,7 @@ function FeaResultControls({ controls, values, presets, preset, onChange, onPres
     <div className="flex flex-col gap-1.5 [&_span:has(+span>[data-slot=select-trigger])]:shrink-0 [&_span:has(>[data-slot=select-trigger])]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:shrink [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:max-w-full">
       {presets.length ? <KinematicsPoseRow name="Preset" poses={presets} activeValue={preset} onSelect={onPreset} onReset={onReset} /> : null}
       {controls.map((control) => controlRow({
-        control, value: values[control.id], valueText: controlText,
+        control, value: values[control.id], valueText: controlText, t,
         action: control.drives === "motion" ? playButton : null,
         onChange: (value) => onChange(control.id, value),
       }))}
@@ -124,6 +126,7 @@ function StudyHeadingRow({ row, depth, ...rest }) {
  * and closes, and a heading of the setup (Held at, Pushed, Made of) does neither (`StudyHeadingRow`). `contents`: what an open row shows in place of child rows, by id (What you see's controls).
  */
 function StudyRow({ row, depth, chosen, collapsed, toggle, onChoose, contents }) {
+  const { t } = useI18n();
   const content = contents[row.id] || null;
   const choosable = Boolean(row.faces || row.refs);
   if (row.glyph && row.children?.length) return <StudyHeadingRow {...{ row, depth, chosen, collapsed, toggle, onChoose, contents }} />;
@@ -135,11 +138,11 @@ function StudyRow({ row, depth, chosen, collapsed, toggle, onChoose, contents })
     <TreeRowSurface dense active={active} className={cn("gap-0 pr-0", row.wrap && "h-auto min-h-6")}
       style={{ paddingLeft: depth * TREE_INDENT_PX, ...(row.wrap ? { height: "auto" } : {}) }} data-study-row={row.id}>
       <TreeRowGuides depth={depth} column={16} />
-      {branch ? <button type="button" aria-label={`${open ? "Collapse" : "Expand"} ${row.label}`} aria-expanded={open}
+      {branch ? <button type="button" aria-label={t(open ? "tree.collapse" : "tree.expand", { name: row.label })} aria-expanded={open}
         className="grid h-6 w-4 shrink-0 place-items-center self-start rounded focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => toggle(row.id)}><TreeRowChevron expanded={open} /></button> : <span className="w-4 shrink-0" />}
       {choosable ? <TooltipHint content={row.hint || (row.wrap ? null : [row.label, row.detail].filter(Boolean).join(" "))} overflowOnly={!row.hint}>
-        <button type="button" aria-label={`Select ${row.name || row.label}`} aria-pressed={active} onClick={() => onChoose(row)}
+        <button type="button" aria-label={t("tree.select", { name: row.name || row.label })} aria-pressed={active} onClick={() => onChoose(row)}
           className={cn("flex min-w-0 flex-1 gap-1.5 rounded pr-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             row.wrap ? "flex-wrap items-baseline py-1" : "h-full items-center")}>
           {row.wrap ? <WrappedRowText row={row} /> : <RowText row={row} />}
@@ -195,7 +198,7 @@ function studyBlocks(sections, { verdict, setup, controls, details }) {
 }
 
 // What the view shows and how: the study view's controls, under the setup and above Details by default.
-const RESULT_ROW = Object.freeze({ id: "result", label: "What you see", detail: "" });
+const RESULT_ROW = Object.freeze({ id: "result", label: "What you see", key: "fea.whatYouSee", detail: "" });
 const NONE = Object.freeze([]);
 const DEFAULT_SECTIONS = Object.freeze(["verdict", "setup", "controls", "details"]);
 
@@ -226,22 +229,24 @@ export const FEA_STUDY_PANEL_ID = "study";
  *     markers?: { title: string, text: string, on: boolean, onChange(on: boolean): void } | null } }} props
  */
 export default function FeaStudyPanel({ parts = NONE, openPart = -1, setup, details, sections = DEFAULT_SECTIONS, verdict = null, chosen, onChoose, result }) {
+  const { t } = useI18n();
   const contents = {
     [RESULT_ROW.id]: <FeaResultControls {...result} />,
   };
-  const controls = result.controls.length || result.presets.length || result.markers ? [RESULT_ROW] : NONE;
+  const controls = result.controls.length || result.presets.length || result.markers ? [{ ...RESULT_ROW, label: t(RESULT_ROW.key) }] : NONE;
   const studied = { verdict: verdict ? <FeaVerdict verdict={verdict} chosen={chosen} onChoose={onChoose} /> : null, setup, controls, details };
   const panels = [
-    parts.length ? { id: FEA_PARTS_PANEL_ID, title: "Parts", blocks: [{ rows: parts }], startsCollapsed: parts.filter((_, index) => index !== openPart).map((row) => row.id), fit: "tree" } : null,
-    { id: FEA_STUDY_PANEL_ID, title: "Study", startsCollapsed: collapsedIds([...setup, ...details]), fit: "tree", blocks: studyBlocks(sections, studied) },
+    parts.length ? { id: FEA_PARTS_PANEL_ID, title: t("fea.parts"), blocks: [{ rows: parts }], startsCollapsed: parts.filter((_, index) => index !== openPart).map((row) => row.id), fit: "tree" } : null,
+    { id: FEA_STUDY_PANEL_ID, title: t("fea.study"), startsCollapsed: collapsedIds([...setup, ...details]), fit: "tree", blocks: studyBlocks(sections, studied) },
   ].filter(Boolean);
   return <>{panels.map((panel) => <StudyTreePanel key={panel.id} {...panel} chosen={chosen} onChoose={onChoose} contents={contents} />)}</>;
 }
 
 /** A face picked on the result, as its Quick Edit chip's card under the ref the chip names: what the study does to it, and its part. */
 export function FaceCard({ face }) {
+  const { t } = useI18n();
   return <>
-    <InfoRow label="Study">{face.role}</InfoRow>
-    {face.part ? <InfoRow label="Part">{unbroken(face.part)}</InfoRow> : null}
+    <InfoRow label={t("fea.study")}>{face.role}</InfoRow>
+    {face.part ? <InfoRow label={t("fea.part")}>{unbroken(face.part)}</InfoRow> : null}
   </>;
 }

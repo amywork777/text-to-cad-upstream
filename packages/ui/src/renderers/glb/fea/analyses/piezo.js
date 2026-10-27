@@ -13,6 +13,7 @@ import { VIBRATE as HARMONIC_VIBRATE } from "./harmonic.js";
 import { VIBRATE } from "./modal.js";
 import { LOAD_RAMP } from "./static.js";
 import { planned } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 /** The piezo study as the viewer read it (`readStudy`'s `piezo`): its solve, electrodes and poling; null for none. */
 const piezoOf = (result) => result?.study?.piezo || null;
@@ -44,13 +45,13 @@ export function electrodeLabel(entry) {
  * Study's "Electrodes": one row per electrode, its voltage or "open" ("1 V on the top electrode"), its faces under it,
  * the poling in its prompt ("1 V on the top electrode (face 6), poled along Z").
  */
-export function piezoElectrodeRows(result) {
+export function piezoElectrodeRows(result, t = english) {
   const piezo = piezoOf(result);
   if (!piezo) return [];
   const poled = poledPhrase(result);
   const entries = piezo.electrodes.filter((entry) => entry.faces.length).map((entry) => {
     const label = electrodeLabel(entry);
-    return { faces: entry.faces, label, hint: entry.open ? "Floats: one voltage, no net charge (a sensor's output)" : "",
+    return { faces: entry.faces, label, hint: entry.open ? t("fea.floatsHint") : "",
       summary: (faces) => `${label} (${facesWords(faces)})${poled ? `, ${poled}` : ""}` };
   });
   return group("electrodes", "Electrodes", "fixture", faceEntryRows(result, "electrode", entries));
@@ -99,7 +100,7 @@ export function hertzWords(hertz) {
  * anti-resonance 7.1 kHz, k_eff 0.40", chosen with the whole result and its mode shown. With no checks they are
  * the verdict: "First resonance 6.5 kHz", "Anti-resonance 7.1 kHz, coupling k_eff 0.40". null for anything else.
  */
-export function piezoFacts(result) {
+export function piezoFacts(result, t = english) {
   const modes = result?.analysis?.resonances;
   if (!modes?.length) return null;
   const refs = wholeRefs(result);
@@ -108,14 +109,14 @@ export function piezoFacts(result) {
     const coupling = `k_eff ${entry.kEff.toFixed(2)}`;
     const summary = `Mode ${entry.mode}: resonance ${hertzWords(entry.resonanceHz)}, anti-resonance ${hertzWords(entry.antiresonanceHz)}, ${coupling}`;
     const frame = frames.findIndex((each) => each.value === entry.mode);
-    return { id: `fact:mode:${entry.mode}`, kind: "resonance", status: "none", label: `Mode ${entry.mode}`, part: "",
+    return { id: `fact:mode:${entry.mode}`, kind: "resonance", status: "none", label: t("fea.modeNumber", { n: entry.mode }), part: "",
       line: unbrokenHalves([hertzWords(entry.resonanceHz), `anti-resonance ${hertzWords(entry.antiresonanceHz)}`, coupling]),
       use: null, margin: null,
       choice: { id: `fact:mode:${entry.mode}`, ...(refs.length ? { refs } : {}), summary, ...(frame >= 0 ? { frame } : {}) } };
   });
   const [first] = modes;
-  return { title: `First resonance ${hertzWords(first.resonanceHz)}`,
-    caption: `Anti-resonance ${hertzWords(first.antiresonanceHz)}, coupling k_eff ${first.kEff.toFixed(2)}`, rows };
+  return { title: t("fea.firstResonance", { frequency: hertzWords(first.resonanceHz) }),
+    caption: t("fea.antiResonance", { frequency: hertzWords(first.antiresonanceHz), k: first.kEff.toFixed(2) }), rows };
 }
 
 export default planned({

@@ -9,6 +9,7 @@ import { plainNumber, threeFigures } from "../numbers.js";
 import { poseRoutine, shakeMotion } from "../poses.js";
 import { planned } from "./stub.js";
 import { axisWords, heldRefs, heldRows, madeOfRows } from "../setup.js";
+import { english } from "../../../../i18n/core.js";
 
 const finite = (value) => typeof value === "number" && Number.isFinite(value);
 
@@ -54,15 +55,15 @@ export function spectrumWords(srs) {
  * Study's "Shocked", under a wave: the spectrum in a line, how the modes were combined its hint,
  * chosen with every fixed face (where the shock comes in). [] for a file with no spectrum.
  */
-export function shockedRows(result) {
+export function shockedRows(result, t = english) {
   const study = result.study || {};
   const label = spectrumWords(study.srs);
   if (!label) return [];
   const combination = study.combination === "cqc" ? "CQC" : study.combination === "srss" ? "SRSS" : "";
   const refs = heldRefs(result);
-  return [{ id: "shocked", label: "Shocked", detail: "", glyph: "wave", children: [{ id: "shocked:0", label, detail: "", wrap: true,
-    ...(combination ? { hint: `Modes combined by ${combination}` } : {}),
-    ...(refs ? { ...refs, summary: `Shocked where it is held: ${label}` } : {}) }] }];
+  return [{ id: "shocked", label: t("fea.shocked"), detail: "", glyph: "wave", children: [{ id: "shocked:0", label, detail: "", wrap: true,
+    ...(combination ? { hint: t("fea.modesCombined", { method: combination }) } : {}),
+    ...(refs ? { ...refs, summary: t("fea.shockedSummary", { what: label }) } : {}) }] }];
 }
 
 export default planned({
@@ -72,7 +73,7 @@ export default planned({
   setupGroups: [heldRows, shockedRows, madeOfRows],
   // Shock: a base pulse matched to the spectrum and the part's modes ringing, scrubbed on its Time row (`../poses.js`).
   motion: shakeMotion,
-  routine: (result) => poseRoutine(shakeMotion(result)),
+  routine: (result, t) => poseRoutine(shakeMotion(result, t)),
   markers: ["fixture", "base_excitation"], displayTitle: "Shaker and fixtures",
 });
 

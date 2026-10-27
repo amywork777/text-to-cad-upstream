@@ -23,6 +23,7 @@ import { DISPLACEMENT } from "./series.js";
 import { roundFactor, shortTime, slowWords } from "./fall.js";
 import { threeFigures } from "./numbers.js";
 import { motionRoutine } from "./motion.js";
+import { english } from "../../../i18n/core.js";
 
 /** What cadgen wrote for the routine (`extras.analysis.motion`), or null. */
 export function motionData(result) {
@@ -63,7 +64,7 @@ const pose = (spec) => Object.freeze({ kind: "pose", play: null, moments: [], ..
  * its states the start, a shock's pulse ending and the largest swing (where it opens); the readout says the base's
  * acceleration then. null for a file with none.
  */
-function shakeMotionOf(result) {
+function shakeMotionOf(result, t) {
   const data = motionData(result);
   if (data?.kind !== "base_shake") return null;
   const count = Number(data.count);
@@ -93,11 +94,11 @@ function shakeMotionOf(result) {
     ? "A base pulse synthesised to match the shock's spectrum, and the modes that move the part most answering it, relative to the shaker"
     : `A ${threeFigures(Number(data.rms_g) || 0)} g rms shake synthesised from the PSD, and the modes that move the part most answering it, relative to the shaker`;
   return pose({
-    label: shock ? "Shock" : "Shake", row: "Time", duration, defaultAt: peakIndex * step * slow, hint, timeAt,
+    label: shock ? t("fea.shock") : t("fea.shake"), row: t("fea.time"), duration, defaultAt: peakIndex * step * slow, hint, timeAt,
     states: [
-      { id: "start", label: shock ? "Pulse starts" : "Start", at: 0 },
-      shock && pulse > 0 && pulse < window ? { id: "pulse_end", label: "Pulse ends", at: pulse * slow } : null,
-      { id: "largest", label: "Largest swing", at: peakIndex * step * slow },
+      { id: "start", label: shock ? t("fea.pulseStarts") : t("fea.start"), at: 0 },
+      shock && pulse > 0 && pulse < window ? { id: "pulse_end", label: t("fea.pulseEnds"), at: pulse * slow } : null,
+      { id: "largest", label: t("fea.largestSwing"), at: peakIndex * step * slow },
     ],
     slow,
     poseAt(at) {
@@ -126,7 +127,7 @@ const FOLLOWS_LOAD = new Set(["_cycle_stress", DISPLACEMENT]);
  * in Steinberg's shares), the stress (`_cycle_stress`) and the deformation following it while the life and the
  * margin, which are of the whole cycle, stand. Its row is Cycle; its states the peak (where it opens) and the trough.
  */
-function cycleMotionOf(result) {
+function cycleMotionOf(result, t) {
   const data = motionData(result);
   if (data?.kind !== "cycle") return null;
   const ratio = finite(data.ratio) ? Number(data.ratio) : -1;
@@ -153,12 +154,11 @@ function cycleMotionOf(result) {
   const rate = hz ? `${hertzWords(hz)}, ${slowWords(slow) || "real time"}` : "one cycle a second: the load gives no rate";
   const third = random ? STEINBERG_CYCLES.indexOf(3) : 0;
   return pose({
-    label: "Load cycle", row: "Cycle", duration, defaultAt: (third + 0.25) * cycleS, timeAt,
-    hint: random ? "The stress swinging fully reversed, its cycles at 1σ, 2σ and 3σ in Steinberg's shares (68 %, 27 %, 4 %)"
-      : `The load swinging between ${Math.round(ratio * 100)} % and 100 % of its peak, the stress and the deformation with it`,
+    label: t("fea.loadCycle"), row: t("fea.cycle"), duration, defaultAt: (third + 0.25) * cycleS, timeAt,
+    hint: random ? t("fea.randomCycleHint") : t("fea.cycleHint", { low: Math.round(ratio * 100) }),
     states: [
-      { id: "max", label: random ? "3σ peak" : "Max", at: (third + 0.25) * cycleS },
-      { id: "min", label: random ? "3σ trough" : "Min", at: (third + 0.75) * cycleS },
+      { id: "max", label: random ? t("fea.peak3s") : t("fea.max"), at: (third + 0.25) * cycleS },
+      { id: "min", label: random ? t("fea.trough3s") : t("fea.min"), at: (third + 0.75) * cycleS },
     ],
     poseAt(at, { field } = {}) {
       const { n, load } = loadAt(at);
@@ -182,7 +182,7 @@ const PHASE_S = 2;
  * density, from their real and imaginary parts), on the amplitude's colour range. Its row is Phase; its states 0°,
  * 90° and the moment the strongest point peaks (where it opens). A field with no phase (a temperature) stands.
  */
-function acMotionOf(result) {
+function acMotionOf(result, t) {
   const data = motionData(result);
   if (data?.kind !== "ac" || !(Number(data.frequency_Hz) > 0)) return null;
   const hz = Number(data.frequency_Hz);
@@ -225,9 +225,9 @@ function acMotionOf(result) {
   }
   const timeAt = (at) => `${Math.round((angle(at) * 180) / Math.PI) % 360}° · ${shortTime(clampTo(at, 0, duration) / slow)}`;
   return pose({
-    label: "AC cycle", row: "Phase", duration, defaultAt: peakAt, timeAt,
-    hint: `The field turning through one ${hertzWords(hz)} cycle: its strength at each moment, on its amplitude's colours`,
-    states: [{ id: "peak", label: "Peak", at: peakAt }, { id: "0", label: "0°", at: 0 }, { id: "90", label: "90°", at: duration / 4 }],
+    label: t("fea.acCycle"), row: t("fea.phase"), duration, defaultAt: peakAt, timeAt,
+    hint: t("fea.acCycleHint", { frequency: hertzWords(hz) }),
+    states: [{ id: "peak", label: t("fea.peak"), at: peakAt }, { id: "0", label: "0°", at: 0 }, { id: "90", label: "90°", at: duration / 4 }],
     poseAt(at, { field } = {}) {
       const pair = pairs[field?.view] || null;
       const words = { time: `${Math.round((angle(at) * 180) / Math.PI) % 360}° of the cycle`, scale: `${hertzWords(hz)}, ${slowWords(slow)}` };
@@ -250,7 +250,7 @@ const STEP_S = 1;
  * steps, each blended into the next. Its row is Load; its states Snug, Preloaded and the full service load; a
  * check's frame is a moment on it. null for a file with no load steps.
  */
-function boltMotionOf(result) {
+function boltMotionOf(result, t) {
   const frames = result?.series?.frames || [];
   if (!frames.length) return null;
   const steps = frames.length - 1;
@@ -269,13 +269,13 @@ function boltMotionOf(result) {
     return frames[state.weight >= 0.5 ? state.to : state.from]?.label || "";
   };
   return pose({
-    label: "Tighten and load", row: "Load", duration, defaultAt: atFrame(result.series.default) ?? TIGHTEN_S, timeAt, atFrame,
+    label: t("fea.tightenAndLoad"), row: t("fea.load"), duration, defaultAt: atFrame(result.series.default) ?? TIGHTEN_S, timeAt, atFrame,
     moments: frames.map((_, index) => atFrame(index)),
-    hint: "The bolt tightened to its preload (ramped), then the service load put on in its solved steps",
+    hint: t("fea.tightenHint"),
     states: [
-      { id: "snug", label: "Snug", at: 0 },
-      { id: "preloaded", label: "Preloaded", at: TIGHTEN_S },
-      steps ? { id: "service", label: "Service load", at: duration } : null,
+      { id: "snug", label: t("fea.snug"), at: 0 },
+      { id: "preloaded", label: t("fea.preloaded"), at: TIGHTEN_S },
+      steps ? { id: "service", label: t("fea.serviceLoad"), at: duration } : null,
     ],
     poseAt(at) {
       const state = where(at);
@@ -298,7 +298,7 @@ const HEAT_S = 2;
  * is exact for that share of the heat, and it says "ramped". Its row is Heat; its states Ambient and Heated (where
  * it opens: the result as solved).
  */
-function heatMotionOf(result) {
+function heatMotionOf(result, t) {
   const temperature = result?.fields?.find((entry) => entry.attribute === "_temperature");
   if (!temperature) return null;
   const reference = finite(result.analysis?.referenceC) ? result.analysis.referenceC : 20;
@@ -306,9 +306,9 @@ function heatMotionOf(result) {
   let out = null;
   const timeAt = (at) => `${Math.round((clampTo(at, 0, HEAT_S) / HEAT_S) * 100)} % of the heat`;
   return pose({
-    label: "Heat up", row: "Heat", duration: HEAT_S, defaultAt: HEAT_S, timeAt,
-    hint: `The part heating from ${threeFigures(reference)} °C to its solved temperatures, the stress and the deformation growing with it (ramped: the result is linear in the heat)`,
-    states: [{ id: "ambient", label: "Ambient", at: 0 }, { id: "heated", label: "Heated", at: HEAT_S }],
+    label: t("fea.heatUp"), row: t("fea.heat"), duration: HEAT_S, defaultAt: HEAT_S, timeAt,
+    hint: t("fea.heatUpHint", { from: threeFigures(reference) }),
+    states: [{ id: "ambient", label: t("fea.ambient"), at: 0 }, { id: "heated", label: t("fea.heated"), at: HEAT_S }],
     poseAt(at, { field } = {}) {
       const k = clampTo(at, 0, HEAT_S) / HEAT_S;
       const words = { time: timeAt(at), scale: "ramped" };
@@ -362,13 +362,18 @@ export function paceWords(slow) {
   return "real time";
 }
 
-/** One motion per result read: a builder is called by the controls, the presets and the routine alike. */
+/**
+ * One motion per result read and language: a builder is called by the controls, the presets and the routine alike,
+ * in the words of the `t` it is handed (English by default).
+ */
 function once(build) {
   const kept = new WeakMap();
-  return (result) => {
+  return (result, t = english) => {
     if (!result || typeof result !== "object") return null;
-    if (!kept.has(result)) kept.set(result, build(result));
-    return kept.get(result);
+    let byLanguage = kept.get(result);
+    if (!byLanguage) kept.set(result, (byLanguage = new Map()));
+    if (!byLanguage.has(t)) byLanguage.set(t, build(result, t));
+    return byLanguage.get(t);
   };
 }
 

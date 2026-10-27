@@ -10,6 +10,7 @@ import { sigmaControl } from "../series.js";
 import { planned } from "./stub.js";
 import { poseRoutine, shakeMotion } from "../poses.js";
 import { axisWords, heldRefs, heldRows, madeOfRows } from "../setup.js";
+import { english } from "../../../../i18n/core.js";
 
 /** The field select over every field (stress first), then the Sigma level; the field alone for a result with no RMS field. */
 export function fieldAndSigma(result) {
@@ -46,15 +47,15 @@ export function psdWords(psd) {
 }
 
 /** Study's "Shaken", under a wave: the PSD summarised, chosen with every fixed face; the level judged at its hint. */
-export function shakenAtRandomRows(result) {
+export function shakenAtRandomRows(result, t = english) {
   const psd = psdOf(result);
   if (!psd) return [];
   const label = psdWords(psd);
   const sigma = result.study?.sigma;
   const refs = heldRefs(result);
-  return [{ id: "shaken", label: "Shaken", detail: "", glyph: "wave", children: [{ id: "shaken:0", label, detail: "", wrap: true,
-    hint: `At random, a ${psd.table.length}-point PSD${sigma ? `, judged at ${sigma}σ` : ""}`,
-    ...(refs ? { ...refs, summary: `Shaken at random where it is held: ${label}` } : {}) }] }];
+  return [{ id: "shaken", label: t("fea.shaken"), detail: "", glyph: "wave", children: [{ id: "shaken:0", label, detail: "", wrap: true,
+    hint: sigma ? t("fea.psdSigmaHint", { points: psd.table.length, sigma }) : t("fea.psdHint", { points: psd.table.length }),
+    ...(refs ? { ...refs, summary: t("fea.shakenRandomSummary", { what: label }) } : {}) }] }];
 }
 
 export default planned({
@@ -64,7 +65,7 @@ export default planned({
   setupGroups: [heldRows, shakenAtRandomRows, madeOfRows],
   // Shake: a shake synthesised from the PSD and the part's modes answering it, scrubbed on its Time row (`../poses.js`).
   motion: shakeMotion,
-  routine: (result) => poseRoutine(shakeMotion(result)),
+  routine: (result, t) => poseRoutine(shakeMotion(result, t)),
   markers: ["fixture", "base_excitation"], displayTitle: "Shaker and fixtures",
 });
 

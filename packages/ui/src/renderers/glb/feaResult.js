@@ -49,6 +49,7 @@ import { detailRows, faceLabel, facePartIndex, faceSummary, isRoller, loadWords,
 export { FEA_CHECK_KINDS } from "./fea/checkKinds.js";
 export { deformationRange } from "./fea/controls.js";
 import { fieldInfo } from "./fea/fields.js";
+import { english } from "../../i18n/core.js";
 export { FIELD_WORDS } from "./fea/fields.js";
 export { faceLabel, faceTitle, forceDirection } from "./fea/setup.js";
 
@@ -974,13 +975,13 @@ const finiteNumber = (value) => typeof value === "number" && Number.isFinite(val
  * sentence: their labels run over the whole row (`wideLabel`), where the default two keep the
  * one-column look they always had.
  */
-export function feaControls(result) {
+export function feaControls(result, t = english) {
   const every = result.fields.map((entry) => entry.attribute);
   const chosen = result.view?.controls ? viewControls(result, every) : [];
-  const own = chosen.length ? keptDeformation(result, chosen) : feaAnalysis(result).defaultControls(result);
+  const own = chosen.length ? keptDeformation(result, chosen, t) : feaAnalysis(result).defaultControls(result, t);
   // A result that moves as a whole (a drop: `fea/motion.js`) leads with its Time row, which also scrubs its frames.
-  const motion = feaMotion(result);
-  const controls = motion ? [motionControl(motion), ...own.filter((control) => control.drives !== "frame" && control.drives !== "motion")] : own;
+  const motion = feaMotion(result, t);
+  const controls = motion ? [motionControl(motion, t), ...own.filter((control) => control.drives !== "frame" && control.drives !== "motion")] : own;
   // A displacement too small to mean anything has no Deformation to set: it is drawn at rest.
   return result.motionless ? controls.filter((control) => control.drives !== "deformation") : controls;
 }
@@ -989,9 +990,9 @@ export function feaControls(result) {
  * A view that picks the field but says nothing of the deformation keeps the analysis's own Deformation
  * slider, after its controls: choosing what the colours show is no reason to lose how far it is drawn.
  */
-function keptDeformation(result, chosen) {
+function keptDeformation(result, chosen, t = english) {
   if (!chosen.some((control) => control.drives === "field") || chosen.some((control) => control.drives === "deformation")) return chosen;
-  const own = feaAnalysis(result).defaultControls(result).find((control) => control.drives === "deformation");
+  const own = feaAnalysis(result).defaultControls(result, t).find((control) => control.drives === "deformation");
   return own ? [...chosen, own] : chosen;
 }
 
@@ -1109,7 +1110,7 @@ export function feaPresets(result, controls) {
 }
 
 /** The motion a result moves through as a whole (`fea/motion.js`: a drop's fall), as its analysis says; null for none. */
-export const feaMotion = (result) => feaAnalysis(result).motion?.(result) || null;
+export const feaMotion = (result, t = english) => feaAnalysis(result).motion?.(result, t) || null;
 
 function viewPresets(result, controls, defaults) {
   return (result.view?.presets || []).map((preset, index) => {
@@ -1214,7 +1215,7 @@ function jointChoice(result, joint, index) {
  * joint is under both its parts and either row is the same choice (`jointChoice`). Details wrap
  * (`wrap`) rather than truncate. What each part holds is at `loadScale` times the solved load.
  */
-export function partRows(result, loadScale = 1) {
+export function partRows(result, loadScale = 1, t = english) {
   const joints = result.connections.map((joint, index) => jointChoice(result, joint, index));
   return result.parts.map((part, index) => {
     const children = part.ref ? result.connections.flatMap((joint, at) => {
@@ -1223,7 +1224,7 @@ export function partRows(result, loadScale = 1) {
     }) : [];
     return {
       id: `part:${index}`, label: spaced(part.name || part.ref), detail: partDetail(part, loadScale), wrap: true, refs: part.ref ? [part.ref] : [], parts: [index],
-      summary: `Part '${part.name || part.ref}'`, ...(children.length ? { children } : {}),
+      summary: t("fea.partSummary", { name: part.name || part.ref }), ...(children.length ? { children } : {}),
     };
   });
 }
@@ -1450,23 +1451,23 @@ const failedTitle = (failing, total) => (failing === total ? (total === 2 ? "Fai
  * the file cannot say: in the static family, no stress field, or a stress with no safety factor and
  * no checks (a result older than both); in any other analysis, no checks.
  */
-export function feaVerdict(result, loadScale = 1) {
+export function feaVerdict(result, loadScale = 1, t = english) {
   const analysis = feaAnalysis(result);
   const staticFamily = analysis.family === "static";
   const stress = result.fields.find((entry) => entry.attribute === "_von_mises");
   if (staticFamily && !stress) return null;
   const k = Number(loadScale) >= 0 ? Number(loadScale) : 1;
-  if (!(k > 0)) return { status: "none", title: "No load", caption: "The load is set to 0", rows: [] };
+  if (!(k > 0)) return { status: "none", title: t("fea.noLoad"), caption: t("fea.loadIsZero"), rows: [] };
   const checks = feaChecks(result);
   if (staticFamily) {
     const unloaded = checks.some((check) => check.kind === "stress" && !(check.value > 0));
     if (!checks.length || unloaded) {
-      return stress.max > 0 && !unloaded ? null : { status: "none", title: "No stress", caption: "Check the load reaches the part", rows: [] };
+      return stress.max > 0 && !unloaded ? null : { status: "none", title: t("fea.noStress"), caption: t("fea.checkLoadReaches"), rows: [] };
     }
   }
   // What the analysis reports with no limit to judge it by (a piezo resonance's modes): rows of their own, after
   // any checks; with no checks, its own headline and takeaway, in no tone.
-  const facts = typeof analysis.facts === "function" ? analysis.facts(result) : null;
+  const facts = typeof analysis.facts === "function" ? analysis.facts(result, t) : null;
   if (!checks.length) {
     if (!facts) return null;
     const { lead, tail } = captionFrame(result, analysis);
@@ -1534,26 +1535,26 @@ function machRows(result, whole) {
  * the faces it is about (the region kept fine, the features left out) tinted, else the whole result;
  * and a Tier 3 analysis's "Limits", one row per sentence of what its model leaves out.
  */
-function detailsGroup(result) {
+function detailsGroup(result, t = english) {
   const refs = wholeRefs(result);
   const whole = (summary) => (refs.length ? { refs, summary } : {});
   const reynolds = reynoldsWarning(result);
   const flow = reynolds ? [{ id: "reynolds", label: reynolds.sentence, detail: "", wrap: true, ...whole(reynolds.sentence) }] : [];
-  const mesh = result.study ? detailRows(result)[0]?.children || [] : [];
-  const fit = result.fit.length ? [{ id: "fit", label: "Adapted to fit", detail: "", children: result.fit.map((step, index) => {
+  const mesh = result.study ? detailRows(result, t)[0]?.children || [] : [];
+  const fit = result.fit.length ? [{ id: "fit", label: t("fea.adapted"), detail: "", children: result.fit.map((step, index) => {
     const summary = `Adapted to fit: ${step.words}${step.accuracy ? ` (${step.accuracy})` : ""}`;
     return { id: `fit:${index}`, label: step.words, detail: "", wrap: true, ...(step.accuracy ? { hint: step.accuracy } : {}),
       ...(step.faces.length ? { faces: step.faces, summary } : whole(summary)) };
   }) }] : [];
   const tier3 = result.analysis?.tier === 3 && result.analysis.limits.length;
-  const limits = tier3 ? [{ id: "limits", label: "Limits", detail: "", children: result.analysis.limits.map((sentence, index) => ({
+  const limits = tier3 ? [{ id: "limits", label: t("fea.limits"), detail: "", children: result.analysis.limits.map((sentence, index) => ({
     id: `limit:${index}`, label: sentence, detail: "", wrap: true, ...whole(`Limits of this ${result.analysis.word.toLowerCase()} result: ${sentence}`) })) }] : [];
   const unsettled = unsettledWarning(result);
   const settle = unsettled ? [{ id: "unsettled", label: unsettled.sentence, detail: "", wrap: true, ...whole(unsettled.sentence) }] : [];
   // An analysis's own Details rows (`detailRows(result, whole)`: fsi's coupling iterations), before the mesh.
   const own = typeof feaAnalysis(result).detailRows === "function" ? feaAnalysis(result).detailRows(result, whole) : [];
   const children = [...settle, ...flow, ...machRows(result, whole), ...own, ...mesh, ...fit, ...limits];
-  return children.length ? [{ id: "details", label: "Details", detail: "", collapsed: true, children }] : [];
+  return children.length ? [{ id: "details", label: t("fea.details"), detail: "", collapsed: true, children }] : [];
 }
 
 // Details follow "What you see" (the panel's own), shut; a result kind with more to say adds a group here.
@@ -1574,8 +1575,8 @@ export function studyRows(result) {
 }
 
 /** Study's rows by section: `setup` (the analysis's `setupGroups`) and `details` (`DETAIL_GROUPS`), each [] where the file records nothing for it. */
-export function studySections(result) {
-  return { setup: result.study ? feaAnalysis(result).setupGroups.flatMap((group) => group(result)) : [], details: DETAIL_GROUPS.flatMap((group) => group(result)) };
+export function studySections(result, t = english) {
+  return { setup: result.study ? feaAnalysis(result).setupGroups.flatMap((group) => group(result, t)) : [], details: DETAIL_GROUPS.flatMap((group) => group(result, t)) };
 }
 
 /**

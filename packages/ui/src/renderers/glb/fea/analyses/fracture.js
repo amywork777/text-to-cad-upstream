@@ -9,6 +9,7 @@ import { plainNumber } from "../numbers.js";
 import { faceLabel, heldRows, madeOfRows, pushedRows, wholeRefs } from "../setup.js";
 import { LOAD_RAMP } from "./static.js";
 import { planned } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 const KINDS = Object.freeze(["edge", "through", "surface", "embedded"]);
 const finite = (value) => (Number.isFinite(Number(value)) && value !== null && value !== "" ? Number(value) : null);
@@ -61,15 +62,15 @@ export function crackHint(crack) {
  * Study's "Crack": one row, the crack in plain words ("2 mm edge crack on face 4"), its K its hint,
  * chosen with the face it opens from (else the whole result). [] for a result with no crack.
  */
-export function crackRows(result) {
+export function crackRows(result, t = english) {
   const crack = crackOf(result);
   if (!crack) return [];
   const label = crackWords(crack);
   const hint = crackHint(crack);
   const faces = crack.face ? [crack.face] : [];
-  return [{ id: "crack", label: "Crack", detail: "", glyph: "plane", children: [{
+  return [{ id: "crack", label: t("fea.crack"), detail: "", glyph: "plane", children: [{
     id: "crack:0", label, detail: "", wrap: true, ...(hint ? { hint } : {}),
-    ...(faces.length ? { faces } : { refs: wholeRefs(result) }), summary: `Crack: ${label}${hint ? ` (${hint})` : ""}`,
+    ...(faces.length ? { faces } : { refs: wholeRefs(result) }), summary: hint ? t("fea.crackHintSummary", { crack: label, hint }) : t("fea.crackSummary", { crack: label }),
   }] }];
 }
 

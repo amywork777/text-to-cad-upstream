@@ -83,7 +83,7 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     if (posed) Object.assign(scene, { bounds: posed, restBounds: posed });
   }, [scene, fea]);
   const analysis = fea ? fv.feaAnalysis(fea) : null;
-  const controls = useMemo(() => (fea ? fv.feaControls(fea) : EMPTY), [fea]);
+  const controls = useMemo(() => (fea ? fv.feaControls(fea, t) : EMPTY), [fea, t]);
   const presets = useMemo(() => (fea ? fv.feaPresets(fea, controls) : EMPTY), [fea, controls]);
   const markerShow = useMemo(() => (fea ? fv.feaMarkerShow(fea) : null), [fea]);
   const signature = fea ? `${fea.fields.map((entry) => entry.attribute).join(",")}:${fea.deformationScale}${fea.view ? `:${fv.viewKey(fea.view)}` : ""}` : "";
@@ -134,14 +134,14 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   const clearChoice = useCallback(() => setChosenFaces(NO_FACES), []);
   const faces = fea && chosenFaces.result === fea ? chosenFaces : NO_FACES;
   // Study's setup and Details, and the parts of Study the view lists, in its order.
-  const sections = useMemo(() => (fea ? fv.studySections(fea) : { setup: EMPTY, details: EMPTY }), [fea]);
+  const sections = useMemo(() => (fea ? fv.studySections(fea, t) : { setup: EMPTY, details: EMPTY }), [fea, t]);
   const rows = useMemo(() => [...sections.setup, ...sections.details], [sections]);
   const order = useMemo(() => (fea ? fv.feaSections(fea) : EMPTY), [fea]);
   // An assembly's parts, each with its joints, are a sidebar section of their own above Study, from six parts
   // up unless the view says (`feaShowsParts`); a picked face's chip names its part.
-  const parts = useMemo(() => (fea && fv.feaShowsParts(fea) ? fv.partRows(fea, loadScale) : EMPTY), [fea, loadScale]);
+  const parts = useMemo(() => (fea && fv.feaShowsParts(fea) ? fv.partRows(fea, loadScale, t) : EMPTY), [fea, loadScale, t]);
   // The answer at a glance, at the load shown: it follows the load control, and may change its word.
-  const verdict = useMemo(() => (fea ? fv.feaVerdict(fea, loadScale) : null), [fea, loadScale]);
+  const verdict = useMemo(() => (fea ? fv.feaVerdict(fea, loadScale, t) : null), [fea, loadScale, t]);
   // A check whose value occurs at a frame of the series shows that frame when chosen: the mode picker
   // or the scrubber moves there, and with neither the view still jumps to it.
   const jumpRef = useRef(null);
@@ -183,7 +183,7 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   // A result that moves as a whole (`fea/motion.js`; a drop's fall, `fea/fall.js`, drawn by `feaFall.js`): the Time
   // row's value poses it, and Preview's playbar plays the same timeline (with reduced motion, only its `play` span).
   const reducedMotion = host.environment?.reducedMotion === true || prefersReducedMotion();
-  const motion = useMemo(() => (fea ? fv.feaMotion(fea) : null), [fea]);
+  const motion = useMemo(() => (fea ? fv.feaMotion(fea, t) : null), [fea, t]);
   const fall = useMemo(() => {
     const frame = motion?.kind === "fall" ? fv.fallFrame(THREE, fea) : null;
     return frame ? { frame, plan: motion.plan } : null;
@@ -204,7 +204,7 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   // modal's and harmonic's Vibrate (a loop of the shape swinging, a harmonic frame through its phase),
   // a series' Play (its frames in turn, each blended into the next); none for one with nothing to play.
   const ownClips = useMemo(() => {
-    const routine = fea ? fv.feaAnalysis(fea).routine(fea) : null;
+    const routine = fea ? fv.feaAnalysis(fea).routine(fea, t) : null;
     // A motion's routine plays its timeline (`motionSpan`): its value is the moment on it, as the Time row's is.
     const span = routine?.kind === "motion" && motion ? fv.motionSpan(motion, reducedMotion) : null;
     // A routine that says how long it is (a flow's tracers' longest trip) plays that long.
@@ -213,13 +213,13 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     const swings = routine.kind === "vibrate" || routine.kind === "pulse";
     const valueAt = (elapsedSec) => (span ? span.from + clamp(elapsedSec, 0, duration) : routine.kind === "tracers" ? elapsedSec : swings ? (2 * Math.PI * elapsedSec) / duration : clamp(elapsedSec / duration, 0, 1));
     return [{
-      id: routine.id, label: routine.label, duration,
+      id: routine.id, label: routine.key ? t(routine.key) : routine.label, duration,
       play: {
         apply(elapsedSec) { routineRef.current = { kind: routine.kind, value: valueAt(elapsedSec) }; paintRef.current?.(); },
         release() { routineRef.current = null; paintRef.current?.(); },
       },
     }];
-  }, [fea, motion, reducedMotion]);
+  }, [fea, motion, reducedMotion, t]);
   const animation = useGlbAnimation(scene?.document || null, () => requestRenderRef.current?.(), ownClips);
   const shellRef = useRef(null);
   const choose = useCallback((patch) => {

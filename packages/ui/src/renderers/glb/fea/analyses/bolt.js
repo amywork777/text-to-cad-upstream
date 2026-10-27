@@ -10,6 +10,7 @@ import { contactRows, list, outcomeRefs } from "./contact.js";
 import { stopsCaption } from "./nonlinear.js";
 import { boltMotion, poseRoutine } from "../poses.js";
 import { planned } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 /** A bolt as its row says it: "M6 bolt, 5 kN preload, clamps plate and bracket". */
 export function boltWords(bolt) {
@@ -31,7 +32,7 @@ function outcomeWords(outcome) {
  * Study's "Bolted": one row per bolt as cadgen solved it ("M6 bolt, 5 kN preload, clamps plate and
  * bracket"), its force after loading its hint, chosen with the two parts it clamps. [] for none.
  */
-export function boltRows(result) {
+export function boltRows(result, t = english) {
   const extras = result?.mesh?.userData || {};
   const outcomes = list(extras.bolts);
   const rows = list(result?.study?.bolts).map((bolt, index) => {
@@ -41,7 +42,7 @@ export function boltRows(result) {
     const refs = outcomeRefs(outcome);
     const hint = outcomeWords(outcome);
     return { id: `bolt:${index}`, label, detail: "", wrap: true, ...(hint ? { hint } : {}),
-      ...(refs.length ? { refs, summary: `Bolt: ${label}` } : {}) };
+      ...(refs.length ? { refs, summary: t("fea.boltSummary", { what: label }) } : {}) };
   }).filter(Boolean);
   return group("bolts", "Bolted", "load", rows);
 }
@@ -58,7 +59,7 @@ export default planned({
   setupGroups: BOLT_SETUP,
   // Tighten and load: the bolt tightened (ramped), then the service load's steps, on a Load row (`../poses.js`).
   motion: boltMotion,
-  routine: (result) => poseRoutine(boltMotion(result)),
+  routine: (result, t) => poseRoutine(boltMotion(result, t)),
   markers: ["load", "fixture", "rigid_plane"],
   limitWord: "Lite",
   stopCaption: stopsCaption,

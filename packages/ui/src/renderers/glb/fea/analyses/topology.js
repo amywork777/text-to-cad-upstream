@@ -9,6 +9,7 @@ import { plainNumber } from "../numbers.js";
 import { frameControl } from "../series.js";
 import { faceLabel, group, heldRows, madeOfRows, pushedRows, wholeRefs } from "../setup.js";
 import { planned, routineOf } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 /** The design forming: the iterations one after another, interpolated (GlbRenderer plays a series this way). */
 export const FORMING = routineOf("Watch it form", "play");
@@ -29,7 +30,7 @@ export function keptSolidWords(refs) {
 }
 
 /** Study's "Lighten": the share of the material to keep, and the faces kept solid (the fixtures, loads and holes among them). */
-export function lightenRows(result) {
+export function lightenRows(result, t = english) {
   const study = result.study || {};
   const rows = [];
   const keep = keepWords(study.volumeFraction);
@@ -39,7 +40,7 @@ export function lightenRows(result) {
   const solid = keptSolidWords(kept);
   if (solid) {
     rows.push({ id: "lighten:solid", label: solid, detail: "", wrap: true, faces: kept, summary: solid,
-      hint: "The material near these faces stays: fixtures, loads, bolt holes and the faces the study keeps" });
+      hint: t("fea.keepHint") });
   }
   return group("lighten", "Lighten", "material", rows);
 }
@@ -51,19 +52,19 @@ export const TOPOLOGY_SETUP = Object.freeze([heldRows, pushedRows, lightenRows, 
  * first, then the verified design's stress and displacement), and "Show above" 0.5 on the material
  * kept, which draws the material that goes grey.
  */
-export function topologyControls(result) {
+export function topologyControls(result, t = english) {
   const every = result.fields.map((entry) => entry.attribute);
   const ordered = [MATERIAL_KEPT, ...every.filter((attribute) => attribute !== MATERIAL_KEPT)];
   const options = fieldOptions(result, ordered);
   const controls = [];
-  const frames = frameControl(result, "frame", { label: "Iteration" });
+  const frames = frameControl(result, "frame", { label: t("fea.iteration") }, t);
   if (frames) controls.push(frames);
   if (options.length) {
-    controls.push({ id: "field", drives: "field", type: "enum", label: "Field", ariaLabel: "Result field", hideLabel: true, options,
+    controls.push({ id: "field", drives: "field", type: "enum", label: t("fea.field"), ariaLabel: t("fea.resultField"), hideLabel: true, options,
       defaultValue: options[0].value });
   }
   if (result.fields.some((entry) => entry.attribute === MATERIAL_KEPT)) {
-    controls.push({ id: "threshold", drives: "threshold", type: "number", label: "Show above", min: 0, max: 1, step: 0.05,
+    controls.push({ id: "threshold", drives: "threshold", type: "number", label: t("fea.showAbove"), min: 0, max: 1, step: 0.05,
       defaultValue: 0.5, unit: "", field: MATERIAL_KEPT });
   }
   return controls;
