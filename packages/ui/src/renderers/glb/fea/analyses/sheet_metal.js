@@ -11,7 +11,7 @@ import { planned } from "./stub.js";
 
 /** Spring back: the part released from the press brake, from its CAD shape to its shape off the brake (FeaSurface
  * plays it as a load ramp, from the sidebar's Animation section). */
-export const SPRING_BACK = Object.freeze({ id: "fea:spring-back", label: "Spring back", kind: "load_ramp" });
+export const SPRING_BACK = Object.freeze({ id: "fea:spring-back", label: "Spring back", key: "fea.springBack", kind: "load_ramp" });
 
 export default planned({
   name: "sheet_metal", tier: 2, word: "Sheet metal", noun: "this bend", estimate: true,

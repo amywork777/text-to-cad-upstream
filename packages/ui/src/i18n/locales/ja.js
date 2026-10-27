@@ -822,4 +822,6 @@ export default {
   "fea.showAbove": "表示の下限",
   "fea.pointing": "向き: {direction}",
   "fea.overTime": "時間変化: {history}",
+  "fea.build": "造形",
+  "fea.springBack": "スプリングバック",
 };

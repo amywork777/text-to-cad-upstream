@@ -850,4 +850,6 @@ export default {
   "fea.showAbove": "Show above",
   "fea.pointing": "Pointing {direction}",
   "fea.overTime": "Over time: {history}",
+  "fea.build": "Build",
+  "fea.springBack": "Spring back",
 };

@@ -822,4 +822,6 @@ export default {
   "fea.showAbove": "표시 하한",
   "fea.pointing": "방향: {direction}",
   "fea.overTime": "시간에 따라: {history}",
+  "fea.build": "적층",
+  "fea.springBack": "스프링백",
 };

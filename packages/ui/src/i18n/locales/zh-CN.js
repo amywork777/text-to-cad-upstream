@@ -823,4 +823,6 @@ export default {
   "fea.showAbove": "显示阈值",
   "fea.pointing": "方向：{direction}",
   "fea.overTime": "随时间：{history}",
+  "fea.build": "打印进度",
+  "fea.springBack": "回弹",
 };

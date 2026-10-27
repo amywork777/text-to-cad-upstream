@@ -7,12 +7,13 @@
  */
 import { seriesControls } from "../controls.js";
 import { planned, playSeries } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 export { PLAY } from "./stub.js";
 
 /** What you see's controls: the series' own (the scrubber, the field, the deformation), the scrubber called Build. */
-export function buildControls(result) {
-  return seriesControls(result).map((control) => (control.id === "frame" ? { ...control, label: "Build" } : control));
+export function buildControls(result, t = english) {
+  return seriesControls(result, t).map((control) => (control.id === "frame" ? { ...control, label: t("fea.build") } : control));
 }
 
 export default planned({
