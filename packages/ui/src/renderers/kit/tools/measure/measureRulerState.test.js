@@ -72,7 +72,22 @@ test("measure ruler ignores invalid picks", () => {
 
 test("measure ruler keeps the existing state for invalid picks while drafting", () => {
   const draft = applyMeasureRulerPick(null, FIRST_PICK);
-  assert.equal(applyMeasureRulerPick(draft, null), draft);
+  assert.equal(applyMeasureRulerPick(draft, { point: [NaN, 0, 0] }), draft);
+  assert.equal(applyMeasureRulerPick(draft, undefined), draft);
+});
+
+test("a press on nothing, or on what is held, lets go of the first end and keeps what was measured", () => {
+  const face = { point: [1, 2, 8], snapKind: "face", referenceId: "top" };
+  const sameFace = { point: [40, 30, 8], snapKind: "face", referenceId: "top" };
+  const done = applyMeasureRulerPick(applyMeasureRulerPick(null, FIRST_PICK), SECOND_PICK);
+  const held = applyMeasureRulerPick(done, face);
+  assert.equal(applyMeasureRulerPick(held, null).draft, null);
+  assert.equal(applyMeasureRulerPick(held, null).measurements.length, 1);
+  assert.equal(applyMeasureRulerPick(held, sameFace).draft, null, "the face again, wherever on it");
+  assert.equal(applyMeasureRulerPick(held, sameFace).measurements.length, 1);
+  assert.equal(applyMeasureRulerPick(done, null), done, "with nothing held, nothing changes");
+  // Two free points are no entities: pressing one twice measures between them.
+  assert.equal(applyMeasureRulerPick(applyMeasureRulerPick(null, FIRST_PICK), FIRST_PICK).measurements.length, 1);
 });
 
 test("measure ruler stores hover while drafting", () => {
@@ -175,10 +190,6 @@ test("measure ruler tracks hover without a draft, and only when the entity chang
 test("measure ruler entry-change gate stays null without state", () => {
   assert.equal(measureRulerStateForChange(null, { entryChanged: true }), null);
   assert.equal(measureRulerStateForChange(null), null);
-});
-
-test("measure ruler reset returns null", () => {
-  const draft = applyMeasureRulerPick(null, FIRST_PICK);
 });
 
 test("cancelMeasureRulerDraft drops the in-flight measurement and nothing else", () => {

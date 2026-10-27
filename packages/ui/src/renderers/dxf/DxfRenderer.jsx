@@ -10,7 +10,7 @@ import { useViewerMobile } from "../../file-viewer/responsive.js";
 import { hasOpenPopup } from "../../lib/popups.js";
 import { useAnnotationSession } from "../../annotation/session.js";
 import { annotationAt, withGroups } from "../../annotation/geometry.js";
-import { AnnotationMenu, AnnotationToolbar, annotationToolIcon } from "../../annotation/toolbar.jsx";
+import { AnnotationToolbar, DRAWING_TOOLS, annotationToolIcon, drawingToolLabel, drawingToolVariant } from "../../annotation/toolbar.jsx";
 import { promptView, promptViews } from "../../annotation/views.js";
 import ViewerAlertCard, { useAlertDismissal } from "../kit/status/ViewerAlertCard.jsx";
 import ViewerLoadingOverlay from "../kit/status/ViewerLoadingOverlay.js";
@@ -32,7 +32,7 @@ import { MeasureIcon } from "../kit/tools/measure/SceneMeasure.jsx";
 import { measureSelectHandlers } from "../kit/tools/measure/measureSelection.js";
 import { useMeasureOverlay } from "../kit/tools/measure/useMeasureOverlay.js";
 import { useMeasureSession } from "../kit/tools/measure/useMeasureSession.js";
-import { useQuickEditMeasurements } from "../kit/tools/measure/measurementChips.jsx";
+import { MeasurementsBar } from "../kit/tools/measure/measurementChips.jsx";
 import QuickEdit from "../kit/tools/quick-edit/QuickEdit.jsx";
 import { useSceneReferences } from "../kit/tools/select/sceneReferences.jsx";
 import { useSceneSelection } from "../kit/tools/select/useSceneSelection.js";
@@ -45,6 +45,8 @@ import { createDrawingScene, drawingHandleOf, drawingReferenceId, drawingUnits, 
 import { drawingAnnotationDocument, drawingAnnotationSurface } from "./drawingAnnotation.js";
 import LayersSection from "./LayersSection.jsx";
 import { DXF_DECLINED_LIVE_COMMANDS, DXF_NO_CAMERA, DXF_NO_DISPLAY, DXF_TOOL, DXF_TOOL_MODES } from "./tools.js";
+import { DRAWING_SHORTCUTS, TOOL_SHORTCUTS, pressToolKey } from "../kit/tools/toolShortcuts.js";
+import { useI18n } from "@text-to-cad/ui/i18n";
 
 /**
  * A `.dxf` is drawn as a drawing: on a canvas, head on, in the pens it declares. No 3D, no fold
@@ -56,8 +58,8 @@ import { DXF_DECLINED_LIVE_COMMANDS, DXF_NO_CAMERA, DXF_NO_DISPLAY, DXF_TOOL, DX
  * entities (by handle: `drawingReferences.js`) and is the view's hand — a drag pans, the wheel or a
  * pinch zooms, a double-click fits; Annotate, which draws on the sheet; and Measure, between points
  * snapped to its ends, centres and lines, in the unit the drawing declares (bare drawing units when
- * it declares none). What is picked, drawn and measured is Quick Edit's, whose views are the window
- * on screen as a plan-view camera, which `cadgen dxf snapshot --job` draws again. A drawing with
+ * it declares none). What is picked and drawn is Quick Edit's (what is measured, Measure's row's), whose views are the window
+ * on screen as a plan-view camera, which `cadgen snapshot --annotation PACKET --camera authored` draws again. A drawing with
  * layers and blocks to read has a Layers section in the file sidebar (`layersSectionShown`). The
  * chrome is every view's — the strip at the top centre, the tool's row under it, the sidebar at the
  * top-left, Quick Edit at the top-right — drawn from the kit's parts around the 2D canvas.
@@ -83,6 +85,7 @@ const SIDEBAR_POSITION = Object.freeze({ top: INSET, left: INSET, bottom: INSET 
 const SIDEBAR_POSITION_PHONE = Object.freeze({ top: INSET, left: INSET, bottom: `calc(var(--cad-quick-edit-peek, 0px) + ${INSET})` });
 
 function DxfSurface({ view, data }) {
+  const { t } = useI18n();
   const host = useViewerHost();
   const destination = usePromptDestination();
   const mobile = useViewerMobile();
@@ -120,13 +123,15 @@ function DxfSurface({ view, data }) {
   // The tool in hand is never saved: a drawing opens in Select.
   const [toolMode, setToolMode] = useState(DXF_TOOL_MODES.defaultMode);
   const selectTool = useCallback(mode => setToolMode(current => DXF_TOOL_MODES.next(current, mode)), []);
-  const annotating = toolMode === DXF_TOOL.ANNOTATE;
+  const drawingFamily = toolMode === DXF_TOOL.PENCIL || toolMode === DXF_TOOL.SHAPES ? toolMode : null;
+  const annotating = drawingFamily !== null;
   const measuring = toolMode === DXF_TOOL.MEASURE;
   const selecting = toolMode === DXF_TOOL.SELECT;
   const history = useViewerHistory();
-  const annotation = useAnnotationSession(annotating, CAD_ANNOTATION_DEFAULTS, history);
+  const annotation = useAnnotationSession(drawingFamily, CAD_ANNOTATION_DEFAULTS, history);
   const measure = useMeasureSession({ fileKey: file, revision: workspace.resource.revision, picking: measuring && Boolean(drawing) });
-  const measurements = useQuickEditMeasurements(measure);
+  // A measurement taken, deleted or cleared is a step of the drawing's one history, with the ink's.
+  measure.history.current = history;
   const [hiddenLayers, setHiddenLayers] = useState(NO_LAYERS);
   const toggleLayer = useCallback(name => setHiddenLayers(current => {
     const next = new Set(current);
@@ -155,8 +160,8 @@ function DxfSurface({ view, data }) {
   const paintRef = useRef(() => {});
   const requestPaint = useCallback(() => paintRef.current(), []);
   const scene = useMemo(() => (drawing ? createDrawingScene(drawing, {
-    onHighlight: ink => { highlightRef.current = ink; }, unit: units.declared ? units.unit : ""
-  }) : null), [drawing, units]);
+    onHighlight: ink => { highlightRef.current = ink; }, unit: units.declared ? units.unit : "", t
+  }) : null), [drawing, units, t]);
   const selection = useSceneSelection({ scene, requestRender: requestPaint });
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
@@ -301,15 +306,15 @@ function DxfSurface({ view, data }) {
   const alert = useMemo(() => {
     if (workspace.catalogError && !shown) {
       return {
-        severity: "error", kind: "status", title: "Couldn’t open the drawing",
-        message: "The viewer couldn’t retrieve this file’s information.",
-        recovery: "Try again. If this continues, check that the viewer is running.",
+        severity: "error", kind: "status", title: t("alert.openDrawingFailed"),
+        message: t("alert.catalogFailed"),
+        recovery: t("alert.catalogRecovery"),
         details: String(workspace.catalogError), reload: true
       };
     }
-    const failed = drawingLoadAlert(workspace.modelKey || file, payload.error);
-    return failed && shown ? { ...failed, blocking: false, message: `${failed.message} The existing drawing remains visible.` } : failed;
-  }, [workspace.catalogError, workspace.modelKey, file, payload.error, shown]);
+    const failed = drawingLoadAlert(workspace.modelKey || file, payload.error, t);
+    return failed && shown ? { ...failed, blocking: false, message: t("alert.drawingStillShown", { message: failed.message }) } : failed;
+  }, [workspace.catalogError, workspace.modelKey, file, payload.error, shown, t]);
   const empty = shown && !drawing.bounds;
   // Settled is this revision's drawing painted: a capture waits out an update.
   const ready = shown && !payload.loading && !payload.updating && !alert;
@@ -354,9 +359,7 @@ function DxfSurface({ view, data }) {
 
   // ---- Quick Edit ------------------------------------------------------------
   // A note carries the views with annotation ink as JSON files — a plan-view job
-  // `cadgen dxf snapshot --job` renders, the annotation on the sheet, the measurements.
-  const measurementsRef = useRef(measurements);
-  measurementsRef.current = measurements;
+  // `cadgen snapshot --annotation PACKET --camera authored` draws, the annotation on the sheet.
   const promptFile = useCallback(() => (resourceRef.current?.kind === "workspace-file" ? resourceRef.current.path : null), []);
   const annotationNow = useCallback(() => drawingAnnotationDocument(annotationRef.current.items, unitsRef.current.unit), []);
   const quickEditPrompt = useMemo(() => ({
@@ -364,9 +367,7 @@ function DxfSurface({ view, data }) {
     files: views => {
       const input = promptFile();
       if (!host.promptFiles || !input || !views.length) return null;
-      const marks = measurementsRef.current?.marks?.() || [];
-      return host.promptFiles.create({ name: input.split("/").pop(), input, views, annotation: annotationNow(),
-        ...(marks.length ? { measurements: marks } : {}) });
+      return host.promptFiles.create({ name: input.split("/").pop(), input, views, annotation: annotationNow() });
     },
     read: path => host.promptFiles.read(path),
   }), [host.promptFiles, promptFile, currentView, annotationNow]);
@@ -379,7 +380,7 @@ function DxfSurface({ view, data }) {
   const forgetAnnotation = annotation.forget;
   const quickEditAnnotation = useMemo(() => (annotating || annotation.hasAnnotation
     ? { present: annotation.hasAnnotation, clear: forgetAnnotation } : null), [annotating, annotation.hasAnnotation, forgetAnnotation]);
-  const clearQuickEdit = () => { selection.clear(); measure.select([]); if (annotation.hasAnnotation) annotation.forget(); measurements?.clear?.(); };
+  const clearQuickEdit = () => { selection.clear(); measure.select([]); if (annotation.hasAnnotation) annotation.forget(); };
   // Annotate's copy: the drawing with its ink, to the clipboard.
   const copyAction = () => {
     if (!annotating || !shown) return false;
@@ -396,6 +397,8 @@ function DxfSurface({ view, data }) {
     if (selectionRef.current.active) { selectionRef.current.clear(); return true; }
     return false;
   };
+  // The strip's tools as last drawn: what a tool's letter takes up.
+  const toolKeysRef = useRef([]);
   useViewerShortcuts({
     viewerElement,
     onCopy: () => copyAction(),
@@ -408,6 +411,9 @@ function DxfSurface({ view, data }) {
     },
     onUndo: () => history.undo(),
     onRedo: () => history.redo(),
+    // A tool's letter takes it up, F fits the drawing (`toolShortcuts.js`), over the strip as drawn.
+    onKey: event => shown && pressToolKey(event, { tools: toolKeysRef.current,
+      selectDrawing: tool => annotationRef.current.selectTool(tool), fit }),
     escapeActive: Boolean(selection.active || measure.drafting || measure.selected.length || annotation.selected.length || !selecting),
     onEscape(event) {
       if (hasOpenPopup(viewerElement?.current)) return;
@@ -439,7 +445,7 @@ function DxfSurface({ view, data }) {
   // A drawing has settled once it is read and painted: a library card's picture waits for that.
   const whenSettled = useWhenSettled(() => ready);
   // The card the viewport shows, and its dismissal: put away, its icon in the navbar brings it back.
-  const cardAlert = alert || (actionError ? { severity: "error", kind: "status", blocking: false, title: "Couldn’t capture the drawing", message: actionError } : null);
+  const cardAlert = alert || (actionError ? { severity: "error", kind: "status", blocking: false, title: t("alert.captureDrawingFailed"), message: actionError } : null);
   const alertDismissal = useAlertDismissal(cardAlert, { hasContent: shown, scope: file, onNavigationActionsChange: view.onNavigationActionsChange });
   const binding = data.services.live;
   useEffect(() => {
@@ -465,19 +471,23 @@ function DxfSurface({ view, data }) {
     toolStackRef.current = next;
     onPreferenceChange?.({ toolStack: next });
   }, [onPreferenceChange]);
-  const AnnotateIcon = annotationToolIcon(annotation.tool);
   const stripTool = (id, label, icon, extra = {}) => ({ id, label, icon, active: toolMode === id, disabled: !shown, onSelect: () => selectTool(id), ...extra });
   const tools = [
-    stripTool(DXF_TOOL.SELECT, "Select", SELECT_ICON),
-    stripTool(DXF_TOOL.ANNOTATE, "Annotate", <AnnotateIcon className="size-3" strokeWidth={2} aria-hidden="true" />,
-      // On a phone Annotate's controls are its chevron's menu on the strip, and it has no row.
-      mobile ? { menu: <AnnotationMenu annotation={annotation} history={history} colorScheme={colorScheme} placements={false}
-        onTakeUp={() => selectTool(DXF_TOOL.ANNOTATE)} /> } : {}),
-    stripTool(DXF_TOOL.MEASURE, "Measure", MEASURE_ICON)
+    stripTool(DXF_TOOL.SELECT, t("tool.select"), SELECT_ICON, { shortcut: TOOL_SHORTCUTS.select }),
+    // Pencil and Shapes: plain buttons, each the tool last chosen in it, its tooltip that tool and its key; the tools are the row's.
+    ...DRAWING_TOOLS.map(({ id }) => {
+      const variant = drawingToolVariant(id, annotation);
+      const Icon = annotationToolIcon(variant);
+      return stripTool(id, drawingToolLabel(id, t), <Icon className="size-3" strokeWidth={2} aria-hidden="true" />,
+        { tooltip: drawingToolLabel(variant, t), shortcut: DRAWING_SHORTCUTS[variant] });
+    }),
+    stripTool(DXF_TOOL.MEASURE, t("tool.measure"), MEASURE_ICON, { shortcut: TOOL_SHORTCUTS.measure })
   ];
-  // Annotate's row under the strip (on a phone, its chevron's menu instead); Select and Measure have none.
-  const toolRow = annotating && !mobile
-    ? <AnnotationToolbar annotation={annotation} history={history} colorScheme={colorScheme} placements={false} /> : null;
+  toolKeysRef.current = tools;
+  // The drawing tools' row under the strip, and Measure's (its measurements, while there are any); Select has none.
+  const toolRow = annotating
+    ? <AnnotationToolbar annotation={annotation} colorScheme={colorScheme} placements={false} />
+    : measuring ? <MeasurementsBar measure={measure} /> : null;
   const updateStatus = payload.updating && !alert ? <div className="pointer-events-none flex max-w-full items-center" data-viewport-status="">
     <ViewUpdateStatus status={DRAWING_UPDATE_STATUS} className="rounded-md bg-background/95 px-1 py-0.5 shadow-sm" />
   </div> : null;
@@ -523,7 +533,7 @@ function DxfSurface({ view, data }) {
       data-slot="cad-file-view" data-drawing-surface data-cad-scene-backdrop="" tabIndex={-1}
       onPointerDownCapture={event => { if (event.target instanceof Element && event.target.closest("canvas")) event.currentTarget.focus({ preventScroll: true }); }}>
       <div ref={containerRef} className="relative min-h-0 flex-1" aria-busy={payload.loading || payload.updating ? "true" : "false"}>
-        <canvas ref={canvasRef} aria-label={`Drawing: ${view.file.name}`} role="img" data-drawing-tool={toolMode}
+        <canvas ref={canvasRef} aria-label={t("drawing.canvas", { name: view.file.name })} role="img" data-drawing-tool={toolMode}
           className={cn("absolute inset-0 block touch-none select-none", cursor)} />
         {/* Measure's layer, over the drawing and under the tools: the pointer stays the drawing's. */}
         <canvas ref={measureCanvasRef} className="pointer-events-none absolute inset-0 z-[1] h-full w-full" aria-hidden="true" data-scene-measure="" />
@@ -531,7 +541,7 @@ function DxfSurface({ view, data }) {
         {empty ? (
           <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-muted-foreground"
             data-drawing-empty>
-            This drawing has no geometry in its modelspace, so there is nothing to show.
+            {t("drawing.empty")}
           </p>
         ) : null}
       </div>
@@ -551,7 +561,7 @@ function DxfSurface({ view, data }) {
         <ViewportTopRight notice={chromeHidden ? null : view.notice}>
           {compact ? null : <QuickEdit key={file} className="self-stretch" hidden={chromeHidden} docked={mobile}
             resource={workspace.resource} references={references} chips={chips} nameReference={nameReference} annotation={quickEditAnnotation}
-            measurements={measurements} prompt={quickEditPrompt} onCopy={copyAction} onEscape={letGo} onClear={clearQuickEdit} disabled={!shown} />}
+            prompt={quickEditPrompt} onCopy={copyAction} onEscape={letGo} onClear={clearQuickEdit} disabled={!shown} />}
         </ViewportTopRight>
       </PreviewChrome>
       {toolsHidden || !layered ? null : <FileSidebar style={mobile ? SIDEBAR_POSITION_PHONE : SIDEBAR_POSITION} phone={mobile}
