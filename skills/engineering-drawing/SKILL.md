@@ -248,7 +248,7 @@ sheets.part("base_plate").views[1].section("A")   # refine any part's sheet
 return sheets
 ```
 
-- `parts_list` reads one item per distinct part off the STEP, with its
+- `parts_list` reads one item per distinct part off the assembly, with its
   quantity; the description is the model's own name for it
   (`piston_rod:chrome` reads `PISTON ROD, CHROME`). Label the model's parts
   before drawing it. PART NO. and MATERIAL stay blank unless `parts.set(...)`
