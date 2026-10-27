@@ -67,7 +67,7 @@ class StudyFile(unittest.TestCase):
             ({"inherent_strain": {"in_plane": -0.2}}, "inherent_strain.in_plane: -0.2 is a strain of 20%"),
             ({"inherent_strain": {"shrink": 1}}, "inherent_strain: unknown keys ['shrink']"),
             ({"view": {"checks": [{"kind": "stress"}]}}, 'view.checks[0].kind: "stress" is not a check'),
-            ({"plate": "#o1.f1"}, "unknown keys ['plate']"),
+            ({"plate": "face 1"}, "unknown keys ['plate']"),
         ]
         for changes, fragment in cases:
             document = {key: value for key, value in {**BASE, **changes}.items() if value is not None}

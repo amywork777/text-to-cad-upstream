@@ -110,7 +110,7 @@ class CastingInputs(Inputs):
 def _parse_feeders(document: dict, alloy) -> tuple[Feeder, ...]:
     feeders = []
     seen: dict[str, int] = {}
-    for index, entry in enumerate(kinds.entries(document, "feeders", '{"faces": ["#o1.f12"]}')):
+    for index, entry in enumerate(kinds.entries(document, "feeders", '{"faces": ["face 12"]}')):
         where = f"feeders[{index}]"
         kinds.known(entry, FEEDER_KEYS, where, "a feeder takes faces, and h_W_m2K (its coefficient to the mould; "
                     "insulated, 0, when left out) or held_C (held hot while the rest freezes)")

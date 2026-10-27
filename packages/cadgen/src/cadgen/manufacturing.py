@@ -36,7 +36,7 @@ def check(target: Path, *, study: str | dict | None = None, occurrence: str | No
         sheet); see the manufacturing-sim skill for each. Face refs are the ones ``cadgen fea faces`` prints. Writes
         ``<stem>.<process>.glb`` and its sidecar ``<stem>.<process>.result.json`` beside the document, replacing an
         earlier check's.
-    occurrence: check only this part occurrence (``#o1.2``) when the document holds several parts; a process checks
+    occurrence: check only this part occurrence (its name or ref, ``arm``) when the document holds several parts; a process checks
         one part.
     mesh_size: target element size in mm, overriding the study's mesh.size_mm. Omitted, the study's, else one
         picked from the part.

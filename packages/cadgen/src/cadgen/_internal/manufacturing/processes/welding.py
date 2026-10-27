@@ -203,10 +203,10 @@ class WeldingProcess(Process):
         if "alloy" not in document:
             raise ValueError(f"study.alloy: the base metal, one of {', '.join(METALS)}")
         metal = lookup_metal(document["alloy"])
-        entries = kinds.entries(document, "welds", '{"faces": ["#o1.f3", "#o1.f7"], "process": "gmaw", '
+        entries = kinds.entries(document, "welds", '{"faces": ["face 3", "face 7"], "process": "gmaw", '
                                                    '"heat_input_kJ_mm": 0.8}')
         if not entries:
-            raise ValueError('study.welds: the welds, like [{"faces": ["#o1.f3", "#o1.f7"], "process": "gmaw", '
+            raise ValueError('study.welds: the welds, like [{"faces": ["face 3", "face 7"], "process": "gmaw", '
                              '"heat_input_kJ_mm": 0.8}]')
         welds = tuple(_parse_weld(entry, index) for index, entry in enumerate(entries))
         tolerance = None

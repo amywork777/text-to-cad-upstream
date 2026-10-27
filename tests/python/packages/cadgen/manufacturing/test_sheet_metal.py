@@ -95,9 +95,9 @@ class StudyFile(unittest.TestCase):
                          ("aluminum-5052-h32", None, 1.0, None, None))
         self.assertEqual((study.mesh_order, study.material, inputs.requires_anchor, inputs.face_refs), (1, None, False, ()))
         own = self.parse(material={"name": "6061-T6", "yield_MPa": 290}, thickness_mm=2, tolerance_deg=0.5,
-                         fixed_face="#o1.f3", grain_direction=[0, 2, 0]).inputs
+                         fixed_face="face 3", grain_direction=[0, 2, 0]).inputs
         self.assertEqual((own.sheet.key, own.sheet.yield_strength, own.sheet.E), ("aluminum-6061-t6", 290.0, 68_900.0))
-        self.assertEqual((own.thickness_mm, own.tolerance_deg, own.face_refs, own.grain), (2.0, 0.5, ("#o1.f3",), (0.0, 1.0, 0.0)))
+        self.assertEqual((own.thickness_mm, own.tolerance_deg, own.face_refs, own.grain), (2.0, 0.5, ("face 3",), (0.0, 1.0, 0.0)))
 
     def test_the_shops_k_factor_is_optional(self):
         self.assertIsNone(self.parse().inputs.k_factor)
@@ -268,8 +268,8 @@ class NotSheet(unittest.TestCase):
         from cadgen._internal.manufacturing.processes.bends import read_sheet
 
         block = Box(20, 20, 20)
-        message = value_error(self, read_sheet, block.wrapped, part="#o1", volume_mm3=block.volume, area_mm2=block.area)
-        self.assertRegex(message, r"^sheet_metal: #o1 has no bends: .* not a bent sheet")
+        message = value_error(self, read_sheet, block.wrapped, part="block", volume_mm3=block.volume, area_mm2=block.area)
+        self.assertRegex(message, r"^sheet_metal: block has no bends: .* not a bent sheet")
 
 
 class SkillDocs(unittest.TestCase):

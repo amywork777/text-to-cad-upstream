@@ -74,21 +74,31 @@ A test keeps this table's **Runs today** rows in step with the processes cadgen 
 
 ## Setup
 
-Run cadgen through [uv](https://docs.astral.sh/uv/). `cadgen fea faces` shares one installation
-with the `$cad` skill and the CAD app's server; `cadgen manufacturing check` needs the `fea` extra,
-so it runs from its own installation, made the first time it is needed (below):
+Run cadgen through the `cadgen` command its installation writes, as the `$cad` skill does:
+`cadgen fea faces` shares one installation with it and with the CAD app's server;
+`cadgen manufacturing check` needs the `fea` extra, so it runs from its own installation, made the
+first time it is needed (below):
 
-- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 cadgen`
-- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 python`
+- `cadgen` below means `cadgen +0.8.0` (`~/.local/bin/cadgen +0.8.0` where `~/.local/bin` is not on your PATH)
+- `python` below means `cadgen +0.8.0 run`
 
-Checking needs cadgen's opt-in `fea` extra (the mesher and the solver). The first time a check runs,
-`cadgen manufacturing check` fails with "cadgen's fea extra is not installed"; that is a missing
-install, not a modelling error. Run the same command with the extra in the requirement, and keep
-using that form for `manufacturing check` from then on (the first run downloads the mesher and
-solver; later runs reuse them):
+If `cadgen` is not on your PATH, or it says 0.8.0 is not installed, run
+`uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.0 cadgen doctor` once,
+outside any sandbox or with its permission: it installs cadgen, registers it, writes the
+`cadgen` command and starts the engine. With the CAD app's server running, nothing else
+needs the sandbox's permission: it starts the engine and holds it. Without it, a sandboxed
+shell cannot start the engine; when a command says no engine is running, run `cadgen server`
+outside the sandbox once.
+
+Checking needs cadgen's opt-in `fea` extra (the mesher and the solver). The
+first time a check runs, `cadgen manufacturing check` fails with "cadgen's fea extra is not
+installed"; that is a missing install, not a modelling error. Run the same command with the extra
+in the requirement, and keep using that form for `manufacturing check` from then on (the first run
+downloads the mesher and solver; later runs reuse them). A check reads the part's STEP or `.xbf`
+in its own process, so it needs no engine running:
 
 ```bash
-uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.7.24" cadgen manufacturing check part.step --study part.casting.json
+uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.8.0" cadgen manufacturing check part.step --study part.casting.json
 ```
 
 Units: mm for geometry, °C for temperatures, s for times, W/(m² K) for a heat transfer coefficient,
@@ -98,7 +108,7 @@ rpm for a spindle, kJ/mm for a weld's heat input.
 
 1. **List the faces** the study names, if it names any (a casting's feeders, a cut's faces and the
    faces held, a weld's faces, a sheet's held flat). Prefer faces the user selected in the Viewer
-   (`part.step#o1.f12`); otherwise list them and match by description.
+   (`/work/bracket.step#bracket/face 12`); otherwise list them and match by description.
 
    ```bash
    cadgen fea faces part.step
@@ -109,7 +119,7 @@ rpm for a spindle, kJ/mm for a weld's heat input.
 
    ```json
    {"process": "casting", "alloy": "sterling-silver-925", "mold": "investment",
-    "feeders": [{"faces": ["#o1.f12"]}], "fill_time_s": 0.5}
+    "feeders": [{"faces": ["bracket/face 12"]}], "fill_time_s": 0.5}
    ```
 
    Every study names its `process`; the rest is that process's own keys (here the alloy, its mould,
@@ -148,9 +158,9 @@ fix what it finds and run it again until it passes, then tell the user what chan
    error`, and its lines end on a checklist, failures first, then the verdict:
 
    ```text
-   FAIL  shrinkage_hot_spot  liquid cut off: 6667 mm³, needs below 15.9 mm³; at [50.263, -1.105, 14.134] mm; fix: Feed it from #o1.f7: ...
+   FAIL  shrinkage_hot_spot  liquid cut off: 6667 mm³, needs below 15.9 mm³; at [50.263, -1.105, 14.134] mm; fix: Feed it from bracket/face 7: ...
    WARN  low_niyama          lowest Niyama: 0.044 (°C·s)^½/mm, needs above 0.3 (°C·s)^½/mm; at [49.665, 1.287, 12.304] mm; fix: ...
-   PASS  thinnest_section    section solid through: 20.8 s, needs above 0.876 s; at #o1.f5 [0.667, -4.333, 3.0] mm
+   PASS  thinnest_section    section solid through: 20.8 s, needs above 0.876 s; at bracket/face 5 [0.667, -4.333, 3.0] mm
    PASS  hand_check          simulation against the rule: 1.11×, needs below 3×
    Verdict: 1 to fix · shrinkage hot spot · 1 failed, 1 warning, 2 passed; fails --fail-on error
    ```

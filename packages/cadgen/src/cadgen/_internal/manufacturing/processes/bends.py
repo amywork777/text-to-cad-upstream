@@ -291,11 +291,11 @@ def read_sheet(shape, *, part: str, volume_mm3: float, area_mm2: float, fixed_or
     from OCP.BRepAdaptor import BRepAdaptor_Surface
     from OCP.GeomAbs import GeomAbs_Cylinder
 
-    from cadgen._internal.entity_ordinals import entity_map
     from cadgen._internal.fea.assembly import gprops
     from cadgen._internal.fea.defeature import as_face
+    from cadgen._internal.fea.document import face_map
 
-    faces = entity_map(shape, "face")
+    faces = face_map(shape)
     scale = max(math.sqrt(max(area_mm2, 1e-12)), 1e-6)
     arcs = []
     for ordinal in range(1, faces.Extent() + 1):

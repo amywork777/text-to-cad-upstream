@@ -233,7 +233,7 @@ class MachiningProcess(Process):
                     raise ValueError(f"{key}: a turning cut has none: its chip is depth_mm wide and "
                                      "feed_per_tooth_mm (per revolution) thick")
         if "cut_faces" not in document:
-            raise ValueError('study.cut_faces: the faces the cutter is on, like ["#o1.f4"]')
+            raise ValueError('study.cut_faces: the faces the cutter is on, like ["face 4"]')
         cut = kinds.faces({"faces": document["cut_faces"]}, where="cut_faces")
         fixtures = parse_fixtures(document)
         held = {ref for fixture in fixtures for ref in fixture.faces}

@@ -66,12 +66,12 @@ class StudyFile(unittest.TestCase):
         self.assertEqual((inputs.alloy.key, inputs.mold.key, inputs.pour_C, inputs.mold_C), ("a356", "sand", 715.0, 25.0))
         self.assertEqual((study.mesh_order, study.material, inputs.requires_anchor), (1, None, False))
         own = self.parse(alloy="Sterling", mold="investment", pour_temperature_C=980, mold_temperature_C=500,
-                         feeders=[{"faces": ["#o1.f3"]}, {"faces": ["#o1.f4"], "h_W_m2K": 40},
-                                  {"faces": ["#o1.f5"], "held_C": 1000}]).inputs
+                         feeders=[{"faces": ["face 3"]}, {"faces": ["face 4"], "h_W_m2K": 40},
+                                  {"faces": ["face 5"], "held_C": 1000}]).inputs
         self.assertEqual((own.alloy.key, own.pour_C, own.mold_C), ("sterling-silver-925", 980.0, 500.0))
         self.assertEqual([(f.faces, f.h, f.held_C) for f in own.feeders],
-                         [(("#o1.f3",), 0.0, None), (("#o1.f4",), 40.0, None), (("#o1.f5",), 0.0, 1000.0)])
-        self.assertEqual(own.face_refs, ("#o1.f3", "#o1.f4", "#o1.f5"))
+                         [(("face 3",), 0.0, None), (("face 4",), 40.0, None), (("face 5",), 0.0, 1000.0)])
+        self.assertEqual(own.face_refs, ("face 3", "face 4", "face 5"))
 
     def test_the_errors_name_the_field(self):
         cases = [
@@ -83,17 +83,17 @@ class StudyFile(unittest.TestCase):
             ({"mold_temperature_C": 560}, "mold_temperature_C: 560 °C is not below the solidus"),
             ({"mold": "investment"}, "mold_temperature_C: the investment preset's mould (600 °C)"),
             ({"h_W_m2K": -5}, "h_W_m2K: must be > 0"),
-            ({"feeders": [{"faces": ["#o1.f1"], "riser": True}]}, "feeders[0]: unknown keys ['riser']"),
-            ({"feeders": [{"faces": ["#o1.f1"], "h_W_m2K": 5, "held_C": 700}]}, "feeders[0]: give h_W_m2K or held_C"),
-            ({"feeders": [{"faces": ["#o1.f1"], "held_C": 500}]}, "feeders[0].held_C: 500 °C is not above the solidus"),
-            ({"feeders": [{"faces": ["#o1.f1"]}, {"faces": ["#o1.f1"]}]}, "feeders[1]: #o1.f1 is already a feeder"),
+            ({"feeders": [{"faces": ["face 1"], "riser": True}]}, "feeders[0]: unknown keys ['riser']"),
+            ({"feeders": [{"faces": ["face 1"], "h_W_m2K": 5, "held_C": 700}]}, "feeders[0]: give h_W_m2K or held_C"),
+            ({"feeders": [{"faces": ["face 1"], "held_C": 500}]}, "feeders[0].held_C: 500 °C is not above the solidus"),
+            ({"feeders": [{"faces": ["face 1"]}, {"faces": ["face 1"]}]}, "feeders[1]: face 1 is already a feeder"),
             ({"fill_time_s": 0}, "fill_time_s: must be > 0"),
             ({"duration_s": "long"}, "duration_s: expected a number"),
             ({"material": "steel"}, "study.material: a casting study names its metal with 'alloy'"),
             ({"parts": {"a": {"material": "steel"}}}, "study.parts: a casting study solves one part"),
             ({"view": {"checks": [{"kind": "stress"}]}}, "view.checks[0].kind: \"stress\" is not a check"),
             ({"mesh": {"order": 2}}, "study.mesh.order: casting studies take order 1"),
-            ({"gate": "#o1.f1"}, "unknown keys ['gate']"),
+            ({"gate": "face 1"}, "unknown keys ['gate']"),
         ]
         for changes, fragment in cases:
             document = {key: value for key, value in {**BASE, **changes}.items() if value is not None}

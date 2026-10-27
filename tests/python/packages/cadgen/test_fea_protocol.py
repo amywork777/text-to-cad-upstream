@@ -400,18 +400,18 @@ class Checklist(unittest.TestCase):
         {"severity": "info", "type": "no_feeder", "summary": "a note", "items": []},
         {"severity": "warning", "type": "low_niyama", "summary": "s", "items": [{"text": "t", "ref": None, "at": [49.665, 1.287, 12.304]}],
          "measured": {"quantity": "lowest Niyama", "value": 0.0441, "limit": 0.3, "units": "(°C·s)^½/mm", "pass_when": "above"},
-         "fix": {"action": "add_chill", "summary": "Chill it", "where": ["#o1.f7"], "params": {}}},
-        {"severity": "error", "type": "shrinkage_hot_spot", "summary": "s", "items": [{"text": "t", "ref": "#o1.f7", "at": [50.0, 0.0, 16.0]}],
+         "fix": {"action": "add_chill", "summary": "Chill it", "where": ["face 7"], "params": {}}},
+        {"severity": "error", "type": "shrinkage_hot_spot", "summary": "s", "items": [{"text": "t", "ref": "face 7", "at": [50.0, 0.0, 16.0]}],
          "measured": {"quantity": "liquid cut off", "value": 6667.2, "limit": 15.94, "units": "mm³", "pass_when": "below"},
-         "fix": {"action": "add_feeder", "summary": "Feed it from #o1.f7", "where": ["#o1.f7"], "params": {"riser_modulus_mm": 2.85}}},
+         "fix": {"action": "add_feeder", "summary": "Feed it from face 7", "where": ["face 7"], "params": {"riser_modulus_mm": 2.85}}},
     )
 
     def test_the_checklist_lists_failures_first_with_the_measure_the_place_and_the_fix_then_the_verdict(self):
         from cadgen._internal.checklist import checklist_lines
 
         self.assertEqual(checklist_lines(self.FINDINGS), [
-            "FAIL  shrinkage_hot_spot  liquid cut off: 6667 mm³, needs below 15.9 mm³; at #o1.f7 [50.0, 0.0, 16.0] mm; "
-            "fix: Feed it from #o1.f7",
+            "FAIL  shrinkage_hot_spot  liquid cut off: 6667 mm³, needs below 15.9 mm³; at face 7 [50.0, 0.0, 16.0] mm; "
+            "fix: Feed it from face 7",
             "WARN  low_niyama          lowest Niyama: 0.0441 (°C·s)^½/mm, needs above 0.3 (°C·s)^½/mm; "
             "at [49.665, 1.287, 12.304] mm; fix: Chill it",
             "PASS  hand_check          simulation against the rule: 1.11×, needs below 3×",

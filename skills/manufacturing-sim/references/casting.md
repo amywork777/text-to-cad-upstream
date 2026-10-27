@@ -17,7 +17,7 @@ Lite: read [Limits](#limits) before you report.
 ```json
 {"process": "casting", "alloy": "a356", "mold": "sand",
  "pour_temperature_C": 720, "mold_temperature_C": 25,
- "feeders": [{"faces": ["#o1.f12"]}, {"faces": ["#o1.f3"], "h_W_m2K": 50}],
+ "feeders": [{"faces": ["bracket/face 12"]}, {"faces": ["bracket/face 3"], "h_W_m2K": 50}],
  "fill_time_s": 4, "mesh": {"size_mm": 2}}
 ```
 

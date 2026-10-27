@@ -44,9 +44,9 @@ a forming simulation: say "estimate" every time you quote it, and read [Limits](
    naming the field. Its lines end on the checklist, failures first, then the verdict:
 
    ```text
-   FAIL  bend_may_crack               bend 1 outer strain: 33.3%, needs below 25.7%; at #o1.f2 [21.591, 12.5, 1.409] mm; fix: Open bend 1 to an inside radius of at least 2.2 mm (1.44t).
-   FAIL  bend_may_crack               bend 2 outer strain: 33.3%, needs below 25.7%; at #o1.f4 [21.591, 12.5, 34.591] mm; fix: Open bend 2 to an inside radius of at least 2.2 mm (1.44t).
-   PASS  springback_within_tolerance  bend 1 springback: 0.724°, needs below 3°; at #o1.f2 [21.591, 12.5, 1.409] mm
+   FAIL  bend_may_crack               bend 1 outer strain: 33.3%, needs below 25.7%; at bracket/face 2 [21.591, 12.5, 1.409] mm; fix: Open bend 1 to an inside radius of at least 2.2 mm (1.44t).
+   FAIL  bend_may_crack               bend 2 outer strain: 33.3%, needs below 25.7%; at bracket/face 4 [21.591, 12.5, 34.591] mm; fix: Open bend 2 to an inside radius of at least 2.2 mm (1.44t).
+   PASS  springback_within_tolerance  bend 1 springback: 0.724°, needs below 3°; at bracket/face 2 [21.591, 12.5, 1.409] mm
    ...
    PASS  reliefs                      bend ends with no relief: 0, needs below 1
    Verdict: 2 to fix · bend may crack · 2 failed, 0 warnings, 5 passed
@@ -77,7 +77,7 @@ a forming simulation: say "estimate" every time you quote it, and read [Limits](
 
 ```json
 {"process": "sheet_metal", "material": "6061-t6", "thickness_mm": 1.5, "tolerance_deg": 0.5,
- "fixed_face": "#o1.f7", "grain_direction": [1, 0, 0]}
+ "fixed_face": "bracket/face 7", "grain_direction": [1, 0, 0]}
 ```
 
 - `process` (required): `sheet_metal`.

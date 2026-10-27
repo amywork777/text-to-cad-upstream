@@ -28,9 +28,9 @@ from tests.python.support.paths import REPO_ROOT
 SKILL = REPO_ROOT / "skills" / "manufacturing-sim"
 MILL = {"process": "machining", "material": "6061-t6", "operation": "milling", "tool": {"diameter_mm": 10, "flutes": 3},
         "spindle_rpm": 8000, "feed_per_tooth_mm": 0.05, "depth_mm": 3, "width_mm": 0.5,
-        "cut_faces": ["#o1.f4"], "fixtures": [{"faces": ["#o1.f5"]}]}
+        "cut_faces": ["face 4"], "fixtures": [{"faces": ["face 5"]}]}
 TURN = {"process": "machining", "material": "1018", "operation": "turning", "spindle_rpm": 1200,
-        "feed_per_tooth_mm": 0.1, "depth_mm": 1, "cut_faces": ["#o1.f1"], "fixtures": [{"faces": ["#o1.f3"]}]}
+        "feed_per_tooth_mm": 0.1, "depth_mm": 1, "cut_faces": ["face 1"], "fixtures": [{"faces": ["face 3"]}]}
 
 
 class StudyFile(unittest.TestCase):
@@ -43,7 +43,7 @@ class StudyFile(unittest.TestCase):
         self.assertEqual((inputs.operation, inputs.diameter_mm, inputs.flutes, inputs.teeth, inputs.milling),
                          ("milling", 10.0, 3, 3, "down"))
         self.assertEqual((inputs.tolerance_mm, inputs.tolerance_given, inputs.damping), (0.05, False, 0.02))
-        self.assertEqual(inputs.face_refs, ("#o1.f4", "#o1.f5"))
+        self.assertEqual(inputs.face_refs, ("face 4", "face 5"))
         # The study's material is the workpiece's, its cutting force with it, and what the solver reads.
         self.assertEqual((study.material.name, study.material.kc11, study.material.mc), ("Aluminum 6061-T6", 800.0, 0.25))
         self.assertEqual((study.material.E, study.material.yield_strength), (68_900.0, 276.0))
@@ -77,7 +77,7 @@ class StudyFile(unittest.TestCase):
             (MILL, {"width_mm": 12}, "width_mm: 12 mm is wider than the 10 mm cutter"),
             (MILL, {"milling": "sideways"}, "milling: down (climb) or up (conventional)"),
             (MILL, {"cut_faces": []}, "cut_faces: 'faces' must be a non-empty list"),
-            (MILL, {"cut_faces": ["#o1.f5"]}, "cut_faces: #o1.f5 is also a fixture"),
+            (MILL, {"cut_faces": ["face 5"]}, "cut_faces: face 5 is also a fixture"),
             (MILL, {"fixtures": None}, "study: 'fixtures' must list at least one"),
             (MILL, {"tolerance_mm": 0}, "tolerance_mm: must be > 0"),
             (MILL, {"damping_ratio": 1.5}, "damping_ratio: a share of critical damping"),

@@ -74,7 +74,7 @@ class StudyFile(unittest.TestCase):
             ({"material": "abs"}, "study.material: a molding study names its plastic with 'resin'"),
             ({"parts": {"a": {"material": "abs"}}}, "study.parts: a molding study solves one part"),
             ({"mesh": {"order": 2}}, "study.mesh.order: molding studies take order 1"),
-            ({"gate": "#o1.f1"}, "unknown keys ['gate']"),
+            ({"gate": "face 1"}, "unknown keys ['gate']"),
         ]
 
         for changes, fragment in cases:

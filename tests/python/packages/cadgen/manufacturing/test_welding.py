@@ -22,7 +22,7 @@ from tests.python.support.fea_fixtures import check, class_directory, needs_fea,
 from tests.python.support.paths import REPO_ROOT
 
 SKILL = REPO_ROOT / "skills" / "manufacturing-sim"
-WELD = {"faces": ["#o1.f3", "#o1.f8"], "process": "gmaw", "heat_input_kJ_mm": 1.0}
+WELD = {"faces": ["face 3", "face 8"], "process": "gmaw", "heat_input_kJ_mm": 1.0}
 BASE = {"process": "welding", "alloy": "s235", "welds": [WELD]}
 FIX_KEYS = {"action", "summary", "where", "params"}
 
@@ -35,16 +35,16 @@ class StudyFile(unittest.TestCase):
         inputs = self.parse()
         weld = inputs.welds[0]
         self.assertEqual((inputs.metal.key, weld.faces, weld.process.key, weld.heat_J_mm, weld.passes, weld.line),
-                         ("s235", ("#o1.f3", "#o1.f8"), "gmaw", 1000.0, 1, None))
-        self.assertEqual((inputs.face_refs, inputs.requires_anchor, inputs.fatigue_critical), (("#o1.f3", "#o1.f8"), False, False))
-        arc = self.parse(welds=[{"faces": ["#o1.f3", "#o1.f8"], "process": "MIG", "volts": 24, "amps": 200,
+                         ("s235", ("face 3", "face 8"), "gmaw", 1000.0, 1, None))
+        self.assertEqual((inputs.face_refs, inputs.requires_anchor, inputs.fatigue_critical), (("face 3", "face 8"), False, False))
+        arc = self.parse(welds=[{"faces": ["face 3", "face 8"], "process": "MIG", "volts": 24, "amps": 200,
                                  "travel_speed_mm_s": 5, "passes": 2, "thickness_mm": [10, 8], "label": "root"}]).welds[0]
         self.assertAlmostEqual(arc.heat_J_mm, 0.8 * 24 * 200 / 5)      # EN 1011-1's k for MIG/MAG, 0.8
         self.assertEqual((arc.passes, arc.thickness, arc.label), (2, (10.0, 8.0), "root"))
-        tig = self.parse(welds=[{"faces": ["#o1.f3", "#o1.f8"], "process": "tig", "volts": 12, "amps": 120,
+        tig = self.parse(welds=[{"faces": ["face 3", "face 8"], "process": "tig", "volts": 12, "amps": 120,
                                  "travel_speed_mm_s": 2}]).welds[0]
         self.assertAlmostEqual(tig.heat_J_mm, 0.6 * 12 * 120 / 2)
-        laser = self.parse(welds=[{"faces": ["#o1.f3"], "line_mm": [[0, 0, 10], [0, 100, 10]], "process": "laser",
+        laser = self.parse(welds=[{"faces": ["face 3"], "line_mm": [[0, 0, 10], [0, 100, 10]], "process": "laser",
                                    "power_W": 3000, "travel_speed_mm_s": 20, "efficiency": 0.5}]).welds[0]
         self.assertEqual((laser.heat_J_mm, laser.line), (75.0, ((0.0, 0.0, 10.0), (0.0, 100.0, 10.0))))
 
@@ -55,8 +55,8 @@ class StudyFile(unittest.TestCase):
             ({"material": "steel"}, "study.material: a welding study names its base metal with 'alloy'"),
             ({"welds": []}, "study.welds: the welds"),
             ({"welds": [{**WELD, "rod": 1}]}, "welds[0]: unknown keys ['rod']"),
-            ({"welds": [{**WELD, "faces": ["#o1.f3"]}]}, "welds[0]: one face makes no edge"),
-            ({"welds": [{**WELD, "faces": ["#o1.f1", "#o1.f2", "#o1.f3"]}]}, "welds[0].faces: at most two faces"),
+            ({"welds": [{**WELD, "faces": ["face 3"]}]}, "welds[0]: one face makes no edge"),
+            ({"welds": [{**WELD, "faces": ["face 1", "face 2", "face 3"]}]}, "welds[0].faces: at most two faces"),
             ({"welds": [{**WELD, "process": "brazing"}]}, 'welds[0].process: "brazing" is not a welding process'),
             ({"welds": [{"faces": WELD["faces"], "process": "gmaw"}]}, "welds[0]: give the heat one way"),
             ({"welds": [{**WELD, "volts": 24}]}, "welds[0]: give the heat one way"),

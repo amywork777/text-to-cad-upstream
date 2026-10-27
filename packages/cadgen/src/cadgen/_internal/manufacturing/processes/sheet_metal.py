@@ -139,7 +139,7 @@ class SheetMetalProcess(Process):
         if "fixed_face" in document:
             fixed = document["fixed_face"]
             if not isinstance(fixed, str) or not fixed.strip():
-                raise ValueError(f"fixed_face: a face of the flat to hold still, like \"#o1.f1\"; got "
+                raise ValueError(f"fixed_face: a face of the flat to hold still, like \"face 1\"; got "
                                  f"{kinds.json_text(fixed)}")
             fixed = fixed.strip()
         grain = _parse_grain(document["grain_direction"]) if "grain_direction" in document else None

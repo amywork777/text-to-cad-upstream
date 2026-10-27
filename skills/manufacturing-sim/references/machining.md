@@ -17,7 +17,7 @@ before you report.
 
 1. **List the faces** (`cadgen fea faces part.step`, as in `$fea`): the faces the cutter is on (the
    wall being finished, the diameter being turned) and the faces the vise jaws, clamps or chuck hold.
-   Prefer faces the user selected in the Viewer (`part.step#o1.f12`).
+   Prefer faces the user selected in the Viewer (`/work/bracket.step#bracket/face 12`).
 2. **Write the study** as `part.machining.json` beside the part ([The study](#the-study)), from the
    user's cutting data: the cutter, the spindle speed, the feed, the depths, and the drawing's
    tolerance on the cut faces.
@@ -40,7 +40,7 @@ before you report.
 {"process": "machining", "material": "6061-t6", "operation": "milling",
  "tool": {"diameter_mm": 10, "flutes": 3}, "spindle_rpm": 8000, "feed_per_tooth_mm": 0.05,
  "depth_mm": 5, "width_mm": 1, "milling": "down",
- "cut_faces": ["#o1.f10"], "fixtures": [{"faces": ["#o1.f5"]}],
+ "cut_faces": ["bracket/face 10"], "fixtures": [{"faces": ["bracket/face 5"]}],
  "tolerance_mm": 0.02, "damping_ratio": 0.02}
 ```
 

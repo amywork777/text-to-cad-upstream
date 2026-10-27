@@ -109,7 +109,7 @@ def _measured_words(measured: dict) -> str:
 
 
 def _where_words(finding: dict) -> str:
-    """Where a finding is, from its first item: "at #o1.f5 [0.667, -4.333, 3.0] mm", or the face or point alone."""
+    """Where a finding is, from its first item: "at face 5 [0.667, -4.333, 3.0] mm", or the face or point alone."""
     items = finding.get("items") or ()
     if not items:
         return ""

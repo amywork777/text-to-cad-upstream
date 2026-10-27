@@ -16,7 +16,7 @@ stress along the welds. Lite: read [Limits](#limits) before you report.
 
 ```json
 {"process": "welding", "alloy": "s355",
- "welds": [{"faces": ["#o1.f3", "#o1.f8"], "process": "gmaw", "volts": 26, "amps": 220,
+ "welds": [{"faces": ["bracket/face 3", "bracket/face 8"], "process": "gmaw", "volts": 26, "amps": 220,
             "travel_speed_mm_s": 5, "passes": 1, "label": "web to flange, left"}],
  "tolerance_mm": 0.5, "fatigue_critical": true}
 ```
