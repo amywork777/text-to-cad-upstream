@@ -7,17 +7,14 @@ from cadgen.eng_drawing import eng_drawing, Sheet, Frame, geometry_notes
 ## Template
 
 ```python
-from pathlib import Path
-
-import cadgen
 from cadgen.eng_drawing import Sheet, eng_drawing
-# The facts the dimensions reference come from the model, not from this file.
-from enclosure import FLOOR, HOLES, L, H, W
+# The part, and the facts the dimensions reference, come from the model, not from this file.
+from enclosure import FLOOR, HOLES, L, H, W, enclosure
 
 
 @eng_drawing(out="../PDF/enclosure_drawing.pdf")
 def enclosure_drawing():
-    part = cadgen.read_step(Path(__file__).parent / "../STEP/enclosure.step")
+    part = enclosure().shape    # the model, built by the engine (a replay when it holds it)
     sheet = Sheet("A3", title="ENCLOSURE", part_number="ENC-001", material="ABS",
                   revision="A", general_tolerance="ISO 2768-m",
                   notes=["BREAK SHARP EDGES."])
@@ -40,12 +37,12 @@ hidden lines cannot (here a keyway's depth) and draws a detail of what is too
 small to dimension at 1:1:
 
 ```python
-from shaft import CHAMFER, KEY_DEPTH, KEY_END, KEY_START, KEY_WIDTH, LENGTH, STEP_DIAMETER, STEP_LENGTH
+from shaft import CHAMFER, KEY_DEPTH, KEY_END, KEY_START, KEY_WIDTH, LENGTH, STEP_DIAMETER, STEP_LENGTH, shaft
 
 
 @eng_drawing(out="../PDF/shaft_drawing.pdf")
 def shaft_drawing():
-    part = cadgen.read_step(Path(__file__).parent / "../STEP/shaft.step")   # axis along X
+    part = shaft().shape                                  # axis along X
     sheet = Sheet("A3", title="SHAFT", part_number="SH-001", general_tolerance="ISO 2768-m")
     top, front, right, iso = sheet.three_views(part, iso=True)
     middle, r = (KEY_START + KEY_END) / 2, STEP_DIAMETER / 2
@@ -69,6 +66,24 @@ the drawing leaves unstated, and returns `[path]`.
 `out` is required and must name a `.pdf`; a relative path resolves against the
 script. Both are checked when the module is imported. There is no CLI verb: a
 `Sheet` is composed in Python and no argument list carries that.
+
+## The part
+
+Call the model: `enclosure()` is built by cadgen's engine, a replay when the engine
+already holds it, and its `.shape` is the part as a build123d tree. A part with no model is
+read from its file instead:
+
+```python
+from pathlib import Path
+
+from cadgen import read_step
+
+part = read_step(Path(__file__).parent / "../vendor/enclosure.step")
+```
+
+`read_xbf` reads an xbf the same way. Anchor the path on the
+script, since it resolves against the process's working directory otherwise. Any
+build123d shape works: a drawing takes geometry, not a file.
 
 ## `Sheet(size="A3", scale=1.0, title=..., part_number="", material="", spec="", finish="", revision="A", author="", date="", units="mm", projection="THIRD ANGLE", notes=(), ink="mono", text_height=3.5, general_tolerance="", general_profile=None, revisions=(), stage=None, profile=None, category="", company="", fields={})`
 

@@ -19,13 +19,13 @@ decorator for a DXF: a cut layout is a toolpath, and a drawing is not.
 
 Usage::
 
-    import cadgen
-    from cadgen.eng_drawing import eng_drawing, Sheet
     from pathlib import Path
+    from cadgen import read_xbf
+    from cadgen.eng_drawing import eng_drawing, Sheet
 
     @eng_drawing(out="../PDF/bracket_drawing.pdf")
     def bracket_drawing():
-        part = cadgen.read_step(Path(__file__).parent / "../STEP/bracket.step")
+        part = read_xbf(Path(__file__).parent / "XBF/bracket.xbf")
         sheet = Sheet("A3", title="BRACKET", part_number="BRK-001", revision="A")
         top, front, right, iso = sheet.three_views(part, iso=True)
         front.section("A")                               # the front view, cut
@@ -41,14 +41,18 @@ Running the script writes one PDF at ``out`` with a page per sheet, and prints
 what the sheet noticed (a dimension measuring blank paper, crowded annotation)
 and what the drawing leaves unstated (a hole not called out, a size not
 dimensioned). There is no default location: ``out`` is the path the caller
-passes. A live build123d shape works in place of ``read_step``.
+passes. The part is the engine's document of it, read in this process (a model's
+``.shape``, ``cadgen.read_xbf`` of an xbf, or ``cadgen.read_step`` of a vendor STEP);
+a live build123d shape works in its place: the part is whatever geometry the
+function has.
 
 Bytes are a function of the content: the PDF carries no creation date, so an
 unchanged drawing rebuilds to an identical file.
 
-This module keeps ``@eng_drawing`` outside the build store on purpose: a drawing
-is a document over a part, not a model with a closure to hash. Import
-discipline: nothing here pulls in ezdxf or the CAD kernel at module scope.
+This module keeps ``@eng_drawing`` outside the engine on purpose: a drawing is a
+document over a part, not a model with a closure to hash, and it runs in the
+script's own process. Import discipline: nothing here pulls in ezdxf or the CAD
+kernel at module scope.
 """
 
 from __future__ import annotations
@@ -1536,8 +1540,8 @@ def _say(line: str) -> None:
 def _counted(run: Callable[..., list[Path]]) -> Callable[..., list[Path]]:
     """``run``, counted for telemetry (``cadgen/analytics.py``): a drawing made, or a mistake in
     cadgen's own code making one. A drawing is made in the script's own process, which sends nothing
-    itself: both are handed to a running build daemon, as a command hands it its snapshots
-    (``cadgen.daemon.client.hand_over``), and neither ever changes what the drawing does."""
+    itself: both are kept with a command's counts (``analytics.hand_over``), and neither ever changes
+    what the drawing does."""
 
     @functools.wraps(run)
     def counted(*args: Any, **kwargs: Any) -> list[Path]:
@@ -1552,9 +1556,9 @@ def _counted(run: Callable[..., list[Path]]) -> Callable[..., list[Path]]:
                 pass
             raise
         try:
-            from cadgen.daemon.client import hand_over
+            from cadgen import analytics
 
-            hand_over({"features": ["drawing"]})
+            analytics.hand_over({"features": ["drawing"]})
         except Exception:  # noqa: BLE001 - a count never fails the drawing it counts
             pass
         return drawn
@@ -1590,7 +1594,7 @@ def eng_drawing(func: Callable[..., Any] | None = None, *, out: str | Path | Non
             sheets = list(result) if isinstance(result, (list, tuple)) else [result]
             if not sheets or not all(isinstance(s, Sheet) for s in sheets):
                 raise TypeError(f"@eng_drawing {fn.__name__} must return a Sheet or a list of Sheets")
-            from cadgen.drawing_checks import raise_on_error_findings, validate_drawing_document
+            from cadgen.engine.export.dxf import raise_on_error_findings, validate_drawing_document
 
             target = target_spec if target_spec.is_absolute() else (script.parent / target_spec).resolve()
             docs = []
@@ -1600,7 +1604,7 @@ def eng_drawing(func: Callable[..., Any] | None = None, *, out: str | Path | Non
             for index, sheet in enumerate(sheets, start=1):
                 doc = _render_sheet(sheet, index=index, count=len(sheets), label=fn.__name__,
                                     warnings=notices, facts=facts, continued=continued.get(index))
-                # The same checks every @dxf build runs, against the document the
+                # The same checks every DXF export runs, against the document the
                 # page is rendered from: duplicate geometry, unset units, an empty
                 # sheet. A drawing skipping them is how the duplicates went unseen.
                 # drawing=True because this IS one: the cut-profile checks grade a

@@ -22,13 +22,19 @@ which are toolpaths, not documents.
 
 ## Setup
 
-Run cadgen through [uv](https://docs.astral.sh/uv/), so this skill's commands share
-one installation, and its warm build daemon, with the CAD app's server:
+Run cadgen through the `cadgen` command its installation writes, so this skill's commands
+share one installation, and its engine server, with the CAD app's:
 
-- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.26 cadgen`
-- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.26 python`
+- `cadgen` below means `cadgen +0.8.0` (`~/.local/bin/cadgen +0.8.0` where `~/.local/bin` is not on your PATH)
+- `python` below means `cadgen +0.8.0 run`
 
-The first run downloads that installation; later runs reuse it.
+If `cadgen` is not on your PATH, or it says 0.8.0 is not installed, run
+`uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.0 cadgen doctor` once,
+outside any sandbox or with its permission: it installs cadgen, registers it, writes the
+`cadgen` command and starts the engine. With the CAD app's server running, nothing else
+needs the sandbox's permission: it starts the engine and holds it. Without it, a sandboxed
+shell cannot start the engine; when a command says no engine is running, run `cadgen server`
+outside the sandbox once.
 
 ## Workflow
 
@@ -72,10 +78,12 @@ The first run downloads that installation; later runs reuse it.
    drawing forward as if it showed tolerancing ("The actuator has nominal
    dimensions only; to show tolerancing, let's set the pin and bushing fits and
    the mounting faces first").
-1. **Get the part.** `cadgen.read_step(Path(__file__).parent / "../STEP/part.step")`
-   reads the artifact a `@step` model wrote (run `python <model>.py` first); a
-   live build123d shape works too. The drawing documents geometry; it does not
-   build it.
+1. **Get the part.** Call the model: `enclosure()`, imported from the model's
+   script, is built by cadgen's engine (a replay when the engine already holds
+   it), and its `.shape` is the part. For a part with no model, read its file:
+   `read_step` for a STEP, `read_xbf` for an xbf, anchored on
+   `Path(__file__).parent`. Any build123d shape works. The drawing documents
+   geometry; it does not build it.
 2. **Write `<name>_drawing.py`** beside the model, from
    [the template](references/sheet-api.md#template). Import the facts your
    dimensions reference (hole pitch, wall, step lengths) from the model module
@@ -201,7 +209,8 @@ The first run downloads that installation; later runs reuse it.
      hole called out where no hole is, views that run off the frame on a sheet
      whose scale you fixed. The message says what the part has, or which scale
      fits. A sheet that chose its own scale takes a larger sheet or the next
-     scale down instead.
+     scale down instead. A failed render leaves no file it wrote; an earlier
+     PDF stays byte for byte.
 
    Set `MPLCONFIGDIR` to a writable directory when running unattended.
 6. **Read the PDF** (render a page to PNG if you cannot view PDFs). Check that
@@ -228,7 +237,7 @@ keys every part to a parts list with a balloon, and one sheet per distinct part.
 
 ```python
 # in the @eng_drawing function; from cadgen.eng_drawing import assembly_sheets, parts_list
-parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/rig.step"))
+parts = parts_list(rig().shape)                    # the assembly model, called
 parts.merge("eye:upper", "eye:lower")              # one part the model names twice
 parts.set("base_plate", material="AL 6061-T6", spec="AMS 4027")   # only what the person states
 parts.add("LOCTITE 243", spec="MIL-S-46163 TYPE II")             # not modelled: QTY AR
