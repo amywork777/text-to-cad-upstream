@@ -1,10 +1,10 @@
 """The part's edges for the operations that follow them (``trace``): edge selectors, points, chains.
 
-Not an operation (no registry entry). A job names edges the way the Viewer selects them (``#o1.e5``; a bare ``#e5``
-on a one-part document, or a ``part.step#o1.e5`` file-prefixed ref); ``part.py`` resolves faces only, so this module
-resolves edges through the same scene.
+Not an operation (no registry entry). A job names edges the way the Viewer selects them (``edge 5`` on a one-part
+document, ``bracket/edge 5`` under its part, an edge's name, or a ``bracket.step#edge 5`` file-prefixed ref);
+:meth:`Part.edge` resolves them in the document the part was read from.
 
-* :func:`edge_refs` checks a job's edge list (strings shaped like edge selectors, none twice).
+* :func:`edge_refs` checks a job's edge list (refs that each name one edge, none twice).
 * :func:`edge_points` resolves one edge on the part and samples it in a setup's WCS, finer than the tolerance.
 * :func:`chains` joins edges end to end into :class:`Chain` rows (open or closed); a chain that climbs (not level in
   the setup's XY plane) is refused (``unreachable``).
@@ -17,16 +17,13 @@ numpy, shapely and OCP inside.
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass
 
 from cadgen._internal.cam.job_errors import CamJobError, PlanError, shown
-from cadgen._internal.cam.part import resolve_one
+from cadgen._internal.cam.part import element_kind
 
-__all__ = ["Chain", "EDGE_REF", "chains", "edge_points", "edge_refs", "material_heights", "resolve_edge"]
+__all__ = ["Chain", "chains", "edge_points", "edge_refs", "material_heights"]
 
-#: An edge selector: ``#o1.e5`` (any file prefix), or a bare ``#e5`` on a one-part document.
-EDGE_REF = re.compile(r"^(?:[^#\s]*)#o[\w.]+\.e\d+$|^#e\d+$")
 #: Two edge ends this close (mm) are one point of a chain; a chain whose heights spread more than this climbs.
 JOIN_MM = 1e-3
 
@@ -49,32 +46,16 @@ class Chain:
 
 
 def edge_refs(raw: object, where: str) -> tuple[str, ...]:
-    """A job's ``edges``: a non-empty list of edge selectors, each once."""
+    """A job's ``edges``: a non-empty list of edge refs, each once."""
     if isinstance(raw, str):
         raw = [raw]
-    if not isinstance(raw, list) or not raw or not all(isinstance(ref, str) and EDGE_REF.match(ref) for ref in raw):
-        raise CamJobError(f"{where} must be a list of edge refs like \"#o1.e12\" (select the edges in the Viewer), "
+    if not isinstance(raw, list) or not raw or not all(element_kind(ref) == "edge" for ref in raw):
+        raise CamJobError(f"{where} must be a list of edge refs like \"edge 12\" (select the edges in the Viewer), "
                           f"not {shown(raw)}")
     for i, ref in enumerate(raw):
         if ref in raw[:i]:
             raise CamJobError(f"{where}: {ref!r} is listed twice; name each edge once")
     return tuple(raw)
-
-
-def resolve_edge(ctx, ref: str, where: str):
-    """The scene's selection of the edge ``ref`` names on the part machined, or the teaching error."""
-    part = ctx.part
-    if part.kind != "step" or part._scene is None:
-        raise CamJobError(f"{where}: {ref} names an edge, but a DXF has no edges; follow its profiles with region")
-    try:
-        selection = resolve_one(part._scene, ref)
-    except ValueError as exc:
-        raise CamJobError(f"{where}: {ref} is not an edge of this part ({exc}); select the edges in the Viewer") from None
-    if selection.kind != "edge":
-        raise CamJobError(f"{where}: {ref} is a {selection.kind} reference; name edges (#o1.e12)")
-    if selection.occurrence_ref != part.occurrence:
-        raise CamJobError(f"{where}: {ref} is on {selection.occurrence_ref}, but the job machines {part.occurrence}")
-    return selection
 
 
 def edge_points(ctx, ref: str, where: str):
@@ -85,12 +66,10 @@ def edge_points(ctx, ref: str, where: str):
     from OCP.BRepAdaptor import BRepAdaptor_Curve
     from OCP.GCPnts import GCPnts_QuasiUniformDeflection
     from OCP.GeomAbs import GeomAbs_Line
-    from OCP.TopoDS import TopoDS
 
-    selection = resolve_edge(ctx, ref, where)
-    edge = TopoDS.Edge_s(selection.shape().wrapped)
+    canonical, edge = ctx.part.edge(ref, where)
     if BRep_Tool.Degenerated_s(edge):
-        raise CamJobError(f"{where}: {selection.ref} is a degenerate edge (a point, at a cone's tip or a sphere's pole); "
+        raise CamJobError(f"{where}: {canonical} is a degenerate edge (a point, at a cone's tip or a sphere's pole); "
                           "name the edges round it")
     curve = BRepAdaptor_Curve(edge)
     first, last = curve.FirstParameter(), curve.LastParameter()
@@ -99,11 +78,11 @@ def edge_points(ctx, ref: str, where: str):
     else:
         sampler = GCPnts_QuasiUniformDeflection(curve, max(1e-4, ctx.tolerance_mm / 4.0), first, last)
         if not sampler.IsDone() or sampler.NbPoints() < 2:
-            raise PlanError("unreachable", f"{where}: the curve of {selection.ref} could not be followed point by point; "
+            raise PlanError("unreachable", f"{where}: the curve of {canonical} could not be followed point by point; "
                             "trace a slot path drawn along it instead")
         values = [sampler.Value(i) for i in range(1, sampler.NbPoints() + 1)]
     points = np.array([(p.X(), p.Y(), p.Z()) for p in values], dtype=float)
-    return selection.ref, ctx.wcs.to_wcs(points)
+    return canonical, ctx.wcs.to_wcs(points)
 
 
 def chains(ctx, refs, where: str) -> list[Chain]:

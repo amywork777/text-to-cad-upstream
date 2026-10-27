@@ -57,16 +57,25 @@ def crowded_step(directory):
 
 def edges(step, test) -> list[str]:
     """The part's edge refs whose (bounding box min, max, length) pass ``test``, in ordinal order."""
-    from cadgen.step_scene import read_scene
+    from build123d import Edge
+    from OCP.TopAbs import TopAbs_EDGE
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
 
-    leaf = next(iter(read_scene(step).leaves()))
+    from cadgen import read_step
+    from cadgen._internal.cam.part import read_part
+
+    owner = read_part(step).faces[1].ref.rpartition("/")[0]
+    # A fresh read, unmeshed: a meshed edge's box grows by its triangulation's tolerance.
+    found = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(read_step(step).wrapped, TopAbs_EDGE, found)
     out = []
-    for selection in leaf.entities("edge"):
-        shape = selection.shape()
+    for ordinal in range(1, found.Extent() + 1):
+        shape = Edge(found.FindKey(ordinal))
         box = shape.bounding_box()
         low, high = (box.min.X, box.min.Y, box.min.Z), (box.max.X, box.max.Y, box.max.Z)
         if test(np.round(low, 6), np.round(high, 6), round(shape.length, 6)):
-            out.append(selection.ref)
+            out.append(f"{owner}/edge {ordinal}")
     return out
 
 
@@ -320,7 +329,7 @@ class Trace(unittest.TestCase):
             "use one of on, inside, outside, left, right": {**rim, "offset": "around"},
             "needs \"depth_mm\"": {"op": "trace", "tool": "T1", "edges": [self.rim]},
             "needs \"edges\"": {"op": "trace", "tool": "T1", "depth_mm": 2},
-            "must be a list of edge refs": {**rim, "edges": ["#o1.f3"]},
+            "must be a list of edge refs": {**rim, "edges": ["face 3"]},
             "does not use stepover": {**rim, "stepover": 0.5},
         }
         for expected, operation in cases.items():

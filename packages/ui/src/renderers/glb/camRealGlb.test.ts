@@ -13,7 +13,8 @@ import { createCamTool, setupAxis } from '../../../dist/renderers/glb/cam/tool.j
 /*
  * `__tests__/boss.cam.glb` is a real result, written by `cadgen cam plan` (not by hand): a 20 x 15 x 3 plate with an
  * 11 x 7 boss 6 mm tall whose walls lean in 15°, on a mill5 (linuxcnc), stock box margin [1, 1, 0.5], tolerance 0.1,
- * one 8 mm flat (T1). Setup `top` (+Z): a region pocket clearing round the boss (op 0), then swarf on its four walls
+ * one 8 mm flat (T1). Setup `top` (+Z): a region pocket clearing round the boss (op 0: the polygon ±15 x ±12, bottom_z
+ * -6.5, the plate's top), then swarf on its four walls
  * (op 1, continuous A/C: its lines carry `_CAM_AXIS`); setup `tilt` ({"a_deg": 30}, 3+2): a face 0.5 mm deep (op 2).
  * To regenerate it, build that part with build123d (Box(20, 15, 3) + loft of Rectangle(11, 7) at z 3 to the inset
  * rectangle at z 9), plan it with that job (the swarf faces are the four walls `cadgen cam features` lists at z ~6),

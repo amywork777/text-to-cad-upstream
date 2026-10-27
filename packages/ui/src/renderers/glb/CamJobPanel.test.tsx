@@ -64,14 +64,14 @@ it('marks the row chosen', () => {
 it('carries a row into Quick Edit: the part\'s faces with the operation\'s sentence, or the whole part', () => {
   const choices = camChoices(job());
   const pocket = camReferences('/work/part.step', choices.get('op:1'));
-  expect(pocket).toEqual([{ resource: { kind: 'workspace-file', path: '/work/part.step' }, target: { kind: 'cad-selector', selectors: ['o1.f12', 'o1.f13'] },
-    summary: 'Pocket #o1.f12 with T3 4 mm ball, 60 s' }]);
+  expect(pocket).toEqual([{ resource: { kind: 'workspace-file', path: '/work/part.step' }, target: { kind: 'cad-selector', selectors: ['part/face 12', 'part/face 13'] },
+    summary: 'Pocket part/face 12 with T3 4 mm ball, 60 s' }]);
   const message = formatPromptMessage(createPromptContext([{ id: 'r', kind: 'reference', reference: pocket[0] }]));
-  expect(message).toContain('Pocket #o1.f12 with T3 4 mm ball, 60 s · /work/part.step#o1.f12,o1.f13');
+  expect(message).toContain('Pocket part/face 12 with T3 4 mm ball, 60 s · /work/part.step#part/face 12,part/face 13');
   expect(camReferences('/work/part.step', choices.get('op:0'))[0].target).toEqual({ kind: 'whole-resource' });
-  expect(choices.get('setup:top')).toMatchObject({ label: 'Top setup', ops: [0, 1], faces: ['#o1.f12', '#o1.f13'], summary: 'Top setup: Face, Pocket, 2 min' });
+  expect(choices.get('setup:top')).toMatchObject({ label: 'Top setup', ops: [0, 1], faces: ['part/face 12', 'part/face 13'], summary: 'Top setup: Face, Pocket, 2 min' });
   expect(choices.get('finding:0')).toMatchObject({ label: 'Tool too long for this pocket', ops: [1],
-    summary: 'Tool too long for this pocket (Pocket #o1.f12 with T3 4 mm ball, 60 s)' });
+    summary: 'Tool too long for this pocket (Pocket part/face 12 with T3 4 mm ball, 60 s)' });
   // A result with no part to name has no references; nothing chosen, none either.
   expect(camReferences('', choices.get('op:1'))).toEqual([]);
   expect(camReferences('/work/part.step', null)).toEqual([]);
@@ -82,12 +82,12 @@ it('shows a choice in Quick Edit as one chip named for its row, a face glyph in 
   const onRemove = vi.fn();
   const pocket = choices.get('op:1')!;
   const [chip] = camChips(pocket, camReferences('/work/part.step', pocket), { colours: { 1: '#123456' }, onRemove });
-  expect(chip).toMatchObject({ key: 'cam:op:1', label: 'Pocket', glyph: 'face', glyphColor: '#123456', copy: '/work/part.step#o1.f12,o1.f13' });
+  expect(chip).toMatchObject({ key: 'cam:op:1', label: 'Pocket', glyph: 'face', glyphColor: '#123456', copy: '/work/part.step#part/face 12,part/face 13' });
   chip.onRemove();
   expect(onRemove).toHaveBeenCalled();
   // The card: the row's sentence, the part and how many faces.
   const { container } = render(<>{chip.card}</>);
-  expect(container.querySelector('[data-cam-chip-summary]')!.textContent).toBe('Pocket #o1.f12 with T3 4 mm ball, 60 s');
+  expect(container.querySelector('[data-cam-chip-summary]')!.textContent).toBe('Pocket part/face 12 with T3 4 mm ball, 60 s');
   expect([...container.querySelectorAll('[data-info-row]')].map((row) => row.textContent)).toEqual(['Partpart.step', 'Faces2']);
   // A choice of the whole part reads as the part; a setup's glyph takes no one colour.
   const face = choices.get('op:0')!;
@@ -165,7 +165,7 @@ it('lists each tool with its speed and feed, a range where its operations differ
   extras.tools = [{ id: 'T3', number: 3, type: 'ball_endmill', diameter_mm: 4, plain: '4 mm ball end mill' },
     { id: 'T1', number: 1, type: 'flat_endmill', diameter_mm: 6 }, { id: 'T9', number: 9, type: 'drill', diameter_mm: 5 }];
   extras.setups[0].operations.push({ index: 2, op: 'contour', plain: 'Profile', tool: 'T1', tool_plain: '6 mm flat', rpm: 10000, feed_mm_min: 1440,
-    time_s: 10, t0: 90, t1: 100, summary: 'Profile', faces: ['#o1.f2'], limits: [] });
+    time_s: 10, t0: 90, t1: 100, summary: 'Profile', faces: ['part/face 2'], limits: [] });
   const parsed = readCamJob(camScene({ extras }))!;
   render(<CamJobPanel job={parsed} colours={{}} chosen="tool:T1" onChoose={() => {}} />);
   const tools = screen.getByRole('region', { name: 'Tools' });
@@ -173,10 +173,10 @@ it('lists each tool with its speed and feed, a range where its operations differ
     'T1 6 mm flat10,000–12,000 rpm · 1,440 mm/min', 'T3 4 mm ball end mill15,000 rpm · 900 mm/min', 'T9 5 mm drill']);
   expect(screen.getByRole('button', { name: 'Select T1 6 mm flat' }).getAttribute('aria-pressed')).toBe('true');
   const choices = camChoices(parsed);
-  expect(choices.get('tool:T1')).toEqual({ id: 'tool:T1', label: 'T1 6 mm flat', ops: [0, 2], faces: ['#o1.f2'],
+  expect(choices.get('tool:T1')).toEqual({ id: 'tool:T1', label: 'T1 6 mm flat', ops: [0, 2], faces: ['part/face 2'],
     summary: 'T1 6 mm flat at 10,000–12,000 rpm, 1,440 mm/min: Face, Profile' });
   expect(choices.get('tool:T9')).toMatchObject({ ops: [], summary: 'T9 5 mm drill, unused' });
-  expect(camReferences('/work/part.step', choices.get('tool:T1'))[0]).toMatchObject({ target: { kind: 'cad-selector', selectors: ['o1.f2'] } });
+  expect(camReferences('/work/part.step', choices.get('tool:T1'))[0]).toMatchObject({ target: { kind: 'cad-selector', selectors: ['part/face 2'] } });
 });
 
 it('says at the view\'s foot where a playing clip is, and is away while none plays', () => {
@@ -197,7 +197,7 @@ it('gates what the view shows of a result in Job\'s Show rows: toolpaths, rapids
   const gates = camGates({ job: job(), meshes: camSceneMeshes(root), paths: camPathKinds(root), shown: CAM_SHOWN });
   expect(gates.map((gate: any) => [gate.id, gate.title, gate.on])).toEqual([
     ['toolpaths', 'Toolpaths', true], ['rapids', 'Rapids', true], ['tool', 'Tool', true], ['stock', 'Stock', false], ['part', 'Part', true]]);
-  expect(gates[0].hint).toBe('2 operations, each in its own colour');
+  expect(gates[0].hint).toBe('Each operation in its own colour');
   root.remove(...camSceneMeshes(root).stock.map((entry: any) => entry.object));
   expect(camGates({ job: job(), meshes: camSceneMeshes(root), paths: { feed: true, rapid: false }, shown: CAM_SHOWN })
     .map((gate: any) => gate.title)).toEqual(['Toolpaths', 'Tool', 'Part']);
@@ -214,9 +214,9 @@ it('gates what the view shows of a result in Job\'s Show rows: toolpaths, rapids
   const show = screen.getByRole('region', { name: 'Show' });
   expect([...show.querySelectorAll('[data-cam-gate]')].map((row) => row.textContent)).toEqual(['Toolpaths', 'Tool', 'Fixtures', 'Part']);
   expect(container.querySelector('[data-cam-gate="fixtures"]')!.hasAttribute('data-cam-hidden')).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: 'Reveal fixtures' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reveal Fixtures' }));
   expect(onToggleGate).toHaveBeenLastCalledWith('fixtures', true);
-  fireEvent.click(screen.getByRole('button', { name: 'Hide toolpaths' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Hide Toolpaths' }));
   expect(onToggleGate).toHaveBeenLastCalledWith('toolpaths', false);
 });
 

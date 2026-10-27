@@ -82,7 +82,7 @@ def pockets(part, floors, holes=()) -> list[dict]:
         pocket = floor.get("pocket")
         if not pocket or floor["normal"] not in ("+Z", "-Z") or floor["ref"] in taken:
             continue
-        ordinal = int(floor["ref"].rsplit("f", 1)[1])
+        ordinal = part.ordinal(floor["ref"])
         tris = np.asarray(part.triangles)[np.asarray(part.face_of_triangle) == ordinal]
         if not len(tris):
             continue

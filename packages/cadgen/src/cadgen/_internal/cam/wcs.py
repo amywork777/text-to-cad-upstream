@@ -2,7 +2,7 @@
 
 A setup's ``orientation`` names the part direction the tool comes from (``+Z``: from above, the part as modelled;
 ``-Z``: flipped; ``+X``: lying so its +X side faces up; ...) or a 3+2 tilt ``{"a_deg", "c_deg"}`` (the table turned
-C about Z, then tilted A about X); or a planar face of the part (``"#o1.f4"``, on a mill or router): the tool looks
+C about Z, then tilted A about X); or a planar face of the part (``"face 4"``, on a mill or router): the tool looks
 down the face's outward normal, the part turned by the smallest rotation that brings that normal to +Z (a half turn
 about X for -Z), resolved against the part by :func:`with_face_orientations` into a :class:`FaceOrientation`. On a
 mill4/mill5 a face its rotary axes reach is that rotary position, as a fixed orientation is; one they cannot reach is a
@@ -71,7 +71,7 @@ def rotation_for(orientation: object) -> tuple[tuple[float, float, float], ...]:
         if orientation.rotary is not None:
             return rotation_for(dict(orientation.rotary))
         return rotation_to(orientation.normal)
-    if isinstance(orientation, str) and "#" in orientation:
+    if isinstance(orientation, str) and orientation not in _WCS_X:
         raise CamJobError(f"orientation {orientation} names a face: read the part first (with_face_orientations)")
     if isinstance(orientation, dict):
         a = math.radians(orientation.get("a_deg", 0.0))
@@ -189,16 +189,16 @@ def build_wcs(setup, *, stock_points, part_points, machine=None) -> WCS:
 
 
 def with_face_orientations(job, part):
-    """``job`` with each setup turned onto a face (``"orientation": "#o1.f4"``) resolved against ``part`` into a
+    """``job`` with each setup turned onto a face (``"orientation": "face 4"``) resolved against ``part`` into a
     :class:`FaceOrientation`; the job itself when none is (and a job already resolved). A face that is not on the part,
     or not planar, is a teaching error."""
     from dataclasses import replace
 
-    if not any(isinstance(s.orientation, str) and "#" in s.orientation for s in job.setups):
+    if not any(isinstance(s.orientation, str) and s.orientation not in _WCS_X for s in job.setups):
         return job
     setups = []
     for setup in job.setups:
-        if isinstance(setup.orientation, str) and "#" in setup.orientation:
+        if isinstance(setup.orientation, str) and setup.orientation not in _WCS_X:
             setup = replace(setup, orientation=_face_orientation(setup, part, job.machine))
         setups.append(setup)
     return replace(job, setups=tuple(setups))

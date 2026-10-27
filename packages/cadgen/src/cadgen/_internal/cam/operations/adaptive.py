@@ -59,7 +59,7 @@ class AdaptiveOp(Operation):
     def parse(self, spec, ctx):
         super().parse(spec, ctx)
         if not spec.faces and spec.region is None:
-            raise CamJobError(f"{spec.where}: an adaptive clear needs its floor faces (\"faces\": [\"#o1.f12\"]) or a "
+            raise CamJobError(f"{spec.where}: an adaptive clear needs its floor faces (\"faces\": [\"face 12\"]) or a "
                               "\"region\" ({\"polygon\": [[x, y], ...], \"bottom_z\": z})")
         if spec.faces and spec.region is not None:
             raise CamJobError(f"{spec.where}: give an adaptive clear faces or a region, not both")

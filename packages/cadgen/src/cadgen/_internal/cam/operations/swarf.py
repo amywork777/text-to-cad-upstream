@@ -186,7 +186,7 @@ class SwarfOp(Operation):
     def parse(self, spec, ctx):
         super().parse(spec, ctx)
         if not spec.faces:
-            raise CamJobError(f"{spec.where}: a swarf names the walls it cuts (\"faces\": [\"#o1.f7\"]); "
+            raise CamJobError(f"{spec.where}: a swarf names the walls it cuts (\"faces\": [\"face 7\"]); "
                               "cadgen cam features lists them")
         extra = spec.extra
         return {

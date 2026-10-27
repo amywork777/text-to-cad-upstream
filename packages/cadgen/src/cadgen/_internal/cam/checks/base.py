@@ -23,7 +23,7 @@ __all__ = ["CheckContext", "FINDING_TYPES", "OpPlan", "SetupPlan", "assumed_leng
 
 _SEVERITY = {"error": 0, "warning": 1, "info": 2}
 
-#: Every finding a plan can carry, by ``check``: the closed set of its ``type`` (law 9; the skill's checks.md names
+#: Every finding a plan can carry, by ``check``: the closed set of its ``type`` (law 16; the skill's checks.md names
 #: each). A finding of a check or type not listed here is a bug in cadgen, refused where it is made. The plan error
 #: kinds are :data:`~cadgen._internal.cam.job_errors.PLAN_ERROR_KINDS`.
 FINDING_TYPES: dict[str, tuple[str, ...]] = {

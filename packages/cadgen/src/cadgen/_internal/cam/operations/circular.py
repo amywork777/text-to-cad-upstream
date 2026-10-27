@@ -71,7 +71,7 @@ class CircularOp(Operation):
         extra = spec.extra
         where = spec.where
         if bool(spec.faces) == (spec.region is not None):
-            raise CamJobError(f"{where}: a circular needs the round pocket's or boss's walls (\"faces\": [\"#o1.f8\"]) "
+            raise CamJobError(f"{where}: a circular needs the round pocket's or boss's walls (\"faces\": [\"face 8\"]) "
                               "or a \"region\" ({\"polygon\": [[x, y], ...], \"bottom_z\": z}), one of them")
         boss = extra.get("boss")
         if boss is not None and not isinstance(boss, bool):

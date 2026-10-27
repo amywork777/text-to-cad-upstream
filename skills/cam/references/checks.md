@@ -50,7 +50,7 @@ which:
 | `unreachable` | the tool cannot get there from this setup, or cannot come down there (a hole under a roof, no room to ramp, a helix pitch steeper than its ramp angle) | another setup from the side that reaches it, or what the summary names |
 | `tool_too_large` | the tool does not fit the feature: a pocket narrower than it, a drill bigger than its hole | a smaller tool, or the tool of the hole's size |
 | `tool_too_small` | the tool cannot make the feature as asked (a spot wider than the spot drill) | a larger tool |
-| `gouge` | the only path the operation has goes into the part | redraw the region inside the material, or cut the feature by its selector |
+| `gouge` | the only path the operation has goes into the part | redraw the region inside the material, or cut the feature by its face refs |
 
 A post that cannot write what the job needs (a tap on a controller with no spindle-synchronised
 feed) is a `no_post_support` error (`check` `post`) on the operation. Either way no G-code is

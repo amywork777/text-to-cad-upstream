@@ -54,13 +54,15 @@ class BlockFeatures(unittest.TestCase):
     def test_the_mesh_faces_match_the_scene_ordinals(self):
         import numpy as np
 
+        from build123d import Face
+
         from cadgen._internal.cam.part import read_part
 
         part = read_part(self.step)
         for ordinal, info in part.faces.items():
             with self.subTest(face=info.ref):
-                (selection,) = part._scene.resolve(info.ref)
-                centre = selection.shape().center()
+                self.assertEqual(info, part.face(info.ref))
+                centre = Face(part.ocp_face(ordinal)).center()
                 rows = np.asarray(part.triangles)[np.asarray(part.face_of_triangle) == ordinal]
                 points = np.asarray(part.vertices)[np.unique(rows)]
                 low, high = points.min(axis=0) - 1e-6, points.max(axis=0) + 1e-6
@@ -73,7 +75,7 @@ class BlockFeatures(unittest.TestCase):
 
         part = read_part(self.step)
         with self.assertRaises(CamJobError) as caught:
-            part.face("#o1.f999")
+            part.face("face 999")
         self.assertIn("cadgen cam features lists them", str(caught.exception))
 
 

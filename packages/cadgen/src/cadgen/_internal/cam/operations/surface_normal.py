@@ -142,7 +142,7 @@ class SurfaceNormalOp(Operation):
     def parse(self, spec, ctx):
         super().parse(spec, ctx)
         if not spec.faces:
-            raise CamJobError(f"{spec.where}: a surface_normal names the faces it finishes (\"faces\": [\"#o1.f7\"]); "
+            raise CamJobError(f"{spec.where}: a surface_normal names the faces it finishes (\"faces\": [\"face 7\"]); "
                               "cadgen cam features lists them")
         extra = spec.extra
         smooth = extra.get("smooth", 5)

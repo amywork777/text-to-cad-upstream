@@ -153,36 +153,36 @@ class ViseAndPlateBoxes(unittest.TestCase):
 
     def test_a_vise_on_a_setup_turned_to_a_sloping_face_is_refused(self):
         parsed = parse_job(job({"type": "vise"}))
-        setup = dataclasses.replace(parsed.setups[0], orientation=FaceOrientation("#o1.f4", CHAMFER_NORMAL))
+        setup = dataclasses.replace(parsed.setups[0], orientation=FaceOrientation("face 4", CHAMFER_NORMAL))
         wcs = build_wcs(setup, stock_points=STOCK, part_points=STOCK)
         with self.assertRaisesRegex(CamJobError, r"setups\[0\]\.fixture\[0\]: setup top turns the part onto "
-                                                 r"#o1\.f4, at an angle to the part's axes"):
+                                                 r"face 4, at an angle to the part's axes"):
             holding_boxes(setup, wcs, STOCK)
         # A face square to the part's axes keeps the vise.
-        square = dataclasses.replace(setup, orientation=FaceOrientation("#o1.f2", (0.0, 1.0, 0.0)))
+        square = dataclasses.replace(setup, orientation=FaceOrientation("face 2", (0.0, 1.0, 0.0)))
         boxes, _ = holding_boxes(square, build_wcs(square, stock_points=STOCK, part_points=STOCK), STOCK)
         self.assertEqual(5, len(boxes))
 
 
 class FaceOrientationParsing(unittest.TestCase):
     def test_a_face_names_the_setup_and_waits_for_the_part(self):
-        setup = parse_job(job(orientation="#o1.f4")).setups[0]
-        self.assertEqual("#o1.f4", setup.orientation)
-        self.assertEqual("Face #o1.f4 up", setup.plain)
+        setup = parse_job(job(orientation="face 4")).setups[0]
+        self.assertEqual("face 4", setup.orientation)
+        self.assertEqual("Face 4 up", setup.plain)
 
     def test_an_edge_a_lathe_and_a_cutting_machine_are_refused(self):
         cases = {
-            "'#o1.e3', an edge: a setup looks down a flat face's outward normal": job(orientation="#o1.e3"),
-            "'#o1.v2', a vertex": job(orientation="#o1.v2"),
-            "a planar face's selector like \"#o1.f4\"": job(orientation="#nope"),
+            "'edge 3', an edge: a setup looks down a flat face's outward normal": job(orientation="edge 3"),
+            "'vertex 2', a vertex": job(orientation="vertex 2"),
+            "a planar face's ref like \"face 4\"": job(orientation="#nope"),
             "a lathe's setup is its spindle axis": dict(
                 job(), machine={"kind": "lathe", "post": "linuxcnc"},
                 stock={"kind": "cylinder", "diameter_mm": 20, "length_mm": 40}, tools=[{"id": "T1", "type": "turn"}],
-                setups=[{"id": "turn", "orientation": "#o1.f4", "operations": [{"op": "turn_face", "tool": "T1"}]}]),
+                setups=[{"id": "turn", "orientation": "face 4", "operations": [{"op": "turn_face", "tool": "T1"}]}]),
             "a laser cuts through the sheet lying flat, so it cannot be turned onto a face": dict(
                 job(), machine={"kind": "laser", "post": "grbl"}, stock={"kind": "sheet", "thickness_mm": 3},
                 tools=[{"id": "B1", "type": "beam", "kerf_mm": 0.2}],
-                setups=[{"id": "cut", "orientation": "#o1.f4", "operations": [{"op": "cut", "tool": "B1"}]}]),
+                setups=[{"id": "cut", "orientation": "face 4", "operations": [{"op": "cut", "tool": "B1"}]}]),
         }
         for expected, raw in cases.items():
             with self.subTest(expected=expected), self.assertRaises(CamJobError) as caught:
@@ -265,10 +265,10 @@ class SetupOnAFace(unittest.TestCase):
         self.assertEqual("ready", result.verdict["status"], result.findings)
         self.assertFalse([f for f in result.findings if f["check"] == "gouge"])
         header = gcode_reader.posted_text(result, "chamfer").splitlines()[0]
-        self.assertIn(f"setup chamfer Face {self.chamfer} up", header)
+        self.assertIn(f"setup chamfer {self.chamfer} up", header)
         cam = read_glb(result.glb)[0]["scenes"][0]["extras"]["cam"]
         self.assertEqual(self.chamfer, cam["setups"][0]["orientation"])
-        self.assertEqual(f"Face {self.chamfer} up", cam["setups"][0]["plain"])
+        self.assertEqual(f"{self.chamfer} up", cam["setups"][0]["plain"])
 
     def test_on_a_mill5_the_face_is_a_rotary_position_and_on_a_mill4_out_of_reach_a_refixture(self):
         mill5 = mill_job([], machine={"kind": "mill5", "post": "linuxcnc"}, stock={"kind": "box", "margin_mm": 1},
@@ -293,7 +293,7 @@ class SetupOnAFace(unittest.TestCase):
 
         block = block_step(self.directory)
         cylinder = next(f.ref for f in read_part(block).faces.values() if f.surface == "cylinder")
-        cases = {(self.step, "#o1.f99"): "setups[0].orientation: #o1.f99 is not a face of this part",
+        cases = {(self.step, "face 99"): "setups[0].orientation: face 99 is not a face of this part",
                  (block, cylinder): f"setups[0].orientation: {cylinder} is a cylinder face, which has no one "
                                     "normal to look down"}
         for (step, ref), expected in cases.items():

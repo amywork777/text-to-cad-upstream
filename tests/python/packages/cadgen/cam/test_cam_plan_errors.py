@@ -186,12 +186,12 @@ class PlanOneOccurrence(unittest.TestCase):
         job = mill_job([{"op": "face", "tool": "T1"}])
         with quiet():
             refused = cam.plan(path, job=job)
-            planned = cam.plan(path, job=job, occurrence="#o1.2")
+            planned = cam.plan(path, job=job, occurrence="p1")
         self.assertFalse(refused.ok)
         self.assertIn("--occurrence", refused.findings[0]["summary"])
         self.assertTrue(planned.ok, planned.findings)
         stock = read_glb(planned.glb)[0]["scenes"][0]["extras"]["cam"]["stock"]
-        self.assertIn("#o1.2", read_glb(planned.glb)[0]["scenes"][0]["extras"]["cam"]["occurrence"])
+        self.assertIn("p1", read_glb(planned.glb)[0]["scenes"][0]["extras"]["cam"]["occurrence"])
         self.assertTrue(stock)
 
     def test_the_generated_cli_takes_the_flag(self):

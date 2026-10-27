@@ -1,4 +1,4 @@
-"""Robustness (README law 10): every input to ``cadgen cam`` ends in ``ok`` with sane outputs, or ``ok: false`` with
+"""Robustness (README law 17): every input to ``cadgen cam`` ends in ``ok`` with sane outputs, or ``ok: false`` with
 one teaching error and no file written; never a traceback, a hang, a NaN or an infinity in a posted file, or memory
 past a bound.
 
@@ -360,15 +360,15 @@ class JobKeys(Sane, unittest.TestCase):
             "duplicate T numbers": {**base, "tools": [tool, {**tool, "id": "rougher", "number": 1}]},
             "duplicate setup ids": {**base, "setups": [setup, setup]},
             "an op naming a missing tool": _set(base, ("setups", 0, "operations", 0, "tool"), "T9"),
-            "a face that does not exist": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["#o1.f999"]}]),
-            "face 0": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["#o1.f0"]}]),
+            "a face that does not exist": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["face 999"]}]),
+            "face 0": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["face 0"]}]),
             "a face ref of 30 digits": _set(base, ("setups", 0, "operations"),
-                                            [{**pocket, "faces": ["#o1.f" + "9" * 30]}]),
+                                            [{**pocket, "faces": ["face " + "9" * 30]}]),
             "a face in wrong syntax": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["f12"]}]),
-            "an edge, not a face": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["#o1.e1"]}]),
-            "a face of another occurrence": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["#o2.f1"]}]),
+            "an edge, not a face": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["edge 1"]}]),
+            "a face of another occurrence": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["other/face 1"]}]),
             "faces not a list of text": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": [1]}]),
-            "a wall named as a pocket floor": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["#o1.f1"]}]),
+            "a wall named as a pocket floor": _set(base, ("setups", 0, "operations"), [{**pocket, "faces": ["face 1"]}]),
         }
         for what, job in cases.items():
             with self.subTest(what):
@@ -614,8 +614,8 @@ class Geometry(Sane, unittest.TestCase):
             part.label = f"p{k}"
         assembly = _step("assembly", Compound(children=parts, label="asm"))
         self.assertFalse(self.features(assembly).ok)
-        self.assertTrue(self.features(assembly, occurrence="#o1.2").ok)
-        for occurrence in ("#o9", "garbage!", "#o1.2.f1", ""):
+        self.assertTrue(self.features(assembly, occurrence="p1").ok)
+        for occurrence in ("p9", "garbage!", "p1/face 1", ""):
             with self.subTest(occurrence=occurrence):
                 self.features(assembly, occurrence=occurrence or None)
         self.refused(assembly, mill_job([{"op": "face", "tool": "T1"}]), "an assembly", contains="--occurrence")
@@ -722,7 +722,7 @@ class Cli(unittest.TestCase):
             "an output folder that is a file": ("cam", "plan", plate, "--job", job, "--out-dir", str(a_file)),
             "features of a missing part": ("cam", "features", str(folder / "nope.step")),
             "features of a folder": ("cam", "features", str(folder)),
-            "an unknown occurrence": ("cam", "features", plate, "--occurrence", "#o9"),
+            "an unknown occurrence": ("cam", "features", plate, "--occurrence", "p9"),
             "a junk occurrence": ("cam", "features", plate, "--occurrence", "!!"),
         }
         for what, argv in verbs.items():

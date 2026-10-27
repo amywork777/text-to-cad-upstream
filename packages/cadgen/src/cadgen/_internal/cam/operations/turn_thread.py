@@ -69,7 +69,7 @@ class TurnThreadOp(TurnOperation):
         if not (params["pitch_mm"] or tool.pitch_mm):
             raise CamJobError(f"{where}: a thread needs its pitch: pitch_mm on the operation or on {tool.id}")
         if not spec.faces and (params["z_start_mm"] is None or params["z_end_mm"] is None):
-            raise CamJobError(f"{where}: name the threaded cylinder (faces: [\"#o1.f4\"]) or give z_start_mm and "
+            raise CamJobError(f"{where}: name the threaded cylinder (faces: [\"face 4\"]) or give z_start_mm and "
                               "z_end_mm with its diameter")
         if params["z_start_mm"] is not None and params["z_end_mm"] is not None \
                 and params["z_end_mm"] >= params["z_start_mm"]:

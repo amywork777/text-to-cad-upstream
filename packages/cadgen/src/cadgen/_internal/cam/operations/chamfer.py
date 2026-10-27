@@ -50,7 +50,7 @@ class ChamferOp(Operation):
     def parse(self, spec, ctx):
         super().parse(spec, ctx)
         if not spec.faces and spec.region is None:
-            raise CamJobError(f"{spec.where}: a chamfer needs the faces whose edges it breaks (\"faces\": [\"#o1.f3\"]) "
+            raise CamJobError(f"{spec.where}: a chamfer needs the faces whose edges it breaks (\"faces\": [\"face 3\"]) "
                               "or a \"region\" ({\"polygon\": [[x, y], ...], \"bottom_z\": z})")
         if spec.faces and spec.region is not None:
             raise CamJobError(f"{spec.where}: give a chamfer faces or a region, not both")

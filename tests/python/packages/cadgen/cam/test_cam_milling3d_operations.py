@@ -196,7 +196,7 @@ class Mould(Planned):
             ({"op": "rest", "tool": "T4", "of": "parallel", "bottom_z": -3}, "'bottom_z' is not a key of a parallel"),
             ({"op": "rest", "tool": "T4", "of": "parallel", "from_tool_diameter_mm": 1}, "must be more than"),
             ({"op": "parallel", "tool": "T2", "min_slope_deg": 50, "max_slope_deg": 40}, "must be less than"),
-            ({"op": "rough", "tool": "T1", "faces": ["#o1.f1"]}, "takes no faces"),
+            ({"op": "rough", "tool": "T1", "faces": ["face 1"]}, "takes no faces"),
             ({"op": "waterline", "tool": "T2", "angle_deg": 10}, "unknown key 'angle_deg'"),
             ({"op": "pencil", "tool": "T2", "crease_deg": 0}, "crease_deg must be more than 0"),
         ]

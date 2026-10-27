@@ -251,7 +251,7 @@ class TurnProfile:
     z_front: float
     z_back: float
     r_max: float
-    #: Faces that are not turned about the axis (``#o1.fN``): flats, cross holes, keyways.
+    #: Faces that are not turned about the axis (``face N``): flats, cross holes, keyways.
     off_axis: tuple[str, ...] = ()
     revolved_fraction: float = 1.0
     note: str | None = None

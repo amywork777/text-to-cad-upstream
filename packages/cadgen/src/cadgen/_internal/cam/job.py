@@ -1,4 +1,4 @@
-"""Parse and validate a CAM job: a closed vocabulary (law 9), frozen dataclasses, one-sentence teaching errors.
+"""Parse and validate a CAM job: a closed vocabulary (law 16), frozen dataclasses, one-sentence teaching errors.
 
 The job (spec section 3) is JSON: a file path, inline JSON text, or a dict from a library caller. :func:`parse_job`
 returns a :class:`Job`::
@@ -37,6 +37,7 @@ from cadgen._internal.cam.operations import available as operation_built
 from cadgen._internal.cam.operations import entry_for as operation_entry
 from cadgen._internal.cam.operations import get_operation
 from cadgen._internal.cam.operations.drill import DEFAULT_CYCLE
+from cadgen._internal.cam.part import element_kind
 from cadgen._internal.cam.tools import Tool, parse_tool
 
 __all__ = ["CamJobError", "Fixture", "Holding", "Job", "Machine", "Material", "OpSpec", "Setup", "StockSpec",
@@ -46,7 +47,7 @@ MACHINE_KINDS = ("mill", "mill4", "mill5", "lathe", "laser", "plasma", "waterjet
 #: mill5 kinematics: an A+C trunnion table, or a B+C head over a C table.
 KINEMATICS = ("ac_trunnion", "bc_head")
 ORIENTATIONS = ("+Z", "-Z", "+X", "-X", "+Y", "-Y")
-#: The machines a setup may be turned onto a face of the part (``"orientation": "#o1.f4"``): the tool looks down the
+#: The machines a setup may be turned onto a face of the part (``"orientation": "face 4"``): the tool looks down the
 #: face's outward normal (``wcs.with_face_orientations``).
 FACE_ORIENTATION_KINDS = ("mill", "mill4", "mill5", "router")
 #: A setup's fixture: a keep-out box in part coordinates (no ``type``, or ``"box"``), or a fixture modelled around the
@@ -267,7 +268,7 @@ class OpSpec:
 class Setup:
     id: str
     plain: str
-    #: ``+Z`` .. ``-Y``, a 3+2 tilt ``{"a_deg": .., "c_deg": ..}`` (a dict), or a planar face's selector (``#o1.f4``,
+    #: ``+Z`` .. ``-Y``, a 3+2 tilt ``{"a_deg": .., "c_deg": ..}`` (a dict), or a planar face's selector (``face 4``,
     #: a str), which the plan resolves against the part to a :class:`~cadgen._internal.cam.wcs.FaceOrientation`.
     orientation: object
     #: One of :data:`ORIGINS`, or ``{"xyz": (x, y, z)}`` in part mm (a bare ``[x, y, z]`` in the job).
@@ -856,9 +857,6 @@ def _stock(raw: object, kind: str) -> StockSpec:
     return StockSpec(kind="from_step", path=path)
 
 
-_REF = re.compile(r"^(?:[^#\s]*)#o[\w.]+\.f\d+$|^#f\d+$")
-
-
 def _setup(raw: object, index: int, machine: Machine, tools: dict[str, Tool]) -> Setup:
     where = f"setups[{index}]"
     if not isinstance(raw, dict):
@@ -883,8 +881,11 @@ def _setup(raw: object, index: int, machine: Machine, tools: dict[str, Tool]) ->
 
         # What the machine's rotary axes (and machine.rotary_limits_deg) can reach; every axis it has, named.
         orientation = check_orientation(orientation, machine, f"{where}.orientation")
-    elif isinstance(orientation, str) and "#" in orientation:
+    elif isinstance(orientation, str) and orientation not in ORIENTATIONS and element_kind(orientation) is not None:
         orientation = _face_orientation(orientation, f"{where}.orientation", machine)
+    elif isinstance(orientation, str) and orientation not in ORIENTATIONS:
+        raise CamJobError(f"{where}.orientation is {shown(orientation)}; use one of {', '.join(ORIENTATIONS)}, a planar "
+                          "face's ref like \"face 4\", or a tilt {\"a_deg\": .., \"c_deg\": ..} on a mill4 or mill5")
     else:
         orientation = choice(orientation, ORIENTATIONS, f"{where}.orientation")
     origin = _origin(raw.get("origin", "stock-top-center"), f"{where}.origin", machine)
@@ -906,20 +907,18 @@ def _setup(raw: object, index: int, machine: Machine, tools: dict[str, Tool]) ->
 
 
 def _face_orientation(value: str, where: str, machine: Machine) -> str:
-    """A setup turned onto a face (``#o1.f4``): a planar face's selector, kept as written; the plan reads the face's
+    """A setup turned onto a face (``face 4``): a planar face's selector, kept as written; the plan reads the face's
     outward normal from the part (``wcs.with_face_orientations``), and refuses one that is not planar."""
     if machine.kind not in FACE_ORIENTATION_KINDS:
         held = ("a lathe's setup is its spindle axis" if machine.kind == "lathe"
                 else f"a {machine.kind} cuts through the sheet lying flat")
         raise CamJobError(f"{where} is {shown(value)}, a face: {held}, so it cannot be turned onto a face; "
                           "remove orientation (or use +Z)")
-    if re.search(r"\.[ev]\d+$", value):
-        what = "an edge" if re.search(r"\.e\d+$", value) else "a vertex"
-        raise CamJobError(f"{where} is {shown(value)}, {what}: a setup looks down a flat face's outward normal, so "
-                          "name a planar face (#o1.f4; cadgen cam features lists them)")
-    if not _REF.match(value):
-        raise CamJobError(f"{where} is {shown(value)}; use one of {', '.join(ORIENTATIONS)}, a planar face's "
-                          "selector like \"#o1.f4\", or a tilt {\"a_deg\": .., \"c_deg\": ..} on a mill4 or mill5")
+    kind = element_kind(value)
+    if kind != "face":
+        raise CamJobError(f"{where} is {shown(value)}, {'an edge' if kind == 'edge' else 'a vertex'}: a setup looks "
+                          "down a flat face's outward normal, so name a planar face (face 4; cadgen cam features lists "
+                          "them)")
     return value
 
 
@@ -1035,15 +1034,16 @@ def _origin(value: object, where: str, machine: Machine) -> object:
 def _plain_orientation(orientation: object) -> str:
     if isinstance(orientation, dict):
         return "Tilted " + " ".join(f"{k[0].upper()}{v:g}°" for k, v in orientation.items() if v)
-    if "#" in orientation:
-        return f"Face {orientation} up"
+    if orientation not in ORIENTATIONS:
+        # A face up: "Face 4 up" (its ref as written, "bracket/face 4 up" under a part).
+        return f"{'F' + orientation[1:] if orientation.startswith('face ') else orientation} up"
     return {"+Z": "Top", "-Z": "Bottom", "+X": "Right", "-X": "Left", "+Y": "Back", "-Y": "Front"}[orientation]
 
 
 def _operation(raw: object, where: str, index: int, machine: Machine, tools: dict[str, Tool],
                heights: tuple[float, float] = (5.0, 2.0)) -> OpSpec:
     if not isinstance(raw, dict):
-        raise CamJobError(f"{where} must be an object like {{\"op\": \"pocket\", \"tool\": \"T1\", \"faces\": [\"#o1.f12\"]}}")
+        raise CamJobError(f"{where} must be an object like {{\"op\": \"pocket\", \"tool\": \"T1\", \"faces\": [\"face 12\"]}}")
     if "op" not in raw:
         raise CamJobError(f"{where} needs \"op\", the operation's name")
     entry = operation_entry(raw["op"], f"{where}.op")
@@ -1060,8 +1060,8 @@ def _operation(raw: object, where: str, index: int, machine: Machine, tools: dic
     faces = raw.get("faces", [])
     if isinstance(faces, str):
         faces = [faces]
-    if not isinstance(faces, list) or not all(isinstance(face, str) and _REF.match(face) for face in faces):
-        raise CamJobError(f"{where}.faces must be a list of face refs like \"#o1.f12\" (cadgen cam features lists "
+    if not isinstance(faces, list) or not all(element_kind(face) == "face" for face in faces):
+        raise CamJobError(f"{where}.faces must be a list of face refs like \"face 12\" (cadgen cam features lists "
                           f"them), not {shown(raw.get('faces'))}")
     for i, face in enumerate(faces):
         if face in faces[:i]:

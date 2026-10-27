@@ -53,7 +53,7 @@ A pocket square to a face tilted 30° about X:
   "tools": [{"id": "T1", "type": "flat", "diameter_mm": 6, "flute_length_mm": 20, "stickout_mm": 35}],
   "setups": [
     {"id": "top", "orientation": "+Z", "operations": [{"op": "face", "tool": "T1"}]},
-    {"id": "tilt", "orientation": {"a_deg": 30}, "operations": [{"op": "pocket", "tool": "T1", "faces": ["#o1.f12"]}]}
+    {"id": "tilt", "orientation": {"a_deg": 30}, "operations": [{"op": "pocket", "tool": "T1", "faces": ["face 12"]}]}
   ]
 }
 ```

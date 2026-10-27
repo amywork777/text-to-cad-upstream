@@ -7,6 +7,7 @@
  * Pure: no three.js, no React.
  */
 
+import { english } from "../../../i18n/core.js";
 import { camExtras, carriesCamJob } from "./detect.js";
 
 export { carriesCamJob };
@@ -31,9 +32,6 @@ export function formatDuration(seconds) {
   const rest = minutes % 60;
   return rest ? `${hours} h ${rest} min` : `${hours} h`;
 }
-
-/** A face token as the prompt grammar writes a selector: its leading "#" is not part of it. */
-export const faceSelector = (ref) => String(ref).replace(/^#/, "");
 
 /**
  * The part the job was planned from, the file a row's references name: `document` as the extras
@@ -301,15 +299,14 @@ const ranged = (range, unit) => (range ? `${range[0] === range[1] ? grouped(rang
 /** A tool's speed and feed as the operations that use it run it ("12,000 rpm · 1,440 mm/min"), a range where they differ. */
 export const toolSpeeds = (tool) => [ranged(tool.rpm, "rpm"), ranged(tool.feedMmMin, "mm/min")].filter(Boolean).join(" · ");
 
-const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
-
 /** The job's tool changes in words: "No tool changes", "1 tool change", "3 tool changes". */
-export const toolChangeWords = (count) => (count > 0 ? plural(count, "tool change") : "No tool changes");
+export const toolChangeWords = (count, t = english) =>
+  (count > 0 ? t(count === 1 ? "cam.toolChange" : "cam.toolChanges", { count }) : t("cam.noToolChanges"));
 
 /** What the job takes, under its verdict: its tool changes and the controller its G-code is for ("1 tool change · grbl controller"). */
-export function jobSummary(job) {
+export function jobSummary(job, t = english) {
   if (!job.operations.length) return "";
-  return [toolChangeWords(job.toolChanges.count), job.post ? `${job.post} controller` : ""].filter(Boolean).join(" · ");
+  return [toolChangeWords(job.toolChanges.count, t), job.post ? t("cam.controller", { post: job.post }) : ""].filter(Boolean).join(" · ");
 }
 
 /** An operation of the job by its index, or null. */

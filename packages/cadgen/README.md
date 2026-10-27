@@ -422,3 +422,13 @@ The viewer exposes `POST /__cad/clipboard` for explicit viewport PNG copies. It
 uses the same host and custom-header POST gates as other mutation routes, limits
 images to 20 MiB, and delegates native delivery to `viewer/clipboard.py`. It never
 reads the clipboard. Unsupported desktop clipboard environments return an error.
+
+## CAM
+
+`cadgen cam features` and `cadgen cam plan` (`cadgen.cam`) read a part from its file -- a STEP or an
+xbf through `read_step`/`read_xbf`, or a DXF's profiles -- never through the engine, and resolve a
+job's face and edge refs in that file by the engine's grammar (`engine/refs.py`), so a ref
+`cadgen inspect` answers or the CAD Viewer copies names the same face. The planner, simulator, checks
+and posts live under `src/cadgen/_internal/cam/`; a plan writes `<stem>.cam.glb`, an ordinary GLB the
+viewer's GLB renderer draws the job of, and one G-code file per setup. The `cam` skill carries the job
+file's contract.

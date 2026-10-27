@@ -29,9 +29,9 @@ A minimal job: face the top, cut a slot, bore a hole, profile the outline out wi
   ],
   "setups": [{"id": "top", "operations": [
     {"op": "face", "tool": "T1"},
-    {"op": "slot", "tool": "T2", "faces": ["#o1.f14"]},
-    {"op": "helix_bore", "tool": "T1", "faces": ["#o1.f8"]},
-    {"op": "contour", "tool": "T1", "faces": ["#o1.f3"], "loops": "outer", "tabs": {"count": 4}}
+    {"op": "slot", "tool": "T2", "faces": ["face 14"]},
+    {"op": "helix_bore", "tool": "T1", "faces": ["face 8"]},
+    {"op": "contour", "tool": "T1", "faces": ["face 3"], "loops": "outer", "tabs": {"count": 4}}
   ]}]
 }
 ```
@@ -272,7 +272,7 @@ circle) and for any boss.
 ## trace: Trace
 
 Follows a chain of the part's edges `depth_mm` below them: name the edges in `edges` as the Viewer
-selects them (`#o1.e5`). They are joined end to end into chains, open or closed; each chain must lie
+selects them (`edge 5`). They are joined end to end into chains, open or closed; each chain must lie
 level in the setup (a chain that climbs is refused). Levels run from the material's top over the
 edges (the stock top when they lie on the part's top) down by the step down; each level ramps in
 along the path at `ramp_angle_deg`, or comes straight down where the tool is off the stock. The part
@@ -281,10 +281,10 @@ Flat, bull, ball, vee, chamfer or engraver tool.
 
 | key | meaning |
 | --- | --- |
-| `edges` | the edges to follow, `["#o1.e5", "#o1.e6"]` (required) |
+| `edges` | the edges to follow, `["edge 5", "edge 6"]` (required) |
 | `depth_mm` | how far below the edges to cut (required) |
 | `offset` | `on` (default: the tool's centre on the edges), `inside` or `outside` a closed loop (climb), `left` or `right` of an open chain looking along it from its start. An offset moves the centre the tool's cutting radius at the depth (a vee's: its radius `depth_mm` up its cone), so its edge runs on the edges. `left`/`right` on a loop or `inside`/`outside` on an open chain is refused |
-| `start` | where an open chain starts: a point `[x, y]` (WCS) at one of its ends, or its first or last edge (`"#o1.e5"`). Required with `left` or `right`; an edge in the middle of the chain is refused. Without it a chain is cut from its end nearer the tool |
+| `start` | where an open chain starts: a point `[x, y]` (WCS) at one of its ends, or its first or last edge (`"edge 5"`). Required with `left` or `right`; an edge in the middle of the chain is refused. Without it a chain is cut from its end nearer the tool |
 | `ramp_angle_deg` | the ramp's angle (default 3) |
 
 With `offset: on` the tool cuts into the modelled part on purpose (a groove along the edges), so the

@@ -3,7 +3,7 @@ in canned cycles.
 
 Which holes (exactly one of):
 
-* ``faces``: any face of a hole (``#o1.fN``: a wall, either half of a split one, its counterbore's wall or
+* ``faces``: any face of a hole (``face N``: a wall, either half of a split one, its counterbore's wall or
   shoulder, its countersink, its floor). Each hole's axis must be the setup's Z (a through hole either way); one
   that is not is refused naming the setup, or the orientation, that would reach it. One along the setup's Z whose
   opening the part covers (a hole in the floor of a cave, under its roof) cannot be planned (``unreachable``).

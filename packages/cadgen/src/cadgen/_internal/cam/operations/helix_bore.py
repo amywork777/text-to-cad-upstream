@@ -47,7 +47,7 @@ class HelixBoreOp(Operation):
         extra = spec.extra
         where = spec.where
         if bool(spec.faces) == ("holes" in extra):
-            raise CamJobError(f"{where}: a helix bore needs the hole walls (\"faces\": [\"#o1.f8\"]) or \"holes\" "
+            raise CamJobError(f"{where}: a helix bore needs the hole walls (\"faces\": [\"face 8\"]) or \"holes\" "
                               "([{\"center\": [x, y], \"diameter_mm\": d, \"bottom_z\": z}]), one of them")
         holes = []
         if "holes" in extra:

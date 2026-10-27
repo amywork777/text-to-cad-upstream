@@ -22,7 +22,7 @@ G0 Z5
 G0 A30
 S12000 M3
 M8
-(Pocket #o1.f12)
+(Pocket face 12)
 G0 X10 Y0
 Z5
 A30

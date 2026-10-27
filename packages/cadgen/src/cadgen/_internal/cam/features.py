@@ -93,7 +93,7 @@ def holes(part) -> list[dict]:
     for run in runs:
         _cones(part, run, points, touch)
         out.append(_hole(part, run, points, touch))
-    out.sort(key=lambda hole: int(hole["faces"][0].rsplit("f", 1)[1]))
+    out.sort(key=lambda hole: part.ordinal(hole["faces"][0]))
     return out
 
 

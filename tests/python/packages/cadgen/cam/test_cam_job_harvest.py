@@ -196,8 +196,8 @@ class JobBugs(unittest.TestCase):
                job(setups__0__clearance_mm=1.5))   # the default retract over a lowered clearance
 
     def test_a_face_listed_twice_is_refused(self):
-        refuse(self, "'#o1.f20' is listed twice",
-               job(setups__0__operations=[{"op": "pocket", "tool": "T1", "faces": ["#o1.f20", "#o1.f20"]}]))
+        refuse(self, "'face 20' is listed twice",
+               job(setups__0__operations=[{"op": "pocket", "tool": "T1", "faces": ["face 20", "face 20"]}]))
 
 
 class Materials(unittest.TestCase):
@@ -265,7 +265,7 @@ class Overrides(unittest.TestCase):
         result = for_op(clamped.material, clamped.tool("T1"), "rough", clamped.machine, plunge=123)
         self.assertEqual(100.0, result.plunge_mm_min)
         drill = parse_job(job(tools=[{"id": "T1", "type": "drill", "diameter_mm": 5}],
-                              setups__0__operations=[{"op": "drill", "tool": "T1", "faces": ["#o1.f3"],
+                              setups__0__operations=[{"op": "drill", "tool": "T1", "faces": ["face 3"],
                                                       "plunge_mm_min": 50}]))
         with self.assertRaisesRegex(CamJobError, "a drill does not use plunge_mm_min"):
             parse_operations(drill)
@@ -283,7 +283,7 @@ class Overrides(unittest.TestCase):
         refuse(self, "clearance_mm must be more than 0", job(setups__0__operations__0__clearance_mm=0))
         # An operation's own key of the same name is the operation's: a drill's chip-break retract_mm.
         drill = parse_job(job(tools=[{"id": "T1", "type": "drill", "diameter_mm": 5}], setups__0__operations=[
-            {"op": "drill", "tool": "T1", "faces": ["#o1.f3"], "cycle": "chipbreak", "retract_mm": 0.3}]))
+            {"op": "drill", "tool": "T1", "faces": ["face 3"], "cycle": "chipbreak", "retract_mm": 0.3}]))
         spec = drill.setups[0].operations[0]
         self.assertEqual((None, 0.3), (spec.retract_mm, spec.extra["retract_mm"]))
 

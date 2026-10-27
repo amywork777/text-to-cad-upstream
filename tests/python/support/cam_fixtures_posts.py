@@ -85,7 +85,7 @@ def _mill_path(b, *, rotary_setup=None, wcs="G54", tap=True):
     b.event("tool", tool="T1", number=1)
     b.event("spindle", rpm=12000, dir="cw")
     b.event("coolant", mode="flood")
-    b.event("comment", text="Pocket #o1.f12")
+    b.event("comment", text="Pocket face 12")
     b.rapid(x=10, y=0)
     b.rapid(z=1)
     b.feed(z=0, f=600)

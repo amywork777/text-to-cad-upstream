@@ -12,10 +12,10 @@ An operation is a small class (one module per op under ``operations/``, register
 
         def parse(self, spec: OpSpec, ctx: ParseContext) -> params      # closed keys; teaching errors
         def plan(self, ctx: PlanContext, params) -> Toolpath           # WCS moves, op index stamped
-        def summary(self, ctx: PlanContext, params) -> str              # "Pocket #o1.f12 with T1 6 mm flat"
+        def summary(self, ctx: PlanContext, params) -> str              # "Pocket face 12 with T1 6 mm flat"
 
 ``parse`` runs before the part is read (a malformed job fails fast); the base checks the op's own keys against
-``keys``, the shared tuning keys the job wrote against ``common_keys`` (law 9: a ``stepover`` a drill never reads is
+``keys``, the shared tuning keys the job wrote against ``common_keys`` (law 16: a ``stepover`` a drill never reads is
 refused, not ignored), the tool's presence and type, and returns the ``extra`` dict; an op overrides it to return
 its own params.
 ``plan`` starts at ``ctx.start`` (over the part at the clearance height) and should end at the clearance height; the
@@ -213,7 +213,7 @@ class Operation:
         return allowed
 
     def check_common_keys(self, spec, allowed) -> None:
-        """Refuse a shared tuning key the job set that this operation never reads (law 9)."""
+        """Refuse a shared tuning key the job set that this operation never reads (law 16)."""
         allowed = self.with_plunge(allowed)
         stray = [key for key in SHARED if key in getattr(spec, "given", ()) and key not in allowed]
         if stray:
@@ -226,7 +226,7 @@ class Operation:
         raise NotImplementedError
 
     def summary(self, ctx: PlanContext, params) -> str:
-        """``Pocket #o1.f12 with T1 6 mm flat``: the plain word, what it cuts, the tool."""
+        """``Pocket face 12 with T1 6 mm flat``: the plain word, what it cuts, the tool."""
         faces = ctx.spec.faces
         what = "" if not faces else (" " + ", ".join(faces) if len(faces) <= 3 else f" {len(faces)} faces")
         name = f" ({ctx.spec.name})" if ctx.spec.name else ""

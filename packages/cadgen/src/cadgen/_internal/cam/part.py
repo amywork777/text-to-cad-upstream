@@ -1,47 +1,99 @@
-"""The part a job machines, read once: exact faces through ``read_scene``, one tessellation, or a DXF's profiles.
+"""The part a job machines, read once: exact faces from ``read_step``/``read_xbf``, one tessellation, or a DXF's
+profiles.
 
 :func:`read_part` returns a :class:`Part`:
 
 * ``vertices`` (V, 3) and ``triangles`` (T, 3) in part mm: one tessellation of the occurrence at
   ``deflection_mm`` (OCCT's incremental mesher, linear and angular deflection), wound outward; and
-  ``face_of_triangle`` (T,) with each triangle's face ordinal (the ``N`` of ``#o1.fN``);
+  ``face_of_triangle`` (T,) with each triangle's face ordinal (the ``N`` of ``face N``);
 * ``faces``: one :class:`FaceInfo` per face ordinal (surface type, area, centre, plane normal or cylinder axis,
   whether a cylinder is a hole), read from the exact B-rep;
-* :meth:`Part.face` resolves a job's ``#o1.fN`` to its :class:`FaceInfo` with a teaching error for a ref that is
-  not on this part; :meth:`Part.ocp_face` hands back the exact ``TopoDS_Face`` (world placement);
+* :meth:`Part.face` resolves a job's face ref to its :class:`FaceInfo` with a teaching error for a ref that is not on
+  this part, and :meth:`Part.edge` an edge ref to its exact ``TopoDS_Edge``; :meth:`Part.ocp_face` hands back the
+  exact ``TopoDS_Face`` (world placement);
 * :meth:`Part.mesh_in` the mesh in a setup's WCS (cached per setup).
 
 A DXF part (``kind == "dxf"``) has ``profiles`` (shapely polygons, even-odd filled, in mm on z = 0; blocks expanded,
 annotation skipped and said in ``notes``, any other entity refused: :func:`dxf_curves`) and a mesh extruded to the
 sheet's thickness; it has no faces. Stdlib at import; numpy, OCP and ezdxf inside.
+
+A ref is the engine's (``cadgen.engine.refs``, what ``cadgen inspect`` answers and the CAD Viewer copies): ``face 12``
+on a document of one part, ``bracket/face 12`` or ``kit/arm/face 12`` under the part's occurrence, an element's name
+(``bracket/f:bracket.body.3``) where the file names its faces, optionally after the document (``bracket.step#face
+12``). It is resolved in the document as it is read here, never through the engine: CAM reads a file, not a model.
 """
 
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from cadgen._internal.cam.job_errors import CamJobError
 
-__all__ = ["DXF_SUFFIXES", "FaceInfo", "Part", "dxf_curves", "read_dxf_drawing", "read_dxf_profiles", "read_part"]
+__all__ = ["DXF_SUFFIXES", "PART_SUFFIXES", "FaceInfo", "Part", "dxf_curves", "element_kind", "read_dxf_drawing",
+           "read_dxf_profiles", "read_part"]
 
 DXF_SUFFIXES = (".dxf",)
+#: The documents a part is read from: a STEP, or an engine document (a model's ``@xbf``, or ``cadgen export ID
+#: part.xbf``).
+PART_SUFFIXES = (".step", ".stp", ".xbf")
 #: The default tessellation: fine enough that sections and checks are good to a few hundredths of a millimetre.
 DEFAULT_DEFLECTION_MM = 0.01
 ANGULAR_DEFLECTION = 0.15
+#: The kinds an element name's codes stand for, as the reader keeps them (``kernel/imported.py``).
+_NAME_KINDS = (("vertex", 0), ("edge", 1), ("face", 2))
 
 
+def element_kind(ref: object) -> str | None:
+    """The kind of element a ref names (``face``, ``edge``, ``vertex``) when it is one ref of one element, else None:
+    what a job's ``faces`` or ``edges`` entry is read as before the part is."""
+    from cadgen.engine.refs import RefError, parse
 
-def resolve_one(scene, ref: str):
-    """The one selection ``ref`` names. ``StepScene.resolve`` reads a reference line, one selection per ref in it
-    (``#o1.f1,o1.f2``); a job names one ref per entry, so a line of several raises as an unresolved one does."""
-    selections = scene.resolve(ref)
-    if len(selections) != 1:
-        raise ValueError(f"it names {len(selections)} references; give each its own entry")
-    return selections[0]
+    if not isinstance(ref, str):
+        return None
+    try:
+        _file, selectors = parse(ref)
+    except RefError:
+        return None
+    return selectors[0].kind if len(selectors) == 1 else None
+
+
+class _Document:
+    """A read document's occurrence tree as the engine's refs resolve it (``refs.resolve_structure``): an assembly by
+    its components, a part by its element names; each part's entry holds its node of the build123d tree."""
+
+    def __init__(self, path: Path, tree) -> None:
+        self.path = path
+        self.prototypes: list[dict] = []
+        self.parts: list[dict] = []
+        root = self._entry(tree)
+        if not root["name"]:
+            root["name"] = path.stem  # several roots, or one unnamed: the document's name
+        self.structure = {"tree": root, "prototypes": self.prototypes}
+
+    def _entry(self, node) -> dict:
+        children = list(getattr(node, "children", ()) or ())
+        if children:
+            return {"name": node.label or "", "children": [self._entry(child) for child in children]}
+        from cadgen.engine.kernel.imported import ELEMENT_NAMES
+
+        names = node.__dict__.get(ELEMENT_NAMES) or {}
+        self.prototypes.append({f"{kind}Names": {str(o): text for o, text in (names.get(code) or {}).items()}
+                                for kind, code in _NAME_KINDS})
+        entry = {"name": node.label or "", "prototype": len(self.prototypes) - 1, "node": node}
+        self.parts.append(entry)
+        return entry
+
+    def resolve(self, ref: str):
+        """The one thing ``ref`` names (a ``refs.Hit``); ValueError where it names nothing, or several things."""
+        from cadgen.engine.refs import resolve_structure
+
+        hits = resolve_structure(self.structure, ref, self.path)
+        if len(hits) != 1:
+            raise ValueError(f"it names {len(hits)} things; give each its own entry")
+        return hits[0]
 
 @dataclass(frozen=True)
 class FaceInfo:
@@ -67,7 +119,7 @@ class FaceInfo:
 class Part:
     document: Path
     occurrence: str
-    kind: str                       # "step" | "dxf"
+    kind: str                       # "step" (a STEP or an xbf: B-rep) | "dxf"
     vertices: Any                   # (V, 3) float
     triangles: Any                  # (T, 3) int
     face_of_triangle: Any           # (T,) int, face ordinal (0 for a DXF)
@@ -77,8 +129,12 @@ class Part:
     profiles: list = field(default_factory=list)   # DXF: shapely Polygons
     #: What reading it skipped (a DXF's text and dimensions), in plain words, for the result's warnings.
     notes: list = field(default_factory=list)
-    _scene: Any = None
+    _document: Any = None
+    #: The occurrence's path from the document's root: the identity a ref's part is checked against.
+    _path: str = ""
     _face_map: Any = None
+    _edge_map: Any = None
+    _ordinals: Any = None
     _wcs_cache: dict = field(default_factory=dict)
 
     @property
@@ -87,20 +143,55 @@ class Part:
 
         return np.asarray(self.vertices).min(axis=0), np.asarray(self.vertices).max(axis=0)
 
+    def _element(self, ref: str, where: str, kind: str):
+        try:
+            hit = self._document.resolve(ref)
+        except ValueError as exc:
+            raise CamJobError(f"{where}: {ref} is not {'an' if kind == 'edge' else 'a'} {kind} of this part ({exc}); "
+                              + ("cadgen cam features lists them" if kind == "face" else "select the edges in the Viewer")
+                              ) from None
+        if hit.kind != kind:
+            raise CamJobError(f"{where}: {ref} is {'a part' if hit.kind is None else f'a {hit.kind}'} reference; "
+                              f"name {kind}s ({kind} 12)")
+        if hit.path != self._path:
+            raise CamJobError(f"{where}: {ref} is on {hit.path}, but the job machines {self.occurrence}")
+        count = len(self.faces) if kind == "face" else self._edges().Extent()
+        if not 1 <= hit.ordinal <= count:
+            raise CamJobError(f"{where}: {ref} is not {'an' if kind == 'edge' else 'a'} {kind} of this part (it has "
+                              f"{count}); " + ("cadgen cam features lists them" if kind == "face"
+                                               else "select the edges in the Viewer"))
+        return hit
+
+    def _edges(self):
+        from OCP.TopAbs import TopAbs_EDGE
+        from OCP.TopExp import TopExp
+        from OCP.TopTools import TopTools_IndexedMapOfShape
+
+        if self._edge_map is None:
+            self._edge_map = TopTools_IndexedMapOfShape()
+            TopExp.MapShapes_s(self.shape.wrapped, TopAbs_EDGE, self._edge_map)
+        return self._edge_map
+
     def face(self, ref: str, where: str = "faces") -> FaceInfo:
         """The face a job names, or the teaching error."""
         if self.kind != "step":
             raise CamJobError(f"{where}: {ref} names a face, but a DXF has no faces; name its profiles with region")
-        try:
-            selection = resolve_one(self._scene, ref)
-        except ValueError as exc:
-            raise CamJobError(f"{where}: {ref} is not a face of this part ({exc}); cadgen cam features lists them") from None
-        if selection.kind != "face":
-            raise CamJobError(f"{where}: {ref} is a {selection.kind} reference; operations take faces (#o1.f12)")
-        if selection.occurrence_ref != self.occurrence:
-            raise CamJobError(f"{where}: {ref} is on {selection.occurrence_ref}, but the job machines {self.occurrence}")
-        ordinal = int(re.search(r"\.f(\d+)$", selection.ref).group(1))
-        return self.faces[ordinal]
+        return self.faces[self._element(ref, where, "face").ordinal]
+
+    def edge(self, ref: str, where: str = "edges"):
+        """``(canonical ref, TopoDS_Edge)`` of the edge a job names (world placement), or the teaching error."""
+        from OCP.TopoDS import TopoDS
+
+        if self.kind != "step":
+            raise CamJobError(f"{where}: {ref} names an edge, but a DXF has no edges; follow its profiles with region")
+        hit = self._element(ref, where, "edge")
+        return hit.ref, TopoDS.Edge_s(self._edges().FindKey(hit.ordinal))
+
+    def ordinal(self, ref: str) -> int:
+        """The ordinal of a face by its canonical ref (a :class:`FaceInfo`'s ``ref``, as ``cam features`` lists it)."""
+        if self._ordinals is None:
+            self._ordinals = {info.ref: ordinal for ordinal, info in self.faces.items()}
+        return self._ordinals[ref]
 
     def ocp_face(self, ordinal: int):
         """The exact ``TopoDS_Face`` of a face ordinal, in part coordinates."""
@@ -148,40 +239,44 @@ def read_part(document: Path, *, occurrence: str | None = None, deflection_mm: f
         # A plan always names the sheet's thickness (run.py refuses a DXF job without one); read for its profiles
         # alone (``cam features``) the drawing stays flat, at z = 0.
         return _read_dxf(document, thickness=float(sheet_thickness_mm) if sheet_thickness_mm is not None else 0.0)
-    from cadgen._internal.doors import STEP_SUFFIXES, document_target
-    from cadgen.step_scene import read_scene
+    suffix = document.suffix.lower()
+    if suffix not in PART_SUFFIXES:
+        raise CamJobError(f"this command takes a {'/'.join((*PART_SUFFIXES, *DXF_SUFFIXES))} document: {document}")
+    what = "xbf" if suffix == ".xbf" else "STEP"
+    if not document.is_file():
+        raise CamJobError(f"no {what} at {document}")
+    from cadgen.engine.model import read_step, read_xbf
 
     try:
-        path = document_target(document, suffixes=(*STEP_SUFFIXES, *DXF_SUFFIXES))
-    except FileNotFoundError:
-        raise CamJobError(f"no STEP at {document}") from None
-    except (ValueError, OSError) as exc:
-        raise CamJobError(str(exc)) from None
-    if not path.is_file():
-        raise CamJobError(f"no STEP at {path}")
-    try:
-        scene = read_scene(path)
+        tree = (read_xbf if suffix == ".xbf" else read_step)(document)
     except (RuntimeError, ValueError, OSError) as exc:
-        # An empty, truncated or non-STEP file: the reader's first line says why.
+        # An empty, truncated or foreign file: the reader's first line says why.
         why = (str(exc).strip().splitlines() or [type(exc).__name__])[0]
-        raise CamJobError(f"{path.name} is not a STEP that can be read ({why[:200]}); export it again from the CAD "
-                          "tool") from None
-    leaves = list(scene.leaves())
+        raise CamJobError(f"{document.name} is not {'an' if what == 'xbf' else 'a'} {what} that can be read "
+                          f"({why[:200]}); export it again from the CAD tool") from None
+    read = _Document(document, tree)
     if occurrence:
         try:
-            owner = resolve_one(scene, occurrence)
+            hit = read.resolve(occurrence)
         except ValueError as exc:
             raise CamJobError(f"occurrence {occurrence}: {exc}") from None
-        if owner.kind != "occurrence" or owner.ref not in {leaf.ref for leaf in leaves}:
-            raise CamJobError(f"{occurrence} is not a part occurrence of {path.name}; the parts are "
-                              f"{', '.join(leaf.ref for leaf in leaves)}")
+        if hit.kind is not None or "prototype" not in hit.node.payload:
+            raise CamJobError(f"{occurrence} is not a part occurrence of {document.name}; the parts are "
+                              f"{', '.join(_part_paths(read))}")
     else:
-        if len(leaves) != 1:
-            raise CamJobError(f"the document has {len(leaves)} parts; CAM machines one part: pass --occurrence "
-                              f"{' or '.join(leaf.ref for leaf in leaves[:4])}")
-        owner = leaves[0]
-    shape = owner.shape()
-    return _tessellate(path, owner.ref, shape, scene, deflection_mm or DEFAULT_DEFLECTION_MM)
+        if len(read.parts) != 1:
+            raise CamJobError(f"the document has {len(read.parts)} parts; CAM machines one part: pass --occurrence "
+                              f"{' or '.join(_part_paths(read)[:4])}")
+        hit = read.resolve(_part_paths(read)[0])
+    node = hit.node.payload["node"]
+    return _tessellate(document, read, hit, node.located(node.global_location), deflection_mm or DEFAULT_DEFLECTION_MM)
+
+
+def _part_paths(read: _Document) -> list[str]:
+    from cadgen.engine.refs import path_text, structure_tree
+
+    root = structure_tree(read.structure)
+    return [path_text(root, part) for part in root.parts()]
 
 
 #: The largest part (mm on any axis) CAM reads: ten metres, past any machine bed (job.MAX_STOCK_MM). A bigger one is
@@ -218,7 +313,7 @@ def _surface_name(adaptor) -> str:
     return names.get(adaptor.GetType(), "other")
 
 
-def _tessellate(path: Path, ref: str, shape, scene, deflection: float) -> Part:
+def _tessellate(path: Path, read: _Document, hit, shape, deflection: float) -> Part:
     import numpy as np
     from OCP.BRep import BRep_Tool
     from OCP.BRepAdaptor import BRepAdaptor_Surface
@@ -226,15 +321,23 @@ def _tessellate(path: Path, ref: str, shape, scene, deflection: float) -> Part:
     from OCP.BRepMesh import BRepMesh_IncrementalMesh
     from OCP.GProp import GProp_GProps
     from OCP.TopAbs import TopAbs_REVERSED
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp
     from OCP.TopLoc import TopLoc_Location
     from OCP.TopoDS import TopoDS
+    from OCP.TopTools import TopTools_IndexedMapOfShape
 
-    from cadgen._internal.entity_ordinals import entity_map
-
+    ref = hit.ref
     wrapped = shape.wrapped
     _check_size(f"{ref} of {path.name}", shape.bounding_box())
     BRepMesh_IncrementalMesh(wrapped, deflection, False, ANGULAR_DEFLECTION, True)
-    face_map = entity_map(wrapped, "face")
+    # Ordinals as the engine numbers a part's elements: TopExp.MapShapes over its shape.
+    face_map = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(wrapped, TopAbs_FACE, face_map)
+    # A face's canonical ref: its name where the file gives it one, else its ordinal, under its owner as ``inspect``
+    # spells it (the document's name for a document of one part).
+    names = {int(o): text for o, text in read.prototypes[hit.node.payload["prototype"]]["faceNames"].items()}
+    owner = read.resolve(f"{hit.path}/face 1").ref.rpartition("/")[0] if face_map.Extent() else ref
     vertices: list = []
     triangles: list = []
     owners: list = []
@@ -293,8 +396,9 @@ def _tessellate(path: Path, ref: str, shape, scene, deflection: float) -> Part:
                 axial = gp_Vec(d.X(), d.Y(), d.Z())
                 radial = radial.Subtracted(axial.Multiplied(radial.Dot(axial)))
                 hole = bool(outward.Dot(radial) < 0)
+        element = names.get(ordinal) or f"face {ordinal}"
         faces[ordinal] = FaceInfo(
-            ref=f"{ref}.f{ordinal}", ordinal=ordinal, surface=surface, area_mm2=float(props.Mass()),
+            ref=f"{owner}/{element}" if owner else element, ordinal=ordinal, surface=surface, area_mm2=float(props.Mass()),
             center_mm=(float(centre.X()), float(centre.Y()), float(centre.Z())), normal=normal, axis=axis,
             axis_point=axis_point, radius_mm=radius, hole=hole, bounds=bounds,
         )
@@ -302,7 +406,7 @@ def _tessellate(path: Path, ref: str, shape, scene, deflection: float) -> Part:
         raise CamJobError(f"{ref} of {path.name} has no surface to machine")
     return Part(document=path, occurrence=ref, kind="step", vertices=np.vstack(vertices),
                 triangles=np.vstack(triangles), face_of_triangle=np.concatenate(owners), faces=faces,
-                deflection_mm=deflection, shape=shape, _scene=scene, _face_map=face_map)
+                deflection_mm=deflection, shape=shape, _document=read, _path=hit.path, _face_map=face_map)
 
 
 # --- DXF -------------------------------------------------------------------------------------------------

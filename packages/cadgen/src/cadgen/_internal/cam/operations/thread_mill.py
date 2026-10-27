@@ -70,7 +70,7 @@ class ThreadMillOp(Operation):
         super().parse(spec, ctx)
         if not spec.faces:
             raise CamJobError(f"{spec.where}: a thread mill needs a hole wall or a boss to thread "
-                              "(\"faces\": [\"#o1.f7\"]; cadgen cam features lists the holes)")
+                              "(\"faces\": [\"face 7\"]; cadgen cam features lists the holes)")
         extra = spec.extra
         where = spec.where
         tool = ctx.job.tool(spec.tool)

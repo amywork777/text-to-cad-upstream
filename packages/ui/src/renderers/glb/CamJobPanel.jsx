@@ -3,6 +3,8 @@ import { cn } from "@text-to-cad/ui/utils";
 import { Button } from "@text-to-cad/ui/primitives/button";
 import { ROW_NAME_UNDER_ACTIONS, TREE_INDENT_PX, TreeRowGuides, TreeRowLabel, TreeRowSurface, treeRowActionsClass } from "@text-to-cad/ui/primitives/tree-row";
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
+import { english } from "../../i18n/core.js";
+import { useI18n } from "@text-to-cad/ui/i18n";
 import ToolPanel from "../kit/tools/ToolPanel.jsx";
 import { assumedWords, formatDuration, jobSummary, operationDetail, toolSpeeds } from "./cam/extras.js";
 
@@ -11,11 +13,12 @@ export const CAM_JOB_SECTION_ID = "job";
 
 // The verdict's status in the theme's own status tones, FEA's verdict's: green to cut, red to fix.
 const TONES = Object.freeze({
-  ready: { icon: CircleCheck, text: "text-success", surface: "bg-success-bg/70" },
-  fix: { icon: CircleX, text: "text-error", surface: "bg-error-bg/70" },
+  ready: { icon: CircleCheck, tone: "text-success", surface: "bg-success-bg/70" },
+  fix: { icon: CircleX, tone: "text-error", surface: "bg-error-bg/70" },
 });
 
-const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+// A count in words: its key's singular or plural form ("1 warning", "3 warnings").
+const counted = (t, count, one, many) => t(count === 1 ? one : many, { count });
 const NONE = Object.freeze(new Set());
 // The room an operation row's eye takes at its right end (its `--row-actions`).
 const ROW_ACTIONS_WIDTH = "1.5rem";
@@ -30,23 +33,24 @@ export const toolRowLabel = (tool) => [tool.label, tool.plain].filter(Boolean).j
 const opChoice = (op) => ({ id: `op:${op.index}`, label: op.name || op.plain, ops: [op.index], faces: op.faces, summary: op.summary });
 
 /** The choices the panel's rows make, by row: a setup chooses all its operations; an error, the operation it is about. */
-export function camChoices(job) {
+export function camChoices(job, t = english) {
   const choices = new Map();
   for (const op of job.operations) choices.set(`op:${op.index}`, opChoice(op));
   for (const setup of job.setups) {
     choices.set(`setup:${setup.id}`, {
-      id: `setup:${setup.id}`, label: `${setup.plain} setup`, ops: setup.operations.map((op) => op.index),
+      id: `setup:${setup.id}`, label: t("cam.setup", { name: setup.plain }), ops: setup.operations.map((op) => op.index),
       faces: [...new Set(setup.operations.flatMap((op) => op.faces))],
-      summary: `${setup.plain} setup: ${setup.operations.map((op) => op.plain).join(", ")}, ${formatDuration(setup.timeS)}`,
+      summary: t("cam.setupSummary", { name: setup.plain, operations: setup.operations.map((op) => op.plain).join(", "), time: formatDuration(setup.timeS) }),
     });
   }
   // A tool chooses every operation that runs it.
   for (const tool of job.tools || []) {
     const ops = job.operations.filter((op) => tool.operations.includes(op.index));
     const speeds = toolSpeeds(tool).replace(" · ", ", ");
+    const named = speeds ? t("cam.toolAt", { tool: toolRowLabel(tool), speeds }) : toolRowLabel(tool);
     choices.set(`tool:${tool.id}`, {
       id: `tool:${tool.id}`, label: toolRowLabel(tool), ops: ops.map((op) => op.index), faces: [...new Set(ops.flatMap((op) => op.faces))],
-      summary: `${toolRowLabel(tool)}${speeds ? ` at ${speeds}` : ""}${ops.length ? `: ${ops.map((op) => op.plain).join(", ")}` : ", unused"}`,
+      summary: ops.length ? t("cam.toolUses", { tool: named, operations: ops.map((op) => op.plain).join(", ") }) : t("cam.toolUnused", { tool: named }),
     });
   }
   job.findings.forEach((finding, index) => {
@@ -62,8 +66,9 @@ export function camChoices(job) {
 
 /** A row that chooses on a press, Enter or Space, and says so (`aria-pressed`) while it is the choice. */
 function Choosable({ id, label, chosen, onChoose, className, children }) {
+  const { t } = useI18n();
   const active = chosen === id;
-  return <button type="button" aria-label={`Select ${label}`} aria-pressed={active} data-cam-choice={id} onClick={() => onChoose(id)}
+  return <button type="button" aria-label={t("tree.select", { name: label })} aria-pressed={active} data-cam-choice={id} onClick={() => onChoose(id)}
     className={cn("flex min-w-0 flex-1 items-center gap-1.5 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", className)}>
     {children}
   </button>;
@@ -76,24 +81,25 @@ function Choosable({ id, label, chosen, onChoose, className, children }) {
  * then each error in plain words, each a row that chooses the operation it is about.
  */
 function CamVerdict({ job, chosen, onChoose }) {
+  const { t } = useI18n();
   const tone = TONES[job.verdict.status] || TONES.ready;
   const Icon = tone.icon;
   const errors = job.findings.map((finding, index) => ({ finding, index })).filter(({ finding }) => finding.level === "error");
-  const caption = [job.verdict.gcode, job.verdict.warnings ? plural(job.verdict.warnings, "warning") : ""]
+  const caption = [job.verdict.gcode, job.verdict.warnings ? counted(t, job.verdict.warnings, "cam.warning", "cam.warnings") : ""]
     .filter(Boolean).join(" · ");
-  const summary = jobSummary(job);
-  return <section aria-label="Verdict" data-cam-verdict={job.verdict.status} className={cn("mx-1 mb-1 flex flex-col gap-1 rounded-md px-2.5 py-2", tone.surface)}>
-    <div className={cn("flex items-center gap-1.5 text-xs leading-4", tone.text)}>
+  const summary = jobSummary(job, t);
+  return <section aria-label={t("cam.verdict")} data-cam-verdict={job.verdict.status} className={cn("mx-1 mb-1 flex flex-col gap-1 rounded-md px-2.5 py-2", tone.surface)}>
+    <div className={cn("flex items-center gap-1.5 text-xs leading-4", tone.tone)}>
       <Icon className="size-3.5 shrink-0" strokeWidth={2} aria-hidden="true" />
       <span className="min-w-0 [overflow-wrap:break-word]" data-cam-verdict-title="">{job.verdict.headline}</span>
     </div>
     {summary ? <p className="text-tiny leading-4 text-foreground/80" data-cam-summary="">{summary}</p> : null}
     {caption ? <p className="text-tiny leading-4 text-muted-foreground" data-cam-verdict-caption="">{caption}</p> : null}
-    {job.assumed.length ? <ul className="flex flex-col" aria-label="Assumed" data-cam-assumed="">
+    {job.assumed.length ? <ul className="flex flex-col" aria-label={t("cam.assumed")} data-cam-assumed="">
       {job.assumed.map((entry, index) => <li key={index} title={entry.why || undefined}
-        className="min-w-0 text-tiny leading-4 text-muted-foreground [overflow-wrap:anywhere]">Assumed {assumedWords(entry)}</li>)}
+        className="min-w-0 text-tiny leading-4 text-muted-foreground [overflow-wrap:anywhere]">{t("cam.assumedValue", { what: assumedWords(entry) })}</li>)}
     </ul> : null}
-    {errors.length ? <ul className="flex flex-col" aria-label="To fix">
+    {errors.length ? <ul className="flex flex-col" aria-label={t("cam.toFix")}>
       {errors.map(({ finding, index }) => <li key={index} className="min-w-0 border-t border-foreground/10" data-cam-finding={finding.check || "error"}>
         <Choosable id={`finding:${index}`} label={finding.message} chosen={chosen} onChoose={onChoose}
           className={cn("-mx-1 items-start px-1 py-1 text-tiny leading-4 text-error hover:bg-foreground/5", chosen === `finding:${index}` && "bg-foreground/[0.07]")}>
@@ -111,7 +117,8 @@ function CamVerdict({ job, chosen, onChoose }) {
  * right end as an assembly row's does: on hover, and kept while its paths are put away (`hidden`).
  */
 function JobRow({ id, label, detail, hint, swatch = null, depth, chosen, onChoose, hidden = false, onToggleHidden = null }) {
-  const eye = hidden ? "Reveal" : "Hide";
+  const { t } = useI18n();
+  const eye = t(hidden ? "tree.reveal" : "tree.hide");
   return <li className="min-w-0">
     <TreeRowSurface dense active={chosen === id} className={cn("gap-0 pr-0", onToggleHidden && "group/row")}
       style={{ paddingLeft: depth * TREE_INDENT_PX, ...(onToggleHidden ? { "--row-actions": ROW_ACTIONS_WIDTH } : null) }}
@@ -129,7 +136,7 @@ function JobRow({ id, label, detail, hint, swatch = null, depth, chosen, onChoos
       </TooltipHint>
       {onToggleHidden ? <div data-row-actions="" className={treeRowActionsClass(hidden)}>
         <TooltipHint content={eye}>
-          <Button type="button" variant="ghost" size="icon-xs" aria-label={`${eye} ${label}`} className="h-5 w-4 text-muted-foreground"
+          <Button type="button" variant="ghost" size="icon-xs" aria-label={t(hidden ? "tree.revealNamed" : "tree.hideNamed", { name: label })} className="h-5 w-4 text-muted-foreground"
             onClick={(event) => { event.stopPropagation(); onToggleHidden(); }}>
             {hidden ? <EyeOff className="size-3" aria-hidden="true" /> : <Eye className="size-3" aria-hidden="true" />}
           </Button>
@@ -141,10 +148,11 @@ function JobRow({ id, label, detail, hint, swatch = null, depth, chosen, onChoos
 
 /** The job's tools under a muted heading, each a row with its speed and feed: the speeds a machinist sets. */
 function JobTools({ job, chosen, onChoose }) {
+  const { t } = useI18n();
   const tools = job.tools;
   if (!tools?.length) return null;
-  return <section aria-label="Tools" className="flex flex-col px-1 pb-1 text-tiny" data-cam-tools="">
-    <h3 className="flex h-6 items-center pl-4 text-tiny font-normal text-muted-foreground">Tools</h3>
+  return <section aria-label={t("cam.tools")} className="flex flex-col px-1 pb-1 text-tiny" data-cam-tools="">
+    <h3 className="flex h-6 items-center pl-4 text-tiny font-normal text-muted-foreground">{t("cam.tools")}</h3>
     <ul>
       {tools.map((tool) => {
         const speeds = toolSpeeds(tool);
@@ -162,13 +170,14 @@ function JobTools({ job, chosen, onChoose }) {
  * is: on hover, kept while it is put away. `onToggleGate(id, on)` turns one on or off.
  */
 function JobShow({ gates, onToggleGate }) {
+  const { t } = useI18n();
   if (!gates?.length) return null;
-  return <section aria-label="Show" className="flex flex-col px-1 pb-1 text-tiny" data-cam-show="">
-    <h3 className="flex h-6 items-center pl-4 text-tiny font-normal text-muted-foreground">Show</h3>
+  return <section aria-label={t("cam.show")} className="flex flex-col px-1 pb-1 text-tiny" data-cam-show="">
+    <h3 className="flex h-6 items-center pl-4 text-tiny font-normal text-muted-foreground">{t("cam.show")}</h3>
     <ul>
       {gates.map((gate) => {
         const away = !gate.on;
-        const eye = away ? "Reveal" : "Hide";
+        const eye = t(away ? "tree.reveal" : "tree.hide");
         return <li key={gate.id} className="min-w-0">
           <TreeRowSurface dense className="group/row gap-0 pr-0" style={{ paddingLeft: TREE_INDENT_PX, "--row-actions": ROW_ACTIONS_WIDTH }}
             data-cam-gate={gate.id} data-cam-hidden={away ? "" : undefined}>
@@ -182,7 +191,7 @@ function JobShow({ gates, onToggleGate }) {
             </TooltipHint>
             <div data-row-actions="" className={treeRowActionsClass(away)}>
               <TooltipHint content={eye}>
-                <Button type="button" variant="ghost" size="icon-xs" aria-label={`${eye} ${gate.title.toLowerCase()}`} aria-pressed={away}
+                <Button type="button" variant="ghost" size="icon-xs" aria-label={t(away ? "tree.revealNamed" : "tree.hideNamed", { name: gate.title })} aria-pressed={away}
                   className="h-5 w-4 text-muted-foreground" onClick={() => onToggleGate(gate.id, away)}>
                   {away ? <EyeOff className="size-3" aria-hidden="true" /> : <Eye className="size-3" aria-hidden="true" />}
                 </Button>
@@ -208,15 +217,16 @@ function JobShow({ gates, onToggleGate }) {
  *   gates?: { id: string, title: string, hint: string, on: boolean }[] | null, onToggleGate?(id: string, on: boolean): void }} props
  */
 export default function CamJobPanel({ job, colours, chosen, onChoose, hidden = null, onToggleHidden = null, gates = null, onToggleGate = () => {} }) {
+  const { t } = useI18n();
   const away = hidden || NONE;
-  return <ToolPanel id={CAM_JOB_SECTION_ID} title="Job" label="Job" fit="tree" collapsible={false}>
+  return <ToolPanel id={CAM_JOB_SECTION_ID} title={t("cam.job")} label={t("cam.job")} fit="tree" collapsible={false}>
     <div className="pt-1">
       <CamVerdict job={job} chosen={chosen} onChoose={onChoose} />
     </div>
-    <ul className="flex flex-col px-1 pb-1 text-tiny" aria-label="Setups">
+    <ul className="flex flex-col px-1 pb-1 text-tiny" aria-label={t("cam.setups")}>
       {job.setups.map((setup) => <li key={setup.id} className="min-w-0 [&:not(:first-child)]:pt-1">
         <ul>
-          <JobRow id={`setup:${setup.id}`} label={setup.plain} detail={`${plural(setup.operations.length, "operation")} · ${formatDuration(setup.timeS)}`}
+          <JobRow id={`setup:${setup.id}`} label={setup.plain} detail={`${counted(t, setup.operations.length, "cam.operation", "cam.operations")} · ${formatDuration(setup.timeS)}`}
             depth={0} chosen={chosen} onChoose={onChoose} />
           {setup.operations.map((op) => <JobRow key={op.index} id={`op:${op.index}`} label={op.name || op.plain} detail={operationDetail(op)}
             hint={[op.summary, ...op.limits].filter(Boolean).join(". ")} swatch={colours[op.index]} depth={1} chosen={chosen} onChoose={onChoose}

@@ -1,6 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { readFileView } from "../../kit/shell/fileView.js";
 import { ViewerHostContext } from "../../../host/context.js";
+import { useI18n } from "@text-to-cad/ui/i18n";
 import { carriesCamJob } from "./detect.js";
 
 /**
@@ -63,6 +64,7 @@ export function useReducedMotion() {
  * `shellRef` is the renderer's, filled once the shell exists: its frames and its view saves.
  */
 export function useCamResult({ cv, scene, view, shellRef }) {
+  const { t } = useI18n();
   // A CAM result carries its job in the file: its verdict, setups and operations (Job), its toolpaths and its
   // simulated stock. What the view shows of it is this renderer's one slice of the file's view.
   const root = scene?.document?.scene || null;
@@ -85,12 +87,12 @@ export function useCamResult({ cv, scene, view, shellRef }) {
   // The operations put away by their eyes in Job, kept with the Show rows in the file's view.
   const hidden = useMemo(() => (cam ? cv.camHidden(cam, shown) : null), [cv, cam, shown]);
   const toggleHidden = useCallback((index) => show({ hidden: cv.toggleCamHidden(shownRef.current, index) }), [cv, show]);
-  const gates = useMemo(() => (cam ? cv.camGates({ job: cam, meshes, paths: pathKinds, shown }) : null), [cv, cam, meshes, pathKinds, shown]);
+  const gates = useMemo(() => (cam ? cv.camGates({ job: cam, meshes, paths: pathKinds, shown, t }) : null), [cv, cam, meshes, pathKinds, shown, t]);
   const toggleGate = useCallback((id, on) => show({ [id]: on }), [show]);
 
   // A row of Job chosen (an operation, a setup, a tool, an error): its paths isolated, and its faces and sentence for Quick Edit.
   const [chosenRow, setChosenRow] = useState(NO_CAM_CHOICE);
-  const choices = useMemo(() => (cam ? cv.camChoices(cam) : null), [cam]);
+  const choices = useMemo(() => (cam ? cv.camChoices(cam, t) : null), [cam, t]);
   const choice = cam && chosenRow.result === cam ? choices.get(chosenRow.id) || null : null;
   const clearChoice = useCallback(() => setChosenRow((current) => (current.id ? NO_CAM_CHOICE : current)), []);
   const chooseRow = useCallback((id) => setChosenRow((current) => (current.result === cam && current.id === id ? NO_CAM_CHOICE : { result: cam, id })), [cam]);
@@ -111,15 +113,15 @@ export function useCamResult({ cv, scene, view, shellRef }) {
     if (!cam) return;
     const moment = momentRef.current;
     const painted = cv.paintCam({ controller: camRef.current, meshes, job: cam, shown, isolate, moment });
-    readoutRef.current?.(moment ? cv.camReadoutWords(cam, moment, { op: painted.place?.op ?? null, speed: speedRef.current, reducedMotion }) : null);
+    readoutRef.current?.(moment ? cv.camReadoutWords(cam, moment, { op: painted.place?.op ?? null, speed: speedRef.current, reducedMotion, t }) : null);
     if (painted.changed) shellRef.current?.requestRender();
   };
   const paint = useCallback(() => paintRef.current?.(), []);
   useEffect(() => { paint(); }, [cam, shown, isolate, paint]);
   // Simulate, and one per setup, among the file's routines (the file sidebar's Animation section): the paths drawn up
   // to the moment and the tool on them; with motion reduced, one operation a second.
-  const ownClips = useMemo(() => (cam ? cv.camClips(cam, (moment) => { momentRef.current = moment; paint(); }, { reducedMotion }) : EMPTY),
-    [cam, paint, reducedMotion]);
+  const ownClips = useMemo(() => (cam ? cv.camClips(cam, (moment) => { momentRef.current = moment; paint(); }, { reducedMotion, t }) : EMPTY),
+    [cam, paint, reducedMotion, t]);
   return {
     cv, cam, root, scheme, colours, choice, chooseRow, clearChoice, hidden, toggleHidden, gates, toggleGate, references, ownClips,
     rendererState, refs: { camRef, readoutRef, speedRef }, paint,
@@ -133,11 +135,12 @@ export function useCamResult({ cv, scene, view, shellRef }) {
  */
 export function useCamChrome({ result, scene, animation }) {
   const { cv, cam, root, scheme, colours, choice, chooseRow, clearChoice, hidden, toggleHidden, gates, toggleGate, references, refs, paint } = result;
+  const { t } = useI18n();
   refs.speedRef.current = animation?.speed || 1;
   // A new routine speed says so in the readout at once, paused or not.
   useEffect(() => { paint(); }, [animation?.speed, paint]);
-  const chips = useMemo(() => (cam ? cv.camChips(choice, references, { colours, onRemove: clearChoice }) : EMPTY),
-    [cv, cam, choice, references, colours, clearChoice]);
+  const chips = useMemo(() => (cam ? cv.camChips(choice, references, { colours, onRemove: clearChoice, t }) : EMPTY),
+    [cv, cam, choice, references, colours, clearChoice, t]);
   if (!cam) return null;
   return {
     sidebar: <cv.CamJobPanel job={cam} colours={colours} chosen={choice?.id || ""} onChoose={chooseRow}

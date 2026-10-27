@@ -5,7 +5,7 @@ read the part's turned profile straight off the exact solid, so you name only wh
 groove, the thread's cylinder. Order them as a machinist would: face, centre drill or drill, rough
 the outside and the bore, finish them, groove, thread, part off.
 
-Read the part first: its round faces and holes, with their selectors, are what the profile is made
+Read the part first: its round faces and holes, with their refs, are what the profile is made
 of.
 
 ```bash
@@ -39,7 +39,7 @@ A shaft along the part's Z, its front (the end away from the chuck) at the top o
       {"op": "turn_finish", "tool": "T2", "face": true},
       {"op": "turn_finish", "tool": "T7", "side": "id"},
       {"op": "turn_groove", "tool": "T3"},
-      {"op": "turn_thread", "tool": "T4", "faces": ["#o1.f13"]},
+      {"op": "turn_thread", "tool": "T4", "faces": ["face 13"]},
       {"op": "turn_partoff", "tool": "T5"}
     ]}
   ]

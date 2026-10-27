@@ -7,7 +7,7 @@ them, and the same moves spelled out where it does not (GRBL has none).
 
 Read the holes first: `cadgen cam features` lists each one with its diameter, depth, through or
 blind, its axis, the directions that reach it (`reach`: a hole whose opening the part covers, under
-a roof or a ledge, is reached from no side above it) and the face selectors of its faces. A
+a roof or a ledge, is reached from no side above it) and the refs of its faces. A
 counterbore or countersink is part of the hole under it (`counterbore` `{diameter_mm, depth_mm}`,
 `countersink` `{diameter_mm, angle_deg}`): the hole opens, and its depth runs, from the top of the
 counterbore or countersink. A blind hole's drawn drill point is measured (`point_mm`).
@@ -50,7 +50,7 @@ Name them one way per operation:
 
 | key | meaning |
 | --- | --- |
-| `faces` | any face of the hole (`#o1.f7`: a wall, either half of a split hole, the counterbore's wall or shoulder, the countersink, a blind hole's floor names the hole). Each must run along the setup's Z (a through hole either way); one that does not is refused with the setup, or the `orientation`, that would reach it. A hole whose opening the part covers from this side is `unreachable`; a tool bigger than the hole (past `size_tolerance_mm`; a tap whose tap drill is more than 0.15 mm over the hole) is `tool_too_large` |
+| `faces` | any face of the hole (`face 7`: a wall, either half of a split hole, the counterbore's wall or shoulder, the countersink, a blind hole's floor names the hole). Each must run along the setup's Z (a through hole either way); one that does not is refused with the setup, or the `orientation`, that would reach it. A hole whose opening the part covers from this side is `unreachable`; a tool bigger than the hole (past `size_tolerance_mm`; a tap whose tap drill is more than 0.15 mm over the hole) is `tool_too_large` |
 | `holes` | `"all"`: every hole this setup reaches and the tool suits (holes along other axes, covered holes and holes the tool is too big for are left, and the note counts them; none left is `empty_operation`); or `{"diameter_mm": 5, "tolerance_mm": 0.05}`: those of one size |
 | `points` | `[[x, y], ...]` in the setup's WCS (mm from its origin), with `depth_mm`. A point where the model has no hole is drilled anyway and said once as a `no_hole_in_model` warning |
 | `top_z` | with `points` only: the holes' top in WCS. Left out, the part's top at each point (else the stock's top) |

@@ -2,7 +2,7 @@
 
 No parser here on purpose: everything the command accepts is derived from the
 verb function's signature by :mod:`cadgen._internal.cli_from_function`, so a
-flag cannot drift from a parameter (README law 6).
+flag cannot drift from a parameter.
 """
 
 from __future__ import annotations

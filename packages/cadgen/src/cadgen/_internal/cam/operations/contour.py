@@ -62,7 +62,7 @@ class ContourOp(Operation):
     def parse(self, spec, ctx):
         super().parse(spec, ctx)
         if not spec.faces and spec.region is None:
-            raise CamJobError(f"{spec.where}: a contour needs the faces it follows (\"faces\": [\"#o1.f3\"]) or a "
+            raise CamJobError(f"{spec.where}: a contour needs the faces it follows (\"faces\": [\"face 3\"]) or a "
                               "\"region\" ({\"polygon\": [[x, y], ...], \"bottom_z\": z})")
         if spec.faces and spec.region is not None:
             raise CamJobError(f"{spec.where}: give a contour faces or a region, not both")

@@ -70,11 +70,17 @@ keeps this table in step with what cadgen builds.
 
 ## Setup
 
-Run cadgen through [uv](https://docs.astral.sh/uv/), so this skill's commands share one
-installation, and its warm build daemon, with the `$cad` skill and the CAD app's server:
+Run cadgen through the `cadgen` command its installation writes, so this skill's commands
+share one installation, and its engine server, with the CAD app's:
 
-- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.26 cadgen`
-- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.26 python`
+- `cadgen` below means `cadgen +0.8.0` (`~/.local/bin/cadgen +0.8.0` where `~/.local/bin` is not on your PATH)
+- `python` below means `cadgen +0.8.0 run`
+
+If `cadgen` is not on your PATH, or it says 0.8.0 is not installed, run
+`uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.0 cadgen doctor` once,
+outside any sandbox or with its permission: it installs cadgen, registers it, writes the
+`cadgen` command and starts the engine. `cadgen cam` reads its part from the file itself and
+needs no engine.
 
 Units are fixed: mm for lengths, mm/min for feed, rev/min for spindle speed, degrees for angles,
 seconds for time. Restate the user's numbers in those units before you write them down (a 1/4"
@@ -82,16 +88,18 @@ end mill is 6.35 mm, 30 ipm is 762 mm/min).
 
 ## Workflow
 
-1. **Read the part.** Every job names faces by the Viewer's selector.
+1. **Read the part.** Every job names faces by the Viewer's refs.
 
    ```bash
    cadgen cam features part.step
    ```
 
-   It prints the part's size, one line per face (`#o1.f15  flat floor at Z 17, facing +Z (a pocket
+   It prints the part's size, one line per face (`part/face 15  flat floor at Z 17, facing +Z (a pocket
    floor 8 mm down, 1 island)`) and one line per hole (diameter, depth, through or blind, axis,
    position). For a `.dxf` it lists the closed profiles and holes. A face the user selected in the
-   Viewer arrives as `part.step#o1.f15` and needs no lookup.
+   Viewer arrives as `/work/part.step#part/face 15` and needs no lookup: a job takes it as it
+   comes, or as `face 15` on a part of one solid. A model's part is its `@xbf` file, or the file
+   `cadgen export <id> part.xbf` writes: CAM reads a file, never a model.
 
 2. **Pick the machine, material and stock.** Use what the user said; otherwise ask once, in one
    message, for what [machining-practice.md](references/machining-practice.md#ask-before-you-plan)
@@ -120,8 +128,8 @@ end mill is 6.35 mm, 30 ipm is 762 mm/min).
      "setups": [
        {"id": "top", "orientation": "+Z", "origin": "stock-top-center", "operations": [
          {"op": "face", "tool": "T1"},
-         {"op": "pocket", "tool": "T1", "faces": ["#o1.f15"]},
-         {"op": "drill", "tool": "T2", "faces": ["#o1.f7", "#o1.f8"], "cycle": "peck"}
+         {"op": "pocket", "tool": "T1", "faces": ["face 15"]},
+         {"op": "drill", "tool": "T2", "faces": ["face 7", "face 8"], "cycle": "peck"}
        ]}
      ]
    }
@@ -141,7 +149,8 @@ end mill is 6.35 mm, 30 ipm is 762 mm/min).
    cadgen cam plan part.step --job part.cam.json
    ```
 
-   For an assembly, name the part to machine: `--occurrence '#o1.2'` (as `cam features` takes it).
+   For an assembly, name the part to machine: `--occurrence kit/arm` (the part's path in the
+   assembly, as `cadgen inspect` and the Viewer name it; `pin.2` for the second `pin`).
    It writes `part.cam.glb` and, when no check found an error, one G-code file per setup
    (`part.top.nc`; the extension is the post's; a post that needs one file per tool names them
    `part.top.T1.nc`, `part.top.T2.nc`) beside the part, and prints one line per operation (tool, speed, feed, time), one

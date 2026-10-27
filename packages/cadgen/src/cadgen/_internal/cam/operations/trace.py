@@ -1,6 +1,6 @@
 """``trace`` (Trace): follow a chain of the part's edges at a depth, the tool's centre on them or offset to one side.
 
-What it follows: ``edges``, the part's edges as the Viewer selects them (``["#o1.e5", "#o1.e6"]``), joined end to
+What it follows: ``edges``, the part's edges as the Viewer selects them (``["edge 5", "edge 6"]``), joined end to
 end into chains (:func:`~cadgen._internal.cam.operations._edges.chains`), open or closed, each level in the setup's
 XY plane (a chain that climbs is refused, ``unreachable``). ``depth_mm`` (required) is how far below its edges a
 chain is cut.
@@ -54,27 +54,28 @@ class TraceOp(Operation):
     feeds_kind = "slot"
 
     def parse(self, spec, ctx):
-        from cadgen._internal.cam.operations._edges import EDGE_REF, edge_refs
+        from cadgen._internal.cam.operations._edges import edge_refs
+        from cadgen._internal.cam.part import element_kind
 
         super().parse(spec, ctx)
         extra = spec.extra
         where = spec.where
         if "edges" not in extra:
             raise CamJobError(f"{where}: a trace needs \"edges\", the part's edges it follows (\"edges\": "
-                              "[\"#o1.e5\", \"#o1.e6\"], selected in the Viewer)")
+                              "[\"edge 5\", \"edge 6\"], selected in the Viewer)")
         if "depth_mm" not in extra:
             raise CamJobError(f"{where}: a trace needs \"depth_mm\", how far below its edges it cuts (like 0.5)")
         start = extra.get("start")
         if start is not None:
             if isinstance(start, str):
-                if not EDGE_REF.match(start):
+                if element_kind(start) != "edge":
                     raise CamJobError(f"{where}.start must be a point [x, y] (WCS) at one end of an open chain, or "
-                                      f"its first or last edge (\"#o1.e5\"), not {shown(start)}")
+                                      f"its first or last edge (\"edge 5\"), not {shown(start)}")
             elif (isinstance(start, (list, tuple)) and len(start) == 2 and all(is_number(v) for v in start)):
                 start = (float(start[0]), float(start[1]))
             else:
                 raise CamJobError(f"{where}.start must be a point [x, y] (WCS) at one end of an open chain, or its "
-                                  f"first or last edge (\"#o1.e5\"), not {shown(start)}")
+                                  f"first or last edge (\"edge 5\"), not {shown(start)}")
         return {
             "edges": edge_refs(extra["edges"], f"{where}.edges"),
             "depth_mm": read_number(extra, "depth_mm", where),
@@ -88,13 +89,13 @@ class TraceOp(Operation):
         direction."""
         import numpy as np
 
-        from cadgen._internal.cam.operations._edges import chains, resolve_edge
+        from cadgen._internal.cam.operations._edges import chains
 
         where = ctx.spec.where
         offset = params["offset"]
         start = params["start"]
         if isinstance(start, str):
-            start = resolve_edge(ctx, start, f"{where}.start").ref
+            start = ctx.part.edge(start, f"{where}.start")[0]
         found = chains(ctx, params["edges"], f"{where}.edges")
         if isinstance(start, str) and not any(start in chain.refs for chain in found):
             raise CamJobError(f"{where}.start: {params['start']} is not one of the edges traced; name the first or "

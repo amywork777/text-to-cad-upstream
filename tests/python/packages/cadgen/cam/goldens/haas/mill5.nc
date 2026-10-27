@@ -21,7 +21,7 @@ G0 A30. C90.
 G254
 S12000 M3
 M8
-(Pocket #o1.f12)
+(Pocket face 12)
 G0 X10. Y0.
 G0 G43 Z5. H1
 Z1.

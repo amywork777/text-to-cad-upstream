@@ -9,6 +9,8 @@
  * Pure but for the visibility it sets.
  */
 
+import { english } from "../../../i18n/core.js";
+
 export const SIMULATE_SECONDS = 30;
 const MIN_SECONDS = 2;
 
@@ -30,7 +32,7 @@ export const STEP_SECONDS = 1;
  * With `reducedMotion` (the person's `prefers-reduced-motion`, or the app's own setting) nothing sweeps: a clip
  * steps one operation a second (`STEP_SECONDS`), each operation drawn whole at once with the tool at its end.
  */
-export function camClips(job, onMoment, { reducedMotion = false } = {}) {
+export function camClips(job, onMoment, { reducedMotion = false, t = english } = {}) {
   const timeline = camTimeline(job);
   if (!(timeline.to > 0)) return [];
   const clip = (id, label, from, to, setup) => {
@@ -56,13 +58,13 @@ export function camClips(job, onMoment, { reducedMotion = false } = {}) {
       },
     };
   };
-  const clips = [clip("cam:simulate", "Simulate", timeline.from, timeline.to, null)];
+  const clips = [clip("cam:simulate", t("cam.simulate"), timeline.from, timeline.to, null)];
   if (job.setups.length > 1) {
     for (const setup of job.setups) {
       if (!setup.operations.length) continue;
       const from = Math.min(...setup.operations.map((op) => op.t0));
       const to = Math.max(...setup.operations.map((op) => op.t1));
-      if (to > from) clips.push(clip(`cam:setup:${setup.id}`, `Simulate ${setup.plain}`, from, to, setup.id));
+      if (to > from) clips.push(clip(`cam:setup:${setup.id}`, t("cam.simulateSetup", { setup: setup.plain }), from, to, setup.id));
     }
   }
   return clips;
@@ -125,12 +127,12 @@ export function formatClock(seconds) {
  * How fast a clip plays the program, in words: "12× speed" (the playbar's own `speed` times the pace the
  * program is fitted to), "Real time", or, with motion reduced, "One operation a second".
  */
-export function playbackSpeedWords(job, { speed = 1, reducedMotion = false } = {}) {
-  if (reducedMotion) return "One operation a second";
+export function playbackSpeedWords(job, { speed = 1, reducedMotion = false, t = english } = {}) {
+  if (reducedMotion) return t("cam.stepPerSecond");
   const factor = (Number(speed) || 1) / camTimeline(job).pace;
-  if (Math.abs(factor - 1) < 0.05) return "Real time";
+  if (Math.abs(factor - 1) < 0.05) return t("cam.realTime");
   const shown = factor >= 10 ? Math.round(factor) : Math.round(factor * 10) / 10;
-  return `${shown.toLocaleString("en-US")}× speed`;
+  return t("cam.speed", { factor: shown.toLocaleString("en-US") });
 }
 
 /**
@@ -138,7 +140,7 @@ export function playbackSpeedWords(job, { speed = 1, reducedMotion = false } = {
  * place names it; else the last begun before then, in the setup the clip plays), the program's time over its whole
  * ("1:32 / 3:38"), and how fast it plays.
  */
-export function camReadoutWords(job, moment, { op = null, speed = 1, reducedMotion = false } = {}) {
+export function camReadoutWords(job, moment, { op = null, speed = 1, reducedMotion = false, t = english } = {}) {
   if (!job || !moment) return null;
   const ops = job.operations.filter((entry) => !moment.setup || entry.setup === moment.setup);
   let current = op === null ? null : ops.find((entry) => entry.index === op) || null;
@@ -151,6 +153,6 @@ export function camReadoutWords(job, moment, { op = null, speed = 1, reducedMoti
   return {
     operation: current ? current.name || current.plain : "",
     time: `${formatClock(moment.t)} / ${formatClock(camTimeline(job).to)}`,
-    speed: playbackSpeedWords(job, { speed, reducedMotion }),
+    speed: playbackSpeedWords(job, { speed, reducedMotion, t }),
   };
 }

@@ -1,27 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { BufferAttribute, BufferGeometry, Group, LineBasicMaterial, LineSegments, Mesh } from 'three';
 
-/** The extras `cadgen cam plan` writes on the scene (spec §10, schema 1): one setup, a face and a pocket, one error. */
-export const camExtras = () => ({
-  schema: 1,
-  verdict: { status: 'fix', headline: '1 to fix', errors: 1, warnings: 2, gcode: 'G-code not written: fix 1 error first' },
-  machine: { kind: 'mill', post: 'grbl' },
-  material: 'aluminum-6061',
-  document: 'part.step',
-  setups: [{ id: 'top', plain: 'Top', time_s: 90, orientation: '+Z', operations: [
-    { index: 0, op: 'face', plain: 'Face', tool: 'T1', tool_plain: '6 mm flat', rpm: 12000, feed_mm_min: 1440, time_s: 30, t0: 0, t1: 30,
-      summary: 'Face the stock top with T1 6 mm flat, 30 s', limits: [] },
-    { index: 1, op: 'pocket', plain: 'Pocket', tool: 'T3', tool_plain: '4 mm ball', rpm: 15000, feed_mm_min: 900, time_s: 60, t0: 30, t1: 90,
-      summary: 'Pocket #o1.f12 with T3 4 mm ball, 60 s', faces: ['#o1.f12', '#o1.f13'], limits: ['lite: engagement capped'] },
-  ] }],
-  findings: [
-    { check: 'corner_radius', level: 'warning', message: 'An inside corner is tighter than the tool', operation: 1, at: [1, 2, 3] },
-    { check: 'reach', level: 'error', message: 'Tool too long for this pocket', operation: 1, at: [4, 5, 6] },
-    { check: 'material_left', level: 'warning', message: 'Material left on the floor', operation: 1 },
-  ],
-  adapted: [{ step: 'stock_grid', note: 'stock grid 0.5 mm -> 1 mm' }],
-  posts: [{ setup: 'top', file: 'part.top.nc', post: 'grbl' }],
-  duration_s: 90,
-});
+/**
+ * The extras `cadgen cam plan` writes on the scene (spec §10, schema 1): one setup, a face and a pocket, one error.
+ * cadgen's own words, kept as the file carries them (`camExtras.json`); a fresh copy each call.
+ */
+export const camExtras = () => JSON.parse(readFileSync(join(__dirname, 'camExtras.json'), 'utf8'));
 
 /** A LINES node as GLTFLoader builds one: positions, then `_cam_t` and `_cam_op` lowercased, and the node's extras. */
 export function camLines(points: number[][], times: number[], ops: number[] | null, extras: Record<string, unknown>, { upper = false } = {}) {

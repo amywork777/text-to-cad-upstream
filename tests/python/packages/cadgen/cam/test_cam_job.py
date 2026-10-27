@@ -93,7 +93,7 @@ class JobParsing(unittest.TestCase):
             "setups[0].operations[0].coolant is 'lots'": job(setups__0__operations__0__coolant="lots"),
             "max_mm must be more than min_mm": job(setups__0__fixture={"min_mm": [0, 0, 0], "max_mm": [1, 0, 1]}),
             "fixture[0].type is 'vice' (did you mean 'vise'?)": job(setups__0__fixture={"type": "vice"}),
-            "an edge: a setup looks down a flat face's outward normal": job(setups__0__orientation="#o1.e2"),
+            "an edge: a setup looks down a flat face's outward normal": job(setups__0__orientation="edge 2"),
             "setup ids must be different": job(setups=[BASE["setups"][0], BASE["setups"][0]]),
             "both post as T1": job(tools=[BASE["tools"][0], {"id": "T1b", "type": "drill", "diameter_mm": 5, "number": 1}]),
             "a plan needs a job": None,
@@ -198,11 +198,11 @@ class WorkCoordinates(unittest.TestCase):
         from cadgen._internal.cam.wcs import FaceOrientation
 
         stock = np.array([[x, y, z] for x in (-10, 10) for y in (-5, 5) for z in (0, 20)], dtype=float)
-        setup = parse_job(job(setups__0__orientation="#o1.f4")).setups[0]
+        setup = parse_job(job(setups__0__orientation="face 4")).setups[0]
         with self.assertRaisesRegex(CamJobError, "names a face: read the part first"):
             build_wcs(setup, stock_points=stock, part_points=stock)
         normal = (math.sin(math.radians(30)), 0.0, math.cos(math.radians(30)))
-        setup = dataclasses.replace(setup, orientation=FaceOrientation("#o1.f4", normal))
+        setup = dataclasses.replace(setup, orientation=FaceOrientation("face 4", normal))
         wcs = build_wcs(setup, stock_points=stock, part_points=stock)
         self.assertTrue(np.allclose(normal, wcs.tool_axis))
         # stock-top-center in the turned frame: the stock's +X top edge is the highest the tool sees, at WCS z 0.

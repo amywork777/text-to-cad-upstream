@@ -28,7 +28,7 @@ from pathlib import Path
 from cadgen._internal.atomic_replace import replace_atomic
 from cadgen._internal.cam.checks.base import finding
 from cadgen._internal.cam.job_errors import CamJobError, PlanError, PostRefusal
-from cadgen.cli_logging import CliLogger
+from cadgen._internal.cam.log import CamLog
 from cadgen.results import CamFeaturesResult, CamPlanResult, _assumed_value
 
 __all__ = ["headline", "list_features", "parse_operations", "plan_job", "plan_setups"]
@@ -258,7 +258,7 @@ def plan_job(target: Path, *, job, occurrence: str | None = None, post: str | No
     from cadgen._internal.cam import posts as post_registry
     from cadgen._internal.cam.job import parse_job
 
-    logger = CliLogger("cam", verbose=verbose)
+    logger = CamLog(verbose=verbose)
     document = Path(target)
     timings: dict[str, float] = {}
     started = time.perf_counter()
@@ -465,7 +465,8 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
                 "moves": op.end - op.start,
             }
             if op.spec.faces:
-                row["faces"] = list(op.spec.faces)
+                # Canonical, as the viewer's references and ``cadgen inspect`` spell them, whatever the job wrote.
+                row["faces"] = [part.face(ref).ref for ref in op.spec.faces]
             if op.spec.name:
                 row["name"] = op.spec.name
             if op.feeds is not None and op.feeds.clamped:
@@ -636,7 +637,7 @@ def plan_setups(parsed, operations, part, stock, logger=None):
     from cadgen._internal.cam.wcs import build_wcs, with_face_orientations
     from cadgen._internal.cam.workholding import holding_boxes
 
-    logger = logger or CliLogger("cam")
+    logger = logger or CamLog()
     # A setup turned onto a face reads that face's normal from the part (every setup, so an operation that names
     # another setup's tool axis reads it too).
     parsed = with_face_orientations(parsed, part)

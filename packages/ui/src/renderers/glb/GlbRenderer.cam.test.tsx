@@ -108,8 +108,8 @@ it('an operation\'s eye hides its paths, and the file\'s view keeps what is hidd
   // Hiding is not choosing: nothing is isolated.
   expect(screen.getByRole('button', { name: 'Select Face' }).getAttribute('aria-pressed')).toBe('false');
   // What Display used to gate is Job's Show rows: the stock starts put away, and its eye brings it out.
-  fireEvent.click(screen.getByRole('button', { name: 'Reveal stock' }));
-  expect(screen.getByRole('button', { name: 'Hide stock' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Reveal Stock' }));
+  expect(screen.getByRole('button', { name: 'Hide Stock' })).toBeTruthy();
   view.unmount();
   const record = onStateChange.mock.lastCall![0];
   expect(record.renderer.cam.signature).toBe('cam:1');
@@ -119,7 +119,7 @@ it('an operation\'s eye hides its paths, and the file\'s view keeps what is hidd
   await openJob();
   expect(screen.getByRole('button', { name: 'Reveal Face' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Hide Pocket' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Hide stock' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Hide Stock' })).toBeTruthy();
 }, 30000);
 
 it('reduces motion where the app says so or the system does', () => {

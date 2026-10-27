@@ -130,7 +130,7 @@ class PlanBlock(unittest.TestCase):
         from cadgen._internal.cam.operations import OPERATION_NAMES, REGISTRY, available
 
         cases = {
-            "is not a face of this part": mill_job([{"op": "pocket", "tool": "T1", "faces": ["#o1.f999"]}]),
+            "is not a face of this part": mill_job([{"op": "pocket", "tool": "T1", "faces": ["face 999"]}]),
             "unknown key 'speeed'": mill_job([{"op": "face", "tool": "T1", "speeed": 1}]),
         }
         unbuilt = [name for name in OPERATION_NAMES if not available(name) and "mill" in REGISTRY[name].machines]

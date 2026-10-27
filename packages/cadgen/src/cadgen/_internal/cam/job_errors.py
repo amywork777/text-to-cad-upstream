@@ -1,7 +1,7 @@
 """The job's teaching errors and the small validators every parser shares (job, tools, operations).
 
 A :class:`CamJobError` is a job that cannot run, said in one plain sentence that names what to add or change and,
-for a closed vocabulary, the allowed set (law 9). ``cadgen cam plan`` turns it into ``ok: false`` with one error
+for a closed vocabulary, the allowed set (law 16). ``cadgen cam plan`` turns it into ``ok: false`` with one error
 finding of type ``job``; nothing is written. Stdlib only.
 """
 

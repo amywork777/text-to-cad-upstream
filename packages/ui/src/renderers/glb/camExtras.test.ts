@@ -9,7 +9,7 @@ it('reads the job a CAM result carries: verdict, setups, operations, errors firs
   expect(job.setups.map((setup: any) => [setup.id, setup.plain, setup.timeS, setup.operations.length])).toEqual([['top', 'Top', 90, 2]]);
   const pocket = job.operations[1];
   expect(pocket).toMatchObject({ index: 1, op: 'pocket', plain: 'Pocket', tool: 'T3', toolPlain: '4 mm ball', toolDiameterMm: 4, toolType: 'ball',
-    rpm: 15000, feedMmMin: 900, timeS: 60, t0: 30, t1: 90, faces: ['#o1.f12', '#o1.f13'], limits: ['lite: engagement capped'], setup: 'top' });
+    rpm: 15000, feedMmMin: 900, timeS: 60, t0: 30, t1: 90, faces: ['part/face 12', 'part/face 13'], limits: ['lite: engagement capped'], setup: 'top' });
   expect(job.findings.map((finding: any) => finding.level)).toEqual(['error', 'warning', 'warning']);
   expect(job.findings[0]).toMatchObject({ check: 'reach', message: 'Tool too long for this pocket', operation: 1, at: [4, 5, 6] });
   expect(job).toMatchObject({ durationS: 90, document: 'part.step', material: 'aluminum-6061', schema: 1 });
@@ -124,7 +124,7 @@ it('counts the tool changes: cadgen\'s where it writes them, else from the opera
   single.machine = 'mill';
   single.posts = [];
   expect(jobSummary(readCamJob(camScene({ extras: single }))!)).toBe('No tool changes');
-  expect([0, 1, 2].map(toolChangeWords)).toEqual(['No tool changes', '1 tool change', '2 tool changes']);
+  expect([0, 1, 2].map((count) => toolChangeWords(count))).toEqual(['No tool changes', '1 tool change', '2 tool changes']);
   expect(readCamJob(camScene())!.warnings).toEqual([]);
 });
 

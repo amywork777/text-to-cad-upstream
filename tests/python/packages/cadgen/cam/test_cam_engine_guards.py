@@ -1,5 +1,5 @@
-"""Engine guards from review: plausible-wrong plans the engine must refuse, flag or get right (law 10), and keys it
-must not accept and ignore (law 9). Each test is one fixed bug, on a small part built in a temporary directory."""
+"""Engine guards from review: plausible-wrong plans the engine must refuse, flag or get right (law 17), and keys it
+must not accept and ignore (law 16). Each test is one fixed bug, on a small part built in a temporary directory."""
 
 from __future__ import annotations
 
@@ -160,7 +160,7 @@ class StaleOutputs(unittest.TestCase):
         self.assertTrue(self.plan(mill_job([{"op": "face", "tool": "T1"}])).ok)
         with mock.patch("cadgen._internal.cam.part.read_part", side_effect=RuntimeError("boom")):
             result = self.plan(mill_job([{"op": "face", "tool": "T1"}]))
-        # A crash is a refusal that says it is cadgen's bug (law 10: never a traceback), and leaves nothing.
+        # A crash is a refusal that says it is cadgen's bug (law 17: never a traceback), and leaves nothing.
         self.assertFalse(result.ok)
         self.assertEqual("internal_error", result.findings[0]["type"])
         self.assertIn("RuntimeError: boom", result.findings[0]["summary"])
@@ -414,7 +414,7 @@ class ChecksSayWhatTheyDidNotJudge(unittest.TestCase):
 
 
 class SharedKeysAreRead(unittest.TestCase):
-    """Law 9: a shared key an operation never reads is refused, never accepted and ignored."""
+    """Law 16: a shared key an operation never reads is refused, never accepted and ignored."""
 
     def test_every_operation_refuses_each_shared_key_it_does_not_read(self):
         from cadgen._internal.cam.job import OpSpec

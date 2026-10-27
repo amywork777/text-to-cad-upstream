@@ -8,8 +8,9 @@ import * as THREE from "three";
 import { formatPromptReference } from "@text-to-cad/core/prompt";
 import { cn } from "@text-to-cad/ui/utils";
 import { FLOATING_CHROME_SURFACE_CLASS } from "../../lib/floatingSurface.js";
+import { english } from "../../i18n/core.js";
+import { useI18n } from "@text-to-cad/ui/i18n";
 import { InfoRow } from "../kit/inspector/referenceRows.jsx";
-import { faceSelector } from "./cam/extras.js";
 import { camHasFixtures, createCamFixtures, fixtureSetups } from "./cam/fixtures.js";
 import { camToolpathObjects, createCamPaths } from "./cam/lines.js";
 import { camSceneMeshes, showCamMeshes } from "./cam/playback.js";
@@ -47,16 +48,15 @@ export function toggleCamHidden(shown, index) {
  * the tool, the simulated stock, what holds the part, the finished part — offered where the file has it, with the
  * words its hint says. `shown` is what is on (`on`); Job's eye turns one, as `{ [id]: on }` patched into `shown`.
  */
-export function camGates({ job, meshes, paths, shown }) {
+export function camGates({ job, meshes, paths, shown, t = english }) {
   const gates = [];
-  const gate = (id, title, hint) => gates.push({ id, title, hint, on: shown[id] !== false });
-  const operations = job.operations.length;
-  if (paths.feed) gate("toolpaths", "Toolpaths", `${operations} operation${operations === 1 ? "" : "s"}, each in its own colour`);
-  if (paths.rapid) gate("rapids", "Rapids", "Moves between cuts, dashed");
-  if (paths.feed || paths.rapid) gate("tool", "Tool", "The tool on the path while Simulate plays");
-  if (meshes.stock.length) gate("stock", "Stock", "The stock as the job leaves it");
-  if (camHasFixtures(job)) gate("fixtures", "Fixtures", "What holds the part, see-through");
-  if (meshes.part.length) gate("part", "Part", "The finished part");
+  const gate = (id) => gates.push({ id, title: t(`cam.gate.${id}`), hint: t(`cam.gate.${id}Hint`), on: shown[id] !== false });
+  if (paths.feed) gate("toolpaths");
+  if (paths.rapid) gate("rapids");
+  if (paths.feed || paths.rapid) gate("tool");
+  if (meshes.stock.length) gate("stock");
+  if (camHasFixtures(job)) gate("fixtures");
+  if (meshes.part.length) gate("part");
   return gates;
 }
 
@@ -73,7 +73,7 @@ export function camPathKinds(root) {
  */
 export function camReferences(source, choice) {
   if (!source || !choice) return [];
-  const faces = choice.faces.map(faceSelector);
+  const faces = choice.faces;
   const target = faces.length ? { kind: "cad-selector", selectors: faces } : { kind: "whole-resource" };
   return [{ resource: { kind: "workspace-file", path: source }, target, ...(choice.summary ? { summary: choice.summary } : {}) }];
 }
@@ -82,11 +82,12 @@ const fileName = (path) => String(path || "").split(/[\\/]/).filter(Boolean).at(
 
 /** A choice's card in Quick Edit: its sentence, then the part it names and how many of its faces. */
 function CamChoiceCard({ choice, reference }) {
+  const { t } = useI18n();
   const faces = reference.target.kind === "cad-selector" ? reference.target.selectors.length : 0;
   return <>
     {choice.summary ? <p className="py-0.5 text-tiny text-muted-foreground [overflow-wrap:break-word]" data-cam-chip-summary="">{choice.summary}</p> : null}
-    <InfoRow label="Part" copy={reference.resource.path}>{fileName(reference.resource.path)}</InfoRow>
-    <InfoRow label="Faces">{faces ? faces.toLocaleString("en-US") : "The whole part"}</InfoRow>
+    <InfoRow label={t("cam.gate.part")} copy={reference.resource.path}>{fileName(reference.resource.path)}</InfoRow>
+    <InfoRow label={t("cam.faces")}>{faces ? faces.toLocaleString("en-US") : t("cam.wholePart")}</InfoRow>
   </>;
 }
 
@@ -96,12 +97,12 @@ function CamChoiceCard({ choice, reference }) {
  * an operation's), else the whole part's, its card the row's sentence. A click copies the reference; its X lets go of
  * the choice (`onRemove`). None without a reference.
  */
-export function camChips(choice, references, { colours = {}, onRemove } = {}) {
+export function camChips(choice, references, { colours = {}, onRemove, t = english } = {}) {
   const reference = references?.[0];
   if (!choice || !reference) return [];
   const op = choice.ops.length === 1 && choice.id.startsWith("op:") ? choice.ops[0] : null;
   return [{
-    key: `cam:${choice.id}`, label: choice.label || choice.summary || "Job", glyph: reference.target.kind === "cad-selector" ? "face" : "solid",
+    key: `cam:${choice.id}`, label: choice.label || choice.summary || t("cam.job"), glyph: reference.target.kind === "cad-selector" ? "face" : "solid",
     ...(op !== null && colours[op] ? { glyphColor: colours[op] } : {}),
     copy: formatPromptReference(reference), card: <CamChoiceCard choice={choice} reference={reference} />, onRemove,
   }];
