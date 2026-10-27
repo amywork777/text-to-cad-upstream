@@ -157,8 +157,15 @@ first time it is needed (below):
 - `cadgen` below means `cadgen +0.8.0` (`~/.local/bin/cadgen +0.8.0` where `~/.local/bin` is not on your PATH)
 - `python` below means `cadgen +0.8.0 run`
 
-If `cadgen` is not on your PATH, or it says 0.8.0 is not installed, set it up as the `$cad` skill
-says (`cadgen doctor`). Solving needs cadgen's opt-in `fea` extra, which brings the mesher (netgen)
+If `cadgen` is not on your PATH, or it says 0.8.0 is not installed, run
+`uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.0 cadgen doctor` once,
+outside any sandbox or with its permission: it installs cadgen, registers it, writes the
+`cadgen` command and starts the engine. With the CAD app's server running, nothing else
+needs the sandbox's permission: it starts the engine and holds it. Without it, a sandboxed
+shell cannot start the engine; when a command says no engine is running, run `cadgen server`
+outside the sandbox once.
+
+Solving needs cadgen's opt-in `fea` extra, which brings the mesher (netgen)
 and the solver (scikit-fem, pyamg); `fea faces` and `fea parts` work without it. The first time a
 study runs, `cadgen fea solve` fails with "cadgen's fea extra is not installed"; that is a missing
 install, not a modelling error. Its `pip install` hint does not apply under uv: run the same

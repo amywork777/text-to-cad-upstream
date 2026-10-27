@@ -110,7 +110,6 @@ def list_faces(target: Path, *, occurrence: str | None = None, verbose: bool = F
         owner = _resolve_one(document, occurrence)
         if owner.kind != "occurrence":
             raise ValueError(f"{occurrence} names a face, not a part")
-        owner = owner.occurrence
     else:
         leaves = document.leaves()
         if len(leaves) != 1:

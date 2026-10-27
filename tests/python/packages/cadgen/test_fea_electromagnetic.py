@@ -323,7 +323,7 @@ class Magnetostatics(unittest.TestCase):
         upper.label = "upper"
         pair = directory / "pair.step"
         export_step(Compound(children=[lower, upper]), str(pair))
-        top = planes_along(pair, 2, "guard")[4.0]
+        top = planes_along(pair, 2, "upper")[4.0]
         cls.pair = solve(pair, directory / "pair.glb", {
             "analysis": "electromagnetic", "mode": "magnetostatic", "material": "aluminum-6061-t6", "mesh": {"size_mm": 1.5},
             "coils": [{"part": "lower", "turns": 100, "A": 5, "axis": {"direction": [0, 0, 1]}},
