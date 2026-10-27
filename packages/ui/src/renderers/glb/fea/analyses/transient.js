@@ -9,6 +9,7 @@ import { threeFigures } from "../numbers.js";
 import { frameControl } from "../series.js";
 import { heldRows, loadWords, madeOfRows, mapRows, pushedRows, shakenRows } from "../setup.js";
 import { planned, playSeries } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 export { PLAY } from "./stub.js";
 
@@ -50,27 +51,27 @@ export function timeFieldAndDeformation(result) {
  * Study's "Pushed" over time: each face load says how much and how it changes ("50 N half-sine,
  * 2 ms"), which way it points its hint, and a prompt carries the history too.
  */
-export function pushedOverTimeRows(result) {
+export function pushedOverTimeRows(result, t = english) {
   const loads = result.study.loads.filter((load) => load.faces.length);
-  return mapRows(pushedRows(result), (row, index) => {
+  return mapRows(pushedRows(result, t), (row, index) => {
     const history = historyWords(loads[index]?.history);
     if (!history || !loads[index]) return row;
     const words = loadWords(loads[index]);
     return {
       ...row,
       label: `${words.amount} ${history}`,
-      ...(words.direction ? { hint: `Pointing ${words.direction}` } : {}),
+      ...(words.direction ? { hint: t("fea.pointing", { direction: words.direction }) } : {}),
       ...(row.summary ? { summary: `${row.summary}, ${history}` } : {}),
     };
   });
 }
 
 /** Study's "Shaken" over time: the shake's size and line, how it changes over time its hint ("half-sine, 2 ms"). */
-export function shakenOverTimeRows(result) {
+export function shakenOverTimeRows(result, t = english) {
   const history = historyWords(result.study?.excitation?.history);
-  return mapRows(shakenRows(result), (row) => ({
+  return mapRows(shakenRows(result, t), (row) => ({
     ...row,
-    ...(history ? { hint: `Over time: ${history}` } : {}),
+    ...(history ? { hint: t("fea.overTime", { history }) } : {}),
     ...(row.summary && history ? { summary: `${row.summary}, ${history}` } : {}),
   }));
 }

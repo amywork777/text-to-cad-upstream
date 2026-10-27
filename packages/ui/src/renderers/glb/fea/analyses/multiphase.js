@@ -12,6 +12,7 @@ import { frameControl } from "../series.js";
 import { axisWords, group, heldRows, madeOfRows, wholeRefs } from "../setup.js";
 import { planned, playSeries } from "./stub.js";
 import { historyWords } from "./transient.js";
+import { english } from "../../../../i18n/core.js";
 
 const record = (raw) => (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null);
 
@@ -58,7 +59,7 @@ export function timeLimitCaption(result) {
  * completely full inside's hint says it was solved as the liquid's flow alone ("Completely full: solved as
  * single-fluid flow, no free surface").
  */
-export function filledRows(result) {
+export function filledRows(result, t = english) {
   const { study, fill } = twoFluids(result);
   if (!study && !fill) return [];
   const words = fillWords(fill?.fraction, fill?.liquid || study?.liquid?.name);
@@ -67,11 +68,11 @@ export function filledRows(result) {
   const history = study?.acceleration ? historyWords(study.acceleration.history) : "";
   // A completely full inside has no free surface: cadgen solves the liquid's flow alone and says so.
   const single = (result.analysis?.warnings || []).find((line) => SINGLE_FLUID.test(line)) || "";
-  const hint = [single, history ? `Over time: ${history}` : ""].filter(Boolean).join(". ");
+  const hint = [single, history ? t("fea.overTime", { history }) : ""].filter(Boolean).join(". ");
   const refs = wholeRefs(result);
-  return [{ id: "filled", label: "Filled", detail: "", glyph: "flow", children: [{ id: "filled:0", label, detail: "", wrap: true,
+  return [{ id: "filled", label: t("fea.filled"), detail: "", glyph: "flow", children: [{ id: "filled:0", label, detail: "", wrap: true,
     ...(hint ? { hint } : {}),
-    ...(refs.length ? { refs, summary: `Filled: ${label.charAt(0).toLowerCase()}${label.slice(1)}${history ? `, ${history}` : ""}` } : {}) }] }];
+    ...(refs.length ? { refs, summary: t("fea.filledSummary", { what: `${label.charAt(0).toLowerCase()}${label.slice(1)}${history ? `, ${history}` : ""}` }) } : {}) }] }];
 }
 
 const sideWords = (opening) => {

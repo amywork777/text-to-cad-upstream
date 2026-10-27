@@ -11,6 +11,7 @@ import { plainNumber } from "../numbers.js";
 import { frameControl } from "../series.js";
 import { faceLabel, group, madeOfRows, wholeRefs } from "../setup.js";
 import { planned, routineOf } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 /** Whirl: a one-second loop of the chosen whirl shape walking its orbit (re·cos − im·sin), every section at once. */
 export const WHIRL = routineOf("Whirl", "vibrate");
@@ -78,49 +79,49 @@ export function bearingWords(bearing) {
 }
 
 /** Study's "Spins": one row, how fast and about which axis, chosen with the whole part. */
-export function spinRows(result) {
+export function spinRows(result, t = english) {
   const rotor = rotorOf(result);
   const label = spinWords(rotor);
   if (!label) return [];
   const refs = wholeRefs(result);
-  return [{ id: "spin", label: "Spins", detail: "", glyph: "wave", children: [{
+  return [{ id: "spin", label: t("fea.spins"), detail: "", glyph: "wave", children: [{
     id: "spin:0", label, detail: "", wrap: true, ...(refs.length ? { refs, summary: label } : {}),
   }] }];
 }
 
 /** Study's "Bearings": one row naming them all ("Bearings at face 3 and face 9"), chosen with their faces; each bearing's springs its hint. */
-export function bearingRows(result) {
+export function bearingRows(result, t = english) {
   const rotor = rotorOf(result);
   if (!rotor?.bearings.length) return [];
   const places = rotor.bearings.map((bearing) => placeWords(bearing, rotor.axis)).filter(Boolean);
   const label = `Bearings at ${places.join(" and ")}`;
   const kinds = [...new Set(rotor.bearings.map(bearingWords).filter(Boolean))];
   const faces = rotor.bearings.flatMap((bearing) => bearing.faces);
-  return [{ id: "bearings", label: "Bearings", detail: "", glyph: "fixture", children: [{
+  return [{ id: "bearings", label: t("fea.bearings"), detail: "", glyph: "fixture", children: [{
     id: "bearings:0", label, detail: "", wrap: true, ...(kinds.length ? { hint: kinds.join("; ") } : {}),
     ...(faces.length ? { faces } : { refs: wholeRefs(result) }), summary: label,
   }] }];
 }
 
 /** Study's "Unbalance": one row per unbalance ("50 g·mm at face 5"), chosen with its faces. */
-export function unbalanceRows(result) {
+export function unbalanceRows(result, t = english) {
   const rotor = rotorOf(result);
   const rows = (rotor?.unbalance || []).filter((entry) => entry.gMm !== null).map((entry, index) => {
     const place = placeWords(entry, rotor.axis);
     const label = `${plainNumber(entry.gMm)} g·mm${place ? ` at ${place}` : ""}`;
-    return { id: `unbalance:${index}`, label, detail: "", wrap: true, summary: `Unbalance ${label}`,
+    return { id: `unbalance:${index}`, label, detail: "", wrap: true, summary: t("fea.unbalanceSummary", { what: label }),
       ...(entry.faces.length ? { faces: entry.faces } : { refs: wholeRefs(result) }) };
   });
   return group("unbalance", "Unbalance", "load", rows);
 }
 
 /** Study's "Discs added": each disc the study adds to the CAD's ("2.5 kg disc at 150 mm along Z"). */
-export function discRows(result) {
+export function discRows(result, t = english) {
   const rotor = rotorOf(result);
   const rows = (rotor?.discs || []).filter((disc) => disc.massKg !== null).map((disc, index) => {
     const label = `${plainNumber(disc.massKg)} kg disc${disc.atMm === null ? "" : ` at ${plainNumber(disc.atMm)} mm along ${rotor.axis || "the axis"}`}`;
     const refs = wholeRefs(result);
-    return { id: `disc:${index}`, label, detail: "", wrap: true, ...(refs.length ? { refs, summary: `Added ${label}` } : {}) };
+    return { id: `disc:${index}`, label, detail: "", wrap: true, ...(refs.length ? { refs, summary: t("fea.addedSummary", { what: label }) } : {}) };
   });
   return group("discs", "Discs added", "plane", rows);
 }
@@ -129,9 +130,9 @@ export function discRows(result) {
 export const ROTOR_SETUP = Object.freeze([spinRows, bearingRows, discRows, unbalanceRows, madeOfRows]);
 
 /** What you see: the whirl picker (one shape per critical speed), the field, and the deformation. */
-export function whirlControls(result) {
-  const [field, deformation] = fieldAndDeformation(result);
-  const whirl = frameControl(result, "mode", { label: "Whirl" });
+export function whirlControls(result, t = english) {
+  const [field, deformation] = fieldAndDeformation(result, t);
+  const whirl = frameControl(result, "mode", { label: t("fea.whirl") }, t);
   return [...(whirl ? [whirl] : []), field, deformation];
 }
 

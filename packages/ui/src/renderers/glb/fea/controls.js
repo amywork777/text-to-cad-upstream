@@ -6,6 +6,7 @@
 import { clamp } from "@text-to-cad/core/common/numbers.js";
 import { fieldWord } from "./fields.js";
 import { DISPLACEMENT, frameControl, sigmaControl } from "./series.js";
+import { english } from "../../../i18n/core.js";
 
 /** Sensible slider bounds for the deformation scale, with no view to say: 0 to four times the file's own. */
 export function deformationRange(baseScale) {
@@ -25,14 +26,14 @@ export function fieldOptions(result, attributes) {
  * (stress), and a deformation slider from 0 to four times the file's own scale, in the one-column
  * look they always had.
  */
-export function fieldAndDeformation(result) {
+export function fieldAndDeformation(result, t = english) {
   const every = result.fields.map((entry) => entry.attribute);
   const range = deformationRange(result.deformationScale);
   return [
-    { id: "field", drives: "field", type: "enum", label: "Field", ariaLabel: "Result field", hideLabel: true,
+    { id: "field", drives: "field", type: "enum", label: t("fea.field"), ariaLabel: t("fea.resultField"), hideLabel: true,
       options: fieldOptions(result, every), defaultValue: every[0] },
-    { id: "deformation", drives: "deformation", type: "number", label: "Deformation", ariaLabel: "Deformation scale",
-      labelTitle: "How much larger than life the displacement is drawn", min: range.min, max: range.max, step: range.step,
+    { id: "deformation", drives: "deformation", type: "number", label: t("fea.deformation"), ariaLabel: t("fea.deformationScale"),
+      labelTitle: t("fea.deformationTitle"), min: range.min, max: range.max, step: range.step,
       defaultValue: clamp(result.deformationScale, range.min, range.max), unit: "×" },
   ];
 }

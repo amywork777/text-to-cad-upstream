@@ -8,6 +8,7 @@ import { plainNumber } from "../numbers.js";
 import { group, heldRows, madeOfRows, pushedRows, rigidFloorRows, spaced } from "../setup.js";
 import { stopsCaption } from "./nonlinear.js";
 import { planned, playSeries } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 export { PLAY } from "./stub.js";
 
@@ -30,7 +31,7 @@ function outcomeWords(outcome) {
  * Study's "Pressed together": one row per contact pair as cadgen solved it ("pin presses on plate,
  * friction 0.2"), what it did under the load its hint, chosen with both parts. [] for none.
  */
-export function contactRows(result) {
+export function contactRows(result, t = english) {
   const extras = result?.mesh?.userData || {};
   const pairs = list(result?.study?.contactPairs);
   const outcomes = list(extras.contacts).filter((entry) => entry.kind === "pair");
@@ -43,7 +44,7 @@ export function contactRows(result) {
     const refs = outcomeRefs(outcome);
     const hint = outcomeWords(outcome);
     return { id: `contact:${index}`, label, detail: "", wrap: true, ...(hint ? { hint } : {}),
-      ...(refs.length ? { refs, summary: `Contact: ${label}` } : {}) };
+      ...(refs.length ? { refs, summary: t("fea.contactSummary", { what: label }) } : {}) };
   }).filter(Boolean);
   return group("contacts", "Pressed together", "load", rows);
 }

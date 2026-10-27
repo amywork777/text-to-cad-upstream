@@ -4,6 +4,7 @@
  * and the words for faces and loads they and the Reference share. Pure: no three.js, no React.
  */
 import { plainNumber } from "./numbers.js";
+import { english } from "../../../i18n/core.js";
 
 /** A face ref's own number ("bracket/face 17": 17), or null for a ref that names no face by its number. */
 function faceNumber(ref) {
@@ -145,11 +146,11 @@ export function heldRows(result) {
  * sliding support), its name alone, the hint saying what that means. Its rows number their fixture
  * as Held at's do (`roller:<fixture>:<ref>`), so a row chooses its own markers.
  */
-export function slidesOnRows(result) {
+export function slidesOnRows(result, t = english) {
   const study = result.study;
   const rows = study.fixtures.flatMap((fixture, index) => (isRoller(fixture) ? fixture.faces.map((ref) => ({
     id: `roller:${index}:${ref}`, label: faceTitle(result, ref), detail: "", faces: [ref], summary: faceSummary(study, ref), wrap: true,
-    hint: "May slide along the face, not move off it",
+    hint: t("fea.slideHint"),
   })) : []));
   return group("roller", "Slides on", "roller", rows);
 }
@@ -158,7 +159,7 @@ export function slidesOnRows(result) {
  * Study's "Pushed": one row per load, how much and which way ("300 N along −X"), under the arrow
  * glyph, its faces under it by name alone, shut until opened (`collapsed`).
  */
-export function pushedRows(result) {
+export function pushedRows(result, t = english) {
   const study = result.study;
   const faceLoads = study.loads.filter((load) => load.faces.length).map((load, index) => {
     const words = loadWords(load);
@@ -175,7 +176,7 @@ export function pushedRows(result) {
   const bodyLoads = study.loads.filter((load) => !load.faces.length && load.g).map((load, index) => {
     const label = bodyLoadWords(load);
     const summary = load.type === "acceleration" ? `Accelerated ${label}` : `Its weight, ${label}`;
-    return { id: `body:${index}`, label, detail: "", ...(load.type === "acceleration" ? { hint: "Accelerated: every part of it pushed the other way" } : {}),
+    return { id: `body:${index}`, label, detail: "", ...(load.type === "acceleration" ? { hint: t("fea.acceleratedHint") } : {}),
       ...(refs.length ? { refs, summary } : {}) };
   });
   return group("loads", "Pushed", "load", [...faceLoads, ...bodyLoads]);
@@ -204,27 +205,27 @@ function faceEntryGroup(result, { id, label, glyph, entries }) {
 }
 
 /** Study's "Kept at", under a thermometer: each fixed temperature ("25 °C"), its faces under it. */
-export function keptAtRows(result) {
-  return faceEntryGroup(result, { id: "temperature", label: "Kept at", glyph: "temperature", entries: (result.study.temperatures || []).map((entry) => {
+export function keptAtRows(result, t = english) {
+  return faceEntryGroup(result, { id: "temperature", label: t("fea.keptAt"), glyph: "temperature", entries: (result.study.temperatures || []).map((entry) => {
     const degrees = entry.celsius === null ? "a fixed temperature" : `${plainNumber(entry.celsius)} °C`;
     return { faces: entry.faces, words: { label: degrees, summary: (refs) => `Kept at ${degrees} on ${facesWords(refs)}` } };
   }) });
 }
 
 /** Study's "Heated", under a flame: each heat input ("15 W", "2000 W/m²"), its faces under it. */
-export function heatedRows(result) {
-  return faceEntryGroup(result, { id: "heat", label: "Heated", glyph: "heat", entries: (result.study.heat || []).map((entry) => {
+export function heatedRows(result, t = english) {
+  return faceEntryGroup(result, { id: "heat", label: t("fea.heated"), glyph: "heat", entries: (result.study.heat || []).map((entry) => {
     const amount = entry.watts !== null ? `${plainNumber(entry.watts)} W` : entry.fluxWm2 !== null ? `${plainNumber(entry.fluxWm2)} W/m²` : "heat";
     return { faces: entry.faces, words: { label: amount, summary: (refs) => `${amount} of heat into ${facesWords(refs)}` } };
   }) });
 }
 
 /** Study's "Cooled by air", under the wind: each convection ("Air at 25 °C", how well it cools its hint), its faces under it. */
-export function cooledRows(result) {
-  return faceEntryGroup(result, { id: "convection", label: "Cooled by air", glyph: "convection", entries: (result.study.convection || []).map((entry) => {
+export function cooledRows(result, t = english) {
+  return faceEntryGroup(result, { id: "convection", label: t("fea.cooledByAir"), glyph: "convection", entries: (result.study.convection || []).map((entry) => {
     const air = entry.ambientC === null ? "Air" : `Air at ${plainNumber(entry.ambientC)} °C`;
     const how = entry.h === null ? "" : `${plainNumber(entry.h)} W/m²K`;
-    return { faces: entry.faces, words: { label: air, hint: how ? `Heat transfer coefficient ${how}` : "",
+    return { faces: entry.faces, words: { label: air, hint: how ? t("fea.htcHint", { value: how }) : "",
       summary: (refs) => `Cooled by a${air.slice(1)}${how ? ` (${how})` : ""} on ${facesWords(refs)}` } };
   }) });
 }
@@ -233,11 +234,11 @@ export function cooledRows(result) {
  * Study's "Radiation", under the warmth glyph: each radiating entry ("Radiates to 25 °C, emissivity 0.9"), its
  * faces under it; faces that also radiate to each other say so in the hint.
  */
-export function radiatesRows(result) {
-  return faceEntryGroup(result, { id: "radiation", label: "Radiation", glyph: "heat", entries: (result.study.radiation || []).map((entry) => {
+export function radiatesRows(result, t = english) {
+  return faceEntryGroup(result, { id: "radiation", label: t("fea.radiation"), glyph: "heat", entries: (result.study.radiation || []).map((entry) => {
     const to = entry.ambientC === null ? "Radiates" : `Radiates to ${plainNumber(entry.ambientC)} °C`;
     const label = entry.emissivity === null ? to : `${to}, emissivity ${plainNumber(entry.emissivity)}`;
-    return { faces: entry.faces, words: { label, hint: entry.surfaceToSurface ? "And to the other faces that radiate to each other" : "",
+    return { faces: entry.faces, words: { label, hint: entry.surfaceToSurface ? t("fea.radiatesHint") : "",
       summary: (refs) => `${to}${entry.emissivity === null ? "" : ` (emissivity ${plainNumber(entry.emissivity)})`} from ${facesWords(refs)}` } };
   }) });
 }
@@ -246,43 +247,43 @@ export function radiatesRows(result) {
  * Study's "Coolant", under the flow: the fluid and the temperature each inlet brings it in at ("Water in at
  * 20 °C"), chosen with the whole part. [] for a flow that carries no heat.
  */
-export function coolantRows(result) {
+export function coolantRows(result, t = english) {
   const flow = result.study.flow;
   const inlets = (flow?.inlets || []).filter((inlet) => inlet.temperatureC !== null && inlet.temperatureC !== undefined);
   if (!inlets.length) return [];
   const refs = wholeRefs(result);
   const fluid = flow.fluid ? `${flow.fluid.charAt(0).toUpperCase()}${flow.fluid.slice(1)}` : "Fluid";
-  return [{ id: "coolant", label: "Coolant", detail: "", glyph: "flow", children: inlets.map((inlet, index) => {
+  return [{ id: "coolant", label: t("fea.coolant"), detail: "", glyph: "flow", children: inlets.map((inlet, index) => {
     const label = `${fluid} in at ${plainNumber(inlet.temperatureC)} °C`;
     const where = inlet.opening ? openingWords(inlet.opening) : "";
-    return { id: `coolant:${index}`, label, detail: "", wrap: true, ...(where ? { hint: `At ${where}` } : {}),
+    return { id: `coolant:${index}`, label, detail: "", wrap: true, ...(where ? { hint: t("fea.atWhere", { where }) } : {}),
       ...(refs.length ? { refs, summary: `${label}${where ? ` at ${where}` : ""}` } : {}) };
   }) }];
 }
 
 /** Study's "Shaken", under a wave: the shaker on the fixtures ("1 g along Z", "At random along Z"), chosen with every fixed face. */
-export function shakenRows(result) {
+export function shakenRows(result, t = english) {
   const study = result.study;
   const shake = study.excitation;
   if (!shake?.kind || shake.kind === "force") return [];
   const along = shake.direction ? ` along ${axisWords(shake.direction)}` : "";
   const label = shake.kind === "psd" ? `At random${along}` : shake.kind === "srs" ? `A shock${along}` : `${shake.amplitudeG === null ? "Shaken" : `${plainNumber(shake.amplitudeG)} g`}${along}`;
   const refs = heldRefs(result);
-  return [{ id: "shaken", label: "Shaken", detail: "", glyph: "wave", children: [{ id: "shaken:0", label, detail: "", wrap: true,
-    ...(refs ? { ...refs, summary: `Shaken where it is held: ${label.charAt(0).toLowerCase()}${label.slice(1)}` } : {}) }] }];
+  return [{ id: "shaken", label: t("fea.shaken"), detail: "", glyph: "wave", children: [{ id: "shaken:0", label, detail: "", wrap: true,
+    ...(refs ? { ...refs, summary: t("fea.shakenSummary", { what: `${label.charAt(0).toLowerCase()}${label.slice(1)}` }) } : {}) }] }];
 }
 
 /** Study's "Dropped", under a drop: its height ("1 m drop"), how it stops its hint, the faces that land under it. */
-export function droppedRows(result) {
+export function droppedRows(result, t = english) {
   const drop = result.study.drop;
   if (!drop) return [];
   const height = drop.heightMm === null ? "Dropped" : drop.heightMm >= 1000 ? `${plainNumber(drop.heightMm / 1000)} m drop` : `${plainNumber(drop.heightMm)} mm drop`;
   const stop = drop.stopMm !== null ? `stopping in ${plainNumber(drop.stopMm)} mm` : drop.impactMs !== null ? `stopping in ${plainNumber(drop.impactMs)} ms` : "";
   const hint = [stop, drop.floor === "rigid" ? "onto a rigid floor" : ""].filter(Boolean).join(", ");
   const entry = { faces: drop.onto, words: { label: height, ...(hint ? { hint } : {}), summary: (refs) => `${height}${stop ? `, ${stop}` : ""}, landing on ${facesWords(refs)}` } };
-  if (drop.onto.length) return faceEntryGroup(result, { id: "drop", label: "Dropped", glyph: "drop", entries: [entry] });
+  if (drop.onto.length) return faceEntryGroup(result, { id: "drop", label: t("fea.dropped"), glyph: "drop", entries: [entry] });
   const refs = wholeRefs(result);
-  return [{ id: "drop", label: "Dropped", detail: "", glyph: "drop", children: [{ id: "drop:0", label: height, detail: "", ...(hint ? { hint } : {}),
+  return [{ id: "drop", label: t("fea.dropped"), detail: "", glyph: "drop", children: [{ id: "drop:0", label: height, detail: "", ...(hint ? { hint } : {}),
     ...(refs.length ? { refs, summary: `${height}${stop ? `, ${stop}` : ""}` } : {}) }] }];
 }
 
@@ -294,11 +295,11 @@ const openingWords = (opening) => {
 };
 
 /** Study's "Flow in/out", under the flow: each inlet ("In 0.5 m/s at the low X side") and outlet ("Out at 0 Pa"), chosen with the whole part. */
-export function flowRows(result) {
+export function flowRows(result, t = english) {
   const flow = result.study.flow;
   if (!flow) return [];
   const refs = wholeRefs(result);
-  const row = (id, label) => ({ id, label, detail: "", wrap: true, ...(refs.length ? { refs, summary: `Flow ${label.charAt(0).toLowerCase()}${label.slice(1)}` } : {}) });
+  const row = (id, label) => ({ id, label, detail: "", wrap: true, ...(refs.length ? { refs, summary: t("fea.flowSummary", { what: `${label.charAt(0).toLowerCase()}${label.slice(1)}` }) } : {}) });
   const rows = [
     ...flow.inlets.map((inlet, index) => {
       const speed = inlet.speed === null ? "" : ` ${plainNumber(inlet.speed)} m/s`;
@@ -312,14 +313,14 @@ export function flowRows(result) {
 }
 
 /** Study's "Rigid floor", under a plane: each rigid plane, which way it faces, chosen with the whole part. */
-export function rigidFloorRows(result) {
+export function rigidFloorRows(result, t = english) {
   const study = result.study;
   const refs = wholeRefs(result);
   const planes = [...(study.rigidPlanes || []).map((plane) => `Facing ${forceDirection(plane.normal)}`),
     ...(study.drop?.floor === "rigid" ? ["Under the drop"] : [])];
   if (!planes.length) return [];
-  return [{ id: "rigid", label: "Rigid floor", detail: "", glyph: "plane", children: planes.map((label, index) => ({ id: `rigid:${index}`, label, detail: "",
-    ...(refs.length ? { refs, summary: `A rigid floor, ${label.charAt(0).toLowerCase()}${label.slice(1)}` } : {}) })) }];
+  return [{ id: "rigid", label: t("fea.rigidFloor"), detail: "", glyph: "plane", children: planes.map((label, index) => ({ id: `rigid:${index}`, label, detail: "",
+    ...(refs.length ? { refs, summary: t("fea.rigidFloorSummary", { what: `${label.charAt(0).toLowerCase()}${label.slice(1)}` }) } : {}) })) }];
 }
 
 /** Every setup group an analysis can show, in Study's order: each is [] where the study records nothing for it. */
@@ -335,7 +336,7 @@ export const SETUP_GROUPS = Object.freeze([heldRows, keptAtRows, pushedRows, hea
 /** The most materials Made of names inline, each with its parts; past it, a count and a hint. */
 const INLINE_MATERIALS = 3;
 
-export function madeOfRows(result) {
+export function madeOfRows(result, t = english) {
   const fallback = result.study.material?.name || "";
   const each = result.parts.map((part) => part.material || fallback).filter(Boolean);
   const counts = new Map();
@@ -363,18 +364,18 @@ export function madeOfRows(result) {
   const summary = byMaterial.size > 1
     ? `Made of ${[...byMaterial].map(([name, names]) => `${name} (${names.join(", ")})`).join(" and ")}`
     : `Made of ${counts.size === 1 ? each[0] : label}${counts.size <= 1 && yieldMPa !== null && yieldMPa !== undefined ? ` (yield ${plainNumber(yieldMPa)} MPa)` : ""}`;
-  return [{ id: "material", label: "Made of", detail: "", glyph: "material", children: [{ id: "material:name", label, detail: "", wrap: true,
+  return [{ id: "material", label: t("fea.madeOf"), detail: "", glyph: "material", children: [{ id: "material:name", label, detail: "", wrap: true,
     ...(hint ? { hint } : {}), ...(refs.length ? { refs, summary } : {}) }] }];
 }
 
 /** Details, shut until opened: the mesh, "3.7 mm elements", how it got there its hint ("refined from 2.8 mm", "not refined"). */
-export function detailRows(result) {
+export function detailRows(result, t = english) {
   const mesh = result.study.mesh;
   if (mesh?.sizeMm === null || mesh?.sizeMm === undefined) return [];
   const refined = mesh.refinedFromMm === null ? "not refined" : `refined from ${plainNumber(mesh.refinedFromMm)} mm`;
   // Chosen, it carries the whole result into a prompt with how fine the mesh is.
   const refs = wholeRefs(result);
-  return [{ id: "details", label: "Details", detail: "", collapsed: true,
-    children: [{ id: "mesh", label: "Mesh", detail: `${plainNumber(mesh.sizeMm)} mm elements`, hint: refined,
-      ...(refs.length ? { refs, summary: `Mesh of ${plainNumber(mesh.sizeMm)} mm elements, ${refined}` } : {}) }] }];
+  return [{ id: "details", label: t("fea.details"), detail: "", collapsed: true,
+    children: [{ id: "mesh", label: t("fea.mesh"), detail: `${plainNumber(mesh.sizeMm)} mm elements`, hint: refined,
+      ...(refs.length ? { refs, summary: t("fea.meshSummary", { size: plainNumber(mesh.sizeMm), refined }) } : {}) }] }];
 }

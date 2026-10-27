@@ -8,6 +8,7 @@ import { fieldAndDeformation } from "../controls.js";
 import { plainNumber } from "../numbers.js";
 import { heldRows, pushedRows, wholeRefs } from "../setup.js";
 import { planned } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 /** A layup's angles in the short form, bottom ply first: "[0/90]s" for a symmetric one, else "[0/45/-45/90]". */
 export function layupNotation(plies) {
@@ -33,15 +34,15 @@ export function layupWords(layup) {
 }
 
 /** Study's "Layup": one row, the plies' count, angles and thickness, the ply materials its hint. */
-export function layupRows(result) {
+export function layupRows(result, t = english) {
   const layup = readLayup(result);
   if (!layup) return [];
   const label = layupWords(layup);
   const materials = [...new Set(layup.plies.map((ply) => String(ply.material || "")).filter(Boolean))];
   const refs = wholeRefs(result);
-  return [{ id: "layup", label: "Layup", detail: "", glyph: "material", children: [{ id: "layup:0", label, detail: "", wrap: true,
+  return [{ id: "layup", label: t("fea.layup"), detail: "", glyph: "material", children: [{ id: "layup:0", label, detail: "", wrap: true,
     ...(materials.length ? { hint: materials.join(", ") } : {}),
-    ...(refs.length ? { refs, summary: `Layup ${label}${materials.length ? ` of ${materials.join(", ")}` : ""}` } : {}) }] }];
+    ...(refs.length ? { refs, summary: materials.length ? t("fea.layupOfSummary", { layup: label, materials: materials.join(", ") }) : t("fea.layupSummary", { layup: label }) } : {}) }] }];
 }
 
 export const COMPOSITE_SETUP = Object.freeze([heldRows, pushedRows, layupRows]);

@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   applyDeformation, deformationRange, faceLabel, faceTitle, faceRole, feaControls, feaMarkerShow, feaPresets, feaRamp, fieldValues, forceDirection,
   feaVerdict, formatValue, pickFace, readFeaResult, partRows, recolorByField, resultSourcePath, studyRows, weakestPartIndex,
-  feaChecks, feaFailing, feaSections, feaShownControls, feaDefaults, facePromptSummary, routineScale, ROUTINE_MOTION_SHARE, symmetricRange
+  feaChecks, feaFailing, feaSections, studySections, feaShownControls, feaDefaults, facePromptSummary, routineScale, ROUTINE_MOTION_SHARE, symmetricRange
 } from './feaResult.js';
 import { shakenRows } from './fea/setup.js';
+import { translator } from '../../i18n/core.js';
 
 /** A two-triangle "result" the way GLTFLoader hands one over: lower-cased custom attributes, extras in userData. */
 function resultMesh({ generator = 'cadgen fea', scale = 10, safetyFactor = 5.83 as number | null } = {}) {
@@ -921,6 +922,10 @@ describe('another analysis\'s setup', () => {
     const rows = studyRows(result) as any[];
     expect(ids(rows)).toEqual([['Kept at', ['25 °C']], ['Heated', ['15 W', '2000 W/m²']], ['Cooled by air', ['Air at 25 °C']], ['Made of', ['6061-T6']]]);
     expect(rows.slice(0, 3).map((row) => row.glyph)).toEqual(['temperature', 'heat', 'convection']);
+    // In the person's language: the headings and the hints read through the locale files.
+    const japanese = studySections(result, translator('ja')).setup as any[];
+    expect(japanese.map((row) => row.label)).toEqual(['温度固定', '加熱', '空冷', '材料']);
+    expect(japanese[2].children[0].hint).toBe('熱伝達係数 10 W/m²K');
     expect(rows[1].children[0]).toMatchObject({ id: 'heat:0', faces: ['bracket/face 2'], summary: '15 W of heat into face 2', collapsed: true });
     expect(rows[2].children[0]).toMatchObject({ summary: 'Cooled by air at 25 °C (10 W/m²K) on faces 3, 4', hint: 'Heat transfer coefficient 10 W/m²K' });
     expect(faceRole(result, 'bracket/face 3')).toBe('2000 W/m² of heat in; cooled by air at 25 °C');

@@ -33,6 +33,6 @@ export default planned({
   setupGroups: [heldRows, pushedRows, madeOfRows],
   // Load cycle: the stress and the deformation swinging between the cycle's ends, on a Cycle row (`../poses.js`).
   motion: cycleMotion,
-  routine: (result) => poseRoutine(cycleMotion(result)),
+  routine: (result, t) => poseRoutine(cycleMotion(result, t)),
   markers: ["load", "fixture", "body_load"],
 });

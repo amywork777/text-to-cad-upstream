@@ -2,6 +2,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@text-to-cad/ui/primitives/slider";
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
 import { cn } from "@text-to-cad/ui/utils";
+import { english } from "../../../i18n/core.js";
 import {
   FILE_SHEET_PRECISION_SLIDER_CLASSES,
   FILE_SHEET_SELECT_TRIGGER_CLASSES,
@@ -31,7 +32,7 @@ export function controlStep(control) {
  *   otherwise about a thousandth of its range; `control.wideLabel`: a number's label runs over its value field;
  *   `action`: a compact icon button beside a number's value field (a motion's play/pause).
  */
-export function controlRow({ control, value, onChange, valueText, action = null }) {
+export function controlRow({ control, value, onChange, valueText, action = null, t = english }) {
   const label = control.label;
   const name = control.ariaLabel || label;
   if (control.type === "enum") {
@@ -54,7 +55,7 @@ export function controlRow({ control, value, onChange, valueText, action = null 
       action={action}
       value={valueText(value, control)}
       onValueCommit={(draft) => onChange(parseFileSheetNumberInput(draft, { fallback: value, min: control.min, max: control.max }))}
-      valueInputProps={{ ariaLabel: control.ariaLabel ? `${control.ariaLabel} value` : `${label} slider value` }}
+      valueInputProps={{ ariaLabel: control.ariaLabel ? t("fea.controlValue", { name: control.ariaLabel }) : t("fea.sliderValue", { name: label }) }}
     >
       <Slider
         className={FILE_SHEET_PRECISION_SLIDER_CLASSES}

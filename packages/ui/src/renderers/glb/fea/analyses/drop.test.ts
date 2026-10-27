@@ -32,7 +32,7 @@ describe('drop', () => {
     const fall = { height_mm: 1000, direction: [0, 0, -1], speed_m_s: 4.4287, floor: { point_mm: [0, 0, -5], normal: [0, 0, 1] }, impact_ms: 0.903 };
     const result = dropResult({}, fall);
     expect(drop.routine(result)).toBe(DROP);
-    expect(DROP).toEqual({ id: 'fea:fall', label: 'Drop', kind: 'motion' });
+    expect(DROP).toEqual({ id: 'fea:fall', label: 'Drop', key: 'fea.drop', kind: 'motion' });
     expect(result.analysis.fall).toMatchObject({ heightMm: 1000, direction: [0, 0, -1], floor: { point: [0, 0, -5], normal: [0, 0, 1] }, impactMs: 0.903,
       reboundMs: 0, centres: null });
     // A file from before cadgen wrote the fall ramps the load, as static does.

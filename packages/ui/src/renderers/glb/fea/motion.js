@@ -16,6 +16,7 @@
  *
  * Pure: no three.js, no React.
  */
+import { english } from "../../../i18n/core.js";
 
 /** The scrubber's evenly spaced stops over the whole motion. */
 export const MOTION_SAMPLES = 240;
@@ -24,14 +25,14 @@ export const MOTION_SAMPLES = 240;
 export const motionRoutine = (motion) => Object.freeze({ id: `fea:${motion.kind}`, label: motion.label, kind: "motion" });
 
 /** The Time row over a motion: a number control along its timeline that stops at its moments, its value field the real time there. */
-export function motionControl(motion) {
+export function motionControl(motion, t = english) {
   const evenly = Array.from({ length: MOTION_SAMPLES + 1 }, (_, index) => (motion.duration * index) / MOTION_SAMPLES);
   const stops = [...evenly, ...motion.states.map((state) => state.at), ...(motion.moments || []), motion.defaultAt]
     .filter((at) => Number.isFinite(at) && at >= 0 && at <= motion.duration);
   // Each moment once: one a hair from another (a state on an even stop) is that one.
   const snaps = stops.sort((a, b) => a - b).filter((at, index, all) => index === 0 || at - all[index - 1] > 1e-9 * motion.duration);
   return {
-    id: "motion", drives: "motion", type: "number", label: motion.row || "Time", min: 0, max: motion.duration, defaultValue: motion.defaultAt, unit: "",
+    id: "motion", drives: "motion", type: "number", label: motion.row || t("fea.time"), min: 0, max: motion.duration, defaultValue: motion.defaultAt, unit: "",
     snaps, frameLabels: snaps.map((at) => motion.timeAt(at)), ...(motion.hint ? { labelTitle: motion.hint } : {}),
   };
 }

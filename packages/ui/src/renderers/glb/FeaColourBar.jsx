@@ -1,4 +1,5 @@
 import { cn } from "@text-to-cad/ui/utils";
+import { useI18n } from "@text-to-cad/ui/i18n";
 import { FLOATING_CHROME_SURFACE_CLASS } from "../../lib/floatingSurface.js";
 import { FEA_BOTTOM_LINE } from "./feaChrome.js";
 import { feaAnalysis } from "./fea/analyses/index.js";
@@ -51,6 +52,7 @@ const PLAYBAR_CLEARANCE = "3rem";
  * RMS field's.
  */
 export default function FeaColourBar({ result, field, loadScale = 1, sigma = null, raised = false }) {
+  const { t } = useI18n();
   const scale = (feaAnalysis(result).scalesWithLoad ? loadScale : 1) * sigmaScale(field, sigma);
   const shown = colourBarText(field, scale, sigma);
   return (
@@ -58,7 +60,7 @@ export default function FeaColourBar({ result, field, loadScale = 1, sigma = nul
       <div
         className={cn("flex w-80 max-w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-micro tabular-nums text-muted-foreground", FLOATING_CHROME_SURFACE_CLASS)}
         role="group"
-        aria-label={`${field.name} colour bar`}
+        aria-label={t("fea.colourBar", { field: field.name })}
       >
         <span className="text-tiny text-foreground" data-fea-field="">{shown.word}</span>
         <span data-fea-min="">{shown.min}</span>

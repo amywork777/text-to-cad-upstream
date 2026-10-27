@@ -6,7 +6,7 @@ import { fieldAndDeformation } from "../controls.js";
 import { heldRows, madeOfRows, pushedRows } from "../setup.js";
 
 /** The Load ramp: the load going on, from none to the load chosen (GlbRenderer plays it). */
-export const LOAD_RAMP = Object.freeze({ id: "fea:load-ramp", label: "Load ramp", kind: "load_ramp" });
+export const LOAD_RAMP = Object.freeze({ id: "fea:load-ramp", label: "Load ramp", key: "fea.loadRamp", kind: "load_ramp" });
 
 export default Object.freeze({
   name: "static",

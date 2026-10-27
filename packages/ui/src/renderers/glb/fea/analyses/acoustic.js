@@ -11,6 +11,7 @@ import { plainNumber, threeFigures } from "../numbers.js";
 import { faceEntryRows, facesWords, group, heldRows, madeOfRows, wholeRow } from "../setup.js";
 import { shakenSweepRows } from "./harmonic.js";
 import { planned, routineOf } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 /** Ring: a one-second loop of the chosen mode's pressure, its colours swinging through the cycle (cos 2πt). */
 export const RING = routineOf("Ring", "pulse");
@@ -34,7 +35,7 @@ export function airWords(acoustic) {
 }
 
 /** Study's "Air": where the sound travels, its speed the hint (and, around the part, that open air ends at an absorbing box). */
-export function airRows(result) {
+export function airRows(result, t = english) {
   const acoustic = acousticOf(result);
   if (!acoustic.domain) return [];
   const label = airWords(acoustic);
@@ -42,7 +43,7 @@ export function airRows(result) {
   const open = acoustic.domain === "outside" ? "open air ends at an absorbing box" : "";
   const hint = [speed, open].filter(Boolean).join("; ");
   const summary = `${label}${acoustic.domain === "part" ? ": the part's solid is the air the sound travels in" : ""}`;
-  return [{ id: "air", label: "Air", detail: "", glyph: "flow", children: [wholeRow(result, "air:0", label, summary, hint)] }];
+  return [{ id: "air", label: t("fea.air"), detail: "", glyph: "flow", children: [wholeRow(result, "air:0", label, summary, hint)] }];
 }
 
 /** A volume velocity in words: "1 cm³/s", "250 mm³/s". */
@@ -52,12 +53,12 @@ function volumeWords(m3s) {
 }
 
 /** Study's "Sound from": each speaker face ("Speaker face 1 mm/s"), point source, or the part's own vibration (from a harmonic study). */
-export function sourceRows(result) {
+export function sourceRows(result, t = english) {
   const acoustic = acousticOf(result);
   const faces = list(acoustic.sources).filter((source) => source.faces?.length).map((source) => {
     const speed = source.velocityMmS === null ? "" : ` ${plainNumber(source.velocityMmS)} mm/s`;
     const label = `Speaker face${speed}`;
-    return { faces: source.faces, label, hint: "Moving in and out of the air at every frequency",
+    return { faces: source.faces, label, hint: t("fea.speakerHint"),
       summary: (refs) => `A speaker on ${facesWords(refs)}, moving${speed || " in and out"}` };
   });
   const rows = faceEntryRows(result, "source", faces);
@@ -74,7 +75,7 @@ export function sourceRows(result) {
 }
 
 /** Study's "Soaks up": each absorbing face ("Absorbs 30%", "Impedance 800 rayl"), and each open face ("Open"), its faces under it. */
-export function absorberRows(result) {
+export function absorberRows(result, t = english) {
   const acoustic = acousticOf(result);
   const absorbers = list(acoustic.absorbers).map((entry) => {
     const label = Number.isFinite(entry.absorption) ? `Absorbs ${plainNumber(entry.absorption * 100)}%`
@@ -82,21 +83,21 @@ export function absorberRows(result) {
     return { faces: entry.faces, label, summary: (refs) => `${label} of the sound striking ${facesWords(refs)}` };
   });
   const open = list(acoustic.open).filter((faces) => faces.length).map((faces) => ({
-    faces, label: "Open", hint: "Open to the air: no sound pressure there",
+    faces, label: t("fea.open"), hint: t("fea.openHint"),
     summary: (refs) => `Open to the air at ${facesWords(refs)}`,
   }));
   return group("absorbers", "Soaks up", "plane", faceEntryRows(result, "absorber", [...absorbers, ...open]));
 }
 
 /** Study's "Listening at": each probe by its label, where it is its hint. */
-export function probeRows(result) {
+export function probeRows(result, t = english) {
   const probes = list(acousticOf(result).probes);
   if (!probes.length) return [];
   const rows = probes.map((probe, index) => {
     const at = `(${probe.at.map(plainNumber).join(", ")}) mm`;
     return wholeRow(result, `probe:${index}`, probe.label, `Listening at '${probe.label}', ${at}`, at);
   });
-  return [{ id: "probes", label: "Listening at", detail: "", glyph: "wave", children: rows }];
+  return [{ id: "probes", label: t("fea.listeningAt"), detail: "", glyph: "wave", children: rows }];
 }
 
 /** A vibration-driven study is held, shaken and made of something as its harmonic is; a study of air alone is none of these. */

@@ -11,12 +11,12 @@
  * impact, where it lands. Pure: no three.js, no React.
  */
 import { threeFigures } from "./numbers.js";
-import { motionRoutine } from "./motion.js";
+import { english } from "../../../i18n/core.js";
 
 /** Standard gravity, mm/s². */
 export const G_MM_S2 = 9806.65;
 /** Drop: the fall, the impact slowed down, and the rest, as Preview plays a drop's motion. */
-export const DROP = motionRoutine({ kind: "fall", label: "Drop" });
+export const DROP = Object.freeze({ id: "fea:fall", label: "Drop", key: "fea.drop", kind: "motion" });
 
 /** How long it waits at its height before it falls, s. */
 export const HOLD_S = 0.5;
@@ -183,7 +183,7 @@ export function landingTime(state, plan) {
  * peak (an impact's peak frame, an estimate's stop at its middle), its states Released, Contact, Peak and At rest,
  * the scrubber stopping at each solved frame, and the impact alone played with reduced motion.
  */
-export function fallMotion(result) {
+export function fallMotion(result, t = english) {
   const fall = result?.analysis?.fall;
   if (!fall) return null;
   const plan = fallTimeline(fall, { impactS: impactSpan(result) });
@@ -192,12 +192,12 @@ export function fallMotion(result) {
   const atReal = (seconds) => impact.start + Math.min(Math.max(Number(seconds) || 0, 0), impact.real) * impact.slow;
   const peakAt = frames.length ? atReal(frames[result.series.default]?.value) : (impact.start + impact.end) / 2;
   return {
-    kind: "fall", label: "Drop", plan, fall, duration: plan.duration, defaultAt: peakAt,
-    states: [{ id: "released", label: "Released", at: 0 }, { id: "contact", label: "Contact", at: impact.start },
-      { id: "peak", label: "Peak", at: peakAt }, { id: "rest", label: "At rest", at: plan.duration }],
+    kind: "fall", label: t("fea.drop"), plan, fall, duration: plan.duration, defaultAt: peakAt,
+    states: [{ id: "released", label: t("fea.released"), at: 0 }, { id: "contact", label: t("fea.contact"), at: impact.start },
+      { id: "peak", label: t("fea.peak"), at: peakAt }, { id: "rest", label: t("fea.atRest"), at: plan.duration }],
     moments: frames.map((frame) => atReal(frame.value)),
     timeAt: (at) => landingTime(fallAt(plan, fall, at), plan),
-    hint: "Time from when it lands: before it, falling",
+    hint: t("fea.dropTimeHint"),
     play: { from: impact.start, to: impact.end },
     atFrame: (index) => (frames[index] ? atReal(frames[index].value) : null),
   };

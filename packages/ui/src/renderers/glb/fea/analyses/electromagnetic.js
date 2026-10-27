@@ -12,6 +12,7 @@ import { plainNumber, threeFigures } from "../numbers.js";
 import { cooledRows, faceEntryRows, facesWords, forceDirection, group, heldRows, keptAtRows, madeOfRows, spaced, wholeRefs } from "../setup.js";
 import { acMotion, poseRoutine } from "../poses.js";
 import { planned } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 /** The study as the viewer read it (`readStudy`: its voltages, currents, coils, AC field and heat out); {} for none. */
 const studyOf = (result) => result?.study || {};
@@ -59,7 +60,7 @@ export function electrodeRows(result) {
  * Study's "Driven by": "Coil 2 A × 100 turns" per coil, the part it is wound on as its hint; at a frequency
  * "Coil 2 A at 50 kHz" (its turns in the hint), and a uniform field the air carries, "Field 10 mT at 500 Hz".
  */
-export function coilRows(result) {
+export function coilRows(result, t = english) {
   const study = studyOf(result);
   const at = atFrequency(result);
   const rows = list(study.coils).map((coil, index) => {
@@ -80,7 +81,7 @@ export function coilRows(result) {
     const label = `Field${mT === null ? "" : ` ${plainNumber(mT)} mT`}${at}`;
     const axis = field.direction || [];
     const along = axis.length === 3 && axis.filter((c) => c !== 0).length === 1 ? ` along ${"xyz"[axis.findIndex((c) => c !== 0)]}` : "";
-    rows.push({ id: "field", label, detail: "", summary: `A uniform${mT === null ? "" : ` ${plainNumber(mT)} mT`} field${along}${at}` });
+    rows.push({ id: "field", label, detail: "", summary: t("fea.uniformField", { strength: mT === null ? "" : ` ${plainNumber(mT)} mT`, along, at }) });
   }
   return group("coils", "Driven by", "wave", rows);
 }
@@ -118,7 +119,7 @@ const newtons = (value) => `${threeFigures(value)} N`;
  * "0.424 N down, its magnetic pull", chosen with the whole result. With no checks they are its verdict,
  * headed by the largest ("Pulls the plunger with 0.424 N", "0.424 N down"). null with none written.
  */
-export function electromagneticFacts(result) {
+export function electromagneticFacts(result, t = english) {
   const forces = result?.analysis?.forces;
   if (!forces?.length) return null;
   const refs = wholeRefs(result);
@@ -134,7 +135,7 @@ export function electromagneticFacts(result) {
   });
   const largest = forces.reduce((best, force) => (Math.hypot(...force.vector) > Math.hypot(...best.vector) ? force : best));
   const size = Math.hypot(...largest.vector);
-  return { title: `Pulls ${named(largest)} with ${newtons(size)}`, caption: `${newtons(size)} ${forceWay(largest.vector)} on ${named(largest)}`.replace("  ", " "), rows };
+  return { title: t("fea.pulls", { part: named(largest), force: newtons(size) }), caption: `${newtons(size)} ${forceWay(largest.vector)} on ${named(largest)}`.replace("  ", " "), rows };
 }
 
 export default planned({
@@ -146,7 +147,7 @@ export default planned({
   setupGroups: ELECTROMAGNETIC_SETUP,
   // An AC field turning through its cycle, on a Phase row (`../poses.js`); a static field has none.
   motion: acMotion,
-  routine: (result) => poseRoutine(acMotion(result)),
+  routine: (result, t) => poseRoutine(acMotion(result, t)),
   facts: electromagneticFacts,
   markers: ["fixture"], displayTitle: "Electrodes and coils",
 });

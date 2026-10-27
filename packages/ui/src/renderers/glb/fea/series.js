@@ -7,6 +7,7 @@
  * result with no series, or a viewer that knows none, reads frame 0 as it always did.
  * Pure: no three.js, no React.
  */
+import { english } from "../../../i18n/core.js";
 
 /** The deformation's own attribute: the displacement the file baked into its positions. */
 export const DISPLACEMENT = "_displacement";
@@ -106,12 +107,12 @@ function scrubberLabel(series) {
  * view's control as the file gives it (`label`, `default`: a mode number or a frame value), where a
  * view names one. null for a result with no series.
  */
-export function frameControl(result, drives = result?.series?.kind === "mode" ? "mode" : "frame", own = {}) {
+export function frameControl(result, drives = result?.series?.kind === "mode" ? "mode" : "frame", own = {}, t = english) {
   const series = result?.series;
   if (!series) return null;
-  const label = typeof own.label === "string" && own.label.trim() ? own.label.trim() : drives === "mode" ? "Mode" : scrubberLabel(series);
+  const label = typeof own.label === "string" && own.label.trim() ? own.label.trim() : drives === "mode" ? t("fea.mode") : scrubberLabel(series);
   if (drives === "mode") {
-    const options = series.frames.map((frame, index) => ({ value: String(index), label: frame.label || `Mode ${index + 1}` }));
+    const options = series.frames.map((frame, index) => ({ value: String(index), label: frame.label || t("fea.modeNumber", { n: index + 1 }) }));
     const named = Number.isFinite(own.default) ? series.frames.findIndex((frame) => frame.value === own.default) : -1;
     return { id: "mode", drives: "mode", type: "enum", label, options, defaultValue: String(named >= 0 ? named : series.default) };
   }

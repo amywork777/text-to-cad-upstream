@@ -8,6 +8,7 @@ import { plainNumber } from "../numbers.js";
 import { flowRows, heldRows, madeOfRows, wholeRefs } from "../setup.js";
 import { tracersRoutine } from "../poses.js";
 import { planned } from "./stub.js";
+import { english } from "../../../../i18n/core.js";
 
 /** What the file says of its coupling (`extras.analysis.coupling`): iterations, converged, residual, tolerance, method. null for none. */
 export function couplingOf(result) {
@@ -36,15 +37,15 @@ export function partName(result) {
 }
 
 /** Study's "Bent by the flow": "Water at 0.5 m/s bends the flap", chosen with the whole part. */
-export function bentRows(result) {
+export function bentRows(result, t = english) {
   const flow = result.study.flow;
   if (!flow) return [];
   const speeds = flow.inlets.map((inlet) => inlet.speed).filter((speed) => speed !== null);
   const speed = speeds.length ? ` at ${plainNumber(Math.max(...speeds))} m/s` : "";
   const label = `${capital(flow.fluid) || "The flow"}${speed} bends ${partName(result)}`;
   const refs = wholeRefs(result);
-  return [{ id: "bent", label: "Bent by the flow", detail: "", glyph: "flow", children: [{ id: "bent:flow", label, detail: "", wrap: true,
-    ...(refs.length ? { refs, summary: `${label}, and the bend changes the flow (two-way)` } : {}) }] }];
+  return [{ id: "bent", label: t("fea.bentByFlow"), detail: "", glyph: "flow", children: [{ id: "bent:flow", label, detail: "", wrap: true,
+    ...(refs.length ? { refs, summary: t("fea.twoWaySummary", { what: label }) } : {}) }] }];
 }
 
 /** Flow and bending's setup: what bends it, flow in/out, held at, made of. */

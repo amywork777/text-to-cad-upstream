@@ -73,7 +73,7 @@ describe('static', () => {
 
   it('plays the Load ramp', () => {
     expect(staticAnalysis.routine(result)).toBe(LOAD_RAMP);
-    expect(LOAD_RAMP).toEqual({ id: 'fea:load-ramp', label: 'Load ramp', kind: 'load_ramp' });
+    expect(LOAD_RAMP).toEqual({ id: 'fea:load-ramp', label: 'Load ramp', key: 'fea.loadRamp', kind: 'load_ramp' });
   });
 
   it('offers today\'s two controls with no view: a field over every field opening on stress, and the deformation to four times the file\'s', () => {
