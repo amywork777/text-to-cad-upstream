@@ -21,8 +21,8 @@ def solved(**changes):
         peak_MPa=47.3,
         peak_gauss_MPa=59.7,
         peak_at=(10.0, 40.0, 5.0),
-        peak_face="#o1.f12",
-        fixed_faces=("#o1.f3",),
+        peak_face="face 12",
+        fixed_faces=("face 3",),
         max_displacement_mm=0.029,
         displacement_at=(10.0, 60.0, 5.0),
         bbox_diagonal_mm=90.0,
@@ -45,7 +45,7 @@ class ChecksTest(unittest.TestCase):
         (f,) = findings(solved(peak_MPa=310.0, peak_gauss_MPa=320.0))
         self.assertEqual((f["severity"], f["type"]), ("error", "yields"))
         self.assertEqual(f["summary"], "The bracket yields: peak stress 310 MPa is above the 276 MPa yield strength of 6061-T6")
-        self.assertEqual(f["items"][0]["ref"], "#o1.f12")
+        self.assertEqual(f["items"][0]["ref"], "face 12")
 
     def test_a_single_finding_in_plain_words(self):
         holds = "It holds, but only {}× the load: under the 2× margin"
@@ -69,18 +69,18 @@ class ChecksTest(unittest.TestCase):
         self.assertEqual(findings(solved(peak_MPa=197.0, peak_gauss_MPa=200.0, margin=1.25)), [])
 
     def test_yields_is_qualified_when_the_peak_is_at_the_fixture(self):
-        (f, g) = findings(solved(peak_MPa=310.0, peak_gauss_MPa=320.0, peak_face="#o1.f3"))
+        (f, g) = findings(solved(peak_MPa=310.0, peak_gauss_MPa=320.0, peak_face="face 3"))
         self.assertEqual((f["type"], g["type"]), ("yields", "peak_at_fixture"))
         self.assertEqual(f["summary"], "The bracket yields: peak stress 310 MPa is above the 276 MPa yield strength of 6061-T6 (the peak sits at the fixed face)")
 
     def test_peak_on_a_fixed_face(self):
-        (low, f) = findings(solved(peak_MPa=150.0, peak_gauss_MPa=160.0, peak_face="#o1.f3"))
+        (low, f) = findings(solved(peak_MPa=150.0, peak_gauss_MPa=160.0, peak_face="face 3"))
         self.assertEqual((low["type"], f["type"]), ("low_margin", "peak_at_fixture"))
         self.assertTrue(low["summary"].endswith("(the peak sits at the fixed face)"))
         self.assertEqual(f["summary"], "Check the stress a little away from the fixed face before redesigning: the model exaggerates peaks where a part is held")
 
     def test_peak_findings_wait_until_the_margin_is_missed(self):
-        self.assertEqual(findings(solved(peak_face="#o1.f3", peak_gauss_MPa=200.0)), [])
+        self.assertEqual(findings(solved(peak_face="face 3", peak_gauss_MPa=200.0)), [])
 
     def test_gauss_spike(self):
         (low, f) = findings(solved(peak_MPa=150.0, peak_gauss_MPa=230.0))  # > 1.5 x 150
@@ -93,7 +93,7 @@ class ChecksTest(unittest.TestCase):
         self.assertEqual(low["type"], "low_margin")
 
     def test_fixture_wins_over_spike(self):
-        types = [f["type"] for f in findings(solved(peak_MPa=150.0, peak_gauss_MPa=300.0, peak_face="#o1.f3"))]
+        types = [f["type"] for f in findings(solved(peak_MPa=150.0, peak_gauss_MPa=300.0, peak_face="face 3"))]
         self.assertEqual(types, ["low_margin", "peak_at_fixture"])
 
     def test_not_converged_rising(self):
@@ -116,7 +116,7 @@ class ChecksTest(unittest.TestCase):
 
     def test_a_resolved_peak_at_the_fixture_raises_no_peak_finding(self):
         # The mounting plate: 209 MPa then 208 on the finer mesh, peak on a clamped hole's rim.
-        (low,) = findings(solved(yield_MPa=276.0, peak_MPa=208.0, peak_gauss_MPa=300.0, peak_face="#o1.f3", coarser_peak_MPa=209.0))
+        (low,) = findings(solved(yield_MPa=276.0, peak_MPa=208.0, peak_gauss_MPa=300.0, peak_face="face 3", coarser_peak_MPa=209.0))
         self.assertEqual(low["type"], "low_margin")
         self.assertNotIn("peak sits", low["summary"])
         (low,) = findings(solved(peak_MPa=150.0, peak_gauss_MPa=300.0, coarser_peak_MPa=149.0))
@@ -126,30 +126,30 @@ class ChecksTest(unittest.TestCase):
     def test_a_resolve_barely_bigger_than_the_first_does_not_resolve_the_peak(self):
         # The plate: 603k then 621k DOF (+3%), 209 then 208 MPa: weak evidence.
         types = [f["type"] for f in findings(solved(
-            peak_MPa=208.0, peak_gauss_MPa=216.0, peak_face="#o1.f3", coarser_peak_MPa=209.0,
+            peak_MPa=208.0, peak_gauss_MPa=216.0, peak_face="face 3", coarser_peak_MPa=209.0,
             dofs=620922, coarser_dofs=603483,
         ))]
         self.assertEqual(types, ["low_margin", "peak_at_fixture"])
         (low,) = findings(solved(
-            peak_MPa=208.0, peak_gauss_MPa=216.0, peak_face="#o1.f3", coarser_peak_MPa=209.0,
+            peak_MPa=208.0, peak_gauss_MPa=216.0, peak_face="face 3", coarser_peak_MPa=209.0,
             dofs=130_000, coarser_dofs=100_000,  # exactly 1.3x counts as finer
         ))
         self.assertEqual(low["type"], "low_margin")
 
     def test_a_rising_peak_at_a_smooth_spot_gets_no_likely_lower_clause(self):
-        (low, moved) = findings(solved(peak_MPa=150.0, peak_gauss_MPa=160.0, peak_face="#o1.f12", coarser_peak_MPa=100.0))
+        (low, moved) = findings(solved(peak_MPa=150.0, peak_gauss_MPa=160.0, peak_face="face 12", coarser_peak_MPa=100.0))
         self.assertEqual((low["type"], moved["type"]), ("low_margin", "mesh_not_converged"))
         self.assertEqual(low["summary"], "It holds, but only 1.8× the load: under the 2× margin")
 
     def test_a_rising_spike_gets_the_clause(self):
-        (low, *_rest) = findings(solved(peak_MPa=150.0, peak_gauss_MPa=300.0, peak_face="#o1.f12", coarser_peak_MPa=100.0))
+        (low, *_rest) = findings(solved(peak_MPa=150.0, peak_gauss_MPa=300.0, peak_face="face 12", coarser_peak_MPa=100.0))
         self.assertIn("kept rising on a finer mesh, so the real stress is likely lower", low["summary"])
 
     def test_a_rising_peak_says_the_real_stress_is_likely_lower(self):
         # The stepped shaft: 175 then 337 MPa, peak at the fixed journal.
         (f, peak, moved) = findings(solved(
             material_name="steel", yield_MPa=250.0, part="shaft", peak_MPa=337.0, peak_gauss_MPa=467.0,
-            peak_face="#o1.f3", coarser_peak_MPa=175.0,
+            peak_face="face 3", coarser_peak_MPa=175.0,
         ))
         self.assertEqual((f["type"], peak["type"], moved["type"]), ("yields", "peak_at_fixture", "mesh_not_converged"))
         self.assertEqual(f["severity"], "error")
@@ -161,13 +161,13 @@ class ChecksTest(unittest.TestCase):
         self.assertNotIn("fixed face)", f["summary"])
 
     def test_a_rising_low_margin_peak_carries_the_same_clause_once(self):
-        found = findings(solved(peak_MPa=150.0, peak_gauss_MPa=160.0, peak_face="#o1.f3", coarser_peak_MPa=100.0))
+        found = findings(solved(peak_MPa=150.0, peak_gauss_MPa=160.0, peak_face="face 3", coarser_peak_MPa=100.0))
         self.assertEqual(found[0]["summary"], "It holds, but only 1.8× the load: under the 2× margin, but this peak kept rising on a finer mesh, so the real stress is likely lower")
         # An unresolved peak at the fixture still raises it.
         self.assertEqual([f["type"] for f in found], ["low_margin", "peak_at_fixture", "mesh_not_converged"])
 
     def test_a_falling_peak_keeps_its_old_qualifier(self):
-        (low, *_rest) = findings(solved(peak_MPa=150.0, peak_gauss_MPa=160.0, peak_face="#o1.f3", coarser_peak_MPa=200.0))
+        (low, *_rest) = findings(solved(peak_MPa=150.0, peak_gauss_MPa=160.0, peak_face="face 3", coarser_peak_MPa=200.0))
         self.assertTrue(low["summary"].endswith("(the peak sits at the fixed face)"))
 
     def test_one_rounding_for_every_factor_a_person_reads(self):
@@ -222,7 +222,7 @@ class AssemblyChecksTest(unittest.TestCase):
     def test_the_other_sentences_of_an_assembly_name_the_part(self):
         (f,) = findings(solved(part="post", assembly=True, peak_MPa=197.0, peak_gauss_MPa=200.0))
         self.assertEqual(f["summary"], "'post' holds, but only 1.4× the load: under the 2× margin")
-        (low, g) = findings(solved(part="post", assembly=True, peak_MPa=150.0, peak_gauss_MPa=160.0, peak_face="#o1.f3"))
+        (low, g) = findings(solved(part="post", assembly=True, peak_MPa=150.0, peak_gauss_MPa=160.0, peak_face="face 3"))
         self.assertTrue(g["summary"].startswith("In 'post': check the stress a little away from the fixed face"))
         (h,) = findings(solved(part="post", assembly=True, max_displacement_mm=2.0))
         self.assertTrue(h["summary"].startswith("'post' moves 2 mm, about 2% of its size"))
@@ -279,7 +279,7 @@ class StudyChecksTest(unittest.TestCase):
     def test_an_assemblys_stress_check_is_its_weakest_parts_against_that_parts_yield(self):
         check = stress_check(solved(peak_MPa=200.0, yield_MPa=250.0, part="post", assembly=True), label="Strong enough?")
         self.assertEqual((check["part"], check["limit"], check["label"], check["status"]), ("post", 250.0, "Strong enough?", "close"))
-        self.assertEqual(check["where"], {"ref": "#o1.f12", "at": [10.0, 40.0, 5.0]})
+        self.assertEqual(check["where"], {"ref": "face 12", "at": [10.0, 40.0, 5.0]})
         self.assertNotIn("part", stress_check(solved()))
 
     def test_no_load_passes_the_stress_check_at_no_ratio(self):
@@ -289,21 +289,21 @@ class StudyChecksTest(unittest.TestCase):
         at = (60.0, 0.0, 0.0)
         for value, status in ((0.6, "fails"), (0.46, "close"), (0.45, "passes")):
             with self.subTest(value=value):
-                self.assertEqual(displacement_check(value, 0.5, at=at, ref="#o1.f2")["status"], status)
-        check = displacement_check(0.25, 0.5, at=at, ref="#o1.f2", faces=("#o1.f2",), label="Tip sag")
+                self.assertEqual(displacement_check(value, 0.5, at=at, ref="face 2")["status"], status)
+        check = displacement_check(0.25, 0.5, at=at, ref="face 2", faces=("face 2",), label="Tip sag")
         self.assertEqual(check, {"kind": "displacement", "label": "Tip sag", "value": 0.25, "limit": 0.5, "unit": "mm", "ratio": 0.5,
-                                 "close_at": 0.9, "status": "passes", "where": {"ref": "#o1.f2", "at": [60.0, 0.0, 0.0]}, "faces": ["#o1.f2"]})
+                                 "close_at": 0.9, "status": "passes", "where": {"ref": "face 2", "at": [60.0, 0.0, 0.0]}, "faces": ["face 2"]})
 
     def test_a_failing_displacement_check_is_an_error_in_the_users_words(self):
         at = (60.0, 0.0, 0.0)
-        failing = displacement_check(2.1, 0.5, at=at, ref="#o1.f23", faces=("#o1.f23",), label="Tip sag")
+        failing = displacement_check(2.1, 0.5, at=at, ref="face 23", faces=("face 23",), label="Tip sag")
         (finding,) = check_findings([stress_check(solved(peak_MPa=310.0)), failing, displacement_check(0.1, 0.5, at=at, ref=None)])
         self.assertEqual((finding["severity"], finding["type"]), ("error", "displacement_over_limit"))
         self.assertEqual(finding["summary"], "'Tip sag' moves 2.1 mm, more than the 0.5 mm allowed")
-        self.assertEqual(finding["items"], [{"text": "the largest displacement", "ref": "#o1.f23", "at": [60.0, 0.0, 0.0]}])
+        self.assertEqual(finding["items"], [{"text": "the largest displacement", "ref": "face 23", "at": [60.0, 0.0, 0.0]}])
         unnamed = check_findings([displacement_check(2.1, 0.5, at=at, ref=None)], assembly=True)[0]["summary"]
         self.assertEqual(unnamed, "The assembly moves 2.1 mm, more than the 0.5 mm allowed")
-        faces = check_findings([displacement_check(2.1, 0.5, at=at, ref=None, faces=("#o1.f2",))])[0]["summary"]
+        faces = check_findings([displacement_check(2.1, 0.5, at=at, ref=None, faces=("face 2",))])[0]["summary"]
         self.assertEqual(faces, "The checked faces move 2.1 mm, more than the 0.5 mm allowed")
         self.assertEqual(check_findings([displacement_check(0.48, 0.5, at=at, ref=None)]), [])
 

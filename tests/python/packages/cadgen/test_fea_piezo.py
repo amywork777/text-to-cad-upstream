@@ -47,7 +47,7 @@ def parse(document: dict):
     return parse_study({"analysis": "piezo", "material": "pzt-5a", **document})
 
 
-ELECTRODES = [{"faces": ["#o1.f6"], "V": 100, "name": "top"}, {"faces": ["#o1.f5"], "V": 0, "name": "bottom"}]
+ELECTRODES = [{"faces": ["face 6"], "V": 100, "name": "top"}, {"faces": ["face 5"], "V": 0, "name": "bottom"}]
 
 
 def plane(step: Path, axis: int, at: float, occurrence: str | None = None) -> str:
@@ -71,30 +71,30 @@ class StudyFile(unittest.TestCase):
 
         analysis = get_analysis("piezo")  # registered tier 3, "Piezo", built: test_fea_protocol's Registry
         self.assertEqual(analysis.word, "Piezo")
-        static = parse({"electrodes": ELECTRODES, "fixtures": [{"faces": ["#o1.f5"]}],
+        static = parse({"electrodes": ELECTRODES, "fixtures": [{"faces": ["face 5"]}],
                         "view": {"checks": [{"kind": "displacement", "limit_mm": 0.01}]}})
         self.assertEqual((static.inputs.solve, [e.volts for e in static.inputs.electrodes]), ("static", [100.0, 0.0]))
         self.assertEqual([f.name for f in analysis.fields], ["von_mises", "potential", "electric_field", "displacement"])
         resonance = parse({"solve": "resonance", "modes": 4, "electrodes": ELECTRODES})
         self.assertEqual((resonance.inputs.modes, resonance.inputs.fixtures, resonance.inputs.requires_anchor), (4, (), False))
         self.assertEqual([f.name for f in analysis.fields], ["mode_shape", "von_mises", "potential"])
-        sensing = parse({"solve": "harmonic", "sweep_Hz": [100, 10000], "damping_ratio": 0.02, "fixtures": [{"faces": ["#o1.f5"]}],
-                         "electrodes": [{"faces": ["#o1.f6"], "open": True, "name": "out"}, {"faces": ["#o1.f5"], "V": 1}],
+        sensing = parse({"solve": "harmonic", "sweep_Hz": [100, 10000], "damping_ratio": 0.02, "fixtures": [{"faces": ["face 5"]}],
+                         "electrodes": [{"faces": ["face 6"], "open": True, "name": "out"}, {"faces": ["face 5"], "V": 1}],
                          "view": {"checks": [{"kind": "voltage", "min_V": 0.5}]}})
         self.assertEqual(sensing.checks[0], {"kind": "voltage", "min_V": 0.5})
         self.assertEqual((sensing.inputs.open[0].name, sensing.inputs.sweep_Hz, sensing.inputs.material_needs),
                          ("out", (100.0, 10000.0), frozenset({"density"})))
 
     def test_the_errors_name_the_field_in_plain_words(self):
-        held = {"fixtures": [{"faces": ["#o1.f5"]}]}
+        held = {"fixtures": [{"faces": ["face 5"]}]}
         cases = [
             ({"solve": "quasi"}, 'solve: "quasi" is not one of'),
             ({**held}, "electrodes: a piezo study needs its electrodes"),
-            ({**held, "electrodes": [{"faces": ["#o1.f6"]}]}, "give V (the voltage it is held at"),
-            ({**held, "electrodes": [{"faces": ["#o1.f6"], "open": True}]}, "hold at least one electrode at a voltage"),
+            ({**held, "electrodes": [{"faces": ["face 6"]}]}, "give V (the voltage it is held at"),
+            ({**held, "electrodes": [{"faces": ["face 6"], "open": True}]}, "hold at least one electrode at a voltage"),
             ({"electrodes": ELECTRODES}, "fixtures"),
-            ({"solve": "resonance", "electrodes": [{"faces": ["#o1.f6"], "V": 1}]}, "needs a ground"),
-            ({"solve": "resonance", "electrodes": [{"faces": ["#o1.f6"], "V": 0}]}, "nothing opens at anti-resonance"),
+            ({"solve": "resonance", "electrodes": [{"faces": ["face 6"], "V": 1}]}, "needs a ground"),
+            ({"solve": "resonance", "electrodes": [{"faces": ["face 6"], "V": 0}]}, "nothing opens at anti-resonance"),
             ({"solve": "resonance", "loads": [], "electrodes": ELECTRODES}, "loads is not for a resonance piezo study"),
             ({**held, "solve": "harmonic", "electrodes": ELECTRODES}, "sweep_Hz: the band"),
             ({**held, "electrodes": ELECTRODES, "view": {"checks": [{"kind": "voltage", "min_V": 1}]}}, "reads an open electrode"),
@@ -355,11 +355,11 @@ class Bimorph(unittest.TestCase):
         lower.label = "lower"
         step = directory / "bimorph.step"
         export_step(Compound(children=[upper, lower]), str(step))
-        tip = [plane(step, 0, cls.L, "#o1.1"), plane(step, 0, cls.L, "#o1.2")]
+        tip = [plane(step, 0, cls.L, "upper"), plane(step, 0, cls.L, "lower")]
         cls.study = {"analysis": "piezo", "material": "pzt-5a", "mesh": {"size_mm": 0.5},
-                     "electrodes": [{"faces": [plane(step, 2, 2 * cls.H, "#o1.1")], "V": cls.V, "name": "top"},
-                                    {"faces": [plane(step, 2, 0, "#o1.2")], "V": 0, "name": "bottom"}],
-                     "fixtures": [{"faces": [plane(step, 0, 0, "#o1.1"), plane(step, 0, 0, "#o1.2")]}],
+                     "electrodes": [{"faces": [plane(step, 2, 2 * cls.H, "upper")], "V": cls.V, "name": "top"},
+                                    {"faces": [plane(step, 2, 0, "lower")], "V": 0, "name": "bottom"}],
+                     "fixtures": [{"faces": [plane(step, 0, 0, "upper"), plane(step, 0, 0, "lower")]}],
                      "view": {"checks": [{"kind": "displacement", "limit_mm": 1, "faces": tip}]}}
 
         def parts(**block):
@@ -378,7 +378,7 @@ class Bimorph(unittest.TestCase):
     def test_the_glb_names_each_layer_so_a_held_face_reads_by_its_part(self):
         # Piezo writes no per-part results; the viewer still needs each part's name and material ("upper · face 1").
         self.assertEqual([(part["ref"], part["name"], part["material"]) for part in glb_extras(self.real.glb)["parts"]],
-                         [("#o1.1", "upper", "PZT-5A"), ("#o1.2", "lower", "PZT-5A")])
+                         [("upper", "upper", "PZT-5A"), ("lower", "lower", "PZT-5A")])
 
     def test_with_weak_coupling_the_tip_meets_the_closed_form(self):
         from cadgen._internal.fea import piezo_ops

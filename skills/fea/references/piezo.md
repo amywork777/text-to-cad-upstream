@@ -67,8 +67,8 @@ A plate actuator, free to grow (rollers that only stop it sliding away):
 
 ```json
 {"analysis": "piezo", "material": "pzt-5a",
- "electrodes": [{"faces": ["#o1.f5"], "V": 100, "name": "drive"}, {"faces": ["#o1.f6"], "V": 0, "name": "ground"}],
- "fixtures": [{"faces": ["#o1.f5", "#o1.f1", "#o1.f3"], "type": "roller"}],
+ "electrodes": [{"faces": ["bracket/face 5"], "V": 100, "name": "drive"}, {"faces": ["bracket/face 6"], "V": 0, "name": "ground"}],
+ "fixtures": [{"faces": ["bracket/face 5", "bracket/face 1", "bracket/face 3"], "type": "roller"}],
  "view": {"checks": [{"kind": "displacement", "limit_mm": 0.0001}]}}
 ```
 
@@ -76,9 +76,9 @@ A force sensor, its output open:
 
 ```json
 {"analysis": "piezo", "material": "pzt-4",
- "electrodes": [{"faces": ["#o1.f6"], "open": true, "name": "out"}, {"faces": ["#o1.f5"], "V": 0, "name": "ground"}],
- "fixtures": [{"faces": ["#o1.f5"], "type": "roller"}, {"faces": ["#o1.f1", "#o1.f3"], "type": "roller"}],
- "loads": [{"faces": ["#o1.f6"], "type": "force", "vector_N": [0, 0, -10]}],
+ "electrodes": [{"faces": ["bracket/face 6"], "open": true, "name": "out"}, {"faces": ["bracket/face 5"], "V": 0, "name": "ground"}],
+ "fixtures": [{"faces": ["bracket/face 5"], "type": "roller"}, {"faces": ["bracket/face 1", "bracket/face 3"], "type": "roller"}],
+ "loads": [{"faces": ["bracket/face 6"], "type": "force", "vector_N": [0, 0, -10]}],
  "view": {"checks": [{"kind": "voltage", "min_V": 5, "electrode": "out"}]}}
 ```
 
@@ -88,8 +88,8 @@ A series bimorph bender (two layers poled opposite ways, glued; voltage across t
 {"analysis": "piezo", "material": "pzt-5a",
  "parts": {"upper": {"material": {"name": "pzt-5a", "piezo": {"poling": [0, 0, 1]}}},
            "lower": {"material": {"name": "pzt-5a", "piezo": {"poling": [0, 0, -1]}}}},
- "electrodes": [{"faces": ["#o1.1.f6"], "V": 10, "name": "top"}, {"faces": ["#o1.2.f5"], "V": 0, "name": "bottom"}],
- "fixtures": [{"faces": ["#o1.1.f1", "#o1.2.f1"]}]}
+ "electrodes": [{"faces": ["upper/face 6"], "V": 10, "name": "top"}, {"faces": ["lower/face 5"], "V": 0, "name": "bottom"}],
+ "fixtures": [{"faces": ["upper/face 1", "lower/face 1"]}]}
 ```
 
 A buzzer (a PZT disc on a brass shim, the shim the ground electrode) swept for its resonance; its
@@ -97,8 +97,8 @@ resonance and anti-resonance: the same with `"solve": "resonance"` (no sweep key
 
 ```json
 {"analysis": "piezo", "solve": "harmonic", "material": "brass", "parts": {"disc": {"material": "pzt-5h"}},
- "electrodes": [{"faces": ["#o1.1.f2"], "V": 5, "name": "drive"}, {"faces": ["#o1.2.f3"], "V": 0, "name": "shim"}],
- "fixtures": [{"faces": ["#o1.2.f1"]}], "sweep_Hz": [500, 10000], "damping_ratio": 0.02}
+ "electrodes": [{"faces": ["disc/face 2"], "V": 5, "name": "drive"}, {"faces": ["shim/face 3"], "V": 0, "name": "shim"}],
+ "fixtures": [{"faces": ["shim/face 1"]}], "sweep_Hz": [500, 10000], "damping_ratio": 0.02}
 ```
 
 ## What comes out

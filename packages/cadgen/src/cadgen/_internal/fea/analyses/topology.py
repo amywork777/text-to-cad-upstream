@@ -193,9 +193,9 @@ def hole_faces(geometry) -> list[int]:
     from OCP.TopAbs import TopAbs_REVERSED
     from OCP.TopoDS import TopoDS
 
-    from cadgen._internal.entity_ordinals import entity_map
+    from cadgen._internal.fea.document import face_map
 
-    faces = entity_map(geometry.shape, "face")
+    faces = face_map(geometry.shape)
     found = []
     for ordinal in range(1, faces.Extent() + 1):
         face = TopoDS.Face_s(faces.FindKey(ordinal))

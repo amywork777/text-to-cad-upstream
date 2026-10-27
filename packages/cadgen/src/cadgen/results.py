@@ -87,7 +87,7 @@ class FeaFace:
     """One B-rep face of a part, as ``cadgen fea faces`` lists it: the selector a
     study names it by, and enough geometry to pick it from a description."""
 
-    #: The viewer's selector (``#o1.f17``).
+    #: The face's ref (``bracket/face 17``), as the viewer copies it.
     ref: str
     area_mm2: float
     #: Centre of mass, mm.
@@ -291,7 +291,7 @@ class FeaResult:
 class FeaPart:
     """One part of an assembly, as ``cadgen fea parts`` lists it."""
 
-    #: The occurrence selector (``#o1.2``), what a study's faces are scoped by.
+    #: The part occurrence's ref (``arm``), or the document's name for an assembly.
     ref: str
     name: str
     volume_mm3: float

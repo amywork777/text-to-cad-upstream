@@ -6,7 +6,7 @@ import { ARROW_LENGTH, GHOST_OPACITY, MARKER_KINDS, createFeaMarkers, dropWords,
 
 // A unit cube in the result's glTF space, its six faces in BoxGeometry's order (+X, -X, +Y, -Y, +Z,
 // -Z) as `_FACE` 0..5, wound outward as the writer winds it.
-const FACES = ['#o1.f1', '#o1.f2', '#o1.f3', '#o1.f4', '#o1.f5', '#o1.f6'];
+const FACES = ['bracket/face 1', 'bracket/face 2', 'bracket/face 3', 'bracket/face 4', 'bracket/face 5', 'bracket/face 6'];
 function cube(study: Record<string, unknown>, displacement = [0, 0, 0], extras: Record<string, unknown> = {}) {
   const geometry = new BoxGeometry(1, 1, 1, 4, 4, 4);
   const count = geometry.getAttribute('position').count;
@@ -26,8 +26,8 @@ function cube(study: Record<string, unknown>, displacement = [0, 0, 0], extras: 
   root.add(mesh);
   return readFeaResult(root)!;
 }
-const DOWN_ON_TOP = { type: 'force', faces: ['#o1.f3'], vector_N: [0, 0, -300] };  // CAD -Z is glTF -Y: onto the +Y face
-const STUDY = { fixtures: [{ type: 'fixed', faces: ['#o1.f4'] }], loads: [DOWN_ON_TOP, { type: 'pressure', faces: ['#o1.f1'], pressure_MPa: 2 }] };
+const DOWN_ON_TOP = { type: 'force', faces: ['bracket/face 3'], vector_N: [0, 0, -300] };  // CAD -Z is glTF -Y: onto the +Y face
+const STUDY = { fixtures: [{ type: 'fixed', faces: ['bracket/face 4'] }], loads: [DOWN_ON_TOP, { type: 'pressure', faces: ['bracket/face 1'], pressure_MPa: 2 }] };
 const near = (a: number[], b: number[]) => a.forEach((value, k) => expect(value).toBeCloseTo(b[k], 6));
 const positionsOf = (result: any) => result.mesh.geometry.getAttribute('position').array;
 
@@ -36,14 +36,14 @@ describe('loads and fixtures on the model', () => {
     const placed = markerSites(cube(STUDY));
     expect(placed.diagonal).toBeCloseTo(Math.sqrt(3), 6);
     const byFace = (ref: string) => placed.sites.filter((site: any) => site.ref === ref);
-    for (const ref of ['#o1.f3', '#o1.f1', '#o1.f4']) {
+    for (const ref of ['bracket/face 3', 'bracket/face 1', 'bracket/face 4']) {
       expect(byFace(ref).length).toBeGreaterThanOrEqual(1);
       expect(byFace(ref).length).toBeLessThanOrEqual(5);
     }
     // A whole face of the cube is large for it: it gets the most, on distinct triangles.
-    expect(byFace('#o1.f3').length).toBe(5);
-    expect(new Set(byFace('#o1.f3').map((site: any) => site.triangle.join())).size).toBe(5);
-    expect(placed.sites.filter((site: any) => site.ref === '#o1.f2')).toEqual([]);
+    expect(byFace('bracket/face 3').length).toBe(5);
+    expect(new Set(byFace('bracket/face 3').map((site: any) => site.triangle.join())).size).toBe(5);
+    expect(placed.sites.filter((site: any) => site.ref === 'bracket/face 2')).toEqual([]);
   });
 
   it('points a force\'s arrows along it with their tips on the face, and a pressure\'s along the inward normal', () => {
@@ -64,7 +64,7 @@ describe('loads and fixtures on the model', () => {
   });
 
   it('stands a pulling force\'s arrows on the face by their tails, pointing away', () => {
-    const result = cube({ fixtures: [], loads: [{ type: 'force', faces: ['#o1.f3'], vector_N: [0, 0, 300] }] });
+    const result = cube({ fixtures: [], loads: [{ type: 'force', faces: ['bracket/face 3'], vector_N: [0, 0, 300] }] });
     const [pose] = markerPoses(result, markerSites(result), positionsOf(result));
     near(pose.direction, [0, 1, 0]);
     expect(pose.tail[1]).toBeCloseTo(0.5, 6);
@@ -76,7 +76,7 @@ describe('loads and fixtures on the model', () => {
     const cones = markerPoses(result, markerSites(result), positionsOf(result)).filter((pose: any) => pose.kind === 'fixture');
     expect(cones.length).toBeGreaterThan(0);
     for (const cone of cones) {
-      expect(cone.ref).toBe('#o1.f4');
+      expect(cone.ref).toBe('bracket/face 4');
       expect(cone.tip[1]).toBeCloseTo(-0.5, 6);
       near(cone.direction, [0, 1, 0]);
     }
@@ -150,7 +150,7 @@ describe('loads and fixtures on the model', () => {
   });
 
   it('labels a pulling force past its arrows\' tips, off the part, not over it at their tails', () => {
-    const result = cube({ fixtures: [], loads: [{ type: 'force', faces: ['#o1.f3'], vector_N: [0, 0, 300] }] });
+    const result = cube({ fixtures: [], loads: [{ type: 'force', faces: ['bracket/face 3'], vector_N: [0, 0, 300] }] });
     const markers = createFeaMarkers(THREE, result);
     markers.update(positionsOf(result));
     const [label] = markers.labels();
@@ -162,7 +162,7 @@ describe('loads and fixtures on the model', () => {
   it('offers a load its own arrow\'s outer end, but stands it outside the model\'s box wherever that end is inside it', () => {
     // Down along the +X face: its arrows' tails lie inside the model's box. The label's place is out of the box,
     // along the arrow; the arrow's own end is offered beside it, for the view to use only where it is in sight.
-    const result = cube({ fixtures: [], loads: [{ type: 'force', faces: ['#o1.f1'], vector_N: [0, 0, -300] }] });
+    const result = cube({ fixtures: [], loads: [{ type: 'force', faces: ['bracket/face 1'], vector_N: [0, 0, -300] }] });
     const markers = createFeaMarkers(THREE, result);
     markers.update(positionsOf(result));
     const [label] = markers.labels();
@@ -185,8 +185,8 @@ describe('loads and fixtures on the model', () => {
 });
 
 // Track V1: every other kind of marker, from one table, each in the ink or the muted grey.
-const HEATED = { fixtures: [], loads: [], temperatures: [{ faces: ['#o1.f4'], C: 25 }], heat: [{ faces: ['#o1.f3'], W: 15 }],
-  convection: [{ faces: ['#o1.f1', '#o1.f2'], h_W_m2K: 10, ambient_C: 25 }] };
+const HEATED = { fixtures: [], loads: [], temperatures: [{ faces: ['bracket/face 4'], C: 25 }], heat: [{ faces: ['bracket/face 3'], W: 15 }],
+  convection: [{ faces: ['bracket/face 1', 'bracket/face 2'], h_W_m2K: 10, ambient_C: 25 }] };
 const STYLE = { colours: { load: '#18181b', fixture: '#71717a' }, visible: { loads: true, fixtures: true }, chosen: () => false };
 const colourOf = (mesh: THREE.InstancedMesh) => { const colour = new THREE.Color(); mesh.getColorAt(0, colour); return colour.getHexString(); };
 
@@ -252,7 +252,7 @@ describe('every other kind of marker', () => {
   });
 
   it('shakes the fixtures with double arrows, drops along the fall, and opens a flow at its box\'s sides', () => {
-    const shaken = cube({ fixtures: [{ type: 'fixed', faces: ['#o1.f4'] }], loads: [], excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 } },
+    const shaken = cube({ fixtures: [{ type: 'fixed', faces: ['bracket/face 4'] }], loads: [], excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 } },
       [0, 0, 0], { analysis: { type: 'harmonic' } });
     const shaker = createFeaMarkers(THREE, shaken);
     shaker.update(positionsOf(shaken));
@@ -265,7 +265,7 @@ describe('every other kind of marker', () => {
     shaker.dispose();
 
     // Held at two opposite faces, the shake's label stands at one shaker, off the part, not at their middle (inside it).
-    const both = cube({ fixtures: [{ type: 'fixed', faces: ['#o1.f1', '#o1.f2'] }], loads: [], excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 } },
+    const both = cube({ fixtures: [{ type: 'fixed', faces: ['bracket/face 1', 'bracket/face 2'] }], loads: [], excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 } },
       [0, 0, 0], { analysis: { type: 'harmonic' } });
     const twoShakers = createFeaMarkers(THREE, both);
     twoShakers.update(positionsOf(both));
@@ -274,7 +274,7 @@ describe('every other kind of marker', () => {
     expect(Math.abs(outside.at[0])).toBeGreaterThanOrEqual(0.5 - 1e-6);
     twoShakers.dispose();
 
-    const dropped = cube({ fixtures: [], loads: [], drop: { height_mm: 1000, onto: ['#o1.f4'], stop_mm: 2 } }, [0, 0, 0], { analysis: { type: 'drop' } });
+    const dropped = cube({ fixtures: [], loads: [], drop: { height_mm: 1000, onto: ['bracket/face 4'], stop_mm: 2 } }, [0, 0, 0], { analysis: { type: 'drop' } });
     const [fall] = markerPoses(dropped, markerSites(dropped), positionsOf(dropped));
     // Along the landing face's outward normal, standing on it by its tail.
     near(fall.direction, [0, -1, 0]);
@@ -308,15 +308,15 @@ describe('every other kind of marker', () => {
   });
 
   it('stands a roller\'s own cone on a plate on its face, grey, pointing into it, wherever fixtures are drawn', () => {
-    const rolling = { fixtures: [{ type: 'fixed', faces: ['#o1.f4'] }, { type: 'roller', faces: ['#o1.f2'] }], loads: [DOWN_ON_TOP] };
+    const rolling = { fixtures: [{ type: 'fixed', faces: ['bracket/face 4'] }, { type: 'roller', faces: ['bracket/face 2'] }], loads: [DOWN_ON_TOP] };
     const result = cube(rolling);
     const sites = markerSites(result).sites;
-    expect(sites.filter((site: any) => site.kind === 'fixture').every((site: any) => site.ref === '#o1.f4' && site.group === 0)).toBe(true);
+    expect(sites.filter((site: any) => site.kind === 'fixture').every((site: any) => site.ref === 'bracket/face 4' && site.group === 0)).toBe(true);
     const rollers = markerPoses(result, markerSites(result), positionsOf(result)).filter((pose: any) => pose.kind === 'roller');
     expect(rollers.length).toBeGreaterThan(0);
     for (const pose of rollers) {
       // Numbered by its place among every fixture, as Study's "roller:1:<ref>" row is.
-      expect([pose.ref, pose.group]).toEqual(['#o1.f2', 1]);
+      expect([pose.ref, pose.group]).toEqual(['bracket/face 2', 1]);
       expect(pose.tip[0]).toBeCloseTo(-0.5, 6);
       near(pose.direction, [1, 0, 0]);
     }
@@ -339,7 +339,7 @@ describe('every other kind of marker', () => {
   });
 
   it('stands a speaker on a sound source\'s face, a plate on a piezo electrode and two races on a bearing\'s faces', () => {
-    const sounding = cube({ fixtures: [], loads: [], acoustic: { sources: [{ faces: ['#o1.f3'], velocity_mm_s: 2 }, { point_mm: [0, 0, 0], volume_velocity_m3_s: 1e-6 }] } },
+    const sounding = cube({ fixtures: [], loads: [], acoustic: { sources: [{ faces: ['bracket/face 3'], velocity_mm_s: 2 }, { point_mm: [0, 0, 0], volume_velocity_m3_s: 1e-6 }] } },
       [0, 0, 0], { analysis: { type: 'acoustic' } });
     const speakers = createFeaMarkers(THREE, sounding);
     expect(speakers.kinds).toEqual(['speaker']);
@@ -358,7 +358,7 @@ describe('every other kind of marker', () => {
     speakers.style({ ...STYLE, visible: { loads: false, fixtures: true } });
     expect(byName(speakers, 'fea-speaker-cones').visible).toBe(false);
 
-    const poled = cube({ fixtures: [{ faces: ['#o1.f4'] }], loads: [], electrodes: [{ faces: ['#o1.f3'], name: 'top', V: 10 }, { faces: ['#o1.f1'], name: 'out', open: true }] },
+    const poled = cube({ fixtures: [{ faces: ['bracket/face 4'] }], loads: [], electrodes: [{ faces: ['bracket/face 3'], name: 'top', V: 10 }, { faces: ['bracket/face 1'], name: 'out', open: true }] },
       [0, 0, 0], { analysis: { type: 'piezo' } });
     const plates = createFeaMarkers(THREE, poled);
     expect(plates.kinds).toEqual(['fixture', 'electrode']);
@@ -366,7 +366,7 @@ describe('every other kind of marker', () => {
     expect(plates.labels(1).map((label: any) => label.text)).toEqual(['10 V', 'open']);
     for (const pose of plates.poses().filter((entry: any) => entry.kind === 'electrode' && entry.group === 0)) near(pose.direction, [0, -1, 0]);
 
-    const spinning = cube({ spin: { axis: 'Z', rpm: [0, 3000] }, bearings: [{ faces: ['#o1.f5'], rigid: true }, { faces: ['#o1.f6'], kxx: 1000 }] },
+    const spinning = cube({ spin: { axis: 'Z', rpm: [0, 3000] }, bearings: [{ faces: ['bracket/face 5'], rigid: true }, { faces: ['bracket/face 6'], kxx: 1000 }] },
       [0, 0, 0], { analysis: { type: 'rotordynamics' } });
     const races = createFeaMarkers(THREE, spinning);
     expect(races.kinds).toEqual(['bearing']);
@@ -375,7 +375,7 @@ describe('every other kind of marker', () => {
     // Grey, like what holds the part; both bearings are Study's one Bearings row (group 0), and say nothing.
     expect(colourOf(byName(races, 'fea-bearing-races'))).toBe('71717a');
     expect(new Set(races.sites.map((site: any) => site.group))).toEqual(new Set([0]));
-    expect(new Set(races.sites.map((site: any) => site.ref))).toEqual(new Set(['#o1.f5', '#o1.f6']));
+    expect(new Set(races.sites.map((site: any) => site.ref))).toEqual(new Set(['bracket/face 5', 'bracket/face 6']));
     expect(races.labels(1)).toEqual([]);
     expect(markerGateText(['speaker', 'electrode', 'bearing']))
       .toBe('Speakers where sound is made, plates on its electrodes, rings where bearings carry the shaft.');
@@ -428,14 +428,14 @@ describe('a label is never on or inside the part', () => {
 describe('a sound result\'s source and walls', () => {
   it('marks a part shaken by a harmonic result as the source: its broad faces, not the held one, labelled "vibrating"', () => {
     // A slab: its two broad faces (+Y, -Y in glTF) are the plate's; held on -X.
-    const plate = cube({ fixtures: [{ type: 'fixed', faces: ['#o1.f2'] }], loads: [], excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 },
+    const plate = cube({ fixtures: [{ type: 'fixed', faces: ['bracket/face 2'] }], loads: [], excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 },
       acoustic: { solve: 'response', domain: 'outside', sources: [], from: 'harmonic' } }, [0, 0, 0], { analysis: { type: 'acoustic' } });
     plate.mesh.geometry.scale(1, 0.05, 1);
     const markers = createFeaMarkers(THREE, plate);
     expect(markers.kinds).toContain('speaker');
     const faces = new Set(markers.sites.filter((site: any) => site.kind === 'speaker').map((site: any) => site.ref));
-    // +Y and -Y (#o1.f3, #o1.f4) and the +Z/-Z sides as broad as them here are not: only faces of a quarter of the largest.
-    expect([...faces].sort()).toEqual(['#o1.f3', '#o1.f4']);
+    // +Y and -Y (bracket/face 3, bracket/face 4) and the +Z/-Z sides as broad as them here are not: only faces of a quarter of the largest.
+    expect([...faces].sort()).toEqual(['bracket/face 3', 'bracket/face 4']);
     markers.update(positionsOf(plate));
     expect(markers.labels(1).find((label: any) => label.kind === 'speaker')?.text).toBe('vibrating');
     markers.dispose();

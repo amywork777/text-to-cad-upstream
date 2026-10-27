@@ -98,9 +98,9 @@ class Ladder(unittest.TestCase):
         self.assertEqual(fit.human_bytes(600 * 2 ** 20), "600 MB")
 
     def test_a_step_is_a_dict_and_an_info_finding(self):
-        step = fit.Step("defeature", "Left out 2 small holes", None, None, faces=("#o1.f9",), detail={"faces": 1})
+        step = fit.Step("defeature", "Left out 2 small holes", None, None, faces=("face 9",), detail={"faces": 1})
         self.assertEqual(step.as_dict(), {"rung": "defeature", "words": "Left out 2 small holes", "accuracy": None,
-                                          "accuracy_pct": None, "faces": ["#o1.f9"], "detail": {"faces": 1}})
+                                          "accuracy_pct": None, "faces": ["face 9"], "detail": {"faces": 1}})
         finding = step.finding()
         self.assertEqual((finding["severity"], finding["type"]), ("info", "fit_defeature"))
 
@@ -236,9 +236,9 @@ class Cantilever(unittest.TestCase):
         self.assertTrue(0.6 < ratio < 1.0, ratio)
 
     def test_linear_elements_measure_their_accuracy_where_a_quadratic_pass_fits(self):
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
-        occurrence = next(iter(read_scene(self.step).leaves()))
+        occurrence = next(iter(read_document(self.step).leaves()))
         shape = occurrence.shape()
         geometry = fit.geometry_of(shape.wrapped, occurrence.ref)
 
@@ -374,8 +374,8 @@ class NoRefusal(unittest.TestCase):
         from cadgen._internal.fea.study import Fixture, Load
         volume = box_volume()
         with mock.patch.object(solve, "DOF_LIMIT", 10):
-            outcome = solve.solve_linear_static(volume, lookup_material("steel"), (Fixture(("#o1.f1",)),),
-                                                (Load(("#o1.f2",), "force", vector=(0.0, 0.0, -1.0)),), {"#o1.f1": 1, "#o1.f2": 2})
+            outcome = solve.solve_linear_static(volume, lookup_material("steel"), (Fixture(("face 1",)),),
+                                                (Load(("face 2",), "force", vector=(0.0, 0.0, -1.0)),), {"face 1": 1, "face 2": 2})
         self.assertGreater(outcome.dofs, 10)
         self.assertTrue(math.isfinite(float(outcome.displacement.max())))
 

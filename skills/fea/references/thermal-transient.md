@@ -13,8 +13,8 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis):
 ```json
 {"analysis": "thermal_transient", "material": "aluminum-6061-t6",
  "initial_C": 25, "end_s": 600, "step_s": "auto",
- "heat": [{"faces": ["#o1.f7"], "W": 15, "history": [[0, 1], [300, 1], [301, 0]]}],
- "convection": [{"faces": ["#o1.f3"], "h_W_m2K": 10, "ambient_C": 25}],
+ "heat": [{"faces": ["bracket/face 7"], "W": 15, "history": [[0, 1], [300, 1], [301, 0]]}],
+ "convection": [{"faces": ["bracket/face 3"], "h_W_m2K": 10, "ambient_C": 25}],
  "view": {"checks": [{"kind": "temperature", "max_C": 85}]}}
 ```
 

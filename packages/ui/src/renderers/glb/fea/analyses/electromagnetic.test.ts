@@ -11,7 +11,7 @@ function electricResult(extras: Record<string, unknown> = {}, attributes: Record
     position: [0, 0, 0, 0.01, 0, 0, 0, 0.01, 0], _displacement: vec(9), _potential: [0, 500, 1000], _electric_field: [0.5, 0.5, 2.8],
     _face: [0, 0, 1], ...attributes,
   }, {
-    generator: 'cadgen fea', name: 'gap electromagnetic', deformation_scale: null, faces: ['#o1.f1', '#o1.f2'],
+    generator: 'cadgen fea', name: 'gap electromagnetic', deformation_scale: null, faces: ['bracket/face 1', 'bracket/face 2'],
     analysis: { type: 'electromagnetic', tier: 3, word: 'Magnetic / electric', estimate: false,
       limits: ['Static and DC only: no eddy currents, AC or high frequency; linear materials (no saturation, no hysteresis).'],
       noun: 'this voltage', reference_C: null, warnings: [], mode: 'electrostatic' },
@@ -22,7 +22,7 @@ function electricResult(extras: Record<string, unknown> = {}, attributes: Record
     study: {
       material: { name: 'PETG', yield_MPa: 50 },
       mode: 'electrostatic',
-      voltages: [{ faces: ['#o1.f1'], V: 1000, name: 'top' }, { faces: ['#o1.f2'], V: 0, name: '0 V' }],
+      voltages: [{ faces: ['bracket/face 1'], V: 1000, name: 'top' }, { faces: ['bracket/face 2'], V: 0, name: '0 V' }],
       mesh: { size_mm: 2, order: 2, elements: 100, refined_from_mm: null },
     },
     checks: [{ kind: 'electric_field', label: 'Arcing', value: 2.8, limit: 3, unit: 'kV/mm', ratio: 2.8 / 3, close_at: 0.9,
@@ -53,12 +53,12 @@ describe('electromagnetic', () => {
     const rows = studyRows(electricResult());
     expect(rows.slice(0, 2).map((row: { label: string }) => row.label)).toEqual(['Electrodes', 'Made of']);
     expect(rows[0].children.map((row: { label: string }) => row.label)).toEqual(['Held at 1000 V', 'Held at 0 V']);
-    expect(rows[0].children[0]).toMatchObject({ hint: 'top', summary: 'Held at 1000 V on face 1', faces: ['#o1.f1'] });
+    expect(rows[0].children[0]).toMatchObject({ hint: 'top', summary: 'Held at 1000 V on face 1', faces: ['bracket/face 1'] });
     expect(rows[0].children[1].hint).toBeUndefined();
 
     const coil = electricResult({ study: { material: { name: 'Aluminum 6061-T6', yield_MPa: 276 }, mode: 'magnetostatic',
       coils: [{ part: 'winding_a', turns: 100, A: 2, name: 'coil 1', axis: { direction: [0, 0, 1] } }],
-      currents: [{ faces: ['#o1.f2'], A: 3, name: 'in' }] } });
+      currents: [{ faces: ['bracket/face 2'], A: 3, name: 'in' }] } });
     expect(coilRows(coil)[0].children[0]).toMatchObject({ label: 'Coil 2 A × 100 turns', hint: 'Wound on winding a' });
     expect(electrodeRows(coil)[0].children[0]).toMatchObject({ label: '3 A in', summary: '3 A in through face 2' });
   });
@@ -77,14 +77,14 @@ describe('electromagnetic', () => {
 
   it("lists each part's own material and names a face by its part in an assembly", () => {
     const result = electricResult({
-      faces: ['#o1.1.f1', '#o1.2.f1'],
-      parts: [{ ref: '#o1.1', name: 'coil', material: 'Copper', yield_MPa: 69 }, { ref: '#o1.2', name: 'shaft', material: 'Stainless steel 304', yield_MPa: 215 }],
+      faces: ['part1/face 1', 'part2/face 1'],
+      parts: [{ ref: 'part1', name: 'coil', material: 'Copper', yield_MPa: 69 }, { ref: 'part2', name: 'shaft', material: 'Stainless steel 304', yield_MPa: 215 }],
       study: { material: { name: 'Stainless steel 304', yield_MPa: 215 }, mode: 'ac_magnetic', frequencyHz: 25000 },
     });
     const [made] = madeOfRows(result);
     expect(made.children[0]).toMatchObject({ label: 'Copper coil, Stainless steel 304 shaft',
       summary: 'Made of Copper (coil) and Stainless steel 304 (shaft)' });
-    expect(faceTitle(result, '#o1.2.f1')).toBe('shaft · face 1');
+    expect(faceTitle(result, 'part2/face 1')).toBe('shaft · face 1');
   });
 
   it('says where a peak out in the air is, so it does not read against the colour bar on the parts', () => {
@@ -98,7 +98,7 @@ describe('electromagnetic', () => {
 
   it('says the current a magnetic force\'s stress allows as the square root of its room: force grows with the current squared', () => {
     const stress = { kind: 'stress', label: 'Plunger strength', value: 0.00525, limit: 250, unit: 'MPa', ratio: 2.1e-5, close_at: 0.5,
-      margin: 2, status: 'passes', where: { ref: '#o1.2.f3', at: [0, 0, 48] }, part: 'plunger' };
+      margin: 2, status: 'passes', where: { ref: 'part2/face 3', at: [0, 0, 48] }, part: 'plunger' };
     const magnetic = (check: Record<string, unknown>) => electricResult({
       analysis: { type: 'electromagnetic', tier: 3, word: 'Magnetic / electric', estimate: false, limits: [], noun: 'this current',
         reference_C: null, warnings: [], mode: 'magnetostatic' }, checks: [check] });
@@ -122,7 +122,7 @@ describe('electromagnetic', () => {
         material: { name: 'Aluminum 6061-T6', yield_MPa: 276 }, mode: 'ac_magnetic', frequency_Hz: 50000,
         coils: [{ part: 'winding', turns: 100, A: 2, name: 'coil 1', axis: { direction: [0, 0, 1] } }],
         applied_field: { mT: 10, direction: [1, 0, 0] },
-        currents: [{ faces: ['#o1.f2'], A: 30, name: 'in' }], voltages: [{ faces: ['#o1.f1'], V: 0, name: 'out' }],
+        currents: [{ faces: ['bracket/face 2'], A: 30, name: 'in' }], voltages: [{ faces: ['bracket/face 1'], V: 0, name: 'out' }],
       },
       checks: [{ kind: 'temperature', label: 'Heat', value: 64, limit: 80, unit: '°C', ratio: 0.73, close_at: 0.9, status: 'passes',
         reference: 20, where: { ref: null, at: [0, 0, 0] } }],
@@ -143,12 +143,12 @@ describe('electromagnetic', () => {
   it('reads its voltages, currents, coils and AC source through the study it keeps, not the raw echo', () => {
     const ac = electricResult({ study: {
       material: { name: 'Aluminum 6061-T6', yield_MPa: 276 }, mode: 'ac_magnetic', frequency_Hz: 50000,
-      voltages: [{ faces: ['#o1.f1'], V: 12, name: 'feed' }], currents: [{ faces: ['#o1.f2'], A: 3, name: '' }],
+      voltages: [{ faces: ['bracket/face 1'], V: 12, name: 'feed' }], currents: [{ faces: ['bracket/face 2'], A: 3, name: '' }],
       coils: [{ part: 'winding_a', turns: 100, A: 2, name: 'coil', axis: { direction: [0, 0, 1], point_mm: [0, 0, 5] } }],
       applied_field: { mT: 10, direction: [0, 0, 1] },
     } });
     expect(ac.study).toMatchObject({ mode: 'ac_magnetic', frequencyHz: 50000,
-      voltages: [{ faces: ['#o1.f1'], value: 12, name: 'feed' }], currents: [{ faces: ['#o1.f2'], value: 3, name: '' }],
+      voltages: [{ faces: ['bracket/face 1'], value: 12, name: 'feed' }], currents: [{ faces: ['bracket/face 2'], value: 3, name: '' }],
       coils: [{ part: 'winding_a', turns: 100, amps: 2, name: 'coil', axis: { direction: [0, 0, 1], point: [0, 0, 5] } }],
       appliedField: { mT: 10, direction: [0, 0, 1] } });
     const before = [electrodeRows(ac), coilRows(ac)];
@@ -165,7 +165,7 @@ describe('electromagnetic', () => {
     const analysis = { type: 'electromagnetic', tier: 3, word: 'Magnetic / electric', estimate: false, limits: [], noun: 'this current',
       reference_C: null, warnings: [], mode: 'magnetostatic', forces };
     const stress = { kind: 'stress', label: 'Plunger strength', value: 0.0053, limit: 250, unit: 'MPa', ratio: 2.1e-5, close_at: 0.5,
-      margin: 2, status: 'passes', where: { ref: '#o1.2.f3', at: [0, 0, 48] }, part: 'plunger', scaling: 'quadratic' };
+      margin: 2, status: 'passes', where: { ref: 'part2/face 3', at: [0, 0, 48] }, part: 'plunger', scaling: 'quadratic' };
     const checked = feaVerdict(electricResult({ analysis, checks: [stress] }));
     expect(checked.rows.map((row: { label: string; line: string }) => [row.label, row.line])).toEqual([
       ['Plunger strength', checked.rows[0].line], ['Force on the coil', '0.42 N up, the current in the field'],

@@ -39,7 +39,7 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis); reads den
 
 ```json
 {"analysis": "random_vibration", "material": "aluminum-6061-t6",
- "fixtures": [{"faces": ["#o1.f1"]}],
+ "fixtures": [{"faces": ["bracket/face 1"]}],
  "psd": {"direction": [0, 0, 1], "table": [[20, 0.01], [80, 0.04], [350, 0.04], [2000, 0.007]]},
  "damping_ratio": 0.02, "sigma": 3,
  "view": {"checks": [{"kind": "stress"}, {"kind": "displacement", "limit_mm": 0.5}]}}

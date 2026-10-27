@@ -40,16 +40,16 @@ good answer from a bad one. The keys are in [study-file.md](study-file.md).
 
 ## Choosing faces
 
-1. Prefer references the user selected in the Viewer: they arrive as `part.step#o1.f17` and are
+1. Prefer references the user selected in the Viewer: they arrive as `/work/bracket.step#bracket/face 17` and are
    exact.
 2. Otherwise run `cadgen fea faces part.step` and match by the hint (`plane, normal -Z, largest`),
    the centre, and the area. "The base", "the mounting face" and "the bottom" usually mean the
    largest planar face with a downward normal; "the top of the upright" is a small planar face at
    the highest Z. A hole is a `cylinder`.
-3. When two faces match a description equally, ask, quoting both selectors and where they are. Do
+3. When two faces match a description equally, ask, quoting both refs and where they are. Do
    not guess between a face and its mirror image.
-4. Restate what you chose before solving: "fixing #o1.f17 (3943 mm², bottom), 500 N in -Y on
-   #o1.f22 (640 mm², top of the back plate)". A wrong face is cheaper to catch here than after a
+4. Restate what you chose before solving: "fixing bracket/face 17 (3943 mm², bottom), 500 N in -Y on
+   bracket/face 22 (640 mm², top of the back plate)". A wrong face is cheaper to catch here than after a
    run.
 
 ## Setting the load
@@ -69,7 +69,7 @@ in g (1 g = 9.81 m/s²).
 
 ```json
 "loads": [
-  {"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -200]},
+  {"faces": ["bracket/face 2"], "type": "force", "vector_N": [0, 0, -200]},
   {"type": "gravity", "vector_g": [0, 0, -1]},
   {"type": "acceleration", "vector_g": [5, 0, 0]}
 ]

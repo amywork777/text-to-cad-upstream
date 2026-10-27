@@ -35,8 +35,8 @@ CREEPING = {"name": "steel", "creep": {"A": A, "n": N, "m": 0, "units": "MPa, ho
 
 
 def _study(**more) -> dict:
-    return {"analysis": "creep", "material": CREEPING, "duration_h": 1000, "fixtures": [{"faces": ["#o1.f1"]}],
-            "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -100]}], **more}
+    return {"analysis": "creep", "material": CREEPING, "duration_h": 1000, "fixtures": [{"faces": ["face 1"]}],
+            "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -100]}], **more}
 
 
 class StudyFile(unittest.TestCase):
@@ -44,7 +44,7 @@ class StudyFile(unittest.TestCase):
         parsed = parse_study(_study())
         inputs = parsed.inputs
         self.assertEqual((parsed.analysis, inputs.duration_h, inputs.steps, inputs.temperature_C), ("creep", 1000.0, DEFAULT_STEPS, None))
-        self.assertEqual(inputs.face_refs, ("#o1.f1", "#o1.f2"))
+        self.assertEqual(inputs.face_refs, ("face 1", "face 2"))
         self.assertEqual(parsed.checks, ({"kind": "creep_strain", "limit_percent": 1.0},))
         self.assertEqual(parse_study(_study(steps=50, temperature_C=550)).inputs.temperature_C, 550.0)
         checks = parse_study(_study(view={"checks": [{"kind": "creep_strain", "limit_percent": 0.5}, {"kind": "stress"},

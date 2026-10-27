@@ -136,32 +136,36 @@ These rules hold for every analysis.
 | **Check a part under a load** | List its faces, write the study, solve, report. The workflow below. | [Linear static checklist](references/linear-static.md) |
 | **Check an assembly** | `cadgen fea parts` first, then write the study with a material per part, solve, read the findings by part. | [Assemblies](#assemblies) |
 | **Compare variants of a design** | Get the study right on one variant, then map its faces onto each other variant and solve each. | [Compare variants](#compare-variants) |
-| **Pick the faces to fix and load** | Prefer face references the user selected in the Viewer (`part.step#o1.f17`). Otherwise list faces and match by description. | [Face selection](references/linear-static.md#choosing-faces) |
+| **Pick the faces to fix and load** | Prefer face references the user selected in the Viewer (`/work/bracket.step#bracket/face 17`). Otherwise list faces and match by description. | [Face selection](references/linear-static.md#choosing-faces) |
 | **Write or edit a study** | One JSON object: material, fixtures, loads, mesh; for an assembly also parts and connections. | [Study file](references/study-file.md) |
 | **Choose a material** | Use the table by name, or give E, ν and yield explicitly. | [Materials](references/materials.md) |
 | **Judge the answer** | Compare with a hand estimate, refine once, read the peak away from the fixture. | [Validation](references/linear-static.md#judging-the-answer) |
 
-Modelling the part itself is `$cad`; this skill only reads a saved `.step`. Show the result GLB with
+Modelling the part itself is `$cad`; this skill only reads a saved `.step` or `.xbf` (a model's
+`@step` or `@xbf` output, or `cadgen export <id> part.step`). Show the result GLB with
 `$cad` (its Show the model step), beside the STEP, so the user sees the colour map.
 
 ## Setup
 
-Run cadgen through [uv](https://docs.astral.sh/uv/). `cadgen fea faces` and `cadgen fea parts`
-share one installation with the `$cad` skill and the CAD app's server; `cadgen fea solve` needs the
-`fea` extra, so it runs from its own installation, made the first time it is needed (below):
+Run cadgen through the `cadgen` command its installation writes, as the `$cad` skill does:
+`cadgen fea faces` and `cadgen fea parts` share one installation with it and with the CAD app's
+server; `cadgen fea solve` needs the `fea` extra, so it runs from its own installation, made the
+first time it is needed (below):
 
-- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 cadgen`
-- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 python`
+- `cadgen` below means `cadgen +0.8.0` (`~/.local/bin/cadgen +0.8.0` where `~/.local/bin` is not on your PATH)
+- `python` below means `cadgen +0.8.0 run`
 
-Solving needs cadgen's opt-in `fea` extra, which brings the mesher (netgen) and the solver
-(scikit-fem, pyamg); `fea faces` and `fea parts` work without it. The first time a study runs, `cadgen fea solve` fails with "cadgen's fea extra
-is not installed"; that is a missing install, not a modelling error. Its `pip install` hint does not
-apply under uv: run the same command again with the extra in the requirement, and keep using that
-form for `fea solve` from then on (the first run downloads the mesher and solver, large; later runs
-reuse them):
+If `cadgen` is not on your PATH, or it says 0.8.0 is not installed, set it up as the `$cad` skill
+says (`cadgen doctor`). Solving needs cadgen's opt-in `fea` extra, which brings the mesher (netgen)
+and the solver (scikit-fem, pyamg); `fea faces` and `fea parts` work without it. The first time a
+study runs, `cadgen fea solve` fails with "cadgen's fea extra is not installed"; that is a missing
+install, not a modelling error. Its `pip install` hint does not apply under uv: run the same
+command with the extra in the requirement, and keep using that form for `fea solve` from then on
+(the first run downloads the mesher and solver, large; later runs reuse them). A solve reads the
+document in its own process, so it needs no engine running:
 
 ```bash
-uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.7.24" cadgen fea solve part.step --study study.json
+uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.8.0" cadgen fea solve part.step --study study.json
 ```
 
 The analyses CalculiX solves run on it, faster, and the first of them downloads it once (`cadgen:
@@ -178,18 +182,18 @@ you write it down. The full table, including the heat and flow units the other a
 
 ## Workflow
 
-1. **List the faces.** Every study names faces by the Viewer's selector.
+1. **List the faces.** Every study names faces by the engine's refs, the ones the Viewer copies.
 
    ```bash
    cadgen fea faces part.step
    ```
 
-   Each line is one face: selector, area, centre, surface type and a hint such as `plane, normal -Z,
+   Each line is one face: ref, area, centre, surface type and a hint such as `plane, normal -Z,
    largest`. Use the hint and the centre to match the user's words ("the mounting face", "the top of
-   the upright") to a selector. A document with several parts refuses with the occurrences it holds;
-   pass the one to list, `cadgen fea faces assembly.step --occurrence #o2`, or for a whole assembly
-   follow [Assemblies](#assemblies). When two faces fit equally, ask, quoting both selectors. A face
-   the user selected in the Viewer arrives as `part.step#o1.f17` and needs no lookup.
+   the upright") to a ref. A document with several parts refuses with the parts it holds;
+   pass the one to list, `cadgen fea faces assembly.step --occurrence post`, or for a whole assembly
+   follow [Assemblies](#assemblies). When two faces fit equally, ask, quoting both refs. A face
+   the user selected in the Viewer arrives as `/work/bracket.step#bracket/face 17` and needs no lookup.
 
 2. **Write the study** as `study.json` beside the part (schema in
    [study-file.md](references/study-file.md)):
@@ -197,8 +201,8 @@ you write it down. The full table, including the heat and flow units the other a
    ```json
    {
      "material": "aluminum-6061-t6",
-     "fixtures": [{"faces": ["#o1.f17"], "type": "fixed"}],
-     "loads": [{"faces": ["#o1.f22"], "type": "force", "vector_N": [0, -500, 0]}]
+     "fixtures": [{"faces": ["bracket/face 17"], "type": "fixed"}],
+     "loads": [{"faces": ["bracket/face 22"], "type": "force", "vector_N": [0, -500, 0]}]
    }
    ```
 
@@ -240,7 +244,7 @@ you write it down. The full table, including the heat and flow units the other a
    result as one JSON line for scripting. Progress lines (`[fea] reading the parts`, `[fea]
    meshing the glued shape at 6.01 mm`) print to stderr, never into the result on stdout;
    `--verbose` adds mesh and solve detail there. A study with no fixture, a face that is not on the
-   part, or an out-of-range selector is refused with a message naming the field.
+   part, or an out-of-range ref is refused with a message naming the field.
 
 4. **Read the findings.** Every solve prints them after the numbers, one line each, `error:` or
    `warning:` and then what is wrong and what to do (`findings` in `--json` and the sidecar). Read
@@ -279,7 +283,7 @@ fixed. The keys are in [study-file.md](references/study-file.md#assemblies).
    from near misses and overlaps. Read it against what you know of the design: is each detected
    joint a real joint, and is a joint you expect missing (a gap, or an overlap where the parts
    should touch)? `--contact-tolerance-mm` tries another tolerance; `--json` prints the same for
-   scripting. Names can repeat (two parts called `bar`): use the ref (`#o1.2.1`) whenever a name is
+   scripting. Names can repeat (two parts called `bar`): use the ref (`frame/bar.2`) whenever a name is
    ambiguous.
 
 2. **Write the study.** `material` stays the default; give `parts` a material for each part whose
@@ -287,7 +291,7 @@ fixed. The keys are in [study-file.md](references/study-file.md#assemblies).
    Do not guess a material to silence a finding: the default is reported, and asking the user is
    better. Add `connections` only to override a detection (`free` for a pair that must not be
    glued, such as a part that only sits near another); touching pairs are bonded without it. Fixtures and loads name faces on any part
-   (`#o1.4.f23`), but not a face that is wholly a bonded joint (refused before the solve, naming the
+   (`post/face 23`), but not a face that is wholly a bonded joint (refused before the solve, naming the
    face: move it to a face that is not covered); on a face another part only partly covers they apply to the uncovered area alone.
 
 3. **Solve** exactly as for a part; the finer re-solve runs when the weakest part's safety factor
@@ -325,19 +329,19 @@ configuration. Run the same study on each, with the faces mapped, and compare.
 1. **Get the study right on one variant first** (the baseline): the full [Workflow](#workflow),
    solved and checked.
 2. **Map its faces onto every other variant.** Face numbers are not stable between versions: an
-   edit renumbers faces, and a selector reused unchecked can land on a different face with no
+   edit renumbers faces, and a ref reused unchecked can land on a different face with no
    error. Run `cadgen fea faces variant.step` and match each face the study names by what it is,
    never by its number: the same surface type and normal, a centre where the edit would move it,
    an area that changed only as the edit explains. When two faces fit equally, or the edit removed
    the face, ask, quoting the candidates. Write one study per variant (`study.<variant>.json`):
-   the mapped selectors, everything else identical.
+   the mapped refs, everything else identical.
 3. **Hold the mesh still.** Accuracy follows the mesh, so a difference between variants is only
    the design's when they are meshed alike: give every study the baseline's `mesh.size_mm`.
 4. **Solve each to its own result:** `cadgen fea solve variant.step FEA/variant.fea.glb --study
    study.<variant>.json`.
 5. **Report one table**, a row per variant: the answer's numbers (max von Mises and where, safety
    factor, max displacement; the first frequency for `modal`), whether a finer re-solve ran, and
-   the face mapping used (`baseline #o1.f17 → #o1.f21, the mounting face`) so the user can check
+   the face mapping used (`baseline bracket/face 17 → bracket/face 21, the mounting face`) so the user can check
    it. Say which variant answers their question best, and by how much.
 
 ## What the result means
@@ -366,8 +370,8 @@ configuration. Run the same study on each, with the faces mapped, and compare.
 Every solve checks its own result as an engineer would and lists findings, errors first. An
 **error** makes the part unfit to use: fix it before you call the part done. A **warning** is a
 suggestion: weigh it as an engineer would, act on it or tell the user why not. A clean part has no
-findings. Most findings point at where they apply: the face (`#o1.f12`, the original part's
-selector) when the point is on one, and the point in the part's mm. A peak inside the part and
+findings. Most findings point at where they apply: the face (`bracket/face 12`, the original part's
+ref) when the point is on one, and the point in the part's mm. A peak inside the part and
 `large_displacement` have a point but no face; `no_load` has neither.
 
 The two peak findings, `peak_at_fixture` and `peak_concentration`, appear only when the safety

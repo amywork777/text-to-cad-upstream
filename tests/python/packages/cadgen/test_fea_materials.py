@@ -163,8 +163,8 @@ class Requires(unittest.TestCase):
         from cadgen._internal.fea.study import parse_study
 
         rubber = {"name": "rubber", "hyperelastic": {"model": "neo_hookean", "mu_MPa": 0.6, "bulk_MPa": 300}}
-        study = {"analysis": "static", "material": rubber, "fixtures": [{"faces": ["#o1.f1"]}],
-                 "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -10]}]}
+        study = {"analysis": "static", "material": rubber, "fixtures": [{"faces": ["face 1"]}],
+                 "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -10]}]}
         # A static study judges stress by default: a plain error naming what to add, not a TypeError later.
         for document in (study, {**study, "view": {"checks": [{"kind": "stress"}]}}):
             message = value_error(self, parse_study, document)
@@ -184,13 +184,13 @@ class Requires(unittest.TestCase):
         # Steel with an orthotropic block, and everything else each analysis asks of its material.
         ortho = {"name": "steel", "orthotropic": block, "plasticity": {"tangent_MPa": 0},
                  "creep": {"A": 1e-20, "n": 5, "m": 0, "units": "MPa, hours"}}
-        held = {"fixtures": [{"faces": ["#o1.f1"]}], "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -10]}]}
-        bolt = {"between": ["plate", "bracket"], "type": "bolt", "size": "M6", "preload_N": 5000, "holes": ["#o1.1.f3", "#o1.2.f3"]}
+        held = {"fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -10]}]}
+        bolt = {"between": ["plate", "bracket"], "type": "bolt", "size": "M6", "preload_N": 5000, "holes": ["plate/face 3", "bracket/face 3"]}
         studies = {
             "nonlinear": {"analysis": "nonlinear", **held},
             "creep": {"analysis": "creep", "duration_h": 1000, **held},
             "contact": {"analysis": "contact", **held, "rigid_planes": [{"point_mm": [0, 0, 0], "normal": [0, 0, 1]}]},
-            "bolt": {"analysis": "bolt", "fixtures": [{"faces": ["#o1.2.f1"]}], "connections": [bolt]},
+            "bolt": {"analysis": "bolt", "fixtures": [{"faces": ["bracket/face 1"]}], "connections": [bolt]},
             "impact": {"analysis": "impact", "drop": {"height_mm": 500}},
         }
         for name, study in studies.items():

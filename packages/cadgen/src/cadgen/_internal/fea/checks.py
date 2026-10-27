@@ -48,7 +48,7 @@ class Solved:
     #: Peak von Mises stress at the Gauss points, before smoothing.
     peak_gauss_MPa: float
     peak_at: tuple[float, float, float]
-    #: The ``#o1.fN`` face the peak sits on, when it sits on one; the fixed face
+    #: The face (its ref) the peak sits on, when it sits on one; the fixed face
     #: when the peak touches one or lies within half an element of its edge.
     peak_face: str | None
     fixed_faces: tuple[str, ...]
@@ -105,8 +105,9 @@ def _distinct(low: float, high: float) -> tuple[str, str]:
 
 
 def quoted(name: str) -> str:
-    """A part's name for a sentence: ``'bar'``, or ``'bar' (#o1.3)`` when the name is shared and carries its ref."""
-    shared = re.fullmatch(r"(.*) \((#o[\d.]+)\)", name)
+    """A part's name for a sentence: ``'bar'``, or ``'bar' (kit/bar.2)`` when the name is shared and carries its ref
+    (:func:`~cadgen._internal.fea.assembly.display_names`: a shared label's ref is numbered, ``bar.2``)."""
+    shared = re.fullmatch(r"(.*) \(([^()]*\.[1-9][0-9]*)\)", name)
     return f"'{shared.group(1)}' ({shared.group(2)})" if shared else f"'{name}'"
 
 

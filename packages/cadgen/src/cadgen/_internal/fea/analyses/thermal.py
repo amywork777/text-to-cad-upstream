@@ -140,7 +140,7 @@ def parse_history(entry: dict, where: str, *, allowed: bool) -> tuple[tuple[floa
 def parse_heat_keys(document: dict, *, transient: bool = False) -> tuple[tuple, tuple, tuple]:
     """The study's ``temperatures``, ``heat`` and ``convection``, each checked; ValueError names the field."""
     temperatures = []
-    for index, entry in enumerate(_entries(document, "temperatures", '{"faces": ["#o1.f1"], "C": 25}')):
+    for index, entry in enumerate(_entries(document, "temperatures", '{"faces": ["face 1"], "C": 25}')):
         where = f"temperatures[{index}]"
         _known(entry, {"faces", "C", "history"}, where, "a held temperature takes faces, C" + (" and history" if transient else ""))
         if "C" not in entry:
@@ -151,7 +151,7 @@ def parse_heat_keys(document: dict, *, transient: bool = False) -> tuple[tuple, 
         temperatures.append(FixedTemperature(kinds.faces(entry, where=where), celsius,
                                              parse_history(entry, where, allowed=transient)))
     heat = []
-    for index, entry in enumerate(_entries(document, "heat", '{"faces": ["#o1.f7"], "W": 15}')):
+    for index, entry in enumerate(_entries(document, "heat", '{"faces": ["face 7"], "W": 15}')):
         where = f"heat[{index}]"
         _known(entry, {"faces", "W", "W_per_m2", "history"}, where,
                "heat takes faces and W (the total power) or W_per_m2 (a flux)" + (", and history" if transient else ""))
@@ -165,7 +165,7 @@ def parse_heat_keys(document: dict, *, transient: bool = False) -> tuple[tuple, 
         history = parse_history(entry, where, allowed=transient)
         heat.append(HeatInput(faces, value, None, history) if given[0] == "W" else HeatInput(faces, None, value, history))
     convection = []
-    for index, entry in enumerate(_entries(document, "convection", '{"faces": ["#o1.f3"], "h_W_m2K": 10, "ambient_C": 25}')):
+    for index, entry in enumerate(_entries(document, "convection", '{"faces": ["face 3"], "h_W_m2K": 10, "ambient_C": 25}')):
         where = f"convection[{index}]"
         _known(entry, {"faces", "h_W_m2K", "ambient_C", "history"}, where,
                "convection takes faces, h_W_m2K and ambient_C" + (" and history (on the ambient)" if transient else ""))
@@ -184,7 +184,7 @@ def parse_radiation(document: dict) -> tuple[Radiating, ...]:
     """The study's ``radiation``: faces, emissivity (0 to 1), ambient_C, and optional surface_to_surface."""
     radiation = []
     seen: dict[str, int] = {}
-    example = '{"faces": ["#o1.f3"], "emissivity": 0.9, "ambient_C": 25}'
+    example = '{"faces": ["face 3"], "emissivity": 0.9, "ambient_C": 25}'
     for index, entry in enumerate(_entries(document, RADIATION_KEY, example)):
         where = f"radiation[{index}]"
         _known(entry, {"faces", "emissivity", "ambient_C", "surface_to_surface"}, where,

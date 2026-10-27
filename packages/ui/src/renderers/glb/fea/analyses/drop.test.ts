@@ -16,11 +16,11 @@ function dropResult(study: Record<string, unknown> = {}, fall: Record<string, un
       { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 0.001, attribute_scale: 1000, field: 'displacement' }],
     analysis: { type: 'drop', tier: 2, word: 'Drop (estimate)', estimate: true, limits: ['An estimate: ...'], noun: 'this drop', reference_C: null, warnings: [],
       ...(fall ? { fall } : {}) },
-    checks: [{ kind: 'stress', label: 'Drop', value: 4, limit: 40, unit: 'MPa', ratio: 0.1, close_at: 0.5, margin: 2, status: 'passes', where: { ref: '#o1.f5', at: [0, 0, 0] } }],
-    faces: ['#o1.f5'], occurrence: '#o1',
-    study: { material: { name: 'ABS', yield_MPa: 40 }, fixtures: [{ type: 'fixed', faces: ['#o1.f5'] }],
+    checks: [{ kind: 'stress', label: 'Drop', value: 4, limit: 40, unit: 'MPa', ratio: 0.1, close_at: 0.5, margin: 2, status: 'passes', where: { ref: 'bracket/face 5', at: [0, 0, 0] } }],
+    faces: ['bracket/face 5'], occurrence: 'bracket',
+    study: { material: { name: 'ABS', yield_MPa: 40 }, fixtures: [{ type: 'fixed', faces: ['bracket/face 5'] }],
       loads: [{ type: 'acceleration', vector_g: [0, 0, 500] }], mesh: { size_mm: 5, refined_from_mm: null },
-      drop: { height_mm: 1000, onto: ['#o1.f5'], stop_mm: 2, direction: [0, 0, -1], G: 500 }, ...study },
+      drop: { height_mm: 1000, onto: ['bracket/face 5'], stop_mm: 2, direction: [0, 0, -1], G: 500 }, ...study },
   }, { index: false, color: false });
 }
 
@@ -50,7 +50,7 @@ describe('drop', () => {
     const result = dropResult();
     const [dropped, material] = studyRows(result);
     expect(dropped).toMatchObject({ id: 'drop', label: 'Dropped', glyph: 'drop', children: [
-      { id: 'drop:0', label: '1 m drop', hint: 'stopping in 2 mm, about 500 g steady', faces: ['#o1.f5'],
+      { id: 'drop:0', label: '1 m drop', hint: 'stopping in 2 mm, about 500 g steady', faces: ['bracket/face 5'],
         summary: '1 m drop, stopping in 2 mm, landing on face 5' }] });
     expect(material).toMatchObject({ id: 'material', label: 'Made of' });
     // No "Held at" or "Pushed": the landing faces and the equivalent load are the drop's own row.

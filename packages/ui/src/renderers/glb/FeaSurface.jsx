@@ -14,6 +14,9 @@ import { useSceneToolState, useSceneTools } from "../kit/tools/sceneTools.jsx";
 import { PointerPick } from "../kit/tools/select/usePointerPick.js";
 import { useDeclinedSelectReference, workspaceLoadAlert } from "../workspace/useWorkspaceDocument.js";
 import { useViewerHost } from "../../host/context.js";
+import { useExportView } from "../../export/context.js";
+import { TOOL_SHORTCUTS } from "../kit/tools/toolShortcuts.js";
+import { useI18n } from "@text-to-cad/ui/i18n";
 import { DEFAULT_POSE_VALUE, NO_PRESET_VALUE, positionValuesAreDefault } from "../kit/inspector/kinematicsControls.jsx";
 import { GLB_DECLINED_LIVE_COMMANDS, GLB_TOOL, GLB_TOOL_MODES } from "./tools.js";
 import { useGlbAnimation } from "./useGlbAnimation.js";
@@ -46,11 +49,12 @@ const CLIP_OFF = Object.freeze({ clip: { enabled: false, axis: "x", invert: fals
  * flow's tracers) in the sidebar's Animation and in Preview. `fv`: the FEA viewer's chunk (`feaView.jsx`).
  */
 export default function FeaSurface({ view, document, loaded, fv }) {
+  const { t } = useI18n();
   const host = useViewerHost();
   const scene = loaded.scene;
   const loadAlert = useMemo(() => workspaceLoadAlert({
-    catalogError: document.catalogError, error: loaded.error, modelKey: document.modelKey, hasScene: Boolean(scene)
-  }), [document.catalogError, loaded.error, document.modelKey, scene]);
+    catalogError: document.catalogError, error: loaded.error, modelKey: document.modelKey, hasScene: Boolean(scene), t
+  }), [document.catalogError, loaded.error, document.modelKey, scene, t]);
 
   // An FEA result (cadgen fea solve) carries its fields and true displacement in the file; what is
   // shown of it is chosen in Study's What you see, with the controls the study's view names (`feaControls`;
@@ -257,7 +261,7 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     view, services: document.services, resource: document.resource, modelKey: document.modelKey, revisionKey: loaded.revision,
     features, toolModes: GLB_TOOL_MODES, tool: tools.tool, previewable: true, preview, scene, sceneEffects: true,
     load: { busy: loaded.busy && !scene, updating: loaded.busy && Boolean(scene), progress: loaded.progress, alert: loadAlert },
-    animation, live, escape, rendererState, measurements: tools.measurements, deleteSelection: measure.removeSelected
+    animation, live, escape, rendererState, deleteSelection: measure.removeSelected
   });
   shellRef.current = shell;
   requestRenderRef.current = () => { shell.requestRender(); shell.frame.previewViewRef.current?.requestRender?.(); };
@@ -610,8 +614,13 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     overlay: () => (fea ? <fv.FeaColourBar result={fea} field={activeField} loadScale={loadScale} sigma={sigma} raised={Boolean(previewAnimation)} /> : null),
   }), [previewScene, previewAnimation, fea, activeField, loadScale, sigma]);
 
+  // Export converts the result shown to the other mesh kinds, as a plain GLB's does (`GlbRenderer.jsx`).
+  const exportView = useMemo(() => scene && loaded.revision && document.modelKey && !host.environment.compact ? {
+    doc: document.modelKey, revision: loaded.revision, file: view.file.path, name: view.file.name
+  } : null, [scene, loaded.revision, document.modelKey, host.environment.compact, view.file.path, view.file.name]);
+  useExportView(exportView);
   const sceneTools = useSceneTools({ shell, scene, features, state: tools, measurable: true, clearParts: clearChoice });
-  const strip = [shell.tools.own({ id: GLB_TOOL.SELECT, label: "Select", icon: SELECT_ICON }), ...sceneTools.tools];
+  const strip = [shell.tools.own({ id: GLB_TOOL.SELECT, label: t("tool.select"), shortcut: TOOL_SHORTCUTS.select, icon: SELECT_ICON }), ...sceneTools.tools];
   const handlePick = useCallback((hit, modifiers) => {
     pick(hit);
     if (hit && !modifiers?.multiSelect) measureRef.current.select([]);

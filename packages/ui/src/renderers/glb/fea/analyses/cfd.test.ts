@@ -15,7 +15,7 @@ function flowResult(analysis: Record<string, unknown> = {}, extras: Record<strin
     position: [0, 0, 0, 0.016, 0, 0, 0, 0.002, 0], _displacement: vec(9), _pressure: [0.32, 0, 0.16], _wall_shear: [0.02, 0.02, 0.02],
     _speed: [0.9, 0.4, 1.3], _face: [0, 0, 0],
   }, {
-    generator: 'cadgen fea', name: 'tube flow', deformation_scale: null, faces: ['#o1.f4'], occurrence: '#o1',
+    generator: 'cadgen fea', name: 'tube flow', deformation_scale: null, faces: ['bracket/face 4'], occurrence: 'bracket',
     analysis: { type: 'cfd', tier: 3, word: 'Flow', estimate: false, limits: [LIMIT], noun: 'this flow', reference_C: null, warnings: [],
       ...analysis },
     fields: [

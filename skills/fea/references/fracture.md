@@ -71,9 +71,9 @@ constants are illustrative: use the alloy's own):
 
 ```json
 {"analysis": "fracture", "material": "aluminum-7075-t6",
- "fixtures": [{"type": "roller", "faces": ["#o1.f3"]}],
- "loads": [{"type": "pressure", "faces": ["#o1.f4"], "pressure_MPa": -100}],
- "crack": {"kind": "edge", "face": "#o1.f1", "at_mm": [0, 0, 5], "normal": [0, 1, 0], "size_mm": 2},
+ "fixtures": [{"type": "roller", "faces": ["bracket/face 3"]}],
+ "loads": [{"type": "pressure", "faces": ["bracket/face 4"], "pressure_MPa": -100}],
+ "crack": {"kind": "edge", "face": "bracket/face 1", "at_mm": [0, 0, 5], "normal": [0, 1, 0], "size_mm": 2},
  "growth": {"load_ratio": 0.1, "paris_C": 1.6e-11, "paris_m": 3.6},
  "view": {"checks": [{"kind": "fracture"}, {"kind": "crack_life", "cycles": 100000}]}}
 ```

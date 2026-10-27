@@ -13,7 +13,7 @@ function shaken(study: Record<string, unknown> = {}) {
     position: [0, 0, 0, 0.1, 0, 0, 0.1, 0, 0.006], _displacement: vec(9), _von_mises_rms: [9.6, 2, 0], _displacement_rms: [0, 0.02, 0.045],
     _face: [0, 1, 1],
   }, {
-    generator: 'cadgen fea', name: 'beam random vibration', deformation_scale: null, faces: ['#o1.f1', '#o1.f2'],
+    generator: 'cadgen fea', name: 'beam random vibration', deformation_scale: null, faces: ['bracket/face 1', 'bracket/face 2'],
     analysis: { type: 'random_vibration', tier: 1, word: 'Random vibration', estimate: false, limits: [], noun: 'this shake', reference_C: null, warnings: [] },
     fields: [
       { attribute: '_VON_MISES_RMS', name: 'von Mises stress (RMS, 1σ)', units: 'MPa', min: 0, max: 9.6, attribute_scale: 1, field: 'von_mises_rms' },
@@ -21,13 +21,13 @@ function shaken(study: Record<string, unknown> = {}) {
     ],
     study: {
       material: { name: 'Steel', yield_MPa: 250 },
-      fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }],
+      fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }],
       psd: { direction: [0, 0, 1], table: TABLE }, damping_ratio: 0.02, sigma: 3,
       mesh: { size_mm: 2, order: 2, elements: 1708, refined_from_mm: null }, margin: 2,
       ...study,
     },
     checks: [{ kind: 'stress', label: 'Random vibration', value: 28.9, limit: 250, unit: 'MPa', ratio: 0.1156, close_at: 0.5, margin: 2,
-      status: 'passes', where: { ref: '#o1.f1', at: [0, 3, 3] } }],
+      status: 'passes', where: { ref: 'bracket/face 1', at: [0, 3, 3] } }],
     findings: [],
   });
 }
@@ -68,7 +68,7 @@ describe('random_vibration', () => {
   it('says it is held, shaken at random with the PSD summarised, and what it is made of', () => {
     const rows = studyRows(shaken());
     expect(rows.slice(0, 3).map((row: { label: string }) => row.label)).toEqual(['Held at', 'Shaken', 'Made of']);
-    expect(rows[1].children[0]).toMatchObject({ label: '6.1 g rms along Z, 20 to 2000 Hz', faces: ['#o1.f1'],
+    expect(rows[1].children[0]).toMatchObject({ label: '6.1 g rms along Z, 20 to 2000 Hz', faces: ['bracket/face 1'],
       hint: 'At random, a 4-point PSD, judged at 3σ', summary: 'Shaken at random where it is held: 6.1 g rms along Z, 20 to 2000 Hz' });
   });
 

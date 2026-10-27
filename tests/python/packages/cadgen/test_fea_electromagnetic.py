@@ -48,7 +48,7 @@ def planes_along(step: Path, axis: int, occurrence: str | None = None) -> dict[f
 class StudyFile(unittest.TestCase):
     def test_each_mode_reads_its_own_keys_and_writes_its_own_fields(self):
         electro = parse({"mode": "electrostatic", "material": "petg", "air": {"around_mm": 5},
-                         "voltages": [{"faces": ["#o1.f1"], "V": 1000, "name": "top"}, {"faces": ["#o1.f2"], "V": 0}],
+                         "voltages": [{"faces": ["face 1"], "V": 1000, "name": "top"}, {"faces": ["face 2"], "V": 0}],
                          "probes": [{"at_mm": [0, 0, 1], "label": "gap"}],
                          "view": {"checks": [{"kind": "electric_field", "limit_kV_mm": 3}]}})
         inputs = electro.inputs
@@ -59,13 +59,13 @@ class StudyFile(unittest.TestCase):
         analysis = get_analysis("electromagnetic")  # registered and built: test_fea_protocol's Registry
         self.assertEqual(analysis.word, "Magnetic / electric")
         self.assertEqual([f.name for f in analysis.fields], ["potential", "electric_field"])
-        current = parse({"mode": "current", "voltages": [{"faces": ["#o1.f2"], "V": 0}], "currents": [{"faces": ["#o1.f1"], "A": 2}],
-                         "electro_thermal": {"convection": [{"faces": ["#o1.f3"], "h_W_m2K": 10, "ambient_C": 20}]}})
+        current = parse({"mode": "current", "voltages": [{"faces": ["face 2"], "V": 0}], "currents": [{"faces": ["face 1"], "A": 2}],
+                         "electro_thermal": {"convection": [{"faces": ["face 3"], "h_W_m2K": 10, "ambient_C": 20}]}})
         self.assertEqual(current.inputs.material_needs, frozenset({"resistivity", "conductivity"}))
         self.assertEqual([f.name for f in analysis.fields], ["potential", "current_density", "temperature"])
         self.assertIsNone(current.inputs.air_mm)
         magnetic = parse({"mode": "magnetostatic", "coils": [{"turns": 100, "A": 2, "axis": {"direction": [0, 0, 1]}}],
-                          "map_to_structure": {"fixtures": [{"faces": ["#o1.f1"]}]}})
+                          "map_to_structure": {"fixtures": [{"faces": ["face 1"]}]}})
         self.assertEqual(magnetic.inputs.air_mm, 0.0)  # magnetostatics always solves in air
         self.assertEqual([f.name for f in analysis.fields], ["magnetic_field", "von_mises", "displacement"])
 
@@ -73,18 +73,18 @@ class StudyFile(unittest.TestCase):
         cases = [
             ({"mode": "plasma"}, "mode: \"plasma\" is not one of"),
             ({"mode": "electrostatic"}, "needs faces held at a voltage"),
-            ({"mode": "current", "currents": [{"faces": ["#o1.f1"], "A": 2}]}, "a current needs somewhere to leave"),
-            ({"mode": "current", "voltages": [{"faces": ["#o1.f1"], "V": 0}], "air": True}, "air is not for a current study"),
+            ({"mode": "current", "currents": [{"faces": ["face 1"], "A": 2}]}, "a current needs somewhere to leave"),
+            ({"mode": "current", "voltages": [{"faces": ["face 1"], "V": 0}], "air": True}, "air is not for a current study"),
             ({"mode": "magnetostatic"}, "needs a source: a coil"),
             ({"mode": "magnetostatic", "coils": [{"turns": 10, "A": 1}]}, "coils[0].axis"),
             ({"mode": "magnetostatic", "coils": [{"turns": 10, "A": 1, "axis": {"direction": [0, 0, 0]}}]}, "the direction is zero"),
-            ({"mode": "electrostatic", "voltages": [{"faces": ["#o1.f1"], "V": 1}], "capacitance": {"between": ["a", "b"]}},
+            ({"mode": "electrostatic", "voltages": [{"faces": ["face 1"], "V": 1}], "capacitance": {"between": ["a", "b"]}},
              "names no electrode"),
-            ({"mode": "electrostatic", "voltages": [{"faces": ["#o1.f1"], "V": 1}],
+            ({"mode": "electrostatic", "voltages": [{"faces": ["face 1"], "V": 1}],
               "view": {"checks": [{"kind": "electric_field"}]}}, "limit_kV_mm"),
-            ({"mode": "current", "voltages": [{"faces": ["#o1.f1"], "V": 1}],
+            ({"mode": "current", "voltages": [{"faces": ["face 1"], "V": 1}],
               "view": {"checks": [{"kind": "electric_field", "limit_kV_mm": 3}]}}, "not for a current study"),
-            ({"mode": "current", "voltages": [{"faces": ["#o1.f1"], "V": 1}],
+            ({"mode": "current", "voltages": [{"faces": ["face 1"], "V": 1}],
               "view": {"checks": [{"kind": "temperature", "max_C": 80}]}}, "add electro_thermal"),
             ({"mode": "magnetostatic", "material": "steel", "coils": [{"turns": 10, "A": 1, "axis": {"direction": [0, 0, 1]}}]},
              "relative_permeability"),
@@ -240,14 +240,14 @@ class Electrostatics(unittest.TestCase):
         bottom.label = "bottom"
         plates = directory / "plates.step"
         export_step(Compound(children=[centre, guard, bottom]), str(plates))
-        under = {occurrence: planes_along(plates, 2, occurrence) for occurrence in ("#o1.1", "#o1.2", "#o1.3")}
+        under = {occurrence: planes_along(plates, 2, occurrence) for occurrence in ("centre", "guard", "bottom")}
         cls.reference_pF = EPS0_F_M * math.pi * ((radius + slot / 2) / 1000) ** 2 / (gap / 1000) * 1e12
         cls.plates = solve(plates, directory / "plates.glb", {
             "analysis": "electromagnetic", "mode": "electrostatic", "material": "aluminum-6061-t6", "mesh": {"size_mm": 1.5},
             "air": {"around_mm": 8},
-            "voltages": [{"faces": [under["#o1.1"][gap / 2]], "V": 100, "name": "centre"},
-                         {"faces": [under["#o1.2"][gap / 2]], "V": 100, "name": "guard"},
-                         {"faces": [under["#o1.3"][-gap / 2]], "V": 0, "name": "bottom"}],
+            "voltages": [{"faces": [under["centre"][gap / 2]], "V": 100, "name": "centre"},
+                         {"faces": [under["guard"][gap / 2]], "V": 100, "name": "guard"},
+                         {"faces": [under["bottom"][-gap / 2]], "V": 0, "name": "bottom"}],
             "capacitance": {"between": ["centre", "bottom"]},
             "probes": [{"at_mm": [0, 0, 0], "label": "gap"}],
             "view": {"checks": [{"kind": "electric_field", "limit_kV_mm": 3}]},
@@ -323,7 +323,7 @@ class Magnetostatics(unittest.TestCase):
         upper.label = "upper"
         pair = directory / "pair.step"
         export_step(Compound(children=[lower, upper]), str(pair))
-        top = planes_along(pair, 2, "#o1.2")[4.0]
+        top = planes_along(pair, 2, "guard")[4.0]
         cls.pair = solve(pair, directory / "pair.glb", {
             "analysis": "electromagnetic", "mode": "magnetostatic", "material": "aluminum-6061-t6", "mesh": {"size_mm": 1.5},
             "coils": [{"part": "lower", "turns": 100, "A": 5, "axis": {"direction": [0, 0, 1]}},

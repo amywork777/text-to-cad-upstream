@@ -421,3 +421,16 @@ The viewer exposes `POST /__cad/clipboard` for explicit viewport PNG copies. It
 uses the same host and custom-header POST gates as other mutation routes, limits
 images to 20 MiB, and delegates native delivery to `viewer/clipboard.py`. It never
 reads the clipboard. Unsupported desktop clipboard environments return an error.
+
+## Finite element analysis
+
+`cadgen.fea` (`cadgen fea faces|parts|solve`) studies a part or an assembly of a STEP or an `.xbf`.
+It reads the document in its own process, as the engine reads a file (`engine.document.load`), with
+no worker and no build, and names faces by the engine's refs, resolved in the document's structure
+as `cadgen inspect` resolves them (`engine.refs`): a study's `bracket/face 17` is the face the CAD
+Viewer copies. A study is a JSON file; a solve writes only the result GLB its `out` names and its
+JSON sidecar (and a `.vtu` when asked). The solvers are `_internal/fea/`, one module per analysis
+behind a registry; the mesher and the solvers are the opt-in `fea` extra (netgen, scikit-fem,
+pyamg). The analyses CalculiX covers run on a pinned CalculiX build, downloaded once into the
+cache folder's `tools/` on the first such solve, else on the built-in solver; the result names the
+solver that ran.

@@ -23,8 +23,8 @@ from tests.python.support.fea_fixtures import class_directory, glb_array, needs_
 from cadgen._internal.fea.study import parse_study  # noqa: E402
 
 STUDY = {
-    "analysis": "topology", "material": "steel", "fixtures": [{"faces": ["#o1.f1"]}],
-    "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, -100, 0]}],
+    "analysis": "topology", "material": "steel", "fixtures": [{"faces": ["face 1"]}],
+    "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, -100, 0]}],
 }
 
 
@@ -41,20 +41,20 @@ class Parse(unittest.TestCase):
         self.assertEqual((inputs.objective, inputs.volume_fraction, inputs.penalty, inputs.iterations), ("stiffest", 0.3, 3.0, 150))
         self.assertEqual(parsed.mesh_order, 1)
         self.assertEqual([c["kind"] for c in parsed.checks], ["mass_saved", "stress"])
-        self.assertEqual(inputs.face_refs, ("#o1.f1", "#o1.f2"))
+        self.assertEqual(inputs.face_refs, ("face 1", "face 2"))
         self.assertEqual(parse_study(_study(objective="lightest")).inputs.volume_fraction, 0.5)
 
     def test_keys(self):
-        inputs = parse_study(_study(volume_fraction=0.25, keep=["#o1.f7"], min_member_mm=4, penalty=3.5,
+        inputs = parse_study(_study(volume_fraction=0.25, keep=["face 7"], min_member_mm=4, penalty=3.5,
                                     symmetry=["x", {"axis": "z", "at_mm": 1}], extrusion="z", iterations=60)).inputs
-        self.assertEqual(inputs.keep, ("#o1.f7",))
-        self.assertIn("#o1.f7", inputs.face_refs)
+        self.assertEqual(inputs.keep, ("face 7",))
+        self.assertIn("face 7", inputs.face_refs)
         self.assertEqual(inputs.symmetry, (("x", None), ("z", 1.0)))
         self.assertEqual(inputs.extrusion, (0.0, 0.0, 1.0))
         self.assertEqual(parse_study(_study(extrusion={"direction": [0, 3, 4]})).inputs.extrusion, (0.0, 0.6, 0.8))
         cases = parse_study({k: v for k, v in _study(load_cases=[
-            {"name": "lift", "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 10, 0]}]},
-            {"loads": [{"faces": ["#o1.f3"], "type": "pressure", "pressure_MPa": 1}]},
+            {"name": "lift", "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 10, 0]}]},
+            {"loads": [{"faces": ["face 3"], "type": "pressure", "pressure_MPa": 1}]},
         ]).items() if k != "loads"}).inputs.cases
         self.assertEqual([name for name, _ in cases], ["lift", "case 2"])
         self.assertEqual(parse_study(_study(fit={"allow": ["coarse_design", "symmetry"]})).fit["allow"], ["coarse_design", "symmetry"])

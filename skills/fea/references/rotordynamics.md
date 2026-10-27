@@ -69,8 +69,8 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis):
 
 ```json
 {"analysis": "rotordynamics", "material": "steel", "spin": {"axis": "Z", "rpm": [0, 10800]},
- "bearings": [{"faces": ["#o1.f3"], "k": 50000, "c": 20}, {"faces": ["#o1.f9"], "kxx": 50000, "kyy": 40000, "c": 20}],
- "unbalance": [{"faces": ["#o1.f5"], "g_mm": 50}],
+ "bearings": [{"faces": ["bracket/face 3"], "k": 50000, "c": 20}, {"faces": ["bracket/face 9"], "kxx": 50000, "kyy": 40000, "c": 20}],
+ "unbalance": [{"faces": ["bracket/face 5"], "g_mm": 50}],
  "view": {"checks": [{"kind": "critical_speed", "margin_percent": 15}, {"kind": "stability"}, {"kind": "stress"}]}}
 ```
 

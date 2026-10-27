@@ -59,7 +59,7 @@ class StudyFile(unittest.TestCase):
         external = self.parse(flow={"kind": "external", "fluid": "air", "velocity_m_s": [20, 0, 0],
                                     "turbulence_intensity": 0.02}).inputs
         self.assertEqual((external.kind, external.intensity), ("external", 0.02))
-        mapped = self.parse(map_to_structure={"material": "aluminum-6061-t6", "fixtures": [{"faces": ["#o1.f1"]}]},
+        mapped = self.parse(map_to_structure={"material": "aluminum-6061-t6", "fixtures": [{"faces": ["face 1"]}]},
                             view={"checks": [{"kind": "pressure_drop", "limit_Pa": 1000}, {"kind": "stress"}]})
         self.assertTrue(mapped.inputs.mapped)
         self.assertEqual([check["kind"] for check in mapped.checks], ["pressure_drop", "stress"])

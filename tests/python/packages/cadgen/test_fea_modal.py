@@ -49,8 +49,8 @@ class StudyFile(unittest.TestCase):
         self.assertEqual((parsed.inputs.fixtures, parsed.inputs.modes, parsed.inputs.range_Hz), ((), 6, None))
         self.assertFalse(parsed.inputs.requires_anchor)
         self.assertEqual(parsed.checks, ())
-        held = parse_study(_study(fixtures=[{"faces": ["#o1.f1"]}], modes=3, range_Hz=[100, 2000]))
-        self.assertEqual((held.inputs.anchor_refs, held.inputs.modes, held.inputs.range_Hz), (("#o1.f1",), 3, (100.0, 2000.0)))
+        held = parse_study(_study(fixtures=[{"faces": ["face 1"]}], modes=3, range_Hz=[100, 2000]))
+        self.assertEqual((held.inputs.anchor_refs, held.inputs.modes, held.inputs.range_Hz), (("face 1",), 3, (100.0, 2000.0)))
 
     def test_modes_and_range_are_checked_in_plain_words(self):
         for bad, words in (({"modes": 0}, "from 1 to 30"), ({"modes": 31}, "from 1 to 30"), ({"modes": 2.5}, "whole number"),
@@ -61,7 +61,7 @@ class StudyFile(unittest.TestCase):
 
     def test_it_takes_its_own_keys_and_checks_only(self):
         for more, words in (
-            ({"loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -1]}]}, r"unknown keys \['loads'\]; modal studies take"),
+            ({"loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -1]}]}, r"unknown keys \['loads'\]; modal studies take"),
             ({"view": {"checks": [{"kind": "stress"}]}}, "not a check this cadgen makes"),
             ({"view": {"checks": [{"kind": "frequency", "min_Hz": 60, "avoid_Hz": [1, 2]}]}}, "exactly one"),
             ({"view": {"checks": [{"kind": "frequency", "min_Hz": 60, "mode": 31}]}}, "at most mode 30"),
@@ -238,11 +238,11 @@ class OnTheEngine(unittest.TestCase):
     def setUpClass(cls):
         from cadgen._internal.fea.femspace import FemSpace
         from cadgen._internal.fea.mesh import mesh_occurrence
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
         step = box_step(class_directory(cls), "beam", (LENGTH, SIDE, SIDE), "x")
         cls.fixed = ends(step)[0]
-        cls.volume = mesh_occurrence(next(iter(read_scene(step).leaves())), max_h=2.0)
+        cls.volume = mesh_occurrence(next(iter(read_document(step).leaves())), max_h=2.0)
         cls.space = FemSpace.build(cls.volume)
 
     def _solve(self, study: dict, solver: str = "direct", modes: int | None = None):
@@ -251,7 +251,7 @@ class OnTheEngine(unittest.TestCase):
 
         parsed = parse_study(study)
         ctx = SolveContext(
-            volume=self.volume, materials=(parsed.material,), ordinal_of={self.fixed: int(self.fixed.rsplit("f", 1)[1])},
+            volume=self.volume, materials=(parsed.material,), ordinal_of={self.fixed: int(self.fixed.rsplit(" ", 1)[1])},
             space=self.space, log=None, automatic=False, upstream={}, budget=None, plan=FitPlan(solver=solver, modes=modes),
             study=parsed,
         )

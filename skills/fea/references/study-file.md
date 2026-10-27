@@ -10,11 +10,11 @@ in [Assemblies](#assemblies); a study without them on a one-part document is unc
 {
   "material": "aluminum-6061-t6",
   "fixtures": [
-    {"faces": ["#o1.f17"], "type": "fixed"}
+    {"faces": ["bracket/face 17"], "type": "fixed"}
   ],
   "loads": [
-    {"faces": ["#o1.f22"], "type": "force", "vector_N": [0, -500, 0]},
-    {"faces": ["#o1.f3", "#o1.f4"], "type": "pressure", "pressure_MPa": 0.8},
+    {"faces": ["bracket/face 22"], "type": "force", "vector_N": [0, -500, 0]},
+    {"faces": ["bracket/face 3", "bracket/face 4"], "type": "pressure", "pressure_MPa": 0.8},
     {"type": "gravity", "vector_g": [0, 0, -1]}
   ],
   "mesh": {"size_mm": 2.5},
@@ -175,8 +175,8 @@ entry lists faces and a type:
 
 ```json
 "fixtures": [
-  {"faces": ["#o1.f1"], "type": "fixed"},
-  {"faces": ["#o1.f5", "#o1.f6"], "type": "roller"}
+  {"faces": ["bracket/face 1"], "type": "fixed"},
+  {"faces": ["bracket/face 5", "bracket/face 6"], "type": "roller"}
 ]
 ```
 
@@ -212,14 +212,16 @@ analysis: [bolt.md](bolt.md)); approximate a moment with a pair of opposite forc
 
 ## Faces
 
-Face references are the Viewer's selectors: `#o1.f17` is face 17 of occurrence 1. A reference the
-user selected arrives with its document prefix (`part.step#o1.f17`); both forms are accepted, and
-the prefix must match the document being solved. `cadgen fea faces part.step` prints every face
+Face references are the engine's refs, the ones the Viewer copies and `cadgen inspect` reads:
+`bracket/face 17` is face 17 of the part `bracket` (`face 17` alone in a one-part document), and a
+face the document names is named by its name (`bracket/f:plate.relief.3`). A reference the user
+selected arrives after its document's path (`/work/bracket.step#bracket/face 17`); both forms are
+accepted, and the path must name the document being solved. `cadgen fea faces part.step` prints every face
 with its area, centre, surface type and a hint. In a one-part study every face must belong to the
 same part occurrence (an assembly's may be on any part).
 
-Selectors are positions in the saved document: when the model is edited and the STEP re-written, a
-face's number can change, so list the faces again before re-running a study on a new revision.
+A face number is a position in the saved document: when the model is edited and the STEP re-written, a
+face's number can change (a face the document names keeps its name while its feature is unchanged), so list the faces again before re-running a study on a new revision.
 
 ## Assemblies
 
@@ -231,16 +233,16 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
   "material": "aluminum-6061-t6",
   "parts": {
     "post": {"material": "steel"},
-    "#o1.3": {"material": {"name": "custom", "E_MPa": 70000, "nu": 0.33, "yield_MPa": 240}}
+    "frame/bar.2": {"material": {"name": "custom", "E_MPa": 70000, "nu": 0.33, "yield_MPa": 240}}
   },
   "connections": [{"between": ["post", "base"], "type": "free"}],
   "contact_tolerance_mm": 0.1,
-  "fixtures": [{"faces": ["#o1.1.f9"], "type": "fixed"}],
-  "loads": [{"faces": ["#o1.2.f6"], "type": "force", "vector_N": [1000, 0, 0]}]
+  "fixtures": [{"faces": ["base/face 9"], "type": "fixed"}],
+  "loads": [{"faces": ["post/face 6"], "type": "force", "vector_N": [1000, 0, 0]}]
 }
 ```
 
-- `parts`: a material per part, keyed by occurrence ref (`#o1.2`) or by name; same forms as
+- `parts`: a material per part, keyed by its ref (`frame/bar.2`) or by its name; same forms as
   `material`. A part left out gets the default `material` and a `default_material` finding. A name
   that two parts share is refused: use a ref. A part named twice is refused.
 - `connections`: optional overrides, `{"between": [A, B], "type": ...}` with `bonded` or `free`.
@@ -253,7 +255,7 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
 - `contact_tolerance_mm`: default 0.1. Faces this close are touching; a gap within it is closed to
   bond the pair, and so is an overlap no thicker than it (an interference; a `gap_closed` finding
   says which). A thicker overlap is never bonded.
-- Faces: `#o1.4.f23` is face 23 of occurrence `#o1.4`; faces may be on any part. A face that
+- Faces: `post/face 23` is face 23 of the part `post`; faces may be on any part. A face that
   another part only partly covers (a plate's top with a post standing on it) holds or loads its
   exposed area; a face wholly covered by a bonded joint is refused before the solve. At least one
   part must be fixed, and every part must reach it through bonded neighbours (`not_connected`
@@ -350,7 +352,7 @@ it into the GLB (`extras.view`) and the sidecar (`view`).
 "view": {
   "checks": [
     {"kind": "stress"},
-    {"kind": "displacement", "limit_mm": 0.5, "faces": ["#o1.f23"], "label": "Tip sag"}
+    {"kind": "displacement", "limit_mm": 0.5, "faces": ["bracket/face 23"], "label": "Tip sag"}
   ],
   "sections": ["verdict", "setup", "controls", "details"],
   "controls": [

@@ -1,6 +1,6 @@
 """An assembly's parts, the faces where they touch, and the parts glued into one shape.
 
-A part is one leaf occurrence of the STEP scene, placed in world coordinates. Two parts are in contact when a face of
+A part is one part occurrence of the document (:mod:`cadgen._internal.fea.document`), placed in world coordinates. Two parts are in contact when a face of
 one lies on a face of the other, or within the contact tolerance of it, over an area. Each stage cheaply drops pairs the
 next would spend long on: a sweep over the parts' boxes (enlarged by the tolerance), the boxes of each pair's faces, a
 lower bound on the distance from sampled tessellations, then ``BRepExtrema_DistShapeShape`` for the gap, then the common
@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from cadgen.step_scene import StepScene
+    from cadgen._internal.fea.document import Document
 
 __all__ = ["Contact", "Glued", "Overlap", "Part", "detect_contacts", "detect_overlaps", "display_names", "glue", "interferences", "list_parts", "part_centre", "part_faces", "part_gap"]
 
@@ -42,15 +42,17 @@ _MAX_TRIANGLES = 20_000
 
 @dataclass(frozen=True)
 class Part:
-    """One placed leaf occurrence of an assembly."""
+    """One placed part occurrence of an assembly."""
 
-    #: The occurrence's selector (``#o1.2``).
+    #: The occurrence's canonical ref (``arm``, ``hand/finger.2``).
     ref: str
     #: The occurrence's label, else its ref.
     name: str
     volume_mm3: float
     #: The placed OCP shape (world coordinates), owned by this part.
     shape: Any = field(default=None, repr=False, compare=False)
+    #: Each face's canonical ref, by ordinal (index 0 is face 1): what a study and the viewer name it by.
+    face_refs: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -118,17 +120,18 @@ def gprops(shape, kind: str = "Surface"):
     return props
 
 
-def list_parts(scene: "StepScene") -> list[Part]:
-    """Every leaf occurrence of the scene, in scene order."""
+def list_parts(document: "Document") -> list[Part]:
+    """Every part occurrence of the document, in the document's order."""
     parts = []
-    for leaf in scene.leaves():
+    for leaf in document.leaves():
         shape = leaf.shape().wrapped
-        parts.append(Part(ref=leaf.ref, name=leaf.label or leaf.ref, volume_mm3=float(gprops(shape, "Volume").Mass()), shape=shape))
+        parts.append(Part(ref=leaf.ref, name=leaf.label or leaf.ref, volume_mm3=float(gprops(shape, "Volume").Mass()), shape=shape,
+                          face_refs=leaf.face_refs()))
     return parts
 
 
 def display_names(parts: list[Part]) -> list[str]:
-    """Each part's name, with its ref added (``bar (#o1.3)``) when another part has the same name."""
+    """Each part's name, with its ref added (``bar (kit/bar.2)``) when another part has the same name."""
     count: dict[str, int] = {}
     for part in parts:
         count[part.name] = count.get(part.name, 0) + 1
@@ -136,10 +139,10 @@ def display_names(parts: list[Part]) -> list[str]:
 
 
 def part_faces(shape) -> list:
-    """The faces of a shape in cadgen's face-ordinal order (index 0 = ordinal 1)."""
-    from cadgen._internal.entity_ordinals import entity_map
+    """The faces of a shape in the engine's face-ordinal order (index 0 = ordinal 1)."""
+    from cadgen._internal.fea.document import face_map
 
-    faces = entity_map(shape, "face")
+    faces = face_map(shape)
     return [faces.FindKey(i) for i in range(1, faces.Extent() + 1)]
 
 

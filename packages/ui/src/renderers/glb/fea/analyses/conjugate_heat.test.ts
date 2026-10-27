@@ -15,7 +15,7 @@ function cooledResult(analysis: Record<string, unknown> = {}, extras: Record<str
     _fluid_temperature: [20, 21.9, 21], _wall_heat_flux: [4000, 2500, 3000], _heat_transfer_coefficient: [1100, 1300, 1200],
     _pressure: [0.48, 0, 0.24], _face: [0, 0, 1],
   }, {
-    generator: 'cadgen fea', name: 'cold plate cooled by flow', deformation_scale: null, faces: ['#o1.f3', '#o1.f7'], occurrence: '#o1',
+    generator: 'cadgen fea', name: 'cold plate cooled by flow', deformation_scale: null, faces: ['bracket/face 3', 'bracket/face 7'], occurrence: 'bracket',
     analysis: { type: 'conjugate_heat', tier: 3, word: 'Cooled by flow', estimate: false, limits: [LIMIT], noun: 'this heat',
       reference_C: 20, warnings: [], reynolds: { value: 39.85, limit: 2000, kind: 'internal', length_mm: 4 }, regime: 'laminar', ...analysis },
     fields: [
@@ -29,11 +29,11 @@ function cooledResult(analysis: Record<string, unknown> = {}, extras: Record<str
       material: { name: 'Aluminum 6061-T6', yield_MPa: 276 },
       flow: { kind: 'internal', regime: 'auto', fluid: { name: 'water', density_kg_m3: 998.2, viscosity_Pa_s: 0.001002, conductivity_W_mK: 0.606, specific_heat_J_kgK: 4181 },
         inlets: [{ opening: 'x_min', velocity_m_s: 0.01, profile: 'developed', temperature_C: 20 }], outlets: [{ opening: 'x_max', pressure_Pa: 0 }] },
-      temperatures: [], heat: [{ faces: ['#o1.f3'], W: 1 }], convection: [],
+      temperatures: [], heat: [{ faces: ['bracket/face 3'], W: 1 }], convection: [],
       mesh: { size_mm: 0.75, order: 2, elements: 100, refined_from_mm: null },
     },
     checks: [{ kind: 'temperature', label: 'Heat', value: 24.15, limit: 60, unit: '°C', ratio: (24.15 - 20) / 40, close_at: 0.9,
-      status: 'passes', where: { ref: '#o1.f3', at: [24, 0, 4] }, reference: 20 }],
+      status: 'passes', where: { ref: 'bracket/face 3', at: [24, 0, 4] }, reference: 20 }],
     findings: [],
     ...extras,
   });

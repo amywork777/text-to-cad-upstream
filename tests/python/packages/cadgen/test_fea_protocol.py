@@ -89,7 +89,7 @@ class Operators(unittest.TestCase):
         import numpy as np
 
         self.assertEqual(self.space.boundary_quadratic.shape, (len(self.volume.boundary), 6))
-        facets = self.space.facets_of(["#o1.f2"], {"#o1.f2": 2})
+        facets = self.space.facets_of(["face 2"], {"face 2": 2})
         self.assertTrue(np.allclose(self.space.mesh.p[0, self.space.mesh.facets[:, facets]], 4.0))
 
     def test_mass_sums_to_density_times_volume(self):
@@ -140,7 +140,7 @@ class Operators(unittest.TestCase):
         # A bar held on its x- face only in x (here: clamped) and heated 10 K grows α ΔT L at the far end.
         alpha, rise = 11.7e-6, 10.0
         strain = np.full(self.space.basis.dx.shape, alpha * rise)
-        outcome = solve_linear_static(self.volume, self.steel, (Fixture(("#o1.f1",)),), (), {"#o1.f1": 1},
+        outcome = solve_linear_static(self.volume, self.steel, (Fixture(("face 1",)),), (), {"face 1": 1},
                                       initial_strain=strain, space=self.space)
         far = np.isclose(outcome.dof_locations[:, 0], 4.0)
         self.assertAlmostEqual(float(outcome.displacement[far, 0].mean()) / (alpha * rise * 4.0), 1.0, delta=0.05)
@@ -152,7 +152,7 @@ class Operators(unittest.TestCase):
         from cadgen._internal.fea.solve import solve_linear_static
         from cadgen._internal.fea.study import Fixture, Load
 
-        study = ((Fixture(("#o1.f1",)),), (Load(("#o1.f2",), "force", vector=(0.0, 0.0, -10.0)),), {"#o1.f1": 1, "#o1.f2": 2})
+        study = ((Fixture(("face 1",)),), (Load(("face 2",), "force", vector=(0.0, 0.0, -10.0)),), {"face 1": 1, "face 2": 2})
         direct = solve_linear_static(self.volume, self.steel, *study, solver="direct")
         matrix_free = solve_linear_static(self.volume, self.steel, *study, solver="matrix_free", space=self.space)
         self.assertTrue(matrix_free.solver.startswith("matrix-free cg"))
@@ -167,7 +167,7 @@ class Operators(unittest.TestCase):
         from cadgen._internal.fea.solve import solve_linear_static
         from cadgen._internal.fea.study import Fixture
 
-        outcome = solve_linear_static(self.volume, self.steel, (Fixture(("#o1.f1",)),), (), {"#o1.f1": 1},
+        outcome = solve_linear_static(self.volume, self.steel, (Fixture(("face 1",)),), (), {"face 1": 1},
                                       body_loads=[(0.0, 0.0, -operators.G0_MM_S2)], space=self.space)
         weight = self.steel.density * 4.0 * operators.G0_MM_S2
         self.assertAlmostEqual(outcome.applied[2] / -weight, 1.0, places=9)
@@ -180,16 +180,16 @@ class Operators(unittest.TestCase):
         from cadgen._internal.fea.solve import solve_linear_static
         from cadgen._internal.fea.study import Fixture, Load
 
-        ordinal_of = {"#o1.f1": 1, "#o1.f6": 6}
-        uniform = solve_linear_static(self.volume, self.steel, (Fixture(("#o1.f1",)),),
-                                      (Load(("#o1.f6",), "pressure", pressure=0.2),), ordinal_of, space=self.space)
+        ordinal_of = {"face 1": 1, "face 6": 6}
+        uniform = solve_linear_static(self.volume, self.steel, (Fixture(("face 1",)),),
+                                      (Load(("face 6",), "pressure", pressure=0.2),), ordinal_of, space=self.space)
         per_facet = np.where(self.volume.boundary_ordinal == 6, 0.2, 0.0)
-        mapped = solve_linear_static(self.volume, self.steel, (Fixture(("#o1.f1",)),), (), ordinal_of,
+        mapped = solve_linear_static(self.volume, self.steel, (Fixture(("face 1",)),), (), ordinal_of,
                                      facet_pressures=per_facet, space=self.space)
         np.testing.assert_allclose(mapped.displacement, uniform.displacement, atol=1e-12)
 
 
-BASE = {"material": "steel", "fixtures": [{"faces": ["#o1.f1"]}], "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [1, 0, 0]}]}
+BASE = {"material": "steel", "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [1, 0, 0]}]}
 
 
 class StudyDispatch(unittest.TestCase):
@@ -201,7 +201,7 @@ class StudyDispatch(unittest.TestCase):
         bare, named = parse_study(BASE), parse_study({**BASE, "analysis": "static"})
         self.assertEqual((bare.analysis, named.analysis), ("static", "static"))
         self.assertEqual((bare.fixtures, bare.loads, bare.inputs), (named.fixtures, named.loads, named.inputs))
-        self.assertEqual(bare.inputs.anchor_refs, ("#o1.f1",))
+        self.assertEqual(bare.inputs.anchor_refs, ("face 1",))
         self.assertTrue(bare.inputs.requires_anchor)
         self.assertIsNone(bare.fit)
         self.assertEqual((CHECK_KINDS, VIEW_FIELDS), (("stress", "displacement"), ("von_mises", "displacement")))
@@ -250,12 +250,12 @@ class StudyDispatch(unittest.TestCase):
         study = parse_study({**BASE, "loads": [{"type": "gravity", "vector_g": [0, 0, -1]}, {"type": "acceleration", "vector_g": [5, 0, 0]}]})
         self.assertEqual([load.type for load in study.body_loads], ["gravity", "acceleration"])
         self.assertEqual(study.surface_loads, ())
-        self.assertEqual(study.face_refs, ("#o1.f1",))
+        self.assertEqual(study.face_refs, ("face 1",))
         self.assertEqual(study.inputs.body_accelerations, [(0.0, 0.0, -9806.65), (-5 * 9806.65, -0.0, -0.0)])
         cases = [
             ({"loads": [{"type": "gravity"}]}, "loads[0].vector_g: gravity as [x, y, z] in g"),
             ({"loads": [{"type": "gravity", "vector_g": [0, 0, 0]}]}, "loads[0].vector_g: the gravity is zero"),
-            ({"loads": [{"type": "gravity", "vector_g": [0, 0, -1], "faces": ["#o1.f2"]}]}, "acts on the whole part"),
+            ({"loads": [{"type": "gravity", "vector_g": [0, 0, -1], "faces": ["face 2"]}]}, "acts on the whole part"),
             ({"material": {"E_MPa": 1000, "nu": 0.3, "yield_MPa": 10}, "loads": [{"type": "acceleration", "vector_g": [1, 0, 0]}]},
              "static studies need the density"),
         ]
@@ -279,8 +279,8 @@ class CheckKinds(unittest.TestCase):
         self.assertEqual(parse["frequency"]({"kind": "frequency", "avoid_Hz": [110, 130]}, "c")["avoid_Hz"], [110.0, 130.0])
         self.assertEqual(parse["buckling"]({"kind": "buckling"}, "c"), {"kind": "buckling", "margin": 3.0})
         self.assertEqual(parse["fatigue"]({"kind": "fatigue", "cycles": 1e6}, "c"), {"kind": "fatigue", "cycles": 1e6, "margin": 1.5})
-        self.assertEqual(parse["temperature"]({"kind": "temperature", "max_C": 85, "faces": ["#o1.f7"], "label": "Chip"}, "c"),
-                         {"kind": "temperature", "max_C": 85.0, "faces": ["#o1.f7"], "label": "Chip"})
+        self.assertEqual(parse["temperature"]({"kind": "temperature", "max_C": 85, "faces": ["face 7"], "label": "Chip"}, "c"),
+                         {"kind": "temperature", "max_C": 85.0, "faces": ["face 7"], "label": "Chip"})
         self.assertEqual(CHECK_SPECS["buckling"].scaling, "inverse")
         self.assertEqual(CHECK_SPECS["frequency"].default_label, "Vibration")
 
@@ -308,12 +308,12 @@ class CheckKinds(unittest.TestCase):
         from cadgen._internal.fea.mesh import FaceFingerprint
 
         boundary = np.array([[0, 1, 2], [2, 3, 4]])
-        faces = {1: FaceFingerprint("#o1.f1", 1, 1.0, (0, 0, 0)), 2: FaceFingerprint("#o1.f2", 2, 1.0, (0, 0, 0))}
+        faces = {1: FaceFingerprint("face 1", 1, 1.0, (0, 0, 0)), 2: FaceFingerprint("face 2", 2, 1.0, (0, 0, 0))}
         values = np.array([0.0, 1.0, 2.0, 5.0, 3.0, 9.0])
         common = dict(boundary=boundary, boundary_ordinal=np.array([1, 2]), locations=np.arange(18.0).reshape(6, 3),
                       face_ref=faces, ordinal_of={"a": 1, "b": 2}, where="view.checks[1]")
         on_one = field_max_over(values, ("a",), **common)
-        self.assertEqual((on_one.node, on_one.value, on_one.ref, on_one.faces, on_one.at), (2, 2.0, "#o1.f1", ("#o1.f1",), (6.0, 7.0, 8.0)))
+        self.assertEqual((on_one.node, on_one.value, on_one.ref, on_one.faces, on_one.at), (2, 2.0, "face 1", ("face 1",), (6.0, 7.0, 8.0)))
         self.assertEqual(field_max_over(values, (), **common).node, 5)
         self.assertIsNone(field_max_over(values, (), **common).ref)
 
@@ -323,7 +323,7 @@ class CliLines(unittest.TestCase):
         from cadgen.results import FeaResult
 
         fields = {"summary": {"safety_factor": 2.5}, "mesh": {"elements": 10}, **changes}
-        return FeaResult(ok=True, document=Path("p.step"), occurrence="#o1", glb=Path("p.glb"), sidecar=Path("p.json"), **fields)
+        return FeaResult(ok=True, document=Path("p.step"), occurrence="part", glb=Path("p.glb"), sidecar=Path("p.json"), **fields)
 
     def test_static_lines_are_todays_plus_one_line_per_fit_step(self):
         plain = self._result().human_lines()
@@ -401,12 +401,12 @@ class MeshOptions(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
         cls.directory = class_directory(cls)
         cls.step = _cantilever(cls.directory)
         cls.fixed, cls.loaded = ends(cls.step)
-        cls.occurrence = next(iter(read_scene(cls.step).leaves()))
+        cls.occurrence = next(iter(read_document(cls.step).leaves()))
 
     def test_linear_elements_mesh_solve_and_write(self):
         import numpy as np
@@ -421,7 +421,7 @@ class MeshOptions(unittest.TestCase):
         volume = mesh_occurrence(self.occurrence, max_h=2.0, order=1)
         self.assertEqual((volume.tets.shape[1], volume.boundary.shape[1]), (4, 3))
         space = FemSpace.build(volume, order=1)
-        ordinal_of = {self.fixed: int(self.fixed.rsplit("f", 1)[1]), self.loaded: int(self.loaded.rsplit("f", 1)[1])}
+        ordinal_of = {self.fixed: int(self.fixed.rsplit(" ", 1)[1]), self.loaded: int(self.loaded.rsplit(" ", 1)[1])}
         outcome = solve_linear_static(volume, lookup_material("steel"), (Fixture((self.fixed,)),),
                                       (Load((self.loaded,), "force", vector=(0.0, 0.0, -20.0)),), ordinal_of, space=space)
         self.assertEqual(outcome.boundary_quadratic.shape[1], 3)
@@ -429,7 +429,7 @@ class MeshOptions(unittest.TestCase):
         path = self.directory / "linear.glb"
         write_glb(path, positions=outcome.dof_locations, displacement=outcome.displacement, values=outcome.von_mises,
                   triangles6=outcome.boundary_quadratic, face_of_triangle=np.zeros(len(volume.boundary), dtype=np.int64),
-                  scale=1.0, value_range=(0.0, float(outcome.von_mises.max())), extras={"faces": ["#o1.f1"]},
+                  scale=1.0, value_range=(0.0, float(outcome.von_mises.max())), extras={"faces": ["face 1"]},
                   extra_attributes={"_TEMPERATURE": outcome.von_mises, "_HEAT_FLUX": outcome.displacement})
         gltf, _ = read_glb(path)
         primitive = gltf["meshes"][0]["primitives"][0]
@@ -443,7 +443,7 @@ class MeshOptions(unittest.TestCase):
         from cadgen._internal.fea.mesh import mesh_occurrence
 
         plain = mesh_occurrence(self.occurrence, max_h=2.0)
-        ordinal = int(self.loaded.rsplit("f", 1)[1])
+        ordinal = int(self.loaded.rsplit(" ", 1)[1])
         by_face = mesh_occurrence(self.occurrence, max_h=2.0, size_field={"faces": {ordinal: 0.5}})
         by_point = mesh_occurrence(self.occurrence, max_h=2.0, size_field={"points": [[20.0, 0.0, 0.0, 0.5]], "radius_mm": 1.0})
         for refined in (by_face, by_point):
@@ -453,7 +453,7 @@ class MeshOptions(unittest.TestCase):
             corners = volume.nodes[volume.boundary[volume.boundary_ordinal == face][:, :3]]
             return float(np.linalg.norm(corners[:, 1] - corners[:, 0], axis=1).mean())
         self.assertLess(mean_edge(by_face, ordinal), 0.8)
-        self.assertGreater(mean_edge(by_face, int(self.fixed.rsplit("f", 1)[1])), 1.2)
+        self.assertGreater(mean_edge(by_face, int(self.fixed.rsplit(" ", 1)[1])), 1.2)
 
 
 class SkillDocs(unittest.TestCase):
@@ -598,7 +598,7 @@ class WrittenAttributes(unittest.TestCase):
                            {"analysis": "modal", "material": "steel", "modes": 2, "mesh": {"size_mm": 4.0}})
             gltf, _ = read_glb(result.glb)
         self.assertTrue(result.ok)
-        self.assertEqual((result.analysis, result.occurrence), ("modal", "#o1"))
+        self.assertEqual((result.analysis, result.occurrence), ("modal", "COMPOUND"))
         self.assertEqual(result.summary["rigid_body_modes"], 6)
         self.assertEqual(len(result.summary["modes"]), 2)
         attributes = gltf["meshes"][0]["primitives"][0]["attributes"]

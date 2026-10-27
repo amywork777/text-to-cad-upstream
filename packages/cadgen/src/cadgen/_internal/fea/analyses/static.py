@@ -45,11 +45,11 @@ class StaticInputs(Inputs):
 
 
 def solved_record(volume, outcome, study, ordinal_of: dict[str, int], part: str, fixtures) -> "Solved":
-    """The numbers of one solve the checks read, faces as bare ``#o1.fN`` refs.
+    """The numbers of one solve the checks read, faces as their canonical refs.
 
-    The study may name a face with a document prefix (``part.step#o1.f17``) or a
-    label; both go through the ordinal to the scene's own ref, so a fixture and
-    the peak's face compare as the same string.
+    The study may name a face with a document prefix (``/work/part.step#part/face 17``)
+    or by its name; both go through the ordinal to the document's canonical ref, so a
+    fixture and the peak's face compare as the same string.
     """
     import numpy as np
 
@@ -91,7 +91,8 @@ def solved_part_record(volume, outcome, study, plan, index: int, ordinal_of: dic
     rows = volume.domain == index
     dofs = np.unique(outcome.element_dofs[rows])
     field = outcome.von_mises_parts[index]  # the part's own stress, not smoothed across a joint
-    own = {position for position, fp in volume.faces.items() if fp.ref.startswith(f"{part.ref}.f")}
+    own_refs = set(part.face_refs)
+    own = {position for position, fp in volume.faces.items() if fp.ref in own_refs}
     fixed_ordinals = {ordinal_of[ref] for fixture in fixtures for ref in fixture.faces} & own
     magnitude = np.linalg.norm(outcome.displacement[dofs], axis=1)
     peak_node = int(dofs[field[dofs].argmax()])
@@ -140,7 +141,7 @@ def solved_records(volume, outcome, ctx: SolveContext, fixtures) -> list["Solved
 def peak_face(
     volume, outcome, peak_node: int, fixed_ordinals: set[int], own: set[int] | None = None
 ) -> str | None:
-    """The ``#o1.fN`` face the peak sits on, or ``None`` inside the part and away from every fixed face.
+    """The face (its canonical ref) the peak sits on, or ``None`` inside the part and away from every fixed face.
 
     The peak is at a fixture, and names that fixed face, when its node touches a
     fixed face (a node on an edge touches two) or lies within half an element

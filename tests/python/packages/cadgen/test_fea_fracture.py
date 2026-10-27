@@ -34,12 +34,12 @@ from cadgen._internal.fea.materials import MATERIALS, NONE_REASONS, material_fro
 from cadgen._internal.fea.study import parse_study  # noqa: E402
 
 REFERENCE = Path(__file__).resolve().parents[4] / "skills" / "fea" / "references"
-EDGE = {"kind": "edge", "face": "#o1.f1", "at_mm": [0, 0, 1], "normal": [0, 1, 0], "size_mm": 5}
+EDGE = {"kind": "edge", "face": "face 1", "at_mm": [0, 0, 1], "normal": [0, 1, 0], "size_mm": 5}
 
 
 def _study(**more) -> dict:
-    return {"analysis": "fracture", "material": "aluminum-7075-t6", "fixtures": [{"faces": ["#o1.f3"]}],
-            "loads": [{"faces": ["#o1.f4"], "type": "pressure", "pressure_MPa": -100}], "crack": EDGE, **more}
+    return {"analysis": "fracture", "material": "aluminum-7075-t6", "fixtures": [{"faces": ["face 3"]}],
+            "loads": [{"faces": ["face 4"], "type": "pressure", "pressure_MPa": -100}], "crack": EDGE, **more}
 
 
 class StudyFile(unittest.TestCase):
@@ -52,7 +52,7 @@ class StudyFile(unittest.TestCase):
     def test_it_takes_static_fixtures_and_loads_and_a_crack(self):
         parsed = parse_study(_study())
         inputs = parsed.inputs
-        self.assertEqual(inputs.face_refs, ("#o1.f3", "#o1.f4", "#o1.f1"))
+        self.assertEqual(inputs.face_refs, ("face 3", "face 4", "face 1"))
         self.assertEqual((inputs.crack.kind, inputs.crack.size_mm, inputs.crack.normal), ("edge", 5.0, (0.0, 1.0, 0.0)))
         self.assertEqual(parsed.checks, ({"kind": "fracture", "margin": 1.5},))
         self.assertIsNone(inputs.growth)
@@ -97,7 +97,7 @@ class StudyFile(unittest.TestCase):
     def test_words(self):
         from cadgen._internal.fea.analyses.fracture import crack_words, point_words
 
-        self.assertEqual(crack_words({"kind": "edge", "size_mm": 2, "face": "#o1.f4"}, "face 4"), "2 mm edge crack on face 4")
+        self.assertEqual(crack_words({"kind": "edge", "size_mm": 2, "face": "face 4"}, "face 4"), "2 mm edge crack on face 4")
         self.assertEqual(crack_words({"kind": "surface", "size_mm": 1.5, "length_mm": 6}, "face 4"),
                          "1.5 mm deep surface crack, 6 mm long, on face 4")
         self.assertEqual(crack_words({"kind": "through", "size_mm": 5}, "face 6"), "10 mm through crack across face 6")
@@ -289,9 +289,9 @@ class PinLoadedLink(unittest.TestCase):
             low = (Align.CENTER, Align.CENTER, Align.MIN)
             export_step(Box(140, width, thick, align=low) - Pos(-58, 0, 0) * Cylinder(5, thick, align=low)
                         - Pos(58, 0, 0) * Cylinder(5, thick, align=low), str(step))
-            study = {"analysis": "fracture", "material": "aluminum-7075-t6", "fixtures": [{"faces": ["#o1.f7"]}],
-                     "loads": [{"faces": ["#o1.f8"], "type": "force", "vector_N": [force, 0, 0]}],
-                     "crack": {"kind": "edge", "face": "#o1.f2", "at_mm": [0, -15, 4], "normal": [1, 0, 0], "size_mm": a},
+            study = {"analysis": "fracture", "material": "aluminum-7075-t6", "fixtures": [{"faces": ["face 7"]}],
+                     "loads": [{"faces": ["face 8"], "type": "force", "vector_N": [force, 0, 0]}],
+                     "crack": {"kind": "edge", "face": "face 2", "at_mm": [0, -15, 4], "normal": [1, 0, 0], "size_mm": a},
                      "view": {"checks": [{"kind": "fracture", "margin": 1.5}]}}
             result = solve(step, directory / "link.fea.glb", study)
         self.assertTrue(result.ok)

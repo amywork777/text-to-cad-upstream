@@ -45,9 +45,9 @@ on the verified design. With none named: `mass_saved` and `stress`. For example:
 
 ```json
 {"analysis": "topology", "material": "aluminum-6061-t6",
- "fixtures": [{"faces": ["#o1.f3", "#o1.f4"]}],
- "loads": [{"faces": ["#o1.f9"], "type": "force", "vector_N": [0, 0, -800]}], "mesh": {"size_mm": 2},
- "volume_fraction": 0.3, "keep": ["#o1.f12"], "min_member_mm": 6, "symmetry": ["x"],
+ "fixtures": [{"faces": ["bracket/face 3", "bracket/face 4"]}],
+ "loads": [{"faces": ["bracket/face 9"], "type": "force", "vector_N": [0, 0, -800]}], "mesh": {"size_mm": 2},
+ "volume_fraction": 0.3, "keep": ["bracket/face 12"], "min_member_mm": 6, "symmetry": ["x"],
  "view": {"checks": [{"kind": "mass_saved", "min_percent": 50}, {"kind": "stress"}]}}
 ```
 
@@ -55,8 +55,8 @@ The lightest version of the same bracket that must not move more than 0.1 mm:
 
 ```json
 {"analysis": "topology", "objective": "lightest", "material": "aluminum-6061-t6",
- "fixtures": [{"faces": ["#o1.f3", "#o1.f4"]}],
- "loads": [{"faces": ["#o1.f9"], "type": "force", "vector_N": [0, 0, -800]}],
+ "fixtures": [{"faces": ["bracket/face 3", "bracket/face 4"]}],
+ "loads": [{"faces": ["bracket/face 9"], "type": "force", "vector_N": [0, 0, -800]}],
  "view": {"checks": [{"kind": "displacement", "limit_mm": 0.1}, {"kind": "stress"}]}}
 ```
 

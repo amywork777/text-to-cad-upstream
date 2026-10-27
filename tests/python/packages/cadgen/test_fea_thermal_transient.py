@@ -28,8 +28,8 @@ SIDE, H, T0, AIR = 10.0, 100.0, 100.0, 20.0
 # τ = ρ c V / (h A), in seconds: ρ c in J/(m³ K), V/A = side / 6 in m, h in W/(m² K).
 TAU = ALUMINIUM.density * 1e12 * ALUMINIUM.specific_heat * (SIDE / 1000 / 6) / H
 BASE = {"analysis": "thermal_transient", "material": "aluminum-6061-t6", "end_s": 600,
-        "heat": [{"faces": ["#o1.f7"], "W": 15, "history": [[0, 1], [300, 1], [301, 0]]}],
-        "convection": [{"faces": ["#o1.f3"], "h_W_m2K": 10, "ambient_C": 25}]}
+        "heat": [{"faces": ["face 7"], "W": 15, "history": [[0, 1], [300, 1], [301, 0]]}],
+        "convection": [{"faces": ["face 3"], "h_W_m2K": 10, "ambient_C": 25}]}
 
 
 def lumped(t: float) -> float:
@@ -67,8 +67,8 @@ class StudyFile(unittest.TestCase):
             ({"step_s": 900}, "longer than the run"),
             ({"step_s": "fast"}, "step_s: expected a number"),
             ({"heat": [], "convection": []}, "nothing changes the part's temperature"),
-            ({"heat": [{"faces": ["#o1.f7"], "W": 1, "history": [[5, 1], [2, 0]]}]}, "times must rise"),
-            ({"heat": [{"faces": ["#o1.f7"], "W": 1, "history": [[0, 1, 2]]}]}, "[[t_s, factor], ...]"),
+            ({"heat": [{"faces": ["face 7"], "W": 1, "history": [[5, 1], [2, 0]]}]}, "times must rise"),
+            ({"heat": [{"faces": ["face 7"], "W": 1, "history": [[0, 1, 2]]}]}, "[[t_s, factor], ...]"),
             ({"material": "steel", "view": {"checks": [{"kind": "temperature", "max_C": 10}]}}, "is not above 20 °C"),
             ({"material": {"name": "x", "E_MPa": 1e3, "nu": 0.3, "yield_MPa": 10, "density_t_per_mm3": 1e-9, "conductivity_W_mK": 1}},
              "specific_heat_J_kgK"),

@@ -52,17 +52,17 @@ class StudyFile(unittest.TestCase):
         return parse_study({**BASE, **changes})
 
     def test_it_reads_radiation_to_the_surroundings_and_between_faces(self):
-        study = self.parse(radiation=[{"faces": ["#o1.f6"], "emissivity": 0.9, "ambient_C": 25},
-                                      {"faces": ["#o1.f1", "#o1.f2"], "emissivity": 0.8, "ambient_C": 15, "surface_to_surface": True}])
+        study = self.parse(radiation=[{"faces": ["face 6"], "emissivity": 0.9, "ambient_C": 25},
+                                      {"faces": ["face 1", "face 2"], "emissivity": 0.8, "ambient_C": 15, "surface_to_surface": True}])
         inputs = study.inputs
         self.assertEqual([(r.faces, r.emissivity, r.ambient, r.surface_to_surface) for r in inputs.radiation],
-                         [(("#o1.f6",), 0.9, 25.0, False), (("#o1.f1", "#o1.f2"), 0.8, 15.0, True)])
+                         [(("face 6",), 0.9, 25.0, False), (("face 1", "face 2"), 0.8, 15.0, True)])
         # Radiation alone gives the heat somewhere to go: it anchors a steady study, and sets the reference.
-        self.assertEqual(inputs.anchor_refs, ("#o1.f6", "#o1.f1", "#o1.f2"))
+        self.assertEqual(inputs.anchor_refs, ("face 6", "face 1", "face 2"))
         self.assertEqual(inputs.reference_C, 15.0)
 
     def test_a_study_without_radiation_reads_as_before(self):
-        study = self.parse(temperatures=[{"faces": ["#o1.f1"], "C": 25}])
+        study = self.parse(temperatures=[{"faces": ["face 1"], "C": 25}])
         self.assertEqual(study.inputs.radiation, ())
         from cadgen._internal.fea.analyses.thermal import heat_echo
 
@@ -70,12 +70,12 @@ class StudyFile(unittest.TestCase):
 
     def test_the_errors_name_the_field(self):
         cases = [
-            ([{"faces": ["#o1.f6"], "ambient_C": 25}], "radiation[0].emissivity: how well the faces radiate"),
-            ([{"faces": ["#o1.f6"], "emissivity": 1.2, "ambient_C": 25}], "a share from 0 to 1"),
-            ([{"faces": ["#o1.f6"], "emissivity": 0.9}], "radiation[0].ambient_C"),
-            ([{"faces": ["#o1.f6"], "emissivity": 0.9, "ambient_C": 25, "view": 1}], "radiation takes faces, emissivity, ambient_C"),
-            ([{"faces": ["#o1.f6"], "emissivity": 0.9, "ambient_C": 25, "surface_to_surface": "yes"}], "surface_to_surface: true"),
-            ([{"faces": ["#o1.f6"], "emissivity": 0.9, "ambient_C": 25}, {"faces": ["#o1.f6"], "emissivity": 0.5, "ambient_C": 25}],
+            ([{"faces": ["face 6"], "ambient_C": 25}], "radiation[0].emissivity: how well the faces radiate"),
+            ([{"faces": ["face 6"], "emissivity": 1.2, "ambient_C": 25}], "a share from 0 to 1"),
+            ([{"faces": ["face 6"], "emissivity": 0.9}], "radiation[0].ambient_C"),
+            ([{"faces": ["face 6"], "emissivity": 0.9, "ambient_C": 25, "view": 1}], "radiation takes faces, emissivity, ambient_C"),
+            ([{"faces": ["face 6"], "emissivity": 0.9, "ambient_C": 25, "surface_to_surface": "yes"}], "surface_to_surface: true"),
+            ([{"faces": ["face 6"], "emissivity": 0.9, "ambient_C": 25}, {"faces": ["face 6"], "emissivity": 0.5, "ambient_C": 25}],
              "already radiates in radiation[0]"),
         ]
         for radiation, words in cases:
@@ -83,7 +83,7 @@ class StudyFile(unittest.TestCase):
                 self.assertIn(words, value_error(self, self.parse, radiation=radiation))
 
     def test_nothing_to_take_the_heat_still_names_radiation(self):
-        message = value_error(self, self.parse, heat=[{"faces": ["#o1.f1"], "W": 5}])
+        message = value_error(self, self.parse, heat=[{"faces": ["face 1"], "W": 5}])
         self.assertIn("nowhere for the heat to go, has no steady temperature", message)
         self.assertIn("'radiation' entry", message)
 
@@ -91,16 +91,16 @@ class StudyFile(unittest.TestCase):
         from cadgen._internal.fea.study import parse_study
 
         study = parse_study({"analysis": "thermal_transient", "material": "aluminum-6061-t6", "initial_C": 500, "end_s": 60,
-                             "radiation": [{"faces": ["#o1.f1"], "emissivity": 0.9, "ambient_C": 25}]})
+                             "radiation": [{"faces": ["face 1"], "emissivity": 0.9, "ambient_C": 25}]})
         self.assertEqual(study.inputs.radiation[0].ambient, 25.0)
         self.assertEqual(study.inputs.reference_C, 25.0)
 
     def test_heat_stress_takes_radiation_through_its_thermal_solve(self):
         from cadgen._internal.fea.study import parse_study
 
-        study = parse_study({"analysis": "thermal_stress", "material": "aluminum-6061-t6", "fixtures": [{"faces": ["#o1.f1"]}],
-                             "radiation": [{"faces": ["#o1.f2"], "emissivity": 0.9, "ambient_C": 25}]})
-        self.assertEqual([(entry.faces, entry.emissivity) for entry in study.inputs.thermal.radiation], [(("#o1.f2",), 0.9)])
+        study = parse_study({"analysis": "thermal_stress", "material": "aluminum-6061-t6", "fixtures": [{"faces": ["face 1"]}],
+                             "radiation": [{"faces": ["face 2"], "emissivity": 0.9, "ambient_C": 25}]})
+        self.assertEqual([(entry.faces, entry.emissivity) for entry in study.inputs.thermal.radiation], [(("face 2",), 0.9)])
 
 
 @needs_fea

@@ -162,7 +162,7 @@ class FractureAnalysis(StaticAnalysis):
     def parse(self, document: dict) -> FractureInputs:
         static = StaticAnalysis.parse(self, document)
         if "crack" not in document:
-            raise ValueError('study.crack: a fracture study describes its crack, like {"kind": "edge", "face": "#o1.f4", '
+            raise ValueError('study.crack: a fracture study describes its crack, like {"kind": "edge", "face": "face 4", '
                              '"at_mm": [0, 0, 5], "normal": [0, 1, 0], "size_mm": 2}')
         crack = parse_crack(document["crack"])
         growth = _growth(document["growth"]) if "growth" in document else None
@@ -183,7 +183,7 @@ class FractureAnalysis(StaticAnalysis):
     def crack_geometry(self, ctx: SolveContext, inputs: FractureInputs) -> "CrackGeometry":
         """The study's crack on the part (OCP): its plane, axes and size. One part only."""
         from cadgen._internal.fea import crack
-        from cadgen._internal.fea.defeature import face_map
+        from cadgen._internal.fea.document import face_map
 
         geometry = ctx.geometry
         if ctx.assembly is not None or geometry is None or geometry.shape is None:

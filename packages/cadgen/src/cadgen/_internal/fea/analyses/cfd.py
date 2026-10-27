@@ -83,7 +83,7 @@ BYTES_PER_TET, NNZ_PER_ROW, FILL = 80_000.0, 90.0, 1.0
 SPEED_WALLS = 2.0
 #: What a pressure-drop and a velocity check's findings call what they judge.
 FLOW_WORDS = {"pressure_drop": "pressure drop", "velocity": "fastest flow"}
-ONE_PART = ("a flow study solves one part: name it with --occurrence (#o1.2), or flow through the assembly's parts "
+ONE_PART = ("a flow study solves one part: name it with --occurrence (its part's name, like arm), or flow through the assembly's parts "
             "fused into one")
 
 
@@ -279,7 +279,7 @@ def parse_mapping(document: dict, pushes: str, pressure: str) -> tuple[tuple, An
     if mapping is not None:
         if not isinstance(mapping, dict):
             raise ValueError('map_to_structure: expected an object like {"material": "aluminum-6061-t6", '
-                             '"fixtures": [{"faces": ["#o1.f1"]}]}')
+                             '"fixtures": [{"faces": ["face 1"]}]}')
         kinds.known(mapping, {"material", "fixtures"}, "map_to_structure",
                     f"it takes the part's material and its fixtures (where it is held while {pushes} on it)")
         spec = mapping.get("material", document.get("material"))

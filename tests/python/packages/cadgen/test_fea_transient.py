@@ -29,8 +29,8 @@ from cadgen._internal.fea.study import parse_study  # noqa: E402
 LENGTH, SIDE, FORCE = 100.0, 6.0, 10.0
 STEEL = lookup_material("steel")
 G0 = 9806.65
-TIP = "#o1.f2"
-FIXED = "#o1.f1"
+TIP = "face 2"
+FIXED = "face 1"
 
 
 def _study(**more) -> dict:
@@ -43,12 +43,12 @@ class StudyFile(unittest.TestCase):
     def test_loads_carry_their_histories_and_the_run_its_defaults(self):
         parsed = parse_study(_study(loads=[
             {"faces": [TIP], "type": "force", "vector_N": [0, 0, -50], "history": {"shape": "half_sine", "duration_s": 0.002}},
-            {"faces": ["#o1.f3"], "type": "pressure", "pressure_MPa": 1, "history": [[0, 0], [0.001, 1], [0.003, 0]]}]))
+            {"faces": ["face 3"], "type": "pressure", "pressure_MPa": 1, "history": [[0, 0], [0.001, 1], [0.003, 0]]}]))
         inputs = parsed.inputs
         self.assertEqual(parsed.analysis, "transient")
         self.assertEqual([h.shape for h in inputs.histories], ["half_sine", "table"])
         self.assertEqual((inputs.end_s, inputs.step_s, inputs.damping_ratio, inputs.method), (0.006, None, 0.02, "modal"))
-        self.assertEqual((inputs.face_refs, inputs.anchor_refs, inputs.excitation), ((FIXED, TIP, "#o1.f3"), (FIXED,), None))
+        self.assertEqual((inputs.face_refs, inputs.anchor_refs, inputs.excitation), ((FIXED, TIP, "face 3"), (FIXED,), None))
         self.assertEqual(parsed.checks, ({"kind": "stress"},))
         # The fastest load sets the modes: a 2 ms half-sine carries up to 500 Hz, followed to 3×.
         self.assertAlmostEqual(inputs.content_Hz(), 1000.0)  # the table's 1 ms rise

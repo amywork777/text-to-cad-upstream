@@ -66,10 +66,9 @@ dependencies = [
   # measurements) with Pillow.
   "pillow",
   "shapely",
-  # `cadgen fea parts` finds the parts that touch with numpy and scipy (a KD-tree of
-  # sampled faces) and no solver, so it runs without the fea extra. build123d brings
-  # both already; they are named here because cadgen imports them itself.
-  "numpy",
+  # `cadgen fea parts` finds the parts that touch with scipy (a KD-tree of sampled
+  # faces) and no solver, so it runs without the fea extra. build123d brings it
+  # already; it is named here because cadgen imports it itself.
   "scipy",
 ]
 
@@ -83,7 +82,6 @@ fea = [
   "netgen-mesher>=6.2.2608",
   "scikit-fem>=12,<13",
   "pyamg>=5.2",
-  "numpy>=1.26",
   "scipy>=1.11",
   # Unpacks the CalculiX build downloaded on first use (the stdlib has zstd from 3.14).
   "zstandard>=0.22; python_version < '3.14'",

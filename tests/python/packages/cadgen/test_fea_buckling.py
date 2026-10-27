@@ -27,15 +27,15 @@ EULER_N = math.pi ** 2 * STEEL.E * SIDE ** 4 / 12.0 / (4.0 * LENGTH ** 2)
 
 
 def _study(**more) -> dict:
-    return {"analysis": "buckling", "material": "steel", "fixtures": [{"faces": ["#o1.f1"]}],
-            "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [-PUSH, 0, 0]}], **more}
+    return {"analysis": "buckling", "material": "steel", "fixtures": [{"faces": ["face 1"]}],
+            "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [-PUSH, 0, 0]}], **more}
 
 
 class StudyFile(unittest.TestCase):
     def test_it_takes_static_fixtures_and_loads_and_three_modes(self):
         parsed = parse_study(_study())
         self.assertEqual((parsed.analysis, parsed.inputs.modes, parsed.inputs.requires_anchor), ("buckling", 3, True))
-        self.assertEqual(parsed.inputs.face_refs, ("#o1.f1", "#o1.f2"))
+        self.assertEqual(parsed.inputs.face_refs, ("face 1", "face 2"))
         self.assertEqual(parsed.checks, ({"kind": "buckling", "margin": 3.0},))
         self.assertEqual(parse_study(_study(modes=5)).inputs.modes, 5)
 
@@ -133,11 +133,11 @@ class EulerColumn(unittest.TestCase):
         from cadgen._internal.fea.femspace import FemSpace
         from cadgen._internal.fea.fit import FitPlan
         from cadgen._internal.fea.mesh import mesh_occurrence
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
-        volume = mesh_occurrence(next(iter(read_scene(self.step).leaves())), max_h=2.0)
+        volume = mesh_occurrence(next(iter(read_document(self.step).leaves())), max_h=2.0)
         space = FemSpace.build(volume)
-        ordinal_of = {ref: int(ref.rsplit("f", 1)[1]) for ref in (self.fixed, self.top)}
+        ordinal_of = {ref: int(ref.rsplit(" ", 1)[1]) for ref in (self.fixed, self.top)}
         analysis = get_analysis("buckling")
 
         def run(study, solver="direct"):

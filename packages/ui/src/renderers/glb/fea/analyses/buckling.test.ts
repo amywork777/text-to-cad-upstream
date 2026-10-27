@@ -6,11 +6,11 @@ import buckling, { BUCKLE } from './buckling.js';
 const geometry = { getAttribute: (name: string) => (['_displacement', '_mode_shape_f1'].includes(name) ? { itemSize: 3 } : null) };
 const result = {
   fields: [{ attribute: '_displacement', name: 'mode shape', view: 'mode_shape' }, { attribute: '_von_mises', name: 'von Mises stress' }],
-  deformationScale: 20, mesh: { geometry }, occurrence: '#o1', parts: [],
+  deformationScale: 20, mesh: { geometry }, occurrence: 'bracket', parts: [],
   series: { kind: 'mode', unit: '×', default: 0, frames: [
     { value: 1, label: 'Mode 1 · 13.3×', attributes: { mode_shape: '_displacement' } },
     { value: 2, label: 'Mode 2 · 119×', attributes: { mode_shape: '_mode_shape_f1' } }] },
-  study: { fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }], loads: [{ type: 'force', faces: ['#o1.f2'], vector: [-100, 0, 0], pressure: null }],
+  study: { fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }], loads: [{ type: 'force', faces: ['bracket/face 2'], vector: [-100, 0, 0], pressure: null }],
     material: { name: 'Steel', yieldMPa: 250 } },
 };
 

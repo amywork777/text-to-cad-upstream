@@ -79,17 +79,17 @@ def _uniaxial(directory: Path, angle: float, **more):
 
 class StudyFile(unittest.TestCase):
     def test_a_fixture_is_fixed_by_default_or_a_roller(self):
-        base = {"material": "steel", "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, 1]}]}
-        parsed = parse_study({**base, "fixtures": [{"faces": ["#o1.f1"]}, {"faces": ["#o1.f3"], "type": "roller"}]})
+        base = {"material": "steel", "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 1]}]}
+        parsed = parse_study({**base, "fixtures": [{"faces": ["face 1"]}, {"faces": ["face 3"], "type": "roller"}]})
         self.assertEqual([fixture.type for fixture in parsed.fixtures], ["fixed", "roller"])
         with self.assertRaisesRegex(ValueError, r"fixtures\[0\]\.type: 'pinned' is not one of \('fixed', 'roller'\)"):
-            parse_study({**base, "fixtures": [{"faces": ["#o1.f1"], "type": "pinned"}]})
+            parse_study({**base, "fixtures": [{"faces": ["face 1"], "type": "pinned"}]})
 
     def test_mesh_refine_names_balls_meshed_finer(self):
         from cadgen._internal.fea.study import refine_points
 
-        base = {"material": "steel", "fixtures": [{"faces": ["#o1.f1"]}],
-                "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, 1]}]}
+        base = {"material": "steel", "fixtures": [{"faces": ["face 1"]}],
+                "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 1]}]}
         ball = {"center_mm": [1, 2, 3], "radius_mm": 1.0, "size_mm": 0.5}
         parsed = parse_study({**base, "mesh": {"size_mm": 3, "refine": [ball]}})
         self.assertEqual(parsed.mesh_refine, (((1.0, 2.0, 3.0), 1.0, 0.5),))

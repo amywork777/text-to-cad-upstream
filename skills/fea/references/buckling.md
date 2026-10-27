@@ -26,8 +26,8 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis):
 
 ```json
 {"analysis": "buckling", "material": "steel",
- "fixtures": [{"faces": ["#o1.f1"]}],
- "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -100]}],
+ "fixtures": [{"faces": ["bracket/face 1"]}],
+ "loads": [{"faces": ["bracket/face 2"], "type": "force", "vector_N": [0, 0, -100]}],
  "modes": 3,
  "view": {"checks": [{"kind": "buckling", "margin": 3}]}}
 ```

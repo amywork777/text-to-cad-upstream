@@ -258,7 +258,7 @@ def _coils(document: dict) -> tuple[Coil, ...]:
         point = _vector(axis["point_mm"], f"{where}.axis.point_mm") if "point_mm" in axis else None
         part = entry.get("part")
         if part is not None and (not isinstance(part, str) or not part.strip()):
-            raise ValueError(f"{where}.part: the coil's part, by its name or ref (\"#o2\")")
+            raise ValueError(f"{where}.part: the coil's part, by its name or ref (\"coil\")")
         name = kinds.text(entry, "name", where=where).get("name") or f"coil {index + 1}"
         out.append(Coil(part.strip() if part else None, turns, amps, direction, point, name))
     return tuple(out)
@@ -294,7 +294,7 @@ def _electro_thermal(document: dict, needs: set[str], check_kinds: list, heat: s
             raise ValueError(f"view.checks: a temperature check needs {heat} to go somewhere: add electro_thermal")
         return None, None
     if not isinstance(block, dict):
-        raise ValueError('electro_thermal: an object like {"convection": [{"faces": ["#o1.f3"], "h_W_m2K": 10, '
+        raise ValueError('electro_thermal: an object like {"convection": [{"faces": ["face 3"], "h_W_m2K": 10, '
                          '"ambient_C": 25}]}, where the Joule heat goes')
     kinds.known(block, set(thermal_analysis.HEAT_KEYS), "electro_thermal",
                 "it takes temperatures, heat and convection, as a thermal study writes them")
@@ -337,9 +337,9 @@ def parse_document(document: dict) -> ElectromagneticInputs:
     if stray := sorted((set(document) & set().union(*MODE_KEYS.values())) - allowed):
         raise ValueError(f"study: {', '.join(stray)} {'is' if len(stray) == 1 else 'are'} not for {_a(mode)} study; "
                          f"it takes {', '.join(sorted(allowed))}")
-    voltages = _electrodes(document, "voltages", "V", '{"faces": ["#o1.f1"], "V": 1000, "name": "top"}',
+    voltages = _electrodes(document, "voltages", "V", '{"faces": ["face 1"], "V": 1000, "name": "top"}',
                            "a held voltage takes faces, V (volts) and an optional name")
-    currents = _electrodes(document, "currents", "A", '{"faces": ["#o1.f2"], "A": 2}',
+    currents = _electrodes(document, "currents", "A", '{"faces": ["face 2"], "A": 2}',
                            "a current takes faces, A (amperes into the part through them) and an optional name")
     coils = _coils(document)
     names = [e.name for e in (*voltages, *currents)]
@@ -359,12 +359,12 @@ def parse_document(document: dict) -> ElectromagneticInputs:
     if mode == "electrostatic":
         if not voltages:
             raise ValueError('voltages: an electrostatic study needs faces held at a voltage, like '
-                             '[{"faces": ["#o1.f1"], "V": 1000}, {"faces": ["#o1.f2"], "V": 0}]')
+                             '[{"faces": ["face 1"], "V": 1000}, {"faces": ["face 2"], "V": 0}]')
         between = _between(document, voltages, "capacitance", "voltages")
     elif mode == "current":
         if not voltages:
             raise ValueError('voltages: a current needs somewhere to leave: hold a face at a voltage, like '
-                             '{"faces": ["#o1.f2"], "V": 0} (ground)')
+                             '{"faces": ["face 2"], "V": 0} (ground)')
         between = _between(document, (*voltages, *currents), "resistance", "electrodes")
         needs.add("resistivity")
         thermal, reference = _electro_thermal(document, needs, check_kinds, "the Joule heat")
@@ -379,7 +379,7 @@ def parse_document(document: dict) -> ElectromagneticInputs:
                              '"voltages" at 0 V) or a uniform field ("applied_field": {"mT": 10, "direction": [1, 0, 0]})')
         if currents and not voltages:
             raise ValueError('voltages: an AC current needs its return: hold the conductor\'s other end at 0 V, like '
-                             '[{"faces": ["#o1.f2"], "V": 0}]')
+                             '[{"faces": ["face 2"], "V": 0}]')
         for e in voltages:
             if e.value != 0:
                 raise ValueError(f"voltages[{e.name}]: an AC study is driven by its current; hold the return at 0 V "
@@ -397,7 +397,7 @@ def parse_document(document: dict) -> ElectromagneticInputs:
             from cadgen._internal.fea.study import parse_fixtures
 
             if not isinstance(mapping, dict):
-                raise ValueError('map_to_structure: an object like {"part": "armature", "fixtures": [{"faces": ["#o2.f1"]}]}')
+                raise ValueError('map_to_structure: an object like {"part": "armature", "fixtures": [{"faces": ["armature/face 1"]}]}')
             kinds.known(mapping, {"part", "fixtures"}, "map_to_structure",
                         "it takes the part the magnetic force acts on and the fixtures that hold the parts")
             try:

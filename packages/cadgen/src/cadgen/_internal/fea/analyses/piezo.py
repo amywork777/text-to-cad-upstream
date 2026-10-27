@@ -140,7 +140,7 @@ class PiezoInputs(Inputs):
 
 def _electrodes(document: dict) -> tuple[ElectrodeSpec, ...]:
     raw = document.get("electrodes")
-    example = '[{"faces": ["#o1.f6"], "V": 100, "name": "top"}, {"faces": ["#o1.f5"], "V": 0, "name": "ground"}]'
+    example = '[{"faces": ["face 6"], "V": 100, "name": "top"}, {"faces": ["face 5"], "V": 0, "name": "ground"}]'
     if not isinstance(raw, list) or not raw:
         raise ValueError(f"electrodes: a piezo study needs its electrodes, the faces painted with metal, like {example} "
                          '(an open one, the sensing side, is {"faces": [...], "open": true})')
@@ -148,7 +148,7 @@ def _electrodes(document: dict) -> tuple[ElectrodeSpec, ...]:
     for index, entry in enumerate(raw):
         where = f"electrodes[{index}]"
         if not isinstance(entry, dict):
-            raise ValueError(f"{where}: expected an object like {{\"faces\": [\"#o1.f6\"], \"V\": 100}}")
+            raise ValueError(f"{where}: expected an object like {{\"faces\": [\"face 6\"], \"V\": 100}}")
         kinds.known(entry, {"faces", "V", "open", "name"}, where,
                     "an electrode takes faces, V (held at a voltage) or open (true: it floats) and an optional name")
         is_open = entry.get("open", False)

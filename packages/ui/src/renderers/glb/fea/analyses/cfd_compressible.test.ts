@@ -14,7 +14,7 @@ function gasResult(checks: Record<string, unknown>[] = []) {
     position: [0, 0, 0, 0.04, 0, 0, 0, 0.004, 0], _displacement: vec(9), _pressure: [2400, -13000, 0], _mach: [0.19, 0.53, 0.27],
     _temperature: [17.9, 4.5, 15.7], _face: [0, 0, 0],
   }, {
-    generator: 'cadgen fea', name: 'nozzle gas flow', deformation_scale: null, faces: ['#o1.f2'], occurrence: '#o1',
+    generator: 'cadgen fea', name: 'nozzle gas flow', deformation_scale: null, faces: ['bracket/face 2'], occurrence: 'bracket',
     analysis: { type: 'cfd_compressible', tier: 3, word: 'Fast gas flow', estimate: false, limits: [LIMIT], noun: 'this flow',
       reference_C: null, warnings: [], mach: { value: 0.53, limit: 1.8, regime: 'subsonic', checked: true }, walls: 'slip' },
     fields: [
@@ -70,7 +70,7 @@ describe('cfd_compressible', () => {
   it('says its fastest flow in Details, and where the file warns, leads the takeaway with how far past it ran', () => {
     const within = studyRows(gasResult()).find((row: { id: string }) => row.id === 'details');
     expect(within.children[0]).toMatchObject({ id: 'mach', label: 'Fastest flow Mach 0.53', hint: 'Subsonic, checked to Mach 1.8',
-      refs: ['#o1'], summary: 'Fastest flow Mach 0.53 (subsonic), within the Mach 1.8 its solver is checked to' });
+      refs: ['bracket'], summary: 'Fastest flow Mach 0.53 (subsonic), within the Mach 1.8 its solver is checked to' });
     expect(machWarning(gasResult())).toBeNull();
     expect(feaVerdict(gasResult([mach(0.53, 'passes')])).caption.startsWith('Ideal gas · Peak')).toBe(true);
 
@@ -80,7 +80,7 @@ describe('cfd_compressible', () => {
     past.analysis.warnings = [sentence];
     expect(feaVerdict(past).caption.startsWith('Ideal gas · past Mach 1.8 · ')).toBe(true);
     const row = studyRows(past).find((entry: { id: string }) => entry.id === 'details').children[0];
-    expect(row).toMatchObject({ id: 'mach', label: sentence, refs: ['#o1'], summary: sentence });
+    expect(row).toMatchObject({ id: 'mach', label: sentence, refs: ['bracket'], summary: sentence });
 
     // Within the range, but the gas leaves the outlet faster than sound: still not checked.
     const outlet = gasResult([mach(1.2, 'fails')]);

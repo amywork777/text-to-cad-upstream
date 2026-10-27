@@ -89,9 +89,9 @@ def _face_at(scene, part_ref: str, z: float) -> str:
 
 
 def _scene(step: Path):
-    from cadgen.step_scene import read_scene
+    from cadgen._internal.fea.document import read_document
 
-    scene = read_scene(step)
+    scene = read_document(step)
     return scene, _refs(scene)
 
 
@@ -115,9 +115,9 @@ class DetectContactsTest(unittest.TestCase):
 
     def _parts(self, **kwargs):
         from cadgen._internal.fea.assembly import list_parts
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
-        return list_parts(read_scene(_write_assembly(self.tmp, **kwargs)))
+        return list_parts(read_document(_write_assembly(self.tmp, **kwargs)))
 
     def _contacts(self, **kwargs):
         from cadgen._internal.fea.assembly import detect_contacts
@@ -210,10 +210,10 @@ class DetectContactsTest(unittest.TestCase):
 
     def test_a_row_of_parts_is_checked_only_between_neighbours(self):
         from cadgen._internal.fea.assembly import detect_contacts, list_parts
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
         path = _export(self.tmp / "row.step", *(_box(f"box{n}", (10 * n, 0, 0), (10, 10, 10)) for n in range(12)))
-        parts = list_parts(read_scene(path))
+        parts = list_parts(read_document(path))
         said = []
         contacts = detect_contacts(parts, TOLERANCE, log=said.append)
         self.assertEqual(len(contacts), 11)
@@ -229,9 +229,9 @@ class MeshAssemblyTest(unittest.TestCase):
     def _glued(self, lift: float = 0.0):
         from cadgen._internal.fea.assembly import detect_contacts, list_parts
         from cadgen._internal.fea.mesh import mesh_assembly
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
-        scene = read_scene(_write_assembly(self.tmp, lift=lift, name=f"lift{lift}"))
+        scene = read_document(_write_assembly(self.tmp, lift=lift, name=f"lift{lift}"))
         parts = list_parts(scene)
         contacts = detect_contacts(parts, TOLERANCE)
         refs = [part.ref for part in parts]
@@ -276,7 +276,7 @@ class MeshAssemblyTest(unittest.TestCase):
         base, post = refs
         base_bottom, post_top = _face_at(scene, base, 0.0), _face_at(scene, post, 40.0)
         self.assertEqual(len(volume.faces), 12)
-        self.assertTrue(all(ref.startswith((base + ".f", post + ".f")) for ref in volume.faces))
+        self.assertTrue(all(ref.startswith((base + "/face ", post + "/face ")) for ref in volume.faces))
         positions = list(volume.faces)
         for ref, z in ((base_bottom, 0.0), (post_top, 40.0)):
             rows = volume.boundary_ordinal == positions.index(ref) + 1
@@ -425,12 +425,12 @@ class DuplicateNamesTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
         cls.tmp = class_directory(cls)
         cls.step = _export(cls.tmp / "bars.step", _box("base", (0, 0, 0), (40, 20, 10)),
                            *(_box("bar", (x, 5, 10), (10, 10, 30)) for x in (2, 26)))
-        cls.scene = read_scene(cls.step)
+        cls.scene = read_document(cls.step)
         cls.base, cls.first, cls.second = [leaf.ref for leaf in cls.scene.leaves()]
 
     def study(self, **extra) -> dict:
@@ -488,8 +488,8 @@ class AssemblyStudyFileTest(unittest.TestCase):
 
     BASE = {
         "material": "6061",
-        "fixtures": [{"faces": ["#o1.1.f1"]}],
-        "loads": [{"faces": ["#o1.2.f2"], "type": "force", "vector_N": [1, 0, 0]}],
+        "fixtures": [{"faces": ["base/face 1"]}],
+        "loads": [{"faces": ["post/face 2"], "type": "force", "vector_N": [1, 0, 0]}],
     }
 
     def _parse(self, **extra):
@@ -685,15 +685,14 @@ class SolveAssemblyTest(unittest.TestCase):
         face = glb_array(self.mixed.glb, "_FACE")[:, 0].astype(int)
         for part_index, face_index in set(zip(part.tolist(), face.tolist())):
             self.assertTrue(
-                extras["faces"][face_index].startswith(extras["parts"][part_index]["ref"] + ".f"),
+                extras["faces"][face_index].startswith(extras["parts"][part_index]["ref"] + "/face "),
                 (extras["faces"][face_index], extras["parts"][part_index]["ref"]),
             )
 
-    def test_face_refs_sort_by_their_owners_numbers(self):
-        from cadgen._internal.fea.run import _face_key
-
-        refs = ["#o1.10.f2", "#o1.2.f10", "#o1.2.f9", "#o1.1.f30"]
-        self.assertEqual(sorted(refs, key=_face_key), ["#o1.1.f30", "#o1.2.f9", "#o1.2.f10", "#o1.10.f2"])
+    def test_a_joints_faces_come_in_the_glbs_face_order(self):
+        extras = glb_extras(self.mixed.glb)
+        (joint,) = extras["connections"]
+        self.assertEqual(joint["faces"], sorted(joint["faces"], key=extras["faces"].index))
 
     def test_the_glb_parts_match_the_sidecar(self):
         extras = glb_extras(self.mixed.glb)
@@ -731,8 +730,8 @@ class SolveAssemblyTest(unittest.TestCase):
         # The same study without it is an assembly study of the document.
         with self.assertRaisesRegex(ValueError, "--occurrence"):
             solve(self.step, self.tmp / "stray.glb", self.study(None), occurrence=post)
-        with self.assertRaisesRegex(ValueError, "unknown occurrence"):
-            solve(self.step, self.tmp / "nope.glb", self.alone, occurrence="#o9")
+        with self.assertRaisesRegex(ValueError, "has no part or assembly nope"):
+            solve(self.step, self.tmp / "nope.glb", self.alone, occurrence="nope")
 
     def test_occurrence_says_the_studys_parts_and_connections_are_ignored(self):
         study = {**self.alone, "parts": {"post": {"material": "6061"}}}
@@ -866,9 +865,9 @@ class SolveAssemblyTest(unittest.TestCase):
     def test_parts_the_glue_would_fuse_are_named_in_a_study_error(self):
         from cadgen._internal.fea.assembly import Contact, list_parts
         from cadgen._internal.fea.mesh import mesh_assembly
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
-        scene = read_scene(_write_assembly(self.tmp, corner_block=0.25, name="corner-forced"))
+        scene = read_document(_write_assembly(self.tmp, corner_block=0.25, name="corner-forced"))
         refs = _refs_of(list_parts(scene))
         # Bonded by hand, as the old 2 V / A estimate did: gluing fuses the corner into one solid.
         forced = Contact(a=refs["block"], b=refs["base"], area_mm2=0.19, gap_mm=0.0, interference_mm=0.083)

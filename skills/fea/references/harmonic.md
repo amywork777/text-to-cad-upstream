@@ -42,23 +42,23 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis); reads den
 
 ```json
 {"analysis": "harmonic", "material": "steel",
- "fixtures": [{"faces": ["#o1.f1"]}],
+ "fixtures": [{"faces": ["bracket/face 1"]}],
  "excitation": {"type": "base", "direction": [0, 0, 1], "amplitude_g": 1},
  "sweep_Hz": [10, 2000], "damping_ratio": 0.02,
  "view": {"checks": [
    {"kind": "stress"},
-   {"kind": "acceleration", "limit_g": 10, "faces": ["#o1.f2"], "label": "Sensor"}]}}
+   {"kind": "acceleration", "limit_g": 10, "faces": ["bracket/face 2"], "label": "Sensor"}]}}
 ```
 
 A force shake:
 
 ```json
 {"analysis": "harmonic", "material": "aluminum-6061-t6",
- "fixtures": [{"faces": ["#o1.f1"]}],
+ "fixtures": [{"faces": ["bracket/face 1"]}],
  "excitation": {"type": "force"},
- "loads": [{"faces": ["#o1.f7"], "type": "force", "vector_N": [0, 0, 5]}],
+ "loads": [{"faces": ["bracket/face 7"], "type": "force", "vector_N": [0, 0, 5]}],
  "sweep_Hz": [25, 100],
- "view": {"checks": [{"kind": "displacement", "limit_mm": 0.2, "faces": ["#o1.f7"]}]}}
+ "view": {"checks": [{"kind": "displacement", "limit_mm": 0.2, "faces": ["bracket/face 7"]}]}}
 ```
 
 ## What it writes

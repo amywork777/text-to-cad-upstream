@@ -6,10 +6,10 @@ caller) of this shape::
     {
       "analysis": "static",                      # optional; the default (analyses/__init__.py lists every one)
       "material": "aluminum-6061-t6",            # or {"name", "E_MPa", "nu", "yield_MPa"}
-      "fixtures": [{"faces": ["#o1.f17"], "type": "fixed"}],
+      "fixtures": [{"faces": ["face 17"], "type": "fixed"}],
       "loads": [
-        {"faces": ["#o1.f22"], "type": "force", "vector_N": [0, -500, 0]},
-        {"faces": ["#o1.f3"], "type": "pressure", "pressure_MPa": 0.5}
+        {"faces": ["face 22"], "type": "force", "vector_N": [0, -500, 0]},
+        {"faces": ["face 3"], "type": "pressure", "pressure_MPa": 0.5}
       ],
       "mesh": {"size_mm": 2.5},                  # optional; default from the bounding box
       "output": {"deformation_scale": "auto"},   # optional; a number, or "auto"
@@ -27,7 +27,7 @@ its ``parse``. The view's checks, fields and drives, the mesh orders and the con
 static load may also be a body load, with no faces: ``{"type": "gravity", "vector_g": [0, 0, -1]}`` or ``{"type":
 "acceleration", "vector_g": [5, 0, 0]}`` (in g).
 
-Face references are the viewer's own selectors (``#o1.f17``, or with the document prefix ``part.step#o1.f17``); ``cadgen
+Face references are the engine's refs, as the viewer copies them (``bracket/face 17``, or after the document's path, ``/work/bracket.step#bracket/face 17``); ``cadgen
 fea faces`` lists them. A ``force`` is the TOTAL force on its faces, spread as a uniform traction. A ``pressure`` acts
 along the inward normal (positive pushes on the surface). The optional ``view`` is the agent's choice of what the viewer
 offers for the result (see :func:`_view`): copied, checked, into the GLB and the sidecar. Every check here is

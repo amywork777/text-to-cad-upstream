@@ -63,8 +63,8 @@ grade's data: use the grade's own):
  "material": {"name": "steel",
               "creep": {"A": 1.875e-16, "n": 5, "m": 0, "units": "MPa, hours",
                         "temperature_C": 600, "source": "the supplier's creep data sheet"}},
- "fixtures": [{"faces": ["#o1.f1"]}],
- "loads": [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -60]}],
+ "fixtures": [{"faces": ["bracket/face 1"]}],
+ "loads": [{"faces": ["bracket/face 2"], "type": "force", "vector_N": [0, 0, -60]}],
  "view": {"checks": [{"kind": "creep_strain", "limit_percent": 1},
                      {"kind": "displacement", "limit_mm": 0.5}]}}
 ```

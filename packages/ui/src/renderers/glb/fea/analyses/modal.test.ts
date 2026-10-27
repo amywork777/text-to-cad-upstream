@@ -10,7 +10,7 @@ const series = { kind: 'mode', unit: 'Hz', default: 0, frames: [
   { value: 2, label: 'Mode 2 · 3018 Hz', attributes: { mode_shape: '_mode_shape_f1' } }] };
 const result = (fixtures: unknown[]) => ({
   fields: [{ attribute: '_displacement', name: 'mode shape', view: 'mode_shape' }], deformationScale: 12, series, mesh: { geometry },
-  occurrence: '#o1', parts: [], study: { fixtures, loads: [], material: { name: 'Steel', yieldMPa: 250 } },
+  occurrence: 'bracket', parts: [], study: { fixtures, loads: [], material: { name: 'Steel', yieldMPa: 250 } },
 });
 
 describe('modal', () => {
@@ -32,8 +32,8 @@ describe('modal', () => {
     expect(modal.setupGroups).toEqual([heldRows, freeRows, madeOfRows]);
     const free = modal.setupGroups.flatMap((group: (r: unknown) => unknown[]) => group(result([])));
     expect(free.map((row: { label: string }) => row.label)).toEqual(['Held at', 'Made of']);
-    expect(free[0].children[0]).toMatchObject({ label: 'Nothing: free in space', refs: ['#o1'], summary: 'Free in space, held by nothing' });
-    const held = modal.setupGroups.flatMap((group: (r: unknown) => unknown[]) => group(result([{ type: 'fixed', faces: ['#o1.f1'] }])));
+    expect(free[0].children[0]).toMatchObject({ label: 'Nothing: free in space', refs: ['bracket'], summary: 'Free in space, held by nothing' });
+    const held = modal.setupGroups.flatMap((group: (r: unknown) => unknown[]) => group(result([{ type: 'fixed', faces: ['bracket/face 1'] }])));
     expect(held.map((row: { label: string }) => row.label)).toEqual(['Held at', 'Made of']);
     expect(held[0].children[0].label).toBe('Face 1');
   });

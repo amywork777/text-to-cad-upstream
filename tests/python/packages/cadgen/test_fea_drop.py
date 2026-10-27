@@ -22,7 +22,7 @@ LINE = ("Estimate: 1 m drop stopping in 2 mm, 500 g equivalent static load; "
 
 
 def _study(**drop) -> dict:
-    return {"analysis": "drop", "material": "abs", "drop": {"height_mm": 1000, "onto": ["#o1.f5"], **drop}}
+    return {"analysis": "drop", "material": "abs", "drop": {"height_mm": 1000, "onto": ["face 5"], **drop}}
 
 
 def _parse(document):
@@ -35,8 +35,8 @@ class Parse(unittest.TestCase):
     def test_g_is_height_over_stopping_distance_exactly(self):
         study = _parse(_study(stop_mm=2))
         self.assertEqual(study.inputs.G, 500.0)
-        self.assertEqual(study.fixtures[0].faces, ("#o1.f5",))
-        self.assertEqual(study.inputs.anchor_refs, ("#o1.f5",))
+        self.assertEqual(study.fixtures[0].faces, ("face 5",))
+        self.assertEqual(study.inputs.anchor_refs, ("face 5",))
         self.assertEqual(study.checks, ({"kind": "stress", "label": "Drop"},))
 
     def test_a_half_sine_stop_peaks_at_pi_v_over_two_tau(self):
@@ -64,16 +64,16 @@ class Parse(unittest.TestCase):
         for document, fragment in (
             (_study(), "exactly one of stop_mm"),
             (_study(stop_mm=2, impact_ms=1), "exactly one of stop_mm"),
-            ({"analysis": "drop", "material": "abs", "drop": {"onto": ["#o1.f5"], "stop_mm": 2}}, "drop.height_mm"),
+            ({"analysis": "drop", "material": "abs", "drop": {"onto": ["face 5"], "stop_mm": 2}}, "drop.height_mm"),
             ({"analysis": "drop", "material": "abs", "drop": {"height_mm": 10, "stop_mm": 2}}, "drop.onto"),
             (_study(stop_mm=0), "drop.stop_mm: must be > 0"),
             (_study(stop_mm=2, direction=[0, 0, 0]), "the direction is zero"),
             (_study(stop_mm=2, floor="rigid"), "unknown keys ['floor']"),
             (_study(stop_mm=2, dynamic="yes"), "drop.dynamic: true or false"),
-            ({"analysis": "drop", "material": "abs", "drop": {"height_mm": 10, "onto": ["#o1.f5"], "stop_mm": 2},
+            ({"analysis": "drop", "material": "abs", "drop": {"height_mm": 10, "onto": ["face 5"], "stop_mm": 2},
               "fixtures": []}, "drop studies take"),
             ({"analysis": "drop", "material": {"E_MPa": 2000, "nu": 0.3, "yield_MPa": 40}, "drop": {"height_mm": 10,
-              "onto": ["#o1.f5"], "stop_mm": 2}}, "need the density"),
+              "onto": ["face 5"], "stop_mm": 2}}, "need the density"),
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, value_error(self, _parse, document))

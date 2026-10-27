@@ -631,18 +631,20 @@ def solid_estimate(ctx, *, components: int = 3, extra_bytes: float = 0.0, extra_
 # -- geometry ----------------------------------------------------------------------------------------
 
 
-def geometry_of(shape, occurrence_ref: str = "", *, parts: int = 1, keep_shape: bool = True) -> Geometry:
-    """Volume, area, diagonal and every face's kind and size of an OCP shape, in cadgen's face order."""
+def geometry_of(shape, occurrence_ref: str = "", *, face_refs: "tuple[str, ...]" = (), parts: int = 1,
+                keep_shape: bool = True) -> Geometry:
+    """Volume, area, diagonal and every face's kind and size of an OCP shape, in the engine's face order: each face
+    under its ref in ``face_refs`` (index 0 is face 1; the occurrence's, :meth:`Occurrence.face_refs`), else ``face N``."""
     from OCP.BRepAdaptor import BRepAdaptor_Surface
     from OCP.GeomAbs import GeomAbs_Cone, GeomAbs_Cylinder, GeomAbs_Plane, GeomAbs_Sphere, GeomAbs_Torus
 
-    from cadgen._internal.entity_ordinals import entity_map
     from cadgen._internal.fea.assembly import gprops
     from cadgen._internal.fea.defeature import as_face
+    from cadgen._internal.fea.document import face_map
     from cadgen._internal.fea.mesh import shape_diagonal
 
     volume = float(gprops(shape, "Volume").Mass())
-    faces = entity_map(shape, "face")
+    faces = face_map(shape)
     infos = []
     total = 0.0
     for ordinal in range(1, faces.Extent() + 1):
@@ -665,8 +667,7 @@ def geometry_of(shape, occurrence_ref: str = "", *, parts: int = 1, keep_shape: 
             kind, size = "plane", _perimeter_width(face, area)
         else:
             kind, size = "other", _perimeter_width(face, area)
-        prefix = occurrence_ref or ""
-        infos.append(FaceInfo(ordinal, f"{prefix}.f{ordinal}" if prefix else f"f{ordinal}", kind, float(size), area,
+        infos.append(FaceInfo(ordinal, face_refs[ordinal - 1] if face_refs else f"face {ordinal}", kind, float(size), area,
                               (centre.X(), centre.Y(), centre.Z())))
     return Geometry(volume, total, shape_diagonal(shape), tuple(infos), shape if keep_shape else None, occurrence_ref, parts)
 

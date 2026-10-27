@@ -28,7 +28,7 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis):
 ```json
 {"analysis": "fsi", "material": {"name": "silicone", "E_MPa": 5, "nu": 0.3, "yield_MPa": 3},
  "mesh": {"size_mm": 0.8},
- "fixtures": [{"faces": ["#o1.f9"]}],
+ "fixtures": [{"faces": ["bracket/face 9"]}],
  "flow": {"kind": "internal", "fluid": "water", "regime": "auto",
           "inlets": [{"opening": "x_min", "velocity_m_s": 0.5}],
           "outlets": [{"opening": "x_max", "pressure_Pa": 0}]},

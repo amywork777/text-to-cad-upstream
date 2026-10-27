@@ -26,14 +26,14 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis):
  "flow": {"kind": "internal", "fluid": "water", "regime": "auto",
           "inlets": [{"opening": "x_min", "velocity_m_s": 0.2, "temperature_C": 20}],
           "outlets": [{"opening": "x_max", "pressure_Pa": 0}]},
- "heat": [{"faces": ["#o1.f3"], "W": 40}],
- "convection": [{"faces": ["#o1.f5"], "h_W_m2K": 10, "ambient_C": 25}],
- "view": {"checks": [{"kind": "temperature", "max_C": 70, "faces": ["#o1.f3"], "label": "Chip side"},
+ "heat": [{"faces": ["bracket/face 3"], "W": 40}],
+ "convection": [{"faces": ["bracket/face 5"], "h_W_m2K": 10, "ambient_C": 25}],
+ "view": {"checks": [{"kind": "temperature", "max_C": 70, "faces": ["bracket/face 3"], "label": "Chip side"},
                      {"kind": "pressure_drop", "limit_Pa": 5000}]}}
 ```
 
 External (a part in a stream): `"flow": {"kind": "external", "fluid": "air", "velocity_m_s":
-[2, 0, 0], "temperature_C": 25}`, with `"heat": [{"faces": ["#o1.f1"], "W": 5}]`.
+[2, 0, 0], "temperature_C": 25}`, with `"heat": [{"faces": ["bracket/face 1"], "W": 5}]`.
 
 - `flow`: everything a [`cfd`](cfd.md#the-study) study's `flow` takes, plus:
   - each inlet's `temperature_C` (required), or an external flow's `flow.temperature_C`;

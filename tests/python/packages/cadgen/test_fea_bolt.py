@@ -57,11 +57,11 @@ def hand_load_factor() -> tuple[float, float, float]:
 
 def _bolt(**more) -> dict:
     return {"between": ["plate", "bracket"], "type": "bolt", "size": "M6", "preload_N": PRELOAD,
-            "holes": ["#o1.1.f3", "#o1.2.f3"], **more}
+            "holes": ["plate/face 3", "bracket/face 3"], **more}
 
 
 def _study(**more) -> dict:
-    return {"analysis": "bolt", "material": "steel", "fixtures": [{"faces": ["#o1.2.f1"]}], "connections": [_bolt()], **more}
+    return {"analysis": "bolt", "material": "steel", "fixtures": [{"faces": ["bracket/face 1"]}], "connections": [_bolt()], **more}
 
 
 class StudyFile(unittest.TestCase):
@@ -70,7 +70,7 @@ class StudyFile(unittest.TestCase):
         (bolt,) = parsed.inputs.bolts
         self.assertEqual((parsed.analysis, bolt.between, bolt.size.name, bolt.preload_N, bolt.grade, bolt.friction),
                          ("bolt", ("plate", "bracket"), "M6", PRELOAD, "8.8", 0.2))
-        self.assertEqual(parsed.inputs.face_refs, ("#o1.2.f1", "#o1.1.f3", "#o1.2.f3"))
+        self.assertEqual(parsed.inputs.face_refs, ("bracket/face 1", "plate/face 3", "bracket/face 3"))
         self.assertEqual((parsed.inputs.loads, parsed.inputs.requires_anchor, parsed.inputs.steps), ((), False, 5))
         self.assertEqual([check["kind"] for check in parsed.checks], ["bolt_load", "joint_separation", "joint_slip"])
         self.assertEqual([(c.between, c.type) for c in parsed.connections], [(("plate", "bracket"), "bolt")])
@@ -84,7 +84,7 @@ class StudyFile(unittest.TestCase):
         self.assertAlmostEqual(bolt.proof_N, 830 * 36.6, places=6)
         self.assertEqual(bolt_words(parsed.inputs.bolts[0]), "M6 bolt, 5 kN preload, clamps plate and bracket")
         # Several bolts may clamp the same two parts.
-        two = parse_study(_study(connections=[_bolt(), _bolt(holes=["#o1.1.f4", "#o1.2.f4"])]))
+        two = parse_study(_study(connections=[_bolt(), _bolt(holes=["plate/face 4", "bracket/face 4"])]))
         self.assertEqual(len(two.inputs.bolts), 2)
 
     def test_only_the_bolt_analysis_accepts_bolts(self):
@@ -93,9 +93,9 @@ class StudyFile(unittest.TestCase):
             with self.subTest(analysis=name):
                 self.assertNotIn("bolt", get_analysis(name).connection_types)
         with self.assertRaisesRegex(ValueError, r"connections\[0\]\.type: 'bolt' connections are not yet supported"):
-            parse_study({**_study(), "analysis": "static", "loads": [{"faces": ["#o1.1.f2"], "type": "force", "vector_N": [0, 0, 1]}]})
+            parse_study({**_study(), "analysis": "static", "loads": [{"faces": ["plate/face 2"], "type": "force", "vector_N": [0, 0, 1]}]})
         with self.assertRaisesRegex(ValueError, r"connections\[0\]: unknown keys \['holes', 'preload_N', 'size'\]"):
-            parse_study({**_study(), "analysis": "contact", "loads": [{"faces": ["#o1.1.f2"], "type": "force", "vector_N": [0, 0, 1]}]})
+            parse_study({**_study(), "analysis": "contact", "loads": [{"faces": ["plate/face 2"], "type": "force", "vector_N": [0, 0, 1]}]})
 
     def test_the_errors_say_what_to_add(self):
         no_bolt = {key: value for key, value in _study().items() if key != "connections"}
@@ -197,7 +197,7 @@ def _joint(directory: Path, width: float | None):
     """Two plates with a 6.6 mm hole, 6 mm thick, stacked: round as wide as the head (``width`` None) or square."""
     from build123d import Align, Box, Compound, Cylinder, Pos, export_step
 
-    from cadgen.step_scene import read_scene
+    from cadgen._internal.fea.document import read_document
 
     base = (Align.CENTER, Align.CENTER, Align.MIN)
 
@@ -209,7 +209,7 @@ def _joint(directory: Path, width: float | None):
     top.label, bottom.label = "plate", "bracket"
     step = directory / "joint.step"
     export_step(Compound(children=[top, bottom]), str(step))
-    scene = read_scene(step)
+    scene = read_document(step)
     return step, {leaf.label: leaf.ref for leaf in scene.leaves()}, scene
 
 
@@ -380,7 +380,7 @@ class LapJoint(unittest.TestCase):
     def setUpClass(cls):
         from build123d import Align, Box, Compound, Cylinder, Pos, export_step
 
-        from cadgen.step_scene import read_scene
+        from cadgen._internal.fea.document import read_document
 
         directory = class_directory(cls)
         low = (Align.MIN, Align.CENTER, Align.MIN)
@@ -389,7 +389,7 @@ class LapJoint(unittest.TestCase):
         strap.label, link.label = "base_strap", "link"
         cls.step = directory / "lap_joint.step"
         export_step(Compound(children=[strap, link]), str(cls.step))
-        scene = read_scene(cls.step)
+        scene = read_document(cls.step)
         refs = {leaf.label: leaf.ref for leaf in scene.leaves()}
         wall = 2 * math.pi * 4.5 * 6
         cls.holes = [_face(scene, refs["link"], 2, 9.0, wall), _face(scene, refs["base_strap"], 2, 3.0, wall)]

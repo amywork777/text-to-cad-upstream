@@ -188,7 +188,7 @@ def _where_on_axis(entry: dict, where: str) -> tuple[tuple[str, ...], float | No
     """A bearing's or an unbalance's place: ``faces`` (its station is their centre along the axis) or ``at_mm``."""
     has_faces, has_at = "faces" in entry, "at_mm" in entry
     if has_faces == has_at:
-        raise ValueError(f"{where}: give where it is as faces (like [\"#o1.f3\"]: its place along the spin axis is the "
+        raise ValueError(f"{where}: give where it is as faces (like [\"face 3\"]: its place along the spin axis is the "
                          "faces' centre) or at_mm (the position along the spin axis, in the part's coordinates), one of them")
     if has_faces:
         return kinds.faces(entry, where=where), None
@@ -211,7 +211,7 @@ def _coefficient(value: Any, where: str):
 def _bearing(entry: Any, index: int) -> BearingInput:
     where = f"bearings[{index}]"
     if not isinstance(entry, dict):
-        raise ValueError(f"{where}: expected an object like {{\"faces\": [\"#o1.f3\"], \"k\": 20000, \"c\": 5}}")
+        raise ValueError(f"{where}: expected an object like {{\"faces\": [\"face 3\"], \"k\": 20000, \"c\": 5}}")
     allowed = {"faces", "at_mm", "k", "c", "rigid", "clamped", "label", *COEFFICIENTS}
     unknown = set(entry) - allowed
     if unknown:
@@ -276,7 +276,7 @@ def _disc(entry: Any, index: int) -> DiscInput:
 def _unbalance(entry: Any, index: int) -> UnbalanceInput:
     where = f"unbalance[{index}]"
     if not isinstance(entry, dict):
-        raise ValueError(f"{where}: expected an object like {{\"faces\": [\"#o1.f5\"], \"g_mm\": 50}}")
+        raise ValueError(f"{where}: expected an object like {{\"faces\": [\"face 5\"], \"g_mm\": 50}}")
     allowed = {"faces", "at_mm", "g_mm", "phase_deg", "label"}
     unknown = set(entry) - allowed
     if unknown:
@@ -465,8 +465,8 @@ class RotordynamicsAnalysis(AnalysisBase):
         spin = _spin(document["spin"])
         raw = document.get("bearings")
         if not isinstance(raw, list) or not raw:
-            raise ValueError("bearings: a rotor needs the bearings it runs in, like [{\"faces\": [\"#o1.f3\"], \"rigid\": true}, "
-                             "{\"faces\": [\"#o1.f9\"], \"k\": 20000, \"c\": 5}] (springs N/mm, dampers N s/mm)")
+            raise ValueError("bearings: a rotor needs the bearings it runs in, like [{\"faces\": [\"face 3\"], \"rigid\": true}, "
+                             "{\"faces\": [\"face 9\"], \"k\": 20000, \"c\": 5}] (springs N/mm, dampers N s/mm)")
         bearings = tuple(_bearing(entry, i) for i, entry in enumerate(raw))
         discs_raw = document.get("discs", [])
         if not isinstance(discs_raw, list):
@@ -481,7 +481,7 @@ class RotordynamicsAnalysis(AnalysisBase):
         if isinstance(unbalance_raw, dict):
             unbalance_raw = [unbalance_raw]
         if not isinstance(unbalance_raw, list):
-            raise ValueError("unbalance: a list like [{\"faces\": [\"#o1.f5\"], \"g_mm\": 50}]")
+            raise ValueError("unbalance: a list like [{\"faces\": [\"face 5\"], \"g_mm\": 50}]")
         unbalance = tuple(_unbalance(entry, i) for i, entry in enumerate(unbalance_raw))
         modes = document.get("modes", DEFAULT_CURVES)
         if isinstance(modes, bool) or not isinstance(modes, int) or not 1 <= modes <= MAX_CURVES:

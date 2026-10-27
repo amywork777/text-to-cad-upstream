@@ -27,8 +27,8 @@ from tests.python.support.fea_fixtures import (
 from cadgen._internal.fea.analyses import get_analysis  # noqa: E402
 from cadgen._internal.fea.materials import lookup_material  # noqa: E402
 
-FIXTURES = [{"faces": ["#o1.f1"]}]
-LOADS = [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, -100]}]
+FIXTURES = [{"faces": ["face 1"]}]
+LOADS = [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -100]}]
 
 
 def _study(material="steel", **fatigue) -> dict:
@@ -151,7 +151,7 @@ class Parse(unittest.TestCase):
         inputs = study.inputs
         self.assertEqual((inputs.source, inputs.loading, inputs.ratio, inputs.cycles, inputs.surface, inputs.factor),
                          ("static", "fully_reversed", -1.0, 1e6, "machined", 1.0))
-        self.assertEqual(study.fixtures[0].faces, ("#o1.f1",))
+        self.assertEqual(study.fixtures[0].faces, ("face 1",))
         self.assertEqual(study.checks, ({"kind": "fatigue", "margin": 1.5},))
         ratio = self.parse(_study(loading={"ratio": 0.1}, cycles=2e5, surface="ground", factor=0.8)).inputs
         self.assertEqual((ratio.loading, ratio.ratio, ratio.cycles, ratio.surface, ratio.factor), ("ratio", 0.1, 2e5, "ground", 0.8))

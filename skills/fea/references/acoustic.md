@@ -47,8 +47,8 @@ Keys beyond the [shared ones](study-file.md#shared-by-every-analysis). Cavity mo
 Frequency response, a speaker face and a microphone:
 
 ```json
-{"analysis": "acoustic", "domain": "part", "fluid": "air", "sources": [{"faces": ["#o1.f1"], "velocity_mm_s": 1}],
- "absorbers": [{"faces": ["#o1.f2"], "absorption": 0.3}], "sweep_Hz": [100, 2000], "points": 40, "loss_factor": 0.01,
+{"analysis": "acoustic", "domain": "part", "fluid": "air", "sources": [{"faces": ["bracket/face 1"], "velocity_mm_s": 1}],
+ "absorbers": [{"faces": ["bracket/face 2"], "absorption": 0.3}], "sweep_Hz": [100, 2000], "points": 40, "loss_factor": 0.01,
  "probes": [{"label": "ear", "at_mm": [490, 20, 20]}],
  "view": {"checks": [{"kind": "sound_level", "limit_dB": 85, "probes": ["ear"]}]}}
 ```
@@ -57,7 +57,7 @@ Vibro-acoustics, a harmonic shake of the part driving the air around it:
 
 ```json
 {"analysis": "acoustic", "from": "harmonic", "domain": "outside", "material": "aluminum-6061-t6",
- "fixtures": [{"faces": ["#o1.f1"]}], "excitation": {"type": "base", "direction": [0, 0, 1], "amplitude_g": 1},
+ "fixtures": [{"faces": ["bracket/face 1"]}], "excitation": {"type": "base", "direction": [0, 0, 1], "amplitude_g": 1},
  "sweep_Hz": [100, 1500], "damping_ratio": 0.02, "air_mm": 60,
  "probes": [{"label": "1 m", "at_mm": [40, 20, 1000]}],
  "view": {"checks": [{"kind": "sound_level", "limit_dB": 70, "probes": ["1 m"]}]}}

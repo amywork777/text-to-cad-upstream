@@ -37,7 +37,7 @@ from cadgen._internal.fea import calculix  # noqa: E402
 #: CalculiX and the built-in solver agree to 0.005 % on one mesh (measured on a real part's curved mesh; a straight
 #: one like these agrees to CalculiX's seven printed digits).
 AGREEMENT = 5e-5
-ORDINAL_OF = {f"#o1.f{i}": i for i in range(1, 7)}
+ORDINAL_OF = {f"face {i}": i for i in range(1, 7)}
 
 
 def _steel():
@@ -71,8 +71,8 @@ def _cantilever(cells=(20, 2, 2)):
     from cadgen._internal.fea.study import Fixture, Load
 
     volume = box_volume((100.0, 10.0, 10.0), cells)
-    fixtures = (Fixture(("#o1.f1",)), Fixture(("#o1.f3",), "roller"))
-    loads = (Load(("#o1.f2",), "force", vector=(0.0, 0.0, -1000.0)), Load(("#o1.f6",), "pressure", pressure=0.5))
+    fixtures = (Fixture(("face 1",)), Fixture(("face 3",), "roller"))
+    loads = (Load(("face 2",), "force", vector=(0.0, 0.0, -1000.0)), Load(("face 6",), "pressure", pressure=0.5))
     return volume, _steel(), fixtures, loads, ORDINAL_OF, {"body_loads": [(0.0, 0.0, -98066.5)]}
 
 
@@ -89,7 +89,7 @@ class Import(unittest.TestCase):
     def test_the_command_line_names_the_solver_that_ran(self):
         from cadgen.results import FeaResult
 
-        result = FeaResult(ok=True, document=Path("part.step"), occurrence="#o1", glb=Path("part.fea.glb"),
+        result = FeaResult(ok=True, document=Path("part.step"), occurrence="part", glb=Path("part.fea.glb"),
                            sidecar=Path("part.fea.json"),
                            mesh={"elements": 480, "dofs": 3075, "size_mm": 5.0, "solver": "calculix 2.23 (C3D10)"})
         first = result.human_lines()[0]

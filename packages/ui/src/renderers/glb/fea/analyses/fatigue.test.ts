@@ -8,7 +8,7 @@ import { feaFile, vec } from '../../__tests__/feaFile.js';
 // The check as cadgen writes it: the Goodman factor as the value, held to its margin, its ratio one over
 // the factor and its close_at one over the margin; the cycles needed (`need`) and, within the data, the life.
 const CLOSE = { kind: 'fatigue', label: 'Fatigue life', value: 1.317, limit: 1.5, unit: '', ratio: 0.759301, close_at: 0.666667,
-  margin: 1.5, status: 'close', where: { ref: '#o1.f1', at: [0, 0, 3] }, need: 1e6, life: 3.903e7 };
+  margin: 1.5, status: 'close', where: { ref: 'bracket/face 1', at: [0, 0, 3] }, need: 1e6, life: 3.903e7 };
 const FAILS = { ...CLOSE, label: 'Service life', value: 0.812, ratio: 1.231527, status: 'fails', need: 1e9 };
 const RUNOUT = { kind: 'fatigue', label: '', value: 2.4, limit: 1.5, unit: '', ratio: 0.416667, close_at: 0.666667, margin: 1.5,
   status: 'passes', where: { ref: null, at: [0, 0, 0] }, need: 1e6 };
@@ -25,9 +25,9 @@ function fatigueResult(checks: unknown[], { capped = false, view = null }: { cap
       { attribute: '_FATIGUE_FACTOR', name: 'fatigue safety factor', units: '', min: 1.317, max: 100, attribute_scale: 1, field: 'fatigue_factor' },
       { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 1.4, attribute_scale: 1000, field: 'displacement' }],
     analysis: { type: 'fatigue', tier: 1, word: 'Fatigue life', estimate: false, limits: [], noun: 'this load', reference_C: null, warnings: [] },
-    checks, faces: ['#o1.f1', '#o1.f2'], occurrence: '#o1', ...(view ? { view } : {}),
-    study: { material: { name: 'Aluminum 7075-T6', yield_MPa: 503 }, fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }],
-      loads: [{ type: 'force', faces: ['#o1.f2'], vector_N: [0, 0, -150] }], mesh: { size_mm: 1.5, refined_from_mm: 3 },
+    checks, faces: ['bracket/face 1', 'bracket/face 2'], occurrence: 'bracket', ...(view ? { view } : {}),
+    study: { material: { name: 'Aluminum 7075-T6', yield_MPa: 503 }, fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }],
+      loads: [{ type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -150] }], mesh: { size_mm: 1.5, refined_from_mm: 3 },
       fatigue: { from: 'static', loading: 'zero_based', stress_ratio: 0, cycles: 1e6, surface: 'machined', factor: 1 } },
   }, { index: false, color: false });
 }

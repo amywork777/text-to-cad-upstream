@@ -18,7 +18,7 @@ function heldResult(extras: Record<string, unknown> = {}) {
     position: [0, 0, 0, 0.04, 0, 0, 0, 0.006, 0], _von_mises: [67, 10, 30], _displacement: vec(9), _creep_strain: [0, 0, 0], ...frames,
     _face: [0, 0, 1],
   }, {
-    generator: 'cadgen fea', name: 'bar creep', deformation_scale: 19, faces: ['#o1.f1', '#o1.f2'], occurrence: '#o1',
+    generator: 'cadgen fea', name: 'bar creep', deformation_scale: 19, faces: ['bracket/face 1', 'bracket/face 2'], occurrence: 'bracket',
     duration_h: 10000, reached_h: 10000, stopped: false,
     analysis: { type: 'creep', tier: 3, word: 'Creep', estimate: false, limits: [LIMIT], noun: 'this load', reference_C: null, warnings: [] },
     fields: [
@@ -32,11 +32,11 @@ function heldResult(extras: Record<string, unknown> = {}) {
       { value: 10000, label: '10,000 h', attributes: { von_mises: '_VON_MISES_F2', displacement: '_DISPLACEMENT_F2', creep_strain: '_CREEP_STRAIN_F2' } }] },
     study: {
       material: { name: 'Steel (structural, generic)', yield_MPa: 250, youngs_GPa: 200, poisson: 0.3 },
-      fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }], loads: [{ type: 'force', faces: ['#o1.f2'], vector_N: [0, 0, -60] }],
+      fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }], loads: [{ type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -60] }],
       duration_h: 10000, steps: 20, mesh: { size_mm: 3, order: 2, elements: 400, refined_from_mm: null },
     },
     checks: [{ kind: 'creep_strain', label: 'Creep', value: 0.8, limit: 1, unit: '%', ratio: 0.8, close_at: 0.9, status: 'passes',
-      where: { ref: '#o1.f1', at: [0, 0, 0] }, duration_h: 10000, at: { frame: 2, value: 10000, unit: 'h' } }],
+      where: { ref: 'bracket/face 1', at: [0, 0, 0] }, duration_h: 10000, at: { frame: 2, value: 10000, unit: 'h' } }],
     findings: [],
     ...extras,
   });

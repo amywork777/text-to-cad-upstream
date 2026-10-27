@@ -62,8 +62,8 @@ A [0/90]s carbon/epoxy panel (T300/5208, Tsai and Hahn's textbook lamina) clampe
            {"material": "t300", "angle_deg": 90, "thickness_mm": 0.25},
            {"material": "t300", "angle_deg": 90, "thickness_mm": 0.25},
            {"material": "t300", "angle_deg": 0,  "thickness_mm": 0.25}],
- "fixtures": [{"faces": ["#o1.f1", "#o1.f2"]}],
- "loads": [{"faces": ["#o1.f6"], "type": "pressure", "pressure_MPa": 0.001}]}
+ "fixtures": [{"faces": ["bracket/face 1", "bracket/face 2"]}],
+ "loads": [{"faces": ["bracket/face 6"], "type": "pressure", "pressure_MPa": 0.001}]}
 ```
 
 ## How it solves

@@ -12,7 +12,7 @@ function heatResult(extras: Record<string, unknown> = {}) {
     position: [0, 0, 0, 0.01, 0, 0, 0, 0.01, 0], _von_mises: [25, 60, 84], _displacement: vec(9), _temperature: [25, 60, 84],
     _heat_flux: [0, 900, 2000], _face: [0, 0, 1],
   }, {
-    generator: 'cadgen fea', name: 'plate temperature', deformation_scale: null, faces: ['#o1.f1', '#o1.f7'],
+    generator: 'cadgen fea', name: 'plate temperature', deformation_scale: null, faces: ['bracket/face 1', 'bracket/face 7'],
     analysis: { type: 'thermal', tier: 1, word: 'Heat', estimate: false, limits: [], noun: 'this heat', reference_C: 25, warnings: [] },
     fields: [
       { attribute: '_TEMPERATURE', name: 'temperature', units: '°C', min: 25, max: 84, attribute_scale: 1, field: 'temperature', signed: true },
@@ -20,13 +20,13 @@ function heatResult(extras: Record<string, unknown> = {}) {
     ],
     study: {
       material: { name: 'Aluminum 6061-T6', yield_MPa: 276 },
-      temperatures: [{ faces: ['#o1.f1'], C: 25 }],
-      heat: [{ faces: ['#o1.f7'], W: 15 }],
-      convection: [{ faces: ['#o1.f3', '#o1.f4'], h_W_m2K: 10, ambient_C: 25 }],
+      temperatures: [{ faces: ['bracket/face 1'], C: 25 }],
+      heat: [{ faces: ['bracket/face 7'], W: 15 }],
+      convection: [{ faces: ['bracket/face 3', 'bracket/face 4'], h_W_m2K: 10, ambient_C: 25 }],
       mesh: { size_mm: 2, order: 2, elements: 100, refined_from_mm: null },
     },
     checks: [{ kind: 'temperature', label: 'Chip side', value: 84, limit: 100, unit: '°C', ratio: (84 - 25) / (100 - 25), close_at: 0.9,
-      status: 'passes', where: { ref: '#o1.f7', at: [1, 2, 3] }, faces: ['#o1.f7'], reference: 25 }],
+      status: 'passes', where: { ref: 'bracket/face 7', at: [1, 2, 3] }, faces: ['bracket/face 7'], reference: 25 }],
     findings: [],
     ...extras,
   });
@@ -62,14 +62,14 @@ describe('thermal', () => {
   it('says where it radiates: to the surroundings at a temperature, with its emissivity, and to other faces', () => {
     const study = {
       material: { name: 'Aluminum 6061-T6', yield_MPa: 276 },
-      temperatures: [{ faces: ['#o1.f1'], C: 25 }], heat: [], convection: [],
-      radiation: [{ faces: ['#o1.f7'], emissivity: 0.9, ambient_C: 25 }, { faces: ['#o1.f1', '#o1.f7'], emissivity: 0.8, ambient_C: 40, surface_to_surface: true }],
+      temperatures: [{ faces: ['bracket/face 1'], C: 25 }], heat: [], convection: [],
+      radiation: [{ faces: ['bracket/face 7'], emissivity: 0.9, ambient_C: 25 }, { faces: ['bracket/face 1', 'bracket/face 7'], emissivity: 0.8, ambient_C: 40, surface_to_surface: true }],
       mesh: { size_mm: 2, order: 2, elements: 100, refined_from_mm: null },
     };
     const result = heatResult({ study });
     expect(result.study.radiation).toEqual([
-      { faces: ['#o1.f7'], emissivity: 0.9, ambientC: 25, surfaceToSurface: false },
-      { faces: ['#o1.f1', '#o1.f7'], emissivity: 0.8, ambientC: 40, surfaceToSurface: true },
+      { faces: ['bracket/face 7'], emissivity: 0.9, ambientC: 25, surfaceToSurface: false },
+      { faces: ['bracket/face 1', 'bracket/face 7'], emissivity: 0.8, ambientC: 40, surfaceToSurface: true },
     ]);
     const rows = studyRows(result);
     expect(rows.slice(0, 3).map((row: { label: string }) => row.label)).toEqual(['Kept at', 'Radiation', 'Made of']);
@@ -86,7 +86,7 @@ describe('thermal', () => {
     expect(verdict.caption).toContain('Hottest 84 °C, 16 °C under its limit');
     expect(JSON.stringify(verdict)).not.toContain('No stress');
     const hot = feaVerdict(heatResult({ checks: [{ kind: 'temperature', label: 'Chip side', value: 112, limit: 100, unit: '°C',
-      ratio: (112 - 25) / 75, close_at: 0.9, status: 'fails', where: { ref: '#o1.f7', at: [1, 2, 3] }, reference: 25 }] }));
+      ratio: (112 - 25) / 75, close_at: 0.9, status: 'fails', where: { ref: 'bracket/face 7', at: [1, 2, 3] }, reference: 25 }] }));
     expect(hot.title).toBe('Runs too hot');
     expect(hot.caption).toContain('12 °C over its limit');
   });

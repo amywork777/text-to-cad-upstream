@@ -27,7 +27,7 @@ LENGTH, SIDE = 100.0, 6.0
 STEEL = lookup_material("steel")
 G0 = 9806.65
 ZETA = 0.02
-FIXED = "#o1.f1"
+FIXED = "face 1"
 
 
 def _study(**more) -> dict:
@@ -46,13 +46,13 @@ class StudyFile(unittest.TestCase):
         self.assertEqual(parsed.checks, ({"kind": "stress"},))
 
     def test_a_force_shake_swings_its_loads(self):
-        study = _study(excitation={"type": "force"}, loads=[{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, 10]}])
+        study = _study(excitation={"type": "force"}, loads=[{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 10]}])
         inputs = parse_study(study).inputs
-        self.assertEqual((inputs.excitation, inputs.direction, inputs.face_refs), ("force", None, (FIXED, "#o1.f2")))
+        self.assertEqual((inputs.excitation, inputs.direction, inputs.face_refs), ("force", None, (FIXED, "face 2")))
         self.assertEqual(inputs.loads[0].vector, (0.0, 0.0, 10.0))
 
     def test_what_is_wrong_is_said_in_plain_words(self):
-        loads = [{"faces": ["#o1.f2"], "type": "force", "vector_N": [0, 0, 1]}]
+        loads = [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 1]}]
         for bad, words in (
             ({"excitation": None}, "what shakes it"),
             ({"excitation": {"type": "random"}}, "is not one of"),
@@ -75,10 +75,10 @@ class StudyFile(unittest.TestCase):
 
     def test_it_takes_the_three_shaking_checks_and_a_frequency_scrubber(self):
         parsed = parse_study(_study(view={"checks": [
-            {"kind": "stress"}, {"kind": "displacement", "limit_mm": 0.5}, {"kind": "acceleration", "limit_g": 10, "faces": ["#o1.f2"]}],
+            {"kind": "stress"}, {"kind": "displacement", "limit_mm": 0.5}, {"kind": "acceleration", "limit_g": 10, "faces": ["face 2"]}],
             "presets": [{"label": "At resonance", "frame": 490, "deformation": 50}]}))
         self.assertEqual([check["kind"] for check in parsed.checks], ["stress", "displacement", "acceleration"])
-        self.assertEqual(parsed.check_faces, ("#o1.f2",))
+        self.assertEqual(parsed.check_faces, ("face 2",))
 
 
 class Ladder(unittest.TestCase):

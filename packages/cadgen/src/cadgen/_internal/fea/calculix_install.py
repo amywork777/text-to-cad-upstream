@@ -67,10 +67,10 @@ def conda_platform() -> str | None:
 def installed_dir(conda: str) -> Path:
     """The cache folder the pinned build for ``conda`` unpacks into; named by its pins, so a new pin
     is a new folder and an old one is never half-replaced."""
-    from cadgen._internal.cache_paths import cache_root
+    from cadgen.viewer.recents import cache_dir
 
     digest = hashlib.sha256("".join(sha for _, sha, _ in PINS[conda]).encode()).hexdigest()[:12]
-    return cache_root() / "tools" / f"calculix-{VERSION}-{conda}-{digest}"
+    return cache_dir() / "tools" / f"calculix-{VERSION}-{conda}-{digest}"
 
 
 def _binary(prefix: Path) -> Path:

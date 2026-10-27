@@ -41,7 +41,7 @@ afterEach(() => { vi.restoreAllMocks(); cleanup(); vi.unstubAllGlobals(); docume
 // Heat over time, as `cadgen fea solve` writes it: a temperature per frame, warming from 25 °C, the
 // model never deformed (its displacement is zero), opening on the hottest frame.
 const WARMUP = {
-  generator: 'cadgen fea', name: 'heatsink temperature', deformation_scale: 1, document: 'part.step', occurrence: 'o1', faces: ['#o1.f1', '#o1.f2'],
+  generator: 'cadgen fea', name: 'heatsink temperature', deformation_scale: 1, document: 'part.step', occurrence: 'bracket', faces: ['bracket/face 1', 'bracket/face 2'],
   analysis: { type: 'thermal_transient', tier: 1, word: 'Heat over time', reference_C: 25 },
   fields: [{ attribute: '_TEMPERATURE', name: 'temperature', units: '°C', min: 25, max: 75, attribute_scale: 1, signed: true, per_frame: true }],
   series: { kind: 'time', unit: 's', default: 2, frames: [
@@ -120,11 +120,11 @@ it('a result has a GLB\'s tools, Clip among them, and a cut never recolours it o
 });
 
 const DROPPED = {
-  generator: 'cadgen fea', name: 'plate drop (estimate)', deformation_scale: 1, document: 'part.step', occurrence: 'o1', faces: ['#o1.f1', '#o1.f2'],
+  generator: 'cadgen fea', name: 'plate drop (estimate)', deformation_scale: 1, document: 'part.step', occurrence: 'bracket', faces: ['bracket/face 1', 'bracket/face 2'],
   analysis: { type: 'drop', tier: 2, word: 'Drop (estimate)', estimate: true, limits: [], noun: 'this drop', warnings: [],
     fall: { height_mm: 1000, direction: [0, 0, -1], speed_m_s: 4.4287, floor: { point_mm: [500, 0, 0], normal: [0, 0, 1] }, impact_ms: 0.9 } },
   fields: [{ attribute: '_TEMPERATURE', name: 'von Mises stress', units: 'MPa', min: 0, max: 75, attribute_scale: 1, field: 'von_mises' }],
-  study: { drop: { height_mm: 1000, onto: ['#o1.f1'], stop_mm: 2, direction: [0, 0, -1] }, material: { name: 'ABS', yield_MPa: 40 } },
+  study: { drop: { height_mm: 1000, onto: ['bracket/face 1'], stop_mm: 2, direction: [0, 0, -1] }, material: { name: 'ABS', yield_MPa: 40 } },
 };
 
 it('a drop moves as kinematics does: a Time row and named states pose it, and the sidebar\'s Animation plays the fall', () => {
@@ -163,7 +163,7 @@ it('a drop moves as kinematics does: a Time row and named states pose it, and th
 
 // Heat stress as `cadgen fea solve` writes it: its motion is the heat coming on, on a Heat row.
 const HEATED = {
-  generator: 'cadgen fea', name: 'strip heat stress', deformation_scale: 1, document: 'part.step', occurrence: 'o1', faces: ['#o1.f1', '#o1.f2'],
+  generator: 'cadgen fea', name: 'strip heat stress', deformation_scale: 1, document: 'part.step', occurrence: 'bracket', faces: ['bracket/face 1', 'bracket/face 2'],
   analysis: { type: 'thermal_stress', tier: 1, word: 'Heat stress', reference_C: 25 },
   fields: [{ attribute: '_TEMPERATURE', name: 'temperature', units: '°C', min: 25, max: 75, attribute_scale: 1, field: 'temperature', signed: true }],
 };

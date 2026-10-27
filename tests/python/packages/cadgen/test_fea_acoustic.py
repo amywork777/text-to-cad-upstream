@@ -61,42 +61,42 @@ class StudyFile(unittest.TestCase):
         self.assertEqual([spec.name for spec in get_analysis("acoustic").fields], ["sound_pressure"])
         response = parse_study({
             "analysis": "acoustic", "fluid": "water", "sweep_Hz": [100, 1000],
-            "sources": [{"faces": ["#o1.f1"], "velocity_mm_s": 2}, {"point_mm": [1, 2, 3], "volume_velocity_m3_s": 1e-6}],
-            "absorbers": [{"faces": ["#o1.f2"], "absorption": 0.3}], "open": [{"faces": ["#o1.f3"]}],
+            "sources": [{"faces": ["face 1"], "velocity_mm_s": 2}, {"point_mm": [1, 2, 3], "volume_velocity_m3_s": 1e-6}],
+            "absorbers": [{"faces": ["face 2"], "absorption": 0.3}], "open": [{"faces": ["face 3"]}],
             "probes": [{"label": "ear", "at_mm": [0, 0, 10]}],
             "view": {"checks": [{"kind": "sound_level", "limit_dB": 80, "probes": ["ear"]}]},
         })
         inputs = response.inputs
         self.assertEqual((inputs.solve, inputs.fluid.name, inputs.loss_factor, inputs.sweep_Hz), ("response", "water", 0.01, (100.0, 1000.0)))
-        self.assertEqual(inputs.face_refs, ("#o1.f1", "#o1.f2", "#o1.f3"))
+        self.assertEqual(inputs.face_refs, ("face 1", "face 2", "face 3"))
         self.assertEqual([spec.name for spec in get_analysis("acoustic").fields], ["sound_level", "sound_pressure"])
         self.assertEqual(response.checks, ({"kind": "sound_level", "limit_dB": 80.0, "probes": ["ear"]},))
 
     def test_from_harmonic_reads_the_harmonic_keys_and_needs_the_material(self):
         study = parse_study({
-            "analysis": "acoustic", "from": "harmonic", "material": "aluminum-6061-t6", "fixtures": [{"faces": ["#o1.f1"]}],
+            "analysis": "acoustic", "from": "harmonic", "material": "aluminum-6061-t6", "fixtures": [{"faces": ["face 1"]}],
             "excitation": {"type": "base", "direction": [0, 0, 1], "amplitude_g": 1}, "sweep_Hz": [100, 800],
         })
         inputs = study.inputs
-        self.assertEqual((inputs.domain, inputs.from_harmonic, inputs.requires_anchor, inputs.anchor_refs), ("outside", True, True, ("#o1.f1",)))
+        self.assertEqual((inputs.domain, inputs.from_harmonic, inputs.requires_anchor, inputs.anchor_refs), ("outside", True, True, ("face 1",)))
         self.assertEqual(get_analysis("acoustic").upstream_for(inputs), ("harmonic",))
         self.assertEqual(inputs.harmonic.sweep_Hz, (100.0, 800.0))
 
     def test_the_errors_name_the_field_in_plain_words(self):
-        source = [{"faces": ["#o1.f1"], "velocity_mm_s": 1}]
+        source = [{"faces": ["face 1"], "velocity_mm_s": 1}]
         cases = [
             ({"sweep_Hz": [10, 100]}, "sources: a sweep needs something making the sound"),
             ({"sources": source}, "sweep_Hz: the frequencies to solve the sound at"),
             ({"domain": "outside"}, "domain: open air has no natural frequencies"),
             ({"domain": "room"}, "domain: \"room\" is not one of"),
-            ({"absorbers": [{"faces": ["#o1.f2"], "absorption": 0.3}]}, "absorbers: absorbers damp a driven response"),
-            ({"sources": source, "sweep_Hz": [10, 100], "absorbers": [{"faces": ["#o1.f2"], "absorption": 1.5}]},
+            ({"absorbers": [{"faces": ["face 2"], "absorption": 0.3}]}, "absorbers: absorbers damp a driven response"),
+            ({"sources": source, "sweep_Hz": [10, 100], "absorbers": [{"faces": ["face 2"], "absorption": 1.5}]},
              "absorbers[0].absorption: a share from 0 to 1"),
-            ({"sources": [{"faces": ["#o1.f1"]}], "sweep_Hz": [10, 100]}, "sources[0].velocity_mm_s"),
+            ({"sources": [{"faces": ["face 1"]}], "sweep_Hz": [10, 100]}, "sources[0].velocity_mm_s"),
             ({"fluid": "oil"}, "fluid: \"oil\" is not one of"),
-            ({"from": "harmonic", "fixtures": [{"faces": ["#o1.f1"]}], "excitation": {"type": "base", "direction": [0, 0, 1]},
+            ({"from": "harmonic", "fixtures": [{"faces": ["face 1"]}], "excitation": {"type": "base", "direction": [0, 0, 1]},
               "sweep_Hz": [10, 100]}, "material: the vibrating part's material"),
-            ({"fixtures": [{"faces": ["#o1.f1"]}]}, "fixtures: that is a harmonic study's key"),
+            ({"fixtures": [{"faces": ["face 1"]}]}, "fixtures: that is a harmonic study's key"),
             ({"sources": source, "sweep_Hz": [10, 100], "view": {"checks": [{"kind": "sound_level", "limit_dB": 80, "probes": ["ear"]}]}},
              "view.checks[0].probes: no probe labelled 'ear'"),
             ({"view": {"checks": [{"kind": "sound_level", "limit_dB": 80}]}}, "view.checks[0]: a sound_level check judges a driven response"),
@@ -239,7 +239,7 @@ class Benchmarks(unittest.TestCase):
         probes = [{"label": f"r{r}", "at_mm": [r, 0, 0]} for r in (30, 50, 70)] + [{"label": "far", "at_mm": [0, 0, 500]}]
         result = solve(self.sphere, self.tmp / "sphere.fea.glb", {
             "analysis": "acoustic", "domain": "outside", "frequencies_Hz": [f], "mesh": {"size_mm": 10},
-            "sources": [{"faces": ["#o1.f1"], "velocity_mm_s": 1}], "probes": probes,
+            "sources": [{"faces": ["face 1"], "velocity_mm_s": 1}], "probes": probes,
         })
         k = 2 * math.pi * f / C
         errors = {}
@@ -291,7 +291,7 @@ class Ladder(unittest.TestCase):
     def test_open_air_brings_its_absorbing_box_in_to_fit(self):
         adapted = solve(self.sphere, self.tmp / "sphere.fea.glb", {
             "analysis": "acoustic", "domain": "outside", "frequencies_Hz": [1000], "mesh": {"size_mm": 10},
-            "sources": [{"faces": ["#o1.f1"], "velocity_mm_s": 1}], "probes": [{"label": "r50", "at_mm": [50, 0, 0]}],
+            "sources": [{"faces": ["face 1"], "velocity_mm_s": 1}], "probes": [{"label": "r50", "at_mm": [50, 0, 0]}],
             "fit": {"seconds": 0.001, "allow": ["far_field"]},
         })
         step = next(step for step in adapted.fit if step["rung"] == "far_field")

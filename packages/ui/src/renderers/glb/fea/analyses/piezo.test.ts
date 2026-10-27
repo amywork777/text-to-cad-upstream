@@ -13,8 +13,8 @@ const LIMITS = ['Linear, small signal: room-temperature constants at low field; 
 const STUDY = {
   material: { name: 'PZT-5A', yield_MPa: null },
   solve: 'static',
-  electrodes: [{ faces: ['#o1.f6'], name: 'top', V: 1 }, { faces: ['#o1.f5'], name: 'bottom', V: 0 }, { faces: ['#o1.f2'], name: 'out', open: true }],
-  fixtures: [{ type: 'roller', faces: ['#o1.f5'] }], loads: [],
+  electrodes: [{ faces: ['bracket/face 6'], name: 'top', V: 1 }, { faces: ['bracket/face 5'], name: 'bottom', V: 0 }, { faces: ['bracket/face 2'], name: 'out', open: true }],
+  fixtures: [{ type: 'roller', faces: ['bracket/face 5'] }], loads: [],
   poling: [{ part: 'disc', material: 'PZT-5A', direction: [0, 0, 1] }],
   mesh: { size_mm: 0.5, order: 2, elements: 100, refined_from_mm: null },
 };
@@ -26,7 +26,7 @@ function piezoResult(extras: Record<string, unknown> = {}, attributes: Record<st
     position: [0, 0, 0, 0.01, 0, 0, 0, 0.01, 0], _displacement: vec(9), _von_mises: [0, 2, 4], _potential: [0, 0.5, 1],
     _electric_field: [0.001, 0.001, 0.001], _face: [0, 0, 1], ...extra,
   }, {
-    generator: 'cadgen fea', name: 'disc piezo', deformation_scale: 50, faces: ['#o1.f2', '#o1.f5', '#o1.f6'],
+    generator: 'cadgen fea', name: 'disc piezo', deformation_scale: 50, faces: ['bracket/face 2', 'bracket/face 5', 'bracket/face 6'],
     analysis: { type: 'piezo', tier: 3, word: 'Piezo', estimate: false, limits: LIMITS, noun: 'this voltage', reference_C: null,
       warnings: [], solve: 'static' },
     fields: [
@@ -37,7 +37,7 @@ function piezoResult(extras: Record<string, unknown> = {}, attributes: Record<st
     ],
     study: STUDY,
     checks: [{ kind: 'voltage', label: 'Signal', value: 0.82, limit: 0.5, unit: 'V', ratio: 0.5 / 0.82, close_at: 0.9, status: 'passes',
-      where: { ref: '#o1.f2', at: [0, 0, 0] }, electrode: 'out' }],
+      where: { ref: 'bracket/face 2', at: [0, 0, 0] }, electrode: 'out' }],
     findings: [],
     ...extras,
   });
@@ -88,7 +88,7 @@ describe('piezo', () => {
     expect(rows.slice(0, 3).map((row: { label: string }) => row.label)).toEqual(['Electrodes', 'Poled', 'Slides on']);
     expect(rows[0].children.map((row: { label: string }) => row.label))
       .toEqual(['1 V on the top electrode', '0 V on the bottom electrode', 'The out electrode, open']);
-    expect(rows[0].children[0]).toMatchObject({ faces: ['#o1.f6'], summary: '1 V on the top electrode (face 6), poled along Z' });
+    expect(rows[0].children[0]).toMatchObject({ faces: ['bracket/face 6'], summary: '1 V on the top electrode (face 6), poled along Z' });
     expect(rows[0].children[2].hint).toContain('Floats');
     expect(poledRows(result)[0].children[0]).toMatchObject({ label: 'Along Z', hint: 'disc, PZT-5A', summary: 'Disc poled along Z' });
     expect([polingWords([0, 0, -1]), polingWords([1, 0, 0]), polingWords([0.6, 0, 0.8])]).toEqual(['along −Z', 'along X', 'along (0.6, 0, 0.8)']);
@@ -106,7 +106,7 @@ describe('piezo', () => {
     expect(['fails', 'close', 'passes'].map((status) => checkTitle({ kind: 'voltage' }, status)))
       .toEqual(['Signal too weak', 'Close to the limit', 'Strong enough signal']);
     const weak = feaVerdict(piezoResult({ checks: [{ kind: 'voltage', label: 'Signal', value: 0.3, limit: 0.5, unit: 'V', ratio: 0.5 / 0.3,
-      close_at: 0.9, status: 'fails', where: { ref: '#o1.f2', at: [0, 0, 0] }, electrode: 'out' }] }));
+      close_at: 0.9, status: 'fails', where: { ref: 'bracket/face 2', at: [0, 0, 0] }, electrode: 'out' }] }));
     expect(weak.title).toBe('Signal too weak');
   });
 

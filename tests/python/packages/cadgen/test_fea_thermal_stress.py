@@ -25,8 +25,8 @@ from cadgen._internal.fea.materials import lookup_material  # noqa: E402
 STEEL = lookup_material("steel")
 LENGTH, SIDE, HOT, REFERENCE = 100.0, 5.0, 120.0, 20.0
 RISE = HOT - REFERENCE
-BASE = {"analysis": "thermal_stress", "material": "steel", "fixtures": [{"faces": ["#o1.f1"]}],
-        "temperatures": [{"faces": ["#o1.f2"], "C": HOT}]}
+BASE = {"analysis": "thermal_stress", "material": "steel", "fixtures": [{"faces": ["face 1"]}],
+        "temperatures": [{"faces": ["face 2"], "C": HOT}]}
 
 
 class StudyFile(unittest.TestCase):
@@ -36,15 +36,15 @@ class StudyFile(unittest.TestCase):
         return parse_study({**BASE, **changes})
 
     def test_it_reads_the_heat_the_fixtures_and_the_stress_free_temperature(self):
-        study = self.parse(reference_C=25, loads=[{"faces": ["#o1.f3"], "type": "force", "vector_N": [0, 0, -10]}],
-                           convection=[{"faces": ["#o1.f4"], "h_W_m2K": 10, "ambient_C": 20}])
+        study = self.parse(reference_C=25, loads=[{"faces": ["face 3"], "type": "force", "vector_N": [0, 0, -10]}],
+                           convection=[{"faces": ["face 4"], "h_W_m2K": 10, "ambient_C": 20}])
         inputs = study.inputs
         self.assertEqual(inputs.reference_C, 25.0)
-        self.assertEqual([fixture.faces for fixture in study.fixtures], [("#o1.f1",)])
+        self.assertEqual([fixture.faces for fixture in study.fixtures], [("face 1",)])
         self.assertEqual(len(study.loads), 1)
         self.assertEqual(inputs.thermal.temperatures[0].celsius, HOT)
-        self.assertEqual(inputs.anchor_refs, ("#o1.f1",))
-        self.assertEqual(set(study.face_refs), {"#o1.f1", "#o1.f2", "#o1.f3", "#o1.f4"})
+        self.assertEqual(inputs.anchor_refs, ("face 1",))
+        self.assertEqual(set(study.face_refs), {"face 1", "face 2", "face 3", "face 4"})
         self.assertEqual(study.checks, ({"kind": "stress"},))
         default = self.parse()
         self.assertEqual((default.inputs.reference_C, default.loads), (20.0, ()))
@@ -167,14 +167,14 @@ class HeatedBar(unittest.TestCase):
 
     @staticmethod
     def _spiked():
-        """A field with one 900 MPa spike on 100 MPa, and its peak on the clamped face #o1.f1."""
+        """A field with one 900 MPa spike on 100 MPa, and its peak on the clamped face face 1."""
         import numpy as np
 
         from cadgen._internal.fea.checks import Solved
 
         spike = np.concatenate([np.full(999, 100.0), [900.0]])
         held = Solved(material_name="Steel", yield_MPa=250.0, peak_MPa=900.0, peak_gauss_MPa=800.0, peak_at=(0.0, 0.0, 0.0),
-                      peak_face="#o1.f1", fixed_faces=("#o1.f1",), max_displacement_mm=0.01, displacement_at=(0.0, 0.0, 0.0),
+                      peak_face="face 1", fixed_faces=("face 1",), max_displacement_mm=0.01, displacement_at=(0.0, 0.0, 0.0),
                       bbox_diagonal_mm=100.0, margin=2.0, coarser_peak_MPa=600.0, part="bar")
         return spike, held
 
@@ -186,11 +186,11 @@ class HeatedBar(unittest.TestCase):
         spike, held = self._spiked()
         singular = ThermalStressAnalysis().singular_edge
         found = singular(SimpleNamespace(solved=[held], fields={"von_mises": spike}))
-        self.assertEqual((found["type"], found["items"][0]["ref"]), ("singular_clamped_edge", "#o1.f1"))
+        self.assertEqual((found["type"], found["items"][0]["ref"]), ("singular_clamped_edge", "face 1"))
         self.assertIn("(it already rose from 600 to 900 MPa on a finer mesh)", found["summary"])
         self.assertIn("the colour bar stops at 100 MPa", found["summary"])
         # The peak away from the fixtures (a corner), or a field with no spike: nothing singular to say.
-        self.assertIsNone(singular(SimpleNamespace(solved=[dataclasses.replace(held, peak_face="#o1.f3")], fields={"von_mises": spike})))
+        self.assertIsNone(singular(SimpleNamespace(solved=[dataclasses.replace(held, peak_face="face 3")], fields={"von_mises": spike})))
         self.assertIsNone(singular(SimpleNamespace(solved=[held], fields={"von_mises": np.linspace(0.0, 900.0, 1000)})))
 
     def test_strength_is_judged_away_from_a_singular_clamped_edge(self):
@@ -203,7 +203,7 @@ class HeatedBar(unittest.TestCase):
         check = analysis.judge({"kind": "stress"}, 0, None, SimpleNamespace(solved=[held], fields={"von_mises": spike}), None)
         self.assertEqual((check["value"], check["edge_peak"], check["ratio"], check["status"]), (100.0, 900.0, 0.4, "passes"))
         # A peak on a face that is not held is judged as ever.
-        free = SimpleNamespace(solved=[dataclasses.replace(held, peak_face="#o1.f2")], fields={"von_mises": spike})
+        free = SimpleNamespace(solved=[dataclasses.replace(held, peak_face="face 2")], fields={"von_mises": spike})
         self.assertEqual(analysis.judge({"kind": "stress"}, 0, None, free, None)["value"], 900.0)
 
     def test_the_findings_and_the_cli_say_it_was_heated(self):

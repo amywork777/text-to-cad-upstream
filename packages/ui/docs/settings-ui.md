@@ -961,8 +961,8 @@ exactly as it always was.
       chip's card says these too ("kept at 25 °C; 15 W of heat in", "cooled by air at 25 °C").
     - **What you see**: the controls the study's
     `view` chose (`feaControls` in `glb/feaResult.js`), in its order, with its labels, ranges and
-    units, each a generic parameter row drawn by the same `parameterRow` as Position's joints
-    (`kit/inspector/parameterRow.jsx`), a sentence-long label wrapping between words on its
+    units, each a settings row (`glb/fea/controlRow.jsx`): a number a slider with its value field,
+    as Position's joints are (`FileSheetSliderField`), a choice a select, a sentence-long label wrapping between words on its
     value field's line and the slider the row's whole width under them (`wideLabel`), so the
     narrow panel still gives the slider room. A control the view gives a `when` shows only while a
     check fails or is close (`failing`) or only while every check passes (`passing`), judged live at
@@ -1135,7 +1135,7 @@ exactly as it always was.
   Time row at its moment), a chosen check jumps the Time row to its frame's moment, and its routine
   (`kind: "motion"`) plays the same timeline in preview, from the Time row's moment back to it when
   let go. The Time row has a **play** button beside its value field (`FeaStudyPanel.jsx`, through
-  `parameterRow`'s `action`: a ghost icon button the joint value boxes' size, a play triangle hinted
+  `controlRow`'s `action`: a ghost icon button the joint value boxes' size, a play triangle hinted
   "Play the motion", a pause hinted "Pause" while it plays), so a person sees the motion plays without
   finding Preview: a press plays the same timeline in place in the tools view, once, from the row's
   moment (from its start where the row is at its end), the slider and the value field following it

@@ -7,7 +7,7 @@ import { Pause, Play } from "lucide-react";
 import { Checkbox } from "@text-to-cad/ui/primitives/checkbox";
 import { InfoRow } from "../kit/inspector/referenceRows.jsx";
 import { KinematicsPoseRow } from "../kit/inspector/kinematicsControls.jsx";
-import { parameterRow } from "../kit/inspector/parameterRow.jsx";
+import { controlRow } from "./fea/controlRow.jsx";
 import ToolPanel from "../kit/tools/ToolPanel.jsx";
 import { formatValue } from "./feaResult.js";
 import { frameText } from "./fea/series.js";
@@ -22,8 +22,8 @@ const controlText = (value, control) => frameText(control, value)
   ?? (control.unit === "×" ? `×${formatValue(value)}` : `${formatValue(value)}${control.unit ? ` ${control.unit}` : ""}`);
 
 /**
- * Study's What you see: the controls the study's view chose (`feaControls`), in its order, each a generic
- * parameter row as Position's joints are (`parameterRow`), under a Preset select when the view names
+ * Study's What you see: the controls the study's view chose (`feaControls`), in its order, each a settings
+ * row (`controlRow`), under a Preset select when the view names
  * presets (Default, each preset, Custom once a control has moved). The file carries every field and
  * the true displacement (feaResult.js), so each is a choice, not a readout. `values` by control id.
  * `markers`: whether the model shows where the study holds and loads it (its title, "Loads and fixtures";
@@ -41,8 +41,8 @@ function FeaResultControls({ controls, values, presets, preset, onChange, onPres
     // A select gives way before its label in the narrow panel ("Displacement" would squeeze "Show" away).
     <div className="flex flex-col gap-1.5 [&_span:has(+span>[data-slot=select-trigger])]:shrink-0 [&_span:has(>[data-slot=select-trigger])]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:shrink [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:max-w-full">
       {presets.length ? <KinematicsPoseRow name="Preset" poses={presets} activeValue={preset} onSelect={onPreset} onReset={onReset} /> : null}
-      {controls.map((control) => parameterRow({
-        parameter: control, value: values[control.id], labelTitle: control.labelTitle, valueText: controlText, step: control.step, wideLabel: control.wideLabel === true,
+      {controls.map((control) => controlRow({
+        control, value: values[control.id], valueText: controlText,
         action: control.drives === "motion" ? playButton : null,
         onChange: (value) => onChange(control.id, value),
       }))}

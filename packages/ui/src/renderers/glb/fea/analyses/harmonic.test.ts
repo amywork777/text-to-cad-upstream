@@ -15,7 +15,7 @@ function shaken(study: Record<string, unknown> = {}) {
   return feaFile({
     position: [0, 0, 0, 0.1, 0, 0, 0.1, 0, 0.006], _von_mises: [0.3, 0.1, 0], _displacement: vec(9), _face: [0, 1, 1], ...frames,
   }, {
-    generator: 'cadgen fea', name: 'beam shaking', deformation_scale: 120, faces: ['#o1.f1', '#o1.f2'],
+    generator: 'cadgen fea', name: 'beam shaking', deformation_scale: 120, faces: ['bracket/face 1', 'bracket/face 2'],
     analysis: { type: 'harmonic', tier: 1, word: 'Shaking', estimate: false, limits: [], noun: 'this shake', reference_C: null, warnings: [] },
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress (peak over the cycle)', units: 'MPa', min: 0, max: 8.7, attribute_scale: 1, field: 'von_mises', per_frame: true },
@@ -26,13 +26,13 @@ function shaken(study: Record<string, unknown> = {}) {
       displacement_im: `_DISPLACEMENT_IM_F${index}` } })) },
     study: {
       material: { name: 'Steel', yield_MPa: 250 },
-      fixtures: [{ type: 'fixed', faces: ['#o1.f1'] }], loads: [],
+      fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }], loads: [],
       excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 }, sweep_Hz: [10, 600], damping_ratio: 0.02,
       mesh: { size_mm: 2, order: 2, elements: 1708, refined_from_mm: null }, margin: 2,
       ...study,
     },
     checks: [{ kind: 'acceleration', label: 'Tip', value: 39.1, limit: 10, unit: 'g', ratio: 3.91, close_at: 0.9, status: 'fails',
-      where: { ref: '#o1.f2', at: [100, -3, 3] }, faces: ['#o1.f2'], at: { frame: 1, value: 489.6, unit: 'Hz' } }],
+      where: { ref: 'bracket/face 2', at: [100, -3, 3] }, faces: ['bracket/face 2'], at: { frame: 1, value: 489.6, unit: 'Hz' } }],
     findings: [],
   });
 }
@@ -71,7 +71,7 @@ describe('harmonic', () => {
   it('says it is held, shaken 1 g along Z where it is held, and what it is made of', () => {
     const rows = studyRows(shaken());
     expect(rows.slice(0, 3).map((row: { label: string }) => row.label)).toEqual(['Held at', 'Shaken', 'Made of']);
-    expect(rows[1].children[0]).toMatchObject({ label: '1 g along Z', faces: ['#o1.f1'], summary: 'Shaken where it is held: 1 g along Z' });
+    expect(rows[1].children[0]).toMatchObject({ label: '1 g along Z', faces: ['bracket/face 1'], summary: 'Shaken where it is held: 1 g along Z' });
   });
 
   it('hints the sweep and its damping on the Shaken row, read from the study it keeps', () => {
@@ -84,7 +84,7 @@ describe('harmonic', () => {
   });
 
   it('says which loads swing in a force shake, and shows no shaker', () => {
-    const result = shaken({ excitation: { type: 'force' }, loads: [{ type: 'force', faces: ['#o1.f2'], vector_N: [0, 0, 1] }] });
+    const result = shaken({ excitation: { type: 'force' }, loads: [{ type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, 1] }] });
     const rows = studyRows(result);
     expect(rows.slice(0, 3).map((row: { label: string }) => row.label)).toEqual(['Held at', 'Pushed', 'Made of']);
     expect(rows[1].children[0]).toMatchObject({ label: '1 N up', hint: 'Swinging back and forth across the sweep' });

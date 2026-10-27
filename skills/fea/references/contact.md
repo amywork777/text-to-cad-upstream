@@ -69,7 +69,7 @@ A pin pressed into a plate that rests on a bench, dry steel:
 {"analysis": "contact", "material": "steel", "steps": 5,
  "connections": [{"between": ["pin", "plate"], "type": "contact", "friction": 0.2}],
  "rigid_planes": [{"point_mm": [0, 0, 0], "normal": [0, 0, 1], "parts": ["plate"]}],
- "loads": [{"faces": ["#o1.1.f3"], "type": "force", "vector_N": [0, 0, -2000]}],
+ "loads": [{"faces": ["pin/face 3"], "type": "force", "vector_N": [0, 0, -2000]}],
  "view": {"checks": [{"kind": "stress"}, {"kind": "contact_pressure", "limit_MPa": 400}]}}
 ```
 

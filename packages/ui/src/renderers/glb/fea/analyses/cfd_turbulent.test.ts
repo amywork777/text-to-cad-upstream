@@ -13,7 +13,7 @@ function turbulentResult(analysis: Record<string, unknown> = {}, extras: Record<
     position: [0, 0, 0, 0.015, 0, 0, 0, 0.005, 0], _displacement: vec(9), _pressure: [23.6, 0, 11.8], _wall_shear: [3.7, 3.7, 3.7],
     _face: [0, 0, 0],
   }, {
-    generator: 'cadgen fea', name: 'tube turbulent flow', deformation_scale: null, faces: ['#o1.f4'], occurrence: '#o1',
+    generator: 'cadgen fea', name: 'tube turbulent flow', deformation_scale: null, faces: ['bracket/face 4'], occurrence: 'bracket',
     analysis: { type: 'cfd_turbulent', tier: 3, word: 'Turbulent flow', estimate: false, limits: [LIMIT], noun: 'this flow',
       reference_C: null, warnings: [], turbulence: { model: 'k-omega SST', reynolds: 10000, kind: 'internal', viscosity_ratio_max: 89.6 },
       ...analysis },
