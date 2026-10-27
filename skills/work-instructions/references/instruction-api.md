@@ -16,8 +16,7 @@ state, each value copied from the section it cites. A value they do not state
 is left out, and prints NOT STATED.
 
 ```python
-from pathlib import Path
-
+from bracket_assembly import bracket_assembly  # the assembly's model, beside this script
 from cadgen.work_instruction import (
     Adhesive, Cited, Cure, Datasheet, Drawing, Instruction, Material, Spec,
     work_instruction,
@@ -44,12 +43,11 @@ LOCKING = Material("<threadlocker>", per=FASTENING.at("<section>"),
                    note="<how it is applied>")
 
 
-# Paths are relative to this script: a project with STEP/ and PDF/ beside src/.
-# Match the project's own layout (e.g. ../../STEP/<assembly>/<assembly>.step).
+# out= is relative to this script: a project with PDF/ beside src/.
 @work_instruction(out="../PDF/bracket_assembly_wi.pdf")
 def bracket_assembly_wi():
     wi = Instruction(
-        Path(__file__).parent / "../STEP/bracket_assembly.step",
+        bracket_assembly(),  # the model's document; an assembly with no model: its .xbf or .step
         title="BRACKET ASSEMBLY", number="WI-0001", revision="A", drawing=DWG,
         rigor="production",   # prototype, production or controlled: as asked
         emphasis="visual",    # visual or process: as asked
@@ -65,7 +63,7 @@ def bracket_assembly_wi():
     (wi.step("Bond the bracket to the base plate", install=["bracket"],
              camera="bottom")
        .caution("<caution, in the user's words>")
-       .bond(ADHESIVE, surfaces=["#o1.2.f5"]))
+       .bond(ADHESIVE, surfaces=["bracket/face 5"]))
     wi.step("Cure the bond").cure(
         Cure("<cure name>", cycle="<cycle as stated>", per=BONDING.at("<section>")))
 
@@ -90,18 +88,18 @@ writes one PDF at `out` (relative to the script), prints every open item, and
 returns `[path]`. A refused or failed run leaves no file at `out`, not even an
 earlier one.
 
-## `Instruction(step_path, *, title, number, revision, ...)`
+## `Instruction(assembly, *, title, number, revision, ...)`
 
 | Argument | Meaning |
 | --- | --- |
-| `step_path` | the assembly STEP; a single part is refused |
+| `assembly` | the assembly's document: what calling its model returns, or an `.xbf` or `.step` path; a single part is refused |
 | `title`, `number`, `revision` | the instruction's own; on every page |
 | `part_number`, `author` | optional; the author signs "prepared by" |
 | `drawing` | the assembly `Drawing`, first under APPLICABLE DOCUMENTS |
 | `status` | `draft` (default, DRAFT on every page) or `released` (refused while anything is open) |
 | `size` | `LETTER` (default) or `A4`, portrait |
 | `camera` | every figure's camera: `iso` (default), `front`, `back`, `left`, `right`, `top`, `bottom` |
-| `pictures` | `False` writes no figures and needs no browser |
+| `pictures` | `False` writes no figures, so the engine draws nothing |
 | `scope` | one sentence: what this builds and when it applies |
 | `safety` | lines of PPE and hazards, as the user's documents state them |
 | `tools` | fixtures and tooling the user names, listed under EQUIPMENT |
@@ -117,15 +115,17 @@ across operations.
 `wi.step(title, *, install=(), camera=None, picture=True, frame="step")` adds
 the next step and returns it. One step is one action. `install` names the
 parts the step puts in place: a label (every part carrying it), or a
-subassembly's label or occurrence ref (`#o1.2`), which installs it as ONE unit
+subassembly's label or ref (`wheel`, `cart/wheel.2`), which installs it as ONE unit
 (one line in the parts list) and every part under it in the figure. A part is
 installed by one step only. `frame="step"` fits the figure to the parts the
 step installs with room around them; `frame="assembly"` fits the whole
 assembly. A step that installs nothing (a cure, an inspection) still has a
 figure of what is installed so far, and none while nothing is.
 
-`wi.tree()` returns every part and subassembly, indented, with its ref and
-name: what `install=` takes. Print it before writing the steps.
+`wi.tree()` returns every part and subassembly, indented, by its ref (the
+grammar `cadgen inspect` and the viewer use: a label, numbered among siblings
+that share it, `pin.2`, or a path where the label alone names several,
+`arm/pin`): what `install=` takes, beside a part's label. Print it before writing the steps.
 
 `wi.open_items()` returns what the run prints: each NOT STATED value, each
 inspection criterion with no source, and each part no step installs.
@@ -179,8 +179,8 @@ Each returns the step, so they chain, and prints in the order called.
 `bond`, `layup`, `cure` and `machine` take `None` for a record nobody has
 stated yet; it prints NOT STATED. `surfaces` (on `bond`, `machine`, `apply` and
 `fasten`, where it marks the faces hardware the model does not carry goes
-into) are face refs (`#o1.2.f3`, from
-`cadgen.read_scene(path).resolve("#o1.2")[0].entities("face")`), each resolved
+into) are face refs (`bracket/face 3`, or the `bracket/f:...` ref the viewer
+copies; `cadgen inspect "$ID" "bracket/face 3"` says which face it is), each resolved
 to exactly one face when the step names it and drawn on the step's figure;
 each must be on a part installed by that step or before.
 
@@ -225,12 +225,13 @@ under EQUIPMENT with ID and calibration-due blanks.
 
 ## The figures
 
-One snapshot packet renders every step's figure in one browser. Each shows the
-assembly as it stands after the step, as hidden-line art (black edges,
-whatever colours the STEP carries): parts a later step installs are left out,
-parts installed earlier are outlines, the step's own parts are filled blue,
-and named surfaces are filled purple. Every figure shares one camera fitted to
-the whole assembly, so a part sits in the same place in each.
+One snapshot job draws every step's figure through the engine. Each shows the
+assembly as it stands after the step, as hidden-line art (black edges): parts
+a later step installs are left out, parts installed earlier are lines only,
+the step's own parts are filled blue, and named surfaces are outlined purple.
+Every figure looks from the same direction, fitted to the step's parts
+(`frame="step"`) or the whole assembly (`frame="assembly"`), never to what is
+visible, so a part does not jump between figures.
 
 ## What the run prints
 
@@ -238,7 +239,7 @@ the whole assembly, so a part sits in the same place in each.
 | --- | --- |
 | `open item: step 2 (bond): pot life not stated` | a value the documents or the user still owe |
 | `open item: step 4 (inspect): criterion source not stated` | an inspection with no document behind it |
-| `open item: #o1.4 pin: no step installs it` | a part the order leaves out |
+| `open item: assembly/pin.2: no step installs it` | a part the order leaves out |
 | `wrote <path> (N pages)` | the PDF |
 
 A step taller than a page is refused, naming the step: split it into shorter

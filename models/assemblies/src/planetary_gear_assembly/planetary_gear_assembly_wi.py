@@ -2,18 +2,17 @@
 
 A manual sample, not a test fixture, laid out at the default `production`
 rigor. It cites no process spec, because this demo assembly has none, so it
-states no torque, adhesive or cure value either. Run
-`python planetary_gear_assembly.py` first to write the STEP.
+states no torque, adhesive or cure value either. It calls the assembly's
+model, which the engine replays when it already holds it.
 """
 
-from pathlib import Path
-
 from cadgen.work_instruction import Instruction, work_instruction
+from planetary_gear_assembly import planetary_gear_assembly
 
 
 @work_instruction(out="../../PDF/planetary_gear_assembly/planetary_gear_assembly_wi.pdf")
 def planetary_gear_assembly_wi():
-    wi = Instruction(Path(__file__).parent / "../../STEP/planetary_gear_assembly/planetary_gear_assembly.step",
+    wi = Instruction(planetary_gear_assembly(),
                      title="PLANETARY GEAR ASSEMBLY", number="WI-DEMO-001", revision="A",
                      scope="Assembly of the demo planetary gear stage from its machined parts.",
                      revisions=[("A", "2026-10-23", "First issue")])

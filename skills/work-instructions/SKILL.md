@@ -14,8 +14,8 @@ the finished state; a process spec states the company's rules for a kind of
 work (fastening, bonding, curing, layup, machining) across every part it makes.
 The work instruction applies those rules to ONE assembly, so the technician
 holds exactly the steps for this build instead of a hundred pages of spec.
-`cadgen.work_instruction` reads the assembly STEP, checks every step against
-it, and writes one PDF. There is no CLI: the script is the interface.
+`cadgen.work_instruction` reads the assembly's document, checks every step
+against it, and writes one PDF. There is no CLI: the script is the interface.
 
 **Never invent a torque, adhesive, prep, mix ratio, pot life, cure schedule,
 ply schedule, feed or speed.** Each comes from a process spec the user
@@ -29,14 +29,19 @@ placeholders, never defaults.
 
 ## Setup
 
-Run cadgen through [uv](https://docs.astral.sh/uv/), so this skill's commands share
-one installation, and its warm build daemon, with the CAD app's server:
+Run cadgen through the `cadgen` command its installation writes, so this skill's commands
+share one installation, and its engine server, with the CAD app's:
 
-- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.26 cadgen`
-- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.26 python`
+- `cadgen` below means `cadgen +0.8.0` (`~/.local/bin/cadgen +0.8.0` where `~/.local/bin` is not on your PATH)
+- `python` below means `cadgen +0.8.0 run`
 
-The first run downloads that installation and the first snapshot its headless
-browser; later runs reuse both.
+If `cadgen` is not on your PATH, or it says 0.8.0 is not installed, run
+`uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.0 cadgen doctor` once,
+outside any sandbox or with its permission: it installs cadgen, registers it, writes the
+`cadgen` command and starts the engine. With the CAD app's server running, nothing else
+needs the sandbox's permission: it starts the engine and holds it. Without it, a sandboxed
+shell cannot start the engine; when a command says no engine is running, run `cadgen server`
+outside the sandbox once.
 
 ## Workflow
 
@@ -66,10 +71,14 @@ browser; later runs reuse both.
      points is `controlled`.
    - **Its identity:** the instruction's own number and revision, and the
      assembly's part number. Never make these up.
-2. **Get the assembly.** The STEP a `@step` assembly model wrote (run `python
-   <model>.py` first; build or fix the model with `$cad`) or an imported one.
-   `Instruction(...).tree()` prints every part and subassembly with its ref
-   (`#o1.2`) and name; those are what a step installs. Install a subassembly
+2. **Get the assembly.** Call its model: `bracket_assembly()`, imported from
+   the model's script, is built by cadgen's engine (a replay when the engine
+   already holds it), and `Instruction` takes the document it returns (build
+   or fix the model with `$cad`). For an assembly with no model, give its
+   `.xbf` or `.step` path, anchored on `Path(__file__).parent`.
+   `Instruction(...).tree()` prints every part and subassembly by its ref
+   (`bracket`, `pin.2`, `arm/pin`: the refs `cadgen inspect` and the viewer
+   use); those, and a part's label, are what a step installs. Install a subassembly
    the model builds as one piece (a coilover, a wheel) by its ref or name: it
    is one line in the parts list, not its modelling fragments.
 3. **Get the documents.** Ask for the assembly drawing (number, revision, and
@@ -154,9 +163,9 @@ there, and a `Format` renames or replaces what the user's own template shows:
   actual torque, the adhesive lot, mix and mate times, oven ID and cure
   times. A `controlled` inspection is a hold point: its last sign-off cell is
   shaded and says HOLD. From `production` up a close-out row ends the table.
-- **Figures:** the assembly after the step in hidden-line art, whatever
-  colours the STEP carries: the step's parts filled blue, named surfaces
-  purple, parts installed earlier in outline, later parts left out. Each is
+- **Figures:** the assembly after the step in hidden-line art, drawn by the
+  engine: the step's parts filled blue, named surfaces outlined purple, parts
+  installed earlier in lines only, later parts left out. Each is
   framed on the step's parts with room for what they go onto.
 - PDF bytes that are a function of the content: no creation date is stamped.
 
@@ -168,10 +177,10 @@ The script raises rather than writing a wrong document:
   in it, a torque unit outside `in-lbf`, `ft-lbf`, `N-m`, a torque that is not
   positive or whose high is below its low, a blank string where text is
   required.
-- A missing STEP or a file that is not one, a single part where an assembly
+- A missing document or a file that is not an `.xbf` or `.step`, a single part where an assembly
   is needed, a part the assembly does not have (the error lists the parts it
   has), a part two steps install, `install=` given a bare string.
-- A surface that is not a face ref (`#o1.2.f3`), is not on the assembly, or
+- A surface that is not a face ref (`bracket/face 3`), is not on the assembly, or
   is on a part no step has installed yet.
 - An unknown `status`, `size`, `camera`, `rigor`, `emphasis`, or `Format`
   field or numbering, a `Format` with no sign-off column; an instruction with
@@ -186,6 +195,6 @@ The script raises rather than writing a wrong document:
   that each names one, not that the document says it. Say which documents and
   revisions were used.
 - Hardware that is not modelled (screws, nuts, washers) is text in
-  `fasten()`; only parts in the STEP are drawn.
+  `fasten()`; only parts in the assembly are drawn.
 - The figures show the assembly at rest from one camera; they do not show
   tooling, fixtures or hand positions.

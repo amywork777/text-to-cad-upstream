@@ -20,8 +20,7 @@ instruction (``status="released"``) refuses to be written with one.
 Usage (every document and value here is a placeholder: a real one is copied
 from the section of the user's document it cites)::
 
-    import cadgen
-    from pathlib import Path
+    from bracket_assembly import bracket_assembly        # the assembly's model
     from cadgen.work_instruction import work_instruction, Instruction, Spec, Drawing, Torque
 
     FASTENING = Spec("PS-XXXX", "<fastening spec title>", revision="<rev>")
@@ -29,7 +28,7 @@ from the section of the user's document it cites)::
 
     @work_instruction(out="../PDF/bracket_assembly_wi.pdf")
     def bracket_assembly_wi():
-        wi = Instruction(Path(__file__).parent / "../STEP/bracket_assembly.step",
+        wi = Instruction(bracket_assembly(),           # the document the model's call returns
                          title="BRACKET ASSEMBLY", number="WI-0001", revision="A", drawing=DWG)
         wi.step("Place the base plate on the fixture", install=["base_plate"])
         wi.step("Fasten the bracket to the base plate", install=["bracket"]).fasten(
@@ -53,9 +52,15 @@ table, one row per step with its values, a figure of the assembly as it stands
 after the step (line art, the step's own parts filled, parts still to come left
 out), the blanks the floor fills in and a column per sign-off.
 
-Like ``@eng_drawing`` this is a document over a document, with no public function
-and no CLI: the script is the program. Import discipline: nothing here pulls in
-matplotlib or the CAD kernel at module scope.
+The assembly is a model's document (what calling the model returns: the engine
+builds it, or replays it) or an ``.xbf`` or ``.step`` file. Its parts are named
+as the engine names them (``cadgen.engine.refs``), so a part or face ref copied
+from ``cadgen inspect`` or the viewer is one ``install=`` and ``surfaces=`` take,
+and the figures are the engine's snapshots of that document.
+
+Like ``@eng_drawing`` this is a document over a document, run in the script's
+own process, with no CLI: the script is the program. Import discipline: nothing
+here pulls in matplotlib or the CAD kernel at module scope.
 """
 
 from __future__ import annotations
@@ -609,7 +614,7 @@ class Step:
         """Install threaded hardware. ``torque=None`` prints NOT STATED: a threaded
         joint with no stated torque is an open item, not a default. Where the
         user says no torque exists, ``torque=Unspecified(what to do, per=...)``.
-        ``surfaces`` are the faces the hardware goes into (``#o1.2.f3``), marked on
+        ``surfaces`` are the faces the hardware goes into (``bracket/face 3``), marked on
         the figure: hardware the model does not carry is drawn nowhere else."""
         hardware = _text("fasten hardware", hardware)
         if qty is not None and (isinstance(qty, bool) or not isinstance(qty, int) or qty < 1):
@@ -650,7 +655,7 @@ class Step:
         return self._add(_Op(kind, lines, missing=record.missing(), surfaces=self._faces(surfaces)))
 
     def bond(self, adhesive: Adhesive | None, *, surfaces: Iterable[str] = ()) -> "Step":
-        """Bond with an adhesive. ``surfaces`` are face refs (``#o1.2.f3``) marked
+        """Bond with an adhesive. ``surfaces`` are face refs (``bracket/face 3``) marked
         on the step's picture; ``None`` for the adhesive prints NOT STATED."""
         return self._record("bond", adhesive, Adhesive, "Adhesive", surfaces)
 
@@ -673,20 +678,19 @@ class Step:
         return self._add(_Op("apply", lines, surfaces=self._faces(surfaces)))
 
     def _faces(self, refs) -> tuple[tuple[str, str], ...]:
-        """Each surface ref resolved on the assembly to exactly one face."""
+        """Each surface ref resolved on the assembly to exactly one face: (its canonical ref, the
+        part it is on)."""
         if isinstance(refs, (str, bytes)):
             raise TypeError(f"surfaces takes a sequence of face refs, not one string: surfaces=({refs!r},)")
         out = []
         for ref in refs:
             ref = _text("surface ref", ref)
             try:
-                found = self._instruction.scene.resolve(ref)
-            except Exception as exc:  # noqa: BLE001 - re-raised naming the step
-                raise ValueError(f"step {self.label}: {ref} is not on {self._instruction.step_path.name}: {exc}") from exc
-            if len(found) != 1 or found[0].kind != "face":
-                raise ValueError(f"step {self.label}: surfaces takes face refs such as '#o1.2.f3'; "
-                                 f"{ref} names {len(found)} {found[0].kind if found else 'entity'}(s)")
-            out.append((found[0].ref, found[0].occurrence_ref))
+                face, part = self._instruction.scene.face(ref)
+            except ValueError as exc:  # a RefError among them
+                raise ValueError(f"step {self.label}: {ref} is not one face of {self._instruction.source_name}: "
+                                 f"{exc}") from None
+            out.append((face, part))
         return tuple(out)
 
     def inspect(self, text: str, *, per: Source | None = None, record: str | None = None) -> "Step":
@@ -705,15 +709,152 @@ class Step:
         return self._add(op)
 
 
+class _Occurrence:
+    """One occurrence of the assembly: its canonical ref in the engine's grammar (``bracket``,
+    ``pin.2``, ``arm/pin``), its label, the occurrences below it (none for a part) and, a part's,
+    its shape placed in the document's frame."""
+
+    def __init__(self, ref: str, label: str, node: Any, shape: Any) -> None:
+        self.ref, self.label, self.node, self._shape = ref, label, node, shape
+        self.children: list[_Occurrence] = []
+
+    def shape(self) -> Any:
+        return self._shape
+
+
+class _Scene:
+    """The assembly's occurrence tree, read from the shape the document holds and named as the
+    engine names it (``cadgen.engine.refs``), so a ref here is a ref ``cadgen inspect``, the
+    viewer and a snapshot's ``hidden`` read the same way."""
+
+    def __init__(self, shape: Any, source: str) -> None:
+        from build123d import Location
+
+        from cadgen.engine import refs
+
+        self.source = source
+        shapes: list[Any] = []
+
+        def entry(node: Any, at: Any) -> dict[str, Any]:
+            children = list(getattr(node, "children", ()) or ())
+            index = len(shapes)
+            shapes.append(None if children else node.moved(at))  # a part, placed where its parents put it
+            found: dict[str, Any] = {"name": node.label or "", "index": index}
+            if children:
+                placed = at * node.location
+                found["children"] = [entry(child, placed) for child in children]
+            else:
+                found["prototype"] = index
+            return found
+
+        tree = entry(shape, Location())
+        # The structure a served document has, as far as refs read it: no element names (those are
+        # the engine's document's own: ``face`` asks it for a named face).
+        self.structure = {"tree": tree, "prototypes": [{} for _shape in shapes]}
+        self.root = refs.structure_tree(self.structure)
+        self._shapes = shapes
+        self._by_index: dict[int, _Occurrence] = {}
+
+        def build(node: Any) -> _Occurrence:
+            made = _Occurrence(refs.owner_text(self.root, node), node.label, node, shapes[node.payload["index"]])
+            self._by_index[node.payload["index"]] = made
+            made.children = [build(child) for child in node.children]
+            return made
+
+        self.top = build(self.root)
+
+    def leaves(self) -> list[_Occurrence]:
+        return [self._by_index[node.payload["index"]] for node in self.root.parts()]
+
+    def parts_under(self, occurrence: _Occurrence) -> list[_Occurrence]:
+        return [self._by_index[node.payload["index"]] for node in occurrence.node.parts()]
+
+    def occurrences(self, ref: str) -> list[_Occurrence]:
+        """What a part or assembly ref names (the engine's grammar); ``RefError`` where it names
+        nothing, several things where it names one, or an element."""
+        from cadgen.engine import refs
+
+        hits = refs.resolve_structure(self.structure, ref)
+        if any(hit.kind is not None for hit in hits):
+            raise refs.RefError(f"{ref!r} names a {hits[0].kind}; install takes parts and subassemblies")
+        return [self._by_index[hit.node.payload["index"]] for hit in hits]
+
+    def face(self, ref: str) -> tuple[str, str]:
+        """(the canonical ref of the one face ``ref`` names, the ref of the part it is on). A face
+        named by its ordinal (``bracket/face 3``) is resolved here; one named by its name
+        (``bracket/f:...``), which only the engine's document holds, is asked of the engine."""
+        from cadgen.engine import refs
+
+        _file, selectors = refs.parse(ref)
+        if len(selectors) != 1 or selectors[0].kind != "face":
+            raise ValueError("surfaces takes face refs such as 'bracket/face 3'")
+        if isinstance(selectors[0].element, str):
+            import cadgen
+
+            facts = cadgen.inspect(self.source, ref)
+            facts = facts[0] if isinstance(facts, list) else facts
+            node = next((node for node in self.root.parts() if refs.path_text(self.root, node) == facts["path"]), None)
+            if node is None:
+                raise ValueError(f"the engine's document has no part {facts['path']!r} here")
+            part, ordinal = self._by_index[node.payload["index"]], int(facts["ordinal"])
+        else:
+            (hit,) = refs.resolve_structure(self.structure, ref)
+            part, ordinal = self._by_index[hit.node.payload["index"]], int(hit.ordinal)
+            count = len(_faces(part.shape()))
+            if ordinal > count:
+                raise ValueError(f"{part.ref} has no face {ordinal} (it has {count})")
+        return f"{part.ref}/face {ordinal}", part.ref
+
+    def face_shape(self, ref: str) -> Any:
+        """The placed face a canonical face ref (``face``'s) names."""
+        part, _slash, element = ref.rpartition("/")
+        (found,) = self.occurrences(part)
+        return _faces(found.shape())[int(element.split()[-1]) - 1]
+
+
+def _faces(shape: Any) -> list[Any]:
+    """A part's faces by their ``TopExp.MapShapes`` ordinals, the ones its refs number."""
+    from build123d import Face
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+
+    found = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(shape.wrapped, TopAbs_FACE, found)
+    return [Face(found.FindKey(index)) for index in range(1, found.Extent() + 1)]
+
+
+def _assembly(assembly: Any) -> tuple[Any, str, str]:
+    """What an Instruction reads: (the assembly's shape, the document the engine knows it by --
+    a model's id or the file's path -- and the name the pages print)."""
+    from cadgen.engine.api import Document
+
+    if isinstance(assembly, Document):
+        return assembly.shape, assembly.id, assembly.name
+    if isinstance(assembly, (str, Path)):
+        path = Path(assembly).expanduser().resolve()
+        suffix = path.suffix.lower()
+        if suffix not in (".xbf", ".step", ".stp"):
+            raise ValueError(f"Instruction takes a model's document (what calling the model returns) or an "
+                             f"assembly's .xbf or .step, got {str(assembly)!r}")
+        if not path.is_file():
+            raise FileNotFoundError(f"no document at {path}")
+        from cadgen import read_step, read_xbf
+
+        return (read_xbf if suffix == ".xbf" else read_step)(path), str(path), path.name
+    raise TypeError(f"Instruction takes a model's document (what calling the model returns) or an assembly's "
+                    f".xbf or .step, got {type(assembly).__name__}")
+
+
 class Instruction:
-    """The work instruction for one assembly STEP.
+    """The work instruction for one assembly: a model's document, or an assembly's .xbf or .step.
 
     ``status`` is ``draft`` (the default: every page says DRAFT, and NOT STATED
     values and parts no step installs are listed) or ``released`` (either one is
     refused). ``size`` is one of :data:`PAGE_SIZES` (US Letter by default),
     ``camera`` one of :data:`CAMERAS` for every step's picture (a step may name
-    its own). ``pictures=False`` writes the document with no pictures and needs
-    no browser.
+    its own). ``pictures=False`` writes the document with no pictures, so
+    the engine draws nothing.
 
     ``rigor`` is one of :data:`RIGORS`: ``prototype`` (a build order to follow:
     figures, a done column, no paperwork), ``production`` (the default: tech
@@ -732,17 +873,13 @@ class Instruction:
     imply) and ``revisions`` (``(rev, date, change)`` rows), each only if given.
     """
 
-    def __init__(self, step_path: str | Path, *, title: str, number: str, revision: str,
+    def __init__(self, assembly: Any, *, title: str, number: str, revision: str,
                  part_number: str = "", drawing: Drawing | None = None, author: str = "",
                  status: str = "draft", size: str = "LETTER", camera: str = "iso", pictures: bool = True,
                  scope: str = "", safety: Sequence[str] = (), tools: Sequence[str] = (),
                  revisions: Sequence[tuple[str, str, str]] = (), rigor: str = "production",
                  emphasis: str = "visual", format: Format | None = None) -> None:  # noqa: A002
-        self.step_path = Path(step_path).resolve()
-        if self.step_path.suffix.lower() not in (".step", ".stp"):
-            raise ValueError(f"Instruction takes an assembly .step, got {str(step_path)!r}")
-        if not self.step_path.is_file():
-            raise FileNotFoundError(f"no STEP at {self.step_path}: run the assembly's model first")
+        shape, self.source, self.source_name = _assembly(assembly)
         self.title = _text("title", title)
         self.number = _text("number", number)
         self.revision = _text("revision", revision)
@@ -768,58 +905,46 @@ class Instruction:
         self.operations: list[str] = []
         self.steps: list[Step] = []
         self.materials: list[_Record] = []
-        self._scene = None
         self._installed: dict[str, int] = {}
-        self.scene  # read now: a single part, or a file that is no assembly, is refused before any step
+        self.scene = _Scene(shape, self.source)
+        if len(self.scene.leaves()) < 2:  # refused before any step
+            raise TypeError(f"{self.source_name} is a single part: work instructions are for an assembly; "
+                            "instructions for machining or processing one detail part are not supported yet")
 
-    @property
-    def scene(self):
-        if self._scene is None:
-            from cadgen.step_scene import read_scene
-
-            self._scene = read_scene(self.step_path)
-            if len(list(self._scene.leaves())) < 2:
-                raise TypeError(f"{self.step_path.name} is a single part: work instructions are for an assembly; "
-                                "instructions for machining or processing one detail part are not supported yet")
-        return self._scene
-
-    def leaves(self) -> list:
-        return list(self.scene.leaves())
+    def leaves(self) -> list[_Occurrence]:
+        return self.scene.leaves()
 
     def _resolve(self, key: str) -> tuple[list[tuple[str, str]], list[str]]:
-        """What a part name or occurrence ref installs: the units at the level it
-        names them (a subassembly is one unit), and every leaf under them."""
+        """What a part's label or a part or subassembly ref installs: the units at the level it
+        names them (a subassembly is one unit, a label several parts share is each of them), and
+        every part under them."""
+        from cadgen.engine.refs import RefError
+
         key = _text("install ref", key)
         leaves = self.leaves()
-        under = lambda ref: [leaf.ref for leaf in leaves if leaf.ref == ref or leaf.ref.startswith(ref + ".")]  # noqa: E731
-        named = [leaf for leaf in leaves if leaf.label == key or (leaf.label or "").split(":")[0] == key]
-        if key.startswith("#o") or not named:
-            try:  # an occurrence ref, a subassembly's label, or a numbered alias of a shared one
-                found = [sel for sel in self.scene.resolve(key) if sel.kind == "occurrence"]
-            except Exception:  # noqa: BLE001 - not a name the assembly has; refused below with the list
-                found = []
-            units = [(sel.ref, sel.label or "(unnamed)") for sel in found if under(sel.ref)]
-            if units:
-                return units, [ref for ref, _name in units for ref in under(ref)]
-        if named:
-            return [(leaf.ref, leaf.label or "(unnamed)") for leaf in named], [leaf.ref for leaf in named]
-        listing = ", ".join(f"{leaf.ref} {leaf.label or '(unnamed)'}" for leaf in leaves[:40])
-        more = f" and {len(leaves) - 40} more" if len(leaves) > 40 else ""
-        raise KeyError(f"{key!r} is not a part or subassembly of {self.step_path.name}; its parts are: "
-                       f"{listing}{more}. wi.tree() lists the subassemblies too.")
+        named = [leaf for leaf in leaves if leaf.label == key]
+        if not named:
+            try:
+                named = self.scene.occurrences(key)
+            except RefError as exc:
+                listing = ", ".join(leaf.ref for leaf in leaves[:40])
+                more = f" and {len(leaves) - 40} more" if len(leaves) > 40 else ""
+                raise KeyError(f"{key!r} is not a part or subassembly of {self.source_name} ({exc}); its parts are: "
+                               f"{listing}{more}. wi.tree() lists the subassemblies too.") from None
+        parts = [part.ref for unit in named for part in self.scene.parts_under(unit)]
+        return [(unit.ref, unit.label or "(unnamed)") for unit in named], parts
 
     def tree(self) -> str:
         """The assembly's occurrences, indented: every ref and name ``install=`` takes,
         subassemblies included."""
         rows: list[str] = []
 
-        def walk(node, depth: int) -> None:
-            rows.append(f"{'  ' * depth}{node.ref}  {node.label or '(unnamed)'}")
+        def walk(node: _Occurrence, depth: int) -> None:
+            rows.append(f"{'  ' * depth}{node.ref or node.label or '(unnamed root)'}")
             for child in node.children:
                 walk(child, depth + 1)
 
-        for root in self.scene.roots:
-            walk(root, 0)
+        walk(self.scene.top, 0)
         return "\n".join(rows)
 
     def operation(self, title: str) -> "Instruction":
@@ -831,7 +956,7 @@ class Instruction:
     def step(self, title: str, *, install: Iterable[str] = (), camera: str | None = None,
              picture: bool = True, frame: str = "step") -> Step:
         """Add the next step. ``install`` names the parts this step puts in place
-        (labels, or occurrence refs such as ``#o1.2``; a label several parts share
+        (labels, or refs such as ``bracket`` or ``arm/pin.2``; a label several parts share
         installs every one of them; a subassembly's ref or label installs it as one
         unit). A part is installed by one step only. ``frame`` is ``step`` (the
         figure fits the parts the step installs, with what is around them) or
@@ -895,7 +1020,7 @@ class Instruction:
                 items += [f"step {step.label} ({op.kind}): {name} not stated" for name in op.missing]
         for leaf in self.leaves():
             if leaf.ref not in self._installed:
-                items.append(f"{leaf.ref} {leaf.label or '(unnamed)'}: no step installs it")
+                items.append(f"{leaf.ref}: no step installs it")
         return items
 
     def documents(self) -> list[tuple[str, str]]:

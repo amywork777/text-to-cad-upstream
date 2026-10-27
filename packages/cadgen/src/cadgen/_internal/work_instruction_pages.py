@@ -14,13 +14,15 @@ instruction's number, revision and ``PAGE n OF m``.
 page's header can say ``PAGE n OF m``, then renders them with matplotlib to a
 temporary file renamed into place: a failed run leaves no document behind.
 
-The pictures are one snapshot packet, one browser: for each step the assembly
-as it stands after the step, drawn as hidden-line art -- black edges, whatever
-colours the STEP carries, so the one colour on the page means what the legend
-says. Parts a later step installs are hidden; parts the step installs are
-filled by an area mark laid over their own triangles, and the surfaces the step
-names (a bond line, a machined face) are filled in a second colour. Every
-picture shares one camera fitted to the whole assembly, with tight framing off,
+The pictures are one snapshot job, drawn by the engine: for each step the
+assembly as it stands after the step, as hidden-line art -- black edges on
+faces of the page's colour, so the one colour on the page means what the
+legend says. Parts a later step installs are hidden. The parts the step
+installs are filled: the step is drawn twice more, solid, with and without
+them, and the pixels the two differ in are where those parts show, in front of
+whatever they stand behind. The surfaces the step names (a bond line, a
+machined face) are outlined in a second colour. Every picture shares one
+camera fitted to the whole assembly and placed exactly (no fit per picture),
 so a part sits in the same place on every page.
 """
 
@@ -86,15 +88,14 @@ def picture_plan(wi) -> list[Picture]:
     return plan
 
 
-def _area(mark_id: str, shape, color: str, opacity: float, tolerance: float) -> dict:
-    vertices, triangles = shape.tessellate(tolerance, 0.3)
-    if not triangles:
-        raise ValueError(f"{mark_id}: nothing to draw -- the shape tessellated to no triangles")
-    return {
-        "id": mark_id, "kind": "area", "color": color, "opacity": opacity,
-        "points": [round(c, 4) for v in vertices for c in (v.X, v.Y, v.Z)],
-        "triangles": [i for tri in triangles for i in tri], "outline": 3,
-    }
+def _outline(mark_id: str, face, color: str, tolerance: float) -> dict:
+    """A stroke round a face's outer boundary, in the document's frame (a document's scene
+    coordinates are its millimetres)."""
+    wire = face.outer_wire()
+    count = max(16, min(512, int(wire.length / max(tolerance * 4, 1e-6))))
+    points = [wire.position_at(i / count) for i in range(count)]
+    return {"id": mark_id, "kind": "stroke", "color": color, "width": 4, "closed": True,
+            "points": [round(c, 4) for point in points for c in (point.X, point.Y, point.Z)]}
 
 
 def _extent(wi) -> tuple[list[float], float]:
@@ -120,43 +121,85 @@ def _fit_step(leaves, picture, diagonal: float) -> tuple[list[float], float]:
     return centre, min(max(size, 0.1 * diagonal), 0.5 * diagonal)
 
 
+def _camera(preset: str, target: list[float], half: float, diagonal: float) -> dict:
+    """The snapshot's own camera object for a preset direction, placed exactly: the position
+    along the preset's direction from the target, its up, and the orthographic half-height."""
+    from cadgen.engine.render.occt import PRESETS
+
+    direction, up = PRESETS[preset]
+    norm = math.sqrt(sum(c * c for c in direction))
+    position = [round(t + c / norm * 2 * diagonal, 4) for t, c in zip(target, direction)]
+    return {"position": position, "target": target, "up": list(up), "orthographicHalfHeight": round(half, 4)}
+
+
 def render_pictures(wi, folder: Path) -> dict[int, Path]:
-    """Render every step's picture in one snapshot packet; {step number: PNG}."""
+    """Render every step's picture in one snapshot job; {step number: PNG}."""
     plan = picture_plan(wi)
     if not plan:
         return {}
-    from cadgen import step as step_door
+    import cadgen
 
     leaves = {leaf.ref: leaf for leaf in wi.leaves()}
     centre, diagonal = _extent(wi)
     tolerance = max(diagonal * 0.002, 0.01)
-    jobs, out = [], {}
+    jobs, layers = [], {}
     for picture in plan:
         target, half = centre, 0.5 * diagonal
         if picture.frame == "step" and picture.focus:
             target, half = _fit_step(leaves, picture, diagonal)
-        camera = {"preset": picture.camera, "target": target, "orthographicHalfHeight": round(half, 4)}
-        marks = [_area(f"step{picture.step}-{ref}", leaves[ref].shape(), NEW_PART, 0.6, tolerance)
-                 for ref in picture.tint]
-        marks += [_area(f"step{picture.step}-{ref}", wi.scene.resolve(ref)[0].shape(), SURFACE, 0.75, tolerance)
-                  for ref in picture.surfaces]
-        path = folder / f"step-{picture.step}.png"
-        job = {"input": str(wi.step_path), "mode": "view", "display": "hidden-line",
-               "output": {"tightFrame": False, "transparent": True},
-               "outputs": [{"path": str(path), "camera": camera}]}
-        if marks:
-            job["annotation"] = {"units": "mm", "marks": marks}
-        if picture.hide:
-            job["selection"] = {"hide": list(picture.hide)}
-        jobs.append(job)
-        out[picture.step] = path
-    packet = folder / "pictures.json"
-    packet.write_text(json.dumps({"jobs": jobs}), encoding="utf-8")
-    step_door.snapshot(job=packet, width=PICTURE_PX[0], height=PICTURE_PX[1])
-    missing = [str(path) for path in out.values() if not path.is_file()]
-    if missing:
-        raise RuntimeError(f"the snapshot wrote no picture at {', '.join(missing)}")
+        camera = _camera(picture.camera, target, half, diagonal)
+        marks = [_outline(f"step{picture.step}-{ref}", wi.scene.face_shape(ref), SURFACE, tolerance)
+                 for ref in picture.surfaces]
+        earlier = tuple(ref for ref in leaves if ref not in picture.hide and ref not in picture.tint)
+        paths = {name: folder / f"step-{picture.step}-{name}.png" for name in ("lines", "with", "without")}
+        views = [("lines", "hidden-line", picture.hide)]
+        if picture.tint:
+            views.append(("with", "solid", picture.hide))
+        if picture.tint and earlier:  # the first parts in stand on nothing: every pixel drawn is theirs
+            views.append(("without", "solid", picture.hide + picture.tint))
+        for name, mode, hidden in views:
+            job = {"input": wi.source, "camera": camera, "display": {"mode": mode},
+                   "output": {"tightFrame": False, "transparent": True},
+                   "outputs": [{"path": str(paths[name]), "width": PICTURE_PX[0], "height": PICTURE_PX[1]}]}
+            if hidden:
+                job["selection"] = {"hide": list(hidden)}
+            if marks and name == "lines":
+                job["annotation"] = {"units": "mm", "marks": marks}
+            jobs.append(job)
+        layers[picture.step] = {name: paths[name] if any(view[0] == name for view in views) else None
+                                for name in paths}
+    cadgen.snapshot(job={"jobs": jobs}, progress=False)
+    out = {}
+    for step, paths in layers.items():
+        out[step] = folder / f"step-{step}.png"
+        _tint(paths["lines"], paths["with"], paths["without"], out[step])
     return out
+
+
+def _tint(lines: Path, with_parts: Path | None, without: Path | None, out: Path) -> None:
+    """The line art with the step's parts filled: where the solid picture with them differs from
+    the one without them (or, with nothing before them, wherever it drew anything). A step that
+    installs nothing is its line art."""
+    import numpy as np
+    from PIL import Image
+
+    if with_parts is None:
+        lines.replace(out)
+        return
+    art = np.asarray(Image.open(lines).convert("RGBA"), float)
+    shown = np.asarray(Image.open(with_parts).convert("RGBA"), float)
+    if without is None:
+        mask = shown[..., 3] > 0
+    else:
+        before = np.asarray(Image.open(without).convert("RGBA"), float)
+        mask = np.abs(shown - before).max(axis=-1) > 12
+    fill = np.array([int(NEW_PART[at:at + 2], 16) for at in (1, 3, 5)], float)
+    ink = np.array([int(SURFACE[at:at + 2], 16) for at in (1, 3, 5)], float)
+    mask &= np.abs(art[..., :3] - ink).max(axis=-1) > 48  # a marked surface's outline stays its colour, on top
+    share = 0.6 * mask[..., None]
+    art[..., :3] = art[..., :3] * (1 - share) + fill * share
+    art[..., 3] = np.maximum(art[..., 3], mask * 255.0)
+    Image.fromarray(art.round().astype(np.uint8), "RGBA").save(out)
 
 
 # --- layout ------------------------------------------------------------------
@@ -410,7 +453,7 @@ def _header(ax, measure: _Measure, wi, w, h, page: int, count: int, open_count: 
         items = f"{open_count} OPEN ITEM{'S' if open_count != 1 else ''}" if open_count else "NO OPEN ITEMS"
         ax.text(w / 2, top - 20.4, f"DRAFT — NOT FOR PRODUCTION — {items}", fontsize=BODY,
                 weight="bold", va="baseline", ha="center")
-    ax.text(MARGIN, MARGIN - 4.0, f"Generated from {wi.step_path.name}", fontsize=SMALL - 1, color="#666666",
+    ax.text(MARGIN, MARGIN - 4.0, f"Generated from {wi.source_name}", fontsize=SMALL - 1, color="#666666",
             va="baseline")
 
 
@@ -473,7 +516,7 @@ def _front(flow: _Flow, wi, open_items: list[str]) -> None:
     flow.cell(_text_cell(m, layout.title, flow.inner, SMALL, "bold"), "the title")
     flow.cell(_text_cell(m, wi.title, flow.inner, TITLE, "bold"), "the title")
     flow.y -= 2.0
-    info = [["Number", f"{wi.number} Rev {wi.revision}"], ["Assembly", wi.step_path.name]]
+    info = [["Number", f"{wi.number} Rev {wi.revision}"], ["Assembly", wi.source_name]]
     if wi.part_number:
         info.append(["Part number", wi.part_number])
     if wi.drawing is not None:
@@ -591,7 +634,7 @@ def _column_header(flow: _Flow) -> None:
 def _legend(flow: _Flow) -> None:
     cell = _Cell(flow.measure, flow.inner)
     cell.text("FIGURES: the assembly after the step, in line art. Filled blue: the parts this step installs. "
-              "Purple: the surfaces it names. Outline only: parts installed earlier.", SMALL, color="#333333")
+              "Outlined purple: the surfaces it names. Lines only: parts installed earlier.", SMALL, color="#333333")
     flow.cell(cell, "the figure key")
     flow.y -= 1.0
 

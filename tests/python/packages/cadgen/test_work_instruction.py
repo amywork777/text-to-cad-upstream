@@ -1,42 +1,56 @@
 """``@work_instruction``: the steps to build one assembly, as a PDF.
 
 The assembly is three boxes built here -- a base plate, a bracket on it and two
-pins of one label on the bracket -- so every part ref and face is known from the
-construction. Most tests write with ``pictures=False``, which needs no browser;
-one renders the pictures through the real snapshot runtime, because the marks
-and the selection are validated there and nowhere else.
+pins of one label on the bracket -- handed to the engine, so every part ref and face
+is known from the construction. Most tests write with ``pictures=False``, which
+reads the document's shape in this process; one draws the pictures through the
+engine's snapshot, because the hidden parts and the marks are resolved there
+and nowhere else.
 """
 
 from __future__ import annotations
 
-import os
 import re
 import unittest
 from pathlib import Path
-from unittest import mock
 
-from tests.python.support.paths import add_repo_path
+from tests.python.support import engine_daemon
+from tests.python.support.paths import add_repo_path, repo_path
 from tests.python.support.tmp_root import generated_cad_directory
 
 add_repo_path("packages/cadgen/src")
 
 
 _FIXTURE: dict[str, Path] = {}
+REFERENCE = repo_path("skills/work-instructions/references/instruction-api.md")
+SKILL = repo_path("skills/work-instructions/SKILL.md")
+# The model the skill's template calls, with the part names it installs.
+ASSEMBLY_MODEL = """
+import build123d as bd
+from cadgen import model
+
+
+@model
+def bracket_assembly():
+    parts = []
+    for label, z, size in (("base_plate", 0, 10), ("bracket", 25, 40), ("pin", 50, 4)):
+        part = bd.Pos(0, 0, z) * bd.Box(size * 2, size, size)
+        part.label = label
+        parts.append(part)
+    return bd.Compound(children=parts, label="bracket_assembly")
+"""
 
 
 def setUpModule() -> None:
-    """One assembly and one store for every test here: its scene compiles once."""
+    """One assembly document for every test here, held by an engine of the module's own
+    (``engine_daemon.isolate``)."""
     from build123d import Box, Compound, Pos
-    from cadgen.step_export import export_build123d_step_file
+    from cadgen import model
 
+    engine_daemon.isolate(unittest.addModuleCleanup)
     temporary = generated_cad_directory(prefix="work-instruction-")
     unittest.addModuleCleanup(temporary.cleanup)
     root = Path(temporary.name)
-    patch = mock.patch.dict(os.environ, {
-        "CADGEN_CACHE_DIR": str(root / "store"), "CADGEN_DAEMON": "0", "CADGEN_COMPONENT_WORKERS": "1",
-    })
-    patch.start()
-    unittest.addModuleCleanup(patch.stop)
     base = Box(100, 60, 10)
     base.label = "base_plate"
     bracket = Pos(0, 0, 25) * Box(40, 40, 40)
@@ -46,21 +60,20 @@ def setUpModule() -> None:
         pin = Pos(x, 0, 50) * Box(4, 4, 10)
         pin.label = "pin"
         pins.append(pin)
-    step = root / "assembly.step"
-    export_build123d_step_file(Compound(children=[base, bracket, *pins], label="assembly"), step)
-    _FIXTURE.update(root=root, step=step)
+    document = model(Compound(children=[base, bracket, *pins], label="assembly"), name="assembly")
+    _FIXTURE.update(root=root, document=document)
 
 
 class _Assembly(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.root, cls.step = _FIXTURE["root"], _FIXTURE["step"]
+        cls.root, cls.document = _FIXTURE["root"], _FIXTURE["document"]
 
     def instruction(self, **kwargs):
         from cadgen.work_instruction import Instruction
 
         kwargs.setdefault("pictures", False)
-        return Instruction(self.step, title="BRACKET ASSEMBLY", number="WI-1", revision="A", **kwargs)
+        return Instruction(self.document, title="BRACKET ASSEMBLY", number="WI-1", revision="A", **kwargs)
 
 
 def _sources():
@@ -155,21 +168,21 @@ class VocabularyTests(_Assembly):
             (ValueError, lambda: self.instruction(status="approved")),
             (ValueError, lambda: self.instruction(camera="isometric")),
             (ValueError, lambda: self.instruction(size="A3")),
-            (ValueError, lambda: Instruction(self.step, title="  ", number="WI-1", revision="A", pictures=False)),
+            (ValueError, lambda: Instruction(self.document, title="  ", number="WI-1", revision="A", pictures=False)),
             (TypeError, lambda: self.instruction().step("Load", install="base_plate")),
-            (ValueError, lambda: self.instruction().step("Load", install=["base_plate"]).bond(None, surfaces=["#o1.1"])),
+            (ValueError, lambda: self.instruction().step("Load", install=["base_plate"]).bond(None, surfaces=["base_plate"])),
         ]
         for error, make in cases:
             with self.subTest(make=make), self.assertRaises(error):
                 make()
 
     def test_a_single_part_is_not_an_assembly(self) -> None:
-        from build123d import Box
-        from cadgen.step_export import export_build123d_step_file
+        """A file's document is read in this process, as a model's handle is."""
+        from build123d import Box, export_step
         from cadgen.work_instruction import Instruction
 
         single = self.root / "single.step"
-        export_build123d_step_file(Box(1, 1, 1), single)
+        export_step(Box(1, 1, 1), single)
         with self.assertRaisesRegex(TypeError, "single part"):
             Instruction(single, title="T", number="N", revision="A", pictures=False)
 
@@ -177,31 +190,31 @@ class VocabularyTests(_Assembly):
 class PartTests(_Assembly):
     def test_a_label_installs_every_part_that_carries_it(self) -> None:
         wi = self.instruction()
-        self.assertEqual(wi.step("Pins", install=["pin"]).install, ("#o1.3", "#o1.4"))
+        self.assertEqual(wi.step("Pins", install=["pin"]).install, ("assembly/pin.1", "assembly/pin.2"))
 
     def test_a_surface_is_resolved_to_one_face_when_the_step_names_it(self) -> None:
         step = self.instruction().step("Load", install=["bracket"])
-        self.assertEqual(step.bond(None, surfaces=["#o1.2.f5"]).ops[-1].surfaces, (("#o1.2.f5", "#o1.2"),))
+        self.assertEqual(step.bond(None, surfaces=["bracket/face 5"]).ops[-1].surfaces, (("bracket/face 5", "bracket"),))
         with self.assertRaisesRegex(ValueError, "face refs"):
-            step.bond(None, surfaces=["#o1.2"])
-        with self.assertRaisesRegex(ValueError, "is not on assembly.step"):
-            step.bond(None, surfaces=["#o1.9.f1"])
+            step.bond(None, surfaces=["bracket"])
+        with self.assertRaisesRegex(ValueError, "is not one face of assembly"):
+            step.bond(None, surfaces=["bolt/face 1"])
 
     def test_an_unknown_part_is_refused_with_the_parts_there_are(self) -> None:
-        with self.assertRaisesRegex(KeyError, r"#o1\.2 bracket"):
+        with self.assertRaisesRegex(KeyError, r"its parts are: base_plate, bracket"):
             self.instruction().step("Load", install=["brackett"])
 
     def test_a_refused_step_leaves_its_parts_for_the_next(self) -> None:
         wi = self.instruction()
         with self.assertRaises(ValueError):
             wi.step("Load", install=["base_plate"], camera="isometric")
-        self.assertEqual(wi.step("Load", install=["base_plate"]).install, ("#o1.1",))
+        self.assertEqual(wi.step("Load", install=["base_plate"]).install, ("base_plate",))
 
     def test_a_part_is_installed_by_one_step(self) -> None:
         wi = self.instruction()
         wi.step("Load", install=["base_plate"])
         with self.assertRaisesRegex(ValueError, "step 1 already installs"):
-            wi.step("Again", install=["#o1.1"])
+            wi.step("Again", install=["base_plate"])
 
 
 class OpenItemTests(_Assembly):
@@ -214,7 +227,7 @@ class OpenItemTests(_Assembly):
         wi.step("Load", install=["base_plate"])
         wi.step("Bond", install=["bracket"]).bond(
             Adhesive("EA 9394", prep="IPA wipe", mix="100:17", cure="5 days at 77 F", per=spec.at("5.1")))
-        wi.step("Pins", install=["#o1.3"]).fasten("NAS1352-3", qty=1,
+        wi.step("Pins", install=["assembly/pin.1"]).fasten("NAS1352-3", qty=1,
                                                   torque=Torque(40, 45, "in-lbf", per=drawing.at("note 4")))
         return wi
 
@@ -225,7 +238,7 @@ class OpenItemTests(_Assembly):
             "step 2 (bond): pot life not stated",
             "step 3 (fasten): torque not stated",
             "step 3 (inspect): criterion source not stated",
-            "#o1.4 pin: no step installs it",
+            "assembly/pin.2: no step installs it",
         ])
 
     def test_a_released_instruction_with_open_items_is_refused_and_writes_nothing(self) -> None:
@@ -385,7 +398,7 @@ class WhatTheTestsFoundTests(_Assembly):
         wi.step("Bolt", install=["base_plate"]).fasten(
             "M8 bolt", qty=4, torque=Unspecified("Snug; no torque is specified",
                                                  per=Stated("A. Zhou", on="2026-10-25")))
-        self.assertEqual(wi.open_items()[:1], ["#o1.2 bracket: no step installs it"])
+        self.assertEqual(wi.open_items()[:1], ["bracket: no step installs it"])
         self.assertEqual(wi.equipment(), [])
         text = [t for page in _page_texts(wi) for t in page]
         self.assertIn("stated by A. Zhou, 2026-10-25", text, "a statement prints as one, never 'per stated by'")
@@ -450,7 +463,7 @@ class SubassemblyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         from build123d import Box, Compound, Pos
-        from cadgen.step_export import export_build123d_step_file
+        from cadgen import model
 
         base = Box(100, 60, 10)
         base.label = "base_plate"
@@ -464,14 +477,13 @@ class SubassemblyTests(unittest.TestCase):
             pin.label = f"pin_{n}"
             pins.append(pin)
         wheel = Compound(children=[hub, rim], label="wheel")
-        cls.step = _FIXTURE["root"] / "nested.step"
-        export_build123d_step_file(Compound(children=[base, wheel, *pins], label="nested"), cls.step)
+        cls.document = model(Compound(children=[base, wheel, *pins], label="nested"), name="nested")
 
     def test_units_and_kinds(self) -> None:
         from cadgen._internal.work_instruction_pages import parts
         from cadgen.work_instruction import Instruction
 
-        wi = Instruction(self.step, title="T", number="N", revision="A", pictures=False)
+        wi = Instruction(self.document, title="T", number="N", revision="A", pictures=False)
         self.assertIn("wheel", wi.tree())
         wi.step("Base", install=["base_plate"])
         wheel = wi.step("Wheel", install=["wheel"])
@@ -490,20 +502,20 @@ class PictureTests(_Assembly):
         wi = self.instruction(pictures=True)
         wi.step("Prepare the fixture")
         wi.step("Load", install=["base_plate"])
-        wi.step("Bond", install=["bracket"]).bond(None, surfaces=["#o1.2.f5"])
+        wi.step("Bond", install=["bracket"]).bond(None, surfaces=["bracket/face 5"])
         wi.step("Pins", install=["pin"], camera="top")
         plan = {p.step: p for p in picture_plan(wi)}
         self.assertNotIn(1, plan, "nothing is installed yet, so there is nothing to picture")
-        self.assertEqual(plan[2].hide, ("#o1.2", "#o1.3", "#o1.4"))
-        self.assertEqual((plan[3].tint, plan[3].surfaces), (("#o1.2",), ("#o1.2.f5",)))
+        self.assertEqual(plan[2].hide, ("bracket", "assembly/pin.1", "assembly/pin.2"))
+        self.assertEqual((plan[3].tint, plan[3].surfaces), (("bracket",), ("bracket/face 5",)))
         self.assertEqual((plan[4].hide, plan[4].camera), ((), "top"))
-        self.assertEqual(plan[3].focus, ("#o1.2",), "a figure is framed on the parts its step installs")
+        self.assertEqual(plan[3].focus, ("bracket",), "a figure is framed on the parts its step installs")
 
     def test_a_surface_on_a_part_not_yet_installed_is_refused(self) -> None:
         from cadgen._internal.work_instruction_pages import picture_plan
 
         wi = self.instruction(pictures=True)
-        wi.step("Load", install=["base_plate"]).bond(None, surfaces=["#o1.2.f5"])
+        wi.step("Load", install=["base_plate"]).bond(None, surfaces=["bracket/face 5"])
         with self.assertRaisesRegex(ValueError, "not installed by step 1"):
             picture_plan(wi)
 
@@ -516,11 +528,49 @@ class PictureTests(_Assembly):
         def pictured():
             wi = self.instruction(pictures=True)
             wi.step("Load", install=["base_plate"])
-            wi.step("Bond", install=["bracket"]).bond(None, surfaces=["#o1.2.f6"])
+            wi.step("Bond", install=["bracket"]).bond(None, surfaces=["bracket/face 6"])
             return wi
 
         pictured()
         self.assertEqual(len(re.findall(rb"/Subtype\s*/Image", target.read_bytes())), 2)
+
+
+class DocumentedTemplateTests(unittest.TestCase):
+    """The skill's template is run, not just proofread: an agent copies it, so a template that has
+    drifted from ``cadgen.work_instruction`` is a generator of broken scripts. It runs here beside
+    a model of the part names it uses, built by the module's engine, and must write its PDF with
+    the open items its placeholders leave. Its pictures are left out: the test above draws them."""
+
+    def test_the_skill_links_the_template(self) -> None:
+        self.assertIn("references/instruction-api.md#template", SKILL.read_text(encoding="utf-8"))
+
+    def test_the_template_runs_and_leaves_its_placeholders_open(self) -> None:
+        import contextlib
+        import io
+        import runpy
+        import sys
+        from unittest import mock
+
+        section = REFERENCE.read_text(encoding="utf-8").split("## Template", 1)[1]
+        found = re.search(r"```python\n(.*?)```", section, re.S)
+        assert found, "the reference's Template section has no python block"
+        temporary = generated_cad_directory(prefix="wi-template-")
+        self.addCleanup(temporary.cleanup)
+        src = Path(temporary.name) / "src"
+        src.mkdir()
+        (src / "bracket_assembly.py").write_text(ASSEMBLY_MODEL, encoding="utf-8")
+        script = src / "bracket_assembly_wi.py"
+        script.write_text(found.group(1), encoding="utf-8")
+        self.enterContext(mock.patch.object(sys, "path", [str(src), *sys.path]))
+        self.addCleanup(sys.modules.pop, "bracket_assembly", None)
+
+        printed = io.StringIO()
+        with mock.patch("cadgen._internal.work_instruction_pages.render_pictures", return_value={}), \
+                contextlib.redirect_stdout(printed):
+            runpy.run_path(str(script), run_name="__main__")
+        self.assertTrue((src.parent / "PDF/bracket_assembly_wi.pdf").is_file())
+        self.assertIn("open item: step 2 (bond): pot life not stated", printed.getvalue())
+        self.assertIn("open item: step 4 (fasten): torque not stated", printed.getvalue())
 
 
 if __name__ == "__main__":
