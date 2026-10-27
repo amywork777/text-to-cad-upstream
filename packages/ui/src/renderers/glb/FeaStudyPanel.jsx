@@ -40,7 +40,7 @@ function FeaResultControls({ controls, values, presets, preset, onChange, onPres
   return (
     // A select gives way before its label in the narrow panel ("Displacement" would squeeze "Show" away).
     <div className="flex flex-col gap-1.5 [&_span:has(+span>[data-slot=select-trigger])]:shrink-0 [&_span:has(>[data-slot=select-trigger])]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:shrink [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:max-w-full">
-      {presets.length ? <KinematicsPoseRow label="Preset" poses={presets} activeValue={preset} onSelect={onPreset} onReset={onReset} /> : null}
+      {presets.length ? <KinematicsPoseRow name="Preset" poses={presets} activeValue={preset} onSelect={onPreset} onReset={onReset} /> : null}
       {controls.map((control) => parameterRow({
         parameter: control, value: values[control.id], labelTitle: control.labelTitle, valueText: controlText, step: control.step, wideLabel: control.wideLabel === true,
         action: control.drives === "motion" ? playButton : null,

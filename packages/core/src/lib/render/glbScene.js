@@ -1,5 +1,4 @@
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { hitTriangle } from "../viewer/meshMeasure.js";
 import { scheduleRuntimeRaycastBvh } from "../viewer/raycastBvh.js";
 import { createSceneExplode } from "../viewer/sceneExplode.js";
 import { createSceneHighlight } from "../viewer/sceneHighlight.js";
@@ -56,7 +55,7 @@ function boundsOf(THREE, root) {
  * the scene places them in CAD space, wears the look its host resolves, and owns
  * the document from here on (`dispose()` releases its geometry, materials and
  * textures). The ONE builder of a GLB's scene: the viewer's GLB renderer and the
- * snapshot CLI's headless stage both call it, so neither can draw a GLB the other
+ * parity page's headless stage both call it, so neither can draw a GLB the other
  * does not.
  *
  * @param {typeof import("three")} THREE
@@ -81,6 +80,15 @@ export function createGlbScene(THREE, document, { sibling = false } = {}) {
     // leave the rest-pose box while the hierarchy and the framing box stay correct.
     if (object.isSkinnedMesh || object.morphTargetInfluences?.length) object.frustumCulled = false;
   });
+  // A sibling opens at the file's authored pose, even while this scene holds a routine's
+  // frame or an explosion. Keep values for every node (bones included), before either can
+  // write them; clip time zero need not be the authored pose.
+  const authoredPose = new Map();
+  document.scene.traverse(object => authoredPose.set(object, {
+    position: object.position.toArray(), quaternion: object.quaternion.toArray(), scale: object.scale.toArray(),
+    matrix: object.matrix.toArray(), matrixAutoUpdate: object.matrixAutoUpdate,
+    morphs: object.morphTargetInfluences?.slice() || null, visible: object.visible, renderOrder: object.renderOrder
+  }));
   // The authored materials, kept apart from the ones this scene's look will dress, for a sibling.
   const authored = new Map();
   document.scene.traverse((object) => {
@@ -182,9 +190,9 @@ export function createGlbScene(THREE, document, { sibling = false } = {}) {
       const node = nodes.get(index);
       const occurrence = String(node.object.userData?.cadOccurrenceId || "").trim();
       return { name: nodeName(node), facts: [
-        { label: "Node", value: `nodes[${index}]` },
-        { label: "Triangles", value: node.meshes.reduce((sum, mesh) => sum + triangles(mesh), 0).toLocaleString("en-US") },
-        ...(occurrence ? [{ label: "STEP occurrence", value: occurrence }] : [])
+        { label: "Node", key: "part.node", value: `nodes[${index}]` },
+        { label: "Triangles", key: "part.triangles", value: node.meshes.reduce((sum, mesh) => sum + triangles(mesh), 0).toLocaleString("en-US") },
+        ...(occurrence ? [{ label: "STEP occurrence", key: "part.stepOccurrence", value: occurrence }] : [])
       ] };
     },
     /** Light what nodes draw: `hovered` and `selected` are nodes as a pick names them (`n12`). */
@@ -194,7 +202,7 @@ export function createGlbScene(THREE, document, { sibling = false } = {}) {
       highlight = { hovered: indices(hovered), selected: indices(selected) };
       applyHighlight();
     },
-    // The first surface under the ray, as the node that draws it, and the triangle it hit there.
+    // The first surface under the ray, as the node that draws it, and the point it hit there.
     pick(ray) {
       if (disposed) return null;
       root.updateMatrixWorld();
@@ -205,7 +213,7 @@ export function createGlbScene(THREE, document, { sibling = false } = {}) {
       const node = hit ? owningNode(hit.object) : null;
       if (!node) return null;
       const index = node.userData.gltfNode;
-      return { id: `n${index}`, node: index, name: nodeName(nodes.get(index)), point: hit.point.toArray(), triangle: hitTriangle(hit) };
+      return { id: `n${index}`, node: index, name: nodeName(nodes.get(index)), point: hit.point.toArray() };
     },
     /**
      * A second scene of the same document (the viewer's Preview beside its editor): its own copy of
@@ -216,16 +224,29 @@ export function createGlbScene(THREE, document, { sibling = false } = {}) {
      */
     createSibling() {
       const copy = cloneSkinned(document.scene);
-      const sources = [];
-      document.scene.traverse(object => { if (object.isMesh) sources.push(object); });
-      let index = 0;
-      copy.traverse((object) => {
+      // Pair the current source and clone hierarchies first. Runtime overlays can have
+      // appeared since the baseline; remove their copies without shifting authored nodes.
+      const sources = [], copies = [];
+      document.scene.traverse(object => sources.push(object));
+      copy.traverse(object => copies.push(object));
+      sources.forEach((source, index) => {
+        const object = copies[index], pose = authoredPose.get(source);
+        if (!pose) { object.removeFromParent(); return; }
+        object.position.fromArray(pose.position);
+        object.quaternion.fromArray(pose.quaternion);
+        object.scale.fromArray(pose.scale);
+        object.matrix.fromArray(pose.matrix);
+        object.matrixAutoUpdate = pose.matrixAutoUpdate;
+        object.matrixWorldNeedsUpdate = true;
+        object.visible = pose.visible;
+        object.renderOrder = pose.renderOrder;
+        if (pose.morphs) object.morphTargetInfluences = pose.morphs.slice();
         if (!object.isMesh) return;
-        const source = sources[index++];
         object.geometry = shareGeometry(THREE, source.geometry);
         const materials = (authored.get(source) || materialList(source)).map(material => material && copyMaterial(material));
         object.material = Array.isArray(source.material) ? materials : materials[0];
       });
+      copy.updateMatrixWorld(true);
       return createGlbScene(THREE, { ...document, scene: copy }, { sibling: true });
     },
     dispose() {

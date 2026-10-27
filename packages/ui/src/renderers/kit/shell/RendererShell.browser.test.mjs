@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
-import { build } from 'esbuild';
+import { harnessBundle } from '../../harness/bundle.mjs';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
 import * as THREE from 'three';
@@ -29,18 +27,15 @@ const HARNESS_SIZE = '<style>#root > div { width: 800px !important; height: 500p
 // One harness bundle and one browser for the file; every test serves its own files and opens its
 // own page. (A browser's first WebGL page pays for compiling the viewer's shaders; later pages
 // reuse them.)
-let temporary, bundle, compiledCss, browser;
+let bundle, compiledCss, browser;
 before(async () => {
-  temporary = await mkdtemp(join(tmpdir(), 'text-to-cad-shell-browser-'));
-  await build({ entryPoints: [fileURLToPath(new URL('../../harness/index.tsx', import.meta.url))], outfile: join(temporary, 'harness.js'), bundle: true, format: 'esm', platform: 'browser', conditions: ['production'], jsx: 'automatic', loader: { '.webp': 'dataurl', '.avif': 'dataurl', '.woff2': 'dataurl', '.svg': 'dataurl' } });
-  bundle = await readFile(join(temporary, 'harness.js'));
+  ({ bundle } = await harnessBundle());
   compiledCss = await readFile(new URL('../../../../dist/styles.css', import.meta.url));
   browser = await chromium.launch({ headless: true, args: (process.platform === 'darwin' && process.env.CAD_TEST_SWIFTSHADER !== '1')
     ? ['--use-angle=metal'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 });
 after(async () => {
   await browser?.close();
-  if (temporary) await rm(temporary, { recursive: true, force: true });
 });
 
 /**
@@ -508,7 +503,9 @@ test('a scene that arrives in place is framed when whole', async (t) => {
   // whole yet: the viewport adopts what arrived (it is drawn, larger) but does NOT re-frame,
   // so the triangle runs off the canvas. When the scene says it is whole, it is framed again.
   const opened = await waitForFrame(frame => frame.painted > 500 && frame.atEdge === 0, 'showed the framed triangle');
-  const pose = () => page.evaluate(() => { const c = window.__cadCamera(); return [c.position, c.target, c.zoom]; });
+  // The pose: where the camera looks from (its direction), at, and its zoom. How far back an
+  // orthographic eye stands is no part of the picture (`kit/camera/orthographicEye.js`).
+  const pose = () => page.evaluate(() => { const c = window.__cadCamera(); const d = c.position.map((v, i) => v - c.target[i]); const l = Math.hypot(...d); return [d.map(v => v / l), c.target, c.zoom]; });
   // The opened camera once it is at rest: the same over several frames running.
   await page.waitForFunction(() => new Promise(resolve => {
     let still = 0, last = null;
@@ -548,7 +545,8 @@ test('a view turned with the arrow keys while a scene arrives is kept when it is
   const pane = page.getByTestId('one');
   const canvas = pane.locator('[aria-busy="false"] > div > canvas').first();
   await canvas.waitFor();
-  const pose = () => page.evaluate(() => { const c = window.__cadCamera(); return [...c.position, ...c.target, c.zoom]; });
+  // Where the camera looks from (its direction), at, and its zoom (`kit/camera/orthographicEye.js`).
+  const pose = () => page.evaluate(() => { const c = window.__cadCamera(); const d = c.position.map((v, i) => v - c.target[i]); const l = Math.hypot(...d); return [...d.map(v => v / l), ...c.target, c.zoom]; });
   // The camera at rest: the same over several frames running.
   const atRest = () => page.waitForFunction(() => new Promise(resolve => {
     let still = 0, last = null;

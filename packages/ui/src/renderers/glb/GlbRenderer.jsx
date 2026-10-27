@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MousePointer2 } from "lucide-react";
 import { scenePartCount, viewFeaturesForKind } from "@text-to-cad/core/common/viewSettings.js";
+import { useExportView } from "../../export/context.js";
+import { useViewerHost } from "../../host/context.js";
 import RendererShell from "../kit/shell/RendererShell.jsx";
 import { usePreviewState, useRendererShell } from "../kit/shell/useRendererShell.js";
 import { usePreviewScene } from "../kit/shell/usePreviewScene.js";
@@ -13,6 +15,8 @@ import { useDeclinedSelectReference, useWorkspaceDocument, workspaceLoadAlert } 
 import { GLB_DECLINED_LIVE_COMMANDS, GLB_TOOL, GLB_TOOL_MODES } from "./tools.js";
 import { useGlbAnimation } from "./useGlbAnimation.js";
 import { useGlbScene } from "./useGlbScene.js";
+import { TOOL_SHORTCUTS } from "../kit/tools/toolShortcuts.js";
+import { useI18n } from "@text-to-cad/ui/i18n";
 
 const SELECT_ICON = <MousePointer2 className="size-3" strokeWidth={2} aria-hidden="true" />;
 const NO_REFERENCES = Object.freeze([]);
@@ -63,10 +67,11 @@ function GlbFile({ view, data }) {
 }
 
 function GlbSurface({ view, document, loaded, pending }) {
+  const { t } = useI18n();
   const scene = pending ? null : loaded.scene;
   const loadAlert = useMemo(() => workspaceLoadAlert({
-    catalogError: document.catalogError, error: loaded.error, modelKey: document.modelKey, hasScene: Boolean(scene)
-  }), [document.catalogError, loaded.error, document.modelKey, scene]);
+    catalogError: document.catalogError, error: loaded.error, modelKey: document.modelKey, hasScene: Boolean(scene), t
+  }), [document.catalogError, loaded.error, document.modelKey, scene, t]);
 
   const shellRef = useRef(null);
   const sceneRef = useRef(scene);
@@ -124,7 +129,7 @@ function GlbSurface({ view, document, loaded, pending }) {
     view, services: document.services, resource: document.resource, modelKey: document.modelKey, revisionKey: loaded.revision,
     features, toolModes: GLB_TOOL_MODES, tool: tools.tool, previewable: true, preview, scene, sceneEffects: true,
     load: { busy: (loaded.busy || pending) && !scene, updating: loaded.busy && Boolean(scene), progress: loaded.progress, alert: loadAlert },
-    animation: routine, live, escape, measurements: tools.measurements, deleteSelection: measure.removeSelected
+    animation: routine, live, escape, deleteSelection: measure.removeSelected
   });
   shellRef.current = shell;
   useDeclinedSelectReference(document);
@@ -145,9 +150,16 @@ function GlbSurface({ view, document, loaded, pending }) {
   const previewAnimation = useGlbAnimation(previewScene?.document || null, () => shell.frame.previewViewRef.current?.requestRender?.());
   const previewView = useMemo(() => ({ scene: previewScene, animation: previewAnimation }), [previewScene, previewAnimation]);
 
+  // Export converts the file shown to the other two mesh kinds: its path names it and the bytes on
+  // screen (their catalog hash) are its revision; the server refuses a file that has changed since.
+  const host = useViewerHost();
+  const exportView = useMemo(() => scene && loaded.revision && document.modelKey && !host.environment.compact ? {
+    doc: document.modelKey, revision: loaded.revision, file: view.file.path, name: view.file.name
+  } : null, [scene, loaded.revision, document.modelKey, host.environment.compact, view.file.path, view.file.name]);
+  useExportView(exportView);
   const sceneTools = useSceneTools({ shell, scene, features, state: tools, measurable: true, clearParts: selection.clear });
   const selectActive = !previewing && Boolean(scene) && shell.toolMode === GLB_TOOL.SELECT;
-  const strip = [shell.tools.own({ id: GLB_TOOL.SELECT, label: "Select", icon: SELECT_ICON }), ...sceneTools.tools];
+  const strip = [shell.tools.own({ id: GLB_TOOL.SELECT, label: t("tool.select"), shortcut: TOOL_SHORTCUTS.select, icon: SELECT_ICON }), ...sceneTools.tools];
   const { references, chips } = useSceneReferences({ scene, selection, resource: shell.frame.resource });
   const resourcePath = shell.frame.resource?.path;
   const nameNode = useCallback(reference => {
