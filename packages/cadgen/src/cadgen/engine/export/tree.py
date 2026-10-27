@@ -4,7 +4,8 @@ document held without its XCAF document, and for an xbf written from a STEP.
 Every prototype the view places is a part with the document's name, colour, face colours,
 materials and element names; every assembly node of the view's tree is an assembly of its
 own here, each component placed in its parent's frame. A part read from a STEP this engine
-did not write takes the geometry key a build would give it, so an xbf of it caches like any.
+did not write takes the geometry key a build would give it, so an xbf of it caches like any,
+and its GD&T is copied into the xbf as read (``pmi.copy``).
 The mechanism is the document's, whole, and so are its animations (``animations.record``): the
 tree's occurrences are the view's, so their paths are the ones the tracks name.
 """
@@ -110,12 +111,27 @@ def tree_of(view: Any) -> Any:
     tree = document.Tree(root, order, list(parts.values()), ("exported", view.name))
     tree.mechanism = source.mechanism
     tree.animations = source.animations
+    if source.foreign and source.structure.get("pmi"):
+        # A STEP another system wrote: its GD&T copied as read (``pmi.copy``).
+        tree.pmi_source = (document.load(source.path), parts)
     return tree
 
 
 def write_xbf(view: Any, path: Path) -> None:
-    """The view as an xbf of its own, saved atomically (``document.save``)."""
+    """The view as an xbf of its own, saved atomically. A document this engine wrote, held with its
+    XCAF document -- a model's as built, or read from the bytes the engine keeps (``Source.data``,
+    written as they are) -- is that document's own bytes (``document.to_bytes``), the ones its
+    declared xbf and the engine's cache hold: every attribute it holds kept, its PMI -- annotations,
+    notes, views and notes library -- with them, and the same bytes from a live worker and after a
+    restart. Any other (a STEP another system wrote) is made a document again (``tree_of``), its
+    GD&T copied as read (``pmi.copy``)."""
     from cadgen.engine import document
 
+    source = view.source
+    if source.xcaf is not None and not source.foreign:
+        data = source.data if source.data is not None else \
+            document.to_bytes(source.xcaf, source.shapes.values() if source.live else None)
+        document.write_bytes(Path(path), data)
+        return
     doc = document.to_xcaf(tree_of(view))
     document.save(doc, Path(path), compare=True)
