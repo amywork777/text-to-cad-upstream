@@ -1,23 +1,20 @@
 """Engineering drawing of the guide bar: a broken view of a long part.
 
-Run `python guide_bar.py` first; this script documents the STEP it writes. The
-bar's middle is the same section all along, so the front and top views leave it
-out between two break lines, and the sheet chooses its own size and scale for
-what is left. The overall length is still stated true.
+It calls the model in `guide_bar.py`, which the engine builds (a replay when it is
+current). The bar's middle is the same section all along, so the front and top views
+leave it out between two break lines, and the sheet chooses its own size and scale
+for what is left. The overall length is still stated true.
 """
 
-from pathlib import Path
-
-import cadgen
 from cadgen.eng_drawing import Sheet, eng_drawing
-from guide_bar import CROSS_HOLE_INSET, DIAMETER, END_CHAMFER, LENGTH, SPIGOT_DIAMETER, SPIGOT_LENGTH
-
-STEP = Path(__file__).parent / "../STEP/guide_bar.step"
+from guide_bar import (
+    CROSS_HOLE_INSET, DIAMETER, END_CHAMFER, LENGTH, SPIGOT_DIAMETER, SPIGOT_LENGTH, guide_bar,
+)
 
 
 @eng_drawing(out="../PDF/guide_bar_drawing.pdf")
 def guide_bar_drawing():
-    part = cadgen.read_step(STEP)
+    part = guide_bar().shape
     sheet = Sheet(size=None, scale=None, title="GUIDE BAR", part_number="GB-600", revision="A",
                   author="text-to-cad", general_tolerance="ISO 2768-m")
     top, front, right, iso = sheet.three_views(part, iso=True)

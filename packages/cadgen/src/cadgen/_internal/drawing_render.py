@@ -598,7 +598,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     f"the part in the {view.name} view is {solids} separate solids, and a drawing documents one "
                     "part. A cut that runs right through the model splits it; check the model, or draw each "
                     "solid on its own sheet. An assembly is drawn with a parts list and balloons: "
-                    "assembly_sheets(parts_list(cadgen.read_scene(path)), ...)."
+                    "assembly_sheets(parts_list(assembly().shape), ...)."
                 )
         cut = _cut(view) if view._section else None
         draw = cut[0] if cut else None

@@ -1,15 +1,12 @@
 """Engineering drawing of the stepped shaft with its keyway.
 
-Run `python stepped_shaft_keyway.py` first; this script documents the STEP it
-writes. The diameters are dimensioned on the profile, where a turner reads them,
-the end view is a section through the keyway, which shows its depth, and a
-detail draws the end chamfer large enough to dimension. The keyway is centred on
+It calls the model in `stepped_shaft_keyway.py`, which the engine builds (a replay
+when it is current). The diameters are dimensioned on the profile, where a turner
+reads them, the end view is a section through the keyway, which shows its depth, and
+a detail draws the end chamfer large enough to dimension. The keyway is centred on
 the shaft, and the top view says so.
 """
 
-from pathlib import Path
-
-import cadgen
 from cadgen.eng_drawing import Sheet, eng_drawing
 from stepped_shaft_keyway import (
     END_CHAMFER,
@@ -22,14 +19,13 @@ from stepped_shaft_keyway import (
     MIDDLE_LENGTH,
     SMALL_DIAMETER,
     TOTAL_LENGTH,
+    stepped_shaft_keyway,
 )
-
-STEP = Path(__file__).parent / "../STEP/stepped_shaft_keyway.step"
 
 
 @eng_drawing(out="../PDF/stepped_shaft_keyway_drawing.pdf")
 def stepped_shaft_keyway_drawing():
-    part = cadgen.read_step(STEP)
+    part = stepped_shaft_keyway().shape
     sheet = Sheet(
         "A3", title="STEPPED SHAFT WITH KEYWAY", part_number="SH-120", revision="A", author="text-to-cad",
         general_tolerance="ISO 2768-m",

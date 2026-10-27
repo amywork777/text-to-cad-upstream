@@ -1,10 +1,11 @@
 """Assembly drawing of the motorcycle shock absorber: a general arrangement, a
 section through it part by part, and a sheet for each part.
 
-Run `python motorcycle_shock_absorber.py` first; this script documents the STEP
-it writes. The parts list is read off that STEP. The model names its two mounting
-eyes apart (lower, upper), so they arrive as two items; they are one part, made
-twice, and merge() lists them as one after checking their shapes are the same.
+It calls the model in `motorcycle_shock_absorber.py`, which the engine builds (a
+replay when it is current), and reads the parts list off the assembly it hands back.
+The model names its two mounting eyes apart (lower, upper), so they arrive as two
+items; they are one part, made twice, and merge() lists them as one after checking
+their shapes are the same.
 
 The requirements below -- materials and their specs, the threadlocker and the
 grease, how each joint is held, the eye bore's fit, the collar's thread and the
@@ -17,26 +18,22 @@ segments, so its sheet says so and gives the spring's data, and lists what is no
 yet specified.
 """
 
-from pathlib import Path
-
-import cadgen
 from cadgen.eng_drawing import GENERIC, Sheet, assembly_sheets, eng_drawing, parts_list
 from motorcycle_shock_absorber import (
     BODY_OD, BODY_TOP_Z, PRELOAD_COLLAR_TOP_Z, SPRING_BOTTOM_Z, SPRING_HEIGHT, SPRING_MEAN_D, SPRING_TURNS,
-    SPRING_WIRE_D,
+    SPRING_WIRE_D, motorcycle_shock_absorber,
 )
 
 #: The tube's thread runs this far down from its top end: the collar's travel.
 THREAD_LENGTH = 40.0
 
-STEP = Path(__file__).parent / "../../STEP/motorcycle_shock_absorber/motorcycle_shock_absorber.step"
 EXAMPLE = "EXAMPLE REQUIREMENTS FOR DEMONSTRATION; NOT A RELEASED DESIGN."
 TITLE, NUMBER = "MOTORCYCLE SHOCK ABSORBER", "MSA-100"
 
 
 @eng_drawing(out="../../PDF/motorcycle_shock_absorber/motorcycle_shock_absorber_drawing.pdf")
 def motorcycle_shock_absorber_drawing():
-    parts = parts_list(cadgen.read_scene(STEP))
+    parts = parts_list(motorcycle_shock_absorber().shape)
     parts.merge("mounting_eye:lower", "mounting_eye:upper")
     # What each part is made of: example values, as the interview recorded them.
     for key, material, spec, family in (

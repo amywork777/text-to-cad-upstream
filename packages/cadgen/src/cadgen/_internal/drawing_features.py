@@ -867,11 +867,11 @@ def _edge_faces(shape):
 
 def _others(found, edge, face) -> list:
     """The faces other than ``face`` that share ``edge``."""
-    from OCP.TopoDS import TopoDS
+    from build123d.topology.shape_core import downcast
 
     if not found.Contains(edge.wrapped):
         return []
-    return [TopoDS.Face_s(f) for f in found.FindFromKey(edge.wrapped) if not f.IsSame(face.wrapped)]
+    return [downcast(f) for f in found.FindFromKey(edge.wrapped) if not f.IsSame(face.wrapped)]
 
 
 def _normal(face, point) -> tuple | None:
@@ -1155,9 +1155,9 @@ def sharp_edges(shape) -> tuple[int, int]:
 
 
 def _as_face(shape):
-    from OCP.TopoDS import TopoDS
+    from build123d.topology.shape_core import downcast
 
-    return TopoDS.Face_s(shape)
+    return downcast(shape)
 
 
 def _distance_to_face(face, point) -> float:

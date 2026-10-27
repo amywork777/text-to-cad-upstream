@@ -1467,7 +1467,7 @@ class AssemblyEdgeTests(unittest.TestCase):
         from unittest import mock
 
         import cadgen._internal.drawing_render as render
-        from cadgen.drawing_checks import validate_drawing_document
+        from cadgen.engine.export.dxf import validate_drawing_document
         from cadgen.eng_drawing import Sheet
 
         real = render._edge_polyline
@@ -2181,36 +2181,33 @@ class AssemblyDrawingTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "single part"):
             parts_list(_plate())
 
-    def test_a_saved_assembly_counts_shared_prototypes(self) -> None:
-        import os
-        from unittest import mock
-
-        from build123d import Box, Compound, Cylinder, Location
+    def test_a_read_assembly_counts_shared_prototypes(self) -> None:
+        from build123d import Box, Compound, Cylinder, Location, export_step
 
         import cadgen
         from cadgen.eng_drawing import parts_list
-        from cadgen.step_export import export_build123d_step_file
 
         with temporary_directory(prefix="tmp-cad-eng-drawing-") as tmp:
-            with mock.patch.dict(os.environ, {"CADGEN_CACHE_DIR": str(Path(tmp) / "store"), "CADGEN_DAEMON": "0"}):
-                pin = Cylinder(3, 20)
-                placed = []
-                for x in (-10.0, 10.0, 30.0):
-                    copy = pin.moved(Location((x, 0, 0)))
-                    copy.label = "pin"
-                    placed.append(copy)
-                plate = Box(60, 20, 4)
-                plate.label = "plate"
-                # One geometry, two names: the STEP shares their prototype, and they
-                # are still two parts (a steel spacer is not a brass one).
-                steel, brass = Box(5, 5, 5).moved(Location((0, 30, 0))), Box(5, 5, 5).moved(Location((20, 30, 0)))
-                steel.label, brass.label = "spacer_steel", "spacer_brass"
-                path = Path(tmp) / "fixture.step"
-                export_build123d_step_file(Compound(children=[plate, *placed, steel, brass], label="fixture"), path)
-                parts = parts_list(cadgen.read_scene(path))
+            pin = Cylinder(3, 20)
+            placed = []
+            for x in (-10.0, 10.0, 30.0):
+                copy = pin.moved(Location((x, 0, 0)))
+                copy.label = "pin"
+                placed.append(copy)
+            plate = Box(60, 20, 4)
+            plate.label = "plate"
+            # One geometry, two names: they are still two parts (a steel spacer is
+            # not a brass one), listed as twins.
+            steel, brass = Box(5, 5, 5).moved(Location((0, 30, 0))), Box(5, 5, 5).moved(Location((20, 30, 0)))
+            steel.label, brass.label = "spacer_steel", "spacer_brass"
+            path = Path(tmp) / "fixture.step"
+            export_step(Compound(children=[plate, *placed, steel, brass], label="fixture"), str(path))
+            # What a STEP reads back as: a compound tree, the pin one prototype placed three times.
+            parts = parts_list(cadgen.read_step(path))
         self.assertEqual([(i.description, i.quantity) for i in parts],
                          [("PLATE", 1), ("PIN", 3), ("SPACER STEEL", 1), ("SPACER BRASS", 1)])
-        self.assertEqual(parts[2].refs, ("#o1.2", "#o1.3", "#o1.4"))
+        self.assertEqual(parts[2].refs, ("pin.1", "pin.2", "pin.3"), "each as a ref names that occurrence")
+        self.assertEqual(len(parts[2].prototypes), 1, "the three pins are one geometry, placed three times")
         self.assertEqual(parts.twins, ((3, 4),))
         parts.merge(3, 4, description="SPACER")
         self.assertEqual([(i.number, i.description, i.quantity) for i in parts],

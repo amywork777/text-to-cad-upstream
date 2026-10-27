@@ -1,23 +1,19 @@
 """Engineering drawing of the circular flange: a plate with a bolt circle.
 
-Run `python circular_flange.py` first; this script documents the STEP it writes.
-The bolt holes, their pitch circle and the bore are called out from the part
-itself; the constants the script references come from the model module.
+It calls the model in `circular_flange.py`, which the engine builds (a replay when
+it is current). The bolt holes, their pitch circle and the bore are called out from
+the part itself; the constants the script references come from the model module.
 """
 
 import math
-from pathlib import Path
 
-import cadgen
 from cadgen.eng_drawing import Sheet, eng_drawing
-from circular_flange import BOLT_CIRCLE_DIAMETER, OUTER_DIAMETER, OUTER_FILLET, THICKNESS
-
-STEP = Path(__file__).parent / "../STEP/circular_flange.step"
+from circular_flange import BOLT_CIRCLE_DIAMETER, OUTER_DIAMETER, OUTER_FILLET, THICKNESS, circular_flange
 
 
 @eng_drawing(out="../PDF/circular_flange_drawing.pdf")
 def circular_flange_drawing():
-    part = cadgen.read_step(STEP)
+    part = circular_flange().shape
     sheet = Sheet(
         "A4", title="CIRCULAR FLANGE", part_number="FLG-080", revision="A", author="text-to-cad",
         general_tolerance="ISO 2768-m",

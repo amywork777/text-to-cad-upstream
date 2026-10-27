@@ -10,7 +10,7 @@ then a sheet per part, each one refined like any sheet:
 ```python
 @eng_drawing(out="../PDF/rig_drawing.pdf")
 def rig_drawing():
-    parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/rig.step"))
+    parts = parts_list(rig().shape)          # the assembly model, built by the engine
     parts.merge("eye:upper", "eye:lower")                                # one part, named twice
     parts.set("base_plate", material="AL 6061-T6", spec="AMS 4027", part_number="RIG-101")   # stated, never guessed
     parts.add("LOCTITE 243", spec="MIL-S-46163 TYPE II")                 # in no model: QTY AR
@@ -26,13 +26,14 @@ def rig_drawing():
 
 ## `parts_list(source)`
 
-`source` is a scene from `cadgen.read_scene(path)` or a live build123d
-`Compound` made with `children=`. Returns a `PartsList`: one `Item` per
+`source` is an assembly: a build123d `Compound` made with `children=`, as an
+assembly model's `.shape`, `cadgen.read_xbf(path)` and `cadgen.read_step(path)`
+hand one back. Returns a `PartsList`: one `Item` per
 distinct part, numbered in the order the assembly first holds them.
 Occurrences are one part when they have the same name, the same colour and the
-same geometry (a shared STEP prototype, one shape object, or an exact
-translated copy). Anything less stays apart: a saved STEP shares one prototype
-between any parts of identical geometry (a steel spacer and a brass one), a
+same geometry (one prototype placed several times, or an exact translated
+copy). Anything less stays apart: two parts of identical geometry can be
+different parts (a steel spacer and a brass one), a
 label's detail often names a finish (`piston_rod:chrome`), and mirror images
 have identical volumes. `parts.twins` lists the item pairs that share a shape
 under different names, and the script prints them.
@@ -56,9 +57,10 @@ under different names, and the script prints them.
   label segments they share unless given. Merge before drawing from the list.
 - `item.number`, `.description` (the label read out: `piston_rod:chrome` is
   `PISTON ROD, CHROME`), `.quantity`, `.part_number`, `.material`, `.labels`,
-  `.refs` (occurrence refs, `#o1.2`), `.shape` (one occurrence in its own
-  frame), `.occurrences` (each placed in the assembly), `.prototypes` (the STEP
-  prototypes they share).
+  `.refs` (each occurrence's ref, its path of names: `hand/finger.2`), `.shape`
+  (one occurrence in its own frame), `.occurrences` (each placed in the
+  assembly), `.prototypes` (the geometries, each placed one or more times, they
+  are).
 - `parts.assembly`: the whole assembly, placed, for the GA's views.
 
 ## `assembly_sheets(parts, title=..., part_number="", revision="A", size="A3", author="", date="", projection="THIRD ANGLE", ink="mono", notes=(), general_tolerance="", revisions=(), stage=None, profile=None, category="", company="", fields=None)`
@@ -161,7 +163,7 @@ modelled as a small assembly, a layer per part, and drawn with a section
 through it:
 
 ```python
-parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/case_back.step"))
+parts = parts_list(case_back().shape)
 parts.set("shell", material="PC/ABS", family="plastic")
 parts.set("tape", material="3M VHB 4910")
 sheet = Sheet("A3", 5.0, title="CASE BACK")

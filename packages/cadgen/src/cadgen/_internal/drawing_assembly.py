@@ -4,11 +4,12 @@ that key a view to it, and the general arrangement and part sheets
 
 A parts list is the assembly's distinct parts, each once, with how many times it
 occurs. Two occurrences are one part when they carry the same name and colour
-and the same geometry: a shared prototype in the STEP or one shape object in a
-live assembly, or an exact translated copy, which a boolean check confirms. A
-name, a colour or a shape alone never merges two parts: a saved STEP shares one
-prototype between any parts that happen to have identical geometry (a steel
-spacer and a brass one), a label's detail often names a finish
+and the same geometry: one prototype placed several times (the kernel's shape
+shared, as the engine places a part used twice and as ``read_step`` and
+``read_xbf`` hand back a shared product), or an exact translated copy, which a
+boolean check confirms. A name, a colour or a shape alone never merges two
+parts: two parts that happen to have identical geometry can be different parts
+(a steel spacer and a brass one), a label's detail often names a finish
 (``piston_rod:chrome``), and mirror images have identical volumes. Identical
 shapes under different names are kept apart and reported, so the author can
 merge them with :meth:`PartsList.merge` when they are one part.
@@ -103,7 +104,7 @@ class Item:
     refs: tuple[str, ...] = ()
     shape: Any = None
     occurrences: tuple = ()
-    #: The STEP prototypes its occurrences share (empty for a live assembly).
+    #: The prototypes (geometries placed one or more times) its occurrences are.
     prototypes: tuple = ()
 
 
@@ -240,41 +241,45 @@ class PartsList:
 
 
 def parts_list(source) -> PartsList:
-    """The parts list of an assembly: a scene from ``cadgen.read_scene(path)``, or
-    a live build123d assembly (a ``Compound`` built with ``children=``)."""
-    from build123d import Compound, Location
+    """The parts list of an assembly: a build123d ``Compound`` built with
+    ``children=``, as an assembly model's ``.shape``, ``cadgen.read_xbf`` and
+    ``cadgen.read_step`` hand one back. Occurrences sharing one geometry (one
+    prototype placed several times) are one item."""
+    from build123d import Location
 
-    if hasattr(source, "leaves") and hasattr(source, "roots"):
-        leaves = [(o.label or "", o.prototype_id, o.ref, o.shape()) for o in source.leaves()]
-        roots = [root.shape() for root in source.roots]
-        assembly = roots[0] if len(roots) == 1 else Compound(roots)
-    elif getattr(source, "children", None):
-        leaves = list(_walk(source, ()))
-        assembly = source
-    else:
+    if not getattr(source, "children", None):
         raise TypeError(
-            "parts_list() reads an assembly: a scene from cadgen.read_scene(path), or a build123d Compound "
-            "made with children=[...]. A single part has no parts list; draw it with Sheet.three_views()."
+            "parts_list() reads an assembly: a build123d Compound made with children=[...], such as an "
+            "assembly model's .shape or cadgen.read_step(path). A single part has no parts list; draw it with "
+            "Sheet.three_views()."
         )
+    leaves = list(_walk(source, ()))
     if not leaves:
         raise ValueError("parts_list(): the assembly holds no parts")
+    assembly = source
+    # A prototype is one geometry however often it is placed: occurrences of it share
+    # the kernel's shape (``IsPartner``), as the engine places a part used twice.
+    prototypes: list = []
     groups: list[dict] = []
-    for label, key, ref, world in leaves:
+    for label, ref, world in leaves:
         local = world.located(Location())
+        key = next((n for n, held in enumerate(prototypes) if held.IsPartner(local.wrapped)), None)
+        if key is None:
+            prototypes.append(local.wrapped)
+            key = len(prototypes) - 1
         colour = _colour(world)
         group = None
         for g in groups:
             if g["label"] != label or g["colour"] != colour:
                 continue
-            if (key is not None and key in g["keys"]) or (key is None and g["local"].wrapped.IsPartner(local.wrapped)) \
-                    or _same_part(g["local"], local):
+            if key in g["keys"] or _same_part(g["local"], local):
                 group = g
                 break
         if group is None:
-            groups.append({"label": label, "colour": colour, "keys": [key] if key is not None else [],
+            groups.append({"label": label, "colour": colour, "keys": [key],
                            "local": local, "labels": [label], "refs": [ref], "placed": [world]})
         else:
-            if key is not None and key not in group["keys"]:
+            if key not in group["keys"]:
                 group["keys"].append(key)
             group["labels"].append(label)
             group["refs"].append(ref)
@@ -303,13 +308,27 @@ def _colour(shape) -> tuple | None:
 
 
 def _walk(shape, path: tuple[str, ...]):
-    """A live assembly's leaves, each placed where the assembly puts it."""
-    for child in shape.children:
+    """An assembly's leaves: each one's name, its ref (its path of names in the
+    tree, as ``cadgen.engine.refs`` writes an occurrence's: ``hand/finger.2`` is
+    the second child of ``hand`` named ``finger``), and the leaf placed where the
+    assembly puts it."""
+    from collections import Counter
+
+    from cadgen.engine.refs import Segment
+
+    children = list(shape.children)
+    counts = Counter(child.label or "" for child in children)
+    seen: Counter = Counter()
+    for child in children:
         label = child.label or ""
+        seen[label] += 1
+        number = seen[label] if counts[label] > 1 else None
+        plain = bool(label) and label == label.strip() and not any(ch in label for ch in '/,"')
+        segment = (f"{label}.{number}" if number else label) if plain else str(Segment(label, True, number))
         if getattr(child, "children", None):
-            yield from _walk(child, path + (label,))
+            yield from _walk(child, path + (segment,))
         else:
-            yield label, None, "/".join(path + (label,)), child.located(child.global_location)
+            yield label, "/".join(path + (segment,)), child.located(child.global_location)
 
 
 def _base(label: str) -> str:

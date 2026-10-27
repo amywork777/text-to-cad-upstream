@@ -1,7 +1,6 @@
 from __future__ import annotations
-from cadgen import step
-
-from cadgen import build123d as bd
+from cadgen import materials, model
+import build123d as bd
 
 
 LENGTH = 600.0
@@ -13,7 +12,7 @@ CROSS_HOLE_INSET = 20.0   # from each end of the bar
 END_CHAMFER = 1.0
 
 
-@step(out="../STEP/guide_bar.step")
+@model
 def guide_bar():
     """A 600 mm round bar with a spigot on one end and a cross hole near each end:
     a long part of constant section, which a drawing breaks. Millimetres."""
@@ -25,6 +24,7 @@ def guide_bar():
     for x in (CROSS_HOLE_INSET, LENGTH - CROSS_HOLE_INSET):
         part -= bd.Pos(x, 0, 0) * bd.Cylinder(CROSS_HOLE_DIAMETER / 2, DIAMETER * 2)
     part.label = "guide_bar"
+    part.material = materials.steel_4140
     return part
 
 

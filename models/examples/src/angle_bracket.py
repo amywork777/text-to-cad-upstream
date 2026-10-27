@@ -1,9 +1,8 @@
 from __future__ import annotations
 from math import cos, radians, sin
 
-from cadgen import step
-
-from cadgen import build123d as bd
+from cadgen import materials, model
+import build123d as bd
 
 
 BASE_LENGTH = 80.0
@@ -24,7 +23,7 @@ TAB_FACE_POINT = (
 )
 
 
-@step(out="../STEP/angle_bracket.step")
+@model
 def angle_bracket():
     """A base plate with a mounting hole and a tab leaning 30 degrees, a hole
     square through the tab: a face no principal view shows true. Millimetres."""
@@ -35,6 +34,7 @@ def angle_bracket():
     tab -= bd.Pos(-THICKNESS / 2, 0, TAB_HOLE_HEIGHT) * bd.Rot(0, 90, 0) * bd.Cylinder(TAB_HOLE_DIAMETER / 2, THICKNESS)
     part = (base + bd.Location((BASE_LENGTH / 2, 0, 0), (0, 1, 0), TAB_LEAN) * tab).clean()
     part.label = "angle_bracket"
+    part.material = materials.steel_1018
     return part
 
 

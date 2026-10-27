@@ -97,9 +97,13 @@ corner points, in the plane the label should face).
 ```
 
 ```bash
-cadgen snapshot STEP/clevis.step tmp/intent/2-bore.png --camera iso --annotation tmp/intent/2-bore.json
-cadgen snapshot STEP/rig.step tmp/intent/3-pin.png --camera iso --focus "#o1.2"
+# ID: the id: line `python clevis.py` printed (an xbf or STEP path works too)
+cadgen snapshot "$ID" tmp/intent/2-bore.png --camera iso --annotation tmp/intent/2-bore.json
+cadgen snapshot "$RIG_ID" tmp/intent/3-pin.png --camera iso --display '{"mode": "shaded", "isolated": ["pin.2"]}'
 ```
+
+`isolated` takes part refs, an occurrence's path of names: a parts list item's
+`.refs`.
 
 Name the pictures by item and show them beside each question.
 

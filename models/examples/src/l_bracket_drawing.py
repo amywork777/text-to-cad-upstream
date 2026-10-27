@@ -1,15 +1,12 @@
 """Engineering drawing of the L-bracket.
 
-Run `python l_bracket.py` first; this script documents the STEP it writes. Both hole
-patterns are called out from the part, in the views that look down them; every
-constant a dimension references comes from the model module. The bracket is
-symmetric about its middle across X, and the views that measure X say so: the
-spacings across that line place the holes and the gussets either side.
+It calls the model in `l_bracket.py`, which the engine builds (a replay when it is
+current). Both hole patterns are called out from the part, in the views that look
+down them; every constant a dimension references comes from the model module. The
+bracket is symmetric about its middle across X, and the views that measure X say so:
+the spacings across that line place the holes and the gussets either side.
 """
 
-from pathlib import Path
-
-import cadgen
 from cadgen.eng_drawing import Sheet, eng_drawing
 from l_bracket import (
     BACK_CENTER_Y,
@@ -24,14 +21,13 @@ from l_bracket import (
     GUSSET_X_LOCATIONS,
     GUSSET_X_THICKNESS,
     TRANSITION_FILLET,
+    l_bracket,
 )
-
-STEP = Path(__file__).parent / "../STEP/l_bracket.step"
 
 
 @eng_drawing(out="../PDF/l_bracket_drawing.pdf")
 def l_bracket_drawing():
-    part = cadgen.read_step(STEP)
+    part = l_bracket().shape
     sheet = Sheet(
         "A3", title="L BRACKET", part_number="LB-001", revision="A", author="text-to-cad",
         general_tolerance="ISO 2768-m",

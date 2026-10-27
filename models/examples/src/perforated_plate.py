@@ -1,7 +1,6 @@
 from __future__ import annotations
-from cadgen import step
-
-from cadgen import build123d as bd
+from cadgen import materials, model
+import build123d as bd
 
 
 LENGTH = 160.0
@@ -19,7 +18,7 @@ SLOT_LENGTH = 24.0
 SLOT_WIDTH = 8.0
 
 
-@step(out="../STEP/perforated_plate.step")
+@model
 def perforated_plate():
     """A plate with rows of holes, two dowel holes, a bore and a slot: the part a
     hole table documents. Millimetres."""
@@ -35,6 +34,7 @@ def perforated_plate():
     part -= bd.Pos(SLOT_CENTRE_X, 0, 0) * bd.extrude(bd.SlotCenterToCenter(SLOT_LENGTH - SLOT_WIDTH, SLOT_WIDTH),
                                                      THICKNESS)
     part.label = "perforated_plate"
+    part.material = materials.aluminium_6061
     return part
 
 

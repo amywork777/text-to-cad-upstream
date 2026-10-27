@@ -1,19 +1,17 @@
 """Engineering drawing of the angle bracket: an auxiliary view of its inclined tab.
 
-Run `python angle_bracket.py` first; this script documents the STEP it writes. No
-principal view shows the tab's face or its hole true, so VIEW C looks square onto
-it, and the hole in it is called out there, read off the part. The front view
-sees the tab edge-on: its lean off vertical, its thickness and its lengths up
-the tab (aligned dimensions, the true lengths) are stated there. Every position
-below is the model's constants.
+It calls the model in `angle_bracket.py`, which the engine builds (a replay when it
+is current). No principal view shows the tab's face or its hole true, so VIEW C
+looks square onto it, and the hole in it is called out there, read off the part. The
+front view sees the tab edge-on: its lean off vertical, its thickness and its
+lengths up the tab (aligned dimensions, the true lengths) are stated there. Every
+position below is the model's constants.
 """
 
 from math import cos, radians, sin
-from pathlib import Path
 
-import cadgen
 from angle_bracket import (
-    BASE_HOLE_X, BASE_LENGTH, TAB_FACE_POINT, TAB_HEIGHT, TAB_HOLE_HEIGHT, TAB_LEAN, THICKNESS,
+    BASE_HOLE_X, BASE_LENGTH, TAB_FACE_POINT, TAB_HEIGHT, TAB_HOLE_HEIGHT, TAB_LEAN, THICKNESS, angle_bracket,
 )
 from cadgen.eng_drawing import Sheet, eng_drawing
 
@@ -27,12 +25,10 @@ def along_tab(distance: float, depth: float = 0.0) -> tuple[float, float, float]
     lean = radians(TAB_LEAN)
     return (FOOT[0] + distance * sin(lean) - depth * cos(lean), 0.0, distance * cos(lean) + depth * sin(lean))
 
-STEP = Path(__file__).parent / "../STEP/angle_bracket.step"
-
 
 @eng_drawing(out="../PDF/angle_bracket_drawing.pdf")
 def angle_bracket_drawing():
-    part = cadgen.read_step(STEP)
+    part = angle_bracket().shape
     sheet = Sheet(size=None, scale=None, title="ANGLE BRACKET", part_number="AB-030", revision="A",
                   author="text-to-cad", general_tolerance="ISO 2768-m")
     top, front, right, iso = sheet.three_views(part, iso=True)
