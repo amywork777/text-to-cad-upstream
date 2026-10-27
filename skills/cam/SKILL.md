@@ -1,6 +1,6 @@
 ---
 name: cam
-description: Turn a saved STEP part or DXF profile into toolpaths and G-code with cadgen, for CNC mills and routers (2.5D, 3D, indexed and 5-axis), lathes, laser, plasma and waterjet cutters and wire EDM. It plans the cuts, simulates the stock, checks for gouges, collisions and reach, estimates the cycle time and posts G-code for the named controller. Use when the user asks to machine, mill, turn, cut or engrave a part, for CAM, toolpaths, feeds and speeds, or G-code for a CNC machine.
+description: Turn a saved STEP or xbf part, or a DXF profile, into toolpaths and G-code with cadgen, for CNC mills and routers (2.5D, 3D, indexed and 5-axis), lathes, laser, plasma and waterjet cutters and wire EDM. It plans the cuts, simulates the stock, checks for gouges, collisions and reach, estimates the cycle time and posts G-code for the named controller. Use when the user asks to machine, mill, turn, cut or engrave a part, for CAM, toolpaths, feeds and speeds, or G-code for a CNC machine.
 license: MIT
 ---
 
@@ -21,7 +21,7 @@ what the verdict and findings mean, [posts.md](references/posts.md) the controll
 [machining-practice.md](references/machining-practice.md) how a machinist would plan the part:
 workholding, tool choice, operation order, cutting parameters, materials and proving the program.
 
-Modelling the part is `$cad`; this skill only reads a saved `.step` (or a `.dxf` for cutting).
+Modelling the part is `$cad`; this skill only reads a saved `.step` or `.xbf` (or a `.dxf` for cutting).
 Reviewing whether a design CAN be machined well, before any toolpath, is `$dfm`. 3D printing is
 `$gcode`.
 
@@ -79,8 +79,12 @@ share one installation, and its engine server, with the CAD app's:
 If `cadgen` is not on your PATH, or it says 0.8.0 is not installed, run
 `uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.0 cadgen doctor` once,
 outside any sandbox or with its permission: it installs cadgen, registers it, writes the
-`cadgen` command and starts the engine. `cadgen cam` reads its part from the file itself and
-needs no engine.
+`cadgen` command and starts the engine. With the CAD app's server running, nothing else
+needs the sandbox's permission: it starts the engine and holds it. Without it, a sandboxed
+shell cannot start the engine; when a command says no engine is running, run `cadgen server`
+outside the sandbox once.
+
+`cadgen cam` reads its part from the file itself and needs no engine of its own.
 
 Units are fixed: mm for lengths, mm/min for feed, rev/min for spindle speed, degrees for angles,
 seconds for time. Restate the user's numbers in those units before you write them down (a 1/4"

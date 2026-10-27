@@ -156,13 +156,15 @@ def _naming(document: Path) -> re.Pattern:
 def _glb_cam(path: Path) -> dict | None:
     """The plan a cadgen GLB carries (``scenes[0].extras.cam``), read from its JSON chunk alone; None for anything
     else (not there, not a GLB, not cadgen's)."""
+    from cadgen._internal.primitive_mesh import GLB_JSON_CHUNK, GLB_MAGIC
+
     try:
         with open(path, "rb") as handle:
             head = handle.read(20)
             if len(head) < 20:
                 return None
-            magic, _, _, length, kind = struct.unpack("<4sIIII", head)
-            if magic != b"glTF" or kind != 0x4E4F534A or length > 64 * 1024 * 1024:
+            magic, _, _, length, kind = struct.unpack("<IIIII", head)
+            if magic != GLB_MAGIC or kind != GLB_JSON_CHUNK or length > 64 * 1024 * 1024:
                 return None
             document = json.loads(handle.read(length))
     except (OSError, ValueError, RecursionError, struct.error):

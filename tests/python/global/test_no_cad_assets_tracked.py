@@ -40,6 +40,9 @@ ALLOWED: tuple[tuple[str, int, str], ...] = (
      "the meshes cadgen makes for the robot fixtures' primitive shapes (named by sha256, ~1.5 KB each); "
      "make_fixtures.py writes them and test_robot_payload.py holds them current, for JS tests that cannot "
      "run the engine"),
+    ("packages/ui/src/renderers/glb/__tests__/boss.cam.glb", 96 * KIB,
+     "a real `cadgen cam plan` result (the toolpaths, the stock and a 5-axis setup's tool axes) the CAM viewer's "
+     "JS tests read; a JS test cannot run the planner (camRealGlb.test.ts says how it was made)"),
     ("packages/ui/src/renderers/dxf/__fixtures__/*.dxf", TINY,
      "the DXF renderer's test drawings; make_fixture.py writes them, and the JS tests that open them "
      "need neither Python nor ezdxf"),
