@@ -113,7 +113,7 @@ it('an operation\'s eye hides its paths, and the file\'s view keeps what is hidd
   view.unmount();
   const record = onStateChange.mock.lastCall![0];
   expect(record.renderer.cam.signature).toBe('cam:1');
-  expect(record.renderer.cam.value).toMatchObject({ hidden: [0], toolpaths: true, tool: true, fixtures: true, stock: true });
+  expect(record.renderer.cam.value).toMatchObject({ hidden: [0], toolpaths: true, tool: true, stock: true });
   // Opened again with that view: Face is still hidden, and the stock still shown.
   mount(camScene(), '/models/part.cam.glb', { state: record });
   await openJob();

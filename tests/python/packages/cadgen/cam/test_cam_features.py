@@ -86,7 +86,7 @@ class HoleBlockFeatures(unittest.TestCase):
     def setUpClass(cls):
         from cadgen import cam
         from tests.python.support.cam_fixtures import quiet
-        from tests.python.support.cam_fixtures_drilling import hole_block_step
+        from tests.python.support.cam_fixtures import hole_block_step
 
         with quiet():
             cls.result = cam.features(hole_block_step(class_directory(cls)))
@@ -101,9 +101,9 @@ class HoleBlockFeatures(unittest.TestCase):
         return [ref for ref in hole["faces"] if kinds[ref]["surface"] == surface]
 
     def test_a_counterbored_hole_is_one_hole_opening_at_the_top_of_its_counterbore(self):
-        from tests.python.support.cam_fixtures_drilling import BLOCK
+        from tests.python.support.cam_fixtures import HOLE_BLOCK
 
-        top = BLOCK["size"][2]
+        top = HOLE_BLOCK["size"][2]
         holes_here = [h for h in self.result.holes if abs(h["center_mm"][0] + 30) < 1e-3]
         self.assertEqual(1, len(holes_here))                          # not a Ø9 blind hole and a Ø5 one under it
         hole = holes_here[0]

@@ -97,7 +97,7 @@ class CamFeaturesResult:
     shoulder, a countersink's cone and a blind floor; ``diameter_mm``, ``depth_mm``, ``axis``, ``center_mm``,
     ``through``, ``reach``: the directions that reach it, and when it has them ``counterbore``, ``countersink`` and
     ``point_mm``, a drawn drill point's length). ``floors`` are the flat faces facing an axis (``ref``, ``z_mm``, ``normal``,
-    ``kind``: top, floor or bottom). A DXF has ``profiles`` (closed outlines with their area and holes) instead.
+    ``kind``: top, floor or bottom).
     """
 
     ok: bool
@@ -108,7 +108,6 @@ class CamFeaturesResult:
     faces: tuple[dict, ...] = ()
     holes: tuple[dict, ...] = ()
     floors: tuple[dict, ...] = ()
-    profiles: tuple[dict, ...] = ()
     findings: tuple[dict, ...] = ()
     warnings: tuple[str, ...] = ()
 
@@ -120,7 +119,6 @@ class CamFeaturesResult:
                  + " x ".join(f"{value:g}" for value in size) + " mm"]
         lines += [f"{face['ref']}  {face['reading']}" for face in self.faces]
         lines += [f"hole {', '.join(hole['faces'])}: {hole['reading']}" for hole in self.holes]
-        lines += [f"profile {profile['index']}: {profile['reading']}" for profile in self.profiles]
         lines += _finding_lines(self.findings)
         lines += [f"warning: {warning}" for warning in self.warnings]
         return lines
@@ -132,13 +130,13 @@ class CamPlanResult:
 
     ``verdict`` is the status (``status`` ready or fix, ``headline`` "Ready to cut · 42 min · 3 tools", ``errors``,
     ``warnings``). ``operations`` has one dict per planned operation in program order (``setup``, ``index``, ``op``,
-    ``plain``, ``tool``, ``tool_plain``, ``rpm``, ``feed_mm_min``, ``time_s``, ``summary``, ``limits``). ``posts`` has
+    ``plain``, ``tool``, ``tool_plain``, ``rpm``, ``feed_mm_min``, ``time_s``, ``summary``). ``posts`` has
     one ``{setup, file, post, tool}`` per posted file: one per setup, or one per tool where the post splits a setup
-    by tool (``tool`` its label, else None). ``findings`` are the checks' findings, errors first, in the KiCad/FEA
-    shape (``check``, ``severity``, ``type``, ``summary``, ``description``, ``items``). ``adapted`` lists what the run
-    coarsened to fit (``step``, ``words``, ``accuracy``). ``assumed`` lists every value the plan took that neither the
-    job nor its machine model states (``key``, ``value``, ``why``: a generic post or spindle limit, a tool's catalogue
-    flute length). A job that cannot run has ``ok`` false, a finding that says what to change, and wrote nothing.
+    by tool (``tool`` its id, else None). ``findings`` are the checks' findings, errors first, in the KiCad/FEA
+    shape (``check``, ``severity``, ``type``, ``summary``, ``description``, ``items``). ``assumed`` lists every value
+    the plan took that the job does not state (``key``, ``value``, ``why``: a tool's catalogue flute length, the rapid
+    rate the cycle time is worked out at). A job that cannot run has ``ok`` false, a finding that says what to change,
+    and wrote nothing.
     """
 
     ok: bool
@@ -152,7 +150,6 @@ class CamPlanResult:
     summary: dict = field(default_factory=dict)
     operations: tuple[dict, ...] = ()
     findings: tuple[dict, ...] = ()
-    adapted: tuple[dict, ...] = ()
     warnings: tuple[str, ...] = ()
     timings: dict = field(default_factory=dict)
     assumed: tuple[dict, ...] = ()
@@ -166,7 +163,6 @@ class CamPlanResult:
             if op.get("rpm"):
                 line += f" · {op['rpm']:g} rpm · {op['feed_mm_min']:g} mm/min"
             lines.append(line)
-            lines += [f"  lite: {limit}" for limit in op.get("limits", ())]
         changes = self.summary.get("tool_changes") or {}
         if changes.get("count"):
             count = changes["count"]
@@ -174,8 +170,6 @@ class CamPlanResult:
         if self.glb is not None:
             lines.append(f"wrote GLB: {_display(self.glb)}")
         lines += [f"posted {post['setup']}: {_display(Path(post['file']))} ({post['post']})" for post in self.posts]
-        lines += [f"adapted: {step['words']}" + (f" ({step['accuracy']})" if step.get("accuracy") else "")
-                  for step in self.adapted]
         lines += [f"assumed: {entry['key']} {_assumed_value(entry['value'])} ({entry['why']})" for entry in self.assumed]
         lines += _finding_lines(self.findings)
         lines += [f"warning: {warning}" for warning in self.warnings]

@@ -438,13 +438,13 @@ its NATIVE glTF scene, always: one path whether or not a clip is playing.
   file sidebar section (`glb/CamJobPanel.jsx`, id `job`): the verdict first, its errors
   in plain words, then each setup and its operations (word, tool, time), the tools, and
   **Show**, a row with an eye for each thing the file draws beyond its surfaces (Toolpaths,
-  Rapids, Tool, Stock, Fixtures, Part; the renderer's one slice of the file's view, `cam`).
+  Rapids, Tool, Stock, Part; the renderer's one slice of the file's view, `cam`).
   A row isolates its paths (the rest dimmed) until it is chosen again, and is Quick Edit's
   chip (`camChips`) beside the picked nodes: the part the job names (`document`), its faces
   as a selector or the whole part, and its sentence as the reference's `summary`. The
   file's LINES (`_CAM_T`, `_CAM_OP`, which GLTFLoader lowercases) are redrawn as
   screen-space lines, one per operation and kind (`glb/cam/lines.js`): feed moves in the
-  operation's colour, rapids thin and dashed. They, the riding tool and the fixtures hang
+  operation's colour, rapids thin and dashed. They and the riding tool hang
   from a group of their own in the model group, placed where the scene's root is and never
   inside the scene, so Preview's sibling, Select's picks and Clip's caps never meet them;
   Clip cuts the part and the stock, not the paths. The file's routines gain **Simulate**

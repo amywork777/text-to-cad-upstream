@@ -1,6 +1,6 @@
 ---
 name: cam
-description: Turn a saved STEP or xbf part, or a DXF profile, into toolpaths and G-code with cadgen, for CNC mills and routers (2.5D, 3D, indexed and 5-axis), lathes, laser, plasma and waterjet cutters and wire EDM. It plans the cuts, simulates the stock, checks for gouges, collisions and reach, estimates the cycle time and posts G-code for the named controller. Use when the user asks to machine, mill, turn, cut or engrave a part, for CAM, toolpaths, feeds and speeds, or G-code for a CNC machine.
+description: Turn a saved STEP or xbf part into 3-axis CNC toolpaths and G-code with cadgen, planned and posted by the user's own FreeCAD (1.1 or newer, headless), then checked against the part for reach, gouges and rapids into the stock. Facing, profiling, pocketing, adaptive clearing and drilling on a CNC mill or router, posted for GRBL, LinuxCNC, Mach3/Mach4, Fanuc, Centroid, UCCNC or Smoothieware. Use when the user asks to mill, drill or rout a part, for CAM, toolpaths, feeds and speeds, or G-code for a CNC mill or router. Never sends G-code to a machine.
 license: MIT
 ---
 
@@ -10,63 +10,22 @@ Provenance: maintained in [earthtojake/text-to-cad](https://github.com/earthtoja
 Use the installed local skill files as the runtime source of truth; the repository link is only for
 provenance and release review.
 
-Use this skill to take a saved part to cutting instructions. You write a small job file (machine,
-material, stock, tools, setups and their operations), `cadgen cam plan` plans every toolpath,
-simulates the stock being cut, runs the checks, estimates the time and posts one G-code file per
-setup. It also writes `<part>.cam.glb`, which the Viewer shows with the toolpaths, the simulated
-stock, a Job panel with the verdict and a playback of the cut. This page is a router: [Choose the
-operation](#choose-the-operation) maps what the user wants to an operation and its reference page;
-[job-file.md](references/job-file.md) holds what every job shares, [checks.md](references/checks.md)
-what the verdict and findings mean, [posts.md](references/posts.md) the controllers, and
-[machining-practice.md](references/machining-practice.md) how a machinist would plan the part:
-workholding, tool choice, operation order, cutting parameters, materials and proving the program.
+You write a small job file (machine, material, stock, tools, setups and their operations). `cadgen
+cam plan` has the user's FreeCAD plan each setup's toolpaths and post them for the named
+controller, checks every move against the part, and writes `<part>.cam.glb` (the part, the stock
+and the toolpaths, with the verdict) and, when nothing is an error, the G-code beside the part.
 
-Modelling the part is `$cad`; this skill only reads a saved `.step` or `.xbf` (or a `.dxf` for cutting).
-Reviewing whether a design CAN be machined well, before any toolpath, is `$dfm`. 3D printing is
-`$gcode`.
+Modelling the part is `$cad`; this skill reads a saved `.step`, `.stp` or `.xbf`. Reviewing whether
+a design can be machined well is `$dfm`. 3D printing is `$gcode`.
 
-## Choose the operation
+## What it does not do
 
-The `op` key of each operation names it. Pick by what the user wants cut and on which machine.
-
-| The user wants | `op` | Plain word | Status | Reference |
-| --- | --- | --- | --- | --- |
-| The top of the stock flattened | `face` | Face | **Runs today** | [milling-2d.md](references/milling-2d.md) |
-| An outline cut around (or inside) a shape, cut out of a plate with tabs | `contour` | Profile | **Runs today** | milling-2d.md |
-| A flat-floored pocket cleared, with or without islands | `pocket` | Pocket | **Runs today** | milling-2d.md |
-| A big pocket or open area cleared fast with constant tool load, or what an earlier operation left there | `adaptive` | Adaptive clear | **Runs today** (lite) | milling-2d.md |
-| A slot or keyway | `slot` | Slot | **Runs today** | milling-2d.md |
-| Edges chamfered or deburred | `chamfer` | Chamfer | **Runs today** | milling-2d.md |
-| Text, a logo or a line engraved | `engrave` | Engrave | **Runs today** | milling-2d.md |
-| Letters, a logo or any closed shape carved with a V-bit: sharp V walls, deeper where it is wider | `vcarve` | V-carve | **Runs today** (lite) | milling-2d.md |
-| A round hole too big for a drill, milled in a helix | `helix_bore` | Helix bore | **Runs today** | milling-2d.md |
-| A round pocket wider than twice the tool cleared level by level in a spiral (a narrower hole is a `helix_bore`), or the material round a round boss cleared | `circular` | Circular | **Runs today** | milling-2d.md |
-| A groove or a cut along the part's edges, on them or offset to one side | `trace` | Trace | **Runs today** | milling-2d.md |
-| A thread milled in a hole or on a boss | `thread_mill` | Thread mill | **Runs today** | milling-2d.md |
-| Holes drilled, pecked, tapped, reamed, bored or spotted | `drill` | Drill | **Runs today** | [drilling.md](references/drilling.md) |
-| A curved or sculpted part roughed out | `rough` | 3D rough | **Runs today** | [milling-3d.md](references/milling-3d.md) |
-| A curved part roughed at constant tool load (hard material, deep cavities), or what an earlier rough left | `adaptive_3d` | 3D adaptive clear | **Runs today** (lite) | milling-3d.md |
-| A curved surface finished smooth | `parallel` | Parallel finish | **Runs today** | milling-3d.md |
-| Steep walls finished in levels | `waterline` | Waterline | **Runs today** | milling-3d.md |
-| An even finish over mixed steep and shallow surfaces | `scallop` | Scallop | **Runs today** (lite) | milling-3d.md |
-| Inside corners and creases cleaned up after finishing | `pencil` | Pencil | **Runs today** (lite) | milling-3d.md |
-| Only the material a bigger tool left behind | `rest` | Rest machining | **Runs today** | milling-3d.md |
-| A face at an angle reached by tilting the part (3+2), any operation above | a setup with a tilted `orientation` | Indexed | **Runs today** | [multi-axis.md](references/multi-axis.md) |
-| A pattern or groove wrapped around a cylinder on a 4th axis | `rotary` | 4th-axis wrap | **Runs today** (lite) | multi-axis.md |
-| A tilted or ruled wall cut with the side of the tool on a 5-axis | `swarf` | Swarf | **Runs today** (lite) | multi-axis.md |
-| A sculpted surface finished with the tool tilted to it on a 5-axis | `surface_normal` | 5-axis finish | **Runs today** (lite) | multi-axis.md |
-| The end of a bar faced on a lathe | `turn_face` | Face | **Runs today** | [turning.md](references/turning.md) |
-| A turned part roughed, outside or bore | `turn_rough` | Rough turn | **Runs today** | turning.md |
-| A turned profile finished, outside or bore | `turn_finish` | Finish turn | **Runs today** | turning.md |
-| A groove on a lathe | `turn_groove` | Groove | **Runs today** | turning.md |
-| A thread cut on a lathe | `turn_thread` | Thread | **Runs today** | turning.md |
-| A centre hole or a hole on the spindle axis | `turn_drill` | Centre drill | **Runs today** | turning.md |
-| The finished part cut off the bar | `turn_partoff` | Part off | **Runs today** | turning.md |
-| A flat part cut out on a laser, plasma, waterjet or router | `cut` | Cut out | **Runs today** | [cutting.md](references/cutting.md) |
-| A profile cut on a wire EDM | `wire_edm` | Wire cut | **Runs today** (lite) | [wire-edm.md](references/wire-edm.md) |
-
-A lite operation carries plain-sentence limits in its result: quote them when you report it. A test
-keeps this table in step with what cadgen builds.
+3-axis milling and drilling only, the tool always coming straight down Z, from the top (`+Z`) or
+with the part turned over (`-Z`). There is no turning (lathe), laser, plasma, waterjet, wire EDM,
+4th-axis, 3+2 indexed or 5-axis work, no 3D surface finishing (parallel, waterline, scallop), no
+chamfering, engraving, thread milling or tapping, no tabs, no fixture or clamp checks, and no DXF
+input. When the user asks for one of these, say "That is not in this version." Do not stand an
+operation below in for it without saying what it leaves uncut.
 
 ## Setup
 
@@ -86,66 +45,99 @@ outside the sandbox once.
 
 `cadgen cam` reads its part from the file itself and needs no engine of its own.
 
-Units are fixed: mm for lengths, mm/min for feed, rev/min for spindle speed, degrees for angles,
-seconds for time. Restate the user's numbers in those units before you write them down (a 1/4"
-end mill is 6.35 mm, 30 ipm is 762 mm/min).
+### Install FreeCAD
+
+`cadgen cam plan` needs FreeCAD 1.1 or newer, installed by the person; `cadgen cam features` does
+not. cadgen downloads nothing and plans with nothing else. Get it from
+https://www.freecad.org/downloads.php:
+
+- macOS: drag the `.dmg`'s FreeCAD into Applications (or `~/Applications`). cadgen finds
+  `FreeCAD.app/Contents/Resources/bin/freecadcmd` there.
+- Windows: run the installer. cadgen finds `bin\freecadcmd.exe` in the newest `FreeCAD *` folder
+  under Program Files, or under `%LOCALAPPDATA%\Programs` for a one-user install.
+- Linux: a distribution or snap package (`/usr/bin/freecadcmd`, `/usr/local/bin/freecadcmd`,
+  `/snap/bin/freecad.cmd`), or the AppImage unpacked with `--appimage-extract` and
+  `CADGEN_FREECAD` set to its `squashfs-root/usr/bin/freecadcmd`.
+
+Anywhere else, set `CADGEN_FREECAD` to the `freecadcmd` program
+(`CADGEN_FREECAD=/opt/freecad/bin/freecadcmd`). cadgen tries `CADGEN_FREECAD`, then `freecadcmd`
+or `FreeCADCmd` on PATH, then the places above. A missing or older FreeCAD stops the plan with an
+error that says how to install it, and nothing is written: ask the user to install it, or install
+it yourself with their permission, then plan again. Every result names the FreeCAD version that
+planned it. FreeCAD runs in a temporary folder of its own, so a plan leaves nothing in the user's
+FreeCAD settings.
+
+Units are fixed: mm for lengths, mm/min for feeds, rev/min for spindle speed, degrees for angles.
+Restate the user's numbers before you write them down (a 1/4" end mill is 6.35 mm, 30 ipm is 762
+mm/min).
 
 ## Workflow
 
-1. **Read the part.** Every job names faces by the Viewer's refs.
+1. **Read the part.** Every job names faces by their refs.
 
    ```bash
    cadgen cam features part.step
    ```
 
-   It prints the part's size, one line per face (`part/face 15  flat floor at Z 17, facing +Z (a pocket
-   floor 8 mm down, 1 island)`) and one line per hole (diameter, depth, through or blind, axis,
-   position). For a `.dxf` it lists the closed profiles and holes. A face the user selected in the
-   Viewer arrives as `/work/part.step#part/face 15` and needs no lookup: a job takes it as it
-   comes, or as `face 15` on a part of one solid. A model's part is its `@xbf` file, or the file
-   `cadgen export <id> part.xbf` writes: CAM reads a file, never a model.
+   It prints the part's size, one line per face and one per hole:
 
-2. **Pick the machine, material and stock.** Use what the user said; otherwise ask once, in one
-   message, for what [machining-practice.md](references/machining-practice.md#ask-before-you-plan)
-   lists (the machine's make and model, or its kind and controller; how the part is held; the
-   tools they own, or their tool library file; the material and temper; the critical features).
-   The machine model is optional: name it when the user knows it, else give the kind and what
-   they know, and the plan lists every value it assumed in its place. Tools are required: use
-   the user's tool list or tool library file; with none, propose the fewest tools that fit,
-   mark each one proposed when you report, and ask before you plan with them. Leave out a
-   length or flute count the user does not know: the plan assumes it and says so. Never fill
-   one in yourself. A material from the feeds
-   table gives starting speeds and feeds ([job-file.md](references/job-file.md#material)); say they
-   are starting points.
+   ```text
+   block/face 15  flat floor at Z 17, facing +Z (a pocket floor 8 mm down, 1 island), 1469.7 mm²
+   block/face 21  flat floor at Z 11, facing +Z (a pocket floor 6 mm down), 480 mm²
+   hole block/face 7: Ø5 x 25 through along +Z at (-33, -23, 25)
+   ```
 
-3. **Write the job** as `part.cam.json` beside the part ([job-file.md](references/job-file.md)):
+   `--direction -Z` (or `+X` ...) lists only what a tool from that side can work; a feature no
+   direction lists is an undercut, which this skill cannot cut. For an assembly pass the part,
+   `--occurrence kit/arm` (`pin.2` for the second `pin`), here and to `plan`. A job takes a ref
+   as `block/face 15`, as `face 15` on a one-part document, or as the Viewer copies it
+   (`/work/part.step#block/face 15`). A model's part is its `@xbf` or `@step` output, or the file
+   `cadgen export <id> part.step` writes.
+
+2. **Ask what you cannot see.** Once, in one message, for what the user has not said:
+   - **The controller.** `machine.post` is required and has no default: a dialect read by the
+     wrong controller moves the machine wrongly. Ask which controller runs the machine (GRBL,
+     LinuxCNC, Mach3/4, Fanuc, Centroid, UCCNC, Smoothieware); never guess it from the make.
+   - The machine's travel, spindle speed range and feed limit (`travel_mm`, `min_rpm`,
+     `max_rpm`, `max_feed_mm_min`): a 24,000 rpm router spindle, a 2,000 mm/min feed. Without
+     them the plan posts the feeds table's numbers unchecked.
+   - The tools they own, with real diameters, flute lengths and stickouts. With none, propose the
+     fewest that fit and ask before planning with them. Leave out a length the user does not
+     know; never fill one in yourself: the plan assumes it and says so.
+   - The material (6061, not "aluminium"), how the part is held, and which features are
+     critical.
+
+3. **Write the job** as `part.cam.json` beside the part. Every key is in
+   [job-file.md](references/job-file.md).
 
    ```json
    {
-     "machine": {"kind": "mill", "post": "grbl", "travel_mm": [300, 200, 80], "max_rpm": 24000},
+     "machine": {"kind": "router", "post": "grbl", "travel_mm": [300, 300, 80],
+                 "max_rpm": 24000, "max_feed_mm_min": 2500},
      "material": "aluminum-6061",
-     "stock": {"kind": "box", "margin_mm": [2, 2, 1]},
+     "stock": {"margin_mm": [3, 3, 1]},
      "tools": [
        {"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20, "stickout_mm": 30},
-       {"id": "T2", "type": "drill", "diameter_mm": 5}
+       {"id": "T2", "type": "drill", "diameter_mm": 5},
+       {"id": "T3", "type": "flat", "diameter_mm": 10, "flutes": 3, "flute_length_mm": 32, "stickout_mm": 45}
      ],
      "setups": [
        {"id": "top", "orientation": "+Z", "origin": "stock-top-center", "operations": [
          {"op": "face", "tool": "T1"},
          {"op": "pocket", "tool": "T1", "faces": ["face 15"]},
-         {"op": "drill", "tool": "T2", "faces": ["face 7", "face 8"], "cycle": "peck"}
+         {"op": "pocket", "tool": "T1", "faces": ["face 21"]},
+         {"op": "drill", "tool": "T2", "faces": ["face 7", "face 8", "face 9", "face 14"], "peck_mm": 2},
+         {"op": "profile", "tool": "T3", "side": "outside", "through_mm": 0.5}
        ]}
      ]
    }
    ```
 
-   Plan it the way [machining-practice.md](references/machining-practice.md) says: hold the part
-   low and give what holds it as the setup's `fixture` (a `vise` or `plate`, or a box per clamp);
-   the shortest tool that reaches and the largest that fits; face, rough with stock to leave,
-   finish, then spot, drill and tap, then chamfer; the big tool before the small one; the outline
-   cut free last, with tabs so the part stays put; climb milling; helix or ramp entries, never a
-   straight plunge. One setup per way the part is held. Each operation's own keys are on its
-   reference page.
+   The stock is the part's bounding box grown by `margin_mm` (x and y on each side, z over the
+   top); its bottom is the part's bottom, on the table. Plan like a machinist: one setup per way
+   the part is held; face, rough (`adaptive` with `leave_mm`), finish, then drill, and cut the
+   outline free last; group each tool's operations together; use the shortest tool that reaches
+   and the largest that fits.
 
 4. **Plan.**
 
@@ -153,69 +145,123 @@ end mill is 6.35 mm, 30 ipm is 762 mm/min).
    cadgen cam plan part.step --job part.cam.json
    ```
 
-   For an assembly, name the part to machine: `--occurrence kit/arm` (the part's path in the
-   assembly, as `cadgen inspect` and the Viewer name it; `pin.2` for the second `pin`).
-   It writes `part.cam.glb` and, when no check found an error, one G-code file per setup
-   (`part.top.nc`; the extension is the post's; a post that needs one file per tool names them
-   `part.top.T1.nc`, `part.top.T2.nc`) beside the part, and prints one line per operation (tool, speed, feed, time), one
-   `adapted:` line per step it took to fit a big part, then its findings. `--json` gives the same as
-   one JSON object. Every plan first removes what the last plan of that part wrote there, so a job
-   that cannot run leaves nothing (never the last run's G-code) and says, in one sentence, what to
-   change.
+   It prints the headline (`Ready to cut · 42 min · 3 tools` or `2 to fix · ...`), one line per
+   operation (tool, rpm, feed, time), the files written, one `assumed:` line per value the job
+   left out, then the findings, errors first. `--json` gives the same as one JSON object;
+   `--out-dir DIR` writes elsewhere; `--verbose` times each stage. A job that cannot run at all
+   (an unknown key, a missing face, no FreeCAD) is `not planned:` with one error that says what
+   to change, exits 1 and writes nothing. A plan with errors exits 0: read the verdict, not the
+   exit code.
 
-5. **Read the verdict and fix the job.** "Ready to cut" means no check failed; "N to fix" lists the
-   errors, and no G-code was written ("G-code not written: fix N errors first"): only the GLB, to
-   show where they are. Fix each in the JOB (a shorter tool, a smaller stepdown, another setup, a different
-   tool for a corner), never by changing the part unless the user asks. Re-plan until it is ready,
-   then deal with warnings ([checks.md](references/checks.md)).
+5. **Read the verdict and fix the job.** "Ready to cut" means no check found an error. "N to fix"
+   writes the GLB, to show where, and no G-code (`G-code not written: fix N errors first`); any
+   G-code an earlier plan of the part posted is removed, so no stale program stands beside it.
+   Fix each error in the job ([The checks](#the-checks)), never by changing the part unless the
+   user asks, and plan again until it is ready. Then read the warnings.
 
-6. **Show it.** Show `part.cam.glb` with `$cad` (its Show the model step): the user sees the
-   toolpaths, the cut stock, the Job panel and can play the cut.
+6. **Show it** with `$cad` (its Show the model step): `part.cam.glb` shows the part, the stock
+   and every setup's feeds and rapids.
+
+7. **Hand over the G-code** ([Report](#report)).
+
+## The operations
+
+| `op` | Cuts | `faces` | Tools | Its own keys (default) |
+| --- | --- | --- | --- | --- |
+| `face` | The stock's top down to the part's top | Optional: flat faces facing the tool; left out, the part's top faces. Cuts down to the highest one named | `flat`, `ball`, `bull` | `stepdown_mm`, `stepover` (0.4) |
+| `profile` | Around the part's outline (or the faces named), down to the part's bottom and `through_mm` past it | Optional | `flat`, `ball`, `bull` | `side` (`outside`, `inside`), `through_mm` (0), `stepdown_mm`, `leave_mm` (0) |
+| `pocket` | A flat-floored pocket, around its islands | Required: floors at one height, facing the tool | `flat`, `ball`, `bull` | `stepdown_mm`, `stepover` (0.4), `leave_mm` (0) |
+| `adaptive` | The same area as `pocket`, at a constant tool load: for roughing | Required: floors at one height | `flat`, `ball`, `bull` | `stepdown_mm`, `stepover` (0.15), `leave_mm` (0) |
+| `drill` | Holes, to their depth (a through hole `through_mm` past its exit plus the drill's point) | Required: hole walls, as `cam features` lists them | `drill` only | `peck_mm` (none: one plunge), `through_mm` (1) |
+
+Every operation also takes `tool` (required), `feed`, `speed`, `plunge_mm_min`, `coolant` and
+`name` ([job-file.md](references/job-file.md#operations)). `leave_mm` is the wall stock a rough
+pass leaves for a finish pass after; `face` and `drill` refuse it. `stepover` is a fraction
+of the tool's diameter; `stepdown_mm` defaults to a fraction of the diameter set by the material
+(half in aluminium, a quarter in steel), never past the flutes. Profiling is climb milled.
+
+- **One depth per operation.** A `pocket` or `adaptive` naming floors at different heights is
+  refused, and so is a `drill` naming holes of different depths: give each height its own
+  operation, as the example does. A `face` cuts down to the highest face it names.
+- **A profile that cuts the part free** needs `through_mm` past the bottom, into a spoilboard,
+  and flutes longer than the part, the top margin and `through_mm` together. There are no tabs:
+  say how the part stays put (double-sided tape, screws through waste, a vacuum table).
+- **Holes** are drilled from the side they open toward in the setup, with a drill the hole's Ø
+  from the `cam features` line (`drill_size` below). A counterbore or countersink is part of its
+  hole there; the drill does not cut it.
+- **A material that is not in the feeds table** needs `drill_mm_per_rev` for a job that drills;
+  without it the job is refused.
+
+## The checks
+
+FreeCAD plans what it is asked to and checks nothing against the part, so cadgen checks every
+plan, before FreeCAD runs and after. An operation with a reach error is not given to FreeCAD.
+
+| Finding | Severity | Means | Fix it in the job |
+| --- | --- | --- | --- |
+| `unreachable` | error | A named face lies under part of the part, seen from the tool's side, or a hole does not open toward the tool in this setup | Machine it from a setup that sees it (`orientation: "-Z"`), or name only faces the tool can reach |
+| `not_facing` | error | A `face`, `pocket` or `adaptive` face is not flat and facing the tool, or a `drill` face is not a hole wall | Name the floor itself, or the hole's wall, as `cam features` lists them |
+| `drill_size` | error or warning | A drill is larger than its hole (an error: it cuts into the part) or smaller (a warning: it leaves the hole under size) | A drill the hole's size; for a smaller one, open the hole out after (a `pocket`, or a drill its size) |
+| `too_deep` | error | The cut goes further below the stock top than the tool's flutes | A tool with longer flutes (state its `flute_length_mm`), or cut less deep from this side |
+| `gouge` | error | A move brings the tool (its real flat, ball, bull nose or drill point shape) into the part | Name only faces the tool can reach, use a smaller tool, or split the floors by depth |
+| `rapid_into_stock` | error | A rapid runs through stock that no move before it has cut | Raise the setup's `retract_mm` (and `clearance_mm`), or cut that material in an earlier operation |
+| `empty_operation` | error | FreeCAD planned no cut for an operation | Check its faces, that the tool fits them, and for `face` that the stock has a top margin |
+| `travel` | error | The setup's moves span more than `machine.travel_mm` | The part does not fit this machine in this setup |
+| `clamped` | warning | A spindle speed or feed was held to `max_rpm`, raised to `min_rpm`, or held to `max_feed_mm_min` | Fine as a starting point; say so. A drill the machine would turn far too fast is refused: pocket the hole with an end mill, or give the operation's `speed` |
+
+`job`, `freecad` and `internal_error` are the one finding of a plan that did not run: the job was
+refused, FreeCAD is missing or failed, or cadgen hit a bug (report it with the part).
+
+The gouge check sees the part from above, so it is exact for a part cut from one side and
+conservative under an overhang. It knows the part, the stock box and the tools, nothing else: a
+vise, clamps or a tool longer than the job says can still be hit. A guessed stickout is a guessed
+check.
+
+## The posts and the files
+
+`machine.post` names FreeCAD's post processor and the posted file:
+
+| `post` | Controller | File |
+| --- | --- | --- |
+| `grbl` | GRBL | `part.top.nc`, or one per tool |
+| `linuxcnc` | LinuxCNC | `part.top.ngc` |
+| `mach3` | Mach3 and Mach4 | `part.top.tap` |
+| `fanuc` | Fanuc | `part.top.nc` |
+| `centroid` | Centroid | `part.top.nc` |
+| `uccnc` | UCCNC | `part.top.nc` |
+| `smoothie` | Smoothieware | `part.top.gcode`, or one per tool |
+
+The file is `<part>.<setup id><ext>`, one per setup. GRBL and Smoothieware do not change tools, so
+a setup with several tools posts one file per run of one tool, `part.top.1-T1.nc`,
+`part.top.2-T2.nc` ...: the operator runs them in order, changing the tool and setting Z zero
+before each. Each tool posts as its T number (its `number`, else the digits of its `id`); the
+work offset is `machine.work_offset` (`G54`). Every posted file opens with two comment lines
+cadgen adds: what it is (the part, the setup, the FreeCAD version and the post) and that it is not
+proven on a machine and must be air-cut or run single block first.
 
 ## Report
 
 Hand the program over in this order, in the user's words:
 
-- The verdict, the total time and the tool list, then each setup with its operations.
-- The post and the controller it is for, and which file runs first when there are several (one
-  per setup, or per tool on GRBL) and how the part is re-held between them.
-- The work zero and how to set it: `origin` `stock-top-center` on `G54` means X0 Y0 at the stock's
-  centre and Z0 on its top; touch off there.
-- Each tool by its number: diameter, speed and feed, and the stickout the plan assumed (a guessed
-  stickout is a guessed collision check).
-- Every warning, every info note (`unused_tool`), every lite limit an operation carries and every
-  `adapted:` step, with its note.
-- Every `assumed:` line, as a question the user can answer (the post, a spindle limit, the rapid
-  rate and tool change time the cycle time uses, a tool's flute length or stickout), plus anything
-  else you assumed: the material, a fixture box. An assumed post comes first: the program is in a
-  dialect nobody confirmed.
-- That speeds and feeds are starting points from a table, not tuned for their machine.
-- Where the plan departs from [machining-practice.md](references/machining-practice.md) (a long
-  stickout, a full-width slot, a straight plunge, a tool the user did not confirm they own), and
-  why.
+- The verdict, the cycle time and the tool list, then each setup and its operations.
+- The post and the controller it is for, the files in the order they run, and how the part is
+  turned over and re-held between setups.
+- The work zero and how to set it: `stock-top-center` on `G54` means X0 Y0 at the stock's centre
+  and Z0 on its top; touch off there. The stock is the part's box plus `margin_mm`: the blank must
+  be that size, its bottom on the table.
+- Each tool by its T number: diameter, rpm and feed.
+- Every warning, and every `assumed:` line as a question the user can answer: a tool's flute
+  length or stickout, the rapid rate the cycle time is worked out at. Add anything else you
+  assumed (the material, the tools).
+- That feeds and speeds are starting points from a table, not tuned for their machine, and the
+  cycle time is a lower bound (no spindle spin-up, tool changes or corner slow-downs).
 - **Always:** the G-code has not been run on a machine. Say this line word for word: "Prove this
-  program on the machine: single block, feed override low, in air first." Then give the steps in
-  [Proving the program](references/machining-practice.md#proving-the-program): check the post
-  matches the controller, set the work offset and tool lengths, play the cut in the Viewer, dry-run
-  it above the part, then cut single-block with the overrides down. The same warning opens every
-  posted file.
+  program on the machine: single block, feed override low, in air first." Then the steps: check
+  the post matches the controller; set the work offset and every tool's length (on GRBL and
+  Smoothieware, zero Z with each tool's file); play the toolpaths in the Viewer and look at every rapid near the part
+  and the clamps; dry-run 25-50 mm above the part; cut the first part single block with the
+  overrides at 25 % and a hand on feed hold; measure it before running more. The same warning
+  opens every posted file.
 
-Never send G-code to a machine from this skill.
-
-## What the result means
-
-- **The plan is only as true as the job.** It knows the part, the stock, the tools and the fixture
-  boxes you gave, nothing else. A wrong stock size, a fixture that is not where the job says, or a
-  tool longer or shorter than stated makes a plan that looks right and is not.
-- **The cycle time** is the moves at their feeds, rapids at `machine.rapid_mm_min` and each tool
-  change at `machine.tool_change_s` (the model's numbers, else the machine kind's, listed as
-  `assumed:`: repeat that when you quote the time). Spindle
-  spin-up and setting up are not in it, and a real machine slows into corners: read it as a lower
-  bound.
-- **The G-code is written for one controller.** Another controller may read the same words
-  differently: plan again with `--post haas` (the same job for another controller, under the same
-  checks) rather than editing the file by hand.
-- **When the user asks for something this skill does not do** (an operation that is not in the
-  table, a process the machine kinds do not cover), say "That is not in this version." Do not stand
-  a 2.5D operation in for a 3D surface, or a lite operation in for a full one without saying so.
-  Offer the part you can cover, and say what is left uncut.
+Never send G-code to a machine from this skill. When the user wants another controller, plan again
+with another `machine.post` rather than editing the file by hand.

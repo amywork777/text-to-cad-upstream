@@ -376,9 +376,9 @@ src/cadgen/
                          #   reads off it; held in memory
   drawing_payload.py     # a DXF flattened by ezdxf for the viewer's pane
   eng_drawing.py         # @eng_drawing: Sheets and Views over a part, one PDF
-  cam.py                 # CAM: features (what a job can name) and plan (toolpaths, simulated
-                         #   cut, checks, G-code per setup, one result GLB); its engine is
-                         #   _internal/cam (operations/ and posts/ registries)
+  cam.py                 # CAM: features (what a job can name) and plan (FreeCAD's toolpaths
+                         #   and G-code, checked against the part, one result GLB); behind it
+                         #   _internal/cam
   flatten.py             # flat patterns: exact 2D geometry from a solid's planar faces
   geometry.py            # measurements of native geometry: closest points, overlap,
                          #   soundness, mass properties
@@ -440,9 +440,10 @@ reads the clipboard. Unsupported desktop clipboard environments return an error.
 ## CAM
 
 `cadgen cam features` and `cadgen cam plan` (`cadgen.cam`) read a part from its file -- a STEP or an
-xbf through `read_step`/`read_xbf`, or a DXF's profiles -- never through the engine, and resolve a
-job's face and edge refs in that file by the engine's grammar (`engine/refs.py`), so a ref
-`cadgen inspect` answers or the CAD Viewer copies names the same face. The planner, simulator, checks
-and posts live under `src/cadgen/_internal/cam/`; a plan writes `<stem>.cam.glb`, an ordinary GLB the
-viewer's GLB renderer draws the job of, and one G-code file per setup. The `cam` skill carries the job
-file's contract.
+xbf through `read_step`/`read_xbf` -- never through the engine, and resolve a job's face refs in that
+file by the engine's grammar (`engine/refs.py`), so a ref `cadgen inspect` answers or the CAD Viewer
+copies names the same face. FreeCAD, installed by the person (1.1 or newer; `CADGEN_FREECAD` names its
+`freecadcmd`), plans and posts each setup in a process of its own, as KiCad does for `cadgen pcb`;
+cadgen checks what it plans against the part under `src/cadgen/_internal/cam/` and posts nothing a
+check refuses. A plan writes `<stem>.cam.glb`, an ordinary GLB the viewer's GLB renderer draws the job
+of, and the G-code for each setup. The `cam` skill carries the job file's contract.

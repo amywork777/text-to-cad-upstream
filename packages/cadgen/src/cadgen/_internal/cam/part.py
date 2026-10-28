@@ -1,5 +1,4 @@
-"""The part a job machines, read once: exact faces from ``read_step``/``read_xbf``, one tessellation, or a DXF's
-profiles.
+"""The part a job machines, read once: exact faces from ``read_step``/``read_xbf`` and one tessellation.
 
 :func:`read_part` returns a :class:`Part`:
 
@@ -9,13 +8,9 @@ profiles.
 * ``faces``: one :class:`FaceInfo` per face ordinal (surface type, area, centre, plane normal or cylinder axis,
   whether a cylinder is a hole), read from the exact B-rep;
 * :meth:`Part.face` resolves a job's face ref to its :class:`FaceInfo` with a teaching error for a ref that is not on
-  this part, and :meth:`Part.edge` an edge ref to its exact ``TopoDS_Edge``; :meth:`Part.ocp_face` hands back the
-  exact ``TopoDS_Face`` (world placement);
-* :meth:`Part.mesh_in` the mesh in a setup's WCS (cached per setup).
+  this part; :meth:`Part.ocp_face` hands back the exact ``TopoDS_Face`` (world placement).
 
-A DXF part (``kind == "dxf"``) has ``profiles`` (shapely polygons, even-odd filled, in mm on z = 0; blocks expanded,
-annotation skipped and said in ``notes``, any other entity refused: :func:`dxf_curves`) and a mesh extruded to the
-sheet's thickness; it has no faces. Stdlib at import; numpy, OCP and ezdxf inside.
+Stdlib at import; numpy and OCP inside.
 
 A ref is the engine's (``cadgen.engine.refs``, what ``cadgen inspect`` answers and the CAD Viewer copies): ``face 12``
 on a document of one part, ``bracket/face 12`` or ``kit/arm/face 12`` under the part's occurrence, an element's name
@@ -26,16 +21,14 @@ on a document of one part, ``bracket/face 12`` or ``kit/arm/face 12`` under the 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from cadgen._internal.cam.job_errors import CamJobError
 
-__all__ = ["DXF_SUFFIXES", "PART_SUFFIXES", "FaceInfo", "Part", "dxf_curves", "element_kind", "read_dxf_drawing",
-           "read_dxf_profiles", "read_part"]
+__all__ = ["PART_SUFFIXES", "FaceInfo", "Part", "read_part"]
 
-DXF_SUFFIXES = (".dxf",)
 #: The documents a part is read from: a STEP, or an engine document (a model's ``@xbf``, or ``cadgen export ID
 #: part.xbf``).
 PART_SUFFIXES = (".step", ".stp", ".xbf")
@@ -44,20 +37,6 @@ DEFAULT_DEFLECTION_MM = 0.01
 ANGULAR_DEFLECTION = 0.15
 #: The kinds an element name's codes stand for, as the reader keeps them (``kernel/imported.py``).
 _NAME_KINDS = (("vertex", 0), ("edge", 1), ("face", 2))
-
-
-def element_kind(ref: object) -> str | None:
-    """The kind of element a ref names (``face``, ``edge``, ``vertex``) when it is one ref of one element, else None:
-    what a job's ``faces`` or ``edges`` entry is read as before the part is."""
-    from cadgen.engine.refs import RefError, parse
-
-    if not isinstance(ref, str):
-        return None
-    try:
-        _file, selectors = parse(ref)
-    except RefError:
-        return None
-    return selectors[0].kind if len(selectors) == 1 else None
 
 
 class _Document:
@@ -119,23 +98,17 @@ class FaceInfo:
 class Part:
     document: Path
     occurrence: str
-    kind: str                       # "step" (a STEP or an xbf: B-rep) | "dxf"
     vertices: Any                   # (V, 3) float
     triangles: Any                  # (T, 3) int
-    face_of_triangle: Any           # (T,) int, face ordinal (0 for a DXF)
+    face_of_triangle: Any           # (T,) int, face ordinal
     faces: dict[int, FaceInfo]
     deflection_mm: float
-    shape: Any = None               # build123d Shape (world placement); None for a DXF
-    profiles: list = field(default_factory=list)   # DXF: shapely Polygons
-    #: What reading it skipped (a DXF's text and dimensions), in plain words, for the result's warnings.
-    notes: list = field(default_factory=list)
+    shape: Any = None               # build123d Shape (world placement)
     _document: Any = None
     #: The occurrence's path from the document's root: the identity a ref's part is checked against.
     _path: str = ""
     _face_map: Any = None
-    _edge_map: Any = None
     _ordinals: Any = None
-    _wcs_cache: dict = field(default_factory=dict)
 
     @property
     def bbox(self):
@@ -143,49 +116,22 @@ class Part:
 
         return np.asarray(self.vertices).min(axis=0), np.asarray(self.vertices).max(axis=0)
 
-    def _element(self, ref: str, where: str, kind: str):
+    def face(self, ref: str, where: str = "faces") -> FaceInfo:
+        """The face a job names, or the teaching error."""
         try:
             hit = self._document.resolve(ref)
         except ValueError as exc:
-            raise CamJobError(f"{where}: {ref} is not {'an' if kind == 'edge' else 'a'} {kind} of this part ({exc}); "
-                              + ("cadgen cam features lists them" if kind == "face" else "select the edges in the Viewer")
+            raise CamJobError(f"{where}: {ref} is not a face of this part ({exc}); cadgen cam features lists them"
                               ) from None
-        if hit.kind != kind:
+        if hit.kind != "face":
             raise CamJobError(f"{where}: {ref} is {'a part' if hit.kind is None else f'a {hit.kind}'} reference; "
-                              f"name {kind}s ({kind} 12)")
+                              "name faces (face 12)")
         if hit.path != self._path:
             raise CamJobError(f"{where}: {ref} is on {hit.path}, but the job machines {self.occurrence}")
-        count = len(self.faces) if kind == "face" else self._edges().Extent()
-        if not 1 <= hit.ordinal <= count:
-            raise CamJobError(f"{where}: {ref} is not {'an' if kind == 'edge' else 'a'} {kind} of this part (it has "
-                              f"{count}); " + ("cadgen cam features lists them" if kind == "face"
-                                               else "select the edges in the Viewer"))
-        return hit
-
-    def _edges(self):
-        from OCP.TopAbs import TopAbs_EDGE
-        from OCP.TopExp import TopExp
-        from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
-
-        if self._edge_map is None:
-            self._edge_map = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
-            TopExp.MapShapes_s(self.shape.wrapped, TopAbs_EDGE, self._edge_map)
-        return self._edge_map
-
-    def face(self, ref: str, where: str = "faces") -> FaceInfo:
-        """The face a job names, or the teaching error."""
-        if self.kind != "step":
-            raise CamJobError(f"{where}: {ref} names a face, but a DXF has no faces; name its profiles with region")
-        return self.faces[self._element(ref, where, "face").ordinal]
-
-    def edge(self, ref: str, where: str = "edges"):
-        """``(canonical ref, TopoDS_Edge)`` of the edge a job names (world placement), or the teaching error."""
-        from OCP.TopoDS import TopoDS
-
-        if self.kind != "step":
-            raise CamJobError(f"{where}: {ref} names an edge, but a DXF has no edges; follow its profiles with region")
-        hit = self._element(ref, where, "edge")
-        return hit.ref, TopoDS.Edge(self._edges().FindKey(hit.ordinal))
+        if not 1 <= hit.ordinal <= len(self.faces):
+            raise CamJobError(f"{where}: {ref} is not a face of this part (it has {len(self.faces)}); cadgen cam "
+                              "features lists them")
+        return self.faces[hit.ordinal]
 
     def ordinal(self, ref: str) -> int:
         """The ordinal of a face by its canonical ref (a :class:`FaceInfo`'s ``ref``, as ``cam features`` lists it)."""
@@ -193,55 +139,34 @@ class Part:
             self._ordinals = {info.ref: ordinal for ordinal, info in self.faces.items()}
         return self._ordinals[ref]
 
-    def ocp_face(self, ordinal: int):
-        """The exact ``TopoDS_Face`` of a face ordinal, in part coordinates."""
-        from OCP.TopoDS import TopoDS
-
-        return TopoDS.Face(self._face_map.FindKey(ordinal))
-
-    def mesh_in(self, wcs):
-        """(vertices, triangles) in the WCS of ``wcs``; cached per setup."""
-        key = (wcs.setup_id, wcs.rotation, wcs.origin)
-        if key not in self._wcs_cache:
-            self._wcs_cache[key] = (wcs.to_wcs(self.vertices), self.triangles)
-        return self._wcs_cache[key]
-
     def classify(self, points) -> Any:
-        """For each part point, whether it is inside the solid (exact, OCCT's classifier); DXF: inside a profile."""
+        """For each part point, whether it is inside the solid (exact, OCCT's classifier)."""
         import numpy as np
-
-        points = np.asarray(points, dtype=float)
-        if self.kind == "dxf":
-            import shapely
-
-            union = shapely.union_all(self.profiles)
-            top = float(np.asarray(self.vertices)[:, 2].max())
-            return np.array([bool(union.contains(shapely.Point(p[0], p[1]))) and 0 <= p[2] <= top for p in points])
         from OCP.BRepClass3d import BRepClass3d_SolidClassifier
         from OCP.gp import gp_Pnt
         from OCP.TopAbs import TopAbs_IN
 
         classifier = BRepClass3d_SolidClassifier(self.shape.wrapped)
         out = []
-        for p in points:
+        for p in np.asarray(points, dtype=float):
             classifier.Perform(gp_Pnt(float(p[0]), float(p[1]), float(p[2])), 1e-6)
             out.append(classifier.State() == TopAbs_IN)
         return np.array(out, dtype=bool)
 
+    def ocp_face(self, ordinal: int):
+        """The exact ``TopoDS_Face`` of a face ordinal, in part coordinates."""
+        from OCP.TopoDS import TopoDS
 
-def read_part(document: Path, *, occurrence: str | None = None, deflection_mm: float | None = None,
-              sheet_thickness_mm: float | None = None) -> Part:
-    """Read a STEP occurrence (or a DXF) and tessellate it once."""
+        return TopoDS.Face(self._face_map.FindKey(ordinal))
+
+
+
+def read_part(document: Path, *, occurrence: str | None = None, deflection_mm: float | None = None) -> Part:
+    """Read a STEP or xbf occurrence and tessellate it once."""
     document = Path(document)
-    if document.suffix.lower() in DXF_SUFFIXES:
-        if not document.is_file():
-            raise CamJobError(f"no DXF at {document}")
-        # A plan always names the sheet's thickness (run.py refuses a DXF job without one); read for its profiles
-        # alone (``cam features``) the drawing stays flat, at z = 0.
-        return _read_dxf(document, thickness=float(sheet_thickness_mm) if sheet_thickness_mm is not None else 0.0)
     suffix = document.suffix.lower()
     if suffix not in PART_SUFFIXES:
-        raise CamJobError(f"this command takes a {'/'.join((*PART_SUFFIXES, *DXF_SUFFIXES))} document: {document}")
+        raise CamJobError(f"this command takes a {'/'.join(PART_SUFFIXES)} document: {document}")
     what = "xbf" if suffix == ".xbf" else "STEP"
     if not document.is_file():
         raise CamJobError(f"no {what} at {document}")
@@ -404,173 +329,6 @@ def _tessellate(path: Path, read: _Document, hit, shape, deflection: float) -> P
         )
     if not triangles:
         raise CamJobError(f"{ref} of {path.name} has no surface to machine")
-    return Part(document=path, occurrence=ref, kind="step", vertices=np.vstack(vertices),
+    return Part(document=path, occurrence=ref, vertices=np.vstack(vertices),
                 triangles=np.vstack(triangles), face_of_triangle=np.concatenate(owners), faces=faces,
                 deflection_mm=deflection, shape=shape, _document=read, _path=hit.path, _face_map=face_map)
-
-
-# --- DXF -------------------------------------------------------------------------------------------------
-
-#: The entities a drawing's outlines are drawn with: each is followed as a path.
-DXF_CURVES = ("LINE", "ARC", "CIRCLE", "ELLIPSE", "LWPOLYLINE", "POLYLINE", "SPLINE")
-#: Annotation a drawing may carry beside its outlines: skipped and counted, never cut. Anything else is refused.
-DXF_ANNOTATIONS = ("TEXT", "MTEXT", "ATTRIB", "ATTDEF", "DIMENSION", "ARC_DIMENSION", "LARGE_RADIAL_DIMENSION",
-                   "LEADER", "MLEADER", "MULTILEADER", "HATCH")
-
-
-def dxf_curves(path: Path, *, tolerance_mm: float = 0.01) -> tuple[list, dict[str, int]]:
-    """Every curve a DXF's model space draws, ``([(points [(x, y)] mm, closed)], skipped {type: count})``.
-
-    Blocks (``INSERT``) are expanded, nested ones too, with their placement, scale and rotation; its ``$INSUNITS``
-    are honoured. Annotation (:data:`DXF_ANNOTATIONS`: text, dimensions, leaders, hatches) is skipped and counted;
-    any other entity, or a curve that cannot be followed as a path, is refused naming its handle and type: a part
-    is never cut with a piece of its drawing silently left out."""
-    import ezdxf
-    from ezdxf import path as dxf_path
-
-    try:
-        document = ezdxf.readfile(str(path))
-    except (OSError, ezdxf.DXFError) as exc:
-        raise CamJobError(f"{path.name} is not a readable DXF: {exc}") from None
-    scale = {1: 25.4, 2: 304.8, 5: 10.0, 6: 1000.0}.get(int(document.header.get("$INSUNITS", 4) or 4), 1.0)
-    # Its extent first, from control points (cheap): a drawing kilometres across is refused before it is flattened to
-    # a hundredth of a millimetre.
-    try:
-        from ezdxf import bbox as dxf_bbox
-
-        extents = dxf_bbox.extents(document.modelspace(), fast=True)
-    except Exception:  # noqa: BLE001 - an entity ezdxf cannot bound is refused below, by the walk
-        extents = None
-    if extents is not None and extents.has_data:
-        low, high = extents.extmin, extents.extmax
-        _check_size(path.name, ((low.x * scale, low.y * scale), (high.x * scale, high.y * scale)))
-    curves: list = []
-    skipped: dict[str, int] = {}
-
-    def named(entity, inside: str) -> str:
-        handle = entity.dxf.get("handle")
-        return f"{entity.dxftype()} {handle}" if handle else f"a {entity.dxftype()} in {inside}"
-
-    def walk(entities, inside: str) -> None:
-        for entity in entities:
-            kind = entity.dxftype()
-            if kind == "INSERT":
-                block = f"block {entity.dxf.get('name', '?')} (INSERT {entity.dxf.get('handle') or inside})"
-                try:
-                    children = list(entity.virtual_entities())
-                except Exception as exc:  # noqa: BLE001 - ezdxf's reason goes into the refusal
-                    raise CamJobError(f"{path.name}: {block} cannot be expanded ({exc}); explode it in the "
-                                      "drawing") from None
-                attribs = len(getattr(entity, "attribs", ()) or ())
-                if attribs:
-                    skipped["ATTRIB"] = skipped.get("ATTRIB", 0) + attribs
-                walk(children, block)
-                continue
-            if kind in DXF_ANNOTATIONS:
-                skipped[kind] = skipped.get(kind, 0) + 1
-                continue
-            if kind not in DXF_CURVES:
-                raise CamJobError(f"{path.name}: {named(entity, inside)} is not a curve that can be cut; draw the "
-                                  f"outlines as {', '.join(DXF_CURVES[:-1]).lower()} or {DXF_CURVES[-1].lower()}s "
-                                  "and delete it (text, dimensions and hatches are skipped)")
-            try:
-                points = [(v.x * scale, v.y * scale) for v in dxf_path.make_path(entity).flattening(tolerance_mm / scale)]
-            except Exception as exc:  # noqa: BLE001 - ezdxf's reason goes into the refusal
-                raise CamJobError(f"{path.name}: {named(entity, inside)} cannot be followed as a path ({exc}); redraw "
-                                  "it as lines, arcs or a polyline") from None
-            if len(points) < 2:
-                continue
-            closed = kind == "CIRCLE" or math.dist(points[0], points[-1]) <= 1e-6 * max(1.0, scale)
-            curves.append((points, closed))
-
-    walk(document.modelspace(), "model space")
-    return curves, skipped
-
-
-#: The key :func:`read_dxf_drawing` counts open curves under in its skipped dict: curves that close no profile.
-OPEN_CURVES = "open curve"
-
-
-def skipped_words(name: str, skipped: dict[str, int]) -> str:
-    """``bracket.dxf: 2 TEXT and 1 DIMENSION skipped (annotation is not cut ...)``, or "". Open curves (that close no
-    profile, :data:`OPEN_CURVES`) get their own sentence."""
-    skipped = dict(skipped)
-    stray = skipped.pop(OPEN_CURVES, 0)
-    words = (f"{name}: {stray} open curve piece(s) close no profile and are not cut; close them, or delete them if "
-             "they are construction lines") if stray else ""
-    if not skipped:
-        return words
-    parts = [f"{count} {kind}" for kind, count in sorted(skipped.items())]
-    listed = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
-    return (f"{name}: {listed} skipped (annotation is not cut; explode text to curves in the drawing to cut or "
-            "engrave it)") + (f". {words}" if words else "")
-
-
-def read_dxf_drawing(path: Path, *, tolerance_mm: float = 0.01) -> tuple[list, dict[str, int]]:
-    """The DXF's closed regions as shapely polygons (mm), even-odd filled: closed polylines, circles, ellipses and
-    splines as rings, open lines and arcs joined into rings where their ends meet; and what was skipped
-    (:func:`dxf_curves`)."""
-    import shapely
-
-    curves, skipped = dxf_curves(path, tolerance_mm=tolerance_mm)
-    rings: list = []
-    loose: list = []
-    for points, closed in curves:
-        if closed and len(points) >= 4:
-            ring = shapely.Polygon(points)
-            rings.append(ring if ring.is_valid else ring.buffer(0))
-        else:
-            loose.append(shapely.LineString(points))
-    if loose:
-        noded = shapely.union_all(shapely.set_precision(shapely.GeometryCollection(loose), 1e-6))
-        polygons, cuts, dangles, invalid = shapely.polygonize_full(shapely.get_parts(noded))
-        rings.extend(shapely.get_parts(polygons))
-        # What joined into no ring is not cut: counted, so the run says so rather than dropping it unseen.
-        stray = [g for g in (*shapely.get_parts(cuts), *shapely.get_parts(dangles), *shapely.get_parts(invalid))
-                 if g.length > 1e-6]
-        if stray:
-            skipped = {**skipped, OPEN_CURVES: len(stray)}
-    filled = shapely.Polygon()
-    for ring in rings:
-        filled = filled.symmetric_difference(ring)
-    return [p for p in shapely.get_parts(filled) if p.area > 1e-9], skipped
-
-
-def read_dxf_profiles(path: Path, *, tolerance_mm: float = 0.01) -> list:
-    """The DXF's closed regions as shapely polygons (:func:`read_dxf_drawing` without the skipped count)."""
-    return read_dxf_drawing(path, tolerance_mm=tolerance_mm)[0]
-
-
-def _read_dxf(path: Path, *, thickness: float) -> Part:
-    import numpy as np
-    import shapely
-
-    profiles, skipped = read_dxf_drawing(path)
-    if not profiles:
-        raise CamJobError(f"{path.name} has no closed profile to cut; close its outlines (polylines or circles)")
-    vertices: list = []
-    triangles: list = []
-    offset = 0
-    for polygon in profiles:
-        tris = shapely.get_parts(shapely.constrained_delaunay_triangles(polygon))
-        for z, flip in ((thickness, False), (0.0, True)):
-            for tri in tris:
-                coords = np.asarray(tri.exterior.coords)[:3]
-                e1, e2 = coords[1] - coords[0], coords[2] - coords[0]
-                signed = e1[0] * e2[1] - e1[1] * e2[0]
-                order = [0, 1, 2] if (signed > 0) != flip else [0, 2, 1]
-                vertices.append(np.column_stack([coords[order], np.full(3, z)]))
-                triangles.append(np.arange(3) + offset)
-                offset += 3
-        oriented = shapely.geometry.polygon.orient(polygon, 1.0)
-        for ring in (oriented.exterior, *oriented.interiors):
-            coords = np.asarray(ring.coords)
-            for a, b in zip(coords[:-1], coords[1:]):
-                quad = np.array([[a[0], a[1], 0.0], [b[0], b[1], 0.0], [b[0], b[1], thickness], [a[0], a[1], thickness]])
-                vertices.append(quad)
-                triangles.extend([np.array([0, 1, 2]) + offset, np.array([0, 2, 3]) + offset])
-                offset += 4
-    tri_array = np.vstack(triangles).astype(np.int64)
-    return Part(document=path, occurrence="", kind="dxf", vertices=np.vstack(vertices), triangles=tri_array,
-                face_of_triangle=np.zeros(len(tri_array), dtype=np.int64), faces={}, deflection_mm=0.01,
-                profiles=profiles, notes=[note] if (note := skipped_words(path.name, skipped)) else [])
