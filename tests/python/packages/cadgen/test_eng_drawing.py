@@ -472,7 +472,7 @@ class DrawingVocabularyTests(unittest.TestCase):
             self.view.hole((0, 0, 0), 6, thru=True, depth=12)
         with self.assertRaisesRegex(ValueError, "size"):
             self.view.diameter((0, 0, 0), size=0)
-        with self.assertRaisesRegex(TypeError, "measures the circle"):
+        with self.assertRaisesRegex(TypeError, "positional argument"):   # law 15: no word of the retired size
             self.view.diameter((0, 0, 0), 3)
 
     def test_a_tolerance_that_is_not_a_tolerance_is_refused(self) -> None:
