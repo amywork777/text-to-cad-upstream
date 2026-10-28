@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import math
 
-__all__ = ["axis_word", "direction_word", "holes", "read_features"]
+__all__ = ["axis_word", "direction_word", "holes", "read_features", "walls_in"]
 
 _AXES = {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0), "Z": (0.0, 0.0, 1.0)}
 _COS5 = math.cos(math.radians(5.0))
@@ -460,6 +460,41 @@ def _pocket(part, ordinal: int, z: float) -> dict | None:
     top = max(part.faces[w].bounds[1][2] for w in walls)
     return {"walls": [part.faces[w].ref for w in sorted(walls)], "depth_mm": round(top - z, 4),
             "islands": islands}
+
+
+def walls_in(part, ordinal: int) -> list[str]:
+    """The walls an inside profile of the flat face ``ordinal`` would mean: the faces round each of its inner loops
+    (the holes, slots and pockets opening in it) and, for a floor, the faces round its edge that rise above it."""
+    import numpy as np
+    from OCP.BRepTools import BRepTools
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_WIRE
+    from OCP.TopExp import TopExp, TopExp_Explorer
+    from OCP.collections import IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher
+
+    ancestors = IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher()
+    TopExp.MapShapesAndAncestors_s(part.shape.wrapped, TopAbs_EDGE, TopAbs_FACE, ancestors)
+    face = part.ocp_face(ordinal)
+    info = part.faces[ordinal]
+    normal = np.asarray(info.normal, dtype=float)
+    height = float(np.asarray(info.center_mm) @ normal)
+    outer = BRepTools.OuterWire_s(face)
+    found: set[int] = set()
+    wires = TopExp_Explorer(face, TopAbs_WIRE)
+    while wires.More():
+        inner = not wires.Current().IsSame(outer)
+        edges = TopExp_Explorer(wires.Current(), TopAbs_EDGE)
+        while edges.More():
+            for neighbour in ancestors.FindFromKey(edges.Current()):
+                index = part._face_map.FindIndex(neighbour)
+                if not index or index == ordinal:
+                    continue
+                bounds = part.faces[index].bounds
+                rises = bool(bounds) and max(float(np.asarray(corner) @ normal) for corner in bounds) > height + 1e-6
+                if inner or rises:
+                    found.add(index)
+            edges.Next()
+        wires.Next()
+    return [part.faces[index].ref for index in sorted(found)]
 
 
 def read_features(part) -> dict:

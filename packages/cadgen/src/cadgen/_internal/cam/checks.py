@@ -126,11 +126,14 @@ def face_points(vertices, triangles, mine, step: float, most: int = 2000, nudge:
     return points
 
 
-def reach(op, faces, holes, mesh, face_of_triangle, tool, stock_top: float, depth_z: float | None) -> list[dict]:
+def reach(op, faces, holes, mesh, face_of_triangle, tool, stock_top: float, depth_z: float | None,
+          walls=None) -> list[dict]:
     """The reach findings of one operation, in setup coordinates (``mesh``: the part's ``(vertices, triangles)``
     there; ``faces``: the :class:`FaceInfo` of each face it names, their normals turned into the setup; ``holes``: the
-    feature reader's hole for each face of a hole, its ``reach`` turned into the setup's words). A drill naming two
-    faces of one hole drills it once, and is judged once."""
+    feature reader's hole for each face of a hole, its ``reach`` turned into the setup's words; ``walls``: for a flat
+    face an inside profile names, the walls it would mean). A drill naming two faces of one hole drills it once, and
+    is judged once. An inside profile runs along walls: a flat face square to the tool gives it nothing to run along
+    (FreeCAD traces its outline's inside, cutting nothing of the part), so it is refused, naming its walls."""
     import numpy as np
 
     found = []
@@ -174,6 +177,15 @@ def reach(op, faces, holes, mesh, face_of_triangle, tool, stock_top: float, dept
                     [where]))
             continue
         normal = info.normal
+        if op.op == "profile" and op.params["side"] == "inside" and normal is not None and abs(normal[2]) > 1 - 1e-6:
+            named = (walls or {}).get(info.ref) or []
+            found.append(finding(
+                "reach", "error", "not_facing",
+                f"{op.where}: an inside profile runs along walls, and {info.ref} is a flat face"
+                + (f"; the walls round it: {', '.join(named)}" if named else ""),
+                "name the walls of the hole, bore, slot or pocket to cut, as cadgen cam features lists them: "
+                "inside a flat face FreeCAD traces its outline and cuts nothing of the part", [where]))
+            continue
         if op.op in ("pocket", "adaptive", "face") and (normal is None or normal[2] < 1 - 1e-6):
             found.append(finding("reach", "error", "not_facing",
                                  f"{op.where}: {info.ref} is not a flat face looking up at the tool in this setup",

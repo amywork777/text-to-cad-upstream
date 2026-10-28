@@ -222,7 +222,7 @@ def _setup_z(frame, point) -> float:
 def _final_depth(op, faces, holes, tool, frame, part_low_z: float, where: str) -> float | None:
     """The depth an operation is cut down to, in setup coordinates (None: FreeCAD's own reading). ``face``: the
     highest face it names. ``profile``: round the part's outline, or the faces it names down to the lowest of them (a
-    blind feature's floor; a flat face's own height ``inside`` it, the part's bottom ``outside`` it), and
+    blind feature's floor; the part's bottom ``outside`` a flat face, whose inside the reach check refuses), and
     ``through_mm`` past the part's bottom where they reach it. ``drill``: each hole's depth. ``pocket`` and
     ``adaptive``: the floors they name. One operation cuts to one depth: faces that would need two are refused."""
     params = op.params
@@ -289,7 +289,7 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
     import numpy as np
 
     from cadgen._internal.cam import checks, freecad as runner, toolpath
-    from cadgen._internal.cam.features import read_features
+    from cadgen._internal.cam.features import read_features, walls_in
     from cadgen._internal.cam.feeds import default_stepdown, for_op
     from cadgen._internal.cam.job import OPERATIONS, POSTS
     from cadgen._internal.cam.outputs import line_segments, write_glb
@@ -328,7 +328,10 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
                             for ref, hole in holes.items()}
             final_z = _final_depth(op, faces, holes, tool, frame, float(part_z.min()), op.where) \
                 if faces or op.op == "profile" else None
-            found = checks.reach(op, turned, turned_holes, mesh, part.face_of_triangle, tool, stock_top, final_z)
+            flat = [info for info in turned if op.op == "profile" and op.params["side"] == "inside"
+                    and info.normal is not None and abs(info.normal[2]) > 1 - 1e-6]
+            found = checks.reach(op, turned, turned_holes, mesh, part.face_of_triangle, tool, stock_top, final_z,
+                                 walls={info.ref: walls_in(part, info.ordinal) for info in flat})
             findings += found
             stepover = op.params.get("stepover")
             feeds = for_op(parsed.material, tool, OPERATIONS[op.op]["feeds"], machine,

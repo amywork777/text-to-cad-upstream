@@ -111,7 +111,7 @@ And each operation's own:
 | --- | --- | --- |
 | `stepdown_mm` | `face`, `profile`, `pocket`, `adaptive` | Depth per pass, at most the flute length (the material's `stepdown_fraction` of the diameter) |
 | `stepover` | `face`, `pocket`, `adaptive` | Width per pass as a fraction of the diameter, up to 1 (0.4; `adaptive` 0.15) |
-| `side` | `profile` | `outside` or `inside` the outline (`outside`). `inside` with a through bore's or a slot's walls in `faces` cuts the bore or slot out, with a tool narrower than it |
+| `side` | `profile` | `outside` or `inside` the outline (`outside`). `inside` with a through bore's or a slot's walls in `faces` cuts the bore or slot out, with a tool narrower than it; `inside` takes walls only, never a flat face |
 | `through_mm` | `profile`, `drill` | How far past the part's bottom (a through hole's exit for `drill`, plus the drill's point) to cut, up to twice the tool's diameter (`profile` 0, `drill` 1). A `profile` of a blind feature stops at its floor |
 | `leave_mm` | `profile`, `pocket`, `adaptive` | Stock to leave on the walls for a finish pass after, up to the tool's diameter (0) |
 | `peck_mm` | `drill` | Peck depth (none: one plunge) |

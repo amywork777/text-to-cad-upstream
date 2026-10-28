@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import unittest
 
-from tests.python.support.cam_fixtures import (BLOCK, BRIDGE, TSLOT, block_step, bridge_step, class_directory, floor_ref,
-                                               mill_job, tslot_step)
+from tests.python.support.cam_fixtures import (BLOCK, BRIDGE, PLATE, TSLOT, block_step, bridge_step, class_directory,
+                                               floor_ref, mill_job, plate_step, tslot_step)
 
 from cadgen._internal.cam import checks
 from cadgen._internal.cam.job import parse_job
@@ -93,6 +93,31 @@ class WallReach(unittest.TestCase):
         found = self.reach(head)
         self.assertEqual(["unreachable"] * 2, [f["type"] for f in found])
         self.assertTrue(all("100% of" in f["summary"] for f in found), found)
+
+
+class FlatInside(unittest.TestCase):
+    """An inside profile runs along walls: a flat face is refused, naming the walls round its inner loops and, for a
+    pocket's floor, round its edge."""
+
+    def test_the_plates_top_and_its_pockets_floor(self):
+        from cadgen._internal.cam.features import walls_in
+        from cadgen._internal.cam.part import read_part
+
+        part = read_part(plate_step(class_directory(type(self))))
+        by_z = {round(info.center_mm[2], 3): info for info in part.faces.values()
+                if info.normal is not None and info.normal[2] > 0.99 and info.area_mm2 > 200}
+        top, floor = by_z[PLATE["size"][2]], by_z[PLATE["pocket"]["floor_z"]]
+        self.assertEqual(4, len(walls_in(part, floor.ordinal)))              # the pocket's four sides
+        self.assertEqual(10, len(walls_in(part, top.ordinal)))               # bore 1, slot 4, pocket 4, hole 1
+        job = parse_job(mill_job([{"op": "profile", "tool": "T1", "side": "inside", "faces": [top.ref]}]))
+        (op,) = job.setups[0].operations
+        (found,) = checks.reach(op, [top], {}, (part.vertices, part.triangles), part.face_of_triangle, job.tools["T1"],
+                                PLATE["size"][2] + 1.0, None, walls={top.ref: walls_in(part, top.ordinal)})
+        self.assertEqual(("error", "not_facing"), (found["severity"], found["type"]))
+        self.assertIn("the walls round it: " + ", ".join(walls_in(part, top.ordinal)), found["summary"])
+        outside = parse_job(mill_job([{"op": "profile", "tool": "T1", "faces": [top.ref]}])).setups[0].operations[0]
+        self.assertEqual([], checks.reach(outside, [top], {}, (part.vertices, part.triangles), part.face_of_triangle,
+                                          job.tools["T1"], PLATE["size"][2] + 1.0, None))
 
 
 class Moves_(unittest.TestCase):

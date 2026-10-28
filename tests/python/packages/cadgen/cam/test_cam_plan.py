@@ -196,7 +196,9 @@ class Plate(unittest.TestCase):
         cls.slot = [f["ref"] for f in features.faces if abs(f["center_mm"][0] - sx) < reach
                     and abs(f["center_mm"][1] - sy) < PLATE["slot"]["width"] and abs(f.get("normal", [0, 0, 0])[2]) < 0.5]
         in_holes = {ref for hole in features.holes for ref in hole["faces"]}
-        cls.pocket = next(f["ref"] for f in features.floors if f["kind"] == "floor" and f["ref"] not in in_holes)
+        floor = next(f for f in features.floors if f["kind"] == "floor" and f["ref"] not in in_holes)
+        cls.pocket, cls.pocket_walls = floor["ref"], floor["pocket"]["walls"]
+        cls.top = next(f["ref"] for f in features.floors if f["kind"] == "top")
         cls.top_z = -1.0                                    # the part's top under the 1 mm margin
         cls.bottom_z = cls.top_z - PLATE["size"][2]
 
@@ -225,9 +227,22 @@ class Plate(unittest.TestCase):
         self.assertAlmostEqual(y + half, float(slot[:, 1].max()), places=2)
         self.assertAlmostEqual(self.bottom_z - 0.5, float(slot[:, 2].min()), places=3)
 
+    def test_an_inside_profile_of_a_flat_face_is_refused_naming_its_walls(self):
+        # Inside the top face, FreeCAD traces the outline through the stock over it and cuts nothing of the part.
+        result = plan(self.step, self.job([{"op": "profile", "tool": "T3", "side": "inside", "faces": [self.top]}]))
+        self.assertEqual("fix", result.verdict["status"])
+        self.assertEqual((), result.posts)
+        (error,) = [f for f in result.findings if f["severity"] == "error"]
+        self.assertEqual(("reach", "not_facing"), (error["check"], error["type"]))
+        self.assertIn("an inside profile runs along walls", error["summary"])
+        for ref in [self.bore["faces"][0], *self.slot, *self.pocket_walls, self.blind["faces"][0]]:
+            self.assertIn(ref, error["summary"])
+        outside = plan(self.step, self.job([{"op": "profile", "tool": "T1", "faces": [self.top], "through_mm": 0.5}]))
+        self.assertEqual("ready", outside.verdict["status"], outside.findings)
+
     def test_an_inside_profile_of_a_blind_pocket_stops_at_its_floor(self):
         result, (moves,) = plan_moves(self.step, self.job([
-            {"op": "profile", "tool": "T3", "side": "inside", "faces": [self.pocket], "through_mm": 0.5}]))
+            {"op": "profile", "tool": "T3", "side": "inside", "faces": self.pocket_walls, "through_mm": 0.5}]))
         self.assertEqual("ready", result.verdict["status"], result.findings)
         floor = self.top_z - (PLATE["size"][2] - PLATE["pocket"]["floor_z"])
         self.assertAlmostEqual(floor, float(cuts(moves, 0)[:, 2].min()), places=3)
