@@ -3,18 +3,18 @@
 A work instruction is the HOW of one build: the steps a technician follows to put
 one specific assembly together, in order, with the values each step needs. An
 engineering drawing states the finished state; a process specification states
-the company's rules for a kind of work (fastening, bonding, curing, layup,
-machining) across every part. A work instruction applies those rules to one
-assembly, so the technician holds exactly the steps for this build and not a
-hundred pages of spec.
+the company's rules for a kind of work (fastening, bonding, curing) across
+every part. A work instruction applies those rules to one assembly, so the
+technician holds exactly the steps for this build and not a hundred pages of
+spec.
 
 Every value a step prints -- a torque, an adhesive's mix ratio and pot life, a
-cure cycle, a ply schedule, a feed and speed -- names where it came from: a
-section of a process spec the user supplied (:class:`Spec`), a callout on the
-assembly drawing (:class:`Drawing`), or something the user said
-(:class:`Stated`). Nothing here has a default value for any of them. A value
-nobody stated prints as a captioned blank, ``NOT STATED``, and the run lists it,
-so a draft says exactly what engineering still owes the floor. A released
+cure cycle -- names where it came from: a section of a process spec the user
+supplied (:class:`Spec`), a callout on the assembly drawing (:class:`Drawing`),
+or something the user said (:class:`Stated`). Nothing here has a default value
+for any of them. A value nobody stated prints as a captioned blank, ``NOT
+STATED``, and the run lists it, so a draft says exactly what engineering still
+owes the floor. A released
 instruction (``status="released"``) refuses to be written with one.
 
 Usage (every document and value here is a placeholder: a real one is copied
@@ -74,7 +74,7 @@ from typing import Any, Callable, Iterable, Iterator, Sequence
 __all__ = [
     "work_instruction", "Instruction", "Step",
     "Spec", "Drawing", "Datasheet", "Stated", "Source", "Cited",
-    "Torque", "Material", "Adhesive", "Layup", "Cure", "Machining",
+    "Torque", "Material", "Adhesive", "Cure",
     "Format", "TORQUE_UNITS", "CAMERAS", "PAGE_SIZES", "STATUSES", "SOURCE_KINDS", "NOTICES",
     "RIGORS", "EMPHASES", "NUMBERINGS", "FRAMES", "Unspecified",
 ]
@@ -89,6 +89,7 @@ FRAMES = ("step", "assembly")
 NOTICES = ("WARNING", "CAUTION", "NOTE")
 STATUSES = ("draft", "released")
 NOT_STATED = "NOT STATED"
+UNNAMED = "(unnamed)"  # a part or subassembly with no label, as the pages name it
 
 
 def _text(name: str, value, *, required: bool = True) -> str | None:
@@ -368,20 +369,6 @@ class Adhesive(_Record):
 
 
 @dataclass(frozen=True)
-class Layup(_Record):
-    """A composite layup: the material and the ply schedule, and debulking where
-    the spec calls for it."""
-
-    name: str
-    _: KW_ONLY
-    plies: str | Cited | None = None
-    debulk: str | Cited | None = None
-    per: Source | None = None
-    REQUIRED = ("plies",)
-    OPTIONAL = ("debulk",)
-
-
-@dataclass(frozen=True)
 class Cure(_Record):
     """A cure cycle: ramp, hold, pressure and cool-down as the spec states them."""
 
@@ -390,22 +377,6 @@ class Cure(_Record):
     cycle: str | Cited | None = None
     per: Source | None = None
     REQUIRED = ("cycle",)
-
-
-@dataclass(frozen=True)
-class Machining(_Record):
-    """A machining operation's cutting data: tool, speed and feed, with coolant
-    where the spec states it."""
-
-    name: str
-    _: KW_ONLY
-    tool: str | Cited | None = None
-    speed: str | Cited | None = None
-    feed: str | Cited | None = None
-    coolant: str | Cited | None = None
-    per: Source | None = None
-    REQUIRED = ("tool", "speed", "feed")
-    OPTIONAL = ("coolant",)
 
 
 # --- the layout --------------------------------------------------------------
@@ -512,9 +483,7 @@ def _layout(rigor: str, house: Format | None) -> Layout:
 RECORDS = {
     "fasten": ("Actual torque",),
     "bond": ("Prepared at", "Adhesive lot", "Expiry", "Mixed at", "Mated at"),
-    "layup": ("Material lot", "Out-time"),
     "cure": ("Oven / autoclave ID", "Start", "End", "Chart no."),
-    "machine": ("Machine ID",),
 }
 # Equipment a kind of operation implies, for the front pages' equipment list: a torque
 # wrench only where a torque is stated.
@@ -654,7 +623,7 @@ class Step:
             raise TypeError(f"{kind}() takes a {cls.__name__}(...) or None, got {type(record).__name__}")
         lines = [_Line(label, record.name, record.per)]
         lines += [_Line(caption.capitalize(), value, source) for caption, value, source in record.fields()]
-        if kind in ("bond", "layup"):  # a consumable the kit list carries; a cure or a cut is not
+        if kind == "bond":  # a consumable the kit list carries; a cure is not
             self._instruction._use(record)
         return self._add(_Op(kind, lines, missing=record.missing(), surfaces=self._faces(surfaces)))
 
@@ -663,14 +632,9 @@ class Step:
         on the step's picture; ``None`` for the adhesive prints NOT STATED."""
         return self._record("bond", adhesive, Adhesive, "Adhesive", surfaces)
 
-    def layup(self, layup: Layup | None) -> "Step":
-        return self._record("layup", layup, Layup, "Material")
-
     def cure(self, cure: Cure | None) -> "Step":
+        """A cure cycle; ``None`` prints NOT STATED."""
         return self._record("cure", cure, Cure, "Cure")
-
-    def machine(self, machining: Machining | None, *, surfaces: Iterable[str] = ()) -> "Step":
-        return self._record("machine", machining, Machining, "Operation", surfaces)
 
     def apply(self, material: Material, *, surfaces: Iterable[str] = ()) -> "Step":
         """Apply a consumable (sealant, primer, threadlocker) with no record of its own."""
@@ -936,7 +900,7 @@ class Instruction:
                 raise KeyError(f"{key!r} names no one part or subassembly of {self.source_name} ({exc}); "
                                f"its parts are: {listing}{more}. wi.tree() lists the subassemblies too.") from None
         parts = [part.ref for unit in named for part in self.scene.parts_under(unit)]
-        return [(unit.ref, unit.label or "(unnamed)") for unit in named], parts
+        return [(unit.ref, unit.label or UNNAMED) for unit in named], parts
 
     def tree(self) -> str:
         """The assembly's occurrences, indented: every ref and name ``install=`` takes,
@@ -1065,29 +1029,10 @@ def work_instruction(func: Callable[..., Any] | None = None, *, out: str | Path 
 
         @functools.wraps(fn)
         def run(*args: Any, **kwargs: Any) -> list[Path]:
+            # A refused or failed run writes nothing at out=, and an earlier instruction there
+            # stays byte for byte (law 17): the PDF is written whole beside it, then moved in.
             target = target_spec if target_spec.is_absolute() else (script.parent / target_spec).resolve()
-            try:
-                written = write(target, fn(*args, **kwargs))
-            except BaseException as error:
-                # A refused or failed run writes nothing at out=, and an earlier instruction there
-                # stays byte for byte (law 17): the PDF is written whole beside it, then moved in.
-                try:
-                    from cadgen import analytics
-
-                    if isinstance(error, Exception):  # a mistake in cadgen's own code, never the author's
-                        analytics.report(error, "build", bugs_only=True)
-                except Exception:  # noqa: BLE001 - a crash report never adds a failure to one
-                    pass
-                raise
-            try:
-                from cadgen import analytics
-
-                # Made in the script's own process, which sends nothing itself: kept with a
-                # command's counts, as a drawing is (``eng_drawing._counted``).
-                analytics.hand_over({"features": ["work_instruction"]})
-            except Exception:  # noqa: BLE001 - a count never fails the instruction it counts
-                pass
-            return written
+            return write(target, fn(*args, **kwargs))
 
         def write(target: Path, wi: Any) -> list[Path]:
             if not isinstance(wi, Instruction):
@@ -1108,7 +1053,8 @@ def work_instruction(func: Callable[..., Any] | None = None, *, out: str | Path 
             print(f"wrote {target} ({pages} page{'s' if pages != 1 else ''})")
             return [target]
 
-        run.__cadgen_work_instruction__ = True  # type: ignore[attr-defined]
-        return run
+        from cadgen.eng_drawing import _counted
+
+        return _counted(run, "work_instruction")  # counted as a drawing is
 
     return apply(func) if func is not None else apply

@@ -1,6 +1,6 @@
 ---
 name: work-instructions
-description: Write the work instructions a technician follows to build one specific assembly, as a PDF - front pages (documents, parts, materials, equipment, approvals) and a procedure table of one-action steps, each with its torque, bonding, layup, cure or machining values cited to the user's process specs and a figure of the assembly at that step. Use when the user asks for work instructions, assembly instructions, a build procedure, a traveler or operation sheet, or how a technician puts an assembly together.
+description: Write the work instructions a technician follows to build one specific assembly, as a PDF - front pages (documents, parts, materials, equipment, approvals) and a procedure table of one-action steps, each with its torque, bonding or cure values cited to the user's process specs and a figure of the assembly at that step. Use when the user asks for work instructions, assembly instructions, a build procedure, a traveler or operation sheet, or how a technician puts an assembly together.
 license: MIT
 ---
 
@@ -11,16 +11,15 @@ Use the installed local skill files as the runtime source of truth.
 
 A work instruction is the HOW of one build. `$engineering-drawing` documents
 the finished state; a process spec states the company's rules for a kind of
-work (fastening, bonding, curing, layup, machining) across every part it makes.
+work (fastening, bonding, curing) across every part it makes.
 The work instruction applies those rules to ONE assembly, so the technician
 holds exactly the steps for this build instead of a hundred pages of spec.
 `cadgen.work_instruction` reads the assembly's document, checks every step
 against it, and writes one PDF. There is no CLI: the script is the interface.
 
-**Never invent a torque, adhesive, prep, mix ratio, pot life, cure schedule,
-ply schedule, feed or speed.** Each comes from a process spec the user
-supplied, a callout on the assembly drawing, a manufacturer's data sheet the
-spec defers to, or the user's own words, and the code refuses a value that
+**Never invent a torque, adhesive, prep, mix ratio, pot life or cure
+schedule.** Each comes from a process spec the user supplied, a callout on the
+assembly drawing, a manufacturer's data sheet the spec defers to, or the user's own words, and the code refuses a value that
 does not say which (`per=`). A value nobody has stated is left out: it prints
 as a hatched NOT STATED box and the run lists it as an open item. Ask the user
 for it, or leave it visibly blank. General knowledge ("that adhesive usually
@@ -58,9 +57,8 @@ outside the sandbox once.
      (aerospace, medical, anything audited: production plus a QA column,
      inspections as hold points, and a cited criterion for every inspection).
    - **Emphasis:** `visual` (mostly build order: a figure per step) or
-     `process` (bonding, curing, layup, machining: text-led steps, no figure
-     column, and a table of which steps apply which section of which
-     document).
+     `process` (bonding, curing: text-led steps, no figure column, and a
+     table of which steps apply which section of which document).
    - **Their format:** ask whether they have a template or an example work
      instruction from their company. If they do, read it and write a `Format`
      with only what it shows: what the document calls itself, the company,
@@ -80,7 +78,8 @@ outside the sandbox once.
    (`bracket`, `pin.2`, `arm/pin`: the refs `cadgen inspect` and the viewer
    use); those, and a part's label, are what a step installs. Install a subassembly
    the model builds as one piece (a coilover, a wheel) by its ref or name: it
-   is one line in the parts list, not its modelling fragments.
+   is one line in the parts list, not its modelling fragments. Copies of one
+   part share a line only when they share a label (`pin`, not `pin_1`, `pin_2`).
 3. **Get the documents.** Ask for the assembly drawing (number, revision, and
    the callouts that state assembly requirements: torques, threadlocker,
    bonding, work done at assembly) and for the process specs that govern the
@@ -126,7 +125,7 @@ outside the sandbox once.
 7. **Read the PDF.** Check each figure shows what its step does (the parts the
    step installs are filled blue over line art; a surface it names is
    purple). Each figure is framed on its step's parts (`frame="assembly"` shows
-   the whole assembly instead); a bond line or machined face hidden from the
+   the whole assembly instead); a bond line or mating face hidden from the
    default camera needs that step's own `camera=`, or mark it in the step
    that prepares it, before what covers it goes on. Check the order reads as
    the user gave it.
@@ -149,7 +148,7 @@ there, and a `Format` renames or replaces what the user's own template shows:
   blanks from `production` up); scope; applicable documents with their
   revisions; for a `process` emphasis, which steps apply which section of
   which document; safety ("None stated." when nothing is); the parts, at the
-  level the steps install them, copies of one part on one line with their
+  level the steps install them, parts of one label on one line with their
   quantity, in build order; materials (with lot and expiry blanks from `production`
   up); equipment (a torque wrench, an oven, the user's fixtures; with ID and
   calibration-due blanks from `production` up); the operations overview;
@@ -196,5 +195,5 @@ The script raises rather than writing a wrong document:
   revisions were used.
 - Hardware that is not modelled (screws, nuts, washers) is text in
   `fasten()`; only parts in the assembly are drawn.
-- The figures show the assembly at rest from one camera; they do not show
-  tooling, fixtures or hand positions.
+- The figures show the assembly at rest, from the instruction's camera or a
+  step's own; they do not show tooling, fixtures or hand positions.

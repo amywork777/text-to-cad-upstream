@@ -113,11 +113,10 @@ def _page_texts(wi) -> list[list[str]]:
 
 class SourceTests(unittest.TestCase):
     def test_every_process_value_names_where_it_comes_from(self) -> None:
-        from cadgen.work_instruction import Adhesive, Cure, Machining, Material, Torque
+        from cadgen.work_instruction import Adhesive, Cure, Material, Torque
 
         for make in (lambda: Torque(20, 25, unit="in-lbf"), lambda: Adhesive("EA 9394", mix="100:17"),
-                     lambda: Cure("cure", cycle="1 h at 150 F"), lambda: Machining("drill", tool="#21"),
-                     lambda: Material("Loctite 242")):
+                     lambda: Cure("cure", cycle="1 h at 150 F"), lambda: Material("Loctite 242")):
             with self.subTest(make=make), self.assertRaisesRegex(TypeError, r"Spec\(\.\.\.\)\.at"):
                 make()
 
@@ -463,6 +462,53 @@ class WhatTheTestsFoundTests(_Assembly):
         text = [t for page in _page_texts(wi) for t in page]
         self.assertEqual(text.count("per PS-2001 Rev D \u00a75.1"), 1, "one citation for the record's five lines")
 
+    def test_each_operation_prints_its_own_citation(self) -> None:
+        """A value cited to the section the operation before it cited still prints its citation."""
+        from cadgen.work_instruction import Torque
+
+        spec, _ = _sources()
+        wi = self.instruction()
+        (wi.step("Bolt", install=["base_plate"])
+           .instruct("Clean the threads", per=spec.at("3.1"))
+           .fasten("M8 bolt", qty=1, torque=Torque(40, unit="N-m", per=spec.at("3.1"))))
+        text = [t for page in _page_texts(wi) for t in page]
+        self.assertEqual(text.count("per PS-2001 Rev D \u00a73.1"), 2, "the instruction's, and the torque's")
+
+    def test_apply_prints_the_material_and_lists_it_with_the_materials(self) -> None:
+        from cadgen.work_instruction import Material
+
+        spec, _ = _sources()
+        sealant = Material("PR-1422 sealant", per=spec.at("6.2"), note="Fillet seal all edges")
+        wi = self.instruction()
+        wi.step("Seal", install=["base_plate"]).apply(sealant)
+        self.assertEqual(wi.materials, [sealant])
+        text = [t for page in _page_texts(wi) for t in page]
+        for present in ("MATERIALS", "Apply: PR-1422 sealant", "How: Fillet seal all edges", "per PS-2001 Rev D \u00a76.2"):
+            self.assertIn(present, text, present)
+        with self.assertRaisesRegex(TypeError, "apply\\(\\) takes a Material"):
+            wi.steps[0].apply("PR-1422")
+
+    def test_a_warning_and_a_note_are_boxed_above_their_step(self) -> None:
+        spec, _ = _sources()
+        wi = self.instruction()
+        (wi.step("Lift the plate", install=["base_plate"])
+           .warning("Two-person lift", per=spec.at("1.2"))
+           .note("Datum A down"))
+        text = [t for page in _page_texts(wi) for t in page]
+        order = [text.index(t) for t in ("WARNING", "Two-person lift", "per PS-2001 Rev D \u00a71.2", "NOTE",
+                                         "Datum A down", "Lift the plate")]
+        self.assertEqual(order, sorted(order), "each notice, then the step it governs")
+
+    def test_an_a4_instruction_is_laid_out_on_a4(self) -> None:
+        from cadgen._internal.work_instruction_pages import layout
+
+        for size, mm in (("A4", (210.0, 297.0)), ("LETTER", (215.9, 279.4))):
+            with self.subTest(size=size):
+                wi = self.instruction(size=size)
+                wi.step("Load", install=["base_plate"])
+                flow = layout(wi, wi.open_items(), {})
+                self.assertEqual((flow.w, flow.h), mm)
+
     def test_a_house_format_renames_the_instruction_column_and_drops_figures(self) -> None:
         from cadgen.work_instruction import Format
 
@@ -527,7 +573,8 @@ class SubassemblyTests(unittest.TestCase):
         wi.step("Pin 1", install=["pin_1"])
         wi.step("Pin 2", install=["pin_2"])
         rows = [(name, len(refs), steps) for name, refs, steps in parts(wi)]
-        self.assertEqual(rows, [("base_plate", 1, ["1"]), ("wheel", 1, ["2"]), ("pin", 2, ["3", "4"])])
+        self.assertEqual(rows, [("base_plate", 1, ["1"]), ("wheel", 1, ["2"]), ("pin_1", 1, ["3"]),
+                                ("pin_2", 1, ["4"])], "a number in a name is the name's, not a copy count")
 
     def test_a_subassembly_is_installed_by_its_ref_or_its_label(self) -> None:
         from cadgen.work_instruction import Instruction
@@ -544,6 +591,39 @@ class SubassemblyTests(unittest.TestCase):
         alone = Instruction(self.document, title="T", number="N", revision="A", pictures=False)
         self.assertEqual(alone.step("Wheel", install=["wheel"]).units, (("wheel", "wheel"),),
                          "one subassembly of a label is installed by it")
+
+
+class PartNameTests(unittest.TestCase):
+    """The parts list groups only parts of one label: a number in a name is never read as a copy's."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from build123d import Box, Compound, Pos
+        from cadgen import model
+
+        parts = []
+        for n, label in enumerate(("base_plate", "bearing_6202", "bearing_6204", "spacer_10", "spacer_12",
+                                   "washer", "washer")):
+            part = Pos(n * 20, 0, 0) * Box(10, 10, 10)
+            part.label = label
+            parts.append(part)
+        cls.document = model(Compound(children=parts, label="shaft"), name="shaft")
+
+    def test_parts_of_different_names_are_never_one_line(self) -> None:
+        from cadgen._internal.work_instruction_pages import _group, parts
+        from cadgen.work_instruction import Instruction
+
+        wi = Instruction(self.document, title="T", number="N", revision="A", pictures=False)
+        wi.step("Base", install=["base_plate"])
+        bearings = wi.step("Bearings", install=["bearing_6202", "bearing_6204"])
+        wi.step("Spacers", install=["spacer_10", "spacer_12"])
+        wi.step("Washers", install=["washer"])
+        rows = [(name, len(refs)) for name, refs, _steps in parts(wi)]
+        self.assertEqual(rows, [("base_plate", 1), ("bearing_6202", 1), ("bearing_6204", 1), ("spacer_10", 1),
+                                ("spacer_12", 1), ("washer", 2)])
+        self.assertEqual(_group(bearings.units), [("bearing_6202", ["bearing_6202"]),
+                                                  ("bearing_6204", ["bearing_6204"])], "and two on the step")
+        self.assertEqual(_group(wi.steps[-1].units), [("washer", ["shaft/washer.1", "shaft/washer.2"])])
 
 
 class FileTests(unittest.TestCase):
@@ -612,6 +692,57 @@ class PictureTests(_Assembly):
         self.assertEqual((plan[3].tint, plan[3].surfaces), (("bracket",), ("bracket/face 5",)))
         self.assertEqual((plan[4].hide, plan[4].camera), ((), "top"))
         self.assertEqual(plan[3].focus, ("bracket",), "a figure is framed on the parts its step installs")
+
+    def test_each_picture_is_one_hidden_line_job_with_the_step_s_parts_tinted(self) -> None:
+        """The fill is the snapshot's own (``display.tint``), so it is exactly where the parts show;
+        ``frame="assembly"`` places the camera on the whole assembly, ``frame="step"`` on the step's parts."""
+        from cadgen._internal.work_instruction_pages import FILL, _extent, picture_jobs
+
+        wi = self.instruction(pictures=True)
+        wi.step("Load", install=["base_plate"])
+        wi.step("Bracket", install=["bracket"], frame="assembly")
+        wi.step("Pins", install=["pin"])
+        jobs = picture_jobs(wi, self.root)
+        self.assertEqual(jobs[2]["display"], {"mode": "hidden-line", "hidden": ["assembly/pin.1", "assembly/pin.2"],
+                                              "tint": {"parts": ["bracket"], "color": FILL}})
+        self.assertEqual(jobs[3]["display"], {"mode": "hidden-line",
+                                              "tint": {"parts": ["assembly/pin.1", "assembly/pin.2"], "color": FILL}})
+        self.assertEqual(jobs[1]["outputs"][0]["path"], str(self.root / "step-1.png"))
+        centre, diagonal = _extent(wi)
+        whole, pins = jobs[2]["camera"], jobs[3]["camera"]
+        self.assertEqual((whole["target"], whole["orthographicHalfHeight"]), (centre, round(0.5 * diagonal, 4)),
+                         "the whole assembly")
+        self.assertEqual(pins["target"], [0.0, 0.0, 50.0], "the pins' centre")
+        self.assertLess(pins["orthographicHalfHeight"], whole["orthographicHalfHeight"])
+
+    def test_a_part_s_fill_shows_where_its_face_lines_up_with_an_earlier_part_s(self) -> None:
+        """A shim on a plate: its top face is parallel to the plate's and lit alike, and is filled."""
+        import numpy as np
+        from build123d import Box, Compound, Pos
+        from cadgen import model
+        from cadgen._internal.work_instruction_pages import FILL, render_pictures
+        from cadgen.engine.render import context
+        from cadgen.work_instruction import Instruction
+        from PIL import Image
+
+        opengl.require(context.available(), "the pictures are drawn by OCCT")
+        base = Box(100, 60, 10)
+        base.label = "base_plate"
+        shim = Pos(0, 0, 6) * Box(40, 40, 2)
+        shim.label = "shim"
+        document = model(Compound(children=[base, shim], label="stack"), name="stack")
+        wi = Instruction(document, title="T", number="N", revision="A")
+        wi.step("Base", install=["base_plate"])
+        wi.step("Shim", install=["shim"], frame="assembly")
+        folder = self.root / "shim"
+        folder.mkdir()
+        picture = np.asarray(Image.open(render_pictures(wi, folder)[2]).convert("RGB"), int)
+        fill = np.array([int(FILL[at:at + 2], 16) for at in (1, 3, 5)])
+        h, w, _ = picture.shape
+        top = picture[h // 2 - 10:h // 2 + 10, w // 2 - 10:w // 2 + 10]  # the middle of the shim's top face
+        self.assertLessEqual(int(np.abs(top - fill).max()), 2, "the shim's top face is filled, flat")
+        self.assertEqual(sorted(path.name for path in folder.iterdir()), ["step-1.png", "step-2.png"],
+                         "one picture a step")
 
     def test_a_surface_on_a_part_not_yet_installed_is_refused(self) -> None:
         from cadgen._internal.work_instruction_pages import picture_plan

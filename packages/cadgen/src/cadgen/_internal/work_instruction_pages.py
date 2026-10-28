@@ -18,27 +18,26 @@ The pictures are one snapshot job, drawn by the engine: for each step the
 assembly as it stands after the step, as hidden-line art -- black edges on
 faces of the page's colour, so the one colour on the page means what the
 legend says. Parts a later step installs are hidden. The parts the step
-installs are filled: the step is drawn twice more, solid, with and without
-them, and the pixels the two differ in are where those parts show, in front of
-whatever they stand behind. The surfaces the step names (a bond line, a
-machined face) are outlined in a second colour. Every picture shares one
-camera fitted to the whole assembly and placed exactly (no fit per picture),
-so a part sits in the same place on every page.
+installs are filled: the snapshot draws them in one flat colour
+(``display.tint``), so a fill is exactly where those parts show. The surfaces
+the step names (a bond line, a mating face) are outlined in a second colour.
+Each picture's camera looks from the instruction's direction (or its step's
+own) and is placed exactly, not fitted to what is visible: on the step's parts
+(``frame="step"``, the default), so the view moves from step to step, or on the
+whole assembly (``frame="assembly"``), the same camera on every such picture.
 """
 
 from __future__ import annotations
 
-import json
 import math
-import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from cadgen.work_instruction import Source
+from cadgen.work_instruction import UNNAMED, Source
 
-NEW_PART = "#1f6feb"
+FILL = "#79a9f3"  # the parts a step installs: a light blue the black edges read over
 SURFACE = "#8250df"
 PICTURE_PX = (800, 600)
 PAGE_MM = {"A4": (210.0, 297.0), "LETTER": (215.9, 279.4)}
@@ -135,74 +134,45 @@ def _camera(preset: str, target: list[float], half: float, diagonal: float) -> d
     return {"position": position, "target": target, "up": list(up), "orthographicHalfHeight": round(half, 4)}
 
 
-def render_pictures(wi, folder: Path) -> dict[int, Path]:
-    """Render every step's picture in one snapshot job; {step number: PNG}."""
-    plan = picture_plan(wi)
-    if not plan:
-        return {}
-    import cadgen
-
+def picture_jobs(wi, folder: Path) -> dict[int, dict]:
+    """Each step's picture as a snapshot job: {step number: job}. Its view is hidden-line, the
+    parts the step installs filled (``display.tint``: flat, in front of whatever they stand
+    behind, behind whatever stands in front of them), later parts hidden, the surfaces it names
+    outlined."""
     leaves = {leaf.ref: leaf for leaf in wi.leaves()}
     centre, diagonal = _extent(wi)
     tolerance = max(diagonal * 0.002, 0.01)
-    jobs, layers = [], {}
-    for picture in plan:
+    jobs = {}
+    for picture in picture_plan(wi):
         target, half = centre, 0.5 * diagonal
         if picture.frame == "step" and picture.focus:
             target, half = _fit_step(leaves, picture, diagonal)
-        camera = _camera(picture.camera, target, half, diagonal)
+        display: dict = {"mode": "hidden-line"}
+        if picture.hide:
+            display["hidden"] = list(picture.hide)
+        if picture.tint:
+            display["tint"] = {"parts": list(picture.tint), "color": FILL}
+        job = {"input": wi.source, "camera": _camera(picture.camera, target, half, diagonal), "display": display,
+               "output": {"tightFrame": False, "transparent": True},
+               "outputs": [{"path": str(folder / f"step-{picture.step}.png"), "width": PICTURE_PX[0],
+                            "height": PICTURE_PX[1]}]}
         marks = [_outline(f"step{picture.step}-{ref}", wi.scene.face_shape(ref), SURFACE, tolerance)
                  for ref in picture.surfaces]
-        earlier = tuple(ref for ref in leaves if ref not in picture.hide and ref not in picture.tint)
-        paths = {name: folder / f"step-{picture.step}-{name}.png" for name in ("lines", "with", "without")}
-        views = [("lines", "hidden-line", picture.hide)]
-        if picture.tint:
-            views.append(("with", "solid", picture.hide))
-        if picture.tint and earlier:  # the first parts in stand on nothing: every pixel drawn is theirs
-            views.append(("without", "solid", picture.hide + picture.tint))
-        for name, mode, hidden in views:
-            job = {"input": wi.source, "camera": camera, "display": {"mode": mode},
-                   "output": {"tightFrame": False, "transparent": True},
-                   "outputs": [{"path": str(paths[name]), "width": PICTURE_PX[0], "height": PICTURE_PX[1]}]}
-            if hidden:
-                job["selection"] = {"hide": list(hidden)}
-            if marks and name == "lines":
-                job["annotation"] = {"units": "mm", "marks": marks}
-            jobs.append(job)
-        layers[picture.step] = {name: paths[name] if any(view[0] == name for view in views) else None
-                                for name in paths}
-    cadgen.snapshot(job={"jobs": jobs}, progress=False)
-    out = {}
-    for step, paths in layers.items():
-        out[step] = folder / f"step-{step}.png"
-        _tint(paths["lines"], paths["with"], paths["without"], out[step])
-    return out
+        if marks:
+            job["annotation"] = {"units": "mm", "marks": marks}
+        jobs[picture.step] = job
+    return jobs
 
 
-def _tint(lines: Path, with_parts: Path | None, without: Path | None, out: Path) -> None:
-    """The line art with the step's parts filled: where the solid picture with them differs from
-    the one without them (or, with nothing before them, wherever it drew anything). A step that
-    installs nothing is its line art."""
-    import numpy as np
-    from PIL import Image
+def render_pictures(wi, folder: Path) -> dict[int, Path]:
+    """Render every step's picture in one snapshot job; {step number: PNG}."""
+    jobs = picture_jobs(wi, folder)
+    if not jobs:
+        return {}
+    import cadgen
 
-    if with_parts is None:
-        lines.replace(out)
-        return
-    art = np.asarray(Image.open(lines).convert("RGBA"), float)
-    shown = np.asarray(Image.open(with_parts).convert("RGBA"), float)
-    if without is None:
-        mask = shown[..., 3] > 0
-    else:
-        before = np.asarray(Image.open(without).convert("RGBA"), float)
-        mask = np.abs(shown - before).max(axis=-1) > 12
-    fill = np.array([int(NEW_PART[at:at + 2], 16) for at in (1, 3, 5)], float)
-    ink = np.array([int(SURFACE[at:at + 2], 16) for at in (1, 3, 5)], float)
-    mask &= np.abs(art[..., :3] - ink).max(axis=-1) > 48  # a marked surface's outline stays its colour, on top
-    share = 0.6 * mask[..., None]
-    art[..., :3] = art[..., :3] * (1 - share) + fill * share
-    art[..., 3] = np.maximum(art[..., 3], mask * 255.0)
-    Image.fromarray(art.round().astype(np.uint8), "RGBA").save(out)
+    cadgen.snapshot(job={"jobs": list(jobs.values())}, progress=False)
+    return {step: Path(job["outputs"][0]["path"]) for step, job in jobs.items()}
 
 
 # --- layout ------------------------------------------------------------------
@@ -471,23 +441,18 @@ def _section(flow: _Flow, title: str, *, keep: float = 18.0) -> None:
     flow.rule()
 
 
-_NUMBERED = re.compile(r"(?:_\d+)+$")
-
-
-def _kind(name: str) -> str:
-    """A part's name without the copy number its model gave it: ``planet_pin_2`` is a
-    ``planet_pin``. Only for grouping lines on the page; every ref is still listed."""
-    return _NUMBERED.sub("", name) or name
+def _same(ref: str, name: str) -> tuple[str, str]:
+    """What groups a unit with others: its name, only ever identical (``bearing_6202`` and
+    ``bearing_6204`` are two parts, never a guess at one); a part with no name stands alone."""
+    return (name, "") if name != UNNAMED else (name, ref)
 
 
 def _group(units) -> list[tuple[str, list[str]]]:
-    """(name, refs) for units of one kind, in first-seen order: a kind with one
-    unit keeps that unit's own name."""
-    groups: dict[str, list[tuple[str, str]]] = {}
+    """(name, refs) for units that carry one name, in first-seen order."""
+    groups: dict[tuple[str, str], list[str]] = {}
     for ref, name in units:
-        groups.setdefault(_kind(name), []).append((ref, name))
-    return [(kind if len(members) > 1 else members[0][1], [ref for ref, _name in members])
-            for kind, members in groups.items()]
+        groups.setdefault(_same(ref, name), []).append(ref)
+    return [(name, refs) for (name, _ref), refs in groups.items()]
 
 
 def _refs(refs: list[str]) -> str:
@@ -496,21 +461,19 @@ def _refs(refs: list[str]) -> str:
 
 def parts(wi) -> list[tuple[str, list[str], list[str]]]:
     """The parts list at the level the steps install them, in build order: (name,
-    refs, step labels). A subassembly a step installs whole is one line, parts of
-    one kind are one line with their quantity, and parts no step installs come last."""
-    members: dict[str, list[tuple[str, str, str | None]]] = {}  # kind -> (ref, name, step label)
+    refs, step labels). A subassembly a step installs whole is one line, parts that
+    carry one name are one line with their quantity, and parts no step installs come last."""
+    members: dict[tuple[str, str], list[tuple[str, str | None]]] = {}  # _same -> (ref, step label)
     for step in wi.steps:
         for ref, name in step.units:
-            members.setdefault(_kind(name), []).append((ref, name, step.label))
+            members.setdefault(_same(ref, name), []).append((ref, step.label))
     for leaf in wi.leaves():
         if leaf.ref not in wi._installed:
-            name = leaf.label or "(unnamed)"
-            members.setdefault(_kind(name), []).append((leaf.ref, name, None))
-    rows = []
-    for kind, found in members.items():
-        labels = list(dict.fromkeys(label for _ref, _name, label in found if label is not None))
-        rows.append((kind if len(found) > 1 else found[0][1], [ref for ref, _name, _label in found], labels))
-    return rows
+            name = leaf.label or UNNAMED
+            members.setdefault(_same(leaf.ref, name), []).append((leaf.ref, None))
+    return [(name, [ref for ref, _label in found],
+             list(dict.fromkeys(label for _ref, label in found if label is not None)))
+            for (name, _ref), found in members.items()]
 
 
 def _front(flow: _Flow, wi, open_items: list[str]) -> None:
@@ -649,9 +612,9 @@ def _instruction(flow: _Flow, wi, step, width: float) -> _Cell:
         cell.text("Install: " + ", ".join(
             f"{name} ×{len(refs)} ({_refs(refs)})" if len(refs) > 1 else f"{name} ({refs[0]})"
             for name, refs in _group(step.units)), SMALL, color="#333333")
-    names = {leaf.ref: leaf.label or "(unnamed)" for leaf in wi.leaves()}
-    shown: Source | None = None  # a citation is printed once for the lines it covers
+    names = {leaf.ref: leaf.label or UNNAMED for leaf in wi.leaves()}
     for op in step.ops:
+        shown: Source | None = None  # a citation prints once for the lines of one operation it covers
         cell.gap(0.8)
         if op.surfaces:
             cell.text("Surfaces: " + ", ".join(f"{names.get(owner, owner)} ({ref})" for ref, owner in op.surfaces),
@@ -813,44 +776,15 @@ def draw_page(ax, flow: _Flow, index: int, open_count: int) -> None:
 
 
 def write_pdf(wi, path: Path, *, open_items: list[str]) -> int:
-    """Lay out and write the instruction; returns the page count."""
-    try:
-        import matplotlib
+    """Lay out and write the instruction, whole or not at all (``pdf_pages``); returns the page count."""
+    from cadgen._internal.pdf_pages import matplotlib_pdf, write_pages
 
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from matplotlib.backends.backend_pdf import PdfPages
-    except ImportError as exc:
-        raise RuntimeError(
-            f"@work_instruction writes a PDF and its renderer is missing: {exc}. "
-            "Install cadgen's dependencies (pip install matplotlib pillow)."
-        ) from exc
-    from cadgen._internal.atomic_replace import temp_suffix
-
+    matplotlib_pdf("@work_instruction")  # a missing renderer is refused before any picture is drawn
     picture_plan(wi)  # refuses a mark on a part not yet installed, before any render
     with tempfile.TemporaryDirectory(prefix="cadgen-wi-") as folder:
         pictures = render_pictures(wi, Path(folder)) if wi.pictures else {}
         flow = layout(wi, open_items, pictures)
-
-        path.parent.mkdir(parents=True, exist_ok=True)
-        partial = path.with_name(f".{path.name}{temp_suffix()}")
         count = len(flow.pages)
-        try:
-            with PdfPages(partial, metadata={"CreationDate": None}) as pdf:
-                for index in range(1, count + 1):
-                    fig = plt.figure(figsize=(flow.w / 25.4, flow.h / 25.4))
-                    ax = fig.add_axes([0, 0, 1, 1])
-                    ax.set_xlim(0, flow.w)
-                    ax.set_ylim(0, flow.h)
-                    ax.set_aspect("equal")
-                    ax.axis("off")
-                    draw_page(ax, flow, index, len(open_items))
-                    ax.set_xlim(0, flow.w)
-                    ax.set_ylim(0, flow.h)
-                    pdf.savefig(fig)
-                    plt.close(fig)
-            partial.replace(path)
-        finally:
-            partial.unlink(missing_ok=True)
+        write_pages(path, [(flow.w, flow.h, lambda ax, index=index: draw_page(ax, flow, index, len(open_items)))
+                           for index in range(1, count + 1)], decorator="@work_instruction")
     return count
-

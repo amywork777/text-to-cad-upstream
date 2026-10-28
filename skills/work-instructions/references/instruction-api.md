@@ -3,7 +3,7 @@
 ```python
 from cadgen.work_instruction import (
     work_instruction, Instruction, Format, Spec, Drawing, Datasheet, Stated,
-    Cited, Unspecified, Torque, Material, Adhesive, Layup, Cure, Machining,
+    Cited, Unspecified, Torque, Material, Adhesive, Cure,
 )
 ```
 
@@ -116,7 +116,9 @@ across operations.
 the next step and returns it. One step is one action. `install` names the
 parts the step puts in place: a label (every part carrying it), or a
 subassembly's label or ref (`wheel`, `cart/wheel.2`), which installs it as ONE unit
-(one line in the parts list) and every part under it in the figure. A part is
+(one line in the parts list) and every part under it in the figure. The parts
+list puts parts on one line only when they carry the same label: give copies
+of one part one label (`pin`), not numbered names (`pin_1`, `pin_2`). A part is
 installed by one step only. `frame="step"` fits the figure to the parts the
 step installs with room around them; `frame="assembly"` fits the whole
 assembly. A step that installs nothing (a cure, an inspection) still has a
@@ -169,17 +171,14 @@ Each returns the step, so they chain, and prints in the order called.
 | `not_stated(what)` | `what` with NOT STATED: something the step needs that nobody has stated; an open item | |
 | `fasten(hardware, *, qty=None, torque=None, locking=None, sequence=None, surfaces=())` | hardware, torque (NOT STATED when `None`; as said for an `Unspecified`), threadlocker, sequence (text, or `Cited`) | actual torque, one per fastener up to 8 |
 | `bond(adhesive, *, surfaces=())` | adhesive, prep, mix, pot life, cure, the surfaces named | prepared at, adhesive lot, expiry, mixed at, mated at |
-| `layup(layup)` | material, ply schedule, debulk | material lot, out-time |
 | `cure(cure)` | the cycle | oven or autoclave ID, start, end, chart no. |
-| `machine(machining, *, surfaces=())` | operation, tool, speed, feed, coolant | machine ID |
 | `apply(material, *, surfaces=())` | a sealant, primer or other consumable and how it goes on | |
 | `inspect(text, *, per=None, record=None)` | an inspection; when `controlled`, a hold point whose criterion with no `per` prints NOT STATED and is an open item | the measured value `record` names |
 | `warning(text, *, per=None)`, `caution(...)`, `note(...)` | a box above the step, in the user's words or a document's (cited) | |
 
-`bond`, `layup`, `cure` and `machine` take `None` for a record nobody has
-stated yet; it prints NOT STATED. `surfaces` (on `bond`, `machine`, `apply` and
-`fasten`, where it marks the faces hardware the model does not carry goes
-into) are face refs (`bracket/face 3`, or the `bracket/f:...` ref the viewer
+`bond` and `cure` take `None` for a record nobody has stated yet; it prints
+NOT STATED. `surfaces` (on `bond`, `apply` and `fasten`, where it marks the
+faces hardware the model does not carry goes into) are face refs (`bracket/face 3`, or the `bracket/f:...` ref the viewer
 copies; `cadgen inspect "$ID" "bracket/face 3"` says which face it is), each resolved
 to exactly one face when the step names it and drawn on the step's figure;
 each must be on a part installed by that step or before.
@@ -197,7 +196,8 @@ Every record and every torque takes `per=`, and nothing else is accepted:
 
 A record's `per` covers every field. A field from a different document is
 `Cited(text, per=...)` in place of the plain text, and prints its own source.
-A citation prints once for the lines it covers.
+A citation prints once for the lines of one operation it covers; the next
+operation prints its own, even from the same section.
 
 `Unspecified(text, *, per)` is a value that does not exist, as the user says
 ("Snug; no torque is specified"), in place of a `Torque`. It prints as said
@@ -212,14 +212,12 @@ A field left out prints NOT STATED if it is required, and nothing if optional.
 | --- | --- | --- |
 | `Torque(low, high=None, *, unit, per)` | `low` and `unit` (`in-lbf`, `ft-lbf`, `N-m`) | `high` for a range |
 | `Adhesive(name, *, prep, mix, pot_life, cure, per)` | `prep`, `mix`, `pot_life`, `cure` | |
-| `Layup(name, *, plies, debulk, per)` | `plies` | `debulk` |
 | `Cure(name, *, cycle, per)` | `cycle` | |
-| `Machining(name, *, tool, speed, feed, coolant, per)` | `tool`, `speed`, `feed` | `coolant` |
 | `Material(name, *, per, note)` | | `note` |
 
 Values are text as the document writes them (`"100:17 by weight"`,
 `"3000 rpm"`): nothing is parsed, converted or rounded; a torque prints the
-numbers given. Adhesives, layup materials and threadlockers are listed under
+numbers given. Adhesives and threadlockers are listed under
 MATERIALS with lot and expiry blanks; a torque wrench and an oven are listed
 under EQUIPMENT with ID and calibration-due blanks.
 
@@ -229,9 +227,11 @@ One snapshot job draws every step's figure through the engine. Each shows the
 assembly as it stands after the step, as hidden-line art (black edges): parts
 a later step installs are left out, parts installed earlier are lines only,
 the step's own parts are filled blue, and named surfaces are outlined purple.
-Every figure looks from the same direction, fitted to the step's parts
-(`frame="step"`) or the whole assembly (`frame="assembly"`), never to what is
-visible, so a part does not jump between figures.
+Each figure looks from the instruction's `camera` (or the step's own) and is
+placed exactly, never fitted to what is visible. `frame="step"` (the default)
+centres it on the step's parts, so the view moves from step to step;
+`frame="assembly"` fits the whole assembly, one camera for every such figure,
+so a part stays in place across them.
 
 ## What the run prints
 
