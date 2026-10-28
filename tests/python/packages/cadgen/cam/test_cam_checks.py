@@ -96,11 +96,11 @@ class WallReach(unittest.TestCase):
 
 
 class FlatInside(unittest.TestCase):
-    """An inside profile runs along walls: a flat face is refused, naming the walls round its inner loops and, for a
-    pocket's floor, round its edge."""
+    """An inside profile runs along walls: one pocket's floor stands for its walls, and any other flat face is
+    refused, naming the walls round its inner loops."""
 
     def test_the_plates_top_and_its_pockets_floor(self):
-        from cadgen._internal.cam.features import walls_in
+        from cadgen._internal.cam.features import pocket_walls, walls_in
         from cadgen._internal.cam.part import read_part
 
         part = read_part(plate_step(class_directory(type(self))))
@@ -109,6 +109,14 @@ class FlatInside(unittest.TestCase):
         top, floor = by_z[PLATE["size"][2]], by_z[PLATE["pocket"]["floor_z"]]
         self.assertEqual(4, len(walls_in(part, floor.ordinal)))              # the pocket's four sides
         self.assertEqual(10, len(walls_in(part, top.ordinal)))               # bore 1, slot 4, pocket 4, hole 1
+        self.assertEqual(walls_in(part, floor.ordinal), pocket_walls(part, floor.ordinal))
+        self.assertIsNone(pocket_walls(part, top.ordinal))                   # many holes open in it: not one pocket
+        named = parse_job(mill_job([{"op": "profile", "tool": "T1", "side": "inside",
+                                     "faces": pocket_walls(part, floor.ordinal)}]))
+        (walls,) = named.setups[0].operations
+        self.assertEqual([], checks.reach(walls, [part.face(ref) for ref in walls.faces], {},
+                                          (part.vertices, part.triangles), part.face_of_triangle, named.tools["T1"],
+                                          PLATE["size"][2] + 1.0, None))
         job = parse_job(mill_job([{"op": "profile", "tool": "T1", "side": "inside", "faces": [top.ref]}]))
         (op,) = job.setups[0].operations
         (found,) = checks.reach(op, [top], {}, (part.vertices, part.triangles), part.face_of_triangle, job.tools["T1"],

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import math
 
-__all__ = ["axis_word", "direction_word", "holes", "read_features", "walls_in"]
+__all__ = ["axis_word", "direction_word", "holes", "pocket_walls", "read_features", "walls_in"]
 
 _AXES = {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0), "Z": (0.0, 0.0, 1.0)}
 _COS5 = math.cos(math.radians(5.0))
@@ -462,9 +462,8 @@ def _pocket(part, ordinal: int, z: float) -> dict | None:
             "islands": islands}
 
 
-def walls_in(part, ordinal: int) -> list[str]:
-    """The walls an inside profile of the flat face ``ordinal`` would mean: the faces round each of its inner loops
-    (the holes, slots and pockets opening in it) and, for a floor, the faces round its edge that rise above it."""
+def _loops(part, ordinal: int) -> list[tuple[bool, dict[int, bool]]]:
+    """The loops round the flat face ``ordinal``, each ``(inner, {neighbour face index: rises above it})``."""
     import numpy as np
     from OCP.BRepTools import BRepTools
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_WIRE
@@ -478,10 +477,10 @@ def walls_in(part, ordinal: int) -> list[str]:
     normal = np.asarray(info.normal, dtype=float)
     height = float(np.asarray(info.center_mm) @ normal)
     outer = BRepTools.OuterWire_s(face)
-    found: set[int] = set()
+    loops = []
     wires = TopExp_Explorer(face, TopAbs_WIRE)
     while wires.More():
-        inner = not wires.Current().IsSame(outer)
+        neighbours: dict[int, bool] = {}
         edges = TopExp_Explorer(wires.Current(), TopAbs_EDGE)
         while edges.More():
             for neighbour in ancestors.FindFromKey(edges.Current()):
@@ -489,12 +488,30 @@ def walls_in(part, ordinal: int) -> list[str]:
                 if not index or index == ordinal:
                     continue
                 bounds = part.faces[index].bounds
-                rises = bool(bounds) and max(float(np.asarray(corner) @ normal) for corner in bounds) > height + 1e-6
-                if inner or rises:
-                    found.add(index)
+                neighbours[index] = bool(bounds) and max(float(np.asarray(corner) @ normal)
+                                                         for corner in bounds) > height + 1e-6
             edges.Next()
+        loops.append((not wires.Current().IsSame(outer), neighbours))
         wires.Next()
+    return loops
+
+
+def walls_in(part, ordinal: int) -> list[str]:
+    """The walls an inside profile of the flat face ``ordinal`` would mean: the faces round each of its inner loops
+    (the holes, slots and pockets opening in it) and, for a floor, the faces round its edge that rise above it."""
+    found = {index for inner, neighbours in _loops(part, ordinal) for index, rises in neighbours.items()
+             if inner or rises}
     return [part.faces[index].ref for index in sorted(found)]
+
+
+def pocket_walls(part, ordinal: int) -> list[str] | None:
+    """The walls of the one pocket whose floor is the flat face ``ordinal``, or None when it is not one pocket's
+    floor: every face round its edge rises above it, and nothing opens in it (no hole, slot, step or island, whose
+    walls an inside profile would cut the wrong side of). An inside profile of such a floor cuts these walls."""
+    loops = _loops(part, ordinal)
+    if len(loops) != 1 or loops[0][0] or not loops[0][1] or not all(loops[0][1].values()):
+        return None
+    return [part.faces[index].ref for index in sorted(loops[0][1])]
 
 
 def read_features(part) -> dict:

@@ -222,7 +222,8 @@ def _setup_z(frame, point) -> float:
 def _final_depth(op, faces, holes, tool, frame, part_low_z: float, where: str) -> float | None:
     """The depth an operation is cut down to, in setup coordinates (None: FreeCAD's own reading). ``face``: the
     highest face it names. ``profile``: round the part's outline, or the faces it names down to the lowest of them (a
-    blind feature's floor; the part's bottom ``outside`` a flat face, whose inside the reach check refuses), and
+    blind feature's floor; the part's bottom ``outside`` a flat face, whose inside is its pocket's walls by now or
+    refused by the reach check), and
     ``through_mm`` past the part's bottom where they reach it. ``drill``: each hole's depth. ``pocket`` and
     ``adaptive``: the floors they name. One operation cuts to one depth: faces that would need two are refused."""
     params = op.params
@@ -258,6 +259,26 @@ def _final_depth(op, faces, holes, tool, frame, part_low_z: float, where: str) -
         raise CamJobError(f"{where}: {what} ({', '.join(f'{z:g}' for z in sorted(finals))}); {op.op} each in its "
                           "own operation")
     return finals.pop() if finals else None
+
+
+def _floors_to_walls(faces, part, frame, where: str) -> tuple[list, dict[str, list[str]]]:
+    """An inside profile runs along walls: a pocket's floor it names, facing the tool in this setup, stands for that
+    pocket's walls (:func:`features.pocket_walls`). The faces it cuts, each once however it is named (a floor and its
+    own walls together cut them once), and which walls each floor stood for. Any other flat face is kept, for the
+    reach check to refuse."""
+    from cadgen._internal.cam.features import pocket_walls
+
+    out, floors = {}, {}
+    for info in faces:
+        facing = info.normal is not None and frame.direction(info.normal)[2] > 1 - 1e-6
+        walls = pocket_walls(part, info.ordinal) if facing else None
+        if walls:
+            floors[info.ref] = walls
+            for ref in walls:
+                out.setdefault(ref, part.face(ref, where))
+        else:
+            out.setdefault(info.ref, info)
+    return list(out.values()), floors
 
 
 def _targets(op, faces, holes, final_z, frame, mesh, face_of_triangle, tool) -> list:
@@ -315,10 +336,12 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
         s_low, s_high = np.sort(frame.to_setup([stock_low, stock_high]), axis=0)
         part_z = mesh[0][:, 2]
         stock_top = float(s_high[2])
-        specs, planned, rows, targets = [], [], {}, {}
+        specs, planned, rows, targets, floors_of = [], [], {}, {}, {}
         for op in setup.operations:
             tool = tools[op.tool]
             faces = [part.face(ref, f"{op.where}.faces") for ref in op.faces]
+            if op.op == "profile" and op.params["side"] == "inside":
+                faces, floors_of[op.index] = _floors_to_walls(faces, part, frame, f"{op.where}.faces")
             if op.op == "face" and not faces:
                 faces = [info for info in part.faces.values() if info.normal is not None
                          and frame.direction(info.normal)[2] > 1 - 1e-6
@@ -395,6 +418,10 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
             t1 = clock + (float(moves.t[mine[-1]]) if len(mine) else 0.0)
             row.update({"time_s": round(max(0.0, t1 - t0), 2), "t0": round(t0, 3), "t1": round(max(t0, t1), 3)})
             faces_words = f" {', '.join(row['faces'])}" if row["faces"] else ""
+            floors = floors_of.get(op.index)
+            if floors:
+                faces_words += " (" + "; ".join(f"for pocket floor {floor}: its walls {', '.join(walls)}"
+                                                for floor, walls in floors.items()) + ")"
             row["summary"] = f"{op.plain}{faces_words} with {row['tool']} {row['tool_plain']}, " \
                              f"{_duration_words(row['time_s'])}"
             ops_out.append(row)

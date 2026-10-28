@@ -247,6 +247,25 @@ class Plate(unittest.TestCase):
         floor = self.top_z - (PLATE["size"][2] - PLATE["pocket"]["floor_z"])
         self.assertAlmostEqual(floor, float(cuts(moves, 0)[:, 2].min()), places=3)
 
+    def test_an_inside_profile_of_a_pockets_floor_cuts_its_walls(self):
+        # One pocket's floor stands for its four walls: the plan names them, and cuts them down to the floor.
+        import numpy as np
+
+        floor = self.top_z - (PLATE["size"][2] - PLATE["pocket"]["floor_z"])
+        named, (by_walls,) = plan_moves(self.step, self.job([
+            {"op": "profile", "tool": "T3", "side": "inside", "faces": self.pocket_walls, "through_mm": 0.5}]))
+        for faces in ([self.pocket], [self.pocket, *self.pocket_walls[:2]]):    # with its own walls: cut once
+            result, (moves,) = plan_moves(self.step, self.job([
+                {"op": "profile", "tool": "T3", "side": "inside", "faces": faces, "through_mm": 0.5}]))
+            self.assertEqual("ready", result.verdict["status"], result.findings)
+            (op,) = result.operations
+            self.assertEqual(4, len(self.pocket_walls))
+            self.assertEqual(sorted(self.pocket_walls), sorted(op["faces"]))
+            self.assertIn(f"for pocket floor {self.pocket}: its walls {', '.join(self.pocket_walls)}", op["summary"])
+            self.assertAlmostEqual(floor, float(cuts(moves, 0)[:, 2].min()), places=3)
+            self.assertEqual(len(cuts(by_walls, 0)), len(cuts(moves, 0)))
+            np.testing.assert_allclose(cuts(by_walls, 0), cuts(moves, 0), atol=1e-6)
+
     def test_a_floor_the_tool_cannot_enter_is_uncut_and_no_g_code_is_written(self):
         floor = self.blind["faces"][-1]                      # the Ø6 hole's flat floor, at the pocket's height
         result = plan(self.step, self.job([{"op": "pocket", "tool": "T1", "faces": [self.pocket, floor]}]))
