@@ -12,6 +12,7 @@
         "work-instructions",
         "step-parts",
         "dfm",
+        "cam",
         "dfam-check",
         "fea",
         "gcode",

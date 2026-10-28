@@ -208,6 +208,12 @@ export const skillGroups = [
       "Runs a linear static stress study on a STEP part or bonded assembly, solved by a locally installed CalculiX, reporting peak stress, safety factor and displacement with a colour-mapped result.",
   },
   {
+    name: "CAM",
+    path: "skills/cam",
+    summary:
+      "Plans 3-axis milling and drilling toolpaths and posts G-code with FreeCAD, checked against the part.",
+  },
+  {
     name: "G-code",
     path: "skills/gcode",
     summary:

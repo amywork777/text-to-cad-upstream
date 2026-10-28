@@ -22,6 +22,7 @@ Outputs (GITHUB_OUTPUT), one flag per job and the test paths the narrowed jobs t
 
     cadgen  cadgen_tests          cadgen (Linux), cadgen (Windows)
     fea                           fea (the solver tests, with the cadgen[fea] extra installed)
+    cam                           cam (the CAM suites, with FreeCAD installed)
     core_js                       core-js
     web  web_ui  web_client
     mcp
@@ -58,7 +59,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CADGEN_SUITE = "tests/python/packages/cadgen"
 POLICY_SUITE = "tests/python/global"
 SKILL_SUITES = "tests/python/skills"
-FLAGS = ("fea", "core_js", "web_ui", "web_client", "web_viewer", "mcp", "api", "docs", "packaging")
+FLAGS = ("fea", "cam", "core_js", "web_ui", "web_client", "web_viewer", "mcp", "api", "docs", "packaging")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -249,6 +250,13 @@ RULES: tuple[Rule, ...] = (
         f"{CADGEN_SRC}/results.py", "packages/cadgen/pyproject.toml", "skills/fea/**",
         f"{CADGEN_SUITE}/test_fea*.py",
     ), select(flags=["fea"])),
+    # CAM's plans need FreeCAD, which no other job installs: it, its commands, the result types it
+    # returns, its suites and their fixtures, and its skill.
+    Rule((
+        f"{CADGEN_SRC}/_internal/cam/**", f"{CADGEN_SRC}/cam.py", f"{CADGEN_SRC}/cli/cam_*",
+        f"{CADGEN_SRC}/results.py", f"{CADGEN_SUITE}/cam/**", "tests/python/support/cam_fixtures.py",
+        "skills/cam/**",
+    ), select(flags=["cam"])),
 
     # The shared UI and the apps. The snapshot runtime is built from core alone, so ui
     # reaches the two hosts and the wheel, not cadgen's suites.
@@ -277,9 +285,12 @@ RULES: tuple[Rule, ...] = (
     Rule(("skills/dfm/**",), select(skills=[f"{SKILL_SUITES}/dfm"])),
     # The work-instructions template is run by cadgen's own test of the module it drives.
     Rule(("skills/work-instructions/**",), select(cadgen=[f"{CADGEN_SUITE}/test_work_instruction.py"])),
+    # The cam skill's pages are checked against the job vocabulary cadgen reads.
+    Rule(("skills/cam/**",), select(cadgen=[f"{CADGEN_SUITE}/cam/test_cam_skill.py"])),
+
 
     # The test runners and the gates each one feeds.
-    Rule(("scripts/test/test-python.sh",), select(flags=["fea"], cadgen=[CADGEN_SUITE], skills=[SKILL_SUITES])),
+    Rule(("scripts/test/test-python.sh",), select(flags=["fea", "cam"], cadgen=[CADGEN_SUITE], skills=[SKILL_SUITES])),
     Rule(("scripts/test/test-global.sh",), select(policy=[POLICY_SUITE])),
     Rule(("scripts/test/test-js.sh", "scripts/test/check-*.mjs"), select(flags=["core_js", "web_ui", "web_client", "mcp"])),
     Rule(("scripts/test/test-api.sh",), select(flags=["api"])),

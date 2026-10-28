@@ -2,7 +2,7 @@
 
 Three properties that only hold if something checks them:
 
-* **The manifest.** Exactly the declared names are public on each robot namespace, and every
+* **The manifest.** Exactly the declared names are public on each robot namespace and on CAM's, and every
   public verb is fully annotated -- annotation is what makes a CLI derivable, so an unannotated
   parameter is a silently undispatchable flag.
 * **Signature sync.** For every command, the parser's options ARE the function's parameters
@@ -32,7 +32,7 @@ from cadgen._internal.cli_from_function import (
     parser_dests,
 )
 
-# The manifest: robot namespace -> exactly the verbs it exports. A robot description is an
+# The manifest: robot or CAM namespace -> exactly the verbs it exports. A robot description is an
 # authored file, so there is nothing to declare; each format's snapshot is the engine's.
 PUBLIC_SURFACE: dict[str, tuple[str, ...]] = {
     "cadgen.urdf": ("validate",),
@@ -40,6 +40,8 @@ PUBLIC_SURFACE: dict[str, tuple[str, ...]] = {
     "cadgen.sdf": ("validate",),
     # Not a format: a part goes in, a result GLB and its sidecar come out.
     "cadgen.fea": ("faces", "parts", "solve"),
+    # Not a format: a part and a job go in, a result GLB and G-code come out.
+    "cadgen.cam": ("features", "plan"),
 }
 
 # Commands whose parser is GENERATED from the verb it calls. No allowlist is possible here:
@@ -50,6 +52,8 @@ MIRRORS: dict[str, tuple[str, str]] = {
     "fea faces": ("cadgen.fea", "faces"),
     "fea parts": ("cadgen.fea", "parts"),
     "fea solve": ("cadgen.fea", "solve"),
+    "cam features": ("cadgen.cam", "features"),
+    "cam plan": ("cadgen.cam", "plan"),
 }
 
 # The engine snapshot's options (``cadgen.engine.snapshot``), which every format's snapshot
