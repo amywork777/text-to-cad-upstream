@@ -817,9 +817,9 @@ def _faces(shape: Any) -> list[Any]:
     from build123d import Face
     from OCP.TopAbs import TopAbs_FACE
     from OCP.TopExp import TopExp
-    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
 
-    found = TopTools_IndexedMapOfShape()
+    found = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapes_s(shape.wrapped, TopAbs_FACE, found)
     return [Face(found.FindKey(index)) for index in range(1, found.Extent() + 1)]
 
