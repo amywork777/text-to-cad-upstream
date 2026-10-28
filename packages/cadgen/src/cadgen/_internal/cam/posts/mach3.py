@@ -14,7 +14,10 @@ feed to the spindle, so it is for a floating holder and a tap that says ``rigid:
 in seconds (``machine.dwell_ms: true``
 when Mach's General Config has "G4 dwell in ms" ticked), ``G49`` after Z goes home, ``M30``.
 A 4th axis posts A words; a 3+2 setup turns A after each tool change, Z up (set the work offset on the turned part),
-and the program ends with Z up and A back at zero (``G0 A0``; ``G53 G0 A0`` with ``homed``).
+and the program ends with Z up and A back at zero (``G0 A0``; ``G53 G0 A0`` with ``homed``). Unhomed, the clearance
+height clears the part's top, not the corners that swing out as the table turns, and the post cannot tell how far they
+reach (it does not know where the A axis lies in the work offset): a turn needs ``machine.turn_z``, a Z in the work
+offset above the part's swing about A, and Z goes there before every turn; without it the job is refused.
 Mach has no tool centre point control, so a toolpath that turns A while cutting (a wrap) is refused: post it with
 linuxcnc, fanuc or haas.
 
@@ -25,6 +28,7 @@ keys (``_cutting.py`` has the sequence; THC is off by default here).
 
 from __future__ import annotations
 
+from cadgen._internal.cam.job_errors import CamJobError
 from cadgen._internal.cam.posts._cutting import DWELL_MS, torch_off, torch_on, torch_options, torch_safe
 from cadgen._internal.cam.posts._iso import CYCLES_OPTION, IsoPost
 from cadgen._internal.cam.posts.base import Program, number
@@ -47,7 +51,10 @@ class Mach3Post(IsoPost):
     options = {"cycles": CYCLES_OPTION, **torch_options(False), "dwell_ms": DWELL_MS,
                "homed": {"type": "bool", "default": False,
                          "help": "the machine is homed: Z goes to machine Z0 (G53 G0 Z0) before a tool change and at "
-                                 "the end, instead of the clearance height in the work offset"}}
+                                 "the end, instead of the clearance height in the work offset"},
+               "turn_z": {"type": "number", "default": None,
+                          "help": "unhomed, the Z in the work offset (mm) the tool goes to before the table turns: "
+                                  "above the part's and fixture's swing about A, not just the part's top"}}
 
     def begin(self, program: Program) -> None:
         super().begin(program)
@@ -75,7 +82,24 @@ class Mach3Post(IsoPost):
 
     def rotary_home(self, program: Program) -> list[str]:
         self.rotary_home_style = "g53" if self.option(program, "homed") else "work"
-        return super().rotary_home(program)
+        lines = super().rotary_home(program)
+        return self.turn_clear(program) + lines if lines else lines
+
+    def tilt_lines(self, program: Program) -> list[str]:
+        return self.turn_clear(program) + super().tilt_lines(program)
+
+    def turn_clear(self, program: Program) -> list[str]:
+        """Z up to where the table may turn: machine Z0 is already there on a homed machine; unhomed, ``turn_z`` in
+        the work offset, since the clearance height clears the part's top, not its corners as they swing."""
+        if self.option(program, "homed"):
+            return []
+        z = self.option(program, "turn_z")
+        if z is None:
+            raise CamJobError(f"setup {program.setup.id}: the table turns A on an unhomed Mach3, where Z is only at "
+                              f"the clearance height ({number(program.clearance_z)} mm in the work offset) and the "
+                              "part's corners swing above it; set machine.turn_z to a Z in the work offset above the "
+                              "part's swing about A, or machine.homed: true if the machine is homed")
+        return [f"G0 Z{self.num(z)}"]
 
     def dwell_word(self, seconds: float) -> str:
         if self.option(self._program, "dwell_ms"):

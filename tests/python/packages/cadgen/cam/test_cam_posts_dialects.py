@@ -14,6 +14,7 @@ from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, DWELL
 from cadgen._internal.cam.job import parse_job
 from cadgen._internal.cam.job_errors import CamJobError, PostRefusal
 from cadgen._internal.cam.posts import POST_NAMES, REGISTRY, available, get_post
+from cadgen._internal.cam.posts.base import number
 from tests.python.support import cam_fixtures_posts as F
 from tests.python.support import gcode_reader
 
@@ -78,6 +79,10 @@ def _nearest(a: np.ndarray, b: np.ndarray) -> float:
 def read_back(post, program, text):
     machine = program.machine
     lathe = machine.kind == "lathe"
+    turn_z = (machine.post_options or {}).get("turn_z")
+    if machine.post == "mach3" and turn_z is not None:
+        # The Z up before an unhomed Mach3 turns the table is the post's own, as a G53 home is: no IR move.
+        text = "\n".join(line for line in text.splitlines() if line != f"G0 Z{number(turn_z)}")
     start = program.toolpath.start
     if machine.kind == "wire_edm":
         start = (0.0, 0.0, 0.0)
@@ -894,7 +899,7 @@ class Safety(unittest.TestCase):
                 ("fanuc", "mill5", ["G69", "G91 G28 Z0.", "G90", "G91 G28 A0. C0.", "G90", "G49", "M30"]),
                 ("haas", "mill5", ["G255", "G91 G28 Z0.", "G90", "G91 G28 A0. C0.", "G90", "G49", "M30"]),
                 ("linuxcnc", "mill5", ["M5", "G49", "G53 G0 Z0", "G53 G0 A0 C0", "M2"]),
-                ("mach3", "mill4", ["M5", "G0 Z5", "G0 A0", "G49", "M30"]),
+                ("mach3", "mill4", ["M5", "G0 Z5", "G0 Z50", "G0 A0", "G49", "M30"]),
                 ("linuxcnc", "mill5_tcp", ["G49", "G53 G0 Z0", "G53 G0 A0 C0", "M2"])):
             with self.subTest(post=post_name, kind=kind):
                 code = _code(render(post_name, kind, {})[2])

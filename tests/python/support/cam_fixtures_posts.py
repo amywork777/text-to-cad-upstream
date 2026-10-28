@@ -30,6 +30,8 @@ def _machine(kind: str, post: str, keys: dict | None):
     from cadgen._internal.cam.job import Machine
 
     raw = {"kind": kind, "post": post, **(keys or {})}
+    if post == "mach3" and kind == "mill4" and not raw.get("homed"):
+        raw.setdefault("turn_z", 50.0)                 # an unhomed Mach3 turns the table only from a Z it is given
     registry.entry_for(post, kind)
     options = registry.parse_options(post, raw)
     kinematics = raw.get("kinematics") or ("ac_trunnion" if kind == "mill5" else None)

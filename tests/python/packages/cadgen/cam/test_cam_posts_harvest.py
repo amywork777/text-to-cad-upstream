@@ -709,6 +709,20 @@ class MachineCoordinates(unittest.TestCase):
         self.assertIn("G53 G0 Z0\nT1 M6", homed)
         self.assertIn("G53 G0 Z0\nG53 G0 A0\nG49\nM30", homed)
 
+    def test_an_unhomed_mach3_turns_the_table_only_from_turn_z(self):
+        # The clearance height clears the part's top, not its corners as the table turns: every turn starts at turn_z.
+        code = _code(render("mach3", "mill4", {"turn_z": 80})[2])
+        turns = [k for k, line in enumerate(code) if re.match(r"G0 A-?[\d.]+$", line)]
+        self.assertTrue(turns)
+        for k in turns:
+            self.assertEqual("G0 Z80", code[k - 1])
+        post, program, _ = render("mach3", "mill4", {})
+        bare = replace(program, machine=replace(program.machine, post_options={}))
+        with self.assertRaisesRegex(CamJobError, "unhomed Mach3.*machine.turn_z"):
+            post.render(bare)
+        homed = _code(render("mach3", "mill4", {"homed": True})[2])
+        self.assertFalse(any(line.startswith("G0 Z80") for line in homed))
+
     def test_grbl_never_homes(self):
         text = "".join(t for _, t in get_post("grbl", "mill").render_tool_files(F.mill("grbl")))
         self.assertNotRegex(text, r"\bG(28|30|53)\b")

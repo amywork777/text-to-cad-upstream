@@ -425,7 +425,9 @@ class EveryPost(unittest.TestCase):
                         with self.assertRaises(CamJobError):
                             _posted(self.plans[name], post_name, kind)
                         continue
-                    self.assertCrashFree(name, post_name, kind)
+                    # An unhomed Mach3 turns the table only from a Z above the part's swing that the job gives.
+                    keys = {"turn_z": 100.0} if post_name == "mach3" and kind == "mill4" else None
+                    self.assertCrashFree(name, post_name, kind, keys)
 
     def test_the_machine_keys_that_change_what_a_post_writes(self):
         for name, post_name, keys in (
