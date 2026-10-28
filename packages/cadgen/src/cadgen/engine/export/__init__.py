@@ -47,7 +47,8 @@ class ExportRefused(ValueError):
 class Kind:
     """One file kind: its name, the suffixes its files end in (the first is its own), the
     writer (``module:function``, loaded on first use: ``write(view, path)``), and whether
-    the kind is written atomically here (an xbf saves itself atomically)."""
+    the kind is written atomically here (an xbf saves itself atomically, and returns the size it
+    wrote, as a drawing does: inside ``atomic_replace.together`` the file lands later)."""
 
     name: str
     suffixes: tuple[str, ...]
@@ -58,9 +59,9 @@ class Kind:
     def suffix(self) -> str:
         return self.suffixes[0]
 
-    def write(self, view: "View", path: Path) -> None:
+    def write(self, view: "View", path: Path) -> Any:
         module, _sep, function = self.writer.partition(":")
-        getattr(importlib.import_module(module), function)(view, path)
+        return getattr(importlib.import_module(module), function)(view, path)
 
 
 KINDS: dict[str, Kind] = {
@@ -431,8 +432,7 @@ def translate(document: Any, kind: str | None, path: Any, *, log: Callable[[str]
     path.parent.mkdir(parents=True, exist_ok=True)
     spec = KINDS[kind]
     if not spec.atomic:
-        spec.write(view, path)
-        return path.stat().st_size
+        return spec.write(view, path)
 
     def write(temporary: Path) -> None:
         spec.write(view, temporary)

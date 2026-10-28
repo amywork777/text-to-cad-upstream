@@ -117,14 +117,14 @@ def tree_of(view: Any) -> Any:
     return tree
 
 
-def write_xbf(view: Any, path: Path) -> None:
+def write_xbf(view: Any, path: Path) -> int:
     """The view as an xbf of its own, saved atomically. A document this engine wrote, held with its
     XCAF document -- a model's as built, or read from the bytes the engine keeps (``Source.data``,
     written as they are) -- is that document's own bytes (``document.to_bytes``), the ones its
     declared xbf and the engine's cache hold: every attribute it holds kept, its PMI -- annotations,
     notes and views -- with them, and the same bytes from a live worker and after a
     restart. Any other (a STEP another system wrote) is made a document again (``tree_of``), its
-    GD&T copied as read (``pmi.copy``)."""
+    GD&T copied as read (``pmi.copy``). Returns its size."""
     from cadgen.engine import document
 
     source = view.source
@@ -139,8 +139,7 @@ def write_xbf(view: Any, path: Path) -> None:
     elif source.xcaf is not None and not source.foreign:
         data = source.data if source.data is not None else \
             document.to_bytes(source.xcaf, source.shapes.values() if source.live else None)
-        document.write_bytes(Path(path), data)
-        return
+        return document.write_bytes(Path(path), data)[1]
     else:
         doc = document.to_xcaf(tree_of(view))
-    document.save(doc, Path(path), compare=True)
+    return document.save(doc, Path(path), compare=True)[1]

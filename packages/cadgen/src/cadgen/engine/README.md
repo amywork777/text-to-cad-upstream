@@ -1633,8 +1633,10 @@ child whose file cannot be written fails the build. A part is written free
 (`document.unchecked`): OCCT marks a shape put in a compound as no longer free, which would
 make a child's part, placed in its caller's assembly, other bytes than its own build's.
 
-The xbf is saved first, then each derived file. Nothing of them is sent to a page: one serving
-a declared file follows that file's bytes (**Document lifetime**).
+The xbf is made first, then each derived file, each staged beside its target; they land together
+(`atomic_replace.together`, law 17): one refused or failed, none of them is written and every
+earlier one keeps its bytes. Nothing of them is sent to a page: one serving a declared file
+follows that file's bytes (**Document lifetime**), so it moves once every declared file has landed.
 
 **Functions** (`api`, also `cadgen.export`, `cadgen.snapshot` and `cadgen.inspect`; `serve`,
 `status`, `stop`, `delete` and `server` only the CLI calls): one per command, each through the daemon. No function builds source text;
@@ -2219,7 +2221,8 @@ a general profile that covers no face by no record, none being left over. The re
 job. Every file is checked staged, before it lands (`export.translate`'s `check`), whoever asked
 for it: for a document the code made, a check that finds any problem refuses the file (`FILE not
 written: the PMI in the STEP written does not match the model's document, or could not be checked
-against it (M of N matched): ...`), so no file is written and one there keeps its bytes (law 17):
+against it (M of N matched): ...`), so no file is written and one there keeps its bytes (law 17),
+a build's other declared files, its xbf too, with it (`atomic_replace.together`):
 a record that does not match, and a check that could not be made alike -- a file the reader cannot
 read, an entity it does not read, a schema other than AP242, a face name a part's geometry holds
 twice, a datum letter a part's records repeat, two products of one name. Nothing is guessed. The

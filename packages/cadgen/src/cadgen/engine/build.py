@@ -834,32 +834,43 @@ def _outputs(plan: list, report: dict[str, Any], log: Callable[[str], None],
     report's ``files``: each file's kind, whether it was written, the seconds and its bytes. ``log``
     hears each file written, and each one kept too when ``kept`` (a build's; a take says only what it
     wrote, its run line the rest). A STEP of a document with PMI is checked in the file before it
-    lands (``pmi.checked``: its ``pmiVerification``), and refused when the check finds any problem."""
+    lands (``pmi.checked``: its ``pmiVerification``), and refused when the check finds any problem.
+    The files land together (``atomic_replace.together``, law 17): one refused or failed, none of
+    them is written and every earlier one keeps its bytes."""
     from cadgen.engine import export, pmi
+    from cadgen.engine.atomic_replace import together
 
     timings = report.setdefault("timings", {})
     written: dict[str, Any] = {}
+    befores: dict[str, tuple | None] = {}
+    with together():
+        for target in sorted(plan, key=lambda target: target.kind != "xbf"):
+            clock = time.perf_counter()
+            befores[str(target.path)] = _stat(target.path)
+            _say("writing", target.path)
+            carried = pmi.step_entries(source().structure.get("pmi") or []) if target.kind == "step" else []
+            verified: dict[str, Any] = {}
+            fresh = None
+            if target.kind == "xbf":
+                fresh, size = save(target.path)
+            else:
+                check = (lambda staged: verified.update(pmi.checked(source(), carried, staged, log))) if carried else None
+                size = export.translate(source(), target.kind, target.path, check=check)
+            seconds = time.perf_counter() - clock
+            timings[target.kind] = round(seconds, 4)
+            written[str(target.path)] = {"kind": target.kind, "written": fresh, "seconds": round(seconds, 4),
+                                         "bytes": size}
+            if carried:
+                written[str(target.path)]["pmiVerification"] = verified
     for target in sorted(plan, key=lambda target: target.kind != "xbf"):
-        clock = time.perf_counter()
-        before = _stat(target.path)
-        _say("writing", target.path)
-        carried = pmi.step_entries(source().structure.get("pmi") or []) if target.kind == "step" else []
-        verified: dict[str, Any] = {}
-        if target.kind == "xbf":
-            fresh, size = save(target.path)
-        else:
-            check = (lambda staged: verified.update(pmi.checked(source(), carried, staged, log))) if carried else None
-            size = export.translate(source(), target.kind, target.path, check=check)
-            fresh = _stat(target.path) != before
-        seconds = time.perf_counter() - clock
-        timings[target.kind] = round(seconds, 4)
-        written[str(target.path)] = {"kind": target.kind, "written": fresh, "seconds": round(seconds, 4), "bytes": size}
-        if carried:
-            written[str(target.path)]["pmiVerification"] = verified
-        if fresh or kept:
+        said = written[str(target.path)]
+        if said["written"] is None:  # landed only now: written when the file there changed
+            said["written"] = _stat(target.path) != befores[str(target.path)]
+        if said["written"] or kept:
             from cadgen.engine.cli import _bytes  # the size as every verb says one: never "0.0 MB" for a small file
 
-            log(f"{'wrote' if fresh else 'kept'} {_shown(target.path, None)} ({_bytes(size)}) in {seconds:.2f}s")
+            log(f"{'wrote' if said['written'] else 'kept'} {_shown(target.path, None)} ({_bytes(said['bytes'])}) "
+                f"in {said['seconds']:.2f}s")
     report["files"] = {str(target.path): written[str(target.path)] for target in plan}
 
 
