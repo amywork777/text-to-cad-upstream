@@ -60,14 +60,14 @@ def edges(step, test) -> list[str]:
     from build123d import Edge
     from OCP.TopAbs import TopAbs_EDGE
     from OCP.TopExp import TopExp
-    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
 
     from cadgen import read_step
     from cadgen._internal.cam.part import read_part
 
     owner = read_part(step).faces[1].ref.rpartition("/")[0]
     # A fresh read, unmeshed: a meshed edge's box grows by its triangulation's tolerance.
-    found = TopTools_IndexedMapOfShape()
+    found = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapes_s(read_step(step).wrapped, TopAbs_EDGE, found)
     out = []
     for ordinal in range(1, found.Extent() + 1):

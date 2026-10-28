@@ -437,10 +437,10 @@ def _pocket(part, ordinal: int, z: float) -> dict | None:
     """The walls around a +Z floor below the top, their height, and the islands inside it."""
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_WIRE
     from OCP.TopExp import TopExp, TopExp_Explorer
-    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
+    from OCP.collections import IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher
 
     shape = part.shape.wrapped
-    ancestors = TopTools_IndexedDataMapOfShapeListOfShape()
+    ancestors = IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapesAndAncestors_s(shape, TopAbs_EDGE, TopAbs_FACE, ancestors)
     floor = part.ocp_face(ordinal)
     walls: set[int] = set()

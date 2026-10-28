@@ -416,13 +416,13 @@ def _fine_nodes(shape):
     nodes: list[tuple[float, float, float]] = []
     explorer = TopExp_Explorer(copy, TopAbs_VERTEX)
     while explorer.More():
-        point = BRep_Tool.Pnt_s(TopoDS.Vertex_s(explorer.Current()))
+        point = BRep_Tool.Pnt_s(TopoDS.Vertex(explorer.Current()))
         nodes.append((point.X(), point.Y(), point.Z()))
         explorer.Next()
     explorer = TopExp_Explorer(copy, TopAbs_FACE)
     while explorer.More():
         location = TopLoc_Location()
-        triangulation = BRep_Tool.Triangulation_s(TopoDS.Face_s(explorer.Current()), location)
+        triangulation = BRep_Tool.Triangulation_s(TopoDS.Face(explorer.Current()), location)
         if triangulation is not None:
             trsf = location.Transformation()
             for index in range(1, triangulation.NbNodes() + 1):

@@ -461,7 +461,7 @@ def _section_halves(part, wcs, tolerance: float) -> list:
         triangles = []
         explorer = TopExp_Explorer(result, TopAbs_FACE)
         while explorer.More():
-            piece = TopoDS.Face_s(explorer.Current())
+            piece = TopoDS.Face(explorer.Current())
             location = TopLoc_Location()
             mesh = BRep_Tool.Triangulation_s(piece, location)
             if mesh is not None and mesh.NbTriangles():

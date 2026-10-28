@@ -165,10 +165,10 @@ class Part:
     def _edges(self):
         from OCP.TopAbs import TopAbs_EDGE
         from OCP.TopExp import TopExp
-        from OCP.TopTools import TopTools_IndexedMapOfShape
+        from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
 
         if self._edge_map is None:
-            self._edge_map = TopTools_IndexedMapOfShape()
+            self._edge_map = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
             TopExp.MapShapes_s(self.shape.wrapped, TopAbs_EDGE, self._edge_map)
         return self._edge_map
 
@@ -185,7 +185,7 @@ class Part:
         if self.kind != "step":
             raise CamJobError(f"{where}: {ref} names an edge, but a DXF has no edges; follow its profiles with region")
         hit = self._element(ref, where, "edge")
-        return hit.ref, TopoDS.Edge_s(self._edges().FindKey(hit.ordinal))
+        return hit.ref, TopoDS.Edge(self._edges().FindKey(hit.ordinal))
 
     def ordinal(self, ref: str) -> int:
         """The ordinal of a face by its canonical ref (a :class:`FaceInfo`'s ``ref``, as ``cam features`` lists it)."""
@@ -197,7 +197,7 @@ class Part:
         """The exact ``TopoDS_Face`` of a face ordinal, in part coordinates."""
         from OCP.TopoDS import TopoDS
 
-        return TopoDS.Face_s(self._face_map.FindKey(ordinal))
+        return TopoDS.Face(self._face_map.FindKey(ordinal))
 
     def mesh_in(self, wcs):
         """(vertices, triangles) in the WCS of ``wcs``; cached per setup."""
@@ -325,14 +325,14 @@ def _tessellate(path: Path, read: _Document, hit, shape, deflection: float) -> P
     from OCP.TopExp import TopExp
     from OCP.TopLoc import TopLoc_Location
     from OCP.TopoDS import TopoDS
-    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
 
     ref = hit.ref
     wrapped = shape.wrapped
     _check_size(f"{ref} of {path.name}", shape.bounding_box())
     BRepMesh_IncrementalMesh(wrapped, deflection, False, ANGULAR_DEFLECTION, True)
     # Ordinals as the engine numbers a part's elements: TopExp.MapShapes over its shape.
-    face_map = TopTools_IndexedMapOfShape()
+    face_map = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapes_s(wrapped, TopAbs_FACE, face_map)
     # A face's canonical ref: its name where the file gives it one, else its ordinal, under its owner as ``inspect``
     # spells it (the document's name for a document of one part).
@@ -344,7 +344,7 @@ def _tessellate(path: Path, read: _Document, hit, shape, deflection: float) -> P
     faces: dict[int, FaceInfo] = {}
     offset = 0
     for ordinal in range(1, face_map.Extent() + 1):
-        face = TopoDS.Face_s(face_map.FindKey(ordinal))
+        face = TopoDS.Face(face_map.FindKey(ordinal))
         location = TopLoc_Location()
         triangulation = BRep_Tool.Triangulation_s(face, location)
         reversed_ = face.Orientation() == TopAbs_REVERSED
