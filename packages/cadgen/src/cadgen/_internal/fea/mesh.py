@@ -2,7 +2,7 @@
 
 The mesher is netgen (LGPL-2.1, the ``netgen-mesher`` wheel with its own OpenCascade). It cannot take an OCP shape
 object directly -- two pybind11 OCC builds are foreign to each other -- so the placed occurrence is written to a BREP
-file, which netgen reads. Both sides walk the B-rep in explorer order, so netgen's face ``i`` is the engine's face ordinal
+file, which netgen reads in a process of its own (:mod:`.mesher`). Both sides walk the B-rep in explorer order, so netgen's face ``i`` is the engine's face ordinal
 ``i+1`` in practice; that is an implementation property, not a contract, so every face a study names is VERIFIED by area
 and centre of mass against the OCP face the document resolved, and matched geometrically when the order differs.
 
@@ -10,8 +10,8 @@ An assembly (:func:`mesh_assembly`) is glued first (:mod:`.assembly`), so the or
 face where another part sits on it. Each part's face is then followed through the glue's history to the faces it became,
 and those are matched to netgen's by area and centre.
 
-Import order matters on Linux: netgen loads its OpenCascade with RTLD_GLOBAL,
-so the CAD kernel (OCP) is imported first, here, before netgen ever is.
+netgen is never imported in this process: its OpenCascade (7.8) and OCP's (8) cannot share one
+(:mod:`.mesher`). ``match_faces`` and ``generate_mesh`` run in the mesher's process, on netgen's objects.
 """
 
 from __future__ import annotations
@@ -59,8 +59,15 @@ def kernel_messages_on_stderr() -> Iterator[None]:
 
 def require_fea_stack() -> None:
     """Fail with the install hint when the ``fea`` extra is missing."""
+    import importlib.util
+
     missing = []
     for module in ("numpy", "scipy", "netgen", "skfem", "pyamg"):
+        if module == "netgen":
+            # Found, never imported here: netgen's OpenCascade is loaded only by the mesher's process.
+            if importlib.util.find_spec(module) is None:
+                missing.append(module)
+            continue
         try:
             __import__(module)
         except ImportError:
@@ -294,35 +301,18 @@ def _merged_fields(given: dict, own: dict) -> dict:
 
 
 def _netgen(shape, name: str, prints: list[FaceFingerprint], diagonal: float, h: float, refine: float, order: int,
-            size_field: dict | None, keys_of, remap=None, *, count_domains: bool = False):
-    """netgen's mesh of an OCP shape, through a BREP file: the verified face mapping (``remap`` applied), the nodes,
-    the volume and surface elements, and (``count_domains``) the number of volumes; ``keys_of(mapping)`` keys the
-    size field's faces."""
-    import numpy as np
-    import netgen.meshing as ngmesh
-    import netgen.occ as ngocc
+            size_field: dict | None, *, origin: list[int] | None = None, keys: dict | None = None,
+            count_domains: bool = False):
+    """netgen's mesh of an OCP shape, through a BREP file and the mesher's process (:func:`.mesher.volume`): the
+    verified face mapping (through ``origin``), the nodes, the volume and surface elements, and (``count_domains``)
+    the number of volumes; ``keys`` keys the size field's faces."""
+    from cadgen._internal.fea import mesher
 
     with tempfile.TemporaryDirectory(prefix="cadgen-fea-") as tmp:
         brep = Path(tmp) / name
         write_brep(shape, brep)
-        # netgen's C++ side prints to fd 1, the JSON result channel of every door.
-        with kernel_messages_on_stderr():
-            ngmesh.SetMessageImportance(0)
-            geometry = ngocc.OCCGeometry(str(brep))
-            mapping = match_faces(prints, list(geometry.faces), diagonal)
-            if remap is not None:
-                mapping = remap(mapping)
-            mesh = generate_mesh(geometry, ngocc, h, refine, order, size_field, keys_of(mapping))
-            # Copies, deliberately: netgen hands out views into the mesh
-            # object's own memory, and the mesh does not outlive this block.
-            coordinates = np.array(mesh.Coordinates(), dtype=float, copy=True)
-            e3 = mesh.Elements3D().NumPy().copy()
-            e2 = mesh.Elements2D().NumPy().copy()
-            domains = None
-            if count_domains:
-                domains = int(mesh.GetNDomains()) if hasattr(mesh, "GetNDomains") else int(e3["index"].max())
-            del mesh, geometry
-    return mapping, coordinates, e3, e2, domains
+        return mesher.volume(brep, prints, diagonal, h, refine, order, size_field, origin=origin, keys=keys,
+                             count_domains=count_domains)
 
 
 def mesh_occurrence(
@@ -358,11 +348,10 @@ def mesh_occurrence(
         size_field = _merged_fields(size_field or {}, own)
 
     started = time.perf_counter()
-    # netgen face -> the prepared shape's own face -> the occurrence's ordinal.
-    remap = None if origin is None else lambda mapping: {index: origin[own - 1] for index, own in mapping.items()}
+    # netgen face -> the prepared shape's own face -> the occurrence's ordinal (``origin``).
     mapping, coordinates, e3, e2, _ = _netgen(
         shape.wrapped if prepared is None else prepared.shape, "occurrence.brep", fingerprints, diagonal, h, refine, order,
-        size_field, lambda mapping: {index: [ordinal] for index, ordinal in mapping.items()}, remap,
+        size_field, origin=origin,
     )
 
     if len(e3) == 0:
@@ -543,7 +532,7 @@ def mesh_assembly(document: "Document", part_refs: list[str], bonded: "list[Cont
         log(f"meshing the glued shape at {h:.3g} mm")
     mapping, coordinates, e3, e2, domains = _netgen(
         glued.shape, "assembly.brep", glued_prints, diagonal, h, refine, order, size_field,
-        lambda mapping: {index: [refs[position - 1] for position in sources.get(image, ())] for index, image in mapping.items()},
+        keys={image: [refs[position - 1] for position in owners] for image, owners in sources.items()},
         count_domains=True,
     )
 

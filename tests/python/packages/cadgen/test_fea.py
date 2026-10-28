@@ -716,12 +716,19 @@ class FinerMeshSize(unittest.TestCase):
 @needs_fea
 class MeshOrderGuard(unittest.TestCase):
     def _elements(self, second_order: bool):
-        import netgen.occ as ngocc
+        # In a process of its own, as cadgen meshes (fea/mesher.py): netgen's OpenCascade and OCP's cannot share one.
+        import pickle
+        import subprocess
+        import sys
 
-        mesh = ngocc.OCCGeometry(ngocc.Box((0, 0, 0), (1, 1, 1))).GenerateMesh(maxh=0.5)
-        if second_order:
-            mesh.SecondOrder()
-        return mesh.Elements3D().NumPy().copy()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "elements.pickle"
+            script = ("import pickle, sys\nimport netgen.occ as ngocc\n"
+                      "mesh = ngocc.OCCGeometry(ngocc.Box((0, 0, 0), (1, 1, 1))).GenerateMesh(maxh=0.5)\n"
+                      + ("mesh.SecondOrder()\n" if second_order else "")
+                      + "open(sys.argv[1], 'wb').write(pickle.dumps(mesh.Elements3D().NumPy().copy()))\n")
+            subprocess.run([sys.executable, "-c", script, str(out)], check=True, capture_output=True)
+            return pickle.loads(out.read_bytes())
 
     def test_first_order_mesh_is_refused(self):
         from cadgen._internal.fea.mesh import require_elements

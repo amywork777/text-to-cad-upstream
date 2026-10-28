@@ -538,30 +538,20 @@ def mesh_mid_surface(plate: Plate, h: float) -> ShellModel:
     from OCP.BRepTools import BRepTools
     from OCP.TopoDS import TopoDS_Compound
 
-    from cadgen._internal.fea.mesh import kernel_messages_on_stderr
+    from cadgen._internal.fea import mesher
 
     builder = BRep_Builder()
     compound = TopoDS_Compound()
     builder.MakeCompound(compound)
     for face in plate.top_faces:
         builder.Add(compound, face)
-    import netgen.meshing as ngmesh
-    import netgen.occ as ngocc
 
     with tempfile.TemporaryDirectory(prefix="cadgen-shell-") as tmp:
         path = Path(tmp) / "skin.brep"
         BRepTools.Write_s(compound, str(path))
-        with kernel_messages_on_stderr():
-            ngmesh.SetMessageImportance(0)
-            # Finer along every edge (clamps, holes, the outline): the peaks sit there, and a linear
-            # triangle's constant curvature reads them low by about a third of its size's share.
-            shape = ngocc.OCCGeometry(str(path)).shape
-            for edge in shape.edges:
-                edge.maxh = float(h) / EDGE_REFINE
-            mesh = ngocc.OCCGeometry(shape).GenerateMesh(maxh=float(h), grading=0.3)
-            nodes = np.array(mesh.Coordinates(), dtype=float, copy=True)
-            triangles = mesh.Elements2D().NumPy()["nodes"][:, :3].astype(np.int64) - 1
-            del mesh
+        # Finer along every edge (clamps, holes, the outline): the peaks sit there, and a linear
+        # triangle's constant curvature reads them low by about a third of its size's share.
+        nodes, triangles = mesher.skin(path, float(h), float(h) / EDGE_REFINE)
     if nodes.shape[1] == 2:
         nodes = np.c_[nodes, np.zeros(len(nodes))]
     n = np.asarray(plate.normal, dtype=float)
