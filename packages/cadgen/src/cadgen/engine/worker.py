@@ -295,7 +295,7 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
     model's picture is drawn from the document in this worker's memory). Answers what was
     written."""
     from cadgen.engine import build as engine_build
-    from cadgen.engine import export
+    from cadgen.engine import export, pmi
 
     source_spec = request["source"]
     built: list[dict[str, Any]] = []
@@ -362,11 +362,18 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
             from cadgen.engine.export.viewer import original
             size = original(source, target, request["expected"])
         else:
-            size = export.translate(source, None, target)
+            size = export.translate(source, None, target, log=log)
         seconds = time.perf_counter() - clock
         # A file that held these bytes already is left as it was (``atomic_replace.put``): unchanged.
         files.append({"path": str(target), "kind": export.kind_of(target), "bytes": size,
                       "seconds": round(seconds, 4), "written": before is None or _stat(target) != before})
+        # A STEP of a document with PMI is checked in the file written (``export/ap242.py``), within
+        # its ``write`` frame: with the PMI a STEP carries, its notes being the xbf's alone
+        # (``pmi.step_entries``).
+        carried = pmi.step_entries(source.structure.get("pmi") or [])
+        if request.get("expected") and export.kind_of(target) == "step" and carried:
+            from cadgen.engine.export.ap242 import verify
+            files[-1]["pmiVerification"] = verify(carried, target)
     drawn = None
     if request.get("draw"):
         from cadgen.engine import snapshot

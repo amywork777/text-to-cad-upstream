@@ -235,6 +235,7 @@ FACE_MATERIALS = "xbf_face_materials"
 CONFIGURATIONS = "xbf_configurations"  # an assembly's mechanism states by name (``mechanism.mechanism_state``)
 COUPLINGS = "xbf_couplings"  # and its couplings by name (``mechanism.gear_pair`` and its two siblings)
 ANIMATIONS = "xbf_animations"  # and its animations by name (``animations.animation``): plain values
+PMI = "xbf_pmi"  # and a part's semantic PMI (``pmi.annotate``)
 
 
 class _Unkeyable(Exception):
@@ -1658,6 +1659,9 @@ class _Run:
         # The model whose body is running (``scope``): its calls are counted, and keyed,
         # as its own.
         self.scope: str | None = None
+        # The annotations each model body's ``pmi.annotate`` calls gave, by its scope: those its
+        # document does not hold are said (``pmi.unattached``).
+        self.pmi: dict[str | None, list[str]] = {}
         # The logs of the model bodies running, innermost last (``body``), and the bodies
         # this run has run or replayed: each is in the trace once.
         self.bodies: list[_BodyLog] = []
@@ -3821,6 +3825,8 @@ def _shape_key(shape: Any, state: _Run) -> int:
         _normalize(state_dict.get(CONFIGURATIONS) or {}, state),
         _normalize(state_dict.get(COUPLINGS) or {}, state),
         _normalize(state_dict.get(ANIMATIONS) or {}, state),
+        # and its PMI (``pmi.annotate``), which a hit's restored children would otherwise bring back.
+        _normalize(state_dict.get(PMI) or (), state),
     )
     children = tuple(_shape_key(child, state) for child in state_dict.get("_NodeMixin__children") or ())
     return _intern((placed, attrs, children))
