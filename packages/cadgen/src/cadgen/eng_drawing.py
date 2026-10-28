@@ -337,14 +337,13 @@ class View:
         self._table = _TableSpec(None if origin is None else self._at(origin), corner)
         return self
 
-    def diameter(self, center, *retired, size: float | None = None, angle: float = 45.0,
+    def diameter(self, center, *, size: float | None = None, angle: float = 45.0,
                  text: str | None = None, basic: bool = False, reference: bool = False,
                  frame: Frame | None = None, datum: str | None = None, key: bool = False) -> "View":
         """A diameter callout on the circle centred at ``center``, measured off the
         view. ``size`` picks one of several concentric circles (a chamfered
         shaft end shows two) and is checked against the geometry. ``basic``,
         ``reference``, ``frame``, ``datum`` and ``key`` as :meth:`dim` takes them."""
-        _refuse_retired_size("diameter", retired)
         _dimension_kind(basic=basic, reference=reference)
         self._dims.append(_Dim("diameter", self._at(center), None, 0.0, text, None,
                                radius=0.0 if size is None else _positive("size", size) / 2, angle=float(angle),
@@ -352,12 +351,11 @@ class View:
                                datum=_new_datum(self.sheet, datum), key=_key(key, reference)))
         return self
 
-    def radius(self, center, *retired, size: float | None = None, angle: float = 45.0,
+    def radius(self, center, *, size: float | None = None, angle: float = 45.0,
                text: str | None = None, basic: bool = False, reference: bool = False) -> "View":
         """A radius callout on the arc centred at ``center``, measured off the view;
         ``size`` (the radius) picks one of several and is checked like ``diameter``'s,
         and ``basic`` and ``reference`` are as :meth:`dim` takes them."""
-        _refuse_retired_size("radius", retired)
         _dimension_kind(basic=basic, reference=reference)
         self._dims.append(_Dim("radius", self._at(center), None, 0.0, text, None,
                                radius=0.0 if size is None else _positive("size", size), angle=float(angle),
@@ -612,17 +610,6 @@ def _refuse_iso(view: View, call: str) -> None:
     if view.name == "iso":
         raise ValueError(f"{call} calls out what a view looks down, and an isometric looks down no hole; "
                          "call it out on an orthographic view")
-
-
-def _refuse_retired_size(verb: str, retired: tuple) -> None:
-    """``diameter(center, radius)`` took a RADIUS and printed twice it, so
-    ``diameter(c, 30)`` on a ⌀30 shaft printed ⌀60. The size is measured now."""
-    if retired:
-        raise TypeError(
-            f"{verb}() no longer takes a size argument: it measures the circle at `center`. "
-            f"Pass size=<{'diameter' if verb == 'diameter' else 'radius'}> only to pick one of several "
-            "concentric circles; it is checked against the part."
-        )
 
 
 def _tol(value):
