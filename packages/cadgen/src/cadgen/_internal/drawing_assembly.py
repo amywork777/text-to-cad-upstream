@@ -512,9 +512,9 @@ def visible_point(occurrences, cast, look, *, faces: int = 40) -> tuple[float, f
     first occurrence that shows one, so a leader lands well inside the part's
     outline rather than on its edge; None when every occurrence is hidden.
     """
+    from OCP.BRepClass import BRepClass_FaceClassifier
     from OCP.BRepGProp import BRepGProp_Face
     from OCP.BRepTools import BRepTools
-    from OCP.BRepTopAdaptor import BRepTopAdaptor_FClass2d
     from OCP.TopAbs import TopAbs_IN
     from OCP.gp import gp_Dir, gp_Lin, gp_Pnt, gp_Pnt2d, gp_Vec
 
@@ -526,7 +526,7 @@ def visible_point(occurrences, cast, look, *, faces: int = 40) -> tuple[float, f
             if budget <= 0 or len(found) >= 12:
                 break
             u0, u1, v0, v1 = BRepTools.UVBounds_s(face.wrapped)
-            inside = BRepTopAdaptor_FClass2d(face.wrapped, 1e-7)
+            inside = BRepClass_FaceClassifier()
             surface = BRepGProp_Face(face.wrapped)
             # Samples every few millimetres across the face, so a part showing only
             # a narrow band between two others still shows one.
@@ -549,7 +549,8 @@ def visible_point(occurrences, cast, look, *, faces: int = 40) -> tuple[float, f
                 budget -= 1
                 # The UV rectangle overhangs a trimmed face: a plate's centre
                 # sample can sit in its bore.
-                if inside.Perform(gp_Pnt2d(u, v)) != TopAbs_IN:
+                inside.Perform(face.wrapped, gp_Pnt2d(u, v), 1e-7)
+                if inside.State() != TopAbs_IN:
                     continue
                 point, normal = at(u, v)
                 if normal.Magnitude() < 1e-12:

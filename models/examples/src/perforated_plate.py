@@ -1,5 +1,9 @@
 from __future__ import annotations
-from cadgen import materials, model
+
+from bd_materials import FinishedMaterial, metals
+from threejs_materials import PbrProperties
+
+from cadgen import model
 import build123d as bd
 
 
@@ -34,7 +38,10 @@ def perforated_plate():
     part -= bd.Pos(SLOT_CENTRE_X, 0, 0) * bd.extrude(bd.SlotCenterToCenter(SLOT_LENGTH - SLOT_WIDTH, SLOT_WIDTH),
                                                      THICKNESS)
     part.label = "perforated_plate"
-    part.material = materials.aluminium_6061
+    part.material = FinishedMaterial(
+        metals.aluminum().material,
+        pbr=PbrProperties.create('Aluminum 6061-T6', metalness=1.0, roughness=0.35, anisotropy=0.3),
+    )
     return part
 
 

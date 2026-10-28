@@ -1,5 +1,9 @@
 from __future__ import annotations
-from cadgen import materials, model
+
+from bd_materials import FinishedMaterial, metals
+from threejs_materials import PbrProperties
+
+from cadgen import model
 import build123d as bd
 
 
@@ -24,7 +28,11 @@ def guide_bar():
     for x in (CROSS_HOLE_INSET, LENGTH - CROSS_HOLE_INSET):
         part -= bd.Pos(x, 0, 0) * bd.Cylinder(CROSS_HOLE_DIAMETER / 2, DIAMETER * 2)
     part.label = "guide_bar"
-    part.material = materials.steel_4140
+    part.material = FinishedMaterial(
+        metals.alloy_steel().material,
+        pbr=PbrProperties.create('Chromium-molybdenum alloy steel for shafts and gears', metalness=1.0,
+            roughness=0.4),
+    )
     return part
 
 

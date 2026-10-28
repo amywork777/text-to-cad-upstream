@@ -1,7 +1,10 @@
 from __future__ import annotations
 from math import cos, radians, sin
 
-from cadgen import materials, model
+from bd_materials import FinishedMaterial, metals
+from threejs_materials import PbrProperties
+
+from cadgen import model
 import build123d as bd
 
 
@@ -34,7 +37,10 @@ def angle_bracket():
     tab -= bd.Pos(-THICKNESS / 2, 0, TAB_HOLE_HEIGHT) * bd.Rot(0, 90, 0) * bd.Cylinder(TAB_HOLE_DIAMETER / 2, THICKNESS)
     part = (base + bd.Location((BASE_LENGTH / 2, 0, 0), (0, 1, 0), TAB_LEAN) * tab).clean()
     part.label = "angle_bracket"
-    part.material = materials.steel_1018
+    part.material = FinishedMaterial(
+        metals.mild_steel(metals.MildSteel.G1018_COLD_DRAWN).material,
+        pbr=PbrProperties.create('Low-carbon mild steel, cold drawn bar', metalness=1.0, roughness=0.4),
+    )
     return part
 
 
