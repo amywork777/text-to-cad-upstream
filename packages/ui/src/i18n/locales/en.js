@@ -751,5 +751,7 @@ export default {
   "fea.noLoad": "No load",
   "fea.loadIsZero": "The load is set to 0",
   "fea.noStress": "No stress",
+  "fea.cantJudgeAll": "Can't judge every check",
+  "fea.cantJudge": "Can't judge {checks}",
   "fea.checkLoadReaches": "Check the load reaches the part",
 };

@@ -541,12 +541,12 @@ export function feaVerdict(result, loadScale = 1, t = english) {
   const total = result.checks.length;
   // A check it cannot judge leaves no pass to say: how many fail, else that it cannot judge them all.
   const open = unjudged.length > 0 && !failing;
-  const title = open ? "Can't judge every check" : total === 1 ? checkTitle(worst, worst.status)
+  const title = open ? t("fea.cantJudgeAll") : total === 1 ? checkTitle(worst, worst.status)
     : failing ? failedTitle(failing, total) : worst.status === "close" ? "Close to the limit" : "Passes all checks";
   return {
     status: open ? "none" : TONE_OF[worst.status], title,
     // The load the weakest check takes; with none failing and one it cannot judge, which one.
-    caption: open ? `Can't judge ${unjudged.map((check) => `'${check.label || check.kind}'`).join(", ")}`
+    caption: open ? t("fea.cantJudge", { checks: unjudged.map((check) => `'${check.label || check.kind}'`).join(", ") })
       : loadCaption(Math.min(...judged.map((check) => check.times))),
     rows: judged.map((check) => {
       const part = check.kind === "stress" ? spaced(check.part) : "";

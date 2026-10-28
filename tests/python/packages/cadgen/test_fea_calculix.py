@@ -54,7 +54,7 @@ class FindCcx(unittest.TestCase):
 
     def test_freecad_installs_are_looked_for_where_each_installer_puts_them(self):
         with mock.patch.object(calculix.sys, "platform", "darwin"):
-            self.assertIn("/Applications/FreeCAD.app/Contents/Resources/bin/ccx", calculix._in_freecad())
+            self.assertIn(str(Path("/Applications/FreeCAD.app/Contents/Resources/bin/ccx")), calculix._in_freecad())
         with mock.patch.object(calculix.sys, "platform", "linux"):
             self.assertEqual(calculix._in_freecad(), [])
 
