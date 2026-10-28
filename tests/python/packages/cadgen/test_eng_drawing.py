@@ -4762,6 +4762,30 @@ class BrokenViewTests(unittest.TestCase):
         _render_sheet(sheet, index=1, count=1, label="hides", warnings=warnings)
         self.assertTrue(any("hides some of the part" in w for w in warnings), warnings)
 
+    def test_a_break_across_a_fork_draws_both_arms(self) -> None:
+        from build123d import Box, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        fork = Box(300, 60, 10) - Pos(20, 0, 0) * Box(280, 30, 10)  # the cut crosses two arms
+        sheet = Sheet("A3", 1.0)
+        top, _front, _right = sheet.three_views(fork)
+        top.broken((-50, 0, 0), (50, 0, 0))
+        top.overall()
+        values = _dim_texts(_render_sheet(sheet, index=1, count=1, label="fork"))
+        self.assertIn("300", values)
+
+    def test_a_break_leaves_both_ends_of_the_part(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3", 1.0)
+        _top, front, _right = sheet.three_views(_bar())
+        with self.assertRaisesRegex(ValueError, "leaves both ends"):
+            front.broken((-200, 0, 0), (500, 0, 0))
+        with self.assertRaisesRegex(ValueError, "leaves both ends"):
+            front.broken((100, 0, 0), (2000, 0, 0))
+
     def test_a_break_needs_a_length_the_view_shows(self) -> None:
         from cadgen.eng_drawing import Sheet
 

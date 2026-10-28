@@ -509,6 +509,18 @@ def _break_shift(brk: tuple, gap: float) -> Callable:
     return shift
 
 
+def _one_shape(kept):
+    """A split's result as one shape: the kernel hands back a list where the cut
+    leaves several pieces (a fork's two arms), and None where it leaves none."""
+    from build123d import Compound
+
+    if kept is None:
+        return Compound([])
+    if isinstance(kept, (list, tuple)):
+        return Compound(list(kept))
+    return kept
+
+
 def _broken_shape(shape, brk: tuple, gap: float):
     """The part with the stretch between the break's ends taken out and its far
     end moved up to ``gap`` (model mm) from its near one."""
@@ -516,8 +528,8 @@ def _broken_shape(shape, brk: tuple, gap: float):
 
     axis, lo, hi = brk
     normal = Vector(*(1.0 if k == axis else 0.0 for k in range(3)))
-    near = shape.split(Plane(origin=normal * lo, z_dir=normal), keep=Keep.BOTTOM)
-    far = shape.split(Plane(origin=normal * hi, z_dir=normal), keep=Keep.TOP)
+    near = _one_shape(shape.split(Plane(origin=normal * lo, z_dir=normal), keep=Keep.BOTTOM))
+    far = _one_shape(shape.split(Plane(origin=normal * hi, z_dir=normal), keep=Keep.TOP))
     far = far.moved(Location(normal * -((hi - lo) - gap)))
     return Compound([near, far])
 
@@ -539,8 +551,8 @@ def _break_hides(shape, brk: tuple) -> bool:
 
     axis, lo, hi = brk
     normal = Vector(*(1.0 if k == axis else 0.0 for k in range(3)))
-    middle = shape.split(Plane(origin=normal * lo, z_dir=normal), keep=Keep.TOP)
-    middle = middle.split(Plane(origin=normal * hi, z_dir=normal), keep=Keep.BOTTOM)
+    middle = _one_shape(shape.split(Plane(origin=normal * lo, z_dir=normal), keep=Keep.TOP))
+    middle = _one_shape(middle.split(Plane(origin=normal * hi, z_dir=normal), keep=Keep.BOTTOM))
     # The section at each end, and the mean section between: one section drawn
     # long has all three equal.
     ends = [sum(f.area for f in middle.faces() if abs(f.center().dot(normal) - at) < 1e-6) for at in (lo, hi)]

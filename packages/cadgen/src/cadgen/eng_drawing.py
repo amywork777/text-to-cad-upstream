@@ -72,7 +72,7 @@ from cadgen._internal.drawing_assembly import (
 )
 from cadgen._internal.drawing_base import (
     _BAND_H, _DETAIL_SIZE, _MARGIN, _NOTE_HEIGHT, _NOTE_INSET, PROJECTIONS, _SAME_PLACE, _SECTION_LETTERS,
-    SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, _TITLE_W, UNITS, VIEW_DIRECTIONS, _cross, _dirs, _dot, _look, _p3,
+    SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, _TITLE_W, UNITS, VIEW_DIRECTIONS, _cross, _dirs, _dot, _fmt, _look, _p3,
     _places, _scale_label, _text_width, _view_axes, _where,
 )
 from cadgen._internal.drawing_gdt import Frame, frame_size
@@ -549,6 +549,11 @@ class View:
             raise ValueError(f"the {self.name} view looks along {'XYZ'[axis]}, so it shows no length to break; "
                              f"break a view that shows {'XYZ'[axis]} across the sheet")
         brk = _Break(axis, min(a[axis], b[axis]), max(a[axis], b[axis]))
+        box = self.shape.bounding_box()
+        ends = ((box.min.X, box.max.X), (box.min.Y, box.max.Y), (box.min.Z, box.max.Z))[axis]
+        if brk.low <= ends[0] + _SAME_PLACE or brk.high >= ends[1] - _SAME_PLACE:
+            raise ValueError(f"broken({_where(a)}, {_where(b)}): the part runs from {'XYZ'[axis]} = {_fmt(ends[0])} "
+                             f"to {_fmt(ends[1])}, so a break takes out a stretch inside that and leaves both ends")
         views = [self]
         if self._arranged is not None:
             views = [v for v in self.sheet.views if v._arranged is self._arranged and v.name != "iso"
