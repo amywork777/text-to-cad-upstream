@@ -30,8 +30,8 @@ def rig_drawing():
 assembly model's `.shape`, `cadgen.read_xbf(path)` and `cadgen.read_step(path)`
 hand one back. Returns a `PartsList`: one `Item` per
 distinct part, numbered in the order the assembly first holds them.
-Occurrences are one part when they have the same name, the same colour and the
-same geometry (one prototype placed several times, or an exact translated
+Occurrences are one part when they have the same name, the same colour, the
+same material (`shape.material`) and the same geometry (one prototype placed several times, or an exact translated
 copy). Anything less stays apart: two parts of identical geometry can be
 different parts (a steel spacer and a brass one), a
 label's detail often names a finish (`piston_rod:chrome`), and mirror images
@@ -52,7 +52,9 @@ under different names, and the script prints them.
   set at assembly), numbered last. It has no sheet and needs no balloon;
   `quantity` is a count or `"AR"` (as required). Add before drawing.
 - `parts.merge(*keys, description=None)`: list items as one part, after
-  checking their geometry is the same; a different shape is refused. The first
+  checking their geometry and material are the same; a different shape or
+  material is refused. What `set()` stated for any of them is kept, and two
+  different values of one field (two part numbers) are refused. The first
   keeps its place, later items are numbered again, and the description is the
   label segments they share unless given. Merge before drawing from the list.
 - `item.number`, `.description` (the label read out: `piston_rod:chrome` is
@@ -121,7 +123,8 @@ axis:
   flanges prints one line per touching pair.
 
 A joint the assembly repeats (four bolts in four holes) is one line, with its
-number of places.
+number of places: each pair of parts that meet there (two bushings in one bore
+are two places; two plates touching once are one, however many pins cross).
 
 Nominal sizes that meet exactly are what a model says, not what a shop can
 make: each line is a joint to settle with the person. For each joint, ask:

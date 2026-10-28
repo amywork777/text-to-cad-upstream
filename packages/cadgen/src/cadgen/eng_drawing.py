@@ -64,7 +64,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, NamedTuple, Sequence
 
-from cadgen._internal.drawing_annotation import _Dim, _looks_into
+from cadgen._internal.drawing_annotation import _Dim, _looks_into, _thread
 from cadgen._internal.drawing_assembly import (
     _GA_LIST_SHARE, JOINTS, Item, _PartOf, PartsList, _arrange_assembly, _continuations, _item_shown, _joint_note,
     parts_list,
@@ -265,10 +265,20 @@ class View:
         The diameter, THRU or depth, counterbore, countersink and the ``4×``
         count all come from the geometry. Anything given here is checked against
         it and a disagreement is refused: a callout that says ⌀6 over a ⌀6.6
-        bore is the one error a shop machines faithfully. ``thread`` replaces
-        the diameter with the thread spec (``"M6x1 - 6H"``), which the B-rep
-        cannot carry; ``tol``/``fit`` qualify the diameter the way :meth:`dim`
-        does; ``label`` is appended (``"WHEEL"``). ``angle`` is where the leader
+        bore is the one error a shop machines faithfully. ``tol``/``fit``
+        qualify the diameter the way :meth:`dim` does; ``label`` is appended
+        (``"WHEEL"``).
+
+        ``thread`` states a tapped hole, which the B-rep cannot carry: an ISO
+        metric thread of an ISO 261 size and pitch, with an ISO 965 class
+        (``"M6"``, ``"M6x1 - 6H"``). The bore must be its tap drill (from the
+        basic minor diameter to about d - P: ⌀5 for M6x1) or the thread's own
+        size (⌀6), and a tap drill is stated with the thread after it
+        (``⌀5 ↧12   M6x1 - 6H ↧10``). It takes no ``diameter``, ``tol`` or
+        ``fit``. What the part cannot say is asked, never assumed: ``count``
+        is how many of the identical bores are tapped (all of them, or this one
+        alone), and ``depth`` how deep the thread runs, which a blind tap drill
+        needs and a through one may have. ``angle`` is where the leader
         leaves the circle, degrees from horizontal. ``frame`` is the
         :class:`Frame` drawn under the callout (its position, say), and ``datum``
         makes the hole a datum feature, its symbol on the callout. ``key=True``
@@ -281,8 +291,14 @@ class View:
                  "count": None if count is None else _positive("count", count, integer=True)}
         if thru and depth is not None:
             raise ValueError("a hole is either THRU or has a depth, not both")
-        spec = {"given": given, "thread": None if thread is None else str(thread),
-                "label": None if label is None else str(label)}
+        parsed = None
+        if thread is not None:
+            parsed = _thread(thread)
+            stated = [name for name, value in (("diameter", diameter), ("tol", tol), ("fit", fit)) if value is not None]
+            if stated:
+                raise ValueError(f"hole(thread={thread!r}) takes no {', '.join(stated)}: the thread and its class "
+                                 "are the tapped hole's size, and the bore under it is read off the part")
+        spec = {"given": given, "thread": parsed, "label": None if label is None else str(label)}
         self._dims.append(_Dim("hole", self._at(center), None, 0.0, None, None, radius=0.0,
                                angle=float(angle), tol=_tol(tol), fit=fit, hole=spec,
                                frame=_frame(frame), datum=_new_datum(self.sheet, datum), key=_key(key)))
@@ -328,7 +344,10 @@ class View:
         corner of the view's extent by default), which the view marks with its
         X and Y arrows; sizes are read off the part, as a callout reads them.
         ``at`` puts the table's top-left corner at that sheet point instead.
-        A view tabulates its holes or calls them out, not both."""
+        A view tabulates its holes or calls them out, not both, but for a
+        ``hole(thread=...)``: nothing in the part says a bore is tapped, so
+        that call gives the tapped holes' rows their thread, under a letter of
+        their own."""
         if self.name == "iso":
             raise ValueError("hole_table() tabulates an orthographic view's holes; an isometric has no X and Y")
         corner = None
@@ -530,8 +549,9 @@ class View:
         ``end`` lie along one of the model's axes, in the plane of the view. A
         dimension across the break states its true length. The other views of
         the same arrangement that show that length are broken alike, so the
-        views stay in line; the isometric is drawn whole. The drawing says if
-        the part changes inside the break, since the break would hide it."""
+        views stay in line; the isometric is drawn whole. A break where the
+        part changes (a shoulder, a hole) is refused, since the shortened view
+        would hide it, and so is a dimension to a point inside the break."""
         if self.name == "iso" or self._detail is not None or self._aux is not None or self._section is not None:
             raise ValueError("broken() shortens a whole principal view, not an isometric, a detail, an auxiliary "
                              "view or a section")

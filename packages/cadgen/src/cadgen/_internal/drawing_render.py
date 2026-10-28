@@ -21,7 +21,9 @@ from cadgen._internal.drawing_annotation import (
     _Features, _HoleTable, _callout_value, _draw_hole_table, _draw_hole_tags, _hole_table, _plan_view,
     _resolve_view, _shows, _tol_suffix,
 )
-from cadgen._internal.drawing_assembly import _draw_balloons, _item_point, _refresh_from_item, _refuse_balloons_on
+from cadgen._internal.drawing_assembly import (
+    _draw_balloons, _item_of, _item_point, _refresh_from_item, _refuse_balloons_on,
+)
 from cadgen._internal.drawing_base import (
     _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _CALLOUT_STACK, _CENTRE_OVERSHOOT, _DIM_ROW, _FLAG_SIDE,
     _HATCH_SCALE, HATCHES, _LABEL_GAP, _LABEL_HEIGHT, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE,
@@ -630,11 +632,14 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             draw = _broken_shape(view.shape, view._break, gap)
             if (id(view.shape), view._break) not in breaks_checked:
                 breaks_checked.add((id(view.shape), view._break))
-                if _break_hides(view.shape, view._break) and warnings is not None:
+                if _break_hides(view.shape, view._break):
+                    # Drawn, it reads as a part of one section all along: a shoulder
+                    # or a hole inside the break would go unseen, and unmade.
                     axis, lo, hi = view._break
-                    warnings.append(
-                        f"the break from {'XYZ'[axis]} = {_fmt(lo)} to {_fmt(hi)} hides some of the part: it is not "
-                        "the same section all along that stretch. Move the break to where the part does not change."
+                    raise ValueError(
+                        f"{view.name}.broken(): the break from {'XYZ'[axis]} = {_fmt(lo)} to {_fmt(hi)} hides some "
+                        "of the part: it is not the same section all along that stretch. Move the break to where "
+                        "the part does not change."
                     )
         shift = _break_shift(view._break, gap) if view._break is not None else None
         proj = _Projection(view.shape, _dirs(view), draw=draw, shift=shift)
@@ -670,6 +675,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         items = _resolve_view(view, proj, bounds, part_features, warnings, cut)
         if view._table is not None:
             tables[id(view)] = _hole_table(view, proj, part_features(view.shape), cut, items)
+            items = [dim for dim in items if dim.kind != "hole"]  # a tapped hole's thread is in its row
         work.append((view, proj, bounds, items, _plan_view(view, proj, bounds, items, sheet), centre))
 
     # A cutting plane runs out past the view it is drawn on, with an arrow and a
@@ -1378,9 +1384,9 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 if view._break is not None:
                     axis, low, high = view._break
                     inside = [p for p in (dim.p1, dim.p2) if low < p[axis] < high]
-                    if inside and warnings is not None:
-                        warnings.append(f"{view.name} dim {dim.index}: {_where(inside[0])} is inside the break, which "
-                                        "the view leaves out; dimension to a point the view shows.")
+                    if inside:
+                        raise ValueError(f"{view.name} dim {dim.index}: {_where(inside[0])} is inside the break, "
+                                         "which the view leaves out; dimension to a point the view shows.")
                     ra, rb = proj._raw_point(dim.p1), proj._raw_point(dim.p2)
                     if dim.orientation == "aligned":
                         across = [abs(dim.p2[k] - dim.p1[k]) for k in range(3) if k != axis]
@@ -1718,7 +1724,18 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             if dim.kind != "flag":
                 continue
             # A flag note: a leader to the flag, the flag numbered as its note.
-            p = model_to_sheet(dim.p1 if dim.p1 is not None else _item_point(view, dim.item))
+            if dim.p1 is None and view._section:
+                # On a section the item is flagged inside its own cut, where its
+                # balloon lands: a ray from the viewer meets the half taken away.
+                item = _item_of(view, dim.item)
+                if item.number not in section_anchors:
+                    letter = view._section[0]
+                    raise ValueError(f"flag(item={dim.item!r}): SECTION {letter}-{letter} cuts none of item "
+                                     f"{item.number} ({item.description or 'unnamed'}); flag it in a view that "
+                                     "shows it, or with at=")
+                p = section_anchors[item.number]
+            else:
+                p = model_to_sheet(dim.p1 if dim.p1 is not None else _item_point(view, dim.item))
             check("flag", dim.index, p)
             side, tall = _FLAG_SIDE * th, _FLAG_SIDE * th * math.sqrt(3) / 2
             number = len(sheet.drawn_notes()) - len(sheet._flags) + sheet._flags.index(dim.text) + 1

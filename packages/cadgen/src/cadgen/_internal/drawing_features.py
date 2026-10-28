@@ -77,13 +77,17 @@ class Hole:
     far_csk: tuple[float, float] | None = None
     #: From the mouth to the far end of the hole, along ``axis``.
     length: float = 0.0
+    #: Why no one callout states this hole, when none can: an end opened out in
+    #: steps (a chamfered counterbore, a counterbore in a counterbore). Such a hole
+    #: is refused wherever a callout or a table would state it.
+    problem: str | None = None
 
     def signature(self) -> tuple:
         """What makes two holes "the same hole" for a ``4×`` count."""
         r = lambda v: None if v is None else round(v, 3)
         pair = lambda p: None if p is None else (round(p[0], 3), round(p[1], 3))
         return (r(self.diameter), self.thru, r(self.depth), pair(self.cbore), pair(self.csk),
-                pair(self.far_cbore), pair(self.far_csk))
+                pair(self.far_cbore), pair(self.far_csk), self.problem)
 
 
 @dataclass(frozen=True)
@@ -308,13 +312,74 @@ def _perpendicular(d) -> tuple[tuple, tuple]:
     return u, v
 
 
+def _tori(shape) -> dict[tuple, list[tuple[float, float, float, float]]]:
+    """Every toroidal face -- a fillet round a turned edge -- grouped by the axis
+    line it turns about, as its axial range and its least and greatest radius."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Torus
+
+    found: dict[tuple, list[tuple[float, float, float, float]]] = {}
+    for face in shape.faces():
+        surface = BRepAdaptor_Surface(face.wrapped)
+        if surface.GetType() != GeomAbs_Torus:
+            continue
+        ax = surface.Torus().Axis()
+        loc, direction = ax.Location(), ax.Direction()
+        d, foot = _canonical((direction.X(), direction.Y(), direction.Z()), (loc.X(), loc.Y(), loc.Z()))
+        samples = []
+        for edge in face.edges():
+            for t in (0.0, 0.5, 1.0):
+                p = edge.position_at(t)
+                rel = (p.X - foot[0], p.Y - foot[1], p.Z - foot[2])
+                along = sum(a * b for a, b in zip(rel, d))
+                samples.append((along, math.sqrt(max(0.0, sum(c * c for c in rel) - along * along))))
+        if samples:
+            found.setdefault(_line_key(d, foot), []).append(
+                (min(a for a, _ in samples), max(a for a, _ in samples),
+                 min(r for _, r in samples), max(r for _, r in samples)))
+    return found
+
+
+def _bridge_fillets(bores: list[_Segment], tori: list[tuple[float, float, float, float]]) -> None:
+    """Close the gap a fillet leaves between two steps of one hole: a counterbore
+    whose floor is filleted into its wall stops short of the floor, and its wall
+    and the bore below would read as two holes. The step the fillet rounds into
+    is taken down to the floor, as the callout's depth measures it."""
+    cylinders = [s for s in bores if s.kind == "cyl"]
+    for lo, hi, r_min, r_max in tori:
+        for a in cylinders:
+            for b in cylinders:
+                if a is b or abs(a.hi - lo) > 1e-6 or abs(b.lo - hi) > 1e-6 or abs(a.r_lo - b.r_lo) < _TOUCH:
+                    continue
+                wide, narrow = (a, b) if a.r_lo > b.r_lo else (b, a)
+                grown = (wide if abs(r_max - wide.r_lo) < 1e-6 else narrow if abs(r_min - narrow.r_lo) < 1e-6
+                         else None)
+                if grown is None:
+                    continue
+                if grown is a:
+                    a.hi = hi
+                else:
+                    b.lo = lo
+
+
+def _steps(segments, narrowest: float) -> list[_Segment]:
+    """The steps an end of a hole opens out in, from that end inward to the bore."""
+    out = []
+    for seg in segments:
+        if seg.kind == "cyl" and abs(seg.r_lo - narrowest) < _TOUCH:
+            break
+        out.append(seg)
+    return out
+
+
 def holes(shape) -> list[Hole]:
     """Every hole in ``shape``, read off its faces, in a deterministic order."""
     from build123d import Vector
 
     found: list[Hole] = []
     ray = None
-    for d, foot, segments in _surface_segments(shape).values():
+    tori = None
+    for key, (d, foot, segments) in _surface_segments(shape).items():
         u, v = _perpendicular(d)
 
         def at(a: float, x: float = 0.0, y: float = 0.0):
@@ -328,78 +393,110 @@ def holes(shape) -> list[Hole]:
             return not any(shape.is_inside(at(a, x, y)) for x, y in samples)
 
         bores = [s for s in _merge_split_faces(segments) if s.concave and _full(s)]
-        chains = []
+        if tori is None:
+            tori = _tori(shape)
+        _bridge_fillets(bores, tori.get(key, []))
+        groups: list[list[list[_Segment]]] = []
         for chain in _chains(bores):
             # Two pieces of one bore with air between them -- a clevis's two arms,
             # a bore broken through by a cross hole or a slot -- are one hole.
-            if (chains and abs(chains[-1][-1].r_hi - chain[0].r_lo) < _TOUCH
-                    and all(not shape.is_inside(at(chains[-1][-1].hi + (chain[0].lo - chains[-1][-1].hi) * f))
+            last = groups[-1][-1] if groups else None
+            if (last is not None and abs(last[-1].r_hi - chain[0].r_lo) < _TOUCH
+                    and all(not shape.is_inside(at(last[-1].hi + (chain[0].lo - last[-1].hi) * f))
                             for f in (0.1, 0.5, 0.9))):
-                chains[-1] = chains[-1] + chain
+                groups[-1].append(chain)
             else:
-                chains.append(chain)
-        for chain in chains:
-            cylinders = [s for s in chain if s.kind == "cyl"]
-            if not cylinders:
-                continue  # a conical recess with no bore is not a drilled hole
-            longest = max(cylinders, key=lambda s: s.hi - s.lo)
-            if not air((longest.lo + longest.hi) / 2, longest.r_lo):
-                continue
-            lo, hi = chain[0].lo, chain[-1].hi
-            narrowest = min(s.r_lo for s in cylinders)
+                groups.append([chain])
+        for group in groups:
             ray = ray or _Ray(shape)
-            open_lo = ray.open(tuple(at(lo - _PROBE)), tuple(-c for c in d), 2 * narrowest)
-            open_hi = ray.open(tuple(at(hi + _PROBE)), d, 2 * narrowest)
-            if not (open_lo or open_hi):
-                continue  # a sealed void, not something a drill makes
-            thru = open_lo and open_hi
-            # The mouth: a blind hole's open end; a through hole's counterbored or
-            # countersunk end, else its end at the larger coordinate.
-            if thru:
-                lo_wide = chain[0].r_lo > narrowest + _TOUCH
-                hi_wide = chain[-1].r_hi > narrowest + _TOUCH
-                from_hi = hi_wide or not lo_wide
-            else:
-                from_hi = open_hi
-            ordered = list(reversed(chain)) if from_hi else list(chain)
-            mouth_at = hi if from_hi else lo
-            axis = tuple(-c for c in d) if from_hi else d
-
-            def from_mouth(position: float) -> float:
-                return abs(position - mouth_at)
-
-            def widening(seg: _Segment, *, at_mouth: bool) -> tuple | None:
-                """The counterbore or countersink a chain's end segment makes, if any."""
-                outer_at_hi = from_hi if at_mouth else not from_hi
-                outer = seg.r_hi if outer_at_hi else seg.r_lo
-                if outer <= narrowest + _TOUCH:
-                    return None
-                if seg.kind == "cone":
-                    inner = seg.r_lo if outer_at_hi else seg.r_hi
-                    spread = math.degrees(2 * math.atan2(outer - inner, seg.hi - seg.lo))
-                    return ("csk", (2 * outer, round(spread, 1)))
-                return ("cbore", (2 * outer, seg.hi - seg.lo))
-
-            mouth_end = widening(ordered[0], at_mouth=True)
-            far_end = widening(ordered[-1], at_mouth=False) if thru and len(ordered) > 1 else None
-            depth = None
-            if not thru:
-                # From the mouth to the bottom of the deepest full-diameter stretch: a
-                # groove partway down does not end the hole, a drill point does not
-                # count.
-                deepest = [s for s in ordered if s.kind == "cyl" and abs(s.r_lo - narrowest) < _TOUCH][-1]
-                depth = max(from_mouth(deepest.lo), from_mouth(deepest.hi))
-            mouth = tuple(f + mouth_at * c for f, c in zip(foot, d))
-            found.append(Hole(
-                mouth=_tidy(mouth), axis=_tidy(axis), diameter=2 * narrowest, thru=thru, depth=depth,
-                cbore=mouth_end[1] if mouth_end and mouth_end[0] == "cbore" else None,
-                csk=mouth_end[1] if mouth_end and mouth_end[0] == "csk" else None,
-                far_cbore=far_end[1] if far_end and far_end[0] == "cbore" else None,
-                far_csk=far_end[1] if far_end and far_end[0] == "csk" else None,
-                length=hi - lo,
-            ))
+            hole = _read_chain([seg for chain in group for seg in chain], d, foot, at, air, ray)
+            if hole == "sealed" and len(group) > 1:
+                # Closed at both ends, the pieces are not one bore drilled through
+                # air: two blind holes facing each other across a gap (into the
+                # two walls of a channel) are each their own.
+                for chain in group:
+                    piece = _read_chain(chain, d, foot, at, air, ray)
+                    if isinstance(piece, Hole):
+                        found.append(piece)
+            elif isinstance(hole, Hole):
+                found.append(hole)
     found.sort(key=lambda h: (h.signature(), h.axis, h.mouth))
     return found
+
+
+def _read_chain(chain: list[_Segment], d, foot, at, air, ray: _Ray) -> "Hole | str | None":
+    """One run of bore segments on a line as a hole: None when it is not one (no
+    bore, material inside, a conical recess), ``"sealed"`` when it is closed at
+    both ends."""
+    cylinders = [s for s in chain if s.kind == "cyl"]
+    if not cylinders:
+        return None  # a conical recess with no bore is not a drilled hole
+    longest = max(cylinders, key=lambda s: s.hi - s.lo)
+    if not air((longest.lo + longest.hi) / 2, longest.r_lo):
+        return None
+    lo, hi = chain[0].lo, chain[-1].hi
+    narrowest = min(s.r_lo for s in cylinders)
+    open_lo = ray.open(tuple(at(lo - _PROBE)), tuple(-c for c in d), 2 * narrowest)
+    open_hi = ray.open(tuple(at(hi + _PROBE)), d, 2 * narrowest)
+    if not (open_lo or open_hi):
+        return "sealed"  # a sealed void, not something a drill makes
+    thru = open_lo and open_hi
+    # The mouth: a blind hole's open end; a through hole's counterbored or
+    # countersunk end, else its end at the larger coordinate.
+    if thru:
+        lo_wide = chain[0].r_lo > narrowest + _TOUCH
+        hi_wide = chain[-1].r_hi > narrowest + _TOUCH
+        from_hi = hi_wide or not lo_wide
+    else:
+        from_hi = open_hi
+    ordered = list(reversed(chain)) if from_hi else list(chain)
+    mouth_at = hi if from_hi else lo
+    axis = tuple(-c for c in d) if from_hi else d
+
+    def from_mouth(position: float) -> float:
+        return abs(position - mouth_at)
+
+    def widening(seg: _Segment, *, at_mouth: bool) -> tuple | None:
+        """The counterbore or countersink a chain's end segment makes, if any."""
+        outer_at_hi = from_hi if at_mouth else not from_hi
+        outer = seg.r_hi if outer_at_hi else seg.r_lo
+        if outer <= narrowest + _TOUCH:
+            return None
+        if seg.kind == "cone":
+            inner = seg.r_lo if outer_at_hi else seg.r_hi
+            spread = math.degrees(2 * math.atan2(outer - inner, seg.hi - seg.lo))
+            return ("csk", (2 * outer, round(spread, 1)))
+        return ("cbore", (2 * outer, seg.hi - seg.lo))
+
+    def described(steps: list[_Segment]) -> str:
+        return ", then ".join(
+            f"a cone ⌀{2 * max(s.r_lo, s.r_hi):g} to ⌀{2 * min(s.r_lo, s.r_hi):g}" if s.kind == "cone"
+            else f"a bore ⌀{2 * s.r_lo:g} for {s.hi - s.lo:g}" for s in steps)
+
+    problems = []
+    mouth_steps = _steps(ordered, narrowest)
+    far_steps = _steps(list(reversed(ordered)), narrowest) if thru else []
+    for name, steps in (("mouth", mouth_steps), ("far end", far_steps)):
+        if len(steps) > 1:
+            problems.append(f"its {name} opens out in {len(steps)} steps ({described(steps)})")
+    mouth_end = widening(mouth_steps[0], at_mouth=True) if len(mouth_steps) == 1 else None
+    far_end = widening(far_steps[0], at_mouth=False) if len(far_steps) == 1 and len(ordered) > 1 else None
+    depth = None
+    if not thru:
+        # From the mouth to the bottom of the deepest full-diameter stretch: a
+        # groove partway down does not end the hole, a drill point does not
+        # count.
+        deepest = [s for s in ordered if s.kind == "cyl" and abs(s.r_lo - narrowest) < _TOUCH][-1]
+        depth = max(from_mouth(deepest.lo), from_mouth(deepest.hi))
+    mouth = tuple(f + mouth_at * c for f, c in zip(foot, d))
+    return Hole(
+        mouth=_tidy(mouth), axis=_tidy(axis), diameter=2 * narrowest, thru=thru, depth=depth,
+        cbore=mouth_end[1] if mouth_end and mouth_end[0] == "cbore" else None,
+        csk=mouth_end[1] if mouth_end and mouth_end[0] == "csk" else None,
+        far_cbore=far_end[1] if far_end and far_end[0] == "cbore" else None,
+        far_csk=far_end[1] if far_end and far_end[0] == "csk" else None,
+        length=hi - lo, problem="; ".join(problems) or None,
+    )
 
 
 def axes(shape) -> list[Axis]:
@@ -508,8 +605,12 @@ def slots(shape) -> list[Slot]:
                 elif abs(cone.lo - hi) < _TOUCH:
                     hi = cone.hi
             narrow = min(chain, key=lambda p: p["r"])
-            open_lo = ray.open(point(middle, d, lo - _PROBE), tuple(-c for c in d), 2 * narrow["r"])
-            open_hi = ray.open(point(middle, d, hi + _PROBE), d, 2 * narrow["r"])
+            # Open along its whole length, not just at its middle: a blind slot with
+            # a hole through its floor is open where the hole is.
+            feet = [_canonical(d, f)[1] for f in narrow["feet"]]
+            along = [tuple(a + t * (b - a) for a, b in zip(*feet)) for t in (0.0, 0.25, 0.5, 0.75, 1.0)]
+            open_lo = all(ray.open(point(c, d, lo - _PROBE), tuple(-k for k in d), 2 * narrow["r"]) for c in along)
+            open_hi = all(ray.open(point(c, d, hi + _PROBE), d, 2 * narrow["r"]) for c in along)
             if not (open_lo or open_hi):
                 continue
             thru = open_lo and open_hi
@@ -527,7 +628,11 @@ def slots(shape) -> list[Slot]:
             if not thru:
                 # A blind slot is as deep as its floor on the centre line: a floor
                 # fillet or a ball end runs on below where the straight wall stops.
-                depth = ray.depth(point(middle, d, mouth_at), axis)
+                # Along the centre line, the floor's least depth: a hole in it
+                # runs deeper, or right through, where it is.
+                depths = [found for found in (ray.depth(point(c, d, mouth_at), axis) for c in along)
+                          if found is not None]
+                depth = min(depths) if depths else None
                 if depth is None:
                     deepest = [p for p in chain if abs(p["r"] - narrow["r"]) < _TOUCH]
                     depth = abs(mouth_at - (deepest[0]["lo"] if from_hi else deepest[-1]["hi"]))
@@ -1061,6 +1166,12 @@ def _strip_chamfer(face, found) -> Chamfer | None:
         return sum(x * y for x, y in zip(p, q))
 
     if abs(dot(n1, n2)) > 1e-3 or dot(mine, n1) <= 1e-3 or dot(mine, n2) <= 1e-3:
+        return None
+    # An outside corner's bevel runs from one face back away from its outward
+    # normal to the other; a bevel of an inside corner (a 45° fillet's stand-in)
+    # runs out along it, and is no chamfer: a general note of fillets over it
+    # would ask for a radius the corner does not have.
+    if dot(tuple(gap), n1) >= 0:
         return None
     legs = (width * dot(mine, n1), width * dot(mine, n2))
     if max(legs) > _CHAMFER_MAX:

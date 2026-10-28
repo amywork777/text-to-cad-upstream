@@ -85,8 +85,10 @@ def motorcycle_shock_absorber_drawing():
     tube_side, tube_end = (next(view for view in sheets.part("pressure_tube").views if view.name == name)
                            for name in ("front", "right"))
     r = BODY_OD / 2
-    tube_side.dim((r, 0, BODY_TOP_Z), (r, 0, BODY_TOP_Z - THREAD_LENGTH))           # the thread's length
-    tube_end.note(f"M{BODY_OD:g}x1.5 - 6g", (0, r, BODY_TOP_Z), offset=(15, 15))     # and the thread, on its circle
+    # The external thread: its length, said to be the thread's, and its designation
+    # on the threaded stretch.
+    tube_side.dim((r, 0, BODY_TOP_Z), (r, 0, BODY_TOP_Z - THREAD_LENGTH), text="<> THREAD LENGTH")
+    tube_end.note(f"M{BODY_OD:g}x1.5 - 6g", (0, r, BODY_TOP_Z - THREAD_LENGTH / 2), offset=(15, 15))
     # The spring is drawn simplified: its data governs, and what is open is named.
     spring = sheets.part("coil_spring")
     spring_end = next(view for view in spring.views if view.name == "top")

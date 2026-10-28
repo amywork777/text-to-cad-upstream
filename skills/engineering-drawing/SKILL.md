@@ -141,7 +141,9 @@ outside the sandbox once.
      and a bolt circle's `EQ SP ON ⌀60` are **read off the part**: do not type
      them. Anything you do
      type is checked, and a value the part contradicts stops the script.
-     Only `thread=` (which the geometry cannot carry) and `label=` are yours.
+     Only `thread=` (which the geometry cannot carry) and `label=` are yours;
+     with `thread=`, say how many of the identical bores are tapped (`count=`)
+     and, for a blind one, the thread's depth (`depth=`).
      A chamfered bore end is part of its hole: it is called out as `⌵`, with
      `BOTH ENDS` or `FAR SIDE` when the other end is opened out too. For a part
      with many holes, `view.hole_table()` tags each one (A1, B1 ...) and lists
@@ -192,8 +194,6 @@ outside the sandbox once.
    - *"separate solids"*: the part is in pieces, usually a cut that runs right
      through the model. Fix the model before drawing it, or, if it is an
      assembly, draw it as one (below).
-   - *"hides some of the part"*: a break covers a stretch where the part
-     changes; move it to where the section is constant.
    - *"requirements: …"*: one line per part sheet, apart from the `incomplete:`
      lines: its stage; how many sizes are toleranced, basic, reference or
      nominal (and under which general tolerance); its datums and frames; and

@@ -137,6 +137,66 @@ class HoleTests(unittest.TestCase):
         self.assertEqual(holes(left), [], "half a bore, a notch in an edge, is not a hole")
 
 
+class SecondReviewHoleTests(unittest.TestCase):
+    """What the second review of the hole reader found reading wrong at exit 0."""
+
+    @staticmethod
+    def _counterbored():
+        from build123d import Align, Box, Cylinder, Pos
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        return Box(40, 40, 12, align=up) - Cylinder(3.3, 12, align=up) - Pos(0, 0, 5.5) * Cylinder(5.5, 6.5, align=up)
+
+    def test_a_filleted_counterbore_floor_is_one_counterbored_hole(self) -> None:
+        from build123d import Axis, GeomType, SortBy
+        from cadgen._internal.drawing_features import holes
+
+        part = self._counterbored()
+        floor = part.edges().filter_by(GeomType.CIRCLE).filter_by_position(Axis.Z, 5.4, 5.6).sort_by(SortBy.RADIUS)[-1]
+        [hole] = holes(part.fillet(0.5, [floor]))
+        self.assertEqual((round(hole.diameter, 6), hole.thru, hole.problem), (6.6, True, None))
+        self.assertEqual(tuple(round(v, 6) for v in hole.cbore), (11.0, 6.5), "deep to its floor, fillet and all")
+
+    def test_an_end_opened_out_in_steps_is_no_one_callout(self) -> None:
+        from build123d import Align, Axis, Box, Cylinder, GeomType, Pos, SortBy
+        from cadgen._internal.drawing_features import holes
+
+        part = self._counterbored()
+        mouth = part.edges().filter_by(GeomType.CIRCLE).filter_by_position(Axis.Z, 11.9, 12.1).sort_by(SortBy.RADIUS)
+        [chamfered] = holes(part.chamfer(0.5, None, mouth[-1:]))
+        self.assertEqual((chamfered.csk, chamfered.cbore), (None, None), "no countersink made up of its chamfer")
+        self.assertIn("its mouth opens out in 2 steps", chamfered.problem)
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        three = (Box(40, 40, 12, align=up) - Cylinder(3, 12, align=up) - Pos(0, 0, 7) * Cylinder(5, 5, align=up)
+                 - Pos(0, 0, 10) * Cylinder(7, 2, align=up))
+        [stepped] = holes(three)
+        self.assertEqual(stepped.cbore, None, "the middle step is not dropped")
+        self.assertIn("a bore ⌀14 for 2, then a bore ⌀10 for 3", stepped.problem)
+
+    def test_a_blind_slot_with_a_hole_in_its_floor_is_blind(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos, SlotCenterToCenter, extrude
+        from cadgen._internal.drawing_features import holes, slots
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = Box(60, 40, 10, align=up) - Pos(0, 0, 5) * extrude(SlotCenterToCenter(20, 8), 5) - Cylinder(2, 10)
+        [slot] = slots(part)
+        self.assertEqual((slot.thru, slot.depth), (False, 5.0))
+        self.assertEqual([(h.diameter, h.thru) for h in holes(part)], [(4.0, True)], "the hole is its own")
+
+    def test_blind_holes_facing_each_other_across_a_gap_are_two(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos, Rot
+        from cadgen._internal.drawing_features import holes
+
+        up, centred = (Align.CENTER, Align.CENTER, Align.MIN), (Align.CENTER,) * 3
+        channel = Box(10, 30, 30, align=up) + Pos(30, 0, 0) * Box(10, 30, 30, align=up) \
+            + Pos(15, 0, 0) * Box(40, 30, 5, align=up)
+        channel -= Pos(5, 0, 20) * Rot(0, 90, 0) * Cylinder(3, 10, align=centred)
+        channel -= Pos(25, 0, 20) * Rot(0, 90, 0) * Cylinder(3, 10, align=centred)
+        found = sorted(((h.mouth, h.axis, h.thru, h.depth) for h in holes(channel)))
+        self.assertEqual(found, [((5.0, 0.0, 20.0), (-1.0, 0.0, 0.0), False, 5.0),
+                                 ((25.0, 0.0, 20.0), (1.0, 0.0, 0.0), False, 5.0)])
+
+
 class RevolvedTests(unittest.TestCase):
     """A part turned whole about one principal axis, and parts that are not."""
 
@@ -342,3 +402,19 @@ class EdgeTests(unittest.TestCase):
         pin = Cylinder(3, 20, align=up) + Pos(0, 0, 20) * Cone(3, 0, 3, align=up)
         self.assertEqual(chamfers(pin), [], "a cone that reaches its axis is a point")
         self.assertEqual(chamfers(Cone(36.5, 30, 6, align=up)), [], "a cone that is a part's whole side is its shape")
+
+    def test_a_bevelled_inside_corner_is_no_chamfer_and_no_fillet(self) -> None:
+        from build123d import Align, Axis, Box, Pos
+        from cadgen._internal.drawing_features import chamfers, sharp_edges
+        from cadgen._internal.drawing_report import geometry_notes
+
+        low = (Align.MIN,) * 3
+        corner = lambda p, x: p.edges().filter_by(Axis.Y).filter_by_position(Axis.X, x - 0.1, x + 0.1) \
+            .filter_by_position(Axis.Z, 4.9, 5.1)
+        channel = Box(40, 30, 5, align=low) + Box(5, 30, 30, align=low) + Pos(35, 0, 0) * Box(5, 30, 30, align=low)
+        channel = channel.fillet(3, corner(channel, 5))
+        channel = channel.chamfer(3, None, corner(channel, 35))
+        self.assertEqual(chamfers(channel), [], "a bevel in an inside corner bevels no outside edge")
+        self.assertGreater(sharp_edges(channel)[1], 0, "its two edges are inside corners left sharp")
+        self.assertFalse([n for n in geometry_notes(channel) if "FILLETS" in n],
+                         "so no fillet note claims the bevelled corner is R3")
