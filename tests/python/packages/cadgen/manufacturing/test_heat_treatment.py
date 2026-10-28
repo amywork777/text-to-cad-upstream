@@ -136,7 +136,11 @@ class HandCheck(unittest.TestCase):
         directory = class_directory(type(self))
         result = check(round_step(directory, 20.0, 60.0), {**BASE, "mesh": {"size_mm": 2.0}})
         hand = result.summary["hand_check"]
-        self.assertEqual((hand["shape"], hand["dims_mm"]), ("round", [20.0, 60.0]))
+        # The bar is measured from the mesh's nodes, which land on its curved surface where the mesher puts
+        # them: within a micrometre of 20 mm, not on it (19.9999 mm on Linux CI).
+        self.assertEqual(hand["shape"], "round")
+        for got, size in zip(hand["dims_mm"], (20.0, 60.0), strict=True):
+            self.assertAlmostEqual(got, size, delta=1e-3)
         self.assertAlmostEqual(hand["simulated_rate_700_C_s"] / hand["centre_rate_700_C_s"], 1.0, delta=0.10)
         self.assertAlmostEqual(hand["simulated_t85_s"] / hand["centre_t85_s"], 1.0, delta=0.10)
         hand_check = next(f for f in result.findings if f["type"] == "hand_check")
