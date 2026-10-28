@@ -88,6 +88,7 @@ def _operation(model, spec, tc, plan):
     if kind == "drill":
         op.PeckEnabled = spec.get("peck_mm") is not None
         if op.PeckEnabled:
+            op.setExpression("PeckDepth", None)       # FreeCAD's is three quarters of the drill, over any value
             op.PeckDepth = f"{spec['peck_mm']} mm"
         op.AddTipLength = False     # cadgen's depth already takes the point and the break through
     if kind != "drill":

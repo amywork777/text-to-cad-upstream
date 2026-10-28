@@ -237,6 +237,12 @@ class Plate(unittest.TestCase):
         self.assertAlmostEqual(self.bottom_z - 0.5, float(levels.min()), places=3)
         self.assertLessEqual(float(np.diff(levels).max()), 2.0 + 1e-3, levels)
 
+    def test_a_drill_pecks_as_far_as_the_job_says(self):
+        result = plan(self.step, self.job([{"op": "drill", "tool": "T2", "faces": [self.blind["faces"][0]],
+                                            "peck_mm": 1.5}]))
+        text = Path(result.posts[0]["file"]).read_text(encoding="utf-8")
+        self.assertEqual({"1.500"}, set(re.findall(r"G83 .*\bQ(\d+\.\d+)", text)))
+
     def test_an_inside_profile_of_a_flat_face_is_refused_naming_its_walls(self):
         # Inside the top face, FreeCAD traces the outline through the stock over it and cuts nothing of the part.
         result = plan(self.step, self.job([{"op": "profile", "tool": "T3", "side": "inside", "faces": [self.top]}]))

@@ -39,8 +39,10 @@ BORE_SHARE = 0.6
 #: A drill matches a hole within this (mm), and pecks one diameter at a time past this many diameters deep.
 DRILL_MATCH_MM = 0.05
 PECK_DEPTHS = 2.0
-#: The flutes cadgen proposes: three diameters, or as long as the deepest cut asks, up to six (a long-reach cutter).
-FLUTES_D, LONGEST_FLUTES_D = 3.0, 6.0
+#: The flutes cadgen proposes: the deepest cut and 2 mm more, two diameters at least (a stub cutter, stiffest) and six
+#: at most (a long-reach one); and how many, by the material: three in metal, two where chips are bigger.
+SHORTEST_FLUTES_D, LONGEST_FLUTES_D, MARGIN_MM = 2.0, 6.0, 2.0
+METALS = ("aluminum", "steel", "stainless", "brass")
 
 
 def _g(value: float) -> str:
@@ -295,11 +297,10 @@ def complete_job(raw: dict, parsed, part, reading) -> tuple[dict, list[dict]]:
         for d in used:
             id_of[("mill", d)] = f"T{len(new_tools) + 1}"
             deepest = max(cuts[k].depth for k, size in sizes.items() if size == d)
-            entry = {"id": id_of[("mill", d)], "type": "flat", "diameter_mm": d,
-                     "name": f"{_g(d)} mm flat end mill, proposed"}
-            if deepest > FLUTES_D * d:
-                entry["flute_length_mm"] = float(-(-deepest // 1))     # a long-reach cutter, whole mm
-            new_tools.append(entry)
+            flutes = min(LONGEST_FLUTES_D * d, max(SHORTEST_FLUTES_D * d, -(-deepest // 1) + MARGIN_MM))
+            new_tools.append({"id": id_of[("mill", d)], "type": "flat", "diameter_mm": d,
+                              "flutes": 3 if parsed.material.name.split("-")[0] in METALS else 2,
+                              "flute_length_mm": float(flutes), "name": f"{_g(d)} mm flat end mill, proposed"})
         for d in drill_sizes:
             id_of[("drill", d)] = f"T{len(new_tools) + 1}"
             new_tools.append({"id": id_of[("drill", d)], "type": "drill", "diameter_mm": d,
