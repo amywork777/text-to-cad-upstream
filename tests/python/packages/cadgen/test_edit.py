@@ -589,6 +589,30 @@ class TypedValues(unittest.TestCase):
         self.assertTrue(changed["ok"], changed.get("error"))
         self.assertIn("WIDTH = 21.5\n", (root / "sizes.py").read_text(encoding="utf-8"))
 
+    def test_a_flag_in_arithmetic_is_the_number_it_stands_for(self):
+        # build123d's PolarLocations turns each location by `rotate * angle`: rotate is a bool.
+        root = project({
+            "sizes.py": "CIRCLE = 30\nHOLES = 6\n",
+            "flange.py": """
+                import build123d as bd
+                from cadgen import model
+                from sizes import CIRCLE, HOLES
+
+                @model
+                def flange():
+                    part = bd.Cylinder(25, 5)
+                    part -= [loc * bd.Cylinder(2, 5) for loc in bd.PolarLocations(CIRCLE / 2, HOLES, start_angle=360 / HOLES / 2)]
+                    return part
+            """,
+        })
+        self.addCleanup(shutil.rmtree, root, True)
+        service = edit.EditService(build=False)
+        self.addCleanup(service.close)
+        state = service.state(str(root / "flange.step"))
+        self.assertTrue(state["ok"], state.get("error"))
+        self.assertNotIn("failure", state)
+        self.assertIn("CIRCLE", [p["name"] for p in state["params"]])
+
 
 # A model-first part, as the agent writes one on cadgen 0.8: build123d by its module, a bare @model,
 # no file written. A rig composes it as the engine composes a child: `plate().shape`.
