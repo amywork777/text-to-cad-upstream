@@ -163,7 +163,6 @@ const DOUBLE_PRESS_MS = 600;
  *   onContextMenuOpenChange?: ((open: boolean) => void) | null,
  *   frameProvider?: ((frame: import("react").ReactNode) => import("react").ReactNode) | null,
  *   iconSprite?: import("react").ReactNode,
- *   drawingToolIcons?: Readonly<Record<string, import("react").ReactNode>> | null,
  *   onCanvasPointerDown?: ((event: import("react").PointerEvent) => void) | null,
  *   viewportOverlay?: import("react").ReactNode | ((viewport: { runtimeRef: object, hostRef: object,
  *     mountRef: object, viewerReadyTick: number, commitScene: () => boolean }) => import("react").ReactNode) }} props
@@ -212,8 +211,6 @@ const DOUBLE_PRESS_MS = 600;
  *   it wrapped; a renderer that passes none is mounted exactly as it is.
  *   `iconSprite`: the hidden SVG sprite the renderer's chrome draws its icons from (`<use href="#…"/>`),
  *   mounted once in the frame; a renderer that draws its icons itself passes none.
- *   `drawingToolIcons`: the renderer's own icon for each drawing tool, by its id, on the row under the
- *   strip (`AnnotationToolbar`'s `icons`), as its strip draws Pencil and Shapes; none keeps the row's own.
  *   `onCanvasPointerDown`: a press that landed on the canvas, before anything in the viewport sees
  *   it. The frame focuses itself on such a press whatever the renderer does; this is for a renderer
  *   that also has something to put down when the person reaches for the model.
@@ -263,7 +260,7 @@ const DOUBLE_PRESS_MS = 600;
 export default function RendererShell({ shell, tools, toolPanels = null, subToolbar = null, sidebar = null, sidebarStartsOpen = null, references = null, referenceChips = null, nameReference = null, onClearReferences = null,
   requests = null, onClearRequests = null, copySelection = null, contextMenuItems = null,
   onContextMenuOpenChange = null, viewportOverlay = null, previewView = null,
-  frameProvider = null, iconSprite = null, drawingToolIcons = null, onCanvasPointerDown = null, onSelectPress = null, onSelectHover = null, selectsAnnotations = true, inkTouches = null,
+  frameProvider = null, iconSprite = null, onCanvasPointerDown = null, onSelectPress = null, onSelectHover = null, selectsAnnotations = true, inkTouches = null,
   alertBody = null, alertStartsDismissed = false, ribbon = null, leftDock = null, bottomDock = null, dialogPlace = null, dialogOpen = false,
   layoutControl = null, quickEditAsked = null }) {
   const { t } = useI18n();
@@ -436,7 +433,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
   const colorScheme = view.appearance?.colorScheme === "dark" ? "dark" : "light";
   // Otherwise the renderer supplies its active tool's row.
   const toolRow = frame.annotateToolActive
-    ? <AnnotationToolbar annotation={frame.annotation} colorScheme={colorScheme} icons={drawingToolIcons} />
+    ? <AnnotationToolbar annotation={frame.annotation} colorScheme={colorScheme} />
     : subToolbar;
 
   const hasContent = Boolean(scene) && !viewerLoading;

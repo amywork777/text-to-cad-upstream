@@ -12,11 +12,6 @@ function Panel({ family = 'pencil', colorScheme = 'light', placements = true }: 
   session = useAnnotationSession(family);
   return <AnnotationToolbar annotation={session} history={history} colorScheme={colorScheme} placements={placements} />;
 }
-// A renderer that draws the row's tools its own way (`icons`, by tool id).
-function OwnIcons({ icons }: { icons: Record<string, React.ReactNode> }) {
-  session = useAnnotationSession('pencil');
-  return <AnnotationToolbar annotation={session} history={history} icons={icons} />;
-}
 const open = async (name: string) => {
   fireEvent.pointerDown(screen.getByRole('button', { name }), { button: 0, ctrlKey: false });
   return screen.findByRole('menu', { name });
@@ -49,13 +44,6 @@ it("the row starts with the tools of Pencil (the pen first, pressed) or of Shape
   expect(tools()).toEqual([['Rectangle', 'true'], ['Line', 'false'], ['Arrow', 'false'], ['Ellipse', 'false'], ['Text', 'false']]);
   fireEvent.click(screen.getByRole('button', { name: 'Ellipse' }));
   expect([session.tool, session.shape, session.pencil]).toEqual(['ellipse', 'ellipse', 'freedraw']);
-});
-
-it("a renderer may draw the row's tools its own way, each by its id; a tool it gives none keeps the row's own", () => {
-  render(<OwnIcons icons={{ freedraw: <svg data-own="freedraw" />, eraser: <svg data-own="eraser" /> }} />);
-  const drawn = (name: string) => screen.getByRole('button', { name }).querySelector('svg')!;
-  expect([drawn('Pen').getAttribute('data-own'), drawn('Eraser').getAttribute('data-own')]).toEqual(['freedraw', 'eraser']);
-  expect(drawn('Highlighter').getAttribute('class')).toContain('lucide-highlighter');
 });
 
 it("each drawing kind keeps its own style on the row: the pen's red, the highlighter's yellow, Shapes' red; changing one leaves the others", async () => {

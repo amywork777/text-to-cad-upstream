@@ -109,15 +109,16 @@ it("Select's menu is a STEP's single choice: All when a file opens, or one kind 
     ['all', 'parts', 'faces', 'edges'], ['all', 'faces', 'edges', 'position'], ['all', 'parts', 'faces', 'edges', 'position']]);
   // The menu as a person reads it: its trigger, its heading, each mode with its glyph and whether it
   // is chosen, then the grouping options -- under All, and under each mode chosen in turn.
-  // A mode's own icon: the icon generator's, by its name (`<use href="#nx-…">`).
-  const glyphOf = (item: Element) => item.querySelector('use')?.getAttribute('href')?.replace('#nx-', '');
+  // A mode's own glyph: a mode glyph's name, else the icon's classes (not the chosen row's check).
+  const glyphOf = (item: Element) => item.querySelector('svg[data-mode-glyph]')?.getAttribute('data-mode-glyph')
+    ?? [...item.querySelectorAll('svg')].map(icon => icon.getAttribute('class') || '').find(name => !name.includes('lucide-check'));
   const read = () => {
     const menu = document.querySelector<HTMLElement>('[role=menu]')!;
     return {
       trigger: [...document.querySelectorAll('[data-select-filter-trigger]')].map(node => `${node.getAttribute('aria-label')}:${node.getAttribute('data-select-filter-trigger')}`),
       label: menu.querySelector('[data-slot=dropdown-menu-label]')?.textContent,
       modes: within(menu).getAllByRole('menuitemradio').map(item => `${item.getAttribute('data-select-filter')}:${item.textContent}:${item.getAttribute('aria-checked')}:${glyphOf(item)}`),
-      groups: within(menu).queryAllByRole('menuitemcheckbox').map(item => `${item.textContent}:${item.getAttribute('aria-checked')}:${glyphOf(item)}`),
+      groups: within(menu).queryAllByRole('menuitemcheckbox').map(item => `${item.textContent}:${item.getAttribute('aria-checked')}`),
     };
   };
   const seen: { xbf: ReturnType<typeof read>[] } = { xbf: [] };
@@ -136,21 +137,28 @@ it("Select's menu is a STEP's single choice: All when a file opens, or one kind 
   cleanup();
   // All, opening: Parts, Faces, Edges and Position each alone, and both groupings, which All's faces and edges use.
   expect(seen.xbf[0]).toEqual({ trigger: ['Selection filter: everything:all'], label: 'Pick',
-    modes: ['all:All:true:select', 'parts:Parts:false:select-part', 'faces:Faces:false:select-face', 'edges:Edges:false:select-edge', 'position:Position:false:select-position'],
-    groups: ['Group edges:true:select-edge-group', 'Group faces:false:select-face-group'] });
+    modes: ['all:All:true:select', 'parts:Parts:false:parts', 'faces:Faces:false:faces', 'edges:Edges:false:edges', 'position:Position:false:lucide lucide-spline rotate-90 size-3.5'],
+    groups: ['Group edges:true', 'Group faces:false'] });
   expect(seen.xbf.map(menu => menu.trigger[0])).toEqual(['Selection filter: everything:all', 'Selection filter: Parts:parts',
     'Selection filter: Faces:faces', 'Selection filter: Edges:edges', 'Selection filter: Position:position']);
   expect(changes.xbf).toEqual([['parts'], ['faces'], ['edges'], ['position'], [...XBF_SELECT_DEFAULT]]);
-  // The strip's buttons show the mode chosen alone, as the generator draws each: the pointer and the ruler for All.
+  // The strip's buttons are a STEP's: the pointer and the ruler, badged with the mode chosen alone, none for All.
   const icons = (Select: any, Measure: any) => {
     const { container } = render(<>{['all', 'parts', 'faces', 'edges', 'position'].map(mode => <Select key={mode} mode={mode} />)}
       {['all', 'vertex', 'edge', 'face'].map(mode => <Measure key={mode} mode={mode} />)}</>);
-    const found = [...container.querySelectorAll('use')].map(use => use.getAttribute('href')!.replace('#nx-', ''));
+    const found = [...container.querySelectorAll('svg[data-tool-icon-base]')].map(icon =>
+      `${icon.getAttribute('data-tool-icon-base')}:${icon.querySelector('[data-tool-icon-badge]')?.getAttribute('data-tool-icon-badge') ?? ''}`);
     cleanup();
     return found;
   };
-  expect(icons(XbfSelectIcon, XbfMeasureIcon)).toEqual(['select', 'select-part', 'select-face', 'select-edge', 'select-position',
-    'measure', 'measure-vertex', 'measure-edge', 'measure-face']);
+  expect(icons(XbfSelectIcon, XbfMeasureIcon)).toEqual(['select:', 'select:parts', 'select:faces', 'select:edges', 'select:position',
+    'measure:', 'measure:points', 'measure:edges', 'measure:faces']);
+  // In Studio's CAD workspace the same buttons are its icon generator's, each mode its own.
+  const { container: cad } = render(<>{['all', 'parts', 'faces', 'edges', 'position'].map(mode => <XbfSelectIcon key={mode} mode={mode} cad />)}
+    {['all', 'vertex', 'edge', 'face'].map(mode => <XbfMeasureIcon key={mode} mode={mode} cad />)}</>);
+  expect([...cad.querySelectorAll('use')].map(use => use.getAttribute('href')!.replace('#nx-', ''))).toEqual(['select', 'select-part',
+    'select-face', 'select-edge', 'select-position', 'measure', 'measure-vertex', 'measure-edge', 'measure-face']);
+  cleanup();
   // The geometry ticked is picked as one mode, which shapes the tree.
   expect(['all', 'parts', 'topology', 'none'].map(mode => treeShape(mode))).toEqual(['all', 'parts', 'faces', 'all']);
   expect(selectGeometryMode(['faces', 'edges'])).toBe('topology');
