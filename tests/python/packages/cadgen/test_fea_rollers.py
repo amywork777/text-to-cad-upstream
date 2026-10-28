@@ -187,44 +187,5 @@ class ConfinedCylinder(unittest.TestCase):
         self.assertLess(float(np.abs(moved[:, :2]).max()), 0.05 * squeeze)
 
 
-@needs_fea
-class TurnedFrames(unittest.TestCase):
-    """Square to the axes or turned 30°, the same block on the same rollers answers the same."""
-
-    def _both(self, **more):
-        with tempfile.TemporaryDirectory() as name:
-            return _uniaxial(Path(name), 0.0, **more), _uniaxial(Path(name), 30.0, **more)
-
-    def test_its_modes(self):
-        square, turned = self._both(analysis="modal", modes=3)
-        first, second = ([mode["frequency_Hz"] for mode in r.summary["modes"]] for r in (square, turned))
-        self.assertEqual((square.summary["rigid_body_modes"], turned.summary["rigid_body_modes"]), (0, 0))
-        self.assertEqual(len(first), 3)
-        for a, b in zip(first, second):
-            self.assertAlmostEqual(b / a, 1.0, delta=0.02)  # each its own mesh
-
-    def test_a_harmonic_sweep_through_the_modes(self):
-        # The modes are found in the rollers' own axes and turned back.
-        square, turned = self._both(analysis="harmonic", excitation={"type": "force"}, sweep_Hz=[10, 100])
-        for key in ("max_von_mises_MPa", "max_displacement_mm"):
-            self.assertAlmostEqual(turned.summary[key] / square.summary[key], 1.0, delta=0.03, msg=key)
-
-    def test_a_nonlinear_pull_past_yield(self):
-        material = {"name": "steel", "plasticity": {"tangent_MPa": 0}}
-        results = []
-        with tempfile.TemporaryDirectory() as name:
-            for angle in (0.0, 30.0):
-                step, faces = _block(Path(name), angle)
-                results.append(solve(step, Path(name) / f"pull{angle:g}.fea.glb", {
-                    "analysis": "nonlinear", "material": material, "steps": 4, "mesh": {"size_mm": 8.0},
-                    "fixtures": [{"faces": [faces["-x"], faces["-y"], faces["-z"]], "type": "roller"}],
-                    "loads": [{"faces": [faces["+z"]], "type": "pressure", "pressure_MPa": -300}]}))
-        square, turned = (r.summary for r in results)
-        # 300 MPa pulls the 250 MPa steel past yield, perfectly plastic: it collapses at yield over load, 250/300.
-        self.assertTrue(square["collapsed"])
-        self.assertAlmostEqual(square["load_percent"] / (100 * 250 / 300), 1.0, delta=0.02)
-        self.assertAlmostEqual(turned["load_percent"] / square["load_percent"], 1.0, delta=0.02)
-
-
 if __name__ == "__main__":
     unittest.main()

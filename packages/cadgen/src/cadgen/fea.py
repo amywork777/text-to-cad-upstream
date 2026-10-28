@@ -16,7 +16,8 @@ and writes a result GLB the viewer renders (von Mises as vertex colour on the
 deformed shape) beside a JSON sidecar with the numbers.
 
 ``solve`` requires the ``fea`` extra (``pip install 'cadgen[fea]'``): netgen
-for the mesh, scikit-fem and pyamg for the solve; ``faces`` and ``parts`` do
+for the mesh; and CalculiX (``ccx``), installed by the person, for the solve
+(``CADGEN_CCX`` names it where it is not on PATH); ``faces`` and ``parts`` do
 not. Import discipline: nothing here may
 pull in OCP, build123d or the solver stack at module scope (see
 :mod:`cadgen.urdf`) -- ``--help`` must stay cheap, and the extra may be absent.

@@ -17,7 +17,6 @@ caller) of this shape::
       "parts": {"post": {"material": "steel"}},   # assemblies: a material per part, by name or ref
       "connections": [{"between": ["post", "base"], "type": "free"}],  # assemblies: overrides of the bonded default
       "contact_tolerance_mm": 0.1,               # assemblies: faces this close are bonded
-      "fit": {"memory_GB": 8, "seconds": 600, "allow": ["iterative"]},  # optional ladder targets and allowed rungs
       "view": {"checks": [...], "sections": [...], "controls": [...], "presets": [...], "show": {...}}  # optional
     }
 
@@ -38,17 +37,15 @@ message that names the field.
 from __future__ import annotations
 
 import json
-import typing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from cadgen._internal.fea.analyses import kinds
-from cadgen._internal.fea.analyses.base import Rung
 from cadgen._internal.fea.materials import Material, material_from_spec, requires
 
 __all__ = [
-    "CHECK_KINDS", "COMMON_KEYS", "Connection", "Fixture", "Load", "ORTHOTROPIC_ANALYSES", "Study", "VIEW_SECTIONS",
+    "CHECK_KINDS", "COMMON_KEYS", "Connection", "Fixture", "Load", "Study", "VIEW_SECTIONS",
     "parse_fixtures",
     "parse_loads", "parse_study",
 ]
@@ -59,16 +56,9 @@ LOAD_TYPES = ("force", "pressure")
 #: Loads on the whole part, with no faces: a static study's gravity and acceleration (in g).
 BODY_LOAD_TYPES = ("gravity", "acceleration")
 #: The keys every analysis's study may carry; each analysis adds its own (``study_keys``).
-#: The analyses whose stiffness follows an orthotropic material's directions (the operators' anisotropic path); an
-#: analysis with ``isotropic_only`` refuses one, naming these.
-ORTHOTROPIC_ANALYSES = (
-    "static", "modal", "buckling", "harmonic", "random_vibration", "shock", "transient", "fatigue", "drop", "thermal_stress",
-)
 COMMON_KEYS = (
-    "analysis", "material", "mesh", "output", "margin", "parts", "connections", "contact_tolerance_mm", "view", "fit",
+    "analysis", "material", "mesh", "output", "margin", "parts", "connections", "contact_tolerance_mm", "view",
 )
-#: The ladder's rungs a study's ``fit.allow`` may name.
-RUNGS = typing.get_args(Rung)
 CONNECTION_TYPES = ("bonded", "free")
 UNSUPPORTED_CONNECTION_TYPES = ("bolt", "contact")
 #: What a view's control can move; the viewer knows how to apply each. `field` is an enum, the rest numbers.
@@ -160,8 +150,6 @@ class Study:
     analysis: str = "static"
     #: What the analysis parsed of the study (its own keys); ``None`` only for a Study built by hand.
     inputs: Any = None
-    #: The ladder's targets and allowed rungs (``memory_GB``, ``seconds``, ``allow``), checked; ``None`` for the defaults.
-    fit: dict | None = None
     #: Element order: 2 (quadratic) unless the analysis allows and the study asks for 1.
     mesh_order: int = 2
     #: ``mesh.refine``: balls meshed finer, ``(centre (x, y, z), radius_mm, size_mm)`` each.
@@ -568,30 +556,6 @@ def parse_loads(document: dict, *, required: bool = True, body: bool = True) -> 
     return tuple(loads)
 
 
-def _fit(raw: Any) -> dict | None:
-    """The study's ``fit``: the ladder's memory and time targets and the rungs it may take. Never a refusal."""
-    if raw is None:
-        return None
-    if not isinstance(raw, dict):
-        raise ValueError('study.fit: expected an object like {"memory_GB": 8, "seconds": 600, "allow": ["iterative"]}')
-    unknown = set(raw) - {"memory_GB", "seconds", "allow"}
-    if unknown:
-        raise ValueError(f"fit: unknown keys {sorted(unknown)}; expected memory_GB, seconds, allow")
-    fit: dict = {}
-    for key in ("memory_GB", "seconds"):
-        if key in raw:
-            fit[key] = _number(raw[key], where=f"fit.{key}", positive=True)
-    if "allow" in raw:
-        allow = raw["allow"]
-        if not isinstance(allow, list):
-            raise ValueError(f"fit.allow: list the ways it may shrink the model, from {list(RUNGS)} ([] for none)")
-        for index, rung in enumerate(allow):
-            if rung not in RUNGS:
-                raise ValueError(f"fit.allow[{index}]: {_json_text(rung)} is not one of {list(RUNGS)}")
-        fit["allow"] = list(dict.fromkeys(allow))
-    return fit
-
-
 def _mesh_refine(raw) -> tuple:
     """``mesh.refine``: ``[{"center_mm": [x, y, z], "radius_mm": r, "size_mm": h}]``, each ball meshed at ``h``."""
     if raw is None:
@@ -698,7 +662,6 @@ def parse_study(study: str | dict | Path | None) -> Study:
     tolerance = _number(document.get("contact_tolerance_mm", 0.1), where="contact_tolerance_mm")
     if tolerance < 0:
         raise ValueError(f"contact_tolerance_mm: must be zero or more, got {tolerance:g}")
-    fit = _fit(document.get("fit"))
 
     # What the analysis needs of every material it will solve with, asked for by name.
     needs = (*sorted(analysis.material_needs), *sorted(getattr(inputs, "material_needs", ())))
@@ -709,15 +672,14 @@ def parse_study(study: str | dict | Path | None) -> Study:
         needs = (*needs, "yield_strength")
     for each in ([material] if material is not None else []) + list(parts.values()):
         requires(each, needs, name)
-        if getattr(each, "orthotropic", None) and getattr(analysis, "isotropic_only", False):
-            supported = ", ".join(ORTHOTROPIC_ANALYSES[:-1]) + f" and {ORTHOTROPIC_ANALYSES[-1]}"
+        if getattr(each, "orthotropic", None):
             raise ValueError(
-                f"material: {name} studies treat a material as the same in every direction, and {each.name} is "
-                f"orthotropic; {supported} studies take an orthotropic material"
+                f"material: {each.name} is orthotropic, and a study solves a material that is the same in every "
+                "direction; give its E_MPa and nu"
             )
 
     return Study(
         material, fixtures, loads, mesh_size, deformation_scale, margin, document,
         parts=parts, connections=connections, contact_tolerance_mm=tolerance, view=view,
-        analysis=name, inputs=inputs, fit=fit, mesh_order=int(order), mesh_refine=refine,
+        analysis=name, inputs=inputs, mesh_order=int(order), mesh_refine=refine,
     )

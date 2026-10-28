@@ -1,17 +1,17 @@
-"""Linear static elasticity on a :class:`VolumeMesh`: scikit-fem assembly, pyamg solve, or CalculiX when installed.
+"""Linear static elasticity on a :class:`VolumeMesh`, solved by CalculiX (calculix.py).
 
 Quadratic (10-node) tetrahedra, isotropic linear elasticity, small strain. Fixed faces clamp every displacement
-component; a force is spread as a uniform traction over its faces; a pressure acts along the inward normal. The solve is
-algebraic multigrid (smoothed aggregation with the six rigid-body modes as the near-nullspace) accelerated by conjugate
-gradients, which is what makes a 150k-DOF part a seconds-long solve where SciPy's direct solver takes minutes; small
-systems go straight to the direct solver. Where a ``ccx`` program is installed and the study is one it solves the same
-way, CalculiX assembles and solves instead (calculix.py), on the same mesh with the same loads and held DOF, and its
-stress lands on the same quadrature points.
+component and rollers hold their normal (supports.py); a force is spread as a uniform traction over its faces and a
+pressure acts along the inward normal, each integrated over the curved six-node boundary triangles into nodal forces;
+gravity and acceleration are integrated over the curved ten-node elements the same way. CalculiX is given nodal forces
+only, so the load applied is exactly their sum. CalculiX prints the displacement, the reactions and the stress
+at each element's four integration points.
 
-Stress is recovered at the quadrature points from the displacement gradient, von Mises is formed there, and its nodal
-field is the L2 projection onto the quadratic scalar basis. Both maxima are reported: the Gauss-point value is the
-higher and the more mesh-dependent of the two, and the difference between them is itself a signal of a singularity or an
-under-resolved region.
+Von Mises is formed at the integration points. Its nodal field is each element's stress extrapolated linearly from
+its four points to its corners (its mid-edge nodes take the mean of their two), von Mises taken there and averaged over
+the elements at a node; in an assembly, over each part's elements alone, so stress jumps across a change of material as
+it does in the part. Both maxima are reported: the integration-point value is the more mesh-dependent of the two, and
+the difference between them is itself a signal of a singularity or an under-resolved region.
 """
 
 from __future__ import annotations
@@ -24,52 +24,55 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import numpy as np
 
-    from cadgen._internal.fea.femspace import FemSpace
     from cadgen._internal.fea.mesh import VolumeMesh
     from cadgen._internal.fea.study import Fixture, Load, Material
 
-__all__ = ["SolveOutcome", "solve_linear_static"]
+__all__ = ["DOF_LIMIT", "DOF_WARN", "SolveOutcome", "dof_warning", "solve_linear_static"]
 
-#: Above this many DOF the automatic finer re-solve is not taken (:func:`run.finer_mesh_size`). A first
-#: solve this large is never refused: the fit ladder (fit.py) chose its solver and its mesh to fit.
-DOF_LIMIT = 1_500_000
-#: Above this many it warns that the solve will be slow.
-DOF_WARN = 400_000
+#: CalculiX's direct solver (SPOOLES) fills in as a direct solver does: 140k DOF took 10 s and 1.8 GB, 207k 74 s and
+#: 4.3 GB. Above DOF_WARN a solve warns that it will be slow; above DOF_LIMIT the automatic finer re-solve is not
+#: taken (:func:`run.finer_mesh_size`). A first solve this large is never refused.
+DOF_WARN = 150_000
+DOF_LIMIT = 250_000
+# A six-point rule on the reference triangle (exact to degree 4): (ξ, η) and weights summing to its area, 1/2.
+_A1, _B1, _W1 = 0.445948490915965, 0.091576213509771, 0.111690794839005
+_A2, _B2, _W2 = 0.108103018168070, 0.816847572980459, 0.054975871827661
+_TRIANGLE_POINTS = ((_A1, _A1), (1 - 2 * _A1, _A1), (_A1, 1 - 2 * _A1), (_B1, _B1), (1 - 2 * _B1, _B1), (_B1, 1 - 2 * _B1))
+_TRIANGLE_WEIGHTS = (_W1,) * 3 + (_W2,) * 3
+_A, _B = 0.138196601125011, 0.585410196624968
 
 
 @dataclass
 class SolveOutcome:
-    #: (M, 3) coordinates of every scalar DOF: corner vertices first, then edge midpoints.
+    #: (M, 3) the mesh's nodes: corner vertices first, then mid-edge nodes.
     dof_locations: "np.ndarray"
-    #: (M, 3) displacement at each DOF location, mm.
+    #: (M, 3) displacement at each node, mm.
     displacement: "np.ndarray"
-    #: (M,) von Mises at each DOF location, MPa (L2 projection).
+    #: (M,) von Mises at each node, MPa.
     von_mises: "np.ndarray"
-    #: The raw quadrature-point maximum, MPa.
+    #: The raw integration-point maximum, MPa.
     von_mises_gauss_max: float
     #: Corner-vertex count; ``dof_locations[:vertices]`` are the linear mesh's points.
     vertices: int
-    #: (T, 4) corner connectivity in vertex ids.
+    #: (T, 4) corner connectivity.
     tets: "np.ndarray"
-    #: (B, 6) the boundary triangles with their mid-edge nodes, in scalar DOF ids.
+    #: (B, 6) the boundary triangles with their mid-edge nodes.
     boundary_quadratic: "np.ndarray"
     #: Per fixture (by index): reaction force vector in N.
     reactions: list[tuple[float, float, float]]
     #: Total applied force in N, summed over the loads.
     applied: tuple[float, float, float]
     dofs: int
-    #: (T, 10) the scalar DOF ids of each element's ten nodes, for reading a part's share of the fields.
+    #: (T, 10) each element's ten nodes, for reading a part's share of the fields.
     element_dofs: "np.ndarray"
-    #: (T,) the largest von Mises at each element's quadrature points, MPa.
+    #: (T,) the largest von Mises at each element's integration points, MPa.
     element_von_mises_gauss: "np.ndarray"
     timings: dict[str, float] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     solver: str = ""
-    #: For an assembly, (parts, M): each part's own von Mises field, projected from its elements alone (zero off the
-    #: part), so stress jumps across a change of material as it does in the part. ``von_mises`` is then their envelope.
+    #: For an assembly, (parts, M): each part's own von Mises field, from its elements alone (zero off the part), so
+    #: stress jumps across a change of material as it does in the part. ``von_mises`` is then their envelope.
     von_mises_parts: "np.ndarray | None" = None
-    #: (N,) the displacement on the vector DOF, as solved.
-    u: "np.ndarray | None" = field(default=None, repr=False)
 
 
 def dof_warning(dofs: int, automatic: bool, small_feature_mm: float | None = None) -> str:
@@ -87,189 +90,213 @@ def dof_warning(dofs: int, automatic: bool, small_feature_mm: float | None = Non
     return f"{dofs} degrees of freedom: expect a slow solve; a larger mesh.size_mm is usually enough"
 
 
-def _project_on_elements(scalar, field: "np.ndarray", rows: "np.ndarray") -> "np.ndarray":
-    """The L2 projection of a quadrature-point field onto the scalar basis, over the elements ``rows`` only.
-
-    The basis is built on those elements alone, so a part's projection costs
-    its own elements, not the whole mesh's. Zero on the DOF no such element uses.
-    """
+def _surface_quadrature(points: "np.ndarray", triangles: "np.ndarray") -> "tuple[np.ndarray, np.ndarray]":
+    """``(weights, normals)`` for the six-node ``triangles`` (corners, then the nodes on edges 1-2, 0-2, 0-1, as the
+    mesher writes them): ``weights`` (B, P, 6) is ∫ N_i dA at each rule point (summing to each triangle's area over P
+    and i), ``normals`` (B, P, 3) the outward unit normal there."""
     import numpy as np
-    import scipy.sparse.linalg as spla
-    from skfem import Basis, BilinearForm, LinearForm, asm
 
-    elements = np.flatnonzero(rows)
-    own = Basis(scalar.mesh, scalar.elem, elements=elements, quadrature=scalar.quadrature, dofs=scalar.dofs)
-    used = np.unique(own.element_dofs)
+    c0, c1, c2, m12, m02, m01 = (points[triangles[:, k]] for k in range(6))
+    weights, normals = [], []
+    for (xi, eta), w in zip(_TRIANGLE_POINTS, _TRIANGLE_WEIGHTS):
+        l0, l1, l2 = 1.0 - xi - eta, xi, eta
+        shape = np.array([l0 * (2 * l0 - 1), l1 * (2 * l1 - 1), l2 * (2 * l2 - 1), 4 * l1 * l2, 4 * l0 * l2, 4 * l0 * l1])
+        d_xi = (-(4 * l0 - 1)) * c0 + (4 * l1 - 1) * c1 + 4 * l2 * m12 - 4 * l2 * m02 + 4 * (l0 - l1) * m01
+        d_eta = (-(4 * l0 - 1)) * c0 + (4 * l2 - 1) * c2 + 4 * l1 * m12 + 4 * (l0 - l2) * m02 - 4 * l1 * m01
+        jacobian = np.cross(d_xi, d_eta)
+        area = np.linalg.norm(jacobian, axis=1)
+        weights.append(w * area[:, None] * shape[None, :])
+        normals.append(jacobian / np.where(area > 0, area, 1.0)[:, None])
+    return np.stack(weights, axis=1), np.stack(normals, axis=1)
 
-    @BilinearForm
-    def mass(u, v, w):
-        return u * v
 
-    @LinearForm
-    def moment(v, w):
-        return w["field"] * v
+def nodal_forces(volume: "VolumeMesh", loads: "tuple[Load, ...]", ordinal_of: dict[str, int]) -> "np.ndarray":
+    """(N, 3) the face loads as nodal forces, N: a force as a uniform traction over its faces' area, a pressure
+    (MPa, positive pushing in) along the inward normal."""
+    import numpy as np
 
-    M = asm(mass, own).tocsr()[used][:, used]
-    b = asm(moment, own, field=field[elements])[used]
-    inverse_diagonal = 1.0 / M.diagonal()
-    solution, info = spla.cg(M, b, rtol=1e-10, atol=0.0, M=spla.LinearOperator(M.shape, lambda x: inverse_diagonal * x), maxiter=500)
-    if info != 0:
-        solution = spla.spsolve(M.tocsc(), b)
-    result = np.zeros(scalar.N)
-    result[used] = np.maximum(solution, 0.0)
-    return result
+    forces = np.zeros((len(volume.nodes), 3))
+    ordinal = np.asarray(volume.boundary_ordinal)
+    boundary = np.asarray(volume.boundary)
+    for load in loads:
+        if load.body:
+            continue
+        rows = np.flatnonzero(np.isin(ordinal, [ordinal_of[ref] for ref in load.faces]))
+        if not len(rows):
+            raise ValueError(f"the {load.type} on {', '.join(load.faces)} lands on no element of the mesh")
+        weights, normals = _surface_quadrature(volume.nodes, boundary[rows])
+        if load.type == "force":
+            traction = np.asarray(load.vector, dtype=float) / float(weights.sum())
+            per_node = weights.sum(axis=1)[:, :, None] * traction           # (B, 6, 3)
+        else:  # pressure, pushing in: along -n
+            per_node = -float(load.pressure) * np.einsum("bpi,bpk->bik", weights, normals)
+        np.add.at(forces, boundary[rows].ravel(), per_node.reshape(-1, 3))
+    return forces
+
+
+#: Body loads integrate over each element with this many Gauss points along each of a collapsed cube's three axes.
+_BODY_POINTS = 4
+#: Elements integrated at once, to keep the arrays small.
+_CHUNK = 4096
+#: netgen's tetrahedron's mid-edge nodes 5-10 sit on these corner pairs.
+_TET10_EDGES = ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))
+
+
+def _tet_rule() -> "tuple[np.ndarray, np.ndarray]":
+    """``(points, weights)`` on the reference tetrahedron (natural coordinates; weights summing to its volume, 1/6):
+    Gauss-Legendre on the unit cube collapsed onto it, exact well past the degree of a curved ten-node element's
+    ∫ N det J."""
+    import numpy as np
+
+    g, w = np.polynomial.legendre.leggauss(_BODY_POINTS)
+    g, w = (g + 1.0) / 2.0, w / 2.0
+    a, b, c = (axis.ravel() for axis in np.meshgrid(g, g, g, indexing="ij"))
+    wa, wb, wc = (axis.ravel() for axis in np.meshgrid(w, w, w, indexing="ij"))
+    points = np.c_[a * (1 - b) * (1 - c), b * (1 - c), c]
+    return points, wa * wb * wc * (1 - b) * (1 - c) ** 2
+
+
+def body_forces(volume: "VolumeMesh", density: "np.ndarray", accelerations: "Sequence[Sequence[float]]") -> "np.ndarray":
+    """(N, 3) the body loads as nodal forces, N: each acceleration b (mm/s^2) as ∫ ρ b N_i dV over the curved elements,
+    ``density`` (tonne/mm^3) per element."""
+    import numpy as np
+
+    total = np.sum(np.asarray(accelerations, dtype=float).reshape(-1, 3), axis=0)
+    forces = np.zeros((len(volume.nodes), 3))
+    if not np.any(total):
+        return forces
+    points, weights = _tet_rule()
+    l = np.c_[1.0 - points.sum(axis=1), points]                                     # (Q, 4) barycentric
+    shape = np.concatenate([l * (2 * l - 1), np.stack([4 * l[:, i] * l[:, j] for i, j in _TET10_EDGES], axis=1)], axis=1)
+    d_l = np.array([[-1.0, -1.0, -1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    d_shape = np.concatenate([(4 * l - 1)[:, :, None] * d_l[None], np.stack(
+        [4 * (l[:, i, None] * d_l[j] + l[:, j, None] * d_l[i]) for i, j in _TET10_EDGES], axis=1)], axis=1)  # (Q, 10, 3)
+    tets = np.asarray(volume.tets)
+    for start in range(0, len(tets), _CHUNK):
+        rows = tets[start:start + _CHUNK]
+        x = volume.nodes[rows]                                                       # (E, 10, 3)
+        jacobian = np.einsum("eak,qal->eqkl", x, d_shape)                           # (E, Q, 3, 3)
+        dv = np.abs(np.linalg.det(jacobian)) * weights                              # (E, Q)
+        per_node = np.einsum("eq,qa->ea", dv, shape) * np.asarray(density)[start:start + _CHUNK, None]  # ∫ ρ N_a dV
+        np.add.at(forces, rows.ravel(), (per_node[:, :, None] * total).reshape(-1, 3))
+    return forces
+
+
+def _corner_extrapolation() -> "np.ndarray":
+    """(4, 4) the corner values of a linear field from its values at C3D10's four integration points (point k
+    nearest corner k): the inverse of the corner shape functions there."""
+    import numpy as np
+
+    at_points = np.full((4, 4), _A)
+    np.fill_diagonal(at_points, _B)
+    return np.linalg.inv(at_points)
+
+
+def _von_mises(s: "np.ndarray") -> "np.ndarray":
+    """Von Mises of stresses ``(..., 6)`` ordered xx, yy, zz, xy, xz, yz."""
+    import numpy as np
+
+    xx, yy, zz, xy, xz, yz = (s[..., k] for k in range(6))
+    return np.sqrt(np.maximum(0.5 * ((xx - yy) ** 2 + (yy - zz) ** 2 + (zz - xx) ** 2) + 3 * (xy ** 2 + xz ** 2 + yz ** 2), 0.0))
 
 
 def solve_linear_static(volume: "VolumeMesh", material: "Material | Sequence[Material]",
                         fixtures: "tuple[Fixture, ...]", loads: "tuple[Load, ...]", ordinal_of: dict[str, int], *,
-                        log=None, automatic: bool = False, body_loads: "Sequence[Sequence[float]]" = (),
-                        initial_strain=None, facet_pressures: "np.ndarray | None" = None, solver: str | None = None,
-                        space: "FemSpace | None" = None, rollers: "Sequence[tuple[Sequence[int], int]]" = (),
-                        calculix_first: bool = False) -> SolveOutcome:
+                        log=None, automatic: bool = False, body_loads: "Sequence[Sequence[float]]" = ()) -> SolveOutcome:
     """Solve one study on a meshed occurrence. ``ordinal_of`` maps face refs to ordinals.
 
     ``automatic`` marks the re-solve cadgen chose the size of, which words its warnings accordingly.
-    For an assembly (``volume.domain`` set) ``material`` is one material per part, indexed by
-    domain, and E and nu vary from element to element.
-
-    The keywords default to today's solve. ``body_loads`` are uniform body
-    accelerations b in mm/s^2, each adding ∫ ρ b·v (gravity is b = g; a part
-    accelerated by a carries b = -a); they count in ``applied``, so reactions
-    still balance. ``initial_strain`` is a stress-free strain at the vector
-    basis's quadrature points ((elements, quadrature) isotropic, like α ΔT, or a
-    (3, 3, elements, quadrature) tensor): its load is added and the stress is
-    recovered from the elastic part. ``facet_pressures`` is one pressure (MPa,
-    positive pushing in) per row of ``volume.boundary``. ``solver`` forces
-    ``"direct"``, ``"iterative"`` or ``"matrix_free"`` (the built-in solver) or
-    asks for ``"calculix"``; ``None`` takes CalculiX when :func:`calculix.choose
-    <cadgen._internal.fea.calculix.choose>` finds it and the study suits it,
-    else the built-in solver chosen by size. ``space`` reuses a
-    :class:`~cadgen._internal.fea.femspace.FemSpace` built on ``volume``.
-    ``calculix_first`` lets CalculiX take a study ``solver`` names a built-in solver for (the fit ladder's iterative
-    rung, taken to finish sooner); ``solver`` is then the built-in fallback.
-    ``rollers`` hold one displacement component on faces given by mesh ordinal, ``(ordinals,
-    component)`` each: a symmetry plane's (fit's ``symmetry`` rung). They carry no reaction.
+    For an assembly (``volume.domain`` set) ``material`` is one material per part, indexed by domain.
+    ``body_loads`` are uniform body accelerations b in mm/s^2, each adding ∫ ρ b·v (gravity is b = g; a part
+    accelerated by a carries b = -a); they count in ``applied``, so reactions still balance.
     """
     import numpy as np
-    from cadgen._internal.fea import calculix, operators
-    from cadgen._internal.fea.femspace import FemSpace
+
+    from cadgen._internal.fea import calculix
     from cadgen._internal.fea.mesh import small_feature_mm
-    from cadgen._internal.fea.superposition import load_vector
-    from skfem import LinearForm, asm
+    from cadgen._internal.fea.supports import check_held, supports_of
 
     timings: dict[str, float] = {}
     warnings: list[str] = []
-    started = time.perf_counter()
-    if space is None:
-        space = FemSpace.build(volume)
-    mesh, basis, scalar = space.mesh, space.basis, space.scalar
-    timings["mesh_to_fem_s"] = time.perf_counter() - started
+    ccx = calculix.find_ccx()
+    nodes, tets = np.asarray(volume.nodes), np.asarray(volume.tets)
+    if tets.shape[1] != 10:
+        raise ValueError("a static solve needs quadratic (10-node) tetrahedra")
+    count = len(nodes)
     if log:
-        log(f"element mesh: {mesh.t.shape[1]} tets, {basis.N} DOF")
-    if basis.N > DOF_WARN:
-        warnings.append(dof_warning(basis.N, automatic, small_feature_mm(volume)))
-    locations, component = space.locations, space.component
-    materials = list(material) if volume.domain is not None else material
+        log(f"element mesh: {len(tets)} tets, {3 * count} DOF")
+    if 3 * count > DOF_WARN:
+        warnings.append(dof_warning(3 * count, automatic, small_feature_mm(volume)))
+    materials = list(material) if volume.domain is not None else [material]
+    part_of = np.zeros(len(tets), dtype=np.int64) if volume.domain is None else np.asarray(volume.domain, dtype=np.int64)
 
-    # Loads, as nodal forces whichever solver runs
-    f = load_vector(space, loads, ordinal_of)
-    for acceleration in body_loads:
-        f += operators.body_force(space, materials, acceleration)
-    if facet_pressures is not None:
-        pressures = np.asarray(facet_pressures, dtype=float)
-        loaded = np.flatnonzero(pressures)
-        if len(loaded):
-            facets = space.facets_of_rows(loaded)
-            facet_basis = basis.boundary(facets)
-            on_facet = np.repeat(pressures[loaded][:, None], facet_basis.X.shape[1], axis=1)
+    forces = nodal_forces(volume, loads, ordinal_of)
+    if len(body_loads):
+        forces += body_forces(volume, np.array([m.density for m in materials])[part_of], body_loads)
+    applied = forces.sum(axis=0)
+    supports = supports_of(volume, fixtures, ordinal_of)
+    check_held(volume, supports)
 
-            @LinearForm
-            def surface(v, w):
-                return -w["p"] * (w.n[0] * v[0] + w.n[1] * v[1] + w.n[2] * v[2])
-
-            f += asm(surface, facet_basis, p=on_facet)
-    if initial_strain is not None:
-        f += operators.initial_strain_load(space, materials, initial_strain)
-    applied = tuple(float(f[component == c].sum()) for c in range(3))
-
-    # Fixtures: fixed faces, roller faces (supports.py), and a symmetry plane's held component.
-    from cadgen._internal.fea.supports import check_held, supports_of
-
-    planes = []
-    for ordinals, axis in rollers:
-        dofs = basis.get_dofs(space.facets_of_ordinals(list(ordinals), "a symmetry plane")).all()
-        planes.append(dofs[space.component[dofs] == axis])
-    supports = supports_of(space, fixtures, ordinal_of, held=planes)
-    fixture_dofs = supports.per_fixture
-    fixed = supports.fixed
-    free = np.setdiff1d(np.arange(basis.N), fixed)
-    check_held(space, supports)
-
-    # CalculiX, when it is installed and the study is one it solves as the built-in solver does (calculix.declines).
-    solved = None
-    ccx, why = calculix.choose(space, materials, solver=None if calculix_first else solver,
-                               initial_strain=initial_strain, supports=supports)
-    if why:
-        warnings.append(why)
-    if ccx is not None:
-        started = time.perf_counter()
-        solved = calculix.solve_static(ccx, space, materials, f, fixed, warnings)
-        timings["solve_s"] = time.perf_counter() - started
-    if solved is not None:
-        u, residual, how = solved.u, solved.residual, solved.how
-    else:
-        # Stiffness
-        started = time.perf_counter()
-        if solver == "matrix_free":
-            K = operators.ElementChunkOperator(space, materials)
-        else:
-            K = operators.stiffness(space, materials)
-        timings["assemble_s"] = time.perf_counter() - started
-
-        started = time.perf_counter()
-        u = np.zeros(basis.N)
-        method = {"direct": "direct", "iterative": "iterative"}.get(solver or "")
-        if supports.turned:
-            # A sloped or curved roller: solved in its nodes' own axes, then turned back (matrix-free assembles here).
-            K = operators.stiffness(space, materials) if solver == "matrix_free" else K
-            local = np.zeros(basis.N)
-            local[free], how = operators.solve_spd(supports.local(K), supports.local_vector(f), free, locations, component,
-                                                   warnings, method=method)
-            u = supports.global_vector(local)
-        else:
-            u[free], how = operators.solve_spd(K, f, free, locations, component, warnings, method=method)
-        timings["solve_s"] = time.perf_counter() - started
-        residual = K @ u - f
-    if log:
-        log(f"solved with {how} in {timings['solve_s']:.1f}s")
-
-    # Reactions: K u - f on the fixed DOF, summed per fixture and component.
-    reactions = [
-        tuple(float(residual[dofs][component[dofs] == c].sum()) for c in range(3))
-        for dofs in fixture_dofs
-    ]
-
-    # Stress recovery
     started = time.perf_counter()
-    s = operators.stress(space, materials, u, initial_strain)
-    if solved is not None:
-        s = solved.stress(space, s)  # CalculiX's own on its straight elements, exact there
-    von_mises_q = operators.von_mises(s)
+    elements = calculix.c3d10_elements(nodes, tets)
+    dat = calculix.run(ccx, lambda path: calculix.write_inp(
+        path, nodes, elements, part_of, materials, supports.held(), supports.frames, forces))
+    printed = calculix.read_dat(dat)
+    timings["solve_s"] = time.perf_counter() - started
+    if log:
+        log(f"solved with {ccx.label} in {timings['solve_s']:.1f}s")
+
+    displacement = np.zeros((count, 3))
+    u = printed["U"]
+    displacement[u[:, 0].astype(np.int64) - 1] = u[:, 1:4]
+    # CalculiX's RF is the elements' force on a node (K u). The reaction is what the support adds, K u - f, along each
+    # held direction only: along a direction a node is free in, K u is just the force applied there (a top edge's
+    # load on a node held across it), and on a held one the load applied there (the clamped face's own weight) is
+    # carried by the support too.
+    reaction = np.zeros(3 * count)
+    if "RF" in printed:
+        rf = np.zeros((count, 3))
+        rows = printed["RF"]
+        rf[rows[:, 0].astype(np.int64) - 1] = rows[:, 1:4]
+        for node, axis in supports.held():
+            frame = supports.frames.get(node)
+            if frame is None:
+                reaction[3 * node + axis] = rf[node, axis] - forces[node, axis]
+            else:
+                along = frame[:, axis]
+                reaction[3 * node:3 * node + 3] += (along @ (rf[node] - forces[node])) * along
+    reactions = [tuple(float(reaction[dofs][dofs % 3 == c].sum()) for c in range(3)) for dofs in supports.per_fixture]
+
+    started = time.perf_counter()
+    stress = np.full((len(tets), 4, 6), np.nan)
+    s = printed["S"]
+    stress[s[:, 0].astype(np.int64) - 1, s[:, 1].astype(np.int64) - 1] = s[:, 2:8]
+    if np.isnan(stress).any():
+        raise RuntimeError("CalculiX's stresses leave elements out")
+    at_points = _von_mises(stress)                                          # (T, 4)
+    corners = np.einsum("ck,tkj->tcj", _corner_extrapolation(), stress)     # (T, 4, 6) at C3D10's corners
+    mids = np.stack([(corners[:, i] + corners[:, j]) / 2.0 for i, j in calculix.C3D10_EDGES], axis=1)
+    at_nodes = _von_mises(np.concatenate([corners, mids], axis=1))          # (T, 10), in C3D10's order
+
+    def averaged(rows) -> "np.ndarray":
+        total, seen = np.zeros(count), np.zeros(count)
+        np.add.at(total, elements[rows].ravel(), at_nodes[rows].ravel())
+        np.add.at(seen, elements[rows].ravel(), 1.0)
+        return np.divide(total, seen, out=np.zeros(count), where=seen > 0)
+
     von_mises_parts = None
     if volume.domain is None:
-        von_mises = np.maximum(scalar.project(von_mises_q), 0.0)
+        von_mises = averaged(slice(None))
     else:
-        von_mises_parts = np.zeros((len(material), scalar.N))
-        for index in range(len(material)):
-            von_mises_parts[index] = _project_on_elements(scalar, von_mises_q, np.asarray(volume.domain) == index)
+        von_mises_parts = np.stack([averaged(part_of == index) for index in range(len(materials))])
         von_mises = von_mises_parts.max(axis=0)
-    displacement = space.nodal(u)
     timings["stress_s"] = time.perf_counter() - started
 
     return SolveOutcome(
-        dof_locations=space.dof_locations, displacement=displacement, von_mises=von_mises,
-        von_mises_gauss_max=float(von_mises_q.max()), vertices=space.vertices, tets=space.tets,
-        boundary_quadratic=space.boundary_quadratic, reactions=reactions, applied=applied, dofs=int(basis.N),
-        element_dofs=space.element_dofs, element_von_mises_gauss=von_mises_q.max(axis=1), timings=timings,
-        warnings=warnings, solver=how, von_mises_parts=von_mises_parts, u=u,
+        dof_locations=nodes, displacement=displacement, von_mises=von_mises,
+        von_mises_gauss_max=float(at_points.max()), vertices=int(tets[:, :4].max()) + 1, tets=tets[:, :4],
+        boundary_quadratic=np.asarray(volume.boundary), reactions=reactions,
+        applied=tuple(float(c) for c in applied), dofs=3 * count, element_dofs=tets,
+        element_von_mises_gauss=at_points.max(axis=1), timings=timings, warnings=warnings, solver=ccx.label,
+        von_mises_parts=von_mises_parts,
     )

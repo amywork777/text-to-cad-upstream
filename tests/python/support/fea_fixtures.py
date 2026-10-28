@@ -30,7 +30,7 @@ try:
 except RuntimeError:
     HAVE_FEA = False
 
-needs_fea = unittest.skipUnless(HAVE_FEA, "the fea extra (netgen-mesher, scikit-fem, pyamg) is not installed")
+needs_fea = unittest.skipUnless(HAVE_FEA, "the fea extra (netgen-mesher) or CalculiX (ccx) is not installed")
 
 
 @contextmanager

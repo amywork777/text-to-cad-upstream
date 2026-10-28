@@ -173,63 +173,6 @@ def peak_face(
     return volume.faces[ordinals[0]].ref if ordinals else None
 
 
-def static_setup(ctx: SolveContext, inputs: StaticInputs, loads) -> tuple:
-    """``(loads, extra, planes)`` for :func:`~cadgen._internal.fea.solve.solve_linear_static` on the plan: the face
-    loads (``loads``, or the surface ones beside a body load), its keyword arguments and the symmetry planes."""
-    import dataclasses
-
-    extra: dict[str, Any] = {}
-    if any(load.body for load in inputs.loads):
-        extra["body_loads"] = inputs.body_accelerations
-    if ctx.space is not None:
-        extra["space"] = ctx.space
-    if extra.get("body_loads"):
-        loads = inputs.surface_loads
-    plan = ctx.plan
-    planes = list(plan.prepared.planes) if plan is not None and plan.prepared is not None else []
-    if plan is not None and plan.solver != "direct":
-        extra["solver"] = plan.solver
-        # Iterative to finish sooner gives way to CalculiX, faster still; iterative to fit in memory does not.
-        extra["calculix_first"] = plan.solver_for == "time"
-    if planes:
-        # The half carries its share of each force (its faces are that share of the faces); a pressure,
-        # a body load and a fixture act on what is there. The cut faces may slide in their plane only.
-        share = 0.5 ** len(planes)
-        loads = tuple(dataclasses.replace(load, vector=tuple(share * c for c in load.vector)) if load.type == "force" else load
-                      for load in loads)
-        extra["rollers"] = [((p.ordinal,), p.component) for p in planes]
-    return loads, extra, planes
-
-
-def unfold(volume, outcome, planes, nodal: dict | None = None):
-    """The solved half (or quarter) mirrored back into the whole part: its mesh, every field the checks read and
-    the ``nodal`` scalar fields beside them. Returns ``(volume, outcome, nodal)``."""
-    import dataclasses
-
-    import numpy as np
-
-    from cadgen._internal.fea import symmetry
-
-    nodal = dict(nodal or {})
-    for plane in reversed(planes):
-        whole, keep = symmetry.unfold_volume(volume, plane)
-        locations, scalars, vectors, boundary, tets, elements, vertices = symmetry.unfold_fields(
-            plane, outcome.vertices, outcome.dof_locations, keep, scalars={"von_mises": outcome.von_mises, **nodal},
-            vectors={"displacement": outcome.displacement}, boundary=outcome.boundary_quadratic, tets=outcome.tets,
-            element_dofs=outcome.element_dofs,
-        )
-        outcome = dataclasses.replace(
-            outcome, dof_locations=locations, von_mises=scalars["von_mises"], displacement=vectors["displacement"],
-            boundary_quadratic=boundary, tets=tets, element_dofs=elements, vertices=vertices,
-            element_von_mises_gauss=np.concatenate([outcome.element_von_mises_gauss] * 2),
-            reactions=[symmetry.unfold_force(plane, r) for r in outcome.reactions],
-            applied=symmetry.unfold_force(plane, outcome.applied), u=None,
-        )
-        nodal = {name: scalars[name] for name in nodal}
-        volume = whole
-    return volume, outcome, nodal
-
-
 #: A stress's colours stop at this quantile of its values when its peak is a spike above them (a clamped edge's, a
 #: crack front's): the peak, singular, would otherwise turn the rest of the part blue.
 COLOUR_QUANTILE = 0.99
@@ -283,12 +226,8 @@ class StaticAnalysis(AnalysisBase):
     default_checks: ClassVar[tuple[dict, ...]] = DEFAULT_CHECKS
     drives: ClassVar[tuple[str, ...]] = VIEW_DRIVES
     default_controls: ClassVar[dict[str, dict]] = DEFAULT_CONTROLS
-    ladder: ClassVar[tuple[str, ...]] = ("iterative", "local_refine", "defeature", "linear_elements", "idealise", "symmetry")
     #: The noun of the viewer's load control and the verdict's takeaway ("OK up to 1.6× this load").
     noun: ClassVar[str] = "this load"
-    #: What the ladder's two passes compare, in its words ("peak stress moved 2.1% between ...").
-    governing_word: ClassVar[str] = "peak stress"
-
     # -- parse ---------------------------------------------------------------------------------------
 
     def parse(self, document: dict) -> StaticInputs:
@@ -299,67 +238,15 @@ class StaticAnalysis(AnalysisBase):
         needs = frozenset({"density"}) if any(load.body for load in loads) else frozenset()
         return StaticInputs(refs, anchors, True, fixtures=fixtures, loads=loads, material_needs=needs)
 
-    # -- the ladder (fit.py drives these) -------------------------------------------------------------
-
-    def estimate(self, ctx: SolveContext, inputs: StaticInputs):
-        """One elastic solve on the plan's mesh (fit.solid_estimate): the space, the matrix, the solver's own."""
-        from cadgen._internal.fea import fit
-
-        return fit.solid_estimate(ctx)
-
-    def apply(self, rung, ctx: SolveContext, inputs: StaticInputs):
-        from cadgen._internal.fea import fit
-
-        return fit.apply_generic(rung, self, ctx, inputs)
-
-    def symmetric_about(self, plane, inputs: StaticInputs, ctx: SolveContext) -> bool:
-        """Whether every fixture, load and check is its own mirror image about ``plane``: the same set of
-        faces, and no force or body load across it. One part only."""
-        if ctx.assembly is not None:
-            return False
-        axis = plane.component
-        from cadgen._internal.fea.materials import mirror_symmetric
-
-        # An orthotropic material mirrors onto itself only about a plane across one of its own directions.
-        if not all(material is None or mirror_symmetric(material, axis) for material in (getattr(ctx, "materials", None) or ())):
-            return False
-
-        def maps_onto_itself(refs) -> bool:
-            ordinals = {ctx.ordinal_of[ref] for ref in refs}
-            return {plane.mirror.get(o) for o in ordinals} == ordinals
-
-        checks = ctx.study.checks if ctx.study is not None else ()
-        groups = [fixture.faces for fixture in inputs.fixtures] + [load.faces for load in inputs.surface_loads]
-        groups += [tuple(check["faces"]) for check in checks if check.get("faces")]
-        if not all(maps_onto_itself(group) for group in groups):
-            return False
-        for load in inputs.loads:
-            vector = load.vector_g if load.body else (load.vector if load.type == "force" else None)
-            if vector is not None and abs(vector[axis]) > 1e-9 * max(math.sqrt(sum(c * c for c in vector)), 1e-300):
-                return False
-        return True
-
-    def governing(self, result: AnalysisResult):
-        """local_refine follows the stress field; two passes compare the weakest part's peak."""
-        return result.fields["von_mises"], self.weakest(result).peak_MPa
-
     # -- solve ---------------------------------------------------------------------------------------
 
     def solve(self, ctx: SolveContext, inputs: StaticInputs) -> AnalysisResult:
-        from cadgen._internal.fea import fit, solve
+        from cadgen._internal.fea import solve
 
-        # The ladder's idealise rung: a thin plate as a shell, a slender bar as a beam (fit.IDEALISERS).
-        if (idealised := fit.solve_idealised(self, ctx, inputs)) is not None:
-            return idealised
         volume, study, plan = ctx.volume, ctx.study, ctx.assembly
         materials = study.material if plan is None else plan.materials
-        loads, extra, planes = static_setup(ctx, inputs, study.loads)
-        outcome = solve.solve_linear_static(
-            volume, materials, inputs.fixtures, loads, ctx.ordinal_of, log=ctx.log, automatic=ctx.automatic, **extra
-        )
-        if planes:
-            volume, outcome, _ = unfold(volume, outcome, planes)
-            ctx.volume = volume
+        outcome = solve.solve_linear_static(volume, materials, inputs.fixtures, inputs.surface_loads, ctx.ordinal_of,
+                                            log=ctx.log, automatic=ctx.automatic, body_loads=inputs.body_accelerations)
         return self.static_result(outcome, solved_records(volume, outcome, ctx, inputs.fixtures), plan)
 
     def static_result(self, outcome, solved, plan) -> AnalysisResult:

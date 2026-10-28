@@ -58,11 +58,13 @@ def kernel_messages_on_stderr() -> Iterator[None]:
 
 
 def require_fea_stack() -> None:
-    """Fail with the install hint when the ``fea`` extra is missing."""
+    """Fail with the install hint when the ``fea`` extra or CalculiX is missing, before anything is meshed."""
     import importlib.util
 
+    from cadgen._internal.fea import calculix
+
     missing = []
-    for module in ("numpy", "scipy", "netgen", "skfem", "pyamg"):
+    for module in ("numpy", "scipy", "netgen"):
         if module == "netgen":
             # Found, never imported here: netgen's OpenCascade is loaded only by the mesher's process.
             if importlib.util.find_spec(module) is None:
@@ -79,6 +81,10 @@ def require_fea_stack() -> None:
             f"cadgen's fea extra is not installed (missing {', '.join(missing)}): "
             f"pip install 'cadgen[fea]=={__version__}'"
         )
+    try:
+        calculix.find_ccx()
+    except calculix.CalculixMissingError as error:
+        raise RuntimeError(str(error)) from error
 
 
 @dataclass(frozen=True)

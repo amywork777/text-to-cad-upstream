@@ -382,7 +382,8 @@ class Cantilever(unittest.TestCase):
         peak = self.result.summary["max_von_mises_MPa"]
         self.assertGreater(peak, 0.9 * root)
         self.assertLess(peak, 2.0 * root)
-        self.assertGreaterEqual(self.result.summary["max_von_mises_gauss_MPa"], peak * 0.99)
+        # The nodal field is each element's stress extrapolated from its integration points, so it peaks higher.
+        self.assertGreaterEqual(peak, self.result.summary["max_von_mises_gauss_MPa"] * 0.99)
         self.assertAlmostEqual(self.result.summary["safety_factor"], STEEL.yield_strength / peak, places=2)
 
     def test_the_top_fibre_stress_a_quarter_along_matches_my_over_i(self):
@@ -679,31 +680,31 @@ class FinerMeshSize(unittest.TestCase):
     def test_a_small_part_halves(self):
         from cadgen._internal.fea.run import finer_mesh_size
 
-        self.assertEqual(finer_mesh_size(2.0, 20_000), 1.0)
+        self.assertEqual(finer_mesh_size(2.0, 10_000), 1.0)
 
     def test_a_larger_part_is_capped_under_the_warn_threshold(self):
         from cadgen._internal.fea.run import finer_mesh_size
         from cadgen._internal.fea.solve import DOF_WARN
 
-        finer = finer_mesh_size(2.0, 100_000)
+        finer = finer_mesh_size(2.0, 50_000)
         self.assertTrue(1.0 < finer < 2.0)
-        self.assertAlmostEqual(self.estimate(2.0, finer, 100_000), DOF_WARN, delta=DOF_WARN * 1e-6)
+        self.assertAlmostEqual(self.estimate(2.0, finer, 50_000), DOF_WARN, delta=DOF_WARN * 1e-6)
 
     def test_a_part_already_past_the_warn_threshold_stays_under_the_limit(self):
         from cadgen._internal.fea.run import finer_mesh_size
         from cadgen._internal.fea.solve import DOF_LIMIT
 
-        finer = finer_mesh_size(2.0, 679_000)  # a real L-bracket at its default size
+        finer = finer_mesh_size(2.0, 160_000)
         self.assertLess(finer, 2.0)
-        self.assertLess(self.estimate(2.0, finer, 679_000), DOF_LIMIT)
+        self.assertLess(self.estimate(2.0, finer, 160_000), DOF_LIMIT)
 
     def test_a_first_solve_just_under_the_warn_threshold_falls_back_to_the_limit_budget(self):
         from cadgen._internal.fea.run import finer_mesh_size
         from cadgen._internal.fea.solve import DOF_LIMIT
 
-        finer = finer_mesh_size(2.0, 350_000)  # the WARN budget would give a ratio under 1.1
+        finer = finer_mesh_size(2.0, 140_000)  # the WARN budget would give a ratio under 1.1
         self.assertLess(finer, 1.9)
-        self.assertLess(self.estimate(2.0, finer, 350_000), DOF_LIMIT)
+        self.assertLess(self.estimate(2.0, finer, 140_000), DOF_LIMIT)
 
     def test_no_finer_solve_when_there_is_no_room_for_one(self):
         from cadgen._internal.fea.run import finer_mesh_size
@@ -959,94 +960,6 @@ class FinerAtCurves(unittest.TestCase):
         self.assertGreater(self.refined, 2.0 * self.first)
 
 
-@needs_fea
-class MultigridRetry(unittest.TestCase):
-    """A multigrid attempt that diverges is stopped and tried again, not left to run to the iteration cap."""
-
-    N = 21000  # past DIRECT_SOLVE_BELOW
-
-    def _system(self):
-        import numpy as np
-        import scipy.sparse as sparse
-
-        K = sparse.diags(np.linspace(1.0, 2.0, self.N)).tocsr()
-        return K, np.ones(self.N), np.arange(self.N), np.zeros((self.N, 3)), np.arange(self.N) % 3
-
-    def _fake(self, diverges: bool, K, f, starts: list):
-        import numpy as np
-
-        class Fake:
-            def solve(self, rhs, tol, accel, maxiter, residuals, callback, x0=None):
-                starts.append(x0)
-                if diverges:
-                    for _ in range(50):
-                        callback(1e6 * np.ones(len(rhs)))
-                    raise AssertionError("a diverging attempt must be stopped by the callback")
-                residuals.extend([1.0, 1e-9])
-                return rhs / K.diagonal()
-
-        return Fake()
-
-    def _run(self, diverging: list[bool]):
-        from unittest import mock
-
-        from cadgen._internal.fea.operators import solve_spd
-
-        K, f, free, locations, component = self._system()
-        self.starts: list = []
-        fakes = iter(self._fake(d, K, f, self.starts) for d in diverging)
-        warnings: list[str] = []
-        with mock.patch("pyamg.smoothed_aggregation_solver", side_effect=lambda *a, **k: next(fakes)):
-            _, how = solve_spd(K, f, free, locations, component, warnings)
-        return how, warnings
-
-    def test_a_diverging_attempt_is_retried(self):
-        how, warnings = self._run([True, False])
-        self.assertEqual(how, "amg+cg (2 iterations)")
-        self.assertEqual(warnings, [])
-
-    def test_a_retry_starts_from_another_guess_than_the_attempt_before(self):
-        import numpy as np
-
-        self._run([True, False])
-        first, second = self.starts
-        self.assertTrue(first is None or not np.any(first))
-        self.assertTrue(np.any(second))
-
-    def test_numpys_global_random_state_is_left_alone(self):
-        import numpy as np
-
-        np.random.seed(1234)
-        before = np.random.get_state()[1].copy()
-        self._run([True, False])
-        self.assertTrue(np.array_equal(np.random.get_state()[1], before))
-
-    def test_the_direct_solver_takes_over_when_every_attempt_fails(self):
-        how, warnings = self._run([True, True, True])
-        self.assertEqual(how, "superlu (after amg)")
-        self.assertIn("did not converge in 3 attempts", warnings[0])
-
-
-@needs_fea
-class PartProjection(unittest.TestCase):
-    """One part's von Mises field: the L2 projection over its own elements, zero on the rest."""
-
-    def test_a_field_the_basis_holds_comes_back_on_the_parts_nodes_and_zero_elsewhere(self):
-        import numpy as np
-        from skfem import Basis, ElementTetP2, MeshTet
-
-        from cadgen._internal.fea.solve import _project_on_elements
-
-        mesh = MeshTet.init_tensor(np.linspace(0, 2, 5), np.linspace(0, 1, 3), np.linspace(0, 1, 3))
-        scalar = Basis(mesh, ElementTetP2())
-        rows = mesh.p[0, mesh.t].mean(axis=0) < 1.0
-        x = np.asarray(scalar.interpolate(scalar.doflocs[0]))  # (elements, quadrature): x itself, quadratic-exact
-        result = _project_on_elements(scalar, 1.0 + x, rows)
-        own = np.unique(scalar.element_dofs[:, rows])
-        np.testing.assert_allclose(result[own], 1.0 + scalar.doflocs[0, own], atol=1e-8)
-        self.assertFalse(np.any(np.delete(result, own)))
-
-
 class HumanLine(unittest.TestCase):
     def test_the_cli_line_floors_the_safety_factor_like_the_findings(self):
         from cadgen.results import FeaResult
@@ -1061,13 +974,6 @@ class HumanLine(unittest.TestCase):
 
 # One quadratic tetrahedron from the pin hole of a link bar (netgen, 3.6 mm elements): its edge (0, 2) bows 0.8 mm
 # off the chord. scikit-fem's Newton search for its facets' quadrature points (``invF``) stalls on three of its faces.
-CURVED_TET = (
-    (63.0, 0.0, 4.0), (64.203724, 4.944669, 8.0), (60.153373, 4.512536, 5.229239), (60.783194, 4.153773, 2.427272),
-    (63.601862, 2.472335, 6.0), (62.178549, 4.728603, 6.614619), (62.228881, 2.667689, 4.614619),
-    (62.411121, 2.354149, 3.213636), (62.493459, 4.549221, 5.213636), (60.474793, 4.344583, 3.828255),
-)
-
-
 def _write_link_bar(directory: Path) -> Path:
     """A 140 x 30 x 8 mm bar with a 10 mm pin hole 12 mm in from each end (f7 at x = -58, f8 at x = +58)."""
     from build123d import Align, Box, Cylinder, Pos, export_step
@@ -1081,62 +987,7 @@ def _write_link_bar(directory: Path) -> Path:
 
 @needs_fea
 class CurvedFacetLoads(unittest.TestCase):
-    """A load on a curved face: the facet integrals need each quadrature point's place in its element, which
-    scikit-fem's Newton search fails to find on a strongly curved quadratic tet."""
-
-    @staticmethod
-    def _element():
-        import numpy as np
-        from skfem import MeshTet2
-
-        return MeshTet2(np.array(CURVED_TET).T.copy(), np.arange(10)[:, None])
-
-    def test_skfem_alone_fails_on_this_element(self):
-        import numpy as np
-        from skfem import Basis, ElementTetP2
-
-        with self.assertRaisesRegex(Exception, "Newton iteration"):
-            Basis(self._element(), ElementTetP2()).boundary(np.array([0]))
-
-    def test_every_facet_integrates_with_the_space_and_its_points_lie_on_the_facet(self):
-        import numpy as np
-
-        from cadgen._internal.fea.femspace import FemSpace, facet_reference_points
-
-        mesh = self._element()
-        space = FemSpace.from_mesh(mesh)
-        for facet in range(4):
-            boundary = space.basis.boundary(np.array([facet]))
-            mapping = boundary.mapping
-            # The points found are the facet's own: the element's map at them is the facet's map.
-            Y = facet_reference_points(mesh, boundary.X, boundary.find, boundary.tind)
-            np.testing.assert_allclose(mapping.F(Y, boundary.tind), mapping.G(boundary.X, find=boundary.find), atol=1e-9)
-            normal = np.asarray(boundary.normals)
-            np.testing.assert_allclose(np.linalg.norm(normal, axis=0), 1.0, atol=1e-9)
-            # A force spread over the facet sums back to the force.
-            from skfem import LinearForm, asm
-
-            traction = np.array([3.0, -2.0, 5.0]) / float(boundary.dx.sum())
-
-            @LinearForm
-            def form(v, w):
-                return traction[0] * v[0] + traction[1] * v[1] + traction[2] * v[2]
-
-            f = asm(form, boundary)
-            np.testing.assert_allclose([f[space.component == c].sum() for c in range(3)], [3.0, -2.0, 5.0], atol=1e-9)
-
-    def test_where_newton_converges_the_facet_points_are_newtons(self):
-        import numpy as np
-
-        from cadgen._internal.fea.femspace import facet_reference_points
-
-        mesh = self._element()
-        boundary = mesh.mapping()  # skfem's own mapping: Newton
-        from skfem import Basis, ElementTetP2
-
-        newton = Basis(mesh, ElementTetP2()).boundary(np.array([3]))
-        Y = facet_reference_points(mesh, newton.X, newton.find, newton.tind)
-        np.testing.assert_allclose(Y, boundary.invF(boundary.G(newton.X, find=newton.find), tind=newton.tind), atol=1e-9)
+    """A load on a curved face: integrated over the curved six-node triangles, it balances."""
 
     def test_a_force_on_a_pin_hole_solves_and_balances(self):
         """Before the fix this solve raised "Newton iteration didn't converge" building the pin hole's facet basis."""

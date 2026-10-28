@@ -143,28 +143,14 @@ def _stress_lines(s: dict, safety_factor_text) -> list[str]:
 
 
 #: Units on a log scale: a check in one says how far over or under its limit it is, not a ratio of the two.
-LOG_UNITS = ("dB", "dBA", "dB(A)")
 
 
 def _check_lines(s: dict) -> list[str]:
-    """One line per check the study asked for: what it measured against its limit, and whether it passes.
-
-    A level on a log scale (dB) is judged by its difference from the limit ("4 dB over the 80 dB limit"):
-    the ratio of two decibel numbers means nothing.
-    """
+    """One line per check the study asked for: what it measured against its limit, and whether it passes."""
     def unit(check: dict) -> str:  # " MPa", or nothing for a unitless check (a safety factor)
         return f" {check['unit']}" if check["unit"] else ""
 
     def line(check: dict) -> str:
-        if check["unit"] in LOG_UNITS:
-            gap = round(float(check["value"]) - float(check["limit"]), 2)
-            where = "at" if gap == 0 else f"{abs(gap):g}{unit(check)} {'over' if gap > 0 else 'under'}"
-            return (f"check '{check['label']}': {check['value']:g}{unit(check)}, {where} the {check['limit']:g}{unit(check)} "
-                    f"limit, {check['status']}")
-        if check.get("kind") == "frequency" and check["unit"] == "Hz":
-            return _frequency_line(check)
-        if check.get("kind") == "stability":
-            return _stability_line(check)
         # A share under 1 % reads "0.00×" to two places: say it is under 1 % of the limit instead.
         share = "under 1% of it" if 0 <= check["ratio"] < 0.01 else f"{check['ratio']:.2f}× it"
         return (f"check '{check['label']}': {check['value']:g}{unit(check)} against a {check['limit']:g}{unit(check)} limit, "
@@ -173,65 +159,13 @@ def _check_lines(s: dict) -> list[str]:
     return [line(check) for check in s.get("checks", [])]
 
 
-def _stability_line(check: dict) -> str:
-    """A rotor's stability by its smallest log decrement against the least it needs:
-    "log decrement 0.000552 (1st backward whirl at 8,000 rpm), under the 0.1 it needs, close".
-
-    A log decrement is a least-allowed value, not a limit to stay under: its ratio (the verdict meter's place) is
-    no "times the limit" a person reads, so the line says the two numbers and which side it is on.
-    """
-    need = float(check["limit"])
-    head = f"check '{check['label']}': "
-    if check.get("undamped"):
-        return f"{head}no damping modelled, so no whirl grows or dies away (it needs a log decrement of {need:g}), {check['status']}"
-    if check.get("mode") is None:
-        return f"{head}no whirl in the speed range, {check['status']}"
-    from cadgen._internal.fea.analyses.rotordynamics import rpm_text, whirl_words  # stdlib only
-
-    value = float(check["value"])
-    where = "under" if value < need else "at" if value == need else "over"
-    return (f"{head}log decrement {value:.3g} ({whirl_words(check)} at {rpm_text(check['rpm'])}), {where} the {need:g} it needs, "
-            f"{check['status']}")
-
-
-def _frequency_line(check: dict) -> str:
-    """A frequency check by its distance from the limit, in hertz: "127 Hz, 27 Hz above the 100 Hz minimum".
-
-    A minimum and a band to keep clear of are not ratios a person reads: the margin in hertz is.
-    Every number keeps the measured frequency's three significant figures.
-    """
-    value = float(check["value"])
-    decimals = max(0, 2 - math.floor(math.log10(abs(value)))) if value else 0
-
-    def num(number: float) -> str:
-        return f"{round(float(number), decimals):g}"
-
-    def hz(number: float) -> str:
-        return f"{num(number)} Hz"
-
-    mode = f"mode {check['mode']} at " if check.get("mode") is not None and check.get("avoid_Hz") else ""
-    if band := check.get("avoid_Hz"):
-        low, high = (float(edge) for edge in band)
-        if low <= value <= high:
-            where = f"inside the {num(low)}–{hz(high)} band to avoid"
-        else:
-            side, edge = ("below", low) if value < low else ("above", high)
-            where = f"{hz(abs(value - edge))} {side} the {num(low)}–{hz(high)} band to avoid"
-    else:
-        limit = float(check["limit"])
-        gap = value - limit
-        where = (f"at the {hz(limit)} minimum" if round(gap, decimals) == 0
-                 else f"{hz(abs(gap))} {'above' if gap > 0 else 'below'} the {hz(limit)} minimum")
-    return f"check '{check['label']}': {mode}{hz(value)}, {where}, {check['status']}"
-
-
 @dataclass(frozen=True)
 class FeaResult:
     """The outcome of ``cadgen fea solve``: where the results went, and the numbers.
 
-    ``summary`` carries the answer an engineer asks for first (static: max von Mises, nodal and Gauss-point, the
-    safety factor, max displacement, the applied-versus-reaction balance) and each check judged (``checks``);
-    another ``analysis`` writes its own summary and CLI lines. ``findings`` is what an engineer would say about it,
+    ``summary`` carries the answer an engineer asks for first (max von Mises, nodal and at the integration points, the
+    safety factor, max displacement, the applied-versus-reaction balance) and each check judged (``checks``).
+    ``findings`` is what an engineer would say about it,
     errors first, in the KiCad findings' shape. The JSON sidecar holds this whole result plus the study.
     """
 
@@ -247,10 +181,8 @@ class FeaResult:
     timings: dict = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
     findings: tuple[dict, ...] = ()
-    #: The analysis that was run (``static`` unless the study named another).
+    #: The analysis that was run.
     analysis: str = "static"
-    #: The fit-the-budget ladder's steps, in order (``rung``, ``words``, ``accuracy``, ...); empty when none was taken.
-    fit: tuple[dict, ...] = ()
 
     def human_lines(self) -> list[str]:
         from cadgen._internal.fea.checks import safety_factor_text  # stdlib only; kept out of module import time
@@ -260,28 +192,15 @@ class FeaResult:
         s = self.summary
         size = f"{self.mesh.get('elements')} tets, {self.mesh.get('dofs')} DOF, {self.mesh.get('size_mm')} mm elements"
         vtu = f", VTU: {_display(self.vtu)}" if self.vtu else ""
-        if self.analysis == "static":
-            # Which solver ran: CalculiX when it is installed ("calculix 2.23 (C3D10)"), else the built-in one.
-            solver = f"; solver {self.mesh['solver']}" if self.mesh.get("solver") else ""
-            lines = [
-                f"solved {self.occurrence} of {_display(self.document)}: {size}{solver}",
-                *_stress_lines(s, safety_factor_text),
-                *_check_lines(s),
-                f"max displacement {s.get('max_displacement_mm')} mm at {s.get('max_displacement_at_mm')}",
-                f"applied {s.get('applied_force_N')} N, reactions {s.get('reaction_force_N')} N",
-                f"wrote GLB: {_display(self.glb)} (deformation x{s.get('deformation_scale')}), sidecar: {_display(self.sidecar)}{vtu}",
-            ]
-        else:  # another analysis says its own lines (``Analysis.human_lines``)
-            from cadgen._internal.fea.analyses import get_analysis  # stdlib only
-
-            lines = [
-                f"solved {self.occurrence} of {_display(self.document)} ({self.analysis}): {size}",
-                *get_analysis(self.analysis).human_lines(s),
-                *_check_lines(s),
-                f"wrote GLB: {_display(self.glb)}, sidecar: {_display(self.sidecar)}{vtu}",
-            ]
-        # One line per fit-the-budget step: what was adapted, and what it may have cost.
-        lines += [f"adapted: {step['words']}" + (f" ({step['accuracy']})" if step.get("accuracy") else "") for step in self.fit]
+        solver = f"; solver {self.mesh['solver']}" if self.mesh.get("solver") else ""
+        lines = [
+            f"solved {self.occurrence} of {_display(self.document)}: {size}{solver}",
+            *_stress_lines(s, safety_factor_text),
+            *_check_lines(s),
+            f"max displacement {s.get('max_displacement_mm')} mm at {s.get('max_displacement_at_mm')}",
+            f"applied {s.get('applied_force_N')} N, reactions {s.get('reaction_force_N')} N",
+            f"wrote GLB: {_display(self.glb)} (deformation x{s.get('deformation_scale')}), sidecar: {_display(self.sidecar)}{vtu}",
+        ]
         lines += [f"{finding['severity']}: {finding['summary']}" for finding in self.findings]
         lines += [f"warning: {warning}" for warning in self.warnings]
         return lines
