@@ -345,7 +345,7 @@ class _Tracer:
 
     def _start(self) -> None:
         self._process = subprocess.Popen(
-            [self.python, "-m", "cadgen.edit.tracer", "--serve"],
+            [self.python, "-P", "-m", "cadgen.edit.tracer", "--serve"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,

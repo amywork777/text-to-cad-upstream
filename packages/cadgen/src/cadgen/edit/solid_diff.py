@@ -20,6 +20,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from cadgen._internal.atomic_replace import replace_atomic
 
 __all__ = ["compare", "main"]
 
@@ -105,7 +106,7 @@ def _write(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_name(f".{path.name}.{os.getpid()}")
     partial.write_text(json.dumps(payload), encoding="utf-8")
-    os.replace(partial, path)
+    replace_atomic(partial, path)
 
 
 def main(argv: list[str] | None = None) -> int:

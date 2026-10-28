@@ -13,12 +13,12 @@ uses the file, as edit mode's changes do (``service.py``); adding a size changes
 from __future__ import annotations
 
 import ast
-import os
 import re
 from collections import Counter
 from pathlib import Path
 
 from cadgen.edit.service import _project_units, _python_files, dependents, is_part
+from cadgen._internal.atomic_replace import replace_atomic
 
 __all__ = ["SHARED_FILE", "SizesError", "add_shared", "set_size", "shared_folder", "sizes"]
 
@@ -162,7 +162,7 @@ def _write(path: Path, text: str) -> None:
     """The file rewritten whole, so a build never reads it half written."""
     temporary = path.with_name(f".{path.name}.sizes")
     temporary.write_text(text, encoding="utf-8")
-    os.replace(temporary, path)
+    replace_atomic(temporary, path)
 
 
 def set_size(folder: str, rel: str, name: str, line: int, old: str, text: str) -> dict:

@@ -123,9 +123,9 @@ PLATE_TOP_EDGES = [parts.edge("e1", (0, -HALF_WIDTH, TOP), 50.8), parts.edge("e2
 def faces_on_screen(script: Path) -> dict[int, object]:
     """A part's faces by the numbers the viewer's references give them (``face 12``, ``f12``): the
     part's document as the engine makes it of its model, built in this process (``daemon=False``:
-    no engine runs) and written as its xbf, then read back by the scene adapter as the viewer's
-    document is numbered (``step_open``)."""
-    from cadgen._internal.step_open import open_scene
+    no engine runs) and written as its xbf, then read back and numbered as the viewer numbers its
+    faces (``faces_of``)."""
+    from cadgen import read_xbf
     from cadgen.engine import api
     from cadgen.engine.model import models_in
 
@@ -138,8 +138,7 @@ def faces_on_screen(script: Path) -> dict[int, object]:
         api.export(model, document, daemon=False)
     finally:
         sys.path.remove(folder)
-    (leaf,) = open_scene(document).leaves()
-    return {face.ordinal: face.shape() for face in leaf.entities("face")}
+    return faces_of(read_xbf(document))
 
 
 def faces_of(shape) -> dict[int, object]:
