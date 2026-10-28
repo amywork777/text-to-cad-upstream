@@ -838,8 +838,9 @@ def _outputs(plan: list, report: dict[str, Any], log: Callable[[str], None],
     is written again from the document, and one nobody touched keeps its bytes and its time. The
     report's ``files``: each file's kind, whether it was written, the seconds and its bytes. ``log``
     hears each file written, and each one kept too when ``kept`` (a build's; a take says only what it
-    wrote, its run line the rest)."""
-    from cadgen.engine import export
+    wrote, its run line the rest). A STEP of a document with PMI is checked in the file before it
+    lands (``pmi.checked``: its ``pmiVerification``), and refused when it does not match."""
+    from cadgen.engine import export, pmi
 
     timings = report.setdefault("timings", {})
     written: dict[str, Any] = {}
@@ -847,14 +848,20 @@ def _outputs(plan: list, report: dict[str, Any], log: Callable[[str], None],
         clock = time.perf_counter()
         before = _stat(target.path)
         _say("writing", target.path)
+        carried = pmi.step_entries(source().structure.get("pmi") or []) if target.kind == "step" else []
+        verified: dict[str, Any] = {}
         if target.kind == "xbf":
             fresh, size = save(target.path)
         else:
-            size = export.translate(source(), target.kind, target.path)
+            check = (lambda staged: verified.update(pmi.checked(source(), carried, staged, log, refuse=True))) \
+                if carried else None
+            size = export.translate(source(), target.kind, target.path, check=check)
             fresh = _stat(target.path) != before
         seconds = time.perf_counter() - clock
         timings[target.kind] = round(seconds, 4)
         written[str(target.path)] = {"kind": target.kind, "written": fresh, "seconds": round(seconds, 4), "bytes": size}
+        if carried:
+            written[str(target.path)]["pmiVerification"] = verified
         if fresh or kept:
             from cadgen.engine.cli import _bytes  # the size as every verb says one: never "0.0 MB" for a small file
 

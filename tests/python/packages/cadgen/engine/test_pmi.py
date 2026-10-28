@@ -1767,6 +1767,94 @@ def pmi_plate():
         self.assertNotIn("unattached", reports["whole"]["pmi"])
 
 
+BROKEN = '''
+import build123d as bd
+from cadgen.ap242 import annotate, datum, flatness_tolerance
+from cadgen.engine import step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10)
+    body.label = "plate"
+    return annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05),
+                    datum("A", {ref}))
+'''
+
+
+class StepWriteTest(_Folder):
+    """What a STEP write does with a model's PMI: one that would drop an annotation is refused, a
+    build's declared one as an export, naming each annotation and its ref; every one written is
+    checked in the file before it lands, one that does not match refused, an earlier file kept."""
+
+    def test_a_step_that_would_drop_pmi_is_refused_by_name_and_its_ref(self) -> None:
+        from cadgen.engine.worker import _export
+
+        self.build(BROKEN.format(ref='body.faces().sort_by(bd.Axis.Z)[0]'))
+        earlier = self.step.read_bytes()
+        report = self.build(BROKEN.format(ref='"nosuchface"'), ok=False)
+        self.assertIn("a STEP would drop PMI linked to no geometry: A (ref 'nosuchface'", report["error"])
+        self.assertIn("Fix the refs in the model, or remove the annotations", report["error"])
+        self.assertEqual(self.step.read_bytes(), earlier)
+        target = self.folder / "part.step"
+        with self.assertRaisesRegex(export.ExportRefused,
+                                    r"a STEP would drop PMI linked to no geometry: A \(ref 'nosuchface'"):
+            export.translate(export.Source.read(self.xbf), None, target)
+        # ``cadgen export`` and ``api.export``: the worker's export request, no viewer's expectation.
+        with self.assertRaisesRegex(export.ExportRefused, "a STEP would drop PMI"):
+            _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, [].append)
+        self.assertFalse(target.exists())
+
+    def test_every_step_written_is_checked_in_the_file(self) -> None:
+        """A declared STEP and an explicit export (no viewer's expectation) each carry the check of
+        the file written; one that does not match is refused before it lands, the file there kept
+        byte for byte; one that could not be made is warned of, the file written."""
+        from unittest import mock
+
+        from cadgen.engine.worker import _export
+
+        report = self.build(plate())
+        checked = report["files"][str(self.step)]["pmiVerification"]
+        self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (9, 9, []))
+        target = self.folder / "part.step"
+        answer = _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, [].append)
+        checked = answer["files"][0]["pmiVerification"]
+        self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (9, 9, []))
+        failed = {"matched": 8, "total": 9, "problems": ["hole-diameter: not the model's face."], "sha256": "x"}
+        target.write_bytes(b"an earlier file")
+        with mock.patch("cadgen.engine.export.ap242.check", return_value=(failed, True)):
+            with self.assertRaisesRegex(export.ExportRefused,
+                                        r"part.step not written: the PMI in the STEP written does not match the "
+                                        r"model's document \(8 of 9 matched\): hole-diameter: not the model's face"):
+                _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, [].append)
+            self.assertEqual(target.read_bytes(), b"an earlier file")
+            self.step.write_bytes(b"an earlier step")
+            report = self.build(plate(thickness=12), ok=False)
+            self.assertIn("pmi_plate.step not written: the PMI in the STEP written does not match", report["error"])
+            self.assertEqual(self.step.read_bytes(), b"an earlier step")
+        self.assertEqual(len(list(self.folder.glob(".*.tmp"))), 0)
+        said: list[str] = []
+        with mock.patch("cadgen.engine.export.ap242.check", return_value=(failed, False)):
+            answer = _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, said.append)
+        self.assertEqual(answer["files"][0]["pmiVerification"], failed)
+        self.assertTrue(target.read_bytes().startswith(b"ISO-10303-21;"))
+        self.assertIn("warning: pmi: part.step: the PMI in the written file is not verified (8 of 9 matched): "
+                      "hole-diameter: not the model's face.", said)
+
+    def test_datum_letters_asme_sets_aside_are_refused(self) -> None:
+        import build123d as bd
+
+        top = bd.Box(1, 1, 1).faces().sort_by(bd.Axis.Z)[-1]
+        for letter in "IOQ":
+            with self.assertRaisesRegex(PMIError,
+                                        f"a datum's letter is not '{letter}': ASME Y14.5 sets I, O and Q aside"):
+                datum(letter, top)
+            with self.assertRaisesRegex(PMIError, f"tolerance 'p': a datum's letter is not '{letter}'"):
+                position_tolerance("p", top, 0.1, datums=[letter])
+        self.assertEqual(datum("P", top)["datum"], {"letter": "P"})
+
+
 class RefusedTest(_Folder):
     def test_what_is_not_supported_is_refused_by_name(self) -> None:
         import build123d as bd
@@ -1971,7 +2059,7 @@ class ForeignTest(unittest.TestCase):
 
     def test_an_export_of_a_foreign_document_says_what_it_leaves_out(self) -> None:
         """A STEP drops what is linked to no geometry: of a document another system wrote, written,
-        and said."""
+        and said; its faces carry no names, so the check in the file verifies nothing, and says so."""
         import build123d as bd
 
         from cadgen.engine.worker import _export
@@ -1985,9 +2073,12 @@ class ForeignTest(unittest.TestCase):
         part = self.folder / "part.step"
         _export({"source": {"path": str(vendor)}, "destinations": [str(part)]}, said.append)
         self.assertEqual([(entry["id"], entry["status"]) for entry in read(part)], [("geometric_tolerance-1", "ok")])
-        self.assertEqual([text for text in said if text.startswith("warning: pmi:")],
+        self.assertEqual([text for text in said if text.startswith("warning: pmi:")][:1],
                          ["warning: pmi: part.step: geometric_tolerance-2 is not carried whole: missing: the file "
                           "links it to no face, edge or point of a part"])
+        [unverified] = [text for text in said if "not verified" in text]
+        self.assertTrue(unverified.startswith("warning: pmi: part.step: the PMI in the written file is not verified "
+                                              "(0 of 2 matched)"), unverified)
 
 
 class FixtureTest(_Folder):

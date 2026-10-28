@@ -1,9 +1,10 @@
 """AP242 semantic PMI read back from a STEP file without OCCT, and checked against a document's.
 
-A viewer's STEP export is checked in the file it wrote (``verify``): this module reads the file
-with a Part 21 tokenizer of its own, sharing no code with the engine's writer or OCCT's STEP
-translator, and walks AP242's PMI entities as ISO 10303-242 and the CAx-IF Recommended Practices
-for PMI define them:
+Every STEP the engine writes of a document with PMI -- a build's declared one, ``cadgen
+export``'s and ``api.export``'s, the viewer's -- is checked in the file it wrote (``verify``,
+through ``pmi.checked``): this module reads the file with a Part 21 tokenizer of its own, sharing
+no code with the engine's writer or OCCT's STEP translator, and walks AP242's PMI entities as ISO
+10303-242 and the CAx-IF Recommended Practices for PMI define them:
 
 - dimensions: ``DIMENSIONAL_SIZE`` / ``DIMENSIONAL_LOCATION``, their nominal from the
   ``DIMENSIONAL_CHARACTERISTIC_REPRESENTATION``'s ``SHAPE_DIMENSION_REPRESENTATION``, its
@@ -26,7 +27,10 @@ It also says what is malformed for a strict reader: a measure written untyped wh
 
 ``compare`` matches a document's PMI entries (``pmi.read``) one to one with what the file says,
 without guessing identities: a face name the file uses twice, two parts reusing a face name, or a
-datum letter written twice verifies nothing. It is a bounded check of the semantics this engine
+datum letter written twice verifies nothing. Given the model's faces (``pmi.step_surfaces``),
+each face the file ties an annotation to is held to its geometry too: a plane's normal and offset,
+a cylinder's axis and radius, so a face of the right name on the wrong surface verifies nothing (a
+face of another kind is checked by its name). It is a bounded check of the semantics this engine
 writes, not an AP242 validator or a test of any importer.
 """
 
@@ -533,12 +537,71 @@ def _tolerance_matches(tolerance: dict[str, Any], row: dict[str, Any]) -> bool:
             and row.get("zone") == ("cylindrical or circular" if tolerance.get("zone") == "diameter" else None))
 
 
-def _matches(entry: dict[str, Any], row: dict[str, Any]) -> bool:
+# How near a file's surface is to the model's: a length within a millionth of the part's size (and
+# of a millimetre, the least), a direction within 1e-9 of parallel.
+_LENGTH, _PARALLEL = 1e-6, 1e-9
+
+
+def _unit(vector: Any) -> list[float] | None:
+    if not (isinstance(vector, (list, tuple)) and len(vector) == 3
+            and all(isinstance(v, (int, float)) for v in vector)):
+        return None
+    length = math.sqrt(sum(v * v for v in vector))
+    return [v / length for v in vector] if length > 0 and math.isfinite(length) else None
+
+
+def _dot(a: list[float], b: list[float]) -> float:
+    return sum(x * y for x, y in zip(a, b))
+
+
+def _off_axis(point: list[float], origin: list[float], axis: list[float]) -> float:
+    """How far ``point`` lies from the line through ``origin`` along the unit ``axis``."""
+    d = [p - o for p, o in zip(point, origin)]
+    along = _dot(d, axis)
+    return math.sqrt(max(0.0, _dot(d, d) - along * along))
+
+
+def _same_surface(found: Any, model: Any) -> bool:
+    """A face's surface as the file writes it against the model's face (``pmi.step_surfaces``): a
+    plane's normal parallel (either sense: one plane) and its origin on the model's plane; a
+    cylinder's radius, its axis parallel and through the model's axis. A face of another kind is
+    checked by its name alone, as long as the file writes no plane or cylinder for it."""
+    if not isinstance(found, dict) or not isinstance(model, dict):
+        return False
+    kind = model.get("type")
+    if kind not in ("plane", "cylinder"):
+        return found.get("type") not in ("plane", "cylinder")
+    if found.get("type") != kind:
+        return False
+    origin, at = found.get("origin"), model.get("origin")
+    if not all(isinstance(point, (list, tuple)) and len(point) == 3 for point in (origin, at)):
+        return False
+    scale = max([1.0, *(abs(v) for v in (*origin, *at)), abs(found.get("radius") or 0), abs(model.get("radius") or 0)])
+    direction, wanted = _unit(found.get("normal" if kind == "plane" else "axis")), _unit(
+        model.get("normal" if kind == "plane" else "axis"))
+    if direction is None or wanted is None or abs(abs(_dot(direction, wanted)) - 1.0) > _PARALLEL:
+        return False
+    if kind == "plane":
+        return abs(_dot([a - b for a, b in zip(origin, at)], wanted)) <= _LENGTH * scale
+    radius, expected = found.get("radius"), model.get("radius")
+    return (isinstance(radius, (int, float)) and isinstance(expected, (int, float))
+            and abs(radius - expected) <= _LENGTH * scale and _off_axis(origin, at, wanted) <= _LENGTH * scale)
+
+
+def _matches(entry: dict[str, Any], row: dict[str, Any], surfaces: dict[str, Any] | None = None) -> bool:
+    """Whether ``row`` of a file is ``entry``: on the faces of its names, each face's surface the
+    model's (``surfaces``, by canonical ref; not compared where None), with its values."""
     given = entry.get("refs") or []
     if not given or any(not isinstance(ref.get("ref"), str) or ref.get("status", "ok") != "ok" for ref in given):
         return False
-    if sorted(_element(ref["ref"]) for ref in given) != sorted(feature.get("name", "") for feature in row.get("features", [])):
+    features = row.get("features", [])
+    if sorted(_element(ref["ref"]) for ref in given) != sorted(feature.get("name", "") for feature in features):
         return False
+    if surfaces is not None:
+        by_name = {feature.get("name"): feature for feature in features}
+        if not all(_same_surface(by_name[_element(ref["ref"])].get("surface"), surfaces.get(ref["ref"]))
+                   for ref in given):
+            return False
     if entry["kind"] == "datum":
         letter = (entry.get("datum") or {}).get("letter")
         return bool(letter) and row.get("identification") == letter
@@ -555,11 +618,22 @@ def _written_as_nothing(entry: dict[str, Any]) -> bool:
             and bool((entry.get("geometric_tolerance") or {}).get("general")))
 
 
-def compare(entries: list[dict[str, Any]], found: dict[str, Any]) -> dict[str, Any]:
+def compare(entries: list[dict[str, Any]], found: dict[str, Any],
+            surfaces: dict[str, Any] | None = None) -> dict[str, Any]:
     """A document's PMI entries against a file's ``report``: how many match one record each, of
-    how many, and why any does not. A general profile that covers no face matches no record, and
+    how many, and why any does not. Given the model's faces (``surfaces``: ``pmi.step_surfaces``),
+    each record's faces are held to their geometry too, so a face of the right name on the wrong
+    surface matches nothing. A general profile that covers no face matches no record, and
     is verified by none being left over. A note is the document's alone (a STEP carries none): it is
     neither expected nor counted."""
+    return _compared(entries, found, surfaces)[0]
+
+
+def _compared(entries: list[dict[str, Any]], found: dict[str, Any],
+              surfaces: dict[str, Any] | None = None) -> tuple[dict[str, Any], bool]:
+    """``compare``, and whether the entries were held one by one to the file's records: False when
+    the file or the names cannot be checked at all (no AP242, a name used twice, a record the reader
+    cannot read), whose problems say the check could not be made, not that the file is wrong."""
     entries = _carried(entries)
     problems = list(found.get("problems") or [])
     if not entries:
@@ -583,14 +657,19 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any]) -> dict[str, A
         problems.append("Exported datum letters are repeated; their references cannot be verified.")
     result = {"matched": 0, "total": len(entries), "problems": problems}
     if problems:
-        return result
+        return result, False
     remaining = list(found.get("datums", [])) + list(found.get("dimensions", [])) + list(found.get("tolerances", []))
     for entry in entries:
         if _written_as_nothing(entry):
             result["matched"] += 1
             continue
-        match = next((at for at, row in enumerate(remaining) if entry.get("status") == "ok" and _matches(entry, row)), None)
-        if match is None:
+        match = next((at for at, row in enumerate(remaining)
+                      if entry.get("status") == "ok" and _matches(entry, row, surfaces)), None)
+        if match is None and surfaces is not None and any(entry.get("status") == "ok" and _matches(entry, row)
+                                                          for row in remaining):
+            problems.append(f"{entry.get('label') or entry.get('id')}: its face in the file is not the model's face "
+                            "(its plane or cylinder differs).")
+        elif match is None:
             problems.append(f"{entry.get('label') or entry.get('id')}: values, units, datum order or face association "
                             "could not be verified.")
         else:
@@ -598,7 +677,7 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any]) -> dict[str, A
             result["matched"] += 1
     if remaining:
         problems.append(f"{len(remaining)} exported annotations did not match the model.")
-    return result
+    return result, True
 
 
 def _carried(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -606,14 +685,21 @@ def _carried(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [entry for entry in entries if entry.get("kind") != "note"]
 
 
-def verify(entries: list[dict[str, Any]], target: Path) -> dict[str, Any]:
-    """``compare`` of the file at ``target``, with the SHA-256 of the bytes checked, read once: the
-    result belongs to those bytes, whatever the viewer opens next. A check the reader cannot
-    complete counts what ``compare`` would, the notes never."""
+def verify(entries: list[dict[str, Any]], target: Path, surfaces: dict[str, Any] | None = None) -> dict[str, Any]:
+    """``compare`` of the file at ``target`` (against the model's faces, ``surfaces``), with the
+    SHA-256 of the bytes checked, read once: the result belongs to those bytes, whatever the viewer
+    opens next. A check the reader cannot complete counts what ``compare`` would, the notes never."""
+    return check(entries, target, surfaces)[0]
+
+
+def check(entries: list[dict[str, Any]], target: Path,
+          surfaces: dict[str, Any] | None = None) -> tuple[dict[str, Any], bool]:
+    """``verify``, and whether the file disagrees with the entries (``_compared``): a record of
+    them all held to the file and one not matched. A check that could not be made is no mismatch."""
     data = target.read_bytes()
     try:
-        result = compare(entries, report(target, data))
-    except Exception as error:  # noqa: BLE001 - a file the reader cannot read is a failed check, never a failed export
-        result = {"matched": 0, "total": len(_carried(entries)),
-                  "problems": [f"The STEP reader could not complete the check: {error}"]}
-    return {**result, "sha256": hashlib.sha256(data).hexdigest()}
+        result, compared = _compared(entries, report(target, data), surfaces)
+    except Exception as error:  # noqa: BLE001 - a file the reader cannot read is a check not made, never a mismatch
+        result, compared = {"matched": 0, "total": len(_carried(entries)),
+                            "problems": [f"The STEP reader could not complete the check: {error}"]}, False
+    return {**result, "sha256": hashlib.sha256(data).hexdigest()}, compared and bool(result["problems"])

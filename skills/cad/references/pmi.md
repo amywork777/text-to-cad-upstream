@@ -136,7 +136,8 @@ Its run warns that the four sides have no requirement: nothing here holds them.
 - **One part at a time.** In an assembly, annotate each part before it goes into the
   compound; a part placed twice carries its PMI once. An annotated assembly is refused.
 - **Ids are yours**: unique on the part and kept across edits. A datum's id is its
-  letter. The build report, the viewer and the STEP check name annotations by id.
+  letter, one capital other than `I`, `O` and `Q` (ASME Y14.5 sets them aside). The
+  build report, the viewer and the STEP check name annotations by id.
 - **A ref** is a build123d `Face` of the annotated shape, or a ref in the engine's
   grammar: an element name, a canonical `owner/element` ref, or `face N`
   ([references](inspection-and-validation.md#references)). A selection the code makes
@@ -268,7 +269,7 @@ nominal measured anew and its tolerance as written. Otherwise its status says wh
 Such an annotation stays in the document with its values, linked to nothing, and is
 listed in the run's report, its `pmi` (`{"annotations", "problems"}`, with `warnings`,
 `coverage` and `unattached` where any are). A STEP is refused rather than written
-without it, naming each one. Fix the ref in the code, or remove the annotation. A flag
+without it, naming each one and its ref. Fix the ref in the code, or remove the annotation. A flag
 note whose face is gone keeps its number and its text and says `missing` too; a STEP
 is not refused for it.
 
@@ -364,10 +365,15 @@ the `.xbf` keeps the file's GD&T as read, and an export of either writes it. Wha
 export of a vendor's document cannot carry whole is said in its log, `warning: pmi:
 ...`, never refused.
 
-The viewer's Export reads each STEP it writes back with a reader of its own, without
-the kernel, and matches every annotation to the file: values, units, datum order,
-zone, faces and a basic dimension's mark. The export's toast says how many matched,
-with the file's SHA-256. It checks the file, not a supplier's importer.
+Every STEP written of the model -- a declared `@step`, `cadgen export`, `export()`, the
+viewer's Export -- is read back with a reader of its own, without the kernel, and every
+annotation matched to the file: values, units, datum order, zone, a basic dimension's
+mark, and its faces by name and by geometry (a plane's normal and offset, a cylinder's
+axis and radius). The result is the file's `pmiVerification` (the build report's
+`files` row, the export's answer). A build's or an export's STEP that does not match
+is refused, no file written (a fault of the writer, not of your model: report it); the
+viewer's toast says how many matched, with the file's SHA-256. It checks the file, not
+a supplier's importer.
 
 A STEP carries no annotation ids, no drawn callouts, no notes and no views: notes,
 views and the library stay in the document, and the check neither expects nor counts
