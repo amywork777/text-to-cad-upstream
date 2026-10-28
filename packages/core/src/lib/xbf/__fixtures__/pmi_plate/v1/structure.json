@@ -1,7 +1,7 @@
 {
  "name": "plate",
  "path": "pmi_plate.xbf",
- "version": "1792983987009864151-17589",
+ "version": "1793204796498325241-17705",
  "units": "mm",
  "prototypes": [
   {
@@ -96,7 +96,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -131,7 +130,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -185,7 +183,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -231,7 +228,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -281,7 +277,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -331,7 +326,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -372,7 +366,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -410,7 +403,6 @@
    }
   }
  ],
- "pmi_library": [],
  "pmi_views": [],
  "pmi_coverage": [
   {

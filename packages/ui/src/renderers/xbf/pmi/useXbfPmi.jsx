@@ -226,6 +226,6 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
     toggleHidden: key => setHiddenKeys(now => (now.includes(key) ? now.filter(item => item !== key) : [...now, key])),
     slice,
     editable, placeable, changes, pending, edit, add, remove, clearChanges, move, pin, changeChips,
-    parts, library: served.library, viewFromHere
+    parts, viewFromHere
   };
 }

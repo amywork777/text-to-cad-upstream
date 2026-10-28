@@ -721,7 +721,7 @@ def _finish(model: Any, result: Any, run: Any, report: dict[str, Any], log: Call
     document.merge(tree)
     signature = (_signature(tree), tuple(tokens), tree.closure)
     timings["names"] = round(time.perf_counter() - clock, 4)
-    _pmi(model, tree, run, report, log, xbf)
+    _pmi(model, tree, run, report, log)
     report["parts"] = len(tree.parts)
     report["named"] = named
     # What the tree holds at a glance, which the daemon says against the last build (``delta``).
@@ -735,33 +735,33 @@ def _finish(model: Any, result: Any, run: Any, report: dict[str, Any], log: Call
     timings["total"] = round(sum(value for name, value in timings.items() if name != "total"), 4)
 
 
-def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[[str], None], xbf: Any) -> None:
+def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[[str], None]) -> None:
     """The tree's PMI resolved and said, the build report's ``pmi``: how many annotations, each one
-    not ok and why (kept in the document linked to nothing, refused by a STEP), each ref that names
-    another kind of face than on the model's last build (``warnings``: its last tree in this
-    process, else its saved ``xbf``), each part's faces no requirement is on and its requirements
-    that cannot both hold (``coverage``: the served structure's ``pmi_coverage`` of each part with
-    something to say, by its name; warned of, never failing the build), and those its body gave a
-    shape the result does not hold (``unattached``); each logged, none dropped in silence. Timed as
-    ``pmi``."""
+    not ok and why (kept in the document linked to nothing, refused by a STEP), and each part's
+    faces no requirement is on and its requirements that cannot both hold (``coverage``: the served
+    structure's ``pmi_coverage`` of each part with something to say, by its name; warned of, never
+    failing the build); each logged, none dropped in silence. Annotations its body gave a shape the
+    result does not hold fail the build, by id (``pmi.unattached``): its files would carry none of
+    them; the body's run is forgotten (``memo.forget``), so a build again runs it and fails again,
+    never replaying it into a pass. Of this build alone: nothing of an earlier one is read. Timed
+    as ``pmi``."""
     from cadgen.engine import document, pmi
+    from cadgen.engine.kernel import memo
 
     clock = time.perf_counter()
+    scope = f"{model.script}::{model.name}"
+    lost = pmi.unattached(run, scope, tree) if run is not None else []
+    if lost:
+        # A replay of this body would not call annotate again, and so not say it: the body runs again.
+        memo.forget(scope)
+        raise pmi.PMIError(f"{model.name}: {', '.join(lost)} given to a shape that is not in the result, so no file "
+                           "would carry them: annotate the shape the model returns (an operation after annotate() "
+                           "makes another shape)")
     if tree.pmi:
-        remembered = _WRITTEN.get(f"{model.script}::{model.name}")
-        if remembered is not None and remembered.tree is not None:
-            pmi.warn(tree, pmi.faces_named(remembered.tree))
-        elif xbf is not None and Path(xbf).is_file():
-            pmi.warn(tree, pmi.faces_named_in(Path(xbf)))
         report["pmi"] = {"annotations": sum(len(items) for _part, items in pmi.resolve(tree)),
                          "problems": pmi.problems(tree)}
         for problem in report["pmi"]["problems"]:
             log(f"pmi {problem['part']}/{problem['id']}: {problem['status']}: {problem['problem']}")
-        warnings = pmi.warnings(tree)
-        if warnings:
-            report["pmi"]["warnings"] = warnings
-        for text in warnings:
-            log(f"warning: pmi: {text}")
         # Of the structure the build serves (no file's version: none is written yet), so the two agree.
         served = document.tree_structure(tree, None)
         names = [prototype["name"] for prototype in served["prototypes"]]
@@ -776,11 +776,6 @@ def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[
                     f"requirement: {', '.join(found['uncovered'])}")
             for conflict in found["conflicts"]:
                 log(f"warning: pmi: {found['part']}: {', '.join(conflict['ids'])}: {conflict['problem']}")
-    lost = pmi.unattached(run, f"{model.script}::{model.name}", tree) if run is not None else []
-    if lost:
-        report.setdefault("pmi", {"annotations": 0, "problems": []})["unattached"] = lost
-        log(f"pmi: {', '.join(lost)} given to a shape that is not in the result (annotate the shape returned)")
-    if "pmi" in report:
         report["timings"]["pmi"] = round(time.perf_counter() - clock, 4)
 
 
@@ -839,7 +834,7 @@ def _outputs(plan: list, report: dict[str, Any], log: Callable[[str], None],
     report's ``files``: each file's kind, whether it was written, the seconds and its bytes. ``log``
     hears each file written, and each one kept too when ``kept`` (a build's; a take says only what it
     wrote, its run line the rest). A STEP of a document with PMI is checked in the file before it
-    lands (``pmi.checked``: its ``pmiVerification``), and refused when it does not match."""
+    lands (``pmi.checked``: its ``pmiVerification``), and refused when the check finds any problem."""
     from cadgen.engine import export, pmi
 
     timings = report.setdefault("timings", {})
@@ -853,8 +848,7 @@ def _outputs(plan: list, report: dict[str, Any], log: Callable[[str], None],
         if target.kind == "xbf":
             fresh, size = save(target.path)
         else:
-            check = (lambda staged: verified.update(pmi.checked(source(), carried, staged, log, refuse=True))) \
-                if carried else None
+            check = (lambda staged: verified.update(pmi.checked(source(), carried, staged, log))) if carried else None
             size = export.translate(source(), target.kind, target.path, check=check)
             fresh = _stat(target.path) != before
         seconds = time.perf_counter() - clock

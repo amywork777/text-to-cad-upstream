@@ -364,10 +364,10 @@ function XbfSurface({ view, data }) {
   // never the selection, the pose or Preview (`docs/viewer-host.md`, Export destinations and jobs).
   // A document the scene draws flat on z=0 at rest holds no solid, so it writes a DXF too. And what
   // a STEP of it carries of its PMI, as the engine writes one: its GD&T, written and checked in the
-  // file; its notes (its notes library's too) and named views, which stay in the XBF.
+  // file; its notes and named views, which stay in the XBF.
   const planar = Boolean(restBounds && Math.abs(restBounds.min[2]) <= PLANAR && Math.abs(restBounds.max[2]) <= PLANAR);
   const pmiGdt = pmi.entries.some(entry => entry.kind !== "note");
-  const pmiNotes = pmi.entries.some(entry => entry.kind === "note") || pmi.library.length > 0;
+  const pmiNotes = pmi.entries.some(entry => entry.kind === "note");
   const pmiViews = pmi.views.length > 0;
   const exportView = useMemo(() => loaded.document && !host.environment.compact ? {
     doc: loaded.document.source.doc, revision: loaded.revision, file: view.file.path, name: view.file.name, planar,

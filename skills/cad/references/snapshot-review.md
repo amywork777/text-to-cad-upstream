@@ -113,8 +113,7 @@ placed on the parts as made, which Explode moves apart: a view of no section dra
 its camera alone there), and a view whose section its part's placement turns off
 the world's axes: a picture
 cuts only square to a world axis, never along another, so it is refused rather than
-cut wrong. In a `--job`, a job's `display.view` draws that job as the view (its own
-camera beside it is refused), and `--view` draws every job as the view.
+cut wrong. In a `--job`, `--view` draws every job as the view.
 
 `--grid` draws the measuring grid (red X and green Y axes) under the model.
 `--preview` draws Preview's photographic look instead of a mode.

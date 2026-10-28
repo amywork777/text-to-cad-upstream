@@ -47,8 +47,10 @@ function pmiCheck(job: ExportJob, t: Translate) {
  * down and asked again; once the file is ready it is handed to the browser (whose own downloads
  * decide where it goes, and say so) and the toast goes that moment, with no success toast of its
  * own -- but a STEP's PMI check, which no browser says, is its toast then (`pmiCheck`; one that
- * found a problem kept until dismissed); or the toast is the engine's one-line reason, kept until
- * dismissed. A request made from the menu learns
+ * found a problem, which only a document another system wrote is handed over with, kept until
+ * dismissed); or the toast is the engine's one-line reason, kept until dismissed (a STEP of the
+ * code's document whose check found a problem among them: the engine refuses it). A request made
+ * from the menu learns
  * its session's epoch first and is kept with it (`onRequest`), so a reload reconnects to its job
  * by it, and a server restarted since refuses it rather than running it again.
  */

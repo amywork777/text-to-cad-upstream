@@ -1,5 +1,8 @@
 {
   "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF {1 0 10303 442 1 1 4 }",
+  "products": [
+    "plate"
+  ],
   "dimensions": [
     {
       "entity": "DIMENSIONAL_SIZE",
@@ -21,9 +24,11 @@
               1.0
             ]
           },
-          "same_sense": "F"
+          "same_sense": "F",
+          "product": "plate"
         }
       ],
+      "product": "plate",
       "nominal": {
         "value": 10.0,
         "unit": "mm",
@@ -61,7 +66,8 @@
               1.0
             ]
           },
-          "same_sense": "F"
+          "same_sense": "F",
+          "product": "plate"
         },
         {
           "name": "f:pmi_plate.body_make_box1.6;M:pmi_plate.body",
@@ -78,9 +84,11 @@
               1.0
             ]
           },
-          "same_sense": "T"
+          "same_sense": "T",
+          "product": "plate"
         }
       ],
+      "product": "plate",
       "nominal": {
         "value": 10.0,
         "unit": "mm",
@@ -118,7 +126,8 @@
               0.0
             ]
           },
-          "same_sense": "F"
+          "same_sense": "F",
+          "product": "plate"
         },
         {
           "name": "f:pmi_plate.body_make_cylinder1.1;M:pmi_plate.body",
@@ -136,9 +145,11 @@
               1.0
             ]
           },
-          "same_sense": "F"
+          "same_sense": "F",
+          "product": "plate"
         }
       ],
+      "product": "plate",
       "nominal": {
         "value": 30.0,
         "unit": "mm",
@@ -173,7 +184,8 @@
               0.0
             ]
           },
-          "same_sense": "F"
+          "same_sense": "F",
+          "product": "plate"
         },
         {
           "name": "f:pmi_plate.body_make_cylinder1.1;M:pmi_plate.body",
@@ -191,9 +203,11 @@
               1.0
             ]
           },
-          "same_sense": "F"
+          "same_sense": "F",
+          "product": "plate"
         }
       ],
+      "product": "plate",
       "nominal": {
         "value": 50.0,
         "unit": "mm",
@@ -229,9 +243,11 @@
               1.0
             ]
           },
-          "same_sense": "F"
+          "same_sense": "F",
+          "product": "plate"
         }
-      ]
+      ],
+      "product": "plate"
     },
     {
       "identification": "B",
@@ -251,9 +267,11 @@
               0.0
             ]
           },
-          "same_sense": "F"
+          "same_sense": "F",
+          "product": "plate"
         }
-      ]
+      ],
+      "product": "plate"
     },
     {
       "identification": "C",
@@ -273,9 +291,11 @@
               0.0
             ]
           },
-          "same_sense": "F"
+          "same_sense": "F",
+          "product": "plate"
         }
-      ]
+      ],
+      "product": "plate"
     }
   ],
   "tolerances": [
@@ -304,9 +324,11 @@
               1.0
             ]
           },
-          "same_sense": "T"
+          "same_sense": "T",
+          "product": "plate"
         }
-      ]
+      ],
+      "product": "plate"
     },
     {
       "entity": "POSITION_TOLERANCE",
@@ -338,11 +360,15 @@
               1.0
             ]
           },
-          "same_sense": "F"
+          "same_sense": "F",
+          "product": "plate"
         }
-      ]
+      ],
+      "product": "plate"
     }
   ],
-  "ambiguousFaceNames": [],
+  "ambiguousFaceNames": {
+    "plate": []
+  },
   "problems": []
 }

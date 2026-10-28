@@ -122,7 +122,7 @@ def write_xbf(view: Any, path: Path) -> None:
     XCAF document -- a model's as built, or read from the bytes the engine keeps (``Source.data``,
     written as they are) -- is that document's own bytes (``document.to_bytes``), the ones its
     declared xbf and the engine's cache hold: every attribute it holds kept, its PMI -- annotations,
-    notes, views and notes library -- with them, and the same bytes from a live worker and after a
+    notes and views -- with them, and the same bytes from a live worker and after a
     restart. Any other (a STEP another system wrote) is made a document again (``tree_of``), its
     GD&T copied as read (``pmi.copy``)."""
     from cadgen.engine import document

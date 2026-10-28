@@ -12,7 +12,7 @@ after the AP242 entity it writes (`annotate(body, datum("A", ...), dimensional_l
 flatness_tolerance(...), ...)`), the engine writes it into the document's XCAF GD&T attributes,
 which its AP242 export reads, and the
 served structure carries it (`structure.pmi`, absent where there is none; beside it
-`pmi_views` and `pmi_library`, the xbf's alone, and `pmi_coverage`, served for a STEP's PMI too).
+`pmi_views`, the xbf's alone, and `pmi_coverage`, served for a STEP's PMI too).
 So the viewer writes
 nothing: a change asked for in the viewer is the call the model's code should make, which Quick
 Edit hands the agent, and the change reaches the view as the engine's next version.
@@ -20,12 +20,11 @@ Edit hands the agent, and the change reaches the view as the engine's next versi
 ## What is said, and where it comes from
 
 `@text-to-cad/core/lib/xbf/xbfPmi.js` reads the structure (`readXbfPmi`), each field read as it is
-or as nothing, never guessed, into `{ entries, notes, views, library, coverage }`: every annotation
+or as nothing, never guessed, into `{ entries, notes, views, coverage }`: every annotation
 and note (`entries`); the ones said as each part's numbered notes, in their numbers (`notes`: its
 general profile Note 1, then its notes); each part's named views in the code's order, keyed by
-part and name (`views`); its notes library (`library`, no requirement); and, of each part carrying
-PMI, the faces no requirement is on and the requirements that cannot both hold (`coverage`). An
-entry is one of:
+part and name (`views`); and, of each part carrying PMI, the faces no requirement is on and the
+requirements that cannot both hold (`coverage`). An entry is one of:
 
 - A **dimension** (`distance` between two parallel flat faces, `diameter` of a round one): its
   nominal is the engine's, measured on the geometry (`source: "geometry"`), or as another system's
@@ -77,10 +76,7 @@ leader ending in an open ring where the code anchored it (there is no face to po
 and leader dashed in the status colour (missing and invalid red, ambiguous amber), and its row and
 values say why — the engine's own words where it gives them. It is still its part's (`part`),
 linked to no geometry, so it keeps its key, its pick and its eye across the rebuild that broke it.
-What the build that served the document warned of (`warnings`: a ref that names another kind of
-face than on the last build, measured as it now is) is said on its row and in its values, in the
-warning colour; a file holds none, so it is said on the build that changed it and not after. A
-reference that resolved is named as a pick's chip names it ("plate · face 7"), its canonical ref
+A reference that resolved is named as a pick's chip names it ("plate · face 7"), its canonical ref
 its copy.
 
 ## Drawing it
@@ -198,10 +194,7 @@ document says it (a label, a position's zone, round or not):
   Until it is built it is called by its id ("Add flatness"), a datum by its letter ("Add datum B").
   After a rule, what is of the faces' part, or, with nothing picked, of the document's one part:
   - **Note**: a flag note on the faces picked, a general note where none are (`note`). Its
-    words are typed, or one of its part's notes library entries picked by its name (**Library**);
-    nothing starts them, cadgen ships none. A library entry's request asks the agent to write that
-    entry of the dict the call's `library=` is given, by its name, the call carrying its words (the
-    page knows the entry, not what the model's module calls the dict). A face's menu offers it as
+    words are typed; nothing starts them, cadgen ships none. A face's menu offers it as
     "Add note", a flag note.
   - **General profile**: no face to pick (`general_profile`, its faces each build's), its value
     and its datums given; offered while its part has none, built or asked for ("Its part has one").
@@ -237,7 +230,7 @@ directions resolve within the annotation's part.
 
 **Export** in the top-right toolbar lists the formats the file's kind writes, STEP among them,
 written from the built document with its GD&T; a Quick Edit request not yet built is not in it.
-Its notes (and notes library) and named views are the document's: a STEP carries neither, and is
+Its notes and named views are the document's: a STEP carries neither, and is
 not refused for them. Where the document carries PMI, the menu's muted lines under the formats
 say so, and where it holds notes or views, which of them stay in the XBF ("Notes and named views
 stay in the XBF: a STEP carries the GD&T."), from what the view already holds (`ExportView.pmi`, `export/context.ts`: `gdt` and `kept`),
@@ -248,20 +241,24 @@ that would drop an annotation linked to no geometry, and an XBF of a model held 
 the engine writes as the document made again, carrying none of its PMI yet. There is no STEP of a
 pose or of one part to refuse: those are models of their own.
 
-Once the STEP is written, the worker reads that same file back on its own and compares its
-supported annotations with the document's, one to one: values, units, datum order, tolerance-zone
-form and the faces each is on, by name. The result and the file's SHA-256 go with the export job,
-and stay with it when another model opens. An export has no success toast of its own (the
-browser's downloads say the file came); a STEP's check is its toast once the file is handed over,
-the check's headline as its title (every annotation verified, which goes on its own; or the check
-incomplete, a warning kept until dismissed): the check is part of the export, with no endpoint or
-export of its own. The browser's save writes that file; a save that fails never says Saved.
+Once the STEP is written, before it is handed over, the worker reads that same file back on its
+own and compares its supported annotations with the document's, one to one, each part against its
+own product's records: values, units, datum order, tolerance-zone form and the faces each is on,
+by name and geometry -- as `cadgen export` does. The result and the file's SHA-256 go with the
+export job, and stay with it when another model opens. An export has no success toast of its own
+(the browser's downloads say the file came); a STEP's check is its toast once the file is handed
+over, the check's headline as its title (every annotation verified, which goes on its own): the
+check is part of the export, with no endpoint or export of its own. The browser's save writes that
+file; a save that fails never says Saved.
 
 Missing or extra annotations, no PMI, a parser problem or a schema other than AP242 fail the
-check. Both signed deviations' units are checked. Face names are looked for across all the
-geometry, faces with no annotation included. An ambiguous name, two source refs that collide, a
-datum letter used twice, an unsupported modifier or missing uniqueness metadata leave the check
-incomplete, and its result says so; the file stays, to inspect.
+check. Both signed deviations' units are checked. Face names are looked for across each part's
+geometry, faces with no annotation included. An ambiguous name within a part, two source refs that
+collide, a datum letter a part's records repeat, two products of one name or an unsupported
+modifier fail it too. For a document the code made, a check that fails refuses the file: the job
+fails with the engine's reason, its error toast, and no file is handed over. Only a STEP of a
+document another system wrote, whose faces carry no names, is handed over with a check that found
+problems: its toast says the check is incomplete, a warning kept until dismissed.
 
 The check does not establish a complete manufacturing definition, nor that a factory's importer
 reads the file: the result says that is untested. Graphical callouts and the author's annotation

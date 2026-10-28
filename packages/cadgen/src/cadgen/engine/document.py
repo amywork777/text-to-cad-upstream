@@ -34,8 +34,8 @@ standard attributes beside the XCAF tools (``mechanism``).
 
 A part given semantic PMI (``pmi.annotate``) carries it in the GD&T tool, as XCAF's own
 datum, dimension and geometric-tolerance objects linked to its faces' sub-shape labels, its
-notes in the notes tool, its named views in the views tool (their sections in the clipping
-planes tool) and its notes library on its shape label (``pmi``); a document holding PMI is
+notes in the notes tool and its named views in the views tool (their sections in the clipping
+planes tool) (``pmi``); a document holding PMI is
 converted whole on a warm build.
 
 A model's document is kept in memory between builds (``Kept``) and a warm build patches
@@ -107,7 +107,7 @@ class Part:
     material: Any = None
     face_materials: dict[int, Any] = field(default_factory=dict)
     # Its semantic PMI as the code gave it (``pmi.annotate``): annotations as plain dicts, its
-    # notes among them, its views (``pmi._views``) and its notes library (``pmi._library``).
+    # notes among them, and its views (``pmi._views``).
     pmi: tuple = ()
 
 
@@ -150,12 +150,10 @@ class Tree:
     # whether it was handed back rather than made (``collect``'s ``harvested``).
     harvest: "Harvest | None" = None
     reused: bool = False
-    # The annotations resolved against the parts as built (``pmi.resolve``), made once; what the
-    # build warns of them (``pmi.warn``), its report's and never the document's; and, for a tree
-    # made of a document another system wrote, that document and each of its prototypes' part, its
-    # GD&T copied as read (``pmi.copy``).
+    # The annotations resolved against the parts as built (``pmi.resolve``), made once; and, for a
+    # tree made of a document another system wrote, that document and each of its prototypes' part,
+    # its GD&T copied as read (``pmi.copy``).
     pmi_resolved: list | None = None
-    pmi_warnings: dict = field(default_factory=dict)
     pmi_source: tuple | None = None
 
     @property
@@ -1564,11 +1562,9 @@ class Loaded:
         from cadgen.engine import pmi
 
         records = pmi.records_of_document(self.doc, self.prototypes, self.name)
-        library = pmi.library_of_document(self.doc, self.prototypes)
         views = pmi.views_of_document(self.doc, self.prototypes)
-        if records or library or views:
+        if records or views:
             found["pmi"] = pmi.entries(records, found)
-            found["pmi_library"] = library
             found["pmi_views"] = views
             found["pmi_coverage"] = pmi.coverage_of(found, {prototype.index: prototype.shape
                                                             for prototype in self.prototypes})
@@ -1688,7 +1684,6 @@ def tree_structure(tree: Tree, path: Path) -> dict[str, Any]:
         from cadgen.engine import pmi
 
         found["pmi"] = pmi.entries(pmi.records_of_tree(tree, index_of), found)
-        found["pmi_library"] = pmi.library_of_tree(tree, index_of)
         found["pmi_views"] = pmi.views_of_tree(tree, index_of)
         found["pmi_coverage"] = pmi.coverage_of(found, {index_of[id(part)]: part.shape for part, _given in tree.pmi})
     return found

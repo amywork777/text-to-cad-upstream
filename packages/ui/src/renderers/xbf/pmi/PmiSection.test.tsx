@@ -28,9 +28,9 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); while (restores.length) restores.pop()!(); });
 const section = (overrides: Record<string, unknown>) => ({ changes: [], pending: [], hiddenKeys: [], constructions: new Map(), editable: false,
   selectedEntry: null, selectedKey: '', hover: () => {}, select: () => {}, toggleHidden: () => {}, edit: () => {}, focusDatum: () => {}, ...overrides });
-const datum = (part: number, letter: string, face: string) => ({ key: `${part}:${letter}`, id: letter, kind: 'datum', part, status: 'ok', supported: true, warnings: [],
+const datum = (part: number, letter: string, face: string) => ({ key: `${part}:${letter}`, id: letter, kind: 'datum', part, status: 'ok', supported: true,
   datum: { letter }, glyph: 'datum', callout: { text: `Datum ${letter}` }, featureIds: [face], refs: [] });
-const position = (part: number, datums: string[], face: string) => ({ key: `${part}:hole-pos`, id: 'hole-pos', kind: 'geometric_tolerance', part, status: 'ok', warnings: [],
+const position = (part: number, datums: string[], face: string) => ({ key: `${part}:hole-pos`, id: 'hole-pos', kind: 'geometric_tolerance', part, status: 'ok',
   supported: true, glyph: 'position', tolerance: { characteristic: 'position', value: 0.1, unit: 'mm', zone: 'diameter', datums },
   callout: { text: `Position ⌀0.1 | ${datums.join(' | ')}`, title: 'Position', diameter: true, value: '0.1' }, featureIds: [face], refs: [] });
 
@@ -71,22 +71,8 @@ it('picks a related annotation from a datum\'s values with the whole list shown'
 });
 
 const basicFromLeft = (overrides: Record<string, unknown> = {}) => ({ key: '0:hole-from-left', id: 'hole-from-left', kind: 'dimension', part: 0, status: 'ok',
-  supported: true, glyph: 'dimension', statusText: '', warnings: [], featureIds: ['i0/face/9'], refs: [], callout: { text: '44 basic' },
+  supported: true, glyph: 'dimension', statusText: '', featureIds: ['i0/face/9'], refs: [], callout: { text: '44 basic' },
   dimension: { type: 'distance', basic: true, nominal: 44, unit: 'mm', source: 'geometry', tolerance: null }, ...overrides });
-
-it('says what the build warned of on an annotation, on its row and in its values', () => {
-  const warned = 'f:cut.1 named a cylinder face on the last build and names a plane face now: another face than the annotation was made on, measured as it is.';
-  const entry = basicFromLeft({ warnings: [warned] });
-  render(<PmiSection pmi={section({ entries: [entry], selectedEntry: entry, selectedKey: entry.key }) as any} picked={[]} moving={false} />);
-  expect(screen.getByRole('button', { name: `44 basic: ${warned}`, exact: true })).toBeTruthy();
-  expect(screen.getByRole('status').textContent).toBe(warned);
-  cleanup();
-  // None warned of: nothing said.
-  const quiet = basicFromLeft();
-  render(<PmiSection pmi={section({ entries: [quiet], selectedEntry: quiet, selectedKey: quiet.key }) as any} picked={[]} moving={false} />);
-  expect(screen.getByRole('button', { name: '44 basic', exact: true })).toBeTruthy();
-  expect(screen.queryByRole('status')).toBeNull();
-});
 
 it('says a nominal another system\'s file gives as the file\'s, and one the engine measured as measured', () => {
   const measured = basicFromLeft();
@@ -186,7 +172,7 @@ it('says there is no PMI yet only where a document has none at all, views includ
   expect(headings()).toEqual(['Views']);
   expect(screen.queryByText(/No PMI yet/)).toBeNull();
   cleanup();
-  openMbd(structure => ({ ...structure, pmi: [], pmi_views: [], pmi_library: [], pmi_coverage: [] }));
+  openMbd(structure => ({ ...structure, pmi: [], pmi_views: [], pmi_coverage: [] }));
   expect(screen.getByText("No PMI yet: add some from a face's menu.")).toBeTruthy();
 });
 
@@ -300,24 +286,15 @@ it('a surface profile on the faces picked, to its part\'s datums, and a general 
   expect(document.querySelector('[data-pmi-new-kind="general_profile"]')!.hasAttribute('data-disabled')).toBe(true);
 });
 
-it("a note's words come from its part's library, by name, and ask for that entry; typed, they are the person's own", async () => {
+it("a note's words are the person's own, typed, and none given asks for nothing", async () => {
   const user = userEvent.setup();
   await openNew(user);
   await choose(user, 'note');
   expect(within(form()).getByText('A general note, on no face.')).toBeTruthy();
-  await user.click(within(form()).getByRole('combobox', { name: 'Notes library' }));
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['edges', 'primer-mask']);
-  await user.click(screen.getByRole('option', { name: 'primer-mask' }));
-  expect((within(form()).getByRole('textbox', { name: 'Note text' }) as HTMLInputElement).value).toBe('Mask these features before coating with primer');
-  await add(user);
-  await choose(user, 'note');
   expect((within(form()).getByRole('button', { name: 'Add to Quick Edit' }) as HTMLButtonElement).disabled).toBe(true);
   await user.type(within(form()).getByRole('textbox', { name: 'Note text' }), 'Deburr all holes{Enter}');
   await add(user);
-  expect(requests()).toEqual([
-    `${ADD('note')}, its text the project's notes library entry "primer-mask" (the dict given as library=), written as that entry rather than these words:\n`
-      + 'note("note", "Mask these features before coating with primer")',
-    `${ADD('note')}:\nnote("note-2", "Deburr all holes")`]);
+  expect(requests()).toEqual([`${ADD('note')}:\nnote("note", "Deburr all holes")`]);
 });
 
 it('a view from here is the camera and the Clip now, in its part\'s frame, showing what is drawn; its name the person\'s to give', async () => {

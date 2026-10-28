@@ -65,7 +65,7 @@ user (ask for what they have not given; never pick a tolerance):
 from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance,
                           general_profile, limits, note, position_tolerance, section, surface_profile_tolerance,
                           view)
-from lib.notes import NOTES   # the project's notes library (Notes, below)
+from lib.notes import NOTES   # the project's notes, in its own module (Notes, below)
 
 # The values are examples: take the user's, or ask for them.
 return annotate(
@@ -84,7 +84,6 @@ return annotate(
     view("A-A", camera="front", shows=["hole-diameter", "hole-position", "mask"],
          section=section("y", 0, invert=True)),                                 # 6
     view("iso", camera="iso"),
-    library=NOTES,
 )
 ```
 
@@ -132,7 +131,8 @@ Its run warns that the four sides have no requirement: nothing here holds them.
 
 - **Annotate the shape that is returned**, after its last boolean: a `Face` given as a
   ref is numbered against that shape when `annotate` is called. Annotations given to
-  a shape a later operation replaces are reported as `unattached`.
+  a shape a later operation replaces fail the run, naming them: no file would carry
+  them. Move the `annotate` call after the operation.
 - **One part at a time.** In an assembly, annotate each part before it goes into the
   compound; a part placed twice carries its PMI once. An annotated assembly is refused.
 - **Ids are yours**: unique on the part and kept across edits. A datum's id is its
@@ -197,7 +197,6 @@ return annotate(
     general_profile("general", 0.5, datums=["A", "B", "C"]),   # Note 1
     # Note 2, a flag note: on the hole's face and its diameter.
     note("mask", NOTES["primer-mask"], faces=[hole], annotations=["hole-diameter"]),
-    library=NOTES,
 )
 ```
 
@@ -208,10 +207,8 @@ return annotate(
 - **Numbers are the part's**: the general profile is Note 1 where the part has one,
   then each note in the order the code gives them. Reorder the calls to renumber.
 - **Ids are shared**: a note's id is unique among the part's annotations.
-- **A notes library** is the project's: keep its notes in a module of its own code
-  that the models import, and pass the dict as `annotate(..., library=NOTES)`. The
-  build keeps it with the part, so the viewer can offer those notes; it is no
-  requirement. The text is the user's: ask for it.
+- **The project's notes** are its own: keep them in a module of its own code that
+  the models import, and write each note from it. The text is the user's: ask for it.
 - **Notes are the document's**: no STEP carries them, and no STEP is refused for one.
   A flag note on faces is drawn as its flag and number on its first face; a general
   note and the general profile (Note 1) are the viewer's notes alone, which
@@ -267,17 +264,17 @@ nominal measured anew and its tolerance as written. Otherwise its status says wh
 - `invalid`: it names a face the annotation cannot stand on (a diameter on a plane).
 
 Such an annotation stays in the document with its values, linked to nothing, and is
-listed in the run's report, its `pmi` (`{"annotations", "problems"}`, with `warnings`,
-`coverage` and `unattached` where any are). A STEP is refused rather than written
+listed in the run's report, its `pmi` (`{"annotations", "problems"}`, with `coverage`
+where there is any). A STEP is refused rather than written
 without it, naming each one and its ref. Fix the ref in the code, or remove the annotation. A flag
 note whose face is gone keeps its number and its text and says `missing` too; a STEP
-is not refused for it.
+is not refused for it. A tolerance whose frame names a datum that is not `ok` takes
+that datum's status: fix the datum, and the tolerance with it.
 
-A ref written as text that names a face of another kind than on the last build (a
-hole's name that passed to a flat side of the cut that replaced it) is measured as it
-is now, and the run warns of it once, on that run: `warning: pmi: ...` in its log
-and `warnings` in its report's `pmi`. Read the warning, and point the ref at the face
-meant: the next run of the same code no longer says it.
+A ref written as text names whatever face holds that name on this run, measured as it
+is now: a hole's name can pass to a flat side of the cut that replaced it. Each run is
+of itself alone and says nothing of the last, so after an edit that changes how a face
+is made, read the served PMI's nominals and statuses, and point a ref at the face meant.
 
 ## Coverage
 
@@ -333,8 +330,7 @@ Each entry has `id`, `kind` (`datum`, `dimension`, `geometric_tolerance`, `note`
 `status` (`ok`, `missing`, `ambiguous`, `invalid`), `problem`, `refs` (each with its
 canonical ref and status), and one of `datum`, `dimension`, `geometric_tolerance` or
 `note` holding its values. A note's is `{"number", "text", "general", "annotations"}`,
-its `refs` its faces. The document's structure lists each part's library as
-`pmi_library` (`{"part", "name", "text"}`), its views as `pmi_views`
+its `refs` its faces. The document's structure lists each part's views as `pmi_views`
 (`{"part", "name", "label", "camera", "section", "shows", "place"}`, the camera's
 `direction` and `up` unit vectors and its `preset` the name or null), and each part's
 coverage as `pmi_coverage` ([Coverage](#coverage)). A general profile says
@@ -370,13 +366,15 @@ viewer's Export -- is read back with a reader of its own, without the kernel, an
 annotation matched to the file: values, units, datum order, zone, a basic dimension's
 mark, and its faces by name and by geometry (a plane's normal and offset, a cylinder's
 axis and radius). The result is the file's `pmiVerification` (the build report's
-`files` row, the export's answer). A build's or an export's STEP that does not match
-is refused, no file written (a fault of the writer, not of your model: report it); the
-viewer's toast says how many matched, with the file's SHA-256. It checks the file, not
-a supplier's importer.
+`files` row, the export's answer). A STEP whose check finds any problem -- a record that
+does not match, or a file it could not check -- is refused, no file written, whoever
+asked for it: a build, an export or the viewer's Export, whose toast says why. Each part
+is checked against its own records, so parts may reuse face names; the kernel's writer
+writes one datum of a letter per file, so give each part's datums letters of their own,
+and each part its own name. It checks the file, not a supplier's importer.
 
-A STEP carries no annotation ids, no drawn callouts, no notes and no views: notes,
-views and the library stay in the document, and the check neither expects nor counts
+A STEP carries no annotation ids, no drawn callouts, no notes and no views: notes and
+views stay in the document, and the check neither expects nor counts
 them. A general profile is written as a surface profile on exactly the faces it
 covers, so a CAM or inspection program reads the faces themselves; the file does not
 say "general".

@@ -11,7 +11,7 @@ the two print parts below and the two PMI examples, which declare their files, a
 | `basic_shape_mating_test_fixture.py` | — | Seven parts and a sub-assembly seated on a base plate by build123d joints |
 | `electronics_enclosure_base_import.py` | `STEP/electronics_enclosure_base.step`, `STEP/basic_shape_mating_test_fixture.step` (its `__main__` exports them) | The enclosure's and the fixture's STEP read back with `read_step` |
 | `electronics_enclosure_base_drawing.py` | `PDF/electronics_enclosure_base_drawing.pdf` | **Engineering drawing** (`@eng_drawing`) of the enclosure, calling its model: three views with hidden lines and centre marks, measured dimensions, hole callouts, title block. Build the enclosure first. |
-| `pmi_plate.py` | `STEP/pmi_plate.step` | **Semantic PMI as a model-based definition**: a plate with a through-hole, datums A/B/C, thickness and hole-diameter dimensions with plus-minus tolerances, flatness, the hole's position to A\|B\|C located by basic dimensions from B and C, profiles on datum features B and C, and a general profile to A\|B\|C (Note 1) on every other face; a general note and a flag note on the hole from the project's notes library (`lib/notes.py`), and two views, section A-A through the hole and an iso. Exported as AP242 semantic PMI; the notes and views stay in the document's xbf (tolerance values and note texts illustrative; Aluminum 6061-T6) |
+| `pmi_plate.py` | `STEP/pmi_plate.step` | **Semantic PMI as a model-based definition**: a plate with a through-hole, datums A/B/C, thickness and hole-diameter dimensions with plus-minus tolerances, flatness, the hole's position to A\|B\|C located by basic dimensions from B and C, profiles on datum features B and C, and a general profile to A\|B\|C (Note 1) on every other face; a general note and a flag note on the hole, their texts the project's notes (`lib/notes.py`), and two views, section A-A through the hole and an iso. Exported as AP242 semantic PMI; the notes and views stay in the document's xbf (tolerance values and note texts illustrative; Aluminum 6061-T6) |
 | `aerospace_avionics_bracket.py` | `STEP/aerospace_avionics_bracket.step` | **Semantic PMI as a model-based definition** on a bracket with a back wall, webs, slots and a locating bore: datums A/B/C, toleranced thickness and bore, flatness, the bore's position located by basic dimensions, profiles on datum features B and C, and a general profile to A\|B\|C (Note 1) on every other face; the same notes as the plate, flagged on the bore, and two views, section A-A through the bore and an iso (geometry, tolerance values and note texts illustrative, not a flight part; Aluminum 7075-T6) |
 | `cam_follower_roller.py` | — | Cam follower roller with central bearing bore and rounded outer profile (Steel 4140) |
 | `centrifugal_impeller.py` | — | Single solid centrifugal impeller (Aluminum 6061-T6) |
@@ -58,8 +58,8 @@ The imports read the STEP inputs as they are, without materials.
 
 A run writes nothing, but the mounting plate's and the gear blank's declared files, and the
 two PMI examples' STEP (their PMI as AP242's, the notes and views staying in the document, saved as
-an xbf from the viewer or `cadgen export <id> NAME.xbf`; their notes come from `lib/notes.py`, the
-project's notes library, its text illustrative). The import script's `__main__` exports the
+an xbf from the viewer or `cadgen export <id> NAME.xbf`; their notes' texts come from `lib/notes.py`,
+the project's own notes, illustrative). The import script's `__main__` exports the
 enclosure and the fixture to `../STEP/` (gitignored, like every export: Git holds no CAD files)
 and reads them back; run it before opening either import model, which reads those files.
 Build from this folder, in any order: each script builds the models its `__main__` calls, for example

@@ -117,6 +117,18 @@ class _Folder(unittest.TestCase):
         return self.folder / "pmi_plate.step"
 
 
+def verify(entries: list[dict], target: Path, surfaces: dict | None = None,
+           names: tuple[str, ...] = ("plate",)) -> dict:
+    """``ap242.check`` of the file at ``target`` against ``entries``, each part (by its index)
+    named as ``names`` say, as the file names its product."""
+    return ap242.check(entries, target, surfaces, dict(enumerate(names)))
+
+
+def _names(source: Path) -> tuple[str, ...]:
+    """Each part's name of a document, by its index, as the file names its product."""
+    return tuple(prototype["name"] for prototype in document.Loaded(Path(source)).structure()["prototypes"])
+
+
 def _by_id(entries: list[dict]) -> dict[str, dict]:
     return {entry["id"]: entry for entry in entries}
 
@@ -449,7 +461,7 @@ class LimitsTest(_Folder):
 
     def test_the_step_carries_the_limits_and_the_check_matches_them(self) -> None:
         self.build(LIMITS)
-        result = ap242.verify(read(self.xbf), self.step)
+        result = verify(read(self.xbf), self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (2, 2, []))
         text = self.step.read_text(encoding="utf-8")
         for value, role in (("10.", "lower limit"), ("10.05", "upper limit"), ("9.9", "lower limit"),
@@ -477,7 +489,7 @@ class LimitsTest(_Folder):
         # The file states limits, not a nominal: none is served (XCAF's midpoint is no fact of the file).
         self.assertIsNone(entry["dimension"]["nominal"])
         # And the check matches it by its limits, in millimetres, as one of the code's.
-        result = ap242.verify([entry], vendor)
+        result = verify([entry], vendor, names=_names(vendor))
         self.assertEqual((result["matched"], result["total"], result["problems"]), (1, 1, []))
 
     def test_a_vendor_dimension_with_limits_and_more_is_unsupported_with_why(self) -> None:
@@ -554,7 +566,7 @@ class ProfileTest(_Folder):
     def test_a_profile_is_written_as_one_surface_profile_tolerance_and_checked(self) -> None:
         self.build(PROFILE)
         ours = _by_id(read(self.xbf))
-        result = ap242.verify(list(ours.values()), self.step)
+        result = verify(list(ours.values()), self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
         found = ap242.report(self.step)
         self.assertEqual(found["problems"], [])
@@ -745,7 +757,7 @@ class GeneralProfileTest(_Folder):
     def test_the_step_holds_it_on_exactly_those_faces(self) -> None:
         self.build(GENERAL)
         ours = read(self.xbf)
-        result = ap242.verify(ours, self.step)
+        result = verify(ours, self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (9, 9, []))
         general = _by_id(ours)["general"]
         [profile] = [row for row in ap242.report(self.step)["tolerances"] if row["entity"] == "SURFACE_PROFILE_TOLERANCE"]
@@ -769,7 +781,7 @@ class GeneralProfileTest(_Folder):
                          (["A"], True))
         # Linked to nothing, it is written as nothing, and the check expects nothing for it.
         self.assertNotIn("SURFACE_PROFILE_TOLERANCE", self.step.read_text(encoding="utf-8"))
-        result = ap242.verify(served, self.step)
+        result = verify(served, self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (5, 5, []))
 
     def test_a_second_general_profile_is_refused(self) -> None:
@@ -805,16 +817,12 @@ class GeneralProfileTest(_Folder):
         self.assertEqual(self.xbf.read_bytes(), after)
 
 
-# A plate given a general note and a flag note on its hole, after its general profile ({general}): the
-# flag note's text is the project's notes library's, a dict its own module would hold (here inline).
+# A plate given a general note and a flag note on its hole, after its general profile ({general}).
 # Tolerance values and note texts ILLUSTRATIVE.
 NOTES = '''
 import build123d as bd
 from cadgen.ap242 import annotate, datum, dimensional_size, general_profile, note, plus_minus_tolerance
 from cadgen.engine import step, xbf
-
-LIBRARY = {{"primer-mask": "Mask these features before coating with primer"}}
-
 
 @xbf(out="XBF/pmi_plate.xbf")
 @step(out="pmi_plate.step")
@@ -829,8 +837,7 @@ def pmi_plate():
         dimensional_size("hole-dia", {hole}, tolerance=plus_minus_tolerance(0.1, 0)),
         {general}
         note("deburr", "Break all sharp edges 0.2 max"),
-        note("mask", LIBRARY["primer-mask"], faces=[{mask}], annotations=["hole-dia"]),
-        library=LIBRARY,
+        note("mask", "Mask these features before coating with primer", faces=[{mask}], annotations=["hole-dia"]),
     )
 '''
 HOLE = "body.faces().filter_by(bd.GeomType.CYLINDER)[0]"
@@ -875,11 +882,11 @@ class NoteTest(_Folder):
         loaded = document.Loaded(self.xbf)
         found = _by_id(loaded.structure()["pmi"])
         mask = found["mask"]
-        self.assertEqual(set(mask), {"id", "kind", "label", "status", "problem", "warnings", "part", "refs",
+        self.assertEqual(set(mask), {"id", "kind", "label", "status", "problem", "part", "refs",
                                      "presentation", "xcaf_type", "note"})
-        self.assertEqual((mask["kind"], mask["label"], mask["status"], mask["problem"], mask["warnings"], mask["part"],
+        self.assertEqual((mask["kind"], mask["label"], mask["status"], mask["problem"], mask["part"],
                           mask["presentation"], mask["xcaf_type"]),
-                         ("note", None, "ok", None, [], 0, None, "XCAFDoc_NoteComment"))
+                         ("note", None, "ok", None, 0, None, "XCAFDoc_NoteComment"))
         self.assertEqual(mask["note"], {"number": 3, "text": MASK, "general": False, "annotations": ["hole-dia"]})
         # On the hole's face, a ref as any other annotation's.
         hole = found["hole-dia"]["refs"][0]
@@ -927,12 +934,11 @@ class NoteTest(_Folder):
         # A note's id is one of its part's ids, as its annotations' are.
         with self.assertRaisesRegex(PMIError, "two annotations on one part are 'top-flat'"):
             annotate(box, flatness_tolerance("top-flat", top, 0.05), note("top-flat", "Lap this face"))
-        with self.assertRaisesRegex(PMIError, "library note 'primer-mask': its text is a non-empty string"):
-            annotate(box, library={"primer-mask": ""})
-        with self.assertRaisesRegex(PMIError, "a library is a project's notes by name"):
-            annotate(box, library=["primer-mask"])  # type: ignore[arg-type]
+        # annotate() takes annotations alone: a notes library is no argument of it.
+        with self.assertRaisesRegex(TypeError, "unexpected keyword argument 'library'"):
+            annotate(box, library={"primer-mask": MASK})  # type: ignore[call-arg]
 
-    def test_notes_and_the_library_survive_the_xbf_and_make_the_same_bytes(self) -> None:
+    def test_notes_survive_the_xbf_and_make_the_same_bytes(self) -> None:
         from OCP.TDF import TDF_Label, TDF_Tool
         from OCP.collections import Sequence_TDF_Label
         from OCP.XCAFDoc import XCAFDoc_AssemblyItemId, XCAFDoc_DocumentTool, XCAFDoc_NoteComment
@@ -940,9 +946,8 @@ class NoteTest(_Folder):
         self.build(notes())
         loaded = document.Loaded(self.xbf)
         structure = loaded.structure()
-        self.assertEqual(structure["pmi_library"], [{"part": 0, "name": "primer-mask", "text": MASK}])
-        self.assertEqual((self.served()["pmi"], self.served()["pmi_library"]),
-                         (structure["pmi"], structure["pmi_library"]))
+        self.assertNotIn("pmi_library", structure)
+        self.assertEqual(self.served()["pmi"], structure["pmi"])
         # XCAF's notes: comments by one fixed user with no timestamp, in the code's order.
         tool = XCAFDoc_DocumentTool.NotesTool_s(loaded.doc.Main())
         labels = Sequence_TDF_Label()
@@ -988,7 +993,7 @@ class NoteTest(_Folder):
         self.build(notes())
         self.assertEqual(self.xbf.read_bytes(), first)
 
-    def test_a_library_alone_is_served_and_a_note_keeps_any_text(self) -> None:
+    def test_a_note_keeps_any_text(self) -> None:
         model = '''
 import build123d as bd
 from cadgen.ap242 import annotate, note
@@ -999,16 +1004,9 @@ from cadgen.engine import xbf
 def pmi_plate():
     body = bd.Box(100, 60, 10)
     body.label = "plate"
-    return annotate(body, {notes}library={{"primer-mask": "{mask}", "finish": "Ra 1.6 µm"}})
+    return annotate(body, note("finish", "Ra 1.6 µm, ⌀ holes ±0.1"))
 '''
-        # A project's library before any note is written: the viewer offers what the build saw.
-        self.build(model.format(notes="", mask=MASK))
-        structure = document.Loaded(self.xbf).structure()
-        self.assertEqual(structure["pmi"], [])
-        self.assertEqual(structure["pmi_library"], [{"part": 0, "name": "primer-mask", "text": MASK},
-                                                    {"part": 0, "name": "finish", "text": "Ra 1.6 µm"}])
-        self.assertEqual(self.served()["pmi_library"], structure["pmi_library"])
-        self.build(model.format(notes='note("finish", "Ra 1.6 µm, ⌀ holes ±0.1"), ', mask=MASK))
+        self.build(model)
         [finish] = read(self.xbf)
         self.assertEqual((finish["note"]["number"], finish["note"]["text"]), (1, "Ra 1.6 µm, ⌀ holes ±0.1"))
 
@@ -1017,7 +1015,7 @@ def pmi_plate():
         one, and the check matches the GD&T alone."""
         self.build(notes())
         served = read(self.xbf)
-        result = ap242.verify(served, self.step)
+        result = verify(served, self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
         text = self.step.read_text(encoding="utf-8")
         self.assertNotIn("Break all sharp edges", text)
@@ -1028,7 +1026,7 @@ def pmi_plate():
         report = self.build(notes(mask="'face 99'"))
         self.assertEqual([(problem["id"], problem["status"]) for problem in report["pmi"]["problems"]],
                          [("mask", "missing")])
-        result = ap242.verify(read(self.xbf), self.step)
+        result = verify(read(self.xbf), self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
         said: list[str] = []
         export.translate(self.xbf, "step", self.folder / "again.step", log=said.append)
@@ -1249,7 +1247,7 @@ class ViewTest(_Folder):
         """Review Focus 5: a STEP carries no view (OCCT's writer writes none), so a view never stops
         one, and the check matches the GD&T alone."""
         self.build(views())
-        result = ap242.verify(read(self.xbf), self.step)
+        result = verify(read(self.xbf), self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (3, 3, []))
         text = self.step.read_text(encoding="utf-8")
         self.assertNotIn("CAMERA_MODEL", text)
@@ -1512,30 +1510,26 @@ class FaceKindTest(_Folder):
     def named(self, cut: str, name: str, *, ok: bool | None = True) -> dict:
         return self.build(CUT.format(cut=cut, hole=repr(name)), ok=ok)
 
-    def test_a_name_that_comes_to_name_another_kind_of_face_is_warned(self) -> None:
+    def test_a_build_is_of_itself_alone_and_reads_no_declared_file(self) -> None:
+        """The hole made a square: the name now names a flat side 44 from the left face, measured as
+        it now is. The build resolves its refs against this build's geometry alone: nothing of an
+        earlier build is compared or said, and the declared xbf on disk is never read as one (law 5:
+        it is an export of the document, never a source)."""
         name = self.hole_name()
         report = self.named(ROUND, name)
-        self.assertEqual(report["pmi"]["problems"], [])
         self.assertEqual(_by_id(read(self.xbf))["hole-from-left"]["dimension"]["nominal"]["value"], 50.0)
-        # The hole made a square: the name now names a flat side 44 from the left face. The build says
-        # so, as a warning of its report and of the structure it serves; the document is the code's.
         report = self.named(SQUARE, name)
-        self.assertEqual(report["pmi"]["problems"], [])
-        [warning] = report["pmi"]["warnings"]
-        said = f"{name} named a cylinder face on the last build and names a plane face now"
-        self.assertTrue(warning.startswith(f"plate/hole-from-left: {said}"), warning)
-        served = _by_id(engine_build.held(self.folder / "pmi_plate.py", "pmi_plate").structure["pmi"])
-        [text] = served["hole-from-left"]["warnings"]
-        self.assertTrue(text.startswith(said), text)
+        self.assertEqual(_but_coverage(report), {"annotations": 2, "problems": []})
         entry = _by_id(read(self.xbf))["hole-from-left"]
-        self.assertEqual((entry["status"], entry["dimension"]["nominal"]["value"], entry["warnings"]), ("ok", 44.0, []))
-
-    def test_after_a_restart_the_saved_document_is_the_last_build(self) -> None:
-        name = self.hole_name()
-        self.named(ROUND, name)
-        engine_build._WRITTEN.clear()  # a fresh process: nothing of the last build but its xbf
-        report = self.named(SQUARE, name)
-        self.assertEqual([warning.split(":")[0] for warning in report["pmi"]["warnings"]], ["plate/hole-from-left"])
+        self.assertEqual((entry["status"], entry["dimension"]["nominal"]["value"]), ("ok", 44.0))
+        self.assertNotIn("warnings", entry)
+        after = self.xbf.read_bytes()
+        # A fresh process with a declared xbf it cannot read: the same build, the same bytes.
+        engine_build._WRITTEN.clear()
+        self.xbf.write_bytes(b"not an xbf")
+        again = self.named(SQUARE, name)
+        self.assertEqual(_but_coverage(again), {"annotations": 2, "problems": []})
+        self.assertEqual(self.xbf.read_bytes(), after)
 
     def test_the_document_is_the_codes_whatever_was_built_before(self) -> None:
         """The same code and closure make the same xbf, built fresh or after the round hole: it holds
@@ -1551,26 +1545,6 @@ class FaceKindTest(_Folder):
         loaded = document.Loaded(self.xbf)
         for record in records_of_document(loaded.doc, loaded.prototypes, loaded.name):
             self.assertEqual(set(record["extra"]), {"schema", "id", "kind", "label", "presentation", "refs", "unlinked"})
-
-    def test_the_warning_is_the_last_builds_alone(self) -> None:
-        name = self.hole_name()
-        self.named(ROUND, name)
-        self.named(SQUARE, name)
-        # Built again unchanged, the model is not run (its document is held with the closure it has
-        # now) and says nothing; run again, its code edited to the same square, its last build named
-        # the plane.
-        report = self.named(SQUARE, name)
-        self.assertEqual((report["cache"]["used"], report.get("pmi")), (True, None))
-        report = self.named(SQUARE.replace("12, 12", "12.0, 12"), name)
-        self.assertEqual(report["bodies"], {"pmi_plate.py::pmi_plate": "run"})
-        self.assertNotIn("warnings", report["pmi"])
-
-    def test_a_face_the_code_selects_is_not_held_to_its_kind(self) -> None:
-        """A build123d Face is what the code's own selection picks each build: never warned of."""
-        self.build(CUT.format(cut=ROUND, hole="body.faces().sort_by(bd.Axis.X)[-1]"))
-        report = self.build(CUT.format(cut=ROUND, hole="body.faces().filter_by(bd.GeomType.CYLINDER)[0]"))
-        self.assertEqual(_but_coverage(report), {"annotations": 2, "problems": []})
-
 
 class AssemblyTest(_Folder):
     def test_each_part_of_an_assembly_carries_its_own_pmi_once_however_often_it_is_placed(self) -> None:
@@ -1652,6 +1626,90 @@ def pmi_plate():
         self.assertEqual(served, structure["pmi"])
 
 
+# Two plates of one function in one assembly, every face name the same in each (``{a}``, ``{b}``:
+# each plate's datum letter). Tolerance values ILLUSTRATIVE.
+TWO_PLATES = '''
+import build123d as bd
+from cadgen.ap242 import annotate, datum, flatness_tolerance, position_tolerance
+from cadgen.engine import step, xbf
+
+
+def plate(name, width, letter):
+    body = bd.Box(width, 60, 10) - bd.Cylinder(5, 10)
+    body.label = name
+    bottom, top = body.faces().sort_by(bd.Axis.Z)[0], body.faces().sort_by(bd.Axis.Z)[-1]
+    hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+    return annotate(body, datum(letter, bottom), flatness_tolerance("flat", top, 0.05),
+                    position_tolerance("pos", hole, 0.1, datums=[letter]))
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    a = plate("a", 100, "{a}")
+    b = plate("b", 80, "{b}").moved(bd.Location((0, 100, 0)))
+    b.label = "b"
+    return bd.Compound(children=[a, b], label="pair")
+'''
+
+
+class MultiPartStepTest(_Folder):
+    """A STEP's check holds each part to its own product's records, so face names and datum letters
+    need be unique only within a part."""
+
+    def test_two_parts_reusing_every_face_name_are_each_verified(self) -> None:
+        report = self.build(TWO_PLATES.format(a="A", b="B"))
+        checked = report["files"][str(self.step)]["pmiVerification"]
+        self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (6, 6, []))
+
+    def test_two_parts_sharing_a_datum_letter_are_refused_and_told_why(self) -> None:
+        """OCCT's writer writes one DATUM per letter in a file, the second part's frame on the
+        first's datum: the file is not the document, so it is refused, naming the cause."""
+        self.step.write_bytes(b"an earlier step")
+        report = self.build(TWO_PLATES.format(a="A", b="A"), ok=False)
+        self.assertIn("pmi_plate.step not written", report["error"])
+        self.assertIn("(4 of 6 matched): b/A: values, units, datum order or face association could not be verified. "
+                      "Datum A is defined on 2 parts", report["error"])
+        self.assertIn("b/pos: values", report["error"])
+        self.assertEqual(self.step.read_bytes(), b"an earlier step")
+
+    def test_a_reader_problem_or_a_mismatch_refuses_the_step(self) -> None:
+        """The kernel's writer faults no longer put right (``export.step._pmi_records``): a measure
+        written untyped is a problem the reader finds in the file, a check that could not be made of
+        it; a metre for a millimetre is a record that does not match. Each refuses the STEP, which is
+        never written with a warning beside it (law 17)."""
+        from unittest import mock
+
+        from cadgen.engine.export import step as writer
+
+        flat_top = 'flatness_tolerance("top-flatness", top, 0.05, presentation=place((-30, 20, 5), (0, 15, 0))),'
+        located = plate().replace(flat_top, "")
+        flat = '''
+import build123d as bd
+from cadgen.ap242 import annotate, datum, flatness_tolerance, position_tolerance
+from cadgen.engine import step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
+    body.label = "plate"
+    bottom, top = body.faces().sort_by(bd.Axis.Z)[0], body.faces().sort_by(bd.Axis.Z)[-1]
+    hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+    return annotate(body, datum("A", bottom), flatness_tolerance("flat", top, 0.05),
+                    position_tolerance("pos", hole, 0.1, datums=["A"]))
+'''
+        with mock.patch.object(writer, "_pmi_records", side_effect=lambda data: data):
+            for model, said in ((located, "holds an untyped measure value"),
+                                (flat, "flat: values, units, datum order or face association could not be verified")):
+                self.step.unlink(missing_ok=True)
+                report = self.build(model, ok=False)
+                self.assertIn("pmi_plate.step not written: the PMI in the STEP written does not match", report["error"])
+                self.assertIn(said, report["error"])
+                self.assertFalse(self.step.exists())
+
+
 class UnitsTest(_Folder):
     def test_a_tolerance_with_no_dimension_beside_it_is_in_millimetres(self) -> None:
         """OCCT's writer takes the GD&T unit from the first dimension and, with none, writes a bare
@@ -1724,23 +1782,33 @@ class RefTest(_Folder):
                      ["f:box.twin.1", "f:box.other.1", "f:box.twin.1"], {"box"})
         self.assertEqual(found.status, "invalid")
 
-    def test_a_shape_replaced_after_it_was_annotated_is_said(self) -> None:
-        report = self.build('''
+    def test_a_shape_replaced_after_it_was_annotated_fails_the_build(self) -> None:
+        """Annotations given to a shape a later operation replaced reach no file: the build fails,
+        naming them, and writes neither its xbf nor its STEP (law 17), where it once said them and
+        wrote both without them. Built again, the body runs again and fails again: a replay of it,
+        which calls no annotate, never passes."""
+        model = '''
 import build123d as bd
-from cadgen.ap242 import annotate, flatness_tolerance
-from cadgen.engine import xbf
+from cadgen.ap242 import annotate, datum, flatness_tolerance
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
 def pmi_plate():
     body = bd.Box(100, 60, 10)
-    annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
-    body = bd.fillet(body.edges().filter_by(bd.Axis.Z), 2)
-    return body
-''')
-        self.assertEqual(report["pmi"]["unattached"], ["top"])
+    annotate(body, datum("A", body.faces().sort_by(bd.Axis.Z)[0]),
+             flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+    return body - bd.Cylinder(5, 10)
+'''
+        for _again in range(2):
+            report = self.build(model, ok=False)
+            self.assertIn("PMIError: pmi_plate: A, top given to a shape that is not in the result", report["error"])
+            self.assertEqual(report["bodies"], {"pmi_plate.py::pmi_plate": "run"})
+            self.assertFalse(self.xbf.exists())
+            self.assertFalse(self.step.exists())
 
-    def test_each_model_of_a_script_says_only_the_annotations_its_own_body_lost(self) -> None:
+    def test_each_model_of_a_script_fails_only_for_the_annotations_its_own_body_lost(self) -> None:
         # The first model keeps its annotations: a run's record taken by its first report would
         # say the second's loss there.
         script = self.folder / "two.py"
@@ -1763,8 +1831,12 @@ def pmi_plate():
                 return bd.fillet(body.edges().filter_by(bd.Axis.Z), 2)
         '''), encoding="utf-8")
         reports = {report["source"]["name"]: report for report in engine_build.build(script, None, cwd=self.folder)}
-        self.assertEqual(reports["lossy"]["pmi"]["unattached"], ["top"])
+        self.assertFalse(reports["lossy"]["ok"])
+        self.assertIn("lossy: top given to a shape that is not in the result", reports["lossy"]["error"])
+        self.assertTrue(reports["whole"]["ok"], reports["whole"])
         self.assertNotIn("unattached", reports["whole"]["pmi"])
+        self.assertTrue((self.folder / "XBF" / "whole.xbf").is_file())
+        self.assertFalse((self.folder / "XBF" / "lossy.xbf").exists())
 
 
 BROKEN = '''
@@ -1781,6 +1853,39 @@ def pmi_plate():
     return annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05),
                     datum("A", {ref}))
 '''
+
+
+class DatumStatusTest(_Folder):
+    def test_a_tolerance_measured_from_a_broken_datum_takes_its_status(self) -> None:
+        """A position whose frame names a datum on no face is measured from nothing the part has: it
+        takes the datum's status, said so by the build and by its xbf alike, covers no face, and
+        its STEP is refused for both, where the position was once served ``ok``."""
+        report = self.build('''
+import build123d as bd
+from cadgen.ap242 import annotate, datum, position_tolerance
+from cadgen.engine import step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
+    body.label = "plate"
+    hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+    return annotate(body, datum("A", "face 999"), position_tolerance("pos", hole, 0.1, datums=["A"]))
+''', ok=False)
+        self.assertEqual(report["pmi"]["problems"], [
+            {"part": "plate", "id": "A", "status": "missing", "problem": "the part has no face 999 (it has 7)"},
+            {"part": "plate", "id": "pos", "status": "missing",
+             "problem": "datum A is missing: the part has no face 999 (it has 7)"}])
+        self.assertIn("pos (missing: datum A is missing", report["error"])
+        # Its xbf, written before the STEP was refused, derives the same where it is read.
+        position = _by_id(read(self.xbf))["pos"]
+        self.assertEqual((position["status"], position["problem"]),
+                         ("missing", "datum A is missing: the part has no face 999 (it has 7)"))
+        # Every face uncovered, the hole too: a tolerance not ok holds nothing.
+        [found] = report["pmi"]["coverage"]
+        self.assertEqual(len(found["uncovered"]), 7)
 
 
 class StepWriteTest(_Folder):
@@ -1807,9 +1912,10 @@ class StepWriteTest(_Folder):
         self.assertFalse(target.exists())
 
     def test_every_step_written_is_checked_in_the_file(self) -> None:
-        """A declared STEP and an explicit export (no viewer's expectation) each carry the check of
-        the file written; one that does not match is refused before it lands, the file there kept
-        byte for byte; one that could not be made is warned of, the file written."""
+        """A declared STEP, an explicit export and the viewer's export each carry the check of the
+        file written; one whose check finds any problem -- a record that does not match, or a check
+        that could not be made (the reader failed) -- is refused before it lands, the file there kept
+        byte for byte (law 17): a document the code made is never written unverified."""
         from unittest import mock
 
         from cadgen.engine.worker import _export
@@ -1821,26 +1927,23 @@ class StepWriteTest(_Folder):
         answer = _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, [].append)
         checked = answer["files"][0]["pmiVerification"]
         self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (9, 9, []))
-        failed = {"matched": 8, "total": 9, "problems": ["hole-diameter: not the model's face."], "sha256": "x"}
-        target.write_bytes(b"an earlier file")
-        with mock.patch("cadgen.engine.export.ap242.check", return_value=(failed, True)):
-            with self.assertRaisesRegex(export.ExportRefused,
-                                        r"part.step not written: the PMI in the STEP written does not match the "
-                                        r"model's document \(8 of 9 matched\): hole-diameter: not the model's face"):
-                _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, [].append)
-            self.assertEqual(target.read_bytes(), b"an earlier file")
-            self.step.write_bytes(b"an earlier step")
-            report = self.build(plate(thickness=12), ok=False)
-            self.assertIn("pmi_plate.step not written: the PMI in the STEP written does not match", report["error"])
-            self.assertEqual(self.step.read_bytes(), b"an earlier step")
+        mismatched = {"matched": 8, "total": 9, "problems": ["hole-diameter: not the model's face."], "sha256": "x"}
+        unread = {"matched": 0, "total": 9, "problems": ["The STEP reader could not complete the check: no DATA"],
+                  "sha256": "x"}
+        for failed, said in ((mismatched, r"\(8 of 9 matched\): hole-diameter: not the model's face"),
+                             (unread, r"\(0 of 9 matched\): The STEP reader could not complete the check")):
+            target.write_bytes(b"an earlier file")
+            with mock.patch("cadgen.engine.export.ap242.check", return_value=failed):
+                with self.assertRaisesRegex(export.ExportRefused,
+                                            r"part.step not written: the PMI in the STEP written does not match the "
+                                            r"model's document, or could not be checked against it " + said):
+                    _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, [].append)
+                self.assertEqual(target.read_bytes(), b"an earlier file")
+                self.step.write_bytes(b"an earlier step")
+                report = self.build(plate(thickness=12), ok=False)
+                self.assertIn("pmi_plate.step not written: the PMI in the STEP written does not match", report["error"])
+                self.assertEqual(self.step.read_bytes(), b"an earlier step")
         self.assertEqual(len(list(self.folder.glob(".*.tmp"))), 0)
-        said: list[str] = []
-        with mock.patch("cadgen.engine.export.ap242.check", return_value=(failed, False)):
-            answer = _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, said.append)
-        self.assertEqual(answer["files"][0]["pmiVerification"], failed)
-        self.assertTrue(target.read_bytes().startswith(b"ISO-10303-21;"))
-        self.assertIn("warning: pmi: part.step: the PMI in the written file is not verified (8 of 9 matched): "
-                      "hole-diameter: not the model's face.", said)
 
     def test_datum_letters_asme_sets_aside_are_refused(self) -> None:
         import build123d as bd
@@ -1872,6 +1975,47 @@ class RefusedTest(_Folder):
                      position_tolerance("p1", top, 0.1, datums=["A", "B"]),
                      position_tolerance("p2", top, 0.1, datums=["B", "A"]))
 
+    def test_an_annotation_is_of_its_functions_closed_keys(self) -> None:
+        """``annotate`` takes what the functions make, their keys closed (law 16): a dict of another
+        kind, a key beyond its set or one missing is refused naming the set, never read in part; a
+        hand-made tolerance or presentation is checked as ``limits``, ``plus_minus_tolerance`` and
+        ``place`` check theirs."""
+        import build123d as bd
+
+        box = bd.Box(10, 10, 10)
+        top = box.faces().sort_by(bd.Axis.Z)[-1]
+        flat = flatness_tolerance("f", top, 0.1)
+        with self.assertRaisesRegex(PMIError, r"annotation 'f': unknown key 'colour'; its keys are pmi, id, kind, "
+                                              r"label, presentation, refs, geometric_tolerance"):
+            annotate(box, {**flat, "colour": "red"})
+        with self.assertRaisesRegex(PMIError, r"annotation 'f': no key 'label'"):
+            annotate(box, {key: value for key, value in flat.items() if key != "label"})
+        with self.assertRaisesRegex(PMIError, r"annotation 'f''s geometric_tolerance: unknown key 'material'; its keys "
+                                              r"are characteristic, value, unit, zone, modifier, datums, general"):
+            annotate(box, {**flat, "geometric_tolerance": {**flat["geometric_tolerance"], "material": "MMC"}})
+        with self.assertRaisesRegex(PMIError, r"annotation 'f''s ref: unknown key 'weight'"):
+            annotate(box, {**flat, "refs": [{**flat["refs"][0], "weight": 2}]})
+        with self.assertRaisesRegex(PMIError, r"an annotation's kind is datum, dimension, geometric_tolerance, note or "
+                                              r"view, not 'fit'"):
+            annotate(box, {**flat, "kind": "fit"})
+        with self.assertRaisesRegex(PMIError, r"view 'iso': unknown key 'zoom'"):
+            annotate(box, {**view("iso", camera="iso"), "zoom": 2})
+        # A tolerance's keys are its type's, its values checked by its function.
+        with self.assertRaisesRegex(PMIError, r"dimension 'd''s tolerance: unknown key 'fit'; its keys are type, "
+                                              r"lower, upper"):
+            dimensional_size("d", top, tolerance={**limits(9.9, 10.1), "fit": "H7"})
+        with self.assertRaisesRegex(PMIError, r"a dimension's upper limit \(the second\) is above its lower"):
+            dimensional_size("d", top, tolerance={"type": "limits", "lower": 10.1, "upper": 9.9})
+        size = dimensional_size("d", top, tolerance=plus_minus_tolerance(0.1))
+        with self.assertRaisesRegex(PMIError, r"upper deviation is above its lower"):
+            annotate(box, {**size, "dimension": {**size["dimension"],
+                                                 "tolerance": {"type": "plus_minus", "upper": -1, "lower": 1}}})
+        # A presentation is place()'s: its anchor three numbers.
+        with self.assertRaisesRegex(PMIError, r"an anchor is three numbers"):
+            annotate(box, {**flat, "presentation": {"anchor": (1, 2), "offset": (0, 0, 0)}})
+        with self.assertRaisesRegex(PMIError, r"a presentation is place\(anchor, offset\)"):
+            datum("A", top, presentation={"anchor": (0, 0, 0)})
+
     def unsaved(self, model: str) -> export.Source:
         """``model`` built with no xbf of its own declared: its document as the build holds it."""
         self.build(model.replace('@xbf(out="XBF/pmi_plate.xbf")\n', ""))
@@ -1893,15 +2037,15 @@ class RefusedTest(_Folder):
                 self.assertEqual(structure.get(key), held.structure.get(key), key)
         held = self.unsaved(plate())
         export.translate(held, "step", self.folder / "part.step")
-        checked = ap242.verify(held.structure["pmi"], self.folder / "part.step")
+        checked = verify(held.structure["pmi"], self.folder / "part.step")
         self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (9, 9, []))
         # A mesh carries no PMI, as it carries no B-rep: written.
         export.translate(held, "stl", self.folder / "plate.stl")
 
     def test_an_xbf_made_again_is_refused_for_what_it_would_drop(self) -> None:
         """A document this engine wrote held without its XCAF document would be made again (law 17),
-        carrying none of the code's PMI -- annotations, views alone, or a notes library alone -- so its
-        xbf is refused, naming them."""
+        carrying none of the code's PMI -- annotations, or views alone -- so its xbf is refused,
+        naming them."""
         from types import SimpleNamespace
 
         entry = {"id": "hole", "kind": "dimension", "status": "ok", "problem": None,
@@ -1909,9 +2053,7 @@ class RefusedTest(_Folder):
         for structure, said in (({"pmi": [entry]}, r"plate holds 1 PMI annotation\(s\), and an xbf written from it is a "
                                                     r"document made again, which carries none yet"),
                                 ({"pmi": [], "pmi_views": [{"name": "iso"}, {"name": "top"}]},
-                                 r"plate holds 2 named view\(s\) \(iso, top\)"),
-                                ({"pmi": [], "pmi_library": [{"name": "primer-mask"}]},
-                                 r"plate holds a notes library \(primer-mask\)")):
+                                 r"plate holds 2 named view\(s\) \(iso, top\)")):
             source = SimpleNamespace(structure=structure, foreign=False, xcaf=None, name="plate")
             with self.assertRaisesRegex(export.ExportRefused, said):
                 refuse_dropped(SimpleNamespace(source=source), "xbf")

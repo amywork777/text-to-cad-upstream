@@ -1660,7 +1660,7 @@ class _Run:
         # as its own.
         self.scope: str | None = None
         # The annotations each model body's ``pmi.annotate`` calls gave, by its scope: those its
-        # document does not hold are said (``pmi.unattached``).
+        # document does not hold fail its build (``pmi.unattached``).
         self.pmi: dict[str | None, list[str]] = {}
         # The logs of the model bodies running, innermost last (``body``), and the bodies
         # this run has run or replayed: each is in the trace once.
@@ -2503,6 +2503,14 @@ def keep(name: str) -> None:
                 _KEY_IDS.move_to_end(key)
             if _BODIES.get(current.name) is current:
                 current.generation = generation
+
+
+def forget(name: str) -> None:
+    """Body ``name``'s last run dropped, so its next call runs it: a build that fails of what the
+    body's run did, which a replay would not do again (``pmi.unattached``: the annotations it gave a
+    shape its result does not hold), is never replayed into one that passes."""
+    with _LOCK:
+        _BODIES.pop(name, None)
 
 
 def _replay(record: _Body, state: _Run) -> Any:

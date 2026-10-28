@@ -238,6 +238,21 @@ class ExportsTest(unittest.TestCase):
         ready = self.settled(ident)
         self.assertEqual(ready["pmiVerification"], result)
 
+    def test_a_step_the_pmi_check_refuses_is_the_jobs_error_and_no_file(self):
+        """The worker refuses a STEP whose PMI check finds a problem, as ``cadgen export`` does: the
+        job fails with that reason, the person's toast, and holds no file to hand over."""
+        said = ("export.step not written: the PMI in the STEP written does not match the model's document, or "
+                "could not be checked against it (4 of 6 matched): b/A: values, units, datum order or face "
+                "association could not be verified.")
+        self.jobs.run = self.jobs._worker
+        self.jobs._source = lambda spec: ({"path": "/model.xbf"}, {"version": "v"}, "bracket")
+        with patch("cadgen.engine.client.request", return_value={"failed": said}):
+            ident = self.jobs.create(self.request())["id"]
+            failed = self.settled(ident)
+        self.assertEqual((failed["state"], failed["error"]), ("failed", said))
+        self.assertNotIn("pmiVerification", failed)
+        self.assertIsNone(self.jobs.jobs[ident]["directory"])
+
     def test_route_download_and_no_requested_server_path(self):
         self.finish.set()
         ident = self.jobs.create(self.request())["id"]

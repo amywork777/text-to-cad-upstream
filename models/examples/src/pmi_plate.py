@@ -5,7 +5,7 @@ from __future__ import annotations
 # and the hole's diameter with explicit tolerances, the top's flatness, and the hole's position to
 # A|B|C, its true position located by basic dimensions from B and C; datum features B and C
 # profiled to the datums before them, and every other face held by a general profile to A|B|C
-# (Note 1); a general note and a flag note on the hole from the project's notes library; and two
+# (Note 1); a general note and a flag note on the hole, their texts the project's notes; and two
 # views: section A-A through the hole's axis, and an iso view showing everything.
 #
 # Every tolerance value below, and every note's text (lib/notes.py), is ILLUSTRATIVE: chosen to
@@ -74,7 +74,6 @@ def pmi_plate():
              section=section("y", 0, invert=True),
              place={"hole-diameter": place((5, 0, 0), (15, 0, 10))}),
         view("iso", camera="iso"),  # shows every annotation and note
-        library=NOTES,
     )
 
 

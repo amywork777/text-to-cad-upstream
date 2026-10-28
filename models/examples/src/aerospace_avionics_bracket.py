@@ -7,7 +7,7 @@ from __future__ import annotations
 # and the bore's position to A|B|C, its true position located by basic dimensions from B and C;
 # datum features B and C profiled to the datums before them, and every other face (the wall, the
 # webs, the holes, slots and window) held by a general profile to A|B|C (Note 1); a general note
-# and a flag note on the bore from the project's notes library; and two views: section A-A through
+# and a flag note on the bore, their texts the project's notes; and two views: section A-A through
 # the bore's axis, and an iso view showing everything.
 #
 # The geometry, every tolerance value below and every note's text (lib/notes.py) are ILLUSTRATIVE,
@@ -105,7 +105,6 @@ def aerospace_avionics_bracket():
              section=section("y", -18, invert=True),
              place={"locating-bore": place((5, -18, 4), (18, 0, 16))}),
         view("iso", camera="iso"),  # shows every annotation and note
-        library=NOTES,
     )
 
 

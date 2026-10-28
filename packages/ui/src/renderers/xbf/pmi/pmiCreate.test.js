@@ -81,17 +81,14 @@ test("the general profile takes no face, and is offered while its part has none"
   assert.equal(of(pmiCreateOptions({ picked: [PEG], entries: built, parts: [0, 1] }), "general_profile").available, true);
 });
 
-test("a note is general where no face is picked, a flag note on the faces picked; its words are given, from the part's library or typed", () => {
-  const library = [{ part: 0, name: "edges", text: "Break all sharp edges 0.2 max" }, { part: 1, name: "peg-mask", text: "Mask the peg" }];
-  const general = of(pmiCreateOptions({ picked: [], entries: [], parts: [0], library }), "note");
+test("a note is general where no face is picked, a flag note on the faces picked; its words are given, typed", () => {
+  const general = of(pmiCreateOptions({ picked: [], entries: [], parts: [0] }), "note");
   assert.deepEqual([general.available, general.call], [true, { kind: "note", id: "note", text: "", faces: [] }]);
-  assert.deepEqual(general.library, [{ name: "edges", text: "Break all sharp edges 0.2 max" }], "its part's library alone");
   // No words given, no call: cadgen offers no starter text.
   assert.equal(pmiCallText(general.call), null);
-  assert.equal(pmiCallText({ ...general.call, text: general.library[0].text }), `note("note", "Break all sharp edges 0.2 max")`);
-  const flag = of(pmiCreateOptions({ picked: [HOLE, TOP], entries: [], library }), "note");
+  assert.equal(pmiCallText({ ...general.call, text: "Break all sharp edges 0.2 max" }), `note("note", "Break all sharp edges 0.2 max")`);
+  const flag = of(pmiCreateOptions({ picked: [HOLE, TOP], entries: [] }), "note");
   assert.equal(pmiCallText({ ...flag.call, text: "Mask these" }), `note("note", "Mask these", faces=["${HOLE.ref}", "${TOP.ref}"])`);
-  assert.deepEqual(of(pmiCreateOptions({ picked: [PEG], entries: [], library }), "note").library, [{ name: "peg-mask", text: "Mask the peg" }]);
   // Its id is one of the part's ids, with the rest.
   const noted = readXbfPmi({ pmi: [{ id: "note", kind: "note", status: "ok", part: 0, refs: [], note: { number: 1, text: "x", general: true, annotations: [] } }] }).entries;
   assert.equal(of(pmiCreateOptions({ picked: [TOP], entries: noted }), "note").call.id, "note-2");

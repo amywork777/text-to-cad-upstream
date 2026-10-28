@@ -1,7 +1,7 @@
 {
  "name": "plate",
  "path": "pmi_plate.xbf",
- "version": "1792983987098854562-23648",
+ "version": "1793204796597019223-23560",
  "units": "mm",
  "prototypes": [
   {
@@ -96,7 +96,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -131,7 +130,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -185,7 +183,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -231,7 +228,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -281,7 +277,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -331,7 +326,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -372,7 +366,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -415,7 +408,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -458,7 +450,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -514,7 +505,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [],
    "presentation": null,
@@ -532,7 +522,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -565,18 +554,6 @@
      "hole-diameter"
     ]
    }
-  }
- ],
- "pmi_library": [
-  {
-   "part": 0,
-   "name": "edges",
-   "text": "Break all sharp edges 0.2 max"
-  },
-  {
-   "part": 0,
-   "name": "primer-mask",
-   "text": "Mask these features before coating with primer"
   }
  ],
  "pmi_views": [

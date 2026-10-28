@@ -40,7 +40,7 @@ and a still reads them through the structure's ``millimetresPerSceneUnit`` (``re
 (no fit): a mark names its view only by label ("view 1"), and the view -- its camera, size and
 projection -- is a job of the packet (``authored``). Nothing is written but OUT.
 
-``--view NAME`` (``PART/NAME`` where two parts have one; a job's ``display.view``) draws a part's
+``--view NAME`` (``PART/NAME`` where two parts have one) draws a part's
 named view (``cadgen.ap242``'s ``view``) as the viewer applies it: down its camera from its part's first placement
 shown, cut by its section (the Clip's), only the PMI it shows, at its own placements (``view_of``).
 An unknown view, one with ``--camera`` or a clip beside it, one with a section on an exploded
@@ -85,8 +85,7 @@ __all__ = ["SnapshotRefused", "Still", "add_parser", "asked_view", "authored", "
            "parse_measurements", "parse_pose", "picture_path", "run", "snapshot", "view_of"]
 
 DISPLAY_MODES = ("solid", "shaded", "parts", "xray", "hidden-line", "wireframe")
-DISPLAY_KEYS = frozenset({"mode", "grid", "appearance", "camera", "clip", "exploded", "hidden", "isolated", "pmi",
-                          "view"})
+DISPLAY_KEYS = frozenset({"mode", "grid", "appearance", "camera", "clip", "exploded", "hidden", "isolated", "pmi"})
 # What the viewer's hide and isolate leave out of a picture: each a list of part refs (``refs``), the
 # display object's and a Quick Edit packet's alike.
 VISIBILITY = ("hidden", "isolated")
@@ -219,8 +218,6 @@ def parse_display(value: str | None, grid: bool) -> dict[str, Any]:
         raise SnapshotRefused("display.grid is true or false")
     if "pmi" in display and not isinstance(display["pmi"], bool):
         raise SnapshotRefused("display.pmi is true or false")
-    if "view" in display and not (isinstance(display["view"], str) and display["view"].strip()):
-        raise SnapshotRefused("display.view is the name of a view of a part (cadgen.ap242's view), or PART/NAME")
     _visibility(display)
     if grid:
         display["grid"] = True
@@ -289,16 +286,10 @@ def hidden_instances(structure: dict[str, Any], display: dict[str, Any], name: s
     return frozenset(every - drawn)
 
 
-def asked_view(view: Any, display: dict[str, Any], camera: Any, where: str = "--view") -> str | None:
-    """The view a picture is asked for -- ``view`` (``--view NAME``), else ``display.view``, which
-    this takes out of ``display`` -- checked before anything renders: a name (``PART/NAME`` where two
-    parts have one), and no camera beside it, a view being seen down its own (``where`` says who
-    asked)."""
-    given = display.pop("view", None)
-    if view is None:
-        view = given
-    elif given is not None and given != view:
-        raise SnapshotRefused(f"{where} {view} and display.view {given} name two views; give one")
+def asked_view(view: Any, camera: Any, where: str = "--view") -> str | None:
+    """The view a picture is asked for (``--view NAME``), checked before anything renders: a name
+    (``PART/NAME`` where two parts have one), and no camera beside it, a view being seen down its
+    own (``where`` says who asked)."""
     if view is None:
         return None
     if not isinstance(view, str) or not view.strip():
@@ -749,7 +740,7 @@ def options(display: Any = None, camera: Any = None, grid: bool = False, width: 
         display = json.dumps(display)
     shown = parse_display(display, bool(grid))
     framed = parse_camera(camera if camera is None or isinstance(camera, str) else json.dumps(camera))
-    asked_view(view, dict(shown), framed)
+    asked_view(view, framed)
     return shown, framed, parse_size(width, height, size_profile)
 
 
@@ -783,7 +774,7 @@ def snapshot(document: Path, out: Path, *, display: dict[str, Any] | None = None
     ``measurements`` are drawn over the model; ``camera`` ``authored`` is the view the ink was
     drawn in, read from the Quick Edit packet ``annotation_source`` is (or is beside: ``authored``),
     and its size and projection unless ``size`` and ``display.camera`` say otherwise. ``size`` None
-    is the default size. ``view`` (or ``display.view``): a part's named view it is drawn as
+    is the default size. ``view``: a part's named view it is drawn as
     (``view_of``), refused with a camera. Raises ``SnapshotRefused`` for a request it will not
     draw, before rendering; one refused or failed leaves the file at ``out`` as it was
     (``write_png``). Where the picture is goes to ``progress`` where one is given, a frame each
@@ -821,7 +812,7 @@ def _snapshot(document: Path, out: Path, *, display: dict[str, Any] | None, came
               view: str | None = None, progress: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
     suffix = _checked(document, out, source)
     display = dict(display or {})
-    named = asked_view(view, display, camera)
+    named = asked_view(view, camera)
     framed, exact, view = authored(camera, annotation, annotation_source, document)
     # What the viewer hid and isolated when the packet was written, unless the display says.
     for field, refs in packet_visibility(annotation_source).items():
@@ -1009,9 +1000,8 @@ def job_pictures(job: Any, source: Any = None, *, display: Any = None, camera: A
     output settings (``_settings``); each of its ``outputs`` a picture at its ``path`` (a folder
     gives a name in it: ``picture_path``) and size. ``source`` is drawn in place of every job's
     input; a flag given overrides every job: the display, the grid, the camera, Preview, the pose,
-    the ink, the dimensions, and the size of every output. A job's ``display.view`` draws it as a
-    part's named view, which its own camera beside is refused; ``view`` (``--view``) draws every job
-    as that view, in place of its camera."""
+    the ink, the dimensions, and the size of every output; ``view`` (``--view``) draws every job as
+    a part's named view, in place of its camera."""
     given = _load(job, "--job")
     if isinstance(given, dict) and isinstance(given.get("jobs"), list):
         unknown = sorted(set(given) - PACKET_KEYS)
@@ -1029,7 +1019,7 @@ def job_pictures(job: Any, source: Any = None, *, display: Any = None, camera: A
         raise SnapshotRefused("--job names no job")
     shown_flags = parse_display(display, grid) if display is not None else None
     camera_flag = parse_camera(camera if camera is None or isinstance(camera, str) else json.dumps(camera))
-    view_flag = asked_view(view, dict(shown_flags or {}), camera_flag)
+    view_flag = asked_view(view, camera_flag)
     pose_flag = parse_pose(pose) if isinstance(pose, str) else pose
     ink_flag = parse_annotation(annotation)
     dimensions_flag = parse_measurements(measurements)
@@ -1070,9 +1060,6 @@ def job_pictures(job: Any, source: Any = None, *, display: Any = None, camera: A
                 if selection.get(key):
                     shown[field_name] = [*(shown.get(field_name) or []), *selection[key]]
             _visibility(shown)
-        # The view it is drawn as: --view's for every job, else its display's own.
-        own = shown.pop("view", None)
-        named = own if view_flag is None else view_flag
         projection = (shown.get("camera") or {}).get("projection") or ("perspective" if preview or view.get("preview")
                                                                       else "orthographic")
         ink = ink_flag if annotation is not None else parse_annotation(view.get("annotation", shared.get("annotation")))
@@ -1106,17 +1093,13 @@ def job_pictures(job: Any, source: Any = None, *, display: Any = None, camera: A
             framed, exact = (_view_camera(camera_flag, "--camera", projection, tight) if camera is not None
                              else _view_camera(output.get("camera", view.get("camera")), f"{at_output}.camera",
                                                projection, tight))
-            if named is not None:
-                # A part's named view is seen down its own camera: --view stands in for every job's; a
-                # job's own view beside its own camera says two.
-                if view_flag is None and framed is not None:
-                    raise SnapshotRefused(f"{where} names view {named}, seen down its own camera; remove its camera")
-                framed, exact = None, False
+            if view_flag is not None:
+                framed, exact = None, False  # a part's named view is seen down its own camera, every job's
             if framed == AUTHORED:
                 framed, exact, _view = authored(AUTHORED, ink, given if isinstance(given, dict) else None, document)
             pictures.append((document, out, Still(shown, framed, exact, bool(preview or view.get("preview")), size,
                                                   posed, ink, dimensions, padding, tight,
-                                                  bool(settings.get("transparent")), scale, named)))
+                                                  bool(settings.get("transparent")), scale, view_flag)))
     written = [out for _document, out, _still in pictures]
     twice = sorted({str(out) for out in written if written.count(out) > 1})
     if twice:

@@ -1,7 +1,7 @@
 // An engine document's PMI -- its manufacturing annotations: dimensions with their tolerances,
-// datum features, geometric tolerances and numbered notes, with each part's named views, notes
-// library and coverage -- as the page reads them from the document the engine serves
-// (`structure.pmi`, `pmi_views`, `pmi_library` and `pmi_coverage`, the document's XCAF GD&T,
+// datum features, geometric tolerances and numbered notes, with each part's named views and
+// coverage -- as the page reads them from the document the engine serves
+// (`structure.pmi`, `pmi_views` and `pmi_coverage`, the document's XCAF GD&T,
 // notes and views read by `cadgen.engine.pmi`), and as the viewer says them and asks for them.
 //
 // What is said comes from the document alone: a dimension's nominal is the engine's, measured on
@@ -143,7 +143,6 @@ function readEntry(item, { key, part, name: id }) {
     key, id, kind: text(item.kind), label: text(item.label), status: statusOf(item.status), problem: text(item.problem), part,
     refs: readRefs(item.refs), dimension, datum: item.datum && text(item.datum.letter) ? { letter: text(item.datum.letter) } : null,
     tolerance: gdt, note: readNote(item.note), presentation: readPlacement(item.presentation), xcafType: text(item.xcaf_type),
-    warnings: words(item.warnings),
     // What the document holds of an annotation the viewer does not draw: its plain values, to read.
     values: isRecord(item.values) ? readValues(item.values) : null
   };
@@ -207,8 +206,6 @@ const partRank = part => (part === null ? Number.MAX_SAFE_INTEGER : part);
  *   names no face and no annotation; `annotations`: the ids it names.
  * @property {{ anchor: number[], offset: number[] } | null} presentation
  * @property {string} xcafType
- * @property {string[]} warnings  What the build that served it warned of (a ref that names another kind of face than
- *   on the last build; a file holds none).
  * @property {Array<[string, string]> | null} values  What an unsupported one holds, as words.
  * @property {boolean} supported  Whether the viewer draws it.
  * @property {string} unsupported  Why not, the engine's reason where it gives one.
@@ -234,34 +231,30 @@ const partRank = part => (part === null ? Number.MAX_SAFE_INTEGER : part);
  */
 
 /**
- * The document's PMI as the viewer reads it (`structure.pmi`, and beside it `pmi_views`,
- * `pmi_library` and `pmi_coverage`, each served wherever `pmi` is; none where a key is absent),
+ * The document's PMI as the viewer reads it (`structure.pmi`, and beside it `pmi_views` and
+ * `pmi_coverage`, each served wherever `pmi` is; none where a key is absent),
  * read defensively: a field missing or of the wrong type is null, never guessed.
  *
  * - `entries`: each annotation and note.
  * - `notes`: the entries said as a part's numbered notes, each part's by its number: its general
  *   profile (Note 1, where it has one), then its notes. The same objects as in `entries`.
  * - `views`: each part's named views, in the code's order, keyed by part and name.
- * - `library`: each part's notes library, its notes by name in the project's order (no requirement).
  * - `coverage`: of each part carrying PMI, the faces no requirement names and the requirements that
  *   cannot both hold.
  *
  * @param {object | null} structure  A served document's structure.
  * @returns {{ entries: XbfPmiEntry[], notes: XbfPmiEntry[], views: XbfPmiView[],
- *   library: Array<{ part: number | null, name: string, text: string }>,
  *   coverage: Array<{ part: number | null, uncovered: string[], conflicts: Array<{ kind: string, ids: string[], problem: string }> }> }}
  */
 export function readXbfPmi(structure) {
   const entries = keyedByPart(structure?.pmi, item => text(item.id), readEntry);
   const notes = entries.filter(entry => noteNumber(entry) !== null)
     .sort((a, b) => partRank(a.part) - partRank(b.part) || noteNumber(a) - noteNumber(b));
-  const library = (Array.isArray(structure?.pmi_library) ? structure.pmi_library : []).filter(item => isRecord(item) && text(item.name) && text(item.text))
-    .map(item => ({ part: partOf(item.part), name: text(item.name), text: text(item.text) }));
   const coverage = (Array.isArray(structure?.pmi_coverage) ? structure.pmi_coverage : []).filter(isRecord).map(item => ({
     part: partOf(item.part), uncovered: words(item.uncovered),
     conflicts: (Array.isArray(item.conflicts) ? item.conflicts : []).filter(isRecord)
       .map(conflict => ({ kind: text(conflict.kind), ids: words(conflict.ids), problem: text(conflict.problem) })) }));
-  return { entries, notes, views: keyedByPart(structure?.pmi_views, item => text(item.name), readView), library, coverage };
+  return { entries, notes, views: keyedByPart(structure?.pmi_views, item => text(item.name), readView), coverage };
 }
 
 // ---- saying it --------------------------------------------------------------------------------
@@ -438,9 +431,8 @@ function pmiViewText(call) {
  * - `{ kind: "geometric_tolerance", characteristic: "surface_profile", general: true, id, value, datums? }`:
  *   `general_profile(id, value, datums=[...])`, on no ref (its faces are each build's) and never
  *   placed (a presentation given it makes no call);
- * - `{ kind: "note", id, text, faces?, annotations?, library? }`: `note(id, text, faces=[...], annotations=[...])`,
- *   a general note naming neither; `library`, the name of the project's notes library entry its
- *   text is, which the call writes as its words (a request asks for the entry, `pmiChangeRequest`);
+ * - `{ kind: "note", id, text, faces?, annotations? }`: `note(id, text, faces=[...], annotations=[...])`,
+ *   a general note naming neither;
  * - `{ kind: "view", name, camera, shows?, section?, place? }`: `view(name, camera="front", shows=[...],
  *   section=section(axis, at, invert=True), place={id: place(...)})`, its camera a preset's
  *   name or `{ direction, up }` (`camera(direction, up)`), its shows null for every one.
@@ -575,20 +567,14 @@ function pmiCallNames(call) {
  * it and the call take from `cadgen.ap242`, then the call itself, exactly. `change`: a new annotation
  * (`{ kind: "add", part, partName, id, call }`) or an edit of one the document holds
  * (`{ kind: "edit", part, partName, id, values, call, placementOnly }`: what it sets, and the call it
- * makes), `id` the author's. A new note whose words are the project's
- * notes library entry (`call.library`, its name) asks for that entry: the page knows its name and
- * its words, not what the model's module calls the dict. "" for a call that lacks what its kind needs.
+ * makes), `id` the author's. "" for a call that lacks what its kind needs.
  */
 export function pmiChangeRequest(change) {
   const call = pmiCallText(change.call);
   if (!call) return "";
   const annotate = change.partName ? `the annotate(...) call of the model's part ${pyString(change.partName)}` : "the model's annotate(...) call";
   const names = `(from cadgen.ap242 import ${pmiCallNames(call).join(", ")})`;
-  if (change.kind === "add") {
-    const library = change.call.kind === "note" && text(change.call.library)
-      ? `, its text the project's notes library entry ${pyString(change.call.library)} (the dict given as library=), written as that entry rather than these words` : "";
-    return `Add this PMI to ${annotate} ${names}${library}:\n${call}`;
-  }
+  if (change.kind === "add") return `Add this PMI to ${annotate} ${names}:\n${call}`;
   const what = change.placementOnly
     ? `Move the PMI "${change.id}" in ${annotate} ${names}, its placement only (what it says is unchanged)`
     : `Change the PMI "${change.id}" in ${annotate} ${names}`;

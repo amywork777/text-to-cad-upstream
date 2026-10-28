@@ -15,21 +15,38 @@ class ViewerExportsTest(unittest.TestCase):
         self.assertNotEqual(fingerprint({"pmi": [{"value": .1}]}), fingerprint({"pmi": [{"value": .2}]}))
 
     def test_step_result_checks_the_written_file(self):
+        """The viewer's STEP is checked as ``cadgen export``'s is, staged before it lands: one the
+        check passes carries its verification; one it finds any problem with is refused, its job's
+        error the person's toast, and no file is handed over (law 17)."""
         from types import SimpleNamespace
         entry = {"id": "A", "kind": "datum"}
-        source = SimpleNamespace(structure={"pmi": [entry]}, mesh=None, path=None, foreign=False)
+        source = SimpleNamespace(structure={"pmi": [entry], "prototypes": [{"index": 0, "name": "plate"}]},
+                                 mesh=None, path=None, foreign=False)
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "result.step"
-            def write(source, _unused, target, **kwargs):
+            def write(source, _unused, target, check=None, **kwargs):
                 target.write_bytes(b"written step")
+                if check is not None:
+                    check(target)
                 return target.stat().st_size
+            request = {"source": {"path": str(output)}, "expected": {"version": "v"}, "destinations": [str(output)]}
             with patch.object(Source, "read", return_value=source), \
                  patch("cadgen.engine.export.viewer.check"), \
                  patch("cadgen.engine.export.translate", side_effect=write), \
-                 patch("cadgen.engine.export.ap242.check", return_value=({"matched": 1}, False)) as check:
-                result = _export({"source": {"path": str(output)}, "expected": {"version": "v"}, "destinations": [str(output)]}, lambda _: None)
-                check.assert_called_once_with([entry], output, {})
+                 patch("cadgen.engine.export.ap242.check",
+                       return_value={"matched": 1, "total": 1, "problems": []}) as check:
+                result = _export(request, lambda _: None)
+                check.assert_called_once_with([entry], output, {}, {0: "plate"})
                 self.assertEqual(result["files"][0]["pmiVerification"]["matched"], 1)
+            failed = {"matched": 0, "total": 1, "problems": ["A: values, units, datum order or face association could "
+                                                              "not be verified."]}
+            with patch.object(Source, "read", return_value=source), \
+                 patch("cadgen.engine.export.viewer.check"), \
+                 patch("cadgen.engine.export.translate", side_effect=write), \
+                 patch("cadgen.engine.export.ap242.check", return_value=failed):
+                with self.assertRaisesRegex(ExportRefused, r"result.step not written: the PMI in the STEP written does "
+                                                           r"not match the model's document.*\(0 of 1 matched\): A: "):
+                    _export(request, lambda _: None)
             # A document without PMI: its STEP is not checked, and its result carries no verification.
             source.structure = {}
             with patch.object(Source, "read", return_value=source), \

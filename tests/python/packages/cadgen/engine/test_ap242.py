@@ -1,6 +1,6 @@
 """An exported file's requirements must match its source, without guessing identities
-(``export/ap242.py``): the AP242 reader of no OCCT, and ``compare``/``verify`` of a document's PMI
-against the file it wrote."""
+(``export/ap242.py``): the AP242 reader of no OCCT, and ``compare``/``check`` of a document's PMI
+against the file it wrote, each part against its own product's records."""
 
 from __future__ import annotations
 
@@ -14,25 +14,38 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cadgen.engine.export.ap242 import Report, _compared, compare, parse, report, verify
+from cadgen.engine.export.ap242 import Report, check, parse, report
+from cadgen.engine.export.ap242 import compare as _compare
 
-def fixtures() -> tuple[list[dict], dict]:
-    """Three entries as a document serves them, and the report of a file that holds them."""
+# The one part of the fixtures' document, by its index, as the file names its product.
+PARTS = {0: "part"}
+
+
+def compare(entries: list[dict], found: dict, surfaces: dict | None = None, parts: dict | None = None) -> dict:
+    """``ap242.compare`` of the fixtures' document: its part named ``part``, unless ``parts`` say."""
+    return _compare(entries, found, surfaces, PARTS if parts is None else parts)
+
+
+def fixtures(part: int = 0, product: str = "part") -> tuple[list[dict], dict]:
+    """Three entries as a document serves them, of its part ``part``, and the report of a file that
+    holds them, in its product ``product``."""
     entries = [
-        {"id": "A", "kind": "datum", "status": "ok", "refs": [{"ref": "part/f:base.1"}], "datum": {"letter": "A"}},
-        {"id": "bore", "kind": "dimension", "status": "ok", "refs": [{"ref": "part/f:bore.1"}],
+        {"id": "A", "kind": "datum", "status": "ok", "part": part, "refs": [{"ref": f"{product}/f:base.1"}],
+         "datum": {"letter": "A"}},
+        {"id": "bore", "kind": "dimension", "status": "ok", "part": part, "refs": [{"ref": f"{product}/f:bore.1"}],
          "dimension": {"type": "diameter", "nominal": {"value": 10, "unit": "mm"},
                        "tolerance": {"type": "plus_minus", "lower": 0, "upper": 0.05}}},
-        {"id": "position", "kind": "geometric_tolerance", "status": "ok", "refs": [{"ref": "part/f:bore.1"}],
+        {"id": "position", "kind": "geometric_tolerance", "status": "ok", "part": part,
+         "refs": [{"ref": f"{product}/f:bore.1"}],
          "geometric_tolerance": {"characteristic": "position", "value": 0.1, "unit": "mm", "zone": "diameter",
                                  "datums": ["A"]}},
     ]
-    found = {"schema": "AP242_TEST", "problems": [], "ambiguousFaceNames": [],
-             "datums": [{"identification": "A", "features": [{"name": "f:base.1"}]}],
-             "dimensions": [{"name": "diameter", "features": [{"name": "f:bore.1"}],
+    found = {"schema": "AP242_TEST", "problems": [], "products": [product], "ambiguousFaceNames": {product: []},
+             "datums": [{"identification": "A", "features": [{"name": "f:base.1"}], "product": product}],
+             "dimensions": [{"name": "diameter", "features": [{"name": "f:bore.1"}], "product": product,
                              "nominal": {"value": 10, "unit": "mm"},
                              "tolerance": {"lower": 0, "upper": 0.05, "unit": "mm"}}],
-             "tolerances": [{"entity": "POSITION_TOLERANCE", "features": [{"name": "f:bore.1"}],
+             "tolerances": [{"entity": "POSITION_TOLERANCE", "features": [{"name": "f:bore.1"}], "product": product,
                              "magnitude": {"value": 0.1, "unit": "mm"}, "zone": "cylindrical or circular",
                              "datums": ["A"]}]}
     return entries, found
@@ -52,21 +65,56 @@ class VerificationTest(unittest.TestCase):
         found["dimensions"] *= 2
         self.assertTrue(compare(entries, found)["problems"])
 
-    def test_a_mismatch_is_told_from_a_check_that_could_not_be_made(self) -> None:
-        """An entry held to the file and not matched is a mismatch (a build's or an export's STEP is
-        refused for it, ``pmi.checked``); a file that cannot be checked at all is not."""
+    def test_a_check_that_could_not_be_made_fails_as_a_mismatch_does(self) -> None:
+        """An entry held to the file and not matched is a problem; so is a file that cannot be
+        checked at all (no AP242, a record the reader does not read, a face name it cannot tell
+        apart): each refuses the STEP of a document the code made (``pmi.checked``), never a
+        warning beside a file written unverified."""
         entries, found = fixtures()
-        self.assertEqual(_compared(entries, found), ({"matched": 3, "total": 3, "problems": []}, True))
+        self.assertEqual(compare(entries, found), {"matched": 3, "total": 3, "problems": []})
         changed = copy.deepcopy(found)
         changed["dimensions"][0]["nominal"]["value"] = 11
-        result, compared = _compared(entries, changed)
-        self.assertTrue(result["problems"])
-        self.assertTrue(compared)
+        self.assertTrue(compare(entries, changed)["problems"])
         for unverifiable in ({**found, "schema": "AP214"}, {**found, "problems": ["#9 is not read here"]},
-                             {**found, "ambiguousFaceNames": ["f:bore.1"]}):
-            result, compared = _compared(entries, unverifiable)
+                             {**found, "ambiguousFaceNames": {"part": ["f:bore.1"]}}):
+            result = compare(entries, unverifiable)
+            self.assertEqual(result["matched"], 0, unverifiable)
             self.assertTrue(result["problems"])
-            self.assertFalse(compared)
+
+    def test_each_part_is_matched_within_its_own_product(self) -> None:
+        """Two parts of one document made by one function reuse every face name and datum letter:
+        each part's entries are held to its own product's records alone, so all six match, where a
+        check across the file would verify none. A record of one part on another's faces, or measured
+        from another's datum (its ``product`` None), matches nothing; two products of one name verify
+        neither part's."""
+        first, found = fixtures(0, "a")
+        second, other = fixtures(1, "b")
+        both = {**found, "products": ["a", "b"], "ambiguousFaceNames": {"a": [], "b": []},
+                **{key: found[key] + other[key] for key in ("datums", "dimensions", "tolerances")}}
+        parts = {0: "a", 1: "b"}
+        self.assertEqual(compare(first + second, both, parts=parts), {"matched": 6, "total": 6, "problems": []})
+        # b's position measured from a's datum A (OCCT's writer writes one DATUM per letter in a file).
+        crossed = copy.deepcopy(both)
+        crossed["tolerances"][1]["product"] = None
+        crossed["datums"].pop(1)
+        result = compare(first + second, crossed, parts=parts)
+        self.assertEqual(result["matched"], 4)
+        self.assertIn("b/A: values, units, datum order or face association could not be verified.", result["problems"])
+        self.assertIn("Datum A is defined on 2 parts: the STEP writer writes one datum of a letter per file; give "
+                      "each part's datums letters of their own.", result["problems"])
+        self.assertIn("1 exported annotations did not match the model.", result["problems"])
+        # A face name ambiguous in b's product, or two products named b: b's entries verify nothing.
+        for altered, said in (({**both, "ambiguousFaceNames": {"a": [], "b": ["f:bore.1"]}},
+                               "part b: an exported face name is ambiguous across its geometry"),
+                              ({**both, "products": ["a", "b", "b"]}, "part b: 2 products of the file are named 'b'"),
+                              ({**both, "datums": both["datums"] + [other["datums"][0]]},
+                               "part b: its exported datum letters are repeated")):
+            result = compare(first + second, altered, parts=parts)
+            self.assertEqual(result["matched"], 3, said)
+            self.assertTrue(any(problem.startswith(said) for problem in result["problems"]), result["problems"])
+        # Two parts of one name: neither is told apart.
+        result = compare(first + second, both, parts={0: "a", 1: "a"})
+        self.assertEqual(result["matched"], 0)
 
     def test_given_the_models_faces_each_face_is_held_to_its_geometry(self) -> None:
         """A face of the right name on another surface matches nothing: a plane's normal and offset,
@@ -96,15 +144,17 @@ class VerificationTest(unittest.TestCase):
 
     def test_ambiguous_associations_fail_closed(self) -> None:
         entries, found = fixtures()
-        for altered in [{**found, "ambiguousFaceNames": ["f:bore.1"]},
+        for altered in [{**found, "ambiguousFaceNames": {"part": ["f:bore.1"]}},
                         {key: value for key, value in found.items() if key != "ambiguousFaceNames"},
                         {**found, "datums": found["datums"] * 2},
                         {**found, "problems": ["Mixed deviation units"]},
                         {**found, "schema": "AUTOMOTIVE_DESIGN"}]:
             self.assertEqual(compare(entries, altered)["matched"], 0)
+        # Two faces of the part share a name; a part the document names no product for.
         other = copy.deepcopy(entries[1])
         other["refs"][0]["ref"] = "other/f:bore.1"
         self.assertEqual(compare(entries + [other], found)["matched"], 0)
+        self.assertEqual(compare(entries, found, parts={})["matched"], 0)
 
     def test_unsupported_modifiers_and_empty_pmi_never_claim_success(self) -> None:
         entries, found = fixtures()
@@ -118,12 +168,12 @@ class VerificationTest(unittest.TestCase):
             target = Path(temp) / "export.step"
             target.write_bytes(b"exported bytes")
             with patch("cadgen.engine.export.ap242.report", return_value=found) as reader:
-                result = verify(entries, target)
+                result = check(entries, target, None, PARTS)
             reader.assert_called_once_with(target, b"exported bytes")
             self.assertEqual(result["matched"], 3)
             self.assertEqual(result["sha256"], hashlib.sha256(b"exported bytes").hexdigest())
             with patch("cadgen.engine.export.ap242.report", side_effect=ValueError("unsupported syntax")):
-                self.assertTrue(verify(entries, target)["problems"])
+                self.assertTrue(check(entries, target, None, PARTS)["problems"])
 
     def test_a_note_is_never_counted_even_where_the_check_fails(self) -> None:
         """A STEP carries no note: a failed check counts the GD&T alone, as a completed one does."""
@@ -134,17 +184,17 @@ class VerificationTest(unittest.TestCase):
             target = Path(temp) / "export.step"
             target.write_bytes(b"exported bytes")
             with patch("cadgen.engine.export.ap242.report", side_effect=ValueError("unsupported syntax")):
-                result = verify([entries[0], note], target)
+                result = check([entries[0], note], target, None, PARTS)
         self.assertEqual((result["matched"], result["total"]), (0, 1))
         self.assertEqual(result["problems"], ["The STEP reader could not complete the check: unsupported syntax"])
 
     def test_a_basic_flag_the_file_does_not_carry_is_not_verified(self) -> None:
         entries, found = fixtures()
-        entries.append({"id": "hole-from-B", "kind": "dimension", "status": "ok",
+        entries.append({"id": "hole-from-B", "kind": "dimension", "status": "ok", "part": 0,
                         "refs": [{"ref": "part/f:front.1"}, {"ref": "part/f:bore.1"}],
                         "dimension": {"type": "distance", "basic": True, "nominal": {"value": 30, "unit": "mm"},
                                       "tolerance": None}})
-        row = {"name": "linear distance", "features": [{"name": "f:front.1"}, {"name": "f:bore.1"}],
+        row = {"name": "linear distance", "features": [{"name": "f:front.1"}, {"name": "f:bore.1"}], "product": "part",
                "nominal": {"value": 30, "unit": "mm"}, "tolerance": None, "notes": [["dimensional note", "theoretical"]]}
         self.assertEqual(compare(entries, {**found, "dimensions": found["dimensions"] + [row]})["matched"], 4)
         bare = {**row, "notes": []}  # the same distance with no 'theoretical' note: not the basic one modelled
@@ -189,11 +239,12 @@ class VerificationTest(unittest.TestCase):
 
     def test_a_profile_matches_on_its_faces_in_any_order_and_on_no_other(self) -> None:
         entries, found = fixtures()
-        entries.append({"id": "sides", "kind": "geometric_tolerance", "status": "ok",
+        entries.append({"id": "sides", "kind": "geometric_tolerance", "status": "ok", "part": 0,
                         "refs": [{"ref": "part/f:front.1"}, {"ref": "part/f:left.1"}, {"ref": "part/f:bore.1"}],
                         "geometric_tolerance": {"characteristic": "surface_profile", "value": 0.5, "unit": "mm",
                                                 "zone": None, "datums": ["A"], "general": False}})
         row = {"entity": "SURFACE_PROFILE_TOLERANCE", "magnitude": {"value": 0.5, "unit": "mm"}, "zone": None,
+               "product": "part",
                "datums": ["A"], "features": [{"name": "f:bore.1"}, {"name": "f:front.1"}, {"name": "f:left.1"}]}
         self.assertEqual(compare(entries, {**found, "tolerances": found["tolerances"] + [row]}),
                          {"matched": 4, "total": 4, "problems": []})
@@ -234,13 +285,29 @@ class VerificationTest(unittest.TestCase):
         self.assertEqual(empty.tolerances()[0]["features"], [])
         self.assertTrue(any("relates no shape aspect" in problem for problem in empty.problems), empty.problems)
 
-    def test_reader_checks_unannotated_face_names(self) -> None:
+    def test_reader_checks_unannotated_face_names_within_each_product(self) -> None:
+        """A face name a product's geometry holds twice is ambiguous in that product, annotated or
+        not; another product holding it once more makes no name of its ambiguous. An assembly's
+        product, which holds no face, is no product a part is matched in."""
         with tempfile.TemporaryDirectory() as temp:
             step = Path(temp) / "duplicate.step"
+            products = "".join(f"#{at}=PRODUCT('{name}','{name}','',());\n"
+                               f"#{at + 1}=PRODUCT_DEFINITION_FORMATION('','',#{at});\n"
+                               f"#{at + 2}=PRODUCT_DEFINITION('design','',#{at + 1},$);\n"
+                               f"#{at + 3}=PRODUCT_DEFINITION_SHAPE('','',#{at + 2});\n"
+                               f"#{at + 4}=SHAPE_DEFINITION_REPRESENTATION(#{at + 3},#{representation});\n"
+                               for at, name, representation in ((20, "a", 10), (30, "b", 11), (40, "asm", 12)))
             step.write_text("ISO-10303-21; HEADER; FILE_SCHEMA(('AP242_TEST')); ENDSEC; DATA;\n"
                             "#1=ADVANCED_FACE('f:bore.1',(),$,.T.);\n"
-                            "#2=ADVANCED_FACE('f:bore.1',(),$,.T.);\nENDSEC; END-ISO-10303-21;", encoding="utf-8")
-            self.assertEqual(report(step)["ambiguousFaceNames"], ["f:bore.1"])
+                            "#2=ADVANCED_FACE('f:bore.1',(),$,.T.);\n"
+                            "#3=ADVANCED_FACE('f:bore.1',(),$,.T.);\n"
+                            "#10=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#1,#2),$);\n"
+                            "#11=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#3),$);\n"
+                            "#12=SHAPE_REPRESENTATION('',(),$);\n"
+                            + products + "ENDSEC; END-ISO-10303-21;", encoding="utf-8")
+            found = report(step)
+            self.assertEqual(found["ambiguousFaceNames"], {"a": ["f:bore.1"], "b": []})
+            self.assertEqual(found["products"], ["a", "b"])
 
     def test_reader_checks_both_deviation_units(self) -> None:
         reader = Report(parse("""ISO-10303-21; HEADER; ENDSEC; DATA;
@@ -293,7 +360,7 @@ class BuiltPlateTest(unittest.TestCase):
 
         entries = read(self.xbf)
         self.assertEqual(sum(1 for entry in entries if (entry.get("dimension") or {}).get("basic")), 2)
-        result = verify(entries, self.step)
+        result = check(entries, self.step, None, {0: "plate"})
         self.assertEqual((result["matched"], result["total"], result["problems"]), (9, 9, []))
 
     def test_a_file_whose_faces_are_named_right_on_the_wrong_geometry_fails(self) -> None:
@@ -306,7 +373,8 @@ class BuiltPlateTest(unittest.TestCase):
         source = Source.read(self.xbf)
         entries = pmi.step_entries(source.structure["pmi"])
         surfaces = pmi.step_surfaces(source, entries)
-        self.assertEqual(verify(entries, self.step, surfaces)["problems"], [])
+        parts = {0: "plate"}
+        self.assertEqual(check(entries, self.step, surfaces, parts)["problems"], [])
         text = self.step.read_text(encoding="utf-8")
         records = parse(text)
         [cylinder] = [number for number, parts in records.items() if parts[0][0] == "CYLINDRICAL_SURFACE"]
@@ -322,8 +390,8 @@ class BuiltPlateTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp:
                 wrong = Path(temp) / "wrong.step"
                 wrong.write_text(altered, encoding="utf-8")
-                self.assertEqual(verify(entries, wrong)["problems"], [], "the names alone still match")
-                result = verify(entries, wrong, surfaces)
+                self.assertEqual(check(entries, wrong, None, parts)["problems"], [], "the names alone still match")
+                result = check(entries, wrong, surfaces, parts)
             failed = {problem.split(":")[0] for problem in result["problems"] if "is not the model's face" in problem}
             self.assertTrue(failed and failed <= ids, result["problems"])
             self.assertLess(result["matched"], result["total"])

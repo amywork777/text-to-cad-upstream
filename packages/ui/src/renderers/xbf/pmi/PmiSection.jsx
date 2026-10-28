@@ -3,12 +3,11 @@ import { CircleAlert, Eye, EyeOff, Pin, Plus } from "lucide-react";
 import { pmiCallText, pmiNumber, pmiToleranceText } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
 import { Button } from "@text-to-cad/ui/primitives/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@text-to-cad/ui/primitives/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@text-to-cad/ui/primitives/select";
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
 import { ROW_NAME_UNDER_ACTIONS, TreeRowLabel, TreeRowSurface, treeRowActionsClass } from "@text-to-cad/ui/primitives/tree-row";
 import { cn } from "@text-to-cad/ui/utils";
 import { useI18n } from "@text-to-cad/ui/i18n";
-import { FILE_SHEET_SELECT_TRIGGER_CLASSES, FileSheetSettingsSection, FileSheetStatusText, FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
+import { FileSheetSettingsSection, FileSheetStatusText, FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
 import { InfoRow, MonoValue } from "../../kit/inspector/referenceRows.jsx";
 import ToolPanel, { TOOL_PANEL_BUTTON_CLASS, ToolPanelHeadAction } from "../../kit/tools/ToolPanel.jsx";
 import { ToolStackContext } from "../../kit/tools/ToolStack.jsx";
@@ -28,14 +27,14 @@ import { PMI_SECTION_OFF, pmiViewShowsText } from "./pmiViews.js";
 // says, and its eye -- in the document's order. The one picked opens under its row, its values
 // read out with their units and where each came from (a nominal measured on the geometry or as
 // another system's file gives it, a tolerance as the code gave it, or none given), its references
-// and how they stand, what the build warned of, where it is placed; an annotation the viewer does
+// and how they stand, where it is placed; an annotation the viewer does
 // not draw is a row too, saying why. Its head holds New (what the faces Select has picked can be)
 // and the eye of them all. Where the document is made from code the agent can change, a value
 // edited here, a label moved in the view, a placement pinned or a new annotation is a change Quick
 // Edit carries to the agent (`useXbfPmi`): nothing here writes the file. A row is an annotation's
 // `key` (its part's and its id), and says its id; a view's row is its own, never an annotation's.
 // Every word it says reads through the locale files (`pmi.*`); what the engine and the document
-// say (a callout, a reference's status, a build's warning) is said as they give it.
+// say (a callout, a reference's status, a conflict) is said as they give it.
 
 const EMPTY = Object.freeze([]);
 const ROW_ACTIONS_WIDTH = "1.5rem";
@@ -44,10 +43,8 @@ const STATUS_KEYS = Object.freeze({ missing: "pmi.status.missing", ambiguous: "p
 // A frame's datums in their order (`datumRelationships`'s `role`).
 const DATUM_ROLE_KEYS = Object.freeze({ Primary: "pmi.datumRole.primary", Secondary: "pmi.datumRole.secondary", Tertiary: "pmi.datumRole.tertiary" });
 const STATUS_TEXT = Object.freeze({ missing: "text-destructive", invalid: "text-destructive", ambiguous: "text-amber-500" });
-// What the build that served it warned of: in a warning's colour, as an ambiguous reference is.
+// A requirement that cannot hold with another: in a warning's colour, as an ambiguous reference is.
 const WARNING_TEXT = STATUS_TEXT.ambiguous;
-// What an annotation's row says beside its callout: why it broke, else what the build warned of.
-const rowNote = entry => [entry.statusText, ...entry.warnings].filter(Boolean).join("; ");
 // Where a nominal came from: measured on the geometry by the engine, or as another system's file gives it.
 const NOMINAL_SOURCE = Object.freeze({ geometry: { said: "pmi.nominal.measured", about: "pmi.nominal.measuredHint" },
   file: { said: "pmi.nominal.fromFile", about: "pmi.nominal.fromFileHint" } });
@@ -58,7 +55,7 @@ const selectionKeyOf = ids => JSON.stringify(ids);
 const drawnKind = entry => entry.drawable ?? entry.supported;
 const ROW_BUTTON = "flex h-full min-w-0 flex-1 items-center gap-1.5 rounded pl-1 pr-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-/** What the build warned of, or a requirement that cannot hold with another: in a warning's colour. */
+/** A requirement that cannot hold with another: in a warning's colour. */
 function Warning({ children, ...props }) {
   return <p className={cn("flex items-start gap-1 py-0.5 text-tiny", WARNING_TEXT)} role="status" data-pmi-warning="" {...props}>
     <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" /><span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
@@ -149,7 +146,6 @@ function EntryDetails({ entry, pmi, onSelectRelated }) {
     {entry.statusText ? <p className={cn("flex items-start gap-1 py-0.5 text-tiny", STATUS_TEXT[entry.status])} role="status">
       <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" /><span className="min-w-0 [overflow-wrap:anywhere]">{entry.statusText}</span>
     </p> : null}
-    {entry.warnings.map(warning => <Warning key={warning}>{warning}</Warning>)}
     {!entry.supported ? <FileSheetStatusText className="px-0">{t("pmi.notShownReason", { reason: entry.unsupported })}</FileSheetStatusText> : null}
     {!entry.supported ? (entry.values || []).slice(0, 8).map(([key, value]) => <InfoRow key={key} label={key} copy={false}>{value}</InfoRow>) : null}
     {entry.kind === "dimension" && entry.supported ? <>
@@ -218,25 +214,13 @@ function TextField({ label, ariaLabel, value, onCommit, error = "" }) {
   </>;
 }
 
-/** A part's notes library, an entry picked by its name (its words its hint): the note's words become the entry's. */
-function LibraryField({ library, value, onPick }) {
-  const { t } = useI18n();
-  return <div className="flex items-center justify-between gap-3 py-0.5">
-    <span className="shrink-0 text-tiny text-muted-foreground">{t("pmi.library")}</span>
-    <Select value={value} onValueChange={onPick}>
-      <SelectTrigger aria-label={t("pmi.notesLibrary")} size="sm" className={cn(FILE_SHEET_SELECT_TRIGGER_CLASSES, "w-fit min-w-20 max-w-44")}><SelectValue placeholder={t("pmi.none")} /></SelectTrigger>
-      <SelectContent>{library.map(item => <TooltipHint key={item.name} content={item.text}><SelectItem value={item.name}>{item.name}</SelectItem></TooltipHint>)}</SelectContent>
-    </Select>
-  </div>;
-}
-
 /** A view's section in words: the Clip's axis and where it stands, and whether it keeps the upper side (the Clip's Reverse). */
 const sectionText = (section, t) => t(section.invert ? "pmi.sectionAtReversed" : "pmi.sectionAt", { axis: section.axis.toUpperCase(), at: pmiNumber(section.at) });
 
 /**
  * A new annotation being made: its kind's values to give, then Add to Quick Edit, once the call has
  * what its kind needs (`pmiCallText`). A position's and a profile's datums are its part's; a note's
- * words are typed, or its part's library entry picked by name; a view, seen from here, is named
+ * words are typed; a view, seen from here, is named
  * afresh and can be renamed, and says why where it is refused (`option.problem`).
  */
 function NewEntry({ option, onAdd, onCancel }) {
@@ -250,12 +234,7 @@ function NewEntry({ option, onAdd, onCancel }) {
     setNameError(problem);
     if (!problem) setCall(now => ({ ...now, name }));
   };
-  // Typed, a note's words are the person's own, no longer the library's.
-  const write = text => setCall(now => (text === now.text ? now : { ...now, text, library: null }));
-  const fromLibrary = (name) => {
-    const entry = option.library.find(item => item.name === name);
-    if (entry) setCall(now => ({ ...now, text: entry.text, library: entry.name }));
-  };
+  const write = text => setCall(now => (text === now.text ? now : { ...now, text }));
   return <div className="border-b border-border px-2 pb-2 pt-1" data-pmi-new={option.kind}>
     <p className="flex items-center gap-1.5 py-0.5 text-tiny text-foreground"><PmiGlyph name={optionGlyph(option.kind)} className="size-3" aria-hidden="true" />
       {t("pmi.newNamed", { name: newPmiName(call, t) })}</p>
@@ -266,7 +245,6 @@ function NewEntry({ option, onAdd, onCancel }) {
     {call.characteristic === "position" || call.characteristic === "surface_profile"
       ? <DatumPicker letters={option.datums} value={call.datums} onChange={datums => setCall(now => ({ ...now, datums }))} /> : null}
     {call.kind === "note" ? <>
-      {option.library.length ? <LibraryField library={option.library} value={call.library || ""} onPick={fromLibrary} /> : null}
       <TextField label={t("pmi.text")} ariaLabel={t("pmi.noteText")} value={call.text} onCommit={write} />
       <FileSheetStatusText className="px-0">{t(call.faces.length ? "pmi.flagNote" : "pmi.generalNote")}</FileSheetStatusText>
     </> : null}
@@ -297,14 +275,13 @@ function EntryRow({ entry, pmi, label, rowProps, onSelectRelated, children }) {
   return <li className="min-w-0">
     <TreeRowSurface dense active={picked} className="group/row gap-0 pr-0" style={{ "--row-actions": ROW_ACTIONS_WIDTH }} {...rowProps}
       onMouseEnter={() => pmi.hover(entry.key)} onMouseLeave={() => pmi.hover("")}>
-      <button type="button" aria-pressed={picked} aria-label={`${label}${rowNote(entry) ? `: ${rowNote(entry)}` : ""}`} data-pmi-pick={entry.id}
+      <button type="button" aria-pressed={picked} aria-label={`${label}${entry.statusText ? `: ${entry.statusText}` : ""}`} data-pmi-pick={entry.id}
         onClick={() => pmi.select(picked ? "" : entry.key)}
         className={cn(ROW_BUTTON, (hidden || !entry.supported) && "text-muted-foreground",
           drawnKind(entry) && (hidden ? ROW_NAME_UNDER_ACTIONS.shown : ROW_NAME_UNDER_ACTIONS.hover))}>
         {entry.glyph ? <PmiGlyph name={entry.glyph} className="size-3 shrink-0" aria-hidden="true" /> : <span className="size-3 shrink-0" aria-hidden="true" />}
         {children}
-        {entry.status !== "ok" ? <CircleAlert className={cn("size-3 shrink-0", STATUS_TEXT[entry.status])} aria-label={t(STATUS_KEYS[entry.status])} />
-          : entry.warnings.length ? <CircleAlert className={cn("size-3 shrink-0", WARNING_TEXT)} aria-label={t("pmi.warning")} /> : null}
+        {entry.status !== "ok" ? <CircleAlert className={cn("size-3 shrink-0", STATUS_TEXT[entry.status])} aria-label={t(STATUS_KEYS[entry.status])} /> : null}
       </button>
       {drawnKind(entry) ? <RowEye entry={entry} hidden={hidden} onToggle={pmi.toggleHidden} /> : null}
     </TreeRowSurface>
@@ -356,7 +333,7 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
   const { t } = useI18n();
   // What is already asked for counts as taken: a second new one never reuses a pending id, letter or name.
   const options = useMemo(() => pmiCreateOptions({ picked, entries: pmi.entries, pending: pmi.pending, parts: pmi.parts, views: pmi.views,
-    library: pmi.library, moving, t }), [picked, pmi.entries, pmi.pending, pmi.parts, pmi.views, pmi.library, moving, t]);
+    moving, t }), [picked, pmi.entries, pmi.pending, pmi.parts, pmi.views, moving, t]);
   const [draft, setDraft] = useState(null);
   // Each choice is a form of its own (`started`); a view is seen from where the viewport looks as it is chosen.
   const started = useRef(0);

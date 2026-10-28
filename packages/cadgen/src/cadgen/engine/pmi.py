@@ -51,10 +51,8 @@ the note is ``ok``) and to the GD&T label of each annotation it names. A note's 
 any ref does, on a face of any kind; one whose face is gone keeps its number and text, its status
 saying so. Its number is derived where served: Note 1 is the part's general profile where it has
 one, then each note in the code's order. OCCT's STEP writer writes no notes, so a STEP carries
-none and is never refused for one (``step_entries``). A part's notes library (``annotate``'s
-``library``: the project's notes by name, the dict its own module holds; cadgen ships none) is one
-JSON attribute (``LIBRARY_GUID``) on its shape label, served as ``pmi_library``. A note this module
-did not write (no cadgen attribute) is not read.
+none and is never refused for one (``step_entries``). A note this module did not write (no cadgen
+attribute) is not read.
 
 **Views** (``view``) are the xbf's alone too: a part's named views, the views its requirements are
 walked through in (a front, a section, a detail; an iso view showing all). Each is seen down a camera
@@ -71,7 +69,7 @@ the same ``TDF_Reference`` and a cadgen attribute holding the view as the code g
 structure's ``pmi_views`` is served from. The notes it shows are that attribute's alone: OCCT's
 ``SetView`` files a view's notes under its clipping-plane link. OCCT's STEP writer writes no views,
 so a STEP carries none and is never refused for one. An xbf made again from a document (one part
-of it) carries no views, notes or library yet, and is refused for any of them, by name
+of it) carries no views or notes yet, and is refused for any of them, by name
 (``refuse_dropped``). A view this module did not write is not read.
 
 **Values.** A dimension's nominal is the geometry's, measured at document time: a cylinder's
@@ -95,10 +93,8 @@ is called now, where anything is); ``ambiguous`` -- it names several faces (each
 ``invalid`` -- it names a face the annotation cannot stand on (a diameter on a plane, two planes
 not parallel, a datum letter the part does not define). An annotation's status is its worst ref's.
 One not ``ok`` is kept in the document, with its values and refs as written, and linked to no
-geometry; the build reports it, and a STEP export refuses to drop it. A ref written as text that
-names another kind of face than on the model's last build (a hole whose name passed to a flat side
-of the cut that replaced it) is warned of (``warn``): the build's report and its served structure
-say so, the document never.
+geometry; the build reports it, and a STEP export refuses to drop it. A tolerance whose frame names
+a datum not ``ok`` takes that datum's status: it is measured from nothing the part has.
 
 **The general profile** (``general_profile``) is ASME Y14.5's "unless otherwise noted, all
 surfaces": a surface profile of every face of its part that nothing else controls
@@ -141,8 +137,8 @@ tolerance or limits; basic (theoretically exact) distances, from planes and hole
 tolerance, marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); flatness; position
 with an ordered datum reference frame and a diametral zone; a surface profile on one face or
 several, of any kind, with a frame of up to three datums or none; a part's general profile, on
-the faces nothing else controls; and, in the xbf alone, general and flag notes, a part's notes
-library and its named views. Each
+the faces nothing else controls; and, in the xbf alone, general and flag notes and a part's named
+views. Each
 is written by the function named after its AP242 entity (``cadgen.ap242``'s); no function writes
 another XCAF characteristic or dimension type, and every other modifier and tolerance form is
 refused by name (``PMIUnsupported``), never approximated. PMI is part-level: an annotation is on one part, and an
@@ -169,9 +165,6 @@ PMI = "xbf_pmi"
 # module): an attribute of another schema is not read.
 EXTRA_GUID = "5d3a7c1e-9f42-4b86-a0e5-3c7b9d2f6e18"
 SCHEMA = "cadgen.pmi/1"
-# The GUID of a part's notes library (``annotate``'s ``library``), one JSON attribute of ``SCHEMA`` on its
-# shape label.
-LIBRARY_GUID = "471db751-90aa-42aa-8fda-c0a0418a5689"
 # The GD&T tool's label under the main label (``XCAFDoc_DocumentTool::DimTolLabel``), the views
 # tool's (``XCAFDoc_DocumentTool::ViewsLabel``) and the notes tool's (``XCAFDoc_DocumentTool::NotesLabel``).
 DIMTOL_TAG = 4
@@ -349,12 +342,12 @@ def general_profile(id: str, value: float, *, datums: Iterable[str] = (), label:
 
 def note(id: str, text: str, *, faces: Any = (), annotations: Iterable[str] = (), label: str | None = None,
          presentation: dict | None = None) -> dict[str, Any]:
-    """A note of the part saying ``text``, the code's words (a project's notes library's, or its
-    own): a general note where it names no face and no annotation; a flag note on ``faces`` (a
-    face, or a list of faces of any kind) and on the ``annotations`` of the same ``annotate`` call
-    it names by id. Numbered among its part's notes as the code gives them, after the part's
-    general profile, which is Note 1 where it has one. Its id is one of the part's ids. Kept in the
-    xbf, never in a STEP (AP242's writer here writes no notes)."""
+    """A note of the part saying ``text``, the code's words: a general note where it names no face
+    and no annotation; a flag note on ``faces`` (a face, or a list of faces of any kind) and on the
+    ``annotations`` of the same ``annotate`` call it names by id. Numbered among its part's notes as
+    the code gives them, after the part's general profile, which is Note 1 where it has one. Its id
+    is one of the part's ids. Kept in the xbf, never in a STEP (AP242's writer here writes no
+    notes)."""
     if not isinstance(text, str) or not text.strip():
         raise PMIError(f"note {id!r}: a note's text is a non-empty string, not {text!r}")
     refs = list(faces) if isinstance(faces, (list, tuple)) else [faces]
@@ -457,15 +450,15 @@ def _cross(first: list[float], second: list[float]) -> float:
     return math.sqrt((b * f - c * e) ** 2 + (c * d - a * f) ** 2 + (a * e - b * d) ** 2)
 
 
-def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str] | None = None) -> Any:
+def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
     """``shape`` given ``annotations`` (replacing any it held): the part a model returns, or
     one part of its assembly. A ``Face`` given as a ref is numbered against ``shape`` now. Ids are
     unique on a part, a note's with the rest, as are datum letters; a note names annotations of
     this call; and a datum holds one place in every frame that names it (XCAF holds one position
     per datum). Its views (``view``) are among them, each name unique among its views, each
     showing and placing ids of this call (a view's placement of an id it does not show is
-    refused). ``library`` is the project's notes by name, the dict its own module holds (cadgen
-    ships none): kept with the part, for a viewer to offer, and no requirement. Returns ``shape``."""
+    refused). Each is a dict as its function makes it, its keys that function's alone (``_keys``).
+    Returns ``shape``."""
     import build123d as bd
 
     if not isinstance(shape, bd.Shape) or getattr(shape, "wrapped", None) is None:
@@ -479,9 +472,7 @@ def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str
     places: dict[str, tuple[int, str]] = {}
     faces = None
     for given in annotations:
-        if not isinstance(given, dict) or given.get("pmi") != 1:
-            raise PMIError(f"annotate() takes annotations made by datum(), dimensional_size(), ...: "
-                           f"not {given!r}")
+        _keys(given)
         if given["kind"] == "view":
             if any(other["name"] == given["name"] for other in views):
                 raise PMIError(f"two views of one part are named {given['name']!r}: a view's name is unique")
@@ -535,41 +526,68 @@ def annotate(shape: Any, *annotations: dict[str, Any], library: Mapping[str, str
                                f"{', '.join(map(repr, shown))}")
     _note_call(held)
     held.extend(views)
-    if library is not None:
-        held.extend(_library_entry(library))
     shape.__dict__[PMI] = tuple(held)
     return shape
 
 
-def _library_entry(library: Any) -> list[dict[str, Any]]:
-    """A part's notes library as ``annotate`` holds it among its annotations: one entry of kind
-    ``library``, each note's name and text in the project's order; none for an empty one."""
-    if not isinstance(library, Mapping):
-        raise PMIError("annotate(library=...): a library is a project's notes by name, a dict of each note's "
-                       f"name to its text, not {type(library).__name__}")
-    found = []
-    for name, text in library.items():
-        if not isinstance(name, str) or not name.strip():
-            raise PMIError(f"a library's note is named by a non-empty string, not {name!r}")
-        if not isinstance(text, str) or not text.strip():
-            raise PMIError(f"library note {name!r}: its text is a non-empty string, not {text!r}")
-        found.append({"name": name, "text": text})
-    return [{"pmi": 1, "kind": "library", "library": found}] if found else []
+# The keys of what each function makes, closed (law 16): every annotation's, then its kind's own block
+# (``datum``, ``dimension``, ``geometric_tolerance``, ``note``), each ref's, a tolerance's by its type,
+# and a view's.
+_COMMON = ("pmi", "id", "kind", "label", "presentation", "refs")
+_BLOCKS = {"datum": ("letter",), "dimension": ("type", "basic", "tolerance"),
+           "geometric_tolerance": ("characteristic", "value", "unit", "zone", "modifier", "datums", "general"),
+           "note": ("text", "annotations")}
+_REF_KEYS = ("role", "target")
+_TOLERANCES = {"plus_minus": ("type", "upper", "lower"), "limits": ("type", "lower", "upper")}
+_VIEW = ("pmi", "kind", "name", "label", "camera", "shows", "section", "place")
+
+
+def _closed(given: Any, keys: Sequence[str], what: str) -> None:
+    """``given`` a dict of exactly ``keys``: one it lacks or one beyond them refused by name, with
+    the set it is of."""
+    if not isinstance(given, dict):
+        raise PMIError(f"{what} is a dict of {', '.join(keys)}, not {type(given).__name__}")
+    unknown = [key for key in given if key not in keys]
+    missing = [key for key in keys if key not in given]
+    if unknown or missing:
+        said = (f"unknown key {', '.join(map(repr, unknown))}" if unknown
+                else f"no key {', '.join(map(repr, missing))}")
+        raise PMIError(f"{what}: {said}; its keys are {', '.join(keys)}")
+
+
+def _keys(given: Any) -> None:
+    """An annotation given to ``annotate`` as its function made it: of a kind it knows, each dict of
+    it of its closed keys (``_COMMON`` and its kind's block, each ref's, a view's), its tolerance and
+    its presentation as ``plus_minus_tolerance``/``limits`` and ``place`` make them; refused by
+    name otherwise, never read in part."""
+    if not isinstance(given, dict) or given.get("pmi") != 1:
+        raise PMIError(f"annotate() takes annotations made by datum(), dimensional_size(), ...: not {given!r}")
+    kind = given.get("kind")
+    if kind == "view":
+        _closed(given, _VIEW, f"view {given.get('name')!r}")
+        return
+    if kind not in _BLOCKS:
+        raise PMIError(f"an annotation's kind is {', '.join(_BLOCKS)} or view, not {kind!r}")
+    what = f"annotation {given.get('id')!r}"
+    _closed(given, (*_COMMON, kind), what)
+    _closed(given[kind], _BLOCKS[kind], f"{what}'s {kind}")
+    if not isinstance(given["refs"], list):
+        raise PMIError(f"{what}: its refs are a list, not {type(given['refs']).__name__}")
+    for ref in given["refs"]:
+        _closed(ref, _REF_KEYS, f"{what}'s ref")
+    _presentation(given["presentation"], given["id"])
+    if kind == "dimension":
+        _tolerance(given["dimension"]["tolerance"], given["id"])
 
 
 def _annotations(given: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """What ``annotate`` gave a part, its views and library apart: its annotations, notes among them."""
-    return [entry for entry in given if entry["kind"] not in ("library", "view")]
+    """What ``annotate`` gave a part, its views apart: its annotations, notes among them."""
+    return [entry for entry in given if entry["kind"] != "view"]
 
 
 def _views(given: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """A part's views as ``annotate`` gave them (``view``), in the code's order."""
     return [entry for entry in given if entry["kind"] == "view"]
-
-
-def _library(given: Iterable[dict[str, Any]]) -> list[dict[str, str]]:
-    """A part's notes library as ``annotate`` gave it (``_library_entry``): each note's name and text."""
-    return next((list(entry["library"]) for entry in given if entry["kind"] == "library"), [])
 
 
 def _annotation(id: str, kind: str, refs: list[tuple[str, Any]], label: str | None, presentation: dict | None,
@@ -584,8 +602,7 @@ def _annotation(id: str, kind: str, refs: list[tuple[str, Any]], label: str | No
         if not isinstance(target, (str, bd.Face)):
             raise PMIError(f"annotation {id!r}: a ref is a face of the part -- a build123d Face, or a ref such as "
                            f"'f:plate.body.6' or 'face 7' -- not {type(target).__name__}")
-    if presentation is not None and (not isinstance(presentation, dict) or set(presentation) != {"anchor", "offset"}):
-        raise PMIError(f"annotation {id!r}: a presentation is place(anchor, offset)")
+    presentation = _presentation(presentation, id)
     return {"pmi": 1, "id": id, "kind": kind, "label": label, "presentation": presentation,
             "refs": [{"role": role, "target": target} for role, target in refs], **values}
 
@@ -595,13 +612,28 @@ def _general(spec: dict[str, Any]) -> bool:
     return spec["kind"] == "geometric_tolerance" and bool(spec["geometric_tolerance"].get("general"))
 
 
+def _presentation(presentation: Any, id: str) -> dict[str, Any] | None:
+    """An annotation's presentation as ``place`` makes it, its anchor and offset checked as it checks
+    them; None for none."""
+    if presentation is None:
+        return None
+    if not isinstance(presentation, dict) or set(presentation) != {"anchor", "offset"}:
+        raise PMIError(f"annotation {id!r}: a presentation is place(anchor, offset), not {presentation!r}")
+    return _place(presentation["anchor"], presentation["offset"])
+
+
 def _tolerance(tolerance: dict | None, id: str) -> dict | None:
+    """A dimension's tolerance as ``plus_minus_tolerance`` or ``limits`` makes it: its closed keys,
+    and its values checked again by the function of its type."""
     if tolerance is None:
         return None
-    if not isinstance(tolerance, dict) or tolerance.get("type") not in ("plus_minus", "limits"):
+    if not isinstance(tolerance, dict) or tolerance.get("type") not in _TOLERANCES:
         raise PMIUnsupported(f"dimension {id!r}: a tolerance is plus_minus_tolerance(...) or limits(...); fits and "
                              "general tolerances are not written yet")
-    return dict(tolerance)
+    _closed(tolerance, _TOLERANCES[tolerance["type"]], f"dimension {id!r}'s tolerance")
+    if tolerance["type"] == "plus_minus":
+        return plus_minus_tolerance(tolerance["upper"], tolerance["lower"])
+    return limits(tolerance["lower"], tolerance["upper"])
 
 
 def _number(value: Any, what: str) -> float:
@@ -699,15 +731,37 @@ def _resolved_part(given: Iterable[dict[str, Any]], shape: Any, names: list[str 
                    owners: set[str]) -> list[Resolved]:
     """A part's annotations (as the code gives them) resolved against its ``shape``, whose faces
     are named ``names`` by ordinal, in the document owned as ``owners`` name it; its general
-    profile, where it is ``ok``, on every face the others leave (``_covered``)."""
+    profile, where it is ``ok``, on every face the others leave (``_covered``). A tolerance whose
+    frame names a datum that is not ``ok`` takes the worst such datum's status, and says which: it
+    is measured from nothing the part has (``_from_datums``)."""
     given = list(given)
     faces = _faces(shape)
     letters = {entry["datum"]["letter"] for entry in given if entry["kind"] == "datum"}
     found = [_resolved(entry, faces, names, owners, letters) for entry in given]
+    _from_datums(found)
     for item in found:
         if _general(item.spec) and item.status == "ok":
             item.refs = _covered(found, item.spec["geometric_tolerance"]["datums"], faces.Extent())
     return found
+
+
+def _from_datums(items: list[Resolved]) -> None:
+    """Each ``ok`` geometric tolerance of a part's resolved ``items`` whose frame names a datum not
+    ``ok`` given the worst such datum's status, and a problem naming it: a frame is only as sound as
+    its datums."""
+    datums = {item.spec["datum"]["letter"]: item for item in items if item.spec["kind"] == "datum"}
+    for item in items:
+        if item.status != "ok" or item.spec["kind"] != "geometric_tolerance":
+            continue
+        broken = [datums[letter] for letter in item.spec["geometric_tolerance"]["datums"]
+                  if letter in datums and datums[letter].status != "ok"]
+        if broken:
+            worst = max(broken, key=lambda datum: STATUSES.index(datum.status))
+            item.status = worst.status
+            item.problem = (f"datum {worst.spec['datum']['letter']} is {worst.status}: {worst.problem}"
+                            if len(broken) == 1 else
+                            f"datums {', '.join(datum.spec['datum']['letter'] for datum in broken)} are not ok "
+                            f"(datum {worst.spec['datum']['letter']} is {worst.status}: {worst.problem})")
 
 
 def _covered(items: list[Resolved], datums: list[str], count: int) -> list[Ref]:
@@ -1050,60 +1104,6 @@ def _surface(face: Any) -> tuple[str, dict[str, Any]]:
     return str(kind.name).replace("GeomAbs_", "").lower(), {}
 
 
-def faces_named(tree: Any) -> dict[tuple[str, str], dict[tuple[str, str], str]]:
-    """The kind of face (plane, cylinder) each ref of a built tree's annotations names, by
-    annotation (part, id), then ref (role, written): what ``warn`` compares two builds by."""
-    found: dict = {}
-    for part, items in resolve(tree) if tree is not None and tree.pmi else ():
-        faces = _faces(part.shape)
-        for item in items:
-            found[(part.name, item.spec["id"])] = {(ref.role, ref.written): _surface(faces.FindKey(ref.ordinal))[0]
-                                                   for ref in item.refs if ref.ordinal is not None}
-    return found
-
-
-def faces_named_in(path: Any) -> dict[tuple[str, str], dict[tuple[str, str], str]]:
-    """The same, of the model's saved xbf: its last build, where this process has not built it. A
-    file that cannot be read holds nothing to compare with."""
-    from cadgen.engine import document
-
-    try:
-        loaded = document.load(path)
-        records = records_of_document(loaded.doc, loaded.prototypes, loaded.name)
-    except Exception:  # noqa: BLE001 - no last build is nothing to warn of, never a failed build
-        return {}
-    found: dict = {}
-    for record in records:
-        if record["extra"] is None:
-            continue
-        prototype = loaded.prototypes[record["part"]]
-        faces = _faces(prototype.shape)
-        found[(prototype.name, record["extra"]["id"])] = {(ref["role"], ref["written"]): _surface(
-            faces.FindKey(ref["ordinal"]))[0] for ref in record["refs"] if ref["ordinal"] is not None}
-    return found
-
-
-def warn(tree: Any, previous: dict[tuple[str, str], dict[tuple[str, str], str]]) -> None:
-    """Each ref of ``tree``'s annotations written as text that names another kind of face than on
-    the model's last build (``previous``: ``faces_named`` of its tree, or ``faces_named_in`` its
-    xbf) -- a hole whose name passed to a flat side of the cut that replaced it -- where the
-    annotation stands on the face it names now (elsewhere its status says so): warned of in
-    ``Tree.pmi_warnings``, the build's report and its served structure, never the document, which
-    is what the code makes."""
-    now = faces_named(tree)
-    for part, items in resolve(tree):
-        for item in items:
-            key = (part.name, item.spec["id"])
-            for ref, given in zip(item.refs, item.spec["refs"]):
-                was = (previous.get(key) or {}).get((ref.role, ref.written))
-                named = now[key].get((ref.role, ref.written))
-                if given["face"] is None and ref.status == "ok" and was is not None and was != named:
-                    tree.pmi_warnings.setdefault(key, []).append(
-                        f"{ref.written} named a {was} face on the last build and names a {named} face now: another "
-                        "face than the annotation was made on, measured as it is. Point the ref at the face meant, "
-                        "or remove the annotation")
-
-
 def signature(tree: Any) -> tuple:
     """What a tree's annotations are, for the build's signature: a change to one remakes the document."""
     return tuple(_text({"part": part.name, "pmi": list(given)}) for part, given in tree.pmi or ())
@@ -1115,20 +1115,15 @@ def problems(tree: Any) -> list[dict[str, Any]]:
             for part, items in resolve(tree) for item in items if item.status != "ok"]
 
 
-def warnings(tree: Any) -> list[str]:
-    """Every warning of ``tree``'s annotations (``warn``), each naming its annotation (``part/id``)."""
-    return [f"{part}/{id}: {text}" for (part, id), texts in tree.pmi_warnings.items() for text in texts]
-
-
 # --- the XCAF document -------------------------------------------------------------------------
 
 
 def write(doc: Any, tree: Any, label_of: Any) -> None:
     """The tree's annotations into ``doc``'s GD&T tool, each part's in its order, datums first
     (a tolerance's frame names them), then its notes into the notes tool, in the code's order
-    (``_note``), its views into the views tool, in the code's order (``_view``), and its notes
-    library onto its shape label; and the GD&T of the document the tree was read from
-    (``Tree.pmi_source``: ``copy``). ``label_of(part)`` is the part's shape label."""
+    (``_note``) and its views into the views tool, in the code's order (``_view``); and the GD&T
+    of the document the tree was read from (``Tree.pmi_source``: ``copy``). ``label_of(part)`` is
+    the part's shape label."""
     if tree.pmi_source is not None:
         loaded, parts = tree.pmi_source
         copy(doc, loaded, lambda index: label_of(parts[index]))
@@ -1203,10 +1198,6 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
             at = _view(doc, given, label, made)
             TDataStd_AsciiString.Set_s(at, guid, TCollection_AsciiString(_text(_view_extra(given))))
             TDF_Reference.Set_s(at, label)
-        library = _library(part.pmi)
-        if library:
-            TDataStd_AsciiString.Set_s(label, Standard_GUID(LIBRARY_GUID),
-                                       TCollection_AsciiString(_text({"schema": SCHEMA, "library": library})))
 
 
 def _note(notes: Any, item: Resolved, label: Any, made: dict[str, Any]) -> Any:
@@ -1607,7 +1598,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
             targets = [("from", hit) for hit in first] + [("to", hit) for hit in second]
         else:
             targets = [("feature", hit) for hit in first]
-        found = {"values": values, "targets": targets, "extra": held, "entry": _entry(label), "warnings": []}
+        found = {"values": values, "targets": targets, "extra": held, "entry": _entry(label)}
         if held is not None:
             found.update(kind=held["kind"], xcaf_type=None, reason=None, part=_part_of(label, by_entry))
             records.append(found)
@@ -1680,7 +1671,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         # Its text is XCAF's comment; its faces are resolved with its part's annotations, below.
         text = XCAFDoc_NoteComment.Get_s(label).Comment().ToExtString()
         records.append({"kind": "note", "values": {"text": text, "annotations": list(held["annotations"])},
-                        "targets": [], "extra": held, "entry": _entry(label), "warnings": [], "xcaf_type": NOTE_TYPE,
+                        "targets": [], "extra": held, "entry": _entry(label), "xcaf_type": NOTE_TYPE,
                         "reason": None, "part": _part_of(label, by_entry)})
     # The code's annotations resolved as their build resolved them, each part's together (its general
     # profile covers what the others leave): the same faces again, from the document alone.
@@ -1790,8 +1781,7 @@ def _name_of(datum: Any) -> str:
 def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]:
     """A built tree's annotations as the records ``records_of_document`` reads back from its
     document: the same order (each part's datums, then the rest, its notes last), the same values,
-    as XCAF holds them (``_as_held``), the same refs resolved; and each one's warnings (``warn``),
-    which are the build's and no document's."""
+    as XCAF holds them (``_as_held``), the same refs resolved."""
     records = []
     for part, items in resolve(tree):
         index = index_of[id(part)]
@@ -1820,8 +1810,7 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
                 "kind": spec["kind"], "values": values, "xcaf_type": NOTE_TYPE if spec["kind"] == "note" else None,
                 "reason": None, "part": index,
                 "targets": targets, "extra": json.loads(_text(_extra(item))), "entry": None, "status": item.status,
-                "problem": item.problem, "refs": _refs(item),
-                "warnings": list(tree.pmi_warnings.get((part.name, spec["id"])) or ())})
+                "problem": item.problem, "refs": _refs(item)})
         records.extend(by_kind["datum"] + by_kind["dimension"] + by_kind["geometric_tolerance"] + by_kind["note"])
     # The document's GD&T tool lists datums, then dimensions, then tolerances, of every part; its
     # notes tool the notes after them.
@@ -1830,35 +1819,6 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
 
 # The kinds of the code's records, in the order its document lists them.
 _KINDS = ("datum", "dimension", "geometric_tolerance", "note")
-
-
-def library_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]:
-    """A built tree's notes libraries as ``library_of_document`` reads them back from its document:
-    each note's ``part`` (a prototype index), ``name`` and ``text``, by part, in the project's order."""
-    found = [{"part": index_of[id(part)], **given} for part, held in tree.pmi or () for given in _library(held)]
-    return sorted(found, key=lambda given: given["part"])
-
-
-def library_of_document(doc: Any, prototypes: list[Any]) -> list[dict[str, Any]]:
-    """The structure's ``pmi_library``: the notes library each part of a document holds (``annotate``'s
-    ``library``, on its shape label), each note's ``part``, ``name`` and ``text``, by part, in the
-    project's order; none where no part holds one."""
-    from OCP.Standard import Standard_GUID
-    from OCP.TDataStd import TDataStd_AsciiString
-    from OCP.TDF import TDF_Label, TDF_Tool
-
-    guid = Standard_GUID(LIBRARY_GUID)
-    found = []
-    for prototype in sorted(prototypes, key=lambda prototype: prototype.index):
-        label, held = TDF_Label(), TDataStd_AsciiString()
-        TDF_Tool.Label_s(doc.GetData(), prototype.entry, label)
-        if label.IsNull() or not label.IsAttribute(guid) or not label.FindAttribute(guid, held):
-            continue
-        given = json.loads(held.Get().ToCString())
-        if given.get("schema") == SCHEMA:
-            found.extend({"part": prototype.index, "name": note["name"], "text": note["text"]}
-                         for note in given["library"])
-    return found
 
 
 def views_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]:
@@ -1934,7 +1894,7 @@ def _as_held(value: float) -> float:
 def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[dict[str, Any]]:
     """The structure's ``pmi``: one JSON-plain entry per record -- ``id``, ``kind`` (``dimension``,
     ``datum``, ``geometric_tolerance``, ``note``, ``unsupported``), ``label``, ``status``,
-    ``problem``, ``warnings``, ``part`` (a prototype index), ``refs`` (each ``role``, ``ref`` --
+    ``problem``, ``part`` (a prototype index), ``refs`` (each ``role``, ``ref`` --
     canonical as ``refs`` spells it for this document --, ``written``, ``status``, ``candidates``,
     ``problem``), ``presentation``, ``xcaf_type``, an unsupported one's ``reason``, and the kind's
     own block of values. A note's (``note``) is its ``number`` (its part's general profile Note 1
@@ -1964,7 +1924,7 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
             ident = (record["values"].get("letter") or kind) if kind == "datum" else f"{kind}-{counters[kind]}"
             label, presentation, unlinked = None, None, None
         entry = {"id": ident, "kind": kind, "label": label, "status": record["status"], "problem": record["problem"],
-                 "warnings": list(record["warnings"]), "part": record["part"], "refs": refs,
+                 "part": record["part"], "refs": refs,
                  "presentation": presentation, "xcaf_type": record["xcaf_type"]}
         values = record["values"]
         if kind == "datum":
@@ -2076,8 +2036,8 @@ def dropped(view: Any, kind: str) -> list[tuple[dict[str, Any], str]]:
 def refuse_dropped(view: Any, kind: str) -> None:
     """A ``kind`` file of ``view`` that would not carry whole an annotation the code made
     (``dropped``), refused by name: it would be no translation of the model's document; so is an
-    xbf made again of one holding the code's views or notes library (``pmi_views``,
-    ``pmi_library``), which it would lose as it would annotations, named. One of a document another
+    xbf made again of one holding the code's views (``pmi_views``), which it would lose as it would
+    annotations, named. One of a document another
     system wrote is written: ``export.translate`` says what it leaves out."""
     from cadgen.engine.export import ExportRefused
 
@@ -2086,12 +2046,9 @@ def refuse_dropped(view: Any, kind: str) -> None:
     if kind == "xbf":
         again = not view.source.foreign and view.source.xcaf is None
         views = [given["name"] for given in structure.get("pmi_views") or []] if again else []
-        library = [given["name"] for given in structure.get("pmi_library") or []] if again else []
         held = [f"{len(structure['pmi'])} PMI annotation(s)"] if lost else []
         if views:
             held.append(f"{len(views)} named view(s) ({', '.join(views)})")
-        if library:
-            held.append(f"a notes library ({', '.join(library)})")
         if held:
             said = held[0] if len(held) == 1 else f"{', '.join(held[:-1])} and {held[-1]}"
             raise ExportRefused(f"{view.source.name} holds {said}, and an xbf written from it is a document made "
@@ -2111,28 +2068,31 @@ def refuse_dropped(view: Any, kind: str) -> None:
 
 
 def checked(source: Any, entries: list[dict[str, Any]], target: Any,
-            log: Callable[[str], None] | None = None, *, refuse: bool = False) -> dict[str, Any]:
+            log: Callable[[str], None] | None = None) -> dict[str, Any]:
     """The check of a STEP written of ``source`` (``ap242.check``) of the PMI it carries
-    (``entries``: ``step_entries``), against the source's faces (``step_surfaces``): what every
-    STEP write of a document with PMI answers with, a build's declared one, an export's and the
-    viewer's alike. With ``refuse`` (``target`` the file staged, before it lands: ``export.translate``'s
-    ``check``), a file that disagrees with the code's document is refused, so none is written and an
-    earlier one keeps its bytes; the viewer's shows the person what it found (its ``pmiVerification``).
-    A check that could not be made (one of a document another system wrote, whose faces carry no
-    names, a file the reader cannot read) is said to ``log``, the file written."""
+    (``entries``: ``step_entries``), against the source's faces (``step_surfaces``), each part held
+    to its own product (by its name): what every STEP write of a document with PMI answers with, a
+    build's declared one, an export's and the viewer's alike, ``target`` the file staged before it
+    lands (``export.translate``'s ``check``). For a document the code made, a check that found any
+    problem -- a record that does not match, or one it could not be made of (a file the reader
+    cannot read, a name it cannot tell apart) -- refuses the file, so none is written and an
+    earlier one keeps its bytes (law 17). One of a document another system wrote, whose faces carry
+    no names, is said to ``log``, the file written."""
     from pathlib import Path
 
     from cadgen.engine.export import ExportRefused
     from cadgen.engine.export.ap242 import check
 
     target = Path(target)
-    found, mismatched = check(entries, target, step_surfaces(source, entries))
+    parts = {prototype["index"]: prototype["name"] for prototype in source.structure.get("prototypes") or []
+             if "index" in prototype and "name" in prototype}
+    found = check(entries, target, step_surfaces(source, entries), parts)
     if not found.get("problems"):
         return found
     said = f"({found['matched']} of {found['total']} matched): {' '.join(found['problems'])}"
-    if refuse and mismatched and not source.foreign:
-        raise ExportRefused(f"{target.name} not written: the PMI in the STEP written does not match the "
-                            f"model's document {said} -- a fault of the STEP writer, not of the model")
+    if not source.foreign:
+        raise ExportRefused(f"{target.name} not written: the PMI in the STEP written does not match the model's "
+                            f"document, or could not be checked against it {said}")
     if log is not None:
         log(f"warning: pmi: {target.name}: the PMI in the written file is not verified {said}")
     return found

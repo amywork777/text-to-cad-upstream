@@ -153,7 +153,8 @@ geometry, names, colours and materials. Keep the xbf beside the STEP, and read t
   material's look and physical fields, a face's material (the face keeps its colour),
   and the mechanism: a STEP is placements only. A part's PMI is written as AP242
   semantic PMI on its faces, its general profile on exactly the faces it covers; its
-  notes, named views and notes library stay in the document ([PMI](pmi.md#export)).
+  notes and named views stay in the document ([PMI](pmi.md#export)). A STEP whose PMI
+  the export cannot verify in the written file is refused.
 - **GLB**: glTF 2.0, Y up, in metres. One mesh per part, a node per placement named by
   its occurrence, a PBR material per look (with the glTF extensions for IOR,
   transmission, clear coat, anisotropy and emission where a material has them), each of

@@ -492,9 +492,9 @@ class PmiAskedTest(unittest.TestCase):
 
         from cadgen.engine import snapshot
 
-        self.assertEqual(parse_display('{"view": "A-A"}', False), {"view": "A-A"})
-        with self.assertRaisesRegex(SnapshotRefused, "display.view is the name of a view"):
-            parse_display('{"view": 3}', False)
+        # A view is --view's alone: a display object names none.
+        with self.assertRaisesRegex(SnapshotRefused, "display has no view; an engine document's display takes"):
+            parse_display('{"view": "A-A"}', False)
         folder = Path(tempfile.mkdtemp(prefix="engine-render-pmi-view-")).resolve()
         self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
         document = folder / "plate.xbf"
@@ -508,14 +508,11 @@ class PmiAskedTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("its own camera", said.getvalue())
         self.assertFalse((folder / "out.png").exists())
-        # A job's display may name a view; its own camera beside it is refused, and the flag stands
-        # in for every job's camera.
-        job = {"input": str(document), "display": {"view": "A-A"}, "outputs": [str(folder / "a.png")]}
-        [(_document, _out, still)] = job_pictures(job)
-        self.assertEqual((still.view, still.camera, "view" in still.display), ("A-A", None, False))
-        with self.assertRaisesRegex(SnapshotRefused, r"jobs\[0\] names view A-A, seen down its own camera; remove its camera"):
-            job_pictures({**job, "camera": "front"})
-        [(_document, _out, still)] = job_pictures({**job, "display": {}, "camera": "front"}, view="A-A")
+        # A job's display names no view; the flag stands in for every job's camera.
+        job = {"input": str(document), "outputs": [str(folder / "a.png")]}
+        with self.assertRaisesRegex(SnapshotRefused, "display has no view"):
+            job_pictures({**job, "display": {"view": "A-A"}})
+        [(_document, _out, still)] = job_pictures({**job, "camera": "front"}, view="A-A")
         self.assertEqual((still.view, still.camera), ("A-A", None))
 
     def test_a_view_the_document_cannot_show_is_refused_by_name_before_anything_renders(self) -> None:

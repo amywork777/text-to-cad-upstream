@@ -253,7 +253,7 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   await update(structure => ({ ...structure, pmi: [...PMI.slice(0, 2), {
     ...PMI[2], status: 'missing', problem: `${TOP} names nothing in this build`, presentation: { anchor: [0, 6, 2], offset: [0, 0, 10] },
     refs: [{ role: 'feature', ref: TOP, written: TOP, status: 'missing', candidates: null }] },
-  { id: 'profile', kind: 'unsupported', label: null, status: 'ok', problem: null, warnings: [], part: 0, refs: [], presentation: null,
+  { id: 'profile', kind: 'unsupported', label: null, status: 'ok', problem: null, part: 0, refs: [], presentation: null,
     xcaf_type: 'XCAFDimTolObjects_GeomToleranceType_ProfileOfSurface', reason: 'profile of surface is not a characteristic this holds', values: {} }] }));
   await page.waitForFunction(() => document.querySelector('[data-pmi-label="top-flat"]')?.getAttribute('data-pmi-status') === 'missing');
   await drawn();

@@ -35,7 +35,7 @@ const PMI = [
 ];
 
 test("the document's PMI is read as it is served, and a document without any has none", () => {
-  assert.deepEqual(readXbfPmi({ name: "bracket" }), { entries: [], views: [], notes: [], library: [], coverage: [] });
+  assert.deepEqual(readXbfPmi({ name: "bracket" }), { entries: [], views: [], notes: [], coverage: [] });
   const read = entriesOf({ pmi: PMI });
   assert.deepEqual(read.map(entry => [entry.id, entry.kind, entry.supported]), [
     ["A", "datum", true], ["thickness", "dimension", true], ["hole-dia", "dimension", true], ["top-flat", "geometric_tolerance", true], ["hole-pos", "geometric_tolerance", true]]);
@@ -94,17 +94,6 @@ test("one the viewer does not draw says the engine's reason where it gives one, 
     ["profile", false, "profile of surface is not a characteristic this holds; it has modifiers"],
     ["edge", false, "XCAFDimTolObjects_DatumObject is not one the viewer draws"],
     ["A", true, ""]]);
-});
-
-test("a build's warnings on an annotation are read as served, and a file's none are none", () => {
-  const warned = "f:edit_plate.cut.1;M:edit_plate.body named a cylinder face on the last build and names a plane face now: another face "
-    + "than the annotation was made on, measured as it is. Point the ref at the face meant, or remove the annotation";
-  const read = entriesOf({ pmi: [
-    { id: "hole-from-left", kind: "datum", status: "ok", refs: [], datum: { letter: "B" }, warnings: [warned, 4, ""] },
-    { id: "A", kind: "datum", status: "ok", refs: [], datum: { letter: "A" }, warnings: [] },
-    { id: "C", kind: "datum", status: "ok", refs: [], datum: { letter: "C" } },
-  ] });
-  assert.deepEqual(read.map(entry => entry.warnings), [[warned], [], []]);
 });
 
 test("a dimension whose reference broke has no nominal, and is said as unknown, not unsupported", () => {
@@ -307,8 +296,7 @@ test("an id is unique on its part only: two parts' datum A are two entries, each
 
 // The engine's plate as made (v1), and after an edit put a square cut where the hole was (v3): the
 // hole's name now on a flat face, which a diameter, a position and a distance from a face square to
-// it cannot stand on, and a distance from a parallel face measures to as it now is (the build warns
-// that its kind changed; a file carries no warning).
+// it cannot stand on, and a distance from a parallel face measures to as it now is.
 test("the PMI the engine serves reads whole, and a reference an edit left on the wrong kind of face is invalid", () => {
   const made = entriesOf(served("v1"));
   assert.deepEqual(made.map(entry => [entry.id, entry.supported, entry.status, entry.part]), [
@@ -317,9 +305,9 @@ test("the PMI the engine serves reads whole, and a reference an edit left on the
   assert.deepEqual(made.map(entry => pmiCallout(entry).text), ["Datum A", "10.0 ±0.2", "⌀10.0 +0.1/0", "30 basic", "50 basic", "Flatness 0.05", "Position ⌀0.1 | A"]);
   const cut = entriesOf(served("v3"));
   // What broke is still its part's: linked to no geometry, known by the same key.
-  assert.deepEqual(cut.map(entry => [entry.key, entry.status, entry.warnings]), [
-    ["0:A", "ok", []], ["0:thickness", "ok", []], ["0:hole-diameter", "invalid", []], ["0:hole-from-front", "invalid", []],
-    ["0:hole-from-left", "ok", []], ["0:top-flatness", "ok", []], ["0:hole-position", "invalid", []]]);
+  assert.deepEqual(cut.map(entry => [entry.key, entry.status]), [
+    ["0:A", "ok"], ["0:thickness", "ok"], ["0:hole-diameter", "invalid"], ["0:hole-from-front", "invalid"],
+    ["0:hole-from-left", "ok"], ["0:top-flatness", "ok"], ["0:hole-position", "invalid"]]);
   const hole = cut.find(entry => entry.id === "hole-diameter");
   assert.deepEqual([hole.supported, hole.dimension.nominal], [true, null]);
   assert.match(pmiStatusText(hole), /is a plane face; a diameter is on a cylinder face/);
@@ -334,7 +322,7 @@ test("the PMI the engine serves reads whole, and a reference an edit left on the
 
 // The same plate as a model-based definition (v4): the thickness given limits, a surface profile on
 // the hole, a general profile 0.5 to A (Note 1), a general note and a flag note on the hole and its
-// diameter, the project's notes library, and two views (a section A-A through the hole, and an iso).
+// diameter, and two views (a section A-A through the hole, and an iso).
 const V4_BOTTOM = "plate/f:edit_plate.body_make_box1.5;M:edit_plate.body";
 const V4_TOP = "plate/f:edit_plate.body_make_box1.6;M:edit_plate.body";
 const V4_HOLE = "plate/f:edit_plate.cut.1;M:edit_plate.body";
@@ -423,8 +411,7 @@ test("views carry their camera, section, shows and placements, keyed by part", (
     section: { axis: "y", at: 0, invert: true }, shows: ["hole-diameter", "hole-position", "hole-profile", "mask"],
     place: { "hole-diameter": { anchor: [5, 0, 0], offset: [15, 0, 10] } }, supported: true, unsupported: "" });
   assert.deepEqual([iso.key, iso.camera.preset, iso.section, iso.shows, iso.place], ["0:iso", "iso", null, null, {}]);
-  // The project's notes library and what coverage found, each its part's.
-  assert.deepEqual(read.library, [{ part: 0, name: "edges", text: "Break all sharp edges 0.2 max" }, { part: 0, name: "primer-mask", text: "Mask these features before coating with primer" }]);
+  // What coverage found, its part's.
   assert.deepEqual(read.coverage, [{ part: 0, uncovered: [], conflicts: [] }]);
   const conflict = { kind: "unused_datum", ids: ["B"], problem: "datum B is named by no tolerance" };
   assert.deepEqual(readXbfPmi({ pmi: [], pmi_coverage: [{ part: 1, uncovered: [V4_TOP, 4], conflicts: [conflict, "x"] }] }).coverage,
@@ -470,12 +457,8 @@ test("each new kind's call is the engine's call exactly", () => {
   assert.equal(pmiCallText({ kind: "geometric_tolerance", characteristic: "surface_profile", general: true, id: "g", value: 0.5, presentation: { anchor: [0, 0, 0], offset: [0, 0, 1] } }), null);
 });
 
-test("a note from the project's library asks for that entry by its name, its call carrying the words", () => {
-  const call = { kind: "note", id: "edges", text: "Break all sharp edges 0.2 max", faces: [], library: "edges" };
+test("a new note asks for its call, its words as typed", () => {
+  const call = { kind: "note", id: "edges", text: "Break all sharp edges 0.2 max", faces: [] };
   assert.equal(pmiChangeRequest({ kind: "add", part: 0, partName: "plate", id: "edges", call }),
-    `Add this PMI to the annotate(...) call of the model's part "plate" (from cadgen.ap242 import annotate, note), its text the project's notes library entry "edges" `
-    + `(the dict given as library=), written as that entry rather than these words:\nnote("edges", "Break all sharp edges 0.2 max")`);
-  // Typed, the words are the person's own.
-  assert.equal(pmiChangeRequest({ kind: "add", part: 0, partName: "plate", id: "edges", call: { ...call, library: null } }),
     `Add this PMI to the annotate(...) call of the model's part "plate" (from cadgen.ap242 import annotate, note):\nnote("edges", "Break all sharp edges 0.2 max")`);
 });

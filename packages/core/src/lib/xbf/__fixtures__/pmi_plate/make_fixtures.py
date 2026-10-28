@@ -7,11 +7,11 @@ edits are:
   the top's flatness, and basic distances from the front and the left side to the hole's axis;
 * ``v2``: 12 mm thick with a 12 mm hole, every name kept: the same annotations, measured anew;
 * ``v3``: a square cut where the hole was: the hole's name now on a flat face, where a diameter and
-  a position cannot stand; the basics to it measure to that face (that it was a round one at the
-  last build is the build's warning, never the document's, so a served file does not carry it);
+  a position cannot stand; the basics to it measure to that face (a build is of itself alone: none
+  says what the face was before);
 * ``v4``: the v1 plate as a model-based definition -- the thickness given limits, a surface profile
   on the hole, a general profile 0.5 to A (Note 1, on every face nothing else controls), a general
-  note and a flag note on the hole and its diameter, the project's notes library, and two views: a
+  note and a flag note on the hole and its diameter, their texts the project's notes, and two views: a
   section "A-A" (front, cut across y through the hole's axis, keeping the far side so the front
   camera sees the cut) placing the diameter its own way, and an iso view showing everything.
 
@@ -99,8 +99,7 @@ DEFINITION = '''
         view("A-A", camera="front", shows=["hole-diameter", "hole-position", "hole-profile", "mask"],
              section=section("y", 0, invert=True),
              place={"hole-diameter": place((RADIUS, 0, 0), (15, 0, 10))}),
-        view("iso", camera="iso"),
-        library=NOTES,'''
+        view("iso", camera="iso"),'''
 
 VERSIONS = {"v1": (10, "round", 5, "plus_minus_tolerance(0.2)", ""),
             "v2": (12, "round", 6, "plus_minus_tolerance(0.2)", ""),

@@ -55,24 +55,23 @@ export const newPmiName = (call, t = english) => (call.kind === "datum" ? t("pmi
  * The kinds a new annotation can be, in the order the menu lists them, each with whether the pick
  * makes one (`available`), what it needs when it does not (`need`), the part it is made on (`part`),
  * whether it stands on the faces picked (`onFaces`: what a face's menu offers) and the call it
- * starts as; a position or a profile with the datums it can refer to (`datums`, its part's), a note
- * with its part's notes library (`library`, each entry's name and words). A view's call is its name
- * alone until it is seen from somewhere (`pmiViewFromHere`).
+ * starts as; a position or a profile with the datums it can refer to (`datums`, its part's). A
+ * view's call is its name alone until it is seen from somewhere (`pmiViewFromHere`).
  *
  * @param {{ picked: Array<{ id: string, part: number | null, ref: string, surface: { type: string, normal?: number[], axis?: number[], origin?: number[], radius?: number } | null }>,
  *   entries: ReturnType<typeof import("@text-to-cad/core/lib/xbf/xbfPmi.js").readXbfPmi>["entries"], pending?: Array<{ part: number | null, call: object }>,
  *   parts?: readonly number[], views?: ReturnType<typeof import("@text-to-cad/core/lib/xbf/xbfPmi.js").readXbfPmi>["views"],
- *   library?: ReturnType<typeof import("@text-to-cad/core/lib/xbf/xbfPmi.js").readXbfPmi>["library"], moving?: boolean,
+ *   moving?: boolean,
  *   t?: (key: string, values?: object) => string }} options
  *   `picked`: the faces Select has picked, each with its part (the structure's prototype), its
  *   canonical ref and its surface; anything else picked makes nothing. `pending`: the new
  *   annotations and views already asked for (each its part and its call), whose ids, letters and
  *   names are taken too. `parts`: the parts the document places, the one a pick of nothing is of
- *   where there is one. `views`, `library`: the document's (`readXbfPmi`'s). `moving`: the parts
+ *   where there is one. `views`: the document's (`readXbfPmi`'s). `moving`: the parts
  *   stand elsewhere than built (Explode, a pose), so no view of one is seen from here. Each `label` and
  *   `need` is said in the language of `t` (English unless the caller hands one over).
  */
-export function pmiCreateOptions({ picked, entries, pending = [], parts = [], views = [], library = [], moving = false, t = english }) {
+export function pmiCreateOptions({ picked, entries, pending = [], parts = [], views = [], moving = false, t = english }) {
   const faces = picked.filter(item => item.surface && item.ref);
   const only = picked.length === faces.length;
   // What is of a part is of the faces' part, or, with nothing picked, of the document's one part.
@@ -119,10 +118,9 @@ export function pmiCreateOptions({ picked, entries, pending = [], parts = [], vi
     { kind: "profile", label: t("pmi.option.profile"), need: t("pmi.need.partFaces"), available: ofPart && faces.length > 0,
       call: ofPart && faces.length ? { kind: "geometric_tolerance", characteristic: "surface_profile", id: pmiFreshId("profile", ids), refs, value: null, datums: [] } : null,
       datums },
-    // Of the part: a note on the faces picked or on none, its words the library's or the person's.
+    // Of the part: a note on the faces picked or on none, its words the person's.
     { kind: "note", label: t("pmi.option.note"), need: needPart, available: ofPart, onFaces: ofPart && faces.length > 0,
-      call: ofPart ? { kind: "note", id: pmiFreshId("note", ids), text: "", faces: refs } : null,
-      library: library.filter(item => item.part === part).map(({ name, text }) => ({ name, text })) },
+      call: ofPart ? { kind: "note", id: pmiFreshId("note", ids), text: "", faces: refs } : null },
     { kind: "general_profile", label: t("pmi.option.general_profile"), need: ofPart && general ? t("pmi.need.hasGeneral") : needPart, available: ofPart && !general, onFaces: false,
       call: ofPart && !general ? { kind: "geometric_tolerance", characteristic: "surface_profile", general: true, id: pmiFreshId("general", ids), value: null, datums: [] } : null,
       datums },

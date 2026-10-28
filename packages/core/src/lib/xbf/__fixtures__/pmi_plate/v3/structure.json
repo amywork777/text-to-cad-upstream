@@ -1,7 +1,7 @@
 {
  "name": "plate",
  "path": "pmi_plate.xbf",
- "version": "1792983987073084723-22998",
+ "version": "1793204796571806518-23114",
  "units": "mm",
  "prototypes": [
   {
@@ -114,7 +114,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -149,7 +148,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -203,7 +201,6 @@
    "label": null,
    "status": "invalid",
    "problem": "f:edit_plate.cut.1;M:edit_plate.body is a plane face; a diameter is on a cylinder face",
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -245,7 +242,6 @@
    "label": null,
    "status": "invalid",
    "problem": "f:edit_plate.body_make_box1.3 and f:edit_plate.cut.1;M:edit_plate.body are not parallel planes",
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -291,7 +287,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -341,7 +336,6 @@
    "label": null,
    "status": "ok",
    "problem": null,
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -382,7 +376,6 @@
    "label": null,
    "status": "invalid",
    "problem": "f:edit_plate.cut.1;M:edit_plate.body is a plane face; a position is on a cylinder face",
-   "warnings": [],
    "part": 0,
    "refs": [
     {
@@ -420,7 +413,6 @@
    }
   }
  ],
- "pmi_library": [],
  "pmi_views": [],
  "pmi_coverage": [
   {
