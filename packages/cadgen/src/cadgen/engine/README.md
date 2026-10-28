@@ -357,6 +357,7 @@ only, and a file's id is derived again from its path after a restart.
 | `reader.py` | what a model imports: an XCAF document described as data and assembled into a build123d tree (`read_step`, `read_xbf`); the reader process a build's STEP files are parsed in; a mesh file as data (`read_mesh`, `Mesh`); a read of a file the build writes refused (`refuse_written`) |
 | `pmi.py` | semantic PMI: datums, dimensions and geometric tolerances on a part's faces (`annotate`, `cadgen.ap242`'s calls defined here), resolved each build (ok, missing, ambiguous, invalid), written as XCAF's GD&T objects, read back as the structure's `pmi`; its notes and named views (`pmi_views`), the xbf's alone; each part's faces no requirement is on and its requirements that cannot both hold (`pmi_coverage`), warned of; another system's GD&T listed as read, and copied into an xbf of its STEP (**PMI**) |
 | `refs.py` | references to geometry: the ref grammar and the element-name pattern it reads (`ELEMENT_NAME`, kernel-free), occurrence paths, resolution by name in the latest build, for `inspect` and the viewer (**References**) |
+| `step_style.py` | standard STEP surface reflectance/transparency written to styled geometry and read as an approximate PBR appearance |
 | `export/` | `translate` and the kind registry (`__init__`); STEP through the XCAF writer (`step`); a STEP's semantic PMI read back without OCCT and checked against the document's (`ap242`); placements and meshes from the one mesh cache (`mesh`); a mesh file read as a document of triangles, no kernel (`mesh_file`); GLB, 3MF, binary STL (`glb`, `threemf`, `stl`); a planar document's drawing through build123d's DXF exporter, with the drawing checks (`dxf`); a motion baked into a glTF clip (`motion`); a view made a document again, for a STEP of a document held without its XCAF document and an xbf written from a STEP (`tree`) |
 | `mesh.py`, `mesh_format.py` | per-part tessellation at a quarter per cent tolerance, element facts, a part's facts as a whole (`measured`: volume, solids, box); the part buffer, its wire format and edge classes (`mesh_format`, kernel-free) |
 | `serve.py`, `page/` | HTTP: structure JSON and one binary buffer per part; each part's facts by geometry key, measured in batches (`FactCache`, `Server.measure`); the meshing pool and its queues (`Mesher`); a STEP read in a reader process, held by its bytes; a minimal three.js page |
@@ -381,7 +382,7 @@ cadgen export SRC DST [DST ...] [--json]
                                              SRC an .xbf, a .step, a document id, or a mesh
                                              (.glb, .stl, .3mf: to the other two mesh kinds)
 cadgen snapshot SRC OUT.png [--display MODE|exploded=A|JSON] [--grid] [--camera C|authored | --view NAME]
-                [--preview] [--pose NAME|JSON] [--annotation FILE] [--measurements FILE]
+                [--pose NAME|JSON] [--annotation FILE] [--measurements FILE]
                 [--width W --height H | --size-profile P] [--json]
 cadgen snapshot --job PACKET [SRC] [the same flags, each over every job]
                                              every picture a Quick Edit packet (or a job file) names
@@ -1255,9 +1256,10 @@ of the irradiance). A part without a material,
 and every fill (Parts), wears a plain dielectric finish (roughness 0.5) over its colour, linear,
 squared, which keeps the saturated colours of OCCT's old Phong look. A part with a material wears
 its finish in Solid and Shaded on both renderers, its colour as authored, reflecting that
-environment; X-ray draws it in the plain finish. What OCCT's raster has no term for it
+environment; the snapshot keeps faces of the same colour but different materials apart for XBF,
+STEP, GLB and 3MF. X-ray draws a material in the plain finish. What OCCT's raster has no term for it
 approximates (`render/finish.py`): a clear coat eases the base's roughness toward the coat's,
-anisotropy is dropped (and the viewer drops it too), transmission is opacity over the colour tinted
+OCCT drops anisotropy, and transmission is opacity over the colour tinted
 by the transmission colour.
 Edges are unlit in their class's ink, 1 px; X-ray's faces are lit at 0.22 opacity, Hidden line's
 are the backdrop's colour. The engine serves the record as `GET /api/look` and its image as
@@ -1265,6 +1267,9 @@ are the backdrop's colour. The engine serves the record as `GET /api/look` and i
 document's scene brings them as its own lighting and surface rule (the bundled
 `@text-to-cad/core`'s `lib/xbf/xbfLook.js`), which the viewer's viewport and the snapshot page put
 up in place of the theme's. Preview is drawn as any file's is.
+
+`cadgen snapshot` writes technical PNG images with OCCT. Photographic Preview belongs to the
+browser viewer; snapshot has no Preview or video option. A packet requesting `preview` is refused.
 
 `cadgen snapshot` draws a document as the viewer does. The engine serves and meshes it (the
 daemon's meshes, or with `daemon=False` a server of this process), and OCCT draws it from those meshes
@@ -1296,7 +1301,7 @@ stderr): one the viewer does not draw, a note (a general note, the part's genera
 note on annotations alone: the viewer lists it in its notes, a still does not draw it), one whose
 part the picture hides, or a broken one its code never placed.
 `pmi=off` (`display.pmi` false) draws none. PMI is shown only on the parts as made, as the viewer
-shows it: an exploded, posed or Preview picture draws none, and asking for it there (`pmi` or
+shows it: an exploded or posed picture draws none, and asking for it there (`pmi` or
 `pmi=on`, `display.pmi` true), or of a document that carries none, is refused by name. `--view
 NAME` (`PART/NAME` where two parts have one; every job's, in a `--job`) draws a part's named view (**PMI**, Views) as the viewer applies it
 (`snapshot.view_of`, `render/pmi.py`'s `view_at`): its camera's direction and up placed by its
@@ -1307,7 +1312,7 @@ own placements (what it does not show is no part of it, and not left out); `--js
 one with `--camera` (a view has its own) or with `display.clip` beside its section, one the viewer
 cannot apply, one whose part the picture hides, one whose section that placement turns off every
 world axis (a still cuts only square to a world axis, never along another, so never cuts wrong),
-a view of a document with PMI exploded, posed or in Preview (with `pmi=off` it draws its camera and
+a view of a document with PMI exploded or posed (with `pmi=off` it draws its camera and
 section alone), and a view with a section on an exploded picture, whatever `pmi` is (the section is
 placed on the parts as made, which Explode moves). `--annotation FILE` draws the viewer's
 annotation over the model -- each mark on the part it was drawn on, wherever the picture places
@@ -1334,7 +1339,7 @@ of jobs, or `{"input", "jobs": [...], "annotation", "measurements"}` -- in one c
 its own `camera` (an output's own `camera` over it), its `display` (its `hidden` and `isolated` parts
 among it; the packet's top-level copies are `--annotation`'s; a `view` in it draws the job as that
 view, and its own camera beside one is refused), its pose (`jointValues`, as `--pose`
-takes it), `preview`, and -- a robot's -- the visuals its `selection.hide` names by the viewer's ids
+takes it), and -- a robot's -- the visuals its `selection.hide` names by the viewer's ids
 (`link:v1`, each robot instance carrying its visual's), the packet's ink and dimensions over each
 (a job's own `annotation` and `measurements` over the packet's); and each of its `outputs` (`path`,
 `width`, `height`, `camera`, `label`) is a picture written at its path (a folder takes
@@ -1352,7 +1357,7 @@ Measure, the grid -- is as heavy against the picture at any scale, while OCCT's 
 drawing's hairlines) stay one pixel of the larger frame and read finer: OCCT's core profile draws no
 line wider than a pixel, and this is that, not a bug; `sizeProfile` sizes an output that gives no
 size. SRC, given, is drawn in place of every job's input, and a flag given overrides every job: the
-display, the grid, the camera (`--view` too, in place of each job's camera), Preview, the pose, the
+display, the grid, the camera (`--view` too, in place of each job's camera), the pose, the
 ink, the dimensions, the size of every output; an OUT is refused. Every job is checked before anything renders (an unknown key, a setting
 out of range, two outputs at one path, a file that is not there: refused by name, every file left as
 it was), and a picture that fails writes none of the job's: every picture is staged beside its
@@ -1384,7 +1389,7 @@ fails saying so. Nothing is written but OUT.
 per file (read again when a file it read changes) or with `daemon=False` in this process:
 
 - **A mesh file** (`.stl`, `.3mf`, `.glb`) becomes a structure and part buffers as a document's are,
-  so the modes, the camera fit, the grid, clip, Explode, Preview and the annotation are a
+  so the modes, the camera fit, the grid, clip, Explode and the annotation are a
   document's. Each mesh carries the viewer's normals (creased at 30 degrees up to 10,000
   triangles, else flat) and its feature edges (three's `EdgesGeometry` at 16 degrees: the folds,
   the open rims), which Solid and the line modes draw. An STL is one part in the look's fill, its
@@ -1514,10 +1519,13 @@ changed or new one fails in one line naming the folder and its mode.
   part and per painted face, material names and densities, element names on face, edge and
   vertex sub-shape labels. Read back through the engine's own reader, the instance tree, every
   name (on the same elements: the reader numbers edges and vertices in its own order), colours
-  and materials' names and densities are the xbf's. OCCT's writer drops the look (metallic,
-  roughness, emissive and the rest: a material reads back matte), every physical field but the
-  density, a face's material (the face keeps its colour), the mechanism and its configurations,
-  and the model's key and provenance. The parts' semantic PMI is written as AP242's (**PMI**),
+  and materials' names and densities are the xbf's. Standard STEP surface rendering records
+  carry an approximate diffuse/specular finish and transparency for parts and material-painted
+  faces. Import converts that standard specular/gloss appearance back to metallic/roughness;
+  it is an approximation based on the [Khronos specular/gloss conversion](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Archived/KHR_materials_pbrSpecularGlossiness), especially for third-party Phong materials. STEP does not retain the
+  original advanced PBR properties, textures, emission, physical fields beyond name and density,
+  mechanism, configurations, model key or provenance. Use XBF or GLB for full PBR looks.
+  The parts' semantic PMI is written as AP242's (**PMI**),
   the code's whole or refused: a STEP that would drop an annotation the code made (one linked to
   no geometry) is refused by name; a document another system wrote is written, what it leaves
   out said. The writer's run-dependent choices are settled: the
@@ -2301,7 +2309,7 @@ file's geometry into the model's document (`reader.py`). The result is a compoun
 file's assembly: an assembly a `Compound` of its components, a part a handle of its own on its
 product's geometry (a move places that occurrence, never its siblings), every node named as the
 file names that occurrence (its own name, else its product's), coloured and given its material
-as the file has them; an xbf's painted faces and face materials come too, and each element keeps
+as the file has them; XBF painted faces and material-painted STEP faces come too, and each element keeps
 the name its file gives it (**Element names**). An xbf's joints, configurations and motions are
 not imported: a part is a part. Linking between models is done by importing code, never by a
 file reference. Both are file reads the memo keys by the file's bytes, so a later build's read

@@ -29,11 +29,12 @@ export const VIEWPORT = Object.freeze({ width: 800, height: 600 });
  *
  * @param {{ after: (cleanup: () => unknown) => void }} lifetime — a test context, or any object
  *   with its `after`, so one server and one browser can span a whole file.
- * @param {{ fixture?: string, edit?: (structure: object) => object }} [options]  `fixture`: the
- *   served document's folder under core's fixtures (`bracket`, `pmi_plate/v1`), opened as
- *   `<its first segment>.xbf`; `edit`: what the served structure is made of the fixture's.
+ * @param {{ fixture?: string, edit?: (structure: object) => object, transmission?: boolean }} [options]
+ *   `fixture`: the served document's folder under core's fixtures (`bracket`, `pmi_plate/v1`),
+ *   opened as `<its first segment>.xbf`; `edit`: what the served structure is made of the
+ *   fixture's; `transmission`: its first prototype made glass, kept across `update`s of it.
  */
-export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure => structure } = {}) {
+export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure => structure, transmission = false } = {}) {
   const fixtureBytes = readFileSync(join(FIXTURES, fixture, 'structure.json'));
   const fixtureVersion = JSON.parse(fixtureBytes).version;
   const name = fixture.split('/')[0];
@@ -46,7 +47,9 @@ export async function serveXbfHarness(t, { fixture = 'bracket', edit = structure
   });
   const { bundle, css: bundledCss } = await harnessBundle();
   // The document as it is served now: its version moves with each `update` of an open page.
-  let served = { version: fixtureVersion, structure: Buffer.from(JSON.stringify(edit(JSON.parse(fixtureBytes)))), parts: fixture };
+  const structure = edit(JSON.parse(fixtureBytes));
+  if (transmission) structure.prototypes[0].material = { pbr: { values: { transmission: 0.9, roughness: 0.1, ior: 1.5 }, textures: {} } };
+  let served = { version: fixtureVersion, structure: Buffer.from(JSON.stringify(structure)), parts: fixture };
   let updates = 0;
   const css = await readFile(new URL('../../../dist/styles.css', import.meta.url));
   const json = (response, body) => { response.setHeader('Content-Type', 'application/json'); response.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); };
