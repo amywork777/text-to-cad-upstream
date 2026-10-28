@@ -1,4 +1,4 @@
-[submodule "apps/studio"]
-	path = apps/studio
+[submodule "apps/t3code"]
+	path = apps/t3code
 	url = https://github.com/amywork777/t3code.git
-	branch = amy/hardware
+	branch = amy/text-to-cad
