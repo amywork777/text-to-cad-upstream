@@ -155,6 +155,12 @@ export const skillGroups = [
       "Dimensioned engineering drawings from a part or an assembly, as a PDF: views and sections, dimensions, hole callouts read off the model, title block, and for an assembly balloons, a parts list and a sheet per part.",
   },
   {
+    name: "Work Instructions",
+    path: "skills/work-instructions",
+    summary:
+      "Step-by-step work instructions for building an assembly, as a PDF: the order, the parts at each step, every torque, bonding, cure and machining value cited to its process spec, and a picture per step.",
+  },
+  {
     name: "DXF",
     path: "skills/dxf",
     summary:
