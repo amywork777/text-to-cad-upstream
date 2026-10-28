@@ -268,7 +268,8 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q calculix-ccx
-          ccx -v
+          # ccx -v prints its version and exits non-zero; check what it says.
+          { ccx -v || true; } | grep "This is Version"
 
       - name: Run the fea tests
         run: scripts/test/test-python.sh --select cadgen --print-weights tests/python/packages/cadgen/test_fea*.py
