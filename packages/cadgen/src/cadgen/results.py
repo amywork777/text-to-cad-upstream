@@ -344,6 +344,8 @@ class CamPlanResult:
     #: ``None`` when the plan stopped before writing (``ok`` is false; ``findings`` say why).
     glb: Path | None = None
     posts: tuple[dict, ...] = ()
+    #: The job cadgen completed from the part when the one given had no setups: ``<stem>.cam.json`` beside the GLB.
+    job_file: Path | None = None
     verdict: dict = field(default_factory=dict)
     #: Totals: ``duration_s``, ``tools``, ``tool_changes`` (``count``, ``order``), ``setups``, ``operations``,
     #: ``post``, ``material``, ``planner``.
@@ -369,6 +371,9 @@ class CamPlanResult:
             lines.append(f"{count} tool change{'s' if count != 1 else ''}: {' then '.join(changes['order'])}")
         if self.glb is not None:
             lines.append(f"wrote GLB: {_display(self.glb)}")
+        if self.job_file is not None:
+            lines.append(f"wrote job: {_display(self.job_file)} (its steps chosen from the part; edit it and plan "
+                         "again)")
         lines += [f"posted {post['setup']}: {_display(Path(post['file']))} ({post['post']})" for post in self.posts]
         lines += [f"assumed: {entry['key']} {_assumed_value(entry['value'])} ({entry['why']})" for entry in self.assumed]
         lines += _finding_lines(self.findings)

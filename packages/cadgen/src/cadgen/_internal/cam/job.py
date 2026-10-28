@@ -168,14 +168,21 @@ def _refuse_constant(name: str):
     raise ValueError(f"{name} is not a number")
 
 
-def parse_job(job: str | dict | None) -> Job:
+def parse_job(job: str | dict | None, *, steps: bool = True) -> Job:
+    """The job, read and checked. ``steps=False`` reads one that may leave out its setups (and then its tools), for
+    cadgen to write them from the part (``auto.py``): its setups are then empty."""
     raw, path = load_job(job)
     check_keys(raw, JOB_KEYS, "the job")
-    for key in ("machine", "material", "stock", "tools", "setups"):
+    planned = steps or "setups" in raw
+    for key in ("machine", "material", "stock", *(("tools", "setups") if planned else ())):
         if key not in raw:
             raise CamJobError(f"the job needs \"{key}\"; its keys are {', '.join(JOB_KEYS)}")
     machine, assumed = _machine(raw["machine"])
     material = _material(raw["material"])
+    if not planned and "tools" not in raw:
+        return Job(name=str(raw.get("name", "job")), machine=machine, material=material, stock=_stock(raw["stock"]),
+                   tools={}, setups=(), tolerance_mm=0.01, coolant=choice(raw.get("coolant", "off"), COOLANTS,
+                                                                           "coolant"))
     if not isinstance(raw["tools"], list) or not raw["tools"]:
         raise CamJobError("tools must be a list of at least one tool, like [{\"id\": \"T1\", \"type\": \"flat\", "
                           "\"diameter_mm\": 6}]")
@@ -186,6 +193,9 @@ def parse_job(job: str | dict | None) -> Job:
             raise CamJobError(f"tools[{position}]: a second tool is called {shown(tool.id)}; each id names one tool")
         tools[tool.id] = tool
     coolant = choice(raw.get("coolant", "off"), COOLANTS, "coolant")
+    if not planned:
+        return Job(name=str(raw.get("name", "job")), machine=machine, material=material, stock=_stock(raw["stock"]),
+                   tools=tools, setups=(), tolerance_mm=0.01, coolant=coolant)
     if not isinstance(raw["setups"], list) or not raw["setups"]:
         raise CamJobError("setups must be a list of at least one setup, like [{\"id\": \"top\", \"operations\": "
                           "[...]}]")

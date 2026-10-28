@@ -9,8 +9,8 @@ lengths are mm, feeds mm/min, speeds rev/min.
 | `machine` | Required. [Machine](#machine) |
 | `material` | Required. [Material](#material) |
 | `stock` | Required. [Stock](#stock) |
-| `tools` | Required. A list of at least one [tool](#tools) |
-| `setups` | Required. A list of at least one [setup](#setups) |
+| `tools` | A list of at least one [tool](#tools). Required with `setups`; left out without them, cadgen proposes the tools |
+| `setups` | A list of at least one [setup](#setups). Left out, cadgen writes one from the part's features (SKILL.md, Write the job) and saves the completed job as `<part>.cam.json` beside the result |
 | `name` | The job's name (the job file's name, else `job`) |
 | `tolerance_mm` | How closely FreeCAD follows curves, 0.01 to 1 (0.01) |
 | `coolant` | `off`, `flood` or `mist`, for every operation that does not say (`off`) |
