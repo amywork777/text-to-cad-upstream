@@ -3,24 +3,17 @@ import { cn } from "@text-to-cad/ui/utils";
 import { useI18n } from "@text-to-cad/ui/i18n";
 import { TREE_INDENT_PX, TreeRowChevron, TreeRowGuides, TreeRowLabel, TreeRowSurface } from "@text-to-cad/ui/primitives/tree-row";
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
-import { Button } from "@text-to-cad/ui/primitives/button";
-import { Pause, Play } from "lucide-react";
 import { Checkbox } from "@text-to-cad/ui/primitives/checkbox";
 import { InfoRow } from "../kit/inspector/referenceRows.jsx";
 import { KinematicsPoseRow } from "../kit/inspector/kinematicsControls.jsx";
 import { controlRow } from "./fea/controlRow.jsx";
 import ToolPanel from "../kit/tools/ToolPanel.jsx";
 import { formatValue } from "./feaResult.js";
-import { frameText } from "./fea/series.js";
 import FeaVerdict from "./FeaVerdict.jsx";
 import { STUDY_GLYPHS } from "./feaGlyphs.jsx";
 
-/**
- * A control's number as its value field shows it: a multiple as "×12.0", a series' scrubber as the
- * frame it stands on ("12 ms", "118 Hz"), others with their unit after ("138 MPa").
- */
-const controlText = (value, control) => frameText(control, value)
-  ?? (control.unit === "×" ? `×${formatValue(value)}` : `${formatValue(value)}${control.unit ? ` ${control.unit}` : ""}`);
+/** A control's number as its value field shows it: a multiple as "×12.0", others with their unit after ("138 MPa"). */
+const controlText = (value, control) => (control.unit === "×" ? `×${formatValue(value)}` : `${formatValue(value)}${control.unit ? ` ${control.unit}` : ""}`);
 
 /**
  * Study's What you see: the controls the study's view chose (`feaControls`), in its order, each a settings
@@ -30,22 +23,14 @@ const controlText = (value, control) => frameText(control, value)
  * `markers`: whether the model shows where the study holds and loads it (its title, "Loads and fixtures";
  * `text`, what it draws), a checkbox after the controls.
  */
-function FeaResultControls({ controls, values, presets, preset, onChange, onPreset, onReset, motionPlay = null, markers = null }) {
+function FeaResultControls({ controls, values, presets, preset, onChange, onPreset, onReset, markers = null }) {
   const { t } = useI18n();
-  // A motion's Time row has a play/pause beside its value: it plays the timeline in place, the row following it.
-  const playButton = motionPlay ? <TooltipHint content={motionPlay.playing ? t("fea.pause") : t("fea.playMotion")}>
-    <Button type="button" variant="ghost" size="icon-xs" className="size-6 text-muted-foreground" data-fea-motion-play=""
-      aria-label={motionPlay.playing ? t("fea.pause") : t("fea.playMotion")} aria-pressed={motionPlay.playing} onClick={motionPlay.onToggle}>
-      {motionPlay.playing ? <Pause className="size-3" aria-hidden="true" /> : <Play className="size-3" aria-hidden="true" />}
-    </Button>
-  </TooltipHint> : null;
   return (
     // A select gives way before its label in the narrow panel ("Displacement" would squeeze "Show" away).
     <div className="flex flex-col gap-1.5 [&_span:has(+span>[data-slot=select-trigger])]:shrink-0 [&_span:has(>[data-slot=select-trigger])]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:shrink [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:max-w-full">
       {presets.length ? <KinematicsPoseRow name="Preset" poses={presets} activeValue={preset} onSelect={onPreset} onReset={onReset} /> : null}
       {controls.map((control) => controlRow({
         control, value: values[control.id], valueText: controlText, t,
-        action: control.drives === "motion" ? playButton : null,
         onChange: (value) => onChange(control.id, value),
       }))}
       {markers ? <div className="flex min-w-0 items-center gap-2 px-2 text-tiny" data-fea-markers="">

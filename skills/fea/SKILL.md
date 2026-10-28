@@ -1,6 +1,6 @@
 ---
 name: fea
-description: Run finite element and multiphysics studies on STEP parts and assemblies with cadgen, covering strength, vibration, buckling, heat, flow, sound, cracks, fatigue, drops, electromagnetics, piezo, rotors and more. Pick the analysis from the table; each has its own reference page. Use when the user asks whether a part is strong enough, how much it bends, where it is most stressed, or asks for FEA or a simulation of a part.
+description: Run a linear elastic stress study on a STEP part or an assembly of bonded parts with cadgen, meshed by netgen and solved by CalculiX, reporting peak stress, safety factor and displacement as a colour map. Use when the user asks whether a part is strong enough, how much it bends, where it is most stressed, or asks for FEA or a stress simulation of a part.
 license: MIT
 ---
 
@@ -10,136 +10,66 @@ Provenance: maintained in [earthtojake/text-to-cad](https://github.com/earthtoja
 Use the installed local skill files as the runtime source of truth; the repository link is only for
 provenance and release review.
 
-Use this skill to answer engineering questions about one part, or an assembly of parts bonded where
-they touch, by simulation. It meshes the saved STEP, solves the analysis the study names, and writes
-a colour-mapped result the Viewer renders. This page is a router: [Choose the
-analysis](#choose-the-analysis) maps the user's question to an analysis and its reference page,
-which holds that analysis's schema, hand checks and limits; [study-file.md](references/study-file.md)
-holds what they all share. Every analysis in the table runs today; for a question none of them
-answers, follow [When the question needs an analysis that is not
-here](#when-the-question-needs-an-analysis-that-is-not-here).
+Use this skill to answer "will it hold, and how far does it move" for one part, or an assembly of
+parts bonded where they touch, by simulation. It meshes the saved STEP with netgen, has CalculiX
+solve it, and writes a colour-mapped result the Viewer renders. This page is a router: [Choose the
+analysis](#choose-the-analysis) maps the user's question to the analysis and its reference page,
+which holds its assumptions, hand checks and limits; [study-file.md](references/study-file.md) holds
+every key of the study.
 
-The default, `static`, answers "will it hold, and by how much" under forces, pressures, the part's
-own weight (`gravity`) and a steady acceleration (`acceleration`), with quadratic tetrahedra and
-linear elasticity (isotropic, or orthotropic where the material gives its directions). It is a
-first-pass engineering check, not a certification: small displacements, a linear material below
-yield, perfectly rigid fixtures (a `fixed` face held still, a `roller` face free to slide in its
-plane but not off it) and loads that do not move. In an assembly every joint is perfectly rigid
-(bonded) unless the study names `contact` pairs or `bolt`s. Say so when you report.
+There is one analysis, `static`: linear elastic stress and displacement under forces, pressures,
+the part's own weight (`gravity`) and a steady acceleration (`acceleration`), on quadratic
+tetrahedra with an isotropic material. It is a first-pass engineering check, not a certification:
+small displacements, a linear material below yield, perfectly rigid fixtures (a `fixed` face held
+still, a `roller` face free to slide in its plane but not off it) and loads that do not move. In an
+assembly every joint is perfectly rigid (bonded) unless the study sets a pair `free`. Say so when
+you report.
 
 ## Choose the analysis
 
-Match the user's question to an analysis first. The `analysis` key of the study names it; left out,
-it is `static`.
+The `analysis` key of the study names it; left out, it is `static`. Any other name is refused with
+the names cadgen knows.
 
 | The user asks | `analysis` | Plain word | Status | Reference |
 | --- | --- | --- | --- | --- |
-| "Will it hold", "is it strong enough", "how much does it bend" | `static` | Strength | **Runs today** | [Linear static](references/linear-static.md) |
+| "Will it hold", "is it strong enough", "how much does it bend", "where is it most stressed" | `static` | Strength | **Runs today** | [Linear static](references/linear-static.md) |
 | The same under its own weight, or while it speeds up, brakes or turns (a steady g-load) | `static` with a `gravity` or `acceleration` load | Strength | **Runs today** | linear-static.md, section "Body loads: gravity and acceleration" |
-| "Will it rattle", "will it resonate", "what frequency does it ring at" | `modal` | Vibration | **Runs today** | [modal.md](references/modal.md) |
-| "Will this column or thin wall buckle" | `buckling` | Buckling | **Runs today** | [buckling.md](references/buckling.md) |
-| "How hot does it get" (settled, steady running) | `thermal` | Heat | **Runs today** | [thermal.md](references/thermal.md) |
-| "How hot during a warm-up or a duty cycle" | `thermal_transient` | Heat over time | **Runs today** | [thermal-transient.md](references/thermal-transient.md) |
-| "It gets hot: does that stress or warp it" | `thermal_stress` | Heat stress | **Runs today** | [thermal-stress.md](references/thermal-stress.md) |
-| "How hot does it get" when it radiates: a hot part, a dull part in still air, in a vacuum, fins or plates that see each other | `thermal` (or `thermal_transient`, or `thermal_stress` for the stress it causes) with `radiation` | Heat | **Runs today** (grey, diffuse; view factors computed between faces with `surface_to_surface`) | thermal.md, section "Radiation" |
-| "On a shaker", "across a motor's speed range", a sine sweep | `harmonic` | Shaking | **Runs today** | [harmonic.md](references/harmonic.md) |
-| A transport or vibration spec in g²/Hz | `random_vibration` | Random vibration | **Runs today** | [random-vibration.md](references/random-vibration.md) |
-| A shock spec, a shock response spectrum (SRS) | `shock` | Shock | **Runs today** | [shock.md](references/shock.md) |
-| A load that changes over time, a hammer blow | `transient` | Over time | **Runs today** | [transient.md](references/transient.md) |
-| "How long will it last", "how many cycles" | `fatigue` | Fatigue life | **Runs today** from a static load case (`"from": "static"`), a shaker dwell (`"from": "harmonic"`, `dwell_s`) or a random vibration spec (`"from": "random_vibration"`, `duration_s`) | [fatigue.md](references/fatigue.md) |
-| "What if I drop it" (a quick answer) | `drop` | Drop (estimate) | **Runs today** (an estimate; `"dynamic": true` adds a transient check) | [drop.md](references/drop.md) |
-| "What if I drop it" (a deeper check, after `drop`) | `impact` | Drop impact | **Runs today** (lite: rigid floor, linear tets, elastic unless plasticity is given) | [impact.md](references/impact.md) |
-| Flow through or around it, pressure drop, the push of air or water on it | `cfd` | Flow | **Runs today** (lite: laminar, steady, incompressible) | [cfd.md](references/cfd.md) |
-| The same when the flow is fast (past Re 2000 in a pipe, Re 1000 around a body): water in a pipe, air in a duct or past a body | `cfd_turbulent` | Turbulent flow | **Runs today** (lite: steady RANS, k-omega SST, wall functions, incompressible) | [cfd-turbulent.md](references/cfd-turbulent.md) |
-| "How hot does it run with this coolant", a liquid cold plate, a cooling channel, "how warm does the water come out", the heat transfer coefficient a flow gives | `conjugate_heat` | Cooled by flow | **Runs today** (lite: steady, the flow not changed by the heat, constant properties; laminar or turbulent) | [conjugate-heat.md](references/conjugate-heat.md) |
-| "Does the flow bend it, and does the bend change the flow", a flexible flap, valve reed or fin in a stream, a soft tube or hose that swells under its own flow | `fsi` | Flow and bending | **Runs today** (lite: steady two-way coupling, linear elastic part, small-to-moderate deflection, ALE mesh motion; no flutter) | [fsi.md](references/fsi.md) |
-| "Does it bend for good", "at what load does it give way", rubber or other stretchy parts | `nonlinear` | Permanent bend / Stretch | **Runs today** (lite: small-strain metal plasticity, Neo-Hookean rubber) | [nonlinear.md](references/nonlinear.md) |
-| "Does it slowly stretch or sag under a load held for years, hot", "does the clamp relax" | `creep` | Creep | **Runs today** (lite: Norton power law, steady creep; needs the grade's creep data) | [creep.md](references/creep.md) |
-| "Will this carbon or glass fibre plate hold", "which ply fails first", a layup | `composite` | Composite | **Runs today** (lite: flat plates of even thickness, classical laminate theory, first ply failure; no delamination) | [composite.md](references/composite.md) |
-| Parts pressing or sliding on each other, "how hard do they press", a part resting on a floor | `contact` | Contact | **Runs today** (lite: small sliding, node-to-surface, static, elastic parts) | [contact.md](references/contact.md) |
-| A bolted joint: "is the bolt strong enough", "does the joint open", "does it slip", tightening torque to preload | `bolt` | Bolted joint | **Runs today** (lite: a pretensioned spring per bolt, frictional contact between the clamped parts, linear elastic, no thread) | [bolt.md](references/bolt.md) |
-| "Will it arc", capacitance, resistance, Joule heating from a current, a coil's magnetic field, inductance or magnet force | `electromagnetic` | Magnetic / electric | **Runs today** (lite: static and DC, linear materials) | [electromagnetic.md](references/electromagnetic.md) |
-| Eddy currents, skin effect, AC resistance, a coil's impedance at a frequency, induction heating, the loss in a part near an AC field | `electromagnetic` with `"mode": "ac_magnetic"` | Magnetic / electric | **Runs today** (lite: time-harmonic at one frequency, linear materials, stranded coils; no saturation, hysteresis or waves) | electromagnetic.md, section "AC magnetic fields (`ac_magnetic`)" |
-| Fast gas flow (past about Mach 0.3, 100 m/s in air): a nozzle, valve or orifice under a real pressure ratio, "does it choke", "what Mach number", "where is the shock" | `cfd_compressible` | Fast gas flow | **Runs today** (lite: steady ideal gas, adiabatic, an inviscid core past the laminar range, shocks captured; no supersonic outlet) | [cfd-compressible.md](references/cfd-compressible.md) |
-| "Make it lighter", "where can I take material out", "what shape should this bracket be", the stiffest part from 30 % of the material, or the least material that still holds | `topology` | Lighten it | **Runs today** (lite: SIMP density method on a fixed linear-tet design mesh, linear elastic, one part; the result is a shape to rebuild in CAD, then check with `static`) | [topology.md](references/topology.md) |
-| "What frequencies does this box, duct or room boom at", the air's own resonances | `acoustic` | Sound | **Runs today** (lite: linear acoustics, rigid walls, no flow) | [acoustic.md](references/acoustic.md) |
-| "How loud is it", a speaker or a point source in a cavity or out in open air, "how much does lining this face help", what a microphone hears across a sweep | `acoustic` with `sources` and `sweep_Hz` | Sound | **Runs today** (lite: linear acoustics, lumped absorption, a first-order absorbing boundary for open air) | acoustic.md |
-| "How much noise does this vibrating part make", the sound a shaken panel sends out or into the box it closes | `acoustic` with `"from": "harmonic"` | Sound | **Runs today** (lite: one-way, the harmonic's surface velocity drives the air; no flow) | acoustic.md, section "The study" |
-| A piezo actuator, sensor or buzzer: "how far does it move at this voltage", "how hard can it push", "what voltage does this sensor make", its capacitance, resonance and anti-resonance, coupling, the current it draws across a band | `piezo` | Piezo | **Runs today** (lite: linear piezoelectricity, small signal; static, resonance and a driven sweep; no depolarisation or hysteresis) | [piezo.md](references/piezo.md) |
-| "Will this crack grow", "how big a crack can it take", a flaw found in inspection, "how many cycles until it breaks" with a crack | `fracture` | Cracks | **Runs today** (lite: linear-elastic fracture mechanics on a crack the study describes, K against K_IC, Paris crack growth; no ductile tearing) | [fracture.md](references/fracture.md) |
-| A spinning shaft, spindle, rotor, fan or disc: "will it run through a critical speed", a Campbell diagram, "how big is the orbit with this unbalance", "is the whirl stable", the spinning stress in a disc | `rotordynamics` | Spinning | **Runs today** (lite: a Timoshenko rotor line cut from the CAD with gyroscopic terms, linear bearings, bending whirl only; the spinning stress on the solid) | [rotordynamics.md](references/rotordynamics.md) |
-| Liquid inside the part moving over time: "will it spill when the tank is shaken or brakes", how high the water climbs the walls, the sloshing force on the tank and its frequency, filling or draining a cavity, a rising bubble | `multiphase` | Two fluids | **Runs today** (lite: laminar, incompressible, the interface a few elements thick; no evaporation, boiling or mixing) | [multiphase.md](references/multiphase.md) |
 
-Each reference holds its analysis's full schema. A test keeps this table and the study file's
-`analysis` table in step with what cadgen registers.
+A test keeps this table and the study file's `analysis` table in step with what cadgen registers.
 
 ### When the question needs an analysis that is not here
 
-([planned-next.md](references/planned-next.md) says the same: nothing is registered as planned.)
+Vibration, buckling, heat, flow, fatigue, impact, contact and the rest are not in this version
+([planned-next.md](references/planned-next.md) lists what comes next).
 
 - Tell the user plainly, in their words: "That is not in this version." Do not write a study for it.
 - Do not pass a static result off as the answer. A static safety factor says nothing about
   resonance, buckling, temperature, fatigue life, flow or parts sliding on each other.
 - Offer a static study only where it honestly answers part of the question, and say which part:
-  - **A drop.** Both run today: `impact` simulates the part hitting a rigid floor
-    ([impact.md](references/impact.md)), and the quicker `drop` estimate is exactly a static
-    study: the faces that hit the floor held fixed, and an `acceleration` load of G g pointing away
-    from the floor (opposite those faces' outward normal), with G = drop height / stopping distance
-    (1000 mm stopping in 2 mm is 500 g). Run `drop` ([drop.md](references/drop.md)). Report it as
-    an estimate, never as an impact simulation, and say what stopping distance you assumed.
   - **Its own weight, or a steady g-load** (a vehicle braking, a part on a spinning arm at a known
     g): that is `static` already.
+  - **A drop, as an estimate.** Hold the faces that hit the floor `fixed` and add an
+    `acceleration` load of G g pointing away from the floor (opposite those faces' outward normal),
+    with G = drop height / stopping distance (1000 mm stopping in 2 mm is 500 g). Report it as an
+    estimate of an equivalent steady load, never as an impact simulation, and say what stopping
+    distance you assumed.
 - When the user wants a number now and no static study fits, a hand estimate, labelled as one, is
   better than nothing. Work in the study's units (mm, N, MPa, t/mm³), where these come out directly:
   - Buckling of a column (Euler): P = π² E I / (K L)², with K = 2 for one end fixed and one free, 1
     for both ends pinned, 0.5 for both ends fixed.
   - First natural frequency of a cantilever: f = 0.560 √(E I / (ρ A L⁴)) Hz.
 
-## Say what the run did
-
-These rules hold for every analysis.
-
-- **Every adapted step.** Never ask the user to shrink, simplify or defeature a model before running
-  it: run it as it is. A model too big for the machine's memory or time target adapts by itself (an
-  iterative solver, a mesh kept fine at the peak and coarse away from it, small fillets far from
-  every load left out, simpler elements, half a symmetric part); nothing is refused for being big
-  or slow, and when every step is used and it still misses the target, the run goes ahead and says
-  how long and how much memory to expect. The CLI prints one `adapted:` line per step, and the
-  sidecar's `fit` lists them, each with its accuracy note ("peak stress moved 2.1 % between
-  passes"); an `info` finding `fit_<step>` (`fit_local_refine`, `fit_defeature`) is the same step.
-  Report every one, with its note, in the user's words; never report an adapted result as if it
-  were not. Use the study's `fit` key ([study-file.md](references/study-file.md#fit)) only when the
-  user rules a simplification out ("do not leave any fillets out": leave `defeature` out of
-  `fit.allow`) or names a memory or time budget.
-- **Estimates.** A `drop` result, or a static study standing in for one, is an estimate of an
-  equivalent steady load, not a simulation of the impact. Say "estimate" every time you quote it.
-- **Lite limits.** An analysis whose Status in the table says "lite" is a lite solver with stated
-  limits, listed in its row and its reference page and carried by its result. Quote the limits the
-  result carries whenever you quote its numbers.
-- **A lightened design.** `topology` is lite too: say it is a concept shape from a fixed design
-  mesh, quote the mass saved and the verified design's stress and displacement as a guide, and
-  point the user to the design STL to rebuild in CAD and re-check with `static`
-  ([topology.md](references/topology.md)).
-- **The Reynolds warning.** When a flow result warns that its Reynolds number is past the laminar
-  range, say so with its number: the real flow is likely turbulent, the pressure drop is a lower
-  bound and the flow pattern may be wrong. Then run the same study as `cfd_turbulent`
-  ([cfd-turbulent.md](references/cfd-turbulent.md)) and report that answer.
-- **A coupling that did not settle.** When an `fsi` result says the flow and the bending did not
-  settle, say so first: its numbers are the last state, not an answer. Offer the fixes in
-  [fsi.md](references/fsi.md#when-it-does-not-settle).
-
 ## Start with the task
 
 | Task | First action | Reference |
 | --- | --- | --- |
-| **Pick the analysis** | Match the question to a row of the table above; every analysis in it runs today, and its row says whether it is an estimate or lite. | [Choose the analysis](#choose-the-analysis) |
 | **Check a part under a load** | List its faces, write the study, solve, report. The workflow below. | [Linear static checklist](references/linear-static.md) |
 | **Check an assembly** | `cadgen fea parts` first, then write the study with a material per part, solve, read the findings by part. | [Assemblies](#assemblies) |
 | **Compare variants of a design** | Get the study right on one variant, then map its faces onto each other variant and solve each. | [Compare variants](#compare-variants) |
 | **Pick the faces to fix and load** | Prefer face references the user selected in the Viewer (`/work/bracket.step#bracket/face 17`). Otherwise list faces and match by description. | [Face selection](references/linear-static.md#choosing-faces) |
 | **Write or edit a study** | One JSON object: material, fixtures, loads, mesh; for an assembly also parts and connections. | [Study file](references/study-file.md) |
 | **Choose a material** | Use the table by name, or give E, ν and yield explicitly. | [Materials](references/materials.md) |
-| **Judge the answer** | Compare with a hand estimate, refine once, read the peak away from the fixture. | [Validation](references/linear-static.md#judging-the-answer) |
+| **Judge the answer** | Compare with a hand estimate, read the peak away from the fixture, refine if it matters. | [Validation](references/linear-static.md#judging-the-answer) |
 
 Modelling the part itself is `$cad`; this skill only reads a saved `.step` or `.xbf` (a model's
 `@step` or `@xbf` output, or `cadgen export <id> part.step`). Show the result GLB with
@@ -163,29 +93,29 @@ needs the sandbox's permission: it starts the engine and holds it. Without it, a
 shell cannot start the engine; when a command says no engine is running, run `cadgen server`
 outside the sandbox once.
 
-Solving needs cadgen's opt-in `fea` extra, which brings the mesher (netgen)
-and the solver (scikit-fem, pyamg); `fea faces` and `fea parts` work without it. The first time a
-study runs, `cadgen fea solve` fails with "cadgen's fea extra is not installed"; that is a missing
-install, not a modelling error. Its `pip install` hint does not apply under uv: run the same
-command with the extra in the requirement, and keep using that form for `fea solve` from then on
-(the first run downloads the mesher and solver, large; later runs reuse them). A solve reads the
-document in its own process, so it needs no engine running:
+Solving needs two things `fea faces` and `fea parts` do not:
 
-```bash
-uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.8.1" cadgen fea solve part.step --study study.json
-```
+- **The mesher.** cadgen's opt-in `fea` extra is netgen (`netgen-mesher`), which meshes in a
+  process of its own. Without it, `cadgen fea solve` fails with "cadgen's fea extra is not
+  installed"; that is a missing install, not a modelling error. Its `pip install` hint does not
+  apply under uv: run the same command with the extra in the requirement, and keep using that form
+  for `fea solve` from then on (uv fetches netgen on the first run; later runs reuse it). A solve
+  reads the document in its own process, so it needs no engine running:
 
-The analyses CalculiX solves run on it, faster, and the first of them downloads it once (`cadgen:
-downloading the CalculiX solver (once, about 9 MB)`, 9 to 21 MB by platform) into cadgen's cache;
-nothing needs installing. Every result names its solver. When the download cannot happen (no
-network, a platform without a build) the same study runs on cadgen's built-in solver, which gives
-the same answer on the same mesh, more slowly, and the result says so. `CADGEN_CCX=0` turns
-CalculiX off; `CADGEN_CCX=/path/to/ccx` uses that one.
+  ```bash
+  uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.8.1" cadgen fea solve part.step --study study.json
+  ```
+
+- **The solver.** CalculiX (`ccx`) 2.20 or newer, installed by the person: `conda install -c
+  conda-forge calculix`, or the `calculix-ccx` package on Debian and Ubuntu. cadgen runs
+  `CADGEN_CCX` when it is set (`CADGEN_CCX=/path/to/ccx`), else the first `ccx` on PATH. A missing
+  or older one stops the solve with an error that says how to install it. cadgen downloads nothing
+  and has no other solver: ask the user to install CalculiX, or install it yourself with their
+  permission, then run the study again. Every result names the CalculiX version that solved it.
 
 Units are fixed: mm for geometry, N for forces, MPa for pressure, modulus and stress, t/mm³ for
 density, and g (9.81 m/s²) for gravity and acceleration. Restate every load in those units before
-you write it down. The full table, including the heat and flow units the other analyses take, is in
-[study-file.md](references/study-file.md#units).
+you write it down ([study-file.md](references/study-file.md#units)).
 
 ## Workflow
 
@@ -245,13 +175,15 @@ you write it down. The full table, including the heat and flow units the other a
    cadgen fea solve part.step FEA/part.bracket-load.glb --study study.json --vtu
    ```
 
-   When the safety factor comes out under 3 the run meshes again at half the element size and
-   solves again, by itself, and reports the finer result
+   When the safety factor comes out under 3 the run meshes again finer (half the element size,
+   less on a big model) and solves again, by itself, and reports the finer result
    ([Mesh](references/linear-static.md#mesh)). `--vtu` adds a ParaView file. `--json` prints the
    result as one JSON line for scripting. Progress lines (`[fea] reading the parts`, `[fea]
    meshing the glued shape at 6.01 mm`) print to stderr, never into the result on stdout;
    `--verbose` adds mesh and solve detail there. A study with no fixture, a face that is not on the
-   part, or an out-of-range ref is refused with a message naming the field.
+   part, an unknown key or an out-of-range ref is refused with a message naming the field. The
+   result files are replaced only once every one is written: a run that fails leaves the previous
+   result as it was.
 
 4. **Read the findings.** Every solve prints them after the numbers, one line each, `error:` or
    `warning:` and then what is wrong and what to do (`findings` in `--json` and the sidecar). Read
@@ -260,12 +192,12 @@ you write it down. The full table, including the heat and flow units the other a
 5. **Report**, in this order, with units: max von Mises (MPa) and where (`max_von_mises_at_mm`;
    say which feature it is near); the safety factor against yield and the yield used; max
    displacement (mm) and where; the applied load and the reaction (they balance, or the run warns);
-   the mesh size, element count and whether a refinement ran; every `adapted:` step with its
-   accuracy note. Then say in a sentence or two what the model assumes and what would change the
-   answer most (a softer fixture, a fillet at the peak, a different material). Open the GLB in the
-   Viewer for the user; the deformation is exaggerated by the `deformation_scale` the sidecar
-   records, so say that too. The Viewer draws the loads as arrows and the fixed faces as cones on
-   the model; a person can check them against what they meant before trusting the numbers.
+   the mesh size, element count and whether a finer re-solve ran. Then say in a sentence or two
+   what the model assumes and what would change the answer most (a softer fixture, a fillet at the
+   peak, a different material). Open the GLB in the Viewer for the user; the deformation is
+   exaggerated by the `deformation_scale` the sidecar records, so say that too. The Viewer draws
+   the loads as arrows and the fixed faces as cones on the model; a person can check them against
+   what they meant before trusting the numbers.
 
 ## Assemblies
 
@@ -323,9 +255,9 @@ Findings an assembly adds:
 | `gap_closed` | warning | Two parts a little apart, or a little into each other (an interference), within the tolerance were bonded anyway, moving geometry up to that far. | Check the gap is a modelling clearance and not a real one the joint should have, or that the interference is a slip and not a press fit whose preload matters; the stress at that joint is the model's closing, not the part's. |
 | `bonded_edge_peak` | warning | The peak sits on the edge of a bonded joint, where a rigid bond exaggerates stress. Appears wherever the part misses the study's `margin`, even when a finer mesh agreed: a rigid bond's edge is singular, so two meshes agreeing proves nothing there. | Read the stress a little away from the joint before redesigning; a bolted or welded joint is softer than this model. |
 
-`contact` connections run under the `contact` analysis and `bolt` connections under `bolt`; every
-other analysis refuses them ("not yet supported"); a pair set `free` inside a group that is glued
-through other parts is refused too.
+Parts that press and slide on each other (`contact`) and bolted joints (`bolt`) are not in this
+version: a connection of either type is refused ("not yet supported; use bonded or free"). A pair
+set `free` inside a group that is glued through other parts is refused too.
 
 ## Compare variants
 
@@ -346,16 +278,20 @@ configuration. Run the same study on each, with the faces mapped, and compare.
    the design's when they are meshed alike: give every study the baseline's `mesh.size_mm`.
 4. **Solve each to its own result:** `cadgen fea solve variant.step FEA/variant.fea.glb --study
    study.<variant>.json`.
-5. **Report one table**, a row per variant: the answer's numbers (max von Mises and where, safety
-   factor, max displacement; the first frequency for `modal`), whether a finer re-solve ran, and
-   the face mapping used (`baseline bracket/face 17 → bracket/face 21, the mounting face`) so the user can check
-   it. Say which variant answers their question best, and by how much.
+5. **Report one table**, a row per variant: max von Mises and where, safety factor, max
+   displacement, whether a finer re-solve ran, and the face mapping used (`baseline bracket/face 17
+   → bracket/face 21, the mounting face`) so the user can check it. Say which variant answers their
+   question best, and by how much.
 
 ## What the result means
 
-- **Nodal von Mises** is the reported peak. **Gauss-point von Mises** is the raw element value and
-  is always higher; a gap of more than 50 % means a stress concentration the mesh has not resolved,
-  usually at a fixed edge or a sharp inside corner. A finding says so when it matters.
+- **Nodal von Mises** is the reported peak: each element's stress at its integration points,
+  extrapolated to its nodes and averaged over the elements at a node (in an assembly, over each
+  part's own elements, so stress jumps across a change of material). It is usually the higher of
+  the two maxima. **Integration-point von Mises** (`max_von_mises_gauss_MPa`) is the raw element
+  value before that. When the integration-point peak stands more than 50 % above the nodal one, the
+  mesh has not resolved a concentration, usually at a fixed edge or a sharp inside corner; a
+  finding says so when it matters.
 - A clamped face is stiffer than any real bolt or weld, and the stress at its edge is a
   singularity: it grows with every refinement and never converges. Read the peak away from the
   fixture when the fixture edge is the maximum; peaks at fixed holes read high too. A sharp inside
@@ -390,10 +326,11 @@ under 10 % settles it); above the margin they would not change the answer.
 | `yields` | error | The peak stress is above the material's yield strength. | Make the part stronger where the peak is (thicker, deeper, a fillet or rib there), choose a stronger material, or confirm the load with the user; solve again. If a `peak_at_fixture` or `peak_concentration` finding sits beside it, read that first: the peak may be the model's, not the part's. |
 | `low_margin` | warning | It holds, but under the study's `margin`. | Strengthen it as for `yields`, or tell the user the margin it has and let them decide; never lower `margin` just to clear the finding. |
 | `peak_at_fixture` | warning | The peak sits on a fixed face or at its edge, where a perfectly rigid clamp exaggerates stress, and a finer solve did not settle it. | Read the stress a little away from the fixed face (the GLB's colours, or a probe in the VTU) before redesigning; if that is still high, the finding beside it stands. |
-| `peak_concentration` | warning | The Gauss-point peak is well above the nodal one: a sharp corner or concentrated load the mesh cannot resolve. | When the safety factor was under 3 the run already solved at half the mesh size, so refining the whole part again is not the next step: fillet the corner or spread the load over a larger face. Above 3 (a `margin` higher than that), refine once and compare: halve `mesh.size_mm`, or at a fillet or hole set it to a third of the radius (see [Mesh](references/linear-static.md#mesh)). |
+| `peak_concentration` | warning | The integration-point peak is well above the nodal one: a sharp corner or concentrated load the mesh cannot resolve. | When the safety factor was under 3 the run already solved finer, so refining the whole part again is not the next step: fillet the corner or spread the load over a larger face. Above 3 (a `margin` higher than that), refine once and compare: halve `mesh.size_mm`, or at a fillet or hole set it to a third of the radius (see [Mesh](references/linear-static.md#mesh)). |
 | `mesh_not_converged` | warning | The automatic finer solve moved the peak by more than 10 %. In an assembly, only for a part whose safety factor is under 3: a part far from failing is not worth distrusting. | A peak that kept rising sits on a singularity (a sharp corner, the fixed edge): fillet it or judge the stress away from it. Otherwise set a smaller `mesh.size_mm` and solve again before trusting the safety factor. |
 | `large_displacement` | warning | It moves more than 1 % of its size. | The small-displacement model is stretched: check the fit against mating parts and whether the deflection is acceptable; stiffen the part if not. |
 | `no_load` | warning | The peak stress is zero: no load reaches the part. | Check that the loaded faces are on the part and connected to the fixed ones, and that the force is not zero. |
 
-A `warning:` line that is not a finding (a slow solve, reactions that do not balance, a finer solve
-that failed) is about the run itself: read it, and mention it when it bears on the answer.
+A `warning:` line that is not a finding (a slow solve past 150 000 degrees of freedom, reactions
+that do not balance, a finer solve that was skipped or failed) is about the run itself: read it,
+and mention it when it bears on the answer.

@@ -6,9 +6,6 @@ import { TREE_GLYPH_STROKE } from "@text-to-cad/ui/primitives/tree-row";
  * grid at the trees' light stroke: a fixture is a cone pointing into the face it holds, in the
  * markers' muted grey, and a roller (a face that may slide) that cone on a plate that rolls on the
  * face; a load an arrow with a cone for its head, in their ink; a material a swatch.
- * Another analysis's setup in the same two tones, as its markers are: a thermometer (a fixed
- * temperature, grey), a flame (heat, ink), wind (the air that cools it, grey), a wave (the shaker,
- * ink), a drop (ink), the flow (ink) and a plane (a rigid floor, grey).
  */
 function Glyph({ className, children }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={TREE_GLYPH_STROKE * 1.5} strokeLinecap="round" strokeLinejoin="round"
@@ -43,27 +40,4 @@ export const STUDY_GLYPHS = Object.freeze({
     <rect x="4" y="4" width="16" height="16" rx="3.5" fill="currentColor" fillOpacity={0.25} />
     <path d="M8 16 16 8" strokeOpacity={0.6} />
   </>),
-  temperature: glyph(MUTED, <>
-    <path d="M14 14.76V4.5a2 2 0 0 0-4 0v10.26a4 4 0 1 0 4 0z" />
-    <circle cx="12" cy="17.5" r="1.6" fill="currentColor" />
-  </>),
-  heat: glyph(INK, <path d="M12 21c-3.5 0-6-2.4-6-5.7 0-3.3 2.6-5.1 3.5-8.3 1.6 1.2 2.4 2.9 2.5 4.6 1-.7 1.6-1.8 1.8-3.1 2.4 1.9 4.2 4.3 4.2 6.8C18 18.6 15.5 21 12 21z" fill="currentColor" fillOpacity={0.2} />),
-  convection: glyph(MUTED, <>
-    <path d="M3 8h10.5a2.5 2.5 0 1 0-2.5-2.5" />
-    <path d="M3 12h15.5a2.5 2.5 0 1 1-2.5 2.5" />
-    <path d="M3 16h7" />
-  </>),
-  wave: glyph(INK, <path d="M2 12c1.7-4 3.3-4 5 0s3.3 4 5 0 3.3-4 5 0 3.3 4 5 0" />),
-  drop: glyph(INK, <>
-    <path d="M12 3v11" />
-    <path d="M7.5 11 12 16.5 16.5 11" />
-    <path d="M4 20.5h16" />
-  </>),
-  flow: glyph(INK, <>
-    <path d="M3 8h13" />
-    <path d="M3 16h13" />
-    <path d="M14 4.5 20 8l-6 3.5" />
-    <path d="M14 12.5 20 16l-6 3.5" />
-  </>),
-  plane: glyph(MUTED, <path d="M6 9h15l-3 8H3z" fill="currentColor" fillOpacity={0.25} />),
 });

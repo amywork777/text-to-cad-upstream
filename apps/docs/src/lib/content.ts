@@ -199,7 +199,7 @@ export const skillGroups = [
     name: "FEA",
     path: "skills/fea",
     summary:
-      "Runs a linear static stress study on a STEP part, reporting peak stress, safety factor and displacement with a colour-mapped result.",
+      "Runs a linear static stress study on a STEP part or bonded assembly, solved by a locally installed CalculiX, reporting peak stress, safety factor and displacement with a colour-mapped result.",
   },
   {
     name: "G-code",

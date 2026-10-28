@@ -315,13 +315,13 @@ export const valueInputWidth = value => {
  * panel whose labels are sentences (an FEA result's controls): the label, wrapping between words,
  * shares its line with the value field, and the slider takes the whole row's width under them.
  */
-export function FileSheetSliderField({ label, value, onValueCommit, valueInputProps, labelTitle, children, wideLabel = false, action = null }) {
+export function FileSheetSliderField({ label, value, onValueCommit, valueInputProps, labelTitle, children, wideLabel = false }) {
   if (wideLabel) {
     return <FileSheetControlRow>
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5" data-position-control="" data-slider-layout="wide">
         {label != null ? <span className={cn(FILE_SHEET_FIELD_LABEL_CLASSES, "whitespace-normal [overflow-wrap:break-word]")} title={labelTitle && labelTitle !== label ? labelTitle : undefined}>{label}</span> : <span />}
-        <span className="flex items-center gap-1">{action}{onValueCommit ? <FileSheetValueInput value={value} onValueCommit={onValueCommit} {...valueInputProps}
-          className={cn("h-6 px-1.5", valueInputWidth(value), valueInputProps?.className)} /> : null}</span>
+        {onValueCommit ? <FileSheetValueInput value={value} onValueCommit={onValueCommit} {...valueInputProps}
+          className={cn("h-6 px-1.5", valueInputWidth(value), valueInputProps?.className)} /> : <span />}
         <div className="col-span-2 min-w-0">{children}</div>
       </div>
     </FileSheetControlRow>;
@@ -333,8 +333,8 @@ export function FileSheetSliderField({ label, value, onValueCommit, valueInputPr
         {/* Under its label, its thumb clear of the label's foot. */}
         <div className="mt-1 min-w-0">{children}</div>
       </div>
-      <span className="flex items-center gap-1">{action}{onValueCommit ? <FileSheetValueInput value={value} onValueCommit={onValueCommit} {...valueInputProps}
-        className={cn("h-6 px-1.5", valueInputWidth(value), valueInputProps?.className)} /> : null}</span>
+      {onValueCommit ? <FileSheetValueInput value={value} onValueCommit={onValueCommit} {...valueInputProps}
+        className={cn("h-6 px-1.5", valueInputWidth(value), valueInputProps?.className)} /> : null}
     </div>
   </FileSheetControlRow>;
 }

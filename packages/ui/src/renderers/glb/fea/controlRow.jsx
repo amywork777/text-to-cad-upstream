@@ -26,13 +26,11 @@ export function controlStep(control) {
  * settings draw one), full width with no label where its options say what it is (`hideLabel`).
  * A plain function, not a component: the panel's rows are its own elements, in its own order.
  *
- * @param {{ control: object, value: unknown, onChange(value: unknown): void, valueText(value: number, control: object): string,
- *   action?: unknown }} props
+ * @param {{ control: object, value: unknown, onChange(value: unknown): void, valueText(value: number, control: object): string }} props
  *   `control.ariaLabel`: the accessible name, where it differs from its label; `control.step`: a slider's increment,
- *   otherwise about a thousandth of its range; `control.wideLabel`: a number's label runs over its value field;
- *   `action`: a compact icon button beside a number's value field (a motion's play/pause).
+ *   otherwise about a thousandth of its range; `control.wideLabel`: a number's label runs over its value field.
  */
-export function controlRow({ control, value, onChange, valueText, action = null, t = english }) {
+export function controlRow({ control, value, onChange, valueText, t = english }) {
   const label = control.label;
   const name = control.ariaLabel || label;
   if (control.type === "enum") {
@@ -52,7 +50,6 @@ export function controlRow({ control, value, onChange, valueText, action = null,
       label={label}
       labelTitle={control.labelTitle || label}
       wideLabel={control.wideLabel === true}
-      action={action}
       value={valueText(value, control)}
       onValueCommit={(draft) => onChange(parseFileSheetNumberInput(draft, { fallback: value, min: control.min, max: control.max }))}
       valueInputProps={{ ariaLabel: control.ariaLabel ? t("fea.controlValue", { name: control.ariaLabel }) : t("fea.sliderValue", { name: label }) }}

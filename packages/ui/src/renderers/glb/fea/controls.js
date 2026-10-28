@@ -1,11 +1,10 @@
 /**
- * What you see's controls that an analysis offers when the study's view names none
- * (`defaultControls`, ./analyses), and the pieces the view's own controls share with them. Each is
- * a generic parameter (`@text-to-cad/core/common/parameters.js`) with `drives`, what it moves.
+ * What you see's controls when the study's view names none, and the pieces the view's own controls
+ * share with them. Each is a generic parameter (`@text-to-cad/core/common/parameters.js`) with
+ * `drives`, what it moves.
  */
 import { clamp } from "@text-to-cad/core/common/numbers.js";
 import { fieldWord } from "./fields.js";
-import { DISPLACEMENT, frameControl, sigmaControl } from "./series.js";
 import { english } from "../../../i18n/core.js";
 
 /** Sensible slider bounds for the deformation scale, with no view to say: 0 to four times the file's own. */
@@ -36,37 +35,4 @@ export function fieldAndDeformation(result, t = english) {
       labelTitle: t("fea.deformationTitle"), min: range.min, max: range.max, step: range.step,
       defaultValue: clamp(result.deformationScale, range.min, range.max), unit: "×" },
   ];
-}
-
-/** Whether a flow or a field was mapped onto the structure: its displacement is among the fields. */
-export const mapsStructure = (result) => result.fields.some((entry) => String(entry.attribute).toLowerCase() === "_displacement");
-
-/** The field select, and the deformation only where the result was mapped onto the structure: an unmapped flow or field moves nothing. */
-export function fieldAndMappedDeformation(result) {
-  const [field, deformation] = fieldAndDeformation(result);
-  return mapsStructure(result) ? [field, deformation] : [field];
-}
-
-/** Whether the result carries a vector to deform the model by: the displacement baked in, or a frame's displacement or mode shape. */
-export function deforms(result) {
-  const geometry = result.mesh?.geometry;
-  const vector = (name) => Boolean(name && geometry?.getAttribute(name)?.itemSize === 3);
-  return vector(DISPLACEMENT) || Boolean(result.series?.frames.some((frame) => vector(frame.attributes.displacement) || vector(frame.attributes.mode_shape)));
-}
-
-/**
- * What you see's controls for an analysis with no view, from what the result carries (spec 6.4): a
- * series of modes opens on the mode picker and the deformation (modal, buckling); a series of times
- * or frequencies on the scrubber, the field and, where it deforms, the deformation (a transient,
- * a harmonic sweep, a load stepped); RMS fields on the field and the sigma level (random vibration);
- * anything else on the field and, where it deforms, the deformation (a temperature has no deformation).
- */
-export function seriesControls(result, t = english) {
-  const [field, deformation] = fieldAndDeformation(result, t);
-  const moves = deforms(result);
-  const frames = frameControl(result, undefined, {}, t);
-  if (result.series?.kind === "mode" && frames) return moves ? [frames, deformation] : [frames, field];
-  const sigma = sigmaControl(result);
-  if (sigma) return [field, sigma];
-  return [...(frames ? [frames] : []), field, ...(moves ? [deformation] : [])];
 }

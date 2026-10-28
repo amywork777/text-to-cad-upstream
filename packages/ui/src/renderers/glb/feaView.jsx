@@ -11,27 +11,18 @@ export { default as FeaSurface } from "./FeaSurface.jsx";
 export { default as FeaStudyPanel, FaceCard } from "./FeaStudyPanel.jsx";
 export { default as FeaColourBar } from "./FeaColourBar.jsx";
 export { default as FeaLoadLabels } from "./FeaLoadLabels.jsx";
-export { default as FeaFallClock } from "./FeaFallClock.jsx";
 export {
-  applyDeformation, faceIndices, facePartDetail, faceTitle, facePromptSummary, faceRole, feaControls, feaDefaults, feaMarkerShow, feaMotion, feaPresets, feaSections, feaShownControls,
-  feaShowsParts, feaVerdict, findingSelector, pickFace, readFeaResult, recolorByField, resultSourcePath, partRows, routineScale, studySections, symmetricRange,
-  weakestPartIndex
+  applyDeformation, faceIndices, facePartDetail, faceTitle, facePromptSummary, faceRole, feaControls, feaDefaults, feaMarkerShow, feaPresets, feaSections, feaShownControls,
+  feaShowsParts, feaVerdict, findingSelector, pickFace, readFeaResult, recolorByField, resultSourcePath, partRows, studySections, weakestPartIndex
 } from "./feaResult.js";
-export { PLANE_SIZE, createFeaMarkers, floorPlaneMaterial, markerGateText } from "./feaMarkers.js";
+export { createFeaMarkers, markerGateText } from "./feaMarkers.js";
 export { feaDrawnBounds } from "./feaBounds.js";
-export { fallFrame, fallMatrix, feaFallBounds, pastFloor } from "./feaFall.js";
-export { fallAt, fallWords, framesAtTime, shortTime } from "./fea/fall.js";
-export { motionSpan } from "./fea/motion.js";
-export { paceWords, readTracers } from "./fea/poses.js";
-export { feaPoseBounds, poseScale } from "./feaPose.js";
-export { createFeaTracers } from "./feaTracers.js";
-export { feaAnalysis } from "./fea/analyses/index.js";
-export { activeFrameIndex, deformationAt, fieldAtFrame, framesBetween, sigmaScale, snapFrame } from "./fea/series.js";
 
-// Each routine an analysis plays (`routine`, fea/analyses), and how long one pass of it is: the Load ramp
-// (the load going on, from none to all of it; buckling's Buckle), Vibrate (one swing a second) and
-// Play (a series' frames, start to end); Ring (a sound mode's pressure swinging through its cycle, once a second).
-export const ROUTINE_SECONDS = Object.freeze({ load_ramp: 2, vibrate: 1, play: 3, pulse: 1 });
+/**
+ * A result's routine, which Preview and the sidebar's Animation play: the Load ramp, the load going on from none
+ * to the load shown over `duration` seconds, colours, deformation and markers together.
+ */
+export const LOAD_RAMP = Object.freeze({ id: "fea:load-ramp", key: "fea.loadRamp", duration: 2 });
 // What the markers are drawn in. The theme has no colour of its own to spare: every saturated hue is
 // the ramp's or the chosen faces' magenta, so a load is the ink and a fixture a muted grey.
 export const MARKER_COLOURS = Object.freeze({
@@ -63,14 +54,12 @@ export function controlValue(control, chosen) {
 }
 
 // Study's setup rows by the marker kind they stand for: a row `<row kind>:<group>` chooses its entry's markers.
-const ROW_MARKERS = Object.freeze({ load: "load", fixed: "fixture", roller: "roller", body: "body_load", shaken: "base_excitation", temperature: "temperature",
-  heat: "heat", convection: "convection", drop: "drop", inlet: "inlet", outlet: "outlet", rigid: "rigid_plane", source: "speaker",
-  electrode: "electrode", bearings: "bearing" });
+const ROW_MARKERS = Object.freeze({ load: "load", fixed: "fixture", roller: "roller", body: "body_load" });
 
 /**
  * Whether a marker is of what Study chose: a setup row's markers (a load's arrows on its faces, a
- * fixed row's cones, a roller row's cones on their plates, a heat input's wavy arrows, ...; a body load, an opening or a floor by its
- * row alone, standing on no face), and every marker on a face picked on the result. A part or a joint has none.
+ * fixed row's cones, a roller row's cones on their plates; a body load's by its row alone, standing on
+ * no face), and every marker on a face picked on the result. A part or a joint has none.
  */
 export function markerChosen(faces, site) {
   const [kind, group] = String(faces.id).split(":");
@@ -87,19 +76,12 @@ export function markerChosen(faces, site) {
  * open in it) and above the colour bar: the viewport reads what they cover whenever it fits the camera
  * (`runtime.framingInset`, read at the fit, so a section opened or widened since counts as it is then). Installed before the shell's first fit of the result: a child's layout effect runs first.
  */
-export function FeaFraming({ runtimeRef, hostRef, sync, syncRef }) {
+export function FeaFraming({ runtimeRef, hostRef }) {
   useLayoutEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return undefined;
     runtime.framingInset = () => framingInset(hostRef.current);
     return () => { if (runtime.framingInset) delete runtime.framingInset; };
   }, [runtimeRef, hostRef]);
-  // How the renderer tells the viewport its scene's bounds moved (a drop lifted off the floor), so the stage and the
-  // camera's near and far planes follow it.
-  useLayoutEffect(() => {
-    if (!syncRef) return undefined;
-    syncRef.current = sync || null;
-    return () => { syncRef.current = null; };
-  }, [sync, syncRef]);
   return null;
 }

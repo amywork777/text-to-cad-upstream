@@ -53,7 +53,6 @@ function Choosable({ choice, chosen, onChoose, label, className, children }) {
  * One check, each the same way: its status icon and name in its own tone (so a passing check under a
  * failing headline reads as passing), a thin bar of how much of its limit it uses, and its value
  * against its limit. An assembly's part a stress check is about is its choice's to say, and its tint's.
- * A fact with no limit (a piezo resonance's mode: `use` null) has no bar, in no tone.
  */
 function CheckRow({ row, chosen, onChoose }) {
   const { t } = useI18n();
@@ -65,9 +64,8 @@ function CheckRow({ row, chosen, onChoose }) {
         <Icon className="size-3 shrink-0" strokeWidth={2} aria-hidden="true" />
         <span className="min-w-0 [overflow-wrap:break-word]" data-fea-check-label="">{row.label}</span>
       </div>
-      {Number.isFinite(row.use) ? <WorkBar use={row.use} margin={row.margin} tone={tone} label={t("fea.limitBar", { check: row.label })} /> : null}
+      <WorkBar use={row.use} margin={row.margin} tone={tone} label={t("fea.limitBar", { check: row.label })} />
       <p className="min-w-0 text-micro leading-3.5 text-muted-foreground tabular-nums [overflow-wrap:break-word]" data-fea-check-line="">{row.line}</p>
-      {row.hint ? <p className="min-w-0 text-micro leading-3.5 text-muted-foreground [overflow-wrap:break-word]" data-fea-check-hint="">{row.hint}</p> : null}
     </Choosable>
   </li>;
 }

@@ -219,7 +219,10 @@ class MeshOptions(unittest.TestCase):
 
 
 class SkillDocs(unittest.TestCase):
-    """The skill says what the registry says: every built analysis runs today, in both of its tables."""
+    """The skill says what the registry says: every registered analysis runs today, in both of its tables, and nothing
+    the rebuild removed (the fit ladder, a downloaded or built-in solver, the other analyses' pages) is still taught."""
+
+    SKILL = Path(__file__).resolve().parents[4] / "skills" / "fea"
 
     def _rows(self, path: Path, heading: str) -> list[list[str]]:
         import re
@@ -230,32 +233,28 @@ class SkillDocs(unittest.TestCase):
         lines = [line for line in section.splitlines() if line.startswith("|") and "---" not in line]
         return [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in lines[1:]]  # past the header
 
-    def test_every_built_analysis_has_a_runs_today_row_and_a_status_cell(self):
-        import re
+    def _pages(self) -> list[Path]:
+        return [self.SKILL / "SKILL.md", *sorted((self.SKILL / "references").glob("*.md"))]
 
-        skill = Path(__file__).resolve().parents[4] / "skills" / "fea"
-        built = [name for name, entry in REGISTRY.items() if not entry.planned]
-        planned = [name for name, entry in REGISTRY.items() if entry.planned]
+    def test_every_registered_analysis_has_a_runs_today_row_in_both_tables(self):
+        import re
 
         # SKILL.md's "Choose the analysis": the analysis is the first `name` of its second column.
         status_of: dict[str, list[str]] = {}
-        for cells in self._rows(skill / "SKILL.md", "## Choose the analysis"):
+        for cells in self._rows(self.SKILL / "SKILL.md", "## Choose the analysis"):
             if len(cells) < 5:
                 continue
             found = re.match(r"`([a-z_]+)`", cells[1])
             if found:
                 status_of.setdefault(found.group(1), []).append(cells[3])
-        for name in built:
+        self.assertEqual(sorted(status_of), sorted(REGISTRY), "one row (or more) per registered analysis, no other")
+        for name, statuses in status_of.items():
             with self.subTest(table="SKILL.md", analysis=name):
-                self.assertIn(name, status_of, f"{name} has no row in SKILL.md's Choose the analysis table")
-                self.assertTrue(all(status.startswith("**Runs today**") for status in status_of[name]), status_of[name])
-        self.assertEqual(sorted(set(status_of) - set(REGISTRY)), [])
-        for name in planned:
-            self.assertFalse(any("Runs today" in status for status in status_of.get(name, [])), name)
+                self.assertTrue(all(status.startswith("**Runs today**") for status in statuses), statuses)
 
         # study-file.md's `analysis` table: one row per registered name, its word and its status.
         table = {}
-        for cells in self._rows(skill / "references" / "study-file.md", "## `analysis`"):
+        for cells in self._rows(self.SKILL / "references" / "study-file.md", "## `analysis`"):
             found = re.fullmatch(r"`([a-z_]+)`", cells[0])
             if found and len(cells) >= 4:
                 table[found.group(1)] = (cells[1], cells[2])
@@ -263,31 +262,81 @@ class SkillDocs(unittest.TestCase):
         for name, (word, status) in table.items():
             with self.subTest(table="study-file.md", analysis=name):
                 self.assertEqual(word, REGISTRY[name].word)
-                self.assertTrue(status.startswith("planned" if REGISTRY[name].planned else "runs today"), status)
-        # Nothing says an analysis is only coming or that static alone runs.
-        for path in (skill / "SKILL.md", skill / "references" / "study-file.md", skill / "references" / "planned-next.md"):
-            text = path.read_text(encoding="utf-8")
-            for stale in ("coming, not in this cadgen", "Only `static` runs", "the only one that runs today", "is planned, and"):
-                self.assertNotIn(stale, text, f"{path.name} still says {stale!r}")
+                self.assertTrue(status.startswith("runs today"), status)
+
+    def test_nothing_removed_is_still_taught(self):
+        from cadgen._internal.fea.study import COMMON_KEYS
+
+        self.assertNotIn("fit", COMMON_KEYS)
+        stale = (
+            "`fit`", "fit.allow", "adapted:", "ladder", "linear_elements", "local_refine", "defeature", "idealise",
+            "built-in solver", "downloads it once", "downloading the CalculiX", "CADGEN_CCX=0", "scikit-fem", "pyamg",
+            "Gauss-point peak is", "always higher", "Lite limits",
+        )
+        for path in self._pages():
+            text = " ".join(path.read_text(encoding="utf-8").split())
+            for phrase in stale:
+                with self.subTest(page=path.name, phrase=phrase):
+                    self.assertNotIn(phrase, text)
+
+    def test_the_setup_names_the_mesher_and_the_installed_solver(self):
+        from cadgen._internal.fea.calculix import CCX_ENV, MINIMUM, install_hint
+
+        text = " ".join((self.SKILL / "SKILL.md").read_text(encoding="utf-8").split())
+        setup = text.split("## Setup", 1)[1].split("## Workflow", 1)[0]
+        self.assertIn(f"`{CCX_ENV}`", setup)
+        self.assertIn(f"{MINIMUM[0]}.{MINIMUM[1]} or newer", setup)
+        self.assertIn("conda install -c conda-forge calculix", install_hint())
+        self.assertIn("conda install -c conda-forge calculix", setup)
+        self.assertIn("calculix-ccx", setup)
+        self.assertIn("netgen", setup)
+        self.assertIn("downloads nothing", setup)
+
+    def test_the_nodal_peak_is_the_one_documented_as_usually_higher(self):
+        for path in (self.SKILL / "SKILL.md", self.SKILL / "references" / "linear-static.md"):
+            text = " ".join(path.read_text(encoding="utf-8").split())
+            with self.subTest(page=path.name):
+                self.assertIn("usually the higher of the two", text)
 
     def test_the_skill_is_a_router_and_links_each_reference_page_once_from_its_table(self):
         import re
 
-        skill = Path(__file__).resolve().parents[4] / "skills" / "fea"
-        text = (skill / "SKILL.md").read_text(encoding="utf-8")
+        text = (self.SKILL / "SKILL.md").read_text(encoding="utf-8")
         description = re.search(r"^description: (.*)$", text, re.M).group(1)
         self.assertLess(len(description), 1024)
-        # A router: it names kinds of question in plain words, never every analysis by its key.
+        # A router: it names kinds of question in plain words, never an analysis by its key.
         self.assertFalse([name for name in REGISTRY if f"`{name}`" in description or name in description.split()])
         self.assertNotIn("—", description)
         section = text.split("## Choose the analysis", 1)[1]
         section = re.split(r"\n#{2,3} ", section, maxsplit=1)[0]
         linked = re.findall(r"\]\(references/([a-z0-9-]+\.md)", section)
         general = {"materials.md", "study-file.md", "planned-next.md"}
-        pages = sorted(path.name for path in (skill / "references").glob("*.md") if path.name not in general)
+        pages = sorted(path.name for path in (self.SKILL / "references").glob("*.md") if path.name not in general)
         self.assertEqual(sorted(linked), pages, "each analysis page is linked exactly once from the table")
         for page in general:
             self.assertIn(f"references/{page}", text)
+
+    def test_every_relative_link_lands_on_a_page_and_its_heading(self):
+        import re
+
+        def anchor(heading: str) -> str:
+            slug = re.sub(r"[^\w\- ]", "", heading.strip().lower())
+            return slug.replace(" ", "-")
+
+        anchors = {}
+        for path in self._pages():
+            headings = re.findall(r"^#{1,6} (.+)$", path.read_text(encoding="utf-8"), re.M)
+            anchors[path.resolve()] = {anchor(heading) for heading in headings}
+        for path in self._pages():
+            for target in re.findall(r"\]\(([^)\s]+)\)", path.read_text(encoding="utf-8")):
+                if re.match(r"[a-z]+:", target):
+                    continue
+                page, _, fragment = target.partition("#")
+                resolved = (path.parent / page).resolve() if page else path.resolve()
+                with self.subTest(page=path.name, link=target):
+                    self.assertIn(resolved, anchors, "links to a page the skill does not ship")
+                    if fragment:
+                        self.assertIn(fragment, anchors[resolved])
 
 
 class PrivateNames(unittest.TestCase):

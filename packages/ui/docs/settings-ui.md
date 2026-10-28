@@ -766,31 +766,22 @@ on screen (`kit/status/statusLabels.js`).
 
 ## An FEA result
 
-A GLB that `cadgen fea solve` wrote is a result: its mesh carries every field, the true
-displacement, a plain-language summary, the study it was solved for and the source face of
-every triangle (`glb/feaResult.js`). The study is read once there (`result.study`: what every
-analysis shares, and what one alone echoes, an electromagnetic study's voltages, currents, coils and
-AC source, a composite's layup and ply materials), and every analysis reads it from there, never the
-file's raw echo. Its choices are Study's, and what the colours mean is on
-the view; the view's own settings are any GLB's. It has no mode of its own.
+A GLB that `cadgen fea solve` wrote is a result: a linear static stress study of a part or a bonded
+assembly, its mesh carrying every field (von Mises stress and the displacement), the true
+displacement, a plain-language summary, the study it was solved for and the source face of every
+triangle (`glb/feaResult.js`). The study is read once there (`result.study`: the material, fixtures,
+loads, mesh and margin), and the viewer reads it from there, never the file's raw echo. Its choices
+are Study's, and what the colours mean is on the view; the view's own settings are any GLB's. It
+has no mode of its own.
 
 The FEA viewer is a chunk of its own (`glb/feaView.jsx`: its surface, `glb/FeaSurface.jsx`, Study, the
 colour bar, the markers, `feaResult.js` and `fea/`), which `GlbRenderer` loads with one `import()` only once
 the loaded scene carries a mesh `cadgen fea solve` wrote (`generator` and `fields` in its extras), and then draws
 the file with its surface instead of the GLB's: one shell, the same tools, the result's own layers. A plain
 GLB never fetches it and renders as it always has; a result waits as the file loading until the
-chunk is in (loaded once, for every result after it), so it is framed once, as it is drawn.
-
-A result is of one analysis (`extras.analysis.type`; none is static): Strength (static),
-Vibration, Buckling, Heat, Heat over time, Heat stress, Shaking, Random vibration, Shock, Over
-time, Fatigue life, Drop (estimate) and the Tier 3 "lite" Flow, Drop impact, Permanent bend and
-Contact. What the viewer does per analysis is one registry entry each (`glb/fea/analyses/`: its
-word, the noun its takeaway uses, its tier, the check kinds it judges, What you see's controls
-with no view, its setup groups, its routine, its marker kinds and its markers' gate's title), per
-check kind one row of `glb/fea/checkKinds.js` and per field one of `glb/fea/fields.js`; a series of
-frames (modes, times, frequencies) is `glb/fea/series.js`. Everything below holds for every
-analysis; where one differs it says so. A static result, and one written before analyses were, is
-exactly as it always was.
+chunk is in (loaded once, for every result after it), so it is framed once, as it is drawn. Its words
+are in `glb/fea/`: per check kind one row of `checkKinds.js` (stress and displacement), per field one
+of `fields.js`, Study's setup in `setup.js` and What you see's own controls in `controls.js`.
 
 - **Its tools, Parts and Study.** A result has every GLB's tools (`kit/tools/sceneTools.jsx`): Select first,
   picking the result's faces rather than its nodes, then Annotate, Measure and Clip (below). Study, and an
@@ -824,82 +815,23 @@ exactly as it always was.
         margin (`study.margin`, else cadgen's 2) and **Strong enough** from it up; a displacement
         check **Moves too much**, **Close to the limit** (within a tenth of its limit) or **Stiff
         enough**. Several say how many fail ("Fails both checks", "Fails 1 of 2 checks"), else
-        **Close to the limit** or **Passes all checks**. A load path that stopped short of the full
-        load (`collapsed`) whose checks all hold at the last load it carried is headed **Stops short of
-        the load**, in the warning tone, never a pass.
+        **Close to the limit** or **Passes all checks**.
       - **What it means for the load**, one line: how many times this load the weakest check takes
-        before its limit, floored ("OK only to 0.4× this load" under 1, "OK up to 1.6× this load"),
-        the noun the analysis's ("this shake", "this drop", "this heat"); buckling's load factor
-        falls as the load grows ("OK up to 13× this load"); a check that grows with the square of what
-        drives it (`scaling: "quadratic"` on the check: a magnetic force's stress and displacement, with
-        the current squared) takes the square root of its room ("OK up to 218× this current", not 47619×;
-        a spinning rotor's stress, with the speed squared, likewise). An analysis not linear in its load
-        (creep, a permanent bend, contact, a bolted joint, a composite, a drop impact, flow, flow and
-        bending, two fluids) never says a load multiple: cadgen tags its checks `scaling: "none"` and its
-        registry entry says `scaling: "none"` for a file older than that, so the worst check's own
-        sentence is the line ("Steady creep · Peak 100 MPa, limit 250 MPa"); of the checks as bad as the
-        worst, the first the person named in the study's view (`view.checks[].label`, "Bore swell": their
-        question) says it, before a default one that uses more of its limit. Where the worst check's kind does not
-        move with the load (a frequency, a temperature, a pressure drop), its own sentence instead
-        ("First mode 85 Hz, must stay above 60 Hz", "Hottest 84 °C, 16 °C under its limit"). The
-        line says how far to trust it, and nothing else: an estimate (Tier 2, drop) leads with
-        "Estimate · "; a Tier 3 analysis leads with its short limit word ("Laminar · ", "Rigid floor · ",
-        "Lite · " where it has none), and a flow the file warns ran past the laminar range with
-        "Laminar · unreliable above Re 2000 · " (1000 for an external flow, or the number the warning
-        names); a fast gas flow the file warns of (`analysis.mach` not `checked`) adds what it ran past
-        after its word, "Ideal gas · past Mach 1.8 · " (the limit the file names), or "Ideal gas ·
-        supersonic outlet · " where the peak is within it but the gas leaves faster than sound. A
-        load path that stopped short of the full load (`collapsed`, the analysis's `stopCaption`) leads
-        with that before anything else (each check is still judged on its own number where it stopped: a
-        bolt under its proof load holds): a contact or bolt solve "Stops at about 20 % of the load · ", a
-        permanent bend "Collapses at about 70 % of the load · " (the file's sentence, else from its
-        `load_percent`), then its limit word and its worst check. Two fluids stopped at its time limit
-        (the file's "Stopped at its time limit at t = 420 ms of 1.5 s ..." in `analysis.warnings`) leads
-        the same way, "Stopped at its time limit at 420 ms · Laminar · ", its checks' labels ending
-        "(stopped at 420 ms)" and a pass shown close. Two fluids that spilled (the file's "Spills over the
-        brim: ..." in `analysis.warnings`, its fill level check failed by the spill) says that as the
-        takeaway, never the fill level's line, which reads at most the brim: "Laminar · Spills over the
-        brim: 2.3 mL left the tank (6.4 % of the liquid)". Two fluids' fill level is the highest point
-        of the liquid's surface anywhere inside, so its row may read higher than a probe's curve. A
-        contact (or bolt) solve whose forces did not settle at a load step (`analysis.unsettled`)
-        leads with that next, "Not reliable · contact did not settle at 80% · ", the
-        first step it names; its checks are ordinary fails, shown as any are. A result that took a step to fit the run that cost some accuracy (`extras.fit`, a
-        step with an accuracy note) ends with " · adapted". A Tier 1 result that took none is as
-        ever.
+        before its limit, floored ("OK only to 0.4× this load" under 1, "OK up to 1.6× this load").
       - **Each check, the same way**, worst first (failing before close before passing, then the
-        checks the person named in the view, in their order, then the most of its limit used), under a hairline: its icon and name in its own tone (its name in
+        checks the person named in the view, `view.checks[].label`, in their order, then the most of
+        its limit used), under a hairline: its icon and name in its own tone (its name in
         the person's words, "Bulkhead top sag", or Strength), a thin bar of how much of its limit it
         uses (a `meter`: filled to the value over the limit, held at full past it with its end
         striped, and for a stress check a tick at the margin, which the meter's text names), and its
         value against its limit ("1.04 mm, limit 0.5 mm", three figures for a displacement: 1.04 is
-        not 1; "405 MPa, limit 276 MPa", the limit an assembly's weakest part's yield). An electric
-        field whose peak is out in the air (`where.in: "air"`, the part beside it `where.near`), past what
-        the colours on the parts' surface show, says so: "Peak 4.5 kV/mm, in the air by hv-rod, limit 3
-        kV/mm". An analysis may add a muted hint under a check's line (its registry entry's
-        `checkHint`): heat stress, where the file finds the peak on a clamped edge (the
-        `singular_clamped_edge` finding, written where its colours stop below that peak), judges strength
-        (and the headline's multiple, through the file's safety factor) on the stress a little away from
-        the edge, where the colours stop, the check keeping the edge's own peak (`edge_peak`), and says under
-        Strength "Judged a little away from the clamped edge: the peak there, 1882 MPa, is a singularity
-        that grows as the mesh is refined"; a file older than that, judged at the edge, says "Peak at the
-        clamped edge: a singularity that grows as the mesh is refined. Read the stress a little away from
-        the edge". A bolted joint's slip says which way it goes ("Sideways 950 N, friction holds up to 1
-        kN"; slipping, where the two are equal, "Sideways 2 kN, at the friction limit: slips"; past it, "…friction holds only 2 kN"). An analysis may
-        also add rows of its own with no limit (its registry entry's `facts`): a piezo resonance, each mode
-        ("Mode 1", "6.5 kHz, anti-resonance 7.1 kHz, k_eff 0.40", `analysis.modes`), in no tone and with no
-        bar, after any checks, each chosen with the whole result and showing its mode; with no checks
-        they are the verdict, headed by the first ("First resonance 6.5 kHz", "Linear · Anti-resonance
-        7.1 kHz, coupling k_eff 0.40"), in no tone. A magnetic result's force on each part is such a row too
-        (`analysis.forces`: "Force on the plunger", "0.424 N down, its magnetic pull"; on a coil "the current
-        in the field"); with no checks, "Pulls the plunger with 0.424 N". A line is kept whole in pieces that break between them, never inside a word ("Factor
-        4.0 at 100 million cycles, needs 1.5" breaks before "at"). Each check is
+        not 1; "405 MPa, limit 276 MPa", the limit an assembly's weakest part's yield). A line is
+        kept whole in pieces that break between them, never inside a word. Each check is
         chosen on a press, as Study's rows are: it tints the faces it is over (`faces`), else the face
         it peaks on (`where.ref`), else names the whole result, and carries its sentence into Quick
         Edit ("Tip sag fails: moves 0.62 mm, limit 0.5 mm (OK only to 0.8× this load)"; an
         assembly's stress check names its part there: "Strength fails in bulkhead right support
-        block: ..."). A check whose value occurs at a frame of the result's series (`at.frame`: a
-        mode, a moment, a frequency) also shows that frame when chosen: the mode picker or the
-        scrubber moves there (with neither, the view still shows it), so "Motor speed" opens mode 2.
+        block: ...").
       Everything follows the load shown (`load_scale` k): each value and share of its limit is k
       times the solved one, so a check, and the headline, can change its word. With no stress it
       says **No stress** and "Check the load reaches the part", in no tone and with no checks; at a
@@ -907,8 +839,6 @@ exactly as it always was.
       by cadgen, value against limit, `ratio`, `status`), a kind the viewer does not know skipped; a
       result older than them has the one stress check, derived from its safety factor, so it says
       what it always did. A result with a stress but no safety factor and no checks has no verdict.
-      "No stress" is the static family's alone (static, heat stress, drop): another analysis with no
-      checks it knows has no verdict.
     - **The setup**, read as sentences, each heading muted with, in the disclosure column, the glyph
       its marker is drawn as on the model (`glb/feaGlyphs.jsx`, lucide's grid at the trees' light
       stroke): **Held at** (a cone pointing into a face, the fixtures' grey), one row per fixed face
@@ -917,48 +847,27 @@ exactly as it always was.
       same grey), one row per face of a roller fixture (`type` "roller", a frictionless sliding
       support), named as Held at's are, its hint "May slide along the face, not move off it", chosen
       as Held at's are, tinting its faces and its markers ("Slides on face 3"; loaded too, "Sliding
-      and loaded face 3"); every analysis that says where it is held says where it slides;
-      **Pushed** (an arrow with a cone
+      and loaded face 3"); **Pushed** (an arrow with a cone
       for its head, the loads' ink), one row per load, how much and which way ("2500 N down": "down"
       and "up" are CAD Z, else "along −X" or the unit vector; or "2 MPa pressure"), its faces under
       it by name, shut until its chevron opens them (choosing the load row still tints all its faces
       and its arrows); and **Made of** (a swatch), the material's name ("Aluminum 6061-T6"; its
       yield is the verdict's to say). Each material is called by its display name, cadgen's: a table
-      entry's ("PZT-5A", "Steel (structural, generic)", also for an object that extends it, `{"name":
-      "pzt-5a", "piezo": ...}`), or an object's own `name`, tidied as cadgen writes it ("Soft silicone",
-      "Copper C110"; a file older than that, its first letter capitalised). In an assembly whose parts differ
-      in two or three materials, each is named inline with its parts ("Copper C110 coil, Stainless steel
-      304 shaft"; a material of three parts or more with how many, "Steel (3 parts)"); past three,
-      "Mostly Aluminum 6061-T6" where one material has most of the parts, else "4 materials", each
-      part's own in its hint; every part's own is in Parts and a picked face's chip too; a part
-      with none of its own takes the study's. Every
-      analysis's assembly says this (cadgen writes each part's name and material, `parts`, where an
-      analysis has no per-part results of its own: electromagnetic, piezo, flow), and so names a face
-      by its part ("upper · face 1"). The
+      entry's ("Steel (structural, generic)"), or an object's own `name`, tidied as cadgen writes it
+      ("Soft silicone"; a file older than that, its first letter capitalised). In an assembly whose
+      parts differ in two or three materials, each is named inline with its parts ("Aluminum 6061-T6
+      bracket, Stainless steel 304 shaft"; a material of three parts or more with how many, "Steel (3
+      parts)"); past three, "Mostly Aluminum 6061-T6" where one material has most of the parts, else
+      "4 materials", each part's own in its hint; every part's own is in Parts and a picked face's
+      chip too; a part with none of its own takes the study's. The
       material row is chosen like a face, tinting nothing: it carries the whole result (every part in
       an assembly) into Quick Edit with what it is made of ("Made of Aluminum 6061-T6 (yield 276 MPa)",
       or each material with its parts). A
       heading neither chooses nor folds; its rows hang from a faint line under its glyph. A face or
       material row too long for the one width wraps between words, never cut off.
       A body load is Pushed's too, a row of its own with no faces ("1 g down", "5 g along +X"),
-      chosen with the whole result ("Its weight, 1 g down", "Accelerated 5 g along +X"). Another
-      analysis's setup is the groups whose entries its study records, in this order, each in the
-      same two tones as its marker: **Held at**; **Slides on**; **Kept at** (a thermometer, grey: each fixed
-      temperature, "25 °C", its faces under it); **Pushed**; **Heated** (a flame, ink: "15 W",
-      "2000 W/m²", its faces under it); **Cooled by air** (wind, grey: "Air at 25 °C", how well it cools
-      its hint, "Heat transfer coefficient 10 W/m²K"); **Shaken** (a wave, ink: "1 g along Z", "At
-      random along Z", "A shock along Z", chosen with every face that holds it, rollers' too, where
-      the shaker is); **Dropped**
-      (a drop, ink: "1 m drop", how it stops its hint, the faces that land under it); **Flow in/out**
-      (the flow, ink: "In 0.5 m/s at the low X side", "Out at 0 Pa, the high X side", chosen with the
-      whole result); two fluids' **Filled** ("Half full of water, shaken 0.3 g along X"; a completely
-      full inside, which has no free surface and is solved as the liquid's flow alone, says so in its
-      hint: "Completely full: solved as single-fluid flow, no free surface"); **Rigid floor** (a plane, grey: "Facing up", "Under the drop"); **Crack** (a
-      plane: "2 mm edge crack on face 4", its largest K its hint, "K 18 MPa√m at the deepest point",
-      chosen with the face it opens from); **Made of**. An
-      entry on faces is chosen as a load is, tinting its faces and its markers and carrying what it is
-      ("15 W of heat into face 7", "Kept at 25 °C on face 1"), its faces shut under it. A picked face's
-      chip's card says these too ("kept at 25 °C; 15 W of heat in", "cooled by air at 25 °C").
+      chosen with the whole result ("Its weight, 1 g down", "Accelerated 5 g along +X", its hint
+      saying every part of it is pushed the other way).
     - **What you see**: the controls the study's
     `view` chose (`feaControls` in `glb/feaResult.js`), in its order, with its labels, ranges and
     units, each a settings row (`glb/fea/controlRow.jsx`): a number a slider with its value field,
@@ -969,68 +878,30 @@ exactly as it always was.
     the load shown (`feaShownControls`); a hidden one keeps its value and acts at its default meanwhile.
     The load control's own `when` is judged at its default load, where it opens, so dragging it never
     hides it: a load slider shown while the part fails stays while the person drags it to a load that
-    passes. What each moves is the viewer's, from a closed set (`drives`): **field** (a select
-    of the fields the file carries, in plain words, as the colour bar names it too: Stress, Displacement), **deformation** (how many times the displacement is drawn,
-    "×12.0"; its value box as wide as the value needs, so "×9500000" is never cut off; a result whose
-    displacement is under a ten-millionth of its diagonal, `NEGLIGIBLE_MOTION` in `glb/feaResult.js`, a
-    magnetic force moving a plunger nanometres, has no deformation control at all and is drawn at
-    rest, whatever its view names), **load_scale** (the load as a multiple of the solved one, "×1.50"; only where the
-    analysis follows the load, `scalesWithLoad`: never for a frequency, a temperature or a flow) and **threshold**
-    (values of its field under it drawn neutral grey, "138 MPa"); and over a series, **mode** (a
-    select of the frames' own labels, "Mode 2 · 118 Hz", for modal and buckling; a view's `default`
-    names a mode by its value), **frame** (a scrubber along the frames' values, "Time", "Frequency" or
-    "Load step", that snaps to the nearest frame where it is let go, its value field saying the
-    frame's label, "12 ms"; it runs along the frames' places where their values do not climb) and
-    **sigma** (a select of 1σ and 3σ, multiplying a random vibration's RMS fields, opening on the
-    level the study judges at; the field select names its RMS fields at the level chosen, "Stress (3σ)",
-    as the colour bar does). A frame's fields and deformation come from the attributes the
-    series names for it (`glb/fea/series.js`), frame 0's being the fields' own; a field the same in
-    every frame keeps its one attribute. A control whose `drives` or type
-    the viewer does not know is skipped. With no `view`, or none of its controls the viewer can draw (an empty list, or all from a newer cadgen), What you see is the analysis's own (`defaultControls`), and a preset may set those. A view that picks the field but names no deformation keeps the analysis's own Deformation slider after its controls. Fatigue opens on the fatigue margin where the life is capped everywhere (the part outlasts the material's data: one number, nothing to see), else on the life. For static it is as it always was: a Field select
-    with no visible label over every field, opening on stress, and a Deformation slider with its
-    committed number, from 0 to four times the file's own exaggeration. For another analysis
-    (`seriesControls` in `glb/fea/controls.js`): a series of modes, Mode and Deformation; a series of
-    times or frequencies, the scrubber, Field and, where the result deforms, Deformation; RMS fields,
-    Field and Sigma; anything else Field and, where it deforms, Deformation (a temperature has no
-    displacement to draw larger, so a thermal result has the Field select alone). A flow (Flow,
-    Turbulent flow, Fast gas flow, Cooled by flow) offers **Speed** among its fields (`_speed`, m/s,
-    from 0): the wall itself is still (no slip), so it is the fastest the fluid moves within a passage
-    width of each wetted point, reaching the fastest point of the flow, so the speed a velocity check
-    quotes ("1.31 m/s, limit 3 m/s") is the top of its colour bar. Cooled by flow's **Fluid
-    temperature** is the fluid's mixed temperature across the passage at each wetted point, so it runs
-    from the inlet's temperature to the outlet's the result reports, never the wall's own. When the view names
+    passes. What each moves is the viewer's, from a closed set (`drives`, cadgen's `VIEW_DRIVES`):
+    **field** (a select of the fields the file carries, in plain words, as the colour bar names it
+    too: Stress, Displacement), **deformation** (how many times the displacement is drawn, "×12.0";
+    its value box as wide as the value needs, so a large exaggeration is never cut off), **load_scale**
+    (the load as a multiple of the solved one, "×1.50") and **threshold** (values of its field under
+    it drawn neutral grey, "138 MPa"). A control whose `drives` or type the viewer does not know is
+    skipped. With no `view`, or none of its controls the viewer can draw (an empty list, or all from a
+    newer cadgen), What you see is the viewer's own (`fieldAndDeformation` in `glb/fea/controls.js`),
+    and a preset may set those: a Field select with no visible label over every field, opening on
+    stress, and a Deformation slider with its committed number, from 0 to four times the file's own
+    exaggeration. A view that picks the field but names no deformation keeps that Deformation slider
+    after its controls. When the view names
     `presets`, a **Preset** row leads What you see, the Position panel's Pose row (`KinematicsPoseRow`)
     labelled "Preset": Default, each preset (a full state: every control at its default but what
     the preset sets), and Custom once any control moves.
     - **Details**, shut until its chevron opens it: the mesh, its size ("Mesh 1.9 mm elements"), how
       it got there ("refined from 2.8 mm", "not refined") its hint. The mesh row is chosen as the
       material is, carrying "Mesh of 1.9 mm elements, refined from 2.8 mm" with the whole result.
-      Then **Adapted to fit**, where cadgen took steps to fit the run to the machine (`extras.fit`;
-      nothing is refused for size, so the run says what it changed): one row per step, in order, its
-      words the label ("Coarsened the mesh away from the hole to fit: the peak is still meshed at
-      0.8 mm"), wrapping, its accuracy note its hint ("peak stress moved 2.1 % between passes"). A
-      step is chosen into Quick Edit with its words and its accuracy ("Adapted to fit: ... (peak
-      stress moved 2.1 % between passes)"), tinting the faces it is about (the region kept fine, the
-      features left out), else carrying the whole result. A Tier 3 result then has **Limits**, one
-      row per sentence its model leaves out ("Laminar, steady, incompressible; no turbulence
-      model."), each chosen with the whole result. A flow the file warns ran past the laminar range
-      has that warning as its own row, first ("Re 4200 is past the laminar range: ..."). A fast gas
-      flow has a row for its Mach number after it: "Fastest flow Mach 0.53", its regime and the Mach
-      its solver is checked to its hint ("Subsonic, checked to Mach 1.8"), or where the file warns,
-      the warning's sentence ("Mach 2.10 is past Mach 1.8, ..."). A contact solve that did not settle
-      has its sentence as the first row of all ("Contact did not settle at 80% of the load: ...").
-      An analysis with rows of its own (its registry entry's `detailRows(result, whole)`) puts them
-      before the mesh: flow and bending's "Coupling: settled in 4 iterations", the change it reached
-      its hint, or "Coupling: did not settle in 25 iterations" with "the last state, not an answer".
-      Each is chosen with the whole result. The fit
-      steps are findings for the agent too; the viewer shows them only here. Details shows for a
-      result whose study was not recorded where it has steps to say.
 
-    Each group shows only where the file records something for it (`STUDY_GROUPS` and
-    `DETAIL_GROUPS` in `glb/feaResult.js`: a result kind with more to say adds a group there,
-    touching no other), so a result written before its study was recorded has its verdict, if it
-    has a safety factor, and What you see alone. Study keeps the sidebar's width: the verdict and the
-    setup wrap to fit it, and its sections run in the view's order in the sidebar's one scroll.
+    Each group shows only where the file records something for it (`SETUP_GROUPS` in
+    `glb/fea/setup.js`, and Details' `detailRows`), so a result written before its study was recorded
+    has its verdict, if it has a safety factor, and What you see alone. Study keeps the sidebar's
+    width: the verdict and the setup wrap to fit it, and its sections run in the view's order in the
+    sidebar's one scroll.
   - **Framing.** The camera frames a result right of the chrome at the view's left (the strip, the file sidebar
     and the section open in it) and above the colour bar: whenever
     the viewport fits the camera (opening, Zoom to Fit, a reset) it reads how much of its width the shown
@@ -1060,22 +931,10 @@ exactly as it always was.
   in an assembly a picked face's chip is named with its part ("post · face 1").
 - **A colour bar** floats at bottom-centre on Preview's playbar's line (`FEA_BOTTOM_LINE` in
   `glb/feaChrome.js`; `FLOATING_CHROME_SURFACE_CLASS`, no pointer events), in the tools view and in Preview
-  (its view's overlay), one playbar's height higher in Preview for a result with a routine. It is only the scale, on one row 20rem wide (less on a
-  narrow viewport): the field in Show's words ("Stress", "Displacement"; a field the file names for
-  the view by that name, "Mode shape"; a sound's level, drawn on the surface, "Sound level at the surface",
-  so it is not read as the level at a check's microphone), then its range and units
-  along the ramp ("0", "47.3 MPa"). A signed field (a temperature, a pressure) runs from its own
-  minimum ("20.0", "84.0 °C"); a log field (a life in cycles) says powers of ten ("10³", "10⁹
-  cycles"); a per-frame field's range is the file's, across every frame, so the colours compare
-  from frame to frame and the bar stays put while the frame changes; an RMS field says the level
-  it is shown at ("Stress (3σ)") and its range is that many times the file's. A field whose worst is
-  its lowest (a life, a fatigue margin: `lowWorst` in `glb/fea/fields.js`) is drawn down the ramp, its
-  lowest red as a stress's peak is, and the bar's ends swap to say so ("Fatigue margin 100 … 4.09"). A stress whose colours stop below its
-  singular peak (the field's `capped`: a crack front, a heat-stressed clamped edge) says its top as "≥361 MPa",
-  and its title says the percentile and the peak ("Colours stop at the 99th percentile; the peak is 948 MPa");
-  the verdict judges the peak, but where it is a clamped edge's in heat stress, which it judges where the colours stop. The load shown scales
-  the range only where the analysis follows the load. What the numbers mean for the part is the verdict's, so the bar
-  says none of it. It has no controls.
+  (its view's overlay), one playbar's height higher in Preview, where the Load ramp's playbar is. It is only
+  the scale, on one row 20rem wide (less on a narrow viewport): the field in Show's words ("Stress",
+  "Displacement"), then its range and units along the ramp ("0", "47.3 MPa"). What the numbers mean
+  for the part is the verdict's, so the bar says none of it. It has no controls.
 - **Findings stay in the file for the agent.** The result's checks (`findings` in the GLB's extras,
   the sidecar and the CLI's lines) are what the agent reads and acts on; the viewer raises no alert
   card and puts no icon in the navbar for them (a board's findings keep theirs). The verdict at the top of Study is
@@ -1084,142 +943,28 @@ exactly as it always was.
   the colour bar's range is k times the solved one, the safety factor and every part's "holds" (in Parts and a picked face's chip) are divided by k, so a part
   can turn to "yields" (at no load there is no factor, and "holds" is left out), and the displacement is drawn k times further. The colours keep their place
   on the bar, which reads k times higher. A threshold compares its field at the load shown.
-- **Its routine.** A result has at most one routine of the viewer's own, its analysis's
-  (`routine`, played through `useGlbAnimation`'s own clips), looping as its Loop says: from the file
-  sidebar's Animation in the tools view, and from Preview's playbar in Preview, whose scene shares the
-  result's geometry, so the colours and the deformation a routine draws are drawn there too. Nothing is
-  baked into the file: the viewer deforms from the vectors it carries.
-  - Vibrate, and a Load ramp outside the static family (piezo's voltage, buckling's Buckle), draw the
-    model at the Exaggerate value, raised where that would move its largest motion less than a tenth
-    of its diagonal (`routineScale`, `ROUTINE_MOTION_SHARE` in `glb/feaResult.js`), so a small part's
-    motion (a piezo bimorph's stroke, a disc's mode) is clearly seen; an Exaggerate past that is kept,
-    and 0 stays 0. The static family's Load ramp is drawn as it always was, and Play's frames as the
-    scrubber shows them.
-  - **Load ramp** (the static family, a drop from before cadgen wrote its fall, a static piezo result's voltage going on; buckling's is called **Buckle**): in preview the playbar
-    plays the load going on, from none to the load chosen, over two seconds, the colours climbing
-    under the bar of that load and the deformation and markers following.
-  - **Vibrate** (modal, harmonic, piezo's modes and sweep): one swing a second, the shape shown drawn × sin 2πt, out one way
-    and back the other through rest; a harmonic frame turns through its phase, re·cos − im·sin, by
-    its imaginary part.
-  - **Play** (a series of times or load steps: heat over time, over time, a drop impact from before
-    cadgen wrote its fall, permanent bend): the frames in turn over three seconds, each colour and position blended linearly into the
-    next's. Two frames moved by the same vector (heat over time, whose displacement is the file's one
-    in every frame) are that vector: Play then steps the colours alone, rewriting no position, normal
-    or marker for a model that does not move.
-  - **Ring** (sound's cavity modes): one swing a second, the chosen mode's signed pressure × cos 2πt
-    on a ramp symmetric about 0 (± its largest magnitude, `symmetricRange`), so the mode's two ends
-    trade colours through the cycle; nothing deforms. A sound sweep plays none. The air closed inside
-    a part (`domain: "inside"`) is drawn as its own solid, the faces it wets alone (cadgen writes only
-    those, `analysis.acoustic.shown: "air"`), as the part's own air is: the part's outside reads no
-    pressure and would hide it. The walls around it are drawn as a faint grey outline (cadgen writes
-    their edges, `analysis.acoustic.walls_mm`), whatever the markers' gate, so the enclosure reads.
-  - **Tracers** (flow, turbulent flow, fast gas flow, cooled by flow, flow and bending: the file's
-    `analysis.motion`, kind `tracers`, read by `readTracers` in `glb/fea/poses.js`, drawn by
-    `glb/feaTracers.js`): dots carried along the paths cadgen traced through the solved velocity field
-    from the inlets (as dense as the flow through them; an external flow's across the part's width),
-    six to a path, each starting again at its inlet at the path's end, so the flow streams. They move at
-    the real speed times one round factor, the median trip about four seconds on screen (a fast flow
-    slowed, a creeping one sped up), and the readout says how long of real flow has passed and the
-    factor ("12 ms of flow", "slowed 200×"). They are drawn as the markers are, solid in view and a
-    faint ghost where the part hides them, under the result mesh, so the file's Clip cuts them, and a
-    flow's preview keeps its cut (preview suspends it for every other result) so they stream inside
-    the part it opens. A flow has no row: the playbar's Speed sets their pace.
-  - None for steady heat, a static electric or magnetic field and a composite: what they show does not move.
-- **A motion** (`glb/fea/motion.js`): a result whose part moves as a whole through time is moved as a
-  STEP's kinematics is, not only played. Its analysis supplies the motion (`motion(result)`: its
-  timeline, the moment it opens on, its named states, the words for the real time at each moment, a
-  solved frame's moment), and the viewer draws it the one way for every analysis: What you see leads
-  with a **Time** row (named by the motion where time is not its axis, `row`: Cycle, Phase, Load, Heat; a scrubber over the whole timeline, in place of a series' own scrubber, that
-  stops at evenly spaced moments, the states and each solved frame, its value field the real time
-  there), its states join the **Preset** row after the view's own presets (each a full state, the
-  Time row at its moment), a chosen check jumps the Time row to its frame's moment, and its routine
-  (`kind: "motion"`) plays the same timeline in preview, from the Time row's moment back to it when
-  let go. The Time row has a **play** button beside its value field (`FeaStudyPanel.jsx`, through
-  `controlRow`'s `action`: a ghost icon button the joint value boxes' size, a play triangle hinted
-  "Play the motion", a pause hinted "Pause" while it plays), so a person sees the motion plays without
-  finding Preview: a press plays the same timeline in place in the tools view, once, from the row's
-  moment (from its start where the row is at its end), the slider and the value field following it
-  and the readout showing; a second press pauses it there, and dragging the row, choosing a preset,
-  another result, another tool or entering preview stops it where it is. It honours reduced motion as
-  the playbar does (only its `play` span). Preview keeps its playbar. The Time row's moment is the
-  file's view (`motion`, written once chosen). With reduced
-  motion (the host's `reducedMotion` or the system's), the playbar plays only the motion's `play`
-  span, where the part stays put. A motion is drawn one of two ways, a drop's fall or a pose:
-  - **Drop** (a drop estimate and a drop impact whose file carries `extras.analysis.fall`:
-    `glb/fea/fall.js` keeps the time, `glb/feaFall.js` draws it). The part is drawn turned so the way
-    it falls points down, the point it meets first on a see-through floor (the rigid floor's look,
-    as wide; an impact's own floor marker stands for it while the part is on the floor). The
-    timeline: it waits half a second at its height, falls under gravity at real time (1 m in 0.45 s;
-    a fall under 0.4 s slowed to last that long), meets the floor, and the impact, milliseconds long,
-    lasts about 2.5 s, slowed by a round factor (1, 2 or 5 × 10ⁿ): an impact's frames by their
-    times, its centre of mass carried where the file says (`fall.centre_mm`); an estimate's load
-    ramping to its peak and back as a half-sine over the stop it assumed. An impact that rebounds
-    (`fall.rebound_m_s`) hops off the floor at that speed under gravity and comes back; it rests
-    for a second, on its last frame's shape (an estimate at rest). The part is never drawn through
-    the floor (an exaggerated squash lifts it), and on it once at rest. The Time row says the real
-    time from landing ("−0.45 s" falling, "0 s", "10.1 µs", "At rest"); the states are Released,
-    Contact, Peak (where it opens: an impact's peak frame, the middle of an estimate's stop) and At
-    rest. Off the floor the markers and their labels are put away. While the routine plays, a small
-    readout over the colour bar (`FeaFallClock.jsx`) says the real time in words ("1 m above the
-    floor", "0.32 s", "0.21 ms after landing", "At rest") and, while slowed, by how much ("slowed
-    2,000×"); with reduced motion it plays the impact alone.
-  - **A pose** (`kind: "pose"`, `glb/fea/poses.js`; drawn by `paintPose` in `GlbRenderer.jsx`): the part
-    stays where it is held and what it shows changes; at each moment the motion says the frame, the
-    colours (scaled with its load, or its own values then: `recolorByField`'s `values`) and the
-    displacement (vector attributes and their weights, drawn at the Deformation shown, or for a shake
-    raised so its largest motion is a tenth of the model's size, `poseScale` in `glb/feaPose.js`, and the
-    readout says "drawn 3,000× larger"). The readout says the real time and the slow motion while it
-    plays. Every pose is drawn from what cadgen solved and wrote (`extras.analysis.motion`), never
-    invented; where it ramps a linear result it says "ramped":
-    - **Shake** (random vibration) and **Shock**: the part's motion relative to its shaker, a few mode
-      shapes (hidden `_MOTION_MODE_n` attributes, each 1 mm at its largest) times their histories over
-      the window cadgen sampled. A random shake is synthesised from the PSD (one line a hertz at its
-      level, phases from a fixed seed: its spectrum and its g rms) and the modes answer every line
-      exactly; a shock's base pulse is synthesised to match its spectrum (wavelets, as a shaker
-      controller does, its match at each mode in the file) and each mode's answer integrated exactly.
-      Slowed so the slowest mode swings about once a second, ten seconds at most. Time row; states
-      Start (a shock's Pulse starts, Pulse ends) and Largest swing, where it opens; the readout adds the
-      base's acceleration ("1.5 ms · base 3.2 g"). The colours are the field's (an RMS, a peak envelope).
-    - **Load cycle** (fatigue): the load swinging between R times its peak and its peak (`ratio`), the
-      stress (Show's **Stress**, `_cycle_stress`, the cycle's peak von Mises) and the deformation with it,
-      the life and the margin standing (they are of the whole cycle). A static load four cycles, one a
-      second (the readout: "the load gives no rate"); a sweep's at its frequency, slowed; a random
-      shake's 23 cycles at 1σ, 2σ and 3σ in Steinberg's shares. Cycle row ("Cycle 2 · 100 %"); states
-      Max, where it opens, and Min (a random shake's 3σ peak and trough); the readout says how many
-      cycles the weakest point lasts.
-    - **AC cycle** (AC magnetics): the field shown (eddy current, magnetic field) turning through one
-      cycle at its real frequency, slowed to two seconds: each vertex's strength re·cos θ − im·sin θ from
-      its real and imaginary parts (`_MOTION_J_RE`/`_IM`, `_MOTION_B_RE`/`_IM`), on the amplitude's
-      colour range; a temperature stands. Phase row ("90° · 5 ms"); states Peak (the strongest point at
-      its peak, where it opens), 0° and 90°.
-    - **Tighten and load** (bolted joint): the bolt tightened from snug to its preload (the preload's
-      solve ramped: "ramped") over two seconds, then the service load's solved steps, a second each,
-      blended. Load row ("Tightening 50 %", then each step's label); states Snug, Preloaded and Service
-      load; it opens on the series' default step, and a check jumps to its step.
-    - **Heat up** (heat stress): every temperature the same share of the way from the reference to the
-      solved one, the stress and the deformation growing with it (a linear result: each moment exact for
-      that share; "ramped"). Heat row ("62 % of the heat"); states Ambient and Heated, where it opens.
-  The tools view frames the part on the floor through its impact; Preview frames the whole fall,
-  from its height to the floor (the scene's `previewBounds`), so the camera never moves while it plays.
-  Preview frames the camera once, on the box the model is drawn in over its whole series and its
-  routine as it plays (`glb/feaBounds.js`: every frame, a Load ramp from no load to the load it
-  opens on, a Vibrate out both ways, each at the scale the routine plays at; a pose over its whole
-  timeline, `feaPoseBounds` in `glb/feaPose.js`), so the moving part
-  stays in view and the camera never zooms while it plays.
-  Letting go puts the model back at the frame and load chosen. The colour bar steps up above the
-  playbar while it is there.
+- **Its routine, the Load ramp**, the viewer's own (`LOAD_RAMP` in `glb/feaView.jsx`, played through
+  `useGlbAnimation`'s own clips), looping as its Loop says: from the file sidebar's Animation in the
+  tools view, and from Preview's playbar in Preview, whose scene shares the result's geometry, so the
+  colours and the deformation it draws are drawn there too. It plays the load going on, from none to
+  the load chosen, over two seconds, the colours climbing under the bar of that load and the
+  deformation and markers following. Nothing is baked into the file: the viewer deforms from the
+  displacement it carries. Preview frames the camera once, on the box the model is drawn in from rest
+  to the deformation and load it opens on (`glb/feaBounds.js`; the positions are linear in the load,
+  so every moment of the ramp is inside it), so the camera never zooms while it plays. Letting go puts
+  the model back at the load chosen. The colour bar steps up above the playbar while it is there.
 - **Loads and fixtures on the model** (`glb/feaMarkers.js`), from the study the file records: on
   each loaded face one to five arrows (more on a bigger face), spread over it, each 8% of the
   model's diagonal long whatever the load, pointing along the force with its tip on the face (a
   pulling force stands on the face by its tail); a pressure's arrows run along the inward normal;
   a label beside each load's arrows, past one arrow's free end (a push's tail, a pull's tip: of several,
-  the one nearest their middle, never the middle itself, which arrows all round a shaft or a shake held at
-  both ends put inside the part), says its amount at the load shown ("300 N", "2 MPa"). A label is never
+  the one nearest their middle, never the middle itself, which arrows all round a shaft put inside the
+  part), says its amount at the load shown ("300 N", "2 MPa"). A label is never
   drawn on, inside or behind the part. It stands at that arrow's own outer end, a few pixels on along it, its
   text running on the way the arrow points (centred over an arrow that stands up; `besideEnd` in
   `glb/feaChrome.js`), only where that end is in sight and the label drawn there lies over none of the model
-  (two rays: from the eye to the end, and through the label); otherwise, and always for a marker drawn through
-  or all over the part (a body load, a shaker, the air, heat), it is carried along the arrow's line out of the
+  (two rays: from the eye to the end, and through the label); otherwise, and always for a body load, drawn
+  through the part, it is carried along the arrow's line out of the
   model's box by the nearer way (`labelOutside` in `glb/feaMarkers.js`) and on screen past the outline of the
   model's box (`pastOutline`: the hull of its corners), so "1 g down" stands beside the model and a load in a
   pin hole is labelled outside it. No label is drawn past the view's edge (it is drawn whole against it), under
@@ -1227,50 +972,29 @@ exactly as it always was.
   the colour bar (`colourBarCover`: above it), nor over another label: each in turn is nudged up or down
   clear of those before it (`settleLabels`), every frame, however the view has been turned. On each fixed face, small cones point into it; on a roller's face (Slides on), the
   same grey cone stands on a small plate on two balls resting on the face, pointing into it along
-  its normal, unlabelled, drawn wherever fixtures are. They stand on the deformed shape as it is
+  its normal, unlabelled, drawn wherever fixtures are. A **body load** (gravity, an acceleration) is
+  one arrow through the model's middle along it, "1 g down". They stand on the deformed shape as it is
   drawn, in two passes, the x-ray look: what is in view solid, depth-tested as the model is,
   and what the model hides as a faint ghost (a quarter opacity) over the surface, so a fixture
   under the base reads as under it, never as standing on the face in front; a load's label the
   part hides is ghosted the same way (a ray from the eye through where it is drawn, cast at most
   every 100 ms while the view moves; past the outline, the part hides none). The theme has no colour to spare (every saturated hue
   is the ramp's or the chosen faces' magenta): loads are the ink, fixtures a muted grey, and a
-  chosen load row's arrows, or a chosen fixed or roller row's cones, take the chosen magenta.
-  Every other kind is one row of a table (`MARKER_KINDS` in `glb/feaMarkers.js`), drawn only where
-  the analysis lists it (`markers`) and the study records it, each solid and ghosted as above, in
-  the ink (what drives the part) or the muted grey (what holds it or takes from it), never a hue of
-  its own, and labelled past its free end as a load is: a **body load** (gravity, an acceleration),
-  one arrow through the model's middle along it, "1 g down"; a **shaker**, a double arrow standing
-  off each fixed face along the shake, "shaken 1 g along Z" ("shaken at random", "a shock"); a fixed
-  **temperature**, grey dots on its faces, "25 °C"; **heat**, wavy arrows into its faces, "15 W";
-  the **air**, grey strokes rising off its faces, "air 25 °C"; a **drop**, an arrow on the face that
-  lands, the way it falls, "1 m drop"; a flow's **inlet** and grey **outlet**, an arrow into and out
-  of the side of the part's box each names, "0.5 m/s" and "0 Pa"; a **rigid plane** (a contact
-  floor, or a drop impact's floor through the lowest point along the fall), one see-through grey
-  quad, unlabelled; a **crack front** (fracture), an ink dot at each station along it where its K was
-  read (`extras.crack.front_mm`), unlabelled; a **speaker** (acoustic, a sound source's face), a small
-  ink cone on the face opening off it with two rings of sound past it, "2 mm/s"; a part shaken by a
-  harmonic result (`from: "harmonic"`) is its own source, its broad faces (each at least a quarter of
-  its largest, a held face not) marked so, "vibrating"; a piezo
-  **electrode**, an ink plate on its faces with a terminal standing off it, "10 V" or "open"; a
-  rotor's **bearings**, two grey races lying on their faces, unlabelled, all one group as Study's
-  one Bearings row. Choosing a setup row takes its own markers to the chosen magenta. What you see has
-  one gate for them, a checkbox after its controls, titled per analysis (**Loads and fixtures**, **Heat inputs and
-  temperatures**, **Shaker and fixtures**, **Flow openings**), its line saying what it draws ("Arrows
-  where the study loads the part, cones where it holds it."; "Dots where its temperature is fixed,
-  wavy arrows where heat goes in, strokes where air cools it."), on unless the study's `view.show`
-  turns both off (it then draws both when turned on); `view.show` leaving one kind off keeps it off
-  (`loads` the ink's kinds, `fixtures` the grey's), its labels with it.
-- **Clip** cuts a result open, so what is inside a part shows: a cooling channel's walls, a tank's
-  floor, a duct's surfaces past its openings, each in the field's colours. It is the Clip every scene has
+  chosen load row's arrows, or a chosen fixed or roller row's cones, take the chosen magenta. Each
+  kind is one row of a table (`MARKER_KINDS` in `glb/feaMarkers.js`). What you see has one gate for
+  them, a checkbox after its controls, titled **Loads and fixtures**, its line saying what it draws
+  ("Arrows where the study loads the part, cones where it holds it."), on unless the study's
+  `view.show` turns both off (it then draws both when turned on); `view.show` leaving one kind off
+  keeps it off (`loads` the ink's kinds, `fixtures` the grey's), its labels with it.
+- **Clip** cuts a result open, so what is inside a part shows in the field's colours. It is the Clip every scene has
   (`kit/tools/model-effects/`: its tool, its row and the viewport's cut, `useSceneEffects`), kept as the
   file's view keeps it; it never recolours, so the colour bar reads as before. A pick goes through what the
   cut took away to the face it shows, and a label whose marker acts there (`face`, else its free end) is left
   out: both read the plane in force from the runtime (`activeClipPlanes`). A result has no X-ray: X-ray,
   Hidden line and Wireframe are drawn from edges, and a result has none.
 - **The choices are the file's view**: one renderer slice (`fea`: the field, the deformation, the
-  load, the threshold, the preset and the markers' gate, and once chosen the mode, the frame and
-  the sigma level; a result with no series writes the slice it always did), written against the
-  result's fields, scale and view, so a re-solved result opens at its own defaults.
+  load, the threshold, the preset and the markers' gate), written against the result's fields, scale
+  and view, so a re-solved result opens at its own defaults.
 
 ## Position and references
 

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { BoxGeometry, BufferAttribute, Group, Mesh } from 'three';
 import { describe, expect, it } from 'vitest';
 import { readFeaResult } from './feaResult.js';
-import { ARROW_LENGTH, GHOST_OPACITY, MARKER_KINDS, createFeaMarkers, dropWords, labelOutside, loadLabel, markerGateText, markerPoses, markerSites, pastOutline, shakeWords } from './feaMarkers.js';
+import { ARROW_LENGTH, GHOST_OPACITY, MARKER_KINDS, createFeaMarkers, labelOutside, loadLabel, markerGateText, markerPoses, markerSites, pastOutline } from './feaMarkers.js';
 
 // A unit cube in the result's glTF space, its six faces in BoxGeometry's order (+X, -X, +Y, -Y, +Z,
 // -Z) as `_FACE` 0..5, wound outward as the writer winds it.
@@ -174,66 +174,20 @@ describe('loads and fixtures on the model', () => {
     const mine = own.find((pose: any) => pose.tail.every((value: number, k: number) => Math.abs(value - label.end.at[k]) < 1e-9));
     near(label.end.face, mine.tip);
     markers.dispose();
-    // The air (and a body load, a shaker, heat) cover the part: always outside, no end offered.
-    const heated = cube(HEATED, [0, 0, 0], { analysis: { type: 'thermal' } });
-    const thermal = createFeaMarkers(THREE, heated);
-    thermal.update(positionsOf(heated));
-    const byKind = Object.fromEntries(thermal.labels().map((entry: any) => [entry.kind, entry]));
-    expect([byKind.convection.end, byKind.heat.end, byKind.temperature.end === undefined]).toEqual([undefined, undefined, false]);
-    thermal.dispose();
+    // A body load runs through the part: always outside, no end offered.
+    const weighed = cube({ fixtures: [], loads: [{ type: 'gravity', vector_g: [0, 0, -1] }] });
+    const weight = createFeaMarkers(THREE, weighed);
+    weight.update(positionsOf(weighed));
+    expect(weight.labels().map((entry: any) => [entry.kind, entry.end])).toEqual([['body_load', undefined]]);
+    weight.dispose();
   });
 });
 
-// Track V1: every other kind of marker, from one table, each in the ink or the muted grey.
-const HEATED = { fixtures: [], loads: [], temperatures: [{ faces: ['bracket/face 4'], C: 25 }], heat: [{ faces: ['bracket/face 3'], W: 15 }],
-  convection: [{ faces: ['bracket/face 1', 'bracket/face 2'], h_W_m2K: 10, ambient_C: 25 }] };
+// A roller and a body load, from the same table as loads and fixtures, each in the ink or the muted grey.
 const STYLE = { colours: { load: '#18181b', fixture: '#71717a' }, visible: { loads: true, fixtures: true }, chosen: () => false };
 const colourOf = (mesh: THREE.InstancedMesh) => { const colour = new THREE.Color(); mesh.getColorAt(0, colour); return colour.getHexString(); };
 
-describe('every other kind of marker', () => {
-  it('draws what the analysis lists, each kind in its tone, following the switch for its bucket', () => {
-    expect(Object.values(MARKER_KINDS).every((kind: any) => ['load', 'fixture'].includes(kind.tone) && ['loads', 'fixtures'].includes(kind.bucket))).toBe(true);
-    const result = cube(HEATED, [0, 0, 0], { analysis: { type: 'thermal' } });
-    const markers = createFeaMarkers(THREE, result);
-    expect(markers.kinds).toEqual(['temperature', 'heat', 'convection']);
-    markers.update(positionsOf(result));
-    markers.style(STYLE);
-    const byName = (name: string) => markers.object3D.getObjectByName(name) as THREE.InstancedMesh;
-    // Loads and fixtures keep their six meshes, empty here; the other kinds follow them, each with its ghost.
-    expect(markers.object3D.children.slice(0, 6).map((child: any) => child.count)).toEqual([0, 0, 0, 0, 0, 0]);
-    expect(markers.object3D.children.slice(6).map((child) => child.name)).toEqual([
-      'fea-temperature-dots', 'fea-temperature-dots-ghost', 'fea-heat-shafts', 'fea-heat-shafts-ghost', 'fea-heat-heads', 'fea-heat-heads-ghost',
-      'fea-convection-strokes', 'fea-convection-strokes-ghost', 'fea-convection-strokes-2', 'fea-convection-strokes-2-ghost']);
-    // A temperature and the air are what the part gives heat to, grey; heat going in is the ink.
-    expect([colourOf(byName('fea-temperature-dots')), colourOf(byName('fea-heat-heads')), colourOf(byName('fea-convection-strokes'))])
-      .toEqual(['71717a', '18181b', '71717a']);
-    expect((byName('fea-heat-heads-ghost').material as THREE.MeshBasicMaterial).opacity).toBe(GHOST_OPACITY);
-    markers.style({ ...STYLE, visible: { loads: true, fixtures: false } });
-    expect([byName('fea-temperature-dots').visible, byName('fea-heat-heads').visible, byName('fea-convection-strokes-ghost').visible]).toEqual([false, true, false]);
-    markers.style({ ...STYLE, chosen: (site: any) => site.kind === 'heat' });
-    expect(colourOf(byName('fea-heat-shafts'))).toBe('ff40f2');
-    // Static draws none of them, whatever the study echoes.
-    expect(createFeaMarkers(THREE, cube(HEATED)).kinds).toEqual([]);
-    const disposed: string[] = [];
-    markers.object3D.traverse((object: any) => object.material?.addEventListener('dispose', () => disposed.push(object.name)));
-    markers.dispose();
-    expect(disposed.length).toBeGreaterThanOrEqual(10);
-  });
-
-  it('stands a dot on a fixed temperature, heat\'s arrow into its face and the air\'s strokes off theirs, each labelled', () => {
-    const result = cube(HEATED, [0, 0, 0], { analysis: { type: 'thermal' } });
-    const markers = createFeaMarkers(THREE, result);
-    markers.update(positionsOf(result));
-    const poses = markers.poses();
-    for (const dot of poses.filter((pose: any) => pose.kind === 'temperature')) expect(dot.tip[1]).toBeCloseTo(-0.5, 6);
-    for (const heat of poses.filter((pose: any) => pose.kind === 'heat')) { expect(heat.tip[1]).toBeCloseTo(0.5, 6); near(heat.direction, [0, -1, 0]); }
-    for (const air of poses.filter((pose: any) => pose.kind === 'convection')) expect(Math.abs(air.direction[0])).toBeCloseTo(1, 6);
-    expect(markers.labels().map((label: any) => [label.kind, label.text])).toEqual([['temperature', '25 °C'], ['heat', '15 W'], ['convection', 'air 25 °C']]);
-    // Only the bucket shown is labelled.
-    expect(markers.labels(1, { loads: true, fixtures: false }).map((label: any) => label.text)).toEqual(['15 W']);
-    markers.dispose();
-  });
-
+describe('rollers and body loads', () => {
   it('puts a body load through the model\'s middle, labelled with its g and way, at the load shown', () => {
     const result = cube({ fixtures: [], loads: [{ type: 'gravity', vector_g: [0, 0, -1] }] });
     const markers = createFeaMarkers(THREE, result);
@@ -248,62 +202,6 @@ describe('every other kind of marker', () => {
     expect(Math.abs(label.at[1])).toBeGreaterThan(0.5);
     expect([label.at[0], label.at[2]]).toEqual([0, 0]);
     expect(label.corners).toHaveLength(8);
-    markers.dispose();
-  });
-
-  it('shakes the fixtures with double arrows, drops along the fall, and opens a flow at its box\'s sides', () => {
-    const shaken = cube({ fixtures: [{ type: 'fixed', faces: ['bracket/face 4'] }], loads: [], excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 } },
-      [0, 0, 0], { analysis: { type: 'harmonic' } });
-    const shaker = createFeaMarkers(THREE, shaken);
-    shaker.update(positionsOf(shaken));
-    const doubles = shaker.poses().filter((pose: any) => pose.kind === 'base_excitation');
-    expect(doubles).toHaveLength(1);
-    // CAD Z is the mesh's Y: the double arrow runs along it, off the fixed face.
-    near(doubles[0].direction, [0, 1, 0]);
-    expect(shaker.object3D.getObjectByName('fea-base-excitation-tails')).toBeTruthy();
-    expect(shaker.labels().map((label: any) => label.text)).toEqual(['shaken 1 g along Z']);
-    shaker.dispose();
-
-    // Held at two opposite faces, the shake's label stands at one shaker, off the part, not at their middle (inside it).
-    const both = cube({ fixtures: [{ type: 'fixed', faces: ['bracket/face 1', 'bracket/face 2'] }], loads: [], excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 } },
-      [0, 0, 0], { analysis: { type: 'harmonic' } });
-    const twoShakers = createFeaMarkers(THREE, both);
-    twoShakers.update(positionsOf(both));
-    const [outside] = twoShakers.labels();
-    expect(Math.max(...outside.at.map(Math.abs))).toBeGreaterThanOrEqual(0.5 - 1e-6);
-    expect(Math.abs(outside.at[0])).toBeGreaterThanOrEqual(0.5 - 1e-6);
-    twoShakers.dispose();
-
-    const dropped = cube({ fixtures: [], loads: [], drop: { height_mm: 1000, onto: ['bracket/face 4'], stop_mm: 2 } }, [0, 0, 0], { analysis: { type: 'drop' } });
-    const [fall] = markerPoses(dropped, markerSites(dropped), positionsOf(dropped));
-    // Along the landing face's outward normal, standing on it by its tail.
-    near(fall.direction, [0, -1, 0]);
-    expect(fall.tail[1]).toBeCloseTo(-0.5, 6);
-
-    const flow = cube({ fixtures: [], loads: [], flow: { kind: 'internal', inlets: [{ opening: 'x_min', velocity_m_s: 0.5 }], outlets: [{ opening: 'y_max', pressure_Pa: 0 }] } },
-      [0, 0, 0], { analysis: { type: 'cfd' } });
-    const openings = createFeaMarkers(THREE, flow);
-    openings.update(positionsOf(flow));
-    const [inlet, outlet] = openings.poses();
-    // In through the low X side, its tip on it; out through CAD's high Y, which is the mesh's low Z.
-    near(inlet.direction, [1, 0, 0]);
-    near(inlet.tip, [-0.5, 0, 0]);
-    near(outlet.direction, [0, 0, -1]);
-    near(outlet.tail, [0, 0, -0.5]);
-    expect(openings.labels().map((label: any) => label.text)).toEqual(['0.5 m/s', '0 Pa']);
-    openings.dispose();
-  });
-
-  it('lays a see-through rigid floor under a drop, through the lowest point along the fall', () => {
-    const result = cube({ fixtures: [], loads: [], drop: { height_mm: 1000, onto: [], direction: [0, 0, -1], floor: 'rigid' } }, [0, 0, 0], { analysis: { type: 'impact' } });
-    const markers = createFeaMarkers(THREE, result);
-    markers.update(positionsOf(result));
-    const plane = markers.object3D.getObjectByName('fea-rigid-plane-0') as THREE.Mesh;
-    expect(plane.position.y).toBeCloseTo(-0.5, 6);
-    const material = plane.material as THREE.MeshBasicMaterial;
-    expect([material.transparent, material.opacity < 0.5, material.depthWrite]).toEqual([true, true, false]);
-    markers.style(STYLE);
-    expect(material.color.getHexString()).toBe('71717a');
     markers.dispose();
   });
 
@@ -338,56 +236,12 @@ describe('every other kind of marker', () => {
     expect(createFeaMarkers(THREE, cube(STUDY)).kinds).not.toContain('roller');
   });
 
-  it('stands a speaker on a sound source\'s face, a plate on a piezo electrode and two races on a bearing\'s faces', () => {
-    const sounding = cube({ fixtures: [], loads: [], acoustic: { sources: [{ faces: ['bracket/face 3'], velocity_mm_s: 2 }, { point_mm: [0, 0, 0], volume_velocity_m3_s: 1e-6 }] } },
-      [0, 0, 0], { analysis: { type: 'acoustic' } });
-    const speakers = createFeaMarkers(THREE, sounding);
-    expect(speakers.kinds).toEqual(['speaker']);
-    speakers.update(positionsOf(sounding));
-    speakers.style(STYLE);
-    const byName = (markers: any, name: string) => markers.object3D.getObjectByName(name) as THREE.InstancedMesh;
-    expect(colourOf(byName(speakers, 'fea-speaker-cones'))).toBe('18181b');
-    expect(byName(speakers, 'fea-speaker-waves-2-ghost')).toBeTruthy();
-    // On the +Y face, opening off it (the outward normal), labelled with its speed past the rings.
-    for (const pose of speakers.poses().filter((entry: any) => entry.kind === 'speaker')) {
-      near(pose.direction, [0, 1, 0]);
-      expect(pose.tip[1]).toBeCloseTo(0.5, 6);
-    }
-    expect(speakers.labels(1).map((label: any) => [label.kind, label.text])).toEqual([['speaker', '2 mm/s']]);
-    expect(speakers.labels(1)[0].at[1]).toBeGreaterThan(0.5);
-    speakers.style({ ...STYLE, visible: { loads: false, fixtures: true } });
-    expect(byName(speakers, 'fea-speaker-cones').visible).toBe(false);
-
-    const poled = cube({ fixtures: [{ faces: ['bracket/face 4'] }], loads: [], electrodes: [{ faces: ['bracket/face 3'], name: 'top', V: 10 }, { faces: ['bracket/face 1'], name: 'out', open: true }] },
-      [0, 0, 0], { analysis: { type: 'piezo' } });
-    const plates = createFeaMarkers(THREE, poled);
-    expect(plates.kinds).toEqual(['fixture', 'electrode']);
-    plates.update(positionsOf(poled));
-    expect(plates.labels(1).map((label: any) => label.text)).toEqual(['10 V', 'open']);
-    for (const pose of plates.poses().filter((entry: any) => entry.kind === 'electrode' && entry.group === 0)) near(pose.direction, [0, -1, 0]);
-
-    const spinning = cube({ spin: { axis: 'Z', rpm: [0, 3000] }, bearings: [{ faces: ['bracket/face 5'], rigid: true }, { faces: ['bracket/face 6'], kxx: 1000 }] },
-      [0, 0, 0], { analysis: { type: 'rotordynamics' } });
-    const races = createFeaMarkers(THREE, spinning);
-    expect(races.kinds).toEqual(['bearing']);
-    races.update(positionsOf(spinning));
-    races.style(STYLE);
-    // Grey, like what holds the part; both bearings are Study's one Bearings row (group 0), and say nothing.
-    expect(colourOf(byName(races, 'fea-bearing-races'))).toBe('71717a');
-    expect(new Set(races.sites.map((site: any) => site.group))).toEqual(new Set([0]));
-    expect(new Set(races.sites.map((site: any) => site.ref))).toEqual(new Set(['bracket/face 5', 'bracket/face 6']));
-    expect(races.labels(1)).toEqual([]);
-    expect(markerGateText(['speaker', 'electrode', 'bearing']))
-      .toBe('Speakers where sound is made, plates on its electrodes, rings where bearings carry the shaft.');
-  });
-
-  it('says beside its checkbox what it draws, and words a drop and a shake plainly', () => {
+  it('says beside its checkbox what it draws', () => {
+    expect(Object.keys(MARKER_KINDS)).toEqual(['load', 'fixture', 'roller', 'body_load']);
+    expect(Object.values(MARKER_KINDS).every((kind: any) => ['load', 'fixture'].includes(kind.tone) && ['loads', 'fixtures'].includes(kind.bucket))).toBe(true);
     expect(markerGateText(['fixture', 'load'])).toBe('Arrows where the study loads the part, cones where it holds it.');
-    expect(markerGateText(['temperature', 'heat', 'convection'])).toBe('Dots where its temperature is fixed, wavy arrows where heat goes in, strokes where air cools it.');
+    expect(markerGateText(['load', 'body_load'])).toBe('Arrows where the study loads the part, an arrow through its middle for its weight.');
     expect(markerGateText([])).toBe('');
-    expect([dropWords(1000), dropWords(500), dropWords(1500)]).toEqual(['1 m drop', '500 mm drop', '1.5 m drop']);
-    expect([shakeWords({ kind: 'psd', direction: [0, 0, 1] }), shakeWords({ kind: 'srs', direction: [1, 0, 0] }),
-      shakeWords({ kind: 'base', direction: [0, 0, 1], amplitudeG: 2 }, 1.5)]).toEqual(['shaken at random along Z', 'a shock along X', 'shaken 3 g along Z']);
   });
 });
 
@@ -413,7 +267,7 @@ describe('a label is never on or inside the part', () => {
     // A sideways load on a hidden back face: its free end projects inside the outline; it runs on out of it.
     const sideways = pastOutline([60, 50], [50, 50], square, 10);
     expect(sideways).toMatchObject({ x: 110, y: 50, dx: 1, dy: 0 });
-    // A shaker standing under the part, its free end pointing up into it: labelled below, not across the part.
+    // A load standing under the part, its free end pointing up into it: labelled below, not across the part.
     const shake = pastOutline([50, 95], [50, 105], square, 10);
     expect(shake.y).toBeGreaterThan(100);
     expect(shake.dy).toBeGreaterThan(0);
@@ -422,35 +276,5 @@ describe('a label is never on or inside the part', () => {
     // An arrow seen end on: straight out from the outline's middle.
     const endOn = pastOutline([70, 50], [70.5, 50], square, 10);
     expect(endOn.x).toBeGreaterThan(100);
-  });
-});
-
-describe('a sound result\'s source and walls', () => {
-  it('marks a part shaken by a harmonic result as the source: its broad faces, not the held one, labelled "vibrating"', () => {
-    // A slab: its two broad faces (+Y, -Y in glTF) are the plate's; held on -X.
-    const plate = cube({ fixtures: [{ type: 'fixed', faces: ['bracket/face 2'] }], loads: [], excitation: { type: 'base', direction: [0, 0, 1], amplitude_g: 1 },
-      acoustic: { solve: 'response', domain: 'outside', sources: [], from: 'harmonic' } }, [0, 0, 0], { analysis: { type: 'acoustic' } });
-    plate.mesh.geometry.scale(1, 0.05, 1);
-    const markers = createFeaMarkers(THREE, plate);
-    expect(markers.kinds).toContain('speaker');
-    const faces = new Set(markers.sites.filter((site: any) => site.kind === 'speaker').map((site: any) => site.ref));
-    // +Y and -Y (bracket/face 3, bracket/face 4) and the +Z/-Z sides as broad as them here are not: only faces of a quarter of the largest.
-    expect([...faces].sort()).toEqual(['bracket/face 3', 'bracket/face 4']);
-    markers.update(positionsOf(plate));
-    expect(markers.labels(1).find((label: any) => label.kind === 'speaker')?.text).toBe('vibrating');
-    markers.dispose();
-  });
-
-  it('draws the walls around the air shown alone as a faint outline', () => {
-    const walls_mm = [[-510, -510, -510, 510, -510, -510], [-510, -510, -510, -510, 510, -510]];
-    const air = cube({ fixtures: [], loads: [], acoustic: { solve: 'modes', domain: 'inside', sources: [] } }, [0, 0, 0],
-      { analysis: { type: 'acoustic', acoustic: { solve: 'modes', domain: 'inside', shown: 'air', walls_mm } } });
-    expect(air.analysis.walls).toEqual(new Float32Array([-0.51, -0.51, 0.51, 0.51, -0.51, 0.51, -0.51, -0.51, 0.51, -0.51, -0.51, -0.51]));
-    const markers = createFeaMarkers(THREE, air);
-    expect(markers.walls).toBe(true);
-    const lines = markers.object3D.getObjectByName('fea-enclosure-walls') as THREE.LineSegments;
-    expect(lines.geometry.getAttribute('position').count).toBe(4);
-    expect((lines.material as THREE.LineBasicMaterial).opacity).toBeLessThan(1);
-    markers.dispose();
   });
 });

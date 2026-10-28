@@ -21,22 +21,19 @@ import { DEFAULT_POSE_VALUE, NO_PRESET_VALUE, positionValuesAreDefault } from ".
 import { GLB_DECLINED_LIVE_COMMANDS, GLB_TOOL, GLB_TOOL_MODES } from "./tools.js";
 import { useGlbAnimation } from "./useGlbAnimation.js";
 
-const NO_CHOICE = Object.freeze({ field: null, scale: null, loadScale: null, threshold: null, preset: null, markers: null, mode: null, frame: null, sigma: null,
-  motion: null });
-// What a series or a motion adds to the file's view, written only once chosen, so a result with none keeps the slice it always had.
-const SERIES_KEYS = Object.freeze(["mode", "frame", "sigma", "motion"]);
+const NO_CHOICE = Object.freeze({ field: null, scale: null, loadScale: null, threshold: null, preset: null, markers: null });
 // Where each control's value is kept in the file's view: the field and the deformation scale as they always were.
-const DRIVE_KEYS = Object.freeze({ field: "field", deformation: "scale", load_scale: "loadScale", threshold: "threshold", mode: "mode", frame: "frame", sigma: "sigma",
-  motion: "motion" });
-const NO_VALUES = Object.freeze({ field: null, scale: null, loadScale: null, threshold: null, mode: null, frame: null, sigma: null, motion: null });
+const DRIVE_KEYS = Object.freeze({ field: "field", deformation: "scale", load_scale: "loadScale", threshold: "threshold" });
+const NO_VALUES = Object.freeze({ field: null, scale: null, loadScale: null, threshold: null });
 const EMPTY = Object.freeze([]);
 // `refs`: what Quick Edit gets when it is not the faces' own (a part's or a joint's parts); `parts`: parts to tint.
 const NO_FACES = Object.freeze({ result: null, id: "", faces: EMPTY, refs: EMPTY, parts: EMPTY, softParts: EMPTY, summary: "" });
-// Whether motion should be kept small: the app's own setting, or the system's.
-const prefersReducedMotion = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+// The markers' checkbox, and what it says it draws before they are built.
+const MARKERS_TITLE = "Loads and fixtures";
+const MARKER_GATE_KINDS = Object.freeze(["load", "fixture"]);
 const SELECT_ICON = <MousePointer2 className="size-3" strokeWidth={2} aria-hidden="true" />;
-// A result offers Clip besides what any GLB view does: a cut through it shows what is inside (a channel's
-// walls, a flow's surfaces past an opening) in the field's colours. It has no edges, so no X-ray.
+// A result offers Clip besides what any GLB view does: a cut through it shows what is inside in the
+// field's colours. It has no edges, so no X-ray.
 const NO_REFERENCES = Object.freeze([]);
 const EXPLODE_OFF = Object.freeze({ exploded: { enabled: false, amount: 0 } });
 const CLIP_OFF = Object.freeze({ clip: { enabled: false, axis: "x", invert: false } });
@@ -45,8 +42,8 @@ const CLIP_OFF = Object.freeze({ clip: { enabled: false, axis: "x", invert: fals
  * A GLB that carries an FEA result (`cadgen fea solve`), drawn on the same shell as any GLB (`GlbRenderer.jsx`) and with
  * its tools (Select, Annotate, Measure, Clip): the field in colour on the deformed shape, Study and an assembly's Parts
  * in the file sidebar, a face picked under Select as Quick Edit's chip (a reference into the STEP it was solved from),
- * where the study holds and loads it on the model, and its routines (a Load ramp, Vibrate, a series' Play, a drop, a
- * flow's tracers) in the sidebar's Animation and in Preview. `fv`: the FEA viewer's chunk (`feaView.jsx`).
+ * where the study holds and loads it on the model, and its Load ramp in the sidebar's Animation and in Preview.
+ * `fv`: the FEA viewer's chunk (`feaView.jsx`).
  */
 export default function FeaSurface({ view, document, loaded, fv }) {
   const { t } = useI18n();
@@ -62,27 +59,17 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   // the file's view (`kit/shell/fileView.js`), written against the result's own fields, scale and
   // view: a re-solved result opens at its own defaults.
   const fea = useMemo(() => (fv ? fv.readFeaResult(scene?.document?.scene) : null), [fv, scene]);
-  // The box the model is drawn in over its whole series and its routine (`feaBounds.js`), at the deformation and load
-  // it opens on, grown on the scene before the shell frames it (Preview frames on it once) and fits the camera's near
-  // and far planes to it: a strap stretched at its last load step is never sliced off, nor a piezo tip at its ramp's top.
-  // A drop's motion (`fea/fall.js`) draws the part turned the way it falls, on the floor: that is the box the tools view
-  // frames, and Preview frames the whole fall from its height (`previewBounds`), as a kinematics pose leaves the
-  // camera on the model at rest while a routine moves it.
+  // The box the model is drawn in over its Load ramp (`feaBounds.js`), at the deformation and load it opens on, grown on
+  // the scene before the shell frames it (Preview frames on it once) and fits the camera's near and far planes to it:
+  // a part drawn larger than the file's own exaggeration is never sliced off.
   useMemo(() => {
     if (!fea) return;
     const opening = fv.feaControls(fea);
     const scale = opening.find((control) => control.drives === "deformation")?.defaultValue ?? fea.deformationScale;
-    const load = fv.feaAnalysis(fea).scalesWithLoad ? opening.find((control) => control.drives === "load_scale")?.defaultValue ?? 1 : 1;
-    const posing = fv.feaMotion(fea);
-    const landed = posing?.kind === "fall" ? fv.feaFallBounds(THREE, scene, fea, { scale, height: false }) : null;
-    const grown = landed || fv.feaDrawnBounds(THREE, scene, fea, { scale, load });
+    const load = opening.find((control) => control.drives === "load_scale")?.defaultValue ?? 1;
+    const grown = fv.feaDrawnBounds(THREE, scene, fea, { scale, load });
     if (grown) Object.assign(scene, { bounds: grown, restBounds: grown });
-    if (landed) scene.previewBounds = fv.feaFallBounds(THREE, scene, fea, { scale });
-    // A pose motion (`fea/poses.js`: a shake, a load cycle, a bolt tightened) is drawn moving over its whole timeline.
-    const posed = posing?.poseAt ? fv.feaPoseBounds(THREE, scene, fea, posing, { scale }) : null;
-    if (posed) Object.assign(scene, { bounds: posed, restBounds: posed });
   }, [scene, fea]);
-  const analysis = fea ? fv.feaAnalysis(fea) : null;
   const controls = useMemo(() => (fea ? fv.feaControls(fea, t) : EMPTY), [fea, t]);
   const presets = useMemo(() => (fea ? fv.feaPresets(fea, controls) : EMPTY), [fea, controls]);
   const markerShow = useMemo(() => (fea ? fv.feaMarkerShow(fea) : null), [fea]);
@@ -97,20 +84,6 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   const { shown: shownControls, effective, loadScale } = fea ? fv.feaShownControls(fea, controls, values) : { shown: EMPTY, effective: values, loadScale: 1 };
   const activeField = fea ? fea.fields.find((entry) => entry.attribute === effective.field) || fea.fields[0] : null;
   const activeScale = fea ? finiteOr(effective.deformation, fea.deformationScale) : null;
-  // The frame of a series shown: the mode picker's or the scrubber's, else where a chosen check
-  // jumped to, else the series' own default; and the sigma level a random vibration's RMS fields show at.
-  const seriesControl = controls.find((control) => control.drives === "mode" || control.drives === "frame") || null;
-  const frameIndex = fea ? fv.activeFrameIndex(fea, seriesControl ? effective : { mode: choice.mode }) : 0;
-  const sigma = fea && effective.sigma !== undefined && effective.sigma !== null ? Number(effective.sigma) : null;
-  // The moment of a motion the Time row shows (`fea/motion.js`), where it has one.
-  // While the Time row's own play button plays it in place (`inPlace`), the moment it has reached.
-  const [inPlace, setInPlace] = useState(null);
-  const inPlaceRef = useRef(null);
-  inPlaceRef.current = inPlace;
-  const hasMotionRow = controls.some((control) => control.drives === "motion");
-  const motionAt = hasMotionRow ? (inPlace ? inPlace.at : Number(effective.motion)) : null;
-  // The load shown moves the colours and the deformation only where the analysis follows the load.
-  const fieldLoad = analysis?.scalesWithLoad ? loadScale : 1;
   // The load as a multiple of the solved one (a linear study scales exactly), and what is drawn grey under a threshold.
   const thresholdControl = shownControls.find((control) => control.drives === "threshold");
   const thresholdField = fea && thresholdControl ? fea.fields.find((entry) => entry.attribute === thresholdControl.field) : null;
@@ -122,8 +95,7 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   const choiceRef = useRef(choice);
   choiceRef.current = choice;
   const rendererState = useMemo(() => (fea
-    ? { signatures: { fea: signature }, read: () => ({ fea: Object.fromEntries(Object.keys(NO_CHOICE)
-      .filter((key) => !SERIES_KEYS.includes(key) || (choiceRef.current[key] !== null && choiceRef.current[key] !== undefined)).map((key) => [key, choiceRef.current[key]])) }) }
+    ? { signatures: { fea: signature }, read: () => ({ fea: Object.fromEntries(Object.keys(NO_CHOICE).map((key) => [key, choiceRef.current[key]])) }) }
     : null), [fea, signature]);
 
   // What the result's checks found stays in the file for the agent; the viewer raises no alert for it
@@ -142,12 +114,8 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   const parts = useMemo(() => (fea && fv.feaShowsParts(fea) ? fv.partRows(fea, loadScale, t) : EMPTY), [fea, loadScale, t]);
   // The answer at a glance, at the load shown: it follows the load control, and may change its word.
   const verdict = useMemo(() => (fea ? fv.feaVerdict(fea, loadScale, t) : null), [fea, loadScale, t]);
-  // A check whose value occurs at a frame of the series shows that frame when chosen: the mode picker
-  // or the scrubber moves there, and with neither the view still jumps to it.
-  const jumpRef = useRef(null);
   const chooseFaces = useCallback((row) => {
     setChosenFaces({ result: fea, id: row.id, faces: row.faces || EMPTY, refs: row.refs || EMPTY, parts: row.parts || EMPTY, softParts: row.softParts || EMPTY, summary: row.summary });
-    if (Number.isInteger(row.frame)) jumpRef.current?.(row.frame);
   }, [fea]);
   // The view's Clip is the viewport's (`kit/tools/model-effects`): its plane in force is the runtime's (three.js's
   // clipping plane, what lies on its negative side cut away), read as a press or a label needs it.
@@ -175,64 +143,34 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     return reference(faces.faces.map(fv.findingSelector), faces.summary);
   }, [fea, source, faces]);
 
-  // A frame for what the routines and the controls change: the editor's, and Preview's while it is open (its own
+  // A frame for what the routine and the controls change: the editor's, and Preview's while it is open (its own
   // scene over the same geometry, so the colours and the deformation drawn are the editor's).
   const requestRenderRef = useMemo(() => ({ current: null }), []);
   const preview = usePreviewState();
   const previewing = preview.previewing;
-  // A result that moves as a whole (`fea/motion.js`; a drop's fall, `fea/fall.js`, drawn by `feaFall.js`): the Time
-  // row's value poses it, and Preview's playbar plays the same timeline (with reduced motion, only its `play` span).
-  const reducedMotion = host.environment?.reducedMotion === true || prefersReducedMotion();
-  const motion = useMemo(() => (fea ? fv.feaMotion(fea, t) : null), [fea, t]);
-  const fall = useMemo(() => {
-    const frame = motion?.kind === "fall" ? fv.fallFrame(THREE, fea) : null;
-    return frame ? { frame, plan: motion.plan } : null;
-  }, [fea, motion]);
-  const fallShownRef = useRef(null);
-  const syncBoundsRef = useRef(null);
-  // A flow's tracers (`fea/poses.js`, drawn by `feaTracers.js`): its routine streams them along the solved flow.
-  const tracers = useMemo(() => (fea && fv.feaAnalysis(fea).routine(fea)?.kind === "tracers" ? fv.readTracers(fea) : null), [fea]);
-  const tracersShownRef = useRef(null);
-  const clockRef = useRef(null);
-  // The routine playing, `{ kind, value }`, or null while none plays: a Load ramp's share of the load
-  // put on (0 to 1), Vibrate's phase (radians), Play's share of the way through the frames (0 to 1);
-  // and the one pass that draws the colours, the deformation and the markers for what is shown.
-  const routineRef = useRef(null);
+  // The Load ramp's share of the load put on (0 to 1) while it plays, or null while it does not; and the one pass
+  // that draws the colours, the deformation and the markers for what is shown.
+  const rampRef = useRef(null);
   const paintRef = useRef(null);
-  // A result's own routine, its analysis's (`routine`): the static family's Load ramp (the load going
-  // on, from none to the load chosen, colours, deformation and markers together; buckling's Buckle),
-  // modal's and harmonic's Vibrate (a loop of the shape swinging, a harmonic frame through its phase),
-  // a series' Play (its frames in turn, each blended into the next); none for one with nothing to play.
+  // The result's routine: the Load ramp, the load going on from none to the load chosen, colours, deformation and
+  // markers together.
   const ownClips = useMemo(() => {
-    const routine = fea ? fv.feaAnalysis(fea).routine(fea, t) : null;
-    // A motion's routine plays its timeline (`motionSpan`): its value is the moment on it, as the Time row's is.
-    const span = routine?.kind === "motion" && motion ? fv.motionSpan(motion, reducedMotion) : null;
-    // A routine that says how long it is (a flow's tracers' longest trip) plays that long.
-    const duration = span ? span.duration : routine ? routine.duration || fv.ROUTINE_SECONDS[routine.kind] || 0 : 0;
-    if (!duration) return EMPTY;
-    const swings = routine.kind === "vibrate" || routine.kind === "pulse";
-    const valueAt = (elapsedSec) => (span ? span.from + clamp(elapsedSec, 0, duration) : routine.kind === "tracers" ? elapsedSec : swings ? (2 * Math.PI * elapsedSec) / duration : clamp(elapsedSec / duration, 0, 1));
+    if (!fea) return EMPTY;
+    const { id, key, duration } = fv.LOAD_RAMP;
     return [{
-      id: routine.id, label: routine.key ? t(routine.key) : routine.label, duration,
+      id, label: t(key), duration,
       play: {
-        apply(elapsedSec) { routineRef.current = { kind: routine.kind, value: valueAt(elapsedSec) }; paintRef.current?.(); },
-        release() { routineRef.current = null; paintRef.current?.(); },
+        apply(elapsedSec) { rampRef.current = clamp(elapsedSec / duration, 0, 1); paintRef.current?.(); },
+        release() { rampRef.current = null; paintRef.current?.(); },
       },
     }];
-  }, [fea, motion, reducedMotion, t]);
+  }, [fea, t]);
   const animation = useGlbAnimation(scene?.document || null, () => requestRenderRef.current?.(), ownClips);
   const shellRef = useRef(null);
   const choose = useCallback((patch) => {
     setEdited({ ...choiceRef.current, ...patch, signature });
     shellRef.current?.scheduleStateSave();
   }, [signature]);
-  jumpRef.current = (index) => {
-    if (!fea?.series || index < 0 || index >= fea.series.frames.length) return;
-    // A motion's Time row scrubs its frames too: it moves to the frame's moment.
-    const at = motion?.atFrame?.(index);
-    if (Number.isFinite(at)) { choose({ motion: at, preset: null }); return; }
-    choose(seriesControl?.drives === "frame" ? { frame: seriesControl.snaps[index], preset: null } : { mode: String(index), preset: null });
-  };
   // The markers built for the result (below), whose kinds Study's gate for them names.
   const [markers, setMarkers] = useState(null);
   const chosenSomething = faces.faces.length > 0 || faces.refs.length > 0;
@@ -284,219 +222,26 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   // under the range of the load chosen. The markers stand on the positions drawn.
   const tinted = useMemo(() => (fea ? fv.faceIndices(fea, faces.faces) : EMPTY), [fea, faces]);
   const markersRef = useRef(null);
-  // A series shows the frame chosen: its fields' colours from that frame's attributes and the model
-  // deformed by its displacement or mode shape; Play blends each frame into the next, and Vibrate
-  // swings the shape (a harmonic frame turning through its phase, re·cos − im·sin).
-  // A drop's motion, drawn at a moment of it (the Time row's, or the routine's as it plays): the colours and the
-  // deformation of that moment (an impact's frames by their real time; an estimate's load ramping to its peak and back
-  // while it stops), and the mesh turned the way it falls, lifted and carried as the fall says, never through the
-  // floor, which is drawn beside it. Off the floor (falling, hopping) the markers and their labels are put away; while
-  // the routine plays, the readout says the real time and the slow motion.
-  const paintFall = (at, playing) => {
-    const { frame, plan } = fall;
-    const mesh = fea.mesh;
-    const state = fv.fallAt(plan, frame.fall, at);
-    let shown = fallShownRef.current;
-    if (!shown) {
-      mesh.updateMatrix();
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), fv.floorPlaneMaterial(THREE));
-      floor.name = "fea-drop-floor";
-      floor.renderOrder = 9;
-      floor.raycast = () => {};
-      floor.matrixAutoUpdate = false;
-      mesh.parent?.add(floor);
-      shown = { mesh, rest: mesh.matrix.clone(), floor, local: new THREE.Matrix4(), placed: false, off: false };
-      fallShownRef.current = shown;
-    }
-    const frames = fea.series?.frames || [];
-    const level = fv.sigmaScale(activeField, sigma);
-    let index = 0;
-    let blend = null;
-    let centre = null;
-    let share = 1;
-    if (frames.length) {
-      // Before it lands, the first frame (first contact, at rest); after, the last; between, the frames by their times.
-      const between = state.phase === "impact" ? fv.framesAtTime(fea.series, state.sinceContactS)
-        : state.phase === "hold" || state.phase === "fall" ? { from: 0, to: 0, weight: 0 } : { from: frames.length - 1, to: frames.length - 1, weight: 0 };
-      index = between.from;
-      blend = between.weight > 0 ? { to: between.to, weight: between.weight } : null;
-      const centres = frame.centres;
-      if (centres?.[between.from]) centre = centres[between.from].clone().lerp(centres[between.to] || centres[between.from], between.weight);
-    } else {
-      // An estimate's stop: the load goes on and comes off again as a half-sine over the impact.
-      share = state.phase === "impact" ? Math.sin(Math.PI * state.share) : 0;
-    }
-    const field = fv.fieldAtFrame(fea, activeField, index);
-    const mixed = blend ? { field: fv.fieldAtFrame(fea, activeField, blend.to), weight: blend.weight } : null;
-    const threshold = thresholdField ? { field: fv.fieldAtFrame(fea, thresholdField, index), value: thresholdValue, scale: share * fieldLoad } : null;
-    fv.recolorByField(mesh, field, fea.ramp, tinted, faces.parts, faces.softParts,
-      { valueScale: share * fieldLoad * level, rangeScale: fieldLoad * level, threshold, ...(mixed ? { blend: mixed } : {}) });
-    const { attribute } = fv.deformationAt(fea, index);
-    const next = blend ? fv.deformationAt(fea, blend.to).attribute || attribute : attribute;
-    const vector = blend && next !== attribute ? [[attribute, 1 - blend.weight], [next, blend.weight]] : attribute;
-    const positions = mesh.geometry.getAttribute("position").array;
-    if (vector && fv.applyDeformation(mesh, activeScale * share * (frames.length ? 1 : fieldLoad), fea.deformationScale, vector)) {
-      markersRef.current?.update(positions);
-    }
-    // Never through the floor; on it once it has come to rest (and as it hops off it).
-    const past = fv.pastFloor(positions, frame, centre);
-    const settled = state.phase === "rest" || state.phase === "hop";
-    const lift = state.lift / 1000 + (settled ? past : Math.max(0, past));
-    mesh.matrixAutoUpdate = false;
-    mesh.matrix.copy(shown.rest).multiply(fv.fallMatrix(THREE, frame, { lift, centre }, shown.local));
-    mesh.matrixWorldNeedsUpdate = true;
-    if (!shown.placed) {
-      // The floor: level through the point it meets first, under the part, as wide as the markers' rigid floor.
-      mesh.geometry.computeBoundingSphere();
-      const sphere = mesh.geometry.boundingSphere;
-      const size = fv.PLANE_SIZE * Math.max((sphere?.radius || 0) * 2, 1e-3);
-      shown.floor.geometry.dispose();
-      shown.floor.geometry = new THREE.PlaneGeometry(size, size).rotateX(-Math.PI / 2);
-      const middle = (sphere?.center || new THREE.Vector3()).clone().applyMatrix4(fv.fallMatrix(THREE, frame, {}));
-      shown.floor.matrix.copy(shown.rest).multiply(new THREE.Matrix4().makeTranslation(middle.x, frame.pivot.y, middle.z));
-      shown.floor.matrixWorldNeedsUpdate = true;
-      shown.placed = true;
-    }
-    // Off the floor the markers (where the study loads it, its own rigid floor) would ride up with it: put away.
-    shown.off = state.lift > 0;
-    // Off the floor, or playing, the scene's bounds are the whole fall's: the camera's near and far planes and the
-    // stage follow `bounds`, and the part up at its height would be cut off by a near plane fitted to it on the floor.
-    const wanted = (shown.off || playing) && scene.previewBounds ? scene.previewBounds : scene.restBounds;
-    if (wanted && scene.bounds !== wanted) {
-      shown.scene = scene;
-      shown.landed = scene.restBounds;
-      scene.bounds = wanted;
-      syncBoundsRef.current?.();
-    }
-    const markers = markersRef.current;
-    if (markers) markers.object3D.visible = !shown.off;
-    // An impact's markers draw its rigid floor already, on the floor while it is.
-    shown.floor.visible = shown.off || !(markers && markersOn && markerShow?.fixtures && markers.kinds.includes("rigid_plane"));
-    shown.floor.material.color.set(colours.fixture);
-    clockRef.current?.(playing ? fv.fallWords(state, frame.fall) : null);
-    requestRenderRef.current?.();
-  };
-  // Puts back what the motion changed (a result whose Time row is gone): the mesh where it was, the floor gone, the markers, the readout.
-  const endFall = () => {
-    const shown = fallShownRef.current;
-    if (!shown) return;
-    fallShownRef.current = null;
-    const mesh = shown.mesh;
-    mesh.matrix.copy(shown.rest);
-    mesh.matrixAutoUpdate = true;
-    mesh.matrixWorldNeedsUpdate = true;
-    shown.floor.removeFromParent();
-    shown.floor.geometry.dispose();
-    shown.floor.material.dispose();
-    if (markersRef.current) markersRef.current.object3D.visible = true;
-    if (shown.scene && shown.scene.bounds !== shown.landed) { shown.scene.bounds = shown.landed; syncBoundsRef.current?.(); }
-    clockRef.current?.(null);
-    requestRenderRef.current?.();
-  };
-  const endFallRef = useRef(endFall);
-  endFallRef.current = endFall;
-  useEffect(() => () => endFallRef.current(), [fea]);
-  // A pose motion (`fea/poses.js`), drawn at a moment of it (the row's, or the routine's as it plays): its frame, its
-  // colours (scaled with its load, or its own values at that moment: an AC phase, a temperature ramped), its
-  // displacement and the markers on it; while it plays the readout says the real time, how much it is slowed and,
-  // where it was drawn larger to be seen, by how much.
-  const paintPose = (at, playing) => {
-    const pose = motion.poseAt(Number.isFinite(at) ? at : motion.defaultAt, { field: activeField }) || {};
-    const index = Number.isInteger(pose.frame) ? pose.frame : frameIndex;
-    const field = fv.fieldAtFrame(fea, activeField, index);
-    const blend = pose.blend?.weight > 0 ? { field: fv.fieldAtFrame(fea, activeField, pose.blend.to), weight: pose.blend.weight } : null;
-    const level = fv.sigmaScale(activeField, sigma);
-    const share = Number.isFinite(pose.valueScale) ? pose.valueScale : 1;
-    const threshold = thresholdField ? { field: fv.fieldAtFrame(fea, thresholdField, index), value: thresholdValue, scale: fieldLoad * share } : null;
-    let changed = fv.recolorByField(fea.mesh, field, fea.ramp, tinted, faces.parts, faces.softParts,
-      { valueScale: fieldLoad * level * share, rangeScale: fieldLoad * level, threshold, ...(blend ? { blend } : {}),
-        ...(pose.values ? { values: pose.values, stamp: pose.stamp || "" } : {}) });
-    let vector = pose.vector || null;
-    if (!vector) {
-      const { attribute } = fv.deformationAt(fea, index);
-      const next = blend ? fv.deformationAt(fea, pose.blend.to).attribute || attribute : attribute;
-      vector = attribute && blend && next !== attribute ? [[attribute, 1 - blend.weight], [next, blend.weight]] : attribute;
-    }
-    const { scale, raised } = fv.poseScale(fea.mesh, pose, activeScale);
-    if (vector && fv.applyDeformation(fea.mesh, scale * fieldLoad, fea.deformationScale, vector)) {
-      markersRef.current?.update(fea.mesh.geometry.getAttribute("position").array);
-      changed = true;
-    }
-    const larger = raised ? `drawn ${Math.round(raised * fieldLoad).toLocaleString("en-US")}× larger` : "";
-    clockRef.current?.(playing && pose.words ? { time: pose.words.time, scale: [pose.words.scale, larger].filter(Boolean).join(" · ") } : null);
-    if (changed) requestRenderRef.current?.();
-  };
-  // A flow's tracers while its routine plays: built on the first moment, moved every frame, put away when it stops.
-  const paintTracers = (routine) => {
-    let shown = tracersShownRef.current;
-    if (routine?.kind !== "tracers" || !tracers) {
-      if (shown) { tracersShownRef.current = null; shown.dispose(); clockRef.current?.(null); requestRenderRef.current?.(); }
-      return;
-    }
-    if (!shown) {
-      shown = fv.createFeaTracers(THREE, tracers, fea.mesh);
-      tracersShownRef.current = shown;
-    }
-    shown.style({ colour: colours.load });
-    shown.update(routine.value);
-    const seconds = routine.value / tracers.slow;
-    clockRef.current?.({ time: `${fv.shortTime(seconds)} of flow`, scale: fv.paceWords(tracers.slow) });
-    requestRenderRef.current?.();
-  };
-  const paintTracersRef = useRef(paintTracers);
-  paintTracersRef.current = paintTracers;
-  useEffect(() => () => paintTracersRef.current(null), [fea]);
   paintRef.current = () => {
     if (!fea) return;
-    const routine = routineRef.current;
-    paintTracers(routine);
-    if (motion?.poseAt) { paintPose(routine?.kind === "motion" ? routine.value : motionAt, routine?.kind === "motion" || Boolean(inPlace)); return; }
-    // A motion is always drawn at a moment of it: the routine's as it plays, else the Time row's.
-    if (fall) { paintFall(routine?.kind === "motion" ? routine.value : motionAt, routine?.kind === "motion" || Boolean(inPlace)); return; }
-    endFall();
-    const shownLoad = routine?.kind === "load_ramp" ? routine.value * fieldLoad : fieldLoad;
-    const between = routine?.kind === "play" ? fv.framesBetween(fea, routine.value) : null;
-    const index = between ? between.from : frameIndex;
-    const field = fv.fieldAtFrame(fea, activeField, index);
-    const blend = between?.weight > 0 ? { field: fv.fieldAtFrame(fea, activeField, between.to), weight: between.weight } : null;
-    const level = fv.sigmaScale(activeField, sigma);
-    const threshold = thresholdField ? { field: fv.fieldAtFrame(fea, thresholdField, index), value: thresholdValue, scale: shownLoad } : null;
-    // Ring swings the shape's sign (p·cos 2πt) on a ramp symmetric about 0, so a mode's ends visibly trade colours.
-    let changed = fv.recolorByField(fea.mesh, routine?.kind === "pulse" ? fv.symmetricRange(field) : field, fea.ramp, tinted, faces.parts, faces.softParts,
-      { valueScale: shownLoad * level * (routine?.kind === "pulse" ? Math.cos(routine.value) : 1), rangeScale: fieldLoad * level, threshold,
-        ...(blend ? { blend } : {}) });
-    const { attribute, imaginary } = fv.deformationAt(fea, index);
-    let vector = attribute;
-    if (attribute && routine?.kind === "vibrate") {
-      vector = imaginary ? [[attribute, Math.cos(routine.value)], [imaginary, -Math.sin(routine.value)]] : [[attribute, Math.sin(routine.value)]];
-    } else if (attribute && blend) {
-      // Two frames deformed by the same vector (a temperature series, whose displacement is the file's
-      // one in every frame) are that vector: Play then steps the colours alone, never rewriting every
-      // position and normal and re-placing every marker each tick for a model that does not move.
-      const next = fv.deformationAt(fea, between.to).attribute || attribute;
-      vector = next === attribute ? attribute : [[attribute, 1 - blend.weight], [next, blend.weight]];
-    }
-    // Vibrate, and a Load ramp outside the static family (a voltage, a buckle), move the model clearly: at the
-    // Exaggerate value, raised where that moves it less than a tenth of its size. The static family's Load ramp is
-    // drawn as it always was, and Play's frames as the scrubber shows them.
-    const swings = routine?.kind === "vibrate" || (routine?.kind === "load_ramp" && analysis.family !== "static");
-    const moving = swings && attribute
-      ? fv.routineScale(fea.mesh, [attribute, ...(imaginary ? [imaginary] : []), ...(blend ? [fv.deformationAt(fea, between.to).attribute || attribute] : [])], activeScale)
-      : activeScale;
-    if (vector && fv.applyDeformation(fea.mesh, moving * shownLoad, fea.deformationScale, vector)) {
+    const shownLoad = rampRef.current === null ? loadScale : rampRef.current * loadScale;
+    const threshold = thresholdField ? { field: thresholdField, value: thresholdValue, scale: shownLoad } : null;
+    let changed = fv.recolorByField(fea.mesh, activeField, fea.ramp, tinted, faces.parts, faces.softParts,
+      { valueScale: shownLoad, rangeScale: loadScale, threshold });
+    if (fv.applyDeformation(fea.mesh, activeScale * shownLoad, fea.deformationScale)) {
       markersRef.current?.update(fea.mesh.geometry.getAttribute("position").array);
       changed = true;
     }
     if (changed) requestRenderRef.current?.();
   };
-  useEffect(() => { paintRef.current?.(); }, [fea, activeField, tinted, faces.parts, faces.softParts, activeScale, fieldLoad, thresholdField, thresholdValue, frameIndex, sigma, motionAt]);
+  useEffect(() => { paintRef.current?.(); }, [fea, activeField, tinted, faces.parts, faces.softParts, activeScale, loadScale, thresholdField, thresholdValue]);
 
   // Where the study loads and holds the part, on the model (`feaMarkers.js`): built once per result,
   // standing on the positions drawn, the chosen load's or fixture's in the chosen colour.
   useEffect(() => {
     if (!fea?.study) return undefined;
     const built = fv.createFeaMarkers(THREE, fea);
-    if (!built.sites.length && !built.walls) { built.dispose(); return undefined; }
+    if (!built.sites.length) { built.dispose(); return undefined; }
     fea.mesh.add(built.object3D);
     built.update(fea.mesh.geometry.getAttribute("position").array);
     markersRef.current = built;
@@ -516,9 +261,9 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     requestRenderRef.current?.();
   }, [markers, colours, markersOn, markerShow, faces, requestRenderRef]);
   // A label goes with its marker when Clip cuts away where the load acts (read each frame, as the cut is).
-  const loadLabels = useCallback(() => (markers && markersOn && !fallShownRef.current?.off
-    ? markers.labels(fieldLoad, { loads: markerShow.loads, fixtures: markerShow.fixtures })
-      .filter((label) => keptByCut(label.face || label.at)) : EMPTY), [markers, markersOn, markerShow, fieldLoad, keptByCut]);
+  const loadLabels = useCallback(() => (markers && markersOn
+    ? markers.labels(loadScale, { loads: markerShow.loads, fixtures: markerShow.fixtures })
+      .filter((label) => keptByCut(label.face || label.at)) : EMPTY), [markers, markersOn, markerShow, loadScale, keptByCut]);
 
   // Select picks the result's faces; Study's rows choose them too.
   const selectActive = Boolean(fea) && !previewing && shell.toolMode === GLB_TOOL.SELECT;
@@ -531,61 +276,18 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     catch (error) { shellRef.current?.reportActionError(error instanceof Error ? error.message : "Could not copy reference"); return false; }
   }, [single, source, host.clipboard]);
   const copySelection = selectActive && single ? copyFace : null;
-  // The Time row's play button: the motion's timeline in place, in the tools view, its value following it, as the
-  // playbar plays it in preview (with reduced motion only its `play` span); once through, then it stops there.
-  const motionPlaying = Boolean(inPlace);
-  useEffect(() => {
-    if (!motionPlaying || !motion) return undefined;
-    const span = fv.motionSpan(motion, reducedMotion);
-    const end = span.from + span.duration;
-    let previous = null;
-    let frameId = 0;
-    const tick = (now) => {
-      const current = inPlaceRef.current;
-      if (!current) return;
-      const at = Math.min(current.at + (previous === null ? 0 : Math.max(now - previous, 0) / 1000), end);
-      previous = now;
-      if (at >= end) { setInPlace(null); choose({ motion: end, preset: null }); return; }
-      setInPlace({ at });
-      frameId = window.requestAnimationFrame(tick);
-    };
-    frameId = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frameId);
-  }, [motionPlaying, motion, reducedMotion, choose]);
-  // It stops where it is when the result, the tool or preview changes.
-  useEffect(() => {
-    const current = inPlaceRef.current;
-    if (!current) return;
-    setInPlace(null);
-    if (Number.isFinite(current.at)) choose({ motion: current.at, preset: null });
-  }, [fea, shell.toolMode, shell.previewing]); // eslint-disable-line react-hooks/exhaustive-deps
-  const toggleMotion = () => {
-    if (inPlace) { setInPlace(null); choose({ motion: inPlace.at, preset: null }); return; }
-    if (!motion) return;
-    const span = fv.motionSpan(motion, reducedMotion);
-    const end = span.from + span.duration;
-    const from = Number.isFinite(motionAt) && motionAt >= span.from && motionAt < end - 1e-6 * Math.max(end, 1) ? motionAt : span.from;
-    setInPlace({ at: from });
-  };
   // Study's What you see: each control writes its value, and a moved control leaves the preset (Custom).
   const resultControls = {
-    controls: shownControls, values: inPlace ? { ...values, motion: inPlace.at } : values, presets, preset: activePreset,
-    motionPlay: hasMotionRow && motion ? { playing: motionPlaying, onToggle: toggleMotion } : null,
-    // A scrubber snaps to the frame nearest where it is let go; dragging the Time row pauses its play.
-    onChange: (id, value) => {
-      if (id === "motion" && inPlaceRef.current) setInPlace(null);
-      const control = controls.find((entry) => entry.id === id);
-      choose({ [DRIVE_KEYS[id]]: control?.snaps ? fv.snapFrame(control, value) : value, preset: null });
-    },
+    controls: shownControls, values, presets, preset: activePreset,
+    onChange: (id, value) => choose({ [DRIVE_KEYS[id]]: value, preset: null }),
     onPreset: (value) => {
-      if (inPlaceRef.current) setInPlace(null);
       const preset = presets.find((entry) => entry.value === value);
       if (preset) choose({ ...Object.fromEntries(Object.entries(preset.values).map(([id, entry]) => [DRIVE_KEYS[id], entry])), preset: value });
     },
     onReset: () => choose({ ...NO_VALUES, preset: null }),
     // Where the study holds and loads the part, drawn on the model or not.
-    markers: markerShow ? { title: analysis.displayTitle, on: markersOn, onChange: (on) => choose({ markers: on }),
-      text: fv.markerGateText(markers?.kinds?.length ? markers.kinds : analysis.markers.filter((kind) => kind !== "body_load")) } : null,
+    markers: markerShow ? { title: MARKERS_TITLE, on: markersOn, onChange: (on) => choose({ markers: on }),
+      text: fv.markerGateText(markers?.kinds?.length ? markers.kinds : MARKER_GATE_KINDS) } : null,
   };
 
   // ---- the file sidebar: Study, and an assembly's Parts above it ---------------------------
@@ -606,13 +308,13 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   }, [fea, source]);
 
   // ---- Preview: its own scene over the result's geometry, and its own routine ----------------
-  // The routines paint the geometry both scenes share, so Preview shows the field and the deformation they draw.
+  // The Load ramp paints the geometry both scenes share, so Preview shows the field and the deformation it draws.
   const previewScene = usePreviewScene(scene, previewing);
   const previewAnimation = useGlbAnimation(previewScene?.document || null, () => requestRenderRef.current?.(), ownClips);
   const previewView = useMemo(() => ({
     scene: previewScene, animation: previewAnimation,
-    overlay: () => (fea ? <fv.FeaColourBar result={fea} field={activeField} loadScale={loadScale} sigma={sigma} raised={Boolean(previewAnimation)} /> : null),
-  }), [previewScene, previewAnimation, fea, activeField, loadScale, sigma]);
+    overlay: () => (fea ? <fv.FeaColourBar result={fea} field={activeField} loadScale={loadScale} raised={Boolean(previewAnimation)} /> : null),
+  }), [previewScene, previewAnimation, fea, activeField, loadScale]);
 
   // Export converts the result shown to the other mesh kinds, as a plain GLB's does (`GlbRenderer.jsx`).
   const exportView = useMemo(() => scene && loaded.revision && document.modelKey && !host.environment.compact ? {
@@ -630,10 +332,9 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     return <>
       {sceneTools.overlay(viewport)}
       {fea ? <>
-        <fv.FeaFraming runtimeRef={viewport.runtimeRef} hostRef={viewport.hostRef} sync={viewport.syncSceneBounds} syncRef={syncBoundsRef} />
-        {fall || motion?.poseAt || tracers ? <fv.FeaFallClock clockRef={clockRef} /> : null}
+        <fv.FeaFraming runtimeRef={viewport.runtimeRef} hostRef={viewport.hostRef} />
         <PointerPick viewport={viewport} scene={pickScene} enabled={selectActive} onPick={handlePick} />
-        <fv.FeaColourBar result={fea} field={activeField} loadScale={loadScale} sigma={sigma} raised={false} />
+        <fv.FeaColourBar result={fea} field={activeField} loadScale={loadScale} raised={false} />
         {markers ? <fv.FeaLoadLabels runtimeRef={viewport.runtimeRef} hostRef={viewport.hostRef} mesh={fea.mesh} labels={loadLabels}
           colours={{ ink: colours.load, halo: colours.halo }} /> : null}
       </> : null}

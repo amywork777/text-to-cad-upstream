@@ -1007,20 +1007,18 @@ class CurvedFacetLoads(unittest.TestCase):
 
 class MissingExtra(unittest.TestCase):
     def test_the_install_hint_names_the_extra(self):
-        import builtins
+        import importlib.util
         from unittest import mock
 
-        real = builtins.__import__
+        real = importlib.util.find_spec
 
-        def refuse(name, *args, **kwargs):
-            if name == "pyamg":
-                raise ImportError(name)
-            return real(name, *args, **kwargs)
+        def missing(name, *args, **kwargs):
+            return None if name == "netgen" else real(name, *args, **kwargs)
 
-        with mock.patch("builtins.__import__", refuse), self.assertRaises(RuntimeError) as caught:
+        with mock.patch("importlib.util.find_spec", missing), self.assertRaises(RuntimeError) as caught:
             require_fea_stack()
         self.assertIn("cadgen[fea]", str(caught.exception))
-        self.assertIn("pyamg", str(caught.exception))
+        self.assertIn("netgen", str(caught.exception))
 
 
 if __name__ == "__main__":

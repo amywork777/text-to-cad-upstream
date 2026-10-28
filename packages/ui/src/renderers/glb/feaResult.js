@@ -20,12 +20,9 @@
  * (`feaControls`): the controls of Study's What you see, each shown `when` the checks say, named
  * presets, Study's `sections` and whether the loads and fixtures are drawn. A result since the
  * study picked its checks carries `checks`, each judged (`feaVerdict`); an older one's verdict is
- * its safety factor's, the stress check derived from the fields it has.
- * A result of another analysis than static says which (`analysis`: modal, thermal, ...; none is
- * static), and may carry a `series` (its modes, times or frequencies, each frame's fields in
- * attributes of their own) and the steps cadgen took to fit the run (`fit`). What the viewer does
- * per analysis, per check kind and per field is in `fea/`: `analyses/` (its controls, setup and
- * routine), `checkKinds.js` (each kind's words) and `fields.js` (each field's word).
+ * its safety factor's, the stress check derived from the fields it has. The words the viewer says
+ * are in `fea/`: `checkKinds.js` (each check kind's), `fields.js` (each field's), `setup.js` (Study's
+ * setup) and `controls.js` (What you see's own controls).
  * GLTFLoader lower-cases custom attribute names and copies extras into
  * `userData`, which is what is read here.
  *
@@ -37,43 +34,21 @@
  */
 import { Raycaster } from "three";
 import { clamp } from "@text-to-cad/core/common/numbers.js";
-import { feaAnalysis } from "./fea/analyses/index.js";
-import { CHECK_KINDS, FEA_CHECK_KINDS, checkCaption, checkLabel as kindLabel, checkLine as kindLine, checkTitle, loadCaption } from "./fea/checkKinds.js";
-import { deformationRange, fieldOptions } from "./fea/controls.js";
-import { readFall } from "./fea/fall.js";
-import { motionControl, motionPresets } from "./fea/motion.js";
-import { flooredFactor, plainNumber, threeFigures } from "./fea/numbers.js";
-import { DISPLACEMENT, SIGMA_LEVELS, frameControl, isRms, sigmaControl, snapFrame } from "./fea/series.js";
-import { detailRows, faceLabel, facePartIndex, faceSummary, isRoller, loadWords, spaced, wholeRefs } from "./fea/setup.js";
+import { FEA_CHECK_KINDS, checkLabel, checkLine, checkTitle, loadCaption } from "./fea/checkKinds.js";
+import { deformationRange, fieldAndDeformation, fieldOptions } from "./fea/controls.js";
+import { flooredFactor, plainNumber } from "./fea/numbers.js";
+import { SETUP_GROUPS, detailRows, faceLabel, facePartIndex, faceSummary, isRoller, loadWords, spaced, wholeRefs } from "./fea/setup.js";
 
 export { FEA_CHECK_KINDS } from "./fea/checkKinds.js";
 export { deformationRange } from "./fea/controls.js";
-import { fieldInfo } from "./fea/fields.js";
 import { english } from "../../i18n/core.js";
 export { FIELD_WORDS } from "./fea/fields.js";
 export { faceLabel, faceTitle, forceDirection } from "./fea/setup.js";
 
 const GENERATOR = "cadgen fea";
 
-/**
- * A displacement under this share of the model's diagonal is no motion to draw: a magnetic force on a
- * steel plunger moves it nanometres, and drawn ×9,500,000 to be seen it means nothing (a part's own
- * deflection under a real load is thousands of times more).
- */
-export const NEGLIGIBLE_MOTION = 1e-7;
-
-/**
- * Whether a result's displacement is too small to mean anything (`NEGLIGIBLE_MOTION` of its diagonal,
- * the file's largest over every frame): it is then drawn at rest, with no Deformation control.
- */
-function motionless(geometry, fields) {
-  const moved = fields.find((entry) => entry.attribute === DISPLACEMENT);
-  if (!moved || !geometry.getAttribute("position")) return false;
-  if (!geometry.boundingBox) geometry.computeBoundingBox();
-  const box = geometry.boundingBox;
-  const diagonalMm = box ? box.min.distanceTo(box.max) * 1000 : 0;
-  return diagonalMm > 0 && Math.abs(moved.max) <= NEGLIGIBLE_MOTION * diagonalMm;
-}
+/** The deformation's own attribute: the displacement the file baked into its positions. */
+export const DISPLACEMENT = "_displacement";
 
 // The ramp the writer uses when a file carries none: blue -> red.
 export const DEFAULT_RAMP = Object.freeze([
@@ -147,11 +122,8 @@ function readFindings(raw) {
 }
 
 const text = (value) => (typeof value === "string" ? value : "");
-/** These fields less each that is null: the keys a record carries only where the file says them. */
-const present = (fields) => Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null));
 const faceRefs = (raw) => (Array.isArray(raw) ? raw.filter((ref) => typeof ref === "string" && ref) : []);
 const finiteOrNull = (value) => (Number.isFinite(value) ? Number(value) : null);
-const positiveOrNull = (value) => (Number.isFinite(value) && value > 0 ? Number(value) : null);
 // A material as the table's names read: cadgen writes it tidied ("Soft silicone"); a file older than that, its first
 // letter capitalised ("soft silicone" reads "Soft silicone").
 const materialName = (value) => { const name = text(value).trim(); return name ? `${name[0].toUpperCase()}${name.slice(1)}` : ""; };
@@ -195,366 +167,29 @@ function readView(raw) {
   };
 }
 
-/** Where in a result's series a check's value occurs (`at`: its frame, and the frame's value and unit); null for none. */
-function readAt(raw) {
-  if (!raw || typeof raw !== "object" || !Number.isInteger(raw.frame) || raw.frame < 0) return null;
-  return { frame: raw.frame, value: finiteOrNull(raw.value), unit: text(raw.unit) };
-}
-
-/** A frequency band's ends, low first; null for anything else. */
-const band = (raw) => (Array.isArray(raw) && raw.length === 2 && raw.every(Number.isFinite) && raw[0] < raw[1] ? raw.map(Number) : null);
-
 /**
- * The checks the file judged (`kind`, `label`, `value`, `limit`, `unit`, `ratio`, `closeAt`, `status`, `where`,
- * and where its kind's line needs them `at`, `mode`, `band`, `need`, `life`, `reference`), in the study's
- * order, those of a kind its analysis does not judge (`kinds`) or this viewer does not know, or with
- * numbers it cannot use, left out; null for a result written before checks were.
+ * The checks the file judged (`kind`, `label`, `value`, `limit`, `unit`, `ratio`, `closeAt`, `status`, `where`),
+ * in the study's order, those of a kind this viewer does not know, or with numbers it cannot use, left out;
+ * null for a result written before checks were.
  */
-function readChecks(raw, kinds) {
+function readChecks(raw) {
   if (!Array.isArray(raw)) return null;
-  return raw.filter((check) => check && kinds.includes(check.kind) && FEA_CHECK_KINDS.includes(check.kind) && Number.isFinite(check.value)
-    && Number.isFinite(check.limit) && (check.limit > 0 || CHECK_KINDS[check.kind].signedLimit === true) && Number.isFinite(check.ratio))
+  return raw.filter((check) => check && FEA_CHECK_KINDS.includes(check.kind) && Number.isFinite(check.value)
+    && Number.isFinite(check.limit) && check.limit > 0 && Number.isFinite(check.ratio))
     .map((check) => ({
       kind: check.kind, label: text(check.label), value: Number(check.value), limit: Number(check.limit), unit: text(check.unit),
       ratio: Number(check.ratio), closeAt: Number.isFinite(check.close_at) ? Number(check.close_at) : 1,
       margin: Number.isFinite(check.margin) && check.margin >= 1 ? Number(check.margin) : null,
       status: ["fails", "close", "passes"].includes(check.status) ? check.status : null, part: text(check.part),
       faces: faceRefs(check.faces), where: text(check.where?.ref),
-      ...present({
-        at: readAt(check.at), mode: Number.isInteger(check.mode) && check.mode >= 1 ? check.mode : null, band: band(check.avoid_Hz),
-        need: positiveOrNull(check.need), life: positiveOrNull(check.life), reference: finiteOrNull(check.reference),
-        // A laminate's worst ply (ply_failure): its number from the bottom face and its angle.
-        ...(Number.isInteger(check.ply) && check.ply >= 1 ? { ply: check.ply, angle: finiteOrNull(check.angle_deg) ?? 0 } : {}),
-        // Where along a crack's front its K is largest (fracture): "the deepest point", "the surface".
-        point: text(check.point) || null,
-        // A fill level judged against the tank's own brim (multiphase, no limit_mm given): its line says so.
-        brim: check.brim === true ? true : null,
-        // "quadratic": grows with the square of what drives it (a magnetic force's stress, with the current); "none": an
-        // analysis not linear in the load (nonlinear, contact, bolt, composite), judged as solved only.
-        scaling: check.scaling === "quadratic" || check.scaling === "none" ? check.scaling : null,
-        // A field's peak out in the air (electrostatic, no faces named), above what the colours on the parts show.
-        inAir: check.where?.in === "air" ? { near: text(check.where.near) } : null,
-        // A heat stress judged a little away from a singular clamped edge: the edge's own peak, which grows with the mesh.
-        edgePeak: positiveOrNull(check.edge_peak),
-      }),
     }));
 }
 
 /**
- * What analysis the result is (`extras.analysis`; none is static): its `type`, `tier`, plain `word`,
- * whether it is an `estimate`, the `noun` its takeaway uses, its stated `limits` and `warnings`, and
- * the reference temperature its temperature checks are measured from (`referenceC`). The file's
- * words win over the registry's.
- */
-function readAnalysis(raw) {
-  const own = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  const known = feaAnalysis({ analysis: { type: text(own.type), word: text(own.word) } });
-  const sentences = (list) => (Array.isArray(list) ? list.filter((line) => typeof line === "string" && line) : []);
-  return {
-    type: known.name, tier: [1, 2, 3].includes(own.tier) ? own.tier : known.tier, word: text(own.word) || known.word,
-    estimate: typeof own.estimate === "boolean" ? own.estimate : known.estimate, noun: text(own.noun) || known.noun,
-    limits: sentences(own.limits), warnings: sentences(own.warnings), referenceC: finiteOrNull(own.reference_C),
-    ...present({
-      reynolds: readReynolds(own.reynolds),
-      // A flow that carries heat says which model it solved: "laminar" or "turbulent".
-      regime: own.regime === "laminar" || own.regime === "turbulent" ? own.regime : null,
-      mach: readMach(own.mach), unsettled: readUnsettled(own.unsettled), walls: readWalls(own.acoustic),
-      resonances: readResonances(own.modes), forces: readForces(own.forces),
-      // A drop's fall, for its Drop routine: the height, the way it falls, the floor, the impact's time.
-      fall: readFall(own.fall),
-    }),
-  };
-}
-
-/**
- * A magnetic result's force on each part as the file states it (`analysis.forces`: each `part`, its
- * `force_N` vector and what makes it, `by`: "J x B" on a coil, "Maxwell stress" on a magnetic part):
- * `[{ part, vector, by }]`. null for none.
- */
-function readForces(raw) {
-  const forces = (Array.isArray(raw) ? raw : []).filter((entry) => entry && Array.isArray(entry.force_N) && entry.force_N.length === 3
-    && entry.force_N.every(Number.isFinite))
-    .map((entry) => ({ part: text(entry.part), vector: entry.force_N.map(Number), by: text(entry.by) }));
-  return forces.length ? forces : null;
-}
-
-/**
- * A piezo resonance's modes as the file states them (`analysis.modes`: each `mode`, `resonance_Hz`,
- * `antiresonance_Hz`, `k_eff`): `[{ mode, resonanceHz, antiresonanceHz, kEff }]`. null for none.
- */
-function readResonances(raw) {
-  const modes = (Array.isArray(raw) ? raw : []).filter((entry) => entry && Number.isInteger(entry.mode) && Number.isFinite(entry.resonance_Hz)
-    && Number.isFinite(entry.antiresonance_Hz) && Number.isFinite(entry.k_eff))
-    .map((entry) => ({ mode: entry.mode, resonanceHz: Number(entry.resonance_Hz), antiresonanceHz: Number(entry.antiresonance_Hz), kEff: Number(entry.k_eff) }));
-  return modes.length ? modes : null;
-}
-
-/**
- * The walls around the air a sound result shows alone (`analysis.acoustic.walls_mm`: segments in CAD mm,
- * `[x1, y1, z1, x2, y2, z2]`), as one array of their ends in the mesh's space (glTF metres, x, z, -y),
- * two points a segment. null for none.
- */
-function readWalls(acoustic) {
-  const segments = Array.isArray(acoustic?.walls_mm) ? acoustic.walls_mm.filter((s) => Array.isArray(s) && s.length === 6 && s.every(Number.isFinite)) : [];
-  if (!segments.length) return null;
-  const out = new Float32Array(segments.length * 6);
-  segments.forEach((s, i) => {
-    for (let end = 0; end < 2; end += 1) {
-      const [x, y, z] = s.slice(end * 3, end * 3 + 3);
-      out.set([x / 1000, z / 1000, -y / 1000], i * 6 + end * 3);
-    }
-  });
-  return out;
-}
-
-/**
- * Where a contact solve's forces did not settle (`analysis.unsettled`: `at_percent`, the load steps
- * in % of the load, and `first_percent`): `{ atPercent, firstPercent }`. null for none.
- */
-function readUnsettled(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const atPercent = (Array.isArray(raw.at_percent) ? raw.at_percent : []).filter(Number.isFinite).map(Number);
-  const firstPercent = Number.isFinite(raw.first_percent) ? Number(raw.first_percent) : atPercent.length ? Math.min(...atPercent) : null;
-  return firstPercent === null ? null : { atPercent, firstPercent };
-}
-
-/**
- * A fast gas flow's highest Mach number as the file states it (`analysis.mach`: value, limit, regime,
- * checked): `checked` false where the file warns (past the Mach the solver is checked to, or a
- * supersonic outlet); a file that does not say is judged by its value against its limit. null for none.
- */
-function readMach(raw) {
-  if (!raw || typeof raw !== "object" || !Number.isFinite(raw.value)) return null;
-  const limit = Number.isFinite(raw.limit) && raw.limit > 0 ? Number(raw.limit) : null;
-  const regime = ["subsonic", "transonic", "supersonic"].includes(raw.regime) ? raw.regime : "";
-  const checked = typeof raw.checked === "boolean" ? raw.checked : limit === null || raw.value <= limit;
-  return { value: Number(raw.value), limit, regime, checked };
-}
-
-/** A flow's Reynolds number as the file states it (`analysis.reynolds`: value, limit, kind); null for none. */
-function readReynolds(raw) {
-  if (!raw || typeof raw !== "object" || !Number.isFinite(raw.value)) return null;
-  const kind = raw.kind === "external" ? "external" : "internal";
-  return { value: Number(raw.value), limit: Number.isFinite(raw.limit) ? Number(raw.limit) : kind === "external" ? 1000 : 2000, kind };
-}
-
-/**
- * The result's series (`extras.series`): its `kind` (mode, time or frequency), `unit`, the frame it
- * opens on (`default`) and its `frames`, each a `value`, a `label` and the attribute that holds each
- * field at that frame (`attributes`, lower-cased as the geometry names them). null for a result with none.
- */
-function readSeries(raw) {
-  if (!raw || typeof raw !== "object" || !Array.isArray(raw.frames)) return null;
-  const frames = raw.frames.filter((frame) => frame && Number.isFinite(frame.value)).map((frame) => ({
-    value: Number(frame.value), label: text(frame.label),
-    attributes: Object.fromEntries(Object.entries(frame.attributes && typeof frame.attributes === "object" ? frame.attributes : {})
-      .filter(([, attribute]) => typeof attribute === "string" && attribute).map(([name, attribute]) => [name, attribute.toLowerCase()])),
-  }));
-  if (!frames.length) return null;
-  const opening = Number.isInteger(raw.default) && raw.default >= 0 && raw.default < frames.length ? raw.default : 0;
-  return { kind: ["mode", "time", "frequency"].includes(raw.kind) ? raw.kind : "time", unit: text(raw.unit), default: opening, frames };
-}
-
-/**
- * The steps cadgen took to fit the run to the machine (`extras.fit`), in order: each its `rung`, its
- * `words`, its `accuracy` note and `accuracyPct` where it can say, the `faces` it is about and its
- * `detail`. [] when it took none.
- */
-function readFit(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((step) => step && typeof step.words === "string" && step.words).map((step) => ({
-    rung: text(step.rung), words: step.words, accuracy: text(step.accuracy), accuracyPct: finiteOrNull(step.accuracy_pct),
-    faces: faceRefs(step.faces), detail: text(step.detail),
-  }));
-}
-
-const entries = (raw) => (Array.isArray(raw) ? raw.filter((entry) => entry && typeof entry === "object") : []);
-const record = (raw) => (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null);
-
-/**
- * A load's or a shake's `history` over time as the file echoes it, kept in its own form (a table of
- * [t_s, factor] rows, or `{shape, duration_s}`), for the words that say it; null for none.
- */
-function readHistory(raw) {
-  if (Array.isArray(raw)) {
-    const rows = raw.filter((row) => Array.isArray(row) && row.length === 2 && row.every(Number.isFinite)).map((row) => row.map(Number));
-    return rows.length ? rows : null;
-  }
-  const own = record(raw);
-  if (!own || typeof own.shape !== "string") return null;
-  return { shape: own.shape, ...(Number.isFinite(own.duration_s) ? { duration_s: Number(own.duration_s) } : {}) };
-}
-
-/** A spectrum table's rows, [Hz, value] with both positive: a PSD's g²/Hz or a shock's g. [] for none. */
-const spectrumTable = (raw) => (Array.isArray(raw)
-  ? raw.filter((row) => Array.isArray(row) && row.length === 2 && row.every((value) => Number.isFinite(value) && value > 0)).map((row) => row.map(Number))
-  : []);
-
-/** A random vibration's PSD, from the study's echo: its `table` (Hz, g²/Hz), its `grms` as the file states it (null where it does not) and its `direction`. null for none. */
-function readPsd(raw) {
-  const psd = record(raw);
-  if (!psd) return null;
-  return { table: spectrumTable(psd.table), grms: Number.isFinite(psd.grms) && psd.grms > 0 ? Number(psd.grms) : null, direction: vector(psd.direction) };
-}
-
-/** A shock's spectrum, from the study's echo: its `table` (Hz, g), its `direction` and the `dampingRatio` it is quoted at. null for none. */
-function readSrs(raw) {
-  const srs = record(raw);
-  if (!srs) return null;
-  return { table: spectrumTable(srs.table), direction: vector(srs.direction), dampingRatio: finiteOrNull(srs.damping_ratio) };
-}
-
-/**
- * What shakes the part, from the study's echo: a base `excitation` (`kind` "base", or "force" for
- * one through its loads), else a random-vibration `psd` or a shock `srs`, each along its
- * `direction`, with an `amplitudeG` where it has one and the `history` a shake over time follows
- * (null for none). null for none.
- */
-function readExcitation(raw) {
-  const own = record(raw.excitation);
-  if (own) {
-    return { kind: own.type === "force" ? "force" : "base", direction: vector(own.direction), amplitudeG: finiteOrNull(own.amplitude_g),
-      history: readHistory(own.history) };
-  }
-  for (const kind of ["psd", "srs"]) {
-    const spectrum = record(raw[kind]);
-    if (spectrum) return { kind, direction: vector(spectrum.direction), amplitudeG: null };
-  }
-  return null;
-}
-
-/**
- * A flow's openings, from the study's echo: its inlets (`speed` m/s, or an external flow's `velocity`) and outlets (`pressure` Pa).
- * A flow that carries heat adds each inlet's `temperatureC` (an external free stream's), its `fluid`'s name and its `regime`. null for none.
- */
-function readFlow(raw) {
-  const flow = record(raw);
-  if (!flow) return null;
-  const external = vector(flow.velocity_m_s);
-  const fluid = record(flow.fluid);
-  return {
-    kind: flow.kind === "external" ? "external" : "internal",
-    inlets: external ? [{ opening: "", speed: Math.hypot(...external), velocity: external, temperatureC: finiteOrNull(flow.temperature_C) }]
-      : entries(flow.inlets).map((inlet) => ({ opening: text(inlet.opening), speed: finiteOrNull(inlet.velocity_m_s), velocity: null,
-        temperatureC: finiteOrNull(inlet.temperature_C) })),
-    outlets: entries(flow.outlets).map((outlet) => ({ opening: text(outlet.opening), pressure: finiteOrNull(outlet.pressure_Pa) })),
-    fluid: typeof flow.fluid === "string" ? flow.fluid : fluid ? text(fluid.name) : "",
-    regime: text(flow.regime),
-  };
-}
-
-/** A drop, from the study's echo: its `heightMm`, the faces that land (`onto`), how it stops, its `direction`, its `floor` and an impact's `friction`. null for none. */
-function readDrop(raw) {
-  const drop = record(raw);
-  if (!drop) return null;
-  return { heightMm: finiteOrNull(drop.height_mm), onto: faceRefs(drop.onto), stopMm: finiteOrNull(drop.stop_mm), impactMs: finiteOrNull(drop.impact_ms),
-    direction: vector(drop.direction), floor: text(drop.floor), friction: finiteOrNull(drop.friction) };
-}
-
-/** An electromagnetic study's voltages or currents put on faces: each its `faces`, its `value` (V or A) and its `name`. */
-const electrodes = (raw, unit) => entries(raw).map((entry) => ({ faces: faceRefs(entry.faces), value: finiteOrNull(entry[unit]), name: text(entry.name) }));
-
-/** An electromagnetic study's coils: the `part` each is wound on, its `turns`, its current (`amps`), its `name` and its `axis` (direction, point). */
-function readCoils(raw) {
-  return entries(raw).map((coil) => ({
-    part: text(coil.part), turns: finiteOrNull(coil.turns), amps: finiteOrNull(coil.A), name: text(coil.name),
-    axis: { direction: vector(coil.axis?.direction), point: vector(coil.axis?.point_mm) },
-  }));
-}
-
-/** An AC study's uniform field the air carries (`applied_field`): its `mT` and `direction`. null for none. */
-function readAppliedField(raw) {
-  const field = record(raw);
-  return field ? { mT: finiteOrNull(field.mT), direction: vector(field.direction) } : null;
-}
-
-/** A thermal study's fixed temperatures and its convection, on faces. */
-const readTemperatures = (raw) => entries(raw).map((entry) => ({ faces: faceRefs(entry.faces), celsius: finiteOrNull(entry.C) }));
-const readConvection = (raw) => entries(raw).map((entry) => ({ faces: faceRefs(entry.faces), h: finiteOrNull(entry.h_W_m2K), ambientC: finiteOrNull(entry.ambient_C) }));
-
-/** Where an electromagnetic study's Joule heat goes (`electro_thermal`): its fixed `temperatures` and its `convection`, as a thermal study's. null for none. */
-function readHeatOut(raw) {
-  const block = record(raw);
-  return block ? { temperatures: readTemperatures(block.temperatures), convection: readConvection(block.convection) } : null;
-}
-
-/**
- * A composite's layup, from the study's echo (`layup`): its `plies` bottom first (each its `material`,
- * `angle_deg` and `thickness_mm`, as the file says them), its `notation` ("" where it gives none), its
- * `thicknessMm` and the 0° `axis` and `normal` where it says. null for none.
- */
-function readLayupEcho(raw) {
-  const layup = record(raw);
-  if (!layup) return null;
-  const plies = entries(layup.plies).filter((ply) => Number.isFinite(ply.thickness_mm))
-    .map((ply) => ({ material: text(ply.material), angle_deg: Number.isFinite(ply.angle_deg) ? Number(ply.angle_deg) : 0, thickness_mm: Number(ply.thickness_mm) }));
-  return { plies, notation: text(layup.notation), thicknessMm: finiteOrNull(layup.thickness_mm), axis: vector(layup.axis), normal: vector(layup.normal) };
-}
-
-/**
- * An acoustic study's echo: what it solved (`solve`, `domain`), its `fluid`, its `sources` (a speaker
- * face's `faces` and `velocityMmS`, or a `point` and its `volumeVelocity`), its `absorbers` (`faces`,
- * `absorption` or `impedanceRayl`), its `open` faces (one list per entry), its `probes` (`label`, `at`),
- * its sweep and loss, and `from` ("harmonic" when the part's vibration drives it). null for none.
- */
-function readAcoustic(raw) {
-  const block = record(raw);
-  if (!block) return null;
-  const fluid = record(block.fluid);
-  return {
-    solve: text(block.solve), domain: text(block.domain),
-    fluid: fluid ? { name: text(fluid.name), densityKgM3: finiteOrNull(fluid.density_kg_m3), speedMS: finiteOrNull(fluid.speed_m_s) } : null,
-    sources: entries(block.sources).map((source) => ({
-      faces: faceRefs(source.faces), velocityMmS: finiteOrNull(source.velocity_mm_s), point: vector(source.point_mm),
-      volumeVelocity: finiteOrNull(source.volume_velocity_m3_s),
-    })),
-    absorbers: entries(block.absorbers).map((entry) => ({
-      faces: faceRefs(entry.faces), absorption: finiteOrNull(entry.absorption), impedanceRayl: finiteOrNull(entry.impedance_rayl),
-    })),
-    open: entries(block.open).map((entry) => faceRefs(entry.faces)),
-    probes: entries(block.probes).map((probe) => ({ label: text(probe.label), at: vector(probe.at_mm) || [0, 0, 0] })),
-    sweepHz: band(block.sweep_Hz), lossFactor: finiteOrNull(block.loss_factor), from: text(block.from),
-  };
-}
-
-/**
- * A piezo study's echo: what it solved (`solve`: static, resonance or harmonic), its `electrodes` (each its
- * `faces`, `name`, `volts` held, or `open`) and each piezo part's `poling` (`part`, `material`, `direction`).
- * null for a study with no electrodes.
- */
-function readPiezo(raw) {
-  if (!Array.isArray(raw.electrodes)) return null;
-  return {
-    solve: text(raw.solve) || "static",
-    electrodes: entries(raw.electrodes).map((entry) => ({
-      faces: faceRefs(entry.faces), name: text(entry.name), volts: finiteOrNull(entry.V), open: entry.open === true,
-    })),
-    poling: entries(raw.poling).map((entry) => ({ part: text(entry.part), material: text(entry.material), direction: vector(entry.direction) }))
-      .filter((entry) => entry.direction),
-  };
-}
-
-/** A composite's ply materials by name (`laminae`), each its numeric properties as the file gives them. {} for none. */
-function readLaminae(raw) {
-  const named = record(raw);
-  if (!named) return {};
-  return Object.fromEntries(Object.entries(named).filter(([, lamina]) => record(lamina))
-    .map(([name, lamina]) => [name, Object.fromEntries(Object.entries(lamina).filter(([, value]) => Number.isFinite(value)))]));
-}
-
-/**
  * The study the result was solved for, as the file records it; null for a result written before it
- * did. Beside the material, fixtures, loads (a body load, gravity or an acceleration, has no faces
- * and its `g` vector), mesh and margin, what another analysis echoes: fixed `temperatures`, `heat`
- * inputs, `convection`, the `excitation`, the `drop`, the `flow`, the `rigidPlanes`, the
- * `sigma` a random vibration judges at and its `psd` (table and g rms), a shock's `srs` and how its
- * modes were `combination`ed, a sweep's `sweepHz` and the `dampingRatio`. A load over time keeps its
- * `history`, as the excitation does. An electromagnetic study's `mode`, `frequencyHz`, `voltages`,
- * `currents`, `coils`, `appliedField` and `heatOut`; a composite's `layup` and `laminae`; an acoustic
- * study's block, a piezo's electrodes, a bolted joint's `bolts`, a contact study's `contactPairs`, a
- * fracture's `crack`, a multiphase's block and a rotor's spin, bearings, discs and unbalances. A fixture's
- * `type` is "fixed" (none given) or "roller" (it may slide in the face's plane, not off it). Every
- * analysis reads its study from here, never the raw echo.
+ * did: the material, fixtures, loads (a body load, gravity or an acceleration, has no faces and its
+ * `g` vector), mesh and margin. A fixture's `type` is "fixed" (none given) or "roller" (it may slide
+ * in the face's plane, not off it). The viewer reads its study from here, never the raw echo.
  */
 function readStudy(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -569,55 +204,9 @@ function readStudy(raw) {
     loads: (Array.isArray(raw.loads) ? raw.loads : []).filter(Boolean).map((load) => ({
       type: text(load.type), faces: faceRefs(load.faces), vector: vector(load.vector_N), pressure: finiteOrNull(load.pressure_MPa),
       ...(vector(load.vector_g) ? { g: vector(load.vector_g) } : {}),
-      ...(readHistory(load.history) ? { history: readHistory(load.history) } : {}),
     })),
     mesh,
     margin: Number.isFinite(raw.margin) && raw.margin >= 1 ? Number(raw.margin) : null,
-    temperatures: readTemperatures(raw.temperatures),
-    heat: entries(raw.heat).map((entry) => ({ faces: faceRefs(entry.faces), watts: finiteOrNull(entry.W), fluxWm2: finiteOrNull(entry.W_per_m2) })),
-    convection: readConvection(raw.convection),
-    // Faces radiating to their surroundings (and, `surfaceToSurface`, to each other): a thermal study's.
-    radiation: entries(raw.radiation).map((entry) => ({ faces: faceRefs(entry.faces), emissivity: finiteOrNull(entry.emissivity),
-      ambientC: finiteOrNull(entry.ambient_C), surfaceToSurface: entry.surface_to_surface === true })),
-    excitation: readExcitation(raw),
-    drop: readDrop(raw.drop),
-    flow: readFlow(raw.flow),
-    rigidPlanes: entries(raw.rigid_planes).map((plane) => ({ point: vector(plane.point_mm) || [0, 0, 0], normal: vector(plane.normal) }))
-      .filter((plane) => plane.normal && Math.hypot(...plane.normal) > 0),
-    sigma: raw.sigma === 1 || raw.sigma === 3 ? raw.sigma : null,
-    psd: readPsd(raw.psd),
-    srs: readSrs(raw.srs),
-    combination: raw.combination === "cqc" || raw.combination === "srss" ? raw.combination : "",
-    sweepHz: band(raw.sweep_Hz),
-    dampingRatio: finiteOrNull(raw.damping_ratio),
-    // Electromagnetic: what it solved (`mode`, an AC study's `frequencyHz`), its voltages and currents on faces, its coils, an AC
-    // field the air carries, and where its Joule heat goes.
-    mode: text(raw.mode),
-    frequencyHz: finiteOrNull(raw.frequency_Hz),
-    voltages: electrodes(raw.voltages, "V"),
-    currents: electrodes(raw.currents, "A"),
-    coils: readCoils(raw.coils),
-    appliedField: readAppliedField(raw.applied_field),
-    heatOut: readHeatOut(raw.electro_thermal),
-    // Composite: the layup and the ply materials.
-    layup: readLayupEcho(raw.layup),
-    laminae: readLaminae(raw.laminae),
-    // Acoustic: where the air is, what makes and soaks up the sound, where it is listened to (null for none).
-    acoustic: readAcoustic(raw.acoustic),
-    // Topology: the share of the material to keep, and the faces whose nearby material stays solid.
-    volumeFraction: finiteOrNull(raw.volume_fraction),
-    keptSolid: faceRefs(raw.kept_solid),
-    // Piezo: what it solved, its electrodes (held at a voltage, or open) and each part's poling. null for none.
-    piezo: readPiezo(raw),
-    // Bolted joint and contact: the bolts and contact pairs as the study gives them (their analyses word them).
-    bolts: entries(raw.bolts),
-    contactPairs: entries(raw.contact_pairs),
-    // Fracture: the crack the study cuts in (`kind`, `face`, `size_mm`, `length_mm`). null for none.
-    crack: record(raw.crack),
-    // Two fluids: the multiphase block (the liquid, the shake, the openings). null for none.
-    multiphase: record(raw.multiphase),
-    // Spinning: the spin (`axis`, `rpm`), the bearings, discs and unbalances as the study gives them. null for no spin.
-    rotor: record(raw.spin) ? { spin: raw.spin, bearings: entries(raw.bearings), discs: entries(raw.discs), unbalance: entries(raw.unbalance) } : null,
   };
 }
 
@@ -666,27 +255,16 @@ export function readFeaResult(root) {
         min: Number(field.min) || 0,
         max: Number(field.max) || 0,
         attributeScale: Number(field.attribute_scale) || 1,
-        ...present({
-          view: text(field.field) || null, signed: field.signed === true ? true : null, perFrame: field.per_frame === true ? true : null,
-          // Colours stopped below the field's peak (a singular edge's spike): where, and the peak itself.
-          capped: Number.isFinite(field.capped?.peak) && Number.isFinite(field.capped?.quantile)
-            ? { quantile: Number(field.capped.quantile), peak: Number(field.capped.peak) } : null,
-        }),
       }));
     if (fields.length === 0) {
       return;
     }
-    const analysis = readAnalysis(extras.analysis);
-    const still = motionless(object.geometry, fields);
     found = {
-      analysis,
       mesh: object,
       name: String(extras.name || ""),
       document: String(extras.document || ""),
       occurrence: String(extras.occurrence || ""),
-      // A displacement too small to mean anything is drawn at rest (`motionless`: no Deformation control either).
-      deformationScale: still ? 0 : Number(extras.deformation_scale) || 1,
-      ...(still ? { motionless: true } : {}),
+      deformationScale: Number(extras.deformation_scale) || 1,
       safetyFactor: Number.isFinite(extras.safety_factor) ? extras.safety_factor : null,
       fields,
       ramp: rampStops(extras.ramp),
@@ -699,12 +277,7 @@ export function readFeaResult(root) {
       weakestPartPeakMPa: finiteOrNull(extras.weakest_part_peak_MPa),
       maxDisplacementMm: finiteOrNull(extras.max_displacement_mm),
       view: readView(extras.view),
-      checks: readChecks(extras.checks, feaAnalysis({ analysis }).checks),
-      series: readSeries(extras.series),
-      fit: readFit(extras.fit),
-      // A nonlinear run that collapsed: the last load it carried, in % of the load (`load_percent`).
-      collapsed: extras.collapsed === true,
-      loadPercent: finiteOrNull(extras.load_percent),
+      checks: readChecks(extras.checks),
     };
   });
   return found;
@@ -773,26 +346,19 @@ function vertexIndex(mesh, name) {
  * Rewrite the mesh's vertex colours from one field over `[field.min, field.max]`, with the
  * vertices of the faces in `highlight` (indices into the result's `faces`) and of the parts in
  * `parts` (indices into its `parts`) tinted, and the parts in `softParts` tinted lightly (a joint's
- * two parts; its interface faces keep the full tint).
- * A field whose worst is its lowest (`lowWorst` in `fea/fields.js`: a life, a fatigue margin) is drawn
- * down the ramp, its lowest red. `scaling`, for a load other than the solved one: the values are drawn at `valueScale` times
- * their own and the ramp spans `rangeScale` times the field's range (both the load scale; while a
- * load ramp plays the values climb toward the range). `threshold`: `{ field, value, scale }`, every
- * vertex whose value of that field (times `scale`) is under `value` drawn grey. `blend`: `{ field,
- * weight }`, a series playing between two frames, the values that far toward the other frame's
- * (`field` the same field at that frame). `values`: a motion's own values at its moment, per vertex (an AC
- * field's strength at a phase), in place of the field's, named by `stamp` so the same moment is not redrawn.
+ * two parts; its interface faces keep the full tint). `scaling`, for a load other than the solved
+ * one: the values are drawn at `valueScale` times their own and the ramp spans `rangeScale` times the
+ * field's range (both the load scale; while a load ramp plays the values climb toward the range).
+ * `threshold`: `{ field, value, scale }`, every vertex whose value of that field (times `scale`) is
+ * under `value` drawn grey.
  * Returns true when the colours changed; false when that field and tint were already shown.
  */
 export function recolorByField(mesh, field, ramp = DEFAULT_RAMP, highlight = null, parts = null, softParts = null,
-  { valueScale = 1, rangeScale = 1, threshold = null, blend = null, values: given = null, stamp = "" } = {}) {
+  { valueScale = 1, rangeScale = 1, threshold = null } = {}) {
   const color = mesh.geometry.getAttribute("color");
   // The attribute's presence, not its values: a ramp playing recolours every frame, and keptValues
-  // reads them once per field. A motion may give the values at its moment itself (`values`, named by `stamp`).
-  const own = given && given.length === mesh.geometry.getAttribute("position")?.count ? given
-    : mesh.geometry.getAttribute(field.attribute) && keptValues(mesh, field);
-  const toward = own && blend?.field && blend.weight > 0 && mesh.geometry.getAttribute(blend.field.attribute) ? keptValues(mesh, blend.field) : null;
-  const values = toward ? blended(mesh, own, toward, blend.weight) : own;
+  // reads them once per field.
+  const values = mesh.geometry.getAttribute(field.attribute) && keptValues(mesh, field);
   if (!color || !values) {
     return false;
   }
@@ -805,8 +371,7 @@ export function recolorByField(mesh, field, ramp = DEFAULT_RAMP, highlight = nul
   const lightParts = partOf && softParts?.length ? new Set(softParts) : null;
   const sorted = (set) => (set ? [...set].sort((a, b) => a - b).join(",") : "");
   const cut = under ? `${threshold.field.attribute}<${threshold.value}x${threshold.scale}` : "";
-  const mix = toward ? `~${blend.field.attribute}@${blend.weight}` : "";
-  const key = `${field.attribute}${own === given ? `@${stamp}` : ""}${mix}x${valueScale}/${rangeScale}|${cut}|${sorted(tinted)}|${sorted(tintedParts)}|${sorted(lightParts)}`;
+  const key = `${field.attribute}x${valueScale}/${rangeScale}|${cut}|${sorted(tinted)}|${sorted(tintedParts)}|${sorted(lightParts)}`;
   if (kept.field === key) {
     return false;
   }
@@ -816,11 +381,8 @@ export function recolorByField(mesh, field, ramp = DEFAULT_RAMP, highlight = nul
   const stride = color.itemSize;
   const bytes = color.array;
   const cutScale = under ? threshold.scale ?? 1 : 1;
-  // A field whose worst is its lowest (a life, a fatigue margin) runs down the ramp, so its worst is red.
-  const lowWorst = fieldInfo(field.attribute)?.lowWorst === true;
   for (let i = 0; i < values.length; i += 1) {
-    const along = span > 0 ? clamp((values[i] * valueScale - low) / span, 0, 1) : 0;
-    const t = lowWorst ? 1 - along : along;
+    const t = span > 0 ? clamp((values[i] * valueScale - low) / span, 0, 1) : 0;
     const entry = Math.round(t * 255) * 3;
     const grey = under !== null && under[i] * cutScale < threshold.value;
     const base = i * stride;
@@ -837,123 +399,44 @@ export function recolorByField(mesh, field, ramp = DEFAULT_RAMP, highlight = nul
   return true;
 }
 
-/** Two frames' values `weight` of the way from one to the other, in a buffer kept on the mesh (a series plays every frame). */
-function blended(mesh, from, to, weight) {
-  const kept = shown(mesh);
-  if (!kept.blend || kept.blend.length !== from.length) kept.blend = new Float32Array(from.length);
-  for (let i = 0; i < from.length; i += 1) kept.blend[i] = from[i] + (to[i] - from[i]) * weight;
-  return kept.blend;
-}
-
 /**
  * Show the displacement at `scale` times its true size. The file's positions
  * already carry `baseScale` times the displacement, so the change is
  * `(scale - baseScale)` times the displacement vector. Returns true when the
  * positions changed; false when that scale was already shown.
- *
- * `attribute`: the vector to deform by, where it is not the displacement the file baked in (a mode
- * shape, a frame of a series): the positions are then the file's, less what it baked in, plus
- * `scale` times that vector. Or a list of `[attribute, weight]` terms, the vector their sum (a
- * harmonic frame turning through its phase, re·cos − im·sin; a series between two frames).
  */
-export function applyDeformation(mesh, scale, baseScale, attribute = DISPLACEMENT) {
+export function applyDeformation(mesh, scale, baseScale) {
   const geometry = mesh.geometry;
   const position = geometry.getAttribute("position");
-  const terms = (Array.isArray(attribute) ? attribute : [[attribute, 1]]).map(([name, weight]) => [geometry.getAttribute(name), Number(weight) || 0, name]);
-  if (!position || !terms.length || terms.some(([vectors]) => !vectors || vectors.itemSize !== 3)) {
+  const displacement = geometry.getAttribute(DISPLACEMENT);
+  if (!position || displacement?.itemSize !== 3) {
     return false;
   }
   const kept = shown(mesh);
   const wanted = Number(scale) || 0;
-  // The displacement the file baked in, at its own scale, is today's: drawn as it always was.
-  const plain = terms.length === 1 && terms[0][2] === DISPLACEMENT && terms[0][1] === 1;
-  const key = plain ? wanted : `${terms.map(([, weight, name]) => `${name}*${weight}`).join("+")}x${wanted}`;
-  if (kept.scale === key || (kept.scale === null && plain && wanted === (Number(baseScale) || 0))) {
-    kept.scale = key;
+  if (kept.scale === wanted || (kept.scale === null && wanted === (Number(baseScale) || 0))) {
+    kept.scale = wanted;
     return false;
   }
   const out = position.array;
   const base = kept.position;
-  if (plain) {
-    const delta = wanted - (Number(baseScale) || 0);
-    const d = terms[0][0].array;
-    for (let i = 0; i < out.length; i += 1) {
-      out[i] = base[i] + delta * d[i];
-    }
-  } else {
-    const baked = geometry.getAttribute(DISPLACEMENT);
-    const rest = baked?.itemSize === 3 && baked.count * 3 === out.length ? baked.array : null;
-    const bakedScale = Number(baseScale) || 0;
-    for (let i = 0; i < out.length; i += 1) {
-      let v = 0;
-      for (const [vectors, weight] of terms) v += weight * vectors.array[i];
-      out[i] = base[i] - (rest ? bakedScale * rest[i] : 0) + wanted * v;
-    }
+  const delta = wanted - (Number(baseScale) || 0);
+  const d = displacement.array;
+  for (let i = 0; i < out.length; i += 1) {
+    out[i] = base[i] + delta * d[i];
   }
   position.needsUpdate = true;
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  kept.scale = key;
+  kept.scale = wanted;
   return true;
 }
 
-/** A field over a range symmetric about 0 (± its largest magnitude): a signed shape that swings through its sign (Ring). */
-export function symmetricRange(field) {
-  const most = Math.max(Math.abs(field.min), Math.abs(field.max));
-  return most > 0 ? { ...field, min: -most, max: most } : field;
-}
-
-/** The least a routine (Vibrate, the Load ramp, Play) moves the model: its largest motion this share of the model's size. */
-export const ROUTINE_MOTION_SHARE = 0.1;
-
-/**
- * The exaggeration a routine plays at: the one shown (the Exaggerate control's, `scale`), raised where that would
- * move the model's largest motion (over the vectors `attributes`) less than `ROUTINE_MOTION_SHARE` of its diagonal,
- * so a small part's motion (a piezo bimorph, a disc's mode) is clearly seen; an exaggeration of 0 stays 0.
- */
-export function routineScale(mesh, attributes, scale) {
-  const wanted = Number(scale) || 0;
-  if (!(wanted > 0)) return wanted;
-  const kept = shown(mesh);
-  if (kept.diagonal === undefined) {
-    const rest = kept.position;
-    const low = [Infinity, Infinity, Infinity];
-    const high = [-Infinity, -Infinity, -Infinity];
-    for (let i = 0; i < rest.length; i += 1) {
-      low[i % 3] = Math.min(low[i % 3], rest[i]);
-      high[i % 3] = Math.max(high[i % 3], rest[i]);
-    }
-    kept.diagonal = rest.length ? Math.hypot(high[0] - low[0], high[1] - low[1], high[2] - low[2]) : 0;
-  }
-  kept.peaks ||= {};
-  let peak = 0;
-  for (const name of attributes) {
-    if (kept.peaks[name] === undefined) {
-      const vectors = mesh.geometry.getAttribute(name);
-      let most = 0;
-      if (vectors?.itemSize === 3) {
-        const a = vectors.array;
-        for (let i = 0; i + 2 < a.length; i += 3) most = Math.max(most, Math.hypot(a[i], a[i + 1], a[i + 2]));
-      }
-      kept.peaks[name] = most;
-    }
-    peak = Math.max(peak, kept.peaks[name]);
-  }
-  return peak > 0 && kept.diagonal > 0 ? Math.max(wanted, (ROUTINE_MOTION_SHARE * kept.diagonal) / peak) : wanted;
-}
-
-/**
- * What a view's control can move, the closed set the viewer knows how to apply: the four every
- * result has, and over a series the `mode` shown (modal, buckling) or the `frame` (a time, a
- * frequency, a load step), and a random vibration's `sigma` level.
- */
-export const FEA_DRIVES = Object.freeze(["field", "deformation", "load_scale", "threshold", "mode", "frame", "sigma"]);
-const DRIVE_TYPES = Object.freeze({ field: "enum", deformation: "number", load_scale: "number", threshold: "number", mode: "enum", frame: "number", sigma: "enum" });
+/** What a view's control can move, the closed set the viewer knows how to apply. */
+export const FEA_DRIVES = Object.freeze(["field", "deformation", "load_scale", "threshold"]);
+const DRIVE_TYPES = Object.freeze({ field: "enum", deformation: "number", load_scale: "number", threshold: "number" });
 const DRIVE_LABELS = Object.freeze({ field: "Field", deformation: "Deformation", load_scale: "Load", threshold: "Show above" });
-// The drives a series answers (frameControl) and the sigma level (sigmaControl): each built from the result, the view giving its label and default.
-const SERIES_DRIVES = Object.freeze({ mode: (result, raw) => frameControl(result, "mode", raw), frame: (result, raw) => frameControl(result, "frame", raw),
-  sigma: (result, raw) => sigmaControl(result, raw) });
 
 /** A view's field name ("von_mises") as the attribute the result carries ("_von_mises"). */
 const fieldAttribute = (name) => `_${String(name || "").toLowerCase()}`;
@@ -968,31 +451,26 @@ const finiteNumber = (value) => typeof value === "number" && Number.isFinite(val
  * `threshold` (values of its `field` under it drawn grey). They are the study's `view.controls`, in
  * its order, with its labels and ranges; one whose `drives` or `type` this viewer does not know, or
  * whose range or fields it cannot use, is skipped. With no view, or none of its controls this viewer
- * can draw (an empty list, or all from a newer cadgen), the analysis's own (`defaultControls`): for
- * static, a field select over every field, opening on the first (stress), and a deformation slider
- * from 0 to four times the file's own scale. A view that picks the field but names no deformation keeps
- * the analysis's own Deformation slider after its controls. The view's are labelled in the agent's words, often a
+ * can draw (an empty list, or all from a newer cadgen), the viewer's own (`fieldAndDeformation`): a
+ * field select over every field, opening on the first (stress), and a deformation slider from 0 to
+ * four times the file's own scale. A view that picks the field but names no deformation keeps that
+ * Deformation slider after its controls. The view's are labelled in the agent's words, often a
  * sentence: their labels run over the whole row (`wideLabel`), where the default two keep the
  * one-column look they always had.
  */
 export function feaControls(result, t = english) {
   const every = result.fields.map((entry) => entry.attribute);
   const chosen = result.view?.controls ? viewControls(result, every) : [];
-  const own = chosen.length ? keptDeformation(result, chosen, t) : feaAnalysis(result).defaultControls(result, t);
-  // A result that moves as a whole (a drop: `fea/motion.js`) leads with its Time row, which also scrubs its frames.
-  const motion = feaMotion(result, t);
-  const controls = motion ? [motionControl(motion, t), ...own.filter((control) => control.drives !== "frame" && control.drives !== "motion")] : own;
-  // A displacement too small to mean anything has no Deformation to set: it is drawn at rest.
-  return result.motionless ? controls.filter((control) => control.drives !== "deformation") : controls;
+  return chosen.length ? keptDeformation(result, chosen, t) : fieldAndDeformation(result, t);
 }
 
 /**
- * A view that picks the field but says nothing of the deformation keeps the analysis's own Deformation
+ * A view that picks the field but says nothing of the deformation keeps the viewer's own Deformation
  * slider, after its controls: choosing what the colours show is no reason to lose how far it is drawn.
  */
 function keptDeformation(result, chosen, t = english) {
   if (!chosen.some((control) => control.drives === "field") || chosen.some((control) => control.drives === "deformation")) return chosen;
-  const own = feaAnalysis(result).defaultControls(result, t).find((control) => control.drives === "deformation");
+  const own = fieldAndDeformation(result, t).find((control) => control.drives === "deformation");
   return own ? [...chosen, own] : chosen;
 }
 
@@ -1003,13 +481,6 @@ function viewControls(result, every) {
     const drives = raw.drives;
     const type = DRIVE_TYPES[drives];
     if (!type || (raw.type ?? type) !== type || controls.some((control) => control.drives === drives)) continue;
-    // A load control only where the analysis follows the load (a temperature or a frequency does not).
-    if (drives === "load_scale" && !feaAnalysis(result).scalesWithLoad) continue;
-    if (SERIES_DRIVES[drives]) {
-      const built = SERIES_DRIVES[drives](result, raw);
-      if (built) controls.push({ ...built, wideLabel: true, ...whenOf(raw) });
-      continue;
-    }
     const label = typeof raw.label === "string" && raw.label.trim() ? raw.label.trim() : DRIVE_LABELS[drives];
     if (drives === "field") {
       const options = fieldOptions(result, Array.isArray(raw.options) ? raw.options.map(fieldAttribute) : every);
@@ -1057,22 +528,7 @@ export function feaShownControls(result, controls, values) {
   const failing = feaFailing(result, loadScale);
   const shown = controls.filter((control) => (control === load ? loadShown : showsWhen(control.when, failing)));
   const effective = Object.fromEntries(controls.map((control) => [control.id, shown.includes(control) ? values[control.id] : control.defaultValue]));
-  return { shown: atSigma(shown, effective), effective, loadScale };
-}
-
-/**
- * The field select's RMS options at the sigma level chosen ("Stress (3σ)"), as the colour bar says it;
- * the controls as they are with no sigma control.
- */
-function atSigma(controls, effective) {
-  const sigma = controls.find((control) => control.drives === "sigma");
-  const level = sigma ? Number(effective[sigma.id]) : NaN;
-  if (!SIGMA_LEVELS.includes(level) || level === 1) return controls;
-  return controls.map((control) => (control.drives !== "field" ? control : {
-    ...control,
-    options: control.options.map((option) => (isRms({ attribute: option.value })
-      ? { ...option, label: option.label.replace("(1σ)", `(${level}σ)`) } : option)),
-  }));
+  return { shown, effective, loadScale };
 }
 
 /** The parts of Study, in order: the view's `sections` this viewer knows, each once; with none, all four. */
@@ -1087,41 +543,20 @@ export function feaDefaults(controls) {
   return Object.fromEntries(controls.map((control) => [control.id, control.defaultValue]));
 }
 
-/** A preset's value for an enum control as one of its options: a field's name as its attribute, a mode's number as its frame's place, a sigma level as is. */
-function presetOption(result, control, value) {
-  if (control.drives === "mode") {
-    const index = finiteNumber(value) ? (result.series?.frames || []).findIndex((frame) => frame.value === value) : -1;
-    return index >= 0 ? String(index) : null;
-  }
-  if (control.drives === "sigma") return value === undefined || value === null ? null : String(value);
-  return fieldAttribute(value);
-}
-
 /**
  * The study's named states over its controls, as a Preset select lists them: `value` (its place),
  * `label`, and `values`, every control at its default but what the preset sets (a full state, as a
- * kinematics pose is). What a preset names that no control drives is left out.
+ * kinematics pose is). What a preset names that no control drives is left out; a field is named as
+ * the view names it ("von_mises").
  */
 export function feaPresets(result, controls) {
   const defaults = feaDefaults(controls);
-  // A motion's named states (a drop's Released, Contact, Peak, At rest) follow the view's own, as a kinematics pose does.
-  const motion = controls.some((control) => control.drives === "motion") ? feaMotion(result) : null;
-  return [...viewPresets(result, controls, defaults), ...(motion ? motionPresets(motion, defaults) : [])];
-}
-
-/** The motion a result moves through as a whole (`fea/motion.js`: a drop's fall), as its analysis says; null for none. */
-export const feaMotion = (result, t = english) => feaAnalysis(result).motion?.(result, t) || null;
-
-function viewPresets(result, controls, defaults) {
   return (result.view?.presets || []).map((preset, index) => {
     const values = { ...defaults };
     for (const control of controls) {
       const value = preset[control.id];
-      if (control.type === "enum") {
-        const option = presetOption(result, control, value);
-        if (control.options.some((entry) => entry.value === option)) values[control.id] = option;
-      }
-      if (control.type === "number" && finiteNumber(value)) values[control.id] = control.snaps ? snapFrame(control, value) : clamp(value, control.min, control.max);
+      if (control.type === "enum" && control.options.some((entry) => entry.value === fieldAttribute(value))) values[control.id] = fieldAttribute(value);
+      if (control.type === "number" && finiteNumber(value)) values[control.id] = clamp(value, control.min, control.max);
     }
     return { value: `preset:${index}`, label: preset.label.trim(), values };
   });
@@ -1245,14 +680,12 @@ export const DEFAULT_MARGIN = 2;
 
 /**
  * The checks the verdict judges: the file's (`checks`), else, for a result written before them, the
- * stress check derived from what it has, today's verdict (the peak against the weakest part's yield,
- * its safety factor and the study's margin). [] where the file cannot say: no stress field, or a
- * stress with no safety factor (older than the factor), or an analysis outside the static family
- * that judged nothing.
+ * stress check derived from what it has (the peak against the weakest part's yield, its safety factor
+ * and the study's margin). [] where the file cannot say: no stress field, or a stress with no safety
+ * factor (older than the factor).
  */
 export function feaChecks(result) {
   if (result.checks) return result.checks;
-  if (feaAnalysis(result).family !== "static") return [];
   const stress = result.fields.find((entry) => entry.attribute === "_von_mises");
   const factor = result.safetyFactor;
   if (!stress || factor === null || !(factor > 0)) return [];
@@ -1269,48 +702,25 @@ const STATUS_RANK = Object.freeze({ fails: 0, close: 1, passes: 2 });
 // The verdict's tones: each status as the findings card's tones name it.
 const TONE_OF = Object.freeze({ fails: "weak", close: "close", passes: "strong" });
 
-/** The noun a result's takeaway line uses: "this load", "this shake". */
-const nounOf = (result) => result.analysis?.noun || feaAnalysis(result).noun;
-
-/**
- * The margin a check is held to, where its kind has one: a stress check's own, else the study's,
- * else cadgen's 2; a buckling or fatigue check's own (buckling's limit is its margin). null for a
- * kind judged by a share of its limit alone.
- */
+/** The margin a check is held to: a stress check's own, else the study's, else cadgen's 2; none for a displacement, judged by a share of its limit. */
 function marginOf(result, check) {
-  if (check.kind === "stress") return check.margin ?? result.study?.margin ?? DEFAULT_MARGIN;
-  if (!CHECK_KINDS[check.kind].margin) return null;
-  return check.margin ?? (check.kind === "buckling" ? check.limit : null);
+  return check.kind === "stress" ? check.margin ?? result.study?.margin ?? DEFAULT_MARGIN : null;
 }
 
 /**
- * One check at `loadScale` times the solved load (a linear study scales exactly), as its kind moves
- * with the load (`scaling`): a linear kind's value and share of its limit (`use`) k times the solved
- * ones, an inverse kind's value (buckling's load factor) over k and its share k times, a quadratic
- * check (`scaling` on the check: a magnetic force's stress, with the current squared) k² times, its
- * `times` the square root of the room left, and a kind that does not scale as solved. `times`: how many times this load it would take to reach the limit
- * (null for a kind that does not scale), and its `status` at it. The stress check's is the result's
- * safety factor over k (its margin, not a share, makes it close), so it says exactly what the safety
- * factor says; at the solved load a check's status is the one cadgen judged.
+ * One check at `k` times the solved load (a linear study scales exactly): its value and its share of
+ * its limit (`use`) k times the solved ones, `times`, how many times this load it would take to reach
+ * the limit, and its `status` at it. The stress check's is the result's safety factor over k (its
+ * margin, not a share, makes it close), so it says exactly what the safety factor says; at the solved
+ * load a check's status is the one cadgen judged.
  */
 function checkAt(result, check, k) {
-  // The check's own scaling (cadgen's: "none" for an analysis not linear in the load, "quadratic" for a magnetic
-  // force's), else its analysis's for every check (nonlinear, contact, bolt, composite: "none"), else its kind's.
-  const scaling = check.scaling || feaAnalysis(result).scaling || CHECK_KINDS[check.kind].scaling;
-  const moves = scaling !== "none";
-  // A quadratic check (a magnetic force's stress) is k² times as much at k times the drive.
-  const power = scaling === "quadratic" ? 2 : 1;
-  const grown = k ** power;
-  const use = check.ratio * (moves ? grown : 1);
-  // How many times this drive reaches the limit: the power's root of the room left.
-  const factor = check.kind === "stress" && result.safetyFactor !== null && result.safetyFactor > 0 ? result.safetyFactor / grown : 1 / use;
-  const times = !moves ? null : factor ** (1 / power);
+  const use = check.ratio * k;
+  const times = check.kind === "stress" && result.safetyFactor !== null && result.safetyFactor > 0 ? result.safetyFactor / k : 1 / use;
   const margin = marginOf(result, check);
-  const status = (k === 1 || !moves) && check.status ? check.status
-    : times === null ? (use >= 1 ? "fails" : use > check.closeAt ? "close" : "passes")
-      : factor < 1 ? "fails" : (margin !== null ? factor < margin : use > check.closeAt) ? "close" : "passes";
-  const shown = scaling === "linear" || scaling === "quadratic" ? check.value * grown : scaling === "inverse" ? check.value / k : check.value;
-  return { ...check, use: check.kind === "stress" ? 1 / factor : use, times, status, margin, shown };
+  const status = k === 1 && check.status ? check.status
+    : times < 1 ? "fails" : (margin !== null ? times < margin : use > check.closeAt) ? "close" : "passes";
+  return { ...check, use: check.kind === "stress" ? 1 / times : use, times, status, margin, shown: check.value * k };
 }
 
 const STATUS_WORDS = Object.freeze({ fails: "fails", close: "is close to its limit", passes: "passes" });
@@ -1318,104 +728,14 @@ const STATUS_WORDS = Object.freeze({ fails: "fails", close: "is close to its lim
 /**
  * What a check chosen in the verdict carries into a prompt: the faces it is over, else the face it
  * peaks on, else the whole result; and what it says, in one sentence ("Tip sag fails: moves 0.62 mm,
- * limit 0.5 mm (OK only to 0.8× this load)"; a kind that does not scale with the load, its line
- * alone). `part`: whose numbers a stress check's are, in an assembly.
+ * limit 0.5 mm (OK only to 0.8× this load)"). `part`: whose numbers a stress check's are, in an assembly.
  */
 function checkChoice(result, check, part, label) {
   const faces = check.faces?.length ? check.faces : check.where ? [check.where] : [];
-  const noun = nounOf(result);
-  const line = kindLine(check, { noun }).replace(/ /g, " ");
+  const line = checkLine(check).replace(/ /g, " ");
   const where = check.kind === "stress" && part ? ` in ${part}` : "";
-  const takeaway = check.times !== null ? ` (${loadCaption(check.times, noun)})` : "";
-  const summary = `${label} ${STATUS_WORDS[check.status]}${where}: ${line[0].toLowerCase()}${line.slice(1)}${takeaway}`;
-  // Where its value occurs in a series (a mode, a moment, a frequency), choosing it shows that frame.
-  const frame = result.series && check.at && check.at.frame < result.series.frames.length ? { frame: check.at.frame } : {};
-  return { id: `check:${check.index}`, ...(faces.length ? { faces } : { refs: wholeRefs(result) }), summary, ...frame };
-}
-
-/** Whether cadgen took a step to fit the run that cost some accuracy (a step with an accuracy note, or a share it moved the answer by). */
-export const feaAdapted = (result) => result.fit.some((step) => Boolean(step.accuracy) || (step.accuracyPct ?? 0) > 0);
-
-const REYNOLDS = /\bRe\s*(\d[\d,.]*)/;
-/**
- * A flow's warning that it ran past the laminar range: from the file's structured `analysis.reynolds`
- * (value, limit, kind) when it has one, else from its sentence (`analysis.warnings`: "Re 4200 is past
- * the laminar range: ..."): `{ sentence, limit }`, the Reynolds number the laminar solve is good to
- * (said in the sentence, else 1000 for an external flow, 2000 for an internal one).
- * null for none, or for another analysis.
- */
-export function reynoldsWarning(result) {
-  if (result.analysis?.type !== "cfd") return null;
-  const sentence = result.analysis.warnings.find((line) => REYNOLDS.test(line) && /laminar|turbulen/i.test(line));
-  // The structured number first (`analysis.reynolds`), with the file's sentence where it gives one.
-  const stated = result.analysis.reynolds;
-  if (stated) {
-    if (stated.value <= stated.limit) return null;
-    return { sentence: sentence || `Re ${Math.round(stated.value)} is past the laminar range: real flow is likely turbulent, so this pressure drop is a lower bound and the flow pattern may be wrong`, limit: stated.limit };
-  }
-  if (!sentence) return null;
-  const said = /above Re\s*(\d[\d,]*)/i.exec(sentence);
-  return { sentence, limit: said ? Number(said[1].replace(/,/g, "")) : result.study?.flow?.kind === "external" ? 1000 : 2000 };
-}
-
-const MACH_SENTENCE = /\bMach\s*\d[\d.]*.*(past Mach|faster than sound)/i;
-/**
- * A fast gas flow's warning that it ran past what its solver is checked to, from the file's
- * `analysis.mach` (checked false): `{ sentence, short, value, limit }`, the file's own sentence
- * (`analysis.warnings`) where it gives one, and the caption's few words: "past Mach 1.8", or, a flow
- * within it whose outlet runs supersonic, "supersonic outlet". null for none, or for another analysis.
- */
-export function machWarning(result) {
-  const mach = result.analysis?.mach;
-  if (!mach || mach.checked) return null;
-  const past = mach.limit !== null && mach.value > mach.limit;
-  const stated = result.analysis.warnings.find((line) => MACH_SENTENCE.test(line));
-  const sentence = stated || (past
-    ? `Mach ${threeFigures(mach.value)} is past Mach ${plainNumber(mach.limit)}, the fastest this solver is checked to: shocks are captured over a few elements and their strength and place are approximate`
-    : `Mach ${threeFigures(mach.value)}, and the gas leaves the outlet faster than sound: the flow near the outlet is not to be trusted`);
-  return { sentence, short: past ? `past Mach ${plainNumber(mach.limit)}` : "supersonic outlet", value: mach.value, limit: mach.limit };
-}
-
-const UNSETTLED_SENTENCE = /did not settle/i;
-/**
- * A contact solve whose forces did not settle at some load step (`analysis.unsettled`): `{ sentence,
- * short, percent }`, the file's own sentence (`analysis.warnings`) where it gives one, and the
- * caption's few words, "contact did not settle at 80%". null for none.
- */
-export function unsettledWarning(result) {
-  const unsettled = result.analysis?.unsettled;
-  if (!unsettled) return null;
-  const percent = plainNumber(unsettled.firstPercent);
-  const sentence = result.analysis.warnings.find((line) => UNSETTLED_SENTENCE.test(line))
-    || `Contact did not settle at ${percent}% of the load: the forces here do not balance, so this result is not reliable`;
-  return { sentence, short: `contact did not settle at ${percent}%`, percent: unsettled.firstPercent };
-}
-
-/**
- * What leads the verdict's takeaway, by the analysis's tier, after where a load path stopped short of
- * the full load ("Stops at about 20 % of the load · ", the analysis's `stopCaption`) and "Not reliable · contact did not
- * settle at 80% · " where a contact solve's forces did not settle (`unsettledWarning`): "Estimate · " for an estimate (Tier 2),
- * a Tier 3 analysis's short limit word ("Laminar · ", "Rigid floor · "; a flow past the laminar
- * range "Laminar · unreliable above Re 2000 · "; a fast gas flow the file warns of "Ideal gas · past
- * Mach 1.8 · "); "" for Tier 1. And what ends it: " · adapted" where a step to fit the run cost some
- * accuracy.
- */
-function captionFrame(result, analysis) {
-  const lead = [];
-  // A load path that stopped short of the full load says so first (`stopCaption`: "Stops at about 20 % of the load").
-  const stop = typeof analysis.stopCaption === "function" ? analysis.stopCaption(result) : "";
-  if (stop) lead.push(stop);
-  const unsettled = unsettledWarning(result);
-  if (unsettled) lead.push("Not reliable", unsettled.short);
-  if (result.analysis?.estimate || (result.analysis?.tier ?? analysis.tier) === 2) lead.push("Estimate");
-  if ((result.analysis?.tier ?? analysis.tier) === 3) {
-    const reynolds = reynoldsWarning(result);
-    // An analysis whose limit word follows what the file solved (electromagnetic: "Static", or "AC" at a frequency).
-    const word = (typeof analysis.limitWordOf === "function" && analysis.limitWordOf(result)) || analysis.limitWord;
-    const mach = machWarning(result);
-    lead.push(word || "Lite", ...(reynolds ? [`unreliable above Re ${reynolds.limit}`] : []), ...(mach ? [mach.short] : []));
-  }
-  return { lead: lead.length ? `${lead.join(" · ")} · ` : "", tail: feaAdapted(result) ? " · adapted" : "" };
+  const summary = `${label} ${STATUS_WORDS[check.status]}${where}: ${line[0].toLowerCase()}${line.slice(1)} (${loadCaption(check.times)})`;
+  return { id: `check:${check.index}`, ...(faces.length ? { faces } : { refs: wholeRefs(result) }), summary };
 }
 
 /**
@@ -1439,41 +759,25 @@ const failedTitle = (failing, total) => (failing === total ? (total === 2 ? "Fai
  * the worst check's tone ("weak" failing, "close", "strong" passing; "none" with no stress: no load
  * reaches the part, or the load is set to 0). `title`: one check's own words ("Too weak", "Moves too
  * much", "Stiff enough", its kind's, `checkKinds.js`), or over several, how many fail ("Fails both
- * checks"), else "Close to the limit" or "Passes all checks". `caption`: how much of this load (the
- * analysis's noun) the weakest check takes ("OK only to 0.4× this load"; with no stress, what to do),
- * or where the worst check's kind does not scale with the load, its own sentence ("Hottest 84 °C,
- * 16 °C under its limit"), or the analysis's own where it has one (a collapse: "Lite · Collapses at
- * about 70 % of the load"). `rows`: each check, worst first (failing before close before passing, then
- * the most of its limit used), with its `label` in the person's words, the `part` a stress check's
- * numbers are for in an assembly, its `line` (the value against the limit, the label saying what it
- * is: "405 MPa, limit 276 MPa"), `use` (the share of the limit, 1 at it), the `margin` a stress,
- * buckling or fatigue check is held to (null for another) and its `choice` for Quick Edit. null where
- * the file cannot say: in the static family, no stress field, or a stress with no safety factor and
- * no checks (a result older than both); in any other analysis, no checks.
+ * checks"), else "Close to the limit" or "Passes all checks". `caption`: how much of this load the
+ * weakest check takes ("OK only to 0.4× this load"; with no stress, what to do). `rows`: each check,
+ * worst first (failing before close before passing, then the most of its limit used), with its
+ * `label` in the person's words, the `part` a stress check's numbers are for in an assembly, its
+ * `line` (the value against the limit, the label saying what it is: "405 MPa, limit 276 MPa"), `use`
+ * (the share of the limit, 1 at it), the `margin` a stress check is held to (null for a displacement)
+ * and its `choice` for Quick Edit. null where the file cannot say: no stress field, or a stress with
+ * no safety factor and no checks (a result older than both).
  */
 export function feaVerdict(result, loadScale = 1, t = english) {
-  const analysis = feaAnalysis(result);
-  const staticFamily = analysis.family === "static";
   const stress = result.fields.find((entry) => entry.attribute === "_von_mises");
-  if (staticFamily && !stress) return null;
+  if (!stress) return null;
   const k = Number(loadScale) >= 0 ? Number(loadScale) : 1;
   if (!(k > 0)) return { status: "none", title: t("fea.noLoad"), caption: t("fea.loadIsZero"), rows: [] };
   const checks = feaChecks(result);
-  if (staticFamily) {
-    const unloaded = checks.some((check) => check.kind === "stress" && !(check.value > 0));
-    if (!checks.length || unloaded) {
-      return stress.max > 0 && !unloaded ? null : { status: "none", title: t("fea.noStress"), caption: t("fea.checkLoadReaches"), rows: [] };
-    }
+  const unloaded = checks.some((check) => check.kind === "stress" && !(check.value > 0));
+  if (!checks.length || unloaded) {
+    return stress.max > 0 && !unloaded ? null : { status: "none", title: t("fea.noStress"), caption: t("fea.checkLoadReaches"), rows: [] };
   }
-  // What the analysis reports with no limit to judge it by (a piezo resonance's modes): rows of their own, after
-  // any checks; with no checks, its own headline and takeaway, in no tone.
-  const facts = typeof analysis.facts === "function" ? analysis.facts(result, t) : null;
-  if (!checks.length) {
-    if (!facts) return null;
-    const { lead, tail } = captionFrame(result, analysis);
-    return { status: "none", title: facts.title, caption: `${lead}${facts.caption}${tail}`, rows: facts.rows };
-  }
-  const noun = nounOf(result);
   const weakest = result.parts[weakestPartIndex(result)] || null;
   const weakestName = result.weakestPart ? spaced(result.weakestPart) : weakest?.name ? spaced(weakest.name) : "";
   // The checks the person named in the study's view ("Bore swell": their question) come first among those as bad, in
@@ -1485,98 +789,39 @@ export function feaVerdict(result, loadScale = 1, t = english) {
       || (ownRank(a) === 0 ? a.index - b.index : b.use - a.use || a.index - b.index));
   const [worst] = judged;
   const failing = judged.filter((check) => check.status === "fails").length;
-  // A load path that stopped short of the full load (`collapsed`) judges each check at the last load it carried, so
-  // checks that all hold there do not make it pass: its headline says it stopped, in the warning tone.
-  const stoppedShort = result.collapsed === true && !failing;
-  const title = stoppedShort ? "Stops short of the load" : judged.length === 1 ? checkTitle(worst, worst.status)
+  const title = judged.length === 1 ? checkTitle(worst, worst.status)
     : failing ? failedTitle(failing, judged.length) : worst.status === "close" ? "Close to the limit" : "Passes all checks";
-  // The load the weakest check takes, over the checks that scale with the load.
-  const times = judged.filter((check) => check.times !== null).map((check) => check.times);
-  const { lead, tail } = captionFrame(result, analysis);
-  // An analysis may say the takeaway itself (a collapse: "Collapses at about 70 % of the load"), else the first check's:
-  // the worst, and of those as bad, the first the person named ("Bore swell"), their study's question.
-  const own = typeof analysis.caption === "function" ? analysis.caption(result) : "";
-  const first = worst;
   return {
-    status: stoppedShort ? TONE_OF.close : TONE_OF[worst.status], title,
-    caption: `${lead}${own || checkCaption(first, { times: first.times !== null ? Math.min(...times) : null, noun })}${tail}`,
+    status: TONE_OF[worst.status], title,
+    // The load the weakest check takes.
+    caption: loadCaption(Math.min(...judged.map((check) => check.times))),
     rows: judged.map((check) => {
       const part = check.kind === "stress" ? (check.part ? spaced(check.part) : weakestName) : "";
-      const label = kindLabel(check, analysis.checkLabels);
-      // What the analysis adds under a check's line (heat stress: a clamped edge's singular peak, to read away from).
-      const hint = typeof analysis.checkHint === "function" ? analysis.checkHint(result, check) : "";
-      return { id: `check:${check.index}`, kind: check.kind, status: TONE_OF[check.status], label, part, line: kindLine(check, { bare: true, noun }),
-        ...(hint ? { hint } : {}), use: check.use, margin: check.margin, choice: checkChoice(result, check, part, label) };
-    }).concat(facts ? facts.rows : []),
+      const label = checkLabel(check);
+      return { id: `check:${check.index}`, kind: check.kind, status: TONE_OF[check.status], label, part, line: checkLine(check, { bare: true }),
+        use: check.use, margin: check.margin, choice: checkChoice(result, check, part, label) };
+    }),
   };
 }
 
 /**
- * A fast gas flow's Mach row in Details: where the file warns, its sentence (first, as a flow's
- * Reynolds warning is); else "Fastest flow Mach 1.2", its regime and the Mach the solver is checked
- * to its hint. [] for another analysis.
+ * Study's rows by section: `setup` (`SETUP_GROUPS`: where it is held, the fixed faces; what pushes it,
+ * each load with its faces under it; what it is made of) and `details` (the mesh, shut), each [] where
+ * the file records nothing for it. An assembly's parts and joints are the Parts panel's (`partRows`). A
+ * row that stands for faces carries them (`faces`, the file's refs) and what a prompt calls them
+ * (`summary`); a group row (`children`) carries none, and one of the setup's names its `glyph`, the
+ * marker it is drawn as on the model. A row that opens shut says so (`collapsed`), and a fact's further
+ * words are its hint (`hint`).
  */
-function machRows(result, whole) {
-  const mach = result.analysis?.mach;
-  if (!mach) return [];
-  const warning = machWarning(result);
-  if (warning) return [{ id: "mach", label: warning.sentence, detail: "", wrap: true, ...whole(warning.sentence) }];
-  const label = `Fastest flow Mach ${threeFigures(mach.value)}`;
-  const hint = [mach.regime, mach.limit !== null ? `checked to Mach ${plainNumber(mach.limit)}` : ""].filter(Boolean).join(", ");
-  const summary = `${label}${mach.regime ? ` (${mach.regime})` : ""}${mach.limit !== null ? `, within the Mach ${plainNumber(mach.limit)} its solver is checked to` : ""}`;
-  return [{ id: "mach", label, detail: "", wrap: true, ...(hint ? { hint: `${hint.charAt(0).toUpperCase()}${hint.slice(1)}` } : {}), ...whole(summary) }];
+export function studySections(result, t = english) {
+  if (!result.study) return { setup: [], details: [] };
+  return { setup: SETUP_GROUPS.flatMap((group) => group(result, t)), details: detailRows(result, t) };
 }
 
-/**
- * Details' rows, each chosen into Quick Edit with what it says: a contact solve's warning that its
- * forces did not settle (first, its own row); a flow's warning that it ran past the
- * laminar range (its own row, first); a fast gas flow's Mach number (`machRows`); the mesh (`detailRows`); "Adapted to fit", one row per step
- * cadgen took to fit the run, its words as the label and its accuracy note as the hint, chosen with
- * the faces it is about (the region kept fine, the features left out) tinted, else the whole result;
- * and a Tier 3 analysis's "Limits", one row per sentence of what its model leaves out.
- */
-function detailsGroup(result, t = english) {
-  const refs = wholeRefs(result);
-  const whole = (summary) => (refs.length ? { refs, summary } : {});
-  const reynolds = reynoldsWarning(result);
-  const flow = reynolds ? [{ id: "reynolds", label: reynolds.sentence, detail: "", wrap: true, ...whole(reynolds.sentence) }] : [];
-  const mesh = result.study ? detailRows(result, t)[0]?.children || [] : [];
-  const fit = result.fit.length ? [{ id: "fit", label: t("fea.adapted"), detail: "", children: result.fit.map((step, index) => {
-    const summary = `Adapted to fit: ${step.words}${step.accuracy ? ` (${step.accuracy})` : ""}`;
-    return { id: `fit:${index}`, label: step.words, detail: "", wrap: true, ...(step.accuracy ? { hint: step.accuracy } : {}),
-      ...(step.faces.length ? { faces: step.faces, summary } : whole(summary)) };
-  }) }] : [];
-  const tier3 = result.analysis?.tier === 3 && result.analysis.limits.length;
-  const limits = tier3 ? [{ id: "limits", label: t("fea.limits"), detail: "", children: result.analysis.limits.map((sentence, index) => ({
-    id: `limit:${index}`, label: sentence, detail: "", wrap: true, ...whole(`Limits of this ${result.analysis.word.toLowerCase()} result: ${sentence}`) })) }] : [];
-  const unsettled = unsettledWarning(result);
-  const settle = unsettled ? [{ id: "unsettled", label: unsettled.sentence, detail: "", wrap: true, ...whole(unsettled.sentence) }] : [];
-  // An analysis's own Details rows (`detailRows(result, whole)`: fsi's coupling iterations), before the mesh.
-  const own = typeof feaAnalysis(result).detailRows === "function" ? feaAnalysis(result).detailRows(result, whole) : [];
-  const children = [...settle, ...flow, ...machRows(result, whole), ...own, ...mesh, ...fit, ...limits];
-  return children.length ? [{ id: "details", label: t("fea.details"), detail: "", collapsed: true, children }] : [];
-}
-
-// Details follow "What you see" (the panel's own), shut; a result kind with more to say adds a group here.
-const DETAIL_GROUPS = Object.freeze([detailsGroup]);
-
-/**
- * Study's rows for a result's study, in order: its analysis's setup (`setupGroups`: for static, where
- * it is held, the fixed faces; what pushes it, each load with its faces under it; what it is made
- * of), then Details (the mesh, shut: `DETAIL_GROUPS`). An assembly's parts and joints are the Parts
- * panel's (`partRows`). A row that stands for faces carries them (`faces`, the file's refs) and what a
- * prompt calls them (`summary`); a group row (`children`) carries none, and one of the setup's names
- * its `glyph`, the marker it is drawn as on the model. A row that opens shut says so (`collapsed`), and
- * a fact's further words are its hint (`hint`). [] for a result written before the study was recorded.
- */
+/** Study's rows for a result's study, in order: its setup, then Details. [] for a result written before the study was recorded. */
 export function studyRows(result) {
   const { setup, details } = studySections(result);
   return [...setup, ...details];
-}
-
-/** Study's rows by section: `setup` (the analysis's `setupGroups`) and `details` (`DETAIL_GROUPS`), each [] where the file records nothing for it. */
-export function studySections(result, t = english) {
-  return { setup: result.study ? feaAnalysis(result).setupGroups.flatMap((group) => group(result, t)) : [], details: DETAIL_GROUPS.flatMap((group) => group(result, t)) };
 }
 
 /**
@@ -1604,12 +849,6 @@ export function faceRole(result, ref) {
       const words = loadWords(load);
       return [[words.amount, words.noun].filter(Boolean).join(" "), words.direction].filter(Boolean).join(", ");
     }),
-    // What another analysis does to it: a fixed temperature, heat, the air, the drop landing on it.
-    ...study.temperatures.filter((entry) => entry.faces.includes(ref)).map((entry) => (entry.celsius === null ? "kept at a fixed temperature" : `kept at ${plainNumber(entry.celsius)} °C`)),
-    ...study.heat.filter((entry) => entry.faces.includes(ref)).map((entry) => `${entry.watts !== null ? `${plainNumber(entry.watts)} W` : entry.fluxWm2 !== null ? `${plainNumber(entry.fluxWm2)} W/m²` : "some"} of heat in`),
-    ...study.convection.filter((entry) => entry.faces.includes(ref)).map((entry) => `cooled by air${entry.ambientC === null ? "" : ` at ${plainNumber(entry.ambientC)} °C`}`),
-    ...(study.radiation || []).filter((entry) => entry.faces.includes(ref)).map((entry) => `radiates${entry.ambientC === null ? "" : ` to ${plainNumber(entry.ambientC)} °C`}`),
-    ...(study.drop?.onto.includes(ref) ? ["lands on the drop"] : []),
   ];
   return roles.length ? roles.join("; ") : "free";
 }

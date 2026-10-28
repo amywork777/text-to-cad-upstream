@@ -1,10 +1,10 @@
 # The study file
 
-One JSON object, passed as `--study study.json` (or inline: `--study '{...}'`). This page is the
-keys every analysis shares, and the `static` analysis's (the default): for it, every key other than
-`material`, `fixtures` and `loads` is optional. Each other analysis adds its own keys, in its
-reference (the table below). The assembly keys (`parts`, `connections`, `contact_tolerance_mm`) are
-in [Assemblies](#assemblies); a study without them on a one-part document is unchanged.
+One JSON object, passed as `--study study.json` (or inline: `--study '{...}'`). Every key other
+than `material`, `fixtures` and `loads` is optional. The assembly keys (`parts`, `connections`,
+`contact_tolerance_mm`) are in [Assemblies](#assemblies); a study without them on a one-part
+document is unchanged. Every check here runs before anything is meshed, so a malformed study fails
+at once with a sentence naming the field.
 
 ```json
 {
@@ -27,108 +27,35 @@ in [Assemblies](#assemblies); a study without them on a one-part document is unc
 ## `analysis`
 
 Which question the study answers. Optional; left out, it is `static`, and a study without it
-behaves exactly as one with `"analysis": "static"`.
-
-Every analysis below runs in this cadgen. A name cadgen registers but does not solve yet would be
-refused with "'<name>' is planned but not in this cadgen yet", and nothing else about it checked;
-none is registered so today.
+behaves exactly as one with `"analysis": "static"`. Any other name is refused with a sentence
+listing the analyses cadgen knows.
 
 | `analysis` | plain word | status | its keys |
 | --- | --- | --- | --- |
 | `static` | Strength | runs today | this page, and [linear-static.md](linear-static.md) |
-| `modal` | Vibration | runs today | [modal.md](modal.md) |
-| `buckling` | Buckling | runs today | [buckling.md](buckling.md) |
-| `thermal` | Heat | runs today (with radiation: to the surroundings and between faces) | [thermal.md](thermal.md) |
-| `thermal_transient` | Heat over time | runs today | [thermal-transient.md](thermal-transient.md) |
-| `thermal_stress` | Heat stress | runs today | [thermal-stress.md](thermal-stress.md) |
-| `harmonic` | Shaking | runs today | [harmonic.md](harmonic.md) |
-| `random_vibration` | Random vibration | runs today | [random-vibration.md](random-vibration.md) |
-| `shock` | Shock | runs today | [shock.md](shock.md) |
-| `transient` | Over time | runs today | [transient.md](transient.md) |
-| `fatigue` | Fatigue life | runs today, from a static load case, a harmonic dwell or a random vibration | [fatigue.md](fatigue.md) |
-| `drop` | Drop (estimate) | runs today, as an estimate | [drop.md](drop.md) |
-| `cfd` | Flow | runs today (lite: steady laminar, incompressible) | [cfd.md](cfd.md) |
-| `cfd_turbulent` | Turbulent flow | runs today (lite: steady RANS, k-omega SST, wall functions) | [cfd-turbulent.md](cfd-turbulent.md) |
-| `cfd_compressible` | Fast gas flow | runs today (lite: steady ideal gas, adiabatic, shocks captured) | [cfd-compressible.md](cfd-compressible.md) |
-| `conjugate_heat` | Cooled by flow | runs today (lite: steady; the flow, laminar or turbulent, carries the heat but is not changed by it) | [conjugate-heat.md](conjugate-heat.md) |
-| `fsi` | Flow and bending | runs today (lite: steady two-way fluid-structure coupling, linear elastic part, ALE mesh motion) | [fsi.md](fsi.md) |
-| `impact` | Drop impact | runs today (lite) | [impact.md](impact.md) |
-| `nonlinear` | Permanent bend / Stretch | runs today (lite) | [nonlinear.md](nonlinear.md) |
-| `creep` | Creep | runs today (lite) | [creep.md](creep.md) |
-| `composite` | Composite | runs today (lite) | [composite.md](composite.md) |
-| `electromagnetic` | Magnetic / electric | runs today (lite: electrostatic, DC current, magnetostatic, AC magnetic) | [electromagnetic.md](electromagnetic.md) |
-| `contact` | Contact | runs today (lite) | [contact.md](contact.md) |
-| `bolt` | Bolted joint | runs today (lite: pretensioned bolts, frictional contact between the clamped parts) | [bolt.md](bolt.md) |
-| `topology` | Lighten it | runs today (lite: density-based topology optimisation on a fixed design mesh, one part) | [topology.md](topology.md) |
-| `acoustic` | Sound | runs today (lite: linear acoustics; cavity modes, a driven response or a harmonic's vibration, in the part's air, inside it or in open air) | [acoustic.md](acoustic.md) |
-| `piezo` | Piezo | runs today (lite: linear piezoelectricity, small signal; static actuation and sensing, resonance and anti-resonance, a driven sweep) | [piezo.md](piezo.md) |
-| `fracture` | Cracks | runs today (lite: linear-elastic fracture mechanics on a crack the study describes, Paris crack growth) | [fracture.md](fracture.md) |
-| `rotordynamics` | Spinning | runs today (lite: a rotor line cut from the CAD, gyroscopic whirl, critical speeds, unbalance response, linear bearings; the spinning stress on the solid) | [rotordynamics.md](rotordynamics.md) |
-| `multiphase` | Two fluids | runs today (lite: a liquid and a gas inside the part over time, laminar, incompressible; sloshing, filling and draining, a rising bubble) | [multiphase.md](multiphase.md) |
 
-Nothing is planned beyond these today: [planned-next.md](planned-next.md).
+What comes next is in [planned-next.md](planned-next.md).
 
-## Common keys
-
-Every analysis reads these; each adds its own, listed in its reference.
+## Keys
 
 | key | meaning |
 | --- | --- |
 | `analysis` | the analysis (above); default `static` |
-| `material` | a table name or an object ([`material`](#material)); each analysis checks that the material has the properties it needs and names a missing one |
-| `mesh` | element size ([`mesh`](#mesh)) |
+| `material` | a table name or an object ([`material`](#material)) |
+| `fixtures` | the faces held, `fixed` or `roller` ([`fixtures`](#fixtures)); at least one |
+| `loads` | forces and pressures on faces, gravity and acceleration on the whole part ([`loads`](#loads)); at least one |
+| `mesh` | element size and finer balls ([`mesh`](#mesh)) |
 | `output` | how the result is drawn ([`output`](#output)) |
+| `margin` | the safety factor to keep ([`margin`](#margin)) |
 | `parts`, `connections`, `contact_tolerance_mm` | an assembly ([Assemblies](#assemblies)) |
-| `margin` | the safety factor to keep; the static family only ([`margin`](#margin)) |
-| `fit` | memory and time targets, and which adaptations are allowed ([`fit`](#fit)) |
 | `view` | what the Viewer's Study shows ([`view`](#view)) |
 
-A key that neither the common keys nor the analysis claims is refused with a sentence naming the
-analysis and the keys it takes.
-
-## Shared by every analysis
-
-Each analysis page gives only its own keys, defaults, checks, outputs, hand checks, limits and
-ladder. Unless it says otherwise:
-
-- **Keys** come on top of the [common keys](#common-keys). `fixtures` and `loads`, where a page
-  takes them, are as on this page: `fixed` or `roller` faces, `force` and `pressure` on faces,
-  `gravity` and `acceleration`.
-- **Material properties.** An analysis refuses a material that lacks a property it reads (density
-  for anything with mass, `conductivity_W_mK`, `expansion_per_K`, `specific_heat_J_kgK`) with a
-  sentence naming the key. Every table material in [materials.md](materials.md) has all four; a
-  material object must give the ones its analysis reads. In an assembly each part uses its own.
-- **Checks.** A failing check is an `error` finding and a close one a `warning`, in plain words;
-  the page says where "close" starts and what a study with no `view.checks` is judged by.
-- **The view.** The page lists the `drives` it takes and what opens with no `view`. `field`,
-  `deformation`, `threshold` and `load_scale` work as in [`controls`](#controls); `frame` is the
-  scrubber over the result's series (frequencies, times, load steps or modes).
-- **Idealisations.** A fixed face is perfectly rigid, stiffer than a real bolted or clamped mount:
-  stress at its edge reads high, and frequencies read high (a real mount rings lower). An assembly
-  is bonded where it touches, which stiffens it too: no slip, and for heat no contact resistance.
-- **Lite solvers** write their limits into every result (`analysis.limits`, the verdict's
-  "Lite · " and its Details). Quote them whenever you quote its numbers.
-- **Big models.** Every analysis runs at any size, adapting step by step as [`fit`](#fit) says;
-  report every `adapted:` step with its accuracy note, and never ask the user to shrink the model
-  first. The page lists its ladder in order, its own rungs and what a shared rung measures there.
-  The shared rungs:
-  - `iterative`: an iterative solver (the page names it) instead of factorising. Exact (same
-    tolerance); said only when it saves time or memory.
-  - `local_refine`: a coarse pass, then a mesh kept at the requested size only where the first
-    pass peaked (and on named faces), coarse elsewhere; its note says how far the answer moved
-    between the passes.
-  - `defeature`: small fillets, chamfers and holes far from every named face and from the peak
-    left out of the mesh.
-  - `linear_elements`: simpler elements, stiff in bending: stresses read low, frequencies high.
-  - `symmetry`: a half or a quarter solved and mirrored when the part, fixtures, loads and checks
-    are all symmetric. Exact.
-- **Time marches** report progress and stop at their time limit as [`fit`](#fit) says.
+Any other key is refused with a sentence naming the keys a study takes.
 
 ## Units
 
-Geometry in mm, force in N, stress, pressure and modulus in MPa, mass density in t/mm³, as always.
-Accelerations, and the heat and flow inputs of the other analyses, are written in the units people
-use; cadgen converts them inside.
+Geometry in mm, force in N, stress, pressure and modulus in MPa, mass density in t/mm³, and
+accelerations in g.
 
 | quantity | unit in the study | example key |
 | --- | --- | --- |
@@ -137,20 +64,6 @@ use; cadgen converts them inside.
 | stress, pressure, modulus | MPa | `pressure_MPa`, `E_MPa` |
 | mass density | t/mm³ (steel is 7.85e-9) | `density_t_per_mm3` |
 | acceleration, gravity | g (9.81 m/s²) | `vector_g` |
-| temperature | °C | `C`, `ambient_C` |
-| conductivity | W/(m·K) | material `conductivity_W_mK` |
-| heat transfer coefficient | W/(m²·K) | `h_W_m2K` |
-| heat flux | W/m² | `W_per_m2` |
-| power | W | `W` |
-| specific heat | J/(kg·K) | material `specific_heat_J_kgK` |
-| vibration PSD | g²/Hz | `psd.table` |
-| fluid density, viscosity | kg/m³, Pa·s | `density_kg_m3`, `viscosity_Pa_s` |
-| velocity | m/s | `velocity_m_s` |
-| time | s (ms where the key says) | `end_s`, `impact_ms` |
-| frequency | Hz | `range_Hz` |
-
-`static` reads only length, force, stress, density and `vector_g`; the rest belong to the other
-analyses, each in its reference.
 
 ## `material`
 
@@ -161,12 +74,13 @@ A name from [materials.md](materials.md), or an object:
 ```
 
 An object may also name a table entry and override some of its fields:
-`{"name": "steel", "yield_MPa": 355}`.
+`{"name": "steel", "yield_MPa": 355}`. The material must be the same in every direction: an
+`orthotropic` block is refused. A material with no yield strength (a piezo ceramic, a rubber given
+only by its `hyperelastic` block) needs `yield_MPa` for the stress check.
 
 ## `fixtures`
 
-At least one (a few analyses, like `modal` and `contact`, take none: their references say). Each
-entry lists faces and a type:
+At least one. Each entry lists faces and a type:
 
 | type | what the faces do | Viewer |
 | --- | --- | --- |
@@ -184,11 +98,7 @@ A roller on a curved face holds each point along the face's own normal there (pe
 roller on a bore lets the part turn in it and slide along it. Where two roller faces meet at an
 edge, the edge's points are held along both normals. Rollers alone must still stop the part moving
 and turning every way (three faces that are not parallel, like the corner of a block), or the run
-says the part is not held. Rollers apply to every analysis that takes `fixtures` (the static
-family, `modal`, `buckling`, `harmonic`, `random_vibration`, `shock`, `transient`,
-`thermal_stress`, `nonlinear`, `contact`, `bolt`, `creep`, `composite`, `drop`, and `fatigue`
-through its source); a shaker drives a roller face only along its normal. A part with no fixture
-at all has no answer under `static`, so the run refuses it.
+says the part is not held. A part with no fixture at all has no answer, so the run refuses it.
 
 ## `loads`
 
@@ -207,8 +117,8 @@ density greater than zero: every table material has one; a material object must 
 acceleration) joins the applied force in the sidecar's `applied_force_N`, so the reactions still
 balance it. More in [linear-static.md](linear-static.md#body-loads-gravity-and-acceleration).
 
-Remote loads, bearing loads and moments are not in this version (a bolt's preload is, in the `bolt`
-analysis: [bolt.md](bolt.md)); approximate a moment with a pair of opposite forces on two faces.
+Remote loads, bearing loads, bolt preloads and moments are not in this version; approximate a
+moment with a pair of opposite forces on two faces.
 
 ## Faces
 
@@ -249,9 +159,8 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
   Without it every pair that touches within the tolerance is bonded. `bonded` needs the pair to
   touch within the tolerance; `free` leaves them unjoined (their faces stay separate and may not
   pass load). A `free` pair that is still joined through other bonded parts is refused. `contact`
-  (parts that press and slide) runs under the `contact` analysis and `bolt` under the `bolt`
-  analysis; every other analysis refuses them with "not yet supported". Several `bolt`s may join
-  the same two parts.
+  (parts that press and slide) and `bolt` are refused with "not yet supported; use bonded or
+  free".
 - `contact_tolerance_mm`: default 0.1. Faces this close are touching; a gap within it is closed to
   bond the pair, and so is an overlap no thicker than it (an interference; a `gap_closed` finding
   says which). A thicker overlap is never bonded.
@@ -268,15 +177,22 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
 `size_mm` is the target element size. Omitted, it is a fortieth of the part's bounding diagonal.
 Halving it roughly multiplies the run time by eight; a first run at the default, then one
 refinement to confirm the peak, is the usual pattern. `--mesh-size` on the command line overrides
-the file for one run. Elements are quadratic tetrahedra (`order` 2); a study cannot ask for another
-order under `static`, though the run may switch to simpler elements to fit a big model, and then
-says so ([`fit`](#fit)).
+the file for one run. Elements are quadratic tetrahedra (CalculiX's C3D10); `order` may be left out
+or given as 2, and any other order is refused.
 
 `refine` meshes balls finer than the rest, where a small detail decides the answer (two curved
 parts touching, a sharp notch):
 `"mesh": {"size_mm": 3, "refine": [{"center_mm": [0, 0, 0], "radius_mm": 2, "size_mm": 0.3}]}`.
 Each ball is meshed at its `size_mm` within `radius_mm` of `center_mm`, graded to `size_mm` outside
 it. Keep a ball small: a large one at a fine size is refused, as too many local sizes to place.
+
+When the safety factor comes out under 3, the run meshes again finer and solves again by itself:
+half the element size (and half at fillets and holes, where the curvature sets the size), less where
+that would pass 150 000 degrees of freedom, and up to 250 000 only when 150 000 leaves no
+meaningfully finer mesh: CalculiX's direct solver needs several GB of memory there. A model already
+too big for a finer solve keeps its first answer, with a warning that its convergence is unchecked.
+A first solve is never refused for its size; past 150 000 degrees of freedom it warns that it will
+be slow. The finer solve is the one written; the sidecar's `refined` records both sizes and peaks.
 
 ## `output`
 
@@ -290,54 +206,6 @@ The safety factor against yield the part should keep. Omitted, 2. Below 1 is ref
 yields has no margin). A result under it, but above 1, is a `low_margin` warning; below 1 is a
 `yields` error. Raise it for polymers, fatigue or a part whose failure hurts someone; lower it only
 when the user says the load is known exactly.
-
-## `fit`
-
-Optional. A model too big for the machine's memory or for the time target is never refused: before
-meshing, the run estimates the memory and time the solve needs, and while that misses the target it
-takes the next step that applies, until it fits, and says what it did. `fit` sets the targets and
-which steps are allowed.
-
-```json
-"fit": {"memory_GB": 8, "seconds": 600, "allow": ["iterative", "local_refine"]}
-```
-
-| key | meaning |
-| --- | --- |
-| `memory_GB` | the memory to stay under; default half of this machine's memory, at least 2 GB |
-| `seconds` | the time to aim for; default 600 |
-| `allow` | the steps the run may take, by name; default every step the analysis has |
-
-The steps `static` can take, in the order it tries them (examples of their notes in
-[linear-static.md](linear-static.md#when-the-model-is-big-the-static-ladder)):
-
-| step | what it does | what it costs |
-| --- | --- | --- |
-| `iterative` | an iterative solver, or one that never stores the whole matrix | nothing; said only when it changes the run time |
-| `local_refine` | a coarse first pass, then a second mesh fine only around the peak and on the named (loaded, fixed and checked) faces | the peak's change between the passes, stated |
-| `defeature` | leaves out small fillets, chamfers and holes far from every named face and from the peak, for meshing only | none stated for far features; named faces are never touched |
-| `linear_elements` | simpler (linear) elements | bending stress reads low, about 10 to 30 %, stated (measured where it could be) |
-| `idealise` | a thin-walled part as a shell, or a slender one as a beam (at the `linear_elements` step) | the textbook error for its slenderness, stated; skipped where this cadgen has no shell or beam model yet |
-| `symmetry` | solves a half or a quarter of a symmetric part and load (every fixture and check too), and mirrors it | none: exact for a symmetric part and load |
-
-A step that does not apply (no thin wall, no symmetry) is skipped silently. Every step taken prints
-one `adapted:` line on the CLI, joins the sidecar's `fit` list and the GLB's `extras.fit` (each
-with `rung`, `words`, `accuracy`, `accuracy_pct`, `faces`, `detail`), and is an `info` finding
-`fit_<step>`.
-
-Use `allow` only when the user rules a simplification out: "keep every fillet" is an `allow`
-without `defeature`. `fit` never makes a refusal possible: with every step forbidden, or every step
-taken and the target still missed, the run goes ahead and says how long and how much memory to
-expect. Never ask the user to shrink a model before running it.
-
-A time march (transient's direct march, thermal_transient, creep, impact, multiphase) says how far
-it has got about every 10 s on the CLI, without `--verbose` too, and stops at its time limit: twice
-`seconds` (so 20 minutes by default), at least 30 s. A stopped run still writes its GLB and
-sidecar, covering the time it reached: a `time_limit` warning finding, "Stopped at its time limit
-at t = 420 ms of 1.5 s (after 20 minutes): nothing after 420 ms is solved; ...", the same sentence
-in `extras.analysis.warnings`, and each check judged on what was solved, its label ending "(stopped
-at 420 ms)" and a pass turned `close` (a failure stays one). Rerun with a larger `seconds`, or a
-coarser mesh, to follow it to the end.
 
 ## `view`
 
@@ -456,19 +324,22 @@ must end in `.glb`) plus its `.json` twin:
   the value itself rides along as the `_VON_MISES` vertex attribute, and the mesh `extras` carry
   the field, units, range and deformation scale.
 - `part.fea.json`: the study as given, the material, the resolved faces, the summary (max von Mises
-  nodal and Gauss-point, safety factor, max displacement and its location, applied and reaction
+  nodal and at the integration points, safety factor, max displacement and its location, applied and reaction
   forces; for an assembly also `parts`, one entry per part with its material, peak stress, safety
   factor and displacement, and the weakest part's name and peak; and `checks`, each check judged,
   also in the GLB's `extras.checks`), per-fixture reactions, mesh statistics, timings and warnings,
   the `findings` (also in the GLB's mesh `extras`) and `refined`: the first and the finer solve's
-  element size and peak when the run solved twice, else `null`. When the run adapted to fit, `fit`
-  lists each step ([`fit`](#fit)); it is left out when no step was taken.
+  element size and peak when the run solved twice, else `null`. The mesh statistics name the
+  mesher and the solver (`"solver": "calculix 2.23 (C3D10)"`).
 - for an assembly the sidecar also records `connections` (each joint: parts, type, area, gap,
   `interference_mm` when the parts overlapped by no more than the tolerance and were bonded,
   interface faces), and the GLB carries `parts`, `connections` and a per-vertex `_PART` index
   beside `_FACE`.
 - `part.fea.vtu` with `--vtu`: the volume mesh with displacement and von Mises point data, for
   ParaView.
+
+Each file is written under a temporary name and moved into place only once every one is written: a
+run that fails writes nothing, and the previous result stays as it was.
 
 For an assembly the summary mixes two scopes. `yield_MPa` and `safety_factor` are the weakest
 part's (the part named by `weakest_part`, whose own peak is `weakest_part_peak_MPa` at

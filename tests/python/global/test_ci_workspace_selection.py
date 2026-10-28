@@ -250,7 +250,7 @@ class ChangesRunWhatCanBreak(unittest.TestCase):
         self.assertIn('"netgen-mesher==6.2.2608"', JOBS["fea"])
         # One glob runs every analysis's suite, so a new test_fea_<name>.py needs no workflow edit.
         self.assertIn(f"{CADGEN}/test_fea*.py", JOBS["fea"])
-        self.assertIn("timeout-minutes: 40", JOBS["fea"])
+        self.assertIn("timeout-minutes: 15", JOBS["fea"])
         # Every FEA suite on disk is one the glob runs, and a change to it selects the job.
         on_disk = sorted(path.name for path in (REPO_ROOT / CADGEN).glob("test_fea*.py"))
         self.assertLessEqual({"test_fea.py", "test_fea_assembly.py", "test_fea_checks.py"}, set(on_disk))

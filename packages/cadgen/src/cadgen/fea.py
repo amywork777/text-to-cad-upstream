@@ -1,12 +1,9 @@
 """The public ``fea`` namespace: finite element analysis of a part or assembly in a STEP
 or an engine document (``.xbf``), its faces named by the engine's refs (``bracket/face 17``).
 
-A study names its analysis (``"analysis"``; ``static`` when it names none):
-static strength, with face and body loads; and, registered with it, modal
-(vibration), buckling, thermal and thermal_transient (heat), thermal_stress,
-harmonic (shaking), random_vibration, shock, transient, fatigue, drop (an
-estimate), and the lite cfd, impact, nonlinear and contact solvers. A name
-this cadgen does not have built yet says so plainly.
+A study is static: linear elastic strength, with face and body loads, on a part
+or a bonded assembly (``"analysis"`` may say ``static``; any other name is an
+error listing the analyses there are).
 
 Three verbs, each mirrored by a generated CLI (``cadgen fea faces``,
 ``cadgen fea parts``, ``cadgen fea solve``): ``faces`` lists a part's faces
@@ -68,15 +65,14 @@ def solve(
     vtu: bool = False,
     verbose: bool = False,
 ) -> FeaResult:
-    """Run one study (static unless it names another analysis) and write its result GLB and JSON sidecar.
+    """Run one static study and write its result GLB and JSON sidecar.
 
     target: the STEP/STP or .xbf document holding the part.
     out: the result .glb path. Omitted, writes ``<document>.fea.glb`` beside the
         document; the sidecar is the same name with ``.json``.
     study: the study: a JSON file path, inline JSON, or (library callers) a
-        dict. It names the analysis (default ``static``), the material, the
-        fixed faces and the loads (static: forces, pressures, gravity and
-        acceleration), and what the analysis reads of its own; see the fea
+        dict. It names the material, the fixed faces and the loads
+        (forces, pressures, gravity and acceleration); see the fea
         skill for the schema. Face refs are the ones ``cadgen fea faces``
         prints. A document of several parts is solved as one bonded assembly:
         ``parts`` gives each its material, ``connections`` overrides which

@@ -1,11 +1,11 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { BufferAttribute, BufferGeometry, Group, Mesh, Vector3 } from 'three';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 
 // An FEA result's view under the real shell and the real playbar runtime (`useGlbAnimation`, not
-// stood in): Play in preview steps a series' colours through its frames as the playbar's clock runs,
-// and Clip cuts the result open. Only what loads the file and the WebGL viewport are replaced.
+// stood in): the Load ramp in preview climbs the colours and the deformation as the playbar's clock
+// runs, and Clip cuts the result open. Only what loads the file and the WebGL viewport are replaced.
 const loaded = vi.hoisted(() => ({ scene: null as any }));
 vi.mock('../../../dist/renderers/kit/shell/ShellViewport.js', () => ({
   default: forwardRef(function StandInViewport(props: any, ref) {
@@ -38,28 +38,23 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); cleanup(); vi.unstubAllGlobals(); document.querySelectorAll('[data-test-navbar]').forEach(slot => slot.remove()); });
 
-// Heat over time, as `cadgen fea solve` writes it: a temperature per frame, warming from 25 °C, the
-// model never deformed (its displacement is zero), opening on the hottest frame.
-const WARMUP = {
-  generator: 'cadgen fea', name: 'heatsink temperature', deformation_scale: 1, document: 'part.step', occurrence: 'bracket', faces: ['bracket/face 1', 'bracket/face 2'],
-  analysis: { type: 'thermal_transient', tier: 1, word: 'Heat over time', reference_C: 25 },
-  fields: [{ attribute: '_TEMPERATURE', name: 'temperature', units: '°C', min: 25, max: 75, attribute_scale: 1, signed: true, per_frame: true }],
-  series: { kind: 'time', unit: 's', default: 2, frames: [
-    { value: 0, label: '0 s', attributes: { temperature: '_TEMPERATURE' } },
-    { value: 60, label: '60 s', attributes: { temperature: '_TEMPERATURE_F1' } },
-    { value: 120, label: '2 min', attributes: { temperature: '_TEMPERATURE_F2' } }] },
+// A static result, as `cadgen fea solve` writes it: the file draws its displacement ×10.
+const STATIC = {
+  generator: 'cadgen fea', name: 'bracket von Mises', deformation_scale: 10, safety_factor: 5.83, document: 'part.step', occurrence: 'bracket',
+  faces: ['bracket/face 1', 'bracket/face 2'],
+  fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 100, attribute_scale: 1 },
+    { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 2, attribute_scale: 1000 }],
 };
 
-function mount(extras: Record<string, unknown> | null = WARMUP) {
+function mount(extras: Record<string, unknown> | null = STATIC) {
   const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]), 3));
+  // Vertex 2 drawn ×10 its 2 mm: 0.02 m down in z.
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, -0.02, 1, 1, 0]), 3));
   geometry.setIndex([0, 1, 2, 1, 3, 2]);
   geometry.setAttribute('color', new BufferAttribute(new Uint8Array(16).fill(7), 4, true));
-  geometry.setAttribute('_displacement', new BufferAttribute(new Float32Array(12), 3));
+  geometry.setAttribute('_displacement', new BufferAttribute(new Float32Array([0, 0, 0, 0, 0, 0, 0, 0, -0.002, 0, 0, 0]), 3));
   geometry.setAttribute('_face', new BufferAttribute(new Float32Array([0, 0, 0, 1]), 1));
-  geometry.setAttribute('_temperature', new BufferAttribute(new Float32Array([25, 25, 25, 25]), 1));
-  geometry.setAttribute('_temperature_f1', new BufferAttribute(new Float32Array([25, 40, 50, 30]), 1));
-  geometry.setAttribute('_temperature_f2', new BufferAttribute(new Float32Array([25, 60, 75, 40]), 1));
+  geometry.setAttribute('_von_mises', new BufferAttribute(new Float32Array([0, 50, 100, 25]), 1));
   const mesh = new Mesh(geometry);
   if (extras) Object.assign(mesh.userData, extras);
   const root = new Group();
@@ -84,24 +79,29 @@ function mount(extras: Record<string, unknown> | null = WARMUP) {
   return mesh;
 }
 
-it('Play in preview steps a heat-over-time result\'s colours through its frames, and leaves the unmoving model\'s positions alone', () => {
+it('the Load ramp in preview climbs the colours and the deformation from no load to the load, as the playbar\'s clock runs', () => {
   const mesh = mount();
-  // Vertex 2's colour: red at the hottest frame's 75 °C, which the result opens on; blue at the start's 25 °C.
+  // Vertex 2's colour: red at its 100 MPa, the field's top; its z: the file's ×10 drawn.
   const vertex2 = () => Array.from(mesh.geometry.getAttribute('color').array as Uint8Array).slice(8, 11);
-  const position = mesh.geometry.getAttribute('position');
-  const hottest = vertex2();
-  const placed = position.version;
+  const z2 = () => mesh.geometry.getAttribute('position').getZ(2);
+  const loaded = vertex2();
+  expect(z2()).toBeCloseTo(-0.02, 6);
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Preview' })); });
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Play animation' })); });
+  // The ramp starts with no load on: the colours at the ramp's low end, the part at rest.
+  expect(vertex2()).toEqual([13, 26, 230]);
+  expect(z2()).toBeCloseTo(0, 6);
   const seen = [vertex2()];
-  for (const ms of [250, 750, 1500, 2250]) { frame(ms); seen.push(vertex2()); }
-  // Play starts at 0 s, all 25 °C, and every tick of its clock shows a new blend of two frames.
-  expect(seen[0]).toEqual([13, 26, 230]);
-  expect(seen[0]).not.toEqual(hottest);
+  for (const ms of [500, 1000, 1500]) { frame(ms); seen.push(vertex2()); }
+  // Every tick of its clock puts more of the load on: a new colour, and the part a share of the way down.
   expect(new Set(seen.map(String)).size).toBe(seen.length);
-  // A temperature moves nothing: its frames share the file's displacement, so no tick rewrites the
-  // positions (and their normals and markers).
-  expect(position.version).toBe(placed);
+  expect(z2()).toBeCloseTo(-0.015, 6);
+  // At the end of its two seconds the whole load is on, and it starts over from none as it loops.
+  frame(1999);
+  expect(z2()).toBeCloseTo(-0.02, 4);
+  expect(vertex2()).toEqual(loaded);
+  frame(2100);
+  expect(z2()).toBeCloseTo(-0.001, 6);
 });
 
 it('a result has a GLB\'s tools, Clip among them, and a cut never recolours it or its colour bar', () => {
@@ -115,79 +115,6 @@ it('a result has a GLB\'s tools, Clip among them, and a cut never recolours it o
   act(() => { fireEvent.keyDown(screen.getByRole('slider', { name: 'Clip amount' }), { key: 'End' }); });
   // A cut discards; it never recolours. The colour bar stays the reading it was, and Study stays the sidebar's.
   expect(Array.from(mesh.geometry.getAttribute('color').array as Uint8Array)).toEqual(colours);
-  expect(document.querySelector('[aria-label="temperature colour bar"]')).toBeTruthy();
+  expect(document.querySelector('[aria-label="von Mises stress colour bar"]')).toBeTruthy();
   expect(screen.getByRole('region', { name: 'Study' })).toBeTruthy();
-});
-
-const DROPPED = {
-  generator: 'cadgen fea', name: 'plate drop (estimate)', deformation_scale: 1, document: 'part.step', occurrence: 'bracket', faces: ['bracket/face 1', 'bracket/face 2'],
-  analysis: { type: 'drop', tier: 2, word: 'Drop (estimate)', estimate: true, limits: [], noun: 'this drop', warnings: [],
-    fall: { height_mm: 1000, direction: [0, 0, -1], speed_m_s: 4.4287, floor: { point_mm: [500, 0, 0], normal: [0, 0, 1] }, impact_ms: 0.9 } },
-  fields: [{ attribute: '_TEMPERATURE', name: 'von Mises stress', units: 'MPa', min: 0, max: 75, attribute_scale: 1, field: 'von_mises' }],
-  study: { drop: { height_mm: 1000, onto: ['bracket/face 1'], stop_mm: 2, direction: [0, 0, -1] }, material: { name: 'ABS', yield_MPa: 40 } },
-};
-
-it('a drop moves as kinematics does: a Time row and named states pose it, and the sidebar\'s Animation plays the fall', () => {
-  const mesh = mount(DROPPED);
-  const height = () => { mesh.updateMatrixWorld(true); return new Vector3().setFromMatrixPosition(mesh.matrixWorld).y; };
-  // It opens on the peak of the stop, on the floor, its Time row saying the real time from landing.
-  const time = screen.getByRole('slider', { name: 'Time' });
-  const said = () => (screen.getByLabelText('Time slider value') as HTMLInputElement).value;
-  expect(height()).toBeCloseTo(0, 6);
-  expect(said()).toBe('450 µs');
-  // Dragged to its start, it is up at its height, released: as Released, the named state, puts it.
-  act(() => { fireEvent.keyDown(time, { key: 'Home' }); });
-  expect(height()).toBeCloseTo(1, 6);
-  expect(said()).toBe('\u22120.45 s');
-  act(() => { fireEvent.keyDown(time, { key: 'End' }); });
-  expect(height()).toBeCloseTo(0, 6);
-  expect(said()).toBe('At rest');
-  // The file sidebar's Animation plays the same timeline as Drop: from its height, falling, the readout in plain words.
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Play animation' })); });
-  frame(0);
-  frame(100);
-  expect(height()).toBeCloseTo(1, 6);
-  expect(document.querySelector('[data-fea-fall-time]')!.textContent).toBe('1 m above the floor');
-  frame(700);
-  expect(height()).toBeLessThan(1);
-  expect(height()).toBeGreaterThan(0);
-  const floor = mesh.parent!.getObjectByName('fea-drop-floor')!;
-  expect(floor.visible).toBe(true);
-  frame(1200);
-  expect(document.querySelector('[data-fea-fall-scale]')!.textContent).toBe('slowed 2,000×');
-  // Reset puts it back where the Time row has it, the readout gone.
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Reset animation' })); });
-  expect(height()).toBeCloseTo(0, 6);
-  expect((document.querySelector('[data-fea-fall-clock]') as HTMLElement).style.display).toBe('none');
-});
-
-// Heat stress as `cadgen fea solve` writes it: its motion is the heat coming on, on a Heat row.
-const HEATED = {
-  generator: 'cadgen fea', name: 'strip heat stress', deformation_scale: 1, document: 'part.step', occurrence: 'bracket', faces: ['bracket/face 1', 'bracket/face 2'],
-  analysis: { type: 'thermal_stress', tier: 1, word: 'Heat stress', reference_C: 25 },
-  fields: [{ attribute: '_TEMPERATURE', name: 'temperature', units: '°C', min: 25, max: 75, attribute_scale: 1, field: 'temperature', signed: true }],
-};
-
-it('a motion\'s row plays in place: its play button runs the timeline in the tools view, pressed again or dragged it stops', () => {
-  mount(HEATED);
-  const said = () => (screen.getByLabelText('Heat slider value') as HTMLInputElement).value;
-  expect(said()).toBe('100 % of the heat');
-  // At its end, play starts it over from ambient and the row follows the clock.
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Play the motion' })); });
-  frame(0);
-  frame(500);
-  expect(said()).toBe('25 % of the heat');
-  // Pressed again it pauses where it is.
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Pause' })); });
-  frame(1000);
-  expect(said()).toBe('25 % of the heat');
-  // Playing again from there; a drag of the row pauses it and takes the row's value.
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Play the motion' })); });
-  frame(1000);
-  frame(1500);
-  expect(said()).toBe('50 % of the heat');
-  act(() => { fireEvent.keyDown(screen.getByRole('slider', { name: 'Heat' }), { key: 'Home' }); });
-  expect(screen.getByRole('button', { name: 'Play the motion' })).toBeTruthy();
-  frame(2000);
-  expect(said()).toBe('0 % of the heat');
 });

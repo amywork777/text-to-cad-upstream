@@ -7,8 +7,7 @@ good answer from a bad one. The keys are in [study-file.md](study-file.md).
 
 - Small displacements, small strains: results scale linearly with the load. A part that deflects by
   more than a few percent of its own size, buckles, or contacts something else is outside the model.
-- Linear elastic material below yield (isotropic, or orthotropic where the material gives its
-  directions). The safety factor tells you whether that assumption held; below 1 the real part
+- Linear elastic, isotropic material below yield (an orthotropic material is refused). The safety factor tells you whether that assumption held; below 1 the real part
   yields and the stresses reported are not what it sees.
 - Fixtures are perfectly rigid. A `fixed` face is held still and bonded: a real bolt, weld or clamp
   is softer and spreads load, so a fixed face is the stiffest possible support. A `roller` face
@@ -32,11 +31,13 @@ good answer from a bad one. The keys are in [study-file.md](study-file.md).
 - Loads are static and do not follow the deformation. A `gravity` or `acceleration` load is a
   steady body load (the part's weight, or a constant g-load), not a moving one: no vibration, no
   impact, no fatigue, no thermal strain, no preload.
+- Quadratic (10-node) tetrahedra, CalculiX's C3D10, solved by CalculiX's direct solver on one
+  thread, so the same study gives the same numbers every run.
 - An assembly's parts are bonded where they touch (within 0.1 mm): the glued faces carry load as
   if welded, with no slip, no clearance, no preload and no bolt stiffness. A bonded joint is
   stiffer than a real bolted one and exaggerates the stress at its edge. Under `static`, a part
-  resting on another without being bonded carries nothing: parts that press and slide are the
-  `contact` analysis, and bolts the `bolt` analysis.
+  resting on another without being bonded carries nothing. Parts that press and slide, and bolts,
+  are not in this version.
 
 ## Choosing faces
 
@@ -87,8 +88,7 @@ in g (1 g = 9.81 m/s²).
   [`loads`](study-file.md#loads)). In an assembly they act on every part, each with its own density.
 - The sidecar's `applied_force_N` includes them (mass times acceleration), so the reactions still
   balance it: a 2 kg part under `gravity` alone shows about 19.6 N applied and 19.6 N of reaction.
-- A drop, as an estimate, is the [`drop`](drop.md) analysis: the faces that hit the floor fixed and
-  an `acceleration` of G g pointing away from the floor, G = drop height / stopping distance (a
+- A drop, as an estimate: the faces that hit the floor fixed and an `acceleration` of G g pointing away from the floor, G = drop height / stopping distance (a
   1 m drop that stops in 2 mm is 500 g). Report it as an estimate of an equivalent steady load,
   never as an impact simulation, and say the stopping distance you assumed.
 - The `load_scale` control scales the body loads with the rest, because the answer is linear in
@@ -100,13 +100,18 @@ in g (1 g = 9.81 m/s²).
   largest element; small features (thin walls, fillets, chamfers, small holes) make the mesher go
   finer there by itself, with elements under about their radius or thickness, so they, not only
   the bounding box, can set the element count.
-- The run reports both the nodal and the Gauss-point von Mises peak. When the Gauss-point value is
-  more than 50 % above the nodal one, the peak is not resolved; when that matters the run lists a
-  `peak_concentration` finding. When the safety factor is under 3 the run solves again by itself at
-  half the element size (and half the size at fillets and holes too), capped to keep the solve under
-  the degrees-of-freedom budget (so a part near the limit takes minutes and may get less than half);
-  the finer result is the one written and reported, the sidecar's `refined` block records both sizes
-  and peaks, and `mesh_not_converged` is listed when the peak moved more than 10 %.
+- The run reports two von Mises peaks. The nodal one (the reported peak, which the safety factor
+  uses) is each element's stress at its four integration points, extrapolated to its nodes and
+  averaged over the elements at a node, per part in an assembly; it is usually the higher of the
+  two. The integration-point one is the raw element value. When the integration-point peak stands
+  more than 50 % above the nodal one, a concentration is not resolved; when that matters the run
+  lists a `peak_concentration` finding.
+- When the safety factor is under 3 the run solves again by itself at half the element size (and
+  half the size at fillets and holes too), capped to keep the finer solve under 150 000 degrees of
+  freedom where it can and never past 250 000 (so a big part may get less than half, or none, with
+  a warning); the finer result is the one written and reported, the sidecar's `refined` block
+  records both sizes and peaks, and `mesh_not_converged` is listed when the peak moved more than
+  10 %.
 - To check convergence yourself, solve twice and compare the peaks; how depends on where the peak
   is. Away from small features, halve `mesh.size_mm` (`--mesh-size` on the command line). At a
   fillet, hole or chamfer, halving it changes little: the elements there are already sized by the
@@ -117,41 +122,25 @@ in g (1 g = 9.81 m/s²).
   answer. A peak that keeps growing sits on a singularity: a clamped edge, a sharp inside corner, a
   point load. Report the value a short distance away from it, say why, and suggest a fillet or a
   softer fixture if the location is real.
-- Element count grows as the cube of the refinement. Above about 400 000 degrees of freedom the
-  solve is slow and the run says so. A model too big for the machine is not refused: the run
-  adapts it to fit (below).
+- Element count grows as the cube of the refinement. Above 150 000 degrees of freedom the solve is
+  slow and the run says so: CalculiX's direct solver took about 10 s and 1.8 GB at 140 000, and
+  74 s and 4.3 GB at 207 000. A first solve is never refused for its size, and the model is never
+  simplified to fit: when it is too slow, a larger `mesh.size_mm` is the fix (unless the warning says
+  small features set the mesh, where a larger size helps little).
 
-## When the model is big: the static ladder
+## The solver
 
-The steps, their order and their costs are the table in [`fit`](study-file.md#fit): `iterative`,
-`local_refine`, `defeature`, `linear_elements` (with `idealise`), `symmetry`. Each note says what
-it cost: `local_refine` "the peak is still meshed at 0.8 mm; peak stress moved 2.1 % between
-passes", `defeature` "Left out 6 small fillets far from the load to mesh it". Report every step in
-plain words: "To fit this machine, it meshed coarsely away from the hole; the peak there is still
-meshed finely, and it moved 2 % between the coarse and fine passes." Never report an adapted result
-as if no step was taken.
-
-## Which solver runs: CalculiX or the built-in one
-
-- A static study is solved by CalculiX (`ccx`), which is faster, and otherwise by cadgen's built-in
-  solver. Nothing else changes: the same mesh, loads, fixtures, checks and outputs, and the same
-  answer. On a straight-edged mesh the two agree to CalculiX's seven printed digits; at a curved
-  hole or fillet they differ slightly, from how each integrates a curved element (CalculiX at 4
-  points, the built-in solver at 11): within 0.2 % on the max von Mises, the safety factor and the
-  displacement, far less than a finer mesh moves them. The one number that can differ more is the
-  Gauss-point peak at a sharp inside corner (25 % on a clevis's slot corner): a spike the mesh
-  cannot resolve with either solver. Read it as a spike, never quote it as the part's stress.
-- Nothing needs installing: the first study CalculiX suits downloads it once into cadgen's cache (9
-  to 21 MB by platform; the run prints `cadgen: downloading the CalculiX solver`). A `ccx` already
-  on the PATH is used instead; `CADGEN_CCX=/path/to/ccx` names one, and `CADGEN_CCX=0` turns it
-  off. With no network, or on a platform cadgen has no build for, the built-in solver runs, and a
-  failed download says why.
-- The built-in solver keeps what CalculiX would not solve the same way: an orthotropic or layered
-  material, a thermal strain, a roller on a sloped or curved face, linear elements, and models over
-  150 000 degrees of freedom (CalculiX's direct solver needs far more memory there).
-- The result says which ran: `mesh.solver` in the sidecar (`calculix 2.23 (C3D10)`, or the built-in
-  `superlu` or `amg+cg (…)`), also at the end of the first line the command prints. If CalculiX
-  fails, the built-in solver answers instead and a warning says why.
+- Every study is solved by CalculiX (`ccx`), 2.20 or newer, which the person installs: `conda
+  install -c conda-forge calculix`, or the `calculix-ccx` package on Debian and Ubuntu. cadgen runs
+  `CADGEN_CCX` when it is set, else `ccx` on PATH. cadgen meshes with netgen, writes CalculiX's
+  input (each part its own element set and material, a roller on a sloped or curved face in its own
+  frame), runs it, and reads the displacements, the reactions and the stress at each element's
+  integration points back.
+- A missing `ccx`, or one older than 2.20, stops the solve before meshing with an error naming how
+  to install it. cadgen downloads nothing and has no fallback solver.
+- The result names the version that ran: `mesh.solver` in the sidecar (`calculix 2.23 (C3D10)`),
+  also at the end of the first line the command prints. A solve that runs past an hour is stopped
+  and says so.
 
 ## Judging the answer
 

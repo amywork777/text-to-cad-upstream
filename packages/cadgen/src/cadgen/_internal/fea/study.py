@@ -20,10 +20,8 @@ caller) of this shape::
       "view": {"checks": [...], "sections": [...], "controls": [...], "presets": [...], "show": {...}}  # optional
     }
 
-That is the static study. ``analysis`` names another (modal, thermal, ...): the keys above except ``fixtures`` and
-``loads`` are common to every analysis (:data:`COMMON_KEYS`), and each analysis reads its own (``study_keys``) through
-its ``parse``. The view's checks, fields and drives, the mesh orders and the connection types are the analysis's. A
-static load may also be a body load, with no faces: ``{"type": "gravity", "vector_g": [0, 0, -1]}`` or ``{"type":
+That is the study; ``analysis`` may say ``static``, the one analysis. The keys above except ``fixtures`` and ``loads``
+are :data:`COMMON_KEYS`; the analysis reads its own (``study_keys``) through its ``parse``. A static load may also be a body load, with no faces: ``{"type": "gravity", "vector_g": [0, 0, -1]}`` or ``{"type":
 "acceleration", "vector_g": [5, 0, 0]}`` (in g).
 
 Face references are the engine's refs, as the viewer copies them (``bracket/face 17``, or after the document's path, ``/work/bracket.step#bracket/face 17``); ``cadgen
@@ -83,14 +81,10 @@ _CONTROL_KEYS = {
     "deformation": {"drives", "type", "label", "min", "max", "default", "unit", "when"},
     "load_scale": {"drives", "type", "label", "min", "max", "default", "unit", "when"},
     "threshold": {"drives", "type", "label", "field", "min", "max", "default", "unit", "when"},
-    "mode": {"drives", "type", "label", "default", "when"},
-    "frame": {"drives", "type", "label", "min", "max", "default", "unit", "when"},
-    "sigma": {"drives", "type", "label", "options", "default", "when"},
 }
-_ENUM_DRIVES = ("field", "mode", "sigma")
+_ENUM_DRIVES = ("field",)
 #: The controls that may leave their range out, and what they then span.
-_OPEN_RANGE = {"deformation": "run from 0 to four times the result's own exaggeration",
-               "frame": "span every frame of the result"}
+_OPEN_RANGE = {"deformation": "run from 0 to four times the result's own exaggeration"}
 
 
 @dataclass(frozen=True)
@@ -312,30 +306,13 @@ def _control(entry: Any, *, where: str, spec: "_ViewSpec | None" = None) -> dict
         if default not in options:
             raise ValueError(f"{where}.default: default {default!r} is not one of its options {options}")
         return {**control, "options": options, "default": default}
-    if drives == "mode":
-        # Its options are the result's frames (labelled by the solve); a default is a 1-based mode number.
-        if "default" in entry:
-            default = entry["default"]
-            if isinstance(default, bool) or not isinstance(default, int) or default < 1:
-                raise ValueError(f"{where}.default: the mode it opens on, 1 for the first, got {_json_text(default)}")
-            control["default"] = default
-        return control
-    if drives == "sigma":
-        options = entry.get("options", [1, 3])
-        if not isinstance(options, list) or not options or any(option not in (1, 3) or isinstance(option, bool) for option in options):
-            raise ValueError(f"{where}.options: sigma levels from [1, 3]")
-        default = entry.get("default", options[-1])
-        if default not in options:
-            raise ValueError(f"{where}.default: default {default!r} is not one of its options {options}")
-        return {**control, "options": list(options), "default": default}
     if drives == "threshold":
         if entry.get("field") is None:
             raise ValueError(f"{where}.field: name the field it compares, one of {list(fields)}")
         control["field"] = _view_field(entry["field"], where=f"{where}.field", fields=fields)
     # A deformation with no range runs from none to four times the result's own exaggeration, which the
-    # solve picks after the study is written; the viewer reads it from the file. A frame control with no
-    # range spans the result's frames.
-    if drives in ("deformation", "frame") and not {"min", "max", "default"} & set(entry):
+    # solve picks after the study is written; the viewer reads it from the file.
+    if drives == "deformation" and not {"min", "max", "default"} & set(entry):
         return {**control, **_text(entry, "unit", where=where)}
     if "max" not in entry:
         if drives in _OPEN_RANGE:
@@ -607,7 +584,7 @@ def parse_study(study: str | dict | Path | None) -> Study:
     document = _load_document(study)
     name = document.get("analysis", DEFAULT_ANALYSIS)
     if not isinstance(name, str):
-        raise ValueError(f"study.analysis: expected the analysis's name, like \"modal\", got {_json_text(name)}")
+        raise ValueError(f"study.analysis: expected the analysis's name, like \"static\", got {_json_text(name)}")
     analysis = get_analysis(name)
     allowed = {*COMMON_KEYS, *analysis.study_keys}
     unknown = set(document) - allowed

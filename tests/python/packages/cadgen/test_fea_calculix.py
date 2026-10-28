@@ -23,7 +23,7 @@ from cadgen._internal.fea import calculix  # noqa: E402
 def _program(folder: Path, said: str) -> str:
     """A program that prints ``said`` and exits 0."""
     path = folder / "ccx"
-    path.write_text(f"#!/bin/sh\necho '{said}'\n")
+    path.write_text(f"#!/bin/sh\necho '{said}'\n", encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
     return str(path)
 
@@ -119,10 +119,10 @@ class Run(unittest.TestCase):
     def test_an_error_calculix_prints_is_said(self):
         with tempfile.TemporaryDirectory() as name:
             path = Path(name) / "ccx"
-            path.write_text("#!/bin/sh\necho ' *ERROR in calinput: the node set NHELD is not defined'\n")
+            path.write_text("#!/bin/sh\necho ' *ERROR in calinput: the node set NHELD is not defined'\n", encoding="utf-8")
             path.chmod(path.stat().st_mode | stat.S_IEXEC)
             with self.assertRaisesRegex(RuntimeError, "CalculiX failed .*NHELD is not defined"):
-                calculix.run(calculix.Ccx(str(path), "2.23"), lambda inp: inp.write_text("*NODE\n"))
+                calculix.run(calculix.Ccx(str(path), "2.23"), lambda inp: inp.write_text("*NODE\n", encoding="utf-8"))
 
 
 if __name__ == "__main__":

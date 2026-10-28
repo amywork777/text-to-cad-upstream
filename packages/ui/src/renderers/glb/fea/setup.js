@@ -1,7 +1,7 @@
 /**
- * Study's setup in plain words: the groups an analysis lists (`setupGroups`, ./analyses), each a
- * function of the result that gives its heading row, or none where the file records nothing for it,
- * and the words for faces and loads they and the Reference share. Pure: no three.js, no React.
+ * Study's setup in plain words: its groups (`SETUP_GROUPS`), each a function of the result that gives
+ * its heading row, or none where the file records nothing for it, and the words for faces and loads
+ * they and the Reference share. Pure: no three.js, no React.
  */
 import { plainNumber } from "./numbers.js";
 import { english } from "../../../i18n/core.js";
@@ -41,19 +41,6 @@ export function forceDirection(force) {
   if (axis === 2) return unit[2] < 0 ? "down" : "up";
   if (axis >= 0) return `along ${unit[axis] < 0 ? "−" : "+"}${AXIS_NAMES[axis]}`;
   return `along (${unit.map((value) => plainNumber(value).replace(/^-/, "−")).join(", ")})`;
-}
-
-/**
- * Which line something moves along, with no sign (a shake goes both ways): "Z", "X", else the unit
- * vector, "(0.6, 0, 0.8)". "" for none.
- */
-export function axisWords(vector) {
-  const size = Math.hypot(...vector);
-  if (!(size > 0)) return "";
-  const unit = vector.map((value) => value / size);
-  const axis = unit.findIndex((value) => Math.abs(value) > 1 - 1e-6);
-  if (axis >= 0) return AXIS_NAMES[axis];
-  return `(${unit.map((value) => plainNumber(value).replace(/^-/, "−")).join(", ")})`;
 }
 
 /** A load as its row says it: what it is ("2500 N", "2 MPa pressure") and which way it points. */
@@ -103,35 +90,9 @@ export const wholeRefs = (result) => (result.occurrence ? [result.occurrence] : 
 /** A setup group: its heading row over these rows, or none where there are no rows. */
 export const group = (id, label, glyph, rows) => (rows.length ? [{ id, label, detail: "", glyph, children: rows }] : []);
 
-/** These groups with each row under them rewritten by `row`. */
-export const mapRows = (groups, row) => groups.map((entry) => ({ ...entry, children: entry.children.map(row) }));
-
-/** A row about the whole part (no faces of its own), chosen with the whole part. */
-export function wholeRow(result, id, label, summary, hint = "") {
-  const refs = wholeRefs(result);
-  return { id, label, detail: "", wrap: true, ...(hint ? { hint } : {}), ...(refs.length ? { refs, summary } : {}) };
-}
-
-/** Every fixed face, else the whole part, as a row's choice: where a base shake comes in. null for neither. */
-export function heldRefs(result) {
-  const faces = (result.study?.fixtures || []).flatMap((fixture) => fixture.faces);
-  return faces.length ? { faces } : wholeRefs(result).length ? { refs: wholeRefs(result) } : null;
-}
-
-/** One row per entry (`label`, optional `hint`, `summary(faces)`), its faces under it, shut until opened. */
-export function faceEntryRows(result, id, entries) {
-  return entries.map((entry, index) => ({
-    id: `${id}:${index}`, label: entry.label, detail: "", faces: entry.faces, summary: entry.summary(entry.faces), collapsed: true,
-    ...(entry.hint ? { hint: entry.hint } : {}),
-    children: entry.faces.map((ref) => ({ id: `${id}:${index}:${ref}`, label: faceTitle(result, ref), detail: "", faces: [ref], wrap: true,
-      summary: entry.summary([ref]) })),
-  }));
-}
-
 /**
  * Study's "Held at": one row per fixed face, its name alone ("Face 9", "base · face 9"), under the
- * fixture glyph; then, right after it, "Slides on" (`slidesOnRows`), so every analysis that says where
- * it is held says where it slides too.
+ * fixture glyph; then, right after it, "Slides on" (`slidesOnRows`).
  */
 export function heldRows(result) {
   const study = result.study;
@@ -185,146 +146,8 @@ export function pushedRows(result, t = english) {
 /** A body load as its row says it: "1 g down", "5 g along +X". */
 export const bodyLoadWords = (load) => `${plainNumber(Math.hypot(...load.g))} g ${forceDirection(load.g)}`.trim();
 
-/**
- * A setup group of entries on faces, each a row with its faces under it, shut until opened, as
- * Pushed's loads are: `id` the group's, `label` its heading, `glyph` its marker, and for each entry
- * its row's `label`, its `summary` (what a prompt calls it on these faces) and an optional `hint`.
- */
-function faceEntryGroup(result, { id, label, glyph, entries }) {
-  const study = result.study;
-  const rows = entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.faces.length).map(({ entry, index }) => {
-    const words = entry.words;
-    return {
-      id: `${id}:${index}`, label: words.label, detail: "", faces: entry.faces, summary: words.summary(entry.faces), collapsed: true,
-      ...(words.hint ? { hint: words.hint } : {}),
-      children: entry.faces.map((ref) => ({ id: `${id}:${index}:${ref}`, label: faceTitle(result, ref), detail: "", faces: [ref], wrap: true,
-        summary: study.fixtures.some((fixture) => fixture.faces.includes(ref)) ? faceSummary(study, ref) : words.summary([ref]) })),
-    };
-  });
-  return group(id, label, glyph, rows);
-}
-
-/** Study's "Kept at", under a thermometer: each fixed temperature ("25 °C"), its faces under it. */
-export function keptAtRows(result, t = english) {
-  return faceEntryGroup(result, { id: "temperature", label: t("fea.keptAt"), glyph: "temperature", entries: (result.study.temperatures || []).map((entry) => {
-    const degrees = entry.celsius === null ? "a fixed temperature" : `${plainNumber(entry.celsius)} °C`;
-    return { faces: entry.faces, words: { label: degrees, summary: (refs) => `Kept at ${degrees} on ${facesWords(refs)}` } };
-  }) });
-}
-
-/** Study's "Heated", under a flame: each heat input ("15 W", "2000 W/m²"), its faces under it. */
-export function heatedRows(result, t = english) {
-  return faceEntryGroup(result, { id: "heat", label: t("fea.heated"), glyph: "heat", entries: (result.study.heat || []).map((entry) => {
-    const amount = entry.watts !== null ? `${plainNumber(entry.watts)} W` : entry.fluxWm2 !== null ? `${plainNumber(entry.fluxWm2)} W/m²` : "heat";
-    return { faces: entry.faces, words: { label: amount, summary: (refs) => `${amount} of heat into ${facesWords(refs)}` } };
-  }) });
-}
-
-/** Study's "Cooled by air", under the wind: each convection ("Air at 25 °C", how well it cools its hint), its faces under it. */
-export function cooledRows(result, t = english) {
-  return faceEntryGroup(result, { id: "convection", label: t("fea.cooledByAir"), glyph: "convection", entries: (result.study.convection || []).map((entry) => {
-    const air = entry.ambientC === null ? "Air" : `Air at ${plainNumber(entry.ambientC)} °C`;
-    const how = entry.h === null ? "" : `${plainNumber(entry.h)} W/m²K`;
-    return { faces: entry.faces, words: { label: air, hint: how ? t("fea.htcHint", { value: how }) : "",
-      summary: (refs) => `Cooled by a${air.slice(1)}${how ? ` (${how})` : ""} on ${facesWords(refs)}` } };
-  }) });
-}
-
-/**
- * Study's "Radiation", under the warmth glyph: each radiating entry ("Radiates to 25 °C, emissivity 0.9"), its
- * faces under it; faces that also radiate to each other say so in the hint.
- */
-export function radiatesRows(result, t = english) {
-  return faceEntryGroup(result, { id: "radiation", label: t("fea.radiation"), glyph: "heat", entries: (result.study.radiation || []).map((entry) => {
-    const to = entry.ambientC === null ? "Radiates" : `Radiates to ${plainNumber(entry.ambientC)} °C`;
-    const label = entry.emissivity === null ? to : `${to}, emissivity ${plainNumber(entry.emissivity)}`;
-    return { faces: entry.faces, words: { label, hint: entry.surfaceToSurface ? t("fea.radiatesHint") : "",
-      summary: (refs) => `${to}${entry.emissivity === null ? "" : ` (emissivity ${plainNumber(entry.emissivity)})`} from ${facesWords(refs)}` } };
-  }) });
-}
-
-/**
- * Study's "Coolant", under the flow: the fluid and the temperature each inlet brings it in at ("Water in at
- * 20 °C"), chosen with the whole part. [] for a flow that carries no heat.
- */
-export function coolantRows(result, t = english) {
-  const flow = result.study.flow;
-  const inlets = (flow?.inlets || []).filter((inlet) => inlet.temperatureC !== null && inlet.temperatureC !== undefined);
-  if (!inlets.length) return [];
-  const refs = wholeRefs(result);
-  const fluid = flow.fluid ? `${flow.fluid.charAt(0).toUpperCase()}${flow.fluid.slice(1)}` : "Fluid";
-  return [{ id: "coolant", label: t("fea.coolant"), detail: "", glyph: "flow", children: inlets.map((inlet, index) => {
-    const label = `${fluid} in at ${plainNumber(inlet.temperatureC)} °C`;
-    const where = inlet.opening ? openingWords(inlet.opening) : "";
-    return { id: `coolant:${index}`, label, detail: "", wrap: true, ...(where ? { hint: t("fea.atWhere", { where }) } : {}),
-      ...(refs.length ? { refs, summary: `${label}${where ? ` at ${where}` : ""}` } : {}) };
-  }) }];
-}
-
-/** Study's "Shaken", under a wave: the shaker on the fixtures ("1 g along Z", "At random along Z"), chosen with every fixed face. */
-export function shakenRows(result, t = english) {
-  const study = result.study;
-  const shake = study.excitation;
-  if (!shake?.kind || shake.kind === "force") return [];
-  const along = shake.direction ? ` along ${axisWords(shake.direction)}` : "";
-  const label = shake.kind === "psd" ? `At random${along}` : shake.kind === "srs" ? `A shock${along}` : `${shake.amplitudeG === null ? "Shaken" : `${plainNumber(shake.amplitudeG)} g`}${along}`;
-  const refs = heldRefs(result);
-  return [{ id: "shaken", label: t("fea.shaken"), detail: "", glyph: "wave", children: [{ id: "shaken:0", label, detail: "", wrap: true,
-    ...(refs ? { ...refs, summary: t("fea.shakenSummary", { what: `${label.charAt(0).toLowerCase()}${label.slice(1)}` }) } : {}) }] }];
-}
-
-/** Study's "Dropped", under a drop: its height ("1 m drop"), how it stops its hint, the faces that land under it. */
-export function droppedRows(result, t = english) {
-  const drop = result.study.drop;
-  if (!drop) return [];
-  const height = drop.heightMm === null ? "Dropped" : drop.heightMm >= 1000 ? `${plainNumber(drop.heightMm / 1000)} m drop` : `${plainNumber(drop.heightMm)} mm drop`;
-  const stop = drop.stopMm !== null ? `stopping in ${plainNumber(drop.stopMm)} mm` : drop.impactMs !== null ? `stopping in ${plainNumber(drop.impactMs)} ms` : "";
-  const hint = [stop, drop.floor === "rigid" ? "onto a rigid floor" : ""].filter(Boolean).join(", ");
-  const entry = { faces: drop.onto, words: { label: height, ...(hint ? { hint } : {}), summary: (refs) => `${height}${stop ? `, ${stop}` : ""}, landing on ${facesWords(refs)}` } };
-  if (drop.onto.length) return faceEntryGroup(result, { id: "drop", label: t("fea.dropped"), glyph: "drop", entries: [entry] });
-  const refs = wholeRefs(result);
-  return [{ id: "drop", label: t("fea.dropped"), detail: "", glyph: "drop", children: [{ id: "drop:0", label: height, detail: "", ...(hint ? { hint } : {}),
-    ...(refs.length ? { refs, summary: `${height}${stop ? `, ${stop}` : ""}` } : {}) }] }];
-}
-
-const SIDE_WORDS = Object.freeze({ min: "low", max: "high" });
-/** An opening in words: "the low X side". */
-const openingWords = (opening) => {
-  const match = /^([xyz])_(min|max)$/.exec(String(opening || ""));
-  return match ? `the ${SIDE_WORDS[match[2]]} ${match[1].toUpperCase()} side` : "";
-};
-
-/** Study's "Flow in/out", under the flow: each inlet ("In 0.5 m/s at the low X side") and outlet ("Out at 0 Pa"), chosen with the whole part. */
-export function flowRows(result, t = english) {
-  const flow = result.study.flow;
-  if (!flow) return [];
-  const refs = wholeRefs(result);
-  const row = (id, label) => ({ id, label, detail: "", wrap: true, ...(refs.length ? { refs, summary: t("fea.flowSummary", { what: `${label.charAt(0).toLowerCase()}${label.slice(1)}` }) } : {}) });
-  const rows = [
-    ...flow.inlets.map((inlet, index) => {
-      const speed = inlet.speed === null ? "" : ` ${plainNumber(inlet.speed)} m/s`;
-      const where = inlet.opening ? ` at ${openingWords(inlet.opening) || inlet.opening}` : inlet.velocity ? ` ${forceDirection(inlet.velocity)}` : "";
-      return row(`inlet:${index}`, `In${speed}${where}`);
-    }),
-    ...flow.outlets.map((outlet, index) => row(`outlet:${index}`,
-      `Out${outlet.pressure === null ? "" : ` at ${plainNumber(outlet.pressure)} Pa`}${outlet.opening ? `, ${openingWords(outlet.opening) || outlet.opening}` : ""}`)),
-  ];
-  return group("flow", "Flow in/out", "flow", rows);
-}
-
-/** Study's "Rigid floor", under a plane: each rigid plane, which way it faces, chosen with the whole part. */
-export function rigidFloorRows(result, t = english) {
-  const study = result.study;
-  const refs = wholeRefs(result);
-  const planes = [...(study.rigidPlanes || []).map((plane) => `Facing ${forceDirection(plane.normal)}`),
-    ...(study.drop?.floor === "rigid" ? ["Under the drop"] : [])];
-  if (!planes.length) return [];
-  return [{ id: "rigid", label: t("fea.rigidFloor"), detail: "", glyph: "plane", children: planes.map((label, index) => ({ id: `rigid:${index}`, label, detail: "",
-    ...(refs.length ? { refs, summary: t("fea.rigidFloorSummary", { what: `${label.charAt(0).toLowerCase()}${label.slice(1)}` }) } : {}) })) }];
-}
-
-/** Every setup group an analysis can show, in Study's order: each is [] where the study records nothing for it. */
-export const SETUP_GROUPS = Object.freeze([heldRows, keptAtRows, pushedRows, heatedRows, cooledRows, radiatesRows, shakenRows, droppedRows, flowRows, coolantRows, rigidFloorRows, madeOfRows]);
+/** Study's setup groups, in its order: each is [] where the study records nothing for it. */
+export const SETUP_GROUPS = Object.freeze([heldRows, pushedRows, madeOfRows]);
 
 /**
  * Study's "Made of", under a swatch: the material's name ("Aluminum 6061-T6"). In an assembly whose
