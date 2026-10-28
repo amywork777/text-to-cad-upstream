@@ -133,7 +133,8 @@ def reach(op, faces, holes, mesh, face_of_triangle, tool, stock_top: float, dept
     feature reader's hole for each face of a hole, its ``reach`` turned into the setup's words; ``walls``: for a flat
     face an inside profile names, the walls it would mean). A drill naming two faces of one hole drills it once, and
     is judged once. An inside profile runs along walls: a flat face square to the tool gives it nothing to run along
-    (FreeCAD traces its outline's inside, cutting nothing of the part), so it is refused, naming its walls."""
+    (FreeCAD traces its outline's inside, cutting nothing of the part), so it is refused, naming its walls. (One
+    pocket's floor never gets here: the planner has already put its walls in its place.)"""
     import numpy as np
 
     found = []
@@ -183,8 +184,9 @@ def reach(op, faces, holes, mesh, face_of_triangle, tool, stock_top: float, dept
                 "reach", "error", "not_facing",
                 f"{op.where}: an inside profile runs along walls, and {info.ref} is a flat face"
                 + (f"; the walls round it: {', '.join(named)}" if named else ""),
-                "name the walls of the hole, bore, slot or pocket to cut, as cadgen cam features lists them: "
-                "inside a flat face FreeCAD traces its outline and cuts nothing of the part", [where]))
+                "name the walls of the hole, bore, slot or pocket to cut, as cadgen cam features lists them (one "
+                "pocket's floor, walled all round with nothing opening in it, stands for its walls): inside any other "
+                "flat face FreeCAD traces its outline and cuts nothing of the part", [where]))
             continue
         if op.op in ("pocket", "adaptive", "face") and (normal is None or normal[2] < 1 - 1e-6):
             found.append(finding("reach", "error", "not_facing",
