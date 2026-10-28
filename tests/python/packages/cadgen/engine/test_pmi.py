@@ -54,7 +54,8 @@ PLATE = '''
 import build123d as bd
 from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, place,
                           plus_minus_tolerance, position_tolerance)
-from cadgen.engine import materials, step, xbf
+from bd_materials import metals
+from cadgen.engine import step, xbf
 
 
 @xbf(out="XBF/pmi_plate.xbf")
@@ -62,7 +63,7 @@ from cadgen.engine import materials, step, xbf
 def pmi_plate():
     body = bd.Box(100, 60, {thickness}) - bd.Cylinder({radius}, {thickness})
     body.label = "plate"
-    body.material = materials.aluminium_6061
+    body.material = metals.aluminum()
     bottom = body.faces().sort_by(bd.Axis.Z)[0]
     top = body.faces().sort_by(bd.Axis.Z)[-1]
     front = body.faces().sort_by(bd.Axis.Y)[0]
@@ -932,7 +933,8 @@ class NoteTest(_Folder):
             annotate(box, library=["primer-mask"])  # type: ignore[arg-type]
 
     def test_notes_and_the_library_survive_the_xbf_and_make_the_same_bytes(self) -> None:
-        from OCP.TDF import TDF_Label, TDF_LabelSequence, TDF_Tool
+        from OCP.TDF import TDF_Label, TDF_Tool
+        from OCP.collections import Sequence_TDF_Label
         from OCP.XCAFDoc import XCAFDoc_AssemblyItemId, XCAFDoc_DocumentTool, XCAFDoc_NoteComment
 
         self.build(notes())
@@ -943,7 +945,7 @@ class NoteTest(_Folder):
                          (structure["pmi"], structure["pmi_library"]))
         # XCAF's notes: comments by one fixed user with no timestamp, in the code's order.
         tool = XCAFDoc_DocumentTool.NotesTool_s(loaded.doc.Main())
-        labels = TDF_LabelSequence()
+        labels = Sequence_TDF_Label()
         tool.GetNotes(labels)
         said = [XCAFDoc_NoteComment.Get_s(labels.Value(at)) for at in range(1, labels.Length() + 1)]
         self.assertEqual([(note.Comment().ToExtString(), note.UserName().ToExtString(), note.TimeStamp().ToExtString())
@@ -954,7 +956,7 @@ class NoteTest(_Folder):
             TDF_Tool.Label_s(loaded.doc.GetData(), entry, found)
             return found
 
-        def texts(found: TDF_LabelSequence) -> list[str]:
+        def texts(found: Sequence_TDF_Label) -> list[str]:
             return [XCAFDoc_NoteComment.Get_s(found.Value(at)).Comment().ToExtString()
                     for at in range(1, found.Length() + 1)]
 
@@ -962,18 +964,18 @@ class NoteTest(_Folder):
         # face's ordinal in the part's face map (the ref grammar's), and on the diameter's GD&T label.
         self.assertEqual(tool.NbAnnotatedItems(), 3)
         part = loaded.prototypes[0]
-        found = TDF_LabelSequence()
+        found = Sequence_TDF_Label()
         tool.GetNotes(label(part.entry), found)
         self.assertEqual(texts(found), ["Break all sharp edges 0.2 max"])
         ordinal = _ordinal(loaded, _by_id(structure["pmi"])["mask"]["refs"][0]["ref"])
         self.assertEqual(_surface(_faces(part.shape).FindKey(ordinal))[0], "cylinder")
         for at in range(1, _faces(part.shape).Extent() + 1):
-            found = TDF_LabelSequence()
+            found = Sequence_TDF_Label()
             tool.GetSubshapeNotes(XCAFDoc_AssemblyItemId(part.entry), at, found)
             self.assertEqual(texts(found), [MASK] if at == ordinal else [], at)
         [diameter] = [record for record in records_of_document(loaded.doc, loaded.prototypes, loaded.name)
                       if (record["extra"] or {}).get("id") == "hole-dia"]
-        found = TDF_LabelSequence()
+        found = Sequence_TDF_Label()
         tool.GetNotes(label(diameter["entry"]), found)
         self.assertEqual(texts(found), [MASK])
         # The same code makes the same bytes, built warm or fresh.
@@ -1137,7 +1139,8 @@ class ViewTest(_Folder):
     def test_views_survive_the_xbf_as_xcaf_views_and_make_the_same_bytes(self) -> None:
         from OCP.gp import gp_Pln
         from OCP.TCollection import TCollection_ExtendedString
-        from OCP.TDF import TDF_Label, TDF_LabelSequence, TDF_Tool
+        from OCP.TDF import TDF_Label, TDF_Tool
+        from OCP.collections import Sequence_TDF_Label
         from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_View
         from OCP.XCAFView import XCAFView_ProjectionType_Parallel
 
@@ -1146,7 +1149,7 @@ class ViewTest(_Folder):
         self.build(views())
         loaded = document.Loaded(self.xbf)
         tool = XCAFDoc_DocumentTool.ViewTool_s(loaded.doc.Main())
-        labels = TDF_LabelSequence()
+        labels = Sequence_TDF_Label()
         tool.GetViewLabels(labels)
         found = {XCAFDoc_View.Set_s(labels.Value(at)).GetObject().Name().ToCString(): labels.Value(at)
                  for at in range(1, labels.Length() + 1)}
@@ -1155,7 +1158,7 @@ class ViewTest(_Folder):
                    for record in records_of_document(loaded.doc, loaded.prototypes, loaded.name)}
 
         def linked(method: object, label: object) -> list[str]:
-            sequence = TDF_LabelSequence()
+            sequence = Sequence_TDF_Label()
             method(label, sequence)  # type: ignore[operator]
             return [_entry(sequence.Value(at)) for at in range(1, sequence.Length() + 1)]
 
@@ -1174,7 +1177,7 @@ class ViewTest(_Folder):
         # Its section, an XCAF clipping plane named for it: at y = 30, its normal into the half kept
         # (the Clip's lower side, -Y), capped as the Clip caps.
         planes = XCAFDoc_DocumentTool.ClippingPlaneTool_s(loaded.doc.Main())
-        listed = TDF_LabelSequence()
+        listed = Sequence_TDF_Label()
         planes.GetClippingPlanes(listed)
         self.assertEqual(linked(tool.GetRefClippingPlaneLabel, found["A-A"]),
                          [_entry(listed.Value(at)) for at in range(1, listed.Length() + 1)])
@@ -1851,7 +1854,7 @@ class _Foreign:
     def tolerance(self, kind: str, element: object, value: float, **set: object) -> object:
         """A tolerance of ``kind`` on ``element``, or on each of a list of them."""
         from OCP import XCAFDimTolObjects as X
-        from OCP.TDF import TDF_LabelSequence
+        from OCP.collections import Sequence_TDF_Label
         from OCP.XCAFDoc import XCAFDoc_GeomTolerance
 
         at = self.tool.AddGeomTolerance()
@@ -1861,7 +1864,7 @@ class _Foreign:
         for name, argument in set.items():
             getattr(given, name)(*argument)
         XCAFDoc_GeomTolerance.Set_s(at).SetObject(given)
-        elements = TDF_LabelSequence()
+        elements = Sequence_TDF_Label()
         for each in element if isinstance(element, list) else [element]:
             elements.Append(self.sub(each))
         self.tool.SetGeomTolerance(elements, at)

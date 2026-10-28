@@ -992,7 +992,7 @@ def _axis(face: Any) -> dict[str, Any]:
     from OCP.BRepAdaptor import BRepAdaptor_Surface
     from OCP.TopoDS import TopoDS
 
-    axis = BRepAdaptor_Surface(TopoDS.Face_s(face)).Cylinder().Axis()
+    axis = BRepAdaptor_Surface(TopoDS.Face(face)).Cylinder().Axis()
     point, direction = axis.Location(), axis.Direction()
     return {"point": (point.X(), point.Y(), point.Z()), "direction": (direction.X(), direction.Y(), direction.Z())}
 
@@ -1015,9 +1015,9 @@ def _map(shape: Any, kind: str) -> Any:
     indexed map, as the ref grammar and the document's sub-shape labels number them."""
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
     from OCP.TopExp import TopExp
-    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
 
-    found = TopTools_IndexedMapOfShape()
+    found = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapes_s(shape, {"face": TopAbs_FACE, "edge": TopAbs_EDGE, "vertex": TopAbs_VERTEX}[kind], found)
     return found
 
@@ -1029,7 +1029,7 @@ def _surface(face: Any) -> tuple[str, dict[str, Any]]:
     from OCP.GeomAbs import GeomAbs_Cylinder, GeomAbs_Plane
     from OCP.TopoDS import TopoDS
 
-    adaptor = BRepAdaptor_Surface(TopoDS.Face_s(face))
+    adaptor = BRepAdaptor_Surface(TopoDS.Face(face))
     kind = adaptor.GetType()
     if kind == GeomAbs_Plane:
         plane = adaptor.Plane()
@@ -1127,7 +1127,8 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
     from OCP.Standard import Standard_GUID
     from OCP.TCollection import TCollection_AsciiString
     from OCP.TDataStd import TDataStd_AsciiString
-    from OCP.TDF import TDF_Label, TDF_LabelSequence, TDF_Reference
+    from OCP.TDF import TDF_Label, TDF_Reference
+    from OCP.collections import Sequence_TDF_Label
     from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
 
     tool = XCAFDoc_DocumentTool.DimTolTool_s(doc.Main())
@@ -1159,7 +1160,7 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
                 at = tool.AddDatum()
                 _datum(at, spec["datum"]["letter"], positions.get(spec["datum"]["letter"], 0), spec["id"])
                 if linked:
-                    sequence = TDF_LabelSequence()
+                    sequence = Sequence_TDF_Label()
                     sequence.Append(refs[0])
                     tool.SetDatum(sequence, at)
                 datums[spec["datum"]["letter"]] = at
@@ -1174,7 +1175,7 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
                 at = tool.AddGeomTolerance()
                 _tolerance_object(at, spec)
                 if linked:
-                    sequence = TDF_LabelSequence()
+                    sequence = Sequence_TDF_Label()
                     for ref in refs:
                         sequence.Append(ref)
                     tool.SetGeomTolerance(sequence, at)
@@ -1233,7 +1234,7 @@ def _view(doc: Any, given: dict[str, Any], label: Any, made: dict[str, Any]) -> 
     from OCP.BRepBndLib import BRepBndLib
     from OCP.gp import gp_Dir, gp_Pln, gp_Pnt
     from OCP.TCollection import TCollection_ExtendedString
-    from OCP.TDF import TDF_LabelSequence
+    from OCP.collections import Sequence_TDF_Label
     from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool, XCAFDoc_View
     from OCP.XCAFView import XCAFView_Object, XCAFView_ProjectionType_Parallel
 
@@ -1256,7 +1257,7 @@ def _view(doc: Any, given: dict[str, Any], label: Any, made: dict[str, Any]) -> 
     found.SetWindowVerticalSize(diagonal)
     at = tool.AddView()
     XCAFDoc_View.Set_s(at).SetObject(found)
-    sequences = {"shapes": TDF_LabelSequence(), "gdts": TDF_LabelSequence(), "planes": TDF_LabelSequence()}
+    sequences = {"shapes": Sequence_TDF_Label(), "gdts": Sequence_TDF_Label(), "planes": Sequence_TDF_Label()}
     sequences["shapes"].Append(label)
     for id in made if given["shows"] is None else given["shows"]:
         if id in made:
@@ -1402,7 +1403,8 @@ def copy(doc: Any, loaded: Any, label_of: Callable[[int], Any]) -> None:
     ``doc``), a tolerance to the same datums. One the file links to anything else (an occurrence's
     face, a whole part) is copied linked to nothing, as reading the file says it is (``missing``):
     its values kept, nothing approximated."""
-    from OCP.TDF import TDF_Label, TDF_LabelSequence
+    from OCP.TDF import TDF_Label
+    from OCP.collections import Sequence_TDF_Label
     from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_DatumObject, XCAFDimTolObjects_DimensionObject,
                                         XCAFDimTolObjects_GeomToleranceObject)
     from OCP.XCAFDoc import (XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_DocumentTool, XCAFDoc_GeomTolerance,
@@ -1439,11 +1441,11 @@ def copy(doc: Any, loaded: Any, label_of: Callable[[int], Any]) -> None:
         them has no place there."""
         found = []
         for sequence in _linked(source, label):
-            labels = TDF_LabelSequence()
+            labels = Sequence_TDF_Label()
             for at in range(1, sequence.Length() + 1):
                 hit = placed(sequence.Value(at))
                 if hit is None:
-                    return [TDF_LabelSequence(), TDF_LabelSequence()]
+                    return [Sequence_TDF_Label(), Sequence_TDF_Label()]
                 labels.Append(hit)
             found.append(labels)
         return found
@@ -1497,7 +1499,7 @@ def _notes_tool(doc: Any) -> Any:
 def _labels(tool: Any, kind: str) -> list[Any]:
     """The GD&T tool's labels of ``kind`` (``datum``, ``dimension``, ``geometric_tolerance``) that hold
     their object, in the tool's order; none where the document has no GD&T tool (``tool`` None)."""
-    from OCP.TDF import TDF_LabelSequence
+    from OCP.collections import Sequence_TDF_Label
     from OCP.XCAFDoc import XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_GeomTolerance
 
     if tool is None:
@@ -1505,7 +1507,7 @@ def _labels(tool: Any, kind: str) -> list[Any]:
     listed, attribute = {"datum": (tool.GetDatumLabels, XCAFDoc_Datum),
                          "dimension": (tool.GetDimensionLabels, XCAFDoc_Dimension),
                          "geometric_tolerance": (tool.GetGeomToleranceLabels, XCAFDoc_GeomTolerance)}[kind]
-    sequence = TDF_LabelSequence()
+    sequence = Sequence_TDF_Label()
     listed(sequence)
     return [sequence.Value(at) for at in range(1, sequence.Length() + 1)
             if sequence.Value(at).IsAttribute(attribute.GetID_s())]
@@ -1513,19 +1515,19 @@ def _labels(tool: Any, kind: str) -> list[Any]:
 
 def _linked(tool: Any, label: Any) -> tuple[Any, Any]:
     """The shape labels a GD&T label is linked to: its first and its second (a dimension's ``to``)."""
-    from OCP.TDF import TDF_LabelSequence
+    from OCP.collections import Sequence_TDF_Label
 
-    first, second = TDF_LabelSequence(), TDF_LabelSequence()
+    first, second = Sequence_TDF_Label(), Sequence_TDF_Label()
     tool.GetRefShapeLabel_s(label, first, second)
     return first, second
 
 
 def _datums_of(label: Any) -> list[Any]:
     """The datum labels a geometric tolerance's frame names."""
-    from OCP.TDF import TDF_LabelSequence
+    from OCP.collections import Sequence_TDF_Label
     from OCP.XCAFDoc import XCAFDoc_DimTolTool
 
-    named = TDF_LabelSequence()
+    named = Sequence_TDF_Label()
     XCAFDoc_DimTolTool.GetDatumWithObjectOfTolerLabels_s(label, named)
     return [named.Value(at) for at in range(1, named.Length() + 1)]
 
@@ -1571,7 +1573,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
                                         XCAFDimTolObjects_DimensionType_Size_Diameter,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_Diameter,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_None)
-    from OCP.TDF import TDF_LabelSequence
+    from OCP.collections import Sequence_TDF_Label
     from OCP.XCAFDoc import XCAFDoc_Datum, XCAFDoc_Dimension, XCAFDoc_GeomTolerance, XCAFDoc_NoteComment
 
     from cadgen.engine.document import _entry
@@ -1658,7 +1660,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         if any(_entry(named) in modified for named in datums):
             beyond.append("a datum it names has modifiers or is a datum target")
         add(label, "geometric_tolerance", values, beyond, found.GetType().name)
-    labels = TDF_LabelSequence()
+    labels = Sequence_TDF_Label()
     if notes_tool is not None:
         notes_tool.GetNotes(labels)
     for label in (labels.Value(at) for at in range(1, labels.Length() + 1)):
@@ -1864,14 +1866,14 @@ def views_of_document(doc: Any, prototypes: list[Any]) -> list[dict[str, Any]]:
     ``section`` (``{axis, at, invert}``, the Clip's, or None), ``shows`` (ids, or None for every
     annotation and note) and ``place`` (each placed id's ``{anchor, offset}``), in the part's frame.
     A view another system wrote (no cadgen attribute) is not read; none where there are none."""
-    from OCP.TDF import TDF_LabelSequence
+    from OCP.collections import Sequence_TDF_Label
     from OCP.XCAFDoc import XCAFDoc_ViewTool
 
     label = doc.Main().FindChild(VIEWS_TAG, False)
     if label.IsNull() or not label.IsAttribute(XCAFDoc_ViewTool.GetID_s()):
         return []
     by_entry = {prototype.entry: prototype for prototype in prototypes}
-    labels = TDF_LabelSequence()
+    labels = Sequence_TDF_Label()
     XCAFDoc_ViewTool.Set_s(label).GetViewLabels(labels)
     found = []
     for at in range(1, labels.Length() + 1):

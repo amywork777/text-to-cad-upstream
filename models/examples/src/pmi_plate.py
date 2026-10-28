@@ -13,8 +13,10 @@ from __future__ import annotations
 # manufacture to them.
 
 import build123d as bd
+from bd_materials import FinishedMaterial, metals
+from threejs_materials import PbrProperties
 
-from cadgen import materials, step
+from cadgen import step
 from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, general_profile,
                           note, place, plus_minus_tolerance, position_tolerance, section, surface_profile_tolerance,
                           view)
@@ -25,7 +27,10 @@ from lib.notes import NOTES
 def pmi_plate():
     body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
     body.label = "plate"
-    body.material = materials.aluminium_6061
+    body.material = FinishedMaterial(
+        metals.aluminum().material,
+        pbr=PbrProperties.create('Aluminum 6061-T6', metalness=1.0, roughness=0.35, anisotropy=0.3),
+    )
     bottom = body.faces().sort_by(bd.Axis.Z)[0]
     top = body.faces().sort_by(bd.Axis.Z)[-1]
     front = body.faces().sort_by(bd.Axis.Y)[0]

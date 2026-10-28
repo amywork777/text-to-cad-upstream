@@ -15,8 +15,10 @@ from __future__ import annotations
 # flight part. Do not manufacture to it.
 
 import build123d as bd
+from bd_materials import FinishedMaterial, metals
+from threejs_materials import PbrProperties
 
-from cadgen import materials, step
+from cadgen import step
 from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, general_profile,
                           note, place, plus_minus_tolerance, position_tolerance, section, surface_profile_tolerance,
                           view)
@@ -43,7 +45,11 @@ def _body():
     for x in (-38, 38):
         body -= bd.Pos(x, 36, 28) * bd.Rot(90, 0, 0) * bd.Cylinder(3.2, 10)
     body.label = "avionics bracket"
-    body.material = materials.aluminium_7075
+    body.material = FinishedMaterial(
+        metals.aluminum(metals.Alu.G7075_T6).material,
+        pbr=PbrProperties.create('High-strength zinc-alloyed aluminium for stressed parts', metalness=1.0,
+            roughness=0.35, anisotropy=0.3),
+    )
     return body
 
 
