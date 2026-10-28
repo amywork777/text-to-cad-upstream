@@ -33,15 +33,15 @@ export const GHOST_OPACITY = 0.25;
 
 /**
  * Every kind of marker, by name: what it is drawn as (`shape`), in which of the two tones (`tone`:
- * the ink of what drives the part, the muted grey of what holds it), which of the study's `view.show`
- * switches it follows (`bucket`: loads or fixtures), where it stands (`on`: its faces, or the model's
- * middle) and at most how many stand on one face (`most`). `phrase`: what the markers' checkbox says of it.
+ * the ink of what drives the part, the muted grey of what holds it), where it stands (`on`: its faces,
+ * or the model's middle) and at most how many stand on one face (`most`). `phrase`: what the markers'
+ * checkbox says of it.
  */
 export const MARKER_KINDS = Object.freeze({
-  load: Object.freeze({ shape: "arrow", tone: "load", bucket: "loads", on: "faces", most: MAX_PER_FACE, phrase: "arrows where the study loads the part" }),
-  fixture: Object.freeze({ shape: "cone", tone: "fixture", bucket: "fixtures", on: "faces", most: MAX_PER_FACE, phrase: "cones where it holds it" }),
-  roller: Object.freeze({ shape: "roller", tone: "fixture", bucket: "fixtures", on: "faces", most: MAX_PER_FACE, phrase: "cones on rollers where it may slide" }),
-  body_load: Object.freeze({ shape: "arrow", tone: "load", bucket: "loads", on: "middle", most: 1, phrase: "an arrow through its middle for its weight" }),
+  load: Object.freeze({ shape: "arrow", tone: "load", on: "faces", most: MAX_PER_FACE, phrase: "arrows where the study loads the part" }),
+  fixture: Object.freeze({ shape: "cone", tone: "fixture", on: "faces", most: MAX_PER_FACE, phrase: "cones where it holds it" }),
+  roller: Object.freeze({ shape: "roller", tone: "fixture", on: "faces", most: MAX_PER_FACE, phrase: "cones on rollers where it may slide" }),
+  body_load: Object.freeze({ shape: "arrow", tone: "load", on: "middle", most: 1, phrase: "an arrow through its middle for its weight" }),
 });
 
 /** What the markers' checkbox says it draws, over these kinds, in the table's order: "Arrows where the study loads the part, cones where it holds it." */
@@ -381,8 +381,8 @@ export function pastOutline(at, face, corners, gap) {
 /**
  * The THREE objects of a result's markers, added under the result mesh so they ride its transform:
  * `object3D` (a group), `update(positions)` to stand them on the positions on screen,
- * `style({ colours, visible: { loads, fixtures }, chosen })` (`chosen(site)` true for a marker of the
- * entry chosen in Study), `labels(loadScale, visible)`: each entry's text and where it goes (`at`,
+ * `style({ colours, visible, chosen })` (`chosen(site)` true for a marker of the
+ * entry chosen in Study), `labels(loadScale)`: each entry's text and where it goes (`at`,
  * past the free end of the marker nearest the middle of its markers' free ends, out of the model's box
  * along it, and `face`, where it runs from, in the mesh's space, with the box's `corners`; and for a kind
  * whose marker stands on its face, `end`: that marker's own outer end and where it acts, to sit at when
@@ -519,8 +519,8 @@ export function createFeaMarkers(THREE, result) {
     },
     poses: () => poses,
     style({ colours, visible, chosen }) {
-      shafts.visible = heads.visible = ghostShafts.visible = ghostHeads.visible = visible.loads && loads.length > 0;
-      cones.visible = ghostCones.visible = visible.fixtures && fixtures.length > 0;
+      shafts.visible = heads.visible = ghostShafts.visible = ghostHeads.visible = visible && loads.length > 0;
+      cones.visible = ghostCones.visible = visible && fixtures.length > 0;
       loads.forEach((site, index) => {
         colour.set(chosen(site) ? HIGHLIGHT : colours.load);
         paint(shafts, index, colour);
@@ -528,18 +528,17 @@ export function createFeaMarkers(THREE, result) {
       });
       fixtures.forEach((site, index) => paint(cones, index, colour.set(chosen(site) ? HIGHLIGHT : colours.fixture)));
       for (const entry of extra) {
-        const shown = visible[MARKER_KINDS[entry.kind].bucket] === true;
         for (const mesh of entry.parts) {
-          mesh.visible = ghostOf.get(mesh).visible = shown;
+          mesh.visible = ghostOf.get(mesh).visible = visible;
           entry.sites.forEach((site, index) => paint(mesh, index, colour.set(chosen(site) ? HIGHLIGHT : colours[entry.tone])));
         }
       }
       for (const mesh of meshes) if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     },
-    labels(loadScale = 1, visible = { loads: true, fixtures: true }) {
+    labels(loadScale = 1) {
       const entries = [];
       for (const pose of poses) {
-        if (visible[MARKER_KINDS[pose.kind].bucket] !== true || pose.kind === "fixture" || pose.kind === "roller") continue;
+        if (pose.kind === "fixture" || pose.kind === "roller") continue;
         let entry = entries.find((item) => item.kind === pose.kind && item.group === pose.group);
         if (!entry) entries.push(entry = { kind: pose.kind, group: pose.group, ends: [] });
         entry.ends.push(labelEnds(pose));

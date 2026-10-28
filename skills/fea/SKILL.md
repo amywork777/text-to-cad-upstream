@@ -12,12 +12,11 @@ provenance and release review.
 
 Use this skill to answer "will it hold, and how far does it move" for one part, or an assembly of
 parts bonded where they touch, by simulation. It meshes the saved STEP with netgen, has CalculiX
-solve it, and writes a colour-mapped result the Viewer renders. This page is a router: [Choose the
-analysis](#choose-the-analysis) maps the user's question to the analysis and its reference page,
-which holds its assumptions, hand checks and limits; [study-file.md](references/study-file.md) holds
-every key of the study.
+solve it, and writes a colour-mapped result the Viewer renders. [linear-static.md](references/linear-static.md)
+holds the model's assumptions, hand checks and limits; [study-file.md](references/study-file.md)
+holds every key of the study.
 
-There is one analysis, `static`: linear elastic stress and displacement under forces, pressures,
+It answers one kind of question: linear elastic stress and displacement under forces, pressures,
 the part's own weight (`gravity`) and a steady acceleration (`acceleration`), on quadratic
 tetrahedra with an isotropic material. It is a first-pass engineering check, not a certification:
 small displacements, a linear material below yield, perfectly rigid fixtures (a `fixed` face held
@@ -25,22 +24,16 @@ still, a `roller` face free to slide in its plane but not off it) and loads that
 assembly every joint is perfectly rigid (bonded) unless the study sets a pair `free`. Say so when
 you report.
 
-## Choose the analysis
+## What it answers
 
-The `analysis` key of the study names it; left out, it is `static`. Any other name is refused with
-the names cadgen knows.
-
-| The user asks | `analysis` | Plain word | Status | Reference |
-| --- | --- | --- | --- | --- |
-| "Will it hold", "is it strong enough", "how much does it bend", "where is it most stressed" | `static` | Strength | **Runs today** | [Linear static](references/linear-static.md) |
-| The same under its own weight, or while it speeds up, brakes or turns (a steady g-load) | `static` with a `gravity` or `acceleration` load | Strength | **Runs today** | linear-static.md, section "Body loads: gravity and acceleration" |
-
-A test keeps this table and the study file's `analysis` table in step with what cadgen registers.
+| The user asks | The study | Reference |
+| --- | --- | --- |
+| "Will it hold", "is it strong enough", "how much does it bend", "where is it most stressed" | fixtures and face loads | [Linear static](references/linear-static.md) |
+| The same under its own weight, or while it speeds up, brakes or turns (a steady g-load) | a `gravity` or `acceleration` load | [Body loads](references/linear-static.md#body-loads-gravity-and-acceleration) |
 
 ### When the question needs an analysis that is not here
 
-Vibration, buckling, heat, flow, fatigue, impact, contact and the rest are not in this version
-([planned-next.md](references/planned-next.md) lists what comes next).
+Vibration, buckling, heat, flow, fatigue, impact, contact and the rest are not in this version.
 
 - Tell the user plainly, in their words: "That is not in this version." Do not write a study for it.
 - Do not pass a static result off as the answer. A static safety factor says nothing about
@@ -150,16 +143,13 @@ you write it down ([study-file.md](references/study-file.md#units)).
    -1]}` when the part's own weight matters (a long arm, a heavy casting), and `{"type":
    "acceleration", "vector_g": [5, 0, 0]}` when the part is speeding up, braking or turning at a
    known g; neither names faces, and both need the material's density ([Body
-   loads](references/linear-static.md#body-loads-gravity-and-acceleration)). Leave `analysis` out
-   (it is `static`). Leave `mesh` out on the first run ([Mesh](references/linear-static.md#mesh)).
+   loads](references/linear-static.md#body-loads-gravity-and-acceleration)). Leave `mesh` out on the first run ([Mesh](references/linear-static.md#mesh)).
    `margin` is the safety factor the part should keep (default 2, at least 1): higher for a
    polymer, a fatigue load or a part that must not fail.
 
-   Add a `view` only for what the user asked ([The result's
-   view](references/study-file.md#view)): its `checks` from their question (`stress` for "will it
-   break", a `displacement` check with their limit for a sag or stiffness spec), and controls,
-   presets or sections only when their question needs one. Without it the verdict is the stress
-   check and the controls are the field and deformation.
+   Add `checks` only for what the user asked ([checks](references/study-file.md#checks)):
+   `stress` for "will it break", a `displacement` check with their limit for a sag or stiffness
+   spec. Without them the verdict is the stress check alone.
 
 3. **Solve.**
 

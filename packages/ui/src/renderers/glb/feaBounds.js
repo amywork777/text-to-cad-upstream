@@ -1,7 +1,7 @@
 /**
  * The box an FEA result's model is drawn in over its Load ramp. The file's positions carry the
- * displacement at the file's own deformation scale, but Study may open on another (a view's
- * deformation or load) and Preview's Load ramp plays the load going on from none to the load shown:
+ * displacement at the file's own deformation scale, but Study may open on another (its
+ * Deformation or Load) and Preview's Load ramp plays the load going on from none to the load shown:
  * the viewport frames that box and fits the camera's near and far planes to it, so a model drawn
  * outside it would be sliced off by the near plane in an oblique view. The box here holds the part
  * at rest, as the file holds it, and as drawn at the deformation and load it opens on; the positions

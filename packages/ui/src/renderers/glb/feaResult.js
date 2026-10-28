@@ -16,13 +16,10 @@
  * each part), `connections` (each detected pair: type, contact area, gap and the
  * interface faces of both sides), `_PART` (the index into `parts` of the part
  * each vertex belongs to) and the weakest part's name and peak; a single part has
- * none of these. A study that says what the viewer should offer carries its `view`
- * (`feaControls`): the controls of Study's What you see, each shown `when` the checks say, named
- * presets, Study's `sections` and whether the loads and fixtures are drawn. A result since the
- * study picked its checks carries `checks`, each judged (`feaVerdict`); an older one's verdict is
- * its safety factor's, the stress check derived from the fields it has. The words the viewer says
- * are in `fea/`: `checkKinds.js` (each check kind's), `fields.js` (each field's), `setup.js` (Study's
- * setup) and `controls.js` (What you see's own controls).
+ * none of these. A result since the study picked its checks carries `checks`, each judged
+ * (`feaVerdict`); an older one's verdict is its safety factor's, the stress check derived from the
+ * fields it has. The words the viewer says are in `fea/`: `checkKinds.js` (each check kind's),
+ * `fields.js` (each field's), `setup.js` (Study's setup) and `controls.js` (What you see's controls).
  * GLTFLoader lower-cases custom attribute names and copies extras into
  * `userData`, which is what is read here.
  *
@@ -35,12 +32,11 @@
 import { Raycaster } from "three";
 import { clamp } from "@text-to-cad/core/common/numbers.js";
 import { FEA_CHECK_KINDS, checkLabel, checkLine, checkTitle, loadCaption } from "./fea/checkKinds.js";
-import { deformationRange, fieldAndDeformation, fieldOptions } from "./fea/controls.js";
 import { flooredFactor, plainNumber } from "./fea/numbers.js";
 import { SETUP_GROUPS, detailRows, faceLabel, facePartIndex, faceSummary, isRoller, loadWords, spaced, wholeRefs } from "./fea/setup.js";
 
 export { FEA_CHECK_KINDS } from "./fea/checkKinds.js";
-export { deformationRange } from "./fea/controls.js";
+export { deformationRange, feaControls } from "./fea/controls.js";
 import { english } from "../../i18n/core.js";
 export { FIELD_WORDS } from "./fea/fields.js";
 export { faceLabel, faceTitle, forceDirection } from "./fea/setup.js";
@@ -148,23 +144,6 @@ function readConnections(raw) {
     gapMm: finiteOrNull(joint.gap_mm),
     faces: faceRefs(joint.faces),
   }));
-}
-
-/**
- * The study's `view`, as the file carries it: `controls` (null when it names none), `presets` and
- * `show`. null for a result with no view: the viewer's own defaults. Each control is checked where
- * it is used (`feaControls`), so one this viewer does not know is skipped rather than refused.
- */
-function readView(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  return {
-    sections: Array.isArray(raw.sections) ? raw.sections.filter((name) => typeof name === "string") : null,
-    controls: Array.isArray(raw.controls) ? raw.controls.filter((control) => control && typeof control === "object") : null,
-    presets: Array.isArray(raw.presets) ? raw.presets.filter((preset) => preset && typeof preset.label === "string" && preset.label.trim()) : [],
-    show: raw.show && typeof raw.show === "object" ? raw.show : {},
-    // The checks the person named, by their own labels ("Bore swell"): the study's question, which the takeaway follows.
-    named: Array.isArray(raw.checks) ? raw.checks.filter((check) => typeof check?.label === "string" && check.label.trim()).map((check) => check.label) : [],
-  };
 }
 
 /**
@@ -276,7 +255,6 @@ export function readFeaResult(root) {
       weakestPart: text(extras.weakest_part),
       weakestPartPeakMPa: finiteOrNull(extras.weakest_part_peak_MPa),
       maxDisplacementMm: finiteOrNull(extras.max_displacement_mm),
-      view: readView(extras.view),
       checks: readChecks(extras.checks),
     };
   });
@@ -333,8 +311,6 @@ const HIGHLIGHT = Object.freeze([255, 64, 242]);
 const HIGHLIGHT_BLEND = 0.68;
 // A chosen joint also tints the two parts it joins, lightly: the interface faces sit hidden between them.
 const SOFT_BLEND = 0.3;
-// What a vertex under a threshold is drawn: a neutral grey, no colour of the ramp.
-const BELOW_THRESHOLD = Object.freeze([150, 150, 150]);
 
 /** A per-vertex index the file writes: the face each vertex lies on (`_face`), the part it belongs to (`_part`); null where it does not say. */
 function vertexIndex(mesh, name) {
@@ -349,12 +325,10 @@ function vertexIndex(mesh, name) {
  * two parts; its interface faces keep the full tint). `scaling`, for a load other than the solved
  * one: the values are drawn at `valueScale` times their own and the ramp spans `rangeScale` times the
  * field's range (both the load scale; while a load ramp plays the values climb toward the range).
- * `threshold`: `{ field, value, scale }`, every vertex whose value of that field (times `scale`) is
- * under `value` drawn grey.
  * Returns true when the colours changed; false when that field and tint were already shown.
  */
 export function recolorByField(mesh, field, ramp = DEFAULT_RAMP, highlight = null, parts = null, softParts = null,
-  { valueScale = 1, rangeScale = 1, threshold = null } = {}) {
+  { valueScale = 1, rangeScale = 1 } = {}) {
   const color = mesh.geometry.getAttribute("color");
   // The attribute's presence, not its values: a ramp playing recolours every frame, and keptValues
   // reads them once per field.
@@ -363,15 +337,13 @@ export function recolorByField(mesh, field, ramp = DEFAULT_RAMP, highlight = nul
     return false;
   }
   const kept = shown(mesh);
-  const under = threshold?.field ? keptValues(mesh, threshold.field) : null;
   const faces = vertexIndex(mesh, "_face");
   const tinted = faces && highlight?.length ? new Set(highlight) : null;
   const partOf = vertexIndex(mesh, "_part");
   const tintedParts = partOf && parts?.length ? new Set(parts) : null;
   const lightParts = partOf && softParts?.length ? new Set(softParts) : null;
   const sorted = (set) => (set ? [...set].sort((a, b) => a - b).join(",") : "");
-  const cut = under ? `${threshold.field.attribute}<${threshold.value}x${threshold.scale}` : "";
-  const key = `${field.attribute}x${valueScale}/${rangeScale}|${cut}|${sorted(tinted)}|${sorted(tintedParts)}|${sorted(lightParts)}`;
+  const key = `${field.attribute}x${valueScale}/${rangeScale}|${sorted(tinted)}|${sorted(tintedParts)}|${sorted(lightParts)}`;
   if (kept.field === key) {
     return false;
   }
@@ -380,16 +352,14 @@ export function recolorByField(mesh, field, ramp = DEFAULT_RAMP, highlight = nul
   const span = (field.max - field.min) * rangeScale;
   const stride = color.itemSize;
   const bytes = color.array;
-  const cutScale = under ? threshold.scale ?? 1 : 1;
   for (let i = 0; i < values.length; i += 1) {
     const t = span > 0 ? clamp((values[i] * valueScale - low) / span, 0, 1) : 0;
     const entry = Math.round(t * 255) * 3;
-    const grey = under !== null && under[i] * cutScale < threshold.value;
     const base = i * stride;
     const tint = (tinted !== null && tinted.has(Math.round(faces[i]))) || (tintedParts !== null && tintedParts.has(Math.round(partOf[i])));
     const blend = tint ? HIGHLIGHT_BLEND : lightParts !== null && lightParts.has(Math.round(partOf[i])) ? SOFT_BLEND : 0;
     for (let k = 0; k < 3; k += 1) {
-      const own = grey ? BELOW_THRESHOLD[k] : table[entry + k];
+      const own = table[entry + k];
       bytes[base + k] = blend ? Math.round(own + (HIGHLIGHT[k] - own) * blend) : own;
     }
     if (stride > 3) bytes[base + 3] = 255;
@@ -433,160 +403,15 @@ export function applyDeformation(mesh, scale, baseScale) {
   return true;
 }
 
-/** What a view's control can move, the closed set the viewer knows how to apply. */
-export const FEA_DRIVES = Object.freeze(["field", "deformation", "load_scale", "threshold"]);
-const DRIVE_TYPES = Object.freeze({ field: "enum", deformation: "number", load_scale: "number", threshold: "number" });
-const DRIVE_LABELS = Object.freeze({ field: "Field", deformation: "Deformation", load_scale: "Load", threshold: "Show above" });
-
-/** A view's field name ("von_mises") as the attribute the result carries ("_von_mises"). */
-const fieldAttribute = (name) => `_${String(name || "").toLowerCase()}`;
-
-const finiteNumber = (value) => typeof value === "number" && Number.isFinite(value);
-
-/**
- * Study's What you see controls, as generic parameters (`@text-to-cad/core/common/parameters.js`: `id`,
- * `type`, `label`, `min`, `max`, `defaultValue`, `unit`, `options`) with `drives`, what each moves:
- * `field` (which field the colours show; its options are attributes), `deformation` (how many times
- * the displacement is drawn), `load_scale` (the load as a multiple of the solved one) and
- * `threshold` (values of its `field` under it drawn grey). They are the study's `view.controls`, in
- * its order, with its labels and ranges; one whose `drives` or `type` this viewer does not know, or
- * whose range or fields it cannot use, is skipped. With no view, or none of its controls this viewer
- * can draw (an empty list, or all from a newer cadgen), the viewer's own (`fieldAndDeformation`): a
- * field select over every field, opening on the first (stress), and a deformation slider from 0 to
- * four times the file's own scale. A view that picks the field but names no deformation keeps that
- * Deformation slider after its controls. The view's are labelled in the agent's words, often a
- * sentence: their labels run over the whole row (`wideLabel`), where the default two keep the
- * one-column look they always had.
- */
-export function feaControls(result, t = english) {
-  const every = result.fields.map((entry) => entry.attribute);
-  const chosen = result.view?.controls ? viewControls(result, every) : [];
-  return chosen.length ? keptDeformation(result, chosen, t) : fieldAndDeformation(result, t);
-}
-
-/**
- * A view that picks the field but says nothing of the deformation keeps the viewer's own Deformation
- * slider, after its controls: choosing what the colours show is no reason to lose how far it is drawn.
- */
-function keptDeformation(result, chosen, t = english) {
-  if (!chosen.some((control) => control.drives === "field") || chosen.some((control) => control.drives === "deformation")) return chosen;
-  const own = fieldAndDeformation(result, t).find((control) => control.drives === "deformation");
-  return own ? [...chosen, own] : chosen;
-}
-
-/** The view's controls this viewer can draw, in its order; none when it names none it knows. */
-function viewControls(result, every) {
-  const controls = [];
-  for (const raw of result.view.controls) {
-    const drives = raw.drives;
-    const type = DRIVE_TYPES[drives];
-    if (!type || (raw.type ?? type) !== type || controls.some((control) => control.drives === drives)) continue;
-    const label = typeof raw.label === "string" && raw.label.trim() ? raw.label.trim() : DRIVE_LABELS[drives];
-    if (drives === "field") {
-      const options = fieldOptions(result, Array.isArray(raw.options) ? raw.options.map(fieldAttribute) : every);
-      if (!options.length) continue;
-      const opening = options.find((option) => option.value === fieldAttribute(raw.default)) || options[0];
-      controls.push({ id: drives, drives, type, label, options, defaultValue: opening.value, wideLabel: true, ...whenOf(raw) });
-      continue;
-    }
-    // A deformation with no range is the default slider's: none to four times the file's own exaggeration.
-    const ranged = !(drives === "deformation" && !finiteNumber(raw.max));
-    const own = ranged ? null : deformationRange(result.deformationScale);
-    const min = own ? own.min : finiteNumber(raw.min) ? raw.min : 0;
-    const max = own ? own.max : raw.max;
-    if (!finiteNumber(max) || !(min < max)) continue;
-    const measured = drives === "threshold" ? result.fields.find((entry) => entry.attribute === fieldAttribute(raw.field)) : null;
-    if (drives === "threshold" && !measured) continue;
-    const fallback = drives === "load_scale" ? 1 : drives === "deformation" ? result.deformationScale : min;
-    const unit = typeof raw.unit === "string" && raw.unit.trim() ? raw.unit.trim() : measured ? measured.units : "×";
-    controls.push({
-      id: drives, drives, type, label, min, max, defaultValue: clamp(finiteNumber(raw.default) ? raw.default : fallback, min, max), unit, wideLabel: true,
-      ...(measured ? { field: measured.attribute } : {}), ...(own ? { step: own.step } : {}), ...whenOf(raw),
-    });
-  }
-  return controls;
-}
-
-/** When a control shows, as the view says: `failing` or `passing`; a control that says neither, or what this viewer does not know, always. */
-const whenOf = (raw) => (raw.when === "failing" || raw.when === "passing" ? { when: raw.when } : {});
-
-/** Whether a control with this `when` shows, with the checks failing (or close) or not; null, nothing judged, shows every one. */
-const showsWhen = (when, failing) => failing === null || !when || (when === "failing" ? failing : !failing);
-
-/**
- * The controls What you see shows, and what each control does, at the values chosen (`values`, by id):
- * a control shows `when` the checks say, judged at the load shown (`feaFailing`). The load control's
- * own `when` is judged at its default load, where it opens (the load as solved unless the view says),
- * so moving it never hides it, the very control a person drags to see what load would pass. A hidden
- * control acts as if at its default (`values` keeps what was chosen, for when it shows again).
- * `shown`: the controls, in order; `effective`: every control's value, by id; `loadScale`: the load shown.
- */
-export function feaShownControls(result, controls, values) {
-  const load = controls.find((control) => control.drives === "load_scale") || null;
-  const loadShown = !load || showsWhen(load.when, feaFailing(result, load.defaultValue));
-  const loadScale = load ? finiteNumber(values[load.id]) && loadShown ? values[load.id] : load.defaultValue : 1;
-  const failing = feaFailing(result, loadScale);
-  const shown = controls.filter((control) => (control === load ? loadShown : showsWhen(control.when, failing)));
-  const effective = Object.fromEntries(controls.map((control) => [control.id, shown.includes(control) ? values[control.id] : control.defaultValue]));
-  return { shown, effective, loadScale };
-}
-
-/** The parts of Study, in order: the view's `sections` this viewer knows, each once; with none, all four. */
-export const FEA_SECTIONS = Object.freeze(["verdict", "setup", "controls", "details"]);
-export function feaSections(result) {
-  const named = (result.view?.sections || []).filter((name, index, all) => FEA_SECTIONS.includes(name) && all.indexOf(name) === index);
-  return named.length ? named : FEA_SECTIONS;
-}
-
-/** Every control at its default, by id. */
-export function feaDefaults(controls) {
-  return Object.fromEntries(controls.map((control) => [control.id, control.defaultValue]));
-}
-
-/**
- * The study's named states over its controls, as a Preset select lists them: `value` (its place),
- * `label`, and `values`, every control at its default but what the preset sets (a full state, as a
- * kinematics pose is). What a preset names that no control drives is left out; a field is named as
- * the view names it ("von_mises").
- */
-export function feaPresets(result, controls) {
-  const defaults = feaDefaults(controls);
-  return (result.view?.presets || []).map((preset, index) => {
-    const values = { ...defaults };
-    for (const control of controls) {
-      const value = preset[control.id];
-      if (control.type === "enum" && control.options.some((entry) => entry.value === fieldAttribute(value))) values[control.id] = fieldAttribute(value);
-      if (control.type === "number" && finiteNumber(value)) values[control.id] = clamp(value, control.min, control.max);
-    }
-    return { value: `preset:${index}`, label: preset.label.trim(), values };
-  });
-}
-
-/**
- * Whether the loads and the fixtures are drawn on the model, as the study's `view.show` says: each
- * unless it is false. `on` is the Display switch's default, on while either is drawn; turned on by
- * the person when the view turned both off, it draws both.
- */
-export function feaMarkerShow(result) {
-  const show = result.view?.show || {};
-  const loads = show.loads !== false;
-  const fixtures = show.fixtures !== false;
-  return { on: loads || fixtures, loads: loads || !fixtures, fixtures: fixtures || !loads };
-}
-
 /** An assembly's Parts panel shows from this many parts up; under it the picked face's Reference names its part. */
 export const PARTS_PANEL_FROM = 6;
 
 /**
- * Whether an assembly's Parts panel is shown: as the study's `view.show.parts` says, else only from
- * `PARTS_PANEL_FROM` parts up, since a few parts are told apart on the model, a picked face's
- * Reference naming its part, and the findings name the joints. Never for a single part.
+ * Whether an assembly's Parts panel is shown: only from `PARTS_PANEL_FROM` parts up, since a few
+ * parts are told apart on the model, a picked face's Reference naming its part, and the findings
+ * name the joints. Never for a single part.
  */
-export function feaShowsParts(result) {
-  if (!result.parts.length) return false;
-  const chosen = result.view?.show?.parts;
-  return typeof chosen === "boolean" ? chosen : result.parts.length >= PARTS_PANEL_FROM;
-}
+export const feaShowsParts = (result) => result.parts.length >= PARTS_PANEL_FROM;
 
 /**
  * A safety factor at `loadScale` times the solved load: yield over a stress that many times larger.
@@ -738,17 +563,6 @@ function checkChoice(result, check, part, label) {
   return { id: `check:${check.index}`, ...(faces.length ? { faces } : { refs: wholeRefs(result) }), summary };
 }
 
-/**
- * Whether some check fails or is close at `loadScale` times the solved load: what a control's `when`
- * reads. null where the file judges nothing (no checks, or no load), so every control shows.
- */
-export function feaFailing(result, loadScale = 1) {
-  const k = Number(loadScale) >= 0 ? Number(loadScale) : 1;
-  const checks = feaChecks(result);
-  if (!checks.length || !(k > 0)) return null;
-  return checks.some((check) => checkAt(result, check, k).status !== "passes");
-}
-
 // The headline over several checks: how many fail, else whether any is close.
 const failedTitle = (failing, total) => (failing === total ? (total === 2 ? "Fails both checks" : `Fails all ${total} checks`)
   : `Fails ${failing} of ${total} checks`);
@@ -780,13 +594,8 @@ export function feaVerdict(result, loadScale = 1, t = english) {
   }
   const weakest = result.parts[weakestPartIndex(result)] || null;
   const weakestName = result.weakestPart ? spaced(result.weakestPart) : weakest?.name ? spaced(weakest.name) : "";
-  // The checks the person named in the study's view ("Bore swell": their question) come first among those as bad, in
-  // their order; then the most of its limit used.
-  const named = new Set(result.view?.named || []);
-  const ownRank = (check) => (named.has(check.label) ? 0 : 1);
   const judged = checks.map((check, index) => ({ ...checkAt(result, check, k), index }))
-    .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || ownRank(a) - ownRank(b)
-      || (ownRank(a) === 0 ? a.index - b.index : b.use - a.use || a.index - b.index));
+    .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || b.use - a.use || a.index - b.index);
   const [worst] = judged;
   const failing = judged.filter((check) => check.status === "fails").length;
   const title = judged.length === 1 ? checkTitle(worst, worst.status)

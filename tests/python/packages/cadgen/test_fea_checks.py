@@ -265,7 +265,7 @@ class AssemblyChecksTest(unittest.TestCase):
 
 
 class StudyChecksTest(unittest.TestCase):
-    """The study's checks (``view.checks``) judged from the solve's numbers, and the findings of those that fail."""
+    """The study's checks (``checks``) judged from the solve's numbers, and the findings of those that fail."""
 
     def test_the_stress_check_says_what_the_safety_factor_says(self):
         for peak, status in ((310.0, "fails"), (197.0, "close"), (47.3, "passes"), (138.0, "passes")):
@@ -306,6 +306,29 @@ class StudyChecksTest(unittest.TestCase):
         faces = check_findings([displacement_check(2.1, 0.5, at=at, ref=None, faces=("face 2",))])[0]["summary"]
         self.assertEqual(faces, "The checked faces move 2.1 mm, more than the 0.5 mm allowed")
         self.assertEqual(check_findings([displacement_check(0.48, 0.5, at=at, ref=None)]), [])
+
+
+
+class FieldMaxOver(unittest.TestCase):
+    def test_field_max_over_takes_the_faces_nodes_or_every_node(self):
+        from tests.python.support.fea_fixtures import HAVE_FEA
+
+        if not HAVE_FEA:
+            self.skipTest("the fea extra is not installed")
+        import numpy as np
+
+        from cadgen._internal.fea.mesh import FaceFingerprint
+        from cadgen._internal.fea.static import field_max_over
+
+        boundary = np.array([[0, 1, 2], [2, 3, 4]])
+        faces = {1: FaceFingerprint("face 1", 1, 1.0, (0, 0, 0)), 2: FaceFingerprint("face 2", 2, 1.0, (0, 0, 0))}
+        values = np.array([0.0, 1.0, 2.0, 5.0, 3.0, 9.0])
+        common = dict(boundary=boundary, boundary_ordinal=np.array([1, 2]), locations=np.arange(18.0).reshape(6, 3),
+                      face_ref=faces, ordinal_of={"a": 1, "b": 2}, where="checks[1]")
+        on_one = field_max_over(values, ("a",), **common)
+        self.assertEqual((on_one.node, on_one.value, on_one.ref, on_one.faces, on_one.at), (2, 2.0, "face 1", ("face 1",), (6.0, 7.0, 8.0)))
+        self.assertEqual(field_max_over(values, (), **common).node, 5)
+        self.assertIsNone(field_max_over(values, (), **common).ref)
 
 
 if __name__ == "__main__":

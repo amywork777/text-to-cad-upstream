@@ -1,101 +1,48 @@
-"""``cadgen._internal.fea.materials``: the table, the material object, and what an analysis may ask of it.
+"""``cadgen._internal.fea.materials``: the table and the material object.
 
-Stdlib only: no FEA stack. The table and the skill's materials reference must
-agree number for number, and every value the table leaves out must say why.
+Stdlib only: no FEA stack. The table and the skill's materials reference must agree number for number.
 """
 
 from __future__ import annotations
 
-import dataclasses
 import re
 import unittest
 from pathlib import Path
 
-from tests.python.support import markdown
 from tests.python.support.fea_fixtures import value_error
 
-from cadgen._internal.fea.materials import (  # noqa: E402
-    MATERIAL_PROPERTIES,
-    MATERIALS,
-    NONE_REASONS,
-    TABLE_PROPERTIES,
-    Material,
-    lookup_material,
-    material_from_spec,
-    requires,
-)
+from cadgen._internal.fea.materials import MATERIALS, lookup_material, material_from_spec  # noqa: E402
 
 REFERENCE = Path(__file__).resolve().parents[4] / "skills" / "fea" / "references" / "materials.md"
-# The columns of materials.md's "Strength, fatigue and heat" table after the name, as the table stores them.
-COLUMNS = ("uts", "endurance", "endurance_cycles", "conductivity", "expansion", "specific_heat")
-# The doc writes expansion in 1e-6/K, the table in 1/K.
-DOC_FACTOR = {"expansion": 1e-6}
 
 
-def _reference_rows() -> dict[str, list[str]]:
-    """materials.md's property table: table key -> its cells after the name."""
-    text = REFERENCE.read_text(encoding="utf-8")
-    section = markdown.section(text, "## Strength, fatigue and heat")
+def _reference_rows() -> dict[str, list[float]]:
+    """materials.md's table: table key -> E, ν, yield and density as written."""
     rows = {}
-    for line in section.splitlines():
+    for line in REFERENCE.read_text(encoding="utf-8").splitlines():
         match = re.match(r"\|\s*`([a-z0-9-]+)`", line)
         if match:
-            rows[match.group(1)] = [cell.strip() for cell in line.strip().strip("|").split("|")][1:]
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")][1:5]
+            rows[match.group(1)] = [float(cell.replace(" ", "").replace(" ", "")) for cell in cells]
     return rows
 
 
-def _number(cell: str) -> float | None:
-    if cell.lower().startswith("none"):
-        return None
-    cell = cell.split("(")[0]  # "60 (unverified)": the number, its status beside it
-    return float(cell.replace(" ", "").replace(" ", ""))
-
-
 class Table(unittest.TestCase):
-    def test_every_material_has_every_property_or_a_reason(self):
-        for key, material in MATERIALS.items():
-            for attribute in TABLE_PROPERTIES:
-                with self.subTest(material=key, property=attribute):
-                    value = getattr(material, attribute)
-                    if value is None:
-                        self.assertIn((key, attribute), NONE_REASONS)
-                    else:
-                        self.assertGreater(value, 0)
-                        self.assertNotIn((key, attribute), NONE_REASONS)
-
-    def test_the_reference_gives_the_tables_numbers_and_every_reason(self):
+    def test_the_reference_gives_the_tables_numbers(self):
         rows = _reference_rows()
-        text = " ".join(REFERENCE.read_text(encoding="utf-8").split())
         self.assertEqual(set(rows), set(MATERIALS))
         for key, material in MATERIALS.items():
             with self.subTest(material=key):
-                self.assertTrue(rows[key][len(COLUMNS)].strip(), "the sources column is empty")
-            for column, attribute in enumerate(COLUMNS):
-                with self.subTest(material=key, property=attribute):
-                    written = _number(rows[key][column])
-                    value = getattr(material, attribute)
-                    if value is None:
-                        self.assertIsNone(written)
-                    else:
-                        self.assertIsNotNone(written)
-                        self.assertAlmostEqual(written * DOC_FACTOR.get(attribute, 1.0) / value, 1.0, places=9)
-        for reason in set(NONE_REASONS.values()):
-            self.assertIn(reason, text)
-
-    def test_the_first_five_fields_keep_their_order(self):
-        names = [f.name for f in dataclasses.fields(Material)][:5]
-        self.assertEqual(names, ["name", "E", "nu", "yield_strength", "density"])
-        self.assertEqual(Material("x", 1.0, 0.3, 1.0, 0.0).uts, None)
+                self.assertEqual(rows[key], [material.E, material.nu, material.yield_strength, material.density])
 
 
 class MaterialObject(unittest.TestCase):
     def test_a_name_reads_the_table(self):
         self.assertIs(material_from_spec("6061"), lookup_material("aluminum-6061-t6"))
 
-    def test_an_object_extends_a_table_entry_and_keeps_the_rest(self):
-        steel = material_from_spec({"name": "steel", "yield_MPa": 355, "uts_MPa": 470, "conductivity_W_mK": 45})
-        self.assertEqual((steel.yield_strength, steel.uts, steel.conductivity), (355.0, 470.0, 45.0))
-        self.assertEqual(steel.specific_heat, MATERIALS["steel"].specific_heat)
+    def test_an_object_extends_a_table_entry(self):
+        steel = material_from_spec({"name": "steel", "yield_MPa": 355})
+        self.assertEqual((steel.name, steel.E, steel.yield_strength), (MATERIALS["steel"].name, MATERIALS["steel"].E, 355.0))
 
     def test_an_object_is_called_by_a_tidy_name(self):
         """A table entry's display name where the name is one or an alias; an object's own name tidied, never left raw."""
@@ -110,85 +57,23 @@ class MaterialObject(unittest.TestCase):
                 self.assertEqual(material_from_spec({"name": written, **own}).name, shown)
         self.assertEqual(material_from_spec(own).name, "Custom")
 
-    def test_a_polymer_gains_fatigue_data_under_either_name(self):
-        for keys in (("endurance_MPa", "endurance_cycles"), ("fatigue_strength_MPa", "fatigue_cycles")):
-            with self.subTest(keys=keys):
-                pla = material_from_spec({"name": "pla", keys[0]: 18, keys[1]: 1e6})
-                self.assertEqual((pla.endurance, pla.endurance_cycles), (18.0, 1e6))
-
-    def test_plasticity_and_hyperelastic_objects(self):
-        steel = material_from_spec({"name": "steel", "plasticity": {"tangent_MPa": 2000}})
-        self.assertEqual(steel.tangent, 2000.0)
-        rubber = material_from_spec({"name": "rubber", "E_MPa": 1.8, "nu": 0.49, "yield_MPa": 10,
-                                     "hyperelastic": {"model": "neo_hookean", "mu_MPa": 0.6, "bulk_MPa": 300}})
-        self.assertEqual(rubber.hyperelastic, {"model": "neo_hookean", "mu_MPa": 0.6, "bulk_MPa": 300.0})
-
     def test_the_errors_name_the_field(self):
         cases = [
-            ({"name": "steel", "uts_MPa": -1}, "material.uts_MPa"),
-            ({"name": "steel", "conductivity_W_mK": "high"}, "material.conductivity_W_mK"),
-            ({"name": "steel", "plasticity": {"tangent_MPa": 300_000}}, "below E"),
-            ({"name": "steel", "plasticity": 5}, "material.plasticity"),
-            ({"name": "steel", "hyperelastic": {"model": "mooney"}}, "material.hyperelastic.model"),
-            ({"name": "steel", "hyperelastic": {"mu_MPa": 1}}, "bulk_MPa"),
+            ({"name": "steel", "uts_MPa": 400}, "material: unknown keys ['uts_MPa']; a material object takes name, E_MPa, nu"),
+            ({"name": "steel", "nu": 0.5}, "material.nu: Poisson's ratio must be in [0, 0.5)"),
+            ({"name": "steel", "yield_MPa": 0}, "material.yield_MPa: must be > 0"),
+            ({"name": "steel", "density_t_per_mm3": -1}, "material.density_t_per_mm3: must be zero or more"),
             ({"E_MPa": 1}, "an object needs E_MPa, nu and yield_MPa"),
+            ("unobtainium", "unknown material 'unobtainium'"),
             (3, "give a name from the table"),
         ]
         for spec, fragment in cases:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, value_error(self, material_from_spec, spec))
 
-    def test_as_dict_adds_only_the_keys_that_are_set(self):
+    def test_as_dict_names_the_five_numbers(self):
         custom = material_from_spec({"E_MPa": 1000, "nu": 0.3, "yield_MPa": 10})
-        self.assertEqual(set(custom.as_dict()), {"name", "E_MPa", "nu", "yield_MPa", "density_t_per_mm3"})
-        steel = lookup_material("steel").as_dict()
-        self.assertEqual(steel["uts_MPa"], MATERIALS["steel"].uts)
-        self.assertNotIn("tangent_MPa", steel)
-        self.assertNotIn("endurance_MPa", lookup_material("abs").as_dict())
-
-
-class Requires(unittest.TestCase):
-    def test_a_missing_property_is_asked_for_by_its_key(self):
-        message = value_error(self, requires, lookup_material("abs"), ("uts", "endurance"), "fatigue")
-        self.assertIn("fatigue studies need the fatigue strength", message)
-        self.assertIn("endurance_MPa", message)
-        self.assertIn('"name": "ABS"', message)
-
-    def test_zero_density_is_missing(self):
-        custom = material_from_spec({"E_MPa": 1000, "nu": 0.3, "yield_MPa": 10})
-        self.assertIn("density_t_per_mm3", value_error(self, requires, custom, ("density",), "modal"))
-        requires(lookup_material("steel"), ("density", "conductivity", "expansion", "specific_heat"), "thermal_stress")
-
-    def test_a_stress_check_on_a_rubber_asks_for_its_yield_strength(self):
-        from cadgen._internal.fea.study import parse_study
-
-        rubber = {"name": "rubber", "hyperelastic": {"model": "neo_hookean", "mu_MPa": 0.6, "bulk_MPa": 300}}
-        study = {"analysis": "static", "material": rubber, "fixtures": [{"faces": ["face 1"]}],
-                 "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -10]}]}
-        # A static study judges stress by default: a plain error naming what to add, not a TypeError later.
-        for document in (study, {**study, "view": {"checks": [{"kind": "stress"}]}}):
-            message = value_error(self, parse_study, document)
-            self.assertIn("static studies need the yield strength, and Rubber has none", message)
-            self.assertIn('add yield_MPa to the material object, like {"name": "Rubber", "yield_MPa": 10}', message)
-        # Judged by displacement alone it needs no yield strength; given one, the stress check is judged.
-        moved = parse_study({**study, "view": {"checks": [{"kind": "displacement", "limit_mm": 1}]}})
-        self.assertIsNone(moved.material.yield_strength)
-        self.assertEqual(parse_study({**study, "material": {**rubber, "yield_MPa": 8}}).material.yield_strength, 8.0)
-
-    def test_an_orthotropic_material_is_refused(self):
-        from cadgen._internal.fea.study import parse_study
-
-        block = {"E1_MPa": 135000, "E2_MPa": 10000, "E3_MPa": 10000, "nu12": 0.3, "nu13": 0.3, "nu23": 0.45,
-                 "G12_MPa": 5000, "G13_MPa": 5000, "G23_MPa": 3500}
-        study = {"material": {"name": "steel", "orthotropic": block}, "fixtures": [{"faces": ["face 1"]}],
-                 "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -10]}]}
-        with self.assertRaisesRegex(ValueError, "is orthotropic, and a study solves a material that is the same in every direction"):
-            parse_study(study)
-
-    def test_every_need_is_a_known_property(self):
-        with self.assertRaises(KeyError):
-            requires(lookup_material("steel"), ("colour",), "static")
-        self.assertLessEqual(set(TABLE_PROPERTIES), set(MATERIAL_PROPERTIES))
+        self.assertEqual(custom.as_dict(), {"name": "Custom", "E_MPa": 1000.0, "nu": 0.3, "yield_MPa": 10.0, "density_t_per_mm3": 0.0})
 
 
 if __name__ == "__main__":

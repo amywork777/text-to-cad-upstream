@@ -444,8 +444,8 @@ no worker and no build, and names faces by the engine's refs, resolved in the do
 as `cadgen inspect` resolves them (`engine.refs`): a study's `bracket/face 17` is the face the CAD
 Viewer copies. A study is a JSON file; a solve writes only the result GLB its `out` names and its
 JSON sidecar (and a `.vtu` when asked), each replaced only once all are written, so a failed run
-leaves the previous result as it was. `_internal/fea/` holds one analysis, `static` (linear elastic
-stress and displacement), behind a registry that refuses any other name. The mesher is the opt-in
+leaves the previous result as it was. `_internal/fea/` solves one kind of study: linear elastic
+stress and displacement. The mesher is the opt-in
 `fea` extra (`pip install 'cadgen[fea]'`: netgen, run in a process of its own, since its
 OpenCascade and OCP's cannot share one). The solver is CalculiX (`ccx`, 2.20 or newer), which the
 person installs (`conda install -c conda-forge calculix`, or `calculix-ccx` on Debian and Ubuntu):

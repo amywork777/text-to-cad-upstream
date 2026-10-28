@@ -10,7 +10,6 @@ Stdlib only, on purpose: importing a result type must never pull in the CAD kern
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -181,8 +180,6 @@ class FeaResult:
     timings: dict = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
     findings: tuple[dict, ...] = ()
-    #: The analysis that was run.
-    analysis: str = "static"
 
     def human_lines(self) -> list[str]:
         from cadgen._internal.fea.checks import safety_factor_text  # stdlib only; kept out of module import time

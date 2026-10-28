@@ -543,8 +543,8 @@ class SolveAssemblyTest(unittest.TestCase):
                      "loads": [{"faces": [cls.load], "type": "force", "vector_N": [1000, 0, 0]}], "mesh": MESH}
         with quiet():
             # Its checks: the stress check and one displacement check over a face of each part, both passing.
-            cls.mixed = cls.solve_parts({"base": "6061", "post": "steel"}, name="mixed", view={"checks": [
-                {"kind": "stress"}, {"kind": "displacement", "limit_mm": 100.0, "faces": [cls.load, cls.fixed], "label": "Post and base"}]})
+            cls.mixed = cls.solve_parts({"base": "6061", "post": "steel"}, name="mixed", checks=[
+                {"kind": "stress"}, {"kind": "displacement", "limit_mm": 100.0, "faces": [cls.load, cls.fixed], "label": "Post and base"}])
             cls.steel = cls.solve_parts({"base": "steel", "post": "steel"}, name="steel")
             cls.aluminium = cls.solve_parts({"base": "6061", "post": "6061"}, name="aluminium")
 

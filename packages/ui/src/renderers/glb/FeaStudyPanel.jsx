@@ -5,7 +5,6 @@ import { TREE_INDENT_PX, TreeRowChevron, TreeRowGuides, TreeRowLabel, TreeRowSur
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
 import { Checkbox } from "@text-to-cad/ui/primitives/checkbox";
 import { InfoRow } from "../kit/inspector/referenceRows.jsx";
-import { KinematicsPoseRow } from "../kit/inspector/kinematicsControls.jsx";
 import { controlRow } from "./fea/controlRow.jsx";
 import ToolPanel from "../kit/tools/ToolPanel.jsx";
 import { formatValue } from "./feaResult.js";
@@ -16,19 +15,16 @@ import { STUDY_GLYPHS } from "./feaGlyphs.jsx";
 const controlText = (value, control) => (control.unit === "×" ? `×${formatValue(value)}` : `${formatValue(value)}${control.unit ? ` ${control.unit}` : ""}`);
 
 /**
- * Study's What you see: the controls the study's view chose (`feaControls`), in its order, each a settings
- * row (`controlRow`), under a Preset select when the view names
- * presets (Default, each preset, Custom once a control has moved). The file carries every field and
- * the true displacement (feaResult.js), so each is a choice, not a readout. `values` by control id.
- * `markers`: whether the model shows where the study holds and loads it (its title, "Loads and fixtures";
- * `text`, what it draws), a checkbox after the controls.
+ * Study's What you see: the field, the deformation and the load (`feaControls`), each a settings row
+ * (`controlRow`). The file carries every field and the true displacement (feaResult.js), so each is a
+ * choice, not a readout. `values` by control id. `markers`: whether the model shows where the study
+ * holds and loads it (its title, "Loads and fixtures"; `text`, what it draws), a checkbox after the controls.
  */
-function FeaResultControls({ controls, values, presets, preset, onChange, onPreset, onReset, markers = null }) {
+function FeaResultControls({ controls, values, onChange, markers = null }) {
   const { t } = useI18n();
   return (
     // A select gives way before its label in the narrow panel ("Displacement" would squeeze "Show" away).
     <div className="flex flex-col gap-1.5 [&_span:has(+span>[data-slot=select-trigger])]:shrink-0 [&_span:has(>[data-slot=select-trigger])]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:shrink [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:max-w-full">
-      {presets.length ? <KinematicsPoseRow name="Preset" poses={presets} activeValue={preset} onSelect={onPreset} onReset={onReset} /> : null}
       {controls.map((control) => controlRow({
         control, value: values[control.id], valueText: controlText, t,
         onChange: (value) => onChange(control.id, value),
@@ -161,31 +157,9 @@ function StudyTreePanel({ id, title, blocks, startsCollapsed, fit, chosen, onCho
   </ToolPanel>;
 }
 
-/**
- * Study's body in the view's order (`sections`): the verdict as an element of its own, and each run of
- * row sections (setup, What you see, Details) one list, so the default order is one verdict over one list.
- * A section with nothing to show is left out.
- */
-function studyBlocks(sections, { verdict, setup, controls, details }) {
-  const blocks = [];
-  for (const name of sections) {
-    if (name === "verdict") {
-      if (verdict) blocks.push({ element: verdict });
-      continue;
-    }
-    const rows = name === "setup" ? setup : name === "controls" ? controls : name === "details" ? details : NONE;
-    if (!rows.length) continue;
-    const last = blocks[blocks.length - 1];
-    if (last?.rows) last.rows = [...last.rows, ...rows];
-    else blocks.push({ rows });
-  }
-  return blocks;
-}
-
-// What the view shows and how: the study view's controls, under the setup and above Details by default.
+// What the view shows and how: its controls, under the setup and above Details.
 const RESULT_ROW = Object.freeze({ id: "result", label: "What you see", key: "fea.whatYouSee", detail: "" });
 const NONE = Object.freeze([]);
-const DEFAULT_SECTIONS = Object.freeze(["verdict", "setup", "controls", "details"]);
 
 /** The ids of the rows that open shut (`collapsed`: a load's faces), at any depth. */
 const collapsedIds = (rows) => rows.flatMap((row) => [...(row.collapsed ? [row.id] : []), ...collapsedIds(row.children || NONE)]);
@@ -197,32 +171,32 @@ export const FEA_STUDY_PANEL_ID = "study";
 /**
  * An FEA result's sections of the file sidebar, whatever the tool, composed from what the file holds:
  * **Parts** only for an assembly whose panel shows (`parts`: `partRows`, each part with its joints under it,
- * the weakest part open; `feaShowsParts`, from six parts up unless the view says), then **Study**, its
- * sections in the view's order (`sections`, `feaSections`; by default all four): the verdict at the load shown
- * (`verdict`: `feaVerdict`, none where the file cannot say), the setup (`setup`, `studySections`: where it is
- * held, what pushes it, what it is made of, each only where the file records it), What you see: the study
- * view's controls shown at the moment and the markers' gate (`result`: `FeaResultControls`' props, by default
- * the field and deformation), and Details (`details`), shut. A result written before its study was recorded
- * has its verdict and What you see alone. Choosing a row that stands for faces or parts is `onChoose(row)`;
+ * the weakest part open; `feaShowsParts`, from six parts up), then **Study**: the verdict at the load shown
+ * (`verdict`: `feaVerdict`, none where the file cannot say) over one list of the setup (`setup`,
+ * `studySections`: where it is held, what pushes it, what it is made of, each only where the file records it),
+ * What you see: the field, deformation and load controls and the markers' gate (`result`: `FeaResultControls`'
+ * props), and Details (`details`), shut. A result written before its study was recorded has its verdict and
+ * What you see alone. Choosing a row that stands for faces or parts is `onChoose(row)`;
  * `chosen` is the row (or picked face) chosen. A face picked on the result is Quick Edit's chip, its card
  * `FaceCard`.
  *
- * @param {{ parts?: object[], openPart?: number, setup: object[], details: object[], sections?: string[],
+ * @param {{ parts?: object[], openPart?: number, setup: object[], details: object[],
  *   verdict?: object | null, chosen: string, onChoose(row: object): void,
- *   result: { controls: object[], values: Record<string, unknown>, presets: object[], preset: string,
- *     onChange(id: string, value: unknown): void, onPreset(value: string): void, onReset(): void,
+ *   result: { controls: object[], values: Record<string, unknown>, onChange(id: string, value: unknown): void,
  *     markers?: { title: string, text: string, on: boolean, onChange(on: boolean): void } | null } }} props
  */
-export default function FeaStudyPanel({ parts = NONE, openPart = -1, setup, details, sections = DEFAULT_SECTIONS, verdict = null, chosen, onChoose, result }) {
+export default function FeaStudyPanel({ parts = NONE, openPart = -1, setup, details, verdict = null, chosen, onChoose, result }) {
   const { t } = useI18n();
   const contents = {
     [RESULT_ROW.id]: <FeaResultControls {...result} />,
   };
-  const controls = result.controls.length || result.presets.length || result.markers ? [{ ...RESULT_ROW, label: t(RESULT_ROW.key) }] : NONE;
-  const studied = { verdict: verdict ? <FeaVerdict verdict={verdict} chosen={chosen} onChoose={onChoose} /> : null, setup, controls, details };
+  const blocks = [
+    ...(verdict ? [{ element: <FeaVerdict verdict={verdict} chosen={chosen} onChoose={onChoose} /> }] : NONE),
+    { rows: [...setup, { ...RESULT_ROW, label: t(RESULT_ROW.key) }, ...details] },
+  ];
   const panels = [
     parts.length ? { id: FEA_PARTS_PANEL_ID, title: t("fea.parts"), blocks: [{ rows: parts }], startsCollapsed: parts.filter((_, index) => index !== openPart).map((row) => row.id), fit: "tree" } : null,
-    { id: FEA_STUDY_PANEL_ID, title: t("fea.study"), startsCollapsed: collapsedIds([...setup, ...details]), fit: "tree", blocks: studyBlocks(sections, studied) },
+    { id: FEA_STUDY_PANEL_ID, title: t("fea.study"), startsCollapsed: collapsedIds([...setup, ...details]), fit: "tree", blocks },
   ].filter(Boolean);
   return <>{panels.map((panel) => <StudyTreePanel key={panel.id} {...panel} chosen={chosen} onChoose={onChoose} contents={contents} />)}</>;
 }

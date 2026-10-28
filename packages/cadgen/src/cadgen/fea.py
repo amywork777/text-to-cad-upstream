@@ -2,8 +2,7 @@
 or an engine document (``.xbf``), its faces named by the engine's refs (``bracket/face 17``).
 
 A study is static: linear elastic strength, with face and body loads, on a part
-or a bonded assembly (``"analysis"`` may say ``static``; any other name is an
-error listing the analyses there are).
+or a bonded assembly.
 
 Three verbs, each mirrored by a generated CLI (``cadgen fea faces``,
 ``cadgen fea parts``, ``cadgen fea solve``): ``faces`` lists a part's faces

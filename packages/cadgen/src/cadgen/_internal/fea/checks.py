@@ -5,7 +5,7 @@ The KiCad findings' shape (``check``, ``severity``, ``type``, ``summary``,
 the way they read a board. Errors are what make the part unfit to use; the
 rest are suggestions. An assembly's findings come from one :class:`Solved` per
 part (:func:`assembly_findings`) and name the part. The study's checks
-(``view.checks``) are judged here too: :func:`stress_check` and
+(``checks``) are judged here too: :func:`stress_check` and
 :func:`displacement_check` turn the solve's numbers into each check's result,
 and :func:`check_findings` says the ones that fail. Stdlib only: nothing here
 needs the solver.
@@ -17,9 +17,7 @@ import math
 import re
 from dataclasses import dataclass
 
-from cadgen._internal.fea.analyses.base import finding as _finding
-
-__all__ = ["CLOSE_WITHIN", "CONVERGED_WITHIN", "GAUSS_RATIO", "MATERIALLY_FINER", "LARGE_DISPLACEMENT", "RESOLVE_BELOW", "Solved", "assembly_findings", "check_findings", "check_status", "default_material", "displacement_check", "findings", "floored_factor", "gap_closed", "needs_finer", "safety_factor", "safety_factor_text", "stress_check"]
+__all__ = ["CLOSE_WITHIN", "CONVERGED_WITHIN", "GAUSS_RATIO", "MATERIALLY_FINER", "LARGE_DISPLACEMENT", "RESOLVE_BELOW", "Solved", "assembly_findings", "check_findings", "check_status", "default_material", "displacement_check", "finding", "findings", "floored_factor", "gap_closed", "needs_finer", "safety_factor", "safety_factor_text", "stress_check"]
 
 #: Re-solve finer only when the safety factor is this close to failing.
 RESOLVE_BELOW = 3.0
@@ -35,6 +33,12 @@ GAUSS_RATIO = 1.5
 #: A check with no margin of its own (a displacement) is close to failing within this share of its
 #: limit: the model's own accuracy, the share a finer mesh may still move a number.
 CLOSE_WITHIN = CONVERGED_WITHIN
+
+
+def finding(severity: str, kind: str, summary: str, description: str, items=()) -> dict:
+    """One entry of a study's findings."""
+    return {"check": "fea", "severity": severity, "type": kind, "summary": summary, "description": description,
+            "items": list(items)}
 
 
 @dataclass(frozen=True)
@@ -117,7 +121,7 @@ def _item(text: str, ref: str | None, at: tuple[float, float, float]) -> dict:
 
 def default_material(part: str, material_name: str) -> dict:
     """A part the study gave no material of its own: it got the default, which may not be what it is made of."""
-    return _finding("warning", "default_material", f"{quoted(part)} uses the default material ({material_name}): is that right?",
+    return finding("warning", "default_material", f"{quoted(part)} uses the default material ({material_name}): is that right?",
                     f"the study's parts name no material for {quoted(part)}")
 
 
@@ -126,17 +130,17 @@ def gap_closed(first: str, second: str, gap_mm: float, *, interference: bool = F
     anyway by moving geometry up to that far."""
     if interference:
         # Two figures: the depth is estimated from the shared solid's volume and area, not measured.
-        return _finding("warning", "gap_closed",
+        return finding("warning", "gap_closed",
                         f"Closed a {gap_mm:.2g} mm interference between {quoted(first)} and {quoted(second)} to bond them",
                         f"the parts overlapped by {gap_mm:.4g} mm, within the contact tolerance")
-    return _finding("warning", "gap_closed",
+    return finding("warning", "gap_closed",
                     f"Closed a {_number(gap_mm)} mm gap between {quoted(first)} and {quoted(second)} to bond them",
                     f"the parts were {gap_mm:.4g} mm apart, within the contact tolerance")
 
 
 def overlapping_parts(first: str, second: str, volume_mm3: float) -> dict:
     """Two parts whose solids overlap: not bonded, and real parts can't overlap."""
-    return _finding("warning", "overlapping_parts",
+    return finding("warning", "overlapping_parts",
                     f"{quoted(first)} and {quoted(second)} overlap by {_number(volume_mm3)} mm³: real parts can't, "
                     "so the model may be wrong; fix the geometry or mark them free",
                     "overlapping parts are not bonded to each other, so no load passes between them")
@@ -156,7 +160,7 @@ def findings(solved: Solved) -> list[dict]:
         return f"In {quoted(solved.part)}: {summary[0].lower()}{summary[1:]}" if solved.assembly else summary
 
     def add(severity: str, kind: str, summary: str, description: str, items: list[dict]) -> None:
-        found.append(_finding(severity, kind, summary, description, items))
+        found.append(finding(severity, kind, summary, description, items))
 
     if factor is None and not solved.assembly:
         add("warning", "no_load", "No load reaches the part: check the loads are on faces connected to the fixed ones",
@@ -248,7 +252,7 @@ def assembly_findings(parts: list[Solved]) -> list[dict]:
     """
     found = [finding for solved in parts for finding in findings(solved)]
     if all(safety_factor(solved) is None for solved in parts):
-        found.append(_finding("warning", "no_load", "No load reaches the parts: check the loads are on faces connected to "
+        found.append(finding("warning", "no_load", "No load reaches the parts: check the loads are on faces connected to "
                               "the fixed ones", "the peak stress is zero in every part"))
     return sorted(found, key=lambda finding: finding["severity"] != "error")
 
@@ -321,7 +325,7 @@ def check_findings(results: list[dict], *, assembly: bool = False) -> list[dict]
         subject = quoted(result["label"]) if labelled else "The checked faces" if result.get("faces") else (
             "The assembly" if assembly else "The part")
         verb = "move" if subject == "The checked faces" else "moves"
-        found.append(_finding(
+        found.append(finding(
             "error", "displacement_over_limit",
             f"{subject} {verb} {_number(result['value'])} mm, more than the {result['limit']:g} mm allowed",
             f"largest displacement {result['value']:.4g} mm, {result['ratio']:.2f}× the {result['limit']:g} mm limit",

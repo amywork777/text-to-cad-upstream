@@ -55,7 +55,33 @@ class SelfWeight(unittest.TestCase):
     def test_the_glb_echoes_the_body_load_without_faces(self):
         extras = glb_extras(self.gravity.glb)
         self.assertEqual(extras["study"]["loads"], [{"type": "gravity", "vector_g": [0.0, 0.0, -1.0]}])
-        self.assertNotIn("analysis", extras)
+
+
+
+BASE = {"material": "steel", "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [1, 0, 0]}]}
+
+
+class StudyFile(unittest.TestCase):
+    def test_body_loads_have_no_faces_and_need_a_density(self):
+        from tests.python.support.fea_fixtures import value_error
+
+        from cadgen._internal.fea.study import parse_study
+
+        study = parse_study({**BASE, "loads": [{"type": "gravity", "vector_g": [0, 0, -1]}, {"type": "acceleration", "vector_g": [5, 0, 0]}]})
+        self.assertEqual([load.type for load in study.body_loads], ["gravity", "acceleration"])
+        self.assertEqual(study.surface_loads, ())
+        self.assertEqual(study.face_refs, ("face 1",))
+        self.assertEqual(study.body_accelerations, [(0.0, 0.0, -G0), (-5 * G0, -0.0, -0.0)])
+        cases = [
+            ({"loads": [{"type": "gravity"}]}, "loads[0].vector_g: gravity as [x, y, z] in g"),
+            ({"loads": [{"type": "gravity", "vector_g": [0, 0, 0]}]}, "loads[0].vector_g: the gravity is zero"),
+            ({"loads": [{"type": "gravity", "vector_g": [0, 0, -1], "faces": ["face 2"]}]}, "acts on the whole part"),
+            ({"material": {"E_MPa": 1000, "nu": 0.3, "yield_MPa": 10}, "loads": [{"type": "acceleration", "vector_g": [1, 0, 0]}]},
+             "a gravity or acceleration load needs the density, and Custom has none"),
+        ]
+        for change, fragment in cases:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, value_error(self, parse_study, {**BASE, **change}))
 
 
 if __name__ == "__main__":

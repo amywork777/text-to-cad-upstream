@@ -233,11 +233,9 @@ jobs:
           scripts/test/test-python.sh --keep-going --select cadgen --print-weights $TESTS
         shell: bash
 
-  # The solvers need the optional cadgen[fea] stack (netgen, scikit-fem, pyamg), which no other
-  # job installs: without it every test_fea*.py skips its solves. Every analysis's suite matches
-  # the glob below, so a new one needs no edit here. Linux only: the stack is the same wheels
-  # everywhere, and the solves are CPU-bound. 40 minutes for every analysis's benchmarks; past
-  # 25 measured minutes the job splits into shards (structural, dynamics, thermal and flow).
+  # The solves need the optional cadgen[fea] mesher (netgen) and CalculiX, which no other job
+  # installs: without them every test_fea*.py skips its solves. Linux only: the stack is the same
+  # wheels everywhere, and the solves are CPU-bound.
   fea:
     name: fea
     needs: changes

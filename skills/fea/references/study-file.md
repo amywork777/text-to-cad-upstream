@@ -20,37 +20,25 @@ at once with a sentence naming the field.
   "mesh": {"size_mm": 2.5},
   "output": {"deformation_scale": "auto"},
   "margin": 2,
-  "view": {"controls": [{"drives": "load_scale", "label": "Rider weight", "min": 0.5, "max": 3}]}
+  "checks": [{"kind": "stress"}, {"kind": "displacement", "limit_mm": 0.5, "faces": ["bracket/face 22"], "label": "Tip sag"}]
 }
 ```
-
-## `analysis`
-
-Which question the study answers. Optional; left out, it is `static`, and a study without it
-behaves exactly as one with `"analysis": "static"`. Any other name is refused with a sentence
-listing the analyses cadgen knows.
-
-| `analysis` | plain word | status | its keys |
-| --- | --- | --- | --- |
-| `static` | Strength | runs today | this page, and [linear-static.md](linear-static.md) |
-
-What comes next is in [planned-next.md](planned-next.md).
 
 ## Keys
 
 | key | meaning |
 | --- | --- |
-| `analysis` | the analysis (above); default `static` |
 | `material` | a table name or an object ([`material`](#material)) |
 | `fixtures` | the faces held, `fixed` or `roller` ([`fixtures`](#fixtures)); at least one |
 | `loads` | forces and pressures on faces, gravity and acceleration on the whole part ([`loads`](#loads)); at least one |
 | `mesh` | element size and finer balls ([`mesh`](#mesh)) |
 | `output` | how the result is drawn ([`output`](#output)) |
 | `margin` | the safety factor to keep ([`margin`](#margin)) |
+| `checks` | what the result is judged by ([`checks`](#checks)) |
 | `parts`, `connections`, `contact_tolerance_mm` | an assembly ([Assemblies](#assemblies)) |
-| `view` | what the Viewer's Study shows ([`view`](#view)) |
 
-Any other key is refused with a sentence naming the keys a study takes.
+Any other key is refused with a sentence naming the keys a study takes, and so is an unknown key
+inside `material`, `mesh` or `output`.
 
 ## Units
 
@@ -74,9 +62,8 @@ A name from [materials.md](materials.md), or an object:
 ```
 
 An object may also name a table entry and override some of its fields:
-`{"name": "steel", "yield_MPa": 355}`. The material must be the same in every direction: an
-`orthotropic` block is refused. A material with no yield strength (a piezo ceramic, a rubber given
-only by its `hyperelastic` block) needs `yield_MPa` for the stress check.
+`{"name": "steel", "yield_MPa": 355}`. An object takes `name`, `E_MPa`, `nu`, `yield_MPa` and
+`density_t_per_mm3`, nothing else; one with no table name needs the first three.
 
 ## `fixtures`
 
@@ -177,8 +164,7 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
 `size_mm` is the target element size. Omitted, it is a fortieth of the part's bounding diagonal.
 Halving it roughly multiplies the run time by eight; a first run at the default, then one
 refinement to confirm the peak, is the usual pattern. `--mesh-size` on the command line overrides
-the file for one run. Elements are quadratic tetrahedra (CalculiX's C3D10); `order` may be left out
-or given as 2, and any other order is refused.
+the file for one run. Elements are quadratic tetrahedra (CalculiX's C3D10).
 
 `refine` meshes balls finer than the rest, where a small detail decides the answer (two curved
 parts touching, a sharp notch):
@@ -207,113 +193,27 @@ yields has no margin). A result under it, but above 1, is a `low_margin` warning
 `yields` error. Raise it for polymers, fatigue or a part whose failure hurts someone; lower it only
 when the user says the load is known exactly.
 
-## `view`
+## `checks`
 
-What the Viewer's Study shows for the result, all picked from closed vocabularies: the
-`checks` its verdict judges, the `sections` it shows, the `controls` of What you see (each shown
-`when` it helps), named `presets` of them, and what is drawn (`show`). Optional; without it the
-verdict is the stress check and Study shows every section, with a field select over every field,
-opening on stress, and a deformation slider. cadgen checks it with the rest of the study and copies
-it into the GLB (`extras.view`) and the sidecar (`view`).
-
-```json
-"view": {
-  "checks": [
-    {"kind": "stress"},
-    {"kind": "displacement", "limit_mm": 0.5, "faces": ["bracket/face 23"], "label": "Tip sag"}
-  ],
-  "sections": ["verdict", "setup", "controls", "details"],
-  "controls": [
-    {"drives": "load_scale", "type": "number", "label": "Rider weight", "min": 0.5, "max": 3, "default": 1, "unit": "×", "when": "failing"},
-    {"drives": "field", "type": "enum", "label": "Show", "options": ["von_mises", "displacement"], "default": "von_mises"},
-    {"drives": "deformation", "type": "number", "label": "Exaggerate"},
-    {"drives": "threshold", "type": "number", "label": "Over half yield", "field": "von_mises", "min": 0, "max": 300, "default": 138, "unit": "MPa"}
-  ],
-  "presets": [{"label": "Cruise", "load_scale": 1}, {"label": "Landing (3×)", "load_scale": 3}],
-  "show": {"loads": true, "fixtures": true}
-}
-```
-
-### `checks`
-
-What the result is judged by; pick them from what the user asked. cadgen evaluates every check on
-the written solve and writes each result (`kind`, `label`, `value`, `limit`, `unit`, `ratio` = value
-over limit, `close_at`, `status` of `fails`, `close` or `passes`, and `where`, the face and point of
-the worst value) into the summary (`summary.checks`), the GLB (`extras.checks`) and the CLI lines.
-The verdict says how many fail and how much of the load the weakest takes, then one row per check,
-worst first, all scaled by `load_scale` (stress and displacement are linear in the load).
+What the result is judged by; pick them from what the user asked. Optional; left out, the stress
+check alone. cadgen evaluates every check on the written solve and writes each result (`kind`,
+`label`, `value`, `limit`, `unit`, `ratio` = value over limit, `close_at`, `status` of `fails`,
+`close` or `passes`, and `where`, the face and point of the worst value) into the summary
+(`summary.checks`), the GLB (`extras.checks`) and the CLI lines. The Viewer's verdict says how many
+fail and how much of the load the weakest takes, then one row per check, worst first; its load
+slider scales them all (stress and displacement are linear in the load).
 
 | `kind` | judges | keys |
 | --- | --- | --- |
-| `stress` | peak von Mises against each part's yield (an assembly's weakest part): fails under a safety factor of 1, close under the margin. Today's verdict | `margin` (default the study's `margin`; give it once, the same if both), `label` |
+| `stress` | peak von Mises against each part's yield (an assembly's weakest part): fails under a safety factor of 1, close under the margin | `margin` (default the study's `margin`; give it once, the same if both), `label` |
 | `displacement` | the largest displacement over the whole model, or over `faces` (they may span parts), against `limit_mm`: fails past it, close within a tenth of it (the model's own accuracy) | `limit_mm` (required, > 0), `faces` (face refs, resolved like the fixtures'), `label` (the user's words, "Tip sag") |
 
 "Will it break", "is it strong enough": `stress`. "How much does it sag or deflect", or a
 stiffness spec: a `displacement` check with their limit on the faces they mean, labelled in their
 words; keep `stress` too unless they only care about stiffness. At most one `stress` check; an
-empty list is refused (leave `checks` out for the stress check alone). A failing displacement
-check is an error finding ("'Tip sag' moves 2.1 mm, more than the 0.5 mm allowed"); the stress
-check's findings are the yields and margin findings already made.
-
-### `sections`
-
-The parts of Study, in order, from `verdict`, `setup` (Held at, Pushed, Made of, each only where
-the study has it), `controls` (What you see) and `details` (the mesh). Default all four, in that
-order; list them only to leave something out (`["verdict", "controls"]` for a quick look). A
-section listed twice or unknown is refused. Parts stays its own sidebar section (`show.parts`).
-
-### `controls`
-
-`controls` are listed in the order Study shows them, at most one per `drives`. The agent picks
-the words (`label`, `unit`) and ranges; the Viewer decides what dragging one does:
-
-| `drives` | `type` | what it moves | keys |
-| --- | --- | --- | --- |
-| `field` | `enum` | which field the colours show | `options` (fields the result writes: `von_mises`, `displacement`; default both), `default` (default the first option) |
-| `deformation` | `number` | how many times the displacement is drawn | none: leave `min`, `max` and `default` out and it runs from 0 to four times the result's own `deformation_scale`, opening there (the solve picks that scale, so a fixed range is often wrong); or `min` (default 0), `max` and `default` (left out, the result's own) |
-| `load_scale` | `number` | the load as a multiple of the solved one: stress, displacement and deformation times it, safety factors divided by it | `min` (default 0.1; more than 0, since at no load there is nothing to show), `max` (required), `default` (1 where the range holds it, else `min`) |
-| `threshold` | `number` | values of `field` under it are drawn grey, so only the regions over it carry colour | `field` (required), `min` (default 0), `max` (required), `default` (default `min`), in that field's units |
-
-Every control may add `when`: `always` (default), `failing` (shown only while a check fails or is
-close at the load shown) or `passing` (only while every check passes). A hidden control keeps its
-value and acts at its default meanwhile. A `load_scale` control's own `when` is judged at its
-default load (as solved, unless its `default` says), so dragging it never hides it: a load slider
-`when: failing` appears on a part that fails and stays while the person drags it down to a load
-that passes.
-
-`type` may be left out; given, it must be the one above. `min` is zero or more and below `max`, and
-`default` lies between them. Every number is finite. Leave `controls` out for the default field
-select and deformation slider; an empty list is refused. The findings stay those of the solved load
-whatever `load_scale` is set to.
-
-- Every control is more to read: leave `controls` out unless the user asked something a control
-  answers. Declaring `controls` replaces the default pair, so list Show and Exaggerate with what
-  you add: `{"drives": "field", "label": "Show"}` and `{"drives": "deformation", "label":
-  "Exaggerate"}`, the deformation with no range (a fixed `max` can pin it).
-- Use `load_scale` when the user asks how much the part can take, or what happens at a heavier
-  load, labelled with the load in their words ("Rider weight"), `when: failing` when it only helps
-  a part that fails.
-- Open `field` on `displacement` only for a study about deflection.
-- Use `presets` only for two or more load cases the user named ("landing" and "cruise"):
-  `{"label": ..., <drives>: value}`, each key the `drives` of a declared control, each value in its
-  range (an option for `field`). With no `controls`, a preset may set `field` and `deformation`
-  (zero or more), the two the Viewer shows by default. A preset is a full state: controls it does
-  not name go back to their defaults. A single case is the load slider's default, not a preset, and
-  a preset that only moves one slider repeats it.
-- Use `threshold` only when the user asked where the stress is over a limit (half yield, an
-  allowable stress, a deflection limit on `displacement`), with that limit as its `default` and in
-  its label ("Over half yield"), so it shows what they asked when the result opens. One at its
-  minimum greys nothing, so it does nothing until dragged.
-- `show`: `loads` and `fixtures`, `true` or `false` (default both true): whether the arrows on the
-  loaded faces and the cones on the fixed faces are drawn when the result opens. The person can
-  still turn them on with the checkbox in What you see. `parts`, `true` or `false`: whether an assembly's Parts section is
-  shown. Left out, it shows from six parts up; under that, a face picked on the model names its
-  part, the part's material and its margin, and the findings name the joints. Set it `true` when
-  the user asked about the parts or joints of a small assembly.
-
-An unknown key, `kind`, `drives`, section or `when`, a field the result does not write, a range out
-of order or a preset naming no control is refused with a sentence naming the key, like every other
-study error.
+empty list is refused (leave `checks` out for the stress check alone), and so is an unknown `kind`
+or key. A failing displacement check is an error finding ("'Tip sag' moves 2.1 mm, more than the
+0.5 mm allowed"); the stress check's findings are the yields and margin findings already made.
 
 ## What comes out
 

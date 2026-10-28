@@ -72,8 +72,6 @@ def _uniaxial(directory: Path, angle: float, **more):
     study = {"material": "steel", "mesh": {"size_mm": 6.0},
              "fixtures": [{"faces": [faces["-x"], faces["-y"], faces["-z"]], "type": "roller"}],
              "loads": [_pull(faces)], **more}
-    if study.get("analysis") == "modal":
-        study.pop("loads")
     return solve(step, directory / f"block{angle:g}.fea.glb", study)
 
 

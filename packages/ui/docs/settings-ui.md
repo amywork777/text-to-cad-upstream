@@ -768,233 +768,62 @@ on screen (`kit/status/statusLabels.js`).
 
 A GLB that `cadgen fea solve` wrote is a result: a linear static stress study of a part or a bonded
 assembly, its mesh carrying every field (von Mises stress and the displacement), the true
-displacement, a plain-language summary, the study it was solved for and the source face of every
-triangle (`glb/feaResult.js`). The study is read once there (`result.study`: the material, fixtures,
-loads, mesh and margin), and the viewer reads it from there, never the file's raw echo. Its choices
-are Study's, and what the colours mean is on the view; the view's own settings are any GLB's. It
-has no mode of its own.
+displacement, the study it was solved for, the checks cadgen judged and the source face of every
+triangle (`glb/feaResult.js`). The viewer reads the study once there (`result.study`), never the
+file's raw echo. Its layout is the viewer's: a file says what was solved and judged, not how to show it.
 
 The FEA viewer is a chunk of its own (`glb/feaView.jsx`: its surface, `glb/FeaSurface.jsx`, Study, the
 colour bar, the markers, `feaResult.js` and `fea/`), which `GlbRenderer` loads with one `import()` only once
-the loaded scene carries a mesh `cadgen fea solve` wrote (`generator` and `fields` in its extras), and then draws
-the file with its surface instead of the GLB's: one shell, the same tools, the result's own layers. A plain
-GLB never fetches it and renders as it always has; a result waits as the file loading until the
-chunk is in (loaded once, for every result after it), so it is framed once, as it is drawn. Its words
-are in `glb/fea/`: per check kind one row of `checkKinds.js` (stress and displacement), per field one
-of `fields.js`, Study's setup in `setup.js` and What you see's own controls in `controls.js`.
+the scene carries a mesh `cadgen fea solve` wrote (`generator` and `fields` in its extras). A plain GLB
+never fetches it. Its words are in `glb/fea/`: per check kind one row of `checkKinds.js` (stress and
+displacement), per field one of `fields.js`, Study's setup in `setup.js`, What you see's controls in `controls.js`.
 
-- **Its tools, Parts and Study.** A result has every GLB's tools (`kit/tools/sceneTools.jsx`): Select first,
-  picking the result's faces rather than its nodes, then Annotate, Measure and Clip (below). Study, and an
-  assembly's Parts above it, are sections of the file sidebar (`glb/FeaStudyPanel.jsx`, see
-  [The file sidebar and the tool stack](#the-file-sidebar-and-the-tool-stack)), whatever the tool: each a tile
-  that opens it, in the Links tree's rows, as a STEP's Model tree is, and none open as the file opens.
-  - **Parts**, only for an assembly of six parts or more (`parts` in the file, `feaShowsParts` in
-    `glb/feaResult.js`; a single part's result has none, and looks as ever). Under six, the parts
-    are told apart on the model: a face picked there names its part, and its chip's card says the
-    part's material and what it holds; the findings name the joints. The study's `view.show.parts`
-    shows or hides it whatever the count. One row per part, its name, then its material and "holds 1.5×", or "yields"
-    under 1. Under each part, the joints it is in, each naming only the
-    OTHER part ("↔ chassis bulkhead"), then "bonded · 88 mm²", with "· 0.1 mm gap closed" when a gap
-    was closed to bond it, or "not connected" and how far apart for a free pair. A joint is so under
-    both its parts, and either row is the same choice (both rows show it chosen). The weakest part
-    (the one the file names, else the lowest factor) opens with its joints and the rest start shut,
-    so four parts and their joints do not fill the column; each opens by its chevron. Names and
-    details wrap between words, never cut off.
-  - **Study** leads with the answer and reads the study in plain words, technical terms after them
-    or in hints, so a person who is not an engineer has the answer in two seconds. Its sections are
-    the study's to pick (`view.sections`, `feaSections` in `glb/feaResult.js`: the verdict, the setup,
-    What you see and Details, in the view's order, leaving out what it omits and skipping a name the
-    viewer does not know), each only where the file has something for it; with none named, all four,
-    top to bottom:
-    - **The verdict** (`glb/FeaVerdict.jsx`, from `feaVerdict` in `glb/feaResult.js`), a block on
-      the status tone's own background at the top of the panel's body, in the theme's status tones:
-      error (a crossed circle), warning (a triangle), success (a ticked circle). Three parts, top to
-      bottom:
-      - **A headline**, in the worst check's tone. One check says it in its own words: a stress
-        check **Too weak** under a safety factor of 1, **Close to the limit** under the study's
-        margin (`study.margin`, else cadgen's 2) and **Strong enough** from it up; a displacement
-        check **Moves too much**, **Close to the limit** (within a tenth of its limit) or **Stiff
-        enough**. Several say how many fail ("Fails both checks", "Fails 1 of 2 checks"), else
-        **Close to the limit** or **Passes all checks**.
-      - **What it means for the load**, one line: how many times this load the weakest check takes
-        before its limit, floored ("OK only to 0.4× this load" under 1, "OK up to 1.6× this load").
-      - **Each check, the same way**, worst first (failing before close before passing, then the
-        checks the person named in the view, `view.checks[].label`, in their order, then the most of
-        its limit used), under a hairline: its icon and name in its own tone (its name in
-        the person's words, "Bulkhead top sag", or Strength), a thin bar of how much of its limit it
-        uses (a `meter`: filled to the value over the limit, held at full past it with its end
-        striped, and for a stress check a tick at the margin, which the meter's text names), and its
-        value against its limit ("1.04 mm, limit 0.5 mm", three figures for a displacement: 1.04 is
-        not 1; "405 MPa, limit 276 MPa", the limit an assembly's weakest part's yield). A line is
-        kept whole in pieces that break between them, never inside a word. Each check is
-        chosen on a press, as Study's rows are: it tints the faces it is over (`faces`), else the face
-        it peaks on (`where.ref`), else names the whole result, and carries its sentence into Quick
-        Edit ("Tip sag fails: moves 0.62 mm, limit 0.5 mm (OK only to 0.8× this load)"; an
-        assembly's stress check names its part there: "Strength fails in bulkhead right support
-        block: ...").
-      Everything follows the load shown (`load_scale` k): each value and share of its limit is k
-      times the solved one, so a check, and the headline, can change its word. With no stress it
-      says **No stress** and "Check the load reaches the part", in no tone and with no checks; at a
-      load of 0, **No load**. The checks are the study's (`extras.checks`, `feaChecks`: each judged
-      by cadgen, value against limit, `ratio`, `status`), a kind the viewer does not know skipped; a
-      result older than them has the one stress check, derived from its safety factor, so it says
-      what it always did. A result with a stress but no safety factor and no checks has no verdict.
-    - **The setup**, read as sentences, each heading muted with, in the disclosure column, the glyph
-      its marker is drawn as on the model (`glb/feaGlyphs.jsx`, lucide's grid at the trees' light
-      stroke): **Held at** (a cone pointing into a face, the fixtures' grey), one row per fixed face
-      (a fixture of `type` "fixed", or none given), its name alone ("Face 17"; in an assembly "post ·
-      face 17"); right after it **Slides on** (the same cone on a plate that rolls on the face, the
-      same grey), one row per face of a roller fixture (`type` "roller", a frictionless sliding
-      support), named as Held at's are, its hint "May slide along the face, not move off it", chosen
-      as Held at's are, tinting its faces and its markers ("Slides on face 3"; loaded too, "Sliding
-      and loaded face 3"); **Pushed** (an arrow with a cone
-      for its head, the loads' ink), one row per load, how much and which way ("2500 N down": "down"
-      and "up" are CAD Z, else "along −X" or the unit vector; or "2 MPa pressure"), its faces under
-      it by name, shut until its chevron opens them (choosing the load row still tints all its faces
-      and its arrows); and **Made of** (a swatch), the material's name ("Aluminum 6061-T6"; its
-      yield is the verdict's to say). Each material is called by its display name, cadgen's: a table
-      entry's ("Steel (structural, generic)"), or an object's own `name`, tidied as cadgen writes it
-      ("Soft silicone"; a file older than that, its first letter capitalised). In an assembly whose
-      parts differ in two or three materials, each is named inline with its parts ("Aluminum 6061-T6
-      bracket, Stainless steel 304 shaft"; a material of three parts or more with how many, "Steel (3
-      parts)"); past three, "Mostly Aluminum 6061-T6" where one material has most of the parts, else
-      "4 materials", each part's own in its hint; every part's own is in Parts and a picked face's
-      chip too; a part with none of its own takes the study's. The
-      material row is chosen like a face, tinting nothing: it carries the whole result (every part in
-      an assembly) into Quick Edit with what it is made of ("Made of Aluminum 6061-T6 (yield 276 MPa)",
-      or each material with its parts). A
-      heading neither chooses nor folds; its rows hang from a faint line under its glyph. A face or
-      material row too long for the one width wraps between words, never cut off.
-      A body load is Pushed's too, a row of its own with no faces ("1 g down", "5 g along +X"),
-      chosen with the whole result ("Its weight, 1 g down", "Accelerated 5 g along +X", its hint
-      saying every part of it is pushed the other way).
-    - **What you see**: the controls the study's
-    `view` chose (`feaControls` in `glb/feaResult.js`), in its order, with its labels, ranges and
-    units, each a settings row (`glb/fea/controlRow.jsx`): a number a slider with its value field,
-    as Position's joints are (`FileSheetSliderField`), a choice a select, a sentence-long label wrapping between words on its
-    value field's line and the slider the row's whole width under them (`wideLabel`), so the
-    narrow panel still gives the slider room. A control the view gives a `when` shows only while a
-    check fails or is close (`failing`) or only while every check passes (`passing`), judged live at
-    the load shown (`feaShownControls`); a hidden one keeps its value and acts at its default meanwhile.
-    The load control's own `when` is judged at its default load, where it opens, so dragging it never
-    hides it: a load slider shown while the part fails stays while the person drags it to a load that
-    passes. What each moves is the viewer's, from a closed set (`drives`, cadgen's `VIEW_DRIVES`):
-    **field** (a select of the fields the file carries, in plain words, as the colour bar names it
-    too: Stress, Displacement), **deformation** (how many times the displacement is drawn, "×12.0";
-    its value box as wide as the value needs, so a large exaggeration is never cut off), **load_scale**
-    (the load as a multiple of the solved one, "×1.50") and **threshold** (values of its field under
-    it drawn neutral grey, "138 MPa"). A control whose `drives` or type the viewer does not know is
-    skipped. With no `view`, or none of its controls the viewer can draw (an empty list, or all from a
-    newer cadgen), What you see is the viewer's own (`fieldAndDeformation` in `glb/fea/controls.js`),
-    and a preset may set those: a Field select with no visible label over every field, opening on
-    stress, and a Deformation slider with its committed number, from 0 to four times the file's own
-    exaggeration. A view that picks the field but names no deformation keeps that Deformation slider
-    after its controls. When the view names
-    `presets`, a **Preset** row leads What you see, the Position panel's Pose row (`KinematicsPoseRow`)
-    labelled "Preset": Default, each preset (a full state: every control at its default but what
-    the preset sets), and Custom once any control moves.
-    - **Details**, shut until its chevron opens it: the mesh, its size ("Mesh 1.9 mm elements"), how
-      it got there ("refined from 2.8 mm", "not refined") its hint. The mesh row is chosen as the
-      material is, carrying "Mesh of 1.9 mm elements, refined from 2.8 mm" with the whole result.
+- **Its tools, Parts and Study.** A result has every GLB's tools, Select picking its faces rather than its
+  nodes, then Annotate, Measure and Clip (which cuts it open in the field's colours; it has no X-ray). Study,
+  and an assembly's Parts above it, are sections of the file sidebar (`glb/FeaStudyPanel.jsx`).
+  - **Parts**, only for an assembly of six parts or more (`feaShowsParts`); under six, a face picked on
+    the model names its part. One row per part, its material and "holds 1.5×" (or "yields"), the joints
+    it is in under it ("↔ base", "bonded · 88 mm²"), the weakest part open.
+  - **Study**, always in this order:
+    - **The verdict** (`glb/FeaVerdict.jsx`, `feaVerdict`): a headline in the worst check's status tone
+      ("Too weak", "Moves too much", "Fails 1 of 2 checks", "Passes all checks"), how much of this load
+      the weakest check takes ("OK only to 0.8× this load", "OK up to 1.6× this load"), then each check,
+      worst first, with a meter of how much of its limit it uses and its value against the limit. The
+      checks are the file's (`extras.checks`, `feaChecks`); a result older than them has the one stress
+      check its safety factor gives. With no stress it says **No stress**; at a load of 0, **No load**.
+    - **The setup**, as sentences under glyphs that match the markers: **Held at**, **Slides on** (a
+      roller), **Pushed** (each load, its faces under it, shut) and **Made of**.
+    - **What you see** (`feaControls` in `glb/fea/controls.js`, each row `glb/fea/controlRow.jsx`): a
+      Field select (Stress, Displacement), a Deformation slider from 0 to four times the file's own
+      exaggeration, opening at it, and a Load slider from 0.1× to 3× the solved load, opening at 1×;
+      then the **Loads and fixtures** checkbox, on as the file opens, saying what it draws.
+    - **Details**, shut: the mesh size and how it got there.
 
-    Each group shows only where the file records something for it (`SETUP_GROUPS` in
-    `glb/fea/setup.js`, and Details' `detailRows`), so a result written before its study was recorded
-    has its verdict, if it has a safety factor, and What you see alone. Study keeps the sidebar's
-    width: the verdict and the setup wrap to fit it, and its sections run in the view's order in the
-    sidebar's one scroll.
-  - **Framing.** The camera frames a result right of the chrome at the view's left (the strip, the file sidebar
-    and the section open in it) and above the colour bar: whenever
-    the viewport fits the camera (opening, Zoom to Fit, a reset) it reads how much of its width the shown
-    panels cover and how much of its height the colour bar does (`runtime.framingInset`, `framingInset` in
-    `glb/feaChrome.js`) and fits the model into what they leave, panned to the middle of it (`insetLeft`,
-    `insetBottom` in `kit/camera/viewportCameraFit.js`); it orbits about that point, as after a pan. A section
-    opened or closed later does not reframe; Preview, a view of its own, frames in the whole width.
-
-  A GLB that is not a result has the same tools, its Select picking its nodes, and no Study.
-- **Choosing faces.** A fixed face, a load or a load's face chosen in Study tints its triangles
-  (two thirds of the way to magenta, which no colour of the ramp is, so it reads at either end
-  of the ramp while the stress still shows through) and carries
-  them into Quick Edit by the STEP the result was solved from, with what they are: "Fixed face
-  17", "Slides on face 3", "2500 N load on face 22", and a face that is both "Fixed and loaded face 17". A press on the result under Select picks the face under the
-  pointer the same way, called what Study calls it ("Face 3" for a face the study does nothing
-  to). What is chosen is Quick Edit's chip, named as Study names it; one face's chip has a card under the
-  ref it names: what the study does to it ("fixed", "slides along it", "2500 N load, down", "free"), and the
-  copy key copies the STEP's path and the ref, as a STEP's Copy writes it. Escape, the chip's X, Quick Edit's
-  clear and a press on nothing let go. In an assembly the card has one more row, **Part**: the part's material
-  and what it holds at the load shown ("6061‑T6 · holds 1.4×", or "yields"), as Parts' rows say it, so a small
-  assembly with no Parts section loses nothing.
-- **Choosing a part or a joint** in Parts is choosing faces, for an assembly (`_PART`, `parts` and `connections`
-  in the file). A part tints all its triangles and
-  carries its ref into Quick Edit ("Part 'post'"); a joint tints the interface faces of both sides and
-  carries them ("Bonded joint between 'post' and 'base'"), its two parts tinted lightly around them; a free pair has no faces, so it carries
-  both parts' refs ("'post' and 'lid' aren't connected"). A part's or a joint's chip has no card, and
-  in an assembly a picked face's chip is named with its part ("post · face 1").
-- **A colour bar** floats at bottom-centre on Preview's playbar's line (`FEA_BOTTOM_LINE` in
-  `glb/feaChrome.js`; `FLOATING_CHROME_SURFACE_CLASS`, no pointer events), in the tools view and in Preview
-  (its view's overlay), one playbar's height higher in Preview, where the Load ramp's playbar is. It is only
-  the scale, on one row 20rem wide (less on a narrow viewport): the field in Show's words ("Stress",
-  "Displacement"), then its range and units along the ramp ("0", "47.3 MPa"). What the numbers mean
-  for the part is the verdict's, so the bar says none of it. It has no controls.
-- **Findings stay in the file for the agent.** The result's checks (`findings` in the GLB's extras,
-  the sidecar and the CLI's lines) are what the agent reads and acts on; the viewer raises no alert
-  card and puts no icon in the navbar for them (a board's findings keep theirs). The verdict at the top of Study is
-  the viewer's status. Only a failure to load has the alert card.
-- **A load other than the solved one** (`load_scale` k; the study is linear, so it scales exactly):
-  the colour bar's range is k times the solved one, the safety factor and every part's "holds" (in Parts and a picked face's chip) are divided by k, so a part
-  can turn to "yields" (at no load there is no factor, and "holds" is left out), and the displacement is drawn k times further. The colours keep their place
-  on the bar, which reads k times higher. A threshold compares its field at the load shown.
-- **Its routine, the Load ramp**, the viewer's own (`LOAD_RAMP` in `glb/feaView.jsx`, played through
-  `useGlbAnimation`'s own clips), looping as its Loop says: from the file sidebar's Animation in the
-  tools view, and from Preview's playbar in Preview, whose scene shares the result's geometry, so the
-  colours and the deformation it draws are drawn there too. It plays the load going on, from none to
-  the load chosen, over two seconds, the colours climbing under the bar of that load and the
-  deformation and markers following. Nothing is baked into the file: the viewer deforms from the
-  displacement it carries. Preview frames the camera once, on the box the model is drawn in from rest
-  to the deformation and load it opens on (`glb/feaBounds.js`; the positions are linear in the load,
-  so every moment of the ramp is inside it), so the camera never zooms while it plays. Letting go puts
-  the model back at the load chosen. The colour bar steps up above the playbar while it is there.
-- **Loads and fixtures on the model** (`glb/feaMarkers.js`), from the study the file records: on
-  each loaded face one to five arrows (more on a bigger face), spread over it, each 8% of the
-  model's diagonal long whatever the load, pointing along the force with its tip on the face (a
-  pulling force stands on the face by its tail); a pressure's arrows run along the inward normal;
-  a label beside each load's arrows, past one arrow's free end (a push's tail, a pull's tip: of several,
-  the one nearest their middle, never the middle itself, which arrows all round a shaft put inside the
-  part), says its amount at the load shown ("300 N", "2 MPa"). A label is never
-  drawn on, inside or behind the part. It stands at that arrow's own outer end, a few pixels on along it, its
-  text running on the way the arrow points (centred over an arrow that stands up; `besideEnd` in
-  `glb/feaChrome.js`), only where that end is in sight and the label drawn there lies over none of the model
-  (two rays: from the eye to the end, and through the label); otherwise, and always for a body load, drawn
-  through the part, it is carried along the arrow's line out of the
-  model's box by the nearer way (`labelOutside` in `glb/feaMarkers.js`) and on screen past the outline of the
-  model's box (`pastOutline`: the hull of its corners), so "1 g down" stands beside the model and a load in a
-  pin hole is labelled outside it. No label is drawn past the view's edge (it is drawn whole against it), under
-  the tool strip, the tool stack and the file sidebar at the view's left (`chromeCover`: one there moves right of them) or over
-  the colour bar (`colourBarCover`: above it), nor over another label: each in turn is nudged up or down
-  clear of those before it (`settleLabels`), every frame, however the view has been turned. On each fixed face, small cones point into it; on a roller's face (Slides on), the
-  same grey cone stands on a small plate on two balls resting on the face, pointing into it along
-  its normal, unlabelled, drawn wherever fixtures are. A **body load** (gravity, an acceleration) is
-  one arrow through the model's middle along it, "1 g down". They stand on the deformed shape as it is
-  drawn, in two passes, the x-ray look: what is in view solid, depth-tested as the model is,
-  and what the model hides as a faint ghost (a quarter opacity) over the surface, so a fixture
-  under the base reads as under it, never as standing on the face in front; a load's label the
-  part hides is ghosted the same way (a ray from the eye through where it is drawn, cast at most
-  every 100 ms while the view moves; past the outline, the part hides none). The theme has no colour to spare (every saturated hue
-  is the ramp's or the chosen faces' magenta): loads are the ink, fixtures a muted grey, and a
-  chosen load row's arrows, or a chosen fixed or roller row's cones, take the chosen magenta. Each
-  kind is one row of a table (`MARKER_KINDS` in `glb/feaMarkers.js`). What you see has one gate for
-  them, a checkbox after its controls, titled **Loads and fixtures**, its line saying what it draws
-  ("Arrows where the study loads the part, cones where it holds it."), on unless the study's
-  `view.show` turns both off (it then draws both when turned on); `view.show` leaving one kind off
-  keeps it off (`loads` the ink's kinds, `fixtures` the grey's), its labels with it.
-- **Clip** cuts a result open, so what is inside a part shows in the field's colours. It is the Clip every scene has
-  (`kit/tools/model-effects/`: its tool, its row and the viewport's cut, `useSceneEffects`), kept as the
-  file's view keeps it; it never recolours, so the colour bar reads as before. A pick goes through what the
-  cut took away to the face it shows, and a label whose marker acts there (`face`, else its free end) is left
-  out: both read the plane in force from the runtime (`activeClipPlanes`). A result has no X-ray: X-ray,
-  Hidden line and Wireframe are drawn from edges, and a result has none.
-- **The choices are the file's view**: one renderer slice (`fea`: the field, the deformation, the
-  load, the threshold, the preset and the markers' gate), written against the result's fields, scale
-  and view, so a re-solved result opens at its own defaults.
+    A group shows only where the file records something for it, so a result written before its study
+    was recorded has its verdict and What you see alone.
+- **Choosing.** A row of Study or Parts, a check in the verdict, or a face pressed under Select tints
+  what it stands for (two thirds of the way to magenta, which no colour of the ramp is) and carries it
+  into Quick Edit by the STEP the result was solved from, with what it is ("Fixed face 17", "Part
+  'post'", "Tip sag fails: moves 0.62 mm, limit 0.5 mm (OK only to 0.8× this load)"). One face's chip
+  has a card: what the study does to it and, in an assembly, its part.
+- **A load other than the solved one** (the Load slider, k; the study is linear, so it scales exactly):
+  the colour bar's range, every check's value and the displacement drawn are k times the solved ones,
+  every "holds" is divided by k, and the verdict can change its word.
+- **A colour bar** at bottom-centre (`glb/FeaColourBar.jsx`, `glb/feaChrome.js`): the field and its range,
+  no controls. **Findings** stay in the file for the agent: the viewer raises no alert for them.
+- **Loads and fixtures on the model** (`glb/feaMarkers.js`, one row of `MARKER_KINDS` per kind): arrows
+  on each loaded face (one through the middle for a body load) labelled with the amount at the load shown,
+  never on or inside the part (`glb/FeaLoadLabels.jsx`); grey cones into each fixed face, on a plate for a
+  roller. They stand on the deformed shape, a faint ghost where the model hides them.
+- **Its routine, the Load ramp** (`LOAD_RAMP` in `glb/feaView.jsx`, one of `useGlbAnimation`'s own clips),
+  in the sidebar's Animation and Preview's playbar: the load going on from none to the load chosen over two
+  seconds. Preview frames once on the box the model is drawn in over the ramp (`glb/feaBounds.js`).
+- **Framing.** The camera frames a result right of the file sidebar and above the colour bar
+  (`runtime.framingInset`, `framingInset` in `glb/feaChrome.js`, `insetLeft` and `insetBottom` in
+  `kit/camera/viewportCameraFit.js`); Preview frames in the whole width.
+- **The choices are the file's view**: one renderer slice (`fea`: the field, the deformation, the load
+  and the markers' gate), written against the result's fields and scale, so a re-solved result opens at
+  its own defaults.
 
 ## Position and references
 

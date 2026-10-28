@@ -7,7 +7,7 @@ good answer from a bad one. The keys are in [study-file.md](study-file.md).
 
 - Small displacements, small strains: results scale linearly with the load. A part that deflects by
   more than a few percent of its own size, buckles, or contacts something else is outside the model.
-- Linear elastic, isotropic material below yield (an orthotropic material is refused). The safety factor tells you whether that assumption held; below 1 the real part
+- Linear elastic, isotropic material below yield. The safety factor tells you whether that assumption held; below 1 the real part
   yields and the stresses reported are not what it sees.
 - Fixtures are perfectly rigid. A `fixed` face is held still and bonded: a real bolt, weld or clamp
   is softer and spreads load, so a fixed face is the stiffest possible support. A `roller` face

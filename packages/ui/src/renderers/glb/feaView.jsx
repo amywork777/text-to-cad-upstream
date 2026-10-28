@@ -12,8 +12,8 @@ export { default as FeaStudyPanel, FaceCard } from "./FeaStudyPanel.jsx";
 export { default as FeaColourBar } from "./FeaColourBar.jsx";
 export { default as FeaLoadLabels } from "./FeaLoadLabels.jsx";
 export {
-  applyDeformation, faceIndices, facePartDetail, faceTitle, facePromptSummary, faceRole, feaControls, feaDefaults, feaMarkerShow, feaPresets, feaSections, feaShownControls,
-  feaShowsParts, feaVerdict, findingSelector, pickFace, readFeaResult, recolorByField, resultSourcePath, partRows, studySections, weakestPartIndex
+  applyDeformation, faceIndices, facePartDetail, faceTitle, facePromptSummary, faceRole, feaControls, feaShowsParts,
+  feaVerdict, findingSelector, pickFace, readFeaResult, recolorByField, resultSourcePath, partRows, studySections, weakestPartIndex
 } from "./feaResult.js";
 export { createFeaMarkers, markerGateText } from "./feaMarkers.js";
 export { feaDrawnBounds } from "./feaBounds.js";
@@ -37,14 +37,6 @@ export function faceRow(rows, ref) {
     if (found) return found;
   }
   return null;
-}
-
-/** A short, stable name for a view, for its slice's signature. */
-export function viewKey(view) {
-  const text = JSON.stringify(view);
-  let hash = 5381;
-  for (let i = 0; i < text.length; i += 1) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
-  return hash.toString(36);
 }
 
 /** A control's value: what was chosen, where it is still one of the control's; else its default. */

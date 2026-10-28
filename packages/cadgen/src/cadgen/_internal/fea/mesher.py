@@ -8,9 +8,8 @@ JOB RESULT``) that imports netgen and none of OCP: it reads the BREP the parent 
 faces to the parent's fingerprints (:func:`~cadgen._internal.fea.mesh.match_faces`), meshes
 (:func:`~cadgen._internal.fea.mesh.generate_mesh`) and pickles copies of the arrays back.
 
-Two jobs: a solid's volume mesh (:func:`volume`, the part and assembly meshers and the fluid domain's)
-and a plate's top skin (:func:`skin`, the shell model's). A mesher error (a face that does not match, no
-elements) is a RuntimeError in the parent with the child's message; a child that dies says so with the
+One job: a solid's volume mesh (:func:`volume`, the part and assembly meshers'). A mesher error (a face
+that does not match, no elements) is a RuntimeError in the parent with the child's message; a child that dies says so with the
 end of what it printed.
 """
 
@@ -23,32 +22,21 @@ import sys
 import tempfile
 import traceback
 from pathlib import Path
-from typing import Any
 
-__all__ = ["skin", "volume"]
+__all__ = ["volume"]
 
 #: The longest one mesh may take (s): past it the child is stopped and the study says so, rather than a
 #: mesher that never returns holding ``cadgen fea solve`` (and the engine or MCP server it runs in) for good.
 TIMEOUT_S = 3600.0
 
 
-def volume(brep: Path, prints: list, diagonal: float, h: float, refine: float, order: int, size_field: dict | None,
-           *, origin: list[int] | None = None, keys: dict[Any, list] | None = None, count_domains: bool = False):
+def volume(brep: Path, prints: list, diagonal: float, h: float, refine: float, size_field: dict | None,
+           *, count_domains: bool = False):
     """netgen's mesh of the solid in ``brep``: the verified face mapping (netgen face index -> fingerprint
-    ordinal, through ``origin`` -- ``origin[ordinal - 1]`` -- when given), the nodes, the volume and surface
-    elements, and (``count_domains``) the number of volumes. A size field's faces are keyed by ``keys``
-    (mapped ordinal -> its keys; none: the ordinal itself)."""
-    found = _run({"kind": "volume", "brep": str(brep), "prints": prints, "diagonal": diagonal, "h": h,
-                  "refine": refine, "order": order, "size_field": size_field, "origin": origin, "keys": keys,
-                  "count_domains": count_domains})
+    ordinal), the nodes, the volume and surface elements, and (``count_domains``) the number of volumes."""
+    found = _run({"brep": str(brep), "prints": prints, "diagonal": diagonal, "h": h, "refine": refine,
+                  "size_field": size_field, "count_domains": count_domains})
     return found["mapping"], found["coordinates"], found["e3"], found["e2"], found["domains"]
-
-
-def skin(brep: Path, h: float, edge_h: float):
-    """netgen's surface mesh of the faces in ``brep`` at ``h``, ``edge_h`` along every edge (``grading`` 0.3):
-    the nodes and the linear triangles (0-based)."""
-    found = _run({"kind": "skin", "brep": str(brep), "h": h, "edge_h": edge_h})
-    return found["nodes"], found["triangles"]
 
 
 def _run(job: dict) -> dict:
@@ -96,11 +84,7 @@ def _volume(job: dict) -> dict:
     ngmesh.SetMessageImportance(0)
     geometry = ngocc.OCCGeometry(job["brep"])
     mapping = match_faces(job["prints"], list(geometry.faces), job["diagonal"])
-    if job["origin"] is not None:
-        mapping = {index: job["origin"][own - 1] for index, own in mapping.items()}
-    keys = job["keys"]
-    keys_of_face = {index: ([ordinal] if keys is None else list(keys.get(ordinal, ()))) for index, ordinal in mapping.items()}
-    mesh = generate_mesh(geometry, ngocc, job["h"], job["refine"], job["order"], job["size_field"], keys_of_face)
+    mesh = generate_mesh(geometry, job["h"], job["refine"], job["size_field"])
     # Copies, deliberately: netgen hands out views into the mesh object's own memory.
     e3 = mesh.Elements3D().NumPy().copy()
     domains = None
@@ -110,20 +94,6 @@ def _volume(job: dict) -> dict:
             "e2": mesh.Elements2D().NumPy().copy(), "domains": domains}
 
 
-def _skin(job: dict) -> dict:
-    import netgen.meshing as ngmesh
-    import netgen.occ as ngocc
-    import numpy as np
-
-    ngmesh.SetMessageImportance(0)
-    shape = ngocc.OCCGeometry(job["brep"]).shape
-    for edge in shape.edges:
-        edge.maxh = float(job["edge_h"])
-    mesh = ngocc.OCCGeometry(shape).GenerateMesh(maxh=float(job["h"]), grading=0.3)
-    return {"nodes": np.array(mesh.Coordinates(), dtype=float, copy=True),
-            "triangles": mesh.Elements2D().NumPy()["nodes"][:, :3].astype(np.int64) - 1}
-
-
 def main(argv: list[str]) -> int:
     job_path, result_path = Path(argv[0]), Path(argv[1])
     job = pickle.loads(job_path.read_bytes())
@@ -131,7 +101,7 @@ def main(argv: list[str]) -> int:
         from cadgen._internal.fea.mesh import kernel_messages_on_stderr
 
         with kernel_messages_on_stderr():
-            found = (_volume if job["kind"] == "volume" else _skin)(job)
+            found = _volume(job)
     except RuntimeError as error:
         found = {"error": str(error)}
     except Exception as error:  # noqa: BLE001 -- said in the parent, with where it came from

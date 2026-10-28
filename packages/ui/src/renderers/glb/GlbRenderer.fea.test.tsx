@@ -130,7 +130,7 @@ it('the deformation value rescales the drawn displacement from the file\'s posit
   expect(position.getZ(2)).toBeCloseTo(-0.02, 6);
   act(() => { vi.advanceTimersByTime(500); });
   vi.useRealTimers();
-  expect(save.mock.calls.at(-1)![0].renderer.fea.value).toMatchObject({ field: null, scale: 0, loadScale: null, threshold: null });
+  expect(save.mock.calls.at(-1)![0].renderer.fea.value).toMatchObject({ field: null, scale: 0, loadScale: null });
 });
 
 it('takes the stored choice back for the same result, and not for a re-solved one', () => {
@@ -333,8 +333,9 @@ const ASSEMBLED = {
   ],
   connections: [{ between: ['part1', 'part2'], names: ['post', 'base'], type: 'bonded', area_mm2: 100, gap_mm: 0, faces: ['part1/face 1', 'part2/face 1'] }],
 };
-// Two parts would have no Parts panel (it shows from six up); the view asks for it.
-function mountAssembly(copied: string[], extras: Record<string, unknown> = { view: { show: { parts: true } } }) {
+// The Parts panel shows from six parts up: four more parts beside post and base, joined to nothing.
+const SIX_PARTS = [...ASSEMBLED.parts, ...[3, 4, 5, 6].map(n => ({ ...ASSEMBLED.parts[1], ref: `part${n}`, name: `pin ${n}` }))];
+function mountAssembly(copied: string[], extras: Record<string, unknown> = { parts: SIX_PARTS }) {
   const built = mount({ ...ASSEMBLED, ...extras }, undefined, { faces: [0, 0, 2, 1], host: clipboardHost(copied) });
   built.mesh.geometry.setAttribute('_part', new BufferAttribute(new Float32Array([0, 0, 0, 1]), 1));
   return built;
@@ -351,13 +352,14 @@ it('an assembly has a Parts panel above Study, each part with its joints, the we
   expect(parts.compareDocumentPosition(study) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   // The weakest part (post) opens with its joint under it, naming only the other part; base starts shut.
   const plain = (panel: HTMLElement) => rowTexts(panel).map(text => text!.replace(/\u2011/g, '-').replace(/\u00a0/g, ' '));
-  expect(plain(parts)).toEqual(['post6061-T6 · holds 1.4×', '↔ basebonded · 100 mm²', 'baseSteel · holds 2.5×']);
+  expect(plain(parts)).toEqual(['post6061-T6 · holds 1.4×', '↔ basebonded · 100 mm²', 'baseSteel · holds 2.5×',
+    ...[3, 4, 5, 6].map(n => `pin ${n}Steel · holds 2.5×`)]);
   expect(parts.querySelector('[data-study-row="part:0"] [data-study-detail]')!.className).not.toMatch(/truncate|ellipsis|overflow-hidden|whitespace-nowrap/);
   // Opened, base lists the same joint, naming post.
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Expand base' })); });
-  expect(plain(parts).slice(2)).toEqual(['baseSteel · holds 2.5×', '↔ postbonded · 100 mm²']);
+  expect(plain(parts).slice(2, 4)).toEqual(['baseSteel · holds 2.5×', '↔ postbonded · 100 mm²']);
   // Study no longer lists parts or joints; what the parts are made of, which differ, each with its part.
-  expect(study.querySelector('[data-study-row="material:name"]')!.textContent!.replace(/\u00a0/g, ' ')).toBe('6061-T6 post, Steel base');
+  expect(study.querySelector('[data-study-row="material:name"]')!.textContent!.replace(/\u00a0/g, ' ')).toBe('6061-T6 post, Steel (5 parts)');
   expect(study.querySelector('[data-study-row^="part:"], [data-study-row^="joint:"], [data-study-row="parts"], [data-study-row="connections"]')).toBeNull();
 });
 
@@ -369,10 +371,10 @@ it('an assembly\'s Parts and Study are two sections of the file sidebar, each wi
   expect(studyPanel()!.hasAttribute('data-sidebar-section')).toBe(true);
 });
 
-it('an assembly shows Parts from six parts up, and its view can show or hide it either way', () => {
+it('an assembly shows Parts from six parts up', () => {
   const more = (count: number) => Array.from({ length: count }, (_, index) => ({ ...ASSEMBLED.parts[index % 2], ref: `bracket.${index + 1}`, name: `part ${index + 1}` }));
-  for (const [count, view, shown] of [[4, undefined, false], [6, undefined, true], [4, { show: { parts: true } }, true], [6, { show: { parts: false } }, false]] as const) {
-    mountAssembly([], { parts: more(count), ...(view ? { view } : {}) });
+  for (const [count, shown] of [[4, false], [5, false], [6, true]] as const) {
+    mountAssembly([], { parts: more(count) });
     expect(Boolean(partsPanel())).toBe(shown);
     expect(studyPanel()).toBeTruthy();
     cleanup();
@@ -432,116 +434,61 @@ it('a joint chosen under either of its parts is the same choice: both copies pre
   expect(await copiedPrompt(copied)).toBe("move it\n\nFile: /models/part.glb\nReferences:\nBonded joint between 'post' and 'base' · /models/part.step#part1/face 1,part2/face 1");
 });
 
-// The study's view: the agent chooses What you see's controls, their order, ranges and words, and named presets.
-const VIEWED = {
-  ...RESULT,
-  view: {
-    controls: [
-      { drives: 'load_scale', type: 'number', label: 'Rider weight', min: 0.5, max: 3, default: 1, unit: '×' },
-      { drives: 'gravity', type: 'number', label: 'Gravity', max: 2 },
-      { drives: 'field', type: 'enum', label: 'Show', options: ['von_mises', 'displacement'], default: 'von_mises' },
-      { drives: 'deformation', type: 'slider', label: 'Wobble', max: 9 },
-      { drives: 'threshold', type: 'number', label: 'Show above', field: 'von_mises', min: 0, max: 100, default: 40, unit: 'MPa' },
-      { drives: 'deformation', type: 'number', label: 'Exaggerate', min: 0, max: 50, default: 12 },
-    ],
-    presets: [{ label: 'Landing (3×)', load_scale: 3 }],
-  },
-};
-const resultRows = () => Array.from(studyPanel()!.querySelectorAll('[data-study-result] [data-position-control], [data-study-result] [role="combobox"], [data-study-result] [data-pose-menu]'));
+const resultRows = () => Array.from(studyPanel()!.querySelectorAll('[data-study-result] [data-position-control], [data-study-result] [role="combobox"]'));
 const setValue = (name: string, value: string) => act(() => {
   const box = screen.getByRole('textbox', { name });
   fireEvent.change(box, { target: { value } });
   fireEvent.blur(box);
 });
-// Preset is Position's Pose row: a menu its button opens (on a press, as Radix's menus open).
-const preset = () => screen.queryByRole('button', { name: /^Preset: / });
-const choosePreset = (option: string) => {
-  act(() => { fireEvent.pointerDown(preset()!, { button: 0, ctrlKey: false }); });
-  act(() => { fireEvent.click(screen.getByRole('menuitemradio', { name: option })); });
-};
 const choose = (combobox: string, option: string) => {
   act(() => { fireEvent.click(screen.getByRole('combobox', { name: combobox })); });
   act(() => { fireEvent.click(screen.getByRole('option', { name: option })); });
 };
 
-it('Result shows the view\'s controls in its order, with its words and ranges, skipping what it does not know; no view shows today\'s two', () => {
-  mount(VIEWED);
-  const sliders = screen.getAllByRole('slider');
-  expect(sliders.map(slider => slider.getAttribute('aria-label'))).toEqual(['Rider weight', 'Show above', 'Exaggerate']);
-  expect(sliders.map(slider => [slider.getAttribute('aria-valuemin'), slider.getAttribute('aria-valuemax'), slider.getAttribute('aria-valuenow')]))
-    .toEqual([['0.5', '3', '1'], ['0', '100', '40'], ['0', '50', '12']]);
-  // In the view's order: the preset, the load, the field, the threshold, the deformation.
-  expect(resultRows().map(row => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(
-    ['Default', 'Rider weight', 'Stress', 'Show above', 'Exaggerate']);
-  expect(screen.queryByRole('slider', { name: 'Gravity' })).toBeNull();
-  expect(screen.queryByRole('slider', { name: 'Wobble' })).toBeNull();
-  expect(screen.getByRole('textbox', { name: 'Rider weight slider value' }).getAttribute('value')).toBe('×1.00');
-  expect(screen.getByRole('textbox', { name: 'Show above slider value' }).getAttribute('value')).toBe('40.0 MPa');
-  cleanup();
-  mount(RESULT);
-  expect(screen.getAllByRole('slider').map(slider => slider.getAttribute('aria-label'))).toEqual(['Deformation scale']);
-  expect(screen.getByRole('slider', { name: 'Deformation scale' }).getAttribute('aria-valuemax')).toBe('40');
-  expect(screen.getByRole('textbox', { name: 'Deformation scale value' }).getAttribute('value')).toBe('×10.0');
-  expect(preset()).toBeNull();
+it('What you see is the field, the deformation and the load, whatever view an older file carries', () => {
+  for (const extras of [RESULT, { ...RESULT, view: { controls: [{ drives: 'threshold', type: 'number', label: 'Show above', field: 'von_mises', max: 100 }], sections: ['verdict'] } }]) {
+    mount(extras);
+    const sliders = screen.getAllByRole('slider');
+    expect(sliders.map(slider => slider.getAttribute('aria-label'))).toEqual(['Deformation scale', 'Load']);
+    expect(sliders.map(slider => [slider.getAttribute('aria-valuemin'), slider.getAttribute('aria-valuemax'), slider.getAttribute('aria-valuenow')]))
+      .toEqual([['0', '40', '10'], ['0.1', '3', '1']]);
+    expect(resultRows().map(row => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Stress', 'Deformation', 'Load']);
+    expect(screen.getByRole('textbox', { name: 'Deformation scale value' }).getAttribute('value')).toBe('×10.0');
+    expect(screen.getByRole('textbox', { name: 'Load value' }).getAttribute('value')).toBe('×1.00');
+    cleanup();
+  }
 });
 
-it('each slider\'s thumb stands at its control\'s value, and the slider takes the row\'s whole width under its label and value field', () => {
-  mount(VIEWED);
+it('each slider\'s thumb stands at its control\'s value, where that is on its range, not at the left end', () => {
+  mount(RESULT);
+  const thumb = (name: string) => screen.getByRole('slider', { name });
   const now = () => screen.getAllByRole('slider').map(slider => slider.getAttribute('aria-valuenow'));
-  expect(now()).toEqual(['1', '40', '12']);
-  setValue('Exaggerate slider value', '24');
-  setValue('Rider weight slider value', '2.5');
-  expect(now()).toEqual(['2.5', '40', '24']);
-  choosePreset('Landing (3×)');
-  expect(now()).toEqual(['3', '40', '12']);
-  // The label and the value field share the first line; the slider is the second, both columns wide.
-  const row = screen.getByRole('slider', { name: 'Exaggerate' }).closest('[data-slider-layout="wide"]')!;
-  const [label, value, sliderBox] = Array.from(row.children);
-  expect(label.textContent).toBe('Exaggerate');
-  expect(value.contains(screen.getByRole('textbox', { name: 'Exaggerate slider value' })) || value === screen.getByRole('textbox', { name: 'Exaggerate slider value' })).toBe(true);
-  expect(sliderBox.className).toContain('col-span-2');
-  expect(sliderBox.querySelector('[data-slot="slider"]')).toBeTruthy();
+  // ×10 on 0 to 40 is 25% along; ×1 on 0.1 to 3 is 31%.
+  expect(now()).toEqual(['10', '1']);
+  expect((thumb('Deformation scale').parentElement as HTMLElement).style.left).toMatch(/^calc\(25% \+ /);
+  expect((thumb('Load').parentElement as HTMLElement).style.left).toMatch(/^calc\(31\.03/);
+  setValue('Deformation scale value', '40');
+  setValue('Load value', '2.5');
+  expect(now()).toEqual(['40', '2.5']);
+  expect((thumb('Deformation scale').parentElement as HTMLElement).style.left).toMatch(/^calc\(100% /);
 });
 
 it('at twice the load, the bar and the deformation are twice the solved ones, what each part holds is half, and a part flips to yields', () => {
   const parts = [{ ref: 'part1', name: 'post', material: 'Steel', safety_factor: 5.83 }, { ref: 'part2', name: 'base', material: 'Steel', safety_factor: 1.5 }];
-  const { container, mesh } = mount({ ...VIEWED, view: { controls: [VIEWED.view.controls[0], VIEWED.view.controls[5]], show: { parts: true } }, parts });
+  const pins = [3, 4, 5, 6].map(n => ({ ref: `part${n}`, name: `pin ${n}`, material: 'Steel', safety_factor: 10 }));
+  const { container, mesh } = mount({ ...RESULT, parts: [...parts, ...pins] });
   const colours = colourBytes(mesh);
   const tip = mesh.geometry.getAttribute('position').getZ(2);
-  const partDetails = () => Array.from(screen.getByRole('region', { name: 'Parts' }).querySelectorAll('[data-study-detail]')).map(detail => detail.textContent!.replace(/\u00a0/g, ' '));
+  const partDetails = () => Array.from(screen.getByRole('region', { name: 'Parts' }).querySelectorAll('[data-study-detail]')).map(detail => detail.textContent!.replace(/\u00a0/g, ' ')).slice(0, 2);
   expect(partDetails()).toEqual(['Steel · holds 5.8×', 'Steel · holds 1.5×']);
-  setValue('Rider weight slider value', '2');
+  setValue('Load value', '2');
   expect(container.querySelector('[data-fea-max]')!.textContent).toBe('94.6 MPa');
   expect(partDetails()).toEqual(['Steel · holds 2.9×', 'Steel · yields']);
   // The colours keep their place on a bar that now reads twice as high; the displacement is drawn twice as far.
   expect(colourBytes(mesh)).toEqual(colours);
-  // The file baked in 10x of vertex 2's 0.002 m: 12x at the solved load, 24x at twice it.
-  expect(tip).toBeCloseTo(0.002 * (12 - 10), 6);
-  expect(mesh.geometry.getAttribute('position').getZ(2)).toBeCloseTo(0.002 * (24 - 10), 6);
-});
-
-it('a threshold greys every vertex whose value is under it, and the load moves what is over it', () => {
-  const { mesh } = mount({ ...VIEWED, view: { controls: [VIEWED.view.controls[0], VIEWED.view.controls[4]] } });
-  const grey = () => [0, 1, 2, 3].map(vertex => colourBytes(mesh).slice(vertex * 4, vertex * 4 + 3).every(byte => byte === 150));
-  // 0, 50, 100 and 25 MPa against 40.
-  expect(grey()).toEqual([true, false, false, true]);
-  setValue('Rider weight slider value', '2');
-  expect(grey()).toEqual([true, false, false, false]);
-  setValue('Show above slider value', '0');
-  expect(grey()).toEqual([false, false, false, false]);
-});
-
-it('a preset sets the values it names, and moving any control is Custom', () => {
-  const { container } = mount(VIEWED);
-  choosePreset('Landing (3×)');
-  expect(screen.getByRole('textbox', { name: 'Rider weight slider value' }).getAttribute('value')).toBe('×3.00');
-  expect(container.querySelector('[data-fea-max]')!.textContent).toBe('142 MPa');
-  expect(preset()!.textContent).toBe('Landing (3×)');
-  setValue('Exaggerate slider value', '20');
-  expect(preset()!.textContent).toBe('Custom');
-  choosePreset('Default');
-  expect(screen.getByRole('textbox', { name: 'Rider weight slider value' }).getAttribute('value')).toBe('×1.00');
-  expect(preset()!.textContent).toBe('Default');
+  // The file baked in 10x of vertex 2's 0.002 m: 10x at the solved load, 20x at twice it.
+  expect(tip).toBeCloseTo(0, 6);
+  expect(mesh.geometry.getAttribute('position').getZ(2)).toBeCloseTo(0.002 * (20 - 10), 6);
 });
 
 it('draws the loads and fixtures on the model, the chosen load\'s arrows in the chosen colour, and Study\'s checkbox hides them', () => {
@@ -600,16 +547,6 @@ it('a roller fixture reads as Slides on, after Held at, with its own glyph and m
   expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nSlides on face 1 · /models/part.step#bracket/face 1');
 });
 
-it('a view that turns the markers off opens with the checkbox off', () => {
-  const both = { ...STUDY, loads: [{ type: 'force', faces: ['bracket/face 1'], vector_N: [0, 0, -2500] }] };
-  const { mesh } = mount({ ...STUDIED, study: both, view: { show: { loads: false, fixtures: false } } }, undefined, { faces: [0, 0, 0, 0] });
-  const group = mesh.children.find(child => child.name === 'fea-markers')!;
-  expect(group.children.map(child => child.visible)).toEqual([false, false, false, false, false, false]);
-  expect(markersGate('Loads and fixtures').getAttribute('aria-checked')).toBe('false');
-  toggleMarkers('Loads and fixtures');
-  expect(group.children.map(child => child.visible)).toEqual([true, true, true, true, true, true]);
-});
-
 // The answer at a glance, at the top of Study: its headline, the load the weakest check takes, then each check.
 const verdictOf = () => {
   const section = screen.getByRole('region', { name: 'Verdict' });
@@ -651,12 +588,11 @@ it('draws how hard each check works: filled to the value over the limit, held at
 });
 
 it('the verdict follows the load control, and can change its word', () => {
-  const controls = [VIEWED.view.controls[0]];
-  mount({ ...STUDIED, safety_factor: 1.5, view: { controls } }, undefined, { faces: FACES });
+  mount({ ...STUDIED, safety_factor: 1.5 }, undefined, { faces: FACES });
   expect([verdictOf().status, verdictOf().caption]).toEqual(['close', 'OK up to 1.5× this load']);
-  setValue('Rider weight slider value', '2');
+  setValue('Load value', '2');
   expect([verdictOf().status, verdictOf().caption, verdictOf().rows]).toEqual(['weak', 'OK only to 0.7× this load', [['weak', 'Strength', '95 MPa, limit 276 MPa']]]);
-  setValue('Rider weight slider value', '0.5');
+  setValue('Load value', '0.5');
   expect([verdictOf().status, verdictOf().caption]).toEqual(['strong', 'OK up to 3.0× this load']);
 });
 
@@ -675,30 +611,18 @@ it('with no stress, says to check the load reaches the part, in no tone and with
   expect(verdictOf()).toMatchObject({ status: 'close', rows: [['close', 'Strength', '180 MPa, limit 276 MPa']] });
 });
 
-it('a slider\'s thumb stands where its value is on its range, not at the left end', () => {
-  mount({ ...RESULT, view: { controls: [VIEWED.view.controls[5], VIEWED.view.controls[0]] } });
-  const thumb = (name: string) => screen.getByRole('slider', { name });
-  // ×12 on 0 to 50 is 24% along; ×1 on 0.5 to 3 is 20%.
-  expect(thumb('Exaggerate').getAttribute('aria-valuenow')).toBe('12');
-  expect((thumb('Exaggerate').parentElement as HTMLElement).style.left).toMatch(/^calc\(24% \+ /);
-  expect((thumb('Rider weight').parentElement as HTMLElement).style.left).toMatch(/^calc\(20% \+ /);
-  setValue('Exaggerate slider value', '50');
-  expect((thumb('Exaggerate').parentElement as HTMLElement).style.left).toMatch(/^calc\(100% /);
-});
-
 // The checks the study picked, as cadgen judged them: the stress check and a sag on the loaded face.
 const STRESS_CHECK = { kind: 'stress', label: 'Strength', value: 47.3, limit: 276, unit: 'MPa', ratio: 0.171527, close_at: 0.5, margin: 2, status: 'passes', where: { ref: 'bracket/face 1', at: [0, 0, 0] } };
 const SAG_CHECK = { kind: 'displacement', label: 'Tip sag', value: 0.62, limit: 0.5, unit: 'mm', ratio: 1.24, close_at: 0.9, status: 'fails', where: { ref: 'bracket/face 2', at: [1, 0, 0] }, faces: ['bracket/face 2'] };
-const LOAD_WHEN_FAILING = { drives: 'load_scale', type: 'number', label: 'Load', min: 0.1, max: 2, default: 1, unit: '×', when: 'failing' };
 
 it('heads the verdict with how many checks fail and the load the weakest takes, then each check the same way, all following the load', () => {
-  mount({ ...STUDIED, checks: [STRESS_CHECK, SAG_CHECK], view: { controls: [{ ...LOAD_WHEN_FAILING, when: undefined }] } }, undefined, { faces: FACES });
+  mount({ ...STUDIED, checks: [STRESS_CHECK, SAG_CHECK] }, undefined, { faces: FACES });
   expect(verdictOf()).toMatchObject({ status: 'weak', title: 'Fails 1 of 2 checks', caption: 'OK only to 0.8× this load',
     rows: [['weak', 'Tip sag', '0.62 mm, limit 0.5 mm'], ['strong', 'Strength', '47 MPa, limit 276 MPa']] });
   // No margin tick on a displacement: its limit is the person's.
   expect(screen.getByRole('meter', { name: 'Tip sag: how much of its limit' }).querySelector('[data-fea-verdict-tick]')).toBeNull();
   expect(screen.getByRole('meter', { name: 'Strength: how much of its limit' }).getAttribute('aria-valuenow')).toBe('17');
-  setValue('Load slider value', '0.5');
+  setValue('Load value', '0.5');
   expect(verdictOf()).toMatchObject({ status: 'strong', title: 'Passes all checks', caption: 'OK up to 1.6× this load',
     rows: [['strong', 'Tip sag', '0.31 mm, limit 0.5 mm'], ['strong', 'Strength', '24 MPa, limit 276 MPa']] });
 });
@@ -729,39 +653,6 @@ it('a result with no checks in the file has today\'s verdict: its one check, fro
   const body = verdictOf().section.parentElement!.parentElement!;
   expect(body.querySelectorAll('ul[aria-label="Study"]')).toHaveLength(1);
   expect(rowTexts(studyPanel()!).map(text => text!.replace(/‑/g, '-'))).toEqual(['Held at', 'Face 1', 'Pushed', '2500 N down', 'Made of', '6061-T6', 'What you see', 'Details']);
-});
-
-it('composes Study from the view\'s sections, in its order, leaving out what it omits and what it does not know', () => {
-  mount({ ...STUDIED, view: { sections: ['controls', 'verdict', 'chart'] } }, undefined, { faces: FACES });
-  const study = studyPanel()!;
-  expect(rowTexts(study)).toEqual(['What you see']);
-  const verdict = verdictOf().section;
-  expect(study.querySelector('[data-study-row="result"]')!.compareDocumentPosition(verdict) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  cleanup();
-  mount({ ...STUDIED, view: { sections: ['setup', 'details'] } }, undefined, { faces: FACES });
-  expect(screen.queryByRole('region', { name: 'Verdict' })).toBeNull();
-  expect(rowTexts(studyPanel()!).map(text => text!.replace(/‑/g, '-'))).toEqual(['Held at', 'Face 1', 'Pushed', '2500 N down', 'Made of', '6061-T6', 'Details']);
-  expect(screen.queryByRole('slider')).toBeNull();
-});
-
-it('shows a control `when` the checks say, live with the load, the hidden one drawn at its default and its value kept', () => {
-  const threshold = { drives: 'threshold', type: 'number', label: 'Show above', field: 'von_mises', min: 0, max: 100, default: 0, unit: 'MPa', when: 'failing' };
-  const { mesh } = mount({ ...STUDIED, checks: [STRESS_CHECK, SAG_CHECK], view: { controls: [LOAD_WHEN_FAILING, threshold] } }, undefined, { faces: FACES });
-  const sliders = () => screen.queryAllByRole('slider').map(slider => slider.getAttribute('aria-label'));
-  const grey = () => [0, 1, 2, 3].map(vertex => colourBytes(mesh).slice(vertex * 4, vertex * 4 + 3).every(byte => byte === 150));
-  // Too much sag as solved: the load and the threshold show.
-  expect(sliders()).toEqual(['Load', 'Show above']);
-  setValue('Show above slider value', '40');
-  expect(grey()).toEqual([true, false, false, true]);
-  // At half the load every check passes: the threshold hides and greys nothing, while the load slider stays to be dragged back.
-  setValue('Load slider value', '0.5');
-  expect(sliders()).toEqual(['Load']);
-  expect(grey()).toEqual([false, false, false, false]);
-  // Back at the load as solved it fails again, and the threshold returns at the value it had.
-  setValue('Load slider value', '1');
-  expect(sliders()).toEqual(['Load', 'Show above']);
-  expect(screen.getByRole('textbox', { name: 'Show above slider value' }).getAttribute('value')).toBe('40.0 MPa');
-  expect(grey()).toEqual([true, false, false, true]);
 });
 
 // The Load ramp, the renderer's own clip, played by hand.

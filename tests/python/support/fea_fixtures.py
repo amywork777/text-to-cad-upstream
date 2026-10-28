@@ -16,7 +16,6 @@ import tempfile
 import unittest
 from contextlib import contextmanager, redirect_stderr
 from pathlib import Path
-from unittest import mock
 
 from tests.python.support.paths import REPO_ROOT, add_repo_path
 
@@ -59,21 +58,6 @@ def class_directory(cls) -> Path:
     return Path(tmp.name)
 
 
-def solve_keeping(analysis: str, step: Path, out: Path, study: dict):
-    """Run the study; also hand back the analysis's own result (its fields on the nodes it solved)."""
-    from cadgen._internal.fea.analyses import get_analysis
-
-    kind, kept = type(get_analysis(analysis)), {}
-    original = kind.solve
-
-    def keep(self, ctx, inputs):
-        kept["result"] = original(self, ctx, inputs)
-        return kept["result"]
-
-    with mock.patch.object(kind, "solve", keep):
-        return solve(step, out, study), kept.get("result")
-
-
 def heavy_at_import(*modules: str) -> str:
     """The heavy modules importing ``modules`` pulls into a fresh interpreter: "" when they are stdlib-only at import."""
     code = (f"import sys; sys.path.insert(0, 'packages/cadgen/src'); import {', '.join(modules)};"
@@ -107,70 +91,6 @@ def box_step(directory: Path, name: str, size: tuple[float, float, float], align
     aligned = _align(align)
     export_step(Box(*size) if aligned is None else Box(*size, align=aligned), str(step))
     return step
-
-
-def box_duct_step(directory: Path, side: float, length: float, wall: float = 1.0) -> Path:
-    """A square passage through a block along x: sharp corners where the inlet meets the walls."""
-    from build123d import Box, export_step
-
-    step = directory / "duct.step"
-    along = _align("x")
-    export_step(Box(length, side + 2 * wall, side + 2 * wall, align=along) - Box(length, side, side, align=along), str(step))
-    return step
-
-
-def tube_step(directory: Path, bore: float, wall: float, length: float, name: str = "tube") -> Path:
-    """A round tube along x from x = 0: bore radius ``bore``, wall ``wall`` thick."""
-    from build123d import Align, Cylinder, Rotation, export_step
-
-    step = directory / f"{name}.step"
-    along = (Align.CENTER, Align.CENTER, Align.MIN)
-    export_step(Rotation(0, 90, 0) * (Cylinder(bore + wall, length, align=along) - Cylinder(bore, length, align=along)), str(step))
-    return step
-
-
-# netgen's edge order of a 10-node tet, and of a 6-node triangle's mid-edge nodes.
-_TET_EDGES = ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))
-_TRIG_EDGES = ((1, 2), (0, 2), (0, 1))
-
-
-def box_volume(lengths=(4.0, 1.0, 1.0), cells=(4, 1, 1)):
-    """A box of 10-node tets as the mesher hands one over: faces 1-6 are x-, x+, y-, y+, z-, z+."""
-    import numpy as np
-    from skfem import MeshTet
-
-    from cadgen._internal.fea.mesh import FaceFingerprint, VolumeMesh
-
-    mesh = MeshTet.init_tensor(*(np.linspace(0.0, size, count + 1) for size, count in zip(lengths, cells)))
-    points = list(mesh.p.T)
-    middle: dict[tuple[int, int], int] = {}
-
-    def mid(a: int, b: int) -> int:
-        key = (min(a, b), max(a, b))
-        if key not in middle:
-            middle[key] = len(points)
-            points.append(0.5 * (mesh.p[:, a] + mesh.p[:, b]))
-        return middle[key]
-
-    tets = [list(t) + [mid(t[a], t[b]) for a, b in _TET_EDGES] for t in mesh.t.T]
-    facets = mesh.facets[:, mesh.boundary_facets()].T
-    boundary = [list(f) + [mid(f[a], f[b]) for a, b in _TRIG_EDGES] for f in facets]
-    nodes = np.array(points)
-    centres = nodes[facets].mean(axis=1)
-    ordinal = np.zeros(len(facets), dtype=np.int64)
-    for axis in range(3):
-        ordinal[np.isclose(centres[:, axis], 0.0)] = 2 * axis + 1
-        ordinal[np.isclose(centres[:, axis], lengths[axis])] = 2 * axis + 2
-    faces = {}
-    for o in range(1, 7):
-        axis, high = divmod(o - 1, 2)
-        centre = [size / 2 for size in lengths]
-        centre[axis] = lengths[axis] if high else 0.0
-        area = float(np.prod([size for i, size in enumerate(lengths) if i != axis]))
-        faces[o] = FaceFingerprint(f"face {o}", o, area, tuple(centre))
-    diagonal = float(np.linalg.norm(lengths))
-    return VolumeMesh(nodes=nodes, tets=np.array(tets, dtype=np.int64), boundary=np.array(boundary, dtype=np.int64),
-                      boundary_ordinal=ordinal, faces=faces, max_h=max(lengths) / max(cells), bbox_diagonal=diagonal, seconds=0.0)
 
 
 def _listing(step_or_listing):
@@ -208,37 +128,12 @@ def read_glb(path: Path) -> tuple[dict, bytes]:
 
 
 def glb_extras(path: Path) -> dict:
-    """The result mesh's extras: the analysis, its study, fields, checks and parts."""
+    """The result mesh's extras: its study, fields, checks and parts."""
     return read_glb(path)[0]["meshes"][0]["extras"]
 
 
 def glb_attribute_names(path: Path) -> list[str]:
     return list(read_glb(path)[0]["meshes"][0]["primitives"][0]["attributes"])
-
-
-def assert_tracers_cross(case: unittest.TestCase, glb: Path, length: float, label: str | None = None):
-    """The viewer's Flow routine: particles let go at the inlet (x = 0), carried along the duct to its outlet."""
-    motion = glb_extras(glb)["analysis"]["motion"]
-    case.assertEqual(motion["kind"], "tracers")
-    if label is not None:
-        case.assertEqual(motion["label"], label)
-    case.assertLess(max(path[0] for path in motion["paths"]), 0.05 * length)
-    across = [path for path in motion["paths"] if path[-3] > 0.8 * length]
-    case.assertGreater(len(across), len(motion["paths"]) / 2)
-
-
-def glb_rows(path: Path, *names: str) -> dict[str, list[tuple[float, ...]]]:
-    """The named float32 vertex attributes (SCALAR or VEC3), each as a list of rows."""
-    gltf, binary = read_glb(path)
-    attributes = gltf["meshes"][0]["primitives"][0]["attributes"]
-    out = {}
-    for name in names:
-        accessor = gltf["accessors"][attributes[name]]
-        view = gltf["bufferViews"][accessor["bufferView"]]
-        width = {"SCALAR": 1, "VEC3": 3}[accessor["type"]]
-        values = struct.unpack_from(f"<{accessor['count'] * width}f", binary, view["byteOffset"])
-        out[name] = [values[i:i + width] for i in range(0, len(values), width)]
-    return out
 
 
 def glb_array(path: Path, name: str, width: int = 1):

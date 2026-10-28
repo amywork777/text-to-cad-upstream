@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cadgen._internal.atomic_replace import replace_atomic, temp_suffix
-from cadgen._internal.fea.checks import quoted
+from cadgen._internal.fea.checks import finding, quoted
 from cadgen.results import FeaFace, FeaFacesResult, FeaPair, FeaPart, FeaPartsResult, FeaResult
 
 if TYPE_CHECKING:
@@ -346,7 +346,6 @@ def _not_connected(plan: _Plan, unheld: list[list[int]], logger: Narration) -> l
     The nearest part is found nearest-box first: the exact distance is only
     taken to parts whose box is nearer than the best found, not to every part.
     """
-    from cadgen._internal.fea.analyses.base import finding
     from cadgen._internal.fea.assembly import bounding_box, part_centre, part_gap
 
     logger.info(f"{len(unheld)} groups of parts are not connected to a fixed part; finding the nearest part to each")
@@ -488,8 +487,8 @@ def _mesh_assembly(mesh_assembly, doc, plan: _Plan, parsed, resolved, ordinal_of
                 f"{ref} is where {quoted(plan.names[owner])} is bonded to {joined}: "
                 "a fixture or load can't sit on a joint; choose a face, or part of one, that is not covered by another part"
             )
-    held = {ordinal_of[ref] for ref in parsed.inputs.anchor_refs}
-    if parsed.inputs.requires_anchor and (unheld := _unheld_after_meshing(volume, held, len(plan.parts))):
+    held = {ordinal_of[ref] for ref in parsed.fixed_refs}
+    if unheld := _unheld_after_meshing(volume, held, len(plan.parts)):
         raise _NotConnected(unheld)
     return volume
 
@@ -519,15 +518,12 @@ def finer_mesh_size(size_mm: float, dofs: int) -> float | None:
     return None
 
 
-
-
-#: The analyses whose GLB, extras and sidecar are today's exactly: nothing analysis-specific is added for them.
-
-
-def _field_entry(spec, low: float, high: float) -> dict:
-    """One ``extras.fields`` entry."""
-    return {"attribute": spec.attribute, "name": spec.title, "units": spec.units, "min": low, "max": high,
-            "attribute_scale": spec.attribute_scale}
+#: The fields a result carries, for the viewer's field switch: its GLB attribute, name, units, the summary's
+#: maximum, and the scale that turns the stored value into those units (a vector is stored in glTF metres).
+FIELDS = (
+    ("_VON_MISES", "von Mises stress", "MPa", "max_von_mises_MPa", 1.0),
+    ("_DISPLACEMENT", "displacement", "mm", "max_displacement_mm", 1000.0),
+)
 
 
 #: A long solve says how far it has got at most this often, seconds (the CLI prints it without --verbose too).
@@ -535,7 +531,7 @@ PROGRESS_S = 10.0
 
 
 def progress_log(logger: Narration):
-    """What an analysis's ``ctx.log`` (and the meshing lines) print: with --verbose every line; without, a line only once
+    """What the solver's log (and the meshing lines) print: with --verbose every line; without, a line only once
     nine tenths of :data:`PROGRESS_S` have passed since the last one printed (the run's start the first), so a
     long solve says how far it has got about every ten seconds and a short one stays quiet."""
     if logger.verbose:
@@ -557,11 +553,11 @@ def solve_study(target: Path, out: Path | None, *, study, occurrence: str | None
                 vtu: bool = False, verbose: bool = False) -> FeaResult:
     """Mesh, solve and check one study, then write its GLB and sidecar.
 
-    The analysis does the physics: its ``parse``, ``solve``, checks, findings and summary; this is the orchestration.
+    The physics is :mod:`.static`'s: its solve, checks and summary; this is the orchestration.
     ``occurrence`` solves that one part alone, even in a
     document of several parts; every face of the study must be on it.
 
-    When the analysis says the answer is close to failing (static: the safety factor, :func:`checks.needs_finer`)
+    When the safety factor is close to failing (:func:`checks.needs_finer`)
     the part is meshed again at half the element size (:func:`finer_mesh_size` keeps that under the DOF budget),
     finer by the same ratio at curved features, and solved again. When that succeeds its numbers are the ones
     written, reported and checked (the first solve's peak is kept for convergence only); when it fails the GLB
@@ -572,12 +568,9 @@ def solve_study(target: Path, out: Path | None, *, study, occurrence: str | None
 
 def _solve_study(document: Path, out: Path | None, study, occurrence: str | None, mesh_size: float | None, vtu: bool,
                  verbose: bool) -> FeaResult:
-    from cadgen._internal.fea.analyses import get_analysis
     from cadgen._internal.fea.study import parse_study
 
     parsed = parse_study(study)  # stdlib, before any heavy import
-    analysis = get_analysis(parsed.analysis)
-    inputs = parsed.inputs
     logger = Narration(verbose=verbose)
     progress = progress_log(logger)
     glb_path = Path(out) if out is not None else document.with_name(f"{document.stem}.fea.glb")
@@ -587,7 +580,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     vtu_path = glb_path.with_suffix(".vtu") if vtu else None
 
     from cadgen._internal.fea import checks
-    from cadgen._internal.fea.mesh import default_mesh_size, mesh_assembly, mesh_occurrence, require_fea_stack, small_feature_mm
+    from cadgen._internal.fea.mesh import mesh_assembly, mesh_occurrence, require_fea_stack, small_feature_mm
 
     require_fea_stack()
     doc = _open(document)
@@ -619,25 +612,17 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     else:
         occurrence_ref = doc.name
         part_index = {part.ref: i for i, part in enumerate(plan.parts)}
-        held = {part_index[resolved[ref].occurrence_ref] for ref in inputs.anchor_refs}
-        if inputs.requires_anchor and (unheld := _unheld_groups(plan, held)):
+        held = {part_index[resolved[ref].occurrence_ref] for ref in parsed.fixed_refs}
+        if unheld := _unheld_groups(plan, held):
             return _unsolved(document, occurrence_ref, _not_connected(plan, unheld, logger))
-
-    import time
 
     import numpy as np
 
-    from cadgen._internal.fea import solve
-    from cadgen._internal.fea.analyses.base import SolveContext
-    from cadgen._internal.fea.outputs import RAMP, write_glb, write_vtu
+    from cadgen._internal.fea import solve, static
+    from cadgen._internal.fea.outputs import RAMP, auto_deformation_scale, write_glb, write_vtu
     from cadgen._internal.fea.study import refine_points
 
-    materials = (parsed.material,) if plan is None else tuple(plan.materials)
     requested = mesh_size or parsed.mesh_size
-
-    def context(volume, *, automatic=False):
-        return SolveContext(volume=volume, materials=materials, ordinal_of=ordinal_of, log=progress,
-                            automatic=automatic, study=parsed, assembly=plan, part_name=document.stem)
 
     def mesh(max_h: float | None, refine: float = 1.0, size_field: dict | None = None):
         options: dict = {"size_field": size_field} if size_field else {}
@@ -650,35 +635,35 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
         return volume
 
     def solve_on(volume, automatic: bool = False):
-        ctx = context(volume, automatic=automatic)
-        return ctx.volume, ctx, analysis.solve(ctx, inputs)
+        return static.solve(volume, parsed, plan, ordinal_of, part_name=document.stem, log=progress, automatic=automatic)
 
     # The study's own finer balls (mesh.refine), kept through every pass.
     study_points = refine_points(parsed.mesh_refine)
     study_field = {"points": study_points, "radius_mm": 0.0} if study_points else None
     try:
-        volume, ctx, result = solve_on(mesh(requested, size_field=study_field))
+        volume = mesh(requested, size_field=study_field)
+        result = solve_on(volume)
     except _NotConnected as exc:
         return _unsolved(document, occurrence_ref, _not_connected(plan, exc.groups, logger))
     finer_failure = None
     finer_size = None
     finer_written = False
     refined = None
-    if analysis.needs_finer(result, inputs, []):
-        finer_size = finer_mesh_size(volume.max_h, result.dofs)
+    if checks.needs_finer(checks.safety_factor(static.weakest(result))):
+        finer_size = finer_mesh_size(volume.max_h, result.outcome.dofs)
         if finer_size is None:
             finer_failure = (
-                f"the part's {result.dofs:,} degrees of freedom at {volume.max_h:g} mm leave no room under the "
+                f"the part's {result.outcome.dofs:,} degrees of freedom at {volume.max_h:g} mm leave no room under the "
                 f"{solve.DOF_LIMIT:,} limit for a finer solve; its convergence is unchecked"
             )
     if finer_size is not None:
-        refined = analysis.refined_record(result, volume.max_h, finer_size, assembly=plan is not None)
+        refined = static.refined_record(result, volume.max_h, finer_size, assembly=plan is not None)
         logger.debug(f"close to the limit: solving again at {finer_size:.3g} mm")
         try:
             first, first_small = result, small_feature_mm(volume)
             # Finer at fillets and holes too, by the same ratio: there the curvature, not the size, sets the mesh.
-            finer_volume, finer_ctx, finer_result = solve_on(
-                mesh(finer_size, volume.max_h / finer_size, size_field=study_field), automatic=True)
+            finer_volume = mesh(finer_size, volume.max_h / finer_size, size_field=study_field)
+            finer_result = solve_on(finer_volume, automatic=True)
         except Exception as exc:  # a finer solve is a second opinion; the first answer stands without it
             finer_failure = (
                 f"the finer solve at {refined['size_mm']:g} mm failed ({exc}); "
@@ -687,16 +672,16 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
         else:
             # The checks describe the solve that is written, so every number a
             # finding quotes and every point it names is on the GLB shown.
-            volume, ctx = finer_volume, finer_ctx
-            result = analysis.merge_finer(first, finer_result, refined)
+            volume = finer_volume
+            result = static.merge_finer(first, finer_result, refined)
             finer_written = True
-            if first.dofs > solve.DOF_WARN:  # the person's own size was already large
-                result.warnings.insert(0, solve.dof_warning(first.dofs, automatic=False, small_feature_mm=first_small))
+            if first.outcome.dofs > solve.DOF_WARN:  # the person's own size was already large
+                result.outcome.warnings.insert(0, solve.dof_warning(first.outcome.dofs, automatic=False, small_feature_mm=first_small))
+    outcome = result.outcome
 
-    # Each check of the study (`Study.checks`) judged on the written solve, in the study's order,
-    # before the findings: an analysis's own check findings (thermal's temperature_over_limit) read them.
-    check_results = [analysis.judge(check, index, ctx, result, inputs) for index, check in enumerate(parsed.checks)]
-    findings = analysis.findings(ctx, result, inputs, check_results, assembly=plan is not None)
+    # Each check of the study judged on the written solve, in the study's order.
+    check_results = [static.judge(check, index, volume, ordinal_of, result) for index, check in enumerate(parsed.checks)]
+    findings = checks.findings(static.weakest(result)) if plan is None else checks.assembly_findings(result.solved)
     if plan is not None:
         name_of = {part.ref: plan.names[i] for i, part in enumerate(plan.parts)}
         findings += [checks.default_material(plan.names[i], plan.materials[i].name) for i in plan.defaulted]
@@ -715,38 +700,35 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     if check_found := checks.check_findings(check_results, assembly=plan is not None):
         findings = sorted(findings + check_found, key=lambda finding: finding["severity"] != "error")
     material = parsed.material
-    scale = analysis.deformation_scale(result, volume.bbox_diagonal, parsed.deformation_scale)
-    result.scalars.setdefault("deformation_scale", scale)
-    result.scalars.setdefault("yield_MPa", material.yield_strength if material is not None else None)
+    magnitude = np.linalg.norm(outcome.displacement, axis=1)
+    scale = parsed.deformation_scale or auto_deformation_scale(float(magnitude.max()), volume.bbox_diagonal)
     # The summary is the one place the numbers are rounded; everything else
     # (the GLB's extras, the sidecar) is derived from it.
-    summary = analysis.summary(result, inputs, check_results)
+    summary = static.summary(result, check_results, scale=scale,
+                             part_refs=None if plan is None else [part.ref for part in plan.parts])
 
-    warnings = list(result.warnings)
+    warnings = list(outcome.warnings)
     if ignored_note:
         warnings.insert(0, ignored_note)
     if finer_failure:
         warnings.append(finer_failure)
-    if result.reactions:
-        reaction_total = tuple(sum(r[c] for r in result.reactions) for c in range(3))
-        balance = max(abs(a + r) for a, r in zip(result.applied, reaction_total))
-        if balance > 1e-3 * max(1.0, max(abs(a) for a in result.applied)):
-            warnings.append(f"reactions do not balance the applied load (mismatch {balance:.3g} N)")
+    reaction_total = tuple(sum(r[c] for r in outcome.reactions) for c in range(3))
+    balance = max(abs(a + r) for a, r in zip(outcome.applied, reaction_total))
+    if balance > 1e-3 * max(1.0, max(abs(a) for a in outcome.applied)):
+        warnings.append(f"reactions do not balance the applied load (mismatch {balance:.3g} N)")
 
-    ranges = analysis.field_ranges(summary, result)
-    fields = [_field_entry(spec, *ranges[spec.name]) for spec in analysis.fields if spec.name in ranges]
-    # The field the surface is coloured by: von Mises.
-    primary = next(spec for spec in analysis.fields if spec.components == 1)
+    fields = [{"attribute": attribute, "name": name, "units": units, "min": 0.0, "max": summary[peak], "attribute_scale": factor}
+              for attribute, name, units, peak, factor in FIELDS]
     extras = {
-        "name": analysis.extras_name(document.stem),
+        "name": f"{document.stem} von Mises",
         "generator": "cadgen fea",
         # Where the STEP is from the GLB's own folder, so a viewer can find it.
         "document": _document_ref(document, glb_path),
         "occurrence": occurrence_ref,
         "deformation_scale": scale,
-        **analysis.extras_head(summary),
-        # One entry per raw attribute the GLB carries, for a viewer's field switch. `attribute_scale` turns the stored
-        # value into the units named: a vector is stored in glTF metres.
+        # The summary's safety factor, for the viewer's plain line.
+        "safety_factor": summary["safety_factor"],
+        # One entry per raw attribute the GLB carries, for a viewer's field switch.
         "fields": fields,
         "ramp": [[stop, list(colour)] for stop, colour in RAMP],
         # What an engineer would say about the result (checks.py), errors first.
@@ -755,12 +737,16 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
         "checks": check_results,
     }
     if plan is not None:
-        extras.update(analysis.extras_assembly(summary))
-        if not extras.get("parts"):
-            # An analysis with no per-part results of its own still says what each part is and is made of, so the
-            # viewer names a face's part ("coil · face 3") and lists each part's material, not the study's alone.
-            extras["parts"] = [{"ref": part.ref, "name": name, "material": material.name, "yield_MPa": material.yield_strength}
-                               for part, name, material in zip(plan.parts, plan.names, plan.materials)]
+        # What the viewer reads for an assembly (`_PART` indexes `parts`): the weakest part's line.
+        extras.update({
+            "weakest_part": summary["weakest_part"],
+            "weakest_part_peak_MPa": summary["weakest_part_peak_MPa"],
+            "max_displacement_mm": summary["max_displacement_mm"],
+            "parts": [
+                {key: part[key] for key in ("ref", "name", "material", "yield_MPa", "peak_MPa", "safety_factor", "max_displacement_mm")}
+                for part in summary["parts"]
+            ],
+        })
         connections = _connections(plan, volume)
         extras["connections"] = [
             {"between": c["refs"], "names": c["between"], "type": c["type"], "area_mm2": c["area_mm2"],
@@ -782,49 +768,31 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
         return [volume.faces[ordinal_of[ref]].ref for ref in refs]
 
     extras["faces"] = [volume.faces[ordinal].ref for ordinal in face_ordinals]
-    echo = {}
-    if material is not None:
-        echo["material"] = {"name": material.name, "yield_MPa": material.yield_strength,
-                             "youngs_GPa": round(material.E / 1000.0, 6), "poisson": material.nu}
-    echo.update(analysis.study_echo(inputs, bare))
-    echo["mesh"] = {"size_mm": round(volume.max_h, 4), "order": 2, "elements": int(len(volume.tets)),
-                    "refined_from_mm": refined["from_size_mm"] if finer_written else None}
-    if any(spec.kind == "stress" for spec in analysis.checks):
-        echo["margin"] = parsed.margin
-    extras["study"] = echo
-    if parsed.view is not None:
-        # The agent's controls, presets and markers for the result, as the study checked them.
-        extras["view"] = parsed.view
+    extras["study"] = {
+        "material": {"name": material.name, "yield_MPa": material.yield_strength,
+                     "youngs_GPa": round(material.E / 1000.0, 6), "poisson": material.nu},
+        **static.study_echo(parsed, bare),
+        "mesh": {"size_mm": round(volume.max_h, 4), "order": 2, "elements": int(len(volume.tets)),
+                 "refined_from_mm": refined["from_size_mm"] if finer_written else None},
+        "margin": parsed.margin,
+    }
 
-    # Von Mises colours the surface (each part's own stress in an assembly).
-    colour = result.fields[primary.name]
-    stress_coloured = primary.attribute == "_VON_MISES"
-    deformation = result.deformation if result.deformation is not None else np.zeros_like(result.dof_locations)
-    by_part = result.fields_by_part.get(primary.name) if primary.components == 1 else None
-    surface = result.boundary_quadratic
-    if (shown_faces := result.scalars.get("shown_faces")) is not None:
-        # An analysis that shows some of the faces alone (the air closed inside a part: the faces it wets).
-        keep = np.isin(np.asarray(volume.boundary_ordinal), np.asarray(shown_faces, dtype=np.int64))
-        surface, face_of_triangle = surface[keep], face_of_triangle[keep]
-        if plan is not None:
-            part_of_triangle = part_of_triangle[keep]
-    mesh_info = {"elements": int(len(volume.tets)), "nodes": int(len(volume.nodes)), "dofs": result.dofs,
-                 "size_mm": round(volume.max_h, 4), "order": 2, "mesher": "netgen", "solver": result.solver}
-    timings = {"mesh_s": round(volume.seconds, 3), **{k: round(v, 3) for k, v in result.timings.items()}}
-    fixtures = getattr(inputs, "fixtures", None)
+    mesh_info = {"elements": int(len(volume.tets)), "nodes": int(len(volume.nodes)), "dofs": outcome.dofs,
+                 "size_mm": round(volume.max_h, 4), "order": 2, "mesher": "netgen", "solver": outcome.solver}
+    timings = {"mesh_s": round(volume.seconds, 3), **{k: round(v, 3) for k, v in outcome.timings.items()}}
     sidecar = {
         "generator": "cadgen fea",
         "document": str(document),
         "occurrence": occurrence_ref,
         "study": parsed.source,
-        **({} if material is None else {"material": material.as_dict()}),
+        "material": material.as_dict(),
         "faces": {ref: dataclasses.asdict(volume.faces[ordinal]) for ref, ordinal in ordinal_of.items()},
         "summary": summary,
-        **({} if fixtures is None else {"fixtures": [
+        "fixtures": [
             {"faces": list(fixture.faces), "type": fixture.type,
-             **({"reaction_N": [round(x, 4) for x in result.reactions[n]]} if n < len(result.reactions) else {})}
-            for n, fixture in enumerate(fixtures)
-        ]}),
+             **({"reaction_N": [round(x, 4) for x in outcome.reactions[n]]} if n < len(outcome.reactions) else {})}
+            for n, fixture in enumerate(parsed.fixtures)
+        ],
         "fields": extras["fields"],
         "mesh": mesh_info,
         "timings": timings,
@@ -840,25 +808,26 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
         # The first and the finer solve's size and peak, when the part was solved twice.
         "refined": refined,
         "files": {"glb": glb_path.name, "vtu": vtu_path.name if vtu_path else None},
-        **({} if parsed.view is None else {"view": parsed.view}),
     }
     sidecar_text = json.dumps(sidecar, indent=2, allow_nan=False)
+    # Von Mises colours the surface (each part's own stress in an assembly), deformed by the displacement.
+    by_part = outcome.von_mises_parts
     # Each file is written beside its target under a temporary name and replaced into place once every one is written:
     # a run that fails leaves no file it wrote, and an earlier result stays byte for byte.
     temporary = {path: path.with_name(f".{path.name}{temp_suffix()}") for path in (glb_path, vtu_path, sidecar_path)
                  if path is not None}
     try:
         write_glb(
-            temporary[glb_path], positions=result.dof_locations, displacement=deformation, values=colour,
-            values_attribute="_VON_MISES" if stress_coloured else None, triangles6=surface,
+            temporary[glb_path], positions=outcome.dof_locations, displacement=outcome.displacement, values=outcome.von_mises,
+            values_attribute="_VON_MISES", triangles6=outcome.boundary_quadratic,
             face_of_triangle=face_of_triangle, scale=scale if scale is not None else 1.0,
-            value_range=tuple(ranges[primary.name][:2]), extras=extras,
+            value_range=(0.0, summary["max_von_mises_MPa"]), extras=extras,
             **({} if plan is None or by_part is None else {"values_by_part": by_part, "part_of_triangle": part_of_triangle}),
         )
         if vtu_path is not None:
-            vertex_count = result.vertices
-            write_vtu(temporary[vtu_path], positions=result.dof_locations[:vertex_count], tets=result.tets,
-                      displacement=deformation[:vertex_count], values=colour[:vertex_count])
+            vertex_count = outcome.vertices
+            write_vtu(temporary[vtu_path], positions=outcome.dof_locations[:vertex_count], tets=outcome.tets,
+                      displacement=outcome.displacement[:vertex_count], values=outcome.von_mises[:vertex_count])
         temporary[sidecar_path].write_text(sidecar_text, encoding="utf-8")
         for final, held in temporary.items():
             replace_atomic(held, final)
@@ -867,5 +836,4 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
             held.unlink(missing_ok=True)
     logger.debug(f"wrote {glb_path.name}, {sidecar_path.name}" + (f", {vtu_path.name}" if vtu_path else ""))
     return FeaResult(ok=True, document=document, occurrence=occurrence_ref, glb=glb_path, sidecar=sidecar_path, vtu=vtu_path,
-                     summary=summary, mesh=mesh_info, timings=timings, warnings=tuple(warnings), findings=tuple(findings),
-                     analysis=analysis.name)
+                     summary=summary, mesh=mesh_info, timings=timings, warnings=tuple(warnings), findings=tuple(findings))

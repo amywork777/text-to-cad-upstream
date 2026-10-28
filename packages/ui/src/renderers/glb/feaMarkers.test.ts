@@ -104,7 +104,7 @@ describe('loads and fixtures on the model', () => {
     const result = cube(STUDY);
     const markers = createFeaMarkers(THREE, result);
     markers.update(positionsOf(result));
-    markers.style({ colours: { load: '#18181b', fixture: '#71717a' }, visible: { loads: true, fixtures: true }, chosen: () => false });
+    markers.style({ colours: { load: '#18181b', fixture: '#71717a' }, visible: true, chosen: () => false });
     const byName = (name: string) => markers.object3D.getObjectByName(name) as THREE.InstancedMesh;
     for (const kind of ['fea-load-shafts', 'fea-load-heads', 'fea-fixture-cones']) {
       const solid = byName(kind);
@@ -184,7 +184,7 @@ describe('loads and fixtures on the model', () => {
 });
 
 // A roller and a body load, from the same table as loads and fixtures, each in the ink or the muted grey.
-const STYLE = { colours: { load: '#18181b', fixture: '#71717a' }, visible: { loads: true, fixtures: true }, chosen: () => false };
+const STYLE = { colours: { load: '#18181b', fixture: '#71717a' }, visible: true, chosen: () => false };
 const colourOf = (mesh: THREE.InstancedMesh) => { const colour = new THREE.Color(); mesh.getColorAt(0, colour); return colour.getHexString(); };
 
 describe('rollers and body loads', () => {
@@ -205,7 +205,7 @@ describe('rollers and body loads', () => {
     markers.dispose();
   });
 
-  it('stands a roller\'s own cone on a plate on its face, grey, pointing into it, wherever fixtures are drawn', () => {
+  it('stands a roller\'s own cone on a plate on its face, grey, pointing into it, wherever the markers are drawn', () => {
     const rolling = { fixtures: [{ type: 'fixed', faces: ['bracket/face 4'] }, { type: 'roller', faces: ['bracket/face 2'] }], loads: [DOWN_ON_TOP] };
     const result = cube(rolling);
     const sites = markerSites(result).sites;
@@ -227,9 +227,9 @@ describe('rollers and body loads', () => {
       'fea-roller-plates-ghost', 'fea-roller-balls', 'fea-roller-balls-ghost', 'fea-roller-balls-2', 'fea-roller-balls-2-ghost']);
     const cones = markers.object3D.getObjectByName('fea-roller-cones') as THREE.InstancedMesh;
     expect(colourOf(cones)).toBe('71717a');
-    markers.style({ ...STYLE, visible: { loads: true, fixtures: false } });
+    markers.style({ ...STYLE, visible: false });
     expect(cones.visible).toBe(false);
-    expect(MARKER_KINDS.roller).toMatchObject({ tone: 'fixture', bucket: 'fixtures', on: 'faces' });
+    expect(MARKER_KINDS.roller).toMatchObject({ tone: 'fixture', on: 'faces' });
     expect(markerGateText(['fixture', 'roller'])).toBe('Cones where it holds it, cones on rollers where it may slide.');
     expect(markers.labels().map((label: any) => label.kind)).toEqual(['load']);
     // A study with no roller draws none.
@@ -238,7 +238,7 @@ describe('rollers and body loads', () => {
 
   it('says beside its checkbox what it draws', () => {
     expect(Object.keys(MARKER_KINDS)).toEqual(['load', 'fixture', 'roller', 'body_load']);
-    expect(Object.values(MARKER_KINDS).every((kind: any) => ['load', 'fixture'].includes(kind.tone) && ['loads', 'fixtures'].includes(kind.bucket))).toBe(true);
+    expect(Object.values(MARKER_KINDS).every((kind: any) => ['load', 'fixture'].includes(kind.tone))).toBe(true);
     expect(markerGateText(['fixture', 'load'])).toBe('Arrows where the study loads the part, cones where it holds it.');
     expect(markerGateText(['load', 'body_load'])).toBe('Arrows where the study loads the part, an arrow through its middle for its weight.');
     expect(markerGateText([])).toBe('');

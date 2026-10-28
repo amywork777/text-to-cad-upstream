@@ -28,7 +28,7 @@ export function controlStep(control) {
  *
  * @param {{ control: object, value: unknown, onChange(value: unknown): void, valueText(value: number, control: object): string }} props
  *   `control.ariaLabel`: the accessible name, where it differs from its label; `control.step`: a slider's increment,
- *   otherwise about a thousandth of its range; `control.wideLabel`: a number's label runs over its value field.
+ *   otherwise about a thousandth of its range.
  */
 export function controlRow({ control, value, onChange, valueText, t = english }) {
   const label = control.label;
@@ -49,10 +49,9 @@ export function controlRow({ control, value, onChange, valueText, t = english })
       key={control.id}
       label={label}
       labelTitle={control.labelTitle || label}
-      wideLabel={control.wideLabel === true}
       value={valueText(value, control)}
       onValueCommit={(draft) => onChange(parseFileSheetNumberInput(draft, { fallback: value, min: control.min, max: control.max }))}
-      valueInputProps={{ ariaLabel: control.ariaLabel ? t("fea.controlValue", { name: control.ariaLabel }) : t("fea.sliderValue", { name: label }) }}
+      valueInputProps={{ ariaLabel: t("fea.controlValue", { name }) }}
     >
       <Slider
         className={FILE_SHEET_PRECISION_SLIDER_CLASSES}

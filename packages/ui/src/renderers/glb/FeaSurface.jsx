@@ -17,14 +17,12 @@ import { useViewerHost } from "../../host/context.js";
 import { useExportView } from "../../export/context.js";
 import { TOOL_SHORTCUTS } from "../kit/tools/toolShortcuts.js";
 import { useI18n } from "@text-to-cad/ui/i18n";
-import { DEFAULT_POSE_VALUE, NO_PRESET_VALUE, positionValuesAreDefault } from "../kit/inspector/kinematicsControls.jsx";
 import { GLB_DECLINED_LIVE_COMMANDS, GLB_TOOL, GLB_TOOL_MODES } from "./tools.js";
 import { useGlbAnimation } from "./useGlbAnimation.js";
 
-const NO_CHOICE = Object.freeze({ field: null, scale: null, loadScale: null, threshold: null, preset: null, markers: null });
+const NO_CHOICE = Object.freeze({ field: null, scale: null, loadScale: null, markers: null });
 // Where each control's value is kept in the file's view: the field and the deformation scale as they always were.
-const DRIVE_KEYS = Object.freeze({ field: "field", deformation: "scale", load_scale: "loadScale", threshold: "threshold" });
-const NO_VALUES = Object.freeze({ field: null, scale: null, loadScale: null, threshold: null });
+const DRIVE_KEYS = Object.freeze({ field: "field", deformation: "scale", load_scale: "loadScale" });
 const EMPTY = Object.freeze([]);
 // `refs`: what Quick Edit gets when it is not the faces' own (a part's or a joint's parts); `parts`: parts to tint.
 const NO_FACES = Object.freeze({ result: null, id: "", faces: EMPTY, refs: EMPTY, parts: EMPTY, softParts: EMPTY, summary: "" });
@@ -54,10 +52,9 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   }), [document.catalogError, loaded.error, document.modelKey, scene, t]);
 
   // An FEA result (cadgen fea solve) carries its fields and true displacement in the file; what is
-  // shown of it is chosen in Study's What you see, with the controls the study's view names (`feaControls`;
-  // by default the field and the deformation), per tab. That choice is this renderer's one slice of
-  // the file's view (`kit/shell/fileView.js`), written against the result's own fields, scale and
-  // view: a re-solved result opens at its own defaults.
+  // shown of it is chosen in Study's What you see (`feaControls`: the field, the deformation and the load),
+  // per tab. That choice is this renderer's one slice of the file's view (`kit/shell/fileView.js`), written
+  // against the result's own fields and scale: a re-solved result opens at its own defaults.
   const fea = useMemo(() => (fv ? fv.readFeaResult(scene?.document?.scene) : null), [fv, scene]);
   // The box the model is drawn in over its Load ramp (`feaBounds.js`), at the deformation and load it opens on, grown on
   // the scene before the shell frames it (Preview frames on it once) and fits the camera's near and far planes to it:
@@ -65,33 +62,24 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   useMemo(() => {
     if (!fea) return;
     const opening = fv.feaControls(fea);
-    const scale = opening.find((control) => control.drives === "deformation")?.defaultValue ?? fea.deformationScale;
-    const load = opening.find((control) => control.drives === "load_scale")?.defaultValue ?? 1;
+    const scale = opening.find((control) => control.drives === "deformation").defaultValue;
+    const load = opening.find((control) => control.drives === "load_scale").defaultValue;
     const grown = fv.feaDrawnBounds(THREE, scene, fea, { scale, load });
     if (grown) Object.assign(scene, { bounds: grown, restBounds: grown });
   }, [scene, fea]);
   const controls = useMemo(() => (fea ? fv.feaControls(fea, t) : EMPTY), [fea, t]);
-  const presets = useMemo(() => (fea ? fv.feaPresets(fea, controls) : EMPTY), [fea, controls]);
-  const markerShow = useMemo(() => (fea ? fv.feaMarkerShow(fea) : null), [fea]);
-  const signature = fea ? `${fea.fields.map((entry) => entry.attribute).join(",")}:${fea.deformationScale}${fea.view ? `:${fv.viewKey(fea.view)}` : ""}` : "";
+  const signature = fea ? `${fea.fields.map((entry) => entry.attribute).join(",")}:${fea.deformationScale}` : "";
   const [stored] = useState(() => view.state);
   const restored = useMemo(() => (fea ? { ...NO_CHOICE, ...readFileView(stored, { fea: signature }).renderer.fea } : NO_CHOICE), [fea, stored, signature]);
   const [edited, setEdited] = useState({ signature: "", ...NO_CHOICE });
   const choice = edited.signature === signature ? { ...restored, ...edited } : restored;
   // Every control's value, held to its own range and options whatever was written.
   const values = Object.fromEntries(controls.map((control) => [control.id, fv.controlValue(control, choice[DRIVE_KEYS[control.drives]])]));
-  // The controls shown `when` the checks say; a hidden one acts at its default and keeps its value for when it shows again.
-  const { shown: shownControls, effective, loadScale } = fea ? fv.feaShownControls(fea, controls, values) : { shown: EMPTY, effective: values, loadScale: 1 };
-  const activeField = fea ? fea.fields.find((entry) => entry.attribute === effective.field) || fea.fields[0] : null;
-  const activeScale = fea ? finiteOr(effective.deformation, fea.deformationScale) : null;
-  // The load as a multiple of the solved one (a linear study scales exactly), and what is drawn grey under a threshold.
-  const thresholdControl = shownControls.find((control) => control.drives === "threshold");
-  const thresholdField = fea && thresholdControl ? fea.fields.find((entry) => entry.attribute === thresholdControl.field) : null;
-  const thresholdValue = thresholdField ? effective.threshold : null;
-  const markersOn = Boolean(markerShow) && (typeof choice.markers === "boolean" ? choice.markers : markerShow.on);
-  const defaults = useMemo(() => (fv ? fv.feaDefaults(controls) : {}), [fv, controls]);
-  const activePreset = presets.some((preset) => preset.value === choice.preset) ? choice.preset
-    : positionValuesAreDefault(values, defaults) ? DEFAULT_POSE_VALUE : NO_PRESET_VALUE;
+  const activeField = fea ? fea.fields.find((entry) => entry.attribute === values.field) || fea.fields[0] : null;
+  const activeScale = fea ? finiteOr(values.deformation, fea.deformationScale) : null;
+  // The load as a multiple of the solved one (a linear study scales exactly).
+  const loadScale = fea ? finiteOr(values.load_scale, 1) : 1;
+  const markersOn = typeof choice.markers === "boolean" ? choice.markers : true;
   const choiceRef = useRef(choice);
   choiceRef.current = choice;
   const rendererState = useMemo(() => (fea
@@ -105,12 +93,11 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   const [chosenFaces, setChosenFaces] = useState(NO_FACES);
   const clearChoice = useCallback(() => setChosenFaces(NO_FACES), []);
   const faces = fea && chosenFaces.result === fea ? chosenFaces : NO_FACES;
-  // Study's setup and Details, and the parts of Study the view lists, in its order.
+  // Study's setup and Details.
   const sections = useMemo(() => (fea ? fv.studySections(fea, t) : { setup: EMPTY, details: EMPTY }), [fea, t]);
   const rows = useMemo(() => [...sections.setup, ...sections.details], [sections]);
-  const order = useMemo(() => (fea ? fv.feaSections(fea) : EMPTY), [fea]);
   // An assembly's parts, each with its joints, are a sidebar section of their own above Study, from six parts
-  // up unless the view says (`feaShowsParts`); a picked face's chip names its part.
+  // up (`feaShowsParts`); a picked face's chip names its part.
   const parts = useMemo(() => (fea && fv.feaShowsParts(fea) ? fv.partRows(fea, loadScale, t) : EMPTY), [fea, loadScale, t]);
   // The answer at a glance, at the load shown: it follows the load control, and may change its word.
   const verdict = useMemo(() => (fea ? fv.feaVerdict(fea, loadScale, t) : null), [fea, loadScale, t]);
@@ -225,16 +212,15 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   paintRef.current = () => {
     if (!fea) return;
     const shownLoad = rampRef.current === null ? loadScale : rampRef.current * loadScale;
-    const threshold = thresholdField ? { field: thresholdField, value: thresholdValue, scale: shownLoad } : null;
     let changed = fv.recolorByField(fea.mesh, activeField, fea.ramp, tinted, faces.parts, faces.softParts,
-      { valueScale: shownLoad, rangeScale: loadScale, threshold });
+      { valueScale: shownLoad, rangeScale: loadScale });
     if (fv.applyDeformation(fea.mesh, activeScale * shownLoad, fea.deformationScale)) {
       markersRef.current?.update(fea.mesh.geometry.getAttribute("position").array);
       changed = true;
     }
     if (changed) requestRenderRef.current?.();
   };
-  useEffect(() => { paintRef.current?.(); }, [fea, activeField, tinted, faces.parts, faces.softParts, activeScale, loadScale, thresholdField, thresholdValue]);
+  useEffect(() => { paintRef.current?.(); }, [fea, activeField, tinted, faces.parts, faces.softParts, activeScale, loadScale]);
 
   // Where the study loads and holds the part, on the model (`feaMarkers.js`): built once per result,
   // standing on the positions drawn, the chosen load's or fixture's in the chosen colour.
@@ -256,14 +242,12 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   const colours = fv?.MARKER_COLOURS[view.appearance?.colorScheme === "dark" ? "dark" : "light"] || null;
   useEffect(() => {
     if (!markers) return;
-    markers.style({ colours, visible: { loads: markersOn && markerShow.loads, fixtures: markersOn && markerShow.fixtures },
-      chosen: (site) => fv.markerChosen(faces, site) });
+    markers.style({ colours, visible: markersOn, chosen: (site) => fv.markerChosen(faces, site) });
     requestRenderRef.current?.();
-  }, [markers, colours, markersOn, markerShow, faces, requestRenderRef]);
+  }, [markers, colours, markersOn, faces, requestRenderRef]);
   // A label goes with its marker when Clip cuts away where the load acts (read each frame, as the cut is).
   const loadLabels = useCallback(() => (markers && markersOn
-    ? markers.labels(loadScale, { loads: markerShow.loads, fixtures: markerShow.fixtures })
-      .filter((label) => keptByCut(label.face || label.at)) : EMPTY), [markers, markersOn, markerShow, loadScale, keptByCut]);
+    ? markers.labels(loadScale).filter((label) => keptByCut(label.face || label.at)) : EMPTY), [markers, markersOn, loadScale, keptByCut]);
 
   // Select picks the result's faces; Study's rows choose them too.
   const selectActive = Boolean(fea) && !previewing && shell.toolMode === GLB_TOOL.SELECT;
@@ -276,23 +260,18 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     catch (error) { shellRef.current?.reportActionError(error instanceof Error ? error.message : "Could not copy reference"); return false; }
   }, [single, source, host.clipboard]);
   const copySelection = selectActive && single ? copyFace : null;
-  // Study's What you see: each control writes its value, and a moved control leaves the preset (Custom).
+  // Study's What you see: each control writes its value.
   const resultControls = {
-    controls: shownControls, values, presets, preset: activePreset,
-    onChange: (id, value) => choose({ [DRIVE_KEYS[id]]: value, preset: null }),
-    onPreset: (value) => {
-      const preset = presets.find((entry) => entry.value === value);
-      if (preset) choose({ ...Object.fromEntries(Object.entries(preset.values).map(([id, entry]) => [DRIVE_KEYS[id], entry])), preset: value });
-    },
-    onReset: () => choose({ ...NO_VALUES, preset: null }),
+    controls, values,
+    onChange: (id, value) => choose({ [DRIVE_KEYS[id]]: value }),
     // Where the study holds and loads the part, drawn on the model or not.
-    markers: markerShow ? { title: MARKERS_TITLE, on: markersOn, onChange: (on) => choose({ markers: on }),
+    markers: fea ? { title: MARKERS_TITLE, on: markersOn, onChange: (on) => choose({ markers: on }),
       text: fv.markerGateText(markers?.kinds?.length ? markers.kinds : MARKER_GATE_KINDS) } : null,
   };
 
   // ---- the file sidebar: Study, and an assembly's Parts above it ---------------------------
   const sidebar = fea ? <fv.FeaStudyPanel parts={parts} openPart={fv.weakestPartIndex(fea)} setup={sections.setup} details={sections.details}
-    sections={order} verdict={verdict} chosen={faces.id} onChoose={chooseFaces} result={resultControls} /> : null;
+    verdict={verdict} chosen={faces.id} onChoose={chooseFaces} result={resultControls} /> : null;
 
   // ---- Quick Edit: the faces chosen, as references into the part the result was solved from --------------
   const chips = useMemo(() => {

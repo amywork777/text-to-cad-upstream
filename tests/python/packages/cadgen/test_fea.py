@@ -132,9 +132,7 @@ class StudyFile(unittest.TestCase):
     def test_an_inline_material_is_named_by_its_table_entry_or_as_written(self):
         from cadgen._internal.fea.materials import material_from_spec
 
-        poled = material_from_spec({"name": "pzt-5a", "piezo": {"poling": [0, 0, -1]}})
-        self.assertEqual(poled.name, "PZT-5A")
-        self.assertEqual(material_from_spec({"name": "steel", "relative_permeability": 1000}).name, STEEL.name)
+        self.assertEqual(material_from_spec({"name": "steel", "yield_MPa": 355}).name, STEEL.name)
         own = material_from_spec({"name": "Copper C110", "E_MPa": 117000, "nu": 0.34, "yield_MPa": 69})
         self.assertEqual(own.name, "Copper C110")
 
@@ -145,7 +143,9 @@ class StudyFile(unittest.TestCase):
             ({**BASE, "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 0]}]}, "vector_N"),
             ({**BASE, "loads": [{"faces": ["face 2"], "type": "torque"}]}, "loads[0].type"),
             ({**BASE, "mesh": {"size_mm": -1}}, "mesh.size_mm"),
-            ({**BASE, "bogus": 1}, "unknown keys"),
+            ({**BASE, "mesh": {"order": 1}}, "study.mesh: unknown keys ['order']; it takes size_mm, refine"),
+            ({**BASE, "output": {"vtu": True}}, "study.output: unknown keys ['vtu']; it takes deformation_scale"),
+            ({**BASE, "bogus": 1}, "study: unknown keys ['bogus']; a study takes material, fixtures, loads"),
         ]
         for document, fragment in cases:
             with self.subTest(fragment=fragment):
@@ -170,140 +170,49 @@ class StudyFile(unittest.TestCase):
         self.assertIn("--study", value_error(self, parse_study, None))
 
 
-# The agent's view of a result: which controls Study's Result shows, named states, and the markers.
-VIEW = {
-    "controls": [
-        {"drives": "field", "type": "enum", "label": "Show", "options": ["von_mises", "displacement"], "default": "von_mises"},
-        {"drives": "deformation", "type": "number", "label": "Exaggerate", "min": 0, "max": 50, "default": 12},
-        {"drives": "load_scale", "type": "number", "label": "Rider weight", "min": 0.5, "max": 3, "default": 1, "unit": "×"},
-        {"drives": "threshold", "type": "number", "label": "Show above", "field": "von_mises", "min": 0, "max": 300, "default": 138, "unit": "MPa"},
-    ],
-    "presets": [{"label": "Landing (3×)", "load_scale": 3}],
-    "show": {"loads": True, "fixtures": False},
-}
+class StudyChecks(unittest.TestCase):
+    """The study's optional ``checks``: checked like the rest of the study, before any heavy import."""
 
-
-class StudyView(unittest.TestCase):
-    """The study's optional ``view``: checked like the rest of the study, before any heavy import."""
-
-    def _view(self, **changes):
-        return {**VIEW, **changes}
-
-    def _control(self, drives, **changes):
-        controls = [dict(control, **changes) if control["drives"] == drives else control for control in VIEW["controls"]]
-        return self._view(controls=controls)
-
-    def test_a_view_parses_as_written_and_no_view_is_none(self):
-        self.assertIsNone(parse_study(BASE).view)
-        self.assertEqual(parse_study({**BASE, "view": VIEW}).view, VIEW)
-
-    def test_a_bare_control_takes_its_type_and_range_defaults(self):
-        view = parse_study({**BASE, "view": {"controls": [{"drives": "deformation", "max": 40}, {"drives": "load_scale", "max": 2}]}}).view
-        # A deformation with no default leaves it to the result's own exaggeration; a load_scale starts at a tenth of the load.
-        self.assertEqual(view["controls"][0], {"drives": "deformation", "type": "number", "min": 0.0, "max": 40.0})
-        self.assertEqual(view["controls"][1], {"drives": "load_scale", "type": "number", "min": 0.1, "max": 2.0, "default": 1.0})
-        # One with no range at all runs to four times the result's own exaggeration, which the viewer reads; half a range is refused.
-        bare = parse_study({**BASE, "view": {"controls": [{"drives": "deformation", "label": "Exaggerate"}]}}).view
-        self.assertEqual(bare["controls"], [{"drives": "deformation", "type": "number", "label": "Exaggerate"}])
-        self.assertIn("leave min, max and default all out",
-                      value_error(self, parse_study, {**BASE, "view": {"controls": [{"drives": "deformation", "default": 12}]}}))
-
-    def test_show_parts_overrides_when_the_parts_panel_shows_either_way(self):
-        for shown in (True, False):
-            self.assertEqual(parse_study({**BASE, "view": {"show": {"parts": shown}}}).view, {"show": {"parts": shown}})
-
-    def test_presets_with_no_controls_set_the_default_field_and_deformation(self):
-        presets = [{"label": "Exaggerated", "deformation": 40, "field": "displacement"}]
-        self.assertEqual(parse_study({**BASE, "view": {"presets": presets}}).view, {"presets": [{"label": "Exaggerated", "deformation": 40.0, "field": "displacement"}]})
-        self.assertIn("a preset here can set only label, deformation, field",
-                      value_error(self, parse_study, {**BASE, "view": {"presets": [{"label": "Heavy", "load_scale": 2}]}}))
-        self.assertIn("view.presets[0].deformation: -1 must be 0 or more",
-                      value_error(self, parse_study, {**BASE, "view": {"presets": [{"label": "Inside out", "deformation": -1}]}}))
-
-    def test_a_malformed_view_is_a_study_error_in_a_plain_sentence(self):
-        threshold_on_safety = self._control("threshold", field="safety_factor")
-        cases = [
-            (self._view(colours=1), "view: unknown keys ['colours']"),
-            (self._control("field", colour="red"), "view.controls[0]: unknown keys ['colour']"),
-            (self._view(controls=[{"drives": "speed", "max": 1}]), "view.controls[0].drives: 'speed' is not one of"),
-            (self._view(controls=[{"drives": "deformation", "max": 9}, {"drives": "deformation", "max": 4}]), "only one control drives deformation"),
-            (self._control("field", options=["von_mises", "safety_factor"]), "'safety_factor' is not a field the result writes"),
-            (self._control("field", default="displacement", options=["von_mises"]), "default 'displacement' is not one of its options"),
-            (self._control("deformation", type="enum"), "a deformation control is a number"),
-            (self._control("load_scale", min=3, max=1), "min (3) must be below max (1)"),
-            (self._control("load_scale", default=5), "default (5) must be between min (0.5) and max (3)"),
-            (self._control("deformation", min=-1), "min (-1) must be zero or more"),
-            (self._control("load_scale", min=0), "view.controls[2].min: a load_scale control starts above no load; min (0) must be more than 0"),
-            (self._control("threshold", max=float("inf")), "view.controls[3].max: expected a finite number, got inf"),
-            (self._control("deformation", default=float("nan")), "view.controls[1].default: expected a finite number, got nan"),
-            (self._control("deformation", max=True), "view.controls[1].max: expected a number, got true"),
-            (self._view(presets=[{"label": "Huge", "load_scale": float("inf")}]), "view.presets[0].load_scale: expected a finite number"),
-            (self._view(controls=[]), "view.controls is empty: leave it out for the default controls"),
-            (threshold_on_safety, "'safety_factor' is not a field the result writes"),
-            (self._control("threshold", field=None), "view.controls[3].field: name the field it compares"),
-            (self._control("deformation", field="von_mises"), "view.controls[1]: unknown keys ['field']"),
-            (self._view(presets=[{"label": "Bump", "threshold": 50, "load_scale": 9}]), "view.presets[0].load_scale: 9 must be between"),
-            (self._view(presets=[{"label": "Bump", "mesh": 1}]), "view.presets[0]: 'mesh' is not a control"),
-            (self._view(presets=[{"load_scale": 2}]), "view.presets[0].label"),
-            (self._view(presets=[{"label": "Flip", "field": "strain"}]), "view.presets[0].field: 'strain' is not one of"),
-            (self._view(show={"loads": "yes"}), "view.show.loads: true or false"),
-            (self._view(show={"arrows": True}), "view.show: unknown keys ['arrows']; expected loads, fixtures, parts"),
-            (self._view(colours=1), "expected checks, sections, controls, presets, show"),
-            (self._view(show={"parts": 1}), "view.show.parts: true or false, got 1"),
-        ]
-        for view, fragment in cases:
-            with self.subTest(fragment=fragment):
-                self.assertIn(fragment, value_error(self, parse_study, {**BASE, "view": view}))
-        # A preset may only set what a declared control drives.
-        self.assertIn("'load_scale' is not a control", value_error(self, parse_study, {**BASE, "view": {
-            "controls": [VIEW["controls"][0]], "presets": [{"label": "Heavy", "load_scale": 2}]}}))
-
-    def test_checks_sections_and_when_parse_as_written(self):
-        view = {
-            "checks": [{"kind": "stress", "margin": 2, "label": "Strength"}, {"kind": "displacement", "limit_mm": 0.5, "faces": ["face 2"], "label": "Tip sag"}],
-            "sections": ["verdict", "controls"],
-            "controls": [{"drives": "load_scale", "max": 2, "when": "failing"}],
-        }
-        study = parse_study({**BASE, "view": view})
-        self.assertEqual(study.view["checks"], [
-            {"kind": "stress", "margin": 2.0, "label": "Strength"}, {"kind": "displacement", "limit_mm": 0.5, "faces": ["face 2"], "label": "Tip sag"}])
-        self.assertEqual(study.view["sections"], ["verdict", "controls"])
-        self.assertEqual(study.view["controls"][0]["when"], "failing")
+    def test_checks_parse_as_written(self):
+        checks = [{"kind": "stress", "margin": 2, "label": "Strength"},
+                  {"kind": "displacement", "limit_mm": 0.5, "faces": ["face 2"], "label": "Tip sag"}]
+        study = parse_study({**BASE, "checks": checks})
+        self.assertEqual(study.checks, (
+            {"kind": "stress", "margin": 2.0, "label": "Strength"}, {"kind": "displacement", "limit_mm": 0.5, "faces": ["face 2"], "label": "Tip sag"}))
         self.assertEqual(study.check_faces, ("face 2",))
         # The stress check's margin is the study's.
         self.assertEqual(study.margin, 2.0)
-        self.assertEqual(parse_study({**BASE, "view": {"checks": [{"kind": "stress", "margin": 3}]}}).margin, 3.0)
+        self.assertEqual(parse_study({**BASE, "checks": [{"kind": "stress", "margin": 3}]}).margin, 3.0)
 
     def test_with_no_checks_the_stress_check_alone_judges_the_result(self):
         self.assertEqual(parse_study(BASE).checks, ({"kind": "stress"},))
-        self.assertEqual(parse_study({**BASE, "view": {"show": {"loads": True}}}).checks, ({"kind": "stress"},))
         self.assertEqual(parse_study(BASE).check_faces, ())
 
-    def test_a_malformed_check_section_or_when_is_a_plain_sentence(self):
+    def test_a_malformed_check_is_a_plain_sentence(self):
         cases = [
-            ({"checks": []}, "view.checks is empty: leave it out for the stress check alone"),
-            ({"checks": {"kind": "stress"}}, "view.checks: expected a list"),
-            ({"checks": [{"kind": "frequency"}]}, 'view.checks[0].kind: "frequency" is not a check this cadgen makes'),
-            ({"checks": ["stress"]}, "view.checks[0]: expected an object"),
-            ({"checks": [{"kind": "stress"}, {"kind": "stress"}]}, "only one stress check"),
-            ({"checks": [{"kind": "stress", "limit_mm": 1}]}, "view.checks[0]: unknown keys ['limit_mm']; a stress check takes"),
-            ({"checks": [{"kind": "stress", "margin": 0.5}]}, "view.checks[0].margin: a safety factor below 1 means the part yields"),
-            ({"checks": [{"kind": "displacement"}]}, "view.checks[0].limit_mm: a displacement check needs the most it may move"),
-            ({"checks": [{"kind": "displacement", "limit_mm": 0}]}, "view.checks[0].limit_mm: must be > 0"),
-            ({"checks": [{"kind": "displacement", "limit_mm": 1, "faces": []}]}, "view.checks[0]: 'faces' must be a non-empty list"),
-            ({"checks": [{"kind": "displacement", "limit_mm": 1, "label": ""}]}, "view.checks[0].label: expected a short piece of text"),
-            ({"sections": []}, "view.sections: list the parts of Study to show"),
-            ({"sections": ["verdict", "chart"]}, 'view.sections[1]: "chart" is not one of'),
-            ({"sections": ["setup", "setup"]}, "view.sections[1]: 'setup' is listed twice"),
-            ({"controls": [{"drives": "load_scale", "max": 2, "when": "sometimes"}]}, 'view.controls[0].when: "sometimes" is not one of'),
+            ([], "study.checks is empty: leave it out for the stress check alone"),
+            ({"kind": "stress"}, "study.checks: expected a list"),
+            ([{"kind": "frequency"}], 'checks[0].kind: "frequency" is not a check this cadgen makes; use one of [\'stress\', \'displacement\']'),
+            (["stress"], "checks[0]: expected an object"),
+            ([{"kind": "stress"}, {"kind": "stress"}], "only one stress check"),
+            ([{"kind": "stress", "limit_mm": 1}], "checks[0]: unknown keys ['limit_mm']; a stress check takes"),
+            ([{"kind": "stress", "margin": 0.5}], "checks[0].margin: a safety factor below 1 means the part yields"),
+            ([{"kind": "displacement"}], "checks[0].limit_mm: a displacement check needs the most it may move"),
+            ([{"kind": "displacement", "limit_mm": 0}], "checks[0].limit_mm: must be > 0"),
+            ([{"kind": "displacement", "limit_mm": 1, "faces": []}], "checks[0]: 'faces' must be a non-empty list"),
+            ([{"kind": "displacement", "limit_mm": 1, "label": ""}], "checks[0].label: expected a short piece of text"),
         ]
-        for view, fragment in cases:
+        for checks, fragment in cases:
             with self.subTest(fragment=fragment):
-                message = value_error(self, parse_study, {**BASE, "view": view})
+                message = value_error(self, parse_study, {**BASE, "checks": checks})
                 self.assertIn(fragment, message)
                 self.assertNotIn("\u2014", message)
         self.assertIn("the stress check's margin (3) is not the study's margin (2); give it once", value_error(
-            self, parse_study, {**BASE, "margin": 2, "view": {"checks": [{"kind": "stress", "margin": 3}]}}))
+            self, parse_study, {**BASE, "margin": 2, "checks": [{"kind": "stress", "margin": 3}]}))
+
+    def test_a_view_is_no_key(self):
+        self.assertIn("study: unknown keys ['view']", value_error(self, parse_study, {**BASE, "view": {"checks": []}}))
+        self.assertIn("study: unknown keys ['analysis']", value_error(self, parse_study, {**BASE, "analysis": "static"}))
 
 
 class GlbJson(unittest.TestCase):
@@ -318,7 +227,7 @@ class GlbJson(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "result.glb"
             with self.assertRaises(ValueError):
-                write_glb(path, extras={"faces": ["face 1"], "view": {"max": math.inf}}, **mesh)
+                write_glb(path, extras={"faces": ["face 1"], "summary": {"max": math.inf}}, **mesh)
             self.assertFalse(path.exists())
 
 
@@ -342,12 +251,12 @@ class Cantilever(unittest.TestCase):
             "loads": [{"faces": [cls.load_ref], "type": "force", "vector_N": [0, 0, -FORCE]}],
             "mesh": {"size_mm": 2.0},
             # Generous limits: the checks pass, so the part still has nothing to say.
-            "view": {**VIEW, "checks": [
+            "checks": [
                 {"kind": "stress"},
                 {"kind": "displacement", "limit_mm": 2 * TIP},
                 {"kind": "displacement", "limit_mm": 1.05 * TIP, "faces": [cls.load_ref], "label": "Tip sag"},
                 {"kind": "displacement", "limit_mm": TIP, "faces": [cls.fixed_ref], "label": "Clamp"},
-            ]},
+            ],
         }
         cls.out = directory / "results" / "cantilever.glb"
         cls.solver = _CountingSolve()
@@ -406,15 +315,10 @@ class Cantilever(unittest.TestCase):
         self.assertEqual(written["fields"][0]["max"], self.result.summary["max_von_mises_MPa"])
         self.assertEqual(written["mesh"]["order"], 2)
 
-    def test_the_view_names_only_fields_the_glb_writes(self):
-        from cadgen._internal.fea.study import VIEW_FIELDS
-
-        written = {field["attribute"] for field in glb_extras(self.result.glb)["fields"]}
-        self.assertLessEqual({f"_{name.upper()}" for name in VIEW_FIELDS}, written)
-
-    def test_the_studys_view_is_copied_into_the_glb_and_the_sidecar(self):
-        self.assertEqual(glb_extras(self.result.glb)["view"], self.study["view"])
-        self.assertEqual(sidecar(self.result)["view"], self.study["view"])
+    def test_the_glb_writes_von_mises_and_the_displacement(self):
+        written = [field["attribute"] for field in glb_extras(self.result.glb)["fields"]]
+        self.assertEqual(written, ["_VON_MISES", "_DISPLACEMENT"])
+        self.assertNotIn("view", glb_extras(self.result.glb))
 
     def test_a_displacement_check_measures_the_tip_against_beam_theory(self):
         stress, whole, tip, clamp = self.result.summary["checks"]
@@ -469,7 +373,7 @@ class Cantilever(unittest.TestCase):
         json_length, json_type = struct.unpack_from("<II", raw, 12)
         self.assertEqual(json_type, 0x4E4F534A)
         gltf = json.loads(raw[20:20 + json_length])
-        # The attribute names and the fields' order: test_fea_protocol's Golden, on the same static output.
+        # The attribute names and the fields' order.
         attributes = gltf["meshes"][0]["primitives"][0]["attributes"]
         extras = gltf["meshes"][0]["extras"]
         self.assertEqual(extras["deformation_scale"], self.result.summary["deformation_scale"])
@@ -589,11 +493,7 @@ class Yielding(unittest.TestCase):
         self.assertEqual(list(self.result.findings), self.sidecar["findings"])
         self.assertIn(f"error: {first['summary']}", self.result.human_lines())
 
-    def test_a_study_without_a_view_writes_none(self):
-        self.assertNotIn("view", glb_extras(self.result.glb))
-        self.assertNotIn("view", self.sidecar)
-
-    def test_with_no_view_the_stress_check_alone_says_what_the_safety_factor_says(self):
+    def test_with_no_checks_the_stress_check_alone_says_what_the_safety_factor_says(self):
         (check,) = self.result.summary["checks"]
         self.assertEqual((check["kind"], check["status"]), ("stress", "fails"))
         self.assertEqual(check["ratio"], round(1 / self.result.summary["safety_factor"], 6))
@@ -733,12 +633,12 @@ class MeshOrderGuard(unittest.TestCase):
         from cadgen._internal.fea.mesh import require_elements
 
         with self.assertRaises(RuntimeError):
-            require_elements(self._elements(second_order=False), 2)
+            require_elements(self._elements(second_order=False))
 
     def test_second_order_mesh_is_accepted(self):
         from cadgen._internal.fea.mesh import require_elements
 
-        require_elements(self._elements(second_order=True), 2)
+        require_elements(self._elements(second_order=True))
 
 
 class PeakFace(unittest.TestCase):
@@ -747,7 +647,7 @@ class PeakFace(unittest.TestCase):
     def _peak_face(self, peak_node: int, fixed: set[int]):
         import numpy as np
 
-        from cadgen._internal.fea.analyses.static import peak_face as _peak_face
+        from cadgen._internal.fea.static import peak_face as _peak_face
 
         # Two triangles on f1, one on f2, sharing node 2 (an edge between them); node 9 is inside.
         volume = SimpleNamespace(
@@ -777,7 +677,7 @@ class PeakFace(unittest.TestCase):
         """A peak node on free face f2, ``distance`` mm (elements of 1 mm) from fixed face f1's nodes."""
         import numpy as np
 
-        from cadgen._internal.fea.analyses.static import peak_face as _peak_face
+        from cadgen._internal.fea.static import peak_face as _peak_face
 
         volume = SimpleNamespace(
             boundary_ordinal=np.array([1, 2]),
@@ -1019,6 +919,39 @@ class MissingExtra(unittest.TestCase):
             require_fea_stack()
         self.assertIn("cadgen[fea]", str(caught.exception))
         self.assertIn("netgen", str(caught.exception))
+
+
+
+class CheckLines(unittest.TestCase):
+    def test_a_check_far_under_its_limit_says_under_1_percent_not_0_00_times(self):
+        from cadgen.results import FeaResult
+
+        def stress(value, ratio):
+            return {"label": "Strength", "value": value, "limit": 250.0, "unit": "MPa", "ratio": ratio, "status": "passes"}
+
+        result = FeaResult(ok=True, document=Path("p.step"), occurrence="part", glb=Path("p.glb"), sidecar=Path("p.json"),
+                           summary={"safety_factor": 2.5, "checks": [stress(0.0053, 2.12e-05), stress(2.5, 0.01)]},
+                           mesh={"elements": 10})
+        lines = result.human_lines()
+        self.assertIn("check 'Strength': 0.0053 MPa against a 250 MPa limit, under 1% of it, passes", lines)
+        self.assertIn("check 'Strength': 2.5 MPa against a 250 MPa limit, 0.01× it, passes", lines)
+        self.assertFalse(any("0.00×" in line for line in lines))
+
+
+@needs_fea
+class MeshRefine(unittest.TestCase):
+    """``mesh.refine``'s balls, as the size field's points: local sizes that refine where they say."""
+
+    def test_a_size_field_refines_where_it_says(self):
+        from cadgen._internal.fea.document import read_document
+        from cadgen._internal.fea.mesh import mesh_occurrence
+
+        with tempfile.TemporaryDirectory() as tmp:
+            step = box_step(Path(tmp), "cantilever", (40.0, 4.0, 4.0), "x")
+            occurrence = next(iter(read_document(step).leaves()))
+            plain = mesh_occurrence(occurrence, max_h=2.0)
+            by_point = mesh_occurrence(occurrence, max_h=2.0, size_field={"points": [[20.0, 0.0, 0.0, 0.5]], "radius_mm": 1.0})
+        self.assertGreater(len(by_point.tets), 1.5 * len(plain.tets))
 
 
 if __name__ == "__main__":

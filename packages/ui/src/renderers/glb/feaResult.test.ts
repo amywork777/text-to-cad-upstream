@@ -1,9 +1,9 @@
 import { BufferAttribute, BufferGeometry, Group, Mesh, Ray, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
-  applyDeformation, deformationRange, faceLabel, faceTitle, faceRole, feaControls, feaMarkerShow, feaPresets, feaRamp, fieldValues, forceDirection,
+  applyDeformation, deformationRange, faceLabel, faceTitle, faceRole, feaControls, feaRamp, fieldValues, forceDirection,
   feaVerdict, formatValue, pickFace, readFeaResult, partRows, recolorByField, resultSourcePath, studyRows, weakestPartIndex,
-  feaChecks, feaFailing, feaSections, studySections, feaShownControls, feaDefaults, facePromptSummary
+  feaChecks, studySections, facePromptSummary
 } from './feaResult.js';
 import { translator } from '../../i18n/core.js';
 
@@ -399,72 +399,20 @@ describe('an assembly result', () => {
   });
 });
 
-describe('the study\'s view', () => {
-  const VIEW = {
-    controls: [
-      { drives: 'load_scale', type: 'number', label: 'Rider weight', min: 0.5, max: 3, default: 1, unit: '×' },
-      { drives: 'field', type: 'enum', label: 'Show', options: ['displacement', 'von_mises'], default: 'von_mises' },
-      { drives: 'threshold', type: 'number', label: 'Show above', field: 'von_mises', min: 0, max: 300, default: 138, unit: 'MPa' },
-      { drives: 'deformation', type: 'number', label: 'Exaggerate', min: 0, max: 50, default: 12 },
-    ],
-    presets: [{ label: 'Landing (3×)', load_scale: 3 }],
-    show: { loads: true, fixtures: false },
-  };
-  const withView = (view: unknown) => {
-    const { mesh, root } = resultMesh();
-    mesh.userData.view = view;
-    return readFeaResult(root)!;
-  };
-
-  it('is the agent\'s controls in its order, labels and ranges, as generic parameters', () => {
-    const controls = feaControls(withView(VIEW));
-    expect(controls.map((control: any) => [control.id, control.type, control.label])).toEqual([
-      ['load_scale', 'number', 'Rider weight'], ['field', 'enum', 'Show'], ['threshold', 'number', 'Show above'], ['deformation', 'number', 'Exaggerate']]);
-    expect(controls[0]).toMatchObject({ min: 0.5, max: 3, defaultValue: 1, unit: '×' });
-    expect(controls[1].options.map((option: any) => option.label)).toEqual(['Displacement', 'Stress']);
-    expect(controls[1].defaultValue).toBe('_von_mises');
-    expect(controls[2]).toMatchObject({ field: '_von_mises', defaultValue: 138, unit: 'MPa' });
-    expect(controls[3]).toMatchObject({ min: 0, max: 50, defaultValue: 12, unit: '×' });
-  });
-
-  it('with no view, is today\'s: a field over every field opening on stress, and deformation from 0 to four times the file\'s', () => {
+describe('What you see\'s controls', () => {
+  it('are the field over every field opening on stress, the deformation from 0 to four times the file\'s, and the load from 0.1 to 3', () => {
     const controls = feaControls(readFeaResult(resultMesh().root)!);
-    expect(controls.map((control: any) => control.id)).toEqual(['field', 'deformation']);
+    expect(controls.map((control: any) => [control.id, control.type])).toEqual([['field', 'enum'], ['deformation', 'number'], ['load_scale', 'number']]);
     expect(controls[0]).toMatchObject({ defaultValue: '_von_mises', hideLabel: true, ariaLabel: 'Result field' });
-    expect(controls[1]).toMatchObject({ min: 0, max: 40, step: 0.5, defaultValue: 10, ariaLabel: 'Deformation scale' });
-    // A view's deformation with no range is that slider, under the view's own label.
-    expect(feaControls(withView({ controls: [{ drives: 'deformation', type: 'number', label: 'Exaggerate' }] }))[0])
-      .toMatchObject({ label: 'Exaggerate', min: 0, max: 40, step: 0.5, defaultValue: 10, unit: '×' });
+    expect(controls[0].options.map((option: any) => option.label)).toEqual(['Stress', 'Displacement']);
+    expect(controls[1]).toMatchObject({ min: 0, max: 40, step: 0.5, defaultValue: 10, ariaLabel: 'Deformation scale', unit: '×' });
+    expect(controls[2]).toMatchObject({ label: 'Load', min: 0.1, max: 3, defaultValue: 1, unit: '×' });
   });
 
-  it('skips what this viewer does not know: a drives or a type, a field the file lacks, a range it cannot use', () => {
-    const controls = feaControls(withView({ controls: [
-      { drives: 'speed', type: 'number', max: 3 },
-      { drives: 'deformation', type: 'enum', options: [] },
-      { drives: 'field', options: ['safety_factor'] },
-      { drives: 'threshold', field: 'strain', max: 3 },
-      { drives: 'load_scale', min: 2, max: 1 },
-      { drives: 'load_scale', max: 2, type: 'number' },
-    ] }));
-    expect(controls.map((control: any) => control.id)).toEqual(['load_scale']);
-    expect(controls[0]).toMatchObject({ min: 0, max: 2, defaultValue: 1 });
-  });
-
-  it('falls back to the default controls when the view names none this viewer can draw, and its presets set them', () => {
-    for (const controls of [[], [{ drives: 'gravity', type: 'number', max: 2 }]]) {
-      expect(feaControls(withView({ controls })).map((control: any) => control.id)).toEqual(['field', 'deformation']);
-    }
-    const result = withView({ presets: [{ label: 'Exaggerated', deformation: 30, field: 'displacement' }] });
-    expect(feaPresets(result, feaControls(result))[0].values).toEqual({ field: '_displacement', deformation: 30 });
-  });
-
-  it('names its presets as full states over the controls, and says which markers it draws', () => {
-    const result = withView(VIEW);
-    const presets = feaPresets(result, feaControls(result));
-    expect(presets).toEqual([{ value: 'preset:0', label: 'Landing (3×)', values: { load_scale: 3, field: '_von_mises', threshold: 138, deformation: 12 } }]);
-    expect(feaMarkerShow(result)).toEqual({ on: true, loads: true, fixtures: false });
-    expect(feaMarkerShow(withView({ show: { loads: false, fixtures: false } }))).toEqual({ on: false, loads: true, fixtures: true });
-    expect(feaMarkerShow(readFeaResult(resultMesh().root)!)).toEqual({ on: true, loads: true, fixtures: true });
+  it('are the same whatever view an older file carries', () => {
+    const { mesh, root } = resultMesh();
+    mesh.userData.view = { controls: [{ drives: 'threshold', type: 'number', field: 'von_mises', max: 300 }], sections: ['controls'] };
+    expect(feaControls(readFeaResult(root)!)).toEqual(feaControls(readFeaResult(resultMesh().root)!));
   });
 });
 
@@ -503,20 +451,6 @@ describe('a load other than the solved one', () => {
     expect(reads).toBe(1);
   });
 
-  it('greys every vertex under a threshold, comparing the threshold field at the load', () => {
-    const { mesh, root } = resultMesh();
-    const [vm, displacement] = readFeaResult(root)!.fields;
-    recolorByField(mesh, vm, undefined, null, null, null, { threshold: { field: vm, value: 40, scale: 1 } });
-    const bytes = Array.from(mesh.geometry.getAttribute('color').array as Uint8Array);
-    // 0 and 25 MPa are under 40: grey. 50 and 100 keep the ramp.
-    expect([bytes.slice(0, 3), bytes.slice(12, 15)]).toEqual([[150, 150, 150], [150, 150, 150]]);
-    expect(bytes.slice(8, 11)).toEqual([230, 20, 13]);
-    // At twice the load 25 MPa is 50: over it. On another field, the stress decides all the same.
-    recolorByField(mesh, displacement, undefined, null, null, null, { valueScale: 2, rangeScale: 2, threshold: { field: vm, value: 40, scale: 2 } });
-    const doubled = Array.from(mesh.geometry.getAttribute('color').array as Uint8Array);
-    expect(doubled.slice(0, 3)).toEqual([150, 150, 150]);
-    expect(doubled.slice(12, 15)).not.toEqual([150, 150, 150]);
-  });
 });
 
 /** The ramp's colour (with alpha) for a stress over the 47.3 MPa range. */
@@ -622,9 +556,7 @@ describe('the study\'s checks', () => {
     // At half the load the sag uses 0.62 of its limit: both pass, and the sag still takes the least load.
     expect(half).toMatchObject({ status: 'strong', title: 'Passes all checks', caption: 'OK up to 1.6× this load' });
     expect(half.rows.map((row: any) => [row.status, plain(row.line)])).toEqual([['strong', '0.31 mm, limit 0.5 mm'], ['strong', '24 MPa, limit 276 MPa']]);
-    expect(feaFailing(result, 1)).toBe(true);
-    expect(feaFailing(result, 0.5)).toBe(false);
-    expect(feaFailing(result, 0.75)).toBe(true); // 0.93 of the limit: close, within the model's own tenth
+    // 0.93 of the limit: close, within the model's own tenth.
     expect(feaVerdict(result, 0.75)).toMatchObject({ status: 'close', title: 'Close to the limit' });
   });
 
@@ -643,43 +575,8 @@ describe('the study\'s checks', () => {
     const frequency = { kind: 'frequency', label: 'First mode', value: 40, limit: 60, unit: 'Hz', ratio: 0.67, status: 'passes' };
     expect(feaChecks(checked([frequency, SAG_CHECK])).map((check: any) => check.label)).toEqual(['Tip sag']);
     expect(feaVerdict(checked([frequency]))).toBeNull();
-    expect(feaFailing(checked([frequency]))).toBeNull();
   });
 
-  it('show a control `when` they fail or pass at the load shown, the load control judged where it opens, so dragging it never hides it', () => {
-    const view = { controls: [
-      { drives: 'load_scale', label: 'Load', min: 0.1, max: 2, default: 1, when: 'failing' },
-      { drives: 'threshold', label: 'Show above', field: 'von_mises', min: 0, max: 100, default: 0, when: 'failing' },
-      { drives: 'deformation', label: 'Exaggerate', min: 0, max: 50, default: 12, when: 'passing' },
-      { drives: 'field', label: 'Show', when: 'sometimes' },
-    ] };
-    const result = checked([STRESS_CHECK, SAG_CHECK], { view });
-    const controls = feaControls(result);
-    const at = (values: Record<string, unknown>) => {
-      const { shown, effective, loadScale } = feaShownControls(result, controls, { ...feaDefaults(controls), ...values });
-      return { shown: shown.map((control: any) => control.id), effective, loadScale };
-    };
-    // As solved the sag fails: the load and the threshold show, the deformation waits for a pass; an unknown `when` always shows.
-    expect(at({}).shown).toEqual(['load_scale', 'threshold', 'field']);
-    // Dragged to half the load everything passes: the threshold hides and acts at its default, its value kept; the load stays.
-    expect(at({ load_scale: 0.5, threshold: 40, deformation: 30 })).toMatchObject({
-      shown: ['load_scale', 'deformation', 'field'], loadScale: 0.5, effective: { threshold: 0, deformation: 30 } });
-    // While failing, the deformation is hidden and drawn at its default, whatever was chosen.
-    expect(at({ deformation: 30 }).effective.deformation).toBe(12);
-    // A load control shown only while passing hides on a failing result, and the load shown is its default.
-    const passing = checked([STRESS_CHECK, SAG_CHECK], { view: { controls: [{ ...view.controls[0], when: 'passing' }] } });
-    const loadOnly = feaControls(passing);
-    expect(feaShownControls(passing, loadOnly, { load_scale: 0.5 })).toMatchObject({ shown: [], loadScale: 1 });
-    // With nothing judged (no checks, no safety factor) every control shows.
-    const unjudged = studyResult({ study: STUDY, faces: [], safety_factor: null, view }).result;
-    expect(feaShownControls(unjudged, feaControls(unjudged), feaDefaults(feaControls(unjudged))).shown).toHaveLength(4);
-  });
-
-  it('order Study\'s sections as the view lists them, leaving out the rest and any this viewer does not know', () => {
-    expect(feaSections(checked(null))).toEqual(['verdict', 'setup', 'controls', 'details']);
-    expect(feaSections(checked(null, { view: { sections: ['controls', 'chart', 'verdict', 'controls'] } }))).toEqual(['controls', 'verdict']);
-    expect(feaSections(checked(null, { view: { sections: ['chart'] } }))).toEqual(['verdict', 'setup', 'controls', 'details']);
-  });
 });
 
 describe('a body load', () => {
