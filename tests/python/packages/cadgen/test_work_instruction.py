@@ -115,7 +115,7 @@ class SourceTests(unittest.TestCase):
     def test_every_process_value_names_where_it_comes_from(self) -> None:
         from cadgen.work_instruction import Adhesive, Cure, Machining, Material, Torque
 
-        for make in (lambda: Torque(20, 25, "in-lbf"), lambda: Adhesive("EA 9394", mix="100:17"),
+        for make in (lambda: Torque(20, 25, unit="in-lbf"), lambda: Adhesive("EA 9394", mix="100:17"),
                      lambda: Cure("cure", cycle="1 h at 150 F"), lambda: Machining("drill", tool="#21"),
                      lambda: Material("Loctite 242")):
             with self.subTest(make=make), self.assertRaisesRegex(TypeError, r"Spec\(\.\.\.\)\.at"):
@@ -145,7 +145,16 @@ class SourceTests(unittest.TestCase):
 
         spec, _ = _sources()
         self.assertEqual(Torque(12.345678, unit="N-m", per=spec.at("4")).text(), "12.345678 N-m")
-        self.assertEqual(Torque(40.0, 45, "in-lbf", per=spec.at("4")).text(), "40\u201345 in-lbf")
+        self.assertEqual(Torque(40.0, 45, unit="in-lbf", per=spec.at("4")).text(), "40\u201345 in-lbf")
+
+    def test_a_torque_s_unit_is_named_never_read_from_where_the_high_end_goes(self) -> None:
+        from cadgen.work_instruction import Torque
+
+        spec, _ = _sources()
+        with self.assertRaisesRegex(TypeError, r"Torque\(30, unit='N-m'\)"):
+            Torque(30, "N-m", per=spec.at("4"))
+        with self.assertRaises(TypeError):
+            Torque(20, 25, "in-lbf", per=spec.at("4"))
 
     def test_a_citation_says_which_document_and_where(self) -> None:
         from cadgen.work_instruction import Stated
@@ -163,7 +172,7 @@ class VocabularyTests(_Assembly):
         spec, _ = _sources()
         cases = [
             (ValueError, lambda: Torque(20, unit="Nm", per=spec.at("4"))),
-            (ValueError, lambda: Torque(30, 20, "in-lbf", per=spec.at("4"))),
+            (ValueError, lambda: Torque(30, 20, unit="in-lbf", per=spec.at("4"))),
             (ValueError, lambda: Torque(0, unit="in-lbf", per=spec.at("4"))),
             (ValueError, lambda: self.instruction(status="approved")),
             (ValueError, lambda: self.instruction(camera="isometric")),
@@ -228,7 +237,7 @@ class OpenItemTests(_Assembly):
         wi.step("Bond", install=["bracket"]).bond(
             Adhesive("EA 9394", prep="IPA wipe", mix="100:17", cure="5 days at 77 F", per=spec.at("5.1")))
         wi.step("Pins", install=["assembly/pin.1"]).fasten("NAS1352-3", qty=1,
-                                                  torque=Torque(40, 45, "in-lbf", per=drawing.at("note 4")))
+                                                  torque=Torque(40, 45, unit="in-lbf", per=drawing.at("note 4")))
         return wi
 
     def test_every_value_nobody_stated_and_every_part_no_step_installs_is_listed(self) -> None:
@@ -313,6 +322,22 @@ class DocumentTests(_Assembly):
         self.assertTrue(self._write("released.pdf", lambda: self._complete(status="released")).startswith(b"%PDF"))
         pages = _page_texts(self._complete(status="released"))
         self.assertFalse([text for page in pages for text in page if "DRAFT" in text or "NOT STATED" in text])
+
+    def test_an_instruction_written_is_counted_and_one_refused_is_not(self) -> None:
+        """Counted as a drawing is: kept with a command's counts, since the script sends nothing."""
+        from unittest import mock
+
+        from cadgen import analytics
+
+        with mock.patch.object(analytics, "hand_over") as handed:
+            self._write("counted.pdf", self._complete)
+        handed.assert_called_once_with({"features": ["work_instruction"]})
+        self.assertIn("work_instruction", analytics.FEATURES)
+        with mock.patch.object(analytics, "hand_over") as handed, self.assertRaises(ValueError):
+            self._write("refused.pdf", lambda: self.instruction(status="released"))
+        handed.assert_not_called()
+        with mock.patch.object(analytics, "hand_over", side_effect=RuntimeError("broken")):
+            self._write("uncounted.pdf", self._complete)  # a count never fails what it counts
 
     def test_the_output_path_is_required_and_names_a_pdf(self) -> None:
         from cadgen.work_instruction import work_instruction
@@ -410,7 +435,7 @@ class WhatTheTestsFoundTests(_Assembly):
         spec, _ = _sources()
         wi = self.instruction()
         wi.step("Bolt", install=["base_plate"]).fasten(
-            "#10-32 screw", qty=4, torque=Torque(32, 36, "in-lbf", per=spec.at("4.2")),
+            "#10-32 screw", qty=4, torque=Torque(32, 36, unit="in-lbf", per=spec.at("4.2")),
             sequence=Cited("Cross pattern, two passes", per=spec.at("4.3")))
         self.assertEqual(wi.equipment(), ["Torque wrench"])
         text = [t for page in _page_texts(wi) for t in page]
@@ -478,6 +503,14 @@ class SubassemblyTests(unittest.TestCase):
             pins.append(pin)
         wheel = Compound(children=[hub, rim], label="wheel")
         cls.document = model(Compound(children=[base, wheel, *pins], label="nested"), name="nested")
+        wheels = []
+        for x in (-30, 30):
+            hub = Pos(x, 0, 10) * Box(10, 10, 10)
+            hub.label = "hub"
+            rim = Pos(x, 0, 10) * Box(30, 30, 4)
+            rim.label = "rim"
+            wheels.append(Compound(children=[hub, rim], label="wheel"))
+        cls.cart = model(Compound(children=[Box(100, 60, 10), *wheels], label="cart"), name="cart")
 
     def test_units_and_kinds(self) -> None:
         from cadgen._internal.work_instruction_pages import parts
@@ -493,6 +526,73 @@ class SubassemblyTests(unittest.TestCase):
         wi.step("Pin 2", install=["pin_2"])
         rows = [(name, len(refs), steps) for name, refs, steps in parts(wi)]
         self.assertEqual(rows, [("base_plate", 1, ["1"]), ("wheel", 1, ["2"]), ("pin", 2, ["3", "4"])])
+
+    def test_a_subassembly_is_installed_by_its_ref_or_its_label(self) -> None:
+        from cadgen.work_instruction import Instruction
+
+        wi = Instruction(self.cart, title="T", number="N", revision="A", pictures=False)
+        first = wi.step("First wheel", install=["wheel.1"])
+        self.assertEqual((first.units, first.install), ((("cart/wheel.1", "wheel"),),
+                                                        ("cart/wheel.1/hub", "cart/wheel.1/rim")))
+        self.assertEqual(wi.step("Second wheel", install=["cart/wheel.2"]).install,
+                         ("cart/wheel.2/hub", "cart/wheel.2/rim"), "its full path is a ref too")
+        with self.assertRaisesRegex(KeyError, "names no one part or subassembly.*wheel.1, cart/wheel.2"):
+            Instruction(self.cart, title="T", number="N", revision="A", pictures=False).step(
+                "Wheels", install=["wheel"])
+        alone = Instruction(self.document, title="T", number="N", revision="A", pictures=False)
+        self.assertEqual(alone.step("Wheel", install=["wheel"]).units, (("wheel", "wheel"),),
+                         "one subassembly of a label is installed by it")
+
+
+class FileTests(unittest.TestCase):
+    """An assembly's .xbf or .step is read as a model's document is, and a face named by the engine
+    (``bracket/f:...``) is resolved through ``cadgen.inspect``. The names are a built model's own, so
+    this builds the template's model once and writes its files."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import sys
+        from unittest import mock
+
+        import cadgen
+
+        temporary = generated_cad_directory(prefix="wi-files-")
+        cls.addClassCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        (root / "bracket_assembly.py").write_text(ASSEMBLY_MODEL, encoding="utf-8")
+        with mock.patch.object(sys, "path", [str(root), *sys.path]):
+            from bracket_assembly import bracket_assembly
+        cls.addClassCleanup(sys.modules.pop, "bracket_assembly", None)
+        cls.document = bracket_assembly()
+        cls.xbf, cls.step_file = root / "assembly.xbf", root / "assembly.step"
+        cadgen.export(cls.document, cls.xbf, cls.step_file, log=lambda _line: None)
+
+    def instruction(self, source):
+        from cadgen.work_instruction import Instruction
+
+        return Instruction(source, title="T", number="N", revision="A", pictures=False)
+
+    def test_an_xbf_or_a_step_is_an_assembly_as_the_model_s_document_is(self) -> None:
+        for source in (self.xbf, self.step_file):
+            with self.subTest(source=source.name):
+                wi = self.instruction(source)
+                self.assertEqual((wi.source, wi.source_name), (str(source), source.name))
+                self.assertEqual([leaf.label for leaf in wi.leaves()], ["base_plate", "bracket", "pin"])
+                self.assertEqual(wi.step("Bracket", install=["bracket"]).bond(
+                    None, surfaces=["bracket/face 5"]).ops[-1].surfaces, (("bracket/face 5", "bracket"),))
+
+    def test_a_named_face_is_resolved_to_its_ordinal_through_the_engine(self) -> None:
+        import cadgen
+
+        name = cadgen.inspect(self.document.id, "bracket/face 5")["name"]
+        self.assertTrue(name and name.startswith("f:"), name)
+        for source in (self.document, self.xbf):
+            with self.subTest(source=getattr(source, "name", source)):
+                step = self.instruction(source).step("Bond", install=["bracket"])
+                self.assertEqual(step.bond(None, surfaces=[f"bracket/{name}"]).ops[-1].surfaces,
+                                 (("bracket/face 5", "bracket"),))
+                with self.assertRaisesRegex(ValueError, "is not one face of"):
+                    step.bond(None, surfaces=["bracket/f:bracket_assembly.no_such_face.1"])
 
 
 class PictureTests(_Assembly):
@@ -516,7 +616,7 @@ class PictureTests(_Assembly):
 
         wi = self.instruction(pictures=True)
         wi.step("Load", install=["base_plate"]).bond(None, surfaces=["bracket/face 5"])
-        with self.assertRaisesRegex(ValueError, "not installed by step 1"):
+        with self.assertRaisesRegex(ValueError, "no step up to and including step 1 installs"):
             picture_plan(wi)
 
     def test_the_pictures_render_through_the_snapshot_runtime_into_the_pdf(self) -> None:

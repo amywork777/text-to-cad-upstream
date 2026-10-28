@@ -77,7 +77,8 @@ def picture_plan(wi) -> list[Picture]:
         for ref, owner in (pair for op in step.ops for pair in op.surfaces):
             if owner not in installed:
                 raise ValueError(
-                    f"step {step.label} marks {ref}, on {owner}, which is not installed by step {step.label}"
+                    f"step {step.label} marks {ref}, on {owner}, which no step up to and including step "
+                    f"{step.label} installs"
                 )
         if not (wi.pictures and step.picture and installed):
             continue
@@ -99,7 +100,9 @@ def _outline(mark_id: str, face, color: str, tolerance: float) -> dict:
 
 
 def _extent(wi) -> tuple[list[float], float]:
-    """The whole assembly's centre and bounding diagonal: every picture is framed on it."""
+    """The whole assembly's centre and bounding diagonal. A figure framed on the whole assembly
+    (``frame="assembly"``) is fitted to both; one framed on its step (the default, ``_fit_step``)
+    takes its distance from the diagonal and is sized within it."""
     from build123d import Compound
 
     box = Compound([leaf.shape() for leaf in wi.leaves()]).bounding_box()

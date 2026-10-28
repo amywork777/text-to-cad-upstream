@@ -33,7 +33,7 @@ from the section of the user's document it cites)::
         wi.step("Place the base plate on the fixture", install=["base_plate"])
         wi.step("Fasten the bracket to the base plate", install=["bracket"]).fasten(
             "<screw part number>", qty=4,
-            torque=Torque(1, 2, "in-lbf", per=FASTENING.at("<table>")))  # <low>, <high> as stated
+            torque=Torque(1, 2, unit="in-lbf", per=FASTENING.at("<table>")))  # <low>, <high> as stated
         return wi
 
     if __name__ == "__main__":
@@ -271,17 +271,21 @@ def _cited(name: str, value) -> tuple[str | None, Source | None]:
 
 @dataclass(frozen=True)
 class Torque:
-    """A torque, ``Torque(20, 25, "in-lbf", per=...)`` for a range or
+    """A torque, ``Torque(20, 25, unit="in-lbf", per=...)`` for a range or
     ``Torque(30, unit="N-m", per=...)`` for one value. The unit is one of
-    :data:`TORQUE_UNITS`; nothing is converted or rounded."""
+    :data:`TORQUE_UNITS`, and named (``unit=``) so a value is never read as one;
+    nothing is converted or rounded."""
 
     low: float
     high: float | None = None
-    unit: str = ""
     _: KW_ONLY
+    unit: str = ""  # required: refused empty below, after a unit given as ``high`` is named as one
     per: Source | None = None
 
     def __post_init__(self) -> None:
+        if isinstance(self.high, str):  # Torque(30, "N-m"): the unit given where the high end goes
+            raise TypeError(f"Torque high must be a number, got {self.high!r}; the unit is named: "
+                            f"Torque({self.low!r}, unit={self.high!r}), or Torque(low, high, unit=...) for a range")
         for name in ("low", "high"):
             value = getattr(self, name)
             if value is None and name == "high":
@@ -929,8 +933,8 @@ class Instruction:
             except RefError as exc:
                 listing = ", ".join(leaf.ref for leaf in leaves[:40])
                 more = f" and {len(leaves) - 40} more" if len(leaves) > 40 else ""
-                raise KeyError(f"{key!r} is not a part or subassembly of {self.source_name} ({exc}); its parts are: "
-                               f"{listing}{more}. wi.tree() lists the subassemblies too.") from None
+                raise KeyError(f"{key!r} names no one part or subassembly of {self.source_name} ({exc}); "
+                               f"its parts are: {listing}{more}. wi.tree() lists the subassemblies too.") from None
         parts = [part.ref for unit in named for part in self.scene.parts_under(unit)]
         return [(unit.ref, unit.label or "(unnamed)") for unit in named], parts
 
@@ -1063,7 +1067,7 @@ def work_instruction(func: Callable[..., Any] | None = None, *, out: str | Path 
         def run(*args: Any, **kwargs: Any) -> list[Path]:
             target = target_spec if target_spec.is_absolute() else (script.parent / target_spec).resolve()
             try:
-                return write(target, fn(*args, **kwargs))
+                written = write(target, fn(*args, **kwargs))
             except BaseException as error:
                 # A refused or failed run leaves nothing at out=: an older instruction
                 # still there would read as this run's.
@@ -1076,6 +1080,15 @@ def work_instruction(func: Callable[..., Any] | None = None, *, out: str | Path 
                 except Exception:  # noqa: BLE001 - a crash report never adds a failure to one
                     pass
                 raise
+            try:
+                from cadgen import analytics
+
+                # Made in the script's own process, which sends nothing itself: kept with a
+                # command's counts, as a drawing is (``eng_drawing._counted``).
+                analytics.hand_over({"features": ["work_instruction"]})
+            except Exception:  # noqa: BLE001 - a count never fails the instruction it counts
+                pass
+            return written
 
         def write(target: Path, wi: Any) -> list[Path]:
             if not isinstance(wi, Instruction):

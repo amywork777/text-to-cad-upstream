@@ -69,7 +69,7 @@ def bracket_assembly_wi():
 
     wi.operation("Install the pin")
     (wi.step("Install the pin", install=["pin"])
-       # Once stated: torque=Torque(<low>, <high>, "in-lbf", per=FASTENING.at(...)),
+       # Once stated: torque=Torque(<low>, <high>, unit="in-lbf", per=FASTENING.at(...)),
        # or per=DWG.at("<note>") where a drawing callout differs from the table.
        .fasten("<nut part number>", qty=1, torque=None, locking=LOCKING)
        .inspect("<acceptance criterion as stated>", per=DWG.at("<note>"),
@@ -210,7 +210,7 @@ A field left out prints NOT STATED if it is required, and nothing if optional.
 
 | Record | Required | Optional |
 | --- | --- | --- |
-| `Torque(low, high=None, unit="", *, per)` | `low` and `unit` (`in-lbf`, `ft-lbf`, `N-m`) | `high` for a range |
+| `Torque(low, high=None, *, unit, per)` | `low` and `unit` (`in-lbf`, `ft-lbf`, `N-m`) | `high` for a range |
 | `Adhesive(name, *, prep, mix, pot_life, cure, per)` | `prep`, `mix`, `pot_life`, `cure` | |
 | `Layup(name, *, plies, debulk, per)` | `plies` | `debulk` |
 | `Cure(name, *, cycle, per)` | `cycle` | |
