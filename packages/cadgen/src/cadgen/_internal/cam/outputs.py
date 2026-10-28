@@ -1,6 +1,6 @@
 """The result GLB (``<stem>.cam.glb``): the part, the stock, the toolpaths, and the plan in its extras.
 
-Written by hand (glTF 2.0 is a JSON chunk and one binary chunk, as FEA's result GLB is), so CAM adds no dependency.
+Written by hand (glTF 2.0 is a JSON chunk and one binary chunk), so CAM adds no dependency.
 Coordinates are glTF's: metres, Y up (CAD ``(x, y, z)`` mm -> ``(x, z, -y) / 1000``), so the part shows upright at
 its true size in any glTF viewer.
 

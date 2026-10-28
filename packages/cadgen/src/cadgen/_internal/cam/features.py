@@ -9,11 +9,11 @@
   where material stands between them along the axis (a split cylinder is one hole; two blind holes either side of a web
   are two), with their diameter, depth, axis (pointing out of the opening), opening centre and whether they go through;
   whether an end is open is asked of the exact solid (OCCT's classifier), off the axis so a drill point's cone reads as
-  a bottom. A counterbore (a wider coaxial cylinder stepped onto an open end) and a countersink (a cone widening out of
-  one) are part of the hole: it opens where they open on the part, ``depth_mm`` runs from there, and its entry carries
-  ``counterbore`` ``{diameter_mm, depth_mm}`` and ``countersink`` ``{diameter_mm, angle_deg}``; a blind hole's drawn
-  drill point is ``point_mm`` (its length past the full diameter). ``faces`` lists the walls first, then the
-  counterbore's wall and shoulder, the cones and a blind hole's floor, so any of them names the hole. ``reach`` lists
+  a bottom. A counterbore (a wider coaxial cylinder stepped onto an open end) is part of the hole: it opens where the
+  counterbore opens on the part, ``depth_mm`` runs from there, and its entry carries ``counterbore``
+  ``{diameter_mm, depth_mm}``; a blind hole's drawn drill point is ``point_mm`` (its length past the full diameter).
+  ``faces`` lists the walls first, then the counterbore's wall and shoulder, the drawn point's cone and a blind hole's
+  floor, so any of them names the hole. ``reach`` lists
   the ways out of its open ends (``+Z`` ...) that a ray from just past the end, on the axis and near the wall, leaves
   the part along: a hole opening on a floor under a roof lists none;
 * floors: the flat faces square to an axis, with ``kind`` top, floor, bottom or underside, and for a +Z floor below
@@ -53,8 +53,8 @@ def _vec(vector) -> str:
 
 def holes(part) -> list[dict]:
     """The part's holes: hole-wall cylinders grouped by axis line and radius, split at webs (:func:`_clusters`); a
-    wider coaxial cylinder stepped onto an open end is that hole's counterbore and a cone widening out of it its
-    countersink (both part of the hole, which opens where they open), a cone closing a blind end its drawn point."""
+    wider coaxial cylinder stepped onto an open end is that hole's counterbore (part of the hole, which opens where it
+    opens), a cone closing a blind end its drawn point."""
     import numpy as np
 
     groups: list[dict] = []
@@ -75,7 +75,7 @@ def holes(part) -> list[dict]:
     owners = np.asarray(part.face_of_triangle)
     vertices = np.asarray(part.vertices)
     touch = max(1e-3, 2.0 * float(getattr(part, "deflection_mm", 0.01)))
-    points = _FacePoints(part, triangles, owners, vertices)
+    points = _FacePoints(triangles, owners, vertices)
     runs = []
     for group in groups:
         d, p, r = group["d"], group["p"], group["r"]
@@ -120,7 +120,7 @@ def _wrap_deg(points, faces, d, p, side) -> float:
 class _FacePoints:
     """Each face's tessellation vertices (part mm), gathered once."""
 
-    def __init__(self, part, triangles, owners, vertices):
+    def __init__(self, triangles, owners, vertices):
         import numpy as np
 
         self.vertices = vertices
@@ -152,20 +152,17 @@ class _FacePoints:
 class _Run:
     """One hole being read: its wall faces on one axis line (``d`` a unit vector, ``p`` a point on it), its span
     ``low..high`` along ``d``, which ends are open, and how far out each end opens on the part (``outer``: past a
-    counterbore or a countersink), with the faces, sizes and point that join it."""
+    counterbore), with the faces, sizes and point that join it."""
 
     def __init__(self, faces, d, p, r, side, low, high, open_low, open_high):
         self.faces, self.d, self.p, self.r, self.side = list(faces), d, p, r, side
         self.low, self.high, self.open_low, self.open_high = low, high, open_low, open_high
         self.outer = {"low": low, "high": high}
-        #: The radius the hole has at each outer end (a counterbore's, else its own).
-        self.end_r = {"low": r, "high": r}
-        #: The ends a counterbore was folded into; the faces that joined the walls (counterbore, shoulder, cones).
+        #: The ends a counterbore was folded into; the faces that joined the walls (counterbore, shoulder, point).
         self.bored: set[str] = set()
         self.faces_extra: list[str] = []
         self.cone_refs: list[str] = []
         self.counterbore: dict | None = None
-        self.countersink: dict | None = None
         self.point_mm = 0.0
 
     def t(self, point) -> float:
@@ -227,7 +224,6 @@ def _counterbores(part, runs: list[_Run], points: _FacePoints, touch: float) -> 
                 taken.add(j)
                 hole.bored.add(name)
                 hole.outer[name] = far
-                hole.end_r[name] = bore.r
                 hole.counterbore = {"diameter_mm": round(2 * bore.r, 4), "depth_mm": round(abs(far - near), 4)}
                 hole.faces_extra += [info.ref for info in sorted(bore.faces, key=lambda info: info.ordinal)]
                 hole.faces_extra += _flats(part, hole, points, step, bore.r, touch)
@@ -254,8 +250,7 @@ def _flats(part, run: _Run, points: _FacePoints, at: float, radius: float, touch
 
 
 def _cones(part, run: _Run, points: _FacePoints, touch: float) -> None:
-    """A cone on the run's line at an open end widening outward (a countersink: the hole opens at its top) or at a
-    closed end narrowing inward (a drawn drill point: ``point_mm`` its length)."""
+    """A cone on the run's line at a closed end narrowing inward: a drawn drill point, ``point_mm`` its length."""
     import numpy as np
 
     for ordinal, info in sorted(part.faces.items()):
@@ -271,20 +266,9 @@ def _cones(part, run: _Run, points: _FacePoints, touch: float) -> None:
         r_hi = float(radial[t >= c_hi - touch].mean())
         fit = max(0.05, 4 * touch)
         for name, sign in (("high", 1.0), ("low", -1.0)):
+            if run.open_high if name == "high" else run.open_low:
+                continue
             near, far, r_near, r_far = (c_lo, c_hi, r_lo, r_hi) if sign > 0 else (c_hi, c_lo, r_hi, r_lo)
-            is_open = run.open_high if name == "high" else run.open_low
-            if is_open:
-                if abs(near - run.outer[name]) > touch or abs(r_near - run.end_r[name]) > fit or r_far <= r_near:
-                    continue
-                if run.countersink is None:
-                    from OCP.BRepAdaptor import BRepAdaptor_Surface
-
-                    angle = 2.0 * math.degrees(abs(BRepAdaptor_Surface(part.ocp_face(ordinal)).Cone().SemiAngle()))
-                    run.countersink = {"diameter_mm": round(2 * r_far, 4), "angle_deg": round(angle, 2)}
-                run.outer[name] = far
-                run.end_r[name] = r_far
-                run.cone_refs.append(info.ref)
-                break
             end = run.high if name == "high" else run.low
             if abs(near - end) <= touch and abs(r_near - run.r) <= fit and r_far < r_near:
                 run.point_mm = max(run.point_mm, abs(far - near))
@@ -364,7 +348,7 @@ def _clusters(part, faces, d, p, r, side, triangles, owners, vertices, touch):
 
 def _hole(part, run: _Run, points: _FacePoints, touch: float) -> dict:
     """One hole's entry, its axis pointing out of the opening, its opening where it opens on the part (the top of
-    its counterbore or countersink); ``reach`` the ways out of its open ends that no part of the part covers."""
+    its counterbore); ``reach`` the ways out of its open ends that no part of the part covers."""
     import numpy as np
 
     d, p, r = run.d, run.p, run.r
@@ -414,9 +398,6 @@ def _hole(part, run: _Run, points: _FacePoints, touch: float) -> dict:
     if run.counterbore:
         entry["counterbore"] = run.counterbore
         extra.append(f"counterbore Ø{_g(run.counterbore['diameter_mm'])} x {_g(run.counterbore['depth_mm'])}")
-    if run.countersink:
-        entry["countersink"] = run.countersink
-        extra.append(f"countersink Ø{_g(run.countersink['diameter_mm'])} x {_g(run.countersink['angle_deg'])}°")
     if run.point_mm > 0 and not through:
         entry["point_mm"] = round(run.point_mm, 4)
         extra.append(f"drill point {_g(run.point_mm)} long")

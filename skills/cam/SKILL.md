@@ -87,9 +87,7 @@ mm/min).
    hole block/face 7: Ø5 x 25 through along +Z at (-33, -23, 25)
    ```
 
-   `--direction -Z` (or `+X` ...) lists only what a tool from that side can work; a feature no
-   direction lists is an undercut, which this skill cannot cut. For an assembly pass the part,
-   `--occurrence kit/arm` (`pin.2` for the second `pin`), here and to `plan`. A job takes a ref
+   For an assembly pass the part, `--occurrence kit/arm` (`pin.2` for the second `pin`), here and to `plan`. A job takes a ref
    as `block/face 15`, as `face 15` on a one-part document, or as the Viewer copies it
    (`/work/part.step#block/face 15`). A model's part is its `@xbf` or `@step` output, or the file
    `cadgen export <id> part.step` writes.
@@ -112,8 +110,8 @@ mm/min).
 
    ```json
    {
-     "machine": {"kind": "router", "post": "grbl", "travel_mm": [300, 300, 80],
-                 "max_rpm": 24000, "max_feed_mm_min": 2500},
+     "machine": {"post": "grbl", "travel_mm": [300, 300, 80], "max_rpm": 24000,
+                 "max_feed_mm_min": 2500},
      "material": "aluminum-6061",
      "stock": {"margin_mm": [3, 3, 1]},
      "tools": [
@@ -169,10 +167,10 @@ mm/min).
 | `op` | Cuts | `faces` | Tools | Its own keys (default) |
 | --- | --- | --- | --- | --- |
 | `face` | The stock's top down to the part's top | Optional: flat faces facing the tool; left out, the part's top faces. Cuts down to the highest one named | `flat`, `ball`, `bull` | `stepdown_mm`, `stepover` (0.4) |
-| `profile` | Around the part's outline (or the faces named), down to the part's bottom and `through_mm` past it | Optional | `flat`, `ball`, `bull` | `side` (`outside`, `inside`), `through_mm` (0), `stepdown_mm`, `leave_mm` (0) |
+| `profile` | Around the part's outline, or along the faces named: with `side: "inside"` and a through bore's or a slot's walls named, it cuts them out. Down to the lowest face named (a blind feature's floor), or `through_mm` past the part's bottom where the faces reach it (always, for the outline) | Optional: the walls to run along, or a flat face for its outline | `flat`, `ball`, `bull` | `side` (`outside`, `inside`), `through_mm` (0), `stepdown_mm`, `leave_mm` (0) |
 | `pocket` | A flat-floored pocket, around its islands | Required: floors at one height, facing the tool | `flat`, `ball`, `bull` | `stepdown_mm`, `stepover` (0.4), `leave_mm` (0) |
 | `adaptive` | The same area as `pocket`, at a constant tool load: for roughing | Required: floors at one height | `flat`, `ball`, `bull` | `stepdown_mm`, `stepover` (0.15), `leave_mm` (0) |
-| `drill` | Holes, to their depth (a through hole `through_mm` past its exit plus the drill's point) | Required: hole walls, as `cam features` lists them | `drill` only | `peck_mm` (none: one plunge), `through_mm` (1) |
+| `drill` | Holes, to their depth (a through hole `through_mm` past its exit plus the drill's point) | Required: any face of each hole (its wall, its counterbore's wall or shoulder, its floor), as `cam features` lists them | `drill` only | `peck_mm` (none: one plunge), `through_mm` (1) |
 
 Every operation also takes `tool` (required), `feed`, `speed`, `plunge_mm_min`, `coolant` and
 `name` ([job-file.md](references/job-file.md#operations)). `leave_mm` is the wall stock a rough
@@ -181,14 +179,22 @@ of the tool's diameter; `stepdown_mm` defaults to a fraction of the diameter set
 (half in aluminium, a quarter in steel), never past the flutes. Profiling is climb milled.
 
 - **One depth per operation.** A `pocket` or `adaptive` naming floors at different heights is
-  refused, and so is a `drill` naming holes of different depths: give each height its own
-  operation, as the example does. A `face` cuts down to the highest face it names.
+  refused, and so is a `drill` naming holes of different depths or a `profile` naming faces that
+  end at different heights: give each its own operation, as the example does. A `face` cuts down
+  to the highest face it names.
+- **Every face named is cut.** FreeCAD leaves out what the tool does not fit (a floor, slot or
+  hole narrower than it) and says nothing, so a face or hole no cutting move reaches at the
+  operation's depth is an `uncut` error.
 - **A profile that cuts the part free** needs `through_mm` past the bottom, into a spoilboard,
   and flutes longer than the part, the top margin and `through_mm` together. There are no tabs:
   say how the part stays put (double-sided tape, screws through waste, a vacuum table).
 - **Holes** are drilled from the side they open toward in the setup, with a drill the hole's Ø
-  from the `cam features` line (`drill_size` below). A counterbore or countersink is part of its
-  hole there; the drill does not cut it.
+  from the `cam features` line (`drill_size` below). A counterbore is part of its hole there; the
+  drill does not cut it, and nothing cuts a countersink. A blind hole is drilled to its drawn
+  bottom, so a drill whose point is longer than the drawn one (a flat floor's is none) leaves the
+  bottom a cone (`drill_point` below).
+- **A bore or slot too wide to drill** is a `profile` with `side: "inside"` naming its walls, with
+  a tool narrower than it.
 - **A material that is not in the feeds table** needs `drill_mm_per_rev` for a job that drills;
   without it the job is refused.
 
@@ -200,12 +206,14 @@ plan, before FreeCAD runs and after. An operation with a reach error is not give
 | Finding | Severity | Means | Fix it in the job |
 | --- | --- | --- | --- |
 | `unreachable` | error | A named face lies under part of the part, seen from the tool's side, or a hole does not open toward the tool in this setup | Machine it from a setup that sees it (`orientation: "-Z"`), or name only faces the tool can reach |
-| `not_facing` | error | A `face`, `pocket` or `adaptive` face is not flat and facing the tool, or a `drill` face is not a hole wall | Name the floor itself, or the hole's wall, as `cam features` lists them |
+| `not_facing` | error | A `face`, `pocket` or `adaptive` face is not flat and facing the tool, or a `drill` face is not a face of a hole | Name the floor itself, or a face of the hole, as `cam features` lists them |
 | `drill_size` | error or warning | A drill is larger than its hole (an error: it cuts into the part) or smaller (a warning: it leaves the hole under size) | A drill the hole's size; for a smaller one, open the hole out after (a `pocket`, or a drill its size) |
+| `drill_point` | warning | A blind hole's drill has a longer point than the drawn one (a flat floor's is none): its bottom is left a cone, short of the diameter | Say so to the user; mill the floor after with an end mill that fits, or drill with the drawn point angle |
 | `too_deep` | error | The cut goes further below the stock top than the tool's flutes | A tool with longer flutes (state its `flute_length_mm`), or cut less deep from this side |
 | `gouge` | error | A move brings the tool (its real flat, ball, bull nose or drill point shape) into the part | Name only faces the tool can reach, use a smaller tool, or split the floors by depth |
 | `rapid_into_stock` | error | A rapid runs through stock that no move before it has cut | Raise the setup's `retract_mm` (and `clearance_mm`), or cut that material in an earlier operation |
 | `empty_operation` | error | FreeCAD planned no cut for an operation | Check its faces, that the tool fits them, and for `face` that the stock has a top margin |
+| `uncut` | error | No cutting move reaches a face or hole the operation names at its depth: FreeCAD left it out | Cut it in its own operation with a tool that fits it, or leave it out |
 | `travel` | error | The setup's moves span more than `machine.travel_mm` | The part does not fit this machine in this setup |
 | `clamped` | warning | A spindle speed or feed was held to `max_rpm`, raised to `min_rpm`, or held to `max_feed_mm_min` | Fine as a starting point; say so. A drill the machine would turn far too fast is refused: pocket the hole with an end mill, or give the operation's `speed` |
 

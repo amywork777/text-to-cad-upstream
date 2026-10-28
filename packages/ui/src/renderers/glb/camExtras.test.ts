@@ -12,7 +12,7 @@ it('reads the job a ready result carries: verdict, setups, operations, tools, po
     toolType: 'flat', rpm: 13260, feedMmMin: 1083, timeS: 19.24, t0: 62.478, t1: 81.717,
     summary: 'Pocket COMPOUND/face 17 with T1 6 mm flat, 19 s', faces: ['COMPOUND/face 17'], setup: 'top' });
   expect(job.operations[3].toolType).toBe('drill');
-  expect(job).toMatchObject({ durationS: 129.533, document: 'bracket.step', machine: 'router', post: 'grbl', findings: [] });
+  expect(job).toMatchObject({ durationS: 129.533, document: 'bracket.step', post: 'grbl', findings: [] });
   expect(job.posts).toEqual([{ setup: 'top', file: 'bracket.top.1-T1.nc', post: 'grbl', tool: 'T1' }, { setup: 'top', file: 'bracket.top.2-T2.nc', post: 'grbl', tool: 'T2' }]);
   expect(operationDetail(job.operations[0])).toBe('6 mm flat · 1 min');
   expect(job.assumed[0]).toEqual({ key: 'machine.rapid_mm_min', value: '3000', why: 'for the cycle time only' });
@@ -25,7 +25,7 @@ it('reads a refused result: its verdict, its error with the operation and place 
   expect(job.verdict).toEqual({ status: 'fix', headline: '1 to fix · 30 s · 1 tool', errors: 1, warnings: 0, gcode: 'G-code not written: fix 1 error first' });
   expect(job.setups.map((setup: any) => [setup.id, setup.orientation, setup.axis])).toEqual([['top', '+Z', [0, 0, 1]], ['bottom', '-Z', [0, 0, -1]]]);
   expect(job.findings).toEqual([{ check: 'reach', level: 'error', message: expect.stringContaining('27% of COMPOUND/face 9 is under the part'),
-    operation: 0, operations: [0], at: [3.333, 2.444, -13.999] }]);
+    operation: 0, operations: [0], at: [3.333, 2.444, -13.95] }]);
   expect(job.posts).toEqual([]);
   expect(jobSummary(job)).toBe('No tool changes · linuxcnc controller');
 });
@@ -51,7 +51,7 @@ it('reads a damaged job forgivingly: plain defaults, a finding with nothing to s
   expect(job.operations[0].summary).toBe('drill');
   expect(job.findings).toEqual([{ check: 'gouge', level: 'error', message: 'Cuts into the part', operation: null, operations: [], at: null }]);
   expect(job.verdict).toEqual({ status: 'fix', headline: '', errors: 1, warnings: 0, gcode: '' });
-  expect([job.durationS, job.machine, job.post]).toEqual([42, '', '']);
+  expect([job.durationS, job.post]).toEqual([42, '']);
 });
 
 it('resolves the part the job was planned from against the GLB, and says durations plainly', () => {

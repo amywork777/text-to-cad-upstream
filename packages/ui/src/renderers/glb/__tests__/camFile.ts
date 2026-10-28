@@ -4,9 +4,9 @@ import { BufferAttribute, BufferGeometry, Group, LineBasicMaterial, LineSegments
 
 /*
  * Two real results, written by `cadgen cam plan` (FreeCAD plans, cadgen checks), not by hand:
- * - `ready.cam.glb`: a bracket from `bracket.step`, ready to cut on a router (grbl): one setup `top` (+Z) of face,
+ * - `ready.cam.glb`: a bracket from `bracket.step`, ready to cut on GRBL: one setup `top` (+Z) of face,
  *   pocket, profile (T1, a 6 mm flat) and drill (T2, a 6 mm drill), 2 min, two G-code files, one per tool.
- * - `fix.cam.glb`: a bridge from `bridge.step` on a mill (linuxcnc), refused: setup `top`'s pocket (op 0) cannot
+ * - `fix.cam.glb`: a bridge from `bridge.step` on LinuxCNC, refused: setup `top`'s pocket (op 0) cannot
  *   reach a face under an overhang (one `reach` error), so no G-code; setup `bottom` (-Z) faces it (op 1).
  */
 export type Sample = 'ready' | 'fix';

@@ -25,7 +25,6 @@ from cadgen._internal.cam.tools import Tool, parse_tool
 __all__ = ["COOLANTS", "OPERATIONS", "ORIENTATIONS", "ORIGINS", "POSTS", "CamJobError", "Job", "Machine", "Material",
            "Operation", "Setup", "Stock", "load_job", "parse_job"]
 
-MACHINE_KINDS = ("mill", "router")
 #: Each post: FreeCAD's post processor, the posted file's extension, the options it is run with, and whether the
 #: controller changes tools itself. GRBL cannot (its post comments ``M6`` out), so a setup with several tools posts one
 #: file per tool, each run after the operator changes the tool and sets its length.
@@ -59,7 +58,7 @@ _TOOLS_FOR = {"drill": ("drill",)}
 _MILLING = ("flat", "ball", "bull")
 
 JOB_KEYS = ("name", "machine", "material", "stock", "tools", "setups", "tolerance_mm", "coolant")
-MACHINE_KEYS = ("kind", "post", "name", "travel_mm", "min_rpm", "max_rpm", "max_feed_mm_min", "rapid_mm_min",
+MACHINE_KEYS = ("post", "name", "travel_mm", "min_rpm", "max_rpm", "max_feed_mm_min", "rapid_mm_min",
                 "work_offset")
 MATERIAL_KEYS = ("name", "surface_m_min", "chipload_mm", "drill_mm_per_rev", "stepdown_fraction")
 STOCK_KEYS = ("margin_mm",)
@@ -71,7 +70,6 @@ MAX_STOCK_MM = 10_000.0
 
 @dataclass(frozen=True)
 class Machine:
-    kind: str
     post: str
     name: str = ""
     travel_mm: tuple[float, float, float] | None = None
@@ -208,15 +206,14 @@ def parse_job(job: str | dict | None) -> Job:
         raise CamJobError("name must be text: the job's name, for the posted files' headers")
     return Job(name=name.strip(), machine=machine, material=material, stock=_stock(raw["stock"]), tools=tools,
                setups=tuple(setups), tolerance_mm=read_number(raw, "tolerance_mm", "the job", default=0.01,
-                                                              maximum=1.0),
+                                                              minimum=0.01, maximum=1.0),
                coolant=coolant, assumed=tuple(assumed))
 
 
 def _machine(raw: object) -> tuple[Machine, list[dict]]:
     if not isinstance(raw, dict):
-        raise CamJobError("machine must be an object like {\"kind\": \"router\", \"post\": \"grbl\"}")
+        raise CamJobError("machine must be an object like {\"post\": \"grbl\", \"max_rpm\": 24000}")
     check_keys(raw, MACHINE_KEYS, "machine")
-    kind = choice(raw.get("kind"), MACHINE_KINDS, "machine.kind")
     if "post" not in raw:
         raise CamJobError("machine.post is required: the controller's dialect (one of " + ", ".join(POSTS) + "). A "
                           "dialect read by the wrong controller moves the machine wrongly, so ask which controller "
@@ -224,7 +221,7 @@ def _machine(raw: object) -> tuple[Machine, list[dict]]:
     post = choice(raw["post"], tuple(POSTS), "machine.post")
     travel = raw.get("travel_mm")
     machine = Machine(
-        kind=kind, post=post, name=str(raw.get("name", "")),
+        post=post, name=str(raw.get("name", "")),
         travel_mm=None if travel is None else number_list(travel, "machine.travel_mm", length=3, positive=True),
         min_rpm=read_number(raw, "min_rpm", "machine"), max_rpm=read_number(raw, "max_rpm", "machine"),
         max_feed_mm_min=read_number(raw, "max_feed_mm_min", "machine"),

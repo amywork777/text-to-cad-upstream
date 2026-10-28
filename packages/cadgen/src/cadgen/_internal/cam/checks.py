@@ -3,33 +3,39 @@
 FreeCAD plans what it is asked to and checks nothing against the part: asked to pocket a floor that lies under an
 overhang, it cuts through the overhang. So every plan is checked here, and a plan with an error posts no G-code:
 
-* before FreeCAD runs, :func:`reach`: every face an operation names can be seen from the setup's side (rays from the
-  face straight up the tool's axis leave the part), every hole it drills opens toward the tool, and no cut goes
-  deeper below the stock top than the tool's flutes;
+* before FreeCAD runs, :func:`reach`: every face an operation names can be seen from the setup's side (rays straight
+  up the tool's axis from points on the face, each moved a hair off it along the face's outward normal, leave the
+  part: a wall is seen, and the wall of a T-slot's undercut is not), every hole it drills opens toward the tool, its
+  drill's point is no longer than the drawn one, and no cut goes deeper below the stock top than the tool's flutes;
 * after, :func:`check_moves` on each setup's moves (:mod:`toolpath`, setup coordinates, the tool down -Z):
   ``gouge``, a move whose tool (its real profile: flat, ball, bull nose or drill point) comes into the part, tested
   against the part's height seen from above on a grid finer than the tool; ``rapid_into_stock``, a rapid into stock no
-  move before it has cut (the stock lowered along each cutting move, in program order); ``empty_operation``, an operation FreeCAD planned no cut for; ``travel``, a setup whose
+  move before it has cut (the stock lowered along each cutting move, in program order); ``empty_operation``, an
+  operation FreeCAD planned no cut for; ``uncut``, a face or hole an operation names that no cutting move reaches at
+  the operation's final depth (FreeCAD skips what its tool does not fit, and says nothing); ``travel``, a setup whose
   moves span more than the machine travels.
 
 The height grid sees the part from above, so it is exact for a part machined from one side and conservative for an
-undercut (a tool under an overhang is a hit). A finding is the KiCad/FEA shape (``check``, ``severity``, ``type``,
-``summary``, ``description``, ``items``). Stdlib at import; numpy inside.
+undercut (a tool under an overhang is a hit). A finding is a dict of ``check``, ``severity``, ``type``, ``summary``,
+``description`` and ``items``. Stdlib at import; numpy inside.
 """
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
+from typing import Any
 
-__all__ = ["CHECKS", "by_severity", "check_moves", "finding", "reach"]
+__all__ = ["CHECKS", "Target", "by_severity", "check_moves", "face_points", "finding", "reach"]
 
 #: Each check and the finding types it raises.
 CHECKS = {
     "job": ("job", "freecad", "internal_error"),
-    "reach": ("unreachable", "too_deep", "not_facing", "drill_size"),
+    "reach": ("unreachable", "too_deep", "not_facing", "drill_size", "drill_point"),
     "gouge": ("gouge",),
     "rapid_into_stock": ("rapid_into_stock",),
     "empty_operation": ("empty_operation",),
+    "coverage": ("uncut",),
     "travel": ("travel",),
     "limits": ("clamped",),
 }
@@ -40,6 +46,27 @@ GOUGE_TOLERANCE_MM = 0.02
 RAPID_TOLERANCE_MM = 0.05
 #: The most cells the height grid holds: a part over a metre wide checks on a coarser grid, never a full memory.
 MAX_CELLS = 16_000_000
+#: How far off a face its reach is judged from, along its outward normal (mm): past the tessellation's own error, and
+#: far less than any overhang a tool could not pass.
+NUDGE_MM = 0.05
+#: How far above an operation's final depth a move still counts as cutting at it (mm).
+DEPTH_TOLERANCE_MM = 0.05
+#: How much longer than the drawn point a drill's may be before the hole is short of its diameter at the bottom (mm).
+POINT_TOLERANCE_MM = 0.01
+
+
+@dataclass(frozen=True)
+class Target:
+    """What one operation must reach, at its final depth ``final_z`` (setup coordinates): a named face (``points`` on
+    it, (K, 3)) that a cutting move's tool must come over (``wall``: come up beside, within its radius and
+    ``leave_mm``), or a hole (``axis_xy``) a cutting move must plunge down to that depth."""
+
+    ref: str
+    final_z: float
+    points: Any = None
+    axis_xy: tuple[float, float] | None = None
+    wall: bool = False
+    leave_mm: float = 0.0
 
 
 def finding(check: str, severity: str, kind: str, summary: str, description: str = "", items=()) -> dict:
@@ -77,41 +104,51 @@ def _rays_blocked(vertices, triangles, origins):
     return out
 
 
-def _face_points(vertices, triangles, mine, step: float, most: int = 2000):
-    """Points spread over the triangles ``mine`` selects, about ``step`` apart (at most ``most``), just above them."""
+def face_points(vertices, triangles, mine, step: float, most: int = 2000, nudge: float = 0.0):
+    """Points spread over the triangles ``mine`` selects, about ``step`` apart (at most ``most``), each ``nudge`` off
+    its triangle along the triangle's outward normal (the tessellation is wound outward)."""
     import numpy as np
 
     tri = np.asarray(vertices, dtype=float)[np.asarray(triangles)[mine]]
     points = []
     for a, b, c in tri:
+        normal = np.cross(b - a, c - a)
+        length = float(np.linalg.norm(normal))
+        off = normal * (nudge / length) if length > 1e-15 else np.zeros(3)
         n = max(1, int(math.ceil(max(np.linalg.norm(b - a), np.linalg.norm(c - a), np.linalg.norm(c - b)) / step)))
         for i in range(n + 1):
             for j in range(n + 1 - i):
                 w1, w2 = (i + 1 / 3) / (n + 1), (j + 1 / 3) / (n + 1)
-                points.append(a + w1 * (b - a) + w2 * (c - a))
+                points.append(a + w1 * (b - a) + w2 * (c - a) + off)
     points = np.asarray(points).reshape(-1, 3)
     if len(points) > most:
         points = points[np.linspace(0, len(points) - 1, most).astype(int)]
-    return points + [0.0, 0.0, 1e-3]
+    return points
 
 
 def reach(op, faces, holes, mesh, face_of_triangle, tool, stock_top: float, depth_z: float | None) -> list[dict]:
     """The reach findings of one operation, in setup coordinates (``mesh``: the part's ``(vertices, triangles)``
     there; ``faces``: the :class:`FaceInfo` of each face it names, their normals turned into the setup; ``holes``: the
-    feature reader's hole for each drilled face, its ``reach`` turned into the setup's words)."""
+    feature reader's hole for each face of a hole, its ``reach`` turned into the setup's words). A drill naming two
+    faces of one hole drills it once, and is judged once."""
     import numpy as np
 
     found = []
     vertices, triangles = mesh
+    drilled: set[str] = set()
     for info in faces:
         where = {"operation": op.index, "face": info.ref}
         if op.op == "drill":
             hole = holes.get(info.ref)
             if hole is None:
-                found.append(finding("reach", "error", "not_facing", f"{op.where}: {info.ref} is not a hole wall",
-                                     "drill names the walls of holes, as cadgen cam features lists them",
-                                     [where]))
-            elif "+Z" not in hole["reach"]:
+                found.append(finding("reach", "error", "not_facing", f"{op.where}: {info.ref} is not a face of a hole",
+                                     "drill names a face of a hole (its wall, its counterbore's, its floor), as "
+                                     "cadgen cam features lists them", [where]))
+                continue
+            if hole["faces"][0] in drilled:
+                continue
+            drilled.add(hole["faces"][0])
+            if "+Z" not in hole["reach"]:
                 found.append(finding("reach", "error", "unreachable",
                                      f"{op.where}: the hole {info.ref} does not open toward the tool in this setup",
                                      "drill it from a setup the hole opens toward (its reach: "
@@ -124,6 +161,17 @@ def reach(op, faces, holes, mesh, face_of_triangle, tool, stock_top: float, dept
                     f"Ø{tool.diameter_mm:g} drill", "a drill larger than its hole cuts into the part: drill it with "
                     "one its size" if larger else "it leaves the hole under size: open it out after (a pocket, or "
                     "a drill its size), or drill it with one its size", [where]))
+            drawn = float(hole.get("point_mm", 0.0))
+            if "+Z" in hole["reach"] and not hole["through"] and tool.tip_length_mm > drawn + POINT_TOLERANCE_MM:
+                short = tool.tip_length_mm - drawn
+                found.append(finding(
+                    "reach", "warning", "drill_point",
+                    f"{op.where}: {tool.id}'s point is {tool.tip_length_mm:.2f} mm long and the hole {info.ref} is "
+                    + ("drawn with a flat floor" if drawn == 0 else f"drawn with a {drawn:.2f} mm point")
+                    + f": its bottom {short:.2f} mm is left a cone, short of Ø{hole['diameter_mm']:g}",
+                    "the drill stops at the drawn bottom, so its longer point leaves material there: mill the floor "
+                    "after (a pocket of it with an end mill that fits), or drill with the drawn point angle",
+                    [where]))
             continue
         normal = info.normal
         if op.op in ("pocket", "adaptive", "face") and (normal is None or normal[2] < 1 - 1e-6):
@@ -131,7 +179,8 @@ def reach(op, faces, holes, mesh, face_of_triangle, tool, stock_top: float, dept
                                  f"{op.where}: {info.ref} is not a flat face looking up at the tool in this setup",
                                  f"{op.op} names the floors it clears down to, flat and facing the tool", [where]))
             continue
-        origins = _face_points(vertices, triangles, face_of_triangle == info.ordinal, max(0.25, tool.radius / 2))
+        origins = face_points(vertices, triangles, face_of_triangle == info.ordinal, max(0.25, tool.radius / 2),
+                              nudge=NUDGE_MM)
         if not len(origins):
             continue
         blocked = _rays_blocked(vertices, triangles, origins)
@@ -243,19 +292,63 @@ def _gouges(moves, select, tool, grid, low, cell: float):
     return worst
 
 
+def _cells(here, radius: float, low, cell: float):
+    """For points ``here`` (P, 3): the grid cells round each out to ``radius`` and a little past, and each cell
+    centre's distance from the point in XY, ``(i, j, d)`` each (P, K)."""
+    import numpy as np
+
+    span = int(math.ceil(radius / cell)) + 1
+    offsets = np.arange(-span, span + 1)
+    di, dj = (a.ravel() for a in np.meshgrid(offsets, offsets, indexing="ij"))
+    i = np.floor((here[:, :1] - low[0]) / cell).astype(int) + di[None, :]
+    j = np.floor((here[:, 1:2] - low[1]) / cell).astype(int) + dj[None, :]
+    return i, j, np.hypot(low[0] + (i + 0.5) * cell - here[:, :1], low[1] + (j + 0.5) * cell - here[:, 1:2])
+
+
 def _disk(tool, cell: float, here, low):
     """For points ``here`` (P, 3): the grid cells under the tool's end and the tool's lower surface over each,
     ``(i, j, height, inside)`` each (P, K): ``inside`` the cells within the tool's radius."""
     import numpy as np
 
-    span = int(math.ceil(tool.radius / cell)) + 1
-    offsets = np.arange(-span, span + 1)
-    di, dj = (a.ravel() for a in np.meshgrid(offsets, offsets, indexing="ij"))
-    i = np.floor((here[:, :1] - low[0]) / cell).astype(int) + di[None, :]
-    j = np.floor((here[:, 1:2] - low[1]) / cell).astype(int) + dj[None, :]
-    d = np.hypot(low[0] + (i + 0.5) * cell - here[:, :1], low[1] + (j + 0.5) * cell - here[:, 1:2])
-    inside = d <= tool.radius
-    return i, j, here[:, 2:3] + _profile_height(tool, np.minimum(d, tool.radius)), inside
+    i, j, d = _cells(here, tool.radius, low, cell)
+    return i, j, here[:, 2:3] + _profile_height(tool, np.minimum(d, tool.radius)), d <= tool.radius
+
+
+def _uncut(moves, op, tool, targets, low, shape, cell: float) -> list[str]:
+    """The refs of the ``targets`` (:class:`Target`) no cutting move of ``op`` reaches at its final depth: a hole no
+    feed goes down the axis of, a floor no tool comes over, a wall no tool runs beside."""
+    import numpy as np
+
+    keep = np.nonzero((moves.op == op.index) & ~moves.rapid)[0]
+    if not len(keep) or not targets:
+        return []
+    runs = np.split(keep, np.nonzero(np.diff(keep) > 1)[0] + 1)
+    points = np.vstack([_dense(moves.points[max(run[0] - 1, 0):run[-1] + 1], cell) for run in runs])
+    nx, ny = shape
+    swept: dict = {}
+    missed = []
+    for target in targets:
+        at = points[points[:, 2] <= target.final_z + DEPTH_TOLERANCE_MM]
+        if target.axis_xy is not None:
+            x, y = target.axis_xy
+            if not len(at) or not np.any(np.hypot(at[:, 0] - x, at[:, 1] - y) <= DEPTH_TOLERANCE_MM):
+                missed.append(target.ref)
+            continue
+        radius = tool.radius + (target.leave_mm + cell if target.wall else 0.0)
+        key = (target.final_z, radius)
+        if key not in swept:
+            cells = np.zeros(shape, dtype=bool)
+            for chunk in range(0, len(at), 2000):
+                i, j, d = _cells(at[chunk:chunk + 2000], radius, low, cell)
+                inside = (d <= radius) & (i >= 0) & (i < nx) & (j >= 0) & (j < ny)
+                cells[i[inside], j[inside]] = True
+            swept[key] = cells
+        i = np.floor((target.points[:, 0] - low[0]) / cell).astype(int)
+        j = np.floor((target.points[:, 1] - low[1]) / cell).astype(int)
+        inside = (i >= 0) & (i < nx) & (j >= 0) & (j < ny)
+        if not swept[key][i[inside], j[inside]].any():
+            missed.append(target.ref)
+    return missed
 
 
 def _rapid_into_stock(moves, operations, tools, stock_low, stock_high, low, shape, cell: float):
@@ -298,9 +391,11 @@ def _rapid_into_stock(moves, operations, tools, stock_low, stock_high, low, shap
     return None
 
 
-def check_moves(setup_id: str, moves, operations, tools, mesh, stock_low, stock_high, machine) -> list[dict]:
+def check_moves(setup_id: str, moves, operations, tools, mesh, stock_low, stock_high, machine,
+                targets=None) -> list[dict]:
     """The findings of one setup's moves (setup coordinates): ``operations`` its :class:`Operation` list, ``mesh``
-    the part's ``(vertices, triangles)`` there, the stock's box from ``stock_low`` to ``stock_high``."""
+    the part's ``(vertices, triangles)`` there, the stock's box from ``stock_low`` to ``stock_high``, ``targets``
+    each operation's :class:`Target` list by its index."""
     import numpy as np
 
     found = []
@@ -323,6 +418,14 @@ def check_moves(setup_id: str, moves, operations, tools, mesh, stock_low, stock_
     if area / cell ** 2 > MAX_CELLS:
         cell = math.sqrt(area / MAX_CELLS)
     grid = _height_grid(vertices, triangles, low, high, cell)
+    for op in operations:
+        what = "drilled nothing down" if op.op == "drill" else "cut nothing at the operation's depth over"
+        for ref in _uncut(moves, op, tools[op.tool], (targets or {}).get(op.index, ()), low, grid.shape, cell):
+            found.append(finding(
+                "coverage", "error", "uncut", f"{op.where}: FreeCAD {what} {ref}",
+                "FreeCAD leaves out what the tool does not fit, and says nothing: a floor, slot or hole narrower "
+                "than the tool, a hole it did not take. Cut it in its own operation with a tool that fits it, or "
+                "leave it out of this one", [{"setup": setup_id, "operation": op.index, "face": ref}]))
     for op in operations:
         mine = moves.op == op.index
         hit = _gouges(moves, mine, tools[op.tool], grid, low, cell)

@@ -23,7 +23,7 @@ it('reads a real ready result: the job, every operation\'s lines on the program\
   const { scene, root } = await load('ready');
   expect(carriesCamJob(root)).toBe(true);
   const job = readCamJob(root)!;
-  expect([job.verdict.status, job.machine, job.post]).toEqual(['ready', 'router', 'grbl']);
+  expect([job.verdict.status, job.post]).toEqual(['ready', 'grbl']);
   const lines = camToolpathObjects(root);
   expect(lines.map((entry: any) => [entry.setup, entry.kind])).toEqual([['top', 'feed'], ['top', 'rapid']]);
   expect(Object.keys(lines[0].object.geometry.attributes).sort()).toEqual(['_cam_op', '_cam_t', 'position']);

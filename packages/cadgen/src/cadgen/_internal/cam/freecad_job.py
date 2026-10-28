@@ -55,7 +55,7 @@ def _controller(job, bit, number, feeds):
     return tc
 
 
-def _operation(job, model, spec, tc, plan):
+def _operation(model, spec, tc, plan):
     import importlib
 
     module = importlib.import_module(f"Path.Op.{OPERATIONS[spec['op']]}")
@@ -72,6 +72,8 @@ def _operation(job, model, spec, tc, plan):
         outside = spec["side"] == "outside"
         op.Side = "Outside" if outside else "Inside"
         op.Direction = "CW" if outside else "CCW"       # climb milling, the spindle turning clockwise
+        # Only the named faces' outlines: FreeCAD's own hole and circle finding cuts holes nobody named and skips ones
+        # that were (an inside profile names the walls it runs along).
         op.processPerimeter, op.processHoles, op.processCircles = True, False, False
         op.OffsetExtra = f"{spec['leave_mm']} mm"
     if kind == "pocket":
@@ -82,7 +84,7 @@ def _operation(job, model, spec, tc, plan):
         op.Side = "Inside"
         op.StepOver = round(spec["stepover"] * 100)
         op.StockToLeave = f"{spec['leave_mm']} mm"
-        op.Tolerance = max(0.01, min(1.0, plan["tolerance_mm"]))
+        op.Tolerance = plan["tolerance_mm"]
     if kind == "drill":
         op.PeckEnabled = spec.get("peck_mm") is not None
         if op.PeckEnabled:
@@ -90,13 +92,11 @@ def _operation(job, model, spec, tc, plan):
         op.AddTipLength = False     # cadgen's depth already takes the point and the break through
     if kind != "drill":
         op.StepDown = f"{spec['stepdown_mm']} mm"
-    # A depth cadgen worked out wins over FreeCAD's own reading of the faces: the expressions are cleared first, or the
+    # The depth cadgen worked out wins over FreeCAD's own reading of the faces: the expression is cleared first, or the
     # next recompute puts FreeCAD's back.
-    for prop in ("StartDepth", "FinalDepth"):
-        key = {"StartDepth": "start_z", "FinalDepth": "final_z"}[prop]
-        if spec.get(key) is not None:
-            op.setExpression(prop, None)
-            setattr(op, prop, f"{spec[key]} mm")
+    if spec.get("final_z") is not None:
+        op.setExpression("FinalDepth", None)
+        op.FinalDepth = f"{spec['final_z']} mm"
     return op
 
 
@@ -147,15 +147,13 @@ def main():
         key = (spec["tool"], feeds["rpm"], feeds["feed_mm_min"], feeds["plunge_mm_min"])
         if key not in controllers:
             controllers[key] = _controller(job, bits[spec["tool"]], numbers[spec["tool"]], feeds)
-        ops.append((spec, controllers[key], _operation(job, model, spec, controllers[key], plan)))
+        ops.append((spec, controllers[key], _operation(model, spec, controllers[key], plan)))
     doc.recompute()
 
     out = {"freecad": ".".join(FreeCAD.Version()[:3]), "operations": [], "posts": []}
     for spec, _, op in ops:
         commands = [[c.Name, {k: float(v) for k, v in c.Parameters.items()}] for c in op.Path.Commands]
-        out["operations"].append({"index": spec["index"], "commands": commands,
-                                  "start_z": float(op.StartDepth.Value) if hasattr(op, "StartDepth") else None,
-                                  "final_z": float(op.FinalDepth.Value) if hasattr(op, "FinalDepth") else None})
+        out["operations"].append({"index": spec["index"], "commands": commands})
 
     import importlib
 
