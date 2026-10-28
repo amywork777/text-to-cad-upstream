@@ -269,11 +269,12 @@ class View:
         qualify the diameter the way :meth:`dim` does; ``label`` is appended
         (``"WHEEL"``).
 
-        ``thread`` states a tapped hole, which the B-rep cannot carry: an ISO
-        metric thread of an ISO 261 size and pitch, with an ISO 965 class
-        (``"M6"``, ``"M6x1 - 6H"``). The bore must be its tap drill (from the
-        basic minor diameter to about d - P: ⌀5 for M6x1) or the thread's own
-        size (⌀6), and a tap drill is stated with the thread after it
+        ``thread`` states a tapped hole, which the B-rep cannot carry: a metric
+        thread with an optional ISO 965 class (``"M6"``, ``"M6x0.5 - 6H"``; with
+        no pitch, ISO 261's coarse one) or a unified inch thread
+        (``"1/4-20 UNC-2B"``, ``"#10-32 UNF"``). The bore must be its tap drill
+        (from the basic minor diameter to about d - P: ⌀5 for M6x1) or the
+        thread's own size (⌀6), and a tap drill is stated with the thread after it
         (``⌀5 ↧12   M6x1 - 6H ↧10``). It takes no ``diameter``, ``tol`` or
         ``fit``. What the part cannot say is asked, never assumed: ``count``
         is how many of the identical bores are tapped (all of them, or this one

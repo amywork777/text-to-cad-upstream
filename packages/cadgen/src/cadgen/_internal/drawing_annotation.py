@@ -64,7 +64,8 @@ class _Dim:
 
 
 #: ISO 261 general-purpose metric screw threads: each nominal diameter's coarse
-#: pitch (None where the size has fine pitches only) and its fine pitches.
+#: pitch (None where the size has fine pitches only) and its fine pitches. Only
+#: the coarse pitch is read: it is what ``M6`` means with no pitch given.
 _ISO_261: dict[float, tuple[float | None, tuple[float, ...]]] = {
     1.0: (0.25, (0.2,)), 1.2: (0.25, (0.2,)), 1.4: (0.3, (0.2,)), 1.6: (0.35, (0.2,)), 1.8: (0.35, (0.2,)),
     2.0: (0.4, (0.25,)), 2.5: (0.45, (0.35,)), 3.0: (0.5, (0.35,)), 3.5: (0.6, (0.35,)), 4.0: (0.7, (0.5,)),
@@ -82,11 +83,17 @@ _ISO_261: dict[float, tuple[float | None, tuple[float, ...]]] = {
 #: and an ISO 965 tolerance class (an internal thread's letters are capitals).
 _THREAD = re.compile(r"M(?P<d>\d+(?:\.\d+)?)(?:\s*[x×]\s*(?P<p>\d+(?:\.\d+)?))?"
                      r"(?:\s*-\s*(?P<cls>\d[A-Ha-h](?:\d[A-Ha-h])?))?(?:\s+LH)?")
+#: ``1/4-20 UNC``, ``#10-32 UNF - 2B``, ``1-1/4-7 UNC-2B``, ``0.375-24 UNF``: a
+#: unified inch thread (ASME B1.1), its size, threads per inch, series and class
+#: (A external, B internal). A whole number 0 to 12 is a numbered size (#10 is
+#: 0.060 + 0.013 x 10 = 0.190 in); a whole inch is written as a decimal (1.0).
+_UNIFIED = re.compile(r"(?P<size>#?\d+|\d+-\d+/\d+|\d+/\d+|\d*\.\d+)\s*-\s*(?P<tpi>\d+)\s*"
+                      r"(?P<series>UNC|UNF|UNEF|UNS|UN)(?:\s*-\s*(?P<cls>[123][AaBb]))?(?:\s+LH)?")
 
 
 @dataclass(frozen=True)
 class _Thread:
-    """A metric thread a hole callout states: its text as given, nominal diameter and pitch."""
+    """A thread a hole callout states: its text as given, nominal diameter and pitch (mm)."""
 
     text: str
     diameter: float
@@ -104,34 +111,57 @@ class _Thread:
         return None
 
 
+def _inches(size: str) -> float | None:
+    """A unified thread's size in inches: a numbered size (``#10``, ``10``), a
+    fraction (``1/4``, ``1-1/4``) or a decimal (``0.375``); None for a number
+    past #12."""
+    if size.startswith("#") or size.isdigit():
+        number = int(size.lstrip("#"))
+        return 0.060 + 0.013 * number if number <= 12 else None
+    whole, _, fraction = size.rpartition("-") if "/" in size else ("", "", size)
+    if "/" in fraction:
+        top, bottom = fraction.split("/")
+        return (int(whole) if whole else 0) + int(top) / int(bottom) if int(bottom) else None
+    return float(fraction)
+
+
 def _thread(value) -> _Thread:
-    """A hole callout's ``thread=``, parsed: an ISO metric thread (ISO 261 sizes
-    and pitches) with an optional ISO 965 tolerance class. Anything else is
-    refused, because a thread is the one size of a tapped hole the part does not
-    carry, and the drawing can only check one it can read."""
+    """A hole callout's ``thread=``, parsed: a metric thread (``M6``, ``M6x0.5 -
+    6H``) or a unified inch one (``1/4-20 UNC``, ``#10-32 UNF - 2B``). Its
+    diameter and pitch are what the bore is checked against; ISO 261 gives an
+    ``M`` thread written with no pitch its coarse one. Any other form is refused,
+    because a thread is the one size of a tapped hole the part does not carry,
+    and the drawing can only check one it can read."""
     if not isinstance(value, str):
         raise TypeError(f"thread= takes the thread as a string (\"M6x1 - 6H\"), got {value!r}")
     text = value.strip()
+    if match := _UNIFIED.fullmatch(text):
+        inches, tpi = _inches(match["size"]), int(match["tpi"])
+        if inches is None or not inches > 0 or not tpi > 0:
+            raise ValueError(f"thread={value!r}: {match['size']} is not a unified thread size; give a numbered size "
+                             "up to #12, a fraction (1/4) or a decimal inch (1.0)")
+        if match["cls"] and match["cls"][1] in "Aa":
+            raise ValueError(f"thread={value!r}: {match['cls']} is an external thread's class (a tapped hole's ends "
+                             "in B: 2B)")
+        return _Thread(text, inches * 25.4, 25.4 / tpi)
     match = _THREAD.fullmatch(text)
     if match is None:
-        raise ValueError(f"thread={value!r} is not a metric thread this drawing can check against the bore; "
-                         "write it as M<diameter>[x<pitch>][ - <class>]: \"M6\", \"M6x1\", \"M6x1 - 6H\"")
+        raise ValueError(f"thread={value!r} is not a thread this drawing can check against the bore; write a metric "
+                         "one as M<diameter>[x<pitch>][ - <class>] (\"M6\", \"M6x0.5 - 6H\") or a unified inch one as "
+                         "<size>-<threads per inch> <series>[-<class>] (\"1/4-20 UNC\", \"#10-32 UNF - 2B\")")
     diameter = float(match["d"])
-    coarse, fine = _ISO_261.get(diameter, (None, ()))
-    if diameter not in _ISO_261:
-        raise ValueError(f"thread={value!r}: M{_fmt(diameter)} is not an ISO 261 size; the sizes are "
-                         + ", ".join(f"M{_fmt(d)}" for d in _ISO_261))
+    if not diameter > 0:
+        raise ValueError(f"thread={value!r}: a thread's diameter is more than 0")
     if match["p"] is None:
+        coarse = _ISO_261.get(diameter, (None, ()))[0]
         if coarse is None:
-            raise ValueError(f"thread={value!r}: M{_fmt(diameter)} has no coarse pitch in ISO 261; give its "
-                             f"pitch, one of {', '.join(_fmt(p) for p in fine)}")
+            raise ValueError(f"thread={value!r}: ISO 261 gives M{_fmt(diameter)} no coarse pitch to assume; "
+                             f"give its pitch, as M{_fmt(diameter)}x<pitch>")
         pitch = coarse
     else:
         pitch = float(match["p"])
-        if pitch not in (coarse, *fine):
-            listed = ", ".join(_fmt(p) for p in ((coarse,) if coarse else ()) + fine)
-            raise ValueError(f"thread={value!r}: ISO 261 gives M{_fmt(diameter)} a pitch of {listed}, "
-                             f"not {_fmt(pitch)}")
+        if not 0 < pitch < diameter:
+            raise ValueError(f"thread={value!r}: a pitch of {_fmt(pitch)} does not fit an M{_fmt(diameter)} thread")
     if match["cls"] and match["cls"] != match["cls"].upper():
         raise ValueError(f"thread={value!r}: {match['cls']} is an external thread's tolerance class (ISO 965 "
                          "writes a nut's, a tapped hole's, in capitals: 6H)")
@@ -486,10 +516,11 @@ def _resolve_tapped(view: View, call: str, dim: "_Dim", hole, same: list, reads:
     bore = thread.fits(hole.diameter)
     if bore is None:
         raise ValueError(
-            f"{call}: thread={thread.text!r} does not fit the part's hole, which reads {reads}. An "
-            f"M{_fmt(thread.diameter)}x{_fmt(thread.pitch)} hole is its tap drill, ⌀"
-            f"{_fmt(thread.diameter - 1.0825 * thread.pitch)} to ⌀{_fmt(thread.diameter - thread.pitch + 0.1)}, "
-            f"or the thread itself, ⌀{_fmt(thread.diameter)}; give the thread this bore takes, or change the model."
+            f"{call}: thread={thread.text!r} does not fit the part's hole, which reads {reads}. Its hole "
+            f"(⌀{_fmt(round(thread.diameter, 3))}, pitch {_fmt(round(thread.pitch, 3))}) is its tap drill, ⌀"
+            f"{_fmt(round(thread.diameter - 1.0825 * thread.pitch, 2))} to "
+            f"⌀{_fmt(round(thread.diameter - thread.pitch + 0.1, 2))}, or the thread itself, "
+            f"⌀{_fmt(round(thread.diameter, 2))}; give the thread this bore takes, or change the model."
         )
     problems = []
     if given["thru"] is not None and given["thru"] != hole.thru:

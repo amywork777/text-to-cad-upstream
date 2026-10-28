@@ -1427,15 +1427,28 @@ class ThreadCalloutTests(unittest.TestCase):
         self.assertEqual(self._callouts(_drilled([(0, 0)], 6.0), lambda v: v.hole((0, 0, 20), thread="M6")),
                          ["M6 THRU"])
 
-    def test_a_thread_is_an_iso_metric_one_or_refused(self) -> None:
+    def test_a_thread_is_a_metric_or_unified_one_or_refused(self) -> None:
         from cadgen.eng_drawing import Sheet
 
         view = Sheet("A4").view(_drilled([(0, 0)]), "top", at=(100, 150))
-        for thread, message in (("", "is not a metric thread"), ("hello", "is not a metric thread"),
-                                ("M6x3", "ISO 261 gives M6 a pitch of 1, 0.75"), ("M13", "not an ISO 261 size"),
-                                ("M6x1 - 6g", "external thread's tolerance class")):
+        for thread, message in (("", "is not a thread this drawing can check"), ("hello", "is not a thread this drawing"),
+                                ("M50", "ISO 261 gives M50 no coarse pitch to assume"),
+                                ("M6x7", "a pitch of 7 does not fit an M6 thread"),
+                                ("M6x1 - 6g", "external thread's tolerance class"),
+                                ("1/4-20 UNC-2A", "2A is an external thread's class"),
+                                ("#14-20 UNC", "#14 is not a unified thread size")):
             with self.subTest(thread=thread), self.assertRaisesRegex(ValueError, message):
                 view.hole((0, 0, 20), thread=thread)
+
+    def test_a_special_pitch_or_an_inch_thread_is_checked_against_its_tap_drill(self) -> None:
+        # Fine and special metric pitches and unified inch threads print as given over the bore their pitch takes:
+        # M6x0.5 over ⌀5.5, 1/4-20 UNC over its #7 drill (⌀5.11), #10-32 UNF over its #21 drill (⌀4.04).
+        for bore, thread in ((5.5, "M6x0.5 - 6H"), (5.11, "1/4-20 UNC-2B"), (4.04, "#10-32 UNF")):
+            with self.subTest(thread=thread):
+                self.assertEqual(self._callouts(_drilled([(0, 0)], bore), lambda v, t=thread: v.hole((0, 0, 20), thread=t)),
+                                 [f"{thread} THRU"])
+        with self.assertRaisesRegex(ValueError, r"thread='1/4-20 UNC' does not fit the part's hole"):
+            self._callouts(_drilled([(0, 0)], 4.04), lambda v: v.hole((0, 0, 20), thread="1/4-20 UNC"))
 
     def test_a_thread_takes_no_diameter_tolerance_or_fit(self) -> None:
         from cadgen.eng_drawing import Sheet

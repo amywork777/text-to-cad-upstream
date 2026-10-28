@@ -243,10 +243,12 @@ sheet millimetres.
   one callout on the hole whose axis passes through `point`, in a view looking
   down that axis. Every size and the count come from the part; a value given is
   checked and a contradiction is refused, naming what the part has. `label`
-  is appended (`"WHEEL"`). `thread` states a tapped hole: an ISO metric thread,
-  ISO 261 size and pitch, ISO 965 class (`"M6"`, `"M6x1 - 6H"`; anything else is
-  refused), over a bore that is its tap drill (basic minor diameter to about
-  d - P: ⌀5 for M6x1) or the thread's own size (⌀6). It takes no `diameter`,
+  is appended (`"WHEEL"`). `thread` states a tapped hole: a metric thread
+  with an optional ISO 965 class (`"M6"`, `"M6x0.5 - 6H"`; with no pitch, ISO 261's
+  coarse one) or a unified inch thread (`"1/4-20 UNC-2B"`, `"#10-32 UNF"`; numbered
+  sizes up to #12, a whole inch as a decimal, `"1.0-8 UNC"`); any other form is
+  refused. The bore is its tap drill (basic minor diameter to about d - P: ⌀5 for
+  M6x1, the #7 drill for 1/4-20) or the thread's own size (⌀6). It takes no `diameter`,
   `tol` or `fit`. A tap drill is stated with the thread after it: `⌀5 ↧12
   M6x1 - 6H ↧10`. `count` is how many of the identical bores are tapped (all,
   or `count=1` for this one; left unset over several, it is refused), and
