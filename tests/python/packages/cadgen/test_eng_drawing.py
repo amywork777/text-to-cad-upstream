@@ -4104,6 +4104,132 @@ class MaterialSectionTests(unittest.TestCase):
             Sheet("A3").view(_part(), "front", at=(100, 100)).section("A", parts=parts)
 
 
+def _bushed_plate():
+    """A 100 x 70 x 10 plate built from its datum corner (C at X = 0, B at Y = 0, A at
+    Z = 0): four ⌀6.6 holes 12 in from its edges and a ⌀16 bore in the middle, with a
+    lined bushing pressed in flush -- a sleeve to ⌀12.5 and a 0.25 liner in it -- each a
+    part, as the pivot mount plate example draws it."""
+    from build123d import Align, Box, Compound, Cylinder, Pos
+
+    from cadgen.eng_drawing import parts_list
+
+    corner, up = (Align.MIN, Align.MIN, Align.MIN), (Align.CENTER, Align.CENTER, Align.MIN)
+    plate = Box(100, 70, 10, align=corner)
+    for x, y in ((12, 12), (88, 12), (12, 58), (88, 58)):
+        plate -= Pos(x, y, 0) * Cylinder(3.3, 10, align=up)
+    plate -= Pos(50, 35, 0) * Cylinder(8, 10, align=up)
+    sleeve = Pos(50, 35, 0) * (Cylinder(8, 10, align=up) - Cylinder(6.25, 10, align=up))
+    liner = Pos(50, 35, 0) * (Cylinder(6.25, 10, align=up) - Cylinder(6, 10, align=up))
+    plate.label, sleeve.label, liner.label = "mount_plate", "bushing", "liner"
+    parts = parts_list(Compound(children=[plate, sleeve, liner], label="pivot_mount_plate"))
+    parts.set("mount_plate", material="AL 7075-T651", spec="AMS 4045", family="aluminium")
+    parts.set("bushing", material="CRES 303", spec="AMS 5640", family="steel")
+    parts.set("liner", material="PTFE FABRIC", spec="AS81934", family="fabric")
+    return parts
+
+
+class AerospaceExampleTests(unittest.TestCase):
+    """Every requirement the vocabulary has, on one released aerospace drawing: a
+    company's profile built on AEROSPACE, datums on real faces, frames, basic,
+    toleranced and limit sizes, key characteristics, and the installed bushing cut and
+    hatched by material with its layer table."""
+
+    def _drawing(self):
+        from dataclasses import replace
+
+        from cadgen.eng_drawing import AEROSPACE, Frame, Sheet
+
+        parts = _bushed_plate()
+        aero = replace(AEROSPACE, name="EXAMPLE AERO", categories={"PRELIMINARY": "prototype", "RELEASED": "production"})
+        release = dict(profile=aero, category="RELEASED", company="EXAMPLE AERO CO.",
+                       fields={"CAGE CODE": "0ABC1", "DISTRIBUTION": "A"})
+        assembly = Sheet("A3", 2.0, title="PIVOT MOUNT PLATE ASSY", **release)
+        front, right = assembly.three_views(parts.assembly, views=("front", "right"))
+        front.section("A", through=(50, 35, 0), parts=parts, materials=True)
+        front.overall(reference=True)
+        right.overall(height=False, reference=True)
+        front.balloons(parts)
+        front.dim((44, 35, 10), (56, 35, 10), text="%%c<>", limits=(12.0, 12.025), key=True)
+        wall = assembly.detail(front, (57.125, 35, 5), 4)
+        wall.flag("ITEM 2 INTO ITEM 1", at=(58, 35, 5), joint="press_fit")
+        wall.flag("ITEM 3 TO ITEM 2 PER AS81934", at=(56.25, 35, 5), joint="bond")
+        assembly.parts_list(parts)
+        assembly.layer_table(parts, [("bushing", "1.75", "SLEEVE, FULL LENGTH"), ("liner", "0.25", "BORE")])
+
+        plate = Sheet(size=None, scale=None, title="MOUNT PLATE", material="AL 7075-T651", spec="AMS 4045",
+                      finish="CHEM FILM", general_tolerance="±0.1", **release)
+        top, side, end, _iso = plate.three_views(parts["mount_plate"].shape, iso=True)
+        side.datum("A", (25, 35, 0))
+        side.frame((75, 35, 0), Frame("flatness", 0.05), offset=(12, -12))
+        end.datum("B", (50, 0, 5))
+        end.frame((50, 0, 10), Frame("perpendicularity", 0.05, ("A",)), offset=(-10, 12))
+        side.datum("C", (0, 35, 5))
+        side.frame((0, 35, 7.5), Frame("perpendicularity", 0.05, ("A", "B")))
+        top.overall()
+        side.overall(width=False)
+        top.dim((0, 65, 10), (12, 58, 10), orientation="h", basic=True)
+        top.dim((12, 58, 10), (88, 58, 10), basic=True)
+        top.dim((0, 5, 10), (50, 35, 10), orientation="h", basic=True)
+        top.dim((95, 0, 10), (88, 12, 10), orientation="v", basic=True)
+        top.dim((88, 12, 10), (88, 58, 10), basic=True)
+        top.dim((5, 0, 10), (50, 35, 10), orientation="v", basic=True)
+        top.hole((88, 58, 10), frame=Frame("position", 0.25, ("A", "B", "C"), diameter=True, modifier="M"))
+        top.hole((50, 35, 10), fit="H7", frame=Frame("position", 0.05, ("A", "B", "C"), diameter=True), key=True)
+        return assembly, plate
+
+    def _render(self):
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _requirements, _unstated
+
+        sheets, facts, warnings = self._drawing(), _facts(), []
+        docs = [_render_sheet(sheet, index=i, count=2, label="pivot", warnings=warnings, facts=facts)
+                for i, sheet in enumerate(sheets, start=1)]
+        return docs, warnings, _unstated(facts), _requirements(facts)
+
+    def test_it_states_everything_a_released_drawing_asks(self) -> None:
+        _docs, warnings, unstated, requirements = self._render()
+        self.assertEqual([line for line in unstated if line.startswith(("incomplete:", "note:"))], [])
+        self.assertFalse([w for w in warnings if "overlap" in w or "crowded" in w or "crosses" in w], warnings)
+        (line,) = requirements
+        self.assertIn("production", line)
+        self.assertIn("datums A B C", line)
+        self.assertIn("5 frames", line)
+        self.assertIn("1 key characteristic", line)
+        self.assertNotIn("no fit, tolerance or position", line)
+
+    def test_the_plate_carries_its_datums_and_frames(self) -> None:
+        (_assembly, plate), *_rest = self._render()
+        msp = plate.modelspace()
+        texts = [e.dxf.text for e in msp.query("TEXT[layer=='DIM']")]
+        for letter in "ABC":
+            self.assertGreaterEqual(texts.count(letter), 3, f"datum {letter}: its symbol and the frames naming it")
+        for value in ("0.25", "0.05", "M", "KC"):
+            self.assertIn(value, texts)
+        self.assertGreaterEqual(len(msp.query("HATCH[layer=='DIM']")), 3, "each datum's filled triangle")
+        basic = [d for d in msp.query("DIMENSION") if (d.override().get("dimgap") or 0) < 0]
+        self.assertEqual(len(basic), 6, "the pattern and the bore located by basic dimensions")
+        titles = [e.dxf.text for e in msp.query("TEXT[layer=='TITLE']")]
+        for words in ("RELEASED", "0ABC1", "EXAMPLE AERO CO.", "AL 7075-T651 PER AMS 4045"):
+            self.assertIn(words, titles)
+
+    def test_the_assembly_is_cut_and_hatched_by_material(self) -> None:
+        ((assembly, _plate), *_rest) = self._render()
+        msp = assembly.modelspace()
+        hatches = list(msp.query("HATCH[layer=='HATCH']"))
+        patterns = {h.dxf.pattern_name for h in hatches if not h.dxf.solid_fill}
+        self.assertTrue({"ANSI38", "ANSI32", "ANSI37"} <= patterns,
+                        "the plate as aluminium, the sleeve as steel, the liner as fabric in the detail")
+        self.assertTrue([h for h in hatches if h.dxf.solid_fill], "the liner, too thin to hatch at 2:1")
+        texts = [e.dxf.text for e in msp.query("TEXT")]
+        for words in ("MATERIAL KEY", "LAYER TABLE", "THICKNESS", "SLEEVE, FULL LENGTH", "AS81934", "KC"):
+            self.assertIn(words, texts)
+        limits = [d for d in msp.query("DIMENSION") if d.override().get("dimlim") == 1]
+        self.assertEqual(len(limits), 1, "the installed bore, between its limits")
+        dims = " ".join(_dim_texts(assembly))
+        self.assertIn("12.025", dims)
+        self.assertIn("12.000", dims)
+
+
 def _flange():
     """A ⌀80 x 10 flange: a ⌀30 bore, six ⌀6 holes equally spaced on ⌀60."""
     import math
