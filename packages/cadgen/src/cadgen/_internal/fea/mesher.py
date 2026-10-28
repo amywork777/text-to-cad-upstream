@@ -27,6 +27,10 @@ from typing import Any
 
 __all__ = ["skin", "volume"]
 
+#: The longest one mesh may take (s): past it the child is stopped and the study says so, rather than a
+#: mesher that never returns holding ``cadgen fea solve`` (and the engine or MCP server it runs in) for good.
+TIMEOUT_S = 3600.0
+
 
 def volume(brep: Path, prints: list, diagonal: float, h: float, refine: float, order: int, size_field: dict | None,
            *, origin: list[int] | None = None, keys: dict[Any, list] | None = None, count_domains: bool = False):
@@ -53,11 +57,13 @@ def _run(job: dict) -> dict:
     with tempfile.TemporaryDirectory(prefix="cadgen-mesher-") as tmp:
         job_path, result_path = Path(tmp) / "job.pickle", Path(tmp) / "result.pickle"
         job_path.write_bytes(pickle.dumps(job))
-        # The child imports this cadgen, wherever it was imported from (an editable checkout, a wheel).
-        source = str(Path(cadgen.__file__).resolve().parents[1])
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [source, os.environ.get("PYTHONPATH")]))}
-        done = subprocess.run([sys.executable, "-P", "-m", "cadgen._internal.fea.mesher", str(job_path), str(result_path)],
-                              env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        try:
+            done = subprocess.run([sys.executable, "-P", "-m", "cadgen._internal.fea.mesher", str(job_path),
+                                   str(result_path)], env=_child_env(Path(cadgen.__file__).resolve().parents[1]),
+                                  stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=TIMEOUT_S)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(f"the mesher did not finish in {TIMEOUT_S:.0f} s and was stopped; a coarser mesh "
+                               "(mesh.size_mm) or a simpler part meshes sooner") from error
         if not result_path.is_file():
             said = (done.stderr or done.stdout).strip().splitlines()[-12:]
             raise RuntimeError(f"the mesher stopped (exit {done.returncode}) before it wrote a mesh"
@@ -66,6 +72,18 @@ def _run(job: dict) -> dict:
     if "error" in found:
         raise RuntimeError(found["error"])
     return found
+
+
+def _child_env(source: Path) -> dict[str, str]:
+    """The child's environment: this one, with the folder this cadgen was imported from first on its
+    PYTHONPATH where the interpreter would not find it by itself (a source checkout, a test's path). Never
+    a site-packages folder: on PYTHONPATH it would come before the standard library."""
+    import site
+
+    sites = {Path(p).resolve() for p in [*site.getsitepackages(), site.getusersitepackages()]}
+    if source in sites:
+        return dict(os.environ)
+    return {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(source), os.environ.get("PYTHONPATH")]))}
 
 
 def _volume(job: dict) -> dict:
