@@ -395,6 +395,10 @@ its NATIVE glTF scene, always: one path whether or not a clip is playing.
   surface colour in Inspect.
 - **Display**: `viewFeaturesForKind("glb", { parts })`: Solid and Clip, and Explode where the
   file has two or more rigid nodes that draw (`explodeParts`); Preview draws Render.
+- **An FEA result** (a mesh `cadgen fea solve` wrote) is drawn by its own surface over the same shell
+  (`glb/FeaSurface.jsx`, in the FEA viewer's chunk, `glb/feaView.jsx`, which a plain GLB never fetches):
+  the same tools, Select picking the result's faces, with Study (and an assembly's Parts) in the file
+  sidebar, the colour bar and the study's markers on the model. See `settings-ui.md`, An FEA result.
 - **Tools** (`glb/tools.js`): **Select** (in hand as the file opens), **Pencil**, **Shapes**,
   **Measure**, **Explode** (several parts only) and **Clip**. Select picks a NODE: the glTF
   node a mesh belongs to, marked on load (`userData.gltfNode`, `glbMeshData.js`), named

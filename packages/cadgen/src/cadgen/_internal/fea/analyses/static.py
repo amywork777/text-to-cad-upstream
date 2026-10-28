@@ -1,0 +1,408 @@
+"""Static: will it hold, and how far does it move. Linear elasticity under fixtures, face loads and body loads.
+
+The solve calls :func:`cadgen._internal.fea.solve.solve_linear_static` through
+its module, so a test may patch it. ``gravity`` and ``acceleration`` are body
+loads in g, on no faces. Stdlib only at import.
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from cadgen._internal.fea.analyses import kinds
+from cadgen._internal.fea.analyses.base import AnalysisBase, AnalysisResult, FieldSpec, Inputs, SolveContext, xyz
+from cadgen._internal.fea.study import DEFAULT_CONTROLS, DEFAULT_CHECKS, VIEW_DRIVES, Fixture, Load, parse_fixtures, parse_loads
+
+if TYPE_CHECKING:
+    from cadgen._internal.fea.checks import Solved
+
+__all__ = ["StaticAnalysis", "StaticInputs"]
+
+#: Standard gravity, mm/s^2 (operators.G0_MM_S2, kept here so parsing imports no numerics).
+G0_MM_S2 = 9806.65
+
+
+@dataclass(frozen=True)
+class StaticInputs(Inputs):
+    fixtures: tuple[Fixture, ...] = ()
+    #: Every load in the study's order: on faces (force, pressure) and on the whole part (gravity, acceleration).
+    loads: tuple[Load, ...] = ()
+    #: Material properties these loads need beyond the analysis's own: density for a body load.
+    material_needs: frozenset[str] = frozenset()
+
+    @property
+    def surface_loads(self) -> tuple[Load, ...]:
+        return tuple(load for load in self.loads if not load.body)
+
+    @property
+    def body_accelerations(self) -> list[tuple[float, float, float]]:
+        """Each body load as the acceleration b (mm/s^2) of ∫ ρ b·v: gravity is g, an accelerated part -a."""
+        sign = {"gravity": 1.0, "acceleration": -1.0}
+        return [tuple(sign[load.type] * G0_MM_S2 * c for c in load.vector_g) for load in self.loads if load.body]
+
+
+def solved_record(volume, outcome, study, ordinal_of: dict[str, int], part: str, fixtures) -> "Solved":
+    """The numbers of one solve the checks read, faces as their canonical refs.
+
+    The study may name a face with a document prefix (``/work/part.step#part/face 17``)
+    or by its name; both go through the ordinal to the document's canonical ref, so a
+    fixture and the peak's face compare as the same string.
+    """
+    import numpy as np
+
+    from cadgen._internal.fea.checks import Solved
+
+    fixed_ordinals = {ordinal_of[ref] for fixture in fixtures for ref in fixture.faces}
+    magnitude = np.linalg.norm(outcome.displacement, axis=1)
+    peak_node = int(outcome.von_mises.argmax())
+    moved_node = int(magnitude.argmax())
+    extent = volume.nodes.max(axis=0) - volume.nodes.min(axis=0)
+    return Solved(
+        material_name=study.material.name,
+        yield_MPa=study.material.yield_strength,
+        peak_MPa=float(outcome.von_mises[peak_node]),
+        peak_gauss_MPa=outcome.von_mises_gauss_max,
+        peak_at=tuple(float(c) for c in outcome.dof_locations[peak_node]),
+        peak_face=peak_face(volume, outcome, peak_node, fixed_ordinals),
+        fixed_faces=tuple(volume.faces[ordinal].ref for ordinal in sorted(fixed_ordinals)),
+        max_displacement_mm=float(magnitude[moved_node]),
+        displacement_at=tuple(float(c) for c in outcome.dof_locations[moved_node]),
+        bbox_diagonal_mm=float(np.linalg.norm(extent)),
+        margin=study.margin,
+        coarser_peak_MPa=None,
+        part=part,
+        dofs=outcome.dofs,
+    )
+
+
+def solved_part_record(volume, outcome, study, plan, index: int, ordinal_of: dict[str, int], fixtures) -> "Solved":
+    """One part of a solved assembly, as the checks read it: its own peak, yield and displacement.
+
+    The part's elements pick its share of the fields; faces are those of the part alone.
+    """
+    import numpy as np
+
+    from cadgen._internal.fea.checks import Solved
+
+    part, material = plan.parts[index], plan.materials[index]
+    rows = volume.domain == index
+    dofs = np.unique(outcome.element_dofs[rows])
+    field = outcome.von_mises_parts[index]  # the part's own stress, not smoothed across a joint
+    own_refs = set(part.face_refs)
+    own = {position for position, fp in volume.faces.items() if fp.ref in own_refs}
+    fixed_ordinals = {ordinal_of[ref] for fixture in fixtures for ref in fixture.faces} & own
+    magnitude = np.linalg.norm(outcome.displacement[dofs], axis=1)
+    peak_node = int(dofs[field[dofs].argmax()])
+    moved_node = int(dofs[magnitude.argmax()])
+    corners = volume.nodes[np.unique(volume.tets[rows][:, :4])]
+    here = outcome.dof_locations[peak_node]
+    joint_with, nearest = None, 0.5 * volume.max_h
+    rim = np.unique(volume.boundary)
+    for pair, triangles in volume.interface_triangles.items():
+        if index not in pair:
+            continue
+        edge = np.intersect1d(np.unique(triangles), rim)
+        if len(edge) == 0:
+            continue
+        gap = float(np.linalg.norm(volume.nodes[edge] - here, axis=1).min())
+        if gap <= nearest:
+            joint_with, nearest = plan.names[pair[1] if pair[0] == index else pair[0]], gap
+    return Solved(
+        material_name=material.name,
+        yield_MPa=material.yield_strength,
+        peak_MPa=float(field[peak_node]),
+        peak_gauss_MPa=float(outcome.element_von_mises_gauss[rows].max()),
+        peak_at=tuple(float(c) for c in here),
+        peak_face=peak_face(volume, outcome, peak_node, fixed_ordinals, own),
+        fixed_faces=tuple(volume.faces[ordinal].ref for ordinal in sorted(fixed_ordinals)),
+        max_displacement_mm=float(magnitude.max()),
+        displacement_at=tuple(float(c) for c in outcome.dof_locations[moved_node]),
+        bbox_diagonal_mm=float(np.linalg.norm(corners.max(axis=0) - corners.min(axis=0))),
+        margin=study.margin,
+        coarser_peak_MPa=None,
+        part=plan.names[index],
+        dofs=outcome.dofs,
+        assembly=True,
+        joint_with=joint_with,
+    )
+
+
+def solved_records(volume, outcome, ctx: SolveContext, fixtures) -> list["Solved"]:
+    """What the checks read of a solve: the one part's record, or each part's of an assembly."""
+    study, plan = ctx.study, ctx.assembly
+    if plan is None:
+        return [solved_record(volume, outcome, study, ctx.ordinal_of, ctx.part_name, fixtures)]
+    return [solved_part_record(volume, outcome, study, plan, index, ctx.ordinal_of, fixtures) for index in range(len(plan.parts))]
+
+
+def peak_face(
+    volume, outcome, peak_node: int, fixed_ordinals: set[int], own: set[int] | None = None
+) -> str | None:
+    """The face (its canonical ref) the peak sits on, or ``None`` inside the part and away from every fixed face.
+
+    The peak is at a fixture, and names that fixed face, when its node touches a
+    fixed face (a node on an edge touches two) or lies within half an element
+    of a fixed face's boundary nodes: a peak on a clamp's rim is a peak at the
+    clamp, whichever face the mesher gave the rim node. Otherwise the face
+    whose boundary triangles hold the node. In an assembly ``own`` limits the
+    faces to the part the peak is in: a node on a joint is on both parts' faces."""
+    import numpy as np
+
+    rows = (outcome.boundary_quadratic == peak_node).any(axis=1)
+    ordinals = sorted({int(o) for o in volume.boundary_ordinal[rows]} - {0})
+    if own is not None:
+        ordinals = [ordinal for ordinal in ordinals if ordinal in own]
+        fixed_ordinals = fixed_ordinals & own
+    touched = [ordinal for ordinal in ordinals if ordinal in fixed_ordinals]
+    if touched:
+        return volume.faces[touched[0]].ref
+    here = outcome.dof_locations[peak_node]
+    nearest: tuple[float, int] | None = None
+    for ordinal in sorted(fixed_ordinals):
+        nodes = np.unique(outcome.boundary_quadratic[volume.boundary_ordinal == ordinal])
+        if len(nodes) == 0:
+            continue
+        gap = float(np.linalg.norm(outcome.dof_locations[nodes] - here, axis=1).min())
+        if gap <= 0.5 * volume.max_h and (nearest is None or gap < nearest[0]):
+            nearest = (gap, ordinal)
+    if nearest is not None:
+        return volume.faces[nearest[1]].ref
+    return volume.faces[ordinals[0]].ref if ordinals else None
+
+
+#: A stress's colours stop at this quantile of its values when its peak is a spike above them (a clamped edge's, a
+#: crack front's): the peak, singular, would otherwise turn the rest of the part blue.
+COLOUR_QUANTILE = 0.99
+#: The peak is a spike once it stands this many times above the quantile.
+SPIKE = 1.1
+
+
+def colour_range(values, peak: float, spike: float = SPIKE) -> tuple:
+    """A stress's colour range: ``(0, peak)``, or, where the peak stands ``spike`` times above the field's
+    :data:`COLOUR_QUANTILE` (a singular edge or front), ``(0, quantile, {"quantile", "peak"})``: the colours stop at
+    the quantile and the field's entry says so and keeps the peak. The checks judge the peak either way."""
+    import numpy as np
+
+    values = np.asarray(values, dtype=float)
+    cap = round(float(np.quantile(values, COLOUR_QUANTILE)), 4) if len(values) else 0.0
+    if cap <= 0 or peak <= cap * spike:
+        return (0.0, peak)
+    return (0.0, cap, {"quantile": COLOUR_QUANTILE, "peak": peak})
+
+
+def motion_summary(outcome) -> dict:
+    """A summary's motion and forces: the largest displacement and where, the load applied and the reactions."""
+    import numpy as np
+
+    magnitude = np.linalg.norm(outcome.displacement, axis=1)
+    reaction_total = tuple(sum(r[c] for r in outcome.reactions) for c in range(3))
+    return {
+        "max_displacement_mm": round(float(magnitude.max()), 6),
+        "max_displacement_at_mm": xyz(outcome.dof_locations[int(magnitude.argmax())]),
+        "applied_force_N": [round(x, 4) for x in outcome.applied],
+        "reaction_force_N": [round(x, 4) for x in reaction_total],
+    }
+
+
+def floored(factor: float | None) -> float | None:
+    # Floored, so a factor just under a threshold is never shown as reaching it.
+    return None if factor is None else math.floor(factor * 1000) / 1000
+
+
+class StaticAnalysis(AnalysisBase):
+    name: ClassVar[str] = "static"
+    tier: ClassVar[int] = 1
+    word: ClassVar[str] = "Strength"
+    extras_word: ClassVar[str] = "von Mises"
+    study_keys: ClassVar[frozenset[str]] = frozenset({"fixtures", "loads"})
+    fields: ClassVar[tuple[FieldSpec, ...]] = (
+        FieldSpec("von_mises", "_VON_MISES", "von Mises stress", "MPa"),
+        FieldSpec("displacement", "_DISPLACEMENT", "displacement", "mm", 3, 1000.0),
+    )
+    checks: ClassVar[tuple] = (kinds.STRESS, kinds.DISPLACEMENT)
+    default_checks: ClassVar[tuple[dict, ...]] = DEFAULT_CHECKS
+    drives: ClassVar[tuple[str, ...]] = VIEW_DRIVES
+    default_controls: ClassVar[dict[str, dict]] = DEFAULT_CONTROLS
+    #: The noun of the viewer's load control and the verdict's takeaway ("OK up to 1.6× this load").
+    noun: ClassVar[str] = "this load"
+    # -- parse ---------------------------------------------------------------------------------------
+
+    def parse(self, document: dict) -> StaticInputs:
+        fixtures = parse_fixtures(document)
+        loads = parse_loads(document)
+        refs = tuple(dict.fromkeys(ref for group in (*fixtures, *loads) for ref in group.faces))
+        anchors = tuple(dict.fromkeys(ref for fixture in fixtures for ref in fixture.faces))
+        needs = frozenset({"density"}) if any(load.body for load in loads) else frozenset()
+        return StaticInputs(refs, anchors, True, fixtures=fixtures, loads=loads, material_needs=needs)
+
+    # -- solve ---------------------------------------------------------------------------------------
+
+    def solve(self, ctx: SolveContext, inputs: StaticInputs) -> AnalysisResult:
+        from cadgen._internal.fea import solve
+
+        volume, study, plan = ctx.volume, ctx.study, ctx.assembly
+        materials = study.material if plan is None else plan.materials
+        outcome = solve.solve_linear_static(volume, materials, inputs.fixtures, inputs.surface_loads, ctx.ordinal_of,
+                                            log=ctx.log, automatic=ctx.automatic, body_loads=inputs.body_accelerations)
+        return self.static_result(outcome, solved_records(volume, outcome, ctx, inputs.fixtures), plan)
+
+    def static_result(self, outcome, solved, plan) -> AnalysisResult:
+        return AnalysisResult(
+            dof_locations=outcome.dof_locations, vertices=outcome.vertices, tets=outcome.tets,
+            boundary_quadratic=outcome.boundary_quadratic, element_dofs=outcome.element_dofs,
+            fields={"von_mises": outcome.von_mises, "displacement": outcome.displacement},
+            fields_by_part={} if outcome.von_mises_parts is None else {"von_mises": outcome.von_mises_parts},
+            deformation=outcome.displacement,
+            scalars={"outcome": outcome, "part_refs": None if plan is None else [part.ref for part in plan.parts]},
+            reactions=list(outcome.reactions), applied=tuple(outcome.applied), dofs=outcome.dofs, solver=outcome.solver,
+            timings=dict(outcome.timings), warnings=outcome.warnings, solved=solved,
+        )
+
+    @staticmethod
+    def weakest(result: AnalysisResult) -> "Solved":
+        from cadgen._internal.fea import checks
+
+        return min(result.solved, key=lambda part: math.inf if checks.safety_factor(part) is None else checks.safety_factor(part))
+
+    # -- the automatic finer solve -------------------------------------------------------------------
+
+    def needs_finer(self, result: AnalysisResult, inputs: StaticInputs, check_results: list[dict]) -> bool:
+        from cadgen._internal.fea import checks
+
+        return checks.needs_finer(checks.safety_factor(self.weakest(result)))
+
+    def refined_record(self, result: AnalysisResult, size_mm: float, finer_mm: float, *, assembly: bool) -> dict:
+        """The sidecar's ``refined``, before the finer solve: the first solve's size and governing peak."""
+        weakest = self.weakest(result)
+        return {
+            "from_size_mm": round(size_mm, 4),
+            "from_max_von_mises_MPa": round(weakest.peak_MPa, 4),
+            "size_mm": round(finer_mm, 4),
+            "max_von_mises_MPa": None,
+            **({"part": weakest.part} if assembly else {}),
+        }
+
+    def merge_finer(self, coarse: AnalysisResult, finer: AnalysisResult, refined: dict) -> AnalysisResult:
+        """The finer solve is the one written; the first solve's peak rides along for convergence only."""
+        import dataclasses
+
+        index = next(i for i, part in enumerate(coarse.solved) if part is self.weakest(coarse))
+        # Like with like: the finer peak of the part whose first-solve peak is recorded.
+        refined["max_von_mises_MPa"] = round(finer.solved[index].peak_MPa, 4)
+        finer.solved = [
+            dataclasses.replace(fine, coarser_peak_MPa=first.peak_MPa, coarser_dofs=coarse.dofs)
+            for fine, first in zip(finer.solved, coarse.solved)
+        ]
+        return finer
+
+    # -- judging -------------------------------------------------------------------------------------
+
+    def judge(self, check: dict, index: int, ctx: SolveContext, result: AnalysisResult, inputs: StaticInputs) -> dict:
+        """The stress check is the weakest part's. A displacement check takes the largest displacement
+        magnitude over the nodes of its faces' surface triangles (faces of several parts alike), else
+        over the whole model, and names the face it is on."""
+        import numpy as np
+
+        from cadgen._internal.fea import checks
+
+        if check["kind"] == "stress":
+            return checks.stress_check(self.weakest(result), label=check.get("label"))
+        magnitude = np.linalg.norm(result.fields["displacement"], axis=1)
+        peak = kinds.field_max_over(
+            magnitude, tuple(check.get("faces", ())), boundary=result.boundary_quadratic,
+            boundary_ordinal=ctx.volume.boundary_ordinal, locations=result.dof_locations, face_ref=ctx.volume.faces,
+            ordinal_of=ctx.ordinal_of, where=f"view.checks[{index}]",
+        )
+        return checks.displacement_check(
+            peak.value, check["limit_mm"], at=peak.at, ref=peak.ref, faces=peak.faces, label=check.get("label"),
+        )
+
+    def findings(self, ctx: SolveContext, result: AnalysisResult, inputs: StaticInputs,
+                 check_results: list[dict], *, assembly: bool) -> list[dict]:
+        from cadgen._internal.fea import checks
+
+        if not assembly:
+            return checks.findings(self.weakest(result))
+        return checks.assembly_findings(result.solved)
+
+    # -- what is written -----------------------------------------------------------------------------
+
+    def deformation_scale(self, result: AnalysisResult, bbox_diagonal: float, requested: float | None) -> float | None:
+        import numpy as np
+
+        from cadgen._internal.fea.outputs import auto_deformation_scale
+
+        magnitude = np.linalg.norm(result.fields["displacement"], axis=1)
+        return requested or auto_deformation_scale(float(magnitude.max()), bbox_diagonal)
+
+    def summary(self, result: AnalysisResult, inputs: StaticInputs, check_results: list[dict]) -> dict:
+        """The one place the numbers are rounded; the GLB's extras and the sidecar are derived from it."""
+        from cadgen._internal.fea import checks
+
+        outcome = result.scalars["outcome"]
+        max_vm_index = int(outcome.von_mises.argmax())
+        solved = self.weakest(result)
+        summary = {
+            "max_von_mises_MPa": round(float(outcome.von_mises[max_vm_index]), 4),
+            "max_von_mises_gauss_MPa": round(outcome.von_mises_gauss_max, 4),
+            "max_von_mises_at_mm": xyz(outcome.dof_locations[max_vm_index]),
+            "yield_MPa": result.scalars["yield_MPa"],
+            **motion_summary(outcome),
+            "deformation_scale": result.scalars["deformation_scale"],
+        }
+        summary["safety_factor"] = floored(checks.safety_factor(solved))
+        refs = result.scalars["part_refs"]
+        if refs is not None:
+            # The headline is the weakest part: its yield and safety factor; the peak and the colours span the assembly.
+            summary["yield_MPa"] = solved.yield_MPa
+            summary["weakest_part"] = solved.part
+            summary["weakest_part_peak_MPa"] = round(solved.peak_MPa, 4)
+            summary["weakest_part_peak_at_mm"] = [round(c, 3) for c in solved.peak_at]
+            summary["parts"] = [
+                {"ref": refs[i], "name": part.part, "material": part.material_name, "yield_MPa": part.yield_MPa,
+                 "peak_MPa": round(part.peak_MPa, 4), "peak_gauss_MPa": round(part.peak_gauss_MPa, 4),
+                 "peak_at_mm": [round(c, 3) for c in part.peak_at], "safety_factor": floored(checks.safety_factor(part)),
+                 "max_displacement_mm": round(part.max_displacement_mm, 6)}
+                for i, part in enumerate(result.solved)
+            ]
+        # Each check the study asked for (the stress check alone by default), judged at the load as solved.
+        summary["checks"] = check_results
+        return summary
+
+    def field_ranges(self, summary: dict, result: AnalysisResult) -> dict[str, tuple[float, float]]:
+        return {"von_mises": (0.0, summary["max_von_mises_MPa"]), "displacement": (0.0, summary["max_displacement_mm"])}
+
+    def extras_head(self, summary: dict) -> dict:
+        """Static's keys right after the deformation scale: the summary's safety factor, for the viewer's plain line."""
+        return {"safety_factor": summary["safety_factor"]}
+
+    def extras_assembly(self, summary: dict) -> dict:
+        """What the viewer reads for an assembly (`_PART` indexes `parts`): the weakest part's line."""
+        return {
+            "weakest_part": summary["weakest_part"],
+            "weakest_part_peak_MPa": summary["weakest_part_peak_MPa"],
+            "max_displacement_mm": summary["max_displacement_mm"],
+            "parts": [
+                {key: part[key] for key in ("ref", "name", "material", "yield_MPa", "peak_MPa", "safety_factor", "max_displacement_mm")}
+                for part in summary["parts"]
+            ],
+        }
+
+    def study_echo(self, inputs: StaticInputs, bare: Callable[[tuple[str, ...]], list[str]]) -> dict:
+        def load_echo(load: Load) -> dict:
+            if load.body:
+                return {"type": load.type, "vector_g": [float(c) for c in load.vector_g]}
+            return {"type": load.type, "faces": bare(load.faces),
+                    **({"vector_N": [float(c) for c in load.vector]} if load.type == "force" else {"pressure_MPa": load.pressure})}
+
+        return {
+            "fixtures": [{"type": fixture.type, "faces": bare(fixture.faces)} for fixture in inputs.fixtures],
+            "loads": [load_echo(load) for load in inputs.loads],
+        }
+
+    def human_lines(self, summary: dict) -> list[str]:
+        """Static's own CLI lines are :class:`cadgen.results.FeaResult`'s, unchanged."""
+        return []

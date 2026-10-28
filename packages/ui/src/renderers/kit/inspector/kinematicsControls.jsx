@@ -25,9 +25,10 @@ export function positionValuesAreDefault(values, defaults) {
  * dropdown ("Custom" while the joints are set by hand) — Default first where the section
  * can reset, then the named poses. Reset, the way back to the default pose, is in the section's
  * heading before its X (`ToolPanelHeadAction`), idle while the model is there. Nothing where there
- * is neither to choose. `disabled`: shown, not chosen from (while a motion owns the pose).
+ * is neither to choose. `disabled`: shown, not chosen from (while a motion owns the pose). An FEA
+ * result's named states are the same row under its own name (`name`: "Preset").
  */
-export function KinematicsPoseRow({ poses = [], activeValue, onSelect, onReset, disabled = false }) {
+export function KinematicsPoseRow({ poses = [], activeValue, onSelect, onReset, disabled = false, name = null }) {
   const usage = useControlUsage();
   const { t } = useI18n();
   if (!poses.length && !onReset) return null;
@@ -39,13 +40,13 @@ export function KinematicsPoseRow({ poses = [], activeValue, onSelect, onReset, 
   return <div className="flex h-8 items-center px-2" data-pose-row="">
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <button type="button" aria-label={t("pose.current", { pose: label })} data-pose-menu="" disabled={disabled}
+        <button type="button" aria-label={name ? `${name}: ${label}` : t("pose.current", { pose: label })} data-pose-menu="" disabled={disabled}
           className="flex h-6 w-full min-w-0 items-center justify-between gap-1 rounded-md border border-input bg-transparent px-2 text-left text-tiny shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/45 aria-expanded:bg-accent disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50">
           <span className="min-w-0 truncate">{label}</span>
           <ChevronDown className="size-3 shrink-0 opacity-60" aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={4} collisionPadding={8} aria-label={t("pose.label")}
+      <DropdownMenuContent align="end" sideOffset={4} collisionPadding={8} aria-label={name || t("pose.label")}
         className={cn(FLOATING_SURFACE_CLASS, "min-w-(--radix-dropdown-menu-trigger-width) data-[state=closed]:animate-none!")}>
         <DropdownMenuRadioGroup value={active?.value || NO_PRESET_VALUE}
           onValueChange={value => { if (value === DEFAULT_POSE_VALUE) { reset(); return; } usage.used("position_preset"); onSelect?.(value); }}>
