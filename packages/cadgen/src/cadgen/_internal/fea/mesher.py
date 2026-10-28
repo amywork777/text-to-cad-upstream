@@ -56,7 +56,7 @@ def _run(job: dict) -> dict:
         # The child imports this cadgen, wherever it was imported from (an editable checkout, a wheel).
         source = str(Path(cadgen.__file__).resolve().parents[1])
         env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [source, os.environ.get("PYTHONPATH")]))}
-        done = subprocess.run([sys.executable, "-m", "cadgen._internal.fea.mesher", str(job_path), str(result_path)],
+        done = subprocess.run([sys.executable, "-P", "-m", "cadgen._internal.fea.mesher", str(job_path), str(result_path)],
                               env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
         if not result_path.is_file():
             said = (done.stderr or done.stdout).strip().splitlines()[-12:]
