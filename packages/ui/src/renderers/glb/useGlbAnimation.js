@@ -29,14 +29,14 @@ const REST = Object.freeze({ activeClipId: "", enabled: false, playing: false, e
  * property to the value it had at rest.
  *
  * The renderer may add clips of its own that the file does not carry (an FEA
- * result's Load ramp): `{ id, label, duration, play: { apply(elapsedSec), release() } }`,
+ * result's Load ramp, a CAM result's Simulate): `{ id, label, duration, play: { apply(elapsedSec), release() } }`,
  * listed after the file's. While one owns the pose, each frame is `apply` instead
  * of a mixer's, and `release` puts the model back as it was. Hand the same array
  * while they are the same clips: a new one starts the playbar over.
  *
  * @param {object | null} document  The native GLB document on screen.
  * @param {() => void} requestRender  Asks the viewport for a frame.
- * @param {readonly object[]} [own]  The renderer's own clips (an FEA result's routines).
+ * @param {readonly object[]} [own]  The renderer's own clips (an FEA result's routines, a CAM result's Simulate).
  * @returns the routine runtime, or null for a file without playable clips.
  */
 export function useGlbAnimation(document, requestRender, own = NONE) {

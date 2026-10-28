@@ -360,6 +360,7 @@ robot description files, simulation, and local review.
 | DfAM Check   | Measures mesh printability per process: wall thickness, overhangs, support volume, and build orientation.                                          | [skills/dfam-check](skills/dfam-check/SKILL.md)     |
 | DFM | Reviews a part for sheet metal, CNC machining, or injection molding, with measured evidence and the cited rule behind every finding; measures draft, undercuts and projected area from a mesh. | [skills/dfm](skills/dfm/SKILL.md) |
 | FEA | Runs a linear static stress study on a STEP part or bonded assembly, solved by a locally installed CalculiX, reporting peak stress, safety factor and displacement with a colour-mapped result. | [skills/fea](skills/fea/SKILL.md) |
+| CAM | Plans toolpaths and posts G-code for CNC mills, lathes, laser, plasma, waterjet and wire EDM, with a simulated cut, checks and cycle time. | [skills/cam](skills/cam/SKILL.md) |
 | G-code       | Slices models into printer-ready G-code with OrcaSlicer, using your own printer presets.                                                           | [skills/gcode](skills/gcode/SKILL.md)               |
 | Bambu Labs   | Sends prints to Bambu Lab printers through Bambu Connect, Bambu Lab's official app, or Bambu Studio.                                               | [skills/bambu-labs](skills/bambu-labs/SKILL.md)     |
 

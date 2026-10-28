@@ -373,7 +373,7 @@ src/cadgen/
   urdf.py, sdf.py,       # the robot validators: one public namespace per format, its
   srdf.py                #   `validate` verb, and the checks behind it (*_source.py,
                          #   *_validation.py, sdf_external.py, findings.py, xml_common.py)
-  results.py             # what a `validate` verb returns: the JSON line protocol, typed
+  results.py             # what a `validate` or `cam` verb returns: the JSON line protocol, typed
   robot_payload.py       # a robot description resolved for the viewer's page: its
                          #   articulation, its visuals in rest space, the facts a person
                          #   reads off it; held in memory
@@ -389,6 +389,9 @@ src/cadgen/
                          #   parts list, balloons, the set's sheets)
   work_instruction.py    # @work_instruction: the steps that build one assembly, one PDF;
                          #   its pages and figures in _internal/work_instruction_pages.py
+  cam.py                 # CAM: features (what a job can name) and plan (toolpaths, simulated
+                         #   cut, checks, G-code per setup, one result GLB); its engine is
+                         #   _internal/cam (operations/ and posts/ registries)
   flatten.py             # flat patterns: exact 2D geometry from a solid's planar faces
   geometry.py            # measurements of native geometry: closest points, overlap,
                          #   soundness, mass properties
@@ -421,7 +424,8 @@ src/cadgen/
 Commands: `cadgen export`, `snapshot`, `serve`, `inspect`, `status`, `stop`, `delete` and
 `server` are the engine's verbs; `cadgen dxf snapshot`, `urdf snapshot` and `sdf snapshot` its
 snapshot for those files alone; `cadgen urdf|sdf|srdf validate` the validators; `cadgen fea
-faces|parts|solve` finite element analysis (`solve` needs the `fea` extra and CalculiX); `cadgen doctor` the setup (the installation registered, the `cadgen` command written, the engine started),
+faces|parts|solve` finite element analysis (`solve` needs the `fea` extra and CalculiX); `cadgen cam
+features|plan` CAM (a part and a job in, a `.cam.glb` and G-code out); `cadgen doctor` the setup (the installation registered, the `cadgen` command written, the engine started),
 a skill's pin and what cadgen left behind that nothing needs, which `cadgen doctor --prune` removes
 (`_internal/leftovers.py`: engine records of an older format, the bytecode of installations no longer
 registered, cache folders no record names; none written in the last seven days); `cadgen run` a model script by the installation's python; `cadgen viewer` the engine page launcher;
@@ -464,3 +468,13 @@ OpenCascade and OCP's cannot share one). The solver is CalculiX (`ccx`, 2.20 or 
 person installs (`conda install -c conda-forge calculix`, or `calculix-ccx` on Debian and Ubuntu):
 `CADGEN_CCX` names it, else `ccx` on PATH. A missing or older one is an error saying how to install
 it; cadgen downloads no solver and has no other. The result names the CalculiX version that ran.
+
+## CAM
+
+`cadgen cam features` and `cadgen cam plan` (`cadgen.cam`) read a part from its file -- a STEP or an
+xbf through `read_step`/`read_xbf`, or a DXF's profiles -- never through the engine, and resolve a
+job's face and edge refs in that file by the engine's grammar (`engine/refs.py`), so a ref
+`cadgen inspect` answers or the CAD Viewer copies names the same face. The planner, simulator, checks
+and posts live under `src/cadgen/_internal/cam/`; a plan writes `<stem>.cam.glb`, an ordinary GLB the
+viewer's GLB renderer draws the job of, and one G-code file per setup. The `cam` skill carries the job
+file's contract.
