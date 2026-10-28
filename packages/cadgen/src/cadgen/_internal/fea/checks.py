@@ -1,8 +1,8 @@
 """What an engineer checks on a stress result, as findings in plain words.
 
-The KiCad findings' shape (``check``, ``severity``, ``type``, ``summary``,
-``description``, ``items``), so the viewer's alert card and the agent read FEA
-the way they read a board. Errors are what make the part unfit to use; the
+Each is ``check``, ``severity``, ``type``, ``summary``, ``description`` and
+``items``, the shape the viewer's alert card and the agent read for every
+validator. Errors are what make the part unfit to use; the
 rest are suggestions. An assembly's findings come from one :class:`Solved` per
 part (:func:`assembly_findings`) and name the part. The study's checks
 (``checks``) are judged here too: :func:`stress_check` and

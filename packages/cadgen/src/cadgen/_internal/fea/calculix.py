@@ -1,9 +1,9 @@
 """CalculiX (``ccx``): the program every study is solved by. cadgen meshes, writes CalculiX's input, runs it and reads
 its output; CalculiX assembles and solves.
 
-``ccx`` is installed by the person, as KiCad is for ``cadgen pcb``: ``CADGEN_CCX`` names the program, else the first of
-:data:`NAMES` on PATH. One that is missing, or older than :data:`MINIMUM`, is an error naming how to install it; cadgen
-downloads nothing and solves with nothing else.
+``ccx`` is installed by the person: ``CADGEN_CCX`` names the program, else the first of :data:`NAMES` on PATH, else the
+``ccx`` a FreeCAD install carries (FreeCAD's own FEM solves with it). One that is missing, or older than
+:data:`MINIMUM`, is an error naming how to install it; cadgen downloads nothing and solves with nothing else.
 
 A study's mesh is written as C3D10 elements (each part its own element set and material), its held nodes as boundary
 conditions -- a node held along directions that are not global axes (a sloped or curved roller) in its own frame
@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,8 +57,25 @@ class CalculixMissingError(RuntimeError):
 
 
 def install_hint() -> str:
-    return ("install CalculiX 2.20 or newer -- conda install -c conda-forge calculix, or the calculix-ccx package on "
-            f"Debian and Ubuntu -- or set {CCX_ENV} to its ccx program")
+    return ("install CalculiX 2.20 or newer -- conda install -c conda-forge calculix, the calculix-ccx package on "
+            f"Debian and Ubuntu, or FreeCAD 1.0 or newer, which carries one -- or set {CCX_ENV} to its ccx program")
+
+
+def _in_freecad() -> list[str]:
+    """Where each platform's FreeCAD installer puts the ``ccx`` it carries, newest first where the folder names a
+    version. A Linux FreeCAD (a distribution's package, the AppImage) carries none cadgen can find: PATH or
+    ``CADGEN_CCX`` names it."""
+    if sys.platform == "darwin":
+        apps = [Path("/Applications"), Path.home() / "Applications"]
+        return [str(app / "FreeCAD.app" / "Contents" / "Resources" / "bin" / "ccx") for app in apps]
+    if sys.platform == "win32":
+        # The installer's folder is "FreeCAD 1.1", for every user under Program Files or for one under Programs.
+        roots = [Path(os.environ[name]) / under for name, under in (("ProgramFiles", ""), ("LOCALAPPDATA", "Programs"))
+                 if os.environ.get(name)]
+        found = sorted((folder for root in roots for folder in root.glob("FreeCAD *")), key=lambda f: f.name,
+                       reverse=True)
+        return [str(folder / "bin" / "ccx.exe") for folder in found]
+    return []
 
 
 @dataclass(frozen=True)
@@ -74,7 +92,7 @@ class Ccx:
 
 
 def find_ccx() -> Ccx:
-    """The ``ccx`` to run: ``CADGEN_CCX``, else the first of :data:`NAMES` on PATH. Raises
+    """The ``ccx`` to run: ``CADGEN_CCX``, else the first of :data:`NAMES` on PATH, else a FreeCAD install's. Raises
     :class:`CalculixMissingError` naming why and how to install it."""
     setting = os.environ.get(CCX_ENV, "").strip()
     if setting:
@@ -85,6 +103,9 @@ def find_ccx() -> Ccx:
     for name in NAMES:
         if found := shutil.which(name):
             return _checked(found)
+    for path in _in_freecad():
+        if os.path.isfile(path):
+            return _checked(path)
     raise CalculixMissingError(f"CalculiX's ccx was not found: {install_hint()}")
 
 

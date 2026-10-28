@@ -61,7 +61,7 @@ def class_directory(cls) -> Path:
 def heavy_at_import(*modules: str) -> str:
     """The heavy modules importing ``modules`` pulls into a fresh interpreter: "" when they are stdlib-only at import."""
     code = (f"import sys; sys.path.insert(0, 'packages/cadgen/src'); import {', '.join(modules)};"
-            "print(','.join(m for m in ('numpy', 'scipy', 'skfem', 'netgen', 'OCP') if m in sys.modules))")
+            "print(','.join(m for m in ('numpy', 'scipy', 'netgen', 'OCP') if m in sys.modules))")
     return subprocess.run([sys.executable, "-c", code], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout.strip()
 
 

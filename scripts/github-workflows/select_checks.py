@@ -240,6 +240,13 @@ RULES: tuple[Rule, ...] = (
     Rule(VIEWER_SHARED, CADGEN_CONSUMERS, final=True),
     Rule(VIEWER_CODE, _viewer_change, final=True),
     Rule(MCP_CODE, _mcp_change, final=True),
+    # The engine and shared modules FEA reads a document and writes its result through: a change there runs the
+    # solves too, which the cadgen job skips without the fea extra. Before the engine's final rule, which adds the rest.
+    Rule((
+        f"{CADGEN_SRC}/engine/document.py", f"{CADGEN_SRC}/engine/refs.py", f"{CADGEN_SRC}/engine/kernel/bounds.py",
+        f"{CADGEN_SRC}/_internal/atomic_replace.py", f"{CADGEN_SRC}/_internal/primitive_mesh.py",
+        f"{CADGEN_SRC}/_internal/cli_from_function.py",
+    ), select(flags=["fea"])),
     Rule(ENGINE_CODE, CADGEN_CONSUMERS, final=True),
     Rule(("packages/cadgen/**", "scripts/bundle/**"), CADGEN_CONSUMERS),
     # The stress solver's own tests need the optional cadgen[fea] stack, which no other job

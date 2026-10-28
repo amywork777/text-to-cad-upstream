@@ -6,6 +6,7 @@ import dataclasses
 import json
 import math
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -67,21 +68,13 @@ def _resolve_faces(document: "Document", refs: "tuple[str, ...]") -> tuple[dict[
 
 
 def _single_occurrence(document: "Document", owners: set[str], chosen: str | None = None) -> "Occurrence":
-    """The one part occurrence every face ref belongs to. A study that names no face (a free-free modal study) solves
-    ``chosen`` (``--occurrence``), else the document's only part."""
+    """The one part occurrence every face ref belongs to (a study always names faces: its fixtures)."""
     if len(owners) > 1:
         raise ValueError(
             f"the study's faces span {len(owners)} occurrences ({', '.join(sorted(owners))}); "
             "a study solves one part, so every face must be on the same occurrence"
         )
-    if owners:
-        chosen = next(iter(owners))
-    elif chosen is None:
-        leaves = document.leaves()
-        if len(leaves) != 1:
-            raise ValueError(f"the study names no face and the document has {len(leaves)} parts; "
-                             "choose one with --occurrence")
-        return leaves[0]
+    chosen = next(iter(owners))
     return next(leaf for leaf in document.leaves() if leaf.ref == chosen)
 
 
@@ -210,8 +203,6 @@ class _Plan:
     freed_overlaps: set
     #: Per part, the group of parts bonded to it (directly or through others).
     group_of: list[int]
-    #: The pairs (part indices) a contact or bolt study's ``contact`` and ``bolt`` connections name: meshed apart, like free ones.
-    contact: set = dataclasses.field(default_factory=set)
     #: The document the parts are of: a part named by a ref other than its canonical one is resolved in it.
     document: "Document | None" = None
 
@@ -264,21 +255,16 @@ def _plan_assembly(doc: "Document", parsed, logger: Narration) -> _Plan:
     pair_of = {frozenset((index_of[c.a], index_of[c.b])) for c in contacts}
     freed: set[frozenset[int]] = set()
     freed_overlaps: set[frozenset[int]] = set()
-    contact: set[frozenset[int]] = set()
     seen: set[frozenset[int]] = set()
-    bolted: set[frozenset[int]] = set()
     for n, connection in enumerate(parsed.connections):
         where = f"connections[{n}]"
         i, j = (find_part(parts, names, key, f"{where}.between", doc) for key in connection.between)
         pair = frozenset((i, j))
         if i == j:
             raise ValueError(f"{where}.between: both names are {quoted(names[i])}")
-        # Several bolts may clamp the same two parts (a bolt study meshes them apart and presses them together).
-        if pair in seen and not (connection.type == "bolt" and pair in bolted):
+        if pair in seen:
             raise ValueError(f"{where}: {quoted(names[i])} and {quoted(names[j])} are connected twice")
         seen.add(pair)
-        if connection.type == "bolt":
-            bolted.add(pair)
         if connection.type == "bonded" and pair in overlap_of:
             raise ValueError(
                 f"{where}: {quoted(names[i])} and {quoted(names[j])} overlap by {overlap_of[pair].volume_mm3:.3g} mm³, "
@@ -289,10 +275,8 @@ def _plan_assembly(doc: "Document", parsed, logger: Narration) -> _Plan:
                 f"{where}: {quoted(names[i])} and {quoted(names[j])} don't touch within {parsed.contact_tolerance_mm:g} mm, "
                 "so they can't be bonded; raise contact_tolerance_mm or move them together"
             )
-        if connection.type in ("free", "contact", "bolt") and pair in pair_of:
+        if connection.type == "free" and pair in pair_of:
             freed.add(pair)
-        if connection.type in ("contact", "bolt"):
-            contact.add(pair)
         if connection.type == "free" and pair in overlap_of:
             freed_overlaps.add(pair)
 
@@ -316,8 +300,7 @@ def _plan_assembly(doc: "Document", parsed, logger: Narration) -> _Plan:
                 f"connections: {quoted(names[i])} and {quoted(names[j])} are also joined through other bonded parts, so one joint "
                 "between them can't be freed on its own (not yet supported); free the parts' other connections too"
             )
-    return _Plan(parts, names, materials, sorted(set(range(len(parts))) - given), contacts, bonded, overlaps, freed_overlaps, group_of,
-                 contact, doc)
+    return _Plan(parts, names, materials, sorted(set(range(len(parts))) - given), contacts, bonded, overlaps, freed_overlaps, group_of, doc)
 
 
 def _joined_through(pairs: list[tuple[int, int]], start: int, end: int) -> list[int]:
@@ -436,7 +419,7 @@ def _connections(plan: _Plan, volume) -> list[dict]:
         {
             "between": [name_of[c.a], name_of[c.b]],
             "refs": [c.a, c.b],
-            "type": "bonded" if (c.a, c.b) in bonded else "contact" if frozenset((index_of[c.a], index_of[c.b])) in plan.contact else "free",
+            "type": "bonded" if (c.a, c.b) in bonded else "free",
             "area_mm2": round(c.area_mm2, 4),
             "gap_mm": round(c.gap_mm, 6),
             "interference_mm": round(c.interference_mm, 6),
@@ -590,13 +573,14 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     if occurrence is None and (len(doc.leaves()) > 1 or parsed.parts or parsed.connections):
         plan = _plan_assembly(doc, parsed, logger)
     ordinal_of: dict[str, int] = {}
-    ignored_note = None
     if plan is None:
         if occurrence is not None:
             if parsed.parts or parsed.connections:
-                ignored_note = (
-                    f"--occurrence {occurrence} solves that part alone: the study's "
-                    f"{' and '.join(k for k, v in (('parts', parsed.parts), ('connections', parsed.connections)) if v)} are ignored"
+                # Solving one part of an assembly study would leave its own material or joints out of the answer.
+                named = " and ".join(k for k, v in (("parts", parsed.parts), ("connections", parsed.connections)) if v)
+                raise ValueError(
+                    f"--occurrence {occurrence} solves that part alone, so the study's {named} would not apply; "
+                    "give the part's material as the study's material and leave parts and connections out"
                 )
             chosen = _resolve_one(doc, occurrence)
             if chosen.kind != "occurrence":
@@ -701,15 +685,14 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
         findings = sorted(findings + check_found, key=lambda finding: finding["severity"] != "error")
     material = parsed.material
     magnitude = np.linalg.norm(outcome.displacement, axis=1)
-    scale = parsed.deformation_scale or auto_deformation_scale(float(magnitude.max()), volume.bbox_diagonal)
+    scale = parsed.deformation_scale if parsed.deformation_scale is not None else auto_deformation_scale(
+        float(magnitude.max()), volume.bbox_diagonal)
     # The summary is the one place the numbers are rounded; everything else
     # (the GLB's extras, the sidecar) is derived from it.
     summary = static.summary(result, check_results, scale=scale,
                              part_refs=None if plan is None else [part.ref for part in plan.parts])
 
     warnings = list(outcome.warnings)
-    if ignored_note:
-        warnings.insert(0, ignored_note)
     if finer_failure:
         warnings.append(finer_failure)
     reaction_total = tuple(sum(r[c] for r in outcome.reactions) for c in range(3))
@@ -812,14 +795,18 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     sidecar_text = json.dumps(sidecar, indent=2, allow_nan=False)
     # Von Mises colours the surface (each part's own stress in an assembly), deformed by the displacement.
     by_part = outcome.von_mises_parts
-    # Each file is written beside its target under a temporary name and replaced into place once every one is written:
-    # a run that fails leaves no file it wrote, and an earlier result stays byte for byte.
-    temporary = {path: path.with_name(f".{path.name}{temp_suffix()}") for path in (glb_path, vtu_path, sidecar_path)
+    # Each file is written beside its target under a temporary name and replaced into place once every one is written.
+    # Each earlier file is kept under another name (a hard link, else a copy) until every rename is done, so a failure
+    # anywhere puts every earlier file back byte for byte and leaves none this run wrote.
+    suffix = temp_suffix()
+    temporary = {path: path.with_name(f".{path.name}{suffix}") for path in (glb_path, vtu_path, sidecar_path)
                  if path is not None}
+    kept = {path: path.with_name(f".{path.name}{suffix}.old") for path in temporary if path.exists()}
+    placed: list[Path] = []
     try:
         write_glb(
             temporary[glb_path], positions=outcome.dof_locations, displacement=outcome.displacement, values=outcome.von_mises,
-            values_attribute="_VON_MISES", triangles6=outcome.boundary_quadratic,
+            triangles6=outcome.boundary_quadratic,
             face_of_triangle=face_of_triangle, scale=scale if scale is not None else 1.0,
             value_range=(0.0, summary["max_von_mises_MPa"]), extras=extras,
             **({} if plan is None or by_part is None else {"values_by_part": by_part, "part_of_triangle": part_of_triangle}),
@@ -829,10 +816,23 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
             write_vtu(temporary[vtu_path], positions=outcome.dof_locations[:vertex_count], tets=outcome.tets,
                       displacement=outcome.displacement[:vertex_count], values=outcome.von_mises[:vertex_count])
         temporary[sidecar_path].write_text(sidecar_text, encoding="utf-8")
+        for path, old in kept.items():
+            try:
+                os.link(path, old)
+            except OSError:
+                shutil.copy2(path, old)
         for final, held in temporary.items():
             replace_atomic(held, final)
+            placed.append(final)
+    except BaseException:
+        for final in placed:
+            if final in kept:
+                replace_atomic(kept[final], final)
+            else:
+                final.unlink(missing_ok=True)
+        raise
     finally:
-        for held in temporary.values():
+        for held in (*temporary.values(), *kept.values()):
             held.unlink(missing_ok=True)
     logger.debug(f"wrote {glb_path.name}, {sidecar_path.name}" + (f", {vtu_path.name}" if vtu_path else ""))
     return FeaResult(ok=True, document=document, occurrence=occurrence_ref, glb=glb_path, sidecar=sidecar_path, vtu=vtu_path,

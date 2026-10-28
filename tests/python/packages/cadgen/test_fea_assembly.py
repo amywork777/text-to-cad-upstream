@@ -397,7 +397,7 @@ class FeaPartsVerbTest(unittest.TestCase):
         real = builtins.__import__
 
         def refuse(name, *args, **kwargs):
-            if name.split(".")[0] in ("netgen", "skfem", "pyamg"):
+            if name.split(".")[0] == "netgen":
                 raise ImportError(name)
             return real(name, *args, **kwargs)
 
@@ -511,9 +511,9 @@ class AssemblyStudyFileTest(unittest.TestCase):
         parsed = self._parse()
         self.assertEqual((parsed.parts, parsed.connections, parsed.contact_tolerance_mm), ({}, (), 0.1))
 
-    def test_bolt_and_contact_are_not_yet(self):
+    def test_bolt_and_contact_are_no_connection_types(self):
         for kind in ("bolt", "contact"):
-            with self.assertRaisesRegex(ValueError, rf"connections\[0\]\.type: '{kind}' connections are not yet supported"):
+            with self.assertRaisesRegex(ValueError, rf"connections\[0\]\.type: '{kind}' is not one of \('bonded', 'free'\)"):
                 self._parse(connections=[{"between": ["post", "base"], "type": kind}])
 
     def test_the_errors_name_the_field(self):
@@ -733,12 +733,12 @@ class SolveAssemblyTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "has no part or assembly nope"):
             solve(self.step, self.tmp / "nope.glb", self.alone, occurrence="nope")
 
-    def test_occurrence_says_the_studys_parts_and_connections_are_ignored(self):
+    def test_occurrence_refuses_the_studys_parts_and_connections(self):
+        # Solved alone, the part would take the study's default material, not the one parts gives it.
         study = {**self.alone, "parts": {"post": {"material": "6061"}}}
-        result = solve(self.step, self.tmp / "ignored.glb", study, occurrence=self.refs["post"])
-        self.assertTrue(any("ignored" in w and "parts" in w for w in result.warnings), result.warnings)
-        plain = solve(self.step, self.tmp / "plain.glb", self.alone, occurrence=self.refs["post"])
-        self.assertFalse(any("ignored" in w for w in plain.warnings))
+        with self.assertRaisesRegex(ValueError, r"--occurrence .* solves that part alone, so the study's parts would not apply"):
+            solve(self.step, self.tmp / "refused.glb", study, occurrence=self.refs["post"])
+        self.assertFalse((self.tmp / "refused.glb").exists())
 
     def test_the_cli_takes_occurrence(self):
         from cadgen.cli.fea_solve import main
@@ -956,10 +956,6 @@ class SolveAssemblyTest(unittest.TestCase):
         result = solve(self.step, self.tmp / "exposed.glb", study)
         self.assertEqual(result.summary["applied_force_N"], [0.0, 0.0, -100.0])
         self.assertAlmostEqual(result.summary["reaction_force_N"][2], 100.0, delta=0.1)
-
-    def test_bolt_is_not_yet(self):
-        with self.assertRaisesRegex(ValueError, "not yet supported"):
-            solve(self.step, self.tmp / "bolt.glb", self.study(None, connections=[{"between": ["post", "base"], "type": "bolt"}]))
 
     def test_the_parts_the_study_names_must_exist(self):
         with self.assertRaisesRegex(ValueError, r"parts\['lid'\]: no part named 'lid'; the parts are 'base', 'post'"):

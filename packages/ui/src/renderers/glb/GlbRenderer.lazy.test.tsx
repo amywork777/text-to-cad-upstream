@@ -31,6 +31,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function mount(extras: Record<string, unknown> | null) {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3));
+  geometry.setIndex([0, 1, 2]);
   geometry.setAttribute('color', new BufferAttribute(new Uint8Array(12), 4, true));
   geometry.setAttribute('_von_mises', new BufferAttribute(new Float32Array([0, 50, 100]), 1));
   const mesh = new Mesh(geometry);
@@ -58,8 +59,10 @@ it('a plain GLB never requests the FEA viewer', async () => {
 });
 
 it('an FEA result loads the FEA viewer, then shows Study', async () => {
-  mount({ generator: 'cadgen fea', name: 'part von Mises', deformation_scale: 1,
-    fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 100, attribute_scale: 1 }] });
+  mount({ generator: 'cadgen fea', name: 'part von Mises', document: 'part.step', occurrence: 'part', deformation_scale: 1, safety_factor: 2.76, faces: [], findings: [],
+    fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 100, attribute_scale: 1 }],
+    checks: [{ kind: 'stress', label: 'Strength', value: 100, limit: 276, unit: 'MPa', ratio: 0.362319, close_at: 0.5, margin: 2, status: 'passes', where: { ref: null, at: [0, 0, 0] } }],
+    study: { material: { name: '6061-T6', yield_MPa: 276 }, fixtures: [], loads: [], mesh: { size_mm: 1, refined_from_mm: null }, margin: 2 } });
   // The model waits as the file loading while the chunk comes in (in a test, its whole module graph is transformed).
   expect(screen.queryByRole('region', { name: 'Study' })).toBeNull();
   expect(await screen.findByRole('region', { name: 'Study' }, { timeout: 30000 })).toBeTruthy();

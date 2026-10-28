@@ -146,6 +146,18 @@ class StudyFile(unittest.TestCase):
             ({**BASE, "mesh": {"order": 1}}, "study.mesh: unknown keys ['order']; it takes size_mm, refine"),
             ({**BASE, "output": {"vtu": True}}, "study.output: unknown keys ['vtu']; it takes deformation_scale"),
             ({**BASE, "bogus": 1}, "study: unknown keys ['bogus']; a study takes material, fixtures, loads"),
+            ({**BASE, "fixtures": [{"faces": ["face 1"], "type": "roller", "direction": [0, 0, 1]}]},
+             "fixtures[0]: unknown keys ['direction']; it takes faces, type"),
+            ({**BASE, "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [1, 0, 0], "pressure_MPa": 5}]},
+             "loads[0]: unknown keys ['pressure_MPa']; it takes faces, type, vector_N"),
+            ({**BASE, "loads": [{"faces": ["face 2"], "type": "pressure", "pressure_MPa": 1, "vector_N": [1, 0, 0]}]},
+             "loads[0]: unknown keys ['vector_N']; it takes faces, type, pressure_MPa"),
+            ({**BASE, "parts": {"arm": {"material": "pla", "thickness_mm": 2}}}, "parts['arm']: unknown keys ['thickness_mm']"),
+            ({**BASE, "connections": [{"between": ["a", "b"], "type": "free", "tolerance_mm": 1}]},
+             "connections[0]: unknown keys ['tolerance_mm']; it takes between, type"),
+            ({**BASE, "connections": [{"between": ["a", "b"], "type": "bolt"}]}, "connections[0].type: 'bolt' is not one of ('bonded', 'free')"),
+            ({**BASE, "output": {"deformation_scale": 0}}, "output.deformation_scale: must be > 0"),
+            ({**BASE, "output": {"deformation_scale": -5}}, "output.deformation_scale: must be > 0"),
         ]
         for document, fragment in cases:
             with self.subTest(fragment=fragment):
@@ -449,6 +461,29 @@ class Cantilever(unittest.TestCase):
 
     def test_out_must_be_a_glb(self):
         self.assertIn(".glb", value_error(self, solve, self.step, self.out.with_suffix(".vtu"), self.study))
+
+    def test_a_run_that_fails_at_its_last_file_leaves_the_earlier_result_byte_for_byte(self):
+        from unittest import mock
+
+        from cadgen._internal.fea import run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "r.glb"
+            solve(self.step, out, self.study)
+            earlier = {path: path.read_bytes() for path in (out, out.with_suffix(".json"))}
+            heavier = {**self.study, "loads": [{"faces": [self.load_ref], "type": "force", "vector_N": [0, 0, -2 * FORCE]}]}
+            real, calls = run.replace_atomic, []
+
+            def fail_on_the_last(source, target):
+                calls.append(target)
+                if len(calls) == 2:
+                    raise OSError("the sidecar is held open")
+                return real(source, target)
+
+            with mock.patch.object(run, "replace_atomic", fail_on_the_last), self.assertRaises(OSError):
+                solve(self.step, out, heavier)
+            self.assertEqual({path: path.read_bytes() for path in earlier}, earlier)
+            self.assertEqual(sorted(path.name for path in Path(tmp).iterdir()), ["r.glb", "r.json"])
 
 
 @needs_fea
@@ -872,8 +907,8 @@ class HumanLine(unittest.TestCase):
         self.assertNotIn("1.684", result.human_lines()[1])
 
 
-# One quadratic tetrahedron from the pin hole of a link bar (netgen, 3.6 mm elements): its edge (0, 2) bows 0.8 mm
-# off the chord. scikit-fem's Newton search for its facets' quadrature points (``invF``) stalls on three of its faces.
+# A link bar whose pin holes' quadratic tetrahedra (netgen, 3.6 mm elements) bow up to 0.8 mm off the chord: a force on
+# a curved hole must still be spread over its curved facets and balance.
 def _write_link_bar(directory: Path) -> Path:
     """A 140 x 30 x 8 mm bar with a 10 mm pin hole 12 mm in from each end (f7 at x = -58, f8 at x = +58)."""
     from build123d import Align, Box, Cylinder, Pos, export_step

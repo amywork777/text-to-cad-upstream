@@ -53,7 +53,7 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     # GLB (a von Mises colour map on the deformed shape) with its JSON sidecar.
     "fea faces": ("cadgen.cli.fea_faces", "list a part's faces with the refs a study names"),
     "fea parts": ("cadgen.cli.fea_parts", "list an assembly's parts and the pairs that touch"),
-    "fea solve": ("cadgen.cli.fea_solve", "run a study (static stress unless it names another) on a part"),
+    "fea solve": ("cadgen.cli.fea_solve", "run a static stress study on a part or a bonded assembly"),
     # Generic / services
     "run": ("cadgen.cli.run", "run a model script (or -m, -c) with this installation's python"),
     "doctor": ("cadgen.cli.doctor", "install: register, write the cadgen command, start the engine"),

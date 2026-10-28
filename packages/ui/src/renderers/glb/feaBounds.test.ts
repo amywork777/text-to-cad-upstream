@@ -16,7 +16,9 @@ function cantilever({ displacement = true } = {}) {
   if (displacement) geometry.setAttribute('_displacement', new BufferAttribute(new Float32Array(tip), 3));
   const mesh = new Mesh(geometry);
   Object.assign(mesh.userData, {
-    generator: 'cadgen fea', name: 'cantilever', deformation_scale: 10,
+    generator: 'cadgen fea', name: 'cantilever', deformation_scale: 10, safety_factor: 276, faces: [],
+    checks: [{ kind: 'stress', label: 'Strength', value: 1, limit: 276, unit: 'MPa', ratio: 0.003623, close_at: 0.5, margin: 2, status: 'passes', where: { ref: null, at: [0, 0, 0] } }],
+    study: { material: { name: '6061-T6', yield_MPa: 276 }, fixtures: [], loads: [], mesh: { size_mm: 1, refined_from_mm: null }, margin: 2 },
     fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 1, attribute_scale: 1 },
       { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 0.2, attribute_scale: 1000 }],
   });

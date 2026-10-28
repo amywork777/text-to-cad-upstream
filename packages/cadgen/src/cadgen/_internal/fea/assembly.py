@@ -106,8 +106,6 @@ class Glued:
     #: Per part, per face ordinal (index 0 = ordinal 1): the 1-based indices of
     #: the faces of ``shape`` that face became (several when gluing split it).
     face_images: list[list[list[int]]]
-    #: The fuzzy value the glue used (0 when every bonded pair touches).
-    fuzzy_mm: float
 
 
 def gprops(shape, kind: str = "Surface"):
@@ -427,7 +425,6 @@ def glue(shapes: list, bonded: list[tuple[int, int, float]], tolerance_mm: float
     compound, maker = TopoDS_Compound(), BRep_Builder()
     maker.MakeCompound(compound)
     builder_of: dict[int, Any] = {}
-    fuzzy_mm = 0.0
     for group in joined_groups(len(shapes), [(a, b) for a, b, _ in bonded]):
         if len(group) == 1:
             maker.Add(compound, shapes[group[0]])
@@ -437,7 +434,6 @@ def glue(shapes: list, bonded: list[tuple[int, int, float]], tolerance_mm: float
             builder.AddArgument(shapes[index])
         if any(gap > _TOUCHING_MM for a, b, gap in bonded if a in group):
             builder.SetFuzzyValue(tolerance_mm)
-            fuzzy_mm = tolerance_mm
         builder.Perform()
         if builder.HasErrors():
             names = ", ".join(str(index) for index in group)
@@ -483,4 +479,4 @@ def glue(shapes: list, bonded: list[tuple[int, int, float]], tolerance_mm: float
         face_images.append(per_face)
     if -1 in solid_part:
         raise RuntimeError("the glued shape holds a solid no part made")
-    return Glued(shape=compound, solid_part=solid_part, face_images=face_images, fuzzy_mm=fuzzy_mm)
+    return Glued(shape=compound, solid_part=solid_part, face_images=face_images)

@@ -100,8 +100,10 @@ Solving needs two things `fea faces` and `fea parts` do not:
   ```
 
 - **The solver.** CalculiX (`ccx`) 2.20 or newer, installed by the person: `conda install -c
-  conda-forge calculix`, or the `calculix-ccx` package on Debian and Ubuntu. cadgen runs
-  `CADGEN_CCX` when it is set (`CADGEN_CCX=/path/to/ccx`), else the first `ccx` on PATH. A missing
+  conda-forge calculix`, the `calculix-ccx` package on Debian and Ubuntu, or FreeCAD 1.0 or newer
+  on macOS or Windows, which carries one. cadgen runs `CADGEN_CCX` when it is set
+  (`CADGEN_CCX=/path/to/ccx`), else the first `ccx` (or `ccx_2.2x`) on PATH, else the one inside
+  FreeCAD where its installer puts it. A missing
   or older one stops the solve with an error that says how to install it. cadgen downloads nothing
   and has no other solver: ask the user to install CalculiX, or install it yourself with their
   permission, then run the study again. Every result names the CalculiX version that solved it.
@@ -226,8 +228,8 @@ fixed. The keys are in [study-file.md](references/study-file.md#assemblies).
 3. **Solve** exactly as for a part; the finer re-solve runs when the weakest part's safety factor
    is under 3. The summary leads with the weakest part (lowest safety factor), then lists every
    part's peak stress, safety factor and displacement. `--occurrence REF` solves one part alone
-   through the single-part path instead, ignoring the study's `parts` and `connections` (it says
-   so), and every face named must be on that part.
+   through the single-part path instead: write that study with the part's material as `material`
+   and no `parts` or `connections` (it refuses them), and every face named must be on that part.
 
 4. **Read the findings by part.** Each finding names its part ("'post' yields: ..."). Fix the named
    part, not the assembly in general: a thicker section, a fillet, a different material in `parts`,
@@ -245,9 +247,9 @@ Findings an assembly adds:
 | `gap_closed` | warning | Two parts a little apart, or a little into each other (an interference), within the tolerance were bonded anyway, moving geometry up to that far. | Check the gap is a modelling clearance and not a real one the joint should have, or that the interference is a slip and not a press fit whose preload matters; the stress at that joint is the model's closing, not the part's. |
 | `bonded_edge_peak` | warning | The peak sits on the edge of a bonded joint, where a rigid bond exaggerates stress. Appears wherever the part misses the study's `margin`, even when a finer mesh agreed: a rigid bond's edge is singular, so two meshes agreeing proves nothing there. | Read the stress a little away from the joint before redesigning; a bolted or welded joint is softer than this model. |
 
-Parts that press and slide on each other (`contact`) and bolted joints (`bolt`) are not in this
-version: a connection of either type is refused ("not yet supported; use bonded or free"). A pair
-set `free` inside a group that is glued through other parts is refused too.
+Parts that press and slide on each other and bolted joints are not in this version: a connection
+is `bonded` or `free`. A pair set `free` inside a group that is glued through other parts is
+refused too.
 
 ## Compare variants
 

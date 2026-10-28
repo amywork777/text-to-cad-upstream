@@ -48,12 +48,26 @@ function resultRoot(extras: Record<string, unknown> | null, faces: number[] | nu
   root.add(mesh);
   return { mesh, root };
 }
+// The study the result was solved for, and the checks it picked, as cadgen judged them: the stress check and a sag on the loaded face.
+const STUDY = {
+  material: { name: '6061-T6', yield_MPa: 276, youngs_GPa: 68.9, poisson: 0.33 },
+  fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }],
+  loads: [{ type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -2500] }],
+  mesh: { size_mm: 1.9205, order: 2, elements: 52271, refined_from_mm: 2.7686 },
+  margin: 2,
+};
+const STRESS_CHECK = { kind: 'stress', label: 'Strength', value: 47.3, limit: 276, unit: 'MPa', ratio: 0.171527, close_at: 0.5, margin: 2, status: 'passes', where: { ref: 'bracket/face 1', at: [0, 0, 0] } };
+const SAG_CHECK = { kind: 'displacement', label: 'Tip sag', value: 0.62, limit: 0.5, unit: 'mm', ratio: 1.24, close_at: 0.9, status: 'fails', where: { ref: 'bracket/face 2', at: [1, 0, 0] }, faces: ['bracket/face 2'] };
+/** A result's safety factor and its stress check at it, judged against the margin of 2 as cadgen judges it. */
+const factored = (factor: number) => ({ safety_factor: factor,
+  checks: [{ ...STRESS_CHECK, ratio: Number((1 / factor).toFixed(6)), status: factor < 1 ? 'fails' : factor < 2 ? 'close' : 'passes' }] });
 const RESULT = {
-  generator: 'cadgen fea', name: 'part von Mises', deformation_scale: 10, safety_factor: 5.83,
+  generator: 'cadgen fea', name: 'part von Mises', document: 'part.step', occurrence: 'bracket', deformation_scale: 10, safety_factor: 5.83,
   fields: [
     { attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 47.3, attribute_scale: 1 },
     { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 0.0288, attribute_scale: 1000 },
   ],
+  findings: [], checks: [STRESS_CHECK], faces: [], study: STUDY,
 };
 // The viewer's own element, which the shell asks whose Escape it is.
 function ViewerElement({ children }: { children: React.ReactNode }) {
@@ -163,11 +177,10 @@ it('the colour bar stands on Preview\'s playbar line, and a stored scale is held
 const PEAK = { check: 'fea', severity: 'error', type: 'peak', summary: 'The peak stress, 120 MPa, is above the 100 MPa this material yields at',
   description: 'The peak stress is above yield.', items: [{ text: 'the peak stress', ref: 'bracket/face 3', at: [10, 20, 30] }] };
 const SOFT = { check: 'fea', severity: 'warning', type: 'bend', summary: 'The part bends visibly: 0.4 mm', description: 'It bends.', items: [{ text: 'the tip', ref: null }] };
-const FOUND = { ...RESULT, document: 'part.step', occurrence: 'bracket' };
 
 it('a result with findings raises no alert card and puts no findings icon in the navbar', () => {
   const actions = vi.fn();
-  mount({ ...FOUND, findings: [PEAK, SOFT] }, undefined, { actions });
+  mount({ ...RESULT, findings: [PEAK, SOFT] }, undefined, { actions });
   expect(screen.queryByRole('alert')).toBeNull();
   expect(screen.queryByText(PEAK.summary)).toBeNull();
   expect(actions.mock.calls.flat(2).filter((action: any) => action?.label)).toEqual([]);
@@ -189,15 +202,8 @@ it('lays the deformation slider out as Display\'s sliders are: under its label, 
   expect(slider.classList.contains('h-4')).toBe(true);
 });
 
-// What S1 adds: the study the result was solved for, and the face each vertex lies on.
-const STUDY = {
-  material: { name: '6061-T6', yield_MPa: 276, youngs_GPa: 68.9, poisson: 0.33 },
-  fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }],
-  loads: [{ type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -2500] }],
-  mesh: { size_mm: 1.9205, order: 2, elements: 52271, refined_from_mm: 2.7686 },
-  margin: 2,
-};
-const STUDIED = { ...FOUND, study: STUDY, faces: ['bracket/face 1', 'bracket/face 2'] };
+// The study's faces, and the face each vertex lies on.
+const STUDIED = { ...RESULT, faces: ['bracket/face 1', 'bracket/face 2'] };
 // Vertices 0-2 lie on face index 0 (bracket/face 1), vertex 3 on face index 1 (bracket/face 2).
 const FACES = [0, 0, 0, 1];
 async function copiedPrompt(copied: string[]) {
@@ -242,11 +248,15 @@ it('a face both fixed and loaded is named for both, chosen from either row or pi
   expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nFixed and loaded face 1 · /models/part.step#bracket/face 1');
 });
 
-it('a result written before its study was recorded shows Study with the Result alone', () => {
-  mount(FOUND);
-  const study = studyPanel()!;
-  expect(rowTexts(study)).toEqual(['What you see']);
-  expect(study.querySelector('[role="slider"][aria-label="Deformation scale"]')).toBeTruthy();
+it('a result without its checks or study says so in the load\'s alert, with no Study, over the model as the file colours it', () => {
+  for (const missing of ['checks', 'study']) {
+    const { mesh, container } = mount({ ...STUDIED, [missing]: undefined }, undefined, { faces: FACES });
+    expect(screen.getByRole('alert').textContent).toContain(`no ${missing}`);
+    expect(studyPanel()).toBeNull();
+    expect(container.querySelector('[aria-label$="colour bar"]')).toBeNull();
+    expect(colourBytes(mesh).every(byte => byte === 7)).toBe(true);
+    cleanup();
+  }
 });
 
 it('choosing a fixed face tints only its triangles and carries it into Quick Edit by the source STEP', async () => {
@@ -327,6 +337,7 @@ function pressOnTheResult(mounting: () => void) {
 
 const ASSEMBLED = {
   ...STUDIED, faces: ['part1/face 1', 'part2/face 1', 'part1/face 9'], weakest_part: 'post', weakest_part_peak_MPa: 180, safety_factor: 1.46, max_displacement_mm: 0.2,
+  checks: [{ ...factored(1.46).checks[0], value: 180, part: 'post' }],
   parts: [
     { ref: 'part1', name: 'post', material: '6061-T6', yield_MPa: 276, peak_MPa: 180, safety_factor: 1.46, max_displacement_mm: 0.2 },
     { ref: 'part2', name: 'base', material: 'Steel', yield_MPa: 250, peak_MPa: 40, safety_factor: 2.5, max_displacement_mm: 0.01 },
@@ -445,16 +456,28 @@ const choose = (combobox: string, option: string) => {
   act(() => { fireEvent.click(screen.getByRole('option', { name: option })); });
 };
 
-it('What you see is the field, the deformation and the load, whatever view an older file carries', () => {
-  for (const extras of [RESULT, { ...RESULT, view: { controls: [{ drives: 'threshold', type: 'number', label: 'Show above', field: 'von_mises', max: 100 }], sections: ['verdict'] } }]) {
-    mount(extras);
-    const sliders = screen.getAllByRole('slider');
-    expect(sliders.map(slider => slider.getAttribute('aria-label'))).toEqual(['Deformation scale', 'Load']);
-    expect(sliders.map(slider => [slider.getAttribute('aria-valuemin'), slider.getAttribute('aria-valuemax'), slider.getAttribute('aria-valuenow')]))
-      .toEqual([['0', '40', '10'], ['0.1', '3', '1']]);
-    expect(resultRows().map(row => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Stress', 'Deformation', 'Load']);
-    expect(screen.getByRole('textbox', { name: 'Deformation scale value' }).getAttribute('value')).toBe('×10.0');
-    expect(screen.getByRole('textbox', { name: 'Load value' }).getAttribute('value')).toBe('×1.00');
+it('What you see is the field, the deformation and the load', () => {
+  mount(RESULT);
+  const sliders = screen.getAllByRole('slider');
+  expect(sliders.map(slider => slider.getAttribute('aria-label'))).toEqual(['Deformation scale', 'Load']);
+  expect(sliders.map(slider => [slider.getAttribute('aria-valuemin'), slider.getAttribute('aria-valuemax'), slider.getAttribute('aria-valuenow')]))
+    .toEqual([['0', '40', '10'], ['0.1', '3', '1']]);
+  expect(resultRows().map(row => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Stress', 'Deformation', 'Load']);
+  expect(screen.getByRole('textbox', { name: 'Deformation scale value' }).getAttribute('value')).toBe('×10.0');
+  expect(screen.getByRole('textbox', { name: 'Load value' }).getAttribute('value')).toBe('×1.00');
+});
+
+it('sizes What you see\'s value boxes to hold the whole value, its padding and its borders: a large exaggeration is never cut off', () => {
+  // "×6000" read "×600C" and "×9500000" crowded the box: its width left out the 1px borders and the × glyph.
+  for (const scale of [10, 6000, 42000, 9500000, 120000000, 95000000000]) {
+    mount({ ...RESULT, deformation_scale: scale });
+    const box = screen.getByRole('textbox', { name: 'Deformation scale value' });
+    const value = box.getAttribute('value')!;
+    const widths = box.className.split(/\s+/).filter(name => name.startsWith('w-'));
+    expect(widths, value).toHaveLength(1);
+    const [, ch, rem, px] = /^w-\[calc\((\d+)ch\+([\d.]+)rem\+(\d+)px\)\]$/.exec(widths[0]) || [];
+    expect(Number(ch), `${value}: ${widths[0]}`).toBeGreaterThanOrEqual(Math.min(value.length + 1, 14));
+    expect([rem, px], value).toEqual(['0.75', '2']);
     cleanup();
   }
 });
@@ -558,7 +581,7 @@ const verdictOf = () => {
 
 it('leads Study with the verdict: too weak, close to the limit or strong enough, each in its status tone', () => {
   for (const [factor, status, title, tone] of [[0.68, 'weak', 'Too weak', 'text-error'], [1.5, 'close', 'Close to the limit', 'text-warning'], [5.83, 'strong', 'Strong enough', 'text-success']] as const) {
-    mount({ ...STUDIED, safety_factor: factor }, undefined, { faces: FACES });
+    mount({ ...STUDIED, ...factored(factor) }, undefined, { faces: FACES });
     const verdict = verdictOf();
     expect([verdict.status, verdict.title]).toEqual([status, title]);
     expect(verdict.section.querySelector('[data-fea-verdict-title]')!.parentElement!.className).toContain(tone);
@@ -570,7 +593,7 @@ it('leads Study with the verdict: too weak, close to the limit or strong enough,
 });
 
 it('draws how hard each check works: filled to the value over the limit, held at full and striped past it, with a tick at the margin', () => {
-  mount({ ...STUDIED, safety_factor: 1.6 }, undefined, { faces: FACES });
+  mount({ ...STUDIED, ...factored(1.6) }, undefined, { faces: FACES });
   const bar = () => screen.getByRole('meter', { name: 'Strength: how much of its limit' });
   const fill = () => (bar().querySelector('[data-fea-verdict-fill]') as HTMLElement).style.width;
   expect(fill()).toBe('62.5%');
@@ -580,7 +603,7 @@ it('draws how hard each check works: filled to the value over the limit, held at
   expect((bar().querySelector('[data-fea-verdict-tick]') as HTMLElement).style.left).toBe('50%');
   expect(bar().getAttribute('aria-valuetext')).toBe('63% of its limit, your 2× margin at 50%');
   cleanup();
-  mount({ ...STUDIED, safety_factor: 0.5 }, undefined, { faces: FACES });
+  mount({ ...STUDIED, ...factored(0.5) }, undefined, { faces: FACES });
   expect(fill()).toBe('100%');
   expect(bar().getAttribute('aria-valuenow')).toBe('200');
   expect(bar().hasAttribute('data-over')).toBe(true);
@@ -588,7 +611,7 @@ it('draws how hard each check works: filled to the value over the limit, held at
 });
 
 it('the verdict follows the load control, and can change its word', () => {
-  mount({ ...STUDIED, safety_factor: 1.5 }, undefined, { faces: FACES });
+  mount({ ...STUDIED, ...factored(1.5) }, undefined, { faces: FACES });
   expect([verdictOf().status, verdictOf().caption]).toEqual(['close', 'OK up to 1.5× this load']);
   setValue('Load value', '2');
   expect([verdictOf().status, verdictOf().caption, verdictOf().rows]).toEqual(['weak', 'OK only to 0.7× this load', [['weak', 'Strength', '95 MPa, limit 276 MPa']]]);
@@ -597,23 +620,15 @@ it('the verdict follows the load control, and can change its word', () => {
 });
 
 it('with no stress, says to check the load reaches the part, in no tone and with no bar; an assembly\'s numbers are its weakest part\'s', () => {
-  const unloaded = { ...STUDIED, safety_factor: null, fields: [{ ...RESULT.fields[0], max: 0 }, RESULT.fields[1]] };
+  // No load reaches the part: cadgen's stress check is 0 MPa, with no safety factor.
+  const unloaded = { ...STUDIED, safety_factor: null, checks: [{ ...STRESS_CHECK, value: 0, ratio: 0 }], fields: [{ ...RESULT.fields[0], max: 0 }, RESULT.fields[1]] };
   mount(unloaded, undefined, { faces: FACES });
   expect(verdictOf()).toMatchObject({ status: 'none', title: 'No stress', caption: 'Check the load reaches the part', rows: [] });
   expect(screen.queryByRole('meter')).toBeNull();
   cleanup();
-  // A result with a stress but no safety factor (older than it) has no verdict, and still opens.
-  mount({ ...STUDIED, safety_factor: null }, undefined, { faces: FACES });
-  expect(screen.queryByRole('region', { name: 'Verdict' })).toBeNull();
-  expect(studyPanel()).toBeTruthy();
-  cleanup();
   mountAssembly([]);
   expect(verdictOf()).toMatchObject({ status: 'close', rows: [['close', 'Strength', '180 MPa, limit 276 MPa']] });
 });
-
-// The checks the study picked, as cadgen judged them: the stress check and a sag on the loaded face.
-const STRESS_CHECK = { kind: 'stress', label: 'Strength', value: 47.3, limit: 276, unit: 'MPa', ratio: 0.171527, close_at: 0.5, margin: 2, status: 'passes', where: { ref: 'bracket/face 1', at: [0, 0, 0] } };
-const SAG_CHECK = { kind: 'displacement', label: 'Tip sag', value: 0.62, limit: 0.5, unit: 'mm', ratio: 1.24, close_at: 0.9, status: 'fails', where: { ref: 'bracket/face 2', at: [1, 0, 0] }, faces: ['bracket/face 2'] };
 
 it('heads the verdict with how many checks fail and the load the weakest takes, then each check the same way, all following the load', () => {
   mount({ ...STUDIED, checks: [STRESS_CHECK, SAG_CHECK] }, undefined, { faces: FACES });
@@ -646,8 +661,8 @@ it('every part of Study is chattable: a check in the verdict, the material and t
   expect((await prompt(['Expand Details', 'Select Mesh'])).text).toBe('Mesh of 1.9 mm elements, refined from 2.8 mm · /models/part.step#bracket');
 });
 
-it('a result with no checks in the file has today\'s verdict: its one check, from the safety factor', () => {
-  mount({ ...STUDIED, safety_factor: 1.5 }, undefined, { faces: FACES });
+it('one check heads the verdict in its own words, then one list: the setup, What you see, Details', () => {
+  mount({ ...STUDIED, ...factored(1.5) }, undefined, { faces: FACES });
   expect(verdictOf()).toMatchObject({ status: 'close', title: 'Close to the limit', caption: 'OK up to 1.5× this load', rows: [['close', 'Strength', '47 MPa, limit 276 MPa']] });
   // The verdict leads, then one list: the setup, What you see, Details.
   const body = verdictOf().section.parentElement!.parentElement!;
@@ -661,7 +676,7 @@ const own = () => loaded.own[0];
 const play = (seconds: number) => act(() => { own().play.apply(seconds); });
 const release = () => act(() => { own().play.release(); });
 
-it('a static result keeps its Load ramp, drawn as it always was', () => {
+it('plays its Load ramp: the load going on from none, the deformation drawn with it, and back on release', () => {
   const { mesh } = mount(STUDIED, undefined, { faces: FACES });
   expect([own().id, own().label, own().duration]).toEqual(['fea:load-ramp', 'Load ramp', 2]);
   play(1);

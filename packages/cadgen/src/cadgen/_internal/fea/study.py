@@ -54,7 +54,6 @@ STUDY_KEYS = (
 MESH_KEYS = ("size_mm", "refine")
 OUTPUT_KEYS = ("deformation_scale",)
 CONNECTION_TYPES = ("bonded", "free")
-UNSUPPORTED_CONNECTION_TYPES = ("bolt", "contact")
 #: What a check can judge, and the keys each takes; cadgen evaluates each (checks.py).
 CHECK_KEYS = {
     "stress": frozenset({"kind", "label", "margin"}),
@@ -179,6 +178,13 @@ def _read_json_file(path: Path) -> dict:
     return document
 
 
+def _closed(entry: dict, keys: tuple[str, ...], where: str) -> None:
+    """``entry`` names only ``keys``: anything else is refused, naming what it takes."""
+    unknown = set(entry) - set(keys)
+    if unknown:
+        raise ValueError(f"{where}: unknown keys {sorted(unknown)}; it takes {', '.join(keys)}")
+
+
 def _parts(entries: Any) -> dict[str, Material]:
     if entries is None:
         return {}
@@ -188,6 +194,7 @@ def _parts(entries: Any) -> dict[str, Material]:
     for name, entry in entries.items():
         if not isinstance(entry, dict) or "material" not in entry:
             raise ValueError(f"parts[{name!r}]: expected an object with a 'material'")
+        _closed(entry, ("material",), f"parts[{name!r}]")
         parts[str(name)] = material_from_spec(entry["material"])
     return parts
 
@@ -208,9 +215,8 @@ def _connections(entries: Any) -> tuple[Connection, ...]:
             or not all(isinstance(name, str) and name.strip() for name in between)
         ):
             raise ValueError(f'{where}.between: name the two parts, like ["post", "base"]')
+        _closed(entry, ("between", "type"), where)
         kind = entry.get("type")
-        if kind in UNSUPPORTED_CONNECTION_TYPES:
-            raise ValueError(f"{where}.type: {kind!r} connections are not yet supported; use bonded or free")
         if kind not in CONNECTION_TYPES:
             raise ValueError(f"{where}.type: {kind!r} is not one of {CONNECTION_TYPES}")
         connections.append(Connection((between[0].strip(), between[1].strip()), kind))
@@ -267,6 +273,7 @@ def parse_fixtures(document: dict) -> tuple[Fixture, ...]:
         where = f"fixtures[{index}]"
         if not isinstance(entry, dict):
             raise ValueError(f"{where}: expected an object")
+        _closed(entry, ("faces", "type"), where)
         kind = str(entry.get("type", "fixed"))
         if kind not in FIXTURE_TYPES:
             raise ValueError(f"{where}.type: {kind!r} is not one of {FIXTURE_TYPES}")
@@ -306,6 +313,7 @@ def parse_loads(document: dict) -> tuple[Load, ...]:
                 raise ValueError(f"{where}.vector_g: the {kind} is zero")
             loads.append(Load((), kind, vector_g=vector))
             continue
+        _closed(entry, ("faces", "type", "vector_N" if kind == "force" else "pressure_MPa"), where)
         faces = _faces(entry, where=where)
         if kind == "force":
             components = _vector(entry, "vector_N", where=where, words="a force needs [Fx, Fy, Fz] in newtons")
@@ -361,9 +369,7 @@ def _known(raw: Any, keys: tuple[str, ...], where: str, example: str) -> dict:
         return {}
     if not isinstance(raw, dict):
         raise ValueError(f"{where}: expected an object like {example}")
-    unknown = set(raw) - set(keys)
-    if unknown:
-        raise ValueError(f"{where}: unknown keys {sorted(unknown)}; it takes {', '.join(keys)}")
+    _closed(raw, keys, where)
     return raw
 
 
@@ -392,7 +398,8 @@ def parse_study(study: str | dict | Path | None) -> Study:
 
     output = _known(document.get("output"), OUTPUT_KEYS, "study.output", '{"deformation_scale": "auto"}')
     scale_in = output.get("deformation_scale", "auto")
-    deformation_scale = None if scale_in in (None, "auto") else _number(scale_in, where="output.deformation_scale")
+    deformation_scale = (None if scale_in in (None, "auto")
+                         else _number(scale_in, where="output.deformation_scale", positive=True))
 
     margin = _number(document.get("margin", 2.0), where="margin", positive=True)
     if margin < 1:

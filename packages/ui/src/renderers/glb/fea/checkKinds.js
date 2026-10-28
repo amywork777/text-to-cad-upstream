@@ -41,7 +41,7 @@ export const CHECK_KINDS = Object.freeze({
   }),
 });
 
-/** Every check kind this viewer can judge; a kind from a newer cadgen is skipped. */
+/** Every check kind this viewer can judge; a check of any other kind is unjudged, and the verdict then says no pass. */
 export const FEA_CHECK_KINDS = Object.freeze(Object.keys(CHECK_KINDS));
 
 /** A check's headline when it is the only one, at its status: "Too weak", "Stiff enough". */

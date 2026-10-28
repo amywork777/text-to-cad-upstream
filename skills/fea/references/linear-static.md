@@ -35,7 +35,7 @@ good answer from a bad one. The keys are in [study-file.md](study-file.md).
   thread, so the same study gives the same numbers every run.
 - An assembly's parts are bonded where they touch (within 0.1 mm): the glued faces carry load as
   if welded, with no slip, no clearance, no preload and no bolt stiffness. A bonded joint is
-  stiffer than a real bolted one and exaggerates the stress at its edge. Under `static`, a part
+  stiffer than a real bolted one and exaggerates the stress at its edge. A part
   resting on another without being bonded carries nothing. Parts that press and slide, and bolts,
   are not in this version.
 

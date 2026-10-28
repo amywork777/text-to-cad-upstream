@@ -448,6 +448,7 @@ leaves the previous result as it was. `_internal/fea/` solves one kind of study:
 stress and displacement. The mesher is the opt-in
 `fea` extra (`pip install 'cadgen[fea]'`: netgen, run in a process of its own, since its
 OpenCascade and OCP's cannot share one). The solver is CalculiX (`ccx`, 2.20 or newer), which the
-person installs (`conda install -c conda-forge calculix`, or `calculix-ccx` on Debian and Ubuntu):
-`CADGEN_CCX` names it, else `ccx` on PATH. A missing or older one is an error saying how to install
+person installs (`conda install -c conda-forge calculix`, `calculix-ccx` on Debian and Ubuntu, or
+FreeCAD on macOS and Windows, which carries one): `CADGEN_CCX` names it, else `ccx` on PATH, else
+FreeCAD's. A missing or older one is an error saying how to install
 it; cadgen downloads no solver and has no other. The result names the CalculiX version that ran.

@@ -34,12 +34,29 @@ class FindCcx(unittest.TestCase):
             with self.assertRaisesRegex(calculix.CalculixMissingError, r"CADGEN_CCX names /no/such/ccx, which is not a program"):
                 calculix.find_ccx()
 
-    def test_none_on_path_is_refused_with_the_install_hint(self):
-        with mock.patch.dict(os.environ, {calculix.CCX_ENV: ""}), mock.patch.object(calculix.shutil, "which", return_value=None):
+    def test_none_on_path_or_in_freecad_is_refused_with_the_install_hint(self):
+        with mock.patch.dict(os.environ, {calculix.CCX_ENV: ""}), mock.patch.object(calculix.shutil, "which", return_value=None), \
+                mock.patch.object(calculix, "_in_freecad", return_value=["/no/FreeCAD.app/Contents/Resources/bin/ccx"]):
             with self.assertRaises(calculix.CalculixMissingError) as caught:
                 calculix.find_ccx()
         self.assertIn("CalculiX's ccx was not found", str(caught.exception))
         self.assertIn("conda install -c conda-forge calculix", str(caught.exception))
+        self.assertIn("FreeCAD 1.0 or newer, which carries one", str(caught.exception))
+
+    @unittest.skipIf(sys.platform == "win32", "a shell script stands in for ccx")
+    def test_with_none_on_path_the_ccx_a_freecad_install_carries_is_found(self):
+        with tempfile.TemporaryDirectory() as name:
+            program = _program(Path(name), "This is Version 2.23")
+            with mock.patch.dict(os.environ, {calculix.CCX_ENV: ""}), mock.patch.object(calculix.shutil, "which", return_value=None), \
+                    mock.patch.object(calculix, "_in_freecad", return_value=["/no/such/ccx", program]):
+                found = calculix.find_ccx()
+        self.assertEqual((found.path, found.version), (program, "2.23"))
+
+    def test_freecad_installs_are_looked_for_where_each_installer_puts_them(self):
+        with mock.patch.object(calculix.sys, "platform", "darwin"):
+            self.assertIn("/Applications/FreeCAD.app/Contents/Resources/bin/ccx", calculix._in_freecad())
+        with mock.patch.object(calculix.sys, "platform", "linux"):
+            self.assertEqual(calculix._in_freecad(), [])
 
     @unittest.skipIf(sys.platform == "win32", "a shell script stands in for ccx")
     def test_a_version_older_than_the_minimum_is_refused(self):

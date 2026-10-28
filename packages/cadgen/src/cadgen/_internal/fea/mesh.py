@@ -1,4 +1,4 @@
-"""One part occurrence, or an assembly's glued parts -> quadratic (or linear) tetrahedra, faces kept under their ordinal.
+"""One part occurrence, or an assembly's glued parts -> quadratic tetrahedra, faces kept under their ordinal.
 
 The mesher is netgen (LGPL-2.1, the ``netgen-mesher`` wheel with its own OpenCascade). It cannot take an OCP shape
 object directly -- two pybind11 OCC builds are foreign to each other -- so the placed occurrence is written to a BREP
@@ -127,8 +127,6 @@ class VolumeMesh:
     #: For an assembly, the face refs of each bonded joint, keyed like ``interface_triangles``,
     #: both parts' sides together.
     joint_faces: "dict[tuple[int, int], set[str]]" = field(default_factory=dict)
-    #: For an assembly, the fuzzy value the glue closed gaps with (0 = none).
-    fuzzy_mm: float = 0.0
 
 
 # netgen's defaults (curvature safety 2, grading 0.3) refine to a fillet's or chamfer's own size, however large the
@@ -529,5 +527,5 @@ def mesh_assembly(document: "Document", part_refs: list[str], bonded: "list[Cont
         nodes=coordinates, tets=tets, boundary=np.ascontiguousarray(surface[outer]),
         boundary_ordinal=position_of_glued[surface_index[outer]], faces=faces, max_h=h, bbox_diagonal=diagonal,
         seconds=time.perf_counter() - started, domain=domain, interface_faces=interface_faces,
-        interface_triangles=interface_triangles, joint_faces=joint_faces, fuzzy_mm=glued.fuzzy_mm,
+        interface_triangles=interface_triangles, joint_faces=joint_faces,
     )

@@ -141,9 +141,6 @@ def _stress_lines(s: dict, safety_factor_text) -> list[str]:
     return lines
 
 
-#: Units on a log scale: a check in one says how far over or under its limit it is, not a ratio of the two.
-
-
 def _check_lines(s: dict) -> list[str]:
     """One line per check the study asked for: what it measured against its limit, and whether it passes."""
     def unit(check: dict) -> str:  # " MPa", or nothing for a unitless check (a safety factor)
@@ -165,7 +162,7 @@ class FeaResult:
     ``summary`` carries the answer an engineer asks for first (max von Mises, nodal and at the integration points, the
     safety factor, max displacement, the applied-versus-reaction balance) and each check judged (``checks``).
     ``findings`` is what an engineer would say about it,
-    errors first, in the KiCad findings' shape. The JSON sidecar holds this whole result plus the study.
+    errors first (``check``, ``severity``, ``type``, ``summary``, ``description``, ``items``). The JSON sidecar holds this whole result plus the study.
     """
 
     ok: bool

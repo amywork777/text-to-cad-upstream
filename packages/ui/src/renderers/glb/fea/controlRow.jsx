@@ -13,6 +13,19 @@ import {
 
 const TARGET_SLIDER_STEPS = 1000;
 
+// A value box wide enough for the whole of a multiple: its characters, the padding (0.75rem) and the box's
+// 1px borders, and a character's room more for the "×", wider than a figure ("×6000"); a large exaggeration
+// ("×9500000", "×120000000") takes the box its length needs, so its last figures are never cut off. It
+// overrides the sheet's own width, which a joint's figure fits.
+const valueInputWidth = (value) => {
+  const length = String(value ?? "").length;
+  if (length <= 5) return "w-[calc(6ch+0.75rem+2px)]";
+  if (length <= 7) return "w-[calc(8ch+0.75rem+2px)]";
+  if (length <= 9) return "w-[calc(10ch+0.75rem+2px)]";
+  if (length <= 11) return "w-[calc(12ch+0.75rem+2px)]";
+  return "w-[calc(14ch+0.75rem+2px)]";
+};
+
 /** A slider's step from its range: about a thousand steps across it, a power of ten, never finer than a millionth. */
 export function controlStep(control) {
   const range = Math.abs(Number(control.max) - Number(control.min));
@@ -44,14 +57,15 @@ export function controlRow({ control, value, onChange, valueText, t = english })
       ? <div key={control.id} className="min-w-0 px-2" data-fea-control={control.id}>{select}</div>
       : <FileSheetSettingRow key={control.id} label={label}>{select}</FileSheetSettingRow>;
   }
+  const text = valueText(value, control);
   return (
     <FileSheetSliderField
       key={control.id}
       label={label}
       labelTitle={control.labelTitle || label}
-      value={valueText(value, control)}
+      value={text}
       onValueCommit={(draft) => onChange(parseFileSheetNumberInput(draft, { fallback: value, min: control.min, max: control.max }))}
-      valueInputProps={{ ariaLabel: t("fea.controlValue", { name }) }}
+      valueInputProps={{ ariaLabel: t("fea.controlValue", { name }), className: valueInputWidth(text) }}
     >
       <Slider
         className={FILE_SHEET_PRECISION_SLIDER_CLASSES}

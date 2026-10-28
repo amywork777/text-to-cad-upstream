@@ -208,11 +208,6 @@ def field_max_over(
     )
 
 
-def floored(factor: float | None) -> float | None:
-    # Floored, so a factor just under a threshold is never shown as reaching it.
-    return None if factor is None else math.floor(factor * 1000) / 1000
-
-
 def solve(volume, study, plan, ordinal_of: dict[str, int], *, part_name: str, log=None, automatic: bool = False) -> Static:
     """Solve the study on ``volume``: one part (``plan`` None, named ``part_name``) or an assembly's glued parts."""
     from cadgen._internal.fea import solve as solver
@@ -304,7 +299,7 @@ def summary(result: Static, check_results: list[dict], *, scale: float | None, p
         "applied_force_N": [round(x, 4) for x in outcome.applied],
         "reaction_force_N": [round(x, 4) for x in reaction_total],
         "deformation_scale": scale,
-        "safety_factor": floored(checks.safety_factor(solved)),
+        "safety_factor": checks.floored_factor(solved),
     }
     if part_refs is not None:
         # The headline is the weakest part: its yield and safety factor; the peak and the colours span the assembly.
@@ -314,7 +309,7 @@ def summary(result: Static, check_results: list[dict], *, scale: float | None, p
         out["parts"] = [
             {"ref": part_refs[i], "name": part.part, "material": part.material_name, "yield_MPa": part.yield_MPa,
              "peak_MPa": round(part.peak_MPa, 4), "peak_gauss_MPa": round(part.peak_gauss_MPa, 4),
-             "peak_at_mm": [round(c, 3) for c in part.peak_at], "safety_factor": floored(checks.safety_factor(part)),
+             "peak_at_mm": [round(c, 3) for c in part.peak_at], "safety_factor": checks.floored_factor(part),
              "max_displacement_mm": round(part.max_displacement_mm, 6)}
             for i, part in enumerate(result.solved)
         ]

@@ -19,13 +19,15 @@ function cube(study: Record<string, unknown>, displacement = [0, 0, 0], extras: 
   geometry.setAttribute('color', new BufferAttribute(new Uint8Array(count * 4), 4, true));
   const mesh = new Mesh(geometry);
   Object.assign(mesh.userData, {
-    generator: 'cadgen fea', deformation_scale: 1, faces: FACES, study,
+    generator: 'cadgen fea', deformation_scale: 1, faces: FACES, study, checks: [CHECK],
     fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 1 }], ...extras,
   });
   const root = new Group();
   root.add(mesh);
   return readFeaResult(root)!;
 }
+// The stress check cadgen judged: the markers draw the study, not it.
+const CHECK = { kind: 'stress', label: 'Strength', value: 1, limit: 276, unit: 'MPa', ratio: 0.003623, close_at: 0.5, margin: 2, status: 'passes', where: { ref: 'bracket/face 1', at: [0, 0, 0] } };
 const DOWN_ON_TOP = { type: 'force', faces: ['bracket/face 3'], vector_N: [0, 0, -300] };  // CAD -Z is glTF -Y: onto the +Y face
 const STUDY = { fixtures: [{ type: 'fixed', faces: ['bracket/face 4'] }], loads: [DOWN_ON_TOP, { type: 'pressure', faces: ['bracket/face 1'], pressure_MPa: 2 }] };
 const near = (a: number[], b: number[]) => a.forEach((value, k) => expect(value).toBeCloseTo(b[k], 6));

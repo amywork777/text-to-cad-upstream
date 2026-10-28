@@ -7,18 +7,17 @@
  * and `_DISPLACEMENT` (vec3, glTF units, i.e. metres, unscaled), and puts in
  * the mesh extras a `fields` list describing each one (`attribute`, `name`,
  * `units`, `min`, `max`, `attribute_scale`), `deformation_scale` (the
- * multiplier already baked into the positions), the colour `ramp` it used and
- * the result's `safety_factor` (null when it has none). A result written since
- * the study was recorded also carries the `study` it was solved for (material,
- * fixtures, loads, mesh), `faces` (the occurrence's face refs) and `_FACE`, the
- * index into `faces` of the face each vertex lies on (-1 for none). A bonded
- * assembly also carries `parts` (name, material, peak stress, safety factor of
- * each part), `connections` (each detected pair: type, contact area, gap and the
- * interface faces of both sides), `_PART` (the index into `parts` of the part
- * each vertex belongs to) and the weakest part's name and peak; a single part has
- * none of these. A result since the study picked its checks carries `checks`, each judged
- * (`feaVerdict`); an older one's verdict is its safety factor's, the stress check derived from the
- * fields it has. The words the viewer says are in `fea/`: `checkKinds.js` (each check kind's),
+ * multiplier already baked into the positions), the colour `ramp` it used, the
+ * result's `safety_factor` (null when it has none), the `checks` cadgen judged
+ * (`feaVerdict`), the `study` it was solved for (material, fixtures, loads, mesh,
+ * margin), `faces` (the occurrence's face refs) and `_FACE`, the index into
+ * `faces` of the face each vertex lies on (-1 for none). A bonded assembly also
+ * carries `parts` (name, material, peak stress, safety factor of each part),
+ * `connections` (each detected pair: type, contact area, gap and the interface
+ * faces of both sides), `_PART` (the index into `parts` of the part each vertex
+ * belongs to) and the weakest part's name and peak; a single part has none of
+ * these. A file without its `checks` or `study` does not read (`readFeaResult`
+ * throws). The words the viewer says are in `fea/`: `checkKinds.js` (each check kind's),
  * `fields.js` (each field's), `setup.js` (Study's setup) and `controls.js` (What you see's controls).
  * GLTFLoader lower-cases custom attribute names and copies extras into
  * `userData`, which is what is read here.
@@ -97,39 +96,15 @@ function rampStops(raw) {
 
 const vector = (value) => (Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? value.map(Number) : null);
 
-/** The result's findings, kept for the agent (the viewer shows none), in the file's order, each with its position as `index`; malformed ones are left out. */
-function readFindings(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((finding) => finding && (typeof finding.summary === "string" || typeof finding.description === "string"))
-    .map((finding, index) => ({
-      check: String(finding.check || "fea"),
-      severity: finding.severity === "error" ? "error" : "warning",
-      type: String(finding.type || ""),
-      summary: String(finding.summary || ""),
-      description: String(finding.description || ""),
-      index,
-      items: (Array.isArray(finding.items) ? finding.items : []).map((item) => ({
-        text: String(item?.text || ""),
-        ref: typeof item?.ref === "string" && item.ref ? item.ref : null,
-        at: vector(item?.at),
-      })),
-    }));
-}
-
 const text = (value) => (typeof value === "string" ? value : "");
 const faceRefs = (raw) => (Array.isArray(raw) ? raw.filter((ref) => typeof ref === "string" && ref) : []);
 const finiteOrNull = (value) => (Number.isFinite(value) ? Number(value) : null);
-// A material as the table's names read: cadgen writes it tidied ("Soft silicone"); a file older than that, its first
-// letter capitalised ("soft silicone" reads "Soft silicone").
-const materialName = (value) => { const name = text(value).trim(); return name ? `${name[0].toUpperCase()}${name.slice(1)}` : ""; };
 
-/** An assembly's parts in `_PART` order (a malformed entry keeps its place, empty); [] for a single part. */
+/** An assembly's parts in `_PART` order, each its name, material and safety factor (a malformed entry keeps its place, empty); [] for a single part. */
 function readParts(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.map((part) => ({
-    ref: text(part?.ref), name: text(part?.name), material: materialName(part?.material), yieldMPa: finiteOrNull(part?.yield_MPa),
-    peakMPa: finiteOrNull(part?.peak_MPa), safetyFactor: finiteOrNull(part?.safety_factor), maxDisplacementMm: finiteOrNull(part?.max_displacement_mm),
+    ref: text(part?.ref), name: text(part?.name), material: text(part?.material), safetyFactor: finiteOrNull(part?.safety_factor),
   }));
 }
 
@@ -146,34 +121,36 @@ function readConnections(raw) {
   }));
 }
 
+/** Whether the viewer can judge a check: a kind it knows (`FEA_CHECK_KINDS`), with numbers it can use. */
+const judgeable = (check) => FEA_CHECK_KINDS.includes(check.kind) && Number.isFinite(check.value)
+  && Number.isFinite(check.limit) && check.limit > 0 && Number.isFinite(check.ratio);
+
 /**
  * The checks the file judged (`kind`, `label`, `value`, `limit`, `unit`, `ratio`, `closeAt`, `status`, `where`),
- * in the study's order, those of a kind this viewer does not know, or with numbers it cannot use, left out;
- * null for a result written before checks were.
+ * in the study's order. One of a kind this viewer does not know, or with numbers it cannot use, keeps its
+ * `kind` and `label` and is `unjudged`, so the verdict never passes what it could not judge.
  */
 function readChecks(raw) {
-  if (!Array.isArray(raw)) return null;
-  return raw.filter((check) => check && FEA_CHECK_KINDS.includes(check.kind) && Number.isFinite(check.value)
-    && Number.isFinite(check.limit) && check.limit > 0 && Number.isFinite(check.ratio))
-    .map((check) => ({
-      kind: check.kind, label: text(check.label), value: Number(check.value), limit: Number(check.limit), unit: text(check.unit),
-      ratio: Number(check.ratio), closeAt: Number.isFinite(check.close_at) ? Number(check.close_at) : 1,
-      margin: Number.isFinite(check.margin) && check.margin >= 1 ? Number(check.margin) : null,
-      status: ["fails", "close", "passes"].includes(check.status) ? check.status : null, part: text(check.part),
-      faces: faceRefs(check.faces), where: text(check.where?.ref),
-    }));
+  if (!Array.isArray(raw) || !raw.length) throw new Error("The FEA result has no checks in its extras.");
+  return raw.filter(Boolean).map((check) => (judgeable(check) ? {
+    kind: check.kind, label: text(check.label), value: Number(check.value), limit: Number(check.limit), unit: text(check.unit),
+    ratio: Number(check.ratio), closeAt: Number.isFinite(check.close_at) ? Number(check.close_at) : 1,
+    margin: Number.isFinite(check.margin) && check.margin >= 1 ? Number(check.margin) : null,
+    status: ["fails", "close", "passes"].includes(check.status) ? check.status : null, part: text(check.part),
+    faces: faceRefs(check.faces), where: text(check.where?.ref),
+  } : { kind: text(check.kind), label: text(check.label), unjudged: true }));
 }
 
 /**
- * The study the result was solved for, as the file records it; null for a result written before it
- * did: the material, fixtures, loads (a body load, gravity or an acceleration, has no faces and its
- * `g` vector), mesh and margin. A fixture's `type` is "fixed" (none given) or "roller" (it may slide
- * in the face's plane, not off it). The viewer reads its study from here, never the raw echo.
+ * The study the result was solved for, as the file records it: the material, fixtures, loads (a body
+ * load, gravity or an acceleration, has no faces and its `g` vector), mesh and margin. A fixture's
+ * `type` is "fixed" (none given) or "roller" (it may slide in the face's plane, not off it). The
+ * viewer reads its study from here, never the raw echo.
  */
 function readStudy(raw) {
-  if (!raw || typeof raw !== "object") return null;
+  if (!raw || typeof raw !== "object") throw new Error("The FEA result has no study in its extras.");
   const material = raw.material && typeof raw.material === "object"
-    ? { name: materialName(raw.material.name), yieldMPa: finiteOrNull(raw.material.yield_MPa) } : null;
+    ? { name: text(raw.material.name), yieldMPa: finiteOrNull(raw.material.yield_MPa) } : null;
   const mesh = raw.mesh && typeof raw.mesh === "object"
     ? { sizeMm: finiteOrNull(raw.mesh.size_mm), refinedFromMm: finiteOrNull(raw.mesh.refined_from_mm) } : null;
   return {
@@ -210,7 +187,8 @@ export function resultSourcePath(glbPath, document) {
 export const findingSelector = (ref) => String(ref).replace(/^#/, "");
 
 /**
- * The FEA result a loaded glTF scene root carries, or null for any other GLB.
+ * The FEA result a loaded glTF scene root carries, or null for any other GLB. Throws for a result
+ * without its `checks` or `study`: the viewer says so rather than show less than the file should hold.
  */
 export function readFeaResult(root) {
   if (!root?.traverse) {
@@ -247,14 +225,11 @@ export function readFeaResult(root) {
       safetyFactor: Number.isFinite(extras.safety_factor) ? extras.safety_factor : null,
       fields,
       ramp: rampStops(extras.ramp),
-      findings: readFindings(extras.findings),
       study: readStudy(extras.study),
       faces: faceRefs(extras.faces),
       parts: readParts(extras.parts),
       connections: readConnections(extras.connections),
       weakestPart: text(extras.weakest_part),
-      weakestPartPeakMPa: finiteOrNull(extras.weakest_part_peak_MPa),
-      maxDisplacementMm: finiteOrNull(extras.max_displacement_mm),
       checks: readChecks(extras.checks),
     };
   });
@@ -489,48 +464,14 @@ export function partRows(result, loadScale = 1, t = english) {
   });
 }
 
-/** The index of an assembly's weakest part: the one the file names, else the lowest safety factor; -1 for none. */
+/** The index of an assembly's weakest part, the one the file names; -1 for a single part. */
 export function weakestPartIndex(result) {
-  const named = result.weakestPart ? result.parts.findIndex((part) => part.name === result.weakestPart) : -1;
-  if (named >= 0) return named;
-  let weakest = -1;
-  result.parts.forEach((part, index) => {
-    if (part.safetyFactor !== null && (weakest < 0 || part.safetyFactor < result.parts[weakest].safetyFactor)) weakest = index;
-  });
-  return weakest;
-}
-
-/** The safety factor a study asks a part to keep, where it records none: cadgen's own default. */
-export const DEFAULT_MARGIN = 2;
-
-/**
- * The checks the verdict judges: the file's (`checks`), else, for a result written before them, the
- * stress check derived from what it has (the peak against the weakest part's yield, its safety factor
- * and the study's margin). [] where the file cannot say: no stress field, or a stress with no safety
- * factor (older than the factor).
- */
-export function feaChecks(result) {
-  if (result.checks) return result.checks;
-  const stress = result.fields.find((entry) => entry.attribute === "_von_mises");
-  const factor = result.safetyFactor;
-  if (!stress || factor === null || !(factor > 0)) return [];
-  const margin = result.study?.margin ?? DEFAULT_MARGIN;
-  const weakest = result.parts[weakestPartIndex(result)] || null;
-  const value = result.weakestPartPeakMPa ?? weakest?.peakMPa ?? stress.max;
-  // The limit is the yield of the part these numbers are for; failing that, what the factor says it is.
-  const limit = weakest?.yieldMPa ?? result.study?.material?.yieldMPa ?? value * factor;
-  return [{ kind: "stress", label: "", value, limit, unit: stress.units || "MPa", ratio: 1 / factor, closeAt: 1 / margin, margin,
-    status: factor < 1 ? "fails" : factor < margin ? "close" : "passes", part: "" }];
+  return result.weakestPart ? result.parts.findIndex((part) => part.name === result.weakestPart) : -1;
 }
 
 const STATUS_RANK = Object.freeze({ fails: 0, close: 1, passes: 2 });
 // The verdict's tones: each status as the findings card's tones name it.
 const TONE_OF = Object.freeze({ fails: "weak", close: "close", passes: "strong" });
-
-/** The margin a check is held to: a stress check's own, else the study's, else cadgen's 2; none for a displacement, judged by a share of its limit. */
-function marginOf(result, check) {
-  return check.kind === "stress" ? check.margin ?? result.study?.margin ?? DEFAULT_MARGIN : null;
-}
 
 /**
  * One check at `k` times the solved load (a linear study scales exactly): its value and its share of
@@ -542,7 +483,8 @@ function marginOf(result, check) {
 function checkAt(result, check, k) {
   const use = check.ratio * k;
   const times = check.kind === "stress" && result.safetyFactor !== null && result.safetyFactor > 0 ? result.safetyFactor / k : 1 / use;
-  const margin = marginOf(result, check);
+  // A stress check is held to its margin; a displacement, judged by a share of its limit, has none.
+  const margin = check.kind === "stress" ? check.margin : null;
   const status = k === 1 && check.status ? check.status
     : times < 1 ? "fails" : (margin !== null ? times < margin : use > check.closeAt) ? "close" : "passes";
   return { ...check, use: check.kind === "stress" ? 1 / times : use, times, status, margin, shown: check.value * k };
@@ -573,39 +515,41 @@ const failedTitle = (failing, total) => (failing === total ? (total === 2 ? "Fai
  * the worst check's tone ("weak" failing, "close", "strong" passing; "none" with no stress: no load
  * reaches the part, or the load is set to 0). `title`: one check's own words ("Too weak", "Moves too
  * much", "Stiff enough", its kind's, `checkKinds.js`), or over several, how many fail ("Fails both
- * checks"), else "Close to the limit" or "Passes all checks". `caption`: how much of this load the
- * weakest check takes ("OK only to 0.4× this load"; with no stress, what to do). `rows`: each check,
+ * checks"), else "Close to the limit" or "Passes all checks"; with a check this viewer cannot judge
+ * (`unjudged`), how many fail, else "Can't judge every check" in no tone, never a pass. `caption`: how
+ * much of this load the weakest check takes ("OK only to 0.4× this load"; with no stress, what to do;
+ * with a check it cannot judge and none failing, which one). `rows`: each check it judged,
  * worst first (failing before close before passing, then the most of its limit used), with its
  * `label` in the person's words, the `part` a stress check's numbers are for in an assembly, its
  * `line` (the value against the limit, the label saying what it is: "405 MPa, limit 276 MPa"), `use`
  * (the share of the limit, 1 at it), the `margin` a stress check is held to (null for a displacement)
- * and its `choice` for Quick Edit. null where the file cannot say: no stress field, or a stress with
- * no safety factor and no checks (a result older than both).
+ * and its `choice` for Quick Edit. null with no stress field.
  */
 export function feaVerdict(result, loadScale = 1, t = english) {
   const stress = result.fields.find((entry) => entry.attribute === "_von_mises");
   if (!stress) return null;
   const k = Number(loadScale) >= 0 ? Number(loadScale) : 1;
   if (!(k > 0)) return { status: "none", title: t("fea.noLoad"), caption: t("fea.loadIsZero"), rows: [] };
-  const checks = feaChecks(result);
-  const unloaded = checks.some((check) => check.kind === "stress" && !(check.value > 0));
-  if (!checks.length || unloaded) {
-    return stress.max > 0 && !unloaded ? null : { status: "none", title: t("fea.noStress"), caption: t("fea.checkLoadReaches"), rows: [] };
+  if (result.checks.some((check) => check.kind === "stress" && !check.unjudged && !(check.value > 0))) {
+    return { status: "none", title: t("fea.noStress"), caption: t("fea.checkLoadReaches"), rows: [] };
   }
-  const weakest = result.parts[weakestPartIndex(result)] || null;
-  const weakestName = result.weakestPart ? spaced(result.weakestPart) : weakest?.name ? spaced(weakest.name) : "";
-  const judged = checks.map((check, index) => ({ ...checkAt(result, check, k), index }))
+  const judged = result.checks.flatMap((check, index) => (check.unjudged ? [] : [{ ...checkAt(result, check, k), index }]))
     .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || b.use - a.use || a.index - b.index);
+  const unjudged = result.checks.filter((check) => check.unjudged);
   const [worst] = judged;
   const failing = judged.filter((check) => check.status === "fails").length;
-  const title = judged.length === 1 ? checkTitle(worst, worst.status)
-    : failing ? failedTitle(failing, judged.length) : worst.status === "close" ? "Close to the limit" : "Passes all checks";
+  const total = result.checks.length;
+  // A check it cannot judge leaves no pass to say: how many fail, else that it cannot judge them all.
+  const open = unjudged.length > 0 && !failing;
+  const title = open ? "Can't judge every check" : total === 1 ? checkTitle(worst, worst.status)
+    : failing ? failedTitle(failing, total) : worst.status === "close" ? "Close to the limit" : "Passes all checks";
   return {
-    status: TONE_OF[worst.status], title,
-    // The load the weakest check takes.
-    caption: loadCaption(Math.min(...judged.map((check) => check.times))),
+    status: open ? "none" : TONE_OF[worst.status], title,
+    // The load the weakest check takes; with none failing and one it cannot judge, which one.
+    caption: open ? `Can't judge ${unjudged.map((check) => `'${check.label || check.kind}'`).join(", ")}`
+      : loadCaption(Math.min(...judged.map((check) => check.times))),
     rows: judged.map((check) => {
-      const part = check.kind === "stress" ? (check.part ? spaced(check.part) : weakestName) : "";
+      const part = check.kind === "stress" ? spaced(check.part) : "";
       const label = checkLabel(check);
       return { id: `check:${check.index}`, kind: check.kind, status: TONE_OF[check.status], label, part, line: checkLine(check, { bare: true }),
         use: check.use, margin: check.margin, choice: checkChoice(result, check, part, label) };
@@ -623,14 +567,7 @@ export function feaVerdict(result, loadScale = 1, t = english) {
  * words are its hint (`hint`).
  */
 export function studySections(result, t = english) {
-  if (!result.study) return { setup: [], details: [] };
   return { setup: SETUP_GROUPS.flatMap((group) => group(result, t)), details: detailRows(result, t) };
-}
-
-/** Study's rows for a result's study, in order: its setup, then Details. [] for a result written before the study was recorded. */
-export function studyRows(result) {
-  const { setup, details } = studySections(result);
-  return [...setup, ...details];
 }
 
 /**
@@ -645,13 +582,12 @@ export function facePartDetail(result, ref, loadScale = 1) {
 
 /** What a prompt calls a face, by what the study does to it; "Face 17" for a face it does nothing to. */
 export function facePromptSummary(result, ref) {
-  return (result.study && faceSummary(result.study, ref)) || faceLabel(ref);
+  return faceSummary(result.study, ref) || faceLabel(ref);
 }
 
 /** What the study does to a face, in words: "fixed", "slides along it" (a roller), "2500 N load, down", "2 MPa pressure", or "free". */
 export function faceRole(result, ref) {
   const study = result.study;
-  if (!study) return "";
   const roles = [
     ...study.fixtures.filter((fixture) => fixture.faces.includes(ref)).map((fixture) => (isRoller(fixture) ? "slides along it" : fixture.type)),
     ...study.loads.filter((load) => load.faces.includes(ref)).map((load) => {

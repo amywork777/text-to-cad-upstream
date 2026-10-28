@@ -145,9 +145,8 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
 - `connections`: optional overrides, `{"between": [A, B], "type": ...}` with `bonded` or `free`.
   Without it every pair that touches within the tolerance is bonded. `bonded` needs the pair to
   touch within the tolerance; `free` leaves them unjoined (their faces stay separate and may not
-  pass load). A `free` pair that is still joined through other bonded parts is refused. `contact`
-  (parts that press and slide) and `bolt` are refused with "not yet supported; use bonded or
-  free".
+  pass load). A `free` pair that is still joined through other bonded parts is refused. Parts that press
+  and slide, and bolts, are not in this version.
 - `contact_tolerance_mm`: default 0.1. Faces this close are touching; a gap within it is closed to
   bond the pair, and so is an overlap no thicker than it (an interference; a `gap_closed` finding
   says which). A thicker overlap is never bonded.
@@ -156,8 +155,8 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
   exposed area; a face wholly covered by a bonded joint is refused before the solve. At least one
   part must be fixed, and every part must reach it through bonded neighbours (`not_connected`
   error otherwise).
-- `--occurrence REF` on the command line solves that one part alone; `parts` and `connections` are
-  then ignored, with a warning.
+- `--occurrence REF` on the command line solves that one part alone. It refuses a study with
+  `parts` or `connections`: give that part's material as the study's `material` instead.
 
 ## `mesh`
 

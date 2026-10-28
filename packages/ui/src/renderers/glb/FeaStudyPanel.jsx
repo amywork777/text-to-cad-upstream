@@ -175,8 +175,7 @@ export const FEA_STUDY_PANEL_ID = "study";
  * (`verdict`: `feaVerdict`, none where the file cannot say) over one list of the setup (`setup`,
  * `studySections`: where it is held, what pushes it, what it is made of, each only where the file records it),
  * What you see: the field, deformation and load controls and the markers' gate (`result`: `FeaResultControls`'
- * props), and Details (`details`), shut. A result written before its study was recorded has its verdict and
- * What you see alone. Choosing a row that stands for faces or parts is `onChoose(row)`;
+ * props), and Details (`details`), shut. Choosing a row that stands for faces or parts is `onChoose(row)`;
  * `chosen` is the row (or picked face) chosen. A face picked on the result is Quick Edit's chip, its card
  * `FaceCard`.
  *

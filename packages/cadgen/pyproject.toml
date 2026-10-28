@@ -79,7 +79,7 @@ dependencies = [
 # the mesher is heavy and most installs never run a stress study. Opt-in: `cadgen fea solve`
 # only, and no other command needs it. netgen meshes the B-rep (LGPL-2.1, brings its own
 # OpenCascade, so it runs in a process of its own); wheels exist on every packaged target.
-# CalculiX, which solves, is a program the person installs, as KiCad is for `cadgen pcb`.
+# CalculiX, which solves, is a program the person installs (or the one their FreeCAD carries).
 [project.optional-dependencies]
 fea = [
   "netgen-mesher>=6.2.2608",

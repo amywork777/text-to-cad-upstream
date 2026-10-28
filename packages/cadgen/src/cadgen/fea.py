@@ -71,8 +71,8 @@ def solve(
         document; the sidecar is the same name with ``.json``.
     study: the study: a JSON file path, inline JSON, or (library callers) a
         dict. It names the material, the fixed faces and the loads
-        (forces, pressures, gravity and acceleration); see the fea
-        skill for the schema. Face refs are the ones ``cadgen fea faces``
+        (forces, pressures, gravity and acceleration); an unknown or
+        malformed key is refused naming the keys it takes. Face refs are the ones ``cadgen fea faces``
         prints. A document of several parts is solved as one bonded assembly:
         ``parts`` gives each its material, ``connections`` overrides which
         touching pairs are bonded (``cadgen fea parts`` lists them).

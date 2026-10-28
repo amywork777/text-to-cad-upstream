@@ -38,12 +38,16 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); cleanup(); vi.unstubAllGlobals(); document.querySelectorAll('[data-test-navbar]').forEach(slot => slot.remove()); });
 
-// A static result, as `cadgen fea solve` writes it: the file draws its displacement ×10.
+// A result, as `cadgen fea solve` writes it: the file draws its displacement ×10.
 const STATIC = {
   generator: 'cadgen fea', name: 'bracket von Mises', deformation_scale: 10, safety_factor: 5.83, document: 'part.step', occurrence: 'bracket',
   faces: ['bracket/face 1', 'bracket/face 2'],
   fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 100, attribute_scale: 1 },
     { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 2, attribute_scale: 1000 }],
+  findings: [],
+  checks: [{ kind: 'stress', label: 'Strength', value: 100, limit: 583, unit: 'MPa', ratio: 0.171527, close_at: 0.5, margin: 2, status: 'passes', where: { ref: 'bracket/face 1', at: [0, 0, 0] } }],
+  study: { material: { name: 'Steel', yield_MPa: 583 }, fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }],
+    loads: [{ type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -100] }], mesh: { size_mm: 1, refined_from_mm: null }, margin: 2 },
 };
 
 function mount(extras: Record<string, unknown> | null = STATIC) {

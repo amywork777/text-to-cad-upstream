@@ -109,10 +109,8 @@ def _signed_volume(positions: "np.ndarray", triangles: "np.ndarray") -> float:
 
 def write_glb(path: Path, *, positions: "np.ndarray", displacement: "np.ndarray", values: "np.ndarray",
               triangles6: "np.ndarray", face_of_triangle: "np.ndarray", scale: float,
-              values_attribute: str | None = "_VON_MISES", value_range: tuple[float, float], extras: dict,
-              values_by_part: "np.ndarray | None" = None, part_of_triangle: "np.ndarray | None" = None,
-              extra_attributes: "dict[str, np.ndarray] | None" = None,
-              series: "list[dict[str, np.ndarray]] | None" = None) -> None:
+              value_range: tuple[float, float], extras: dict,
+              values_by_part: "np.ndarray | None" = None, part_of_triangle: "np.ndarray | None" = None) -> None:
     """A binary glTF of the deformed boundary surface with the value ramp as vertex colour.
 
     ``positions``, ``displacement`` and ``values`` are per node (corner and mid-edge alike); ``triangles6`` are the
@@ -124,23 +122,12 @@ def write_glb(path: Path, *, positions: "np.ndarray", displacement: "np.ndarray"
     ``part_of_triangle`` also becomes ``_PART`` (float, an index into ``extras["parts"]``), one value per vertex; a
     single part has no ``_PART``.
 
-    ``values`` colour the surface and are written as ``values_attribute`` (``_VON_MISES``); ``None`` colours by them
-    without writing them, for a result whose coloured field is already among ``extra_attributes`` or is a vector's
-    magnitude.
-
-    ``triangles6`` may be (B, 3), the boundary of linear elements: each is written as it is. ``extra_attributes`` are
-    more per-node fields, written after the static ones under their names (``_TEMPERATURE``): an (M,) array is a float
-    scalar as stored, an (M, 3) array a vector in mm, written in glTF metres and axes like ``_DISPLACEMENT``. ``series``
-    is one such dict per frame of a series (``_MODE_SHAPE_F1``), written the same way after them.
+    ``values`` (von Mises) colour the surface and are written as ``_VON_MISES``.
     """
     import numpy as np
 
-    triangles6 = np.asarray(triangles6)
-    if triangles6.shape[1] == 3:
-        triangles, blocks = triangles6, 1
-    else:
-        triangles, blocks = _split_quadratic(triangles6), 4
-    face_of = np.tile(np.asarray(face_of_triangle, dtype=np.int64), blocks)  # _split_quadratic's four blocks
+    triangles = _split_quadratic(np.asarray(triangles6))
+    face_of = np.tile(np.asarray(face_of_triangle, dtype=np.int64), 4)  # _split_quadratic's four blocks
     if _signed_volume(positions, triangles) < 0:
         triangles = triangles[:, [0, 2, 1]]
     # One vertex per (node, face): a node on an edge between faces is written once for each.
@@ -153,7 +140,7 @@ def write_glb(path: Path, *, positions: "np.ndarray", displacement: "np.ndarray"
     vertex_part = None
     if part_of_triangle is not None:
         vertex_part = np.zeros(len(unique_pairs), dtype=np.int64)
-        vertex_part[compact] = np.tile(np.asarray(part_of_triangle, dtype=np.int64), blocks)[:, None]
+        vertex_part[compact] = np.tile(np.asarray(part_of_triangle, dtype=np.int64), 4)[:, None]
     if values_by_part is None:
         vals = values[used].astype(np.float32)
     else:
@@ -189,22 +176,12 @@ def write_glb(path: Path, *, positions: "np.ndarray", displacement: "np.ndarray"
         "NORMAL": add(normals, target=ARRAY, kind="VEC3", component=FLOAT),
         "COLOR_0": add(rgba, target=ARRAY, kind="VEC4", component=UBYTE, normalized=True),
     }
-    if values_attribute is not None:
-        attributes[values_attribute] = add(vals.reshape(-1, 1), target=ARRAY, kind="SCALAR", component=FLOAT)
+    attributes["_VON_MISES"] = add(vals.reshape(-1, 1), target=ARRAY, kind="SCALAR", component=FLOAT)
     attributes["_DISPLACEMENT"] = add(disp, target=ARRAY, kind="VEC3", component=FLOAT)
     # Float: a 2-byte scalar would need padding to the 4-byte vertex alignment glTF asks of attributes.
     attributes["_FACE"] = add(face.reshape(-1, 1), target=ARRAY, kind="SCALAR", component=FLOAT)
     if vertex_part is not None:
         attributes["_PART"] = add(vertex_part.astype(np.float32).reshape(-1, 1), target=ARRAY, kind="SCALAR", component=FLOAT)
-    for more in (extra_attributes or {}, *(series or ())):
-        for attribute, array in more.items():
-            if attribute in attributes:
-                raise ValueError(f"the GLB already has an attribute {attribute}")
-            array = np.asarray(array)
-            if array.ndim == 2 and array.shape[1] == 3:
-                attributes[attribute] = add(_gltf_space(array[used]), target=ARRAY, kind="VEC3", component=FLOAT)
-            else:
-                attributes[attribute] = add(array[used].astype(np.float32).reshape(-1, 1), target=ARRAY, kind="SCALAR", component=FLOAT)
     name = extras.get("name", "fea result")
     gltf = {
         "asset": {"version": "2.0", "generator": "cadgen fea"},

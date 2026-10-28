@@ -30,8 +30,6 @@ const NO_FACES = Object.freeze({ result: null, id: "", faces: EMPTY, refs: EMPTY
 const MARKERS_TITLE = "Loads and fixtures";
 const MARKER_GATE_KINDS = Object.freeze(["load", "fixture"]);
 const SELECT_ICON = <MousePointer2 className="size-3" strokeWidth={2} aria-hidden="true" />;
-// A result offers Clip besides what any GLB view does: a cut through it shows what is inside in the
-// field's colours. It has no edges, so no X-ray.
 const NO_REFERENCES = Object.freeze([]);
 const EXPLODE_OFF = Object.freeze({ exploded: { enabled: false, amount: 0 } });
 const CLIP_OFF = Object.freeze({ clip: { enabled: false, axis: "x", invert: false } });
@@ -47,15 +45,20 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   const { t } = useI18n();
   const host = useViewerHost();
   const scene = loaded.scene;
-  const loadAlert = useMemo(() => workspaceLoadAlert({
-    catalogError: document.catalogError, error: loaded.error, modelKey: document.modelKey, hasScene: Boolean(scene), t
-  }), [document.catalogError, loaded.error, document.modelKey, scene, t]);
 
   // An FEA result (cadgen fea solve) carries its fields and true displacement in the file; what is
   // shown of it is chosen in Study's What you see (`feaControls`: the field, the deformation and the load),
   // per tab. That choice is this renderer's one slice of the file's view (`kit/shell/fileView.js`), written
-  // against the result's own fields and scale: a re-solved result opens at its own defaults.
-  const fea = useMemo(() => (fv ? fv.readFeaResult(scene?.document?.scene) : null), [fv, scene]);
+  // against the result's own fields and scale: a re-solved result opens at its own defaults. A result that
+  // does not read (no checks or study in it) is the load's alert, over the model as the file colours it.
+  const read = useMemo(() => {
+    try { return { fea: fv ? fv.readFeaResult(scene?.document?.scene) : null, error: null }; }
+    catch (error) { return { fea: null, error }; }
+  }, [fv, scene]);
+  const fea = read.fea;
+  const loadAlert = useMemo(() => workspaceLoadAlert({
+    catalogError: document.catalogError, error: loaded.error || read.error, modelKey: document.modelKey, hasScene: Boolean(scene), t
+  }), [document.catalogError, loaded.error, read.error, document.modelKey, scene, t]);
   // The box the model is drawn in over its Load ramp (`feaBounds.js`), at the deformation and load it opens on, grown on
   // the scene before the shell frames it (Preview frames on it once) and fits the camera's near and far planes to it:
   // a part drawn larger than the file's own exaggeration is never sliced off.
@@ -86,8 +89,6 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     ? { signatures: { fea: signature }, read: () => ({ fea: Object.fromEntries(Object.keys(NO_CHOICE).map((key) => [key, choiceRef.current[key]])) }) }
     : null), [fea, signature]);
 
-  // What the result's checks found stays in the file for the agent; the viewer raises no alert for it
-  // (Study's verdict is its status), so only a failure to load has the alert card.
   // What Study chose (a fixed face, a load, a load's face) or a press on the result picked: its faces
   // and what a prompt calls them.
   const [chosenFaces, setChosenFaces] = useState(NO_FACES);
@@ -225,7 +226,7 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   // Where the study loads and holds the part, on the model (`feaMarkers.js`): built once per result,
   // standing on the positions drawn, the chosen load's or fixture's in the chosen colour.
   useEffect(() => {
-    if (!fea?.study) return undefined;
+    if (!fea) return undefined;
     const built = fv.createFeaMarkers(THREE, fea);
     if (!built.sites.length) { built.dispose(); return undefined; }
     fea.mesh.add(built.object3D);

@@ -75,16 +75,15 @@ function restPositions(result) {
   return rest;
 }
 
-/** Each triangle of each face: `{ triangles: [[a, b, c]], areas, centroids }` by face index, from `_FACE`. */
+/** Each triangle of each face: `{ triangles: [[a, b, c]], areas, centroids }` by face index, from `_FACE` (the writer's mesh is indexed). */
 function trianglesByFace(result, positions, wanted) {
   const geometry = result.mesh.geometry;
   const faceOf = geometry.getAttribute("_face")?.array;
-  const index = geometry.getIndex()?.array;
+  const index = geometry.getIndex().array;
   const byFace = new Map([...wanted].map((face) => [face, { triangles: [], areas: [], centroids: [] }]));
   if (!faceOf) return byFace;
-  const count = index ? index.length / 3 : positions.length / 9;
-  for (let t = 0; t < count; t += 1) {
-    const corners = index ? [index[t * 3], index[t * 3 + 1], index[t * 3 + 2]] : [t * 3, t * 3 + 1, t * 3 + 2];
+  for (let t = 0; t < index.length / 3; t += 1) {
+    const corners = [index[t * 3], index[t * 3 + 1], index[t * 3 + 2]];
     const face = Math.round(faceOf[corners[0]]);
     const entry = byFace.get(face);
     if (!entry || Math.round(faceOf[corners[1]]) !== face || Math.round(faceOf[corners[2]]) !== face) continue;
@@ -159,8 +158,6 @@ function markerGroups(result) {
  * fixtures, then each other kind in the table's order.
  */
 export function markerSites(result) {
-  const study = result.study;
-  if (!study) return { diagonal: 0, sites: [] };
   const rest = restPositions(result);
   let low = [Infinity, Infinity, Infinity];
   let high = [-Infinity, -Infinity, -Infinity];
@@ -229,7 +226,7 @@ function bodyLoadPose(result, site, box, arrow) {
  * arrow through the model's middle (`bodyLoadPose`).
  */
 export function markerPoses(result, { diagonal, sites }, positions) {
-  const loads = result.study ? result.study.loads.filter((load) => load.faces.length) : [];
+  const loads = result.study.loads.filter((load) => load.faces.length);
   const arrow = ARROW_LENGTH * diagonal;
   const box = sites.some((site) => !site.triangle) ? boxOf(positions) : null;
   return sites.map((site) => {

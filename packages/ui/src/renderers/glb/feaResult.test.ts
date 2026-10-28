@@ -2,10 +2,27 @@ import { BufferAttribute, BufferGeometry, Group, Mesh, Ray, Vector3 } from 'thre
 import { describe, expect, it } from 'vitest';
 import {
   applyDeformation, deformationRange, faceLabel, faceTitle, faceRole, feaControls, feaRamp, fieldValues, forceDirection,
-  feaVerdict, formatValue, pickFace, readFeaResult, partRows, recolorByField, resultSourcePath, studyRows, weakestPartIndex,
-  feaChecks, studySections, facePromptSummary
+  feaVerdict, formatValue, pickFace, readFeaResult, partRows, recolorByField, resultSourcePath, weakestPartIndex,
+  studySections, facePromptSummary
 } from './feaResult.js';
 import { translator } from '../../i18n/core.js';
+
+// The study the result was solved for, and the stress check cadgen judged (one over the safety factor), as it writes them into the extras.
+const STUDY = {
+  material: { name: '6061-T6', yield_MPa: 276, youngs_GPa: 68.9, poisson: 0.33 },
+  fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }],
+  loads: [
+    { type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -2500] },
+    { type: 'pressure', faces: ['bracket/face 3', 'bracket/face 4'], pressure_MPa: 2 },
+  ],
+  mesh: { size_mm: 1.9205, order: 2, elements: 52271, refined_from_mm: 2.7686 },
+  margin: 2,
+};
+const STRESS_CHECK = { kind: 'stress', label: 'Strength', value: 47.3, limit: 276, unit: 'MPa', ratio: 0.171527, close_at: 0.5, margin: 2, status: 'passes',
+  where: { ref: 'bracket/face 1', at: [0, 0, 0] } };
+/** The stress check at a safety factor, judged against its margin as cadgen judges it. */
+const stressAt = (factor: number, margin = 2) => ({ ...STRESS_CHECK, ratio: Number((1 / factor).toFixed(6)), close_at: 1 / margin, margin,
+  status: factor < 1 ? 'fails' : factor < margin ? 'close' : 'passes' });
 
 /** A two-triangle "result" the way GLTFLoader hands one over: lower-cased custom attributes, extras in userData. */
 function resultMesh({ generator = 'cadgen fea', scale = 10, safetyFactor = 5.83 as number | null } = {}) {
@@ -20,8 +37,14 @@ function resultMesh({ generator = 'cadgen fea', scale = 10, safetyFactor = 5.83 
   Object.assign(mesh.userData, {
     generator,
     name: 'part von Mises',
+    document: 'part.step',
+    occurrence: 'bracket',
     deformation_scale: scale,
     safety_factor: safetyFactor,
+    findings: [],
+    checks: [STRESS_CHECK],
+    faces: [],
+    study: STUDY,
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 47.3, attribute_scale: 1 },
       { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 0.0288, attribute_scale: 1000 },
@@ -62,6 +85,22 @@ describe('readFeaResult', () => {
   it('is null for a GLB that is not a result', () => {
     expect(readFeaResult(resultMesh({ generator: 'something else' }).root)).toBeNull();
     expect(readFeaResult(null)).toBeNull();
+  });
+
+  it('throws for a result without its checks or its study, rather than show less than it holds', () => {
+    for (const [key, missing] of [['checks', undefined], ['checks', []], ['study', undefined]] as const) {
+      const { mesh, root } = resultMesh();
+      mesh.userData[key] = missing;
+      expect(() => readFeaResult(root)).toThrow(new RegExp(`no ${key}`));
+    }
+  });
+
+  it('names its source STEP beside the GLB unless it is absolute', () => {
+    expect(resultSourcePath('/work/results/bracket.glb', 'bracket.step')).toBe('/work/results/bracket.step');
+    expect(resultSourcePath('/work/results/bracket.glb', '../STEP/bracket.step')).toBe('/work/STEP/bracket.step');
+    expect(resultSourcePath('/work/results/bracket.glb', '/parts/bracket.step')).toBe('/parts/bracket.step');
+    expect(resultSourcePath('/work/results/bracket.glb', '')).toBe('');
+    expect(resultSourcePath('FEA/x.glb', '../part.step')).toBe('part.step');
   });
 });
 
@@ -111,44 +150,15 @@ describe('legend helpers', () => {
   });
 });
 
-describe('a result\'s findings', () => {
-  const finding = { check: 'fea', severity: 'error', type: 'peak', summary: 'Too much', description: 'Far too much.', items: [{ text: 'the peak', ref: 'bracket/face 3', at: [1, 2, 3] }, { text: 'a face', ref: null }] };
-  it('are read in the file\'s order with their places, malformed ones left out', () => {
-    const { mesh, root } = resultMesh();
-    mesh.userData.findings = [finding, 'nope', { severity: 'note', summary: 'Soft', items: [{ at: [1, 2] }, { ref: '', at: [0, 0, NaN] }] }];
-    const found = readFeaResult(root)!.findings;
-    expect(found.map(entry => [entry.index, entry.severity, entry.summary])).toEqual([[0, 'error', 'Too much'], [1, 'warning', 'Soft']]);
-    expect(found[0].items).toEqual([{ text: 'the peak', ref: 'bracket/face 3', at: [1, 2, 3] }, { text: 'a face', ref: null, at: null }]);
-    expect(found[1].items.map(item => [item.ref, item.at])).toEqual([[null, null], [null, null]]);
-    expect(readFeaResult(resultMesh().root)!.findings).toEqual([]);
-  });
-
-  it('name their source STEP beside the GLB unless it is absolute', () => {
-    expect(resultSourcePath('/work/results/bracket.glb', 'bracket.step')).toBe('/work/results/bracket.step');
-    expect(resultSourcePath('/work/results/bracket.glb', '../STEP/bracket.step')).toBe('/work/STEP/bracket.step');
-    expect(resultSourcePath('/work/results/bracket.glb', '/parts/bracket.step')).toBe('/parts/bracket.step');
-    expect(resultSourcePath('/work/results/bracket.glb', '')).toBe('');
-    expect(resultSourcePath('FEA/x.glb', '../part.step')).toBe('part.step');
-  });
-});
-
-// What S1 adds: the study the result was solved for, and the face each vertex came from.
-const STUDY = {
-  material: { name: '6061-T6', yield_MPa: 276, youngs_GPa: 68.9, poisson: 0.33 },
-  fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }],
-  loads: [
-    { type: 'force', faces: ['bracket/face 2'], vector_N: [0, 0, -2500] },
-    { type: 'pressure', faces: ['bracket/face 3', 'bracket/face 4'], pressure_MPa: 2 },
-  ],
-  mesh: { size_mm: 1.9205, order: 2, elements: 52271, refined_from_mm: 2.7686 },
-  margin: 2,
-};
+// The face each vertex came from, and the study's faces.
 function studyResult(extras: Record<string, unknown> = { study: STUDY, faces: ['bracket/face 1', 'bracket/face 2', 'bracket/face 3', 'bracket/face 4'] }) {
   const built = resultMesh();
   built.mesh.geometry.setAttribute('_face', new BufferAttribute(new Float32Array([0, 0, 0, 1]), 1));
   Object.assign(built.mesh.userData, extras);
   return { ...built, result: readFeaResult(built.root)! };
 }
+/** Study's rows for a result, in order: its setup, then Details. */
+const studyRows = (result: any): any[] => { const { setup, details } = studySections(result) as { setup: any[]; details: any[] }; return [...setup, ...details]; };
 const strip = (rows: any[]): any[] => rows.map(({ id, label, detail, hint, glyph, collapsed, summary, faces, children }) =>
   ({ id, label, detail, ...(hint ? { hint } : {}), ...(glyph ? { glyph } : {}), ...(collapsed ? { collapsed } : {}), ...(summary ? { summary, faces } : {}), ...(children ? { children: strip(children) } : {}) }));
 
@@ -167,19 +177,19 @@ describe('a result\'s study', () => {
           { id: 'load:1:bracket/face 4', label: 'Face 4', detail: '', summary: '2 MPa pressure on face 4', faces: ['bracket/face 4'] },
         ] },
       ] },
-      { id: 'material', label: 'Made of', detail: '', glyph: 'material', children: [{ id: 'material:name', label: '6061-T6', detail: '' }] },
+      // The material and the mesh are about the whole part (the occurrence), so they carry no faces.
+      { id: 'material', label: 'Made of', detail: '', glyph: 'material', children: [
+        { id: 'material:name', label: '6061-T6', detail: '', summary: 'Made of 6061-T6 (yield 276 MPa)' },
+      ] },
       { id: 'details', label: 'Details', detail: '', collapsed: true, children: [
-        { id: 'mesh', label: 'Mesh', detail: '1.9 mm elements', hint: 'refined from 2.8 mm' },
+        { id: 'mesh', label: 'Mesh', detail: '1.9 mm elements', hint: 'refined from 2.8 mm', summary: 'Mesh of 1.9 mm elements, refined from 2.8 mm' },
       ] },
     ]);
   });
 
-  it('says a mesh was not refined, and a result written before the study was recorded has no rows', () => {
+  it('says a mesh was not refined', () => {
     const plain = studyResult({ study: { ...STUDY, mesh: { ...STUDY.mesh, refined_from_mm: null } }, faces: [] });
     expect(studyRows(plain.result).at(-1)!.children![0]).toMatchObject({ id: 'mesh', detail: '1.9 mm elements', hint: 'not refined' });
-    const old = resultMesh();
-    expect(readFeaResult(old.root)!.study).toBeNull();
-    expect(studyRows(readFeaResult(old.root)!)).toEqual([]);
   });
 
   it('puts a force\'s direction in words: up and down are CAD Z, the rest an axis or the unit vector', () => {
@@ -265,6 +275,7 @@ describe('a result\'s study', () => {
 // A two-part assembly: the post is vertices 0-2 (face index 0), the base vertex 3 (face index 1).
 const ASSEMBLY = {
   study: STUDY,
+  checks: [{ ...stressAt(1.46), value: 180, part: 'post' }],
   faces: ['part1/face 1', 'part2/face 1'],
   weakest_part: 'post', weakest_part_peak_MPa: 180, safety_factor: 1.46, max_displacement_mm: 0.2,
   parts: [
@@ -320,11 +331,9 @@ describe('an assembly result', () => {
     expect((partRows(result)[1] as any).children[0].detail).toBe('bonded · 100 mm² · 0.1 mm gap closed');
   });
 
-  it('finds the weakest part by the name the file gives, else by the lowest factor', () => {
+  it('finds the weakest part by the name the file gives; a single part has none', () => {
     const { result } = studyResult({ ...ASSEMBLY, weakest_part: 'base' });
     expect(weakestPartIndex(result)).toBe(1);
-    const unnamed = studyResult({ ...ASSEMBLY, weakest_part: undefined, parts: [ASSEMBLY.parts[1], ASSEMBLY.parts[0]] }).result;
-    expect(weakestPartIndex(unnamed)).toBe(1);
     expect(weakestPartIndex(studyResult().result)).toBe(-1);
   });
 
@@ -408,12 +417,6 @@ describe('What you see\'s controls', () => {
     expect(controls[1]).toMatchObject({ min: 0, max: 40, step: 0.5, defaultValue: 10, ariaLabel: 'Deformation scale', unit: '×' });
     expect(controls[2]).toMatchObject({ label: 'Load', min: 0.1, max: 3, defaultValue: 1, unit: '×' });
   });
-
-  it('are the same whatever view an older file carries', () => {
-    const { mesh, root } = resultMesh();
-    mesh.userData.view = { controls: [{ drives: 'threshold', type: 'number', field: 'von_mises', max: 300 }], sections: ['controls'] };
-    expect(feaControls(readFeaResult(root)!)).toEqual(feaControls(readFeaResult(resultMesh().root)!));
-  });
 });
 
 describe('a load other than the solved one', () => {
@@ -461,7 +464,8 @@ function solvedAt(field: any, value: number) {
 }
 
 describe('the verdict', () => {
-  const single = (safety_factor: number | null, extras: Record<string, unknown> = {}) => studyResult({ study: STUDY, faces: [], safety_factor, ...extras }).result;
+  const single = (safety_factor: number, extras: Record<string, unknown> = {}) =>
+    studyResult({ study: STUDY, faces: [], safety_factor, checks: [stressAt(safety_factor)], ...extras }).result;
 
   it('says too weak under a safety factor of 1, close to the limit under the margin, strong enough from it up', () => {
     expect(feaVerdict(single(0.68))).toMatchObject({ status: 'weak', title: 'Too weak', caption: 'OK only to 0.6× this load' });
@@ -472,10 +476,11 @@ describe('the verdict', () => {
     expect(row).toMatchObject({ status: 'weak', label: 'Strength', margin: 2, part: '' });
     expect(plain(row.line)).toBe('47 MPa, limit 276 MPa');
     expect(row.use).toBeCloseTo(1 / 0.68, 6);
-    // The study's own margin sets where "close" ends.
-    expect(feaVerdict(single(2.5, { study: { ...STUDY, margin: 3 } }))).toMatchObject({ status: 'close', rows: [{ margin: 3 }] });
-    // A study that records no margin is held to cadgen's default.
-    expect(feaVerdict(single(1.9, { study: { ...STUDY, margin: undefined } }))).toMatchObject({ status: 'close', rows: [{ margin: 2 }] });
+    // The check's own margin sets where "close" ends, at any load.
+    const strict = single(2.5, { study: { ...STUDY, margin: 3 }, checks: [stressAt(2.5, 3)] });
+    expect(feaVerdict(strict)).toMatchObject({ status: 'close', rows: [{ margin: 3 }] });
+    expect(feaVerdict(strict, 0.9)).toMatchObject({ status: 'close', caption: 'OK up to 2.7× this load' });
+    expect(feaVerdict(strict, 0.8)).toMatchObject({ status: 'strong' });
   });
 
   it('follows the load shown: twice the load halves the factor and can change the word, half of it doubles it', () => {
@@ -485,12 +490,12 @@ describe('the verdict', () => {
     expect(feaVerdict(result, 0.5)).toMatchObject({ status: 'strong', caption: 'OK up to 3.0× this load' });
   });
 
-  it('with no stress says so in a neutral tone, and a result too old to judge has no verdict', () => {
-    const none = single(null);
+  it('with no stress says so in a neutral tone, and at no load says that', () => {
+    // No load reaches the part: cadgen's stress check is 0 MPa, with no safety factor.
+    const none = studyResult({ study: STUDY, faces: [], safety_factor: null, checks: [{ ...STRESS_CHECK, value: 0, ratio: 0 }] }).result;
     none.fields[0].max = 0;
     expect(feaVerdict(none)).toEqual({ status: 'none', title: 'No stress', caption: 'Check the load reaches the part', rows: [] });
     expect(feaVerdict(single(1.5), 0)).toMatchObject({ status: 'none', title: 'No load', rows: [] });
-    expect(feaVerdict(single(null))).toBeNull();
   });
 
   it('in an assembly, the stress check\'s numbers are the weakest part\'s, which its choice names', () => {
@@ -516,20 +521,9 @@ describe('the verdict', () => {
     expect(made(four)).toMatchObject({ label: '4 materials', hint: 'Steel: 1 part, Copper: 1 part, PZT-5A: 1 part, Brass: 1 part' });
     expect(made([...four, part('e', 'Steel'), part('f', 'Steel'), part('g', 'Steel')])).toMatchObject({ label: 'Mostly Steel' });
   });
-
-  it('reads a material named in lower case, as an older file wrote it, with its first letter capitalised', () => {
-    const study = { ...STUDY, material: { ...STUDY.material, name: 'soft silicone' } };
-    const material = (studyRows(studyResult({ study, faces: [] }).result) as any[]).find((row) => row.id === 'material');
-    expect(material.children[0].label).toBe('Soft silicone');
-    const part = { ...ASSEMBLY.parts[0], material: 'copper-c110' };
-    expect(studyResult({ ...ASSEMBLY, parts: [part] }).result.parts[0].material).toBe('Copper-c110');
-  });
 });
 
-// The checks cadgen judged, as it writes them into the extras: the stress check (one over the safety
-// factor) and a displacement check named in the person's words.
-const STRESS_CHECK = { kind: 'stress', label: 'Strength', value: 47.3, limit: 276, unit: 'MPa', ratio: 0.171527, close_at: 0.5, margin: 2, status: 'passes',
-  where: { ref: 'bracket/face 1', at: [0, 0, 0] } };
+// A displacement check cadgen judged, named in the person's words, beside the stress check.
 const SAG_CHECK = { kind: 'displacement', label: 'Tip sag', value: 0.62, limit: 0.5, unit: 'mm', ratio: 1.24, close_at: 0.9, status: 'fails',
   where: { ref: 'bracket/face 2', at: [60, 0, 0] }, faces: ['bracket/face 2'] };
 const checked = (checks: unknown, extras: Record<string, unknown> = {}) => studyResult({ study: STUDY, faces: [], safety_factor: 5.83, checks, ...extras }).result;
@@ -560,21 +554,18 @@ describe('the study\'s checks', () => {
     expect(feaVerdict(result, 0.75)).toMatchObject({ status: 'close', title: 'Close to the limit' });
   });
 
-  it('with no checks in the file, judge today\'s stress check from its safety factor, and say exactly what the safety factor says', () => {
-    for (const factor of [0.68, 1.5, 2, 5.83]) {
-      const old = studyResult({ study: STUDY, faces: [], safety_factor: factor }).result;
-      const fresh = checked([{ ...STRESS_CHECK, ratio: Number((1 / factor).toFixed(6)), status: factor < 1 ? 'fails' : factor < 2 ? 'close' : 'passes' }], { safety_factor: factor });
-      expect(feaChecks(old).map((check: any) => check.kind)).toEqual(['stress']);
-      // What each says is the same; only the file's check names the face it peaks on, for a prompt.
-      const said = (verdict: any) => JSON.parse(JSON.stringify(verdict, (key, value) => (key === 'choice' ? undefined : value)));
-      for (const k of [1, 2, 0.5, 1.5]) expect(said(feaVerdict(fresh, k))).toEqual(said(feaVerdict(old, k)));
-    }
-  });
-
-  it('skip a kind this viewer does not know, and a file whose checks it knows none of judges nothing', () => {
-    const frequency = { kind: 'frequency', label: 'First mode', value: 40, limit: 60, unit: 'Hz', ratio: 0.67, status: 'passes' };
-    expect(feaChecks(checked([frequency, SAG_CHECK])).map((check: any) => check.label)).toEqual(['Tip sag']);
-    expect(feaVerdict(checked([frequency]))).toBeNull();
+  it('pass nothing they cannot judge: a check of a kind this viewer does not know, or with numbers it cannot use', () => {
+    const other = { kind: 'other', label: 'Something new', value: 40, limit: 60, unit: '', ratio: 0.67, status: 'passes' };
+    // Every check it knows passes, yet one it cannot judge: no pass, in no tone, naming it; its rows are the ones it judged.
+    const open = feaVerdict(checked([STRESS_CHECK, other]))!;
+    expect(open).toMatchObject({ status: 'none', title: "Can't judge every check", caption: "Can't judge 'Something new'" });
+    expect(open.rows.map((row: any) => row.label)).toEqual(['Strength']);
+    expect(feaVerdict(checked([STRESS_CHECK, { ...SAG_CHECK, status: 'passes', limit: 0 }]))).toMatchObject({ status: 'none', caption: "Can't judge 'Tip sag'" });
+    expect(feaVerdict(checked([other]))).toMatchObject({ status: 'none', title: "Can't judge every check", rows: [] });
+    // At another load, the same.
+    expect(feaVerdict(checked([STRESS_CHECK, other]), 0.5)).toMatchObject({ status: 'none', title: "Can't judge every check" });
+    // One that fails still says so, counting every check.
+    expect(feaVerdict(checked([STRESS_CHECK, SAG_CHECK, other]))).toMatchObject({ status: 'weak', title: 'Fails 1 of 3 checks' });
   });
 
 });
