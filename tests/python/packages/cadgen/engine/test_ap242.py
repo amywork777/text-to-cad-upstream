@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import re
 import shutil
 import tempfile
 import textwrap
@@ -50,6 +51,32 @@ class VerificationTest(unittest.TestCase):
             self.assertTrue(compare(entries, changed)["problems"])
         found["dimensions"] *= 2
         self.assertTrue(compare(entries, found)["problems"])
+
+    def test_given_the_models_faces_each_face_is_held_to_its_geometry(self) -> None:
+        """A face of the right name on another surface matches nothing: a plane's normal and offset,
+        a cylinder's radius and axis, each against the model's face (``pmi.step_surfaces``)."""
+        entries, found = fixtures()
+        base = {"type": "plane", "origin": [0, 0, -5], "normal": [0, 0, 1]}
+        bore = {"type": "cylinder", "radius": 5.0, "origin": [10, 0, 0], "axis": [0, 0, 1]}
+        surfaces = {"part/f:base.1": base, "part/f:bore.1": bore}
+        found["datums"][0]["features"][0]["surface"] = {"type": "plane", "origin": [7, 3, -5], "normal": [0, 0, -1]}
+        for row in found["dimensions"] + found["tolerances"]:
+            row["features"][0]["surface"] = {**bore, "origin": [10, 0, 40]}
+        self.assertEqual(compare(entries, found, surfaces), {"matched": 3, "total": 3, "problems": []})
+        for collection, surface in [("datums", {**base, "origin": [0, 0, 5]}),
+                                    ("datums", {**base, "normal": [0, 1, 0]}),
+                                    ("datums", {**bore}),
+                                    ("dimensions", {**bore, "radius": 5.1}),
+                                    ("dimensions", {**bore, "origin": [10, 1, 0]}),
+                                    ("dimensions", {**bore, "axis": [0, 1, 1]})]:
+            changed = copy.deepcopy(found)
+            changed[collection][0]["features"][0]["surface"] = surface
+            result = compare(entries, changed, surfaces)
+            self.assertEqual(result["matched"], 2, (collection, surface))
+            self.assertTrue(any("is not the model's face" in problem for problem in result["problems"]), result)
+        # A face the model's faces do not hold matches nothing; without them the names alone are checked.
+        self.assertEqual(compare(entries, found, {"part/f:base.1": base})["matched"], 1)
+        self.assertEqual(compare(entries, found)["matched"], 3)
 
     def test_ambiguous_associations_fail_closed(self) -> None:
         entries, found = fixtures()
@@ -252,6 +279,38 @@ class BuiltPlateTest(unittest.TestCase):
         self.assertEqual(sum(1 for entry in entries if (entry.get("dimension") or {}).get("basic")), 2)
         result = verify(entries, self.step)
         self.assertEqual((result["matched"], result["total"], result["problems"]), (9, 9, []))
+
+    def test_a_file_whose_faces_are_named_right_on_the_wrong_geometry_fails(self) -> None:
+        """The plate's STEP with its hole's cylinder widened, and again with its bottom plane moved:
+        every face keeps its name, so a check of names alone passes; against the model's faces each
+        annotation on the altered face fails, named."""
+        from cadgen.engine import pmi
+        from cadgen.engine.export import Source
+
+        source = Source.read(self.xbf)
+        entries = pmi.step_entries(source.structure["pmi"])
+        surfaces = pmi.step_surfaces(source, entries)
+        self.assertEqual(verify(entries, self.step, surfaces)["problems"], [])
+        text = self.step.read_text(encoding="utf-8")
+        records = parse(text)
+        [cylinder] = [number for number, parts in records.items() if parts[0][0] == "CYLINDRICAL_SURFACE"]
+        [bottom] = [number for number, parts in records.items() if parts[0][0] == "PLANE"
+                    and Report(records).surface(number)["origin"][2] == -5.0
+                    and Report(records).surface(number)["normal"] == [0.0, 0.0, 1.0]]
+        point = records[records[bottom][0][1][1].id][0][1][1].id  # the plane's placement's location
+        widened = re.sub(rf"(#{cylinder}\s*=\s*CYLINDRICAL_SURFACE\('[^']*',#\d+,)5\.", r"\g<1>6.", text)
+        moved = re.sub(rf"(#{point}\s*=\s*CARTESIAN_POINT\('[^']*',\([^,]+,[^,]+,)-5\.", r"\g<1>-4.", text)
+        for altered, ids in ((widened, {"hole-diameter", "hole-position", "hole-from-B", "hole-from-C"}),
+                             (moved, {"A", "thickness"})):
+            self.assertNotEqual(altered, text)
+            with tempfile.TemporaryDirectory() as temp:
+                wrong = Path(temp) / "wrong.step"
+                wrong.write_text(altered, encoding="utf-8")
+                self.assertEqual(verify(entries, wrong)["problems"], [], "the names alone still match")
+                result = verify(entries, wrong, surfaces)
+            failed = {problem.split(":")[0] for problem in result["problems"] if "is not the model's face" in problem}
+            self.assertTrue(failed and failed <= ids, result["problems"])
+            self.assertLess(result["matched"], result["total"])
 
 
 if __name__ == "__main__":

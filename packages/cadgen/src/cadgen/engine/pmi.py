@@ -245,11 +245,22 @@ def _place(anchor: Any, offset: Any) -> dict[str, Any]:
     return {"anchor": _point(anchor, "an anchor"), "offset": _point(offset, "an offset")}
 
 
-def datum(letter: str, ref: Any, *, label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
-    """AP242's ``datum`` ``letter`` (``A``..``Z``) and its ``datum_feature``, on a planar or
-    cylindrical face. Its id is its letter."""
+# The letters a datum is named by: A..Z but I, O and Q, which ASME Y14.5 sets aside (read as 1 and 0).
+DATUM_LETTERS = frozenset("ABCDEFGHJKLMNPRSTUVWXYZ")
+
+
+def _datum_letter(letter: Any, what: str) -> None:
     if not isinstance(letter, str) or len(letter) != 1 or not letter.isascii() or not letter.isupper():
-        raise PMIError(f"a datum's letter is one capital A..Z, not {letter!r}")
+        raise PMIError(f"{what} is one capital A..Z, not {letter!r}")
+    if letter not in DATUM_LETTERS:
+        raise PMIError(f"{what} is not {letter!r}: ASME Y14.5 sets I, O and Q aside, as they read as 1 and 0; "
+                       "name the datum by another letter")
+
+
+def datum(letter: str, ref: Any, *, label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
+    """AP242's ``datum`` ``letter`` (``A``..``Z`` but ``I``, ``O`` and ``Q``: ``DATUM_LETTERS``)
+    and its ``datum_feature``, on a planar or cylindrical face. Its id is its letter."""
+    _datum_letter(letter, "a datum's letter")
     return _annotation(letter, "datum", [("feature", ref)], label, presentation, datum={"letter": letter})
 
 
@@ -288,8 +299,7 @@ def _geometric(id: str, characteristic: str, refs: list[Any], value: float, datu
         raise PMIError(f"tolerance {id!r}: a tolerance zone is wider than 0, not {value}")
     letters = list(datums)
     for letter in letters:
-        if not isinstance(letter, str) or len(letter) != 1 or not letter.isupper():
-            raise PMIError(f"tolerance {id!r}: a datum is named by its letter, not {letter!r}")
+        _datum_letter(letter, f"tolerance {id!r}: a datum's letter")
     if len(set(letters)) != len(letters):
         raise PMIError(f"tolerance {id!r}: a datum is named once in a frame, not {letters}")
     if len(letters) > 3:
@@ -616,7 +626,10 @@ def _note_call(held: list[dict[str, Any]]) -> None:
 
     run = getattr(memo._LOCAL, "run", None)  # the memo run of a build on this thread, or None
     if run is not None:
-        run.pmi.setdefault(run.scope, []).extend(_text(entry) for entry in held)
+        texts = [_text(entry) for entry in held]
+        run.pmi.setdefault(run.scope, []).extend(texts)
+        if run.bodies:  # kept with the running body's log too: a replay of it gives them again (``memo._replay``)
+            run.bodies[-1].pmi.extend((run.scope, text) for text in texts)
 
 
 def unattached(run: Any, scope: str, tree: Any) -> list[str]:
@@ -2087,11 +2100,89 @@ def refuse_dropped(view: Any, kind: str) -> None:
             raise ExportRefused(f"{view.source.name} holds {said}, and an xbf written from it is a document made "
                                 "again, which carries none yet: declare the model's xbf (@xbf), its own document")
         return
+    why = step_refusal(view) if kind == "step" else None
+    if why:
+        raise ExportRefused(why)
+
+
+def step_refusal(view: Any) -> str | None:
+    """Why a STEP of ``view`` is refused (``refuse_dropped``), or None: each annotation the code
+    made that it would drop, by its id and the refs that hold no geometry, as the code wrote them.
+    An explicit export is refused for it; a build's declared STEP is not written, and the build
+    says why (``build._outputs``)."""
+    lost = [(entry, why) for entry, why in dropped(view, "step") if _from_code(entry)]
     if not lost:
-        return
-    raise ExportRefused("a STEP would drop PMI linked to no geometry: "
-                        + "; ".join(f"{entry['id']} ({why})" for entry, why in lost)
-                        + ". Fix the refs in the model, or remove the annotations")
+        return None
+
+    def named(entry: dict[str, Any], why: str) -> str:
+        broken = [repr(ref.get("written") or ref.get("ref")) for ref in entry.get("refs") or ()
+                  if ref.get("status", "ok") != "ok"]
+        return f"{entry['id']} ({'ref ' + ', '.join(broken) + ': ' if broken else ''}{why})"
+
+    return ("a STEP would drop PMI linked to no geometry: " + "; ".join(named(entry, why) for entry, why in lost)
+            + ". Fix the refs in the model, or remove the annotations")
+
+
+def checked(source: Any, entries: list[dict[str, Any]], target: Any,
+            log: Callable[[str], None] | None = None) -> dict[str, Any]:
+    """The check of a STEP written of ``source`` (``ap242.verify``) of the PMI it carries
+    (``entries``: ``step_entries``), against the source's faces (``step_surfaces``): what every
+    STEP write of a document with PMI answers with, a build's declared one, an export's and the
+    viewer's alike. A check that does not verify every annotation is said to ``log`` (one of a
+    document another system wrote, whose faces carry no names, cannot); the file stays written."""
+    from pathlib import Path
+
+    from cadgen.engine.export.ap242 import verify
+
+    target = Path(target)
+    found = verify(entries, target, step_surfaces(source, entries))
+    if found.get("problems") and log is not None:
+        log(f"warning: pmi: {target.name}: the PMI in the written file is not verified "
+            f"({found['matched']} of {found['total']} matched): {' '.join(found['problems'])}")
+    return found
+
+
+def step_surfaces(source: Any, entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The surface of each face the entries' refs name, by canonical ref, as ``source``'s shapes
+    hold it in its part's own frame (where a STEP writes it): a ``plane`` (origin, unit normal), a
+    ``cylinder`` (radius, a point on its axis and its direction), another kind by name. What the
+    check of a written STEP holds each face it reads against (``ap242.compare``); a ref it cannot
+    find on the shape is left out, so its face matches nothing."""
+    from cadgen.engine import refs as grammar
+
+    prototypes = source.structure.get("prototypes") or []
+    maps: dict[int, Any] = {}
+    found: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        index = entry.get("part")
+        if index is None or not 0 <= index < len(prototypes) or prototypes[index].get("key") not in source.shapes:
+            continue
+        shape = source.shapes[prototypes[index]["key"]]
+        if isinstance(shape, (bytes, bytearray)):
+            continue
+        faces = maps.get(index)
+        if faces is None:
+            faces = maps[index] = _faces(shape)
+        names = prototypes[index].get("faceNames") or {}
+        for ref in entry.get("refs") or ():
+            text = ref.get("ref")
+            if not isinstance(text, str) or text in found:
+                continue
+            element = grammar.parse(text)[1][-1].element
+            if isinstance(element, tuple):
+                ordinals = [element[1]] if element[0] == "face" else []
+            else:
+                ordinals = [int(at) for at, name in names.items() if name == element]
+            if len(ordinals) != 1 or not 1 <= ordinals[0] <= faces.Extent():
+                continue
+            face = faces.FindKey(ordinals[0])
+            kind, held = _surface(face)
+            if kind == "cylinder":
+                axis = _axis(face)
+                held = {**held, "origin": list(axis["point"]), "axis": list(axis["direction"])}
+            found[text] = {"type": kind, **{key: list(value) if isinstance(value, tuple) else value
+                                            for key, value in held.items()}}
+    return found
 
 
 def _from_code(entry: dict[str, Any]) -> bool:

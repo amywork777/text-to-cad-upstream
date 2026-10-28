@@ -368,12 +368,11 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
         files.append({"path": str(target), "kind": export.kind_of(target), "bytes": size,
                       "seconds": round(seconds, 4), "written": before is None or _stat(target) != before})
         # A STEP of a document with PMI is checked in the file written (``export/ap242.py``), within
-        # its ``write`` frame: with the PMI a STEP carries, its notes being the xbf's alone
-        # (``pmi.step_entries``).
+        # its ``write`` frame, whoever asked for it: with the PMI a STEP carries, its notes being the
+        # xbf's alone (``pmi.step_entries``), against the document's faces (``pmi.step_surfaces``).
         carried = pmi.step_entries(source.structure.get("pmi") or [])
-        if request.get("expected") and export.kind_of(target) == "step" and carried:
-            from cadgen.engine.export.ap242 import verify
-            files[-1]["pmiVerification"] = verify(carried, target)
+        if export.kind_of(target) == "step" and carried:
+            files[-1]["pmiVerification"] = pmi.checked(source, carried, target, log)
     drawn = None
     if request.get("draw"):
         from cadgen.engine import snapshot

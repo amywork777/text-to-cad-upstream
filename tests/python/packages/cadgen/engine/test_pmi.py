@@ -13,7 +13,8 @@ views and served as ``pmi_views``, never in a STEP; each part's coverage (the fa
 is on, and the requirements that cannot both hold) served as ``pmi_coverage`` and warned of by the
 build, never failing it; a warm rebuild,
 an edit of the geometry and of a tolerance, a ref the model no longer satisfies (missing,
-ambiguous, invalid) kept in the document and refused by a STEP, and one that names another kind
+ambiguous, invalid) kept in the document and refused by a STEP (a build's declared one not
+written, the build ok and warned; an explicit export refused), and one that names another kind
 of face than on the last build warned of, the document the code's alone; what is not supported
 refused by name; a STEP another system wrote read, converted and exported as it is, what this does
 not model listed; and the committed fixture (``pmi_golden``: the PMI a viewer is served and what a
@@ -377,7 +378,7 @@ def pmi_plate():
     left, right = sorted(body.faces().filter_by(bd.GeomType.CYLINDER), key=lambda face: face.center().X)
     return annotate(body, dimensional_location("pitch", left, right, basic=True),
                     dimensional_location("crossing", top, left, basic=True))
-''', ok=False)
+''')
         [problem] = report["pmi"]["problems"]
         self.assertEqual((problem["id"], problem["status"]), ("crossing", "invalid"))
         self.assertIn("not parallel", problem["problem"])
@@ -780,11 +781,12 @@ class GeneralProfileTest(_Folder):
 
     def test_one_naming_a_datum_the_part_lacks_covers_nothing_and_is_refused_by_a_step(self) -> None:
         report = self.build(GENERAL_CUT.format(cut=ROUND,
-                                               general='general_profile("general", 0.5, datums=["B"])'), ok=False)
+                                               general='general_profile("general", 0.5, datums=["B"])'))
         [problem] = report["pmi"]["problems"]
         self.assertEqual((problem["id"], problem["status"]), ("general", "invalid"))
-        self.assertIn("a STEP would drop PMI", report["error"])
-        self.assertIn("general", report["error"])
+        refused = report["files"][str(self.step)]["refused"]
+        self.assertIn("a STEP would drop PMI", refused)
+        self.assertIn("general", refused)
         self.assertEqual(_by_id(read(self.xbf))["general"]["refs"], [])
 
     def test_its_faces_follow_an_edit_with_the_same_bytes_whatever_was_built_before(self) -> None:
@@ -897,12 +899,13 @@ class NoteTest(_Folder):
         before = _by_id(read(self.xbf))["mask"]
         self.assertEqual((before["status"], before["note"]["number"]), ("ok", 3))
         # The hole removed: the note's face is gone. The build says so; the note keeps its number,
-        # its text and its links as written, missing; the STEP is refused for the diameter alone.
-        report = self.build(notes(hole=repr(name), cut="pass"), ok=False)
+        # its text and its links as written, missing; the STEP is not written, for the diameter alone.
+        report = self.build(notes(hole=repr(name), cut="pass"))
         self.assertEqual({(problem["id"], problem["status"]) for problem in report["pmi"]["problems"]},
                          {("hole-dia", "missing"), ("mask", "missing")})
-        self.assertIn("hole-dia", report["error"])
-        self.assertNotIn("mask", report["error"])
+        refused = report["files"][str(self.step)]["refused"]
+        self.assertIn("hole-dia", refused)
+        self.assertNotIn("mask", refused)
         served = read(self.xbf)
         mask = _by_id(served)["mask"]
         self.assertEqual((mask["status"], mask["note"]), ("missing", before["note"]))
@@ -1397,7 +1400,7 @@ class CoverageTest(_Folder):
         """Review Focus 2: a flag note linked to a face or an annotation that holds is linked; one whose
         every face and annotation is broken is linked to nothing; a general note names nothing to break."""
         def unlinked() -> list[dict]:
-            """The xbf's: a build whose STEP is refused has written it, but keeps no document of its own."""
+            """The xbf's: a build whose STEP is not written has written it all the same."""
             return [conflict for found in document.Loaded(self.xbf).structure()["pmi_coverage"]
                     for conflict in found["conflicts"] if conflict["kind"] == "unlinked_note"]
 
@@ -1408,14 +1411,14 @@ class CoverageTest(_Folder):
         self.assertEqual(_by_id(read(self.xbf))["mask"]["status"], "missing")
         self.assertEqual(unlinked(), [])
         # The diameter it names broken, its face holds (the STEP is refused for the diameter, not the note).
-        self.build(notes(hole="'face 99'", mask=HOLE), ok=False)
+        self.build(notes(hole="'face 99'", mask=HOLE))
         self.assertEqual(unlinked(), [])
         # The hole removed: its face and the diameter both gone, it keeps its number and is said.
         loaded = document.Loaded(self.xbf)
         faces = _faces(loaded.prototypes[0].shape)
         [ordinal] = [at for at in range(1, faces.Extent() + 1) if _surface(faces.FindKey(at))[0] == "cylinder"]
         name = loaded.prototypes[0].face_names[ordinal]
-        report = self.build(notes(hole=repr(name), cut="pass"), ok=False)
+        report = self.build(notes(hole=repr(name), cut="pass"))
         self.assertEqual(unlinked(), [{"kind": "unlinked_note", "ids": ["mask"],
                                        "problem": "Note 3 is linked to nothing: every face and annotation it names is "
                                                   "broken; point it at what it is for, or remove it"}])
@@ -1678,7 +1681,7 @@ def pmi_plate():
 class RefTest(_Folder):
     def hole_name(self) -> str:
         """The hole's element name, as the served document names it."""
-        self.build(NAMED.format(cut="body = body - bd.Cylinder(5, 10)", ref="face 1"), ok=False)
+        self.build(NAMED.format(cut="body = body - bd.Cylinder(5, 10)", ref="face 1"))
         loaded = document.Loaded(self.xbf)
         faces = _faces(loaded.prototypes[0].shape)
         [ordinal] = [at for at in range(1, faces.Extent() + 1) if _surface(faces.FindKey(at))[0] == "cylinder"]
@@ -1692,12 +1695,13 @@ class RefTest(_Folder):
         self.assertEqual(found["hole-diameter"]["refs"][0]["written"], hole)
         self.assertEqual(found["hole-diameter"]["dimension"]["nominal"]["value"], 10.0)
         # The hole removed: the ref names nothing. The build says so, the xbf keeps the annotation
-        # with its status and its tolerance, and the STEP refuses to drop it.
-        report = self.build(NAMED.format(cut="pass", ref=hole), ok=False)
+        # with its status and its tolerance, and the STEP that would drop it is not written.
+        report = self.build(NAMED.format(cut="pass", ref=hole))
         self.assertEqual(report["pmi"]["problems"][0]["id"], "hole-diameter")
         self.assertEqual(report["pmi"]["problems"][0]["status"], "missing")
-        self.assertIn("hole-diameter", report["error"])
-        self.assertIn("a STEP would drop PMI", report["error"])
+        refused = report["files"][str(self.step)]["refused"]
+        self.assertIn("hole-diameter", refused)
+        self.assertIn("a STEP would drop PMI", refused)
         kept = _by_id(read(self.xbf))["hole-diameter"]
         self.assertEqual(kept["status"], "missing")
         self.assertIn(f"no face {hole}", kept["problem"])
@@ -1707,7 +1711,7 @@ class RefTest(_Folder):
         self.assertEqual(_by_id(read(self.xbf))["A"]["status"], "ok")
 
     def test_a_face_the_annotation_cannot_stand_on_is_invalid(self) -> None:
-        report = self.build(NAMED.format(cut="body = body - bd.Cylinder(5, 10)", ref="face 1"), ok=False)
+        report = self.build(NAMED.format(cut="body = body - bd.Cylinder(5, 10)", ref="face 1"))
         [problem] = report["pmi"]["problems"]
         self.assertEqual((problem["id"], problem["status"]), ("hole-diameter", "invalid"))
         self.assertIn("is a plane face; a diameter is on a cylinder face", problem["problem"])
@@ -1765,6 +1769,124 @@ def pmi_plate():
         reports = {report["source"]["name"]: report for report in engine_build.build(script, None, cwd=self.folder)}
         self.assertEqual(reports["lossy"]["pmi"]["unattached"], ["top"])
         self.assertNotIn("unattached", reports["whole"]["pmi"])
+
+    def test_a_replayed_body_says_the_annotations_it_lost_as_its_run_did(self) -> None:
+        """A body replayed (``memo._replay``) runs no ``annotate``: what its run gave is kept with its
+        log and given again, so the build says the same loss as the run's."""
+        from unittest import mock
+
+        lossy = '''
+import build123d as bd
+from cadgen.ap242 import annotate, flatness_tolerance
+from cadgen.engine import xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+def pmi_plate():
+    body = bd.Box(100, 60, 10)
+    annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+    return bd.fillet(body.edges().filter_by(bd.Axis.Z), 2)
+'''
+        # The whole-model take (``build._previous``) set aside, so the unchanged body is replayed.
+        with mock.patch.object(engine_build, "_previous", return_value=({"used": False, "reason": "set aside"}, None)):
+            first = self.build(lossy)
+            again = engine_build.build(self.folder / "pmi_plate.py", ["pmi_plate"], cwd=self.folder)[0]
+        self.assertEqual(first["bodies"], {"pmi_plate.py::pmi_plate": "run"})
+        self.assertEqual(again["bodies"], {"pmi_plate.py::pmi_plate": "replayed"})
+        self.assertEqual(again["pmi"]["unattached"], first["pmi"]["unattached"])
+        self.assertEqual(again["pmi"]["unattached"], ["top"])
+
+
+BROKEN = '''
+import build123d as bd
+from cadgen.ap242 import annotate, datum, flatness_tolerance
+from cadgen.engine import step, stl, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+@stl(out="pmi_plate.stl")
+def pmi_plate():
+    body = bd.Box(100, 60, 10)
+    body.label = "plate"
+    return annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05),
+                    datum("A", {ref}))
+'''
+
+
+class StepWriteTest(_Folder):
+    """What a STEP write does with a model's PMI: one that would drop an annotation is never written
+    -- a build's declared one skipped and warned of, the build ok and its other files written; an
+    explicit export refused -- and every one written is checked in the file."""
+
+    def test_a_declared_step_that_would_drop_pmi_is_not_written_and_the_build_is_ok(self) -> None:
+        said: list[str] = []
+        report = self.build(BROKEN.format(ref='"nosuchface"'), log=said)
+        self.assertTrue(self.xbf.is_file())
+        self.assertTrue((self.folder / "pmi_plate.stl").is_file())
+        self.assertFalse(self.step.exists())
+        row = report["files"][str(self.step)]
+        self.assertEqual((row["kind"], row["written"]), ("step", False))
+        self.assertIn("A (ref 'nosuchface'", row["refused"])
+        [warning] = [line for line in said if "not written" in line]
+        self.assertTrue(warning.startswith("warning: pmi: pmi_plate.step not written: a STEP would drop PMI"), warning)
+        self.assertIn("A (ref 'nosuchface'", warning)
+        self.assertIn("Fix the refs in the model, or remove the annotations, and build again", warning)
+        self.assertEqual(report["pmi"]["warnings"], [warning.removeprefix("warning: pmi: ")])
+        # A STEP an earlier build wrote is left as it was, and the warning says whose it is.
+        self.build(BROKEN.format(ref='body.faces().sort_by(bd.Axis.Z)[0]'))
+        earlier = self.step.read_bytes()
+        said.clear()
+        self.build(BROKEN.format(ref='"nosuchface"'), log=said)
+        self.assertEqual(self.step.read_bytes(), earlier)
+        self.assertTrue(any("(the pmi_plate.step there is an earlier build's)" in line for line in said), said)
+
+    def test_an_explicit_export_that_would_drop_pmi_is_refused(self) -> None:
+        from cadgen.engine.worker import _export
+
+        self.build(BROKEN.format(ref='"nosuchface"'))
+        target = self.folder / "part.step"
+        with self.assertRaisesRegex(export.ExportRefused,
+                                    r"a STEP would drop PMI linked to no geometry: A \(ref 'nosuchface'"):
+            export.translate(export.Source.read(self.xbf), None, target)
+        # ``cadgen export`` and ``api.export``: the worker's export request, no viewer's expectation.
+        with self.assertRaisesRegex(export.ExportRefused, "a STEP would drop PMI"):
+            _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, [].append)
+        self.assertFalse(target.exists())
+
+    def test_every_step_written_is_checked_in_the_file(self) -> None:
+        """A declared STEP and an explicit export (no viewer's expectation) each carry the check of
+        the file written; a check that fails is warned of, the file written."""
+        from unittest import mock
+
+        from cadgen.engine.worker import _export
+
+        report = self.build(plate())
+        checked = report["files"][str(self.step)]["pmiVerification"]
+        self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (9, 9, []))
+        target = self.folder / "part.step"
+        answer = _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, [].append)
+        checked = answer["files"][0]["pmiVerification"]
+        self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (9, 9, []))
+        said: list[str] = []
+        failed = {"matched": 8, "total": 9, "problems": ["hole-diameter: not the model's face."], "sha256": "x"}
+        with mock.patch("cadgen.engine.export.ap242.verify", return_value=failed):
+            answer = _export({"source": {"path": str(self.xbf)}, "destinations": [str(target)]}, said.append)
+        self.assertEqual(answer["files"][0]["pmiVerification"], failed)
+        self.assertIn("warning: pmi: part.step: the PMI in the written file is not verified (8 of 9 matched): "
+                      "hole-diameter: not the model's face.", said)
+
+    def test_datum_letters_asme_sets_aside_are_refused(self) -> None:
+        import build123d as bd
+
+        top = bd.Box(1, 1, 1).faces().sort_by(bd.Axis.Z)[-1]
+        for letter in "IOQ":
+            with self.assertRaisesRegex(PMIError,
+                                        f"a datum's letter is not '{letter}': ASME Y14.5 sets I, O and Q aside"):
+                datum(letter, top)
+            with self.assertRaisesRegex(PMIError, f"tolerance 'p': a datum's letter is not '{letter}'"):
+                position_tolerance("p", top, 0.1, datums=[letter])
+        self.assertEqual(datum("P", top)["datum"], {"letter": "P"})
 
 
 class RefusedTest(_Folder):
@@ -1971,7 +2093,7 @@ class ForeignTest(unittest.TestCase):
 
     def test_an_export_of_a_foreign_document_says_what_it_leaves_out(self) -> None:
         """A STEP drops what is linked to no geometry: of a document another system wrote, written,
-        and said."""
+        and said; its faces carry no names, so the check in the file verifies nothing, and says so."""
         import build123d as bd
 
         from cadgen.engine.worker import _export
@@ -1985,9 +2107,12 @@ class ForeignTest(unittest.TestCase):
         part = self.folder / "part.step"
         _export({"source": {"path": str(vendor)}, "destinations": [str(part)]}, said.append)
         self.assertEqual([(entry["id"], entry["status"]) for entry in read(part)], [("geometric_tolerance-1", "ok")])
-        self.assertEqual([text for text in said if text.startswith("warning: pmi:")],
+        self.assertEqual([text for text in said if text.startswith("warning: pmi:")][:1],
                          ["warning: pmi: part.step: geometric_tolerance-2 is not carried whole: missing: the file "
                           "links it to no face, edge or point of a part"])
+        [unverified] = [text for text in said if "not verified" in text]
+        self.assertTrue(unverified.startswith("warning: pmi: part.step: the PMI in the written file is not verified "
+                                              "(0 of 2 matched)"), unverified)
 
 
 class FixtureTest(_Folder):

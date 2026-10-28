@@ -2186,7 +2186,14 @@ document made again from its view (`export/tree.py`), which carries no PMI yet; 
 is the document's own bytes, and carries it whole. Every export that would not carry the PMI the
 code made whole is refused by name (`pmi.refuse_dropped`, in `export.translate`: a STEP held to
 the GD&T, an xbf made again to the notes, the views and the notes library as well, a part given
-views or a library alone included, each named); one of a document another system wrote is
+views or a library alone included, each named). A build's declared STEP that would drop an
+annotation is not written, and never fails the build (`build._outputs`, `pmi.step_refusal`): its
+other files are written, its `files` row says `"written": false` with the reason (`refused`), and
+the build warns, its `pmi`'s `warnings` and its log, `warning: pmi: FILE not written: a STEP would
+drop PMI linked to no geometry: ID (ref 'REF': WHY). Fix the refs in the model, or remove the
+annotations, and build again` (a STEP an earlier build wrote there is left as it was, and the
+warning says so). An explicit export -- `cadgen export`, `api.export()`, the viewer's -- is
+refused as ever; one of a document another system wrote is
 written, and what it leaves out is said (`pmi.dropped`: `warning: pmi: FILE: ID is not carried
 whole: WHY` in the export's log). OCCT's writer gets three PMI records wrong, and the STEP export
 puts them right (`export/step.py`, `_pmi_records`; found and checked by the AP242 reader below):
@@ -2195,19 +2202,28 @@ a plus-minus tolerance's bounds untyped (`MEASURE_WITH_UNIT(0.2,#u)`); a two-att
 tolerance magnitude in a bare metre while its value is millimetres. OCCT's own reader finds a
 datum only through a tolerance that names it.
 
-**The viewer's check.** A viewer export offers STEP as it offers every format of the document's
-kind, nothing inspected first (**Viewer exports**): one the PMI refuses (above) fails with its
-reason. For a document holding PMI a STEP carries, after writing the file the worker reads it
-back with
+**The check in the written file.** Every STEP written of a document that holds PMI a STEP
+carries is checked in the file (`pmi.checked`): a build's declared one, `cadgen
+export`'s and `api.export()`'s (the worker's `export`), and the viewer's, which offers STEP as it
+offers every format of the document's kind, nothing inspected first (**Viewer exports**), one the
+PMI refuses (above) failing with its reason. After writing the file the engine reads it back with
 `export/ap242.py` -- a Part 21 reader of AP242's PMI entities with no OCCT in it -- and matches
 every entry but the notes, which it neither expects nor counts (nor the views, which are no
 entries), to one record of the file by face name, kind, values, units, datum order, zone and a
-basic dimension's note (`verify`); a limit dimension by its two limits, in its nominal's unit
+basic dimension's note (`verify`); each face held to the document's own face of that name too
+(`pmi.step_surfaces`, in the part's frame, where the STEP writes it): a plane by its normal
+(either sense) and its offset, a cylinder by its radius and its axis, within a millionth of the
+part's size and 1e-9 of parallel, so a right name on the wrong surface matches nothing (a face of
+another kind, a profile's, by its name); a limit dimension by its two limits, in its nominal's unit
 (millimetres where it has none, as a file's has not), the file's nominal value their midpoint; a
 tolerance on several faces by the same faces, in any order; a general profile that covers no face
 by no record, none being left over. The result,
-`{"matched", "total", "problems", "sha256"}` (the digest of the bytes checked), travels with the
-export job as `pmiVerification`. Nothing is guessed: a face name the file uses twice, two parts
+`{"matched", "total", "problems", "sha256"}` (the digest of the bytes checked), is the file's
+`pmiVerification`: on the build report's `files` row, the export's answer, and the viewer's export
+job. A check that does not verify every annotation leaves the file written and is warned of in the
+log, `warning: pmi: FILE: the PMI in the written file is not verified (M of N matched): ...` (a
+STEP of a document another system wrote, whose faces carry no names, verifies nothing, and says
+so). Nothing is guessed: a face name the file uses twice, two parts
 reusing one, a repeated datum letter, an entity the reader does not read, or a schema other than
 AP242 verifies nothing.
 

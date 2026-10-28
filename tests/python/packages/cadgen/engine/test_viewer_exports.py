@@ -17,7 +17,7 @@ class ViewerExportsTest(unittest.TestCase):
     def test_step_result_checks_the_written_file(self):
         from types import SimpleNamespace
         entry = {"id": "A", "kind": "datum"}
-        source = SimpleNamespace(structure={"pmi": [entry]}, mesh=None, path=None)
+        source = SimpleNamespace(structure={"pmi": [entry]}, mesh=None, path=None, foreign=False)
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "result.step"
             def write(source, _unused, target, **kwargs):
@@ -28,7 +28,7 @@ class ViewerExportsTest(unittest.TestCase):
                  patch("cadgen.engine.export.translate", side_effect=write), \
                  patch("cadgen.engine.export.ap242.verify", return_value={"matched": 1}) as check:
                 result = _export({"source": {"path": str(output)}, "expected": {"version": "v"}, "destinations": [str(output)]}, lambda _: None)
-                check.assert_called_once_with([entry], output)
+                check.assert_called_once_with([entry], output, {})
                 self.assertEqual(result["files"][0]["pmiVerification"]["matched"], 1)
             # A document without PMI: its STEP is not checked, and its result carries no verification.
             source.structure = {}
@@ -47,7 +47,7 @@ class ViewerExportsTest(unittest.TestCase):
         from types import SimpleNamespace
         note = {"id": "deburr", "kind": "note", "status": "ok", "refs": [],
                 "note": {"number": 1, "text": "Break all sharp edges 0.2 max", "general": True, "annotations": []}}
-        source = SimpleNamespace(structure={"pmi": [note]}, mesh=None, path=None)
+        source = SimpleNamespace(structure={"pmi": [note]}, mesh=None, path=None, foreign=False)
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "result.step"
 
