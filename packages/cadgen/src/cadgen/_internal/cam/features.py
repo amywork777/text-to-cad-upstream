@@ -1,6 +1,6 @@
 """The machining reading of a part: what ``cadgen cam features`` lists and what operations look up.
 
-:func:`read_features` returns ``{"faces", "holes", "floors", "profiles"}`` (lists of dicts, the shapes
+:func:`read_features` returns ``{"faces", "holes", "floors"}`` (lists of dicts, the shapes
 :class:`~cadgen.results.CamFeaturesResult` documents):
 
 * every face, with a plain ``reading`` ("flat floor at Z 12, facing +Z", "hole wall Ø5 along Z");
@@ -17,8 +17,7 @@
   the ways out of its open ends (``+Z`` ...) that a ray from just past the end, on the axis and near the wall, leaves
   the part along: a hole opening on a floor under a roof lists none;
 * floors: the flat faces square to an axis, with ``kind`` top, floor, bottom or underside, and for a +Z floor below
-  the top its pocket: the walls around it, their depth and the islands inside it;
-* a DXF's profiles: outline size, area and holes (a round hole with its diameter).
+  the top its pocket: the walls around it, their depth and the islands inside it.
 
 :func:`holes` is the grouping alone, for the drilling operations. Stdlib at import; numpy and OCP inside.
 """
@@ -485,8 +484,6 @@ def _pocket(part, ordinal: int, z: float) -> dict | None:
 def read_features(part) -> dict:
     import numpy as np
 
-    if part.kind == "dxf":
-        return {"faces": [], "holes": [], "floors": [], "profiles": _profiles(part)}
     low, high = (np.asarray(v) for v in part.bbox)
     faces, floors = [], []
     found = holes(part)
@@ -541,29 +538,4 @@ def read_features(part) -> dict:
             reading = f"curved ({info.surface})"
         entry["reading"] = f"{reading}, {_g(info.area_mm2, 1)} mm²"
         faces.append(entry)
-    return {"faces": faces, "holes": found, "floors": floors, "profiles": []}
-
-
-def _profiles(part) -> list[dict]:
-    import numpy as np
-
-    out = []
-    for index, polygon in enumerate(part.profiles):
-        x0, y0, x1, y1 = polygon.bounds
-        hole_list = []
-        for ring in polygon.interiors:
-            coords = np.asarray(ring.coords)[:-1]
-            centre = coords.mean(axis=0)
-            radii = np.linalg.norm(coords - centre, axis=1)
-            round_ = len(coords) >= 8 and float(radii.max() - radii.min()) <= max(0.02, 0.01 * radii.mean())
-            hole_list.append({"center_mm": [round(float(v), 4) for v in centre],
-                              "diameter_mm": round(2 * float(radii.mean()), 4) if round_ else None})
-        sizes = [h["diameter_mm"] for h in hole_list if h["diameter_mm"]]
-        reading = f"outline {_g(x1 - x0)} x {_g(y1 - y0)} mm, {_g(polygon.area, 1)} mm²"
-        if hole_list:
-            reading += f", {len(hole_list)} hole{'s' if len(hole_list) > 1 else ''}"
-            if sizes:
-                reading += " (" + ", ".join(f"Ø{_g(s)}" for s in sorted(set(sizes))) + ")"
-        out.append({"index": index, "area_mm2": round(polygon.area, 3),
-                    "bounds_mm": [round(v, 4) for v in (x0, y0, x1, y1)], "holes": hole_list, "reading": reading})
-    return out
+    return {"faces": faces, "holes": found, "floors": floors}

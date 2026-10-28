@@ -11,7 +11,6 @@ import { FLOATING_CHROME_SURFACE_CLASS } from "../../lib/floatingSurface.js";
 import { english } from "../../i18n/core.js";
 import { useI18n } from "@text-to-cad/ui/i18n";
 import { InfoRow } from "../kit/inspector/referenceRows.jsx";
-import { camHasFixtures, createCamFixtures, fixtureSetups } from "./cam/fixtures.js";
 import { camToolpathObjects, createCamPaths } from "./cam/lines.js";
 import { camSceneMeshes, showCamMeshes } from "./cam/playback.js";
 import { createCamTool } from "./cam/tool.js";
@@ -24,10 +23,10 @@ export { camClips, camReadoutWords } from "./cam/playback.js";
 export { camSceneMeshes, showCamMeshes };
 
 /**
- * What the view shows of a result, before the person chooses (Job's Show rows): the paths, the tool riding them, what
- * holds the part and the part; the stock is a choice. `hidden` is the operations put away by their eyes in Job (their indices).
+ * What the view shows of a result, before the person chooses (Job's Show rows): the paths, the tool riding them and
+ * the part; the stock box is a choice. `hidden` is the operations put away by their eyes in Job (their indices).
  */
-export const CAM_SHOWN = Object.freeze({ toolpaths: true, rapids: true, tool: true, stock: false, fixtures: true, part: true, hidden: Object.freeze([]) });
+export const CAM_SHOWN = Object.freeze({ toolpaths: true, rapids: true, tool: true, stock: false, part: true, hidden: Object.freeze([]) });
 
 /** The operations put away (`shown.hidden`), as a set of the job's indices; null for none. */
 export function camHidden(job, shown) {
@@ -45,17 +44,16 @@ export function toggleCamHidden(shown, index) {
 
 /**
  * Job's Show rows: a gate each for what the file draws beyond a plain GLB's surfaces — its toolpaths, its rapids,
- * the tool, the simulated stock, what holds the part, the finished part — offered where the file has it, with the
+ * the tool, the stock box, the finished part — offered where the file has it, with the
  * words its hint says. `shown` is what is on (`on`); Job's eye turns one, as `{ [id]: on }` patched into `shown`.
  */
-export function camGates({ job, meshes, paths, shown, t = english }) {
+export function camGates({ meshes, paths, shown, t = english }) {
   const gates = [];
   const gate = (id) => gates.push({ id, title: t(`cam.gate.${id}`), hint: t(`cam.gate.${id}Hint`), on: shown[id] !== false });
   if (paths.feed) gate("toolpaths");
   if (paths.rapid) gate("rapids");
   if (paths.feed || paths.rapid) gate("tool");
   if (meshes.stock.length) gate("stock");
-  if (camHasFixtures(job)) gate("fixtures");
   if (meshes.part.length) gate("part");
   return gates;
 }
@@ -134,8 +132,8 @@ function camHolder(runtime, root, cadRoot) {
 }
 
 /**
- * The toolpaths, the riding tool and the fixtures, drawn into the viewport once its runtime is up (`createCamPaths`,
- * which needs its screen-space lines) and put away with the result. `controllerRef` holds `{ paths, tool, fixtures }`
+ * The toolpaths and the riding tool, drawn into the viewport once its runtime is up (`createCamPaths`,
+ * which needs its screen-space lines) and put away with the result. `controllerRef` holds `{ paths, tool }`
  * while they are up; `onChange` is told when they come and go, to draw what is shown.
  */
 export function CamPaths({ runtimeRef, viewerReadyTick, root, cadRoot, job, scheme, controllerRef, onChange }) {
@@ -147,12 +145,10 @@ export function CamPaths({ runtimeRef, viewerReadyTick, root, cadRoot, job, sche
     const paths = createCamPaths(runtime.THREE || THREE, root, job, { context: runtime, cadRoot, scheme, pixelRatio, parent: holder });
     if (!paths) { holder.removeFromParent(); return undefined; }
     const tool = createCamTool(runtime.THREE || THREE, holder, job, paths.frame);
-    const fixtures = createCamFixtures(runtime.THREE || THREE, holder, job, paths.frame, scheme);
-    controllerRef.current = { paths, tool, fixtures };
+    controllerRef.current = { paths, tool };
     onChange?.();
     return () => {
       controllerRef.current = null;
-      fixtures.dispose();
       tool.dispose();
       paths.dispose();
       holder.removeFromParent();
@@ -164,7 +160,6 @@ export function CamPaths({ runtimeRef, viewerReadyTick, root, cadRoot, job, sche
     const controller = controllerRef.current;
     if (!controller) return;
     controller.paths.style(scheme);
-    controller.fixtures?.style(scheme);
     onChange?.();
   }, [scheme]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
@@ -174,19 +169,17 @@ const TOOL_LEAD_S = 1e-6;
 
 /**
  * Draws what is shown, in one pass: the paths (on or off, isolated, the hidden ones put away, revealed up to the
- * moment playing), the tool at that moment, the fixtures of the setup the view is about (`fixtureSetups`), and the
- * part and stock as Display says. Returns whether anything changed, and `place`, where the tool is at the moment.
+ * moment playing), the tool at that moment, and the part and stock as Job's Show rows say. Returns whether anything changed, and `place`, where the tool is at the moment.
  */
 export function paintCam({ controller, meshes, job, shown, isolate, moment }) {
-  let changed = showCamMeshes(meshes, job, { part: shown.part !== false, stock: shown.stock !== false, time: moment ? moment.t : null });
+  let changed = showCamMeshes(meshes, { part: shown.part !== false, stock: shown.stock !== false });
   if (!controller) return { changed, place: null };
-  const { paths, tool, fixtures } = controller;
+  const { paths, tool } = controller;
   if (paths.update({ toolpaths: shown.toolpaths !== false, rapids: shown.rapids !== false, isolate, hidden: camHidden(job, shown),
     time: moment ? moment.t : null, setup: moment?.setup || null })) changed = true;
   // The tool as it reaches the moment: at an operation's last moment it is at that operation's end, not at the start
   // of the next (which begins at the same time), so a step-by-step playback leaves it on what it just cut.
   const place = moment ? paths.toolAt(Math.max(moment.t - TOOL_LEAD_S, 0), moment.setup || null) : null;
-  if (fixtures?.update({ shown: shown.fixtures !== false, setups: fixtureSetups(job, { isolate, moment, playing: place?.setup || null }) })) changed = true;
   if (moment && shown.tool !== false) {
     tool.show(place);
     return { changed: true, place };

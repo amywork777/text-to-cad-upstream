@@ -166,7 +166,7 @@ function JobTools({ job, chosen, onChoose }) {
 
 /**
  * What the view draws of the job beyond the part's surfaces, under a muted **Show** heading: a row each for what the
- * file has (`gates`: Toolpaths, Rapids, Tool, Stock, Fixtures, Part), its words on hover, and its eye, as a layer's
+ * file has (`gates`: Toolpaths, Rapids, Tool, Stock, Part), its words on hover, and its eye, as a layer's
  * is: on hover, kept while it is put away. `onToggleGate(id, on)` turns one on or off.
  */
 function JobShow({ gates, onToggleGate }) {
@@ -208,7 +208,7 @@ function JobShow({ gates, onToggleGate }) {
  * A CAM result's **Job**, a section of the file sidebar (its tile a tree's, named Job), there whatever tool is in
  * hand: the verdict first, its errors under it, then each setup with its operations under it (the plain word, the
  * tool, the time), in the job's order, then the job's tools with their speeds, then what the view shows of the job
- * (`gates`). Every setup, operation, tool and error row is a choice (`onChoose(id)`; `chosen` is the row chosen): it
+ * (`gates`), and at its foot the job's safety sentence, always shown. Every setup, operation, tool and error row is a choice (`onChoose(id)`; `chosen` is the row chosen): it
  * isolates its paths, and Quick Edit gets its faces and its sentence as a chip. An operation's swatch is its paths'
  * colour (`colours`, by index), and its Hide/Reveal eye puts its paths away and back (`hidden`, `onToggleHidden(index)`).
  *
@@ -229,12 +229,13 @@ export default function CamJobPanel({ job, colours, chosen, onChoose, hidden = n
           <JobRow id={`setup:${setup.id}`} label={setup.plain} detail={`${counted(t, setup.operations.length, "cam.operation", "cam.operations")} · ${formatDuration(setup.timeS)}`}
             depth={0} chosen={chosen} onChoose={onChoose} />
           {setup.operations.map((op) => <JobRow key={op.index} id={`op:${op.index}`} label={op.name || op.plain} detail={operationDetail(op)}
-            hint={[op.summary, ...op.limits].filter(Boolean).join(". ")} swatch={colours[op.index]} depth={1} chosen={chosen} onChoose={onChoose}
+            hint={op.summary} swatch={colours[op.index]} depth={1} chosen={chosen} onChoose={onChoose}
             hidden={away.has(op.index)} onToggleHidden={onToggleHidden ? () => onToggleHidden(op.index) : null} />)}
         </ul>
       </li>)}
     </ul>
     <JobTools job={job} chosen={chosen} onChoose={onChoose} />
     <JobShow gates={gates} onToggleGate={onToggleGate} />
+    {job.safety ? <p className="px-2.5 pb-2 pt-1 text-micro leading-4 text-muted-foreground [overflow-wrap:break-word]" data-cam-safety="">{job.safety}</p> : null}
   </ToolPanel>;
 }

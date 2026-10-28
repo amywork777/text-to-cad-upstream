@@ -6,7 +6,7 @@ import { carriesCamJob } from "./detect.js";
 
 /**
  * What GlbRenderer needs to show a CAM result (`cadgen cam plan`): the result's own viewer, loaded as its own chunk
- * (`camView.jsx`), the job read from the file, what the view shows of its paths, stock, fixtures and tool, the
+ * (`camView.jsx`), the job read from the file, what the view shows of its paths, stock and tool, the
  * routines that run the cut, and Job, a section of the file sidebar whose rows are Quick Edit's chips. A GLB that is
  * not a result gets nulls throughout.
  *
@@ -66,7 +66,7 @@ export function useReducedMotion() {
 export function useCamResult({ cv, scene, view, shellRef }) {
   const { t } = useI18n();
   // A CAM result carries its job in the file: its verdict, setups and operations (Job), its toolpaths and its
-  // simulated stock. What the view shows of it is this renderer's one slice of the file's view.
+  // stock box. What the view shows of it is this renderer's one slice of the file's view.
   const root = scene?.document?.scene || null;
   const cam = useMemo(() => (cv && root ? cv.readCamJob(root) : null), [cv, root]);
   const scheme = view.appearance?.colorScheme === "dark" ? "dark" : "light";
@@ -87,7 +87,7 @@ export function useCamResult({ cv, scene, view, shellRef }) {
   // The operations put away by their eyes in Job, kept with the Show rows in the file's view.
   const hidden = useMemo(() => (cam ? cv.camHidden(cam, shown) : null), [cv, cam, shown]);
   const toggleHidden = useCallback((index) => show({ hidden: cv.toggleCamHidden(shownRef.current, index) }), [cv, show]);
-  const gates = useMemo(() => (cam ? cv.camGates({ job: cam, meshes, paths: pathKinds, shown, t }) : null), [cv, cam, meshes, pathKinds, shown, t]);
+  const gates = useMemo(() => (cam ? cv.camGates({ meshes, paths: pathKinds, shown, t }) : null), [cv, cam, meshes, pathKinds, shown, t]);
   const toggleGate = useCallback((id, on) => show({ [id]: on }), [show]);
 
   // A row of Job chosen (an operation, a setup, a tool, an error): its paths isolated, and its faces and sentence for Quick Edit.
@@ -131,7 +131,7 @@ export function useCamResult({ cv, scene, view, shellRef }) {
 /**
  * A CAM result's chrome, after the shell, or null for any other GLB: Job, its file sidebar section (`sidebar`); the
  * chosen row as Quick Edit's chip (`chips`, with `references`); and what is drawn over the viewport (`overlay`): the
- * toolpaths, the tool and the fixtures, and the readout while a routine plays.
+ * toolpaths and the tool, and the readout while a routine plays.
  */
 export function useCamChrome({ result, scene, animation }) {
   const { cv, cam, root, scheme, colours, choice, chooseRow, clearChoice, hidden, toggleHidden, gates, toggleGate, references, refs, paint } = result;

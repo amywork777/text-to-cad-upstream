@@ -62,9 +62,9 @@ function useFeaView(root) {
 function GlbFile({ view, data }) {
   const document = useWorkspaceDocument({ view, data });
   const loaded = useGlbScene({ entry: document.entry, resources: document.client.resources });
-  const { kit: fv, pending } = useFeaView(loaded.scene?.document?.scene);
+  const { kit: fv, pending: feaPending } = useFeaView(loaded.scene?.document?.scene);
   if (fv) return <fv.FeaSurface view={view} document={document} loaded={loaded} fv={fv} />;
-  return <GlbSurface view={view} document={document} loaded={loaded} feaPending={pending} />;
+  return <GlbSurface view={view} document={document} loaded={loaded} feaPending={feaPending} />;
 }
 
 function GlbSurface({ view, document, loaded, feaPending }) {

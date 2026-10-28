@@ -211,7 +211,7 @@ export const skillGroups = [
     name: "CAM",
     path: "skills/cam",
     summary:
-      "Plans toolpaths and posts G-code for CNC mills, lathes, laser, plasma, waterjet and wire EDM, with a simulated cut, checks and cycle time.",
+      "Plans 3-axis milling and drilling toolpaths and posts G-code with FreeCAD, checked against the part.",
   },
   {
     name: "G-code",

@@ -36,7 +36,7 @@ const REST = Object.freeze({ activeClipId: "", enabled: false, playing: false, e
  *
  * @param {object | null} document  The native GLB document on screen.
  * @param {() => void} requestRender  Asks the viewport for a frame.
- * @param {readonly object[]} [own]  The renderer's own clips (an FEA result's routines, a CAM result's Simulate).
+ * @param {readonly object[]} [own]  The renderer's own clips (an FEA or a CAM result's routines).
  * @returns the routine runtime, or null for a file without playable clips.
  */
 export function useGlbAnimation(document, requestRender, own = NONE) {

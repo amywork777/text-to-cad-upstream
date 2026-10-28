@@ -4,9 +4,8 @@
  * program's real time is played faster, the whole job in at most `SIMULATE_SECONDS` (one that is shorter
  * plays in real time), every clip at the same pace. A clip's moment is the program's time (`_CAM_T`).
  *
- * And what the scene's meshes are: the finished part, and the simulated stock, after the job or, where the
- * file stores it after each operation (`operation` in a stock node's extras), after the operation played.
- * Pure but for the visibility it sets.
+ * And what the scene's meshes are: the finished part, and the stock box it is cut from. Pure but for the
+ * visibility it sets.
  */
 
 import { english } from "../../../i18n/core.js";
@@ -70,47 +69,25 @@ export function camClips(job, onMoment, { reducedMotion = false, t = english } =
   return clips;
 }
 
-/** Whether a mesh of the result is the stock: its extras say so, or its name does. */
-function isStock(object) {
-  const kind = String(object.userData?.kind || object.userData?.cam_kind || object.userData?.role || "").toLowerCase();
-  if (kind) return kind === "stock";
-  return /stock/i.test(`${object.userData?.name || ""} ${object.name || ""}`);
-}
-
-/** The result's meshes: the part's and the stock's, a stock with the operation it is after (`after`, null for the job's end). */
+/** The result's meshes: the part's and the stock's (node extras `kind: "stock"`). */
 export function camSceneMeshes(root) {
   const part = [];
   const stock = [];
   root?.traverse?.((object) => {
     if (!object.isMesh || object.userData?.camDrawn) return;
-    if (isStock(object)) {
-      const after = Number(object.userData?.operation ?? object.userData?.after_operation);
-      stock.push({ object, after: Number.isInteger(after) ? after : null });
-    } else part.push(object);
+    (object.userData?.kind === "stock" ? stock : part).push(object);
   });
   return { part, stock };
 }
 
-/**
- * Shows the part and the stock as Display says. The stock shown is the job's end (a mesh with no
- * operation, else the last operation's); while a moment plays, the stock after the last operation that has
- * finished by then, where the file has one per operation. Returns whether anything changed.
- */
-export function showCamMeshes(meshes, job, { part = true, stock = true, time = null } = {}) {
+/** Shows the part and the stock as Job's Show rows say. Returns whether anything changed. */
+export function showCamMeshes(meshes, { part = true, stock = true } = {}) {
   let changed = false;
-  const set = (object, visible) => {
-    if (object.visible !== visible) { object.visible = visible; changed = true; }
+  const set = (objects, visible) => {
+    for (const object of objects) if (object.visible !== visible) { object.visible = visible; changed = true; }
   };
-  for (const object of meshes.part) set(object, part);
-  const staged = meshes.stock.filter((entry) => entry.after !== null).sort((a, b) => a.after - b.after);
-  const final = meshes.stock.find((entry) => entry.after === null) || staged[staged.length - 1] || null;
-  let current = final;
-  if (time !== null && staged.length) {
-    const done = new Set((job?.operations || []).filter((op) => op.t1 <= time).map((op) => op.index));
-    current = null;
-    for (const entry of staged) if (done.has(entry.after)) current = entry;
-  }
-  for (const entry of meshes.stock) set(entry.object, stock && entry === current);
+  set(meshes.part, part);
+  set(meshes.stock, stock);
   return changed;
 }
 

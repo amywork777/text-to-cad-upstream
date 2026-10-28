@@ -1,151 +1,197 @@
-"""``cadgen cam plan`` end to end: the block faced and pocketed, its GLB and G-code read back, refusals write nothing."""
+"""``cadgen cam plan`` end to end, through the FreeCAD installed here: the block planned, posted and drawn; a face
+under a bridge refused with no G-code; a setup turned over; GRBL's program split by tool; a failure that leaves the
+earlier files as they were."""
 
 from __future__ import annotations
 
-import contextlib
-import io
-import json
+import os
+import re
 import unittest
+from pathlib import Path
+from unittest import mock
 
-import numpy as np
-
-from tests.python.support import gcode_reader
-from tests.python.support.cam_fixtures import (
-    BLOCK, accessor_array, block_step, class_directory, floor_ref, mill_job, quiet, read_glb,
-)
+from tests.python.support.cam_fixtures import (BLOCK, block_step, bridge_step, class_directory, floor_ref, glb_cam,
+                                               mill_job, needs_freecad, quiet, read_glb)
 
 
-class PlanBlock(unittest.TestCase):
+#: Tools long enough to profile the block's 26 mm, stock top to bottom.
+LONG_FLUTES = [{"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 30, "stickout_mm": 40},
+               {"id": "T2", "type": "drill", "diameter_mm": 5, "flute_length_mm": 50, "stickout_mm": 60}]
+
+
+def plan(step: Path, job: dict, **options):
+    from cadgen import cam
+
+    with quiet():
+        return cam.plan(step, job=job, **options)
+
+
+def z_words(text: str) -> list[float]:
+    return [float(z) for z in re.findall(r"\bZ(-?\d+(?:\.\d+)?)", text)]
+
+
+@needs_freecad
+class Block(unittest.TestCase):
+    """Face, pocket (around the island), adaptive (the lower step), profile and drill: one LinuxCNC program."""
+
+    @classmethod
+    def setUpClass(cls):
+        from cadgen import cam
+
+        cls.step = block_step(class_directory(cls))
+        features = cam.features(cls.step)
+        holes = [hole["faces"][0] for hole in features.holes]
+        cls.job = mill_job(tools=LONG_FLUTES, operations=[
+            {"op": "face", "tool": "T1"},
+            {"op": "pocket", "tool": "T1", "faces": [floor_ref(features, 17.0)]},
+            {"op": "adaptive", "tool": "T1", "faces": [floor_ref(features, 11.0)]},
+            {"op": "profile", "tool": "T1", "through_mm": 0.5},
+            {"op": "drill", "tool": "T2", "faces": holes},
+        ])
+        cls.result = plan(cls.step, cls.job)
+        cls.cam = glb_cam(cls.result.glb) if cls.result.glb else None
+
+    def test_it_is_ready_to_cut_and_posts_one_program(self):
+        self.assertTrue(self.result.ok, self.result.findings)
+        self.assertEqual("ready", self.result.verdict["status"], self.result.findings)
+        (post,) = self.result.posts
+        self.assertEqual(("top", "linuxcnc", None), (post["setup"], post["post"], post["tool"]))
+        self.assertEqual("block.top.ngc", Path(post["file"]).name)
+        self.assertTrue(self.cam["planner"].startswith("freecad 1."))
+
+    def test_the_program_is_in_work_coordinates_and_cuts_at_real_feeds(self):
+        text = Path(self.result.posts[0]["file"]).read_text(encoding="utf-8")
+        depth = BLOCK["size"][2]
+        zs = z_words(text)
+        self.assertAlmostEqual(-(depth + 1.0 + 0.5), min(z for z in zs if z > -(depth + 3)), places=3)  # profile
+        self.assertGreater(max(zs), 0.0)                                       # clearance above the stock top
+        self.assertIn("G54", text)
+        speeds = {float(s) for s in re.findall(r"\bS(\d+(?:\.\d+)?)", text)}
+        self.assertTrue(speeds and all(s > 1000 for s in speeds), speeds)
+        feeds = {float(f) for f in re.findall(r"\bF(\d+(?:\.\d+)?)", text)}
+        self.assertTrue(feeds and min(feeds) > 10, feeds)                      # never FreeCAD's 0 mm/min
+        self.assertIn("T2", text)                                             # the tool change to the drill
+
+    def test_each_operation_is_drawn_and_timed_in_order(self):
+        ops = self.cam["setups"][0]["operations"]
+        self.assertEqual(["face", "pocket", "adaptive", "profile", "drill"], [op["op"] for op in ops])
+        times = [(op["t0"], op["t1"]) for op in ops]
+        self.assertTrue(all(t0 < t1 for t0, t1 in times), times)
+        self.assertTrue(all(a[1] <= b[0] + 1e-6 for a, b in zip(times, times[1:])), times)
+        document, blob = read_glb(self.result.glb)
+        kinds = {node["extras"].get("kind") for node in document["nodes"] if "extras" in node}
+        self.assertTrue({"part", "stock", "feed", "rapid"} <= kinds, kinds)
+
+    def test_the_drill_goes_through_by_its_point_and_the_break_through(self):
+        drill = self.job["tools"][1]
+        import math
+
+        tip = drill["diameter_mm"] / 2 / math.tan(math.radians(59))
+        expected = -(BLOCK["size"][2] + 1.0) - 1.0 - tip
+        text = Path(self.result.posts[0]["file"]).read_text(encoding="utf-8")
+        self.assertIn(round(expected, 3), [round(z, 3) for z in z_words(text)])
+
+
+@needs_freecad
+class Bridge(unittest.TestCase):
+    """A floor a quarter under a bar: refused before FreeCAD plans it, and the earlier program goes."""
+
     @classmethod
     def setUpClass(cls):
         from cadgen import cam
 
         cls.directory = class_directory(cls)
-        cls.step = block_step(cls.directory)
-        cls.lower = floor_ref(cam.features(cls.step), BLOCK["lower"]["floor_z"])
-        cls.job = mill_job([{"op": "face", "tool": "T1"}, {"op": "pocket", "tool": "T1", "faces": [cls.lower]}])
-        with quiet():
-            cls.result = cam.plan(cls.step, job=cls.job)
+        cls.step = bridge_step(cls.directory)
+        cls.floors = {f["kind"]: f["ref"] for f in cam.features(cls.step).floors}
 
-    def test_the_verdict_and_the_rows(self):
-        result = self.result
-        self.assertTrue(result.ok, result.findings)
-        self.assertEqual("ready", result.verdict["status"])
-        self.assertRegex(result.verdict["headline"], r"^Ready to cut · \d+ min · 1 tool$")
-        self.assertEqual(["face", "pocket"], [op["op"] for op in result.operations])
-        self.assertEqual([0, 1], [op["index"] for op in result.operations])
-        self.assertTrue(all(op["rpm"] and op["feed_mm_min"] for op in result.operations))
-        checks = {f["check"] for f in result.findings}
-        self.assertIn("corner_radius", checks)          # the square pocket's corners, as warnings
-        self.assertTrue(all(f["severity"] != "error" for f in result.findings))
-        lines = result.human_lines()
-        self.assertEqual(result.verdict["headline"], lines[0])
-        self.assertTrue(any(line.startswith("top 2. Pocket") for line in lines))
-        self.assertTrue(lines[-1].startswith("safety:"))
+    def test_a_ready_plan_then_one_that_is_not_leaves_no_program(self):
+        first = plan(self.step, mill_job([{"op": "face", "tool": "T1"}]))
+        self.assertEqual("ready", first.verdict["status"], first.findings)
+        program = Path(first.posts[0]["file"])
+        self.assertTrue(program.is_file())
+        second = plan(self.step, mill_job([{"op": "face", "tool": "T1"},
+                                           {"op": "pocket", "tool": "T1", "faces": [self.floors["floor"]]}]))
+        self.assertTrue(second.ok)
+        self.assertEqual("fix", second.verdict["status"])
+        self.assertEqual((), second.posts)
+        self.assertFalse(program.exists())                 # no "ready" program beside a plan that is not
+        (error,) = [f for f in second.findings if f["severity"] == "error"]
+        self.assertEqual(("reach", "unreachable"), (error["check"], error["type"]))
+        cam = glb_cam(second.glb)
+        self.assertEqual("fix", cam["verdict"]["status"])
+        self.assertIn("G-code not written", cam["verdict"]["gcode"])
 
-    def test_the_glb_carries_the_plan_and_the_lines(self):
-        document, blob = read_glb(self.result.glb)
-        scene = document["scenes"][0]["extras"]
-        root = document["nodes"][0]["extras"]
-        for extras in (scene, root):
-            self.assertEqual("cadgen cam", extras["generator"])
-            self.assertEqual(1, extras["cam"]["schema"])
-        cam = scene["cam"]
-        self.assertEqual("block.step", cam["document"])
-        self.assertEqual(self.result.verdict, cam["verdict"])
-        ops = cam["setups"][0]["operations"]
-        self.assertEqual([self.lower], ops[1]["faces"])
-        for key in ("index", "tool", "tool_plain", "tool_diameter_mm", "plain", "summary", "t0", "t1", "time_s", "rpm",
-                    "feed_mm_min"):
-            self.assertIn(key, ops[1])
-        self.assertEqual("+Z", cam["setups"][0]["orientation"])
-        self.assertEqual([{"setup": "top", "file": "block.top.nc", "post": "grbl", "tool": None}], cam["posts"])
-        kinds = {node["name"]: node.get("extras", {}).get("kind") for node in document["nodes"][1:]}
-        self.assertEqual({"part": "part", "stock": "stock", "top feed": "feed", "top rapid": "rapid"}, kinds)
-        feed = next(m for m in document["meshes"] if m["name"] == "top feed")["primitives"][0]
-        self.assertEqual(1, feed["mode"])
-        self.assertEqual({"POSITION", "_CAM_T", "_CAM_OP"}, set(feed["attributes"]))    # a 3-axis tool's axis is fixed
-        t = accessor_array(document, blob, feed["attributes"]["_CAM_T"])
-        op = accessor_array(document, blob, feed["attributes"]["_CAM_OP"])
-        self.assertEqual({0.0, 1.0}, set(np.unique(op).tolist()))
-        self.assertLessEqual(float(t.max()), cam["duration_s"] + 1e-3)
-        pocket = t[op == 1]
-        self.assertGreaterEqual(float(pocket.min()), ops[1]["t0"] - 1e-3)
-        self.assertLessEqual(float(pocket.max()), ops[1]["t1"] + 1e-3)
-        positions = accessor_array(document, blob, feed["attributes"]["POSITION"])
-        # glTF is Y up, metres: the pocket floor (part z = 11) is the lowest feed point.
-        self.assertAlmostEqual(0.011, float(positions[:, 1].min()), places=6)
+    def test_the_bottom_turned_over_is_faced_from_its_own_side(self):
+        result = plan(self.step, mill_job([], setups=[
+            {"id": "bottom", "orientation": "-Z", "operations": [{"op": "face", "tool": "T1"}]}]))
+        self.assertEqual("ready", result.verdict["status"], result.findings)
+        (op,) = result.operations
+        self.assertEqual([self.floors["bottom"]], op["faces"])
+        setup = glb_cam(result.glb)["setups"][0]
+        self.assertEqual([[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]], setup["matrix"])
+        self.assertEqual(0.0, setup["origin_part_mm"][2])  # the work zero is the stock's face toward the tool
 
-    def test_the_gcode_reaches_the_floor_and_opens_safely(self):
-        # GRBL posts one file per tool: block.top.T1.nc, block.top.T2.nc..., read back as one program.
-        self.assertTrue(self.result.posts[0]["file"].startswith(str(self.directory / "block.top.")))
-        text = gcode_reader.posted_text(self.result, "top")
-        self.assertIn("NOT proven on a machine", text.splitlines()[2])
-        program = gcode_reader.read(text, start=(0.0, 0.0, 6.0))
-        self.assertIn("G54", program.offsets)
-        cuts = [m for m in program.moves if m.kind != "rapid"]
-        # WCS zero is the stock top, a millimetre over the part: the lower floor is 15 below it.
-        self.assertAlmostEqual(-15.0, min(m.end[2] for m in cuts), places=3)
-        self.assertGreaterEqual(min(m.end[2] for m in program.moves if m.kind == "rapid"), -15.0)
-        self.assertTrue(any(m.kind in ("arc_cw", "arc_ccw") for m in program.moves))
 
-    def test_the_cli_answers_one_json_line(self):
-        from cadgen import cli
-
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out), quiet():
-            code = cli.main(["cam", "plan", str(self.step), "--job", json.dumps(self.job), "--out-dir",
-                             str(self.directory / "cli"), "--json"])
-        self.assertEqual(0, code)
-        lines = out.getvalue().strip().splitlines()
-        self.assertEqual(1, len(lines))
-        payload = json.loads(lines[0])
-        self.assertTrue(payload["ok"])
-        self.assertTrue((self.directory / "cli" / "block.cam.glb").is_file())
-        self.assertTrue((self.directory / "cli" / "block.top.nc").is_file())
-
-    def test_a_tool_too_short_is_a_fix(self):
+@needs_freecad
+class Grbl(unittest.TestCase):
+    def test_a_setup_with_two_tools_posts_one_file_per_tool(self):
         from cadgen import cam
 
-        job = mill_job([{"op": "pocket", "tool": "T1", "faces": [self.lower]}], tools=[
-            {"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 6, "stickout_mm": 30}])
-        with quiet():
-            result = cam.plan(self.step, job=job, out_dir=self.directory / "short")
-        self.assertTrue(result.ok)
-        self.assertEqual("fix", result.verdict["status"])
-        self.assertTrue(result.verdict["headline"].startswith("1 to fix · "))
-        reach = [f for f in result.findings if f["check"] == "reach"]
-        self.assertEqual("error", reach[0]["severity"])
-        # The upper step's walls stand 9 mm over its floor; the lower step's only 6 over its own.
-        self.assertAlmostEqual(9.0, reach[0]["items"][0]["depth_mm"], places=3)
-        self.assertEqual(0, reach[0]["items"][0]["operation"])
+        directory = class_directory(type(self))
+        step = block_step(directory)
+        holes = [hole["faces"][0] for hole in cam.features(step).holes]
+        job = mill_job([{"op": "face", "tool": "T1"}, {"op": "drill", "tool": "T2", "faces": holes}],
+                       machine={"kind": "router", "post": "grbl"})
+        result = plan(step, job)
+        self.assertEqual("ready", result.verdict["status"], result.findings)
+        self.assertEqual([("block.top.1-T1.nc", "T1"), ("block.top.2-T2.nc", "T2")],
+                         [(Path(p["file"]).name, p["tool"]) for p in result.posts])
+        first, second = (Path(p["file"]).read_text(encoding="utf-8") for p in result.posts)
+        self.assertNotIn("G81", re.sub(r"\(.*?\)", "", second))   # GRBL has no drilling cycle: written out as moves
 
-    def test_a_job_that_cannot_run_writes_nothing_and_clears_a_stale_result(self):
-        from cadgen import cam
 
-        out = self.directory / "refused"
-        out.mkdir()
-        stale = out / "block.cam.glb"
-        stale.write_bytes(b"old")
-        from cadgen._internal.cam.operations import OPERATION_NAMES, REGISTRY, available
+class Refused(unittest.TestCase):
+    def test_no_freecad_is_refused_with_how_to_install_it_and_writes_nothing(self):
+        from cadgen._internal.cam import freecad
 
-        cases = {
-            "is not a face of this part": mill_job([{"op": "pocket", "tool": "T1", "faces": ["face 999"]}]),
-            "unknown key 'speeed'": mill_job([{"op": "face", "tool": "T1", "speeed": 1}]),
-        }
-        unbuilt = [name for name in OPERATION_NAMES if not available(name) and "mill" in REGISTRY[name].machines]
-        if unbuilt:
-            cases["not in this cadgen yet"] = mill_job([{"op": unbuilt[0], "tool": "T1", "faces": [self.lower]}])
-        for expected, job in cases.items():
-            with self.subTest(expected=expected):
-                with quiet():
-                    result = cam.plan(self.step, job=job, out_dir=out)
-                self.assertFalse(result.ok)
-                self.assertIsNone(result.glb)
-                self.assertIn(expected, result.findings[0]["summary"])
-                self.assertEqual(("job", "error"), (result.findings[0]["check"], result.findings[0]["severity"]))
-                self.assertEqual([], sorted(p.name for p in out.iterdir()))
-                self.assertTrue(result.human_lines()[0].startswith("not planned:"))
+        directory = class_directory(type(self))
+        step = block_step(directory)
+        with mock.patch.dict(os.environ, {freecad.FREECAD_ENV: str(directory / "no-freecad")}):
+            result = plan(step, mill_job([{"op": "face", "tool": "T1"}]))
+        self.assertFalse(result.ok)
+        (found,) = result.findings
+        self.assertEqual(("job", "freecad"), (found["check"], found["type"]))
+        self.assertIn("install FreeCAD 1.1 or newer", found["summary"])
+        self.assertEqual(["block.step"], sorted(p.name for p in directory.iterdir()))
+
+
+@needs_freecad
+class FailedWrite(unittest.TestCase):
+    def test_a_write_that_fails_leaves_the_earlier_files_byte_for_byte(self):
+        directory = class_directory(type(self))
+        step = block_step(directory)
+        job = mill_job([{"op": "face", "tool": "T1"}], tools=LONG_FLUTES)
+        first = plan(step, job)
+        self.assertEqual("ready", first.verdict["status"], first.findings)
+        before = {path.name: path.read_bytes() for path in directory.iterdir()}
+        job["setups"][0]["operations"].append({"op": "profile", "tool": "T1"})
+        real = __import__("cadgen._internal.cam.run", fromlist=["replace_atomic"]).replace_atomic
+        calls = []
+
+        def second_fails(tmp, final):
+            calls.append(final)
+            if len(calls) == 2:
+                raise OSError(28, "No space left on device")
+            real(tmp, final)
+
+        with mock.patch("cadgen._internal.cam.run.replace_atomic", second_fails):
+            result = plan(step, job)
+        self.assertFalse(result.ok)
+        self.assertIn("No space left on device", result.findings[0]["summary"])
+        # The GLB went into place, the program failed, and the earlier GLB was put back.
+        self.assertEqual([".glb", ".ngc", ".glb"], [path.suffix for path in calls])
+        after = {path.name: path.read_bytes() for path in directory.iterdir()}
+        self.assertEqual(before, after)                    # every earlier file back, no temporary left
 
 
 if __name__ == "__main__":

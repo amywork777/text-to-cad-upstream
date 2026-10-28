@@ -101,8 +101,9 @@ search-path = ["src"]
 # otherwise have src excluded by the ignore files above it and check nothing.
 use-ignore-files = false
 # The fea extra's netgen (`pip install 'cadgen[fea]'`): imported only by the mesher's own process, and absent
-# from a checkout installed without the extra, so its imports are not checked against stubs.
-ignore-missing-imports = ["netgen", "netgen.*"]
+# from a checkout installed without the extra, so its imports are not checked against stubs;
+# `_internal/cam/freecad_job.py` runs inside FreeCAD (`freecadcmd`), whose modules no Python of cadgen's has.
+ignore-missing-imports = ["netgen", "netgen.*", "FreeCAD", "Part", "Path", "Path.*"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

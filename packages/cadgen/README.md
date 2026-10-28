@@ -36,8 +36,8 @@ materials, references to geometry, snapshots drawn by OCCT; the CAD Viewer (`cad
 launcher for the installation’s engine’s one page, every document at `/<id>`, every file read by its absolute path); CAD beside an agent's chat (`cadgen mcp`: a stateless stdio peer of the engine’s
 HTTP MCP endpoint, with tools and the app page owned by the engine); the URDF, SDF and SRDF validators;
 engineering drawings (`@eng_drawing`); work instructions (`@work_instruction`); and semantic PMI
-(`cadgen.ap242`: datums, dimensions, tolerances, notes and views on a part's faces, kept in its xbf
-and exported as AP242's).
+(`cadgen.ap242`: datums, dimensions, tolerances, notes and views on a part's faces, kept in its xbf and
+exported as AP242's).
 
 **MAY DEPEND ON** — the Python ecosystem it declares (OCP/build123d lazily, never at
 `import cadgen`) and the bundled runtime. Never app code, never JavaScript source at runtime.
@@ -389,9 +389,9 @@ src/cadgen/
                          #   parts list, balloons, the set's sheets)
   work_instruction.py    # @work_instruction: the steps that build one assembly, one PDF;
                          #   its pages and figures in _internal/work_instruction_pages.py
-  cam.py                 # CAM: features (what a job can name) and plan (toolpaths, simulated
-                         #   cut, checks, G-code per setup, one result GLB); its engine is
-                         #   _internal/cam (operations/ and posts/ registries)
+  cam.py                 # CAM: features (what a job can name) and plan (FreeCAD's toolpaths
+                         #   and G-code, checked against the part, one result GLB); behind it
+                         #   _internal/cam
   flatten.py             # flat patterns: exact 2D geometry from a solid's planar faces
   geometry.py            # measurements of native geometry: closest points, overlap,
                          #   soundness, mass properties
@@ -468,13 +468,13 @@ OpenCascade and OCP's cannot share one). The solver is CalculiX (`ccx`, 2.20 or 
 person installs (`conda install -c conda-forge calculix`, or `calculix-ccx` on Debian and Ubuntu):
 `CADGEN_CCX` names it, else `ccx` on PATH. A missing or older one is an error saying how to install
 it; cadgen downloads no solver and has no other. The result names the CalculiX version that ran.
-
 ## CAM
 
 `cadgen cam features` and `cadgen cam plan` (`cadgen.cam`) read a part from its file -- a STEP or an
-xbf through `read_step`/`read_xbf`, or a DXF's profiles -- never through the engine, and resolve a
-job's face and edge refs in that file by the engine's grammar (`engine/refs.py`), so a ref
-`cadgen inspect` answers or the CAD Viewer copies names the same face. The planner, simulator, checks
-and posts live under `src/cadgen/_internal/cam/`; a plan writes `<stem>.cam.glb`, an ordinary GLB the
-viewer's GLB renderer draws the job of, and one G-code file per setup. The `cam` skill carries the job
-file's contract.
+xbf through `read_step`/`read_xbf` -- never through the engine, and resolve a job's face refs in that
+file by the engine's grammar (`engine/refs.py`), so a ref `cadgen inspect` answers or the CAD Viewer
+copies names the same face. FreeCAD, installed by the person (1.1 or newer; `CADGEN_FREECAD` names its
+`freecadcmd`), plans and posts each setup in a process of its own, as KiCad does for `cadgen pcb`;
+cadgen checks what it plans against the part under `src/cadgen/_internal/cam/` and posts nothing a
+check refuses. A plan writes `<stem>.cam.glb`, an ordinary GLB the viewer's GLB renderer draws the job
+of, and the G-code for each setup. The `cam` skill carries the job file's contract.

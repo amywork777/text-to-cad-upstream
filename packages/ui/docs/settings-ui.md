@@ -1302,8 +1302,9 @@ nothing is prepared ahead: Preview prepares as it is entered, under its cover.
 
 A GLB written by `cadgen cam plan` carries its job in the scene's extras (`cam`). The GLB
 renderer loads the CAM viewer (`renderers/glb/camView.jsx`, a chunk of its own that a plain
-GLB never fetches) and draws the toolpaths, the tool, the simulated stock, the fixtures and
-the part. Its strip is a GLB's (Select, Pencil, Shapes, Measure, Clip), with no Explode: the part,
+GLB never fetches) and draws the toolpaths, the tool, the stock box and the part. The plan is
+3-axis milling and drilling (FreeCAD plans it, cadgen checks it): each setup's tool comes from
++Z or -Z. Its strip is a GLB's (Select, Pencil, Shapes, Measure, Clip), with no Explode: the part,
 the stock and the paths mean nothing pulled apart. What there is to read of the job is
 **Job**, a section of the [file sidebar](#the-file-sidebar-and-the-tool-stack): its tile a
 tree's, named Job, there whatever tool is in hand, and closed as the result opens, as every
@@ -1313,8 +1314,8 @@ the verdict.
 
 - **Verdict.** First, in the theme's status tones: green "Ready to cut · 42 min · 3 tools",
   or red "2 to fix". Under it, what the job takes: its tool changes ("No tool changes",
-  "1 tool change", "3 tool changes", from `cam.tool_changes` where cadgen writes it, else
-  counted from the operations in program order) and the controller its G-code is for
+  "1 tool change", "3 tool changes", counted from the operations in program order) and the
+  controller its G-code is for
   ("grbl controller"); then, muted, whether G-code was written and how many warnings went to
   the agent; then each error in plain words, a row that chooses the operations it is about.
 - **Setups and operations.** Each setup is a parent row (its name, how many operations, its
@@ -1331,13 +1332,12 @@ the verdict.
   surfaces, each only where the file has it, its words on hover and its eye as a layer's is
   (on hover, kept while it is put away): **Toolpaths** (each operation in its own colour),
   **Rapids** (moves between cuts, dashed), **Tool** (the tool on the path while Simulate
-  plays), **Stock** (the stock as the job leaves it; put away by default), **Fixtures** (the
-  setup's fixture boxes as see-through, matte steel blue, so the part stands out; only for a
-  file that has fixtures) and **Part**. These were Display's gates; Display is a mode and the
-  grid, and a file's own drawing is its section's. The fixtures shown are those of the setup
-  in view: the setup under way while a routine plays, the chosen row's setups, else the first
-  setup's that has any. The rows and the hidden operations are the file's view (the
+  plays), **Stock** (the see-through block the part is cut from; put away by default) and
+  **Part**. These were Display's gates; Display is a mode and the grid, and a file's own
+  drawing is its section's. The rows and the hidden operations are the file's view (the
   renderer's `cam` slice), kept with it as the camera and Display are.
+- **Safety.** At the section's foot, always shown in small muted type, the sentence every
+  result carries (`cam.safety`): what the plan is not, and what to check before cutting.
 - **Choosing.** Every setup, operation, tool and error row is a choice: a press chooses it, a
   second press, Escape or its chip's X lets go. The choice isolates its operations (the rest
   of the paths dimmed, not hidden) and is Quick Edit's chip beside any picked nodes, named for
@@ -1351,9 +1351,8 @@ the verdict.
 **Simulate.** A result's routines are the file's, in the sidebar's **Animation** section:
 **Simulate** plays the whole program, and a job with more than one setup adds **Simulate
 <setup>** for each, showing that setup's paths alone. The program plays at one pace for every
-routine, the whole job in at most 30 seconds; the paths are drawn up to the moment, the tool
-rides them, and where the file stores the stock after each operation, the stock is the one the
-last finished operation left. With reduced motion (the system's `prefers-reduced-motion` or
+routine, the whole job in at most 30 seconds; the paths are drawn up to the moment and the tool
+rides them, standing along its setup's axis. With reduced motion (the system's `prefers-reduced-motion` or
 the host's `reducedMotion`) nothing sweeps: a routine steps one operation a second, each drawn
 whole with the tool at its end. While one plays, a small readout sits at the view's bottom
 centre (above Quick Edit's sheet on a phone): the operation under way, the program's time over
