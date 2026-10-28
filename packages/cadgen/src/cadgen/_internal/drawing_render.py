@@ -1227,28 +1227,45 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 # The paper's length is the broken view's; the value is the part's.
                 measured = true
                 label = label.replace("<>", _fmt(true))
+            # What prints stacked, one half over the other: unequal deviations after
+            # the value, or the two limits in its place.
+            stack = None
+            if tol and abs(tol[0] - tol[1]) > 1e-9:
+                stack = (f"+{_exact(tol[0])}", f"-{_exact(tol[1])}")
+            printed = label.replace("<>", _fmt(measured))
             if limits is not None:
                 low, high = limits
                 if not low - 1e-6 <= measured <= high + 1e-6:
                     raise ValueError(f"{view.name} {name}: limits=({_fmt(low)}, {_fmt(high)}) do not hold the part, "
                                      f"which measures {_fmt(measured)} there. Give the limits the design requires, "
                                      "or change the model.")
-                # The two limits, stacked; ezdxf prints them from the deviations.
-                style_override |= {"dimlim": 1, "dimtp": high - measured, "dimtm": measured - low,
-                                   "dimtdec": _places(low, high), "dimtfac": 0.7}
+                # The two limits, stacked where the value would print, its prefix and
+                # suffix kept: ezdxf's own limits (dimlim) print the stack alone, and a
+                # bore's ⌀12.000-12.025 read as a width of 12.
+                places = _places(low, high)
+                stack = (f"{high:.{places}f}", f"{low:.{places}f}")
+                printed = label.replace("<>", "")
+                label = label.replace("<>", f"{{\\H0.70x;\\S{stack[0]}^ {stack[1]};}}")
             if basic:
                 style_override["dimgap"] = -abs(th * 0.25)  # a negative gap is the DXF's mark of a basic value
             # A value wider than the space between its extension lines is set beside
             # them, on the dimension line's side, instead of across them: centred,
             # "3 WALL" printed with both witness lines running through its glyphs.
             # One that fits stays centred and only its arrows go outside.
-            printed = label.replace("<>", _fmt(measured))
             width = _ink_width(printed, th)
             if tol and abs(tol[0] - tol[1]) < 1e-9:
                 width += _text_width(_tol_suffix(tol), th * 0.7)
-            elif tol:
-                # Unequal deviations print stacked, one over the other: as wide as the wider.
-                width += th * 0.35 + max(_text_width(f"+{_exact(v)}", th * 0.7) for v in tol)
+            if stack is not None:
+                # A stack is as wide as its wider half.
+                width += (th * 0.35 if printed.strip() else 0.0) + max(_text_width(v, th * 0.7) for v in stack)
+            # A key characteristic's mark follows a value along its line, so the two
+            # fit between the extension lines together or are set beside them together.
+            beside = width + (th * 0.5 + mark_width(key_mark, th) if keyed and horizontal else 0.0)
+            # How far the value's middle stands off its dimension line: ezdxf's gap
+            # and half the text for one line. A stack draws 1.7 text heights tall
+            # about that middle, its lower half through the line, so it stands half
+            # a text height further off: its glyphs clear the line as one line's do.
+            stand = 1.0 + th / 2 + (th / 2 if stack is not None else 0.0)
             arrow = th * 0.85
             location = None
             if aligned:
@@ -1263,8 +1280,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     reach["left"] = max(reach["left"], vx0 - x + th * 1.5)
             elif horizontal:
                 base = (a[0], (max(a[1], b[1]) if offset >= 0 else min(a[1], b[1])) + offset)
-                if width + 1.0 > span:
-                    location = (max(a[0], b[0]) + 1.5 * arrow + 1.0 + width / 2, base[1] + 1.0 + th / 2)
+                if beside + 1.0 > span:
+                    location = (max(a[0], b[0]) + 1.5 * arrow + 1.0 + width / 2, base[1] + stand)
                 d = msp.add_linear_dim(base=base, p1=a, p2=b, location=location, angle=0, dimstyle=dimstyle,
                                        text=label, override=style_override, dxfattribs={"layer": "DIM"})
                 side = "top" if offset >= 0 else "bottom"
@@ -1272,14 +1289,20 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 reach[side] = max(reach[side], abs(base[1] - edge) + th * 1.5)
             else:
                 base = ((max(a[0], b[0]) if offset >= 0 else min(a[0], b[0])) + offset, a[1])
-                if width + 1.0 > span:
-                    location = (base[0] - 1.0 - th / 2, max(a[1], b[1]) + 1.5 * arrow + 1.0 + width / 2)
+                if beside + 1.0 > span:
+                    location = (base[0] - stand, max(a[1], b[1]) + 1.5 * arrow + 1.0 + width / 2)
                 d = msp.add_linear_dim(base=base, p1=a, p2=b, location=location, angle=90, dimstyle=dimstyle,
                                        text=label, override=style_override, dxfattribs={"layer": "DIM"})
                 side = "right" if offset >= 0 else "left"
                 edge = vx1 if offset >= 0 else vx0
                 reach[side] = max(reach[side], abs(base[0] - edge) + th * 1.5)
             d.render()
+            if stack is not None and location is None and not aligned:
+                # A centred stack, stood off its line as one set beside it is.
+                value = next(e for e in doc.blocks.get(d.dimension.dxf.geometry) if e.dxftype() == "MTEXT")
+                x, y = value.dxf.insert.x, value.dxf.insert.y
+                value.dxf.insert = (x, base[1] + stand) if horizontal else (base[0] - stand, y)
+                reach[side] += th / 2
             if location is not None:
                 # ezdxf leaves a value set beside its dimension floating; the
                 # dimension line runs on under it, as a drafter draws it.

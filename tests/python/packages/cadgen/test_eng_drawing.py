@@ -3364,7 +3364,7 @@ class DimensionKindTests(unittest.TestCase):
         top.dim((-20, -15, 10), (20, -15, 10), limits=(39.98, 40.02))
         doc = _render_sheet(sheet, index=1, count=1, label="limits")
         (dim,) = doc.modelspace().query("DIMENSION")
-        self.assertEqual(dim.override().get("dimlim"), 1)
+        self.assertIn("\\S40.02^ 39.98;", dim.dxf.text, "the two limits, stacked where the value prints")
         text = " ".join(_dim_texts(doc))
         self.assertIn("40.02", text)
         self.assertIn("39.98", text)
@@ -3372,6 +3372,84 @@ class DimensionKindTests(unittest.TestCase):
         top.dim((-20, -15, 10), (20, -15, 10), limits=(40.1, 40.2))
         with self.assertRaisesRegex(ValueError, "measures 40"):
             _render_sheet(sheet, index=1, count=1, label="outside")
+
+    @staticmethod
+    def _ink(doc, dimension, x0: float, x1: float):
+        """What ``dimension`` draws between sheet x0 and x1, as the PDF's renderer
+        lays it out: the bounding boxes of its glyphs (and any line work) there."""
+        from ezdxf.addons.drawing import Frontend, RenderContext, config
+        from ezdxf.addons.drawing.recorder import Recorder
+
+        recorder = Recorder()
+        context = RenderContext(doc)
+        context.set_current_layout(doc.modelspace())
+        Frontend(context, recorder, config=config.Configuration()).draw_entities([dimension])
+        boxes = []
+        for record, _properties in recorder.player().recordings():
+            box = record.bbox()
+            if box.has_data and box.extmin.x > x0 and box.extmax.x < x1:
+                boxes.append((box.extmin.x, box.extmin.y, box.extmax.x, box.extmax.y))
+        return boxes
+
+    @staticmethod
+    def _line_y(doc, dimension) -> float:
+        """The height of a horizontal dimension's dimension line."""
+        lines = [e for e in doc.blocks.get(dimension.dxf.geometry) if e.dxftype() == "LINE"
+                 and abs(e.dxf.start.y - e.dxf.end.y) < 1e-9]
+        return lines[0].dxf.start.y
+
+    def test_a_stacked_value_stands_clear_of_its_dimension_line(self) -> None:
+        """Two limits, or unequal deviations, print one over the other about the
+        middle a one-line value has: the lower half ran through the line."""
+        from cadgen._internal.drawing_render import _render_sheet
+
+        for kind in ({"limits": (39.98, 40.02)}, {"tol": (0.05, 0.02)}, {}):
+            with self.subTest(**kind):
+                sheet, top, front = self._block_sheet()
+                top.dim((-20, -15, 10), (20, -15, 10), **kind)
+                doc = _render_sheet(sheet, index=1, count=1, label="stack", warnings=[])
+                (dim,) = doc.modelspace().query("DIMENSION")
+                line, (x, _y) = self._line_y(doc, dim), top.at
+                glyphs = self._ink(doc, dim, x - 15, x + 15)
+                self.assertTrue(glyphs)
+                self.assertGreater(min(g[1] for g in glyphs), line + 1.0, "no glyph on the line")
+
+    def test_limits_keep_the_values_prefix(self) -> None:
+        """⌀ before a bore's limits: without it, ⌀12.000-12.025 read as a width."""
+        from cadgen._internal.drawing_render import _render_sheet
+
+        sheet, top, front = self._block_sheet()
+        top.dim((-20, -15, 10), (20, -15, 10), text="%%c<> THRU", limits=(39.98, 40.02))
+        doc = _render_sheet(sheet, index=1, count=1, label="prefix", warnings=[])
+        (dim,) = doc.modelspace().query("DIMENSION")
+        self.assertEqual(dim.dxf.text, "%%c{\\H0.70x;\\S40.02^ 39.98;} THRU")
+        block = list(doc.blocks.get(dim.dxf.geometry))
+        (value,) = [e for e in block if e.dxftype() == "MTEXT"]
+        (symbol,) = [e for e in block if e.dxftype() == "CIRCLE"]
+        self.assertLess(symbol.dxf.center.x, value.dxf.insert.x, "the ⌀ drawn before the limits")
+        self.assertAlmostEqual(symbol.dxf.center.y, value.dxf.insert.y, places=6, msg="and centred on their stack")
+
+    def test_a_key_mark_after_limits_clears_the_extension_lines(self) -> None:
+        """The stack's width was not counted, and the mark's never was: a short
+        dimension kept its limits centred and its mark sat on the extension line."""
+        from cadgen._internal.drawing_render import _render_sheet
+
+        for start, limits in ((-10, (9.98, 10.02)), (-6, (13.98, 14.02))):
+            with self.subTest(span=start + 20):
+                sheet, top, front = self._block_sheet()
+                top.dim((-20, -15, 10), (start, -15, 10), text="%%c<>", limits=limits, key=True)
+                doc = _render_sheet(sheet, index=1, count=1, label="keyed", warnings=[])
+                (dim,) = doc.modelspace().query("DIMENSION")
+                (mark,) = [e for e in doc.modelspace().query("LWPOLYLINE[layer=='DIM']") if e.closed]
+                xs = [p[0] for p in mark.get_points()]
+                arrow = sheet.text_height * 0.85
+                extensions = sorted({e.dxf.start.x for e in doc.blocks.get(dim.dxf.geometry) if e.dxftype() == "LINE"
+                                     and abs(e.dxf.start.x - e.dxf.end.x) < 1e-9})
+                far = top.at[0] + start * sheet.scale
+                self.assertAlmostEqual(extensions[-1], far, places=6)
+                self.assertGreater(min(xs), far + arrow, "the mark beyond the far extension line and its arrow")
+                glyphs = self._ink(doc, dim, far + 0.1, min(xs))
+                self.assertTrue(glyphs, "the value set beside, between the arrow and the mark")
 
     def test_kinds_that_cannot_combine_are_refused(self) -> None:
         sheet, top, front = self._block_sheet()
@@ -4223,8 +4301,8 @@ class AerospaceExampleTests(unittest.TestCase):
         texts = [e.dxf.text for e in msp.query("TEXT")]
         for words in ("MATERIAL KEY", "LAYER TABLE", "THICKNESS", "SLEEVE, FULL LENGTH", "AS81934", "KC"):
             self.assertIn(words, texts)
-        limits = [d for d in msp.query("DIMENSION") if d.override().get("dimlim") == 1]
-        self.assertEqual(len(limits), 1, "the installed bore, between its limits")
+        limits = [d.dxf.text for d in msp.query("DIMENSION") if "\\S" in d.dxf.text]
+        self.assertEqual(limits, ["%%c{\\H0.70x;\\S12.025^ 12.000;}"], "the installed bore's ⌀, between its limits")
         dims = " ".join(_dim_texts(assembly))
         self.assertIn("12.025", dims)
         self.assertIn("12.000", dims)
