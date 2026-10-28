@@ -1,7 +1,8 @@
 """STEP: AP242, written by the kernel's XCAF writer from the document.
 
 The assembly with its instance and product names, colours per part and per painted face,
-material names and densities (the writer's material mode), and the element names on face
+material names and densities (the writer's material mode), approximate standard surface
+reflectance and transparency for material-bearing parts and faces, and the element names on face
 and edge sub-shape labels (``write.stepcaf.subshapes.name``). A document as built is
 written from its XCAF document itself; one held without it (a foreign STEP's), from the
 view made a document again (``tree.tree_of``). The mechanism, its
@@ -96,10 +97,13 @@ def write_document(doc: Any, path: Path) -> None:
         with _usages_apart(doc):
             if not writer.Transfer(doc, STEPControl_AsIs):
                 raise OSError(f"could not write {path}")
+        from cadgen.engine.step_style import write_visual_styles
+
+        changed_styles = write_visual_styles(writer, doc)
         _stamp(writer.ChangeWriter().Model())
         if writer.Write(str(path)) != IFSelect_RetDone:
             raise OSError(f"could not write {path}")
-    _settle(Path(path))
+    _settle(Path(path), changed_styles)
 
 
 @contextmanager
@@ -117,7 +121,8 @@ def _usages_apart(doc: Any) -> Iterator[None]:
     would be another's key is given a datum of its own, of the same transformation, written as
     the same numbers; the components and their assemblies' compounds are set back after, each
     compound's named shape at the version it had, so the document saves to the bytes it did."""
-    from OCP.TDF import TDF_AttributeIterator, TDF_Label, TDF_LabelSequence
+    from OCP.TDF import TDF_AttributeIterator, TDF_Label
+    from OCP.collections import Sequence_TDF_Label
     from OCP.TNaming import TNaming_NamedShape
     from OCP.TopLoc import TopLoc_Location
     from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_Location, XCAFDoc_ShapeTool
@@ -125,7 +130,7 @@ def _usages_apart(doc: Any) -> Iterator[None]:
     from cadgen.engine.document import _entry
 
     tool = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
-    labels = TDF_LabelSequence()
+    labels = Sequence_TDF_Label()
     tool.GetShapes(labels)
     placed: dict[tuple[str, int], list] = {}
     moved: list[tuple[Any, Any]] = []
@@ -135,7 +140,7 @@ def _usages_apart(doc: Any) -> Iterator[None]:
         if not XCAFDoc_ShapeTool.IsAssembly_s(assembly):
             continue
         assemblies.append(assembly)
-        components = TDF_LabelSequence()
+        components = Sequence_TDF_Label()
         XCAFDoc_ShapeTool.GetComponents_s(assembly, components, False)
         for place in range(1, components.Length() + 1):
             component = components.Value(place)
@@ -193,15 +198,56 @@ _OCCURRENCE = re.compile(rb"NEXT_ASSEMBLY_USAGE_OCCURRENCE\s*\(\s*'\d*'((?:'(?:[
 _BREAK = re.compile(rb"\r?\n *")
 
 
-def _settle(path: Path) -> None:
+def _settle(path: Path, changed_styles: bool = False) -> None:
     """The written file made a function of the document alone (see the module docstring): its
     presentations in the document's order (``_presentations``) and its assembly occurrences
     numbered as a fresh process numbers them (``_occurrences``); written again when either
     changed it."""
-    data = path.read_bytes()
+    original = path.read_bytes()
+    data = _prune_unused_styles(original) if changed_styles else original
     settled = _occurrences(_presentations(data))
-    if settled != data:
+    if settled != original:
         path.write_bytes(settled)
+
+
+def _prune_unused_styles(data: bytes) -> bytes:
+    """Remove detached originals left by replacing material styles.
+
+    OCCT appends presentation records after the geometry. Only assignment
+    records with no incoming references are roots for removal; shared colours,
+    curve styles and contexts remain live. An unreferenced assignment styles no
+    item, so it carries no appearance to preserve.
+    Dropping these unreachable chains before numbering keeps allocation order out
+    of the bytes without touching geometry or any reachable presentation.
+    """
+    found = data.find(_PRESENTATION)
+    if found < 0:
+        return data
+    start = data.rfind(b"\n#", 0, found) + 1
+    end = data.find(b"ENDSEC;", found)
+    tail = data[start:end]
+    heads = list(_RECORD.finditer(tail))
+    records = {int(m.group(1)): tail[m.start():heads[i + 1].start() if i + 1 < len(heads) else len(tail)]
+               for i, m in enumerate(heads)}
+    refs = {number: [int(ref) for ref in _REFERENCE.findall(_QUOTED.sub(b"''", text[text.index(b"=") + 1:]))]
+            for number, text in records.items()}
+    counts: dict[int, int] = {}
+    for references in refs.values():
+        for ref in references:
+            counts[ref] = counts.get(ref, 0) + 1
+    pending = [number for number, record in records.items()
+               if record.split(b"=", 1)[1].lstrip().startswith(b"PRESENTATION_STYLE_ASSIGNMENT(")]
+    removed = set()
+    while pending:
+        number = pending.pop()
+        if number in removed or number not in records or counts.get(number, 0):
+            continue
+        removed.add(number)
+        for ref in refs[number]:
+            counts[ref] -= 1
+            if counts[ref] == 0:
+                pending.append(ref)
+    return data[:start] + b"".join(records[int(m.group(1))] for m in heads if int(m.group(1)) not in removed) + data[end:]
 
 
 def _presentations(data: bytes) -> bytes:

@@ -75,14 +75,19 @@ def describe(doc: Any, step: bool) -> tuple[dict[str, Any], list[Any], list[Any]
     and face materials carried."""
     import unicodedata
 
+    from cadgen.engine.document import check_format
+
+    check_format(doc)
+
     from OCP.Bnd import Bnd_Box
     from OCP.BRepBndLib import BRepBndLib
     from OCP.Quantity import Quantity_ColorRGBA
-    from OCP.TDF import TDF_Label, TDF_LabelSequence
+    from OCP.TDF import TDF_Label
+    from OCP.collections import Sequence_TDF_Label
     from OCP.TopAbs import TopAbs_FACE
     from OCP.TopExp import TopExp
     from OCP.TopoDS import TopoDS_Iterator
-    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
     from OCP.XCAFDoc import XCAFDoc_ColorCurv, XCAFDoc_ColorGen, XCAFDoc_ColorSurf, XCAFDoc_ColorTool
     from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
 
@@ -142,32 +147,45 @@ def describe(doc: Any, step: bool) -> tuple[dict[str, Any], list[Any], list[Any]
             stack.extend(reversed(below))
         return best
 
-    def faces_given(label: Any, shape: Any) -> tuple[dict[str, list[float]], dict[str, Any]]:
-        """An xbf part's painted faces and face materials, by ordinal."""
+    def faces_given(label: Any, shape: Any) -> tuple[dict[str, list[float]], dict[str, Any], Any]:
+        """A part's painted faces and material styles, by ordinal."""
         paints: dict[str, list[float]] = {}
-        given: dict[str, Any] = {}
-        subs = TDF_LabelSequence()
+        given: dict[int, Any] = {}
+        holding: list[tuple[Any, Any]] = []
+        subs = Sequence_TDF_Label()
         XCAFDoc_ShapeTool.GetSubShapes_s(label, subs)
         faces = None
         for at in range(1, subs.Length() + 1):
             sub = subs.Value(at)
             held = XCAFDoc_ShapeTool.GetShape_s(sub)
-            if held.IsNull() or held.ShapeType() != TopAbs_FACE:
+            if held.IsNull():
+                continue
+            if held.ShapeType() != TopAbs_FACE:
+                material = _label_material(sub)
+                if material is not None:
+                    holding.append((held, material))
                 continue
             if faces is None:
-                faces = TopTools_IndexedMapOfShape()
+                faces = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
                 TopExp.MapShapes_s(shape, TopAbs_FACE, faces)
             ordinal = faces.FindIndex(held)
             if not ordinal:
                 continue
             material = _label_material(sub)
             if material is not None:
-                given[str(ordinal)] = material_json(material)
+                given[ordinal] = material
                 continue
             color = label_color(sub)
             if color is not None:
                 paints[str(ordinal)] = color
-        return paints, given
+        material = _label_material(label)
+        if holding:
+            from cadgen.engine.document import _held_materials
+            if faces is None:
+                faces = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
+                TopExp.MapShapes_s(shape, TopAbs_FACE, faces)
+            material = _held_materials(faces, holding, material, given)
+        return paints, {str(k): material_json(v) for k, v in given.items()}, material
 
     products: list[dict[str, Any]] = []
     index: dict[str, int] = {}
@@ -189,7 +207,7 @@ def describe(doc: Any, step: bool) -> tuple[dict[str, Any], list[Any], list[Any]
         found = index[key] = len(products)
         products.append(record)
         if assembly:
-            components = TDF_LabelSequence()
+            components = Sequence_TDF_Label()
             XCAFDoc_ShapeTool.GetComponents_s(label, components, False)
             record["components"] = [component(components.Value(at)) for at in range(1, components.Length() + 1)]
         else:
@@ -198,9 +216,11 @@ def describe(doc: Any, step: bool) -> tuple[dict[str, Any], list[Any], list[Any]
             names = imported.names(label, topods, held_names)  # what the file names its elements
             record["names"] = {str(kind): {str(o): text for o, text in found_names.items()}
                                for kind, found_names in names.items()}
-            record["material"] = material_json(_label_material(label))
+            paints, face_materials, material = faces_given(label, topods)
+            record["material"] = material_json(material)
+            record["face_materials"] = face_materials
             if not step:
-                record["paints"], record["face_materials"] = faces_given(label, topods)
+                record["paints"] = paints
         return found
 
     def component(label: Any) -> dict[str, Any]:
@@ -214,7 +234,7 @@ def describe(doc: Any, step: bool) -> tuple[dict[str, Any], list[Any], list[Any]
         return {"product": product(referred), "name": name_of(label) if own else "",
                 "color": label_color(label) if own else None, "location": at}
 
-    free = TDF_LabelSequence()
+    free = Sequence_TDF_Label()
     tool.GetFreeShapes(free)
     roots = [component(free.Value(at)) for at in range(1, free.Length() + 1)]
     return {"products": products, "roots": roots}, shapes, locations
@@ -349,6 +369,9 @@ def _parse(path: str) -> tuple[dict[str, Any], bytes]:
 
     refuse_external_files(reader, path)
     reader.Transfer(doc)
+    from cadgen.engine.step_style import read_visual_styles
+
+    read_visual_styles(reader, doc)
     header, shapes, locations = describe(doc, step=True)
     header["shapes"] = len(shapes)
     return header, pack(shapes, locations)
