@@ -1827,6 +1827,26 @@ class LayoutTests(unittest.TestCase):
             else:
                 self.assertTrue(inside, "a value that fits stays centred; only its arrows go outside")
 
+    def test_a_value_set_beside_its_dimension_sits_on_its_dimension_line(self) -> None:
+        """A 6 mm thickness with stacked deviations: the line runs on to the value, which starts just past it."""
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A4")
+        right = sheet.view(_plate(), "right", at=(140, 100))
+        right.dim((40, 25, 0), (40, 25, 6), tol=(0, 0.2))
+        doc = _render_sheet(sheet, index=1, count=1, label="thin")
+        dim = doc.modelspace().query("DIMENSION")[0]
+        block = list(doc.blocks.get(dim.dxf.geometry))
+        mtext = next(e for e in block if e.dxftype() == "MTEXT")
+        top = max(dim.dxf.defpoint2.y, dim.dxf.defpoint3.y)
+        self.assertGreater(mtext.dxf.insert.y, top, "set beside, past the 6 mm")
+        self.assertLess(mtext.dxf.insert.y - top, 12, "close to the dimension it states")
+        x = dim.dxf.defpoint.x
+        run = max((max(e.dxf.start.y, e.dxf.end.y) for e in block if e.dxftype() == "LINE"
+                   and abs(e.dxf.start.x - x) < 1e-6 and abs(e.dxf.end.x - x) < 1e-6), default=top)
+        self.assertGreater(run, mtext.dxf.insert.y, "the dimension line runs on under the value")
+
     def test_a_turned_part_seen_from_the_side_has_one_centre_line_end_to_end(self) -> None:
         from cadgen._internal.drawing_base import _CENTRE_OVERSHOOT
         from cadgen._internal.drawing_render import _render_sheet
