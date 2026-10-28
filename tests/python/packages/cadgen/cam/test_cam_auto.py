@@ -68,7 +68,8 @@ class Plate(unittest.TestCase):
         text = path.read_text(encoding="utf-8")
         written = json.loads(text)
         self.assertEqual(names(self.result), [op["name"] for op in written["setups"][0]["operations"]])
-        self.assertEqual(24.0, written["tools"][0]["flute_length_mm"], "the proposed lengths, stated")
+        self.assertEqual((3, 16.0), (written["tools"][0]["flutes"], written["tools"][0]["flute_length_mm"]),
+                         "a stub cutter, two diameters, three flutes in aluminium")
         again = plan(self.step, str(path), out_dir=self.directory / "again")
         self.assertEqual("ready", again.verdict["status"], again.findings)
         self.assertEqual([op["summary"] for op in self.result.operations], [op["summary"] for op in again.operations])
