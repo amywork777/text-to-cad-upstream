@@ -289,14 +289,17 @@ class ChokedNozzle(unittest.TestCase):
     The mesh differs by platform (CI's Linux one ended unsettled). On four of twenty sizes tried around 1.6 mm on
     macOS the stabilisation's coefficients left the residual on a floor just above FREEZE_AT (1.1e-3 to 2.8e-3), so
     they were never held and the march stalled there, unsettled; a stall with the peak Mach number settled now holds
-    them, from the best state, and those settle."""
+    them, from the best state, and those settle. On OpenCascade 8 (cadgen 0.8.1) the 1.6 mm mesh is itself such a
+    size: the march reaches 1.4e-5 at the shock and steps away from it at any CFL, a limit cycle. Every size tried
+    from 1.45 to 1.8 mm settles on OpenCascade 7.9 and 8 but that one, so the nozzle is meshed at 1.75 mm."""
 
     RATIO = 0.75
+    SIZE_MM = 1.75
 
     @classmethod
     def setUpClass(cls):
         directory = class_directory(cls)
-        study = nozzle_study(cls.RATIO, fit={"seconds": 1, "allow": ["continuation"]})
+        study = {**nozzle_study(cls.RATIO, fit={"seconds": 1, "allow": ["continuation"]}), "mesh": {"size_mm": cls.SIZE_MM}}
         cls.result, cls.captured = solve_capturing(nozzle_step(directory), directory / "choked.glb", study)
         cls.extras = glb_extras(cls.result.glb)
         cls.summary = cls.result.summary
