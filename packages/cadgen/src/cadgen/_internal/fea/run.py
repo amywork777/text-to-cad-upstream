@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from cadgen._internal.atomic_replace import replace_atomic, temp_suffix
 from cadgen._internal.fea.checks import quoted
 from cadgen.results import FeaFace, FeaFacesResult, FeaPair, FeaPart, FeaPartsResult, FeaResult
 
@@ -844,7 +845,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     sidecar_text = json.dumps(sidecar, indent=2, allow_nan=False)
     # Each file is written beside its target under a temporary name and replaced into place once every one is written:
     # a run that fails leaves no file it wrote, and an earlier result stays byte for byte.
-    temporary = {path: path.with_name(f".{path.name}.{os.getpid()}.tmp") for path in (glb_path, vtu_path, sidecar_path)
+    temporary = {path: path.with_name(f".{path.name}{temp_suffix()}") for path in (glb_path, vtu_path, sidecar_path)
                  if path is not None}
     try:
         write_glb(
@@ -860,7 +861,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
                       displacement=deformation[:vertex_count], values=colour[:vertex_count])
         temporary[sidecar_path].write_text(sidecar_text, encoding="utf-8")
         for final, held in temporary.items():
-            os.replace(held, final)
+            replace_atomic(held, final)
     finally:
         for held in temporary.values():
             held.unlink(missing_ok=True)
