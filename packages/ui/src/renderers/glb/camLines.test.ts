@@ -26,6 +26,25 @@ it('groups the file\'s segments by kind and operation, each group in time order,
   expect(Array.from(timeline.starts)).toEqual([0, 10, 20, 40]);
 });
 
+it('reads a job of hundreds of thousands of segments without overflowing the stack', () => {
+  // A 23-minute five-operation job on an 80 x 60 x 25 mm block passed 100k segments in one group, which
+  // overflowed V8's argument limit when they were spread into one push().
+  const count = 300_000;
+  const root = camScene();
+  root.remove(...root.children.filter((child: any) => child.isLineSegments));
+  const points: number[][] = [];
+  const times: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    points.push([i * 0.01, 0, 0], [(i + 1) * 0.01, 0, 0]);
+    times.push(i, i + 1);
+  }
+  root.add(camLines(points, times, new Array(times.length).fill(0), { setup: 'top', kind: 'feed' }));
+  const { groups, timeline } = readCamSegments(THREE, root, readCamJob(root)!);
+  expect(groups.map((group: any) => [group.key, group.starts.length])).toEqual([['feed:0', count]]);
+  expect(timeline.segments.length).toBe(count);
+  expect(timeline.starts[count - 1]).toBe(count - 1);
+});
+
 it('finds a segment\'s operation by its time when the file has no _CAM_OP, and reads the attributes however they are spelled', () => {
   const root = camScene();
   root.remove(...root.children.filter((child: any) => child.isLineSegments));

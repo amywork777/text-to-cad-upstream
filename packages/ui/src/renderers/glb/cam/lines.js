@@ -159,7 +159,8 @@ export function readCamSegments(THREE, root, job) {
   const all = [];
   const sorted = [...groups.values()].map((group) => {
     const segments = group.segments.sort((a, b) => a.t0 - b.t0);
-    all.push(...segments);
+    // One at a time: spread into push(), a large job's segments pass V8's argument limit (a stack overflow).
+    for (const segment of segments) all.push(segment);
     const positions = new Float32Array(segments.length * 6);
     const starts = new Float64Array(segments.length);
     const ends = new Float64Array(segments.length);
