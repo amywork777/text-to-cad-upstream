@@ -355,7 +355,7 @@ only, and a file's id is derived again from its path after a restart.
 | `build.py` | one build: load the script afresh (as Python imports it: a package's module by its dotted name), one memo run, document, element names, files: every model's that ran |
 | `delta.py` | the line under the run line: a built tree's facts (`facts`: its occurrences, its world bounds -- each part's box, kept by its geometry key, measured where it decides the model's -- its parts' geometry keys and looks, and its joints, configuration sequences and warnings), worked out in the worker, and the daemon's delta of them against the build before (`delta`), kept beside each record and in the registry's |
 | `previous.py` | the model's build closure on its xbf's main label (`manifest`), the release from the version beside the code and the platform, the closure made again before the body runs (`again`) |
-| `document_migrations.py` | supported persisted `xbf/8` to `xbf/9` material conversion in memory (`upgrade`), a separate migration record with original build provenance retained, and unsupported/failed conversion errors that preserve saved bytes |
+| `document_migrations.py` | supported persisted `xbf/8` to `xbf/9` material conversion and `xbf/9` to `xbf/10` (nothing to convert) in memory (`upgrade`), a separate migration record with original build provenance retained, and unsupported/failed conversion errors that preserve saved bytes |
 | `document.py` | result to XCAF (prototypes, instances, names, colours, materials, element names; a mesh face refused, `mesh_faces`), a warm build's patch of the document it kept, atomic BinXCAF save, read-back of an xbf or a foreign STEP, and a saved document's main-label strings rewritten in its bytes (`relabel`) |
 | `reader.py` | what a model imports: an XCAF document described as data and assembled into a build123d tree (`read_step`, `read_xbf`); the reader process a build's STEP files are parsed in; a mesh file as data (`read_mesh`, `Mesh`); a read of a file the build writes refused (`refuse_written`) |
 | `pmi.py` | semantic PMI: datums, dimensions and geometric tolerances on a part's faces (`annotate`, `cadgen.ap242`'s calls defined here), resolved each build (ok, missing, ambiguous, invalid), written as XCAF's GD&T objects, read back as the structure's `pmi`; its notes and named views (`pmi_views`), the xbf's alone; each part's faces no requirement is on and its requirements that cannot both hold (`pmi_coverage`), warned of; another system's GD&T listed as read, and copied into an xbf of its STEP (**PMI**) |
@@ -978,7 +978,7 @@ document does; no worker of its script starts and nothing runs. Loaded, it is un
 budget like any document, and leaves memory for its file again when the budget needs the room. The
 record is authoritative: a cache file missing, or not the size its record says, is not cached.
 
-A cached `xbf/8` snapshot is converted in memory when read, just like an explicit file
+A cached `xbf/8` or `xbf/9` snapshot is converted in memory when read, just like an explicit file
 (**Document compatibility**). Viewing, inspection, snapshots, imports and exports require no
 model source or execution. The original cache bytes, record and revision remain unchanged;
 loading a conversion does not schedule a cache rewrite. Unsupported or failed format conversion
@@ -1463,7 +1463,7 @@ Preview -- is an input. A posed or partial file is a function in the model's cod
 
 The page offers what the file's kind writes, and nothing is inspected first: an engine document
 (a STEP, an xbf, a held model) as STEP, STL, 3MF, GLB and xbf. An opened XBF file's XBF
-download returns its original bytes (`original`), including an `xbf/8` file converted in
+download returns its original bytes (`original`), including an `xbf/8` or `xbf/9` file converted in
 memory for viewing. Use
 `cadgen export old.xbf upgraded.xbf` to save that conversion to a different path
 (**Document compatibility**). DXF is offered where the page draws it flat on z=0; a mesh
@@ -1495,7 +1495,7 @@ changed or new one fails in one line naming the folder and its mode.
   `Model` (called first, as the program's own call of it is: taken from its key or the engine's
   cache, or replayed, when nothing changed; then exported by its handle) too. An xbf is written from a
   STEP (its GD&T copied as read, **PMI**). An ordinary current-format xbf is not written from another
-  xbf, which already is the document. A loaded `xbf/8` converted in memory is the exception: export
+  xbf, which already is the document. A loaded `xbf/8` or `xbf/9` converted in memory is the exception: export
   to a different XBF path serializes the complete upgraded XCAF document atomically; the source path
   is refused (**Document compatibility**). Several destinations read the document
   once, and every destination is checked before any is written; an export
@@ -2981,14 +2981,14 @@ The snapshot's part listing (0.7's `--mode list`) is gone by decision: `read_xbf
 A model's document is its own cache, as a FreeCAD document is: opened, it is what was last
 computed, and only what changed is computed again. It is kept in the engine's cache (**The
 cache**), and written as the model's xbf where one is declared, the same bytes. Its main label names what
-wrote it (`cadgen.engine xbf/9 (cadgen <release>)`, `document.Loaded.writer`) and holds the model's build
+wrote it (`cadgen.engine xbf/10 (cadgen <release>)`, `document.Loaded.writer`) and holds the model's build
 closure (`previous.py`, a `TDataStd_AsciiString` beside the writer's, schema `cadgen.engine
 closure/2`), pointers and digests only (law 1), and nothing of a version control's -- the engine calls
 no git. It names what the document was built from and what built it, the toolchain:
 
 ```
 schema    "cadgen.engine closure/2"
-engine    {"release": "cadgen 0.8.1", "format": "xbf/9", "digest": ...}   the format (keyed); the release and
+engine    {"release": "cadgen <VERSION>", "format": "xbf/10", "digest": ...}  the format (keyed); the release and
                                                                      the engine's code digest (information only)
 libs      {"build123d": "0.13.0", "OCP": "8.0.1.1",                   geometry and materials libraries (keyed);
            "bd_materials": "...", "threejs_materials": "..."}         OCP leads with the OCCT it wraps
@@ -3039,14 +3039,19 @@ animations, and a document with any was not taken; `xbf/7`, the compiled animati
 record on the main label, the closure counts none, and an animated document is taken like any
 (**Animations**); `xbf/8`, the closure names its toolchain (`closure/2`: system and architecture
 join the key; release and Python are recorded); `xbf/9`, materials use native bd_materials
-physics and `PbrProperties`, and both material libraries join the key.
+physics and `PbrProperties`, and both material libraries join the key; `xbf/10`, a part's
+semantic PMI, notes and named views (**PMI**), so an engine that reads `xbf/9` alone refuses the
+document instead of dropping them from what it exports. Every document is written `xbf/10`, PMI
+or none: the format is the engine's one marker, written and keyed alike.
 
-**Document compatibility.** The engine reads `xbf/8` and `xbf/9`. Loading an `xbf/8`
+**Document compatibility.** The engine reads `xbf/8`, `xbf/9` and `xbf/10`. Loading an `xbf/8`
 document converts its persisted material metadata to native material data in memory before
-viewing, inspection, snapshots, import or export. No model source is needed or executed.
-Geometry, placements, names, appearance, physical meaning, painted faces, mechanism and animation
-data remain the saved document's. Reading a current `xbf/9` is unchanged; formats outside this
-supported set are refused with a clear error.
+viewing, inspection, snapshots, import or export; loading an `xbf/9` one converts no data,
+`xbf/10` holding everything `xbf/9` does as `xbf/9` holds it: only its writer and the migration
+record say `xbf/10`. No model source is
+needed or executed. Geometry, placements, names, appearance, physical meaning, painted faces,
+mechanism and animation data remain the saved document's. Reading a current `xbf/10` is
+unchanged; formats outside this supported set are refused with a clear error.
 
 The conversion is idempotent. It leaves the original build closure and toolchain provenance
 unchanged: metadata conversion does not mean the geometry was built by the current kernel.
@@ -3058,7 +3063,7 @@ An unsupported or failed conversion preserves the original bytes and cache recor
 To keep an upgraded file, explicitly export the converted document to a different XBF path:
 
 ```bash
-cadgen export saved-v8.xbf upgraded-v9.xbf
+cadgen export saved-v8.xbf upgraded-v10.xbf
 ```
 
 This serializes the complete upgraded XCAF document, including its separate migration record,

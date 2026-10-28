@@ -187,7 +187,7 @@ Laws 1 to 13 and 19 to 23 are the engine's; 14 to 18 hold for the whole package.
 
     **Persisted-document exception.** Saved documents have a separate compatibility contract:
     opening, viewing, importing and exporting supported formats must not require their source or
-    a rebuild just because cadgen was upgraded. The engine reads `xbf/8` and `xbf/9`; it converts
+    a rebuild just because cadgen was upgraded. The engine reads `xbf/8`, `xbf/9` and `xbf/10`; it converts
     `xbf/8` material metadata in memory, without executing model code or changing source or cache
     bytes. A separate migration record identifies the conversion while the original build closure
     and toolchain provenance remain unchanged. Explicit export to a different XBF path can save
