@@ -186,8 +186,8 @@ The script raises rather than writing a wrong document:
   field or numbering, a `Format` with no sign-off column; an instruction with
   no steps; a step taller than a page (split it).
 - `out=` missing or not naming a `.pdf`, at import time.
-- `status="released"` with any open item. A refused or failed run leaves no
-  file at `out=`, not even an earlier one.
+- `status="released"` with any open item. A refused or failed run writes no
+  file at `out=`; an earlier one there is left as it was.
 
 ## Limits to state in the handoff
 

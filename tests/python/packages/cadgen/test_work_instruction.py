@@ -254,7 +254,8 @@ class OpenItemTests(_Assembly):
         from cadgen.work_instruction import work_instruction
 
         target = self.root / "refused.pdf"
-        target.write_bytes(b"%PDF an earlier, released instruction")
+        earlier = b"%PDF an earlier, released instruction"
+        target.write_bytes(earlier)
 
         @work_instruction(out=str(target))
         def released():
@@ -262,7 +263,8 @@ class OpenItemTests(_Assembly):
 
         with self.assertRaisesRegex(ValueError, "released with 2 open item"):
             released()
-        self.assertFalse(target.exists(), "the earlier file would read as this run's")
+        self.assertEqual(earlier, target.read_bytes(), "a refused run leaves the earlier file byte for byte")
+        self.assertEqual([target], sorted(self.root.glob("*refused.pdf*")), "and no partial file beside it")
 
     def test_every_blank_prints_not_stated_and_a_draft_says_so_on_every_page(self) -> None:
         wi = self._wi()
