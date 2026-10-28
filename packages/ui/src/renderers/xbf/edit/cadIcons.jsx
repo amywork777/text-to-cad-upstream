@@ -57,16 +57,13 @@ export const COMMAND_ICON_NAMES = Object.freeze({
 export const COMMAND_ICONS = Object.freeze(Object.fromEntries(Object.entries(COMMAND_ICON_NAMES).map(([id, name]) => [id, generatedIcon(name)])));
 
 /**
- * The generator's icon of each of the viewer's tools on a part's strip, by its id: Select, Annotate's
- * Pencil and Shapes, Measure, Explode and Clip (NX's Edit Section). The toolbar shows them as the strip does.
+ * The generator's icon of Select and Measure, the strip's tools that the CAD workspace draws its own way
+ * (`XbfSelectionModes.jsx`); the AI layout, and the model's effects, keep the kit's.
  */
-export const TOOL_ICON_NAMES = Object.freeze({
-  select: "select", pencil: "annotate", shapes: "shapes", measure: "measure", exploded: "exploded", clip: "section",
-});
+export const TOOL_ICON_NAMES = Object.freeze({ select: "select", measure: "measure" });
 
-// What a tool on the strip shows it has in hand, as the strip always has: Select and Measure what their
-// filters have them pick alone (All, the tool's own icon), Pencil and Shapes the drawing tool each draws
-// with (`annotation/tools.js`; the pen is Annotate's own).
+// What Select and Measure show they have in hand, as the strip always has: what their filters have
+// them pick alone (All, the tool's own icon).
 /** Select's icon by its filter's mode. */
 export const SELECT_ICON_NAMES = Object.freeze({ all: "select", faces: "select-face", edges: "select-edge", parts: "select-part",
   position: "select-position" });
@@ -74,21 +71,12 @@ export const SELECT_ICON_NAMES = Object.freeze({ all: "select", faces: "select-f
 export const SELECT_GROUP_ICON_NAMES = Object.freeze({ tangentFaces: "select-face-group", edgeChain: "select-edge-group" });
 /** Measure's icon by its filter's mode. */
 export const MEASURE_ICON_NAMES = Object.freeze({ all: "measure", vertex: "measure-vertex", edge: "measure-edge", face: "measure-face" });
-/** Each drawing tool's icon, by its id: Pencil's, then Shapes'. */
-export const DRAWING_ICON_NAMES = Object.freeze({
-  freedraw: "annotate", highlighter: "annotate-highlighter", eraser: "annotate-eraser",
-  rectangle: "shapes-rectangle", line: "shapes-line", arrow: "shapes-arrow", ellipse: "shapes-ellipse", text: "shapes-text",
-});
-const IN_HAND = Object.freeze({ select: SELECT_ICON_NAMES, measure: MEASURE_ICON_NAMES, pencil: DRAWING_ICON_NAMES, shapes: DRAWING_ICON_NAMES });
+const IN_HAND = Object.freeze({ select: SELECT_ICON_NAMES, measure: MEASURE_ICON_NAMES });
 
 /**
- * A tool's icon on the strip, by its id and what it has in hand (`mode`): Select's or Measure's
- * filter mode (`pickModeOf`), or the drawing tool Pencil or Shapes draws with (`drawingToolVariant`).
+ * Select's or Measure's icon on the CAD workspace's strip, by what it has in hand (`mode`): its filter
+ * mode (`pickModeOf`).
  */
 export function ToolIcon({ id, mode = "all", className }) {
   return <NxIcon name={IN_HAND[id]?.[mode] || TOOL_ICON_NAMES[id]} className={className} />;
 }
-
-/** The drawing tools' own buttons, in the row under the strip (`AnnotationToolbar`'s `icons`), by tool id. */
-export const DRAWING_TOOL_ICONS = Object.freeze(Object.fromEntries(Object.entries(DRAWING_ICON_NAMES)
-  .map(([id, name]) => [id, <NxIcon name={name} className="size-3.5" />])));

@@ -6,20 +6,16 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import * as cad from "./cadIcons.jsx";
-import { COMMAND_ICON_NAMES, COMMAND_ICONS, DRAWING_TOOL_ICONS, SELECT_GROUP_ICON_NAMES, TOOL_ICON_NAMES, ToolIcon } from "./cadIcons.jsx";
+import { COMMAND_ICON_NAMES, COMMAND_ICONS, SELECT_GROUP_ICON_NAMES, TOOL_ICON_NAMES, ToolIcon } from "./cadIcons.jsx";
 import { EDIT_COMMANDS } from "./editMode.js";
 import { NX_KINDS, booleanOf, featureIconName } from "./nx.js";
 import { SKETCH_TOOLS } from "./sketchMode.js";
 import { ConstructionIcon, NormalToIcon, SKETCH_TOOL_ICON_NAMES, SKETCH_TOOL_ICONS, SmartDimensionIcon } from "./sketchIcons.jsx";
-import { XBF_TOOL } from "../tools.js";
 import { CONNECTED_SELECTION, SELECT_GEOMETRY } from "../xbfSelectionFilter.js";
 import { MEASURE_SNAP_KINDS } from "../../kit/tools/measure/measureFilter.js";
-import { SHAPE_TOOLS, toolFamily } from "../../../annotation/tools.js";
-import { PENCIL_TOOL_ENTRIES } from "../../../annotation/toolbar.jsx";
 import { NX_ICON_NAMES, NxIcon, NxIconSprite } from "../../../lib/nxIcons.generated.jsx";
 
 // What Pencil draws with, as its row under the strip lists it.
-const PENCIL_TOOLS = PENCIL_TOOL_ENTRIES.map(tool => tool.id);
 
 // The workspace's icons all come from one generator (`scripts/nx-icons.py`), so a command, a tool, a
 // row and the sprite have to agree on its names. The sprite is host elements all the way down: read it
@@ -67,19 +63,16 @@ test("draws every sketch tool, each its own picture", () => {
   assert.equal(new Set(SKETCH_TOOLS.map(({ id }) => SKETCH_TOOL_ICON_NAMES[id])).size, SKETCH_TOOLS.length);
 });
 
-test("draws the strip's tools the workspace shows, each showing what it has in hand", () => {
-  // Each of a part's strip tools: Select, Annotate's Pencil and Shapes, Measure, then the model's effects, Explode and Clip.
-  assert.deepEqual(Object.keys(TOOL_ICON_NAMES).sort(), [...Object.values(XBF_TOOL), "exploded", "clip"].sort());
-  for (const id of ["select", "pencil", "shapes", "measure", "exploded", "clip"]) {
+test("draws Select and Measure as the workspace shows them, each showing what it has in hand", () => {
+  // The CAD workspace's Select and Measure; the AI layout and the model's effects keep the kit's icons.
+  assert.deepEqual(Object.keys(TOOL_ICON_NAMES).sort(), ["measure", "select"]);
+  for (const id of ["select", "measure"]) {
     assert.equal(drawnName(({ className }) => ToolIcon({ id, className }), id), TOOL_ICON_NAMES[id]);
   }
-  // As the strip has always shown them: Select and Measure what their filters pick alone, Pencil and
-  // Shapes the drawing tool each draws with; each a picture of its own, All the tool's own.
+  // As the strip has always shown them: what their filters pick alone, each a picture of its own, All the tool's own.
   const inHand = {
     select: ["all", ...SELECT_GEOMETRY.map(({ id }) => id), "position"],
     measure: ["all", ...MEASURE_SNAP_KINDS.map(({ id }) => id)],
-    pencil: PENCIL_TOOLS,
-    shapes: SHAPE_TOOLS,
   };
   for (const [id, modes] of Object.entries(inHand)) {
     const names = modes.map(mode => drawnName(({ className }) => ToolIcon({ id, mode, className }), `${id}: ${mode}`));
@@ -91,11 +84,6 @@ test("draws the strip's tools the workspace shows, each showing what it has in h
   const grows = CONNECTED_SELECTION.map(({ id }) => SELECT_GROUP_ICON_NAMES[id]);
   for (const name of grows) assert.ok(NX_ICON_NAMES.includes(name), name);
   assert.equal(new Set([...grows, ...inHand.select.map(mode => ToolIcon({ id: "select", mode }).props.name)]).size, grows.length + inHand.select.length);
-  // The row under the strip draws each drawing tool as the strip's button does when it is in hand.
-  for (const tool of [...PENCIL_TOOLS, ...SHAPE_TOOLS]) {
-    assert.equal(DRAWING_TOOL_ICONS[tool]?.type, NxIcon, tool);
-    assert.equal(DRAWING_TOOL_ICONS[tool].props.name, ToolIcon({ id: toolFamily(tool), mode: tool }).props.name, tool);
-  }
 });
 
 test("draws the toolbar's other buttons and their panels from the generator, each its own", () => {

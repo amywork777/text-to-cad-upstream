@@ -253,12 +253,10 @@ const GROUP = 'flex items-center gap-1';
  * highlighter's, Shapes'; greyed out under the Eraser), then Clear annotations.
  * Undo and Redo are the keyboard's (⌘Z, ⇧⌘Z: `useViewerShortcuts.js`), not buttons. A flat view, where ink has nowhere to lie but
  * the drawing, has no placement to choose (`placements={false}`). On a phone, where the row is as wide as the
- * view, it wraps rather than scrolls. `icons`: a renderer's own icon for any of the tools, by its id
- * (`tools.js`), where it draws its strip's icons itself; a tool it gives none keeps its own.
- * @param {{ annotation: import('./session.js').AnnotationSession, colorScheme?: 'light' | 'dark', placements?: boolean,
- *   icons?: Readonly<Partial<Record<AnnotationTool, import('react').ReactNode>>> | null }} props
+ * view, it wraps rather than scrolls.
+ * @param {{ annotation: import('./session.js').AnnotationSession, colorScheme?: 'light' | 'dark', placements?: boolean }} props
  */
-export function AnnotationToolbar({ annotation, colorScheme = 'light', placements = true, icons = null }) {
+export function AnnotationToolbar({ annotation, colorScheme = 'light', placements = true }) {
   const controls = useControlUsage();
   const { t } = useI18n();
   const disabled = !annotation.ready;
@@ -272,7 +270,7 @@ export function AnnotationToolbar({ annotation, colorScheme = 'light', placement
       {/* Each its name and its key in a tooltip ("Rectangle R"): the row's way to learn the letters. */}
       {tool.entries.map(({ id, Icon }) => <ToolbarButton key={id} shortcut={DRAWING_SHORTCUTS[id]} label={drawingToolLabel(id, t)} disabled={disabled}
         active={!disabled && annotation.tool === id} aria-pressed={!disabled && annotation.tool === id} onClick={() => annotation.selectTool(id)}>
-        {icons?.[id] ?? icon(Icon)}
+        {icon(Icon)}
       </ToolbarButton>)}
     </div>
     <SubToolbarSeparator />

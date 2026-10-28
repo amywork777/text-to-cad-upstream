@@ -6,7 +6,6 @@ import { transitionCameraToViewPreset } from "../../kit/camera/runtimeCamera.js"
 import { requestSceneFrame } from "../../kit/viewport/sceneFrames.js";
 import { XBF_TOOL } from "../tools.js";
 import { XBF_SELECT_DEFAULT } from "../XbfSelectionModes.jsx";
-import { DRAWING_TOOL_ICONS } from "./cadIcons.jsx";
 import DraftAnalysisLayer from "./DraftAnalysisLayer.jsx";
 import EditBrowser, { floatsCard } from "./EditBrowser.jsx";
 import EditDimensions from "./EditDimensions.jsx";
@@ -480,8 +479,8 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
   const quickEdit = ({ references: carried, chips }) => quickEditCarries({ cad, open: true, carried: { references: carried, chips }, empty: EMPTY });
 
   const frame = {
-    // The edit chrome's icons, and the strip's, are drawn from the generator's sprite, which the frame mounts once.
-    iconSprite: <NxIconSprite />, drawingToolIcons: DRAWING_TOOL_ICONS,
+    // The edit chrome's icons, and the CAD workspace's Select and Measure, are drawn from the generator's sprite, which the frame mounts once.
+    iconSprite: <NxIconSprite />,
     layoutControl: editable && !layout.hosted ? editLayoutControl({ value: layout.layout, onChange: layout.setLayout, disabled: layoutHeld }) : null,
     ribbon: editing ? (stripTools, shown) => <EditRibbon tools={stripTools} view={shown} edit={edit} onCommand={startEditCommand} onSketch={startSketchCommand}
       sketchLabel={selectedTreeSketch ? "Edit Sketch" : "Sketch"} canOpenParts={Boolean(openPart)} onNormalTo={normalTarget ? edit.lookNormalTo : null} /> : null,
