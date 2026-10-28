@@ -105,6 +105,9 @@ search-path = ["src"]
 # A checkout under an ignored folder (a `.claude/worktrees/...` worktree) would
 # otherwise have src excluded by the ignore files above it and check nothing.
 use-ignore-files = false
+# The fea extra's packages (`pip install 'cadgen[fea]'`): imported only where a study solves, and absent
+# from a checkout installed without the extra, so their imports are not checked against stubs.
+ignore-missing-imports = ["netgen", "netgen.*", "skfem", "skfem.*", "pyamg", "pyamg.*", "zstandard"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
