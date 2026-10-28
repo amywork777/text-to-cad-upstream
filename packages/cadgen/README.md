@@ -444,7 +444,8 @@ xbf through `read_step`/`read_xbf` -- never through the engine, and resolve a jo
 file by the engine's grammar (`engine/refs.py`), so a ref `cadgen inspect` answers or the CAD Viewer
 copies names the same face. FreeCAD, installed by the person (1.1 or newer; `CADGEN_FREECAD` names its
 `freecadcmd`), plans and posts each setup in a process of its own; cadgen checks what it plans
-against the part under `src/cadgen/_internal/cam/` and posts nothing a check refuses. A plan writes
-`<stem>.cam.glb`, an ordinary GLB the viewer's GLB renderer draws the job of, and the G-code for each
+against the part under `src/cadgen/_internal/cam/` and posts nothing a check refuses. A job with no
+setups is completed from the part's features (`_internal/cam/auto.py`) and written beside the result as
+`<stem>.cam.json`, the record the person edits. A plan writes `<stem>.cam.glb`, an ordinary GLB the viewer's GLB renderer draws the job of, and the G-code for each
 setup. `cadgen cam plan --help` names the job's keys, and a key or value a job cannot take is
 refused with the ones it can.

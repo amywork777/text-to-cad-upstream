@@ -191,19 +191,46 @@ def _setup_reach(direction: str, sign: float) -> str:
 
 def plan_job(target: Path, *, job, occurrence: str | None = None, out_dir: Path | None = None,
              verbose: bool = False) -> CamPlanResult:
+    from cadgen._internal.cam.features import read_features
     from cadgen._internal.cam.freecad import FreecadMissingError, find_freecad
-    from cadgen._internal.cam.job import parse_job
+    from cadgen._internal.cam.job import load_job, parse_job
     from cadgen._internal.cam.part import read_part
 
     document = Path(target)
     started = time.perf_counter()
     logger = CamLog(verbose=verbose)
     try:
-        parsed = parse_job(job)
+        raw, source = load_job(job)
+        parsed = parse_job(raw, steps=False)
         freecad = find_freecad()
         with logger.timed("read part"):
             part = read_part(document, occurrence=occurrence)
-        return _plan(document, parsed, part, freecad, _glb_path(document, out_dir), logger, started)
+        with logger.timed("read features"):
+            reading = read_features(part)
+        written, notes = None, []
+        if parsed.setups:
+            parsed = parse_job(job)
+        else:
+            from cadgen._internal.cam.auto import complete_job
+
+            # A job with no setups is completed from the part, and kept as the record to edit and plan again.
+            written, notes = complete_job({"name": source.stem if source else document.stem, **raw}, parsed, part,
+                                          reading)
+            parsed = parse_job(written)
+            if "tools" not in raw:
+                # Proposed, so every length is the catalogue's: one line says so, not one a length, and the job
+                # states them, for the person to put the shop's own in their place.
+                for entry in written["tools"]:
+                    tool = parsed.tools[entry["id"]]
+                    entry.update({key: getattr(tool, key) for key in ("flutes", "flute_length_mm", "stickout_mm")
+                                  if key in tool.assumed})
+                sizes = ", ".join(tool.plain for tool in parsed.tools.values())
+                parsed = replace(parsed, assumed=(*(e for e in parsed.assumed if "." not in e["key"]
+                                                    or e["key"].split(".")[0] not in parsed.tools),
+                                                  {"key": "tools", "value": sizes, "why": "proposed from the part's "
+                                                   "features, with catalogue lengths: put the shop's own in the job"}))
+        return _plan(document, parsed, part, freecad, _glb_path(document, out_dir), logger, started, reading,
+                     written, notes)
     except CamJobError as exc:
         return CamPlanResult(ok=False, document=document, findings=(job_finding(str(exc)),))
     except FreecadMissingError as exc:
@@ -306,11 +333,13 @@ def _targets(op, faces, holes, final_z, frame, mesh, face_of_triangle, tool) -> 
             for info in faces]
 
 
-def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlanResult:
+def _plan(document, parsed, part, freecad, glb_path, logger, started, reading, written, notes) -> CamPlanResult:
+    """``written``: the job cadgen completed from the part, saved beside the result as ``<stem>.cam.json``; ``notes``:
+    what it left uncut."""
     import numpy as np
 
     from cadgen._internal.cam import checks, freecad as runner, toolpath
-    from cadgen._internal.cam.features import read_features, walls_in
+    from cadgen._internal.cam.features import walls_in
     from cadgen._internal.cam.feeds import default_stepdown, for_op
     from cadgen._internal.cam.job import OPERATIONS, POSTS
     from cadgen._internal.cam.outputs import line_segments, write_glb
@@ -318,8 +347,6 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
     timings: dict = {}
     machine, tools = parsed.machine, parsed.tools
     post = POSTS[machine.post]
-    with logger.timed("read features"):
-        reading = read_features(part)
     # Every face of a hole names it: its walls, its counterbore's wall and shoulder, its drawn point, its floor.
     holes = {ref: hole for hole in reading["holes"] for ref in hole["faces"]}
     ordinal_of = {info.ref: ordinal for ordinal, info in part.faces.items()}
@@ -327,7 +354,8 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
     margin = parsed.stock.margin_mm
     stock_low = low - [margin[0], margin[1], 0.0]
     stock_high = high + [margin[0], margin[1], margin[2]]
-    findings: list[dict] = []
+    findings: list[dict] = list(notes)
+    clamps: dict[tuple[str, str], list[dict]] = {}
     setups_out, operations_out, lines, posted = [], [], [], []
     clock = 0.0
     for setup in parsed.setups:
@@ -360,9 +388,8 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
             feeds = for_op(parsed.material, tool, OPERATIONS[op.op]["feeds"], machine,
                            stepover_mm=stepover * tool.diameter_mm if stepover else None, feed=op.params["feed"],
                            speed=op.params["speed"], plunge=op.params["plunge_mm_min"])
-            findings += [finding("limits", "warning", "clamped", f"{op.where}: {words}",
-                                 "the machine's limit holds the table's number", [{"operation": op.index}])
-                         for words in feeds.clamped]
+            for words in feeds.clamped:
+                clamps.setdefault((tool.id, words), []).append({"operation": op.index})
             rows[op.index] = {
                 "index": op.index, "setup": setup.id, "op": op.op, "plain": op.plain, "tool": tool.id,
                 "tool_plain": tool.plain, "tool_diameter_mm": tool.diameter_mm, "rpm": feeds.rpm,
@@ -422,8 +449,8 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
             if floors:
                 faces_words += " (" + "; ".join(f"for pocket floor {floor}: its walls {', '.join(walls)}"
                                                 for floor, walls in floors.items()) + ")"
-            row["summary"] = f"{op.plain}{faces_words} with {row['tool']} {row['tool_plain']}, " \
-                             f"{_duration_words(row['time_s'])}"
+            what = f"{row['name']} ({op.plain.lower()})" if row.get("name") else f"{op.plain}{faces_words}"
+            row["summary"] = f"{what} with {row['tool']} {row['tool_plain']}, {_duration_words(row['time_s'])}"
             ops_out.append(row)
         operations_out += ops_out
         setups_out.append({"id": setup.id, "plain": setup.id, "orientation": setup.orientation,
@@ -433,6 +460,10 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
                            "t1": round(clock + setup_time, 3), "operations": ops_out})
         clock += setup_time
 
+    # One warning a tool, however many of its operations the machine's limit holds.
+    findings += [finding("limits", "warning", "clamped", f"{tool_id} {tools[tool_id].plain}: {words}",
+                         "the machine's limit holds the table's number", items)
+                 for (tool_id, words), items in clamps.items()]
     findings = by_severity(findings)
     errors = sum(f["severity"] == "error" for f in findings)
     warning_count = sum(f["severity"] == "warning" for f in findings)
@@ -459,10 +490,13 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
     }
     stock_mesh = _box_mesh(stock_low, stock_high)
     stale = [path for path in _previous_posts(glb_path, document.stem) if path.name not in {p[1] for p in posted}]
-    written = _write(glb_path, lambda path: write_glb(path, part_mesh=(part.vertices, part.triangles),
-                                                     stock_mesh=stock_mesh, lines=lines, cam=cam,
-                                                     name=f"{document.stem} cam"),
-                     [(folder / name, text) for _, name, text, _ in posted])
+    job_file = folder / f"{document.stem}.cam.json" if written is not None else None
+    files = [(folder / name, text) for _, name, text, _ in posted]
+    if job_file is not None:
+        files.append((job_file, json.dumps(written, indent=2, ensure_ascii=False) + "\n"))
+    paths = _write(glb_path, lambda path: write_glb(path, part_mesh=(part.vertices, part.triangles),
+                                                   stock_mesh=stock_mesh, lines=lines, cam=cam,
+                                                   name=f"{document.stem} cam"), files)
     for path in stale:
         path.unlink(missing_ok=True)
     timings["total_s"] = round(time.perf_counter() - started, 4)
@@ -470,8 +504,8 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
     summary = {"duration_s": round(clock, 2), "tools": used, "tool_changes": changes, "setups": len(parsed.setups),
                "operations": len(operations_out), "post": machine.post,
                "material": parsed.material.name, "planner": freecad.label}
-    return CamPlanResult(ok=True, document=document, glb=glb_path,
-                         posts=tuple(dict(p, file=str(path)) for p, path in zip(posts_out, written)),
+    return CamPlanResult(ok=True, document=document, glb=glb_path, job_file=job_file,
+                         posts=tuple(dict(p, file=str(path)) for p, path in zip(posts_out, paths)),
                          verdict=verdict, summary=summary, operations=tuple(operations_out), findings=tuple(findings),
                          warnings=tuple(warnings), timings=timings, assumed=tuple(dict(e) for e in parsed.assumed))
 

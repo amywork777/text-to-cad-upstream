@@ -8,8 +8,10 @@ Two verbs, each mirrored by a generated CLI (``cadgen cam features``,
   machining reading (a flat floor at Z, a wall, a hole of a diameter and depth
   on an axis), plus the part's bounding box.
 * ``plan`` reads a job (machine, material, stock, tools, setups and their
-  operations) and has FreeCAD's CAM workbench plan each setup's toolpaths and
-  post them for the named controller, then checks every path against the part.
+  operations; with no setups, cadgen writes them from the part's features and
+  saves the completed job as ``<stem>.cam.json``) and has FreeCAD's CAM
+  workbench plan each setup's toolpaths and post them for the named controller,
+  then checks every path against the part.
   It writes ``<stem>.cam.glb`` (the part, the stock and the toolpaths, with the
   verdict in its extras) and, when nothing is an error, the G-code for each
   setup beside the part, or in ``out_dir``.
@@ -62,7 +64,9 @@ def plan(target: Path, *, job: str | dict | None = None, occurrence: str | None 
         "tools": [{"id", "type": flat, ball, bull or drill, "diameter_mm",
         "flutes", "flute_length_mm", "stickout_mm", ...}]. "setups": [{"id",
         "orientation": +Z or -Z, "origin", "operations": [{"op": face, profile,
-        pocket, adaptive or drill, "tool", "faces", ...}]}]. Face refs are the
+        pocket, adaptive or drill, "tool", "faces", ...}]}]: left out, with
+        "tools" too if wanted, cadgen chooses them from the part's features and
+        writes the completed job beside the result as <stem>.cam.json. Face refs are the
         ones ``cadgen cam features`` prints; a profile with "side": "inside" names
         the walls it runs along. Every key set is closed: a key or value the job
         cannot take is refused with the ones it can.
