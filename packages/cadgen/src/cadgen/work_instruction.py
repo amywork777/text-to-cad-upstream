@@ -1069,9 +1069,8 @@ def work_instruction(func: Callable[..., Any] | None = None, *, out: str | Path 
             try:
                 written = write(target, fn(*args, **kwargs))
             except BaseException as error:
-                # A refused or failed run leaves nothing at out=: an older instruction
-                # still there would read as this run's.
-                target.unlink(missing_ok=True)
+                # A refused or failed run writes nothing at out=, and an earlier instruction there
+                # stays byte for byte (law 17): the PDF is written whole beside it, then moved in.
                 try:
                     from cadgen import analytics
 

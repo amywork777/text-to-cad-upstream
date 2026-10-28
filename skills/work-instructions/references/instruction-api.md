@@ -85,8 +85,8 @@ if __name__ == "__main__":
 
 Declares the instruction. The function returns an `Instruction`; calling it
 writes one PDF at `out` (relative to the script), prints every open item, and
-returns `[path]`. A refused or failed run leaves no file at `out`, not even an
-earlier one.
+returns `[path]`. A refused or failed run writes no file at `out`; an earlier one
+there is left as it was.
 
 ## `Instruction(assembly, *, title, number, revision, ...)`
 
