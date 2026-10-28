@@ -198,7 +198,7 @@ def hole_faces(geometry) -> list[int]:
     faces = face_map(geometry.shape)
     found = []
     for ordinal in range(1, faces.Extent() + 1):
-        face = TopoDS.Face_s(faces.FindKey(ordinal))
+        face = TopoDS.Face(faces.FindKey(ordinal))
         adaptor = BRepAdaptor_Surface(face)
         if adaptor.GetType() != GeomAbs_Cylinder:
             continue

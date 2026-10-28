@@ -147,10 +147,11 @@ def cut(geometry: "Geometry", prepared: "Prepared | None", planes: list[Plane]) 
 def _on_plane(face, plane: Plane, scale: float) -> bool:
     from OCP.Bnd import Bnd_Box
     from OCP.BRepBndLib import BRepBndLib
+    from cadgen.engine.kernel.bounds import box_limits
 
     box = Bnd_Box()
     BRepBndLib.Add_s(face, box)
-    values = box.Get()
+    values = box_limits(box)
     low, high = values[plane.component], values[3 + plane.component]
     return abs(low - plane.offset) <= 1e-6 * scale and abs(high - plane.offset) <= 1e-6 * scale
 

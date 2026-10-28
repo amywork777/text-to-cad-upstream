@@ -164,7 +164,8 @@ def _close_pairs(boxes: list) -> list[tuple[int, int]]:
     Each box is compared only with the ones that start before it ends, so a
     long assembly costs its neighbours, not every pair of parts.
     """
-    bounds = [(index, box.Get()) for index, box in enumerate(boxes) if not box.IsVoid()]
+    from cadgen.engine.kernel.bounds import box_limits
+    bounds = [(index, box_limits(box)) for index, box in enumerate(boxes) if not box.IsVoid()]
     bounds.sort(key=lambda item: item[1][0])
     pairs = []
     for position, (i, a) in enumerate(bounds):
@@ -203,7 +204,7 @@ def _sampled(face):
     from scipy.spatial import cKDTree
 
     location = TopLoc_Location()
-    mesh = BRep_Tool.Triangulation_s(TopoDS.Face_s(face), location)
+    mesh = BRep_Tool.Triangulation_s(TopoDS.Face(face), location)
     if mesh is None or mesh.NbTriangles() == 0:
         return None
     move = location.Transformation()
@@ -269,7 +270,8 @@ def part_gap(first: Part, second: Part) -> float | None:
 
 def part_centre(part: Part) -> tuple[float, float, float]:
     """The centre of a part's bounding box, mm."""
-    xmin, ymin, zmin, xmax, ymax, zmax = bounding_box(part.shape, 0.0).Get()
+    from cadgen.engine.kernel.bounds import box_limits
+    xmin, ymin, zmin, xmax, ymax, zmax = box_limits(bounding_box(part.shape, 0.0))
     return ((xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2)
 
 
@@ -420,7 +422,7 @@ def glue(shapes: list, bonded: list[tuple[int, int, float]], tolerance_mm: float
     from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID
     from OCP.TopExp import TopExp
     from OCP.TopoDS import TopoDS_Compound
-    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
 
     compound, maker = TopoDS_Compound(), BRep_Builder()
     maker.MakeCompound(compound)
@@ -453,15 +455,15 @@ def glue(shapes: list, bonded: list[tuple[int, int, float]], tolerance_mm: float
         modified = builder.Modified(shape)
         return list(modified) if modified.Size() else [shape]
 
-    solids = TopTools_IndexedMapOfShape()
+    solids = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapes_s(compound, TopAbs_SOLID, solids)
-    faces = TopTools_IndexedMapOfShape()
+    faces = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapes_s(compound, TopAbs_FACE, faces)
 
     solid_part = [-1] * solids.Extent()
     face_images = []
     for index, shape in enumerate(shapes):
-        own = TopTools_IndexedMapOfShape()
+        own = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
         TopExp.MapShapes_s(shape, TopAbs_SOLID, own)
         for k in range(1, own.Extent() + 1):
             for image in images(index, own.FindKey(k)):

@@ -574,7 +574,7 @@ class RotordynamicsAnalysis(AnalysisBase):
         for shape, _ in parts:
             explorer = TopExp_Explorer(shape, TopAbs_VERTEX)
             while explorer.More():
-                point = BRep_Tool.Pnt_s(TopoDS.Vertex_s(explorer.Current()))
+                point = BRep_Tool.Pnt_s(TopoDS.Vertex(explorer.Current()))
                 found.add(round(frame.s((point.X(), point.Y(), point.Z())), 9))
                 explorer.Next()
         return sorted(found)

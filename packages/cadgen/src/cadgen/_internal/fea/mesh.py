@@ -385,10 +385,11 @@ def mesh_occurrence(
 def shape_diagonal(shape) -> float:
     from OCP.Bnd import Bnd_Box
     from OCP.BRepBndLib import BRepBndLib
+    from cadgen.engine.kernel.bounds import box_limits
 
     box = Bnd_Box()
     BRepBndLib.Add_s(shape, box)
-    xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
+    xmin, ymin, zmin, xmax, ymax, zmax = box_limits(box)
     return float(((xmax - xmin) ** 2 + (ymax - ymin) ** 2 + (zmax - zmin) ** 2) ** 0.5)
 
 
@@ -434,6 +435,7 @@ def check_domains(nodes, tets, domain, parts) -> None:
 
     from OCP.Bnd import Bnd_Box
     from OCP.BRepBndLib import BRepBndLib
+    from cadgen.engine.kernel.bounds import box_limits
 
     corners = nodes[tets[:, :4]]
     volumes = curved_volumes(nodes, tets)
@@ -447,7 +449,7 @@ def check_domains(nodes, tets, domain, parts) -> None:
             )
         box = Bnd_Box()
         BRepBndLib.Add_s(part.shape, box)
-        low, high = np.array(box.Get()[:3]), np.array(box.Get()[3:])
+        low, high = np.array(box_limits(box)[:3]), np.array(box_limits(box)[3:])
         centroid = (corners[rows].mean(axis=1) * volumes[rows, None]).sum(axis=0) / volumes[rows].sum()
         if ((centroid < low - 1e-6) | (centroid > high + 1e-6)).any():
             raise RuntimeError(f"the mesh's volume {index} lies outside part {part.ref}; the mesher's volumes do not follow the parts")
@@ -470,7 +472,7 @@ def mesh_assembly(document: "Document", part_refs: list[str], bonded: "list[Cont
     from cadgen._internal.fea.checks import quoted
     from OCP.TopAbs import TopAbs_FACE
     from OCP.TopExp import TopExp
-    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
 
     by_ref = {part.ref: part for part in list_parts(document)}
     missing = [ref for ref in part_refs if ref not in by_ref]
@@ -509,7 +511,7 @@ def mesh_assembly(document: "Document", part_refs: list[str], bonded: "list[Cont
     refs = list(faces)
 
     # Which part faces each face of the glued shape came from.
-    glued_faces = TopTools_IndexedMapOfShape()
+    glued_faces = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapes_s(glued.shape, TopAbs_FACE, glued_faces)
     sources: dict[int, list[int]] = {}
     parts_on: dict[int, set[int]] = {}

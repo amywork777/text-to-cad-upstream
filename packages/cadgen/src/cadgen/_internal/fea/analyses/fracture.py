@@ -193,7 +193,7 @@ class FractureAnalysis(StaticAnalysis):
             from OCP.TopoDS import TopoDS
 
             ordinal = ctx.ordinal_of[inputs.crack.face]
-            face = TopoDS.Face_s(face_map(geometry.shape).FindKey(ordinal))
+            face = TopoDS.Face(face_map(geometry.shape).FindKey(ordinal))
         return crack.resolve(inputs.crack, geometry.shape, face, inputs.crack.face)
 
     def cracked(self, ctx: SolveContext, inputs: FractureInputs, *, front_mm: float | None = None) -> "CrackedPrepared":

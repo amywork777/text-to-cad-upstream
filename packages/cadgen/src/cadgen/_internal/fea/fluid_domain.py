@@ -103,19 +103,20 @@ def bounds(shape) -> tuple[list[float], list[float]]:
     """The exact bounding box (no tolerance gap), mm."""
     from OCP.Bnd import Bnd_Box
     from OCP.BRepBndLib import BRepBndLib
+    from cadgen.engine.kernel.bounds import box_limits
 
     box = Bnd_Box()
     BRepBndLib.AddOptimal_s(shape, box, False, False)
-    xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
+    xmin, ymin, zmin, xmax, ymax, zmax = box_limits(box)
     return [xmin, ymin, zmin], [xmax, ymax, zmax]
 
 
 def shapes_of(shape, kind) -> list:
     """The sub-shapes of an OCP ``TopAbs`` kind, in the shape's own map order."""
     from OCP.TopExp import TopExp
-    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
 
-    found = TopTools_IndexedMapOfShape()
+    found = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapes_s(shape, kind, found)
     return [found.FindKey(k) for k in range(1, found.Extent() + 1)]
 
@@ -159,7 +160,7 @@ def plane_of(face, box_low, box_high, tol: float) -> str | None:
     from OCP.GeomAbs import GeomAbs_Plane
     from OCP.TopoDS import TopoDS
 
-    if BRepAdaptor_Surface(TopoDS.Face_s(face)).GetType() != GeomAbs_Plane:
+    if BRepAdaptor_Surface(TopoDS.Face(face)).GetType() != GeomAbs_Plane:
         return None
     low, high = bounds(face)
     for axis in range(3):

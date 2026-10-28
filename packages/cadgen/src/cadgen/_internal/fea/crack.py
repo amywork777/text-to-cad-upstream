@@ -389,7 +389,7 @@ def cut(geometry: CrackGeometry, shape, origin: list[int] | None, *, base=None, 
     """``shape`` cut along the crack's plane by the crack and the ligament, every face traced (``origin`` the
     shape's own, ``None`` for the part's ordinals). A crack that misses the part is a ValueError."""
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Splitter
-    from OCP.TopTools import TopTools_ListOfShape
+    from OCP.collections import List_TopoDS_Shape
 
     from cadgen._internal.fea.defeature import trace
     from cadgen._internal.fea.document import face_map
@@ -398,7 +398,7 @@ def cut(geometry: CrackGeometry, shape, origin: list[int] | None, *, base=None, 
     plane = _rectangle(geometry, (-geometry.reach, geometry.reach), (-geometry.reach, geometry.reach))
     ligament = BRepAlgoAPI_Cut(plane, crack).Shape()
     splitter = BRepAlgoAPI_Splitter()
-    arguments, tools = TopTools_ListOfShape(), TopTools_ListOfShape()
+    arguments, tools = List_TopoDS_Shape(), List_TopoDS_Shape()
     arguments.Append(shape)
     tools.Append(crack)
     tools.Append(ligament)
@@ -436,11 +436,12 @@ def front_polylines(geometry: CrackGeometry, shape) -> list:
 
     from OCP.Bnd import Bnd_Box
     from OCP.BRepBndLib import BRepBndLib
+    from cadgen.engine.kernel.bounds import box_limits
 
     box = Bnd_Box()
     BRepBndLib.Add_s(shape, box)
-    low = np.array(box.Get()[:3])
-    high = np.array(box.Get()[3:])
+    low = np.array(box_limits(box)[:3])
+    high = np.array(box_limits(box)[3:])
     corners = np.array([[x, y, z] for x in (low[0], high[0]) for y in (low[1], high[1]) for z in (low[2], high[2])])
     at, d, t = geometry.at, geometry.d, geometry.t
 
