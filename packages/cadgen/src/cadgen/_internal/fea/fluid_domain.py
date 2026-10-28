@@ -420,27 +420,13 @@ def netgen_mesh(shape, prints: list, diagonal: float, size: float, order: int, s
     import tempfile
     from pathlib import Path
 
-    import numpy as np
-
     from cadgen._internal.fea import mesh as part_mesh
-    from cadgen._internal.fea.mesh import kernel_messages_on_stderr
-
-    import netgen.meshing as ngmesh
-    import netgen.occ as ngocc
+    from cadgen._internal.fea import mesher
 
     with tempfile.TemporaryDirectory(prefix=f"cadgen-{label}-") as tmp:
         brep = Path(tmp) / f"{label}.brep"
         part_mesh.write_brep(shape, brep)
-        with kernel_messages_on_stderr():
-            ngmesh.SetMessageImportance(0)
-            geometry = ngocc.OCCGeometry(str(brep))
-            mapping = part_mesh.match_faces(prints, list(geometry.faces), diagonal)
-            keys = {index: [ordinal] for index, ordinal in mapping.items()}
-            mesh = part_mesh.generate_mesh(geometry, ngocc, size, 1.0, order, size_field, keys)
-            coordinates = np.array(mesh.Coordinates(), dtype=float, copy=True)
-            e3 = mesh.Elements3D().NumPy().copy()
-            e2 = mesh.Elements2D().NumPy().copy()
-            del mesh, geometry
+        mapping, coordinates, e3, e2, _ = mesher.volume(brep, prints, diagonal, size, 1.0, order, size_field)
     if len(e3) == 0:
         raise RuntimeError(empty)
     if check:
