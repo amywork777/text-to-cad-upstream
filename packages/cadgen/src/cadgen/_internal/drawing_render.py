@@ -291,6 +291,27 @@ def _drawn_area(work_item, s: float):
     return unary_union([ink, *polygonize(ink)])
 
 
+def _overall_ends(points, box, horizontal: bool) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Where an overall size's extension lines start: on the drawn part, at each
+    extreme, the point nearest the side the dimension stands on (the top for a
+    width, the left for a height). The view's box corners are not on a part that
+    does not fill its box -- an inclined tab's top is nowhere near the box's left
+    edge, and an extension line to the corner stops short of the feature it
+    measures. A side no drawn point reaches keeps its corner."""
+    vx0, vx1, vy0, vy1 = box
+    near = 0.05  # sheet mm: a circle sampled in chords still reaches its extreme
+    if horizontal:
+        def end(x):
+            ys = [py for px, py in points if abs(px - x) <= near]
+            return (x, max(ys) if ys else vy1)
+        return end(vx0), end(vx1)
+
+    def end(y):
+        xs = [px for px, py in points if abs(py - y) <= near]
+        return (min(xs) if xs else vx0, y)
+    return end(vy0), end(vy1)
+
+
 def _annotation_lines(doc):
     """The line work of a sheet's dimensions (their dimension and extension lines)
     and leaders, as one shapely geometry."""
@@ -1378,11 +1399,13 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                        frame=dim.frame, datum=dim.datum, keyed=dim.key, ends=(dim.p1, dim.p2))
         extent = view.shape.bounding_box()
         corners = ((extent.min.X, extent.min.Y, extent.min.Z), (extent.max.X, extent.max.Y, extent.max.Z))
+        if view._overall:
+            outline = [to_sheet(p) for edge in proj.visible for p in _edge_points(edge)]
         if "width" in view._overall:
-            linear((vx0, vy1), (vx1, vy1), None, "top", plan["overall"]["top"], None, "h",
+            linear(*_overall_ends(outline, own_box, True), None, "top", plan["overall"]["top"], None, "h",
                    true=whole[1] - whole[0] if whole else None, reference=view._overall_reference, ends=corners)
         if "height" in view._overall:
-            linear((vx0, vy0), (vx0, vy1), None, "left", plan["overall"]["left"], None, "v",
+            linear(*_overall_ends(outline, own_box, False), None, "left", plan["overall"]["left"], None, "v",
                    true=whole[3] - whole[2] if whole else None, reference=view._overall_reference, ends=corners)
         # How far the callouts reach past each side, so balloons drawn later
         # stand outside them; callouts on one side share a knee, so this is not

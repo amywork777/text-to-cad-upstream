@@ -402,6 +402,19 @@ def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
 def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: list | None,
                   features: _Features, slots, stated: set) -> list["_Dim"]:
     kinds = _kinds(f for f in (*seen, *slots) if _faces_viewer(f, look))
+    brk = view._break
+    if brk is not None and warnings is not None:
+        # A hole the break leaves out has no circle to point at, so it gets no
+        # callout here; said, so it is not dropped from the drawing unnoticed.
+        lost = [f for f in (*features.holes, *features.slots) if brk.low < f.mouth[brk.axis] < brk.high
+                and _looks_down(f.axis, look) and _faces_viewer(f, look) and id(f) not in stated]
+        if lost:
+            warnings.append(f"{view.name}.holes(): {len(lost)} hole(s) or slot(s) at "
+                            f"{', '.join(_where(f.mouth) for f in lost[:6])}{', ...' if len(lost) > 6 else ''} "
+                            "are inside the break, which the view leaves out, so they are not called out; call "
+                            "them out in a view without the break.")
+            if not kinds:
+                return []
     if not kinds:
         if warnings is not None:
             warnings.append(f"{view.name}.holes(): the {view.name} view looks down no hole or slot, so it calls "

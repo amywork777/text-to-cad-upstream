@@ -1111,6 +1111,31 @@ class OverallRowTests(unittest.TestCase):
         self.assertGreater(max(rows) - sorted(rows)[-2], 1.0,
                            "overall() is outermost, and clear of the row below it")
 
+    def test_overall_extension_lines_reach_the_part(self) -> None:
+        """A part that does not fill its view's box -- a base with a tab at one
+        end -- has nothing at the box's top-left corner; the overall height's
+        extension line starts on the tab, not at the corner, short of it."""
+        from build123d import Align, Box, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = Box(100, 20, 8, align=align) + Pos(45, 0, 0) * Box(10, 20, 40, align=align)
+        sheet = Sheet("A3", 1.0)
+        _top, front, _right = sheet.three_views(part)
+        front.overall()
+        doc = _render_sheet(sheet, index=1, count=1, label="ends")
+        height = next(d for d in doc.modelspace().query("DIMENSION") if abs(d.dxf.angle - 90) < 1e-6)
+        width = next(d for d in doc.modelspace().query("DIMENSION")
+                     if abs(d.dxf.angle) < 1e-6 and d.dxf.defpoint.y > front.at[1])
+        low, high = sorted((height.dxf.defpoint2, height.dxf.defpoint3), key=lambda p: p.y)
+        self.assertAlmostEqual(high.x, front.at[0] + 40, delta=0.1, msg="the top's on the tab, at x = 40")
+        self.assertAlmostEqual(low.x, front.at[0] - 50, delta=0.1, msg="the bottom's at the left end")
+        left, right = sorted((width.dxf.defpoint2, width.dxf.defpoint3), key=lambda p: p.x)
+        self.assertAlmostEqual(left.y, front.at[1] - 20 + 8, delta=0.1, msg="the left end is the base's top")
+        self.assertAlmostEqual(right.y, front.at[1] + 20, delta=0.1, msg="the right end is the tab's top")
+
 
 def _plate():
     """80 x 50 x 6 with four ⌀5.5 holes at (±30, ±18) and a ⌀20 bore in the middle."""
@@ -4823,6 +4848,33 @@ class BrokenViewTests(unittest.TestCase):
         warnings: list = []
         _render_sheet(sheet, index=1, count=1, label="into", warnings=warnings)
         self.assertTrue(any("inside the break" in w for w in warnings), warnings)
+
+    def test_a_break_takes_two_points(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        _top, front, _right = Sheet("A3", 1.0).three_views(_bar())
+        with self.assertRaisesRegex(TypeError, r"broken\(\) takes two model points like \(x, y, z\)"):
+            front.broken(-5, 5)
+
+    def test_a_hole_inside_the_break_is_reported(self) -> None:
+        from build123d import Align, Box, Cylinder, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        align = (Align.CENTER, Align.CENTER, Align.MIN)
+        plate = Box(400, 40, 10, align=align)
+        for x in (-180, 0, 180):
+            plate -= Pos(x, 0, 0) * Cylinder(4 if x else 3, 10, align=align)
+        sheet = Sheet("A3", 1.0)
+        top, _front, _right = sheet.three_views(plate)
+        top.broken((-100, 0, 0), (100, 0, 0))   # takes out the middle hole, the only ⌀6
+        top.holes()
+        warnings: list = []
+        values = _dim_texts(_render_sheet(sheet, index=1, count=1, label="lost", warnings=warnings))
+        self.assertFalse([v for v in values if "6" in v], values)
+        self.assertTrue(any("top.holes(): 1 hole(s) or slot(s) at (0, 0, 10)" in w and "inside the break" in w
+                            for w in warnings), warnings)
 
 
 

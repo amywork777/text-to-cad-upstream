@@ -141,7 +141,10 @@ def _exact(value: float) -> str:
 
 
 def _p3(p) -> tuple[float, float, float]:
-    values = tuple(float(v) for v in p)
+    try:
+        values = tuple(float(v) for v in p)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"expected a model point like (x, y, z), got {p!r}") from exc
     if len(values) == 2:
         values = (values[0], values[1], 0.0)
     if len(values) != 3:

@@ -537,7 +537,11 @@ class View:
         if self.name == "iso" or self._detail is not None or self._aux is not None or self._section is not None:
             raise ValueError("broken() shortens a whole principal view, not an isometric, a detail, an auxiliary "
                              "view or a section")
-        a, b = self._at(start), self._at(end)
+        try:
+            a, b = self._at(start), self._at(end)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"broken() takes two model points like (x, y, z), the ends of the stretch it takes "
+                            f"out; got {start!r} and {end!r}") from exc
         axis = max(range(3), key=lambda k: abs(b[k] - a[k]))
         if abs(b[axis] - a[axis]) < 1e-6:
             raise ValueError("broken() takes two different points along the part's length")
