@@ -553,6 +553,53 @@ imports remain inside its directory.
 - `VERSION` at the repo root is canonical; release tooling stamps every
   duplicate. Never hand-edit versions under `packages/`.
 
+### Boards: KiCad and the vendored kicad-python
+
+A `@pcb` script is built by KiCad itself: `cadgen.pcb` starts `kicad-cli api-server`
+(headless, an empty settings directory, one server per build) and drives it with
+kicad-python, then runs `kicad-cli pcb drc` on the saved board and prints its counts in
+the report line and its findings below (`--no-drc` skips it; the exit code stays 0, and
+`cadgen pcb drc` is the exit-1 check). A build refuses to overwrite a board saved by
+anything but its script since the last build, recorded as the `CADGEN_BUILD` text variable
+KiCad keeps in the board and project files; `--force` overwrites. Only the **KiCad 10.99
+nightly** (the KiCad 11 API) has that server; KiCad 10.0 is refused at start. Building a board, running `cadgen pcb drc` and the
+`kicad` test suite therefore need the nightly installed; everything else in the
+repo, every required check included, runs without KiCad.
+
+- Ubuntu: `sudo add-apt-repository ppa:kicad/kicad-dev-nightly && sudo apt install
+  kicad-nightly kicad-nightly-footprints`. The package puts `kicad-cli-nightly` on
+  `PATH`, a wrapper that sources `/usr/share/kicad-nightly/kicad-nightly.env` before
+  `/usr/lib/kicad-nightly/bin/kicad-cli`; cadgen looks for that name first.
+  Symbols and 3D models are not needed. A cloud session's setup script installs it
+  in two lines:
+
+  ```sh
+  sudo add-apt-repository -y ppa:kicad/kicad-dev-nightly
+  sudo apt-get install -y kicad-nightly kicad-nightly-footprints
+  ```
+
+- macOS and Windows: the nightly installers from kicad.org. cadgen finds `kicad-cli`
+  in KiCad.app and under `Program Files\KiCad\<version>`; `CADGEN_KICAD_CLI` names
+  one anywhere.
+- `scripts/test/test-kicad.sh` runs `tests/python/packages/kicad/` (the smoke: a
+  test-written script built through `@pcb`, then `cadgen pcb drc` clean) and fails,
+  rather than skips, without a usable KiCad. CI runs it as the `kicad` job, selected
+  for changes under `cadgen/pcb.py`, `cadgen/kicad/`, `cadgen/kipy/`, the suite and
+  its runner; the job installs the PPA itself.
+
+`packages/cadgen/src/cadgen/kipy/` is kicad-python, vendored because no PyPI release
+targets the KiCad 11 API and PyPI forbids git dependencies: the upstream tree at a
+pinned commit, its protocol modules generated from the KiCad commit that commit pins,
+and its absolute `kipy.` imports rewritten to `cadgen.kipy.`. Never edit it by hand.
+`scripts/vendor/kipy.py` regenerates the tree from the pins in `cadgen/kipy/VENDOR.json`
+(the kicad-python commit, the KiCad commit whose protos it uses, and the generator
+toolchain, every version exact) and `scripts/vendor/kipy.py --check` proves the
+committed tree is what the pins make; its header says how to move them. The pins and
+the nightly build the `kicad` job installs move together. The upstream MIT license
+ships beside the tree, and kicad-python's runtime dependencies (`protobuf`, `pynng`)
+are cadgen's. When kicad-python publishes a release for KiCad 11, depend on it and
+delete the tree.
+
 ## Viewer Development In This Repo
 
 The npm apps are `docs`, `web` and `mcp` (`apps/api` is a Vercel project of its own, with no

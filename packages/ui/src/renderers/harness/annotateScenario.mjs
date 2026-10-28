@@ -94,8 +94,9 @@ export async function runAnnotateScenario({ page, pane, errors, update }) {
   await surface.waitFor();
   assert.equal(await draw.getAttribute('aria-pressed'), 'true', 'Pencil is the tool');
   assert.equal(await tool('Shapes').getAttribute('aria-pressed'), 'false');
-  assert.equal(await draw.locator('svg').evaluate(icon => icon.getAttribute('class').includes('lucide-pencil')), true, 'Pencil opens on the pen');
-  assert.equal(await tool('Shapes').locator('svg').evaluate(icon => icon.getAttribute('class').includes('lucide-square')), true, 'Shapes opens on the rectangle');
+  // Each in the icon generator's drawing of the tool in hand (`lib/nxIcons.generated.jsx`), as the renderer's strip draws them.
+  assert.equal(await draw.locator('use').getAttribute('href'), '#nx-annotate', 'Pencil opens on the pen');
+  assert.equal(await tool('Shapes').locator('use').getAttribute('href'), '#nx-shapes-rectangle', 'Shapes opens on the rectangle');
   // One row, in order, all on one line: the tools of Pencil, then Color, Stroke width, Placement and Clear.
   const row = await controls.getByRole('button').evaluateAll(buttons => buttons.map(button => [button.getAttribute('aria-label'), button.getBoundingClientRect().top]));
   assert.deepEqual(row.map(([name]) => name), ['Pen', 'Highlighter', 'Eraser', 'Colour', 'Stroke width', 'Placement', 'Clear annotations']);
@@ -157,7 +158,7 @@ export async function runAnnotateScenario({ page, pane, errors, update }) {
   // it opens in the highlighter's own yellow, not the pen's green.
   await chooseTool('Pencil', 'Highlighter');
   assert.equal(await controls.getByRole('button', { name: 'Colour', exact: true }).locator('span').evaluate(swatch => swatch.style.backgroundColor), 'rgb(255, 230, 0)', "the highlighter's colour is its own");
-  assert.equal(await draw.locator('svg').evaluate(icon => icon.getAttribute('class').includes('lucide-highlighter')), true, 'Pencil shows the highlighter');
+  assert.equal(await draw.locator('use').getAttribute('href'), '#nx-annotate-highlighter', 'Pencil shows the highlighter');
   assert.equal(await draw.getAttribute('aria-pressed'), 'true');
   await drag(at(-80, 10), at(60, 40));
   await copy.waitFor();

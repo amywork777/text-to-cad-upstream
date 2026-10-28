@@ -399,6 +399,30 @@ export function measurePointFromReference({
 }
 
 /**
+ * A measurement between two picks (`exactMeasurementFromPicks`), read in the part's units where the
+ * picks say them (`displayUnit`, "in" for an inch part, as its sketches and dimensions read): an
+ * exact reading in millimetres becomes inches, the places it is drawn between kept as they are.
+ */
+export function measurementFromPicks(pickA, pickB) {
+  const made = exactMeasurementFromPicks(pickA, pickB);
+  const unit = pickA?.displayUnit || pickB?.displayUnit || "";
+  return unit === "in" ? inInches(made) : made;
+}
+
+const LENGTH_KEYS = Object.freeze(["euclidean", "perpendicular", "centerDistance", "minDistance"]);
+
+/** A measurement in millimetres read in inches: its lengths and its delta, nothing it is drawn by. */
+export function inInches(measurement) {
+  if (!measurement || measurement.unit !== "mm" || measurement.approximate === true) return measurement;
+  const converted = { ...measurement, unit: "in" };
+  for (const key of LENGTH_KEYS) {
+    if (typeof measurement[key] === "number") converted[key] = measurement[key] / 25.4;
+  }
+  if (Array.isArray(measurement.delta)) converted.delta = measurement.delta.map(value => value / 25.4);
+  return converted;
+}
+
+/**
  * The reading of two picks, in the order a CAD measure tool reports it: what the two ENTITIES make
  * (`measureEntities.js`), not what the two points picked on them do. `kind` says which it is:
  *
@@ -413,7 +437,7 @@ export function measurePointFromReference({
  * `euclidean` and `delta` are always those of the two points picked; `ends` are the points the reading
  * is drawn between. Picks on a mesh (`units`) are two points on its surface and approximate.
  */
-export function measurementFromPicks(pickA, pickB) {
+function exactMeasurementFromPicks(pickA, pickB) {
   const pointA = isFinitePoint(pickA?.point) ? pickA.point : null;
   const pointB = isFinitePoint(pickB?.point) ? pickB.point : null;
   if (!pointA || !pointB) {
@@ -472,6 +496,28 @@ export function measurementFromPicks(pickA, pickB) {
  * area}` reports it.
  */
 export function entityMeasurementFromPick(pick, { faceArea = null } = {}) {
+  const made = exactEntityFromPick(pick, { faceArea });
+  return pick?.displayUnit === "in" ? entityInInches(made) : made;
+}
+
+/**
+ * A single pick's reading in millimetres read in inches, as an inch part shows it: its place,
+ * lengths and radii, and its area. Its normal and what it is stay as they are.
+ */
+export function entityInInches(entity) {
+  if (!entity || entity.unit !== "mm") return entity;
+  const converted = { ...entity, unit: "in" };
+  for (const key of ["length", "radius", "diameter", "majorRadius", "minorRadius"]) {
+    if (typeof entity[key] === "number") converted[key] = entity[key] / 25.4;
+  }
+  for (const key of ["point", "center"]) {
+    if (isFinitePoint(entity[key])) converted[key] = entity[key].map(value => value / 25.4);
+  }
+  if (typeof entity.area === "number") converted.area = entity.area / 25.4 ** 2;
+  return converted;
+}
+
+function exactEntityFromPick(pick, { faceArea = null } = {}) {
   if (pick?.snapKind === "vertex" && isFinitePoint(pick.point)) {
     // Where it is in the model's own coordinates, not where the viewer drew the re-centred model.
     const offset = isFinitePoint(pick.offset) ? pick.offset : [0, 0, 0];
@@ -574,7 +620,9 @@ export function formatMeasurement(measurement, { precision = 2 } = {}) {
     const unit = measurement.unit || "";
     return `≈ ${value.toFixed(APPROXIMATE_DECIMALS[unit] ?? 2)}${unit ? ` ${unit}` : ""}`;
   }
-  return `${value.toFixed(roundedPrecision(precision))} ${measurement.unit || "mm"}`;
+  // An inch reading one place finer than a millimetre one, as an inch drawing's dimensions are.
+  const places = roundedPrecision(precision) + (measurement.unit === "in" ? 1 : 0);
+  return `${value.toFixed(places)} ${measurement.unit || "mm"}`;
 }
 
 // How many decimals an approximate reading keeps, by its unit: about a tenth of a millimetre.
@@ -608,8 +656,9 @@ export function formatEntityMeasurement(entity, { precision = 2 } = {}) {
   if (!entity) {
     return "";
   }
-  const digits = roundedPrecision(precision);
   const unit = entity.unit || "mm";
+  // An inch reads to one more place, as a two-pick measurement does.
+  const digits = roundedPrecision(precision) + (unit === "in" ? 1 : 0);
   if (Array.isArray(entity.point)) {
     // A vertex: where it is, as a position reads (no unit after each axis).
     return `${entity.point.map((value, axis) => `${"XYZ"[axis]} ${(Math.abs(value) < 0.5 * 10 ** -digits ? 0 : value).toFixed(digits)}`).join("  ")} ${unit}`;

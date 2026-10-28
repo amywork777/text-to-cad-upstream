@@ -35,6 +35,8 @@ export const STATUS_VOCABULARY_FILE = 'packages/ui/src/renderers/kit/status/stat
 
 // Test renderers: they draw one triangle for the shell's own specs and ship to no person.
 const SKIPPED_DIRS = ['packages/ui/src/renderers/harness/', 'packages/ui/src/renderers/shell-harness/'];
+// Studio's CAD mode (Edit by hand): English only for now, as Studio ships in English, so not read.
+export const STUDIO_ENGLISH_ONLY = ['packages/ui/src/renderers/xbf/edit/'];
 
 const LANGUAGE_ATTRIBUTES = new Set([
   'aria-label', 'aria-description', 'aria-valuetext', 'aria-roledescription', 'aria-placeholder', 'title', 'placeholder',
@@ -90,7 +92,7 @@ function sourceFiles(dir, repo, out = []) {
     const rel = path.relative(repo, file).split(path.sep).join('/');
     if (item.isDirectory()) {
       if (item.name === 'node_modules' || item.name === '__fixtures__' || item.name === 'locales') continue;
-      if (SKIPPED_DIRS.some(skipped => `${rel}/`.startsWith(skipped))) continue;
+      if ([...SKIPPED_DIRS, ...STUDIO_ENGLISH_ONLY].some(skipped => `${rel}/`.startsWith(skipped))) continue;
       sourceFiles(file, repo, out);
     } else if (/\.(?:[cm]?jsx?|tsx?)$/.test(item.name) && !/\.(?:test|spec)\.|\.d\.ts$/.test(item.name)) out.push(file);
   }
@@ -198,6 +200,9 @@ export const UI_STRINGS_ALLOWLIST = [
   ['packages/ui/src/renderers/kit/status/ViewUpdateStatus.jsx', 'Meshing parts', "the status vocabulary's counted meshing line, said by its key (`statusLabels.js`)"],
   ['packages/ui/src/renderers/xbf/xbfMenus.js', 'Viewer', "the empty-space menu descriptor's own name, never drawn"],
   ['apps/mcp/src/host/bridge.ts', 'is not supported', "a JSON-RPC error to the host, not to a person"],
+  // Studio's lines in Jake's files, English only as its own folder is (`STUDIO_ENGLISH_ONLY`).
+  ['packages/ui/src/renderers/kit/shell/RendererShell.jsx', 'FeatureManager', "Studio's CAD mode's design tree, named as SolidWorks names it"],
+  ['packages/ui/src/renderers/kit/inspector/parameterRow.jsx', 'value', "Studio's names for a size's field and slider, in English"],
 ];
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

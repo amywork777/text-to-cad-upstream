@@ -601,3 +601,27 @@ test("classifyMeasurePick accepts a precomputed edge fit and derives one otherwi
     null
   );
 });
+
+test("an inch part's measurement reads in inches, a place finer, drawn where it was", async () => {
+  const { formatMeasurement, inInches, measurementFromPicks } = await import("./measurement.js");
+  const a = { point: [0, 0, 0] };
+  const b = { point: [25.4, 0, 0] };
+  const metric = measurementFromPicks(a, b);
+  assert.equal(formatMeasurement(metric), "25.40 mm");
+  const inch = measurementFromPicks({ ...a, displayUnit: "in" }, { ...b, displayUnit: "in" });
+  assert.equal(inch.unit, "in");
+  assert.equal(formatMeasurement(inch), "1.000 in");
+  assert.deepEqual(inch.delta, [1, 0, 0]);
+  // A mesh's approximate reading is in whatever its file measures in, never made inches here.
+  const approximate = { unit: "mm", approximate: true, euclidean: 25.4 };
+  assert.equal(inInches(approximate), approximate);
+});
+
+test("an inch part's single pick reads in inches too: a vertex's place, a face's area", async () => {
+  const { entityMeasurementFromPick, formatEntityMeasurement } = await import("./measurement.js");
+  const vertex = { snapKind: "vertex", point: [25.4, 50.8, 0] };
+  assert.equal(formatEntityMeasurement(entityMeasurementFromPick(vertex)), "X 25.40  Y 50.80  Z 0.00 mm");
+  assert.equal(formatEntityMeasurement(entityMeasurementFromPick({ ...vertex, displayUnit: "in" })), "X 1.000  Y 2.000  Z 0.000 in");
+  const face = { snapKind: "face", reference: { pickData: { selectorType: "face", surfaceType: "plane" } }, displayUnit: "in" };
+  assert.equal(formatEntityMeasurement(entityMeasurementFromPick(face, { faceArea: { state: "ready", area: 645.16 } })).split("  ")[0], "A 1.000 in²");
+});

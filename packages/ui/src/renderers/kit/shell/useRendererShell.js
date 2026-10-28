@@ -155,6 +155,10 @@ const EMPTY = Object.freeze({});
  *   renderer reports its live `selection` itself, in the prompt grammar, through `live.state`.
  * @param {{ active?: boolean, handle?: () => boolean }} [options.escape]  Escape, innermost first: `handle` returns
  *   true when it spent the key. After it there is nothing of the viewer's own left to close.
+ * @param {((items: readonly object[]) => string) | null} [options.marks]  The ink drawn on the renderer's faces, in words, for
+ *   every way a Quick Edit goes and for Add to context (`frame.quickEditPrompt.marks()`, beside its views): the marks on a face
+ *   as shapes in its coordinates (`kit/tools/annotate/faceShapes.js`), for a renderer that names its faces. Called at the press,
+ *   with the ink then.
  * @param {{ signatures?: Record<string, string>, read: () => Record<string, unknown> } | null} [options.rendererState]
  *   The renderer's own slices of the file's view (`fileView.js`): `read()` is called when the view is written,
  *   never at render — state a renderer keeps outside React (a pose written per frame) is saved as it is at that
@@ -184,16 +188,20 @@ const EMPTY = Object.freeze({});
  * @param {boolean} [options.sceneEffects]  The viewport applies the view's model effects to the scene,
  *   through the scene contract (`ShellViewport`'s `sceneEffects`); a renderer whose own layers apply
  *   them leaves this off.
+ * @param {object[] | null} [options.displaySections]  Display's switches of the renderer's own, after
+ *   Grid: each a gate (`{ id, title, description?, enabled, onEnabledChange }`) on what the renderer draws of the
+ *   file beyond its surfaces (an FEA result's loads and fixtures, a CAM job's rapids and stock).
+ *   Its state is the renderer's slice of the file's view, not a view setting.
  */
 export function useRendererShell({
   view, services, resource, modelKey, revisionKey = "", features, toolModes = null, tool = null, previewable = false, preview = null, scene, load,
   viewSettings = null, viewerRef: providedViewerRef = null,
   animation = null, live = EMPTY, promptReferences = null, promptContext = createViewPromptContext,
-  escape = EMPTY, rendererState = null, viewState = null, annotationUnits = "mm", deleteSelection = null,
+  escape = EMPTY, rendererState = null, viewState = null, annotationUnits = "mm", deleteSelection = null, marks = null,
   sceneEffects = false,
   onCameraSettled = null, preserveInteractionPixelRatio = false, runtimeLifecycle = null,
   onRuntimeAlert = null, presentationReport = null,
-  sceneScaleMode = VIEWER_SCENE_SCALE.CAD
+  sceneScaleMode = VIEWER_SCENE_SCALE.CAD, displaySections = null
 }) {
   const host = useViewerHost();
   const { t } = useI18n();
@@ -504,7 +512,11 @@ export function useRendererShell({
     const shown = liveResourceRef.current?.() || resourceRef.current;
     return shown?.kind === "workspace-file" || shown?.kind === "cad-model" ? shown.path : null;
   }, []);
-  // Quick Edit captures the current view and annotation views; the host prepares JSON at the press.
+  // The renderer's words for the ink on its faces, as it is when a Quick Edit goes.
+  const marksRef = useRef(marks);
+  marksRef.current = marks;
+  // Quick Edit captures the current view and annotation views; the host prepares JSON at the press. The marks drawn on a
+  // face go beside them, in words.
   const replayUnavailable = useRef("");
   replayUnavailable.current = String(load.replayUnavailable || "");
   const quickEditPrompt = useMemo(() => ({
@@ -516,6 +528,7 @@ export function useRendererShell({
       return host.promptFiles.create({ name: input.split("/").pop(), input, views, annotation: annotationNow() });
     },
     read: path => host.promptFiles.read(path),
+    marks: () => (annotationRef.current.items.length ? marksRef.current?.(annotationRef.current.items) || "" : ""),
   }), [host.promptFiles, currentView, annotationNow, promptFile]);
   // The view as it is on screen, the annotation's ink in it: the annotation's Copy.
   const captureView = useCallback(() => {
@@ -676,6 +689,9 @@ export function useRendererShell({
     value: desiredScene.view.camera.projection,
     onChange: value => { controls.used(`projection_${value}`); viewSettingsStore.patch({ camera: { projection: value } }); },
   };
+  // The renderer's own switches, after Grid in Display's list.
+  const displayGates = useMemo(() => (displaySections || []).map(({ id, title, description, enabled, onEnabledChange }) => ({
+    id, label: title, description, checked: Boolean(enabled), onChange: onEnabledChange })), [displaySections]);
   const stripTool = ({ id, label, icon, ...rest }) => ({
     id, label, icon, active: !previewing && toolMode === id, disabled: idle, onSelect: () => selectTool(id), ...rest
   });
@@ -728,7 +744,7 @@ export function useRendererShell({
       resource, captureView, escape: escapeView, currentView, quickEditPrompt,
       // Select is the tool in hand (the default one), where a press on ink picks it before a part.
       selecting: !previewing && Boolean(toolModes) && toolMode === toolModes.defaultMode,
-      annotateToolActive, annotation, history, deletePicked, toolKeys: toolKeysRef, animation, previewSettings, displayMode, grid, projection, sceneEffects,
+      annotateToolActive, annotation, history, deletePicked, toolKeys: toolKeysRef, animation, previewSettings, displayMode, grid, displayGates, projection, sceneEffects,
       previewDesiredScene
     }
   };

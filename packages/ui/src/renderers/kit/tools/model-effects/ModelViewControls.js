@@ -53,8 +53,9 @@ const keepOpen = event => event.preventDefault();
  *  first X, Y and Z, the Theme row's buttons (the axis in hand lit), a rule, then **Part colours** (each
  *  part's cap in its own colour; off, every cap one amber) and **Reverse** (which side of the plane
  *  is kept). None of them applies a cut; an axis or Reverse turns a cut keeping its share. They are
- *  settings, so Reset, which takes the cut away, leaves them be. */
-function ClipAxisSelect({ viewSettings, onViewSettingsPatch, bounds }) {
+ *  settings, so Reset, which takes the cut away, leaves them be. A view whose cut draws no caps (an
+ *  FEA result's) offers no Part colors (`caps: false`). */
+function ClipAxisSelect({ viewSettings, onViewSettingsPatch, bounds, caps = true }) {
   const { clip, amount } = clipState(viewSettings, bounds);
   const controls = useControlUsage();
   const { t } = useI18n();
@@ -92,10 +93,10 @@ function ClipAxisSelect({ viewSettings, onViewSettingsPatch, bounds }) {
         </MenuPrimitive.RadioGroup>
       </div>
       <DropdownMenuSeparator />
-      <DropdownMenuCheckboxItem checked={clip.partColors} onSelect={keepOpen} data-clip-part-colors=""
+      {caps ? <DropdownMenuCheckboxItem checked={clip.partColors} onSelect={keepOpen} data-clip-part-colors=""
         onCheckedChange={checked => { controls.used("clip_part_colors"); onViewSettingsPatch({ clip: { partColors: checked === true } }); }}>
         {t("clip.partColours")}
-      </DropdownMenuCheckboxItem>
+      </DropdownMenuCheckboxItem> : null}
       <DropdownMenuCheckboxItem checked={clip.invert} onSelect={keepOpen} data-clip-reverse=""
         onCheckedChange={checked => reverse(checked === true)}>
         {t("clip.reverse")}
@@ -107,12 +108,12 @@ function ClipAxisSelect({ viewSettings, onViewSettingsPatch, bounds }) {
 // Clip's controls: its axis, then one slider, which applies the cut as it leaves zero and removes it
 // at zero. `className` lays them out where they sit, and `sliderClassName` draws the slider.
 export function CrossSectionControls({ viewSettings, onViewSettingsPatch, bounds, className = "flex min-w-0 items-center gap-2 px-2 py-1",
-  sliderClassName = FILE_SHEET_PRECISION_SLIDER_CLASSES }) {
+  sliderClassName = FILE_SHEET_PRECISION_SLIDER_CLASSES, caps = true }) {
   const { clip, range, amount } = clipState(viewSettings, bounds);
   const controls = useControlUsage();
   const { t } = useI18n();
   return <div className={className}>
-    <ClipAxisSelect viewSettings={viewSettings} onViewSettingsPatch={onViewSettingsPatch} bounds={bounds} />
+    <ClipAxisSelect viewSettings={viewSettings} onViewSettingsPatch={onViewSettingsPatch} bounds={bounds} caps={caps} />
     <Slider thumbProps={{ "aria-label": t("clip.amount") }} value={[amount]} min={0} max={100}
       step={0.1} disabled={!range}
       onValueChange={([value]) => { controls.changed("clip_amount"); onViewSettingsPatch({ clip: {

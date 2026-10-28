@@ -58,7 +58,7 @@ it("Measure's menu chooses what a press takes, as a STEP's: All the vertex, else
     const [value, setValue] = useState<readonly string[]>(MEASURE_FILTER_DEFAULT);
     return <>
       <MeasureFilterMenu value={value} onChange={setValue} />
-      <MeasureIcon mode={pickModeOf(value, MEASURE_MODES).id} />
+      <span data-strip-measure-icon=""><MeasureIcon mode={pickModeOf(value, MEASURE_MODES).id} /></span>
       <output data-filter={value.join(',')} />
     </>;
   }
@@ -66,7 +66,7 @@ it("Measure's menu chooses what a press takes, as a STEP's: All the vertex, else
   const trigger = () => document.querySelector<HTMLElement>('[data-measure-filter-trigger]')!;
   const state = () => ({
     trigger: trigger().getAttribute('aria-label'),
-    badge: document.querySelector('svg[data-tool-icon-base] [data-tool-icon-badge]')?.getAttribute('data-tool-icon-badge') ?? '',
+    badge: document.querySelector('[data-strip-measure-icon] use')?.getAttribute('href')?.replace('#nx-', '') ?? '',
     takes: takes(document.querySelector('output')!.dataset.filter!.split(',')),
   });
   const seen = [state()];
@@ -75,15 +75,15 @@ it("Measure's menu chooses what a press takes, as a STEP's: All the vertex, else
     await user.click(document.querySelector<HTMLElement>(`[data-measure-filter="${mode}"]`)!);
     seen.push(state());
   }
-  const all = { trigger: 'Measure filter: everything', badge: '', takes: { corner: 'vertex 18,-10,2', edge: 'edge i0/edge/7', face: 'face i0/face/2' } };
+  const all = { trigger: 'Measure filter: everything', badge: 'measure', takes: { corner: 'vertex 18,-10,2', edge: 'edge i0/edge/7', face: 'face i0/face/2' } };
   expect(seen).toEqual([
     all,
     // Vertices: an edge's end is its vertex; anywhere else a press takes nothing.
-    { trigger: 'Measure filter: Vertices', badge: 'points', takes: { corner: 'vertex 18,-10,2', edge: null, face: null } },
+    { trigger: 'Measure filter: Vertices', badge: 'measure-vertex', takes: { corner: 'vertex 18,-10,2', edge: null, face: null } },
     // Edges: the edge, at its end too; the face's middle is nothing.
-    { trigger: 'Measure filter: Edges', badge: 'edges', takes: { corner: 'edge i0/edge/7', edge: 'edge i0/edge/7', face: null } },
+    { trigger: 'Measure filter: Edges', badge: 'measure-edge', takes: { corner: 'edge i0/edge/7', edge: 'edge i0/edge/7', face: null } },
     // Faces: the face under the pointer, however near an edge.
-    { trigger: 'Measure filter: Faces', badge: 'faces', takes: { corner: 'face i0/face/2', edge: 'face i0/face/2', face: 'face i0/face/2' } },
+    { trigger: 'Measure filter: Faces', badge: 'measure-face', takes: { corner: 'face i0/face/2', edge: 'face i0/face/2', face: 'face i0/face/2' } },
     all,
   ]);
   // Shift takes the point on the model as it is, whatever the menu says.

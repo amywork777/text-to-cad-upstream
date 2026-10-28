@@ -251,6 +251,10 @@ class EngineApp:
             self._mcp.close()
         self.analytics.close()
         self.viewer_analytics.close()
+        # Studio's edit mode: its tracer and its builds are this process's children, and end with it.
+        from cad.edit.service import close_shared
+
+        close_shared()
 
     def hold_ended(self, holder):
         """An MCP server's hold on the engine gone (``Daemon.hold``): the sessions it opened end."""
