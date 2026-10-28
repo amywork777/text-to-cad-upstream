@@ -8,6 +8,7 @@ module scope.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -62,6 +63,111 @@ class _Dim:
     key: bool = False
 
 
+#: ISO 261 general-purpose metric screw threads: each nominal diameter's coarse
+#: pitch (None where the size has fine pitches only) and its fine pitches. Only
+#: the coarse pitch is read: it is what ``M6`` means with no pitch given.
+_ISO_261: dict[float, tuple[float | None, tuple[float, ...]]] = {
+    1.0: (0.25, (0.2,)), 1.2: (0.25, (0.2,)), 1.4: (0.3, (0.2,)), 1.6: (0.35, (0.2,)), 1.8: (0.35, (0.2,)),
+    2.0: (0.4, (0.25,)), 2.5: (0.45, (0.35,)), 3.0: (0.5, (0.35,)), 3.5: (0.6, (0.35,)), 4.0: (0.7, (0.5,)),
+    5.0: (0.8, (0.5,)), 6.0: (1.0, (0.75,)), 7.0: (1.0, (0.75,)), 8.0: (1.25, (1.0, 0.75)),
+    10.0: (1.5, (1.25, 1.0, 0.75)), 12.0: (1.75, (1.5, 1.25, 1.0)), 14.0: (2.0, (1.5, 1.25, 1.0)),
+    16.0: (2.0, (1.5, 1.0)), 18.0: (2.5, (2.0, 1.5, 1.0)), 20.0: (2.5, (2.0, 1.5, 1.0)),
+    22.0: (2.5, (2.0, 1.5, 1.0)), 24.0: (3.0, (2.0, 1.5, 1.0)), 27.0: (3.0, (2.0, 1.5, 1.0)),
+    30.0: (3.5, (3.0, 2.0, 1.5, 1.0)), 33.0: (3.5, (3.0, 2.0, 1.5)), 36.0: (4.0, (3.0, 2.0, 1.5)),
+    39.0: (4.0, (3.0, 2.0, 1.5)), 42.0: (4.5, (4.0, 3.0, 2.0, 1.5)), 45.0: (4.5, (4.0, 3.0, 2.0, 1.5)),
+    48.0: (5.0, (4.0, 3.0, 2.0, 1.5)), 50.0: (None, (3.0, 2.0, 1.5)), 52.0: (5.0, (4.0, 3.0, 2.0, 1.5)),
+    56.0: (5.5, (4.0, 3.0, 2.0, 1.5)), 60.0: (5.5, (4.0, 3.0, 2.0, 1.5)), 64.0: (6.0, (4.0, 3.0, 2.0, 1.5)),
+}
+
+#: ``M6``, ``M6x1``, ``M6 x 1 - 6H``, ``M6x1-6H LH``: a metric thread, its pitch
+#: and an ISO 965 tolerance class (an internal thread's letters are capitals).
+_THREAD = re.compile(r"M(?P<d>\d+(?:\.\d+)?)(?:\s*[x×]\s*(?P<p>\d+(?:\.\d+)?))?"
+                     r"(?:\s*-\s*(?P<cls>\d[A-Ha-h](?:\d[A-Ha-h])?))?(?:\s+LH)?")
+#: ``1/4-20 UNC``, ``#10-32 UNF - 2B``, ``1-1/4-7 UNC-2B``, ``0.375-24 UNF``: a
+#: unified inch thread (ASME B1.1), its size, threads per inch, series and class
+#: (A external, B internal). A whole number 0 to 12 is a numbered size (#10 is
+#: 0.060 + 0.013 x 10 = 0.190 in); a whole inch is written as a decimal (1.0).
+_UNIFIED = re.compile(r"(?P<size>#?\d+|\d+-\d+/\d+|\d+/\d+|\d*\.\d+)\s*-\s*(?P<tpi>\d+)\s*"
+                      r"(?P<series>UNC|UNF|UNEF|UNS|UN)(?:\s*-\s*(?P<cls>[123][AaBb]))?(?:\s+LH)?")
+
+
+@dataclass(frozen=True)
+class _Thread:
+    """A thread a hole callout states: its text as given, nominal diameter and pitch (mm)."""
+
+    text: str
+    diameter: float
+    pitch: float
+
+    def fits(self, bore: float) -> str | None:
+        """How a bore of this diameter carries the thread: ``"major"`` when it is
+        modelled at the thread's nominal size, ``"drill"`` when it is the tap
+        drill (from the basic minor diameter, d - 1.0825P, to d - P and a
+        little over, where the common tap drills sit), else None."""
+        if abs(bore - self.diameter) <= 0.01:
+            return "major"
+        if self.diameter - 1.0825 * self.pitch - 0.01 <= bore <= self.diameter - self.pitch + 0.1:
+            return "drill"
+        return None
+
+
+def _inches(size: str) -> float | None:
+    """A unified thread's size in inches: a numbered size (``#10``, ``10``), a
+    fraction (``1/4``, ``1-1/4``) or a decimal (``0.375``); None for a number
+    past #12."""
+    if size.startswith("#") or size.isdigit():
+        number = int(size.lstrip("#"))
+        return 0.060 + 0.013 * number if number <= 12 else None
+    whole, _, fraction = size.rpartition("-") if "/" in size else ("", "", size)
+    if "/" in fraction:
+        top, bottom = fraction.split("/")
+        return (int(whole) if whole else 0) + int(top) / int(bottom) if int(bottom) else None
+    return float(fraction)
+
+
+def _thread(value) -> _Thread:
+    """A hole callout's ``thread=``, parsed: a metric thread (``M6``, ``M6x0.5 -
+    6H``) or a unified inch one (``1/4-20 UNC``, ``#10-32 UNF - 2B``). Its
+    diameter and pitch are what the bore is checked against; ISO 261 gives an
+    ``M`` thread written with no pitch its coarse one. Any other form is refused,
+    because a thread is the one size of a tapped hole the part does not carry,
+    and the drawing can only check one it can read."""
+    if not isinstance(value, str):
+        raise TypeError(f"thread= takes the thread as a string (\"M6x1 - 6H\"), got {value!r}")
+    text = value.strip()
+    if match := _UNIFIED.fullmatch(text):
+        inches, tpi = _inches(match["size"]), int(match["tpi"])
+        if inches is None or not inches > 0 or not tpi > 0:
+            raise ValueError(f"thread={value!r}: {match['size']} is not a unified thread size; give a numbered size "
+                             "up to #12, a fraction (1/4) or a decimal inch (1.0)")
+        if match["cls"] and match["cls"][1] in "Aa":
+            raise ValueError(f"thread={value!r}: {match['cls']} is an external thread's class (a tapped hole's ends "
+                             "in B: 2B)")
+        return _Thread(text, inches * 25.4, 25.4 / tpi)
+    match = _THREAD.fullmatch(text)
+    if match is None:
+        raise ValueError(f"thread={value!r} is not a thread this drawing can check against the bore; write a metric "
+                         "one as M<diameter>[x<pitch>][ - <class>] (\"M6\", \"M6x0.5 - 6H\") or a unified inch one as "
+                         "<size>-<threads per inch> <series>[-<class>] (\"1/4-20 UNC\", \"#10-32 UNF - 2B\")")
+    diameter = float(match["d"])
+    if not diameter > 0:
+        raise ValueError(f"thread={value!r}: a thread's diameter is more than 0")
+    if match["p"] is None:
+        coarse = _ISO_261.get(diameter, (None, ()))[0]
+        if coarse is None:
+            raise ValueError(f"thread={value!r}: ISO 261 gives M{_fmt(diameter)} no coarse pitch to assume; "
+                             f"give its pitch, as M{_fmt(diameter)}x<pitch>")
+        pitch = coarse
+    else:
+        pitch = float(match["p"])
+        if not 0 < pitch < diameter:
+            raise ValueError(f"thread={value!r}: a pitch of {_fmt(pitch)} does not fit an M{_fmt(diameter)} thread")
+    if match["cls"] and match["cls"] != match["cls"].upper():
+        raise ValueError(f"thread={value!r}: {match['cls']} is an external thread's tolerance class (ISO 965 "
+                         "writes a nut's, a tapped hole's, in capitals: 6H)")
+    return _Thread(text, diameter, pitch)
+
+
 def _tol_suffix(tol) -> str:
     if not tol:
         return ""
@@ -84,7 +190,14 @@ def hole_callout_text(spec: dict, *, tol=None, fit: str | None = None) -> str:
             width, length, depth = spec["cbore"]
             text += f"   \u2334 {_fmt(width)} × {_fmt(length)} \u21a7{_fmt(depth)}"
         return text + (f"   {spec['label']}" if spec.get("label") else "")
-    size = spec["thread"] if spec.get("thread") else f"%%c{_fmt(spec['diameter'])}"
+    thread, drilled = spec.get("thread"), spec.get("tap_drill")
+    thread_depth = spec.get("thread_depth")
+    # A tapped hole whose bore is its tap drill states the drill and then the
+    # thread, each with its own depth (\u23005 \u21a712   M6x1 - 6H \u21a710); one tapped
+    # right through states the thread alone. A bore modelled at the thread's
+    # size is the thread.
+    both = bool(thread and drilled and (thread_depth is not None or not spec.get("thru")))
+    size = thread if thread and not both else f"%%c{_fmt(spec['diameter'])}"
     size += _tol_suffix(tol) + (f" {fit}" if fit else "")
     if spec.get("thru"):
         size += " THRU"
@@ -94,6 +207,8 @@ def hole_callout_text(spec: dict, *, tol=None, fit: str | None = None) -> str:
         # The bolt circle: equally spaced on a circle of this diameter.
         size += f" EQ SP ON %%c{_fmt(spec['pcd'])}"
     parts.append(lead + size)
+    if both:
+        parts.append(f"{thread} \u21a7{_fmt(thread_depth)}")  # a blind tapped hole always gives it
 
     def same(a, b) -> bool:
         return a is not None and b is not None and all(abs(x - y) < 1e-3 for x, y in zip(a, b))
@@ -180,10 +295,24 @@ class _Features:
 
 
 def _hole_spec(hole, count: int, thread: str | None = None, label: str | None = None,
-               pcd: float | None = None) -> dict:
+               pcd: float | None = None, *, tap_drill: bool = False, thread_depth: float | None = None) -> dict:
+    if hole.problem is not None:
+        raise ValueError(f"the hole at {_where(hole.mouth)} cannot be stated in one callout: {hole.problem}. "
+                         "No hole callout or hole table states that; dimension its steps with diameter() and dim() "
+                         "(in a section through it), call out the other holes with hole(), or change the model.")
     return {"diameter": hole.diameter, "depth": hole.depth, "thru": hole.thru, "cbore": hole.cbore,
             "csk": hole.csk, "far_cbore": hole.far_cbore, "far_csk": hole.far_csk, "count": count,
-            "thread": thread, "label": label, "pcd": pcd}
+            "thread": thread, "label": label, "pcd": pcd, "tap_drill": tap_drill, "thread_depth": thread_depth}
+
+
+def _feature_text(feature, count: int) -> str:
+    """What a completeness line calls a hole or slot: its callout, or, for a hole
+    no one callout can state, where it is and why."""
+    if isinstance(feature, Slot):
+        return _shown(hole_callout_text(_slot_spec(feature, count)))
+    if feature.problem is not None:
+        return f"the hole at {_where(feature.mouth)} ({feature.problem})"
+    return _shown(hole_callout_text(_hole_spec(feature, count)))
 
 
 def _slot_spec(slot, count: int, label: str | None = None) -> dict:
@@ -286,7 +415,17 @@ def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None
             resolved[index] = [replace(dim)]
     # A kind of hole a hole() call states is that call's, with its fit or frame;
     # holes() calls out the rest.
-    stated = {id(f) for items in resolved.values() for item in items for f in (item.covers or (item.feature,))}
+    stated: dict[int, int] = {}
+    for index in sorted(resolved):
+        for item in resolved[index]:
+            for feature in item.covers or ((item.feature,) if item.feature is not None else ()):
+                if id(feature) in stated:
+                    first = view._dims[stated[id(feature)]]
+                    raise ValueError(
+                        f"{view.name}.{item.kind}({_where(item.feature.mouth)}) and "
+                        f"{view.name}.{first.kind}({_where(first.p1)}) both call out the "
+                        f"{item.kind} at {_where(feature.mouth)}; a feature takes one callout, so drop one.")
+                stated[id(feature)] = index
     for index, dim in enumerate(view._dims):
         if dim.kind == "holes":
             holes, slots, features = seen()
@@ -331,29 +470,99 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features: _Features
     if not _faces_viewer(hole, look):
         raise _far_side(call, "hole", view)
     same = [h for h in seen if h.signature() == hole.signature() and _faces_viewer(h, look)]
+    reads = _shown(hole_callout_text(_hole_spec(hole, len(same))))
+    if thread is not None:
+        return _resolve_tapped(view, call, dim, hole, same, reads, thread, features)
     problems = []
-    if given["diameter"] is not None and thread is None and abs(given["diameter"] - hole.diameter) > 0.01:
+    if given["diameter"] is not None and abs(given["diameter"] - hole.diameter) > 0.01:
         problems.append(f"diameter={_fmt(given['diameter'])}")
     if given["thru"] is not None and given["thru"] != hole.thru:
         problems.append(f"thru={given['thru']}")
     if given["depth"] is not None and (hole.thru or abs(given["depth"] - hole.depth) > 0.01):
         problems.append(f"depth={_fmt(given['depth'])}")
+    problems += _sunk_problems(given, hole)
+    if given["count"] is not None and given["count"] != len(same):
+        problems.append(f"count={given['count']}")
+    if problems:
+        raise ValueError(
+            f"{call}: the part's hole reads {reads}, but the "
+            f"callout was given {', '.join(problems)}. Leave {'it' if len(problems) == 1 else 'them'} unset so "
+            "the drawing states the part, or change the model."
+        )
+    spec = _hole_spec(hole, len(same), None, label, features.pcd(same))
+    return replace(dim, hole=spec, radius=_outer_radius(spec), feature=hole, covers=tuple(same))
+
+
+def _sunk_problems(given: dict, hole) -> list[str]:
+    """The counterbore or countersink a callout was given that the hole does not have."""
+    problems = []
     if given["cbore"] is not None and (hole.cbore is None or any(
             abs(a - b) > 0.01 for a, b in zip(given["cbore"], hole.cbore))):
         problems.append(f"cbore=({_fmt(given['cbore'][0])}, {_fmt(given['cbore'][1])})")
     if given["csk"] is not None and (hole.csk is None or abs(given["csk"][0] - hole.csk[0]) > 0.01
                                      or abs(given["csk"][1] - hole.csk[1]) > 0.5):
         problems.append(f"csk=({_fmt(given['csk'][0])}, {_fmt(given['csk'][1])})")
-    if given["count"] is not None and given["count"] != len(same):
-        problems.append(f"count={given['count']}")
-    if problems:
+    return problems
+
+
+def _resolve_tapped(view: View, call: str, dim: "_Dim", hole, same: list, reads: str, thread: "_Thread",
+                    features: _Features) -> "_Dim":
+    """A tapped hole's callout. The bore is the thread's tap drill or its nominal
+    size; ``count`` says how many of the identical bores are tapped, ``depth``
+    how deep the thread runs. Nothing in the part says either, so neither is
+    assumed: a bore one of several identical ones, or a blind tap drill, needs
+    them said."""
+    given, label = dim.hole["given"], dim.hole["label"]
+    bore = thread.fits(hole.diameter)
+    if bore is None:
         raise ValueError(
-            f"{call}: the part's hole reads {_shown(hole_callout_text(_hole_spec(hole, len(same))))}, but the "
-            f"callout was given {', '.join(problems)}. Leave {'it' if len(problems) == 1 else 'them'} unset so "
-            "the drawing states the part, or change the model."
+            f"{call}: thread={thread.text!r} does not fit the part's hole, which reads {reads}. Its hole "
+            f"(⌀{_fmt(round(thread.diameter, 3))}, pitch {_fmt(round(thread.pitch, 3))}) is its tap drill, ⌀"
+            f"{_fmt(round(thread.diameter - 1.0825 * thread.pitch, 2))} to "
+            f"⌀{_fmt(round(thread.diameter - thread.pitch + 0.1, 2))}, or the thread itself, "
+            f"⌀{_fmt(round(thread.diameter, 2))}; give the thread this bore takes, or change the model."
         )
-    spec = _hole_spec(hole, len(same), thread, label, features.pcd(same))
-    return replace(dim, hole=spec, radius=_outer_radius(spec), feature=hole, covers=tuple(same))
+    problems = []
+    if given["thru"] is not None and given["thru"] != hole.thru:
+        problems.append(f"thru={given['thru']}")
+    problems += _sunk_problems(given, hole)
+    if problems:
+        raise ValueError(f"{call}: the part's hole reads {reads}, but the callout was given {', '.join(problems)}. "
+                         f"Leave {'it' if len(problems) == 1 else 'them'} unset so the drawing states the part, "
+                         "or change the model.")
+    count = given["count"]
+    if count is None and len(same) > 1:
+        raise ValueError(
+            f"{call}: the part has {len(same)} holes that read {_shown(hole_callout_text(_hole_spec(hole, 1)))}, "
+            f"and nothing in it says which are tapped. Pass count={len(same)} if every one is, or count=1 for "
+            "this one alone.")
+    count = count or 1
+    if count not in (1, len(same)):
+        raise ValueError(
+            f"{call}: count={count} taps some of the {len(same)} identical holes, and one callout cannot say "
+            f"which. Call each tapped hole out with count=1, or model the tapped ones as their own bores.")
+    covers = tuple(same) if count == len(same) else (hole,)
+    length = hole.length if hole.thru else hole.depth
+    depth = given["depth"]
+    if depth is not None and hole.thru and abs(depth - length) <= 0.01:
+        depth = None  # threaded the whole way through
+    if depth is not None and depth > length + 0.01:
+        raise ValueError(f"{call}: depth={_fmt(depth)} is the thread's depth, and the hole, which reads {reads}, "
+                         f"is {_fmt(length)} deep; a thread runs no deeper than its bore.")
+    if bore == "major":
+        # The bore is modelled at the thread's size: its depth is the thread's.
+        if depth is not None and (hole.thru or abs(depth - hole.depth) > 0.01):
+            raise ValueError(f"{call}: the hole is modelled at the thread's size and reads {reads}, so it is the "
+                             f"thread, and depth={_fmt(depth)} contradicts it. Leave depth unset, or model the "
+                             "tap drill.")
+        depth = None
+    elif depth is None and not hole.thru:
+        raise ValueError(
+            f"{call}: a blind tapped hole is threaded short of its tap drill's {_fmt(hole.depth)}, and nothing in "
+            "the part says how far; pass depth= for the thread's depth.")
+    pcd = features.pcd(covers) if len(covers) > 1 else None
+    spec = _hole_spec(hole, len(covers), thread.text, label, pcd, tap_drill=bore == "drill", thread_depth=depth)
+    return replace(dim, hole=spec, radius=_outer_radius(spec), feature=hole, covers=covers)
 
 
 def _slot_end(proj, bounds, slot) -> tuple:
@@ -400,7 +609,7 @@ def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
 
 
 def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: list | None,
-                  features: _Features, slots, stated: set) -> list["_Dim"]:
+                  features: _Features, slots, stated: dict) -> list["_Dim"]:
     kinds = _kinds(f for f in (*seen, *slots) if _faces_viewer(f, look))
     brk = view._break
     if brk is not None and warnings is not None:
@@ -428,7 +637,10 @@ def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: l
 
     out = []
     for members in kinds:
-        if any(id(member) in stated for member in members):
+        # What a hole() or slot() states is its own; holes() calls out the rest
+        # of a kind, a tapped one among identical bores taken out of the count.
+        members = [member for member in members if id(member) not in stated]
+        if not members:
             continue
         if isinstance(members[0], Slot):
             slot = min(members, key=lambda sl: short_way_out(_slot_end(proj, bounds, sl)))
@@ -603,13 +815,31 @@ class _HoleTable:
 
 
 def _hole_table(view: View, proj, features, cut, items) -> _HoleTable:
-    """The holes and slots a view tabulates, tagged and measured from its origin."""
-    if any(dim.kind in ("hole", "slot", "holes") for dim in items):
+    """The holes and slots a view tabulates, tagged and measured from its origin.
+    A tapped hole is tabulated with its thread where a ``hole(thread=...)`` on the
+    view says so, under a letter of its own: nothing in the part says a bore is
+    tapped, so the table cannot."""
+    tapped = [dim for dim in items if dim.kind == "hole" and dim.hole.get("thread")]
+    if any(dim.kind in ("slot", "holes") or (dim.kind == "hole" and not dim.hole.get("thread")) for dim in items):
         raise ValueError(f"the {view.name} view both tabulates its holes and calls them out; hole_table() lists "
-                         "every hole the view looks down, so drop its holes(), hole() and slot() calls")
+                         "every hole the view looks down, so drop its holes(), slot() and hole() calls (a "
+                         "hole(thread=...) stays: it gives the table a tapped hole's thread)")
+    for dim in tapped:
+        if dim.frame is not None or dim.datum is not None or dim.key:
+            raise ValueError(f"{view.name}.hole({_where(dim.p1)}): a tabulated hole's row carries its size, not a "
+                             "frame, a datum or a key mark; state those on a view that calls the hole out")
     look = _look(view)
-    order = _kinds([*(h for h in features.holes if _looks_into(h, look) and _shows(view, proj, h, h.length, cut)),
-                    *(sl for sl in features.slots if _looks_into(sl, look) and _shows(view, proj, sl, sl.run, cut))])
+    taps = {id(feature): dim for dim in tapped for feature in dim.covers}
+    order = []
+    for members in _kinds([*(h for h in features.holes if _looks_into(h, look) and _shows(view, proj, h, h.length, cut)),
+                    *(sl for sl in features.slots if _looks_into(sl, look) and _shows(view, proj, sl, sl.run, cut))]):
+        plain = [m for m in members if id(m) not in taps]
+        if plain:
+            order.append((plain, None))
+        for dim in tapped:
+            mine = [m for m in members if taps.get(id(m)) is dim]
+            if mine:
+                order.append((mine, dim))
     if not order:
         raise ValueError(f"{view.name}.hole_table(): the {view.name} view looks down no hole or slot")
     origin = view._table.origin if view._table.origin is not None else _lower_left(view.shape, proj)
@@ -632,9 +862,10 @@ def _hole_table(view: View, proj, features, cut, items) -> _HoleTable:
         return proj.point(feature.mouth)
 
     rows = []
-    for letter, members in zip(_SECTION_LETTERS, order):
+    for letter, (members, tap) in zip(_SECTION_LETTERS, order):
         is_slot = isinstance(members[0], Slot)
-        spec = _slot_spec(members[0], 1) if is_slot else _hole_spec(members[0], 1)
+        spec = (_slot_spec(members[0], 1) if is_slot else _hole_spec(members[0], 1) if tap is None
+                else dict(tap.hole, count=1, pcd=None))
         size = hole_callout_text(spec)
         radius = members[0].width / 2 if is_slot else _outer_radius(spec)
         measured = []

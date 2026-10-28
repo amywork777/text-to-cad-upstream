@@ -26,6 +26,19 @@ _ALIKE_SAMPLES = 72
 #: are a turned or symmetric part's few, and a coil spring's thousands of curves
 #: would take longer to sample than the rest of its drawing.
 _ALIKE_EDGES = 200
+#: The shortest projected edge a view keeps, in model millimetres. Hidden-line
+#: removal splits a projected curve where it passes behind another, and where the
+#: split falls a hair from the curve's own seam it hands back the remainder as an
+#: edge of a few hundredths of a micron: the shock absorber's coil spring (tilted
+#: cylinders fused) seen from the top carries three, ellipses 4e-8 mm long, each
+#: the last 1.3e-7 rad of its curve before the seam. Such an edge is a
+#: point -- its ends are closer than the kernel's own confusion tolerance (1e-7),
+#: so they are the same point to OCCT -- and OCCT cannot measure along it
+#: (``GCPnts_AbscissaPoint`` raises ``Standard_Failure``), which failed the sheet
+#: the first time anything sampled the view's edges. A micron is ten times that
+#: tolerance and draws nothing at any scale a sheet uses, so dropping these loses
+#: no line.
+_POINT_EDGE = 1e-6
 
 
 # --- projection -----------------------------------------------------------------------
@@ -75,7 +88,10 @@ def _project_to_viewport(shape, origin, up, look_at):
             edge = downcast(explorer.Current())
             # Without this the curve is 2D only and later reads segfault.
             BRepLib.BuildCurves3d_s(edge, 1e-9)
-            found.append(Edge(edge))
+            projected = Edge(edge)
+            # A sliver is a point, not a line: see _POINT_EDGE.
+            if projected.length >= _POINT_EDGE:
+                found.append(projected)
             explorer.Next()
         return found
 

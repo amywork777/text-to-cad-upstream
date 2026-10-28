@@ -236,12 +236,26 @@ sheet millimetres.
   corner of the view's extent unless `origin`, a model point, is given), and a
   table of TAG, X, Y and SIZE in free paper beside the view (or with its
   top-left corner at `at`). Sizes are read off the part as a callout reads
-  them. A view tabulates its holes or calls them out, not both.
+  them. A view tabulates its holes or calls them out, not both, but for a
+  `hole(point, thread=...)`, which gives tapped holes' rows their thread under
+  a letter of their own (nothing in the part says a bore is tapped).
 - `view.hole(point, diameter=None, depth=None, thru=None, cbore=None, csk=None, thread=None, count=None, angle=45, tol=None, fit=None, label=None, frame=None, datum=None, key=False)`:
   one callout on the hole whose axis passes through `point`, in a view looking
   down that axis. Every size and the count come from the part; a value given is
-  checked and a contradiction is refused, naming what the part has. `thread`
-  (`"M6x1 - 6H"`) replaces the diameter; `label` is appended (`"WHEEL"`).
+  checked and a contradiction is refused, naming what the part has. `label`
+  is appended (`"WHEEL"`). `thread` states a tapped hole: a metric thread
+  with an optional ISO 965 class (`"M6"`, `"M6x0.5 - 6H"`; with no pitch, ISO 261's
+  coarse one) or a unified inch thread (`"1/4-20 UNC-2B"`, `"#10-32 UNF"`; numbered
+  sizes up to #12, a whole inch as a decimal, `"1.0-8 UNC"`); any other form is
+  refused. The bore is its tap drill (basic minor diameter to about d - P: ⌀5 for
+  M6x1, the #7 drill for 1/4-20) or the thread's own size (⌀6). It takes no `diameter`,
+  `tol` or `fit`. A tap drill is stated with the thread after it: `⌀5 ↧12
+  M6x1 - 6H ↧10`. `count` is how many of the identical bores are tapped (all,
+  or `count=1` for this one; left unset over several, it is refused), and
+  `depth` the thread's depth, which a blind tap drill needs. One hole takes one
+  callout: a second `hole()` on it is refused. A hole whose end opens out in
+  steps (a chamfered counterbore, a counterbore in a counterbore) has no one
+  callout, and `hole()`, `holes()` and `hole_table()` refuse it.
   A through hole opened out at both ends reads `BOTH ENDS` or `FAR SIDE ...`.
   Pieces of one bore separated by air (a clevis's arms, a cross hole) are one
   hole; a groove or a pocket with material inside is not a hole. `frame=`
@@ -327,7 +341,7 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | `incomplete: the turned diameter ⌀30 is not dimensioned ...` | a shaft step or boss has no diameter |
 | `incomplete: 4 rounds R2 are not stated. Sheet(notes=geometry_notes(part)) ...` | a blend radius is not stated |
 | `incomplete: 2 chamfers 1 × 45° are not stated ...` | a chamfer is not stated |
-| `the break from X = 100 to 500 hides some of the part ...` | the part changes inside a break; move it |
+| `front.broken(): the break from X = 100 to 500 hides some of the part ...` (stops the script) | the part changes inside a break; move it |
 | `front dim 2: ... measures blank paper` | a dimension's points miss the view |
 | `annotation overlaps: '120' is printed over 'TOP' ...` | two pieces of text collide |
 | `views crowded: ... Sheet("A2") or Sheet(scale=0.5) gives them room` | the views' annotation needs more paper |
@@ -338,7 +352,7 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | `VIEW C: no free paper on A3 for it at 1:1 ...` | the same, for an auxiliary view |
 | `top.hole_table(): no free paper on A3 for a 70 x 48 mm table ...` | give the table `at=`, or a larger sheet or smaller scale |
 | `top.hole_table(): the top view looks down no hole or slot` | tabulate the view that looks down the holes |
-| `front dim 3: (250, 0, 0) is inside the break ...` | dimension to a point outside the broken stretch |
+| `front dim 3: (250, 0, 0) is inside the break ...` (stops the script) | dimension to a point outside the broken stretch |
 | `incomplete: sheet 3 (PIN): the turned diameter ⌀6 ...` | on a drawing of several parts, each line names its sheet |
 | `incomplete: 4× ⌀5.5 THRU is not located along X and Y ...` | no dimension ties the feature to an edge, a datum or a located feature; dimension it, tabulate it, or state the symmetry it sits on |
 | `incomplete: the face at Z = 8 (square to Z) is not located ...` | a step or shoulder is not placed; dimension it from an edge or a located face |

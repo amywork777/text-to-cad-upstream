@@ -3,8 +3,8 @@ that key a view to it, and the general arrangement and part sheets
 :func:`cadgen.eng_drawing.assembly_sheets` makes.
 
 A parts list is the assembly's distinct parts, each once, with how many times it
-occurs. Two occurrences are one part when they carry the same name and colour
-and the same geometry: one prototype placed several times (the kernel's shape
+occurs. Two occurrences are one part when they carry the same name, colour and
+material and the same geometry: one prototype placed several times (the kernel's shape
 shared, as the engine places a part used twice and as ``read_step`` and
 ``read_xbf`` hand back a shared product), or an exact translated copy, which a
 boolean check confirms. A name, a colour or a shape alone never merges two
@@ -56,14 +56,19 @@ def _joint_note(text: str, joint: str | None) -> str:
     return f"{word}: {text}" if text else word
 
 
+def _item_of(view, key: int | str) -> Item:
+    """The item of the parts list a view balloons that a flag names."""
+    if not view._balloons:
+        raise ValueError(f"flag(item={key!r}) on the {view.name} view finds the item in the parts list the view "
+                         f"balloons, and it balloons none; {view.name}.balloons(parts) first")
+    return view._balloons[0][key]
+
+
 def _item_point(view, key: int | str) -> tuple[float, float, float]:
     """A point a view sees on an item of the parts list it balloons."""
     from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
 
-    if not view._balloons:
-        raise ValueError(f"flag(item={key!r}) on the {view.name} view finds the item in the parts list the view "
-                         f"balloons, and it balloons none; {view.name}.balloons(parts) first")
-    item = view._balloons[0][key]
+    item = _item_of(view, key)
     cast = IntCurvesFace_ShapeIntersector()
     cast.Load(view.shape.wrapped, 1e-7)
     point = visible_point(item.occurrences, cast, _look(view))
@@ -191,9 +196,11 @@ class PartsList:
         """List several items as one part: the parts the model names differently
         (``mounting_eye:lower``, ``mounting_eye:upper``) that are one part. Their
         geometry must be the same: a shared prototype, or an exact translated
-        copy. The first item keeps its place and takes the others' quantities;
-        the items after it are numbered again. ``description`` replaces the one
-        read from their labels (the segments they share)."""
+        copy, of one material. The first item keeps its place and takes the
+        others' quantities and what :meth:`set` stated for any of them; two
+        different values of one field are refused, as two parts. The items
+        after it are numbered again. ``description`` replaces the one read from
+        their labels (the segments they share)."""
         if self._frozen:
             raise ValueError("merge() renumbers the parts list, and sheets are already drawn from it; merge "
                              "before assembly_sheets() or balloons()")
@@ -219,6 +226,25 @@ class PartsList:
                     f"merge(): item {other.number} ({other.description or 'unnamed'}) is not the same shape as item "
                     f"{first.number} ({first.description or 'unnamed'}); only identical parts are one part"
                 )
+            if _material(other.shape) != _material(first.shape):
+                raise ValueError(
+                    f"merge(): item {other.number} ({other.description or 'unnamed'}) is not made of what item "
+                    f"{first.number} ({first.description or 'unnamed'}) is, in the model; two materials are two parts"
+                )
+        # What set() stated for them: one value each, or the merge would print one
+        # part's and drop the other's.
+        stated = {}
+        for name in FIELDS:
+            if name == "description":
+                continue
+            values = {getattr(item, name) for item in chosen} - {""}
+            if len(values) > 1:
+                listed = ", ".join(f"item {item.number} {getattr(item, name)!r}" for item in chosen
+                                   if getattr(item, name))
+                raise ValueError(f"merge(): the items differ in {name} ({listed}); one part has one {name}, so "
+                                 "set() it the same on each, or leave them apart")
+            if values:
+                stated[name] = values.pop()
         for other in chosen:
             if other is first:
                 continue
@@ -228,6 +254,8 @@ class PartsList:
             first.prototypes += tuple(p for p in other.prototypes if p not in first.prototypes)
             first.quantity += other.quantity
         first.description = description if description is not None else _describe(first.labels)
+        for name, value in stated.items():
+            setattr(first, name, value)
         gone = {id(item) for item in chosen if item is not first}
         kept = [item for item in self.items if id(item) not in gone]
         old = {item.number: item for item in self.items}
@@ -267,16 +295,16 @@ def parts_list(source) -> PartsList:
         if key is None:
             prototypes.append(local.wrapped)
             key = len(prototypes) - 1
-        colour = _colour(world)
+        colour, material = _colour(world), _material(world)
         group = None
         for g in groups:
-            if g["label"] != label or g["colour"] != colour:
+            if g["label"] != label or g["colour"] != colour or g["material"] != material:
                 continue
             if key in g["keys"] or _same_part(g["local"], local):
                 group = g
                 break
         if group is None:
-            groups.append({"label": label, "colour": colour, "keys": [key],
+            groups.append({"label": label, "colour": colour, "material": material, "keys": [key],
                            "local": local, "labels": [label], "refs": [ref], "placed": [world]})
         else:
             if key not in group["keys"]:
@@ -294,6 +322,14 @@ def parts_list(source) -> PartsList:
         Item(number, _describe(g["labels"]), len(g["placed"]), labels=tuple(g["labels"]), refs=tuple(g["refs"]),
              shape=g["local"], occurrences=tuple(g["placed"]), prototypes=tuple(g["keys"]))
         for number, g in enumerate(groups, start=1)], twins)
+
+
+def _material(shape) -> str | None:
+    """A shape's material (a ``bd_materials`` one) as a comparable key, or None:
+    two grades of steel are two parts, however alike they look."""
+    from cadgen.engine.document import material_key
+
+    return material_key(getattr(shape, "material", None))
 
 
 def _colour(shape) -> tuple | None:
@@ -416,7 +452,8 @@ def interfaces(parts: PartsList) -> tuple[list[Fit], list[Abutment]]:
     part in a bore of another, their diameters close enough to meet (an
     interference among them), and the flat faces of parts on such an axis that
     touch square to it. Read off the placed occurrences; a joint the assembly
-    repeats (four bolts in four holes) is one, with the number of places."""
+    repeats (four bolts in four holes, two bushings in one bore) is one, with
+    the number of places: each pair of occurrences that meet there."""
     from cadgen._internal.drawing_features import _TOUCH, _full, _merge_split_faces, _surface_segments
 
     placed = [(item.number, shape) for item in parts for shape in item.occurrences]
@@ -447,7 +484,9 @@ def interfaces(parts: PartsList) -> tuple[list[Fit], list[Abutment]]:
                                 continue
                             at = tuple(round(f + (lo + hi) / 2 * c, 6) + 0.0 for f, c in zip(foot, d))
                             name = (placed[inner][0], placed[outer][0], round(across[0], 4), round(across[1], 4))
-                            fits.setdefault(name, [d, at, set()])[2].add(key)
+                            # Each pair of occurrences meeting is one place: two
+                            # bushings in one bore are two, four pins on four axes four.
+                            fits.setdefault(name, [d, at, set()])[2].add((key, inner, outer))
                             on_axis.setdefault(key, (d, set()))[1].update((i, j))
     flats: dict[tuple, list] = {}
 
@@ -471,7 +510,9 @@ def interfaces(parts: PartsList) -> tuple[list[Fit], list[Abutment]]:
                             continue
                         items = tuple(sorted((placed[m][0], placed[n][0])))
                         at = tuple(round(f + at_a * c, 6) + 0.0 for f, c in zip(foot, d))
-                        abutments.setdefault(items, [d, at, set()])[2].add((key, round(at_a, 3)))
+                        # A pair of occurrences touching in one plane is one place,
+                        # however many of the axes through it share it.
+                        abutments.setdefault(items, [d, at, set()])[2].add((m, n, round(at_a, 3)))
     return ([Fit(*name, d, at, len(keys)) for name, (d, at, keys) in fits.items()],
             [Abutment(items, d, at, len(spots)) for items, (d, at, spots) in abutments.items()])
 

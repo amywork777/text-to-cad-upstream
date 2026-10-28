@@ -12,7 +12,7 @@ import re
 from collections.abc import Hashable
 from dataclasses import dataclass, field
 
-from cadgen._internal.drawing_annotation import hole_callout_text, _hole_spec, _looks_into, _slot_spec
+from cadgen._internal.drawing_annotation import _feature_text, _looks_into, hole_callout_text
 from cadgen._internal.drawing_base import _fmt, _shown, _where
 from cadgen._internal.drawing_features import Slot
 
@@ -101,8 +101,7 @@ def _unstated(facts: _Facts) -> list[str]:
                 continue
             feature = members[0]
             is_slot = isinstance(feature, Slot)
-            text = _shown(hole_callout_text(_slot_spec(feature, len(members)) if is_slot
-                                            else _hole_spec(feature, len(members))))
+            text = _feature_text(feature, len(members))
             where = next((name for name, look in views if _looks_into(feature, look)), None)
             verb = "slot" if is_slot else "hole"
             fix = (f"{where}.{verb}({_where(feature.mouth)}) states it, or {where}.holes() calls out every hole "
@@ -525,8 +524,7 @@ def _unlocated(record: dict, whose: str) -> list[str]:
         feature = members[0][0]
         missing = sorted({axis for _f, axes in members for axis in axes})
         is_slot = isinstance(feature, Slot)
-        text = _shown(hole_callout_text(_slot_spec(feature, len(members)) if is_slot
-                                        else _hole_spec(feature, len(members))))
+        text = _feature_text(feature, len(members))
         where = next((name for name, look in views if _looks_into(feature, look)), "view")
         across = " and ".join("XYZ"[axis] for axis in missing)
         lines.append(
