@@ -21,7 +21,9 @@ const HIGHLIGHT_RENDER_ORDER = 23;
  * @returns {{ apply(look: object | null, ink: { hovered?: { mesh: object }[], selected?: { mesh: object }[] },
  *   clipPlanes?: object[]): void, dispose(): void }}
  *   `apply`: the look, then the ink over it. Records are the scene's own, one per mesh; a record
- *   keeps its ghost (`ghostRecord`) from one selection to the next.
+ *   keeps its ghost (`ghostRecord`) from one selection to the next. `setColors`: the colour a pick
+ *   and what the pointer rests on wear (`{ selected, hovered }`), or null for the viewer's own;
+ *   the next `apply` paints with it.
  */
 export function createSceneHighlight(THREE, look) {
   const hoverColor = new THREE.Color(REFERENCE_HOVER_COLOR);
@@ -72,6 +74,10 @@ export function createSceneHighlight(THREE, look) {
         syncMaterialClipPlanes(record.ghostRecord.ghostMaterial, clipPlanes);
         ghosted.add(record);
       }
+    },
+    setColors(colors) {
+      selectedColor.set(colors?.selected || resolveCadEdgeSettings().highlightColor);
+      hoverColor.set(colors?.hovered || REFERENCE_HOVER_COLOR);
     },
     dispose() {
       for (const record of ghosted) {

@@ -43,6 +43,7 @@ const SECTION_RULES = new Set(['explode', 'section clipping']);
 export const KIT_WORD_ALLOWLIST = [
   ['camera/ViewPlaneControl.js', 'showSelector', 'UI word: the view-plane "selector" is the orientation control itself, not a CAD selector'],
   ['view-settings/viewerDisplaySettings.js', 'buildStepClipPatch', "core's clip-settings API carries STEP in its names; the settings model only passes the Clip section through"],
+  ['view-settings/ClipControls.jsx', 'normalizeStepClipSettings', "core's clip-settings API carries STEP in its names; the Clip panel only reads the section through it"],
   ['tools/model-effects/ModelViewControls.js', 'normalizeStepClipSettings', "core's clip-settings API carries STEP in its names; Clip's controls only pass the setting through"],
   ['tools/select/sceneReferences.jsx', '"cad-selector"', "the prompt grammar's reference target kind: a scene's pick id travels in it as the file's own id"],
 ];

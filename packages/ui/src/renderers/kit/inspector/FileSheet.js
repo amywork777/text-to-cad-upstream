@@ -4,6 +4,15 @@ import { cn } from "@text-to-cad/ui/utils";
 import { Checkbox } from "@text-to-cad/ui/primitives/checkbox";
 import { ColorPicker } from "@text-to-cad/ui/primitives/color-picker";
 import { useI18n } from "@text-to-cad/ui/i18n";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue
+} from "@text-to-cad/ui/primitives/select";
 
 export const FILE_SHEET_CONTROL_ROW_CLASSES = "space-y-1 px-2";
 export const FILE_SHEET_ROW_STACK_CLASSES = "space-y-3";
@@ -18,6 +27,8 @@ export const FILE_SHEET_STATUS_TEXT_CLASSES = "px-2 text-tiny leading-4 text-mut
 // whitespace-nowrap, so without this a long option pushes its chevron out
 // through the border instead of truncating.
 const FILE_SHEET_SELECT_TRIGGER_BASE_CLASSES = "!h-7 px-2 !text-tiny overflow-hidden [&_svg]:size-3.5 [&>span]:min-w-0 [&>span]:truncate";
+const FILE_SHEET_INLINE_SELECT_TRIGGER_CLASSES = `${FILE_SHEET_SELECT_TRIGGER_BASE_CLASSES} w-fit min-w-20 max-w-44`;
+export const FILE_SHEET_COMPACT_BUTTON_CLASSES = "h-7 px-2 text-tiny text-muted-foreground hover:text-foreground";
 export const FILE_SHEET_SELECT_TRIGGER_CLASSES = `${FILE_SHEET_SELECT_TRIGGER_BASE_CLASSES} w-full`;
 export const FILE_SHEET_VALUE_BADGE_CLASSES = "shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-micro leading-none tabular-nums text-muted-foreground";
 export const FILE_SHEET_VALUE_BADGE_INPUT_CLASSES = [
@@ -321,13 +332,13 @@ export const valueInputWidth = value => {
  * panel whose labels are sentences (an FEA result's controls): the label, wrapping between words,
  * shares its line with the value field, and the slider takes the whole row's width under them.
  */
-export function FileSheetSliderField({ label, value, onValueCommit, valueInputProps, labelTitle, children, wideLabel = false }) {
+export function FileSheetSliderField({ label, value, onValueCommit, valueInputProps, labelTitle, children, wideLabel = false, action = null }) {
   if (wideLabel) {
     return <FileSheetControlRow>
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5" data-position-control="" data-slider-layout="wide">
         {label != null ? <span className={cn(FILE_SHEET_FIELD_LABEL_CLASSES, "whitespace-normal [overflow-wrap:break-word]")} title={labelTitle && labelTitle !== label ? labelTitle : undefined}>{label}</span> : <span />}
-        {onValueCommit ? <FileSheetValueInput value={value} onValueCommit={onValueCommit} {...valueInputProps}
-          className={cn("h-6 px-1.5", valueInputWidth(value), valueInputProps?.className)} /> : <span />}
+        <span className="flex items-center gap-1">{action}{onValueCommit ? <FileSheetValueInput value={value} onValueCommit={onValueCommit} {...valueInputProps}
+          className={cn("h-6 px-1.5", valueInputWidth(value), valueInputProps?.className)} /> : null}</span>
         <div className="col-span-2 min-w-0">{children}</div>
       </div>
     </FileSheetControlRow>;
@@ -339,8 +350,8 @@ export function FileSheetSliderField({ label, value, onValueCommit, valueInputPr
         {/* Under its label, its thumb clear of the label's foot. */}
         <div className="mt-1 min-w-0">{children}</div>
       </div>
-      {onValueCommit ? <FileSheetValueInput value={value} onValueCommit={onValueCommit} {...valueInputProps}
-        className={cn("h-6 px-1.5", valueInputWidth(value), valueInputProps?.className)} /> : null}
+      <span className="flex items-center gap-1">{action}{onValueCommit ? <FileSheetValueInput value={value} onValueCommit={onValueCommit} {...valueInputProps}
+        className={cn("h-6 px-1.5", valueInputWidth(value), valueInputProps?.className)} /> : null}</span>
     </div>
   </FileSheetControlRow>;
 }
@@ -402,5 +413,107 @@ export function FileSheetColorPicker({
       popoverAlign="end"
       {...props}
     />
+  );
+}
+
+// The parameter rows' own controls (`parameterRow.jsx`): an FEA result's Study controls and edit mode's
+// panels draw with them. A checkbox row, a row of buttons and a select row.
+export function FileSheetCheckboxRow({ label, checked, onCheckedChange, className, disabled = false }) {
+  return (
+    <label className={cn("flex h-6 items-center gap-2 px-2 text-tiny text-foreground", disabled ? "cursor-default opacity-50" : "cursor-pointer", className)}>
+      <Checkbox aria-label={label} checked={checked} disabled={disabled} onCheckedChange={next => onCheckedChange(next === true)} />
+      <span className="truncate">{label}</span>
+    </label>
+  );
+}
+
+function FileSheetInlineControlRow({ label, children, className }) {
+  return (
+    <div className={cn("px-2", className)}>
+      <div className="flex min-h-7 max-w-full items-center justify-between gap-2">
+        <span className={FILE_SHEET_FIELD_LABEL_CLASSES}>{label}</span>
+        <span className="shrink-0">{children}</span>
+      </div>
+    </div>
+  );
+}
+
+export function FileSheetButtonRow({ children }) {
+  const columnCount = Math.max(1, Children.count(children));
+  return (
+    <div
+      className="grid gap-1.5 px-2"
+      style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function FileSheetSelectRow({
+  label,
+  value,
+  onValueChange,
+  options,
+  ariaLabel,
+  placeholder,
+  triggerContent,
+  hideLabel = false,
+  triggerClassName,
+  className
+}) {
+  const selectedIcon = options.find(option => option.value === value)?.icon;
+  const select = (
+    <Select value={value} onValueChange={onValueChange}>
+      <TooltipHint content={hideLabel ? ariaLabel || label : undefined}><SelectTrigger
+        size="sm"
+        className={cn(hideLabel ? FILE_SHEET_SELECT_TRIGGER_CLASSES : FILE_SHEET_INLINE_SELECT_TRIGGER_CLASSES, triggerClassName)}
+
+        aria-label={ariaLabel || (typeof label === "string" ? label : undefined)}
+      >
+        {triggerContent ?? (selectedIcon ? <span className="flex min-w-0 items-center gap-1">{selectedIcon}<SelectValue placeholder={placeholder} /></span> : <SelectValue placeholder={placeholder} />)}
+      </SelectTrigger></TooltipHint>
+      <SelectContent>
+        {(() => {
+          // Options may carry a `group`: grouped ones render under SelectGroup headings in
+          // first-appearance order, ungrouped ones (e.g. a leading "None") stay at the top.
+          const renderItem = (option) => (
+            <TooltipHint key={option.value} content={option.title}><SelectItem
+
+              value={option.value}
+              disabled={option.disabled}
+
+              icon={option.icon}
+            >
+              {option.label}
+            </SelectItem></TooltipHint>
+          );
+          const ungrouped = options.filter((option) => !option.group);
+          const groupNames = [...new Set(options.map((option) => option.group).filter(Boolean))];
+          if (!groupNames.length) {
+            return options.map(renderItem);
+          }
+          return (
+            <>
+              {ungrouped.map(renderItem)}
+              {groupNames.map((groupName) => (
+                <SelectGroup key={groupName}>
+                  <SelectLabel className="text-micro uppercase tracking-wide text-muted-foreground">
+                    {groupName}
+                  </SelectLabel>
+                  {options.filter((option) => option.group === groupName).map(renderItem)}
+                </SelectGroup>
+              ))}
+            </>
+          );
+        })()}
+      </SelectContent>
+    </Select>
+  );
+  if (hideLabel) return <div className={cn("min-w-0 px-2", className)}>{select}</div>;
+  return (
+    <FileSheetInlineControlRow label={label} className={className}>
+      {select}
+    </FileSheetInlineControlRow>
   );
 }

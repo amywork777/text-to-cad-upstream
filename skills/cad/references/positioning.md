@@ -7,6 +7,7 @@ alignment.
 
 - [Transforms and local frames](#transforms-and-local-frames)
 - [Native joints](#native-joints)
+- [Mates](#mates)
 - [Child models and imported components](#child-models-and-imported-components)
 - [Alignment and measurement checks](#alignment-and-measurement-checks)
 
@@ -74,6 +75,29 @@ cannot place a part inside a nested assembly: there, put each part where it stan
 and give the two joints one label, and the engine pairs them by it. A child model's
 joints stay in its own document, so the joints an assembly needs are authored in the
 assembly's body, on the parts it places.
+
+## Mates
+
+A part placed against faces and edges of others, as a CAD tool's mates place it, takes
+`cadgen.mates` constraints; Studio's Mate command writes them.
+`mate(part, Coincident(a, b), Concentric(c, d), ...)` takes each mate's first item on the
+part that moves and its second on the part it is mated to, solves them together each run
+and moves the part the least it can, so what they leave free stays put
+(`Distance(a, b, gap)`, `Parallel(a, b)`, `Perpendicular(a, b)`, `Angle(a, b, degrees)`,
+`flip=True` to face the same way). Mates that cannot all hold raise `MateError`. Keep a
+part's `mate` call after those of the parts it is mated to, and before the compound that
+holds it. A mate places a part and keeps nothing: a part that moves in the mechanism also
+takes its joints, authored where the mates leave it ([native joints](#native-joints)).
+
+```python
+# Inside an assembly model: a screw seated in a plate's hole, its head on the plate's top.
+from cadgen.mates import Coincident, Concentric, mate
+
+hole = plate.faces().filter_by(bd.GeomType.CYLINDER)[0]
+shank = screw.faces().filter_by(bd.GeomType.CYLINDER).sort_by(bd.Axis.Z)[0]
+head_underside = screw.faces().filter_by(bd.Axis.Z).sort_by(bd.Axis.Z)[1]
+mate(screw, Concentric(shank, hole), Coincident(head_underside, plate.faces().sort_by(bd.Axis.Z)[-1]))
+```
 
 ## Child models and imported components
 

@@ -515,6 +515,8 @@ export function createXbfScene(THREE, document) {
   let disposed = false;
   const overlay = { hovered: null, selected: [] };
   const overlayObjects = new Map();
+  // The colour a pick is drawn in, the viewer's own unless a renderer gives one (`setHighlightColor`).
+  let highlightColor = INK.highlightColor;
   // A lit part's edges, as a STEP part's: in the selection's colour, or the hover's.
   const partLineMaterials = {
     selected: new THREE.LineBasicMaterial({ color: INK.highlightColor, transparent: true }),
@@ -657,7 +659,7 @@ export function createXbfScene(THREE, document) {
   };
   const highlightLine = (positions, onTop) => {
     const line = createScreenSpaceLineSegments(lineContext, positions, {
-      color: INK.highlightColor, opacity: INK.highlightOpacity, lineWidth: EDGE_HIGHLIGHT_PIXELS, renderOrder: HIGHLIGHT_ORDER + 1,
+      color: highlightColor, opacity: INK.highlightOpacity, lineWidth: EDGE_HIGHLIGHT_PIXELS, renderOrder: HIGHLIGHT_ORDER + 1,
       depthTest: !onTop, depthWrite: false, depthBias: topologyLineDepthBiasForWidth(EDGE_HIGHLIGHT_PIXELS)
     }, screenSpaceLineMaterials);
     if (!line) return null;
@@ -948,6 +950,31 @@ export function createXbfScene(THREE, document) {
         if (!local.isEmpty()) box.union(local.applyMatrix4(entry.group.matrixWorld));
       }
       return box.isEmpty() ? null : { min: box.min.toArray(), max: box.max.toArray() };
+    },
+    /**
+     * The colour picks and what the pointer rests on are drawn in -- a part's tint and edges, a face's
+     * fill and outline, an edge -- or null for the viewer's own (a part under the pointer then wears
+     * the hover's): a renderer's own way of showing a pick (CAD mode's workspace, its orange).
+     * @param {string | null} color
+     */
+    setHighlightColor(color) {
+      const next = color || INK.highlightColor;
+      if (disposed || next === highlightColor) return;
+      highlightColor = next;
+      fillMaterial.color.set(next);
+      partLineMaterials.selected.color.set(next);
+      partLineMaterials.hovered.color.set(color || REFERENCE_HOVER_COLOR);
+      ink.setColors(color ? { selected: color, hovered: color } : null);
+      // The lines drawn so far are their own colour's: drawn again in this one.
+      for (const object of overlayObjects.values()) dropOverlay(object);
+      overlayObjects.clear();
+      applyOverlays();
+      applySurfaces();
+    },
+    /** How many faces the part of instance `index` has (its buffer's face rows, a face left unmeshed among them); 0 for none. */
+    faceCount(index) {
+      const entry = instances[index];
+      return entry ? entry.surface.part.mesh.faces.length / 3 : 0;
     },
     /** Light instances (ids `i3`): the part under the pointer and the parts picked, as a STEP lights its parts. */
     setHighlight({ hovered = [], selected = [] } = {}) {

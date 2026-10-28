@@ -93,7 +93,8 @@ export function usePointerPick({ viewport, scene, enabled, onPick, onHover = nul
       if (!started || event.button !== 0 || event.pointerId !== started.pointerId) return;
       const slop = coarse(started.pointerType) ? COARSE_TAP_SLOP_PX : FINE_TAP_SLOP_PX;
       if (Math.hypot(event.clientX - started.x, event.clientY - started.y) > slop) return;
-      callbacks.current.onPick(pickAt(started.x, started.y), { multiSelect: Boolean(event.shiftKey) }, pointerAt(started.x, started.y));
+      // Shift, Ctrl or Cmd adds to the selection, as Ctrl does in SolidWorks.
+      callbacks.current.onPick(pickAt(started.x, started.y), { multiSelect: Boolean(event.shiftKey || event.ctrlKey || event.metaKey) }, pointerAt(started.x, started.y));
     };
     const handlePointerMove = (event) => {
       if (press?.pointerId === event.pointerId && Math.hypot(event.clientX - press.x, event.clientY - press.y) > (coarse(press.pointerType) ? COARSE_TAP_SLOP_PX : FINE_TAP_SLOP_PX)) press = null;

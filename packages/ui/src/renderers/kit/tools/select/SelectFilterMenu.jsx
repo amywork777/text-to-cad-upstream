@@ -14,9 +14,8 @@ const PLURAL = Object.freeze({ vertex: "vertices", edge: "edges", face: "faces" 
  * follows (`children`: how a pick grows, Group faces and Group edges) comes after a rule. Measure's
  * menu is this one too (`MeasureFilterMenu.jsx`): `name` marks its trigger and rows
  * (`data-<name>-filter-trigger`, `data-<name>-filter`) and `triggerName` names its chevron
- * ("Measure filter"), so the two chevrons on the strip are told apart. The strip's button shows the
- * mode chosen as a badge on the tool's glyph (`modeGlyphs.jsx`'s `ToolModeIcon`). A mode says its `key`
- * in the view's language where it has one, else its `label`.
+ * ("Measure filter"), so the two chevrons on the strip are told apart. A mode says its `key` in the
+ * view's language where it has one, else its `label`.
  *
  * @param {{ value: readonly string[], onChange(filter: readonly string[]): void,
  *   modes: { id: string, label: string, key?: string, kinds: readonly string[], icon?: import("react").ReactNode }[],

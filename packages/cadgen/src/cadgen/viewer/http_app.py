@@ -476,6 +476,15 @@ class CadApp:
                     self._handle_folder(response, pathname, query)
                 elif pathname == "/__cad/recents":
                     response.send_json(200, self._recents_payload())
+                elif pathname == "/__cad/models":
+                    # Studio: project folders' models, every folder asked in one read (``cadgen/edit/models.py``).
+                    from cadgen.edit.models import folders_models
+
+                    roots = [value for name, value in query if name == "root"]
+                    answer = folders_models(self.recents.registry, roots)
+                    if len(roots) == 1:
+                        answer["models"] = answer["roots"][roots[0]]
+                    response.send_json(200, answer)
                 elif pathname == "/__cad/thumbnail":
                     self._handle_thumbnail(response, query)
                 elif pathname == "/__cad/drawing":
@@ -526,7 +535,13 @@ class CadApp:
             try:
                 if pathname == "/__cad/exports" or pathname.startswith("/__cad/exports/"):
                     return self.exports.handle(request, response)
-                if pathname in ("/__cad/analytics", "/__cad/analytics/activity") and self.analytics is not None:
+                if pathname in ("/__cad/edit/state", "/__cad/edit/change", "/__cad/edit/face"):
+                    self._handle_edit(request, response, pathname)
+                elif pathname in ("/__cad/versions", "/__cad/versions/compare", "/__cad/versions/restore"):
+                    self._handle_versions(request, response, pathname)
+                elif pathname in ("/__cad/sizes", "/__cad/sizes/set", "/__cad/sizes/add"):
+                    self._handle_sizes(request, response, pathname)
+                elif pathname in ("/__cad/analytics", "/__cad/analytics/activity") and self.analytics is not None:
                     # A page's crash report carries its frames (``_report_activity``): room for them, and no more.
                     if int(request.headers.get("content-length") or 0) > (16384 if pathname.endswith("/activity") else 4096):
                         response.send_empty(413, [("connection", "close")])
@@ -767,6 +782,105 @@ class CadApp:
             self.analytics.crashed(crash)
 
     # --- routes ----------------------------------------------------------
+
+    def _handle_edit(self, request, response, pathname):
+        """Edit mode (``cadgen/edit``): the part script read as a design (``state``), one
+        number of it changed (``change``), and the feature that made a face (``face``). The work is the edit service's processes, never this
+        one's. Its failures are answered, not reported as crashes: nothing about edit mode goes
+        into analytics."""
+        # A command names its faces and edges with the geometry the viewer read of each.
+        if int(request.headers.get("content-length") or 0) > 65536:
+            response.send_empty(413, [("connection", "close")])
+            return
+        try:
+            payload = json.loads(request.body() or b"{}")
+            if type(payload) is not dict:
+                raise ValueError("an edit request is an object")
+            from cadgen.edit.service import shared_service
+
+            service = shared_service()
+            if pathname.endswith("/state") and payload.get("probe"):
+                # Whether the file has a part script to edit, answered without running it.
+                result = service.editable(str(payload.get("file") or ""))
+            elif pathname.endswith("/state"):
+                result = service.state(str(payload.get("file") or ""), payload.get("files"), payload.get("bar"))
+            elif pathname.endswith("/face"):
+                # The feature that made a face the viewer picked: from the engine's ``made_by``, or the trace's map.
+                result = service.face_feature(payload)
+            else:
+                result = service.change(payload)
+        except Exception as error:  # noqa: BLE001
+            result = {"ok": False, "error": str(error) or type(error).__name__}
+        response.send_json(200, result)
+
+    def _handle_versions(self, request, response, pathname):
+        """Studio's versions of a part (``cadgen/edit/versions.py``): the versions of one file in
+        the project's checkpoints, what changed between two of them, and going back to one (what is
+        on disk kept as a version first). Git and a process of its own do the work, never this one.
+        Failures are answered, as edit mode's are."""
+        if int(request.headers.get("content-length") or 0) > 65536:
+            response.send_empty(413, [("connection", "close")])
+            return
+        try:
+            payload = json.loads(request.body() or b"{}")
+            if type(payload) is not dict:
+                raise ValueError("a versions request is an object")
+            from cadgen.edit import versions
+
+            folder, path = str(payload.get("folder") or ""), str(payload.get("path") or "")
+            if pathname.endswith("/compare"):
+                result = versions.compare(
+                    folder,
+                    path,
+                    str(payload.get("older") or ""),
+                    str(payload.get("newer") or ""),
+                    payload.get("texts") if type(payload.get("texts")) is list else None,
+                    retry=payload.get("retry") is True,
+                )
+            elif pathname.endswith("/restore"):
+                result = versions.restore(folder, path, str(payload.get("version") or ""))
+            else:
+                result = versions.versions(folder, path)
+        except Exception as error:  # noqa: BLE001
+            result = {"ok": False, "error": str(error) or type(error).__name__}
+        response.send_json(200, result)
+
+    def _handle_sizes(self, request, response, pathname):
+        """Studio's Sizes (``cadgen/edit/sizes.py``): every named size in a project's scripts, read
+        from the source without running them; one changed where it is written, the parts that use
+        its file then built again in the edit service's processes; a shared one added. Failures are
+        answered, as edit mode's are."""
+        if int(request.headers.get("content-length") or 0) > 65536:
+            response.send_empty(413, [("connection", "close")])
+            return
+        try:
+            payload = json.loads(request.body() or b"{}")
+            if type(payload) is not dict:
+                raise ValueError("a sizes request is an object")
+            from cadgen.edit import sizes
+
+            folder = str(payload.get("folder") or "")
+            if pathname.endswith("/set"):
+                result = sizes.set_size(
+                    folder,
+                    str(payload.get("file") or ""),
+                    str(payload.get("name") or ""),
+                    int(payload.get("line") or 0),
+                    str(payload.get("old") or ""),
+                    str(payload.get("text") or ""),
+                )
+                from cadgen.edit.service import shared_service
+
+                result = {**result, "building": shared_service().rebuild(Path(result["root"]), result["file"])}
+            elif pathname.endswith("/add"):
+                result = sizes.add_shared(
+                    folder, str(payload.get("name") or ""), str(payload.get("text") or ""), str(payload.get("note") or "")
+                )
+            else:
+                result = sizes.sizes(folder)
+        except Exception as error:  # noqa: BLE001
+            result = {"ok": False, "error": str(error) or type(error).__name__}
+        response.send_json(200, result)
 
     def _handle_drawing(self, request, response, query):
         """A ``.dxf`` flattened to 2D primitives (``drawings.py`` owns the rules).

@@ -1,6 +1,7 @@
-import { VIEWPORT_INSET_PX, VIEWPORT_STACK_BOTTOM, VIEWPORT_TOP_BAR_PX } from "./viewportLayout.js";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { LoaderCircle, Play, SlidersHorizontal, X } from "lucide-react";
+import { VIEWPORT_CORNER_INSET_PX, VIEWPORT_CUBE_SIZE, VIEWPORT_INSET_PX, VIEWPORT_STACK_BOTTOM, VIEWPORT_TOP_BAR_PX } from "./viewportLayout.js";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, LoaderCircle, Play, SlidersHorizontal, X } from "lucide-react";
+import { WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
 import { Button } from "@text-to-cad/ui/primitives/button";
 import { ToolbarButton } from "@text-to-cad/ui/primitives/toolbar-button";
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
@@ -64,6 +65,57 @@ const SIDEBAR_POSITION = Object.freeze({ top: INSET, left: INSET, bottom: INSET 
 // section, under tabs) runs down from under it to the view's bottom inset, clear of Quick Edit's
 // peek (`--cad-quick-edit-peek`, which the sheet publishes while it peeks).
 const SIDEBAR_POSITION_PHONE = Object.freeze({ top: INSET, left: INSET, bottom: `calc(var(--cad-quick-edit-peek, 0px) + ${INSET})` });
+// The workspace (edit mode's frame) floats over the canvas, so the canvas keeps its box in either layout. Its
+// toolbar's height, measured onto the viewport (`--cad-workspace-top`), is what the rest at the top keeps below.
+const WORKSPACE_TOP = "var(--cad-workspace-top, 0px)";
+const UNDER_TOOLBAR = `calc(${WORKSPACE_TOP} + ${INSET})`;
+// The design tree and the dialog stop an inset above the cube's line, as the tool stack does, whichever
+// bottom corner the cube is in.
+const NAVIGATOR_POSITION = Object.freeze({ top: UNDER_TOOLBAR, maxHeight: `calc(100% - ${WORKSPACE_TOP} - ${INSET} - ${VIEWPORT_STACK_BOTTOM})` });
+const DIALOG_PLACE_POSITION = Object.freeze({ top: UNDER_TOOLBAR, bottom: VIEWPORT_STACK_BOTTOM });
+// While a dialog is open there, the top column (a tool's own row and its panels) is the room past it, so none of
+// it hides under the dialog: past the navigator (16rem, an inset in) and the dialog (18rem, an inset past it), or
+// past the dialog alone where the navigator gives way to a narrow view (`BESIDE_DIALOG_CLASS`). With none open, the
+// column spans the view, and moves right only as far as clears the navigator (the top controls' measure).
+const TOOLBAR_POSITION_BESIDE_DIALOG = Object.freeze({ top: INSET, right: INSET, bottom: VIEWPORT_STACK_BOTTOM });
+const BESIDE_DIALOG_CLASS = Object.freeze({ navigator: "left-[calc(35rem+8px)] @max-xl/cad-viewport:left-[calc(18rem+16px)]",
+  alone: "left-[calc(18rem+16px)]" });
+// The timeline runs along the bottom edge up to the cube, its corner's room (the cube's box and an inset) kept
+// on the cube's side. A corner a host leaves to the default reads `auto` (`ViewPlaneControl`), which makes the
+// margin on that side invalid, and an invalid margin is none: the timeline reaches the edge where the cube is not.
+const cubeRoom = (side, fallback) => `calc(var(--cad-viewport-corner-${side}, ${fallback}) + ${VIEWPORT_CUBE_SIZE} + ${INSET})`;
+const TIMELINE_POSITION = Object.freeze({ marginLeft: cubeRoom("left", "auto"), marginRight: cubeRoom("right", `${VIEWPORT_CORNER_INSET_PX}px`) });
+// The workspace fades in as the layout turns to it and out as Simple view takes its place: one opacity
+// transition this long (`duration-150`).
+const WORKSPACE_FADE_MS = 150;
+
+/**
+ * The workspace's chrome as the frame draws it. While `up` (the tools are), what the renderer hands over
+ * (`chrome`); once the layout takes it away (Simple view: the tools still up, nothing handed over), what it
+ * was, kept `leaving` for its fade, then gone. Put away with the rest of the tools (a load, Preview, a compact
+ * view), it is gone at once, and comes back with them at once: `fadeIn` only as the layout turns to it.
+ */
+function useWorkspaceChrome(chrome, up) {
+  const live = Boolean(chrome) && up;
+  const layout = up && !chrome;
+  const kept = useRef(null);
+  const [phase, setPhase] = useState({ live, layout, fadeIn: false, leaving: null });
+  if (phase.live !== live || phase.layout !== layout) {
+    setPhase({
+      live, layout,
+      fadeIn: live && (phase.live ? phase.fadeIn : phase.layout || Boolean(phase.leaving)),
+      leaving: live || !layout ? null : phase.live ? kept.current : phase.leaving
+    });
+  }
+  if (live) kept.current = chrome;
+  useEffect(() => {
+    if (!phase.leaving) return undefined;
+    const done = setTimeout(() => setPhase(current => (current.leaving ? { ...current, leaving: null } : current)), WORKSPACE_FADE_MS);
+    return () => clearTimeout(done);
+  }, [phase.leaving]);
+  if (live) return { chrome, leaving: false, fadeIn: phase.fadeIn };
+  return phase.leaving ? { chrome: phase.leaving, leaving: true, fadeIn: false } : null;
+}
 
 /** One of Preview's bar's controls: the navbar's icon button, named on hover, below it. */
 function BarControl({ label, active = undefined, disabled = false, onClick, children, ...props }) {
@@ -110,6 +162,8 @@ const DOUBLE_PRESS_MS = 600;
  *   contextMenuItems?: ((press: { clientX: number, clientY: number, shiftKey: boolean }) => object[] | null) | null,
  *   onContextMenuOpenChange?: ((open: boolean) => void) | null,
  *   frameProvider?: ((frame: import("react").ReactNode) => import("react").ReactNode) | null,
+ *   iconSprite?: import("react").ReactNode,
+ *   drawingToolIcons?: Readonly<Record<string, import("react").ReactNode>> | null,
  *   onCanvasPointerDown?: ((event: import("react").PointerEvent) => void) | null,
  *   viewportOverlay?: import("react").ReactNode | ((viewport: { runtimeRef: object, hostRef: object,
  *     mountRef: object, viewerReadyTick: number, commitScene: () => boolean }) => import("react").ReactNode) }} props
@@ -156,6 +210,10 @@ const DOUBLE_PRESS_MS = 600;
  *   `frameProvider`: the renderer wraps the WHOLE frame — its own context, above the tool
  *   stack as well as the viewport, because both read it. It is given the frame and returns
  *   it wrapped; a renderer that passes none is mounted exactly as it is.
+ *   `iconSprite`: the hidden SVG sprite the renderer's chrome draws its icons from (`<use href="#…"/>`),
+ *   mounted once in the frame; a renderer that draws its icons itself passes none.
+ *   `drawingToolIcons`: the renderer's own icon for each drawing tool, by its id, on the row under the
+ *   strip (`AnnotationToolbar`'s `icons`), as its strip draws Pencil and Shapes; none keeps the row's own.
  *   `onCanvasPointerDown`: a press that landed on the canvas, before anything in the viewport sees
  *   it. The frame focuses itself on such a press whatever the renderer does; this is for a renderer
  *   that also has something to put down when the person reaches for the model.
@@ -176,15 +234,43 @@ const DOUBLE_PRESS_MS = 600;
  *   its publication readiness (`complete`, false while components are arriving),
  *   and Preview viewport's `runtimeLifecycle` and `onCameraSettled`. Preview is a view of its own
  *   (`PreviewView.jsx`) over the editor's, which nothing of it reaches.
+ *   `alertBody`, `alertStartsDismissed`: what a renderer lists under the alert it raised itself (a
+ *   result's findings: `kit/status/findings.jsx`), a function of the card's `dismiss`, so a row
+ *   chosen can put the card away, and whether that alert starts put away (suggestions only).
+ *   `ribbon`, `leftDock`, `bottomDock`, `dialogPlace`: edit mode's frame (`xbf/edit/`), the workspace,
+ *   laid out as a CAD tool lays out its window and floating over the canvas, so the canvas keeps its
+ *   box, and the model its place, whether the workspace or Simple view's ai layout is up: the toolbar
+ *   across the top (`ribbon`, given the strip's tools; the strip then keeps only the view's own
+ *   controls, under the toolbar with its panels and Quick Edit); the design tree, a card at the
+ *   top-left under it holding `leftDock`, which folds to its title and stands in for the file sidebar;
+ *   beside it the place the open command's dialog mounts in (`dialogPlace`, a ref callback); and the
+ *   timeline along the bottom up to the cube (`bottomDock`, drawing its own surface, as the toolbar
+ *   does). It fades in as the layout turns to it and out as Simple view takes its place, in one
+ *   transition; it is put away at once with the rest of the tools (loading, Preview, a compact view),
+ *   and the design tree in a view too narrow for it and the model. While the toolbar is up the
+ *   view's own controls (Projection, Display, Preview) and the view catching up are its, not the
+ *   strip's: `ribbon(tools, view)` is handed them (`view.controls`, small tiles for its tab row's right
+ *   end, and `view.status`; null while it fades). `dialogOpen`: the dialog's place holds something,
+ *   and the top column, a tool's own row and its panels, keeps to the room past it.
+ *   `layoutControl`: a control of the renderer's own that lays the view out (a `ViewportViewControl`,
+ *   `FloatingToolBar.js`), the first of the view's own controls: at the strip's end before Projection,
+ *   or at the toolbar's tab row's right end while the workspace is up (edit mode's switch between
+ *   modeling by hand and asking the AI, `xbf/edit/EditLayoutSwitch.jsx`).
+ *   `quickEditAsked`: for a renderer with a button of its own to ask for Quick Edit (the workspace's Ask). `true`:
+ *   it is open, whatever is picked or drawn, and with nothing picked on the file as a whole; `false`: it is shut
+ *   until asked, a written note excepted; null (the default): it follows what it would carry (`references`).
  */
-export default function RendererShell({ shell, tools, toolPanels = null, subToolbar = null, sidebar = null, references = null, referenceChips = null, nameReference = null, onClearReferences = null,
+export default function RendererShell({ shell, tools, toolPanels = null, subToolbar = null, sidebar = null, sidebarStartsOpen = null, references = null, referenceChips = null, nameReference = null, onClearReferences = null,
   requests = null, onClearRequests = null, copySelection = null, contextMenuItems = null,
   onContextMenuOpenChange = null, viewportOverlay = null, previewView = null,
-  frameProvider = null, onCanvasPointerDown = null, onSelectPress = null, onSelectHover = null, selectsAnnotations = true, inkTouches = null }) {
+  frameProvider = null, iconSprite = null, drawingToolIcons = null, onCanvasPointerDown = null, onSelectPress = null, onSelectHover = null, selectsAnnotations = true, inkTouches = null,
+  alertBody = null, alertStartsDismissed = false, ribbon = null, leftDock = null, bottomDock = null, dialogPlace = null, dialogOpen = false,
+  layoutControl = null, quickEditAsked = null }) {
   const { t } = useI18n();
   const frame = shell.frame;
-  // What a tool's letter takes up (`useRendererShell`'s `onKey`): the strip as drawn now.
-  frame.toolKeys.current = tools;
+  // What a tool's letter takes up (`useRendererShell`'s `onKey`): the strip as drawn now, none
+  // while edit mode's ribbon stands in for it.
+  frame.toolKeys.current = ribbon ? [] : tools;
   const mobile = useViewerMobile();
   const { view, resolvedScene, viewerLoading, scene } = frame;
   // The one presentation state: every gate — the viewport's, the renderer's — reads it.
@@ -350,7 +436,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
   const colorScheme = view.appearance?.colorScheme === "dark" ? "dark" : "light";
   // Otherwise the renderer supplies its active tool's row.
   const toolRow = frame.annotateToolActive
-    ? <AnnotationToolbar annotation={frame.annotation} colorScheme={colorScheme} />
+    ? <AnnotationToolbar annotation={frame.annotation} colorScheme={colorScheme} icons={drawingToolIcons} />
     : subToolbar;
 
   const hasContent = Boolean(scene) && !viewerLoading;
@@ -359,7 +445,8 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
   const failed = Boolean(frame.viewerAlert) && !alertDismissible(frame.viewerAlert, hasContent);
   // The card's dismissal is the frame's, so it outlives the card (gone in preview): while the person
   // has the card put away, its icon is the navbar's way back to it, leftmost of the right-hand group.
-  const alertDismissal = useAlertDismissal(frame.viewerAlert, { hasContent, scope: frame.modelKey, onNavigationActionsChange: view.onNavigationActionsChange });
+  const alertDismissal = useAlertDismissal(frame.viewerAlert, { hasContent, scope: frame.modelKey,
+    startDismissed: alertStartsDismissed, onNavigationActionsChange: view.onNavigationActionsChange });
   // While the model loads, or once it has failed to, the viewer shows none of its own chrome: no
   // tools, no Quick Edit, no cube, no view actions and no update status -- only the load itself,
   // or the card saying why it failed. They arrive with the model, and stay through a rebuild that
@@ -369,8 +456,31 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
   // alone, not the tools, Quick Edit, the view actions or the cube; shown full size, all return.
   const compact = Boolean(view.appearance?.compact);
   const toolsHidden = chromeHidden || compact;
+  const editFrame = !toolsHidden && !previewing;
   // Reserve the sidebar tile's room; the toolbar is centred on the viewport whenever it fits.
   const besideSidebarTile = mobile && !previewing && Boolean(sidebar || hasAnimation);
+  // The workspace, over the canvas while the tools are up, and for its fade as Simple view takes its place.
+  const workspace = useWorkspaceChrome(ribbon || leftDock || bottomDock || dialogPlace ? { ribbon, leftDock, bottomDock, dialogPlace } : null, editFrame);
+  // The design tree folded to its title, as long as the frame is up.
+  const [navigatorFolded, setNavigatorFolded] = useState(false);
+  // The toolbar's height, which the strip, its panels and Quick Edit keep below, and a renderer's own
+  // layers over the top of the view (`--cad-workspace-top` on the viewport).
+  const workspaceToolbar = useRef(null);
+  const toolbarUp = Boolean(workspace && !workspace.leaving && workspace.chrome.ribbon);
+  // A dialog open beside the design tree: the top column keeps to the room past it. No dialog, and the
+  // navigator up, folded or not: the column keeps clear of it (the top controls' measure).
+  const besideDialog = Boolean(dialogOpen && workspace && !workspace.leaving && workspace.chrome.dialogPlace);
+  const navigatorUp = Boolean(!besideDialog && workspace && !workspace.leaving && workspace.chrome.leftDock);
+  useLayoutEffect(() => {
+    const toolbar = workspaceToolbar.current;
+    const viewport = toolbar?.closest("[data-cad-scene-backdrop]");
+    if (!toolbarUp || !toolbar || !viewport) return undefined;
+    const measure = () => viewport.style.setProperty("--cad-workspace-top", `${Math.round(toolbar.getBoundingClientRect().height)}px`);
+    measure();
+    const resized = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    resized?.observe(toolbar);
+    return () => { resized?.disconnect(); viewport.style.removeProperty("--cad-workspace-top"); };
+  }, [toolbarUp]);
 
   // The controls at the top — the strip, a wrapped one, and the tool's row under it — are measured
   // into variables, so a tool change or a resize moves what hangs below them without redrawing the
@@ -381,6 +491,27 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
     const controls = topControls.current;
     const viewport = controls?.closest("[data-cad-scene-backdrop]");
     if (!controls || !viewport) return undefined;
+    // The rows with something in them: an empty one (no update under way) still takes the
+    // column's gap, which would leave a wider gap over the sidebar than at its sides.
+    const rowsOf = () => [...controls.children].map(row => row.getBoundingClientRect()).filter(box => box.height > 0);
+    // The column, centred across the view, moved right only as far as what it holds (its rows, and the tool stack's
+    // panels under them) runs under the design tree, folded or not, and an inset past it, and only as far as it has
+    // room: one measure, one shift, by its margins, which the frame's style leaves alone. What clears the navigator
+    // already stays put, and so does Quick Edit's room. A view too narrow for the navigator hides it, and nothing moves.
+    const movePast = (column, past) => {
+      column.style.removeProperty("margin-left");
+      column.style.removeProperty("margin-right");
+      const edge = past ? viewport.querySelector('[data-cad-dock="navigator"]')?.getBoundingClientRect() : null;
+      if (!edge?.width) return;
+      const panels = [...column.querySelectorAll("[data-cad-tool-stack] [data-tool-panel]")].map(panel => panel.getBoundingClientRect());
+      const held = [...rowsOf(), ...panels].filter(box => box.width > 0 && box.height > 0);
+      if (!held.length) return;
+      const overlap = edge.right + VIEWPORT_INSET_PX - Math.min(...held.map(box => box.left));
+      const shift = Math.min(overlap, column.getBoundingClientRect().right - Math.max(...held.map(box => box.right)));
+      if (shift <= 0) return;
+      column.style.marginLeft = `${shift}px`;
+      column.style.marginRight = `${-shift}px`;
+    };
     const measure = () => {
       const column = controls.parentElement;
       if (mobile && column) {
@@ -392,9 +523,8 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
         // Offset the flex-centred controls without changing the room TouchStrip uses for More.
         controls.style.left = `${Math.min(room, Math.max(0, centered)) - room / 2}px`;
       } else controls.style.removeProperty("left");
-      // The rows with something in them: an empty one (no update under way) still takes the
-      // column's gap, which would leave a wider gap over the sidebar than at its sides.
-      const rows = [...controls.children].map(row => row.getBoundingClientRect()).filter(box => box.height > 0);
+      if (column) movePast(column, navigatorUp && !mobile);
+      const rows = rowsOf();
       const top = controls.getBoundingClientRect().top;
       const below = `${Math.round(VIEWPORT_INSET_PX * 2 + Math.max(top, ...rows.map(box => box.bottom)) - top)}px`;
       viewport.style.setProperty("--cad-tools-bottom", below);
@@ -413,11 +543,14 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
     };
     measure();
     if (typeof ResizeObserver === "undefined") return undefined;
-    // What moves them: the controls, the view, the sidebar (out or away, resized), and what comes
-    // and goes in the top-right corner (Quick Edit opening, closing, resized).
+    // What moves them: the controls, the view, the tool stack (a panel opening or closing), the sidebar
+    // (out or away, resized), and what comes and goes in the top-right corner (Quick Edit opening,
+    // closing, resized).
     const resized = new ResizeObserver(measure);
     resized.observe(controls);
     resized.observe(viewport);
+    const stack = controls.parentElement?.querySelector("[data-cad-tool-stack]");
+    if (stack) resized.observe(stack);
     const watch = () => {
       for (const element of viewport.querySelectorAll(`aside[data-cad-file-sidebar], [data-file-sidebar-tools], ${CORNER_BOXES}`)) resized.observe(element);
     };
@@ -429,9 +562,10 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
     return () => {
       resized.disconnect(); changed?.disconnect();
       controls.style.removeProperty("left");
+      for (const name of ["margin-left", "margin-right"]) controls.parentElement?.style.removeProperty(name);
       for (const name of ["--cad-tools-bottom", "--cad-file-sidebar-max-width", "--cad-top-right-left"]) viewport.style.removeProperty(name);
     };
-  }, [toolsHidden, mobile, besideSidebarTile, Boolean(sidebar), Boolean(references)]);
+  }, [toolsHidden, mobile, besideSidebarTile, Boolean(sidebar), Boolean(references), toolbarUp, besideDialog, navigatorUp]);
   // Display's tile is its mode's sphere; on a phone with no room for it, its More row shows the same.
   const DisplayIcon = (frame.displayMode?.options?.find(option => option.value === frame.displayMode.value) || frame.displayMode?.options?.[0])?.Icon;
   const copyAction = () => {
@@ -460,15 +594,40 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
   // One place says the view is catching up: a newer revision of the file loading behind the model on
   // screen, or a Display change being prepared — the latter's failure first, since it is the one with
   // something to retry. Under the strip at the top centre, or in its place where there is no strip.
-  const updateStatus = failed ? null : <div className="pointer-events-none flex max-w-full items-center gap-2" data-viewport-status="">
+  // While the workspace's toolbar is up it says it there instead, beside the part's build status.
+  const viewUpdateStatus = frame.loading.updating && !frame.viewUpdate.status.error ? modelUpdateStatus(frame.loading.progress) : frame.viewUpdate.status;
+  const updateStatus = failed || toolbarUp ? null : <div className="pointer-events-none flex max-w-full items-center gap-2" data-viewport-status="">
     {frame.loading.preview ? <ViewPreviewLabel /> : null}
-    <ViewUpdateStatus status={frame.loading.updating && !frame.viewUpdate.status.error
-      ? modelUpdateStatus(frame.loading.progress) : frame.viewUpdate.status} onRetry={frame.viewUpdate.retry}
+    <ViewUpdateStatus status={viewUpdateStatus} onRetry={frame.viewUpdate.retry}
       className="rounded-md bg-background/95 px-1 py-0.5 shadow-sm" />
   </div>;
+  // The view's own controls: the renderer's layout (`layoutControl`), Projection, Display, then Preview (a 3D view's). They end the strip, or, while the
+  // workspace's toolbar is up, are its small tiles at its tab row's right end, their names below them.
+  const viewControls = tooltipSide => (shell.previewable && !previewing ? [
+    ...(layoutControl ? [layoutControl] : []),
+    { id: "projection", label: t("projection.label"), icon: <ProjectionIcon value={frame.projection.value} />, disabled: shell.idle,
+      tile: <ProjectionPopover disabled={shell.idle} boundary={frame.hostElement} projection={frame.projection} tooltipSide={tooltipSide} />,
+      // In a phone's More, a standard nested submenu of the two choices.
+      submenu: () => <DropdownMenuRadioGroup value={frame.projection.value} onValueChange={frame.projection.onChange}>
+        <DropdownMenuRadioItem value="orthographic"><OrthographicProjectionIcon className="size-4" />{t("projection.orthographic")}</DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="perspective"><PerspectiveProjectionIcon className="size-4" />{t("projection.perspective")}</DropdownMenuRadioItem>
+      </DropdownMenuRadioGroup> },
+    { id: "display", label: t("display.label"), icon: DisplayIcon ? <DisplayIcon /> : null, disabled: shell.idle,
+      tile: <DisplayPopover disabled={shell.idle} boundary={frame.hostElement} mode={frame.displayMode} grid={frame.grid} gates={frame.displayGates}
+        tooltipSide={tooltipSide} />,
+      // In a phone's More, a standard nested submenu of the same list: the modes, then Grid.
+      submenu: () => <DisplayMenuItems mode={frame.displayMode} grid={frame.grid} gates={frame.displayGates} /> },
+    { id: "preview", label: t("preview.label"), icon: <Play aria-hidden="true" />, disabled: shell.idle, onSelect: enterPreview,
+      tile: <ViewControl label={t("preview.label")} tooltipSide={tooltipSide} disabled={shell.idle} onClick={enterPreview}><Play aria-hidden="true" /></ViewControl> }
+  ] : []);
+  // What the toolbar is handed of the view while it is up.
+  const toolbarView = toolbarUp ? {
+    controls: viewControls("bottom").map(control => <Fragment key={control.id}>{control.tile}</Fragment>),
+    status: failed ? null : <ViewUpdateStatus status={viewUpdateStatus} onRetry={frame.viewUpdate.retry} className="text-tiny" />
+  } : null;
   const quickEdit = references ? <QuickEdit key={frame.modelKey} className="self-stretch" hidden={chromeHidden} docked={mobile}
     resource={frame.resource} references={references} chips={referenceChips} nameReference={nameReference} annotation={annotation} requests={requests} prompt={frame.quickEditPrompt}
-    onCopy={copyAction} onEscape={frame.escape} onClear={clearQuickEdit} disabled={viewerLoading || !scene} /> : null;
+    asked={quickEditAsked} onCopy={copyAction} onEscape={frame.escape} onClear={clearQuickEdit} disabled={viewerLoading || !scene} /> : null;
   const body = (
     <div
       className={cn("relative flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground", pointing && "cursor-pointer")}
@@ -521,14 +680,15 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
       onPointerLeave={() => { if (overSelectable.current || hoveredAnnotation) leaveSelectHover(); }}
       ref={frame.hostRef}
     >
+      {iconSprite}
       <div className="relative flex h-full min-w-0 flex-col overflow-hidden bg-transparent">
         <div className="relative min-h-0 flex-1 overflow-hidden">
-          <div className="flex h-full min-w-0">
-            {/* The render pane's box. The canvas fills exactly this area, so a camera fit
-                centres in what is visible and a change of the pane's size reaches the scene
-                as a plain resize. Its background is the
-                scene's edge colour: the canvas is resized on the next frame, and one frame of
-                the chrome's background above a dark stage is a visible band. */}
+          <div className="@container/cad-frame flex h-full min-w-0">
+            {/* The render pane's box. The canvas fills exactly this area, and nothing stands beside
+                it, the workspace included (it floats over it), so the box is the same in either
+                layout and a change of the pane's size reaches the scene as a plain resize. Its
+                background is the scene's edge colour: the canvas is resized on the next frame, and
+                one frame of the chrome's background above a dark stage is a visible band. */}
             <div
               className="@container/cad-viewport pointer-events-none relative min-w-0 flex-1 overflow-hidden"
               data-cad-scene-backdrop={frame.sceneBackdrop}
@@ -588,7 +748,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
                   file's name, and at its right its settings (a toggle, the panel docked under it at the
                   view's right edge: Orbit, Render's own), closed as it opens, and the way out. The same in
                   every host. A file with routines has its playbar under the model; there is no sidebar. */}
-              <PreviewChrome active={previewing} name={previewName} idle={previewIdle} panelOpen={previewPanelOpen}
+              <PreviewChrome active={previewing} top={toolbarUp ? WORKSPACE_TOP : undefined} name={previewName} idle={previewIdle} panelOpen={previewPanelOpen}
                 controls={<>
                   <BarControl label={t("preview.settings")} active={previewPanelOpen} disabled={shell.idle}
                     onClick={() => { if (!previewPanelOpen) controls.used("preview_settings"); setPreviewPanelOpen(open => !open); }} data-preview-settings=""><SlidersHorizontal className="size-3.5" aria-hidden="true" /></BarControl>
@@ -599,26 +759,14 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
                   onClose={() => setPreviewPanelOpen(false)} render={frame.previewSettings} />}>
 
               {/* The file explorer floats over the top-left corner, above the sidebar, which stays drawn under it. */}
-              {toolsHidden ? null : <div className="group/tool-stack pointer-events-none absolute z-20 flex flex-col items-center gap-2" style={besideSidebarTile ? TOOLBAR_POSITION_PHONE_SIDEBAR : TOOLBAR_POSITION}
+              {toolsHidden ? null : <div className={cn("group/tool-stack pointer-events-none absolute z-20 flex flex-col items-center gap-2",
+                besideDialog && BESIDE_DIALOG_CLASS[workspace.chrome.leftDock ? "navigator" : "alone"])}
+                style={besideDialog ? TOOLBAR_POSITION_BESIDE_DIALOG : besideSidebarTile ? TOOLBAR_POSITION_PHONE_SIDEBAR : TOOLBAR_POSITION}
                 data-mobile={mobile ? "" : undefined} data-cad-tool-groups=""><StripTouchProvider value={mobile}>
                 {/* The view's controls end the strip, after a rule: Projection, Display, then Preview (on a
-                    phone, always in its More menu). */}
+                    phone, always in its More menu); the workspace's toolbar holds them while it is up. */}
                 <div ref={topControls} className="relative flex max-w-full shrink-0 flex-col items-center gap-2" data-cad-top-controls="">
-                  <FloatingToolBar tools={tools} touch={mobile} views={shell.previewable && !previewing ? [
-                    { id: "projection", label: t("projection.label"), icon: <ProjectionIcon value={frame.projection.value} />, disabled: shell.idle,
-                      tile: <ProjectionPopover disabled={shell.idle} boundary={frame.hostElement} projection={frame.projection} />,
-                      // In a phone's More, a standard nested submenu of the two choices.
-                      submenu: () => <DropdownMenuRadioGroup value={frame.projection.value} onValueChange={frame.projection.onChange}>
-                        <DropdownMenuRadioItem value="orthographic"><OrthographicProjectionIcon className="size-4" />{t("projection.orthographic")}</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="perspective"><PerspectiveProjectionIcon className="size-4" />{t("projection.perspective")}</DropdownMenuRadioItem>
-                      </DropdownMenuRadioGroup> },
-                    { id: "display", label: t("display.label"), icon: DisplayIcon ? <DisplayIcon /> : null, disabled: shell.idle,
-                      tile: <DisplayPopover disabled={shell.idle} boundary={frame.hostElement} mode={frame.displayMode} grid={frame.grid} />,
-                      // In a phone's More, a standard nested submenu of the same list: the modes, then Grid.
-                      submenu: () => <DisplayMenuItems mode={frame.displayMode} grid={frame.grid} /> },
-                    { id: "preview", label: t("preview.label"), icon: <Play aria-hidden="true" />, disabled: shell.idle, onSelect: enterPreview,
-                      tile: <ViewControl label={t("preview.label")} disabled={shell.idle} onClick={enterPreview}><Play aria-hidden="true" /></ViewControl> }
-                  ] : []} />
+                  <FloatingToolBar tools={ribbon ? [] : tools} touch={mobile} views={toolbarUp ? [] : viewControls("top")} />
                   {/* The tool in hand's own row, then the view catching up, under the strip. */}
                   {previewing ? null : toolRow}
                   {previewing ? null : updateStatus}
@@ -635,11 +783,37 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
               </ViewportTopRight>
 
               </PreviewChrome>
+              {/* The workspace, over the canvas: the toolbar across the top, the design tree at the
+                  top-left under it (folded, its title alone, what it holds kept), the open command's
+                  dialog beside it, and the timeline along the bottom to the cube. The top-right stays
+                  Quick Edit's and the bottom corner the cube's. Inert while it fades. */}
+              {workspace ? <div data-cad-workspace="" inert={workspace.leaving} aria-hidden={workspace.leaving || undefined}
+                className={cn("pointer-events-none absolute inset-0 z-20 transition-opacity duration-150 motion-reduce:transition-none",
+                  workspace.fadeIn && "starting:opacity-0", workspace.leaving && "opacity-0")}>
+                {workspace.chrome.ribbon ? <div ref={workspaceToolbar} className="pointer-events-auto absolute inset-x-0 top-0" data-cad-dock="toolbar">
+                  {workspace.chrome.ribbon(tools, toolbarView)}
+                </div> : null}
+                {workspace.chrome.leftDock ? <aside aria-label="FeatureManager design tree" data-cad-dock="navigator" style={NAVIGATOR_POSITION}
+                  className={cn(WORKSPACE_SURFACE_CLASS, "pointer-events-auto absolute left-2 flex w-64 flex-col overflow-hidden @max-xl/cad-viewport:hidden")}>
+                  <button type="button" aria-expanded={!navigatorFolded} onClick={() => setNavigatorFolded(folded => !folded)}
+                    className="flex h-7 shrink-0 items-center gap-1 px-2.5 text-left text-micro uppercase leading-3 tracking-wider text-muted-foreground hover:bg-cad-ws-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/45">
+                    <span className="min-w-0 flex-1 truncate">FeatureManager</span>
+                    <ChevronDown className={cn("size-3 shrink-0", navigatorFolded && "-rotate-90")} aria-hidden="true" />
+                  </button>
+                  <div hidden={navigatorFolded} className="flex min-h-0 flex-initial flex-col border-t border-border">{workspace.chrome.leftDock}</div>
+                </aside> : null}
+                {workspace.chrome.dialogPlace ? <div ref={workspace.chrome.dialogPlace} data-cad-command-card-place="" style={DIALOG_PLACE_POSITION}
+                  className={cn("pointer-events-none absolute flex w-72 max-w-[calc(100%-1rem)] flex-col items-stretch",
+                    workspace.chrome.leftDock ? "left-[calc(16rem+1rem)] @max-xl/cad-viewport:left-2" : "left-2")} /> : null}
+                {workspace.chrome.bottomDock ? <div className="pointer-events-auto absolute inset-x-0 bottom-0" data-cad-dock="timeline" style={TIMELINE_POSITION}>
+                  {workspace.chrome.bottomDock}
+                </div> : null}
+              </div> : null}
               {/* The file's sections, and for a file with routines the shell's own Animation section after them:
                   the tools view's alone. Preview has no sidebar (hidden, so a tree keeps its state); its
                   routine is its playbar's, under the model. */}
-              {toolsHidden || !(sidebar || hasAnimation) ? null : <FileSidebar style={mobile ? SIDEBAR_POSITION_PHONE : SIDEBAR_POSITION}
-                hidden={previewing} phone={mobile}
+              {toolsHidden || !(sidebar || hasAnimation) || (leftDock && editFrame) ? null : <FileSidebar style={mobile ? SIDEBAR_POSITION_PHONE : SIDEBAR_POSITION}
+                hidden={previewing} phone={mobile} startsOpen={mobile ? null : sidebarStartsOpen}
                 layout={frame.toolStack} onLayoutChange={frame.changeToolStack}>
                 {sidebar}
                 {hasAnimation ? <AnimationSection key={frame.modelKey} runtime={playbackRuntime} disabled={viewerLoading || !scene}
@@ -672,7 +846,8 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
                   model survives keeps on screen. The file as the alert names it (the catalog's absolute
                   path), which Report Issue keeps out of its issue. */}
               {!previewing ? <ViewerAlertCard alert={frame.viewerAlert} hasContent={hasContent} dismissed={alertDismissal.dismissed} onDismiss={alertDismissal.dismiss}
-                onReload={view.reload} file={frame.modelKey || view.file?.path} /> : null}
+                onReload={view.reload} file={frame.modelKey || view.file?.path}
+                body={alertBody ? alertBody(alertDismissal.dismiss) : null} /> : null}
             </div>
 
           </div>

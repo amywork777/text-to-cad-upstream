@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { WORKSPACE_SURFACE_CLASS } from "./lib/floatingSurface.js";
 
 // The viewer's chrome follows docs/settings-ui.md: type from the token scale (text-micro,
 // text-tiny, text-xs, text-ui), and layout from the ONE viewer breakpoint (useViewerMobile)
@@ -90,4 +91,11 @@ test("cn() merges the scale's sizes as font sizes", async () => {
   assert.equal(cn("h-6 text-xs", "text-ui"), "h-6 text-ui");
   assert.equal(cn("text-tiny", "text-muted-foreground"), "text-tiny text-muted-foreground");
   assert.equal(cn("text-ui", "text-foreground"), "text-ui text-foreground");
+});
+
+// The workspace's cards (the design tree, the open command's dialog, the timeline) stay up over the live
+// canvas for as long as it is: white as its toolbar is, opaque, a 1px hairline and 6px corners, and no
+// backdrop filter, which the canvas would make the GPU compute again for every frame it draws.
+test("the workspace's cards are white and opaque, with a hairline and 6px corners, and filter nothing behind them", () => {
+  assert.equal(WORKSPACE_SURFACE_CLASS, "rounded-sm border border-border bg-background text-foreground");
 });

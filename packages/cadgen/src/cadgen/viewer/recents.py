@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import stat
 import sys
 import time
@@ -35,6 +36,13 @@ from pathlib import Path
 from typing import Any
 
 LIMIT = 200
+# Studio: the name CAD mode's rollback bar hands its body to the engine by (``cadgen.edit.tracer._bar_name``),
+# a shape that is no model of the person's, so Recents leaves it out (``_is_bar``).
+_BAR = re.compile(r" at the rollback bar [0-9a-f]{8}\Z")
+
+
+def _is_bar(record: dict) -> bool:
+    return record.get("kind") == "shape" and bool(_BAR.search(str(record.get("name") or "")))
 MAX_THUMBNAIL_BYTES = 512 * 1024
 THUMBNAIL_GRACE_SECONDS = 600
 THUMBNAILS = "recents/thumbnails"
@@ -245,7 +253,7 @@ class RecentStore:
             if record.get("kind") == "file" and record.get("opened"):
                 path = str(registering.home(self.registry, record))
                 entries.append(Recent(path=path, opened=float(record["opened"]), updated=_mtime(path), **common))
-            elif record.get("kind") in ("model", "shape"):
+            elif record.get("kind") in ("model", "shape") and not _is_bar(record):
                 program = registering.program(self.registry, record)
                 entries.append(Recent(path=record["id"], kind=record["kind"], name=record.get("name") or record.get("entry"),
                                       namespace=record.get("namespace") or record.get("root"),

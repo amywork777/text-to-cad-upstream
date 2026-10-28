@@ -11,7 +11,9 @@ import { FLOATING_SURFACE_CLASS } from "../../../../lib/floatingSurface.js";
 import { capturePointer } from "../../../../lib/pointerCapture.js";
 import ResizeGrip from "../ResizeGrip.jsx";
 import { TOOL_PANEL_BUTTON_CLASS } from "../ToolPanel.jsx";
-import { copiedQuickEdit, createQuickEditContext, pastedLines, quickEditSelection } from "./quickEditPrompt.js";
+import {
+  canAddToContext, copiedQuickEdit, createQuickEditContext, deliveryFailure, pastedLines, promptAttachments, quickEditSelection
+} from "./quickEditPrompt.js";
 import { insertAtCaret, markSelectedPills, noteText, pasteNodes, selectPillAt } from "./noteEditor.js";
 import ReferenceChips from "./ReferenceChips.jsx";
 import { useControlUsage } from "../../../../usage/controls.js";
@@ -29,8 +31,6 @@ const PICK_MS = 1500;
 // 15rem wide, its note growing with what is written.
 export const QUICK_EDIT_LIMITS = Object.freeze({ minWidth: 208, maxWidth: 640, minHeight: 56, maxHeight: 320 });
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-const failure = (result, unsent) => (result && (result.status === "failed" || result.status === "cancelled") ? result.message || unsent : "");
 
 /** Each selected reference by its ids, one a line, as the prompt grammar names them (`promptReferenceIds`). */
 export function quickEditReferenceIds(selection) {
@@ -71,6 +71,11 @@ export function quickEditReferenceIds(selection) {
  * as long as it is open: the size is the box's own, written to it a frame at a time, so a drag
  * renders nothing, and it goes with the box — the next one opens at the default size.
  *
+ * Where the host leaves it to the person to open (`asked`: a boolean), the box does not follow what it would carry.
+ * Asked for (`true`) it opens whatever there is, with nothing picked or drawn too, on the file as a whole, and takes
+ * the keyboard as a pick of theirs does; not asked (`false`) it stays shut however much is picked or drawn, but for
+ * a note already written, which keeps it open as always. Without `asked` (null) it follows what it would carry.
+ *
  * @param {{ resource: import("@text-to-cad/core/prompt").ResourceRef,
  *   references?: readonly import("@text-to-cad/core/prompt").PromptReference[],
  *   chips?: readonly import("./ReferenceChips.jsx").ReferenceChip[] | null,
@@ -80,7 +85,7 @@ export function quickEditReferenceIds(selection) {
  *     read(path: string): Promise<Blob>, annotation(): object | null, unavailable?(): string } | null,
  *   nameReference?: ((reference: import("@text-to-cad/core/prompt").PromptReference) => string | import("../../inspector/pickGlyph.jsx").CompactName) | null,
  *   onCopy?: () => boolean, onEscape?: () => unknown, onClear?: () => void, disabled?: boolean,
- *   hidden?: boolean, className?: string, style?: import("react").CSSProperties }} props
+ *   asked?: boolean | null, hidden?: boolean, className?: string, style?: import("react").CSSProperties }} props
  *   `nameReference`: what the renderer calls a reference into the file on screen, for its chip in
  *   the note ("cam"); "" where it has no name for it, which then reads as its file and ids.
  *   `onCopy`: the viewer's own copy (⌘C / Ctrl+C: the selection's references, or the annotation),
@@ -90,7 +95,7 @@ export function quickEditReferenceIds(selection) {
  *   sight with all it holds (the view is loading).
  */
 export default function QuickEdit({ resource, references = EMPTY, chips = null, annotation = null, requests = null, prompt = null, nameReference = null, onCopy, onEscape, onClear, disabled = false,
-  hidden = false, docked = false, className, style }) {
+  asked = null, hidden = false, docked = false, className, style }) {
   const { t } = useI18n();
   const host = useViewerHost();
   const controls = useControlUsage();
@@ -109,7 +114,7 @@ export default function QuickEdit({ resource, references = EMPTY, chips = null, 
   const attached = referenceIds.length > 0 || annotated || requested;
   const written = Boolean(text.trim());
   const replayUnavailable = prompt?.unavailable?.() || "";
-  const open = written || attached;
+  const open = written || (asked ?? attached);
   // Docked (a phone's) it is a bottom sheet, opening at a peek of its header and chips; a swipe up,
   // or a tap on its title, brings up the note and its buttons, and a swipe down puts them away again,
   // what is written kept.
@@ -177,6 +182,9 @@ export default function QuickEdit({ resource, references = EMPTY, chips = null, 
     return undefined;
   }, [referenceKey, annotated, takeKeyboard]);
 
+  // Asked for, it opens for the person, whose keyboard it takes: they pressed what opened it.
+  useEffect(() => { if (asked) takeKeyboard(); }, [asked, takeKeyboard]);
+
   // Unfolded by its title, the note takes the keyboard.
   const unfold = () => { setUnfolded(current => !current); };
   // The sheet's two stops, measured from its top: the peek (the handle, the header and the chips)
@@ -221,7 +229,7 @@ export default function QuickEdit({ resource, references = EMPTY, chips = null, 
     return () => document.removeEventListener("selectionchange", mark);
   }, [open]);
 
-  const canQueue = destination.kind === "composer" && destination.available;
+  const canQueue = canAddToContext(destination);
   const canSend = typeof host.promptContext.send === "function";
   // A requested change says what it wants on its own: it goes with or without a note.
   const ready = (written || requested) && !pending && !disabled;
@@ -244,11 +252,7 @@ export default function QuickEdit({ resource, references = EMPTY, chips = null, 
     setError("");
     let outcome;
     try {
-      const unavailable = prompt?.unavailable?.() || "";
-      const views = unavailable ? [] : prompt?.views() ?? [];
-      const files = views.length ? prompt.files(views) : null;
-      void files?.catch(() => {});
-      const context = createQuickEditContext({ resource, references: selection, text, views, files, read: prompt?.read, viewUnavailable: unavailable,
+      const context = createQuickEditContext({ resource, references: selection, text, ...promptAttachments(prompt),
         requests: (requests || EMPTY).map(item => item.request).filter(Boolean) });
       if (action === "send") outcome = host.promptContext.send(context);
       else if (action === "queue") outcome = host.promptContext.deliver(context);
@@ -256,7 +260,7 @@ export default function QuickEdit({ resource, references = EMPTY, chips = null, 
     } catch (caught) { outcome = Promise.reject(caught); }
     setPending(action);
     Promise.resolve(outcome).then(result => {
-      const message = failure(result, t("quickEdit.notSent"));
+      const message = deliveryFailure(result, t("quickEdit.notSent"));
       if (message) throw new Error(message);
       try { host.usage?.used("quickEdit"); } catch { /* counting a use never fails it */ }
       controls.used(`quick_edit_${action}`);
