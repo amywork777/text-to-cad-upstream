@@ -33,19 +33,16 @@ from cadgen.results import CamFeaturesResult, CamPlanResult
 __all__ = ["features", "plan"]
 
 
-def features(target: Path, *, occurrence: str | None = None, direction: str | None = None) -> CamFeaturesResult:
+def features(target: Path, *, occurrence: str | None = None) -> CamFeaturesResult:
     """List what a CAM job can name on a part: faces with their selectors and a machining reading, holes, floors.
 
     target: the STEP/STP or XBF document holding the part.
     occurrence: which part occurrence to read (``kit/arm``, ``pin.2``) when the
         document is an assembly. Omitted, the document must hold one part.
-    direction: list only what a tool coming from this side can work (``+Z``, ``-Z``,
-        ``+X``...): the holes it reaches, the floors and faces turned toward it, the
-        walls along it. A feature no direction lists is an undercut.
     """
     from cadgen._internal.cam.run import list_features
 
-    return list_features(Path(target), occurrence=occurrence, direction=direction)
+    return list_features(Path(target), occurrence=occurrence)
 
 
 def plan(target: Path, *, job: str | dict | None = None, occurrence: str | None = None,
@@ -53,10 +50,22 @@ def plan(target: Path, *, job: str | dict | None = None, occurrence: str | None 
     """Plan a CAM job on a part with FreeCAD: toolpaths, checks against the part, and G-code per setup.
 
     target: the STEP/STP or XBF document holding the part.
-    job: the job: a JSON file path, inline JSON, or (library callers) a dict. It
-        names the machine (kind and post), the material, the stock, the tools and
-        the setups, each with its operations; see the cam skill for the schema.
-        Face refs are the ones ``cadgen cam features`` prints.
+    job: the job: a JSON file path, inline JSON, or (library callers) a dict, all
+        lengths in mm, feeds in mm/min, speeds in rpm. "machine": {"post": grbl,
+        linuxcnc, mach3, fanuc, centroid, uccnc or smoothie, and optionally
+        "travel_mm", "min_rpm", "max_rpm", "max_feed_mm_min", "rapid_mm_min",
+        "work_offset", "name"}. "material": a feeds-table name (aluminum-6061,
+        aluminum-7075, steel-1018, stainless-304, brass, delrin, acrylic, hdpe,
+        mdf, hardwood, plywood) or {"name", "surface_m_min", "chipload_mm",
+        "drill_mm_per_rev", "stepdown_fraction"}. "stock": {"margin_mm": [x, y,
+        z]}, the part's box grown by x and y each side and z over the top.
+        "tools": [{"id", "type": flat, ball, bull or drill, "diameter_mm",
+        "flutes", "flute_length_mm", "stickout_mm", ...}]. "setups": [{"id",
+        "orientation": +Z or -Z, "origin", "operations": [{"op": face, profile,
+        pocket, adaptive or drill, "tool", "faces", ...}]}]. Face refs are the
+        ones ``cadgen cam features`` prints; a profile with "side": "inside" names
+        the walls it runs along. Every key set is closed: a key or value the job
+        cannot take is refused with the ones it can.
     occurrence: which part occurrence to machine (``kit/arm``, ``pin.2``) when the
         document is an assembly. Omitted, the document must hold one part.
     out_dir: where the result GLB and the posted files go. Omitted, they go beside

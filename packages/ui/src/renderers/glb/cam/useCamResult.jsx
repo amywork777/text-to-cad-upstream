@@ -26,18 +26,20 @@ export const loadCamView = () => import("../camView.jsx").then((module) => { cam
 
 /**
  * The CAM result viewer for a scene that carries a job (`kit`), loaded the first time one does; `pending` while it
- * loads. A plain GLB's `kit` is null, and so is a result's should the chunk fail to load: it is then drawn as a plain GLB.
+ * loads. A plain GLB's `kit` is null. Should the chunk fail to load, `failed` is the error: the result is not drawn
+ * as a plain GLB, which would hide its verdict, but refused as a file that failed to load.
  */
 export function useCamView(root) {
   const wanted = useMemo(() => carriesCamJob(root), [root]);
   const [kit, setKit] = useState(camView);
+  const [failed, setFailed] = useState(null);
   useEffect(() => {
-    if (!wanted || kit) return undefined;
+    if (!wanted || kit || failed) return undefined;
     let live = true;
-    loadCamView().then((module) => { if (live) setKit(module); }, () => { if (live) setKit(false); });
+    loadCamView().then((module) => { if (live) setKit(module); }, (error) => { if (live) setFailed(error || new Error("the CAM viewer did not load")); });
     return () => { live = false; };
-  }, [wanted, kit]);
-  return { kit: wanted && kit ? kit : null, pending: wanted && kit === null };
+  }, [wanted, kit, failed]);
+  return { kit: wanted && kit ? kit : null, pending: wanted && !kit && !failed, failed: wanted ? failed : null };
 }
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";

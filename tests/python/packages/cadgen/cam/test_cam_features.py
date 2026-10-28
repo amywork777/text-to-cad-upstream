@@ -80,7 +80,7 @@ class BlockFeatures(unittest.TestCase):
 
 
 class HoleBlockFeatures(unittest.TestCase):
-    """Counterbores, countersinks and drawn points are part of their hole; a hole under a roof is not reached."""
+    """Counterbores and drawn points are part of their hole; a hole under a roof is not reached."""
 
     @classmethod
     def setUpClass(cls):
@@ -121,11 +121,13 @@ class HoleBlockFeatures(unittest.TestCase):
         self.assertEqual(top - 4.0, next(f["z_mm"] for f in self.result.floors if f["ref"] == shoulder))
         self.assertEqual(["+Z", "-Z"], hole["reach"])
 
-    def test_a_countersunk_hole_opens_at_the_top_of_its_countersink(self):
+    def test_a_countersunk_hole_is_its_wall_and_its_cone_no_part_of_it(self):
+        # No operation cuts a countersink: the hole is the Ø5 wall, opening where the cone meets it.
         hole = self.hole(-15, 12)
-        self.assertAlmostEqual(20.0, hole["center_mm"][2], places=4)
-        self.assertEqual({"diameter_mm": 10.0, "angle_deg": 90.0}, hole["countersink"])
-        self.assertEqual(1, len(self.faces_of(hole, "cone")))
+        self.assertTrue(hole["through"])
+        self.assertAlmostEqual(5.0, hole["diameter_mm"], places=4)
+        self.assertLess(hole["center_mm"][2], 20.0)
+        self.assertEqual([], self.faces_of(hole, "cone"))
         self.assertNotIn("point_mm", hole)
 
     def test_a_drawn_point_is_measured_and_a_flat_floor_is_a_ref(self):
@@ -176,42 +178,6 @@ class PartCylinders(unittest.TestCase):
         corners = [f for f in self.result.faces if f["reading"].startswith("rounded corner R2 along Z")]
         self.assertEqual(4, len(corners))
         self.assertFalse(any(f["hole"] for f in corners))
-
-
-class Direction(unittest.TestCase):
-    """``direction`` lists what a tool from one side can work; the generated CLI takes ``--direction -Z``."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.step = block_step(class_directory(cls))
-
-    def test_from_below_only_the_bottom_and_the_through_holes(self):
-        from cadgen import cam
-
-        under = cam.features(self.step, direction="-Z")
-        self.assertTrue(under.ok, under.findings)
-        self.assertEqual(["bottom"], [f["kind"] for f in under.floors])
-        self.assertEqual(4, len(under.holes))
-        self.assertTrue(all(f["surface"] != "plane" or f["normal"][2] < 0 for f in under.faces))
-        above = cam.features(self.step, direction="+Z")
-        self.assertIn("floor", [f["kind"] for f in above.floors])
-        self.assertEqual((), cam.features(self.step, direction="+X").holes)
-        wrong = cam.features(self.step, direction="Z")
-        self.assertFalse(wrong.ok)
-        self.assertIn("+Z, -Z", wrong.findings[0]["summary"])
-
-    def test_the_cli_takes_a_direction_that_starts_with_a_dash(self):
-        import contextlib
-        import io
-        import json
-
-        from cadgen.cli.cam_features import main
-
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-            code = main([str(self.step), "--direction", "-Z", "--json"])
-        self.assertEqual(0, code)
-        self.assertEqual(["bottom"], [f["kind"] for f in json.loads(out.getvalue())["floors"]])
 
 
 if __name__ == "__main__":

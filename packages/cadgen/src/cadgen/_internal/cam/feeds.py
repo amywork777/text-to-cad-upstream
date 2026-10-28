@@ -15,8 +15,7 @@ The rules (:func:`for_op`):
 
 * spindle ``rpm = 1000 * Vc / (pi * D)`` (a drill at 0.6 of it), rounded to 10 rpm, then held to the machine;
 * milling feed ``= rpm * flutes * fz``, ``fz`` the table's 6 mm chip load scaled along :data:`CHIPLOAD_CURVE` by
-  the diameter; a full-width slot takes 0.75x, and a light radial stepover gets radial chip thinning
-  ``D / (2 sqrt(D ae - ae^2))``, capped at 2x;
+  the diameter, and a light radial stepover gets radial chip thinning ``D / (2 sqrt(D ae - ae^2))``, capped at 2x;
 * drilling feed ``= rpm * f``, ``f`` per revolution in proportion to the diameter;
 * plunge at 0.3x the plain-chip feed (a plunge takes a full-width chip whatever the stepover); the default step down
   is a fraction of the diameter per material (half in aluminium, a quarter in steel).
@@ -27,7 +26,7 @@ Stdlib only.
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 from cadgen._internal.cam.job_errors import CamJobError
 
@@ -59,26 +58,18 @@ CHIPLOAD_CURVE: tuple[tuple[float, float], ...] = (
     (1.0, 0.2), (3.0, 0.5), (6.0, 1.0), (10.0, 1.5), (12.0, 1.75), (20.0, 2.5))
 
 #: What an operation asks feeds for.
-OP_KINDS = ("rough", "slot", "finish", "face", "drill")
+OP_KINDS = ("rough", "finish", "face", "drill")
 _DRILL_RPM = 0.6
 
 
 @dataclass(frozen=True)
 class Feeds:
-    """What an operation cuts at. ``clamped`` names each limit the machine imposed; ``source`` says whether the
-    numbers are the table's (``table``), the job's (``job``) or both (``mixed``)."""
+    """What an operation cuts at. ``clamped`` names each limit the machine imposed."""
 
     rpm: float
     feed_mm_min: float
     plunge_mm_min: float
-    chipload_mm: float | None
-    surface_m_min: float | None
     clamped: tuple[str, ...] = ()
-    source: str = "table"
-    note: str = "a starting point: adjust to the machine, the tool and what you hear"
-
-    def as_dict(self) -> dict:
-        return asdict(self)
 
 
 def chipload_at(bands, diameter_mm: float) -> float:
@@ -157,7 +148,7 @@ def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = No
         chipload = numbers["drill"] * diameter
         cut = plunge_f = rpm * chipload
     else:
-        fz = numbers["fz6"] * chipload_at(CHIPLOAD_CURVE, diameter) * (0.75 if kind == "slot" else 1.0)
+        fz = numbers["fz6"] * chipload_at(CHIPLOAD_CURVE, diameter)
         plunge_f = 0.3 * rpm * tool.flutes * fz
         chipload = fz * _chip_thinning(diameter, stepover_mm)
         cut = rpm * tool.flutes * chipload
@@ -174,8 +165,5 @@ def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = No
         if plunge_f > limit:
             clamped.append(f"plunge {plunge_f:.0f} mm/min clamped to the machine's {limit:.0f} mm/min")
             plunge_f = limit
-    given = [v is not None for v in (feed, speed, plunge)]
-    source = "job" if (feed is not None and speed is not None) else "mixed" if any(given) else "table"
     return Feeds(rpm=round(rpm, 3), feed_mm_min=float(max(1.0, round(cut))), plunge_mm_min=float(max(1.0, round(plunge_f))),
-                 chipload_mm=round(chipload, 5), surface_m_min=round(math.pi * diameter * rpm / 1000.0, 1),
-                 clamped=tuple(clamped), source=source)
+                 clamped=tuple(clamped))

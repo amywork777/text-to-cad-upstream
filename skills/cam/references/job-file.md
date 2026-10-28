@@ -12,14 +12,13 @@ lengths are mm, feeds mm/min, speeds rev/min.
 | `tools` | Required. A list of at least one [tool](#tools) |
 | `setups` | Required. A list of at least one [setup](#setups) |
 | `name` | The job's name (the job file's name, else `job`) |
-| `tolerance_mm` | How closely FreeCAD follows curves, up to 1 (0.01) |
+| `tolerance_mm` | How closely FreeCAD follows curves, 0.01 to 1 (0.01) |
 | `coolant` | `off`, `flood` or `mist`, for every operation that does not say (`off`) |
 
 ## Machine
 
 | Key | Value (default) |
 | --- | --- |
-| `kind` | Required. `mill` or `router`. Recorded in the result; it changes nothing in the plan |
 | `post` | Required, no default. `grbl`, `linuxcnc`, `mach3` (Mach3 and Mach4), `fanuc`, `centroid`, `uccnc` or `smoothie`. Ask the user which controller runs the machine |
 | `name` | The machine's name, for the result |
 | `travel_mm` | `[x, y, z]`: a setup whose moves span more is a `travel` error (not checked) |
@@ -47,8 +46,8 @@ least `surface_m_min` and `chipload_mm` from the tool maker's chart:
 | `drill_mm_per_rev` | Drill feed per revolution per mm of drill diameter (0.02 in aluminium: a 5 mm drill feeds 0.1 mm/rev). A material that is not in the table needs it for a job that drills: without it a `drill` is refused |
 | `stepdown_fraction` | The default `stepdown_mm` as a fraction of the tool's diameter (0.5 in aluminium, 0.25 in steel) |
 
-The milling feed is rpm × flutes × chip load (0.75 of it in a full-width slot, more at a light
-stepover to make up for chip thinning), the plunge 0.3 of it. An operation's `feed`, `speed` and
+The milling feed is rpm × flutes × chip load (more at a light stepover to make up for chip
+thinning), the plunge 0.3 of it. An operation's `feed`, `speed` and
 `plunge_mm_min` win over all of this.
 
 ## Stock
@@ -112,7 +111,7 @@ And each operation's own:
 | --- | --- | --- |
 | `stepdown_mm` | `face`, `profile`, `pocket`, `adaptive` | Depth per pass, at most the flute length (the material's `stepdown_fraction` of the diameter) |
 | `stepover` | `face`, `pocket`, `adaptive` | Width per pass as a fraction of the diameter, up to 1 (0.4; `adaptive` 0.15) |
-| `side` | `profile` | `outside` or `inside` the outline (`outside`) |
-| `through_mm` | `profile`, `drill` | How far past the part's bottom (a through hole's exit for `drill`, plus the drill's point) to cut, up to twice the tool's diameter (`profile` 0, `drill` 1) |
+| `side` | `profile` | `outside` or `inside` the outline (`outside`). `inside` with a through bore's or a slot's walls in `faces` cuts the bore or slot out, with a tool narrower than it; `inside` takes walls only, never a flat face |
+| `through_mm` | `profile`, `drill` | How far past the part's bottom (a through hole's exit for `drill`, plus the drill's point) to cut, up to twice the tool's diameter (`profile` 0, `drill` 1). A `profile` of a blind feature stops at its floor |
 | `leave_mm` | `profile`, `pocket`, `adaptive` | Stock to leave on the walls for a finish pass after, up to the tool's diameter (0) |
 | `peck_mm` | `drill` | Peck depth (none: one plunge) |

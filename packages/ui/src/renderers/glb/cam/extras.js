@@ -87,7 +87,7 @@ function readFinding(raw) {
  *
  * @returns {null | { verdict: { status: "ready" | "fix", headline: string, errors: number, warnings: number, gcode: string },
  *   setups: { id: string, plain: string, timeS: number, orientation: string, axis: number[], operations: object[] }[],
- *   operations: object[], findings: object[], posts: object[], durationS: number, machine: string, post: string,
+ *   operations: object[], findings: object[], posts: object[], durationS: number, post: string,
  *   tools: object[], toolChanges: number, assumed: { key: string, value: string, why: string }[], document: string, safety: string }}
  *   A setup's `axis` is the direction its tool comes from, in part coordinates. Each operation: `{ index, op, plain, name,
  *   tool, toolPlain, toolDiameterMm, toolType, rpm, feedMmMin, timeS, t0, t1, summary, faces, setup }`, `index` the one
@@ -137,7 +137,6 @@ export function readCamJob(root) {
     // A setup may post several files (one per tool on a controller without tool changes), each naming its `tool`.
     posts,
     durationS: number(cam.duration_s, operations.reduce((end, op) => Math.max(end, op.t1), 0)),
-    machine: text(cam.machine?.kind),
     // The controller the G-code is written for.
     post: text(cam.machine?.post),
     tools: readTools(cam.tools, operations),

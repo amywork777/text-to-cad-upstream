@@ -13,6 +13,12 @@ pointed and a flat-floored hole, a cross bore with a hole down into it, and a ho
 
 The bridge (:func:`bridge_step`, :data:`BRIDGE`): 60 x 40 x 20 mm with a 30 x 20 pocket down to z = 8 and a bar 8 mm
 wide across it from z = 15 to the top: a quarter of the pocket's floor is under the bar.
+
+The plate (:func:`plate_step`, :data:`PLATE`): 80 x 60 x 8 mm with a Ø22.2 bore and a 5.5 mm slot through it (too
+wide to drill: an inside profile cuts them), a 20 x 12 pocket down to z = 4 and a flat-floored Ø6 hole down to z = 4.
+
+The T-slot (:func:`tslot_step`, :data:`TSLOT`): 60 x 40 x 20 mm with a slot 6 mm wide down from the top to z = 10 and
+under it one 14 mm wide from z = 4 to 10, both along X: the wide slot's walls are under the narrow one's lips.
 """
 
 from __future__ import annotations
@@ -59,6 +65,11 @@ HOLE_BLOCK = {
              "depth": 3.0},
 }
 BRIDGE = {"size": (60.0, 40.0, 20.0), "pocket": (30.0, 20.0), "floor_z": 8.0, "bar": 8.0, "bar_z": 15.0}
+PLATE = {"size": (80.0, 60.0, 8.0), "bore": {"center": (0.0, 0.0), "diameter": 22.2},
+         "slot": {"center": (25.0, 15.0), "length": 12.0, "width": 5.5},
+         "pocket": {"center": (-25.0, 15.0), "size": (20.0, 12.0), "floor_z": 4.0},
+         "blind": {"center": (-25.0, -18.0), "diameter": 6.0, "floor_z": 4.0}}
+TSLOT = {"size": (60.0, 40.0, 20.0), "neck": {"width": 6.0, "z": (10.0, 20.0)}, "head": {"width": 14.0, "z": (4.0, 10.0)}}
 
 
 def class_directory(cls) -> Path:
@@ -141,11 +152,43 @@ def bridge_step(directory: Path, name: str = "bridge") -> Path:
     return path
 
 
+def plate_step(directory: Path, name: str = "plate") -> Path:
+    from build123d import Box, Cylinder, Pos, SlotCenterToCenter, export_step, extrude
+
+    base = _base()
+    sx, sy, sz = PLATE["size"]
+    part = Box(sx, sy, sz, align=base)
+    part -= Pos(*PLATE["bore"]["center"], 0) * Cylinder(PLATE["bore"]["diameter"] / 2, sz, align=base)
+    slot = PLATE["slot"]
+    part -= Pos(*slot["center"], 0) * extrude(SlotCenterToCenter(slot["length"], slot["width"]), sz)
+    pocket = PLATE["pocket"]
+    part -= Pos(*pocket["center"], pocket["floor_z"]) * Box(*pocket["size"], sz - pocket["floor_z"], align=base)
+    blind = PLATE["blind"]
+    part -= Pos(*blind["center"], blind["floor_z"]) * Cylinder(blind["diameter"] / 2, sz - blind["floor_z"], align=base)
+    path = directory / f"{name}.step"
+    export_step(part, str(path))
+    return path
+
+
+def tslot_step(directory: Path, name: str = "tslot") -> Path:
+    from build123d import Box, Pos, export_step
+
+    base = _base()
+    sx, sy, sz = TSLOT["size"]
+    part = Box(sx, sy, sz, align=base)
+    for key in ("neck", "head"):
+        low, high = TSLOT[key]["z"]
+        part -= Pos(0, 0, low) * Box(sx, TSLOT[key]["width"], high - low, align=base)
+    path = directory / f"{name}.step"
+    export_step(part, str(path))
+    return path
+
+
 def mill_job(operations: list[dict], *, tools: list[dict] | None = None, stock: dict | None = None,
              machine: dict | None = None, material: str = "aluminum-6061", setups: list[dict] | None = None) -> dict:
     """A 3-axis job on LinuxCNC with a 6 mm three-flute flat (T1) and a 5 mm drill (T2) by default."""
     return {
-        "machine": machine or {"kind": "mill", "post": "linuxcnc", "max_rpm": 24000, "travel_mm": [300, 200, 80]},
+        "machine": machine or {"post": "linuxcnc", "max_rpm": 24000, "travel_mm": [300, 200, 80]},
         "material": material,
         "stock": stock or {"margin_mm": [2, 2, 1]},
         "tools": tools or [

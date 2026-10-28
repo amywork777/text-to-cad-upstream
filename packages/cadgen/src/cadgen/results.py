@@ -294,9 +294,9 @@ class CamFeaturesResult:
     ``faces`` carries one dict per face (``ref``, ``surface``, ``reading``, ``area_mm2``, ``center_mm``, and for a
     flat face its ``normal`` and ``z_mm``; for a cylinder its ``axis``, ``diameter_mm`` and whether it is a hole).
     ``holes`` groups the faces that make one hole (``faces``: its walls first, then a counterbore's wall and
-    shoulder, a countersink's cone and a blind floor; ``diameter_mm``, ``depth_mm``, ``axis``, ``center_mm``,
-    ``through``, ``reach``: the directions that reach it, and when it has them ``counterbore``, ``countersink`` and
-    ``point_mm``, a drawn drill point's length). ``floors`` are the flat faces facing an axis (``ref``, ``z_mm``, ``normal``,
+    shoulder, a drawn point's cone and a blind floor, any of which names the hole; ``diameter_mm``, ``depth_mm``,
+    ``axis``, ``center_mm``, ``through``, ``reach``: the directions that reach it, and when it has them
+    ``counterbore`` and ``point_mm``, a drawn drill point's length). ``floors`` are the flat faces facing an axis (``ref``, ``z_mm``, ``normal``,
     ``kind``: top, floor or bottom).
     """
 
@@ -332,8 +332,8 @@ class CamPlanResult:
     ``warnings``). ``operations`` has one dict per planned operation in program order (``setup``, ``index``, ``op``,
     ``plain``, ``tool``, ``tool_plain``, ``rpm``, ``feed_mm_min``, ``time_s``, ``summary``). ``posts`` has
     one ``{setup, file, post, tool}`` per posted file: one per setup, or one per tool where the post splits a setup
-    by tool (``tool`` its id, else None). ``findings`` are the checks' findings, errors first, in the KiCad/FEA
-    shape (``check``, ``severity``, ``type``, ``summary``, ``description``, ``items``). ``assumed`` lists every value
+    by tool (``tool`` its id, else None). ``findings`` are the checks' findings, errors first, each a dict of
+    ``check``, ``severity``, ``type``, ``summary``, ``description`` and ``items``. ``assumed`` lists every value
     the plan took that the job does not state (``key``, ``value``, ``why``: a tool's catalogue flute length, the rapid
     rate the cycle time is worked out at). A job that cannot run has ``ok`` false, a finding that says what to change,
     and wrote nothing.
@@ -346,7 +346,7 @@ class CamPlanResult:
     posts: tuple[dict, ...] = ()
     verdict: dict = field(default_factory=dict)
     #: Totals: ``duration_s``, ``tools``, ``tool_changes`` (``count``, ``order``), ``setups``, ``operations``,
-    #: ``machine``, ``material``, ``post``.
+    #: ``post``, ``material``, ``planner``.
     summary: dict = field(default_factory=dict)
     operations: tuple[dict, ...] = ()
     findings: tuple[dict, ...] = ()

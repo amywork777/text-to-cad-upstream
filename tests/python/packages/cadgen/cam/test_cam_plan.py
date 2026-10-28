@@ -1,6 +1,7 @@
 """``cadgen cam plan`` end to end, through the FreeCAD installed here: the block planned, posted and drawn; a face
-under a bridge refused with no G-code; a setup turned over; GRBL's program split by tool; a failure that leaves the
-earlier files as they were."""
+under a bridge refused with no G-code; a setup turned over; GRBL's program split by tool; a bore and a slot cut by an
+inside profile of their walls; a floor the tool cannot enter, and a hole named by any of its faces; a failure that
+leaves the earlier files as they were."""
 
 from __future__ import annotations
 
@@ -10,8 +11,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests.python.support.cam_fixtures import (BLOCK, block_step, bridge_step, class_directory, floor_ref, glb_cam,
-                                               mill_job, needs_freecad, quiet, read_glb)
+from tests.python.support.cam_fixtures import (BLOCK, HOLE_BLOCK, PLATE, block_step, bridge_step, class_directory,
+                                               floor_ref, glb_cam, hole_block_step, mill_job, needs_freecad,
+                                               plate_step, quiet, read_glb)
 
 
 #: Tools long enough to profile the block's 26 mm, stock top to bottom.
@@ -24,6 +26,26 @@ def plan(step: Path, job: dict, **options):
 
     with quiet():
         return cam.plan(step, job=job, **options)
+
+
+def plan_moves(step: Path, job: dict, **options):
+    """The plan, and the moves FreeCAD planned for each setup (setup coordinates), as the checks read them."""
+    from cadgen._internal.cam import toolpath
+
+    seen = []
+    real = toolpath.read
+
+    def read(*args):
+        seen.append(real(*args))
+        return seen[-1]
+
+    with mock.patch.object(toolpath, "read", read):
+        return plan(step, job, **options), seen
+
+
+def cuts(moves, op: int):
+    """The points an operation's cutting moves end at."""
+    return moves.points[(moves.op == op) & ~moves.rapid]
 
 
 def z_words(text: str) -> list[float]:
@@ -141,13 +163,141 @@ class Grbl(unittest.TestCase):
         step = block_step(directory)
         holes = [hole["faces"][0] for hole in cam.features(step).holes]
         job = mill_job([{"op": "face", "tool": "T1"}, {"op": "drill", "tool": "T2", "faces": holes}],
-                       machine={"kind": "router", "post": "grbl"})
+                       machine={"post": "grbl"})
         result = plan(step, job)
         self.assertEqual("ready", result.verdict["status"], result.findings)
         self.assertEqual([("block.top.1-T1.nc", "T1"), ("block.top.2-T2.nc", "T2")],
                          [(Path(p["file"]).name, p["tool"]) for p in result.posts])
         first, second = (Path(p["file"]).read_text(encoding="utf-8") for p in result.posts)
         self.assertNotIn("G81", re.sub(r"\(.*?\)", "", second))   # GRBL has no drilling cycle: written out as moves
+
+
+#: A 6 mm end mill for the bore and the pocket, a 3 mm one for the slot, a 6 mm drill.
+PLATE_TOOLS = [{"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20, "stickout_mm": 30},
+               {"id": "T3", "type": "flat", "diameter_mm": 3, "flutes": 2, "flute_length_mm": 15, "stickout_mm": 25},
+               {"id": "T2", "type": "drill", "diameter_mm": 6, "flute_length_mm": 50, "stickout_mm": 60}]
+
+
+@needs_freecad
+class Plate(unittest.TestCase):
+    """A Ø22.2 bore and a 5.5 mm slot, too wide to drill, cut out by an inside profile naming their walls; a pocket
+    floor, and a blind hole's floor no 6 mm tool enters. The stock's top is the work zero, 1 mm over the part's."""
+
+    @classmethod
+    def setUpClass(cls):
+        from cadgen import cam
+
+        cls.step = plate_step(class_directory(cls))
+        features = cam.features(cls.step)
+        cls.bore = next(h for h in features.holes if abs(h["diameter_mm"] - PLATE["bore"]["diameter"]) < 1e-3)
+        cls.blind = next(h for h in features.holes if abs(h["diameter_mm"] - PLATE["blind"]["diameter"]) < 1e-3)
+        sx, sy = PLATE["slot"]["center"]
+        reach = PLATE["slot"]["length"] / 2 + PLATE["slot"]["width"]
+        cls.slot = [f["ref"] for f in features.faces if abs(f["center_mm"][0] - sx) < reach
+                    and abs(f["center_mm"][1] - sy) < PLATE["slot"]["width"] and abs(f.get("normal", [0, 0, 0])[2]) < 0.5]
+        in_holes = {ref for hole in features.holes for ref in hole["faces"]}
+        floor = next(f for f in features.floors if f["kind"] == "floor" and f["ref"] not in in_holes)
+        cls.pocket, cls.pocket_walls = floor["ref"], floor["pocket"]["walls"]
+        cls.top = next(f["ref"] for f in features.floors if f["kind"] == "top")
+        cls.top_z = -1.0                                    # the part's top under the 1 mm margin
+        cls.bottom_z = cls.top_z - PLATE["size"][2]
+
+    def job(self, operations):
+        return mill_job(operations, tools=PLATE_TOOLS, stock={"margin_mm": [2, 2, 1]})
+
+    def test_an_inside_profile_cuts_a_through_bore_and_a_slot_by_their_walls(self):
+        import numpy as np
+
+        self.assertEqual(4, len(self.slot))                  # two flat walls and two round ends
+        result, (moves,) = plan_moves(self.step, self.job([
+            {"op": "profile", "tool": "T1", "side": "inside", "faces": [self.bore["faces"][0]], "through_mm": 0.5},
+            {"op": "profile", "tool": "T3", "side": "inside", "faces": self.slot, "through_mm": 0.5}]))
+        self.assertEqual("ready", result.verdict["status"], result.findings)
+        self.assertEqual(1, len(result.posts))
+        bore = cuts(moves, 0)
+        bore = bore[bore[:, 2] < self.top_z]
+        radius = PLATE["bore"]["diameter"] / 2 - 3.0               # the 6 mm tool's centre, its radius off the wall
+        self.assertTrue(np.allclose(np.hypot(bore[:, 0], bore[:, 1]), radius, atol=0.02))
+        self.assertAlmostEqual(self.bottom_z - 0.5, float(bore[:, 2].min()), places=3)
+        slot = cuts(moves, 1)
+        slot = slot[slot[:, 2] < self.top_z]
+        half = PLATE["slot"]["width"] / 2 - 1.5
+        y = PLATE["slot"]["center"][1]
+        self.assertAlmostEqual(y - half, float(slot[:, 1].min()), places=2)
+        self.assertAlmostEqual(y + half, float(slot[:, 1].max()), places=2)
+        self.assertAlmostEqual(self.bottom_z - 0.5, float(slot[:, 2].min()), places=3)
+
+    def test_an_inside_profile_of_a_flat_face_is_refused_naming_its_walls(self):
+        # Inside the top face, FreeCAD traces the outline through the stock over it and cuts nothing of the part.
+        result = plan(self.step, self.job([{"op": "profile", "tool": "T3", "side": "inside", "faces": [self.top]}]))
+        self.assertEqual("fix", result.verdict["status"])
+        self.assertEqual((), result.posts)
+        (error,) = [f for f in result.findings if f["severity"] == "error"]
+        self.assertEqual(("reach", "not_facing"), (error["check"], error["type"]))
+        self.assertIn("an inside profile runs along walls", error["summary"])
+        for ref in [self.bore["faces"][0], *self.slot, *self.pocket_walls, self.blind["faces"][0]]:
+            self.assertIn(ref, error["summary"])
+        outside = plan(self.step, self.job([{"op": "profile", "tool": "T1", "faces": [self.top], "through_mm": 0.5}]))
+        self.assertEqual("ready", outside.verdict["status"], outside.findings)
+
+    def test_an_inside_profile_of_a_blind_pocket_stops_at_its_floor(self):
+        result, (moves,) = plan_moves(self.step, self.job([
+            {"op": "profile", "tool": "T3", "side": "inside", "faces": self.pocket_walls, "through_mm": 0.5}]))
+        self.assertEqual("ready", result.verdict["status"], result.findings)
+        floor = self.top_z - (PLATE["size"][2] - PLATE["pocket"]["floor_z"])
+        self.assertAlmostEqual(floor, float(cuts(moves, 0)[:, 2].min()), places=3)
+
+    def test_a_floor_the_tool_cannot_enter_is_uncut_and_no_g_code_is_written(self):
+        floor = self.blind["faces"][-1]                      # the Ø6 hole's flat floor, at the pocket's height
+        result = plan(self.step, self.job([{"op": "pocket", "tool": "T1", "faces": [self.pocket, floor]}]))
+        self.assertEqual("fix", result.verdict["status"])
+        self.assertEqual((), result.posts)
+        (error,) = [f for f in result.findings if f["severity"] == "error"]
+        self.assertEqual(("coverage", "uncut", floor), (error["check"], error["type"], error["items"][0]["face"]))
+
+    def test_a_flat_floored_hole_drilled_with_a_pointed_drill_says_what_it_leaves(self):
+        result = plan(self.step, self.job([{"op": "drill", "tool": "T2", "faces": [self.blind["faces"][0]]}]))
+        self.assertEqual("ready", result.verdict["status"], result.findings)
+        (found,) = result.findings
+        self.assertEqual(("drill_point", "warning"), (found["type"], found["severity"]))
+        self.assertIn("drawn with a flat floor: its bottom 1.80 mm is left a cone", found["summary"])
+
+
+@needs_freecad
+class HoleBlock(unittest.TestCase):
+    """A hole is named by any of its faces, and drilled as its wall; a drawn point flatter than the drill's says so."""
+
+    @classmethod
+    def setUpClass(cls):
+        from cadgen import cam
+
+        cls.step = hole_block_step(class_directory(cls))
+        with quiet():
+            features = cam.features(cls.step)
+        surface = {face["ref"]: face["surface"] for face in features.faces}
+        at = {(round(h["center_mm"][0], 3), round(h["center_mm"][1], 3)): h for h in features.holes}
+        cls.shoulder = next(ref for ref in at[HOLE_BLOCK["counterbore"]["center"]]["faces"] if surface[ref] == "plane")
+        cls.countersunk = at[HOLE_BLOCK["countersink"]["center"]]["faces"][0]
+        cls.pointed = at[HOLE_BLOCK["pointed"]["center"]]
+
+    def test_a_counterbores_shoulder_drills_its_hole(self):
+        result = plan(self.step, mill_job([{"op": "drill", "tool": "T2", "faces": [self.shoulder, self.countersunk]}]))
+        self.assertEqual("ready", result.verdict["status"], result.findings)
+        text = Path(result.posts[0]["file"]).read_text(encoding="utf-8")
+        drilled = sorted((float(x), float(y)) for x, y in re.findall(r"G8[123] X(-?[\d.]+) Y(-?[\d.]+)", text))
+        self.assertEqual(sorted([HOLE_BLOCK["counterbore"]["center"], HOLE_BLOCK["countersink"]["center"]]), drilled)
+
+    def test_a_drill_point_longer_than_the_drawn_one_is_a_warning_with_how_much(self):
+        import math
+
+        tools = [{"id": "T2", "type": "drill", "diameter_mm": 6, "flute_length_mm": 50, "stickout_mm": 60}]
+        result = plan(self.step, mill_job([{"op": "drill", "tool": "T2", "faces": [self.pointed["faces"][0]]}],
+                                          tools=tools))
+        self.assertEqual("ready", result.verdict["status"], result.findings)
+        (found,) = result.findings
+        short = 3.0 / math.tan(math.radians(59)) - 3.0 / math.tan(math.radians(HOLE_BLOCK["pointed"]["point_angle"] / 2))
+        self.assertEqual("drill_point", found["type"])
+        self.assertIn(f"its bottom {short:.2f} mm is left a cone", found["summary"])
 
 
 class Refused(unittest.TestCase):

@@ -2,10 +2,9 @@
 FreeCAD runs, and checks what comes back; FreeCAD's CAM workbench plans the paths and its post processors write the
 G-code.
 
-FreeCAD is installed by the person, as KiCad is for ``cadgen pcb``: ``CADGEN_FREECAD`` names its ``freecadcmd``, else
-the first of :data:`NAMES` on PATH, else the place each platform's installer puts it (:func:`_installed`). One that is
-missing, or older than :data:`MINIMUM`, is an error naming how to install it; cadgen downloads nothing and plans with
-nothing else.
+FreeCAD is installed by the person: ``CADGEN_FREECAD`` names its ``freecadcmd``, else the first of :data:`NAMES` on
+PATH, else the place each platform's installer puts it (:func:`_installed`). One that is missing, or older than
+:data:`MINIMUM`, is an error naming how to install it; cadgen downloads nothing and plans with nothing else.
 
 :func:`run` hands ``freecad_job.py`` a plan (JSON: the part as a BREP, the stock, the tools, the operations) in a
 folder of its own and reads back what FreeCAD made: each operation's path commands and the posted files. FreeCAD's own

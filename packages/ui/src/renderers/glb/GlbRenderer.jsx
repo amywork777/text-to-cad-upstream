@@ -70,13 +70,15 @@ function GlbFile({ view, data }) {
 function GlbSurface({ view, document, loaded, feaPending }) {
   const { t } = useI18n();
   // A CAM result (cadgen cam plan) has a viewer of its own (`cam/useCamResult.jsx`), loaded as its own chunk; it waits
-  // for it as the file loading, so it is framed once, as the viewer draws it.
-  const { kit: cv, pending: camPending } = useCamView(loaded.scene?.document?.scene);
+  // for it as the file loading, so it is framed once, as the viewer draws it. A chunk that fails is the file failing:
+  // drawn as a plain GLB, a result would hide its verdict.
+  const { kit: cv, pending: camPending, failed: camFailed } = useCamView(loaded.scene?.document?.scene);
   const pending = feaPending || camPending;
-  const scene = pending ? null : loaded.scene;
+  const scene = pending || camFailed ? null : loaded.scene;
+  const loadError = loaded.error || camFailed;
   const loadAlert = useMemo(() => workspaceLoadAlert({
-    catalogError: document.catalogError, error: loaded.error, modelKey: document.modelKey, hasScene: Boolean(scene), t
-  }), [document.catalogError, loaded.error, document.modelKey, scene, t]);
+    catalogError: document.catalogError, error: loadError, modelKey: document.modelKey, hasScene: Boolean(scene), t
+  }), [document.catalogError, loadError, document.modelKey, scene, t]);
 
   const shellRef = useRef(null);
   const sceneRef = useRef(scene);

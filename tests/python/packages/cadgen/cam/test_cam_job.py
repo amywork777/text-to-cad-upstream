@@ -21,7 +21,7 @@ def refusal(case: unittest.TestCase, job) -> str:
 class Reads(unittest.TestCase):
     def test_a_job_reads_with_its_defaults_and_says_what_it_assumed(self):
         job = parse_job(mill_job([{"op": "face", "tool": "T1"}, {"op": "drill", "tool": "T2", "faces": ["face 9"]}]))
-        self.assertEqual(("mill", "linuxcnc", "G54"), (job.machine.kind, job.machine.post, job.machine.work_offset))
+        self.assertEqual(("linuxcnc", "G54"), (job.machine.post, job.machine.work_offset))
         self.assertEqual((2.0, 2.0, 1.0), job.stock.margin_mm)
         (setup,) = job.setups
         self.assertEqual(("+Z", "stock-top-center", 5.0, 2.0),
@@ -67,13 +67,21 @@ class Refuses(unittest.TestCase):
         self.assertIn("face, profile, pocket, adaptive, drill", message)
 
     def test_the_post_is_never_guessed(self):
-        message = refusal(self, mill_job([{"op": "face", "tool": "T1"}], machine={"kind": "router"}))
+        message = refusal(self, mill_job([{"op": "face", "tool": "T1"}], machine={"max_rpm": 24000}))
         self.assertIn("machine.post is required", message)
         self.assertIn("grbl, linuxcnc", message)
-        self.assertIn("haas", refusal(self, mill_job([], machine={"kind": "mill", "post": "haas"})).split(";")[0])
+        self.assertIn("haas", refusal(self, mill_job([], machine={"post": "haas"})).split(";")[0])
 
-    def test_a_lathe_is_not_a_machine_here(self):
-        self.assertIn("mill, router", refusal(self, mill_job([], machine={"kind": "lathe", "post": "fanuc"})))
+    def test_a_machine_kind_is_no_key_of_a_machine(self):
+        # It changed nothing in a plan, so it is gone: refused as any key the machine never had is.
+        self.assertEqual("machine: unknown key 'kind'; the keys are post, name, travel_mm, min_rpm, max_rpm, "
+                         "max_feed_mm_min, rapid_mm_min, work_offset",
+                         refusal(self, mill_job([], machine={"kind": "mill", "post": "fanuc"})))
+
+    def test_a_tolerance_finer_than_freecad_follows_is_refused(self):
+        job = mill_job([{"op": "face", "tool": "T1"}])
+        job["tolerance_mm"] = 0.001
+        self.assertIn("tolerance_mm must be at least 0.01, not 0.001", refusal(self, job))
 
     def test_a_pocket_needs_its_floors_and_a_drill_its_holes(self):
         self.assertIn("the floors to clear down to", refusal(self, mill_job([{"op": "pocket", "tool": "T1"}])))

@@ -437,7 +437,8 @@ its NATIVE glTF scene, always: one path whether or not a clip is playing.
 - **A CAM result** (`<stem>.cam.glb`, `cadgen cam plan`): a GLB whose scene says
   `generator: "cadgen cam"` and carries the job in its extras (`cam`, schema 1) loads
   the CAM viewer, its own chunk (`glb/camView.jsx`; a plain GLB never fetches it), before
-  it is framed; should the chunk fail, it is drawn as a plain GLB. Its tools are a GLB's,
+  it is framed; should the chunk fail, the file is refused as one that failed to load, never
+  drawn as a plain GLB that would hide its verdict. Its tools are a GLB's,
   less Explode (its nodes are the part, the stock and the toolpaths). It adds **Job**, a
   file sidebar section (`glb/CamJobPanel.jsx`, id `job`): the verdict first, its errors
   in plain words, then each setup and its operations (word, tool, time), the tools, and

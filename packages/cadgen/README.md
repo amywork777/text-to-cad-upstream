@@ -474,7 +474,8 @@ it; cadgen downloads no solver and has no other. The result names the CalculiX v
 xbf through `read_step`/`read_xbf` -- never through the engine, and resolve a job's face refs in that
 file by the engine's grammar (`engine/refs.py`), so a ref `cadgen inspect` answers or the CAD Viewer
 copies names the same face. FreeCAD, installed by the person (1.1 or newer; `CADGEN_FREECAD` names its
-`freecadcmd`), plans and posts each setup in a process of its own, as KiCad does for `cadgen pcb`;
-cadgen checks what it plans against the part under `src/cadgen/_internal/cam/` and posts nothing a
-check refuses. A plan writes `<stem>.cam.glb`, an ordinary GLB the viewer's GLB renderer draws the job
-of, and the G-code for each setup. The `cam` skill carries the job file's contract.
+`freecadcmd`), plans and posts each setup in a process of its own; cadgen checks what it plans
+against the part under `src/cadgen/_internal/cam/` and posts nothing a check refuses. A plan writes
+`<stem>.cam.glb`, an ordinary GLB the viewer's GLB renderer draws the job of, and the G-code for each
+setup. `cadgen cam plan --help` names the job's keys, and a key or value a job cannot take is
+refused with the ones it can.
