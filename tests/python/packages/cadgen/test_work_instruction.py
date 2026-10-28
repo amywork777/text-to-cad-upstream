@@ -14,7 +14,7 @@ import re
 import unittest
 from pathlib import Path
 
-from tests.python.support import engine_daemon
+from tests.python.support import engine_daemon, opengl
 from tests.python.support.paths import add_repo_path, repo_path
 from tests.python.support.tmp_root import generated_cad_directory
 
@@ -520,7 +520,10 @@ class PictureTests(_Assembly):
             picture_plan(wi)
 
     def test_the_pictures_render_through_the_snapshot_runtime_into_the_pdf(self) -> None:
+        from cadgen.engine.render import context
         from cadgen.work_instruction import work_instruction
+
+        opengl.require(context.available(), "the pictures are drawn by OCCT")
 
         target = self.root / "pictured.pdf"
 
