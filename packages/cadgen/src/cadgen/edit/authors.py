@@ -61,6 +61,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from cadgen.edit import versions
+from cadgen._internal.atomic_replace import replace_atomic
 
 __all__ = ["LEDGER", "feature_authors", "note_hand_edit", "start", "written"]
 
@@ -285,7 +286,7 @@ def _begin(root: Path, ledger: Path, turns: list[dict]) -> bool:
         partial.write_text(json.dumps(record) + "\n", encoding="utf-8")
         # Another viewer's tracer may have begun first: its record stands.
         if not ledger.exists():
-            os.replace(partial, ledger)
+            replace_atomic(partial, ledger)
         return True
     except Exception:  # noqa: BLE001 - git's exclude file unreadable (UTF-16, as PowerShell appends), a folder that cannot be written
         return False
