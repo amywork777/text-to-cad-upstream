@@ -227,6 +227,16 @@ class Plate(unittest.TestCase):
         self.assertAlmostEqual(y + half, float(slot[:, 1].max()), places=2)
         self.assertAlmostEqual(self.bottom_z - 0.5, float(slot[:, 2].min()), places=3)
 
+    def test_each_pass_steps_down_as_far_as_the_job_says_not_the_tools_diameter(self):
+        import numpy as np
+
+        result, (moves,) = plan_moves(self.step, self.job([
+            {"op": "profile", "tool": "T1", "through_mm": 0.5, "stepdown_mm": 2}]))
+        self.assertEqual("ready", result.verdict["status"], result.findings)
+        levels = np.unique(np.round(cuts(moves, 0)[:, 2], 3))
+        self.assertAlmostEqual(self.bottom_z - 0.5, float(levels.min()), places=3)
+        self.assertLessEqual(float(np.diff(levels).max()), 2.0 + 1e-3, levels)
+
     def test_an_inside_profile_of_a_flat_face_is_refused_naming_its_walls(self):
         # Inside the top face, FreeCAD traces the outline through the stock over it and cuts nothing of the part.
         result = plan(self.step, self.job([{"op": "profile", "tool": "T3", "side": "inside", "faces": [self.top]}]))

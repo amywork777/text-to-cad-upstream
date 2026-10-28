@@ -36,8 +36,9 @@ THROUGH_MM = 0.5
 #: A tool's share of the feature it cuts: of a corner's diameter or a width, and of a bore's diameter.
 CORNER_SHARE = 0.8
 BORE_SHARE = 0.6
-#: A drill matches a hole within this (mm).
+#: A drill matches a hole within this (mm), and pecks one diameter at a time past this many diameters deep.
 DRILL_MATCH_MM = 0.05
+PECK_DEPTHS = 2.0
 #: The flutes cadgen proposes: three diameters, or as long as the deepest cut asks, up to six (a long-reach cutter).
 FLUTES_D, LONGEST_FLUTES_D = 3.0, 6.0
 
@@ -111,7 +112,7 @@ def _cuts(part, reading, margin_z: float, drills: list[float] | None) -> tuple[l
     top = part.bbox[1][2] + margin_z
     through = top - part.bbox[0][2] + THROUGH_MM
     if margin_z > 0:
-        cuts[("face",)] = _Cut("face", 0, LARGEST_DRILL_MM, margin_z, what=["the top"], roomy=True)
+        cuts[("face",)] = _Cut("face", 0, MILLS_MM[0], margin_z, what=["the top"], roomy=True)
     in_hole: set[str] = set()
     # A hole's flat faces are its own: the pocket loop below clears only a blind hole's floor no drill makes.
     pocketed: set[str] = set()
@@ -136,8 +137,10 @@ def _cuts(part, reading, margin_z: float, drills: list[float] | None) -> tuple[l
                 f"counterbore Ø{_g(size)} x {_g(counterbore['depth_mm'])} deep")
         if drill is not None:
             # Holes that end at one height drill as one operation, whatever height each opens at.
-            key = ("drill", drill, round(min(hole["center_mm"][2], hole["bottom_mm"][2]), 3), hole["through"])
-            peck = drill if depth > 3 * drill else None
+            end = min(hole["center_mm"][2], hole["bottom_mm"][2])
+            key = ("drill", drill, round(end, 3), hole["through"])
+            # As deep as it is drilled: from the stock's top, through the stock over the part.
+            peck = drill if top - end > PECK_DEPTHS * drill else None
             params = {"through_mm": THROUGH_MM if hole["through"] else 0.0, **({"peck_mm": peck} if peck else {})}
             cut = _Cut("drill", 4, drill, drill_mm=drill, params=params)
             add(key, cut, walls[:1], f"Ø{_g(diameter)}" + ("" if hole["through"] else f" x {_g(depth)} deep"))
@@ -180,12 +183,9 @@ def _cuts(part, reading, margin_z: float, drills: list[float] | None) -> tuple[l
             add(("opening",), _Cut("profile", 3, largest, through, params={"side": "inside",
                                                                            "through_mm": THROUGH_MM}),
                 [info.ref for info in walls], f"{word} {_g(narrow)} x {_g(long)}")
-    narrow, _ = _extent(list(part.faces.values()))
-    cuts[("outline",)] = _Cut("profile", 9, min(MILLS_MM[0], narrow / 2), through, params={"side": "outside",
-                                                                                  "through_mm": THROUGH_MM},
+    # Round the outside and over the top nothing narrows the cut: the largest cutter, or one near it.
+    cuts[("outline",)] = _Cut("profile", 9, MILLS_MM[0], through, params={"side": "outside", "through_mm": THROUGH_MM},
                               what=["the outline"], roomy=True)
-    if ("face",) in cuts:
-        cuts[("face",)].largest = cuts[("outline",)].largest
     chamfers = sum(1 for info in part.faces.values() if info.surface == "cone" and info.ref not in in_hole
                    or info.surface == "plane" and info.normal is not None and axis_word(info.normal) is None)
     warnings = []

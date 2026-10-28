@@ -91,6 +91,9 @@ def _operation(model, spec, tc, plan):
             op.PeckDepth = f"{spec['peck_mm']} mm"
         op.AddTipLength = False     # cadgen's depth already takes the point and the break through
     if kind != "drill":
+        # FreeCAD sets the step down by an expression (the tool's diameter), which the next recompute puts back over a
+        # value: cleared first, as the final depth's below.
+        op.setExpression("StepDown", None)
         op.StepDown = f"{spec['stepdown_mm']} mm"
     # The depth cadgen worked out wins over FreeCAD's own reading of the faces: the expression is cleared first, or the
     # next recompute puts FreeCAD's back.
