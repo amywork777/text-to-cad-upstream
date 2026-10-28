@@ -1668,6 +1668,47 @@ class AssemblyEdgeTests(unittest.TestCase):
         errors = [f.code for f in validate_drawing_document(doc, drawing=True) if f.severity == "error"]
         self.assertNotIn("zero_length_entity", errors)
 
+    def test_a_coil_seen_from_the_top_projects_no_sliver_edge(self) -> None:
+        """Not forced: three turns of the shock's coil, 18 tilted cylinders fused,
+        seen from the top. Hidden-line removal hands back one ellipse 4e-8 mm long
+        (the last 1.3e-7 rad before its seam); OCCT cannot measure along it, and the
+        top view's overall dimensions, sampling the outline, failed the sheet with
+        Standard_Failure. The sliver is a point and is not drawn; the coil is."""
+        from cadgen._internal.drawing_base import VIEW_DIRECTIONS
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_views import _POINT_EDGE, _Projection
+        from cadgen.eng_drawing import Sheet
+
+        coil = _coil(turns=3, links_per_turn=6)
+        proj = _Projection(coil, VIEW_DIRECTIONS["top"])
+        edges = [*proj.visible, *proj.hidden]
+        self.assertGreater(len(edges), 400, "the coil is drawn")
+        self.assertTrue(all(edge.length >= _POINT_EDGE for edge in edges))
+        for edge in edges:
+            edge.position_at(0.5)  # every kept edge can be sampled along its length
+
+        sheet = Sheet("A3")
+        sheet.view(coil, "top", at=(150, 150)).overall()
+        doc = _render_sheet(sheet, index=1, count=1, label="coil")
+        size = coil.bounding_box().size
+        self.assertEqual(sorted(_dim_texts(doc)), sorted([f"{size.X:.2f}", f"{size.Y:.2f}"]),
+                         "both overall sizes, read off the whole coil")
+
+
+def _coil(turns: float, links_per_turn: int):
+    """The shock absorber's coil spring, built the same way and fewer turns: a
+    ⌀75 mean helix of ⌀9 wire as straight cylinders, each one wire diameter longer
+    than its step so it overlaps its neighbours, fused into one solid."""
+    from build123d import Cylinder, Plane, Vector
+
+    count = round(turns * links_per_turn)
+    points = [Vector(37.5 * math.cos(turns * math.tau * i / count), 37.5 * math.sin(turns * math.tau * i / count),
+                     100.0 / 6.5 * turns * i / count) for i in range(count + 1)]
+    links = [Cylinder(4.5, (b - a).length + 9.0).moved(
+        Plane(origin=tuple((a + b) * 0.5), z_dir=tuple((b - a).normalized())).location)
+        for a, b in zip(points, points[1:])]
+    return links[0].fuse(*links[1:])
+
 
 class SymbolTests(unittest.TestCase):
     def test_drawing_symbols_are_line_work_not_glyphs(self) -> None:
