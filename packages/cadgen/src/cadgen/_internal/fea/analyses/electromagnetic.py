@@ -787,7 +787,7 @@ class ElectromagneticAnalysis(AnalysisBase):
             key = "currents" if entry in inputs.currents else "voltages"
             for ref in entry.faces:
                 part, ordinal = parts.face_of[ref]
-                face = TopoDS.Face_s(part_faces(parts.shapes[part])[ordinal - 1])
+                face = TopoDS.Face(part_faces(parts.shapes[part])[ordinal - 1])
                 surface = BRepAdaptor_Surface(face)
                 centre = area_center(face)[1]
                 onto = None

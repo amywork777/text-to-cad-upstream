@@ -499,10 +499,11 @@ class AcousticAnalysis(AnalysisBase):
         if shape is not None:
             from OCP.Bnd import Bnd_Box
             from OCP.BRepBndLib import BRepBndLib
+            from cadgen.engine.kernel.bounds import box_limits
 
             box = Bnd_Box()
             BRepBndLib.AddOptimal_s(shape, box, False, False)
-            xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
+            xmin, ymin, zmin, xmax, ymax, zmax = box_limits(box)
             return (xmin, ymin, zmin), (xmax, ymax, zmax)
         d = geometry.bbox_diagonal_mm / math.sqrt(3.0) if geometry is not None else 10.0
         return (0.0, 0.0, 0.0), (d, d, d)

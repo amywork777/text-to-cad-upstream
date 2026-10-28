@@ -118,7 +118,7 @@ def face_records(shape) -> list[FaceRecord]:
     records = []
     faces = face_map(shape)
     for ordinal in range(1, faces.Extent() + 1):
-        face = TopoDS.Face_s(faces.FindKey(ordinal))
+        face = TopoDS.Face(faces.FindKey(ordinal))
         area, centre = area_center(face)
         adaptor = BRepAdaptor_Surface(face)
         kind_id = adaptor.GetType()

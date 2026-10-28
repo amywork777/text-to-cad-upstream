@@ -119,11 +119,12 @@ def part_region(space, volume, face_keys: dict[tuple[int, int], int], parts: int
 def bounds_of(shapes) -> tuple[list[float], list[float]]:
     from OCP.Bnd import Bnd_Box
     from OCP.BRepBndLib import BRepBndLib
+    from cadgen.engine.kernel.bounds import box_limits
 
     box = Bnd_Box()
     for shape in shapes:
         BRepBndLib.AddOptimal_s(shape, box, False, False)
-    xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
+    xmin, ymin, zmin, xmax, ymax, zmax = box_limits(box)
     return [xmin, ymin, zmin], [xmax, ymax, zmax]
 
 

@@ -32,9 +32,9 @@ def face_map(shape):
     """A shape's faces by the engine's ordinals (``TopExp.MapShapes``: ``face N`` is ``FindKey(N)``)."""
     from OCP.TopAbs import TopAbs_FACE
     from OCP.TopExp import TopExp
-    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
 
-    faces = TopTools_IndexedMapOfShape()
+    faces = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapes_s(shape, TopAbs_FACE, faces)
     return faces
 

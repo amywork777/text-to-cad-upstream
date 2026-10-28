@@ -94,9 +94,9 @@ def _neighbours(shape, faces) -> dict[int, set[int]]:
     """Face ordinal -> the ordinals of the faces sharing an edge with it."""
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
     from OCP.TopExp import TopExp
-    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
+    from OCP.collections import IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher
 
-    edges = TopTools_IndexedDataMapOfShapeListOfShape()
+    edges = IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapesAndAncestors_s(shape, TopAbs_EDGE, TopAbs_FACE, edges)
     near: dict[int, set[int]] = {}
     for k in range(1, edges.Extent() + 1):
@@ -162,7 +162,7 @@ def small_features(geometry: "Geometry", size_mm: float, named: set[int]) -> lis
 def as_face(shape):
     from OCP.TopoDS import TopoDS
 
-    return TopoDS.Face_s(shape)
+    return TopoDS.Face(shape)
 
 
 def defeature(geometry: "Geometry", features: list[Feature]) -> Prepared | None:
@@ -194,7 +194,7 @@ def defeature(geometry: "Geometry", features: list[Feature]) -> Prepared | None:
 
 def trace(operation, before, after, origin_before: list[int] | None = None) -> list[int]:
     """Per face of ``after``: the ordinal (through ``origin_before``) of the face of ``before`` it came from, else 0."""
-    from OCP.TopTools import TopTools_ListOfShape
+    from OCP.collections import List_TopoDS_Shape
 
     old = face_map(before)
     new = face_map(after)
@@ -205,7 +205,7 @@ def trace(operation, before, after, origin_before: list[int] | None = None) -> l
         images: list = []
         if operation is not None:
             modified = operation.Modified(face)
-            if isinstance(modified, TopTools_ListOfShape):
+            if isinstance(modified, List_TopoDS_Shape):
                 images = list(modified)
         if not images and new.Contains(face):
             images = [face]
