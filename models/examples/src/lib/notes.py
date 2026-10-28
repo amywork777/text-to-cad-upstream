@@ -7,4 +7,7 @@ any shop's standard or process. cadgen ships no note text; a real project keeps 
 NOTES = {
     "edges": "Remove all burrs and break sharp edges",
     "primer-mask": "Mask these features before coating with primer",
+    # NIST's Note 1 on its PMI test models (public domain, nist_ctc_02_housing.py's source).
+    "basic-from-model": "Obtain dimensions for all undimensioned features from the model. All dimensions "
+                        "obtained from the model are basic unless otherwise specified",
 }

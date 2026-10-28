@@ -1,7 +1,7 @@
 # examples
 
 Every script of `models/examples/src`, on cadgen 0.8: a `@model` each, writing nothing, but
-the two print parts below and the two PMI examples, which declare their files, and the import's
+the two print parts below and the three PMI examples, which declare their files, and the import's
 `__main__`, which exports the two STEPs it reads.
 
 | Script | Files | What it is |
@@ -13,6 +13,7 @@ the two print parts below and the two PMI examples, which declare their files, a
 | `electronics_enclosure_base_drawing.py` | `PDF/electronics_enclosure_base_drawing.pdf` | **Engineering drawing** (`@eng_drawing`) of the enclosure, calling its model: a section through the standoffs, measured dimensions, hole and boss callouts read off the part, title block. |
 | `pmi_plate.py` | `STEP/pmi_plate.step` | **Semantic PMI as a model-based definition**: a plate with a through-hole, datums A/B/C, thickness and hole-diameter dimensions with plus-minus tolerances, flatness, the hole's position to A\|B\|C located by basic dimensions from B and C, profiles on datum features B and C, and a general profile to A\|B\|C (Note 1) on every other face; a general note and a flag note on the hole from the project's notes library (`lib/notes.py`), and two views, section A-A through the hole and an iso. Exported as AP242 semantic PMI; the notes and views stay in the document's xbf (tolerance values and note texts illustrative; Aluminum 6061-T6) |
 | `aerospace_avionics_bracket.py` | `STEP/aerospace_avionics_bracket.step` | **Semantic PMI as a model-based definition** on a bracket with a back wall, webs, slots and a locating bore: datums A/B/C, toleranced thickness and bore, flatness, the bore's position located by basic dimensions, profiles on datum features B and C, and a general profile to A\|B\|C (Note 1) on every other face; the same notes as the plate, flagged on the bore, and two views, section A-A through the bore and an iso (geometry, tolerance values and note texts illustrative, not a flight part; Aluminum 7075-T6) |
+| `nist_ctc_02_housing.py` | `STEP/nist_ctc_02_housing.step` (reads NIST's `STEP/nist_ctc_02_asme1_rc.stp`, downloaded as its header says) | **Semantic PMI on an imported part**: NIST's PMI Complex Test Case 2, a cast gearbox housing, read with `read_step` and annotated: datums D (flange face), E and F (its two locating holes), flange flatness, the bearing bores' diameters and positions to D\|E\|F, the mounting pads profiled to D, a general profile to D\|E\|F, NIST's Note 1 and the edge note, and three views: an iso from each bearing side and section A-A through the bores (tolerance values NIST's, the datum scheme adapted to what cadgen writes; NIST's files are free to use without restriction) |
 | `cam_follower_roller.py` | — | Cam follower roller with central bearing bore and rounded outer profile (Steel 4140) |
 | `centrifugal_impeller.py` | — | Single solid centrifugal impeller (Aluminum 6061-T6) |
 | `circular_flange.py` | — | Circular flange with a six-hole bolt circle (Steel 1018) |
@@ -57,7 +58,7 @@ anodised in each part's own colour (restored after native material assignment).
 The imports read the STEP inputs as they are, without materials.
 
 A run writes nothing, but the mounting plate's and the gear blank's declared files, and the
-two PMI examples' STEP (their PMI as AP242's, the notes and views staying in the document, saved as
+three PMI examples' STEP (their PMI as AP242's, the notes and views staying in the document, saved as
 an xbf from the viewer or `cadgen export <id> NAME.xbf`; their notes come from `lib/notes.py`, the
 project's notes library, its text illustrative). The import script's `__main__` exports the
 enclosure and the fixture to `../STEP/` (gitignored, like every export: Git holds no CAD files)
