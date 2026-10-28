@@ -89,11 +89,6 @@ function linearColor(THREE, rgba) {
   return new THREE.Color().setRGB(Number(rgba[0]) || 0, Number(rgba[1]) || 0, Number(rgba[2]) || 0, THREE.LinearSRGBColorSpace);
 }
 
-// A material's look as the structure serves it (`cadgen.engine.materials`, camelCase): the
-// fields a look's identity is made of.
-const LOOK_FIELDS = Object.freeze(["metallic", "roughness", "ior", "anisotropy", "anisotropyRotation", "transmission",
-  "transmissionColor", "transmissionDepth", "coat", "coatRoughness", "emissive", "emissiveStrength"]);
-
 const finite = (value, fallback) => (Number.isFinite(Number(value)) && value !== null && value !== "" ? Number(value) : fallback);
 
 /**
@@ -108,19 +103,28 @@ export function xbfLookParameters(THREE, rgba, material = null, thickness = 0) {
   const parameters = { color: rgba ? linearColor(THREE, rgba) : new THREE.Color(DEFAULT_SURFACE),
     transparent: alpha < 1, opacity: alpha, depthWrite: alpha >= 1 };
   if (!material) return parameters;
+  if (Object.keys(material.pbr.textures || {}).length) throw new Error("Native material texture maps require UV mapping; use a scalar PBR look");
+  material = material.pbr.values;
   Object.assign(parameters, {
-    metalness: finite(material.metallic, 0), roughness: finite(material.roughness, 0.5), ior: finite(material.ior, 1.5),
+    metalness: finite(material.metalness, 0), roughness: finite(material.roughness, 0.5), ior: finite(material.ior, 1.5),
     anisotropy: finite(material.anisotropy, 0), anisotropyRotation: finite(material.anisotropyRotation, 0),
-    clearcoat: finite(material.coat, 0), clearcoatRoughness: finite(material.coatRoughness, 0),
-    emissiveIntensity: finite(material.emissiveStrength, 1)
+    clearcoat: finite(material.clearcoat, 0), clearcoatRoughness: finite(material.clearcoatRoughness, 0),
+    emissiveIntensity: finite(material.emissiveIntensity, 1)
   });
+  for (const key of ["sheen", "sheenRoughness", "specularIntensity", "iridescence", "iridescenceIOR", "dispersion", "alphaTest"]) {
+    if (material[key] != null) parameters[key] = material[key];
+  }
+  for (const key of ["sheenColor", "specularColor"]) {
+    if (material[key]) parameters[key] = linearColor(THREE, material[key]);
+  }
+  if (material.iridescenceThicknessRange) parameters.iridescenceThicknessRange = material.iridescenceThicknessRange;
   const transmission = finite(material.transmission, 0);
   if (transmission > 0) {
     parameters.transmission = transmission;
     parameters.thickness = Math.max(finite(thickness, 0), 0);
-    if (finite(material.transmissionDepth, 0) > 0) {
-      parameters.attenuationDistance = material.transmissionDepth * 1000;
-      parameters.attenuationColor = linearColor(THREE, material.transmissionColor || [1, 1, 1]);
+    if (finite(material.attenuationDistance, 0) > 0) {
+      parameters.attenuationDistance = material.attenuationDistance * 1000;
+      parameters.attenuationColor = linearColor(THREE, material.attenuationColor || [1, 1, 1]);
     }
   }
   if ((material.emissive || []).some(value => finite(value, 0) > 0)) parameters.emissive = linearColor(THREE, material.emissive);
@@ -129,8 +133,7 @@ export function xbfLookParameters(THREE, rgba, material = null, thickness = 0) {
 
 /** A look's identity: its colour, its material's look and, where it transmits, its part's thickness. */
 function lookKey(rgba, material, thickness) {
-  const look = material ? LOOK_FIELDS.map(field => material[field] ?? null) : null;
-  return JSON.stringify([rgba || null, look, look && finite(material.transmission, 0) > 0 ? thickness : null]);
+  return JSON.stringify([rgba || null, material?.pbr ?? null, thickness]);
 }
 
 /**
@@ -397,26 +400,25 @@ export function createXbfScene(THREE, document) {
     const faceMaterials = prototype.faceMaterials || {};
     // A transmissive look's volume is as thick as its part: the smallest extent of the part's box.
     const thickness = held.box.isEmpty() ? 0 : Math.min(...held.box.getSize(new THREE.Vector3()).toArray());
-    if ([prototype.material, ...Object.values(faceMaterials)].some(look => finite(look?.anisotropy, 0) > 0)) {
+    if ([prototype.material, ...Object.values(faceMaterials)].some(look => finite(look?.pbr?.values?.anisotropy, 0) > 0)) {
       part.hold("three:tangents", () => {
         held.surface.setAttribute("tangent", new THREE.BufferAttribute(xbfTangents(part.mesh.normals), 4));
         return true;
       });
     }
-    const painted = Object.entries(prototype.faceColors || {});
-    if (!painted.length) return { part, held, geometry: held.surface, paints: [], thickness };
+    const painted = new Map(Object.entries(prototype.faceColors || {}));
+    if (!painted.size && !Object.keys(faceMaterials).length) return { part, held, geometry: held.surface, paints: [], thickness };
     const geometry = shareGeometry(THREE, held.surface);
     ownedGeometries.push(geometry);
-    const byOrdinal = new Map(painted);
     const paints = [];
     const slot = new Map();
     const faces = part.mesh.faces;
     for (let row = 0; row < faces.length; row += 3) {
       const ordinal = String(faces[row]);
-      const paint = byOrdinal.get(ordinal);
+      const paint = painted.get(ordinal) || null;
+      const look = faceMaterials[ordinal] || null;
       let index = 0;
-      if (paint) {
-        const look = faceMaterials[ordinal] || null;
+      if (paint || look) {
         const name = lookKey(paint, look, thickness);
         if (!slot.has(name)) { slot.set(name, paints.length + 1); paints.push({ rgba: paint, look }); }
         index = slot.get(name);
@@ -450,7 +452,7 @@ export function createXbfScene(THREE, document) {
     group.userData.xbfInstance = index;
     const own = material(rgba, prototype.material || null, surface.thickness);
     const mesh = new THREE.Mesh(surface.geometry, surface.paints.length
-      ? [own, ...surface.paints.map(paint => material(paint.rgba, paint.look, surface.thickness))] : own);
+      ? [own, ...surface.paints.map(paint => material(paint.rgba ?? rgba, paint.look, surface.thickness))] : own);
     mesh.name = prototype.name || instance.path;
     mesh.castShadow = true;
     // What Parts colours it by, and what a highlight and an annotation name it by.
@@ -856,7 +858,7 @@ export function createXbfScene(THREE, document) {
         volume += own;
         parts += 1;
         // Its mass: the volume (mm³) times its material's density (kg/m³).
-        const density = finite(entry.prototype.material?.density, 0);
+        const density = finite(entry.prototype.material?.material?.density, 0);
         if (density > 0) mass += own * 1e-9 * density;
         else unweighed += 1;
       }
