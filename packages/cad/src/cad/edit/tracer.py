@@ -76,12 +76,16 @@ def _numeric(value):
 
 def _ops(cls, base):
     def binary(symbol, fn):
+        # A bool in arithmetic is the number it stands for: build123d's PolarLocations turns each
+        # location by `rotate * angle`, rotate being True or False.
         def left(self, other):
+            other = int(other) if isinstance(other, bool) else other
             if not _numeric(other):
                 return NotImplemented
             return _traced(fn(base(self), _plain(other)), (symbol, self._e, _expr(other)))
 
         def right(self, other):
+            other = int(other) if isinstance(other, bool) else other
             if not _numeric(other):
                 return NotImplemented
             return _traced(fn(_plain(other), base(self)), (symbol, _expr(other), self._e))
