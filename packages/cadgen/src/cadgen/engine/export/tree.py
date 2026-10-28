@@ -128,10 +128,19 @@ def write_xbf(view: Any, path: Path) -> None:
     from cadgen.engine import document
 
     source = view.source
-    if source.xcaf is not None and not source.foreign:
+    if source.migration is not None:
+        # A migration edits metadata on the original XCAF tree; its bytes as read predate that.
+        # Reconstructing it from the viewer tree would discard its build provenance and preserved
+        # legacy attributes.
+        from cadgen.engine.document_migrations import set_origin
+
+        doc = source.xcaf
+        set_origin(doc, source.origin or {"kind": "bytes", "closure_base": None})
+    elif source.xcaf is not None and not source.foreign:
         data = source.data if source.data is not None else \
             document.to_bytes(source.xcaf, source.shapes.values() if source.live else None)
         document.write_bytes(Path(path), data)
         return
-    doc = document.to_xcaf(tree_of(view))
+    else:
+        doc = document.to_xcaf(tree_of(view))
     document.save(doc, Path(path), compare=True)
