@@ -626,6 +626,14 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any],
     surface matches nothing. A general profile that covers no face matches no record, and
     is verified by none being left over. A note is the document's alone (a STEP carries none): it is
     neither expected nor counted."""
+    return _compared(entries, found, surfaces)[0]
+
+
+def _compared(entries: list[dict[str, Any]], found: dict[str, Any],
+              surfaces: dict[str, Any] | None = None) -> tuple[dict[str, Any], bool]:
+    """``compare``, and whether the entries were held one by one to the file's records: False when
+    the file or the names cannot be checked at all (no AP242, a name used twice, a record the reader
+    cannot read), whose problems say the check could not be made, not that the file is wrong."""
     entries = _carried(entries)
     problems = list(found.get("problems") or [])
     if not entries:
@@ -649,7 +657,7 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any],
         problems.append("Exported datum letters are repeated; their references cannot be verified.")
     result = {"matched": 0, "total": len(entries), "problems": problems}
     if problems:
-        return result
+        return result, False
     remaining = list(found.get("datums", [])) + list(found.get("dimensions", [])) + list(found.get("tolerances", []))
     for entry in entries:
         if _written_as_nothing(entry):
@@ -669,7 +677,7 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any],
             result["matched"] += 1
     if remaining:
         problems.append(f"{len(remaining)} exported annotations did not match the model.")
-    return result
+    return result, True
 
 
 def _carried(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -681,10 +689,17 @@ def verify(entries: list[dict[str, Any]], target: Path, surfaces: dict[str, Any]
     """``compare`` of the file at ``target`` (against the model's faces, ``surfaces``), with the
     SHA-256 of the bytes checked, read once: the result belongs to those bytes, whatever the viewer
     opens next. A check the reader cannot complete counts what ``compare`` would, the notes never."""
+    return check(entries, target, surfaces)[0]
+
+
+def check(entries: list[dict[str, Any]], target: Path,
+          surfaces: dict[str, Any] | None = None) -> tuple[dict[str, Any], bool]:
+    """``verify``, and whether the file disagrees with the entries (``_compared``): a record of
+    them all held to the file and one not matched. A check that could not be made is no mismatch."""
     data = target.read_bytes()
     try:
-        result = compare(entries, report(target, data), surfaces)
-    except Exception as error:  # noqa: BLE001 - a file the reader cannot read is a failed check, never a failed export
-        result = {"matched": 0, "total": len(_carried(entries)),
-                  "problems": [f"The STEP reader could not complete the check: {error}"]}
-    return {**result, "sha256": hashlib.sha256(data).hexdigest()}
+        result, compared = _compared(entries, report(target, data), surfaces)
+    except Exception as error:  # noqa: BLE001 - a file the reader cannot read is a check not made, never a mismatch
+        result, compared = {"matched": 0, "total": len(_carried(entries)),
+                            "problems": [f"The STEP reader could not complete the check: {error}"]}, False
+    return {**result, "sha256": hashlib.sha256(data).hexdigest()}, compared and bool(result["problems"])

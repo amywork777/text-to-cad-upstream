@@ -393,14 +393,16 @@ def _instances(node: dict[str, Any]) -> list[int]:
 # --- the one call ------------------------------------------------------------------------------
 
 
-def translate(document: Any, kind: str | None, path: Any, *, log: Callable[[str], None] | None = None) -> int:
+def translate(document: Any, kind: str | None, path: Any, *, log: Callable[[str], None] | None = None,
+              check: Callable[[Path], None] | None = None) -> int:
     """Write ``document`` (a ``Source``, or the path of an ``.xbf``/``.step`` or a mesh file) to ``path``
     as ``kind`` (from the suffix when None); returns the file's size. The translation lands only where
     the file does not hold its bytes already (``put``): a file written again the same is left as it
     is. Every declared file is written this way too, after the build or the take-up that made its
     document (``build``). A file that would not carry whole the PMI the code made is refused by name
     (``pmi.refuse_dropped``); what one of a document another system wrote leaves out is said to
-    ``log``."""
+    ``log``. ``check`` reads the file staged before it lands (an atomic kind's, a STEP's): one it
+    refuses (raises) is not written, and the file there keeps its bytes."""
     from cadgen.engine import pmi
 
     path = Path(path)
@@ -431,5 +433,11 @@ def translate(document: Any, kind: str | None, path: Any, *, log: Callable[[str]
     if not spec.atomic:
         spec.write(view, path)
         return path.stat().st_size
-    _written, size = put(path, lambda temporary: spec.write(view, temporary))
+
+    def write(temporary: Path) -> None:
+        spec.write(view, temporary)
+        if check is not None:
+            check(temporary)
+
+    _written, size = put(path, write)
     return size

@@ -626,10 +626,7 @@ def _note_call(held: list[dict[str, Any]]) -> None:
 
     run = getattr(memo._LOCAL, "run", None)  # the memo run of a build on this thread, or None
     if run is not None:
-        texts = [_text(entry) for entry in held]
-        run.pmi.setdefault(run.scope, []).extend(texts)
-        if run.bodies:  # kept with the running body's log too: a replay of it gives them again (``memo._replay``)
-            run.bodies[-1].pmi.extend((run.scope, text) for text in texts)
+        run.pmi.setdefault(run.scope, []).extend(_text(entry) for entry in held)
 
 
 def unattached(run: Any, scope: str, tree: Any) -> list[str]:
@@ -2100,45 +2097,44 @@ def refuse_dropped(view: Any, kind: str) -> None:
             raise ExportRefused(f"{view.source.name} holds {said}, and an xbf written from it is a document made "
                                 "again, which carries none yet: declare the model's xbf (@xbf), its own document")
         return
-    why = step_refusal(view) if kind == "step" else None
-    if why:
-        raise ExportRefused(why)
-
-
-def step_refusal(view: Any) -> str | None:
-    """Why a STEP of ``view`` is refused (``refuse_dropped``), or None: each annotation the code
-    made that it would drop, by its id and the refs that hold no geometry, as the code wrote them.
-    An explicit export is refused for it; a build's declared STEP is not written, and the build
-    says why (``build._outputs``)."""
-    lost = [(entry, why) for entry, why in dropped(view, "step") if _from_code(entry)]
     if not lost:
-        return None
+        return
 
     def named(entry: dict[str, Any], why: str) -> str:
         broken = [repr(ref.get("written") or ref.get("ref")) for ref in entry.get("refs") or ()
                   if ref.get("status", "ok") != "ok"]
         return f"{entry['id']} ({'ref ' + ', '.join(broken) + ': ' if broken else ''}{why})"
 
-    return ("a STEP would drop PMI linked to no geometry: " + "; ".join(named(entry, why) for entry, why in lost)
-            + ". Fix the refs in the model, or remove the annotations")
+    raise ExportRefused("a STEP would drop PMI linked to no geometry: "
+                        + "; ".join(named(entry, why) for entry, why in lost)
+                        + ". Fix the refs in the model, or remove the annotations")
 
 
 def checked(source: Any, entries: list[dict[str, Any]], target: Any,
-            log: Callable[[str], None] | None = None) -> dict[str, Any]:
-    """The check of a STEP written of ``source`` (``ap242.verify``) of the PMI it carries
+            log: Callable[[str], None] | None = None, *, refuse: bool = False) -> dict[str, Any]:
+    """The check of a STEP written of ``source`` (``ap242.check``) of the PMI it carries
     (``entries``: ``step_entries``), against the source's faces (``step_surfaces``): what every
     STEP write of a document with PMI answers with, a build's declared one, an export's and the
-    viewer's alike. A check that does not verify every annotation is said to ``log`` (one of a
-    document another system wrote, whose faces carry no names, cannot); the file stays written."""
+    viewer's alike. With ``refuse`` (``target`` the file staged, before it lands: ``export.translate``'s
+    ``check``), a file that disagrees with the code's document is refused, so none is written and an
+    earlier one keeps its bytes; the viewer's shows the person what it found (its ``pmiVerification``).
+    A check that could not be made (one of a document another system wrote, whose faces carry no
+    names, a file the reader cannot read) is said to ``log``, the file written."""
     from pathlib import Path
 
-    from cadgen.engine.export.ap242 import verify
+    from cadgen.engine.export import ExportRefused
+    from cadgen.engine.export.ap242 import check
 
     target = Path(target)
-    found = verify(entries, target, step_surfaces(source, entries))
-    if found.get("problems") and log is not None:
-        log(f"warning: pmi: {target.name}: the PMI in the written file is not verified "
-            f"({found['matched']} of {found['total']} matched): {' '.join(found['problems'])}")
+    found, mismatched = check(entries, target, step_surfaces(source, entries))
+    if not found.get("problems"):
+        return found
+    said = f"({found['matched']} of {found['total']} matched): {' '.join(found['problems'])}"
+    if refuse and mismatched and not source.foreign:
+        raise ExportRefused(f"{target.name} not written: the PMI in the STEP written does not match the "
+                            f"model's document {said} -- a fault of the STEP writer, not of the model")
+    if log is not None:
+        log(f"warning: pmi: {target.name}: the PMI in the written file is not verified {said}")
     return found
 
 

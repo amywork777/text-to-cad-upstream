@@ -1876,7 +1876,7 @@ class _BodyLog:
     it can be replayed."""
 
     __slots__ = ("events", "checks", "keys", "ids", "retainable", "reads", "unread", "keyed", "children", "bypassed",
-                 "uncached", "pmi")
+                 "uncached")
 
     def __init__(self) -> None:
         self.events: list[tuple] = []
@@ -1900,9 +1900,6 @@ class _BodyLog:
         self.bypassed: list[tuple[str, str | None]] = []
         # The calls it ran uncached, each with how many times (``_ran_uncached``).
         self.uncached: dict[str, int] = {}
-        # The annotations its own ``pmi.annotate`` calls gave, each with the model scope it gave
-        # them in (``pmi._note_call``): a replay gives them again, as a run would.
-        self.pmi: list[tuple[str | None, str]] = []
 
 
 class _Body:
@@ -2539,8 +2536,6 @@ def _replay(record: _Body, state: _Run) -> Any:
             entry.refresh(None if feature is None else feature.index, state, {})
         elif event[1].name not in state.done:
             _replay(event[1], state)
-    for scope_name, text in record.log.pmi:
-        state.pmi.setdefault(scope_name, []).append(text)
     with _LOCK:
         for key, found in zip(record.log.keys, record.log.ids):
             _KEY_IDS[key] = found

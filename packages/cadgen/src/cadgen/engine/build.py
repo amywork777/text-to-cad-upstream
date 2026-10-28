@@ -838,9 +838,8 @@ def _outputs(plan: list, report: dict[str, Any], log: Callable[[str], None],
     is written again from the document, and one nobody touched keeps its bytes and its time. The
     report's ``files``: each file's kind, whether it was written, the seconds and its bytes. ``log``
     hears each file written, and each one kept too when ``kept`` (a build's; a take says only what it
-    wrote, its run line the rest). A STEP that would drop an annotation the code made is not written
-    (``pmi.step_refusal``): its row says why (``refused``), and so does a warning, the build ok and its
-    other files written; one with PMI is checked in the file (``pmi.checked``: its ``pmiVerification``)."""
+    wrote, its run line the rest). A STEP of a document with PMI is checked in the file before it
+    lands (``pmi.checked``: its ``pmiVerification``), and refused when it does not match."""
     from cadgen.engine import export, pmi
 
     timings = report.setdefault("timings", {})
@@ -849,27 +848,20 @@ def _outputs(plan: list, report: dict[str, Any], log: Callable[[str], None],
         clock = time.perf_counter()
         before = _stat(target.path)
         _say("writing", target.path)
-        refused = pmi.step_refusal(source().view()) if target.kind == "step" else None
-        if refused:
-            # Never a STEP missing PMI in silence: one written before is left as it was, and said so.
-            text = (f"{target.path.name} not written: {refused}, and build again"
-                    + (f" (the {target.path.name} there is an earlier build's)" if before is not None else ""))
-            report.setdefault("pmi", {"annotations": 0, "problems": []}).setdefault("warnings", []).append(text)
-            log(f"warning: pmi: {text}")
-            written[str(target.path)] = {"kind": target.kind, "written": False, "seconds": 0.0,
-                                         "bytes": 0, "refused": refused}
-            continue
+        carried = pmi.step_entries(source().structure.get("pmi") or []) if target.kind == "step" else []
+        verified: dict[str, Any] = {}
         if target.kind == "xbf":
             fresh, size = save(target.path)
         else:
-            size = export.translate(source(), target.kind, target.path)
+            check = (lambda staged: verified.update(pmi.checked(source(), carried, staged, log, refuse=True))) \
+                if carried else None
+            size = export.translate(source(), target.kind, target.path, check=check)
             fresh = _stat(target.path) != before
         seconds = time.perf_counter() - clock
         timings[target.kind] = round(seconds, 4)
         written[str(target.path)] = {"kind": target.kind, "written": fresh, "seconds": round(seconds, 4), "bytes": size}
-        carried = pmi.step_entries(source().structure.get("pmi") or []) if target.kind == "step" else []
         if carried:
-            written[str(target.path)]["pmiVerification"] = pmi.checked(source(), carried, target.path, log)
+            written[str(target.path)]["pmiVerification"] = verified
         if fresh or kept:
             from cadgen.engine.cli import _bytes  # the size as every verb says one: never "0.0 MB" for a small file
 

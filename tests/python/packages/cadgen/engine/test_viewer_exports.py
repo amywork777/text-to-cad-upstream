@@ -26,7 +26,7 @@ class ViewerExportsTest(unittest.TestCase):
             with patch.object(Source, "read", return_value=source), \
                  patch("cadgen.engine.export.viewer.check"), \
                  patch("cadgen.engine.export.translate", side_effect=write), \
-                 patch("cadgen.engine.export.ap242.verify", return_value={"matched": 1}) as check:
+                 patch("cadgen.engine.export.ap242.check", return_value=({"matched": 1}, False)) as check:
                 result = _export({"source": {"path": str(output)}, "expected": {"version": "v"}, "destinations": [str(output)]}, lambda _: None)
                 check.assert_called_once_with([entry], output, {})
                 self.assertEqual(result["files"][0]["pmiVerification"]["matched"], 1)
@@ -35,7 +35,7 @@ class ViewerExportsTest(unittest.TestCase):
             with patch.object(Source, "read", return_value=source), \
                  patch("cadgen.engine.export.viewer.check"), \
                  patch("cadgen.engine.export.translate", side_effect=write), \
-                 patch("cadgen.engine.export.ap242.verify") as check:
+                 patch("cadgen.engine.export.ap242.check") as check:
                 result = _export({"source": {"path": str(output)}, "expected": {"version": "v"}, "destinations": [str(output)]}, lambda _: None)
                 check.assert_not_called()
                 self.assertNotIn("pmiVerification", result["files"][0])
@@ -58,7 +58,7 @@ class ViewerExportsTest(unittest.TestCase):
             with patch.object(Source, "read", return_value=source), \
                  patch("cadgen.engine.export.viewer.check"), \
                  patch("cadgen.engine.export.translate", side_effect=write), \
-                 patch("cadgen.engine.export.ap242.verify") as check:
+                 patch("cadgen.engine.export.ap242.check") as check:
                 result = _export({"source": {"path": str(output)}, "expected": {"version": "v"},
                                   "destinations": [str(output)]}, lambda _: None)
                 check.assert_not_called()

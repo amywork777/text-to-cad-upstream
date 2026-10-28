@@ -268,11 +268,8 @@ nominal measured anew and its tolerance as written. Otherwise its status says wh
 
 Such an annotation stays in the document with its values, linked to nothing, and is
 listed in the run's report, its `pmi` (`{"annotations", "problems"}`, with `warnings`,
-`coverage` and `unattached` where any are). A STEP is never written without it: a
-declared `@step` is skipped, the build stays ok, writes its other files and warns
-(`warning: pmi: plate.step not written: ...`, naming each annotation and its ref; a STEP
-an earlier build wrote there is left as it was), and an explicit export is refused,
-naming each one. Fix the ref in the code, or remove the annotation, and build again. A flag
+`coverage` and `unattached` where any are). A STEP is refused rather than written
+without it, naming each one and its ref. Fix the ref in the code, or remove the annotation. A flag
 note whose face is gone keeps its number and its text and says `missing` too; a STEP
 is not refused for it.
 
@@ -356,8 +353,7 @@ has none (`nominal` is null), since the file states limits, not a nominal.
 A STEP of the model writes the PMI: `cadgen export "$ID" STEP/plate.step`, `export(plate(),
 ...)` in an `exports.py`, or the viewer's Export ([exports](exports.md)). A STEP that
 would drop an annotation the code made (one linked to no geometry, [After an
-edit](#after-an-edit)) is refused, naming each; a declared `@step` that would is not
-written, and the build warns. An `.xbf` exported from the model is the
+edit](#after-an-edit)) is refused, naming each. An `.xbf` exported from the model is the
 document made again from what the engine holds, which carries none of its PMI yet, so
 `cadgen export "$ID" plate.xbf` is refused for a part with PMI, naming what it would
 lose; the engine keeps the document itself, PMI and all. No export poses a model or
@@ -374,7 +370,8 @@ viewer's Export -- is read back with a reader of its own, without the kernel, an
 annotation matched to the file: values, units, datum order, zone, a basic dimension's
 mark, and its faces by name and by geometry (a plane's normal and offset, a cylinder's
 axis and radius). The result is the file's `pmiVerification` (the build report's
-`files` row, the export's answer); a mismatch is a `warning: pmi:` line, and the
+`files` row, the export's answer). A build's or an export's STEP that does not match
+is refused, no file written (a fault of the writer, not of your model: report it); the
 viewer's toast says how many matched, with the file's SHA-256. It checks the file, not
 a supplier's importer.
 

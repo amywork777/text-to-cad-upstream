@@ -201,9 +201,6 @@ def _given(path: Any, given: Any = ()) -> str:
 def _files(report: dict[str, Any]) -> list[str]:
     found = []
     for path, row in (report.get("files") or {}).items():
-        if row.get("refused"):  # a STEP that would drop PMI: not written (``build._outputs``), its warning says why
-            found.append(f"{_shown(path)} (not written: it would drop PMI)")
-            continue
         state = "written" if row.get("written") else "kept"
         found.append(f"{_shown(path)} ({state}, {_bytes(row.get('bytes'))})")
     return found

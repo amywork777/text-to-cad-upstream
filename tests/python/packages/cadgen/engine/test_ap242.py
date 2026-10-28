@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cadgen.engine.export.ap242 import Report, compare, parse, report, verify
+from cadgen.engine.export.ap242 import Report, _compared, compare, parse, report, verify
 
 def fixtures() -> tuple[list[dict], dict]:
     """Three entries as a document serves them, and the report of a file that holds them."""
@@ -51,6 +51,22 @@ class VerificationTest(unittest.TestCase):
             self.assertTrue(compare(entries, changed)["problems"])
         found["dimensions"] *= 2
         self.assertTrue(compare(entries, found)["problems"])
+
+    def test_a_mismatch_is_told_from_a_check_that_could_not_be_made(self) -> None:
+        """An entry held to the file and not matched is a mismatch (a build's or an export's STEP is
+        refused for it, ``pmi.checked``); a file that cannot be checked at all is not."""
+        entries, found = fixtures()
+        self.assertEqual(_compared(entries, found), ({"matched": 3, "total": 3, "problems": []}, True))
+        changed = copy.deepcopy(found)
+        changed["dimensions"][0]["nominal"]["value"] = 11
+        result, compared = _compared(entries, changed)
+        self.assertTrue(result["problems"])
+        self.assertTrue(compared)
+        for unverifiable in ({**found, "schema": "AP214"}, {**found, "problems": ["#9 is not read here"]},
+                             {**found, "ambiguousFaceNames": ["f:bore.1"]}):
+            result, compared = _compared(entries, unverifiable)
+            self.assertTrue(result["problems"])
+            self.assertFalse(compared)
 
     def test_given_the_models_faces_each_face_is_held_to_its_geometry(self) -> None:
         """A face of the right name on another surface matches nothing: a plane's normal and offset,
