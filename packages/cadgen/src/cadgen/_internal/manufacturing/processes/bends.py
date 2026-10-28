@@ -202,9 +202,9 @@ def _merge(arcs: list[Arc], scale: float) -> list[Arc]:
 def _edges_faces(shape):
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
     from OCP.TopExp import TopExp
-    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
+    from OCP.collections import IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher
 
-    found = TopTools_IndexedDataMapOfShapeListOfShape()
+    found = IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher()
     TopExp.MapShapesAndAncestors_s(shape, TopAbs_EDGE, TopAbs_FACE, found)
     return found
 
@@ -223,7 +223,7 @@ def _neighbours(arc: Arc, at, faces, edges_faces) -> set[int]:
         face = faces.FindKey(ordinal)
         explorer = TopExp_Explorer(face, TopAbs_EDGE)
         while explorer.More():
-            edge = TopoDS.Edge_s(explorer.Current())
+            edge = TopoDS.Edge(explorer.Current())
             explorer.Next()
             curve = BRepAdaptor_Curve(edge)
             if curve.GetType() != GeomAbs_Line:
