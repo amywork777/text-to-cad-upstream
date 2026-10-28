@@ -1978,11 +1978,12 @@ channel but a STEP one as LINEAR keys within a tenth of a millimetre and of a de
 A part's manufacturing requirements, on its own faces (`pmi.py`): datums, measured dimensions
 with explicit tolerances, basic dimensions and geometric tolerances, a general profile for every
 face nothing else controls, numbered notes and named views -- a model-based definition, authored
-in the model and kept in its document. The functions that author them are named after the AP242
-entities they write, and are `cadgen.ap242`'s, beside the mechanism's (the root and
-`cadgen.engine` hold none of them); those that write no entity of their own keep plain names:
-`limits` (a dimension's 'lower limit' and 'upper limit' values), `general_profile`, `note` and
-`view` (with `camera` and `section`), and `place`. `pmi.read` returns them as the structure's
+in the model and kept in its document. The functions that author them are `cadgen.ap242`'s, beside
+the mechanism's (the root and `cadgen.engine` hold none of them): AP242's semantic PMI, which a STEP
+carries, and the notes, named views and presentation around it, which the xbf keeps and a STEP
+does not. Those that write an AP242 entity are named after it; those that write no entity of their
+own keep plain names: `limits` (a dimension's 'lower limit' and 'upper limit' values),
+`general_profile`, `note` and `view` (with `camera` and `section`), and `place`. `pmi.read` returns them as the structure's
 `pmi`, the contract a viewer and a downstream reader build on, served with each part's views
 (`pmi_views`) and coverage (`pmi_coverage`):
 

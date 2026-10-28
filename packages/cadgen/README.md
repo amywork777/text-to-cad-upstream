@@ -35,8 +35,9 @@ makes an edit cost what it changed, documents and their exports, kinematics and 
 materials, references to geometry, snapshots drawn by OCCT; the CAD Viewer (`cadgen viewer [FILE]`: a
 launcher for the installation’s engine’s one page, every document at `/<id>`, every file read by its absolute path); CAD beside an agent's chat (`cadgen mcp`: a stateless stdio peer of the engine’s
 HTTP MCP endpoint, with tools and the app page owned by the engine); the URDF, SDF and SRDF validators;
-engineering drawings (`@eng_drawing`); and semantic PMI (`cadgen.ap242`: datums, dimensions, tolerances,
-notes and views on a part's faces, kept in its xbf and exported as AP242's).
+engineering drawings (`@eng_drawing`); and semantic PMI with the model-based definition around it
+(`cadgen.ap242`: datums, dimensions and tolerances on a part's faces, kept in its xbf and exported as
+AP242's; notes, named views and their presentation, kept in the xbf alone).
 
 **MAY DEPEND ON** — the Python ecosystem it declares (OCP/build123d lazily, never at
 `import cadgen`) and the bundled runtime. Never app code, never JavaScript source at runtime.

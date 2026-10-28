@@ -7,10 +7,10 @@ drawn on the model, picked, hidden, walked view by view, and asked for. It is th
 not the person's: ink (Pencil and Shapes, [annotation](annotation.md)) is a note on a view and goes
 with a prompt; PMI is what the part is made to, and goes with the part.
 
-The document is made from code. A model declares its PMI with `cadgen.ap242`'s calls, each named
-after the AP242 entity it writes (`annotate(body, datum("A", ...), dimensional_location(...),
-flatness_tolerance(...), ...)`), the engine writes it into the document's XCAF GD&T attributes,
-which its AP242 export reads, and the
+The document is made from code. A model declares its PMI with `cadgen.ap242`'s calls, each that
+writes an AP242 entity named after it (`annotate(body, datum("A", ...), dimensional_location(...),
+flatness_tolerance(...), ...)`; `note` and `view`, the xbf's alone, write none), the engine writes
+its requirements into the document's XCAF GD&T attributes, which its AP242 export reads, and the
 served structure carries it (`structure.pmi`, absent where there is none; beside it
 `pmi_views`, the xbf's alone, and `pmi_coverage`, served for a STEP's PMI too).
 So the viewer writes

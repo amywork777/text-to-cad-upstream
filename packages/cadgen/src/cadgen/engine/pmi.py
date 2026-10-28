@@ -2,8 +2,9 @@
 as XCAF's GD&T objects and written to STEP AP242 as AP242's semantic entities.
 
 A model gives its part annotations, each on faces of that part, and returns the part. The functions
-are defined here and are ``cadgen.ap242``'s, each named after the AP242 entity it writes (the root and
-``cadgen.engine`` export none of them)::
+are defined here and are ``cadgen.ap242``'s, each that writes an AP242 entity named after it; notes,
+views and presentation, the xbf's alone, keep plain names (the root and ``cadgen.engine`` export
+none of them)::
 
     from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance,
                               plus_minus_tolerance, position_tolerance)

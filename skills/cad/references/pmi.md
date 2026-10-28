@@ -8,8 +8,9 @@ section, a detail, each showing its own requirements), for which faces of a part
 requirement, or for a STEP a supplier or an inspection tool can read requirements from.
 
 A part's requirements are written in its model, on the faces they control, and the
-document keeps them. The functions are `cadgen.ap242`'s, each named after the AP242
-entity it writes (`from cadgen.ap242 import annotate, datum, ...`):
+document keeps them. The functions are `cadgen.ap242`'s: AP242's semantic PMI, which a
+STEP carries, and the notes and named views around it, which the document keeps and no
+STEP carries (`from cadgen.ap242 import annotate, datum, ...`):
 
 - **`annotate(part, *annotations)`** gives one part its annotations and returns
   the part.

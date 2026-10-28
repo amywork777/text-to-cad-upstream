@@ -1,6 +1,8 @@
-"""The document's AP242 vocabulary: what a model says that ISO 10303-242 names.
+"""The document's AP242 vocabulary: the mechanism and the semantic PMI that ISO 10303-242 names,
+and the model-based definition around that PMI -- notes, named views and their presentation, which
+the xbf keeps and a STEP does not.
 
-Each function is named after the entity it writes (the engine's **Kinematics**, **Configuration
+A function that writes an entity is named after it (the engine's **Kinematics**, **Configuration
 sequences** and **PMI**)::
 
     from cadgen.ap242 import configuration_sequence, gear_pair, mechanism_state
@@ -24,7 +26,9 @@ datums=)`` and ``surface_profile_tolerance(id, refs, value, datums=)``. The rest
 their own and keep plain names: ``limits(lower, upper)`` (a dimension's 'lower limit' and 'upper
 limit' values), ``general_profile(id, value, datums=)`` (ASME's "unless otherwise noted", its faces
 computed), ``note`` and ``view`` (with ``camera`` and ``section``: XCAF's, in the xbf, in no STEP)
-and ``place(anchor, offset)`` (presentation).
+and ``place(anchor, offset)`` (presentation, in no STEP). A STEP carries the datums, dimensions
+(their limits too) and tolerances, the general profile among them; the notes, views and
+placements stay in the xbf.
 
 Every name loads on first use: ``import cadgen.ap242`` imports no CAD kernel.
 """
