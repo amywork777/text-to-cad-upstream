@@ -144,5 +144,9 @@ test("a GLB of two nodes explodes them apart, its box following, and back to whe
   assert.equal(scene.setExplode(1), false, "the same amount moves nothing");
   scene.setExplode(0);
   assert.deepEqual([lit.position.x, unlit.position.x, scene.bounds], [0, 2, document.restBounds]);
+  // A result's view grows the box it is drawn in (a deformation), as the scene's bounds.
+  const grown = { min: [-3000, -500, -500], max: [3000, 500, 500] };
+  Object.assign(scene, { bounds: grown, restBounds: grown });
+  assert.deepEqual([scene.bounds, scene.restBounds], [grown, grown]);
   scene.dispose();
 });

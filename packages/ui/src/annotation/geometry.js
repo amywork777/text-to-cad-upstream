@@ -18,11 +18,14 @@ export const FILL_OPACITY = 0.35;
  * @typedef {{ color: string, width: number }} AnnotationStyle  `width`: the
  *   stroke's weight (1, 2, 4, 6), in CSS pixels on screen.
  * @typedef {{ kind: "stroke", id: string, points: ScreenPoint[], closed: boolean, color: string,
- *   width: number, opacity: number, widths?: number[], group?: string }} ScreenStroke
+ *   width: number, opacity: number, widths?: number[], group?: string,
+ *   shape?: import("./tools.js").ShapeTool }} ScreenStroke
  *   `widths`: the pen's, each point's width as a share of `width` (its pressure). `group`: the
  *   marks drawn as one thing (an arrow's line and its head), which are erased, picked and moved together.
+ *   `shape`: the Shapes tool's that drew it (an arrow's line and both wings are each "arrow"); none for the pen's and the highlighter's.
  * @typedef {{ kind: "area", id: string, outline: ScreenPoint[], color: string, opacity: number }} ScreenArea
- * @typedef {{ kind: "text", id: string, corners: ScreenPoint[], text: string, color: string, fontPx: number }} ScreenText
+ * @typedef {{ kind: "text", id: string, corners: ScreenPoint[], text: string, color: string, fontPx: number,
+ *   shape?: "text" }} ScreenText
  * @typedef {(ScreenStroke | ScreenArea | ScreenText) & { placement?: "surface" | "space" }} ScreenMark  `placement`:
  *   where it lies once put down — on the model (the default) or in space (`annotation3d.js`).
  */
@@ -141,14 +144,17 @@ function roundedRectangle(left, top, right, bottom) {
 
 /**
  * The marks a shape tool puts down, dragged from `from` to `to`: a line, an arrow (its line and its
- * head's two wings, one mark each), a rectangle or an ellipse in the box they span. Nothing for a
- * drag too short to mean a shape.
+ * head's two wings, one mark each, its line first), a rectangle or an ellipse in the box they span, each
+ * saying which it is (`shape`). Nothing for a drag too short to mean a shape.
  *
  * @param {"line" | "arrow" | "rectangle" | "ellipse"} tool
  * @returns {ScreenStroke[]}
  */
 export function shapeMarks(tool, from, to, style) {
   if (Math.hypot(to.x - from.x, to.y - from.y) < 2) return [];
+  return shapeStrokes(tool, from, to, style).map(mark => ({ ...mark, shape: tool }));
+}
+function shapeStrokes(tool, from, to, style) {
   if (tool === "line") return [stroke([from, to], false, style)];
   if (tool === "arrow") {
     const group = annotationId();
@@ -165,11 +171,11 @@ export function shapeMarks(tool, from, to, style) {
   return [stroke(ring, true, style)];
 }
 
-/** A text mark at `at` (its top-left), as wide and tall as the text measured (`size`). */
+/** A text mark at `at` (its top-left), as wide and tall as the text measured (`size`): the Shapes tool's text. */
 export function textMark(text, at, { width, height }, { color, fontPx }) {
   const value = String(text || "").trim();
   if (!value) return null;
-  return { kind: "text", id: annotationId(), text: value, color, fontPx,
+  return { kind: "text", id: annotationId(), text: value, color, fontPx, shape: "text",
     corners: [at, { x: at.x + width, y: at.y }, { x: at.x + width, y: at.y + height }, { x: at.x, y: at.y + height }] };
 }
 

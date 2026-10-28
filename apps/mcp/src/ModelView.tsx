@@ -145,10 +145,14 @@ export default function ModelView({ launch, sequence, alone = false, bridge, cli
     environment: { colorScheme, locale, platform },
   }), [client, source, fileActions, promptContext, promptFiles, links, colorScheme, locale, platform]);
 
+  // A file tab shows its file alone, but a host that opens files beside the thread (Studio) opens
+  // another in a tab of its own: a part opened from its assembly.
+  const openElsewhere = useMemo(() => (alone && bridge.hostCapabilities.openFiles
+    ? (path: string) => void bridge.request('studio/open-file', { path }).catch(() => {}) : undefined), [alone, bridge]);
   // The navbar carries the host's controls; the file handler, which has none, has its corner: the
   // host's notice at the viewport's top-right, Quick Edit under it.
   // The file on screen joins the library every CAD view shares, with its picture.
-  return <CadViewer client={client} host={host} tabStore={tabStore} live={live} file={file} onShow={navigate} chrome={homed ? 'page' : 'bare'}
+  return <CadViewer client={client} host={host} tabStore={tabStore} live={live} file={file} onShow={navigate} openElsewhere={openElsewhere} chrome={homed ? 'page' : 'bare'}
     onShown={path => { if (path) void client.changeRecents({ action: 'open', path }).catch(() => {}); }}
     library={library} appSettings={appSettings} colorScheme={theme} language={language} history={viewerHistory}
     {...homed ? { update, fullSize, openInBrowser } : { notice: <CardCorner fullSize={fullSize} update={update} /> }}

@@ -58,6 +58,12 @@ export interface CadViewerProps<Model extends LibraryModel = LibraryModel> {
    * no home, no explorer, and no link to another file.
    */
   library?: ModelLibrarySource<Model>;
+  /**
+   * Opens another file (absolute) in a view of the host's own, for a view with no library that
+   * shows its file alone but whose host can open others beside it (Studio's tabs): a renderer's
+   * link, a part opened from its assembly. Absent, such a view opens no other file.
+   */
+  openElsewhere?(file: string): void;
   /** Keep the library's picture of a model: the file on screen once it has settled, and on the home a card's. */
   onThumbnail?(png: Blob, file: string): Promise<unknown>;
   /** The person's colour scheme, its rows in the app menu over every file and on the home. */
@@ -107,7 +113,7 @@ const reportError = (error: Error) => console.error(error);
  * navigates: showing a file, or the home, is the host's `onShow`.
  */
 export function CadViewer<Model extends LibraryModel = LibraryModel>({ client, host, tabStore, live, file, onShow, onShown,
-  library, onThumbnail, colorScheme, language, appSettings, notice, update, fullSize, openInBrowser, history, chrome, onError = reportError }: CadViewerProps<Model>) {
+  library, openElsewhere, onThumbnail, colorScheme, language, appSettings, notice, update, fullSize, openInBrowser, history, chrome, onError = reportError }: CadViewerProps<Model>) {
   // The language the host names: the pages drawn here (the home, a file that will not open) read in it.
   const locale = host.environment.locale;
   const t = translator(locale);
@@ -188,7 +194,10 @@ export function CadViewer<Model extends LibraryModel = LibraryModel>({ client, h
   const keepExplorerFolder = useCallback((folder: string) => {
     if (preferences.getSnapshot().explorer.folder !== folder) preferences.update({ explorer: { folder } });
   }, [preferences]);
-  const viewerHost = useMemo<ViewerHost>(() => ({ ...host, navigation: homed ? { openFile, home } : {} }), [host, openFile, home, homed]);
+  const viewerHost = useMemo<ViewerHost>(() => ({
+    ...host,
+    navigation: homed ? { openFile, home } : openElsewhere ? { openFile: (next: string) => { if (next) openElsewhere(normalizePath(next)); } } : {},
+  }), [host, openFile, home, homed, openElsewhere]);
 
   // The home's pictures for cards without a current one, drawn out of sight one at a time and kept as
   // the file on screen's are. A STEP or a model's document the cadgen engine does not hold is left to

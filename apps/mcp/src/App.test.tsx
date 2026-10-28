@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CadViewerProps } from '@text-to-cad/ui/cad-viewer';
+import { editLayoutHost, focusHost } from '@text-to-cad/ui/tab-store';
 import { version } from '../package.json';
 import App from './App';
 import type { HostContext } from './host/bridge';
@@ -352,6 +353,82 @@ it('an inline host that cannot show a view full size gets no Full size, and stil
   expect(container.querySelector('[aria-label="Full size"]')).toBeNull();
   expect(container.querySelector('[data-card-corner]')).toBeNull();
   expect(viewer.props!.host.environment.compact).toBeUndefined();
+});
+
+it('a host that lays the workspace out hears what the part on screen allows as it changes, until the view goes; a host that does not, nothing', () => {
+  const said = (notify: ReturnType<typeof vi.fn>) => notify.mock.calls
+    .filter(([method]) => method === 'studio/notifications/edit-state').map(([, params]) => params);
+  try {
+    const studio = host({ displayMode: 'fullscreen', 'studio/editLayout': 'manual' }, { studioEditState: {} });
+    const { unmount } = render(<App bridge={studio.bridge as any} server={studio.server as any} launch={home} />);
+    // The STEP view says what its part allows (`editLayoutHost`): a part script, then a command open, then the part gone.
+    const builds = editLayoutHost.builds();
+    act(() => editLayoutHost.reportEditState({ editable: true, busy: false }));
+    act(() => editLayoutHost.reportEditState({ editable: true, busy: true }));
+    // A build CAD mode saw end, for Studio to list the part anew.
+    act(() => editLayoutHost.reportBuilt());
+    act(() => editLayoutHost.reportEditState(null));
+    expect(said(studio.bridge.notify)).toEqual([{ editable: false, busy: false, builds }, { editable: true, busy: false, builds },
+      { editable: true, busy: true, builds }, { editable: true, busy: true, builds: builds + 1 }, { editable: false, busy: false, builds: builds + 1 }]);
+    // A view closed says nothing more.
+    unmount();
+    act(() => editLayoutHost.reportEditState({ editable: true, busy: true }));
+    expect(said(studio.bridge.notify)).toHaveLength(5);
+
+    const plain = host({ displayMode: 'fullscreen' });
+    render(<App bridge={plain.bridge as any} server={plain.server as any} launch={home} />);
+    act(() => editLayoutHost.reportEditState({ editable: true, busy: false }));
+    expect(said(plain.bridge.notify)).toEqual([]);
+  } finally {
+    editLayoutHost.reportEditState(null);
+    editLayoutHost.set(false);
+  }
+});
+
+it('a host that switches the layout at the view\'s ask hears it as studio/request/edit-layout, until the view goes; a host that does not is never asked', () => {
+  const asked = (request: ReturnType<typeof vi.fn>) => request.mock.calls
+    .filter(([method]) => method === 'studio/request/edit-layout').map(([, params]) => params);
+  try {
+    const studio = host({ displayMode: 'fullscreen', 'studio/editLayout': 'ai' }, { studioEditLayout: {} });
+    const { unmount } = render(<App bridge={studio.bridge as any} server={studio.server as any} launch={home} />);
+    expect(editLayoutHost.request('manual')).toBe(true);
+    expect(asked(studio.bridge.request)).toEqual([{ layout: 'manual' }]);
+    unmount();
+    expect(editLayoutHost.request('ai')).toBe(false);
+
+    const plain = host({ displayMode: 'fullscreen', 'studio/editLayout': 'ai' });
+    render(<App bridge={plain.bridge as any} server={plain.server as any} launch={home} />);
+    expect(editLayoutHost.request('manual')).toBe(false);
+    expect(asked(plain.bridge.request)).toEqual([]);
+  } finally {
+    editLayoutHost.set(false);
+  }
+});
+
+it('a host that opens a part at a line of its script hands the part on screen the place, and hears when it is taken and whether a feature was there; a host that does not, nothing', () => {
+  const taken = (notify: ReturnType<typeof vi.fn>) => notify.mock.calls
+    .filter(([method]) => method === 'studio/notifications/focus-taken').map(([, params]) => params);
+  try {
+    const studio = host({ displayMode: 'fullscreen', 'studio/focus': { path: 'parts/bracket.py', line: 12, nonce: 3 } }, { studioFocus: {} });
+    const { unmount } = render(<App bridge={studio.bridge as any} server={studio.server as any} launch={home} />);
+    expect(focusHost.get()).toEqual({ path: 'parts/bracket.py', line: 12, nonce: 3 });
+    // The STEP view takes it (`focusHost`), no feature holding the line, for the host to open the script there; the host lets it go.
+    act(() => focusHost.take(3, false));
+    expect(taken(studio.bridge.notify)).toEqual([{ nonce: 3, found: false }]);
+    act(() => studio.bridge.change({ 'studio/focus': null }));
+    expect(focusHost.get()).toBeNull();
+    // A view closed says nothing more.
+    unmount();
+    act(() => focusHost.take(4, true));
+    expect(taken(studio.bridge.notify)).toHaveLength(1);
+
+    const plain = host({ displayMode: 'fullscreen' });
+    render(<App bridge={plain.bridge as any} server={plain.server as any} launch={home} />);
+    act(() => focusHost.take(5, true));
+    expect(taken(plain.bridge.notify)).toEqual([]);
+  } finally {
+    focusHost.set(null);
+  }
 });
 
 it('a Quick Edit queues into a tab host\'s composer always, into an inline host\'s when it takes model context, and sends where the host takes messages', () => {

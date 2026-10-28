@@ -63,6 +63,8 @@ export function createChatPromptContext(bridge: Pick<Bridge, 'request' | 'onHost
   const titled = (what: string, file: string) => (file ? `${what} · ${file}` : what);
   // What the person wrote heads the title; a context of references alone is named by them.
   function textTitle(context: PromptContext): string {
+    // Edit mode's note of a change made by hand (`xbf/edit/useEditMode.js`).
+    if (context.parts.some(part => part.kind === 'text' && part.id === 'hand-edit')) return titled('Hand edit', fileOf(context));
     if (context.parts.some(part => part.kind === 'text')) return titled('Quick edit', fileOf(context));
     const selectors = context.parts.flatMap(part => part.kind === 'reference' && part.reference.target.kind === 'cad-selector' ? part.reference.target.selectors : []);
     return titled(selectors.join(', ') || 'CAD file', fileOf(context));

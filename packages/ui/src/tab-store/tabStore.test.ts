@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { expect, test } from 'vitest';
 import { createTabStore, memoryTabRecord } from './tabStore.js';
-import { TAB_FILE_LIMIT, TAB_RECORD_VERSION, defaultTabRecord, readTabRecord, tabFileKey, writeTabFile } from './tabRecord.js';
+import { OPENED_FROM_LIMIT, TAB_FILE_LIMIT, TAB_RECORD_VERSION, defaultTabRecord, readTabRecord, tabFileKey, writeTabFile } from './tabRecord.js';
 import { useTabViewerState } from './useTabViewerState.js';
 import { readFileView, writeFileView } from '../renderers/kit/shell/fileView.js';
 
@@ -11,7 +11,7 @@ test('the record normalizes: every setting to its bounds, the files to well-keye
   expect(TAB_RECORD_VERSION).toBe(2);
   expect(readTabRecord(undefined)).toEqual(defaultTabRecord());
   expect(defaultTabRecord()).toEqual({ version: 2, settings: {
-    toolStack: { panels: {}, collapsed: {} }, appearance: 'system', library: { layout: 'grid' }, explorer: { folder: null },
+    toolStack: { panels: {}, collapsed: {} }, appearance: 'system', library: { layout: 'grid' }, explorer: { folder: null }, editLayout: 'manual', openedFrom: {},
   }, files: {} });
   // A record of the version before (a file tree's width, views under a root) is the defaults.
   for (const raw of [null, 'x', [], { version: 1, settings: { appearance: 'dark', fileTree: { width: 300 } } }, { version: 3, settings: { appearance: 'dark' } }]) {
@@ -24,11 +24,26 @@ test('the record normalizes: every setting to its bounds, the files to well-keye
   }, files: { [tabFileKey('/models/a.step', 'step')]: view(1), '["root","b.step","step"]': view(2), 'junk': view(3), [tabFileKey('/models/c.step', 'step')]: 'not a view' } });
   expect(record.settings).toEqual({
     toolStack: { panels: { tree: { width: 164 } }, collapsed: { tree: true } }, appearance: 'system', library: { layout: 'grid' }, explorer: { folder: null },
+    editLayout: 'manual', openedFrom: {},
   });
   expect(readTabRecord({ version: 2, settings: { library: { layout: 'list' } }, files: {} }).settings.library).toEqual({ layout: 'list' });
   // The folder the explorer was last in, this tab: where a model's Files starts.
   expect(readTabRecord({ version: 2, settings: { explorer: { folder: '/home/me/parts' } }, files: {} }).settings.explorer).toEqual({ folder: '/home/me/parts' });
   expect(Object.keys(record.files)).toEqual([tabFileKey('/models/a.step', 'step')]);
+});
+
+test('edit mode\'s settings: Manual or AI, and each part\'s way back an assembly\'s file and title, the latest twenty', () => {
+  const settings = (value: Record<string, unknown>) => readTabRecord({ version: 2, settings: value, files: {} }).settings;
+  expect(settings({ editLayout: 'ai' }).editLayout).toBe('ai');
+  expect(settings({ editLayout: 'sketch' }).editLayout).toBe('manual');
+  // A way back to the part itself, one with no file, or one that is not a record is none.
+  expect(settings({ openedFrom: {
+    '/m/post.step': { file: '/m/stack.step', title: 'Stack' }, '/m/self.step': { file: '/m/self.step', title: 'Self' },
+    '/m/none.step': { title: 'No file' }, '/m/junk.step': 'stack',
+  } }).openedFrom).toEqual({ '/m/post.step': { file: '/m/stack.step', title: 'Stack' } });
+  const many = Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`/m/part${index}.step`, { file: '/m/stack.step', title: 'Stack' }]));
+  expect(OPENED_FROM_LIMIT).toBe(20);
+  expect(Object.keys(settings({ openedFrom: many }).openedFrom)).toEqual(Object.keys(many).slice(-20));
 });
 
 test('the files are the file on screen\'s, by absolute path: a write keeps the newest alone, and a record stored with more is read back as its newest', () => {

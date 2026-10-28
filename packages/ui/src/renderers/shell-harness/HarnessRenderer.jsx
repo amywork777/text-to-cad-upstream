@@ -221,7 +221,11 @@ function HarnessSurface({ view, data }) {
     [previewScene, data.previewAnimation, onCameraSettled]);
 
   // Its test controls sit at the bottom centre, clear of the view cube (bottom-right) and the file sidebar (down the left).
+  // A test's icon sprite and workspace (`data.iconSprite`, `data.ribbon`, `data.leftDock`, `data.bottomDock`,
+  // `data.dialogPlace`, `data.dialogOpen` and `data.quickEditAsked`) go to the frame as a renderer hands its own.
   return <RendererShell shell={shell} tools={withPanel ? [selectTool, ...shell.tools.drawing, keepTool, poseTool] : shell.tools.drawing}
+    iconSprite={data.iconSprite ?? null} ribbon={data.ribbon ?? null} leftDock={data.leftDock ?? null} bottomDock={data.bottomDock ?? null}
+    dialogPlace={data.dialogPlace ?? null} dialogOpen={data.dialogOpen ?? false} quickEditAsked={data.quickEditAsked ?? null}
     previewView={previewView}
     toolPanels={toolPanels} sidebar={sidebar} references={references} onClearReferences={() => setPicked("")}
     contextMenuItems={contextMenuItems} onContextMenuOpenChange={setMenuUp}

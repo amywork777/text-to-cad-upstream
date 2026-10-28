@@ -287,6 +287,28 @@ test("each mark keeps its group and the view it was drawn in; the annotation wri
   assert.deepEqual(annotation.marks[0].points, Array.from(items[0].points));
 });
 
+test("each mark keeps its level, where each point falls on the model and a Shapes mark its shape; the annotation file says none of them", () => {
+  const { runtime } = rig();
+  const under = item => Array.from({ length: item.under.length / 3 }, (_, index) => round3(Array.from(item.under.subarray(index * 3, index * 3 + 3))));
+  // On the slab: its level is the slab's top where it starts, its ink two pixels off it toward the eye, and where it falls is on the slab.
+  const [line] = projectAnnotations(runtime, [{ ...stroke('line', [[42, 55], [48, 55]]), shape: 'line' }], size);
+  assert.deepEqual([round3(line.level.point), round3(line.level.normal)], [[-8, -5, 0], [0, 0, 1]]);
+  assert.ok(heights(line).every(z => z === 2), `ink: ${heights(line)}`);
+  assert.deepEqual(under(line), rounded(line).map(([x, y]) => [x, y, 0]));
+  assert.equal(line.shape, 'line');
+  // On plane from the slab across the post: the ink stays at the slab's level, and what it falls on is the post's top where it crosses.
+  const [over] = projectAnnotations(runtime, [stroke('over', [[44, 50], [56, 50]])], size, { placement: 'plane' });
+  assert.ok(heights(over).every(z => z === 2), `ink: ${heights(over)}`);
+  assert.deepEqual([...new Set(under(over).map(([, , z]) => z))].sort((a, b) => a - b), [0, 10]);
+  // Off the model it falls on nothing: no point of it is on the model, whatever level its ink is at.
+  const [beside] = projectAnnotations(runtime, [stroke('beside', [[80, 50], [90, 50]])], size, { cpuBudget: 100 });
+  assert.ok(heights(beside).every(z => z === 2), `ink: ${heights(beside)}`);
+  assert.ok(under(beside).every(point => point.every(Number.isNaN)), `under: ${JSON.stringify(under(beside))}`);
+  // The annotation file is as it always was: none of these is the file's.
+  const marks = normalizeAnnotation(JSON.parse(JSON.stringify(annotationDocumentOf([line, over])))).marks;
+  assert.deepEqual(marks.flatMap(mark => ['level', 'under', 'shape'].filter(key => key in mark)), []);
+});
+
 test("the ink drawn in a runtime says where it is, for the camera's depth range, and only the ink: ink beyond the model is not cut by a near plane fitted to the model", () => {
   const { runtime } = rig();
   const [item] = projectAnnotations(runtime, [stroke('far', [[5, 5], [95, 95]])], size, { placement: 'plane' });

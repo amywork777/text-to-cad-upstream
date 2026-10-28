@@ -6,7 +6,7 @@ import { UpdateButton, useUpdateNotice } from '@text-to-cad/ui/update';
 import { viewerLinks } from '@text-to-cad/ui/links';
 import { Button } from '@text-to-cad/ui/primitives/button';
 import { TooltipHint } from '@text-to-cad/ui/primitives/tooltip';
-import { createTabStore, memoryTabRecord } from '@text-to-cad/ui/tab-store';
+import { createTabStore, editLayoutHost, focusHost, memoryTabRecord } from '@text-to-cad/ui/tab-store';
 import { normalizePath } from '@text-to-cad/ui/cad-viewer';
 import { version } from '../package.json';
 import type { Bridge, HostContext } from './host/bridge';
@@ -195,6 +195,38 @@ export default function App({ bridge, server, launch: initial, presentation = 't
   // it, for as long as this view is open (its tab store is the view's own).
   const tabSettings = useSyncExternalStore(tabStore.settings.subscribe, tabStore.settings.getSnapshot, tabStore.settings.getSnapshot);
   const preference = tabSettings.appearance;
+  // A host that lays its workspace out (Studio's Simple view, `studio/editLayout`) sets how a part
+  // script's model opens, and the navbar leaves the switch to it.
+  const hostLayout = (context as Record<string, unknown>)['studio/editLayout'];
+  useEffect(() => {
+    if (hostLayout !== 'ai' && hostLayout !== 'manual') return;
+    editLayoutHost.set(true);
+    tabStore.settings.update({ editLayout: hostLayout });
+  }, [hostLayout, tabStore]);
+  // Its switch shows and holds as the navbar's would: the host that asks for it (`studioEditState`)
+  // hears what the part on screen allows, now and at each change (`editLayoutHost`), and how many
+  // builds CAD mode saw end, to list the parts they built.
+  useEffect(() => {
+    if (!bridge.hostCapabilities.studioEditState) return undefined;
+    const send = () => bridge.notify('studio/notifications/edit-state', { ...editLayoutHost.editState(), builds: editLayoutHost.builds() });
+    send();
+    return editLayoutHost.subscribeEditState(send);
+  }, [bridge]);
+  // The part on screen asks the host that takes it (`studioEditLayout`) for a layout: a double-click on a face laid out
+  // for the AI steps into CAD, one on empty space in CAD goes back. The layout comes back in the host context, above.
+  useEffect(() => {
+    if (!bridge.hostCapabilities.studioEditLayout) return undefined;
+    return editLayoutHost.setRequester(layout => bridge.request('studio/request/edit-layout', { layout }));
+  }, [bridge]);
+  // A host that opens a part at a line of its script (Studio's References, `studio/focus`) has the part on screen select
+  // the feature there (`focusHost`), and the host that asks to (`studioFocus`) hears when the view has taken it, and
+  // whether a feature held the line.
+  const hostFocus = (context as Record<string, unknown>)['studio/focus'];
+  useEffect(() => { focusHost.set(hostFocus); }, [hostFocus]);
+  useEffect(() => {
+    if (!bridge.hostCapabilities.studioFocus) return undefined;
+    return focusHost.subscribeTaken(({ nonce, found }) => bridge.notify('studio/notifications/focus-taken', { nonce, found }));
+  }, [bridge]);
   const colorScheme = preference === 'light' || preference === 'dark' ? preference : context.theme === 'dark' ? 'dark' : 'light';
   // After every host context too: the page's first theme is the host's (`main.tsx`), and a host
   // change of theme must not undo the person's.

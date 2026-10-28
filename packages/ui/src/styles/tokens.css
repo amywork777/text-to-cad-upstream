@@ -94,6 +94,23 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  /* Edit mode's CAD colors (`renderers/xbf/edit/`): what a feature does, as a CAD tool colors its
+   * commands and previews (material added, material taken away, a sketch), what is picked for a
+   * command, and its OK and Cancel. */
+  --color-cad-solid: var(--cad-solid);
+  --color-cad-solid-edge: var(--cad-solid-edge);
+  --color-cad-cut: var(--cad-cut);
+  --color-cad-sketch: var(--cad-sketch);
+  --color-cad-accent: var(--cad-accent);
+  --color-cad-picked: var(--cad-picked);
+  --color-cad-ok: var(--cad-ok);
+  --color-cad-cancel: var(--cad-cancel);
+  /* The workspace's pale blues (edit mode laid out for modeling by hand): what the pointer rests on
+   * (a toolbar button, a Part Navigator row, a timeline item) and what is pressed or selected. */
+  --color-cad-ws-hover: var(--cad-ws-hover);
+  --color-cad-ws-selected: var(--cad-ws-selected);
+  /* What the agent made, as the timeline marks it with a dot (what you made is the muted foreground). */
+  --color-cad-agent: var(--cad-agent);
 }
 
 :root {
@@ -177,6 +194,18 @@
   /* The veil over the scene while a file loads — viewer-owned. */
   --ui-loading-overlay: color-mix(in srgb, var(--background) 38%, transparent);
   --ui-loading-overlay-strong: color-mix(in srgb, var(--background) 76%, transparent);
+
+  --cad-solid: oklch(0.85 0.15 85);
+  --cad-solid-edge: oklch(0.5 0.11 70);
+  --cad-cut: oklch(0.62 0.2 25);
+  --cad-sketch: oklch(0.5 0.2 262);
+  --cad-accent: oklch(0.58 0.13 170);
+  --cad-picked: oklch(0.69 0.16 256);
+  --cad-ok: oklch(0.58 0.15 150);
+  --cad-cancel: oklch(0.58 0.21 27);
+  --cad-ws-hover: #eef4fc;
+  --cad-ws-selected: #e1ecfa;
+  --cad-agent: #7c3aed;
 }
 
 .dark {
@@ -256,4 +285,16 @@
 
   --ui-loading-overlay: color-mix(in srgb, var(--background) 40%, transparent);
   --ui-loading-overlay-strong: color-mix(in srgb, var(--background) 78%, transparent);
+
+  --cad-solid: oklch(0.8 0.14 85);
+  --cad-solid-edge: oklch(0.92 0.07 90);
+  --cad-cut: oklch(0.7 0.18 25);
+  --cad-sketch: oklch(0.74 0.14 255);
+  --cad-accent: oklch(0.76 0.12 170);
+  --cad-picked: oklch(0.74 0.14 252);
+  --cad-ok: oklch(0.74 0.17 150);
+  --cad-cancel: oklch(0.7 0.19 27);
+  --cad-ws-hover: #1d2a3a;
+  --cad-ws-selected: #24364d;
+  --cad-agent: #a78bfa;
 }

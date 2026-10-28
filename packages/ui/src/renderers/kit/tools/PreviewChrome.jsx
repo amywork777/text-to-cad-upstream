@@ -120,15 +120,16 @@ export function usePreviewIdle(root, active, held) {
  * the right (its settings and the way out), nothing else, on no surface: the model shows through.
  * It comes and goes with the playbar (`idle`, `usePreviewIdle`). Under its right end `panel`,
  * Preview's settings, docked at the view's right edge, sliding in from it while `panelOpen` and out
- * again as it closes, as the file sidebar's panel does from its edge (`SIDEBAR_SLIDE_CLASS`).
+ * again as it closes, as the file sidebar's panel does from its edge (`SIDEBAR_SLIDE_CLASS`). `top`: the
+ * room a toolbar across the view's top takes (the workspace's), which `children` keep below.
  *
- * @param {{ active: boolean, name?: string, controls?: import("react").ReactNode, panel?: import("react").ReactNode,
+ * @param {{ active: boolean, top?: string, name?: string, controls?: import("react").ReactNode, panel?: import("react").ReactNode,
  *   panelOpen?: boolean, idle?: ReturnType<typeof createPreviewIdle> | null, children?: import("react").ReactNode }} props
  */
-export default function PreviewChrome({ active, name = "", controls = null, panel = null, panelOpen = false, idle = null, children }) {
+export default function PreviewChrome({ active, top = undefined, name = "", controls = null, panel = null, panelOpen = false, idle = null, children }) {
   return <>
     <div data-preview-chrome="" hidden={active} inert={active}
-      className="pointer-events-none absolute inset-0 z-20">
+      className="pointer-events-none absolute inset-0 z-20" style={top === undefined ? undefined : { top }}>
       <ToolbarTooltipScope enabled={!active}>{children}</ToolbarTooltipScope>
     </div>
     {active ? <ToolbarTooltipScope enabled>

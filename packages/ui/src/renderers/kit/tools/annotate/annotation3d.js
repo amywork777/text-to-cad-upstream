@@ -14,12 +14,18 @@ import { requestSceneFrame } from "../../viewport/sceneFrames.js";
 // model both carry on at the level. Ink the model hides is drawn faint through it
 // (`ANNOTATION_HIDDEN_OPACITY`). Every mark is in model coordinates and stays put, whatever a model
 // effect that moves the parts, a pose or hiding a part does to the model; Clip cuts it. The projected ink is plain data
-// (`AnnotationItem`), kept across scene rebuilds; `mountAnnotations` draws it in a viewer runtime.
+// (`AnnotationItem`), kept across scene rebuilds; `mountAnnotations` draws it in a viewer runtime. Each mark also keeps
+// what the viewer knows of it beyond its ink — its level, where each point falls on the model, the shape drawn — for the
+// marks on a face to reach the agent as shapes on it (`faceShapes.js`); the annotation file says none of it.
 
 /**
  * A mark as Annotate keeps it: an annotation mark (`@text-to-cad/core/common/annotation.js`, the shape a prompt's
- * annotation file and a snapshot job read), its points a Float32Array.
- * @typedef {import("@text-to-cad/core/common/annotation.js").AnnotationMark & { points: Float32Array }} AnnotationItem
+ * annotation file and a snapshot job read), its points a Float32Array, and the viewer's own record of it: its `level`
+ * (`levelOf`'s plane, as numbers), `under` (each point where it falls on the model: x, y, z triples, as `points`, NaN for
+ * a point with no part under it) and `shape` (the Shapes tool's that drew it).
+ * @typedef {import("@text-to-cad/core/common/annotation.js").AnnotationMark & { points: Float32Array,
+ *   level?: { point: number[], normal: number[] }, under?: Float32Array,
+ *   shape?: import("../../../../annotation/tools.js").ShapeTool }} AnnotationItem
  * @typedef {{ point: import("three").Vector3, normal: import("three").Vector3 }} Level  A mark's level: a plane
  *   through `point` with unit `normal`, in model coordinates.
  */
@@ -85,6 +91,9 @@ const COVER_PX = 1;
 // A level met this nearly edge-on by the view (the cosine of the angle) is replaced by the plane facing the
 // view; a ray met this nearly edge-on gives no depth worth having: the depth of the level's own point stands in.
 const GRAZING = 0.08;
+// A point falls on its level where the surface under it lies this near the level's plane, in the model's units: a flat
+// face is the level of each mark started on it.
+const ON_LEVEL = 0.05;
 
 /**
  * The view's geometry for projecting screen points: the eye, the view direction, a screen point's
@@ -272,7 +281,7 @@ function surfaceUnder(runtime, targets, points, pad, size, view) {
   for (const { x, y } of points) { left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y); }
   const x = Math.max(0, Math.floor(left - pad)), y = Math.max(0, Math.floor(top - pad));
   const box = { x, y, w: Math.min(Math.ceil(size.width), Math.ceil(right + pad) + 1) - x, h: Math.min(Math.ceil(size.height), Math.ceil(bottom + pad) + 1) - y };
-  if (!(box.w > 0) || !(box.h > 0) || !targets.length) return { nearest: () => Infinity };
+  if (!(box.w > 0) || !(box.h > 0) || !targets.length) return { nearest: () => Infinity, under: () => null };
   const { depth, res } = depthMap(runtime, targets, box, size, Math.max(box.w, box.h), view);
   const cell = (px, py) => {
     const column = Math.floor(px) - box.x, row = Math.floor(py) - box.y;
@@ -294,6 +303,13 @@ function surfaceUnder(runtime, targets, points, pad, size, view) {
         }
       }
       return best;
+    },
+    // The surface under a screen point: the depth of the pixel it falls in and where that pixel's middle is (null:
+    // no part drawn there).
+    under(point) {
+      const at = cell(point.x, point.y);
+      if (at < 0 || !Number.isFinite(depth[at])) return null;
+      return { depth: depth[at], x: box.x + (at % res.w) + 0.5, y: box.y + Math.floor(at / res.w) + 0.5 };
     },
   };
 }
@@ -462,7 +478,10 @@ function levelDepth(view, level, point) {
  * the view, at the level's depth under its anchor corner, in both. Every point is a little off what it
  * lies on, toward the eye (text, more).
  * `touches`: what each mark was drawn over, most first — the face or edge (`ref`, from `touchesAt`,
- * a screen point's `[{ part, ref }]`), else the part.
+ * a screen point's `[{ part, ref }]`), else the part. Each mark keeps its `level` and, in `under`, where
+ * each point falls on the model, whatever the placement: on the visible surface under it (exactly on the
+ * level where that surface is the level's), or nowhere (NaN) where no part is drawn under it. The ink stands
+ * off it toward the eye, and On plane may leave it. A Shapes mark keeps its `shape`.
  *
  * @param {object} runtime  The viewer runtime (`THREE`, `camera`, `modelGroup`, `renderer`, `scene`, `activeClipPlanes`).
  * @param {import("../../../../annotation/geometry.js").ScreenMark[]} marks
@@ -488,10 +507,10 @@ export function projectAnnotations(runtime, marks, size, { placement = "surface"
     const line = mark.kind === "stroke" ? subdivideStroke(mark.points, mark.widths) : null;
     return { mark, area, line, points: area ? area.points : line ? line.points : markPoints(mark) };
   });
-  // The parts' depth is read only for ink that lies on them, only under it.
+  // The parts' depth is read only under the ink: what each point falls on, and, On surface, what it lies on.
   const reach = Math.max(FILL_SEGMENT_PX, ...shaped.map(({ mark }) => (mark.kind === "stroke" ? mark.width * Math.max(1, ...(mark.widths || [1])) / 2 + COVER_PX : 0)));
-  const surface = onSurface
-    ? surfaceUnder(runtime, targets, shaped.flatMap(({ points }) => points), reach + 1, size, view) : null;
+  const map = targets.length ? surfaceUnder(runtime, targets, shaped.flatMap(({ points }) => points), reach + 1, size, view) : null;
+  const surface = onSurface ? map : null;
 
   return shaped.map(({ mark, area, line, points }) => {
     const widths = line?.widths ?? mark.widths;
@@ -515,8 +534,20 @@ export function projectAnnotations(runtime, marks, size, { placement = "surface"
     }
     const positions = new Float32Array(points.length * 3);
     points.forEach((point, index) => view.at(point, depths[index]).toArray(positions, index * 3));
+    // Where each point falls on the model, before the ink stands off it: the surface under it — on the level exactly where
+    // that surface is the level's — and nowhere (NaN) where no part is drawn under it: ink carried on into the air is on no face.
+    const under = new Float32Array(points.length * 3).fill(NaN);
+    points.forEach((point, index) => {
+      const found = map?.under(point);
+      if (!found) return;
+      const there = view.at(found, found.depth);
+      const onIt = Math.abs(there.clone().sub(own.point).dot(own.normal)) <= ON_LEVEL;
+      (onIt ? view.at(point, onLevel(point)) : there).toArray(under, index * 3);
+    });
     const item = { id: mark.id, kind: mark.kind, points: positions, color: mark.color, ...(mark.group ? { group: mark.group } : {}),
-      ...(mark.view ? { view: mark.view } : {}), touches: touchesOf(mark.kind === "area" ? mark.outline : points, touchesAt, partAt) };
+      ...(mark.view ? { view: mark.view } : {}), ...(mark.shape ? { shape: mark.shape } : {}),
+      touches: touchesOf(mark.kind === "area" ? mark.outline : points, touchesAt, partAt),
+      level: { point: own.point.toArray(), normal: own.normal.toArray() }, under };
     if (mark.kind === "stroke") Object.assign(item, { width: mark.width, opacity: mark.opacity, closed: mark.closed,
       ...(widths ? { widths } : {}) });
     else if (mark.kind === "area") Object.assign(item, { opacity: mark.opacity, triangles: area.index, outline: mark.outline.length });
@@ -548,12 +579,13 @@ function touchesOf(points, touchesAt, partAt) {
 }
 
 /**
- * The annotation as an annotation file says it (`@text-to-cad/core/common/annotation.js`).
+ * The annotation as an annotation file says it (`@text-to-cad/core/common/annotation.js`): the file as it always was, without
+ * the viewer's own record of each mark (its level, where it falls, its shape).
  * @param {readonly AnnotationItem[]} items
  * @param {string} [units]
  */
 export function annotationDocumentOf(items, units = "mm") {
-  return annotationDocument({ units, marks: items });
+  return annotationDocument({ units, marks: items.map(({ level: _level, under: _under, shape: _shape, ...mark }) => mark) });
 }
 
 /** Each item's points, as vectors: in model coordinates, where it was drawn. */

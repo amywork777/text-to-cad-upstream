@@ -98,7 +98,7 @@ export function createGlbScene(THREE, document, { sibling = false } = {}) {
   const ink = createSceneHighlight(THREE, look);
   // One box for framing, lighting and the floor: a routine poses the model inside
   // the box sampled over every clip at load, so playing one never re-frames it.
-  const bounds = document.animatedBounds || document.restBounds || boundsOf(THREE, root);
+  let bounds = document.animatedBounds || document.restBounds || boundsOf(THREE, root);
 
   // ---- its nodes: what Select picks, Quick Edit names and Explode moves ------------------
   // A node here is one that draws: the node a mesh belongs to. Its meshes are its own, not those of
@@ -159,6 +159,8 @@ export function createGlbScene(THREE, document, { sibling = false } = {}) {
     meshCount: look.meshCount,
     object3D: root,
     get bounds() { return explodedBounds || bounds; },
+    // A view that draws the file larger than authored (an FEA result's deformation, a drop's whole fall) grows them.
+    set bounds(next) { bounds = next; },
     restBounds: bounds,
     // glTF is metres; the scene draws them as millimetres.
     units: GLB_SCENE_UNITS,

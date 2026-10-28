@@ -65,6 +65,7 @@ are for reading and maintaining the contracts.
 | `TabStore`, `TabRecordStorage`, `createTabStore`, `useTabViewerState` (the tab's one store: its settings, the view of the file on screen, and `FileViewer`'s state from both) | [Tab store](../src/tab-store/tabStore.ts), [the record](../src/tab-store/tabRecord.ts) | `@text-to-cad/ui/tab-store` |
 | `CadPreferenceSource`, `createCadPreferences` (the tab's settings as renderers read them) | [Viewer preferences](../src/renderers/workspace/preferences.ts) | `@text-to-cad/ui/renderers/workspace` |
 | `DxfRendererOptions` (2D drawings; declines every camera, display and selection command) | [DXF registration](../src/renderers/dxf/index.ts) | `@text-to-cad/ui/renderers/dxf` |
+| `BoardRendererOptions` (KiCad boards; selects board references, declines a camera and a display setting), `BoardLiveState` (`boardDisplay`) | [Board registration](../src/renderers/board/index.ts) | `@text-to-cad/ui/renderers/board` |
 | `GlbRendererOptions`, `LiveViewBinding`, `LiveViewController` | [GLB registration](../src/renderers/glb/index.ts), [live binding](../src/renderers/kit/shell/liveBinding.ts) | `@text-to-cad/ui/renderers/glb` |
 | `MeshRendererOptions` (STL, 3MF), `LiveViewBinding`, `LiveViewController` | [Mesh registration](../src/renderers/mesh/index.ts) | `@text-to-cad/ui/renderers/mesh` |
 | `RobotRendererOptions` (URDF, SRDF, SDF), `RobotLiveController`, `RobotLiveState` (`selectedLinks`, `selectedPartIds`) | [Robot registration](../src/renderers/robot/index.ts) | `@text-to-cad/ui/renderers/robot` |
@@ -306,8 +307,9 @@ a temporary file, then draws a view the ink was drawn in with
 inside the gesture while the files are still being made; its references name their
 files by absolute path, as copied references do (below), and every file is named by
 its path, since text carries no file (without `promptFiles`, a prompt carries none). **Queue** is there where the
-destination is a composer (`destination.kind === "composer"`): `deliver`, the
-context for the person's next message. **Send** is there where the prompt port
+destination is a composer (`canAddToContext`: `destination.kind === "composer"` and available): `deliver`, the
+context for the person's next message. `addToContext` is the same delivery with no note, the view's requested changes
+included; no surface offers it today. **Send** is there where the prompt port
 has `send`. The context is built at the press, from what is live then; a changed
 document or revision never retargets it. A Quick Edit that reached its destination
 (copied, queued or sent: no `failed` or `cancelled` receipt) tells the host once,
@@ -499,6 +501,14 @@ first (`update`, while its install is behind), the renderer's navigation actions
 the host's actions (`navbarActions`: the web viewer's Export; `CadViewer` puts the host's
 `fullSize` before it and `openInBrowser` after it, the CAD app's Full size and Open in
 browser). The navbar holds no settings and none of the view's controls.
+
+The Kernel menu is `CadViewer`'s, for a model built on other CAD kernels: the kernels skill saves
+each build beside the model's own file (`.kernels/<kernel>/<stem>.step|.stl`) and the client lists
+them (`kernelVariants`, `GET /__cad/kernels`; a client without it offers no menu). It names the
+build on screen, BREP for the model's own, and choosing another shows that file in this view
+through `navigation.openFile`, as the explorer does, so a view that shows its file alone has none.
+It builds nothing: a build is the skill's, run beside the agent, never the viewer's (cadgen's law 12).
+The list is read when the file changes and when the page comes back into focus.
 
 The app menu is FileViewer's, built from the host's `navigation.home`, `links` and
 `environment.platform` and the person's `FileViewerProps.appSettings` (which `CadViewer`
