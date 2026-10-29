@@ -742,31 +742,29 @@ def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[
     structure's ``pmi_coverage`` of each part with something to say, by its name; warned of, never
     failing the build); each logged, none dropped in silence. Annotations its body, or a @memo
     function it called, gave a shape the result does not hold fail the build, by id
-    (``pmi.unattached``): its files would carry none of them; the runs of the bodies that gave them
-    are forgotten (``memo.forget``), so a build again runs them and fails again,
-    never replaying it into a pass. Of this build alone: nothing of an earlier one is read. Timed
-    as ``pmi``."""
+    (``pmi.unattached``): its files would carry none of them; a body replayed gives its annotations
+    as its run did (``memo.annotated``), so a build replayed fails as the build run did. So does a
+    limits dimension whose measured size is outside its limits (``pmi.outside_limits``): a size the
+    model does not have. Of this build alone: nothing of an earlier one is read. Timed as ``pmi``."""
     from cadgen.engine import document, pmi
-    from cadgen.engine.kernel import memo
 
     clock = time.perf_counter()
     scope = f"{model.script}::{model.name}"
     lost = pmi.unattached(run, scope, tree) if run is not None else []
     if lost:
-        # A replay of this body, or of a @memo function that annotated, would not call annotate
-        # again, and so not say it: each runs again.
-        for body in {scope, *run.annotating.get(scope, ())} - {None}:
-            memo.forget(body)
         raise pmi.PMIError(f"{model.name}: {', '.join(lost)} given to a shape that is not in the result, so no file "
                            "would carry them: annotate the shape the model returns (an operation after annotate() "
                            "makes another shape)")
     if tree.pmi:
+        # Of the structure the build serves (no file's version: none is written yet), so the two agree.
+        served = document.tree_structure(tree, None)
+        outside = pmi.outside_limits(served["pmi"])
+        if outside:
+            raise pmi.PMIError(f"{model.name}: {'; '.join(outside)}")
         report["pmi"] = {"annotations": sum(len(items) for _part, items in pmi.resolve(tree)),
                          "problems": pmi.problems(tree)}
         for problem in report["pmi"]["problems"]:
             log(f"pmi {problem['part']}/{problem['id']}: {problem['status']}: {problem['problem']}")
-        # Of the structure the build serves (no file's version: none is written yet), so the two agree.
-        served = document.tree_structure(tree, None)
         names = [prototype["name"] for prototype in served["prototypes"]]
         coverage = [{"part": names[found["part"]], "uncovered": found["uncovered"], "conflicts": found["conflicts"]}
                     for found in served["pmi_coverage"] if found["uncovered"] or found["conflicts"]]

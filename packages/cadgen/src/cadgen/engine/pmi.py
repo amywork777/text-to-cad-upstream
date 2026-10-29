@@ -114,10 +114,10 @@ structure's ``pmi_coverage``), and in the build's report from the same: the face
 toleranced dimension or geometric tolerance names (the general profile names those it covers; a
 basic dimension, a datum and a note cover nothing, and the datum features a general profile names
 are left to controls of their own), and the requirements that cannot both hold or hold nothing --
-a datum no frame names, a flag note every link of which is broken, a limits dimension its measured
-nominal lies outside, two dimensions of one type on the same faces whose zones do not meet, a
-flatness wider than a profile on its face. Derived, never held, and warned of: it never fails a
-build.
+a datum no frame names, a flag note every link of which is broken, two dimensions of one type on
+the same faces whose zones do not meet, a flatness wider than a profile on its face. Derived, never
+held, and warned of: it never fails a build. A limits dimension its measured nominal lies outside is
+no conflict but a size the model does not have: the build fails, naming it (``outside_limits``).
 
 **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
 GD&T as XCAF reads it. What this module does not hold whole -- another characteristic or dimension
@@ -453,7 +453,8 @@ def _cross(first: list[float], second: list[float]) -> float:
 
 def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
     """``shape`` given ``annotations`` (replacing any it held): the part a model returns, or
-    one part of its assembly. A ``Face`` given as a ref is numbered against ``shape`` now. Ids are
+    one part of its assembly. A ``Face`` given as a ref is numbered against ``shape`` now (a face of
+    another shape refused, by its annotation's id). Ids are
     unique on a part, a note's with the rest, as are datum letters; a note names annotations of
     this call; and a datum holds one place in every frame that names it (XCAF holds one position
     per datum). Its views (``view``) are among them, each name unique among its views, each
@@ -491,8 +492,10 @@ def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
             if faces is None:
                 faces = _faces(shape.wrapped)
             ordinal = faces.FindIndex(target.wrapped)
-            refs.append({"role": ref["role"], "written": f"face {ordinal}" if ordinal else "a face of another shape",
-                         "face": ordinal or 0})
+            if not ordinal:
+                raise PMIError(f"annotation {given['id']!r}: its {ref['role']} ref is a face of another shape, not of "
+                               "the part annotated: give a face of the shape passed to annotate()")
+            refs.append({"role": ref["role"], "written": f"face {ordinal}", "face": ordinal})
         entry = {key: value for key, value in given.items() if key != "refs"}
         entry["refs"] = refs
         for at, letter in enumerate((given.get("geometric_tolerance") or {}).get("datums") or (), 1):
@@ -525,7 +528,11 @@ def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
             if shown is not None and named not in shown:
                 raise PMIError(f"view {given['name']!r} places {named!r}, which it does not show; its shows are "
                                f"{', '.join(map(repr, shown))}")
-    _note_call(held)
+    from cadgen.engine.kernel import memo
+
+    # Kept on the build's run under the model whose body gave them, directly or through a @memo
+    # function it called; a replay of either gives them again.
+    memo.annotated([_text(entry) for entry in held])
     held.extend(views)
     shape.__dict__[PMI] = tuple(held)
     return shape
@@ -656,15 +663,6 @@ def _point(value: Any, what: str) -> list[float]:
     return found
 
 
-def _note_call(held: list[dict[str, Any]]) -> None:
-    """``annotate``'s annotations, kept on the build's run under the model whose body gave them,
-    directly or through a @memo function it called, with the body that called ``annotate``."""
-    from cadgen.engine.kernel import memo
-
-    run = getattr(memo._LOCAL, "run", None)  # the memo run of a build on this thread, or None
-    if run is not None:
-        run.pmi.setdefault(run.model, []).extend(_text(entry) for entry in held)
-        run.annotating.setdefault(run.model, set()).add(run.scope)
 
 
 def unattached(run: Any, scope: str, tree: Any) -> list[str]:
@@ -810,7 +808,7 @@ def otherwise_controlled(entries: list[dict[str, Any]]) -> set[str]:
 
 
 # The conflicts ``coverage`` says, in the order it says them.
-CONFLICTS = ("unused_datum", "unlinked_note", "outside_limits", "apart", "form_over_profile")
+CONFLICTS = ("unused_datum", "unlinked_note", "apart", "form_over_profile")
 # Millimetres a measured size may pass a limit by, and two zones miss each other by: its own rounding.
 _ROUNDING = 1e-6
 
@@ -829,8 +827,7 @@ def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, A
     own control.
     The conflicts (``CONFLICTS``, in that order, each in the entries'): ``unused_datum``, a datum no
     tolerance's frame names; ``unlinked_note``, a flag note every face and annotation of which is
-    broken (one link that holds keeps it linked; a general note names nothing to break);
-    ``outside_limits``, a limits dimension whose measured nominal lies outside them; ``apart``, two
+    broken (one link that holds keeps it linked; a general note names nothing to break); ``apart``, two
     toleranced dimensions of one type on the same faces whose zones do not meet; and
     ``form_over_profile``, a flatness wider than a surface profile on its face (its own, or the
     general one). Warned of, never failing a build. Pure: of its arguments alone."""
@@ -864,10 +861,6 @@ def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, A
         nominal = (given["nominal"] or {}).get("value")
         if tolerance.get("type") == "limits":
             zone = (tolerance["lower"], tolerance["upper"])
-            if nominal is not None and not zone[0] - _ROUNDING <= nominal <= zone[1] + _ROUNDING:
-                say("outside_limits", [entry["id"]], f"the {given['type']} measures {_mm(nominal)} mm, outside its "
-                                                     f"limits {_sizes(*zone)}: model it within them, or correct the "
-                                                     "limits")
         elif tolerance.get("type") == "plus_minus" and nominal is not None:
             zone = (nominal + tolerance["lower"], nominal + tolerance["upper"])
         else:
@@ -907,6 +900,22 @@ def _requirement(entry: dict[str, Any]) -> bool:
         return (entry["xcaf_type"] != "XCAFDimTolObjects_DatumObject"
                 and not (entry.get("values") or {}).get("basic"))
     return entry["kind"] == "geometric_tolerance"
+
+
+def outside_limits(entries: list[dict[str, Any]]) -> list[str]:
+    """Each ``ok`` limits dimension of a structure's ``pmi`` (``entries``) whose measured nominal lies
+    outside its limits, said: a size the model does not have, which a build refuses (law 17), as a
+    mechanism state outside its joint's range is."""
+    found = []
+    for entry in entries:
+        given = entry.get("dimension") or {}
+        tolerance, nominal = given.get("tolerance") or {}, (given.get("nominal") or {}).get("value")
+        if (entry["status"] == "ok" and tolerance.get("type") == "limits" and nominal is not None
+                and not tolerance["lower"] - _ROUNDING <= nominal <= tolerance["upper"] + _ROUNDING):
+            found.append(f"{entry['id']}: the {given['type']} measures {_mm(nominal)} mm, outside its limits "
+                         f"{_sizes(tolerance['lower'], tolerance['upper'])}: model it within them, or correct the "
+                         "limits")
+    return found
 
 
 def _mm(value: float) -> str:
@@ -1623,11 +1632,20 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         records.append(found)
 
     modified: set[str] = set()  # the datums a tolerance cannot be read with: modified, or targets
+    # Each datum once, by its letter and the shapes it is linked to: OCCT's STEP reader gives each
+    # frame that names a datum a label of its own, so a STEP's datum A named by three frames is three
+    # labels, where the file holds one DATUM.
+    datums: set[tuple[str, tuple[str, ...]]] = set()
     for label in _labels(tool, "datum"):
         found = XCAFDoc_Datum.Set_s(label).GetObject()
         beyond = _beyond_datum(found)
         if beyond:
             modified.add(_entry(label))
+        first, _second = _linked(tool, label)
+        datum = (_name_of(found), tuple(_entry(first.Value(at)) for at in range(1, first.Length() + 1)))
+        if datum in datums:
+            continue
+        datums.add(datum)
         add(label, "datum", {"letter": _name_of(found)}, beyond, "XCAFDimTolObjects_DatumObject")
     for label in _labels(tool, "dimension"):
         found = XCAFDoc_Dimension.Set_s(label).GetObject()
@@ -2082,21 +2100,30 @@ def checked(source: Any, entries: list[dict[str, Any]], target: Any,
     lands (``export.translate``'s ``check``). For a document the code made, a check that found any
     problem -- a record that does not match, or one it could not be made of (a file the reader
     cannot read, a name it cannot tell apart) -- refuses the file, so none is written and an
-    earlier one keeps its bytes (law 17). One of a document another system wrote, whose faces carry
-    no names, is said to ``log``, the file written."""
+    earlier one keeps its bytes (law 17). So does one of a document another system wrote, of what
+    its STEP carries (each annotation ``ok``: ``dropped`` says the rest), where every face those are
+    on carries a name the file is held to (a STEP this engine wrote, read back). One whose faces
+    carry no names (``face 7``) verifies nothing: what the check found is said to ``log``, the file
+    written."""
     from pathlib import Path
 
+    from cadgen.engine import refs as grammar
     from cadgen.engine.export import ExportRefused
     from cadgen.engine.export.ap242 import check
 
     target = Path(target)
+    binding = not source.foreign
+    if source.foreign:
+        entries = [entry for entry in entries if entry["status"] == "ok"]
+        binding = all(isinstance(ref.get("ref"), str) and isinstance(grammar.parse(ref["ref"])[1][-1].element, str)
+                      for entry in entries for ref in entry.get("refs") or ())
     parts = {prototype["index"]: prototype["name"] for prototype in source.structure.get("prototypes") or []
              if "index" in prototype and "name" in prototype}
     found = check(entries, target, step_surfaces(source, entries), parts)
     if not found.get("problems"):
         return found
     said = f"({found['matched']} of {found['total']} matched): {' '.join(found['problems'])}"
-    if not source.foreign:
+    if binding:
         raise ExportRefused(f"{target.name} not written: the PMI in the STEP written does not match the model's "
                             f"document, or could not be checked against it {said}")
     if log is not None:

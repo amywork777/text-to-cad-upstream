@@ -2008,10 +2008,12 @@ return annotate(body,
 ```
 
 - **Authoring.** `annotate` takes one part (an annotated assembly is refused: annotate its
-  parts) and returns it; a `Face` given as a ref is numbered against it at once, so annotations
+  parts) and returns it; a `Face` given as a ref is numbered against it at once (a face of another
+  shape is refused, by its annotation's id), so annotations
   given to a shape a later operation replaces never reach the result, so the build fails, naming
-  them (`pmi.unattached`): no file would carry them. The body's run is forgotten (`memo.forget`),
-  so a build again runs it, and fails again, where a replay, which calls no `annotate`, would pass. Each annotation is a dict as its function
+  them (`pmi.unattached`): no file would carry them. Its body's run, and a @memo function's that
+  annotated, keeps the annotations it gave (`memo.annotated`), so a replay of it gives them again
+  and fails as its run did, or passes with the same PMI. Each annotation is a dict as its function
   makes it, its keys closed (law 16): `annotate` refuses one of another kind, a key beyond its
   function's or one missing, naming the set, and checks a tolerance and a presentation again as
   `plus_minus_tolerance`, `limits` and `place` check theirs. Ids are the author's, unique on a part, a note's with the rest; a datum's id
@@ -2092,8 +2094,7 @@ return annotate(body,
   of its own (datum A's flatness). The conflicts, each `{"kind", "ids", "problem"}`, in this
   order: `unused_datum`, a datum no tolerance's frame names; `unlinked_note`, a flag note every
   face and annotation of which is broken (one link that holds keeps it linked; a general note has
-  none to break); `outside_limits`, a limits dimension whose measured nominal lies outside them;
-  `apart`, two toleranced dimensions of one type on the same faces whose zones do not meet; and
+  none to break); `apart`, two toleranced dimensions of one type on the same faces whose zones do not meet; and
   `form_over_profile`, a flatness wider than a surface profile on its face, its own or the
   general one. It is derived where the document is served, never held: the structure's
   `pmi_coverage` is `[{"part", "uncovered": [refs, sorted], "conflicts": [...]}]`, one per part
@@ -2246,9 +2247,13 @@ twice, a datum letter a part's records repeat, two products of one name. Nothing
 viewer's refusal is its export job's error, the person's toast. OCCT's writer writes one `DATUM`
 of a letter per file, the frames of every part on it: two parts defining the same letter verify
 neither, and the check says so (`Datum A is defined on 2 parts: ...`). A STEP of a document another
-system wrote, whose faces carry no names, verifies nothing: it is written, and what the check found
-is warned of in the log, `warning: pmi: FILE: the PMI in the written file is not verified (M of N
-matched): ...`.
+system wrote is checked of what it carries (each annotation `ok`; the rest are said as left out),
+and refused alike where every face those are on carries a name -- a STEP this engine wrote, read
+back, and its xbf -- so a round trip carries all it read or writes nothing. OCCT's STEP reader
+gives each frame that names a datum a label of its own; a document read lists each datum once (by
+its letter and the faces it is on). One whose faces carry no names (`face 7`) verifies nothing: it
+is written, and what the check found is warned of in the log, `warning: pmi: FILE: the PMI in the
+written file is not verified (M of N matched): ...`.
 
 ## Materials
 

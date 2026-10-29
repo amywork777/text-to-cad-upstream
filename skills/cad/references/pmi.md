@@ -139,8 +139,8 @@ Its run warns that the four sides have no requirement: nothing here holds them.
 - **Ids are yours**: unique on the part and kept across edits. A datum's id is its
   letter, one capital other than `I`, `O` and `Q` (ASME Y14.5 sets them aside). The
   build report, the viewer and the STEP check name annotations by id.
-- **A ref** is a build123d `Face` of the annotated shape, or a ref in the engine's
-  grammar: an element name, a canonical `owner/element` ref, or `face N`
+- **A ref** is a build123d `Face` of the annotated shape (a face of another shape fails
+  the run, naming the annotation), or a ref in the engine's grammar: an element name, a canonical `owner/element` ref, or `face N`
   ([references](inspection-and-validation.md#references)). A selection the code makes
   again on every build, or an element name, follows the face through edits; `face N`
   does not.
@@ -149,7 +149,10 @@ Its run warns that the four sides have no requirement: nothing here holds them.
 - **Tolerances are explicit.** `plus_minus_tolerance(upper, lower=None)` takes signed
   deviations, `lower` defaulting to `-upper`; `limits(lower, upper)` takes the
   least and the greatest size instead (`limits(10.0, 10.05)` is 10.00–10.05). A
-  dimension given no `tolerance=` holds none: nothing is assumed.
+  dimension given no `tolerance=` holds none: nothing is assumed. A size measured
+  outside its own limits fails the run, naming it: model it within them, or correct
+  the limits. A STEP writes limits with their midpoint as the nominal (the file
+  holds limits, not a size), so its reader takes the limits.
 - **A basic dimension** (`dimensional_location(..., basic=True)`) has no tolerance: it
   locates what a geometric tolerance controls, such as a position's true position. A
   tolerance on one is refused; a diameter is never basic (`dimensional_size` takes no
@@ -301,8 +304,6 @@ warning: pmi: PART: IDS: PROBLEM
   - `unused_datum`: a datum no tolerance's frame names;
   - `unlinked_note`: a flag note whose every face and annotation is broken (one that
     still holds keeps it linked);
-  - `outside_limits`: the measured size is outside its own limits: model it within
-    them, or correct the limits;
   - `apart`: two dimensions of one type on the same faces whose zones do not meet;
   - `form_over_profile`: a flatness wider than a surface profile on its face (its own
     or the general one), which already holds the face's form tighter.
@@ -359,7 +360,9 @@ takes a part out of it: a posed file or a part on its own is a model of its own
 A vendor's STEP converts as ever (`cadgen export vendor/motor.step vendor/motor.xbf`):
 the `.xbf` keeps the file's GD&T as read, and an export of either writes it. What an
 export of a vendor's document cannot carry whole is said in its log, `warning: pmi:
-...`, never refused.
+...`, never refused. A STEP of a document whose faces carry names -- a STEP this
+writes, read back, or its `.xbf` -- is checked as the model's is, and refused where the
+written file does not carry what it read.
 
 Every STEP written of the model -- a declared `@step`, `cadgen export`, `export()`, the
 viewer's Export -- is read back with a reader of its own, without the kernel, and every

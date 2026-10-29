@@ -453,6 +453,16 @@ class LimitsTest(_Folder):
         self.assertEqual(served["thickness"]["dimension"]["tolerance"], {"type": "limits", "lower": 9.9, "upper": 10.1})
         self.assertAlmostEqual(served["thickness"]["dimension"]["nominal"]["value"], 10.0)
 
+    def test_a_size_outside_its_own_limits_fails_the_build(self) -> None:
+        """Limits the measured size lies outside are a size the model does not have: the build fails,
+        naming the dimension, and writes none of its files (law 17), where it once warned of a
+        conflict and wrote a STEP whose nominal, the limits' midpoint, is no size of the model."""
+        report = self.build(LIMITS.replace("limits(10.0, 10.05)", "limits(9.9, 9.95)"), ok=False)
+        self.assertIn("PMIError: pmi_plate: hole: the diameter measures 10 mm, outside its limits 9.90–9.95: model "
+                      "it within them, or correct the limits", report["error"])
+        self.assertFalse(self.xbf.exists())
+        self.assertFalse(self.step.exists())
+
     def test_limits_are_refused_when_not_upper_above_lower(self) -> None:
         with self.assertRaisesRegex(PMIError, "upper limit .* is above its lower, not 10.05 and 10.05"):
             limits(10.05, 10.05)
@@ -1300,10 +1310,10 @@ def pmi_plate():
 '''
 # The hole located: datum C on the left face, and the hole's position to A|B|C.
 LOCATED = 'datum("C", left), position_tolerance("hole-position", hole, 0.1, datums=["A", "B", "C"]),'
-# A requirement of each conflict: B named by no frame; the hole's limits, which its measured 10 mm
-# lies outside, and which miss its size's 10.0–10.1; a flatness wider than the general profile on the
-# top, and one wider than the left face's own profile.
-EACH_CONFLICT = '''dimensional_size("hole-limits", hole, tolerance=limits(9.9, 9.95)),
+# A requirement of each conflict: B named by no frame; a second size of the hole, -0.05/-0.1, which
+# misses its size's 10.0–10.1; a flatness wider than the general profile on the top, and one wider
+# than the left face's own profile.
+EACH_CONFLICT = '''dimensional_size("hole-under", hole, tolerance=plus_minus_tolerance(-0.05, -0.1)),
         flatness_tolerance("top-flatness", top, 0.6),
         surface_profile_tolerance("left-profile", left, 0.2),
         flatness_tolerance("left-flatness", left, 0.3),
@@ -1380,10 +1390,7 @@ class CoverageTest(_Folder):
             {"kind": "unused_datum", "ids": ["B"],
              "problem": "datum B is in no tolerance's frame: name it where a requirement is measured from it, or "
                         "remove it"},
-            {"kind": "outside_limits", "ids": ["hole-limits"],
-             "problem": "the diameter measures 10 mm, outside its limits 9.90–9.95: model it within them, or correct "
-                        "the limits"},
-            {"kind": "apart", "ids": ["hole-size", "hole-limits"],
+            {"kind": "apart", "ids": ["hole-size", "hole-under"],
              "problem": "two diameters of the same face whose zones do not meet, 10.0–10.1 and 9.90–9.95: no part "
                         "holds both; keep the one meant"},
             {"kind": "form_over_profile", "ids": ["top-flatness", "general"],
@@ -1790,6 +1797,26 @@ class RefTest(_Folder):
                                              "tolerance": {"type": "plus_minus", "upper": 0.1, "lower": 0.0}})
         self.assertEqual(_by_id(read(self.xbf))["A"]["status"], "ok")
 
+    def test_a_face_of_another_shape_is_refused_by_its_annotation(self) -> None:
+        """A ``Face`` of a shape other than the one annotated names nothing of the part: the build
+        fails, naming the annotation and its ref, where it once passed with the annotation kept
+        ``missing`` and its xbf written."""
+        model = '''
+import build123d as bd
+from cadgen.ap242 import annotate, flatness_tolerance
+from cadgen.engine import xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+def pmi_plate():
+    body, other = bd.Box(100, 60, 10), bd.Box(5, 5, 5)
+    return annotate(body, flatness_tolerance("top", other.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+'''
+        report = self.build(model, ok=False)
+        self.assertIn("PMIError: annotation 'top': its feature ref is a face of another shape, not of the part "
+                      "annotated: give a face of the shape passed to annotate()", report["error"])
+        self.assertFalse(self.xbf.exists())
+
     def test_a_face_the_annotation_cannot_stand_on_is_invalid(self) -> None:
         report = self.build(NAMED.format(cut="body = body - bd.Cylinder(5, 10)", ref="face 1"), ok=False)
         [problem] = report["pmi"]["problems"]
@@ -1811,8 +1838,8 @@ class RefTest(_Folder):
     def test_a_shape_replaced_after_it_was_annotated_fails_the_build(self) -> None:
         """Annotations given to a shape a later operation replaced reach no file: the build fails,
         naming them, and writes neither its xbf nor its STEP (law 17), where it once said them and
-        wrote both without them. Built again, the body runs again and fails again: a replay of it,
-        which calls no annotate, never passes."""
+        wrote both without them. Built again, the body is replayed and fails again: its replay gives
+        the annotations its run gave."""
         model = '''
 import build123d as bd
 from cadgen.ap242 import annotate, datum, flatness_tolerance
@@ -1827,17 +1854,17 @@ def pmi_plate():
              flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
     return body - bd.Cylinder(5, 10)
 '''
-        for _again in range(2):
+        for status in ("run", "replayed"):
             report = self.build(model, ok=False)
             self.assertIn("PMIError: pmi_plate: A, top given to a shape that is not in the result", report["error"])
-            self.assertEqual(report["bodies"], {"pmi_plate.py::pmi_plate": "run"})
+            self.assertEqual(report["bodies"], {"pmi_plate.py::pmi_plate": status})
             self.assertFalse(self.xbf.exists())
             self.assertFalse(self.step.exists())
 
     def test_a_memo_function_s_annotations_the_result_lost_fail_its_model(self) -> None:
         """A @memo function's annotate is its calling model's: a shape it annotated that the
         model's body replaced fails that model's build, as the model's own would. Built again,
-        the function runs again too: a replay of it, which calls no annotate, never passes."""
+        it fails again, the function replayed."""
         model = '''
 import build123d as bd
 from cadgen import memo
@@ -1856,11 +1883,44 @@ def plate():
 def pmi_plate():
     return bd.fillet(plate().edges().filter_by(bd.Axis.Z), 2)
 '''
-        for _again in range(2):
+        for status in ("run", "replayed"):
             report = self.build(model, ok=False)
             self.assertIn("PMIError: pmi_plate: top given to a shape that is not in the result", report["error"])
+            self.assertEqual(report["bodies"]["pmi_plate.py::plate"], status)
             self.assertFalse(self.xbf.exists())
             self.assertFalse(self.step.exists())
+
+    def test_a_memo_function_kept_by_a_passing_build_and_replayed_into_a_loss_fails(self) -> None:
+        """A @memo function a passing build ran and kept, replayed by a model whose body then replaces
+        its annotated shape, fails that model's build as running it would: its replay gives the
+        annotations its run gave, where it once passed at exit 0 with no PMI in the STEP."""
+        head = '''
+import build123d as bd
+from cadgen import memo
+from cadgen.ap242 import annotate, flatness_tolerance
+from cadgen.engine import step, xbf
+
+
+@memo
+def plate():
+    body = bd.Box(100, 60, 10)
+    return annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+'''
+        report = self.build(head + "    return plate()\n")
+        self.assertEqual(report["bodies"]["pmi_plate.py::plate"], "run")
+        self.assertIn("FLATNESS", self.step.read_text(encoding="utf-8"))
+        report = self.build(head + "    return bd.fillet(plate().edges().filter_by(bd.Axis.Z), 2)\n", ok=False)
+        self.assertEqual(report["bodies"]["pmi_plate.py::plate"], "replayed")
+        self.assertIn("PMIError: pmi_plate: top given to a shape that is not in the result", report["error"])
+        # Replayed into a model that keeps the shape, it passes with the PMI it ran with.
+        report = self.build(head + "    body = plate()\n    return body\n")
+        self.assertEqual(report["bodies"]["pmi_plate.py::plate"], "replayed")
+        self.assertIn("FLATNESS", self.step.read_text(encoding="utf-8"))
 
     def test_each_model_of_a_script_fails_only_for_the_annotations_its_own_body_lost(self) -> None:
         # The first model keeps its annotations: a run's record taken by its first report would
@@ -1891,6 +1951,41 @@ def pmi_plate():
         self.assertNotIn("unattached", reports["whole"]["pmi"])
         self.assertTrue((self.folder / "XBF" / "whole.xbf").is_file())
         self.assertFalse((self.folder / "XBF" / "lossy.xbf").exists())
+
+    def test_a_memo_function_two_models_call_gives_its_annotations_to_each(self) -> None:
+        """A @memo function a second model of the build calls is handed the first's result: its
+        annotations are that model's too, so the one whose body replaced the shape fails, built or
+        replayed, where it once passed at exit 0 with no PMI."""
+        script = self.folder / "two.py"
+        script.write_text(textwrap.dedent('''
+            import build123d as bd
+            from cadgen import memo
+            from cadgen.ap242 import annotate, flatness_tolerance
+            from cadgen.engine import xbf
+
+
+            @memo
+            def plate():
+                body = bd.Box(100, 60, 10)
+                return annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+
+
+            @xbf(out="XBF/whole.xbf")
+            def whole():
+                return plate()
+
+
+            @xbf(out="XBF/lossy.xbf")
+            def lossy():
+                return bd.fillet(plate().edges().filter_by(bd.Axis.Z), 2)
+        '''), encoding="utf-8")
+        for status in ("run", "replayed"):
+            reports = {report["source"]["name"]: report for report in engine_build.build(script, None, cwd=self.folder)}
+            self.assertTrue(reports["whole"]["ok"], reports["whole"])
+            self.assertFalse(reports["lossy"]["ok"])
+            self.assertEqual(reports["lossy"]["bodies"]["two.py::lossy"], status)
+            self.assertIn("lossy: top given to a shape that is not in the result", reports["lossy"]["error"])
+            self.assertFalse((self.folder / "XBF" / "lossy.xbf").exists())
 
 
 BROKEN = '''
@@ -2001,6 +2096,44 @@ class StepWriteTest(_Folder):
                 self.assertIn("pmi_plate.step not written: the PMI in the STEP written does not match", report["error"])
                 self.assertEqual(self.step.read_bytes(), b"an earlier step")
         self.assertEqual(len(list(self.folder.glob(".*.tmp"))), 0)
+
+    def test_the_engine_s_own_step_round_trips_and_one_that_would_not_is_refused(self) -> None:
+        """A STEP this engine wrote reads back with each datum once, though OCCT's reader gives each
+        frame naming one a label of its own (datum A read twice, once), so a STEP of it, and a
+        STEP of its xbf, carry and verify all it holds; and its faces carry names, so a STEP of it
+        whose check finds a problem is refused as one of the model's document is, where it was once
+        written with a warning."""
+        from unittest import mock
+
+        from cadgen.engine.worker import _export
+
+        # Datum A named by two frames, the position's and the profile's.
+        source = plate().replace("plus_minus_tolerance, position_tolerance)",
+                                 "plus_minus_tolerance, position_tolerance, surface_profile_tolerance)")
+        source = source.replace("        dimensional_location(\"hole-from-B\"",
+                                "        surface_profile_tolerance(\"B-profile\", front, 0.1, datums=[\"A\"]),\n"
+                                "        dimensional_location(\"hole-from-B\"")
+        self.assertIn("B-profile", source)
+        self.build(source)
+        listed = read(self.step)
+        self.assertEqual([entry["datum"]["letter"] for entry in listed if entry["kind"] == "datum"], ["A", "B", "C"])
+        self.assertEqual(len(listed), len(read(self.xbf)))
+        again, xbf, twice = self.folder / "again.step", self.folder / "again.xbf", self.folder / "twice.step"
+        said: list[str] = []
+        for source, target in ((self.step, again), (self.step, xbf), (xbf, twice)):
+            answer = _export({"source": {"path": str(source)}, "destinations": [str(target)]}, said.append)
+            if target.suffix == ".step":
+                checked = answer["files"][0]["pmiVerification"]
+                self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (10, 10, []))
+                self.assertEqual(sorted(map(_meaning, read(target))), sorted(map(_meaning, listed)))
+        self.assertEqual([text for text in said if text.startswith("warning:")], [])
+        mismatched = {"matched": 9, "total": 10, "problems": ["A: values, units, datum order or face association could "
+                                                             "not be verified."], "sha256": "x"}
+        again.write_bytes(b"an earlier file")
+        with mock.patch("cadgen.engine.export.ap242.check", return_value=mismatched):
+            with self.assertRaisesRegex(export.ExportRefused, r"again.step not written: .* \(9 of 10 matched\): A: "):
+                _export({"source": {"path": str(self.step)}, "destinations": [str(again)]}, [].append)
+        self.assertEqual(again.read_bytes(), b"an earlier file")
 
     def test_datum_letters_asme_sets_aside_are_refused(self) -> None:
         import build123d as bd
@@ -2286,7 +2419,7 @@ class ForeignTest(unittest.TestCase):
                           "links it to no face, edge or point of a part"])
         [unverified] = [text for text in said if "not verified" in text]
         self.assertTrue(unverified.startswith("warning: pmi: part.step: the PMI in the written file is not verified "
-                                              "(0 of 2 matched)"), unverified)
+                                              "(0 of 1 matched)"), unverified)
 
 
 class FixtureTest(_Folder):
