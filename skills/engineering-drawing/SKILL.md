@@ -171,6 +171,12 @@ outside the sandbox once.
      one, and never present a guess as a requirement: a field you leave blank
      prints as an empty, captioned cell, which says the drawing does not
      state it, and the run reports what the sheet's stage still needs.
+   - A sheet's notes state what to make, not what is still open: questions,
+     unfinished analysis and "not released" lines go in the handoff to the
+     person, not on a prototype or production sheet.
+   - A bent sheet-metal part goes to the shop with its flat pattern: make it
+     with `$dxf` in the same job and name it in a note (FLAT PATTERN PER
+     `bracket_flat.dxf`), so the blank and bend lines are not left to guess.
 5. **Run `python <name>_drawing.py` and read what it prints** before the PDF:
    - *"incomplete: …"*: a hole or slot not called out or not located, a flat
      face not placed, an inclined face with no angle, a taper's end or a
