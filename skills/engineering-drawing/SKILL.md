@@ -160,9 +160,10 @@ outside the sandbox once.
      bounds the feature) or reference (`reference=True`, in parentheses;
      information only). `frame=Frame(...)` on a callout or dimension,
      `view.datum("A", point)`, `view.frame(point, Frame(...))` and
-     `Sheet(general_profile=...)` give GD&T; `key=True` marks a key
-     characteristic. `Sheet(stage=, profile=)` says how far along it is and
-     whose conventions it follows. All of it:
+     `Sheet(general_profile=...)` give GD&T, on a sheet whose `profile=` names
+     the standard that reads it (`GENERIC` is ISO GPS; with none, a frame is
+     refused); `key=True` marks a key characteristic. `Sheet(stage=, profile=)`
+     says how far along it is and whose conventions it follows. All of it:
      [intent and GD&T](references/intent-and-gdt.md).
    - Every tolerance, fit, datum, frame, material, spec, finish and note comes
      from the person or the requirements, confirmed in step 0. Never invent
@@ -181,16 +182,17 @@ outside the sandbox once.
    - *"redundant: …"*: dimensions that state one size twice, every one in the
      loop named. Make one of them reference, or leave it out; which one is a
      design decision (the one that matters is toleranced).
-   - *"measures blank paper"*: a dimension's points miss the view. Usually the
-     part was built from a corner and the script assumed it was centred.
-   - *"annotation overlaps"*, *"views crowded"*, *"leader crosses the view"*,
-     *"its leader crosses a dimension line"*:
+   - *"would measure blank paper"* (it stops the script): a dimension's points
+     miss the view. Usually the part was built from a corner and the script
+     assumed it was centred.
+   - *"annotation overlaps"* (it stops the script), *"views crowded"*,
+     *"leader crosses the view"*, *"its leader crosses a dimension line"*:
      not enough paper where the annotation is. The message names the view and
      side asking most, and a larger sheet or smaller scale; moving that
      annotation to a view with room to spare often does instead.
-   - *"separate solids"*: the part is in pieces, usually a cut that runs right
-     through the model. Fix the model before drawing it, or, if it is an
-     assembly, draw it as one (below).
+   - *"separate solids"* (it stops the script): the part is in pieces, usually
+     a cut that runs right through the model. Fix the model before drawing it,
+     or, if it is an assembly, draw it as one (below).
    - *"requirements: …"*: one line per part sheet, apart from the `incomplete:`
      lines: its stage; how many sizes are toleranced, basic, reference or
      nominal (and under which general tolerance); its datums and frames; and

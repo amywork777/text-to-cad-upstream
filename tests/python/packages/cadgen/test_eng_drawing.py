@@ -342,16 +342,16 @@ class DrawingSheetTests(unittest.TestCase):
         part = _part()
         sheet = Sheet("A4", title="TAGGED", general_tolerance="ISO 2768-m",
                       revisions=[("A", "2026-09-01", "INITIAL RELEASE"), ("B", "2026-09-17", "HOLE MOVED")])
-        top = sheet.view(part, "top", at=(100, 120))
-        front = sheet.view(part, "front", at=(100, 50))
+        top = sheet.view(part, "top", at=(100, 140))
+        front = sheet.view(part, "front", at=(100, 75))
         front.dim((20, -15, 0), (20, -15, 10), offset=12, tol=0.1)
-        front.dim((-20, -15, 0), (20, -15, 0), offset=-12, tol=(0.05, 0.02), fit="h6")
+        front.dim((-20, -15, 0), (20, -15, 0), offset=-12, fit="h6")
         top.hole((10, 5, 10), thread="M6x1 - 6H")
         doc = _render_sheet(sheet, index=1, count=1, label="tagged")
         msp = doc.modelspace()
         texts = _dim_texts(doc)
         self.assertTrue(any("±0.1}" in t for t in texts), texts)
-        self.assertTrue(any("+0.05" in t and "0.02" in t and "h6" in t for t in texts), texts)
+        self.assertTrue(any("40 h6" in t for t in texts), texts)
         notes = [e.dxf.text for e in msp.query("TEXT[layer=='NOTES']")]
         self.assertTrue(any("ISO 2768-m" in n for n in notes), notes)
         title_texts = [e.dxf.text for e in msp.query("TEXT[layer=='TITLE']")]
@@ -383,29 +383,27 @@ class SheetWarningTests(unittest.TestCase):
     """What the sheet draws but a reader should look at. Found by running the
     skill on parts it was not written against."""
 
-    def test_a_dimension_whose_points_miss_the_geometry_says_so(self) -> None:
+    def test_a_dimension_whose_points_miss_the_geometry_is_refused(self) -> None:
         """A part built from a corner, dimensioned as if it were centred.
 
-        The dimension renders perfectly and measures blank paper, which is the
-        one error a shop cannot catch from the print.
+        The dimension rendered perfectly and measured blank paper, which is the
+        one error a shop cannot catch from the print: it was a warning beside it.
         """
         from build123d import Align, Box
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet
 
         part = Box(120, 30, 30, align=(Align.MIN, Align.CENTER, Align.CENTER))  # X runs 0..120
-        sheet = Sheet("A3")
-        front = sheet.view(part, "front", at=(210, 150))
-        front.dim((0, 0, 15), (30, 0, 15))          # on the part
-        front.dim((-60, 0, 15), (-30, 0, 15))       # as if it were centred: off in space
-        front.note("BORE", (-55, 0, 0))
-        notices: list[str] = []
-        _render_sheet(sheet, index=1, count=1, label="off", warnings=notices)
-
-        self.assertEqual(len(notices), 2, notices)
-        self.assertTrue(any("dim 1" in n for n in notices), notices)
-        self.assertTrue(any("note 2" in n for n in notices), notices)
-        self.assertTrue(all("measures blank paper" in n for n in notices), notices)
+        for name, call in (("dim 1", lambda v: v.dim((-60, 0, 15), (-30, 0, 15))),   # as if it were centred
+                           ("note 1", lambda v: v.note("BORE", (-55, 0, 0)))):
+            sheet = Sheet("A3")
+            front = sheet.view(part, "front", at=(210, 150))
+            front.dim((0, 0, 15), (30, 0, 15))          # on the part
+            call(front)
+            with self.subTest(name), self.assertRaisesRegex(
+                    ValueError, rf"front {name}: \d of \d point\(s\) fall outside the view's geometry .* would "
+                                "measure blank paper"):
+                _render_sheet(sheet, index=1, count=1, label="off")
 
     def test_a_clean_sheet_warns_about_nothing(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
@@ -414,7 +412,7 @@ class SheetWarningTests(unittest.TestCase):
         _render_sheet(_sheet(_part()), index=1, count=1, label="clean", warnings=notices)
         self.assertEqual(notices, [])
 
-    def test_annotation_printed_over_annotation_says_so(self) -> None:
+    def test_annotation_printed_over_annotation_is_refused(self) -> None:
         """Two views are laid out knowing only where the views are, so one view's
         outermost dimension can land on the view label of the view above it."""
         from cadgen._internal.drawing_render import _render_sheet
@@ -429,12 +427,14 @@ class SheetWarningTests(unittest.TestCase):
             # Both along the top edge, so both take rows above the view.
             front.dim((-20, -15, 10), (0, -15, 10))
             front.dim((0, -15, 10), (20, -15, 10))
-            notices: list[str] = []
-            _render_sheet(sheet, index=1, count=1, label="rows", warnings=notices)
-            return [n for n in notices if "annotation overlaps" in n]
+            try:
+                _render_sheet(sheet, index=1, count=1, label="rows")
+            except ValueError as exc:
+                return [str(exc)] if "annotation overlaps" in str(exc) else []
+            return []
 
         crowded = build(47)
-        self.assertTrue(crowded, "three rows into a two-row gap should be reported")
+        self.assertTrue(crowded, "three rows into a two-row gap is refused")
         self.assertIn("three_views(gap=", crowded[0])
         self.assertEqual(build(70), [], "given the room, the same sheet is quiet")
         self.assertEqual(build(None), [], "left to itself, the layout makes the room")
@@ -692,7 +692,7 @@ class TextMeasurementTests(unittest.TestCase):
         self.assertAlmostEqual(_text_width("1234", 7.0), 2 * _text_width("1234", 3.5), delta=1e-6)
 
 class ChainDimensionTests(unittest.TestCase):
-    """The overlap warning has to survive the commonest idiom in drafting."""
+    """The overlap refusal has to survive the commonest idiom in drafting."""
 
     def _warnings(self, pitch: float, tol) -> list:
         from build123d import Box
@@ -705,9 +705,11 @@ class ChainDimensionTests(unittest.TestCase):
         for i in range(int(span // pitch)):
             top.dim((-span / 2 + pitch * i, 30, 0), (-span / 2 + pitch * (i + 1), 30, 0),
                     tol=tol, offset=14.0)
-        notices: list = []
-        _render_sheet(sheet, index=1, count=1, label="chain", warnings=notices)
-        return [n for n in notices if "overlaps" in n]
+        try:
+            _render_sheet(sheet, index=1, count=1, label="chain")
+        except ValueError as exc:
+            return [str(exc)] if "overlaps" in str(exc) else []
+        return []
 
     def test_a_toleranced_chain_with_clear_paper_does_not_warn(self) -> None:
         """Five values about 14 mm wide at 30 mm pitch: 16 mm of clear paper.
@@ -722,7 +724,7 @@ class ChainDimensionTests(unittest.TestCase):
                 self.assertEqual([], self._warnings(pitch, 0.1))
                 self.assertEqual([], self._warnings(pitch, None))
 
-    def test_values_that_really_do_collide_still_warn(self) -> None:
+    def test_values_that_really_do_collide_are_refused(self) -> None:
         """The pitch comes from the measurement, so this is a collision on any
         font: values packed at half the width of the value itself."""
         from cadgen._internal.drawing_base import _mtext_extent
@@ -1448,17 +1450,29 @@ class ThreadCalloutTests(unittest.TestCase):
         view = Sheet("A4").view(_drilled([(0, 0)]), "top", at=(100, 150))
         for thread, message in (("", "is not a thread this drawing can check"), ("hello", "is not a thread this drawing"),
                                 ("M50", "ISO 261 gives M50 no coarse pitch to assume"),
-                                ("M6x7", "a pitch of 7 does not fit an M6 thread"),
+                                ("M6x7", r"ISO 261 gives M6 the pitches 1, 0.75, not 7"),
+                                ("M6x5", r"ISO 261 gives M6 the pitches 1, 0.75, not 5"),
+                                ("M6x0.5", r"ISO 261 gives M6 the pitches 1, 0.75, not 0.5"),
+                                ("M13", "M13 is not an ISO 261 size"),
                                 ("M6x1 - 6g", "external thread's tolerance class"),
+                                ("M6x1 - 6E", "6E is not an ISO 965-1 class for a tapped hole"),
+                                ("M6x1 - 9H", "9H is not an ISO 965-1 class"),
+                                ("1/4-28 UNC", r"ASME B1.1 gives 1/4 UNC 20, UNF 28, UNEF 32 threads per inch, so "
+                                               r"1/4-28 UNC is no unified thread; write one of 1/4-20 UNC"),
+                                ("#10-28 UNF", "gives #10 UNC 24, UNF 32"),
+                                ("3/8-20 UNS", "3/8-20 UNS is no unified thread"),
                                 ("1/4-20 UNC-2A", "2A is an external thread's class"),
-                                ("#14-20 UNC", "#14 is not a unified thread size")):
+                                ("#14-20 UNC", "#14 is not an ASME B1.1 unified size"),
+                                ("0.375-24 UNF", "is not a thread this drawing can check")):
             with self.subTest(thread=thread), self.assertRaisesRegex(ValueError, message):
                 view.hole((0, 0, 20), thread=thread)
 
     def test_a_special_pitch_or_an_inch_thread_is_checked_against_its_tap_drill(self) -> None:
-        # Fine and special metric pitches and unified inch threads print as given over the bore their pitch takes:
-        # M6x0.5 over ⌀5.5, 1/4-20 UNC over its #7 drill (⌀5.11), #10-32 UNF over its #21 drill (⌀4.04).
-        for bore, thread in ((5.5, "M6x0.5 - 6H"), (5.11, "1/4-20 UNC-2B"), (4.04, "#10-32 UNF")):
+        # Fine metric pitches and unified inch threads print as given over the bore their pitch takes: M6x0.75
+        # over ⌀5.2, 1/4-20 UNC over its #7 drill (⌀5.11), #10-32 UNF over its #21 drill (⌀4.04), 1-8 UNC (the
+        # inch, since #1 has no 8) over ⌀22.25 and 10-24 UNC (the numbered size) over its #25 drill (⌀3.8).
+        for bore, thread in ((5.2, "M6x0.75 - 6H"), (5.11, "1/4-20 UNC-2B"), (4.04, "#10-32 UNF"),
+                             (22.25, "1-8 UNC"), (3.8, "10-24 UNC"), (5.2, "M6x0.75 - 5H6H LH")):
             with self.subTest(thread=thread):
                 self.assertEqual(self._callouts(_drilled([(0, 0)], bore), lambda v, t=thread: v.hole((0, 0, 20), thread=t)),
                                  [f"{thread} THRU"])
@@ -1660,7 +1674,7 @@ class ColdTrialTests(unittest.TestCase):
         sheet.view(_plate(), "front", at=(140, 110)).dim((40, -25, 0), (34, -25, 6), orientation="v")
         _render_sheet(sheet, index=1, count=1, label="said")
 
-    def test_a_part_that_is_several_solids_is_said(self) -> None:
+    def test_a_part_that_is_several_solids_is_refused(self) -> None:
         from build123d import Align, Box, Pos
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet
@@ -1669,9 +1683,8 @@ class ColdTrialTests(unittest.TestCase):
         split = Box(30, 20, 10, align=align) - Box(4, 30, 20, align=(Align.CENTER, Align.CENTER, Align.CENTER))
         sheet = Sheet("A4")
         sheet.view(split, "top", at=(140, 110))
-        notices: list[str] = []
-        _render_sheet(sheet, index=1, count=1, label="split", warnings=notices)
-        self.assertTrue(any("2 separate solids" in n for n in notices), notices)
+        with self.assertRaisesRegex(ValueError, "the part in the top view is 2 separate solids"):
+            _render_sheet(sheet, index=1, count=1, label="split")
 
     def test_a_dimension_to_a_hole_centre_extends_the_centre_line(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
@@ -2603,19 +2616,17 @@ class AssemblyDrawingTests(unittest.TestCase):
         sheet = Sheet("A3")
         sheet.view(tall, "front", at=(150, 150)).overall().note("X", (-10, -10, 75),
                                                                   offset=(x + 5.25 - 140.0, y + 1.5 - 225.0))
-        warnings: list = []
-        _render_sheet(sheet, index=1, count=1, label="over", warnings=warnings)
-        self.assertTrue(any("'X' is printed over '150'" in w for w in warnings), warnings)
+        with self.assertRaisesRegex(ValueError, "'X' would print over '150'"):
+            _render_sheet(sheet, index=1, count=1, label="over")
 
-    def test_a_separate_solids_notice_points_an_assembly_at_the_parts_list(self) -> None:
+    def test_a_separate_solids_refusal_points_an_assembly_at_the_parts_list(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A3")
         sheet.view(_assembly(), "front", at=(150, 150), hidden=False)
-        warnings: list = []
-        _render_sheet(sheet, index=1, count=1, label="solids", warnings=warnings)
-        self.assertTrue(any("separate solids" in w and "assembly_sheets(parts_list(" in w for w in warnings), warnings)
+        with self.assertRaisesRegex(ValueError, r"separate solids.*assembly_sheets\(parts_list\("):
+            _render_sheet(sheet, index=1, count=1, label="solids")
 
     def test_balloons_refuse_another_shape_a_section_or_a_detail(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
@@ -3369,9 +3380,9 @@ class DimensionKindTests(unittest.TestCase):
     def _block_sheet(self):
         from build123d import Align, Box
 
-        from cadgen.eng_drawing import Sheet
+        from cadgen.eng_drawing import GENERIC, Sheet
 
-        sheet = Sheet("A3", 1.0)
+        sheet = Sheet("A3", 1.0, profile=GENERIC)
         top, front, right = sheet.three_views(Box(40, 30, 10, align=(Align.CENTER, Align.CENTER, Align.MIN)))
         return sheet, top, front
 
@@ -3514,10 +3525,10 @@ class DimensionKindTests(unittest.TestCase):
         from build123d import Align, Box, Cylinder
 
         from cadgen._internal.drawing_render import _render_sheet
-        from cadgen.eng_drawing import Frame, Sheet
+        from cadgen.eng_drawing import GENERIC, Frame, Sheet
 
         up = (Align.CENTER, Align.CENTER, Align.MIN)
-        sheet = Sheet("A3", 1.0)
+        sheet = Sheet("A3", 1.0, profile=GENERIC)
         top, front, right = sheet.three_views(Box(60, 40, 10, align=up) - Cylinder(8, 10, align=up))
         top.diameter((0, 0, 10), reference=True)
         front.overall(reference=True)
@@ -3564,6 +3575,31 @@ class DimensionKindTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"top dim 0: a basic dimension, and no GD&T frame on the sheet"):
             _render_sheet(sheet, index=1, count=1, label="lonely")
 
+    def test_a_fit_is_an_iso_286_class_and_the_whole_tolerance(self) -> None:
+        # fit= printed whatever it was given after the size ("80 banana"), and beside tol= it printed two tolerances.
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet, top, front = self._block_sheet()
+        a, b = (-20, -15, 10), (20, -15, 10)
+        for fit in ("banana", "H", "7", "H19", "I7", "h7/H7", "H7/G6", "H7/g6/f7", "Hh7"):
+            with self.subTest(fit=fit), self.assertRaisesRegex(ValueError, "not an ISO 286-1 tolerance class or fit"):
+                top.dim(a, b, fit=fit)
+        with self.assertRaisesRegex(TypeError, "fit= takes"):
+            top.dim(a, b, fit=7)
+        for kinds in ({"fit": "H7", "tol": 0.1}, {"fit": "g6", "limits": (39.9, 40.0)}):
+            with self.subTest(kinds=kinds), self.assertRaisesRegex(ValueError, r"is the size's tolerance.*not both"):
+                top.dim(a, b, **kinds)
+        for fit in ("H7", "g6", "JS9", "js6", "CD10", "zc11", "h01", "H7/g6", "H7/k6"):
+            top.dim(a, b, fit=fit)
+        plate = Sheet("A4").view(_drilled([(0, 0)]), "top", at=(100, 150))
+        with self.assertRaisesRegex(ValueError, r"hole\(\) takes fit='H7' or tol=, not both"):
+            plate.hole((0, 0, 20), fit="H7", tol=0.1)
+        with self.assertRaisesRegex(ValueError, r"fit='g6' is a shaft's tolerance class .*\(G6\)"):
+            plate.hole((0, 0, 20), fit="g6")
+        plate.hole((0, 0, 20), fit="H7/g6")
+        self.assertEqual(_callouts(_render_sheet(plate.sheet, index=1, count=1, label="fit")), ["%%c5 H7/g6 THRU"])
+
 
 class GdtTests(unittest.TestCase):
     """Feature control frames and datum feature symbols, every value the person's."""
@@ -3571,35 +3607,60 @@ class GdtTests(unittest.TestCase):
     def _plate(self):
         from build123d import Align, Box, Cylinder, Pos
 
-        from cadgen.eng_drawing import Sheet
+        from cadgen.eng_drawing import GENERIC, Sheet
 
         up = (Align.CENTER, Align.CENTER, Align.MIN)
         part = Box(80, 50, 10, align=up) - Pos(20, 0, 0) * Cylinder(5, 10, align=up)
-        sheet = Sheet("A3", 1.0)
+        sheet = Sheet("A3", 1.0, profile=GENERIC)
         top, front, right = sheet.three_views(part)
         return sheet, top, front, right
 
     def test_a_frame_its_sheets_standard_dropped_is_refused(self) -> None:
-        # Y14.5-2018 has no concentricity or symmetry; ISO 1101, which a sheet with no profile reads by, has both.
+        # Y14.5-2018 has no concentricity or symmetry; ISO 1101, which GENERIC reads by, has both.
         from build123d import Align, Box, Cylinder, Pos
 
         from cadgen._internal.drawing_render import _render_sheet
-        from cadgen.eng_drawing import Frame, Sheet
+        from cadgen.eng_drawing import GENERIC, Frame, Sheet
 
         up = (Align.CENTER, Align.CENTER, Align.MIN)
         part = Box(80, 50, 10, align=up) - Pos(20, 0, 0) * Cylinder(5, 10, align=up)
-        for profile in (_aero(), None):
+        for profile in (_aero(), GENERIC):
             sheet = Sheet("A3", 1.0, profile=profile)
             top, front, _right = sheet.three_views(part)
             front.datum("A", (0, -25, 5))
             top.frame((0, 25, 10), Frame("symmetry", 0.1, ("A",)))
-            if profile is None:
+            if profile is GENERIC:
                 _render_sheet(sheet, index=1, count=1, label="iso")
                 continue
             with self.assertRaisesRegex(ValueError, r"top frame 0: ASME Y14.5-2018, the standard its profile AERO "
                                                     r"reads the drawing by, has no symmetry; state position, or "
                                                     r"surface_profile instead"):
                 _render_sheet(sheet, index=1, count=1, label="y14")
+
+    def test_a_frame_on_a_sheet_that_names_no_standard_is_refused(self) -> None:
+        # ISO GPS and Y14.5 read one frame differently (Rule #1): it printed under neither name, read as ISO.
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Frame, Sheet
+
+        part = self._plate()[1].shape
+        sheet = Sheet("A3", 1.0)
+        top, front, _right = sheet.three_views(part)
+        front.datum("A", (0, -25, 0))
+        top.hole((20, 0, 10), frame=Frame("position", 0.1, ("A",), diameter=True))
+        with self.assertRaisesRegex(ValueError, r"sheet 1 \(UNTITLED\), top hole 0: a GD&T frame is read by ISO GPS "
+                                                r"or ASME Y14.5-2018.*the sheet names neither; give it profile=GENERIC"):
+            _render_sheet(sheet, index=1, count=1, label="unnamed")
+        general = Sheet("A3", 1.0, general_profile=Frame("surface_profile", 0.2))
+        general.view(part, "top", at=(150, 150))
+        with self.assertRaisesRegex(ValueError, "the general profile: a GD&T frame"):
+            _render_sheet(general, index=1, count=1, label="general")
+        # Named, the standard prints as a note of the sheet.
+        named = self._plate()
+        named[2].datum("A", (0, -25, 0))
+        named[1].hole((20, 0, 10), frame=Frame("position", 0.1, ("A",), diameter=True))
+        notes = [e.dxf.text for e in _render_sheet(named[0], index=1, count=1, label="named").modelspace()
+                 .query("TEXT[layer=='NOTES']")]
+        self.assertTrue(any("TOLERANCING ISO 8015." in n for n in notes), notes)
 
     def test_frame_vocabulary_is_closed_and_follows_y14_5(self) -> None:
         from cadgen.eng_drawing import Frame
@@ -3646,14 +3707,14 @@ class GdtTests(unittest.TestCase):
 
     def test_a_datum_counts_on_its_own_sheet_only_and_the_refusal_names_the_sheet(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
-        from cadgen.eng_drawing import Frame, Sheet
+        from cadgen.eng_drawing import GENERIC, Frame, Sheet
 
         sheet, top, front, right = self._plate()
         detail = sheet.detail(front, (0, -25, 0), 8)
         detail.datum("A", (0, -25, 0))                   # defined in a detail of the sheet
         top.hole((20, 0, 10), frame=Frame("position", 0.1, ("A",), diameter=True))
         _render_sheet(sheet, index=1, count=2, label="first", warnings=[])
-        second = Sheet("A3", 1.0, title="SECOND")
+        second = Sheet("A3", 1.0, title="SECOND", profile=GENERIC)
         other = second.three_views(self._plate()[1].shape)[0]
         other.hole((20, 0, 10), frame=Frame("position", 0.1, ("A",), diameter=True))
         with self.assertRaisesRegex(ValueError, r"sheet 2 \(SECOND\).*datum A"):
@@ -3669,12 +3730,12 @@ class GdtTests(unittest.TestCase):
 
     def test_the_general_profile_note_is_note_1(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
-        from cadgen.eng_drawing import Frame, Sheet
+        from cadgen.eng_drawing import GENERIC, Frame, Sheet
 
         with self.assertRaisesRegex(ValueError, "surface_profile"):
             Sheet("A3", 1.0, general_profile=Frame("flatness", 0.1))
         sheet = Sheet("A3", 1.0, general_profile=Frame("surface_profile", 0.2, ("A", "B")),
-                      general_tolerance="ISO 2768-m")
+                      general_tolerance="ISO 2768-m", profile=GENERIC)
         top, front, right = sheet.three_views(self._plate()[1].shape)
         front.datum("A", (0, -25, 0))
         top.datum("B", (-40, 0, 10))
@@ -3806,14 +3867,14 @@ class StageProfileTests(unittest.TestCase):
     def test_the_report_says_what_is_required_apart_from_what_is_drawn(self) -> None:
         """"All features dimensioned" can stand beside "no tolerance stated": the
         report says both, so a handoff cannot confuse one for the other."""
-        from cadgen.eng_drawing import Frame
+        from cadgen.eng_drawing import GENERIC, Frame
 
         nominal = self._report(self._sheet(stage="concept")[0], "required")
         self.assertEqual(len(nominal), 1, nominal)
         for words in ("concept", "all nominal", "no general tolerance", "no datums", "⌀6 THRU"):
             self.assertIn(words, nominal[0])
         sheet, top, front = self._sheet(stage="production", material="AL 6061-T6", spec="AMS 4027", finish="NONE",
-                                        general_tolerance="ISO 2768-m", hole_key=True)
+                                        general_tolerance="ISO 2768-m", hole_key=True, profile=GENERIC)
         front.datum("A", (0, -15, 0))
         top.dim((-20, -15, 10), (10, -15, 10), basic=True)
         top.dim((-20, 15, 10), (20, 15, 10), tol=0.1)
@@ -3825,10 +3886,11 @@ class StageProfileTests(unittest.TestCase):
             self.assertIn(words, stated[0])
 
     def test_a_finished_production_sheet_reports_nothing_of_its_stage(self) -> None:
-        from cadgen.eng_drawing import Frame
+        from cadgen.eng_drawing import GENERIC, Frame
 
         sheet, top, front = self._sheet(stage="production", material="AL 6061-T6", spec="AMS 4027",
-                                        finish="ANODISE CLEAR", general_profile=Frame("surface_profile", 0.2, ("A",)))
+                                        finish="ANODISE CLEAR", general_profile=Frame("surface_profile", 0.2, ("A",)),
+                                        profile=GENERIC)
         front.datum("A", (0, -15, 0))
         top.dim((-20, -15, 10), (10, -15, 10), key=True)
         self.assertFalse([line for line in self._report(sheet) if "production" in line])
@@ -4467,6 +4529,24 @@ class LocationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "detail"):
             detail.symmetric("v")
 
+    def test_one_small_hole_off_the_centre_line_is_not_symmetric(self) -> None:
+        # Judged by its share of the part's volume, a ⌀2 hole 30 off centre in a 300 × 200 × 10 plate (31 of
+        # 600 000 mm³) was within 1e-4, and symmetric("v") placed a hole on the far side that is not there.
+        from build123d import Align, Box, Cylinder, Pos
+
+        from cadgen._internal.drawing_features import mirror_symmetric
+        from cadgen.eng_drawing import Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        plate = Box(300, 200, 10, align=up) - Pos(30, 0, 0) * Cylinder(1, 10, align=up)
+        sheet = Sheet("A2", 1.0)
+        top, _front = sheet.three_views(plate, views=("top", "front"))
+        with self.assertRaisesRegex(ValueError, r"top.symmetric\('v'\): the part is not symmetric"):
+            top.symmetric("v")
+        top.symmetric("h")                                 # on the X axis: its mirror across Y is itself
+        pair = plate - Pos(-30, 0, 0) * Cylinder(1, 10, align=up)
+        self.assertTrue(mirror_symmetric(pair, 0), "the hole's mirror image added: symmetric")
+
     def test_the_symmetry_line_runs_through_the_parts_middle_on_a_broken_view(self) -> None:
         from build123d import Align, Box, Cylinder, Pos
 
@@ -4831,9 +4911,9 @@ class RedundancyTests(unittest.TestCase):
 
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _redundant
-        from cadgen.eng_drawing import Frame, Sheet
+        from cadgen.eng_drawing import GENERIC, Frame, Sheet
 
-        sheet = Sheet("A3", 1.0)
+        sheet = Sheet("A3", 1.0, profile=GENERIC)
         top, front = sheet.three_views(Box(60, 40, 8, align=(Align.MIN, Align.MIN, Align.MIN)),
                                        views=("top", "front"))
         front.overall()

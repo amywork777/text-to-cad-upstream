@@ -428,9 +428,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     ``floor`` and ``ceiling`` bound a size or scale the sheet chooses (see
     :func:`_render_sheet`).
 
-    ``warnings`` collects anything the sheet renders but a reader should look
-    at -- a dimension whose points miss the geometry, say. The render never
-    stops for one: it is the PDF that answers whether the sheet is right.
+    ``warnings`` collects what makes a right sheet harder to read -- views
+    squeezed together, a leader that has to cross a dimension line, say. A
+    sheet that would be wrong -- a dimension measuring blank paper, one value
+    printed over another -- is refused instead.
     ``facts`` collects what the sheet states about each part (holes called out,
     values dimensioned), so the drawing can say what it leaves unstated.
     """
@@ -523,13 +524,12 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     def claim(value: str, box: tuple[float, float, float, float]) -> None:
         for other, taken in claimed:
             if (box[0] < taken[2] and box[2] > taken[0] and box[1] < taken[3] and box[3] > taken[1]):
-                if warnings is not None:
-                    warnings.append(
-                        f"annotation overlaps: {value.strip()!r} is printed over {other.strip()!r} "
-                        f"around ({box[0]:.0f}, {box[1]:.0f}). Give the view more room "
-                        "(three_views(gap=...), a larger sheet), or place one of them with offset=."
-                    )
-                break
+                # Two values in one place read as neither: the sheet is wrong, not cramped.
+                raise ValueError(
+                    f"annotation overlaps: {value.strip()!r} would print over {other.strip()!r} "
+                    f"around ({box[0]:.0f}, {box[1]:.0f}). Give the view more room "
+                    "(three_views(gap=...), a larger sheet), or place one of them with offset=."
+                )
         claimed.append((value, box))
 
     # What the part's faces say, read once per part however many views show it.
@@ -607,8 +607,11 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         if id(view.shape) not in checked:
             checked.add(id(view.shape))
             solids = len(view.shape.solids()) if hasattr(view.shape, "solids") else 1
-            if solids > 1 and id(view.shape) not in assemblies and warnings is not None:
-                warnings.append(
+            if solids > 1 and id(view.shape) not in assemblies:
+                # One part's drawing of several solids states one part's sizes over
+                # pieces that are not joined: its title block and its report say
+                # one part, and its views say otherwise.
+                raise ValueError(
                     f"the part in the {view.name} view is {solids} separate solids, and a drawing documents one "
                     "part. A cut that runs right through the model splits it; check the model, or draw each "
                     "solid on its own sheet. An assembly is drawn with a parts list and balloons: "
@@ -1382,12 +1385,12 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # cause is model coordinates assumed to be centred when the part was
             # built from a corner.
             off = [p for p in points if not on_view(p)]
-            if off and warnings is not None:
+            if off:
                 where = ", ".join(f"({p[0]:.1f}, {p[1]:.1f})" for p in off)
-                warnings.append(
+                raise ValueError(
                     f"{view.name} {kind} {index}: {len(off)} of {len(points)} point(s) fall outside the "
-                    f"view's geometry at sheet {where}. The dimension is drawn, but it measures blank "
-                    "paper -- check the model coordinates it was given."
+                    f"view's geometry at sheet {where}, so it would measure blank paper; check the model "
+                    "coordinates it was given."
                 )
 
         # A broken view's overall sizes are the whole part's, not the paper's.

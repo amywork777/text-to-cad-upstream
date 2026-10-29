@@ -48,6 +48,9 @@ __all__ = ["Hole", "Axis", "Slot", "BoltCircle", "Blend", "Chamfer", "holes", "a
 #: counterbore's floor and the bore below it meet at one plane, so their ranges
 #: share an end; tessellation-free B-rep values agree far closer than this.
 _TOUCH = 1e-4
+#: The thickness, in mm, past which what a part and its mirror do not share is a
+#: feature, not a boolean's sliver: a micron.
+_SLIVER = 1e-3
 #: How far past an end of a hole the solid is sampled to decide whether it is open.
 _PROBE = 0.05
 
@@ -827,7 +830,11 @@ def mirror_symmetric(shape, axis: int) -> bool:
     """Whether a part is its own mirror image about the plane square to model
     ``axis`` through the middle of its extent. Its faces, mirrored, are looked
     for among its own first; where the faces are split differently on the two
-    sides, the part and its mirror are compared as solids."""
+    sides, the part and its mirror are compared as solids: what one has and the
+    other lacks is a feature if any piece of it is thicker than ``_SLIVER``
+    (twice its volume over its area), and only the slivers a boolean leaves
+    along faces both share are not. A share of the part's volume would not do:
+    one off-centre ⌀2 hole is a few millionths of a large plate."""
     from build123d import Plane, Vector
 
     box = shape.bounding_box()
@@ -847,8 +854,7 @@ def mirror_symmetric(shape, axis: int) -> bool:
     origin = list(box.center())
     origin[axis] = middle
     mirrored = shape.mirror(Plane(origin=Vector(*origin), z_dir=Vector(*normal)))
-    left = (shape - mirrored).volume
-    return left <= 1e-4 * max(shape.volume, 1e-9)
+    return not any(2 * piece.volume > _SLIVER * piece.area for piece in (shape - mirrored).solids())
 
 
 @dataclass(frozen=True)

@@ -192,8 +192,10 @@ sheet millimetres.
   as a centre line. `text` overrides the
   value; `"<>"` inserts the measurement, `"%%c<>"` prefixes ⌀ (a diameter on a
   profile). `tol=0.1` prints ±0.1, `tol=(0.05, 0.02)` +0.05/-0.02, `fit="H7"`
-  appends a fit class, `limits=(39.98, 40.02)` prints the two limits (checked
-  against the part). `basic=True` boxes the value; `reference=True` puts it in
+  appends an ISO 286-1 tolerance class (a hole's in capitals, `"g6"` a
+  shaft's, `"H7/g6"` a fit; anything else is refused) and is the size's whole
+  tolerance, so it takes no `tol` or `limits`; `limits=(39.98, 40.02)` prints
+  the two limits (checked against the part). `basic=True` boxes the value; `reference=True` puts it in
   parentheses; neither takes a tolerance. `frame=` draws a `Frame` beyond the
   value on a row of its own, `datum="B"` makes the feature a datum, `key=True`
   marks a key characteristic. `orientation` is `"h"`, `"v"`, None, or
@@ -236,12 +238,14 @@ sheet millimetres.
   down that axis. Every size and the count come from the part; a value given is
   checked and a contradiction is refused, naming what the part has. `label`
   is appended (`"WHEEL"`). `thread` states a tapped hole: a metric thread
-  with an optional ISO 965 class (`"M6"`, `"M6x0.5 - 6H"`; with no pitch, ISO 261's
-  coarse one) or a unified inch thread (`"1/4-20 UNC-2B"`, `"#10-32 UNF"`; numbered
-  sizes up to #12, a whole inch as a decimal, `"1.0-8 UNC"`); any other form is
-  refused. The bore is its tap drill (basic minor diameter to about d - P: ⌀5 for
+  of ISO 261's sizes and pitches, with an optional ISO 965-1 class for a tapped
+  hole (`"M6"`, `"M6x0.75 - 6H"`; with no pitch, the coarse one), or a unified
+  inch thread of ASME B1.1's sizes and its UNC, UNF or UNEF count
+  (`"1/4-20 UNC-2B"`, `"#10-32 UNF"`, `"1-8 UNC"`); any other thread, such as a
+  pitch the size does not have (`"M6x5"`, `"1/4-28 UNC"`), is refused. The bore is its tap drill (basic minor diameter to about d - P: ⌀5 for
   M6x1, the #7 drill for 1/4-20) or the thread's own size (⌀6). It takes no `diameter`,
-  `tol` or `fit`. A tap drill is stated with the thread after it: `⌀5 ↧12
+  `tol` or `fit`; a plain hole takes `tol` or a hole's `fit` (`"H7"`,
+  `"H7/g6"`), not both. A tap drill is stated with the thread after it: `⌀5 ↧12
   M6x1 - 6H ↧10`. `count` is how many of the identical bores are tapped (all,
   or `count=1` for this one; left unset over several, it is refused), and
   `depth` the thread's depth, which a blind tap drill needs. One hole takes one
@@ -334,12 +338,12 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | `incomplete: 4 rounds R2 are not stated. Sheet(notes=geometry_notes(part)) ...` | a blend radius is not stated |
 | `incomplete: 2 chamfers 1 × 45° are not stated ...` | a chamfer is not stated |
 | `front.broken(): the break from X = 100 to 500 hides some of the part ...` (stops the script) | the part changes inside a break; move it |
-| `front dim 2: ... measures blank paper` | a dimension's points miss the view |
-| `annotation overlaps: '120' is printed over 'TOP' ...` | two pieces of text collide |
+| `front dim 2: ... would measure blank paper ...` (stops the script) | a dimension's points miss the view |
+| `annotation overlaps: '120' would print over 'TOP' ...` (stops the script) | two pieces of text collide; give the view room, or place one with `offset=` |
 | `views crowded: ... Sheet("A2") or Sheet(scale=0.5) gives them room` | the views' annotation needs more paper |
 | `SECTION A-A has no view on this sheet that sees its cutting plane ...` (stops the script) | add the view that shows the plane |
 | `front dim 0: ... so it could measure either ...` (stops the script) | pass `orientation=` |
-| `the part in the top view is 2 separate solids ...` | the model is in pieces |
+| `the part in the top view is 2 separate solids ...` (stops the script) | the model is in pieces |
 | `DETAIL B: no free paper on A3 for a 50 mm circle at 10:1 ...` | give `at=`, a smaller `scale=`, or a larger sheet |
 | `VIEW C: no free paper on A3 for it at 1:1 ...` | the same, for an auxiliary view |
 | `top.hole_table(): no free paper on A3 for a 70 x 48 mm table ...` | give the table `at=`, or a larger sheet or smaller scale |
@@ -362,6 +366,7 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | `note: a production drawing marks its key characteristics ...` | ask whether any feature is one; `key=True` marks it |
 | `top dim 2: a basic dimension, and no GD&T frame on the sheet bounds it ...` (stops the script) | add the frame, or make it toleranced |
 | `sheet 2 (BRACKET), top hole 0: its frame names datum A, which no view of this sheet defines ...` | define the datum on that sheet with `view.datum` (a refusal) |
+| `sheet 1 (BRACKET), top hole 0: a GD&T frame is read by ISO GPS or ASME Y14.5-2018 ... the sheet names neither ...` | give the sheet `profile=GENERIC` or the person's own `Profile` (a refusal) |
 | `the title block's MATERIAL '...' does not fit its 60 mm cell ...` | shorten the value (a refusal) |
 | `0.00001: a stated tolerance prints exactly as given, to at most 4 decimal places` | state it to four places or fewer (a refusal) |
 | `front: the thin layer '...' has no clear place for its callout ...` | give the section more room, or draw a detail of it |

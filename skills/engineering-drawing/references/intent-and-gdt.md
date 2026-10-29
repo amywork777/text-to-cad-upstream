@@ -151,6 +151,9 @@ front.frame((0, -25, 10), Frame("flatness", 0.05)) # a free frame on a surface
   Letters I, O and Q are refused, and a letter names one feature per sheet.
 - A frame naming a datum no view of its sheet defines (a detail of it counts) is
   refused, naming the sheet.
+- A frame on a sheet with no `profile=` is refused: ISO GPS and Y14.5 read one
+  frame differently, so the sheet names its standard (`profile=GENERIC` for ISO
+  GPS, or a company's own `Profile`), and the profile's note prints it.
 - `frame=` on a hole, slot or diameter callout hangs the frame under its text;
   on a `dim`, beyond its value. `key=True` marks a key characteristic with the
   profile's boxed letters.

@@ -289,11 +289,18 @@ def _frames(sheet) -> list[tuple[str, "Frame"]]:
 
 
 def _check_standard(sheet, which: str) -> None:
-    """Refuse a frame whose characteristic the standard the sheet's profile reads
-    it by has no symbol for: a Y14.5-2018 drawing with a concentricity frame
-    states a requirement its own standard cannot read. A sheet with no profile
-    reads as ISO GPS, which has them all."""
+    """Refuse a frame on a sheet that names no standard to read it by, and one
+    whose characteristic the standard the sheet's profile reads it by has no
+    symbol for: a Y14.5-2018 drawing with a concentricity frame states a
+    requirement its own standard cannot read. ISO GPS and Y14.5 read one frame
+    differently (Rule #1), so which one is the person's to state, and the
+    profile's note prints it on the sheet."""
     if sheet.profile is None:
+        framed = _frames(sheet)
+        if framed:
+            raise ValueError(f"{which}, {framed[0][0]}: a GD&T frame is read by ISO GPS or ASME Y14.5-2018, "
+                             "which read it differently, and the sheet names neither; give it profile=GENERIC "
+                             "(ISO GPS) or your own Profile(name, \"ASME Y14.5-2018\")")
         return
     dropped = _DROPPED.get(sheet.profile.standard, {})
     for where, frame in _frames(sheet):

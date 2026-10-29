@@ -38,7 +38,7 @@ Usage::
         bracket_drawing()
 
 Running the script writes one PDF at ``out`` with a page per sheet, and prints
-what the sheet noticed (a dimension measuring blank paper, crowded annotation)
+what the sheet noticed (crowded views, a leader that crosses a dimension line)
 and what the drawing leaves unstated (a hole not called out, a size not
 dimensioned). There is no default location: ``out`` is the path the caller
 passes. The part is the engine's document of it, read in this process (a model's
@@ -64,7 +64,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, NamedTuple, Sequence
 
-from cadgen._internal.drawing_annotation import _Dim, _looks_into, _thread
+from cadgen._internal.drawing_annotation import _Dim, _fit, _looks_into, _thread
 from cadgen._internal.drawing_assembly import (
     _GA_LIST_SHARE, JOINTS, Item, _PartOf, PartsList, _arrange_assembly, _continuations, _item_shown, _joint_note,
     parts_list,
@@ -228,9 +228,10 @@ class View:
         unset, it stands off the view's middle). Left unset, the dimension takes the next free row on
         its side, so defaults never stack on each other or on :meth:`overall`.
         ``tol=0.1`` states ±0.1; ``tol=(0.05, 0.02)`` states +0.05/-0.02
-        deviations; ``fit="H7"`` appends an ISO fit class; ``limits=(39.98,
-        40.02)`` prints the two limits the part must lie between, and is checked
-        against the part.
+        deviations; ``fit="H7"`` appends an ISO 286 tolerance class (``"g6"`` a
+        shaft's, ``"H7/g6"`` a fit) and is the size's whole tolerance, so it takes
+        no ``tol`` or ``limits``; ``limits=(39.98, 40.02)`` prints the two limits
+        the part must lie between, and is checked against the part.
 
         ``basic=True`` makes it a basic dimension: the exact value, in a box, that
         a GD&T frame bounds. ``reference=True`` makes it a reference dimension:
@@ -245,6 +246,7 @@ class View:
         if orientation == "aligned" and (frame is not None or datum is not None or key):
             raise ValueError("an aligned dimension takes no frame, datum or key mark; state those on a "
                              "dimension along the view's axes")
+        fit = _fit(fit)
         limits = _dimension_kind(tol=tol, fit=fit, limits=limits, basic=basic, reference=reference)
         self._dims.append(_Dim("linear", self._at(p1), self._at(p2), _offset(offset), text, orientation,
                                tol=_tol(tol), fit=fit, basic=basic, reference=reference, limits=limits,
@@ -265,17 +267,19 @@ class View:
         The diameter, THRU or depth, counterbore, countersink and the ``4×``
         count all come from the geometry. Anything given here is checked against
         it and a disagreement is refused: a callout that says ⌀6 over a ⌀6.6
-        bore is the one error a shop machines faithfully. ``tol``/``fit``
-        qualify the diameter the way :meth:`dim` does; ``label`` is appended
+        bore is the one error a shop machines faithfully. ``tol`` or ``fit``
+        (a hole's class, ``"H7"``, or a fit, ``"H7/g6"``) qualifies the diameter
+        the way :meth:`dim` does, one or the other; ``label`` is appended
         (``"WHEEL"``).
 
         ``thread`` states a tapped hole, which the B-rep cannot carry: a metric
-        thread with an optional ISO 965 class (``"M6"``, ``"M6x0.5 - 6H"``; with
-        no pitch, ISO 261's coarse one) or a unified inch thread
-        (``"1/4-20 UNC-2B"``, ``"#10-32 UNF"``). The bore must be its tap drill
-        (from the basic minor diameter to about d - P: ⌀5 for M6x1) or the
-        thread's own size (⌀6), and a tap drill is stated with the thread after it
-        (``⌀5 ↧12   M6x1 - 6H ↧10``). It takes no ``diameter``, ``tol`` or
+        thread of ISO 261's sizes and pitches, with an optional ISO 965-1 class
+        (``"M6"``, ``"M6x0.75 - 6H"``; with no pitch, the coarse one), or a
+        unified inch thread of ASME B1.1's sizes and series (``"1/4-20 UNC-2B"``,
+        ``"#10-32 UNF"``); a pitch the size does not have is refused. The bore
+        must be its tap drill (from the basic minor diameter to about d - P: ⌀5
+        for M6x1) or the thread's own size (⌀6), and a tap drill is stated with
+        the thread after it (``⌀5 ↧12   M6x1 - 6H ↧10``). It takes no ``diameter``, ``tol`` or
         ``fit``. What the part cannot say is asked, never assumed: ``count``
         is how many of the identical bores are tapped (all of them, or this one
         alone), and ``depth`` how deep the thread runs, which a blind tap drill
@@ -299,9 +303,12 @@ class View:
             if stated:
                 raise ValueError(f"hole(thread={thread!r}) takes no {', '.join(stated)}: the thread and its class "
                                  "are the tapped hole's size, and the bore under it is read off the part")
+        if fit is not None and tol is not None:
+            raise ValueError(f"hole() takes fit={fit!r} or tol=, not both: a tolerance class is the diameter's "
+                             "tolerance, so the two would print two")
         spec = {"given": given, "thread": parsed, "label": None if label is None else str(label)}
         self._dims.append(_Dim("hole", self._at(center), None, 0.0, None, None, radius=0.0,
-                               angle=float(angle), tol=_tol(tol), fit=fit, hole=spec,
+                               angle=float(angle), tol=_tol(tol), fit=_fit(fit, hole=True), hole=spec,
                                frame=_frame(frame), datum=_new_datum(self.sheet, datum), key=_key(key)))
         return self
 
@@ -753,6 +760,9 @@ def _dimension_kind(*, tol=None, fit=None, limits=None, basic: bool = False,
             raise ValueError(f"a {kind} dimension takes no tol=, fit= or limits=: "
                              + ("its tolerance is the GD&T frame's that uses it" if kind == "basic"
                                 else "it states no requirement to tolerance"))
+    if fit is not None and (tol is not None or limits is not None):
+        raise ValueError(f"fit={fit!r} is the size's tolerance, as an ISO 286 class; give it or "
+                         f"{'tol=' if tol is not None else 'limits='}, not both, which would print two")
     if limits is None:
         return None
     if tol is not None:

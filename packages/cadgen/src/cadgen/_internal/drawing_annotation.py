@@ -64,8 +64,9 @@ class _Dim:
 
 
 #: ISO 261 general-purpose metric screw threads: each nominal diameter's coarse
-#: pitch (None where the size has fine pitches only) and its fine pitches. Only
-#: the coarse pitch is read: it is what ``M6`` means with no pitch given.
+#: pitch (None where the size has fine pitches only) and its fine pitches. A
+#: metric thread names one of these sizes and one of its pitches; ``M6`` with no
+#: pitch is the coarse one.
 _ISO_261: dict[float, tuple[float | None, tuple[float, ...]]] = {
     1.0: (0.25, (0.2,)), 1.2: (0.25, (0.2,)), 1.4: (0.3, (0.2,)), 1.6: (0.35, (0.2,)), 1.8: (0.35, (0.2,)),
     2.0: (0.4, (0.25,)), 2.5: (0.45, (0.35,)), 3.0: (0.5, (0.35,)), 3.5: (0.6, (0.35,)), 4.0: (0.7, (0.5,)),
@@ -79,16 +80,38 @@ _ISO_261: dict[float, tuple[float | None, tuple[float, ...]]] = {
     56.0: (5.5, (4.0, 3.0, 2.0, 1.5)), 60.0: (5.5, (4.0, 3.0, 2.0, 1.5)), 64.0: (6.0, (4.0, 3.0, 2.0, 1.5)),
 }
 
+#: ASME B1.1's unified inch threads by size, as its numbered size (``#10``) or
+#: fraction is written: the threads per inch of each series the size has (coarse
+#: UNC, fine UNF, extra-fine UNEF). A unified thread names one of these sizes and
+#: the series' own count.
+_UNIFIED_SERIES: dict[str, dict[str, int]] = {
+    "#0": {"UNF": 80}, "#1": {"UNC": 64, "UNF": 72}, "#2": {"UNC": 56, "UNF": 64}, "#3": {"UNC": 48, "UNF": 56},
+    "#4": {"UNC": 40, "UNF": 48}, "#5": {"UNC": 40, "UNF": 44}, "#6": {"UNC": 32, "UNF": 40},
+    "#8": {"UNC": 32, "UNF": 36}, "#10": {"UNC": 24, "UNF": 32}, "#12": {"UNC": 24, "UNF": 28, "UNEF": 32},
+    "1/4": {"UNC": 20, "UNF": 28, "UNEF": 32}, "5/16": {"UNC": 18, "UNF": 24, "UNEF": 32},
+    "3/8": {"UNC": 16, "UNF": 24, "UNEF": 32}, "7/16": {"UNC": 14, "UNF": 20, "UNEF": 28},
+    "1/2": {"UNC": 13, "UNF": 20, "UNEF": 28}, "9/16": {"UNC": 12, "UNF": 18, "UNEF": 24},
+    "5/8": {"UNC": 11, "UNF": 18, "UNEF": 24}, "11/16": {"UNEF": 24}, "3/4": {"UNC": 10, "UNF": 16, "UNEF": 20},
+    "13/16": {"UNEF": 20}, "7/8": {"UNC": 9, "UNF": 14, "UNEF": 20}, "15/16": {"UNEF": 20},
+    "1": {"UNC": 8, "UNF": 12, "UNEF": 20}, "1-1/16": {"UNEF": 18}, "1-1/8": {"UNC": 7, "UNF": 12, "UNEF": 18},
+    "1-3/16": {"UNEF": 18}, "1-1/4": {"UNC": 7, "UNF": 12, "UNEF": 18}, "1-5/16": {"UNEF": 18},
+    "1-3/8": {"UNC": 6, "UNF": 12, "UNEF": 18}, "1-7/16": {"UNEF": 18}, "1-1/2": {"UNC": 6, "UNF": 12, "UNEF": 18},
+}
+
 #: ``M6``, ``M6x1``, ``M6 x 1 - 6H``, ``M6x1-6H LH``: a metric thread, its pitch
 #: and an ISO 965 tolerance class (an internal thread's letters are capitals).
 _THREAD = re.compile(r"M(?P<d>\d+(?:\.\d+)?)(?:\s*[x×]\s*(?P<p>\d+(?:\.\d+)?))?"
-                     r"(?:\s*-\s*(?P<cls>\d[A-Ha-h](?:\d[A-Ha-h])?))?(?:\s+LH)?")
-#: ``1/4-20 UNC``, ``#10-32 UNF - 2B``, ``1-1/4-7 UNC-2B``, ``0.375-24 UNF``: a
-#: unified inch thread (ASME B1.1), its size, threads per inch, series and class
-#: (A external, B internal). A whole number 0 to 12 is a numbered size (#10 is
-#: 0.060 + 0.013 x 10 = 0.190 in); a whole inch is written as a decimal (1.0).
-_UNIFIED = re.compile(r"(?P<size>#?\d+|\d+-\d+/\d+|\d+/\d+|\d*\.\d+)\s*-\s*(?P<tpi>\d+)\s*"
-                      r"(?P<series>UNC|UNF|UNEF|UNS|UN)(?:\s*-\s*(?P<cls>[123][AaBb]))?(?:\s+LH)?")
+                     r"(?:\s*-\s*(?P<cls>\d[A-Za-z](?:\d[A-Za-z])?))?(?:\s+LH)?")
+#: ISO 965-1's tolerance classes for an internal thread, a tapped hole: grades 4
+#: to 8 in position H or G, for the pitch and minor diameters (``5H6H``) or one
+#: for both (``6H``).
+_INTERNAL_CLASS = re.compile(r"[4-8][GH](?:[4-8][GH])?")
+#: ``1/4-20 UNC``, ``#10-32 UNF - 2B``, ``1-1/4-7 UNC-2B``: a unified inch thread
+#: (ASME B1.1), its size, threads per inch, series and class (A external, B
+#: internal). A number 0 to 12 is a numbered size, ``#`` or not, and ``1`` is
+#: the inch where the numbered size has no such count.
+_UNIFIED = re.compile(r"(?P<size>#?\d+|\d+-\d+/\d+|\d+/\d+)\s*-\s*(?P<tpi>\d+)\s*"
+                      r"(?P<series>UN[A-Z]*)(?:\s*-\s*(?P<cls>[123][AaBb]))?(?:\s+LH)?")
 
 
 @dataclass(frozen=True)
@@ -111,61 +134,129 @@ class _Thread:
         return None
 
 
-def _inches(size: str) -> float | None:
-    """A unified thread's size in inches: a numbered size (``#10``, ``10``), a
-    fraction (``1/4``, ``1-1/4``) or a decimal (``0.375``); None for a number
-    past #12."""
-    if size.startswith("#") or size.isdigit():
-        number = int(size.lstrip("#"))
-        return 0.060 + 0.013 * number if number <= 12 else None
+def _inches(size: str) -> float:
+    """A unified thread's size in inches: a numbered size (``#10``) or a
+    fraction (``1/4``, ``1-1/4``) or a whole inch (``1``)."""
+    if size.startswith("#"):
+        return 0.060 + 0.013 * int(size[1:])
     whole, _, fraction = size.rpartition("-") if "/" in size else ("", "", size)
-    if "/" in fraction:
-        top, bottom = fraction.split("/")
-        return (int(whole) if whole else 0) + int(top) / int(bottom) if int(bottom) else None
-    return float(fraction)
+    if "/" not in fraction:
+        return float(fraction)
+    top, bottom = fraction.split("/")
+    return (int(whole) if whole else 0) + int(top) / int(bottom)
+
+
+def _unified_size(size: str, tpi: int) -> str | None:
+    """The B1.1 size a unified thread's written size names: ``10`` and ``#10``
+    are the numbered size, and ``1`` is #1 where #1 has that count, else the inch."""
+    if size.lstrip("#").isdigit() and int(size.lstrip("#")) <= 12:
+        numbered = f"#{int(size.lstrip('#'))}"
+        if size.startswith("#") or tpi in _UNIFIED_SERIES.get(numbered, {}).values() or size not in _UNIFIED_SERIES:
+            return numbered if numbered in _UNIFIED_SERIES else None
+    return size if size in _UNIFIED_SERIES else None
 
 
 def _thread(value) -> _Thread:
-    """A hole callout's ``thread=``, parsed: a metric thread (``M6``, ``M6x0.5 -
-    6H``) or a unified inch one (``1/4-20 UNC``, ``#10-32 UNF - 2B``). Its
-    diameter and pitch are what the bore is checked against; ISO 261 gives an
-    ``M`` thread written with no pitch its coarse one. Any other form is refused,
-    because a thread is the one size of a tapped hole the part does not carry,
-    and the drawing can only check one it can read."""
+    """A hole callout's ``thread=``, parsed: a metric thread (``M6``, ``M6x0.75 -
+    6H``) of ISO 261's sizes and pitches, or a unified inch one (``1/4-20 UNC``,
+    ``#10-32 UNF - 2B``) of ASME B1.1's sizes and series. Its diameter and pitch
+    are what the bore is checked against. Any other thread is refused, because a
+    thread is the one size of a tapped hole the part does not carry: the drawing
+    can only state one it can read, and a pitch the size does not have
+    (``M6x5``, ``1/4-28 UNC``) is no thread at all."""
     if not isinstance(value, str):
         raise TypeError(f"thread= takes the thread as a string (\"M6x1 - 6H\"), got {value!r}")
     text = value.strip()
     if match := _UNIFIED.fullmatch(text):
-        inches, tpi = _inches(match["size"]), int(match["tpi"])
-        if inches is None or not inches > 0 or not tpi > 0:
-            raise ValueError(f"thread={value!r}: {match['size']} is not a unified thread size; give a numbered size "
-                             "up to #12, a fraction (1/4) or a decimal inch (1.0)")
+        tpi, series = int(match["tpi"]), match["series"]
+        size = _unified_size(match["size"], tpi)
+        if size is None:
+            raise ValueError(f"thread={value!r}: {match['size']} is not an ASME B1.1 unified size this drawing "
+                             f"knows; one of {', '.join(_UNIFIED_SERIES)}")
+        counts = _UNIFIED_SERIES[size]
+        if series not in counts or counts[series] != tpi:
+            has = ", ".join(f"{s} {n}" for s, n in counts.items())
+            raise ValueError(f"thread={value!r}: ASME B1.1 gives {size} {has} threads per inch, so "
+                             f"{size}-{tpi} {series} is no unified thread; write one of "
+                             + ", ".join(f"{size}-{n} {s}" for s, n in counts.items()))
         if match["cls"] and match["cls"][1] in "Aa":
             raise ValueError(f"thread={value!r}: {match['cls']} is an external thread's class (a tapped hole's ends "
                              "in B: 2B)")
-        return _Thread(text, inches * 25.4, 25.4 / tpi)
+        return _Thread(text, _inches(size) * 25.4, 25.4 / tpi)
     match = _THREAD.fullmatch(text)
     if match is None:
         raise ValueError(f"thread={value!r} is not a thread this drawing can check against the bore; write a metric "
-                         "one as M<diameter>[x<pitch>][ - <class>] (\"M6\", \"M6x0.5 - 6H\") or a unified inch one as "
+                         "one as M<diameter>[x<pitch>][ - <class>] (\"M6\", \"M6x0.75 - 6H\") or a unified inch one as "
                          "<size>-<threads per inch> <series>[-<class>] (\"1/4-20 UNC\", \"#10-32 UNF - 2B\")")
     diameter = float(match["d"])
-    if not diameter > 0:
-        raise ValueError(f"thread={value!r}: a thread's diameter is more than 0")
+    if diameter not in _ISO_261:
+        raise ValueError(f"thread={value!r}: M{_fmt(diameter)} is not an ISO 261 size this drawing knows; one of "
+                         + ", ".join(f"M{_fmt(d)}" for d in _ISO_261))
+    coarse, fine = _ISO_261[diameter]
     if match["p"] is None:
-        coarse = _ISO_261.get(diameter, (None, ()))[0]
         if coarse is None:
             raise ValueError(f"thread={value!r}: ISO 261 gives M{_fmt(diameter)} no coarse pitch to assume; "
                              f"give its pitch, as M{_fmt(diameter)}x<pitch>")
         pitch = coarse
     else:
         pitch = float(match["p"])
-        if not 0 < pitch < diameter:
-            raise ValueError(f"thread={value!r}: a pitch of {_fmt(pitch)} does not fit an M{_fmt(diameter)} thread")
+        pitches = (coarse, *fine) if coarse is not None else fine
+        if pitch not in pitches:
+            raise ValueError(f"thread={value!r}: ISO 261 gives M{_fmt(diameter)} the pitches "
+                             f"{', '.join(_fmt(p) for p in pitches)}, not {_fmt(pitch)}")
     if match["cls"] and match["cls"] != match["cls"].upper():
         raise ValueError(f"thread={value!r}: {match['cls']} is an external thread's tolerance class (ISO 965 "
                          "writes a nut's, a tapped hole's, in capitals: 6H)")
+    if match["cls"] and not _INTERNAL_CLASS.fullmatch(match["cls"]):
+        raise ValueError(f"thread={value!r}: {match['cls']} is not an ISO 965-1 class for a tapped hole, which "
+                         "is a grade 4 to 8 in position H or G: 6H, 5H6H, 6G")
     return _Thread(text, diameter, pitch)
+
+
+#: ISO 286-1's fundamental deviations: a hole's in capitals, a shaft's the same
+#: in lower case.
+_DEVIATIONS = ("A", "B", "C", "CD", "D", "E", "EF", "F", "FG", "G", "H", "J", "JS", "K", "M", "N", "P", "R", "S",
+               "T", "U", "V", "X", "Y", "Z", "ZA", "ZB", "ZC")
+#: ISO 286-1's standard tolerance grades, IT01 to IT18.
+_GRADES = ("01", "0", *(str(n) for n in range(1, 19)))
+_TOLERANCE_CLASS = re.compile(r"(?P<deviation>[A-Za-z]{1,2})(?P<grade>\d{1,2})")
+
+
+def _tolerance_class(text: str) -> str | None:
+    """``"hole"`` or ``"shaft"`` for an ISO 286-1 tolerance class (``H7``,
+    ``g6``, ``JS9``), else None."""
+    match = _TOLERANCE_CLASS.fullmatch(text)
+    if match is None or match["grade"] not in _GRADES:
+        return None
+    deviation = match["deviation"]
+    if deviation in _DEVIATIONS:
+        return "hole"
+    if deviation.islower() and deviation.upper() in _DEVIATIONS:
+        return "shaft"
+    return None
+
+
+def _fit(value, *, hole: bool = False) -> str | None:
+    """A ``fit=``, checked: an ISO 286-1 tolerance class (``H7`` a hole's, ``g6``
+    a shaft's) or a fit, a hole's class over a shaft's (``H7/g6``). It prints
+    after the size as given, so anything else -- a word, a class with no grade,
+    a hole's class on a shaft -- would print as a requirement nobody can read.
+    A hole callout's fit is the hole's: a shaft's class is refused there."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"fit= takes an ISO 286 tolerance class or fit as a string (\"H7\", \"H7/g6\"), got {value!r}")
+    kinds = [_tolerance_class(part) for part in value.split("/")]
+    if len(kinds) == 1 and kinds[0] is not None and not (hole and kinds[0] == "shaft"):
+        return value
+    if kinds == ["hole", "shaft"]:
+        return value
+    if hole and kinds == ["shaft"]:
+        raise ValueError(f"fit={value!r} is a shaft's tolerance class (lower case); a hole's is in capitals "
+                         f"({value.upper()})")
+    raise ValueError(f"fit={value!r} is not an ISO 286-1 tolerance class or fit: a fundamental deviation "
+                     f"({', '.join(_DEVIATIONS)}; a shaft's in lower case) and a grade 01, 0 or 1 to 18, as \"H7\" "
+                     "or \"g6\", or a hole's class over a shaft's, as \"H7/g6\"")
 
 
 def _tol_suffix(tol) -> str:
