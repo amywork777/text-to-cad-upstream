@@ -66,7 +66,7 @@ dependencies = [
   # names the same range because it imports numpy itself.
   "numpy>=2,<3",
   # The engine's stills rasterise what they draw over the picture (annotation ink,
-  # measurements) with Pillow, and @work_instruction fills its figures with it.
+  # measurements) with Pillow.
   "pillow",
   "shapely",
 ]
