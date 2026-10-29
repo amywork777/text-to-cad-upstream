@@ -134,7 +134,8 @@ class StudyFile(unittest.TestCase):
         cases = [
             ({**BASE, "material": "unobtainium"}, "give an object with E_MPa, nu and yield_MPa"),
             ({**BASE, "fixtures": []}, "fixtures"),
-            ({**BASE, "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 0]}]}, "vector_N"),
+            ({**BASE, "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 0]}]}, "loads[0].vector_N: the force is zero"),
+            ({**BASE, "loads": [{"faces": ["face 2"], "type": "pressure", "pressure_MPa": 0}]}, "loads[0].pressure_MPa: the pressure is zero"),
             ({**BASE, "loads": [{"faces": ["face 2"], "type": "torque"}]}, "loads[0].type"),
             ({**BASE, "mesh": {"size_mm": -1}}, "mesh.size_mm"),
             ({**BASE, "mesh": {"order": 1}}, "study.mesh: unknown keys ['order']; it takes size_mm, refine"),
@@ -176,19 +177,50 @@ class StudyFile(unittest.TestCase):
         self.assertIn("--study", value_error(self, parse_study, None))
 
 
+class Mesher(unittest.TestCase):
+    """netgen installs only where it publishes wheels; elsewhere the solve says so, naming the platform."""
+
+    def test_without_netgen_the_solve_refuses_naming_the_platform_before_reading_anything(self):
+        import importlib.util
+        import platform
+        from unittest import mock
+
+        from cadgen import fea
+
+        real = importlib.util.find_spec
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch("importlib.util.find_spec", lambda name, *a: None if name == "netgen" else real(name, *a)), \
+                mock.patch.object(platform, "system", return_value="Linux"), \
+                mock.patch.object(platform, "machine", return_value="aarch64"):
+            with self.assertRaisesRegex(RuntimeError, r"needs netgen.*not installed.*\(macOS, Linux x86_64 and Windows "
+                                                      r"x86_64\), and this is Linux aarch64"):
+                fea.solve(Path(tmp) / "absent.step", Path(tmp) / "r.glb", study=BASE)
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_the_dependency_is_marked_for_the_platforms_netgen_has_wheels_for(self):
+        import tomllib
+
+        from cadgen._internal.fea.mesh import NETGEN_PLATFORMS
+
+        pyproject = Path(__file__).resolve().parents[4] / "packages" / "cadgen" / "pyproject.toml"
+        (netgen,) = [d for d in tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["dependencies"]
+                     if d.startswith("netgen-mesher")]
+        self.assertEqual(netgen.split(";", 1)[1].strip(), "sys_platform == 'darwin' or (sys_platform == 'linux' and "
+                         "platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64')")
+        self.assertEqual(NETGEN_PLATFORMS, "macOS, Linux x86_64 and Windows x86_64")
+
+
 class StudyChecks(unittest.TestCase):
     """The study's optional ``checks``: checked like the rest of the study, before any heavy import."""
 
     def test_checks_parse_as_written(self):
-        checks = [{"kind": "stress", "margin": 2, "label": "Strength"},
+        checks = [{"kind": "stress", "label": "Strength"},
                   {"kind": "displacement", "limit_mm": 0.5, "faces": ["face 2"], "label": "Tip sag"}]
-        study = parse_study({**BASE, "checks": checks})
+        study = parse_study({**BASE, "margin": 3, "checks": checks})
         self.assertEqual(study.checks, (
-            {"kind": "stress", "margin": 2.0, "label": "Strength"}, {"kind": "displacement", "limit_mm": 0.5, "faces": ["face 2"], "label": "Tip sag"}))
+            {"kind": "stress", "label": "Strength"}, {"kind": "displacement", "limit_mm": 0.5, "faces": ["face 2"], "label": "Tip sag"}))
         self.assertEqual(study.check_faces, ("face 2",))
-        # The stress check's margin is the study's.
-        self.assertEqual(study.margin, 2.0)
-        self.assertEqual(parse_study({**BASE, "checks": [{"kind": "stress", "margin": 3}]}).margin, 3.0)
+        self.assertEqual(study.margin, 3.0)
 
     def test_with_no_checks_the_stress_check_alone_judges_the_result(self):
         self.assertEqual(parse_study(BASE).checks, ({"kind": "stress"},))
@@ -202,7 +234,8 @@ class StudyChecks(unittest.TestCase):
             (["stress"], "checks[0]: expected an object"),
             ([{"kind": "stress"}, {"kind": "stress"}], "only one stress check"),
             ([{"kind": "stress", "limit_mm": 1}], "checks[0]: unknown keys ['limit_mm']; a stress check takes"),
-            ([{"kind": "stress", "margin": 0.5}], "checks[0].margin: a safety factor below 1 means the part yields"),
+            # The margin is the study's, said once: the stress check takes none of its own.
+            ([{"kind": "stress", "margin": 3}], "checks[0]: unknown keys ['margin']; a stress check takes ['kind', 'label']"),
             ([{"kind": "displacement"}], "checks[0].limit_mm: a displacement check needs the most it may move"),
             ([{"kind": "displacement", "limit_mm": 0}], "checks[0].limit_mm: must be > 0"),
             ([{"kind": "displacement", "limit_mm": 1, "faces": []}], "checks[0]: 'faces' must be a non-empty list"),
@@ -213,8 +246,6 @@ class StudyChecks(unittest.TestCase):
                 message = value_error(self, parse_study, {**BASE, "checks": checks})
                 self.assertIn(fragment, message)
                 self.assertNotIn("\u2014", message)
-        self.assertIn("the stress check's margin (3) is not the study's margin (2); give it once", value_error(
-            self, parse_study, {**BASE, "margin": 2, "checks": [{"kind": "stress", "margin": 3}]}))
 
     def test_a_view_is_no_key(self):
         self.assertIn("study: unknown keys ['view']", value_error(self, parse_study, {**BASE, "view": {"checks": []}}))
@@ -455,6 +486,53 @@ class Cantilever(unittest.TestCase):
             **self.study, "fixtures": [{"faces": [self.fixed_ref.rsplit("/", 1)[0]]}]}))
         value_error(self, solve, self.step, self.out, {**self.study, "loads": [{"faces": ["face 99"], "type": "force", "vector_N": [1, 0, 0]}]})
 
+    def test_a_load_on_a_held_face_is_refused_however_the_face_is_named(self):
+        on_fixed = {**self.study, "loads": [{"faces": [f"{self.step.name}#{self.fixed_ref}"], "type": "force", "vector_N": [0, 0, -1]}]}
+        self.assertIn(f"loads[0]: {self.step.name}#{self.fixed_ref} is held by fixtures[0] (fixed), which holds it still, so the "
+                      "load goes into the support", value_error(self, solve, self.step, self.out, on_fixed))
+        # A roller holds a face along its normal, which is where a pressure pushes.
+        pressed = {**self.study, "fixtures": [*self.study["fixtures"], {"faces": [self.load_ref], "type": "roller"}],
+                   "loads": [{"faces": [self.load_ref], "type": "pressure", "pressure_MPa": 1}]}
+        self.assertIn("is held by fixtures[1] (roller), which holds it along its normal",
+                      value_error(self, solve, self.step, self.out, pressed))
+
+    def test_reactions_that_do_not_balance_the_load_refuse_the_solve_and_write_nothing(self):
+        import dataclasses
+        from unittest import mock
+
+        from cadgen._internal.fea import solve as solver
+
+        real = solver.solve_linear_static
+
+        def halved(*args, **kwargs):
+            outcome = real(*args, **kwargs)
+            return dataclasses.replace(outcome, reactions=[tuple(0.5 * c for c in r) for r in outcome.reactions])
+
+        out = self.out.with_name("unbalanced.glb")
+        with mock.patch.object(solver, "solve_linear_static", halved), \
+                self.assertRaisesRegex(RuntimeError, r"the reactions do not balance the applied load \(mismatch 10 N\)"):
+            solve(self.step, out, {**self.study, "mesh": {"size_mm": 6.0}})
+        self.assertFalse(out.exists())
+
+    def test_a_study_no_load_reaches_is_refused_rather_than_passed(self):
+        import dataclasses
+        from unittest import mock
+
+        import numpy as np
+
+        from cadgen._internal.fea import solve as solver
+
+        real = solver.solve_linear_static
+
+        def unstressed(*args, **kwargs):
+            outcome = real(*args, **kwargs)
+            return dataclasses.replace(outcome, von_mises=np.zeros_like(outcome.von_mises))
+
+        out = self.out.with_name("unloaded.glb")
+        with mock.patch.object(solver, "solve_linear_static", unstressed):
+            self.assertIn("no load reaches the part", value_error(self, solve, self.step, out, {**self.study, "mesh": {"size_mm": 6.0}}))
+        self.assertFalse(out.exists())
+
     def test_out_must_be_a_glb(self):
         self.assertIn(".glb", value_error(self, solve, self.step, self.out.with_suffix(".vtu"), self.study))
 
@@ -523,6 +601,12 @@ class Yielding(unittest.TestCase):
         self.assertEqual(glb_extras(self.result.glb)["findings"], self.said["findings"])
         self.assertEqual(list(self.result.findings), self.said["findings"])
         self.assertIn(f"error: {first['summary']}", self.result.human_lines())
+
+    def test_a_part_that_yields_is_not_ok_and_its_glb_is_written_all_the_same(self):
+        # ok is the validators' rule, an error blocks (the command exits 1); the GLB shows where it fails.
+        self.assertFalse(self.result.ok)
+        self.assertTrue(self.result.glb.is_file())
+        self.assertEqual(self.result.human_lines()[-1], f"FAILED {self.step}: 1 blocking finding(s)")
 
     def test_with_no_checks_the_stress_check_alone_says_what_the_safety_factor_says(self):
         (check,) = self.result.summary["checks"]

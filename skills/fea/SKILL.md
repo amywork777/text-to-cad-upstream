@@ -85,8 +85,10 @@ needs the sandbox's permission: it starts the engine and holds it. Without it, a
 shell cannot start the engine; when a command says no engine is running, run `cadgen server`
 outside the sandbox once.
 
-Solving needs one thing `fea faces` and `fea parts` do not; netgen, which meshes, comes with cadgen. A
-solve reads the document in its own process, so it needs no engine running:
+Solving needs one thing `fea faces` and `fea parts` do not; netgen, which meshes, comes with cadgen
+on macOS, Linux x86_64 and Windows x86_64, where netgen publishes wheels (anywhere else, Linux on ARM
+among them, `fea solve` refuses, naming the platform). A solve reads the document in its own
+process, so it needs no engine running:
 
 - **The solver.** CalculiX (`ccx`) 2.20 or newer, installed by the person: `conda install -c
   conda-forge calculix`, the `calculix-ccx` package on Debian and Ubuntu, or FreeCAD 1.0 or newer
@@ -158,9 +160,14 @@ you write it down ([study-file.md](references/study-file.md#units)).
    Progress lines (`[fea] reading the parts`, `[fea]
    meshing the glued shape at 6.01 mm`) print to stderr, never into the result on stdout;
    `--verbose` adds mesh and solve detail there. A study with no fixture, a face that is not on the
-   part, an unknown key or an out-of-range ref is refused with a message naming the field. The
-   result files are replaced only once every one is written: a run that fails leaves the previous
-   result as it was.
+   part, an unknown key, an out-of-range ref, a zero load or a load on a held face is refused with a
+   message naming the field. The result files are replaced only once every one is written: a run
+   that fails leaves the previous result as it was.
+
+   The command exits 1 (`"ok": false`) when a finding is an error, as a validator does: the part
+   yields or misses a check, and the GLB is written all the same so the user sees where; or the
+   study stopped before the solve (`not_connected`), with no GLB. Warnings leave it at 0. Read the
+   result either way.
 
 4. **Read the findings.** Every solve prints them after the numbers, one line each, `error:` or
    `warning:` and then what is wrong and what to do (`findings` in `--json`). Read
@@ -168,7 +175,8 @@ you write it down ([study-file.md](references/study-file.md#units)).
 
 5. **Report**, in this order, with units: max von Mises (MPa) and where (`max_von_mises_at_mm`;
    say which feature it is near); the safety factor against yield and the yield used; max
-   displacement (mm) and where; the applied load and the reaction (they balance, or the run warns);
+   displacement (mm) and where; the applied load and the reaction (they balance: a solve where they
+   do not is refused);
    the mesh size, element count and whether a finer re-solve ran. Then say in a sentence or two
    what the model assumes and what would change the answer most (a softer fixture, a fillet at the
    peak, a different material). Open the GLB in the Viewer for the user; the deformation is
@@ -198,7 +206,8 @@ fixed. The keys are in [study-file.md](references/study-file.md#assemblies).
    `interference N mm`, and the solve closes it like a gap. The header counts touching pairs apart
    from near misses and overlaps. Read it against what you know of the design: is each detected
    joint a real joint, and is a joint you expect missing (a gap, or an overlap where the parts
-   should touch)? `--contact-tolerance-mm` tries another tolerance; `--json` prints the same for
+   should touch)? The listing judges by the 0.1 mm default; a study that should bond a wider gap
+   sets its own `contact_tolerance_mm`, from the gap printed. `--json` prints the same for
    scripting. Names can repeat (two parts called `bar`): use the ref (`frame/bar.2`) whenever a name is
    ambiguous.
 
@@ -290,7 +299,7 @@ Every solve checks its own result as an engineer would and lists findings, error
 suggestion: weigh it as an engineer would, act on it or tell the user why not. A clean part has no
 findings. Most findings point at where they apply: the face (`bracket/face 12`, the original part's
 ref) when the point is on one, and the point in the part's mm. A peak inside the part and
-`large_displacement` have a point but no face; `no_load` has neither.
+`large_displacement` have a point but no face.
 
 The two peak findings, `peak_at_fixture` and `peak_concentration`, appear only when the safety
 factor is under the study's `margin` and the peak was not resolved (a finer solve that moved it
@@ -304,8 +313,7 @@ under 10 % settles it); above the margin they would not change the answer.
 | `peak_concentration` | warning | The integration-point peak is well above the nodal one: a sharp corner or concentrated load the mesh cannot resolve. | When the safety factor was under 3 the run already solved finer, so refining the whole part again is not the next step: fillet the corner or spread the load over a larger face. Above 3 (a `margin` higher than that), refine once and compare: halve `mesh.size_mm`, or at a fillet or hole set it to a third of the radius (see [Mesh](references/linear-static.md#mesh)). |
 | `mesh_not_converged` | warning | The automatic finer solve moved the peak by more than 10 %. In an assembly, only for a part whose safety factor is under 3: a part far from failing is not worth distrusting. | A peak that kept rising sits on a singularity (a sharp corner, the fixed edge): fillet it or judge the stress away from it. Otherwise set a smaller `mesh.size_mm` and solve again before trusting the safety factor. |
 | `large_displacement` | warning | It moves more than 1 % of its size. | The small-displacement model is stretched: check the fit against mating parts and whether the deflection is acceptable; stiffen the part if not. |
-| `no_load` | warning | The peak stress is zero: no load reaches the part. | Check that the loaded faces are on the part and connected to the fixed ones, and that the force is not zero. |
 
-A `warning:` line that is not a finding (a slow solve past 150 000 degrees of freedom, reactions
-that do not balance, a finer solve that was skipped or failed) is about the run itself: read it,
-and mention it when it bears on the answer.
+A `warning:` line that is not a finding (a slow solve past 150 000 degrees of freedom, a finer
+solve that was skipped or failed) is about the run itself: read it, and mention it when it bears on
+the answer.

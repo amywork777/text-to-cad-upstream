@@ -58,8 +58,6 @@ class ChecksTest(unittest.TestCase):
              "The bracket yields: peak stress 276.4 MPa is above the 276.0 MPa yield strength of 6061-T6"),
             ("large displacement", dict(max_displacement_mm=1.6), ("warning", "large_displacement"),  # 1.8% of 90
              "It moves 1.6 mm, about 2% of its size: check the fit if it mates with another part"),
-            ("no load reaches it", dict(peak_MPa=0.0, peak_gauss_MPa=0.0), ("warning", "no_load"),
-             "No load reaches the part: check the loads are on faces connected to the fixed ones"),
         ):
             with self.subTest(case):
                 (f,) = findings(solved(**changes))
@@ -248,8 +246,6 @@ class AssemblyChecksTest(unittest.TestCase):
         loaded = solved(part="post", assembly=True)
         unloaded = solved(part="base", assembly=True, peak_MPa=0.0, peak_gauss_MPa=0.0)
         self.assertEqual(assembly_findings([loaded, unloaded]), [])
-        (f,) = assembly_findings([unloaded, solved(part="post", assembly=True, peak_MPa=0.0, peak_gauss_MPa=0.0)])
-        self.assertEqual(f["type"], "no_load")
 
     def test_errors_come_first_across_parts(self):
         found = assembly_findings([
@@ -277,8 +273,10 @@ class StudyChecksTest(unittest.TestCase):
         self.assertEqual(check["where"], {"ref": "face 12", "at": [10.0, 40.0, 5.0]})
         self.assertNotIn("part", stress_check(solved()))
 
-    def test_no_load_passes_the_stress_check_at_no_ratio(self):
-        self.assertEqual({k: stress_check(solved(peak_MPa=0.0))[k] for k in ("ratio", "status")}, {"ratio": 0.0, "status": "passes"})
+    def test_a_part_no_load_reaches_is_never_passed_by_the_stress_check(self):
+        # The solve refuses such a study before it is judged (static.solve); the check never says it passes.
+        with self.assertRaisesRegex(ValueError, "the stress check judges a loaded part, and no load reaches 'bracket'"):
+            stress_check(solved(peak_MPa=0.0))
 
     def test_a_displacement_check_is_close_within_a_tenth_of_its_limit(self):
         at = (60.0, 0.0, 0.0)

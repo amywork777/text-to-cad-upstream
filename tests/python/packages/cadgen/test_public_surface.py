@@ -38,7 +38,7 @@ PUBLIC_SURFACE: dict[str, tuple[str, ...]] = {
     "cadgen.urdf": ("validate",),
     "cadgen.srdf": ("validate",),
     "cadgen.sdf": ("validate",),
-    # Not a format: a part goes in, a result GLB and its sidecar come out.
+    # Not a format: a part goes in, a result GLB comes out.
     "cadgen.fea": ("faces", "parts", "solve"),
 }
 

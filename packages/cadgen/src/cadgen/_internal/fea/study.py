@@ -12,7 +12,7 @@ caller) of this shape::
       ],
       "mesh": {"size_mm": 2.5},                  # optional; default from the bounding box
       "output": {"deformation_scale": "auto"},   # optional; a number, or "auto"
-      "margin": 2.0,                             # optional; the safety factor (>= 1) the part should keep
+      "margin": 2.0,                             # optional; the safety factor (>= 1) the part should keep, the stress check's
       "checks": [{"kind": "stress"}, {"kind": "displacement", "limit_mm": 0.5}],  # optional; the stress check alone
       "parts": {"post": {"material": {...}}},    # assemblies: a part's own numbers, by name or ref
       "connections": [{"between": ["post", "base"], "type": "free"}],  # assemblies: overrides of the bonded default
@@ -39,7 +39,7 @@ from cadgen._internal.fea.materials import Material, material_from_spec
 from cadgen._internal.fea.values import faces as _faces, json_text as _json_text, number as _number, text as _text
 
 __all__ = [
-    "CHECK_KEYS", "STUDY_KEYS", "Connection", "Fixture", "Load", "Study", "parse_fixtures", "parse_loads", "parse_study",
+    "CHECK_KEYS", "CONTACT_TOLERANCE_MM", "STUDY_KEYS", "Connection", "Fixture", "Load", "Study", "parse_fixtures", "parse_loads", "parse_study",
 ]
 
 #: A fixed face is held still; a roller face slides in its own plane but never moves along its normal (supports.py).
@@ -56,10 +56,12 @@ OUTPUT_KEYS = ("deformation_scale",)
 CONNECTION_TYPES = ("bonded", "free")
 #: What a check can judge, and the keys each takes; cadgen evaluates each (checks.py).
 CHECK_KEYS = {
-    "stress": frozenset({"kind", "label", "margin"}),
+    "stress": frozenset({"kind", "label"}),
     "displacement": frozenset({"kind", "label", "limit_mm", "faces"}),
 }
 DEFAULT_CHECKS = ({"kind": "stress"},)
+#: Faces this close (or closer) count as touching, unless the study says otherwise (``contact_tolerance_mm``).
+CONTACT_TOLERANCE_MM = 0.1
 #: Standard gravity, mm/s^2 (operators.G0_MM_S2, kept here so parsing imports no numerics).
 G0_MM_S2 = 9806.65
 
@@ -115,7 +117,7 @@ class Study:
     #: Assemblies: overrides of the bonded default.
     connections: tuple[Connection, ...] = ()
     #: Assemblies: faces this close (or closer) count as touching.
-    contact_tolerance_mm: float = 0.1
+    contact_tolerance_mm: float = CONTACT_TOLERANCE_MM
     #: What the result is judged by, checked: the stress check alone when the study names none.
     checks: tuple[dict, ...] = DEFAULT_CHECKS
     #: ``mesh.refine``: balls meshed finer, ``(centre (x, y, z), radius_mm, size_mm)`` each.
@@ -226,7 +228,8 @@ def _connections(entries: Any) -> tuple[Connection, ...]:
 
 
 def _check(entry: Any, *, where: str) -> dict:
-    """One ``checks`` entry: ``stress`` (an optional ``margin``) or ``displacement`` (``limit_mm``, over some ``faces``)."""
+    """One ``checks`` entry: ``stress`` (held to the study's ``margin``) or ``displacement`` (``limit_mm``, over some
+    ``faces``)."""
     if not isinstance(entry, dict):
         raise ValueError(f"{where}: expected an object like {{\"kind\": \"displacement\", \"limit_mm\": 0.5}}")
     kind = entry.get("kind")
@@ -237,11 +240,6 @@ def _check(entry: Any, *, where: str) -> dict:
         raise ValueError(f"{where}: unknown keys {sorted(unknown)}; a {kind} check takes {sorted(CHECK_KEYS[kind])}")
     check = {"kind": kind, **_text(entry, "label", where=where)}
     if kind == "stress":
-        if "margin" in entry:
-            margin = _number(entry["margin"], where=f"{where}.margin", positive=True)
-            if margin < 1:
-                raise ValueError(f"{where}.margin: a safety factor below 1 means the part yields; must be 1 or more, got {margin:g}")
-            check["margin"] = margin
         return check
     if "limit_mm" not in entry:
         raise ValueError(f"{where}.limit_mm: a displacement check needs the most it may move, in mm")
@@ -325,7 +323,10 @@ def parse_loads(document: dict) -> tuple[Load, ...]:
         else:
             if "pressure_MPa" not in entry:
                 raise ValueError(f"{where}.pressure_MPa: a pressure needs its magnitude in MPa")
-            loads.append(Load(faces, "pressure", pressure=_number(entry["pressure_MPa"], where=f"{where}.pressure_MPa")))
+            pressure = _number(entry["pressure_MPa"], where=f"{where}.pressure_MPa")
+            if pressure == 0:
+                raise ValueError(f"{where}.pressure_MPa: the pressure is zero")
+            loads.append(Load(faces, "pressure", pressure=pressure))
     return tuple(loads)
 
 
@@ -405,18 +406,10 @@ def parse_study(study: str | dict | Path | None) -> Study:
     if margin < 1:
         raise ValueError(f"margin: a safety factor below 1 means the part yields; must be >= 1, got {margin:g}")
     checks = _checks(document.get("checks"))
-    # A stress check's margin is the study's margin: one number, said once or said the same.
-    stress = next((check for check in checks if check["kind"] == "stress"), {})
-    if "margin" in stress:
-        if "margin" in document and stress["margin"] != margin:
-            raise ValueError(
-                f"checks: the stress check's margin ({stress['margin']:g}) is not the study's margin ({margin:g}); give it once"
-            )
-        margin = stress["margin"]
 
     parts = _parts(document.get("parts"))
     connections = _connections(document.get("connections"))
-    tolerance = _number(document.get("contact_tolerance_mm", 0.1), where="contact_tolerance_mm")
+    tolerance = _number(document.get("contact_tolerance_mm", CONTACT_TOLERANCE_MM), where="contact_tolerance_mm")
     if tolerance < 0:
         raise ValueError(f"contact_tolerance_mm: must be zero or more, got {tolerance:g}")
 

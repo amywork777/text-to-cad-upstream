@@ -156,10 +156,6 @@ def findings(solved: Solved) -> list[dict]:
     def add(severity: str, kind: str, summary: str, description: str, items: list[dict]) -> None:
         found.append(finding(severity, kind, summary, description, items))
 
-    if factor is None and not solved.assembly:
-        add("warning", "no_load", "No load reaches the part: check the loads are on faces connected to the fixed ones",
-            "the peak stress is zero", [])
-
     # A materially finer solve that agreed with the first resolved the peak: it is not a singularity.
     moved = None
     if solved.coarser_peak_MPa is not None and solved.coarser_peak_MPa > 0:
@@ -240,14 +236,9 @@ def findings(solved: Solved) -> list[dict]:
 
 
 def assembly_findings(parts: list[Solved]) -> list[dict]:
-    """The findings of every part of one solved assembly, errors first.
-
-    A part no load reaches is nothing to report on its own; only when none of them is loaded does the study say so.
-    """
+    """The findings of every part of one solved assembly, errors first. A part no load reaches is nothing to report on its
+    own; a study no load reaches at all is refused before it is judged (``static.solve``)."""
     found = [finding for solved in parts for finding in findings(solved)]
-    if all(safety_factor(solved) is None for solved in parts):
-        found.append(finding("warning", "no_load", "No load reaches the parts: check the loads are on faces connected to "
-                              "the fixed ones", "the peak stress is zero in every part"))
     return sorted(found, key=lambda finding: finding["severity"] != "error")
 
 
@@ -269,18 +260,21 @@ def _where(ref: str | None, at: tuple[float, float, float]) -> dict:
 def stress_check(solved: Solved, *, label: str | None = None) -> dict:
     """The stress check's result: the peak against the yield of the part it is in (an assembly's
     weakest), ``fails`` under a safety factor of 1 and ``close`` under the margin, as the summary's
-    factor says it. ``ratio`` is the peak over the yield, one over that factor; 0 with no load."""
+    factor says it. ``ratio`` is the peak over the yield, one over that factor. It judges a loaded part:
+    a study no load reaches is refused before it is judged (``static.solve``)."""
     factor = floored_factor(solved)
+    if factor is None:
+        raise ValueError(f"the stress check judges a loaded part, and no load reaches {quoted(solved.part)}")
     result = {
         "kind": "stress",
         "label": label or "Strength",
         "value": round(solved.peak_MPa, 4),
         "limit": solved.yield_MPa,
         "unit": "MPa",
-        "ratio": 0.0 if factor is None else round(1 / factor, 6) if factor > 0 else round(solved.peak_MPa / solved.yield_MPa, 6),
+        "ratio": round(1 / factor, 6) if factor > 0 else round(solved.peak_MPa / solved.yield_MPa, 6),
         "close_at": round(1 / solved.margin, 6),
         "margin": solved.margin,
-        "status": "passes" if factor is None else "fails" if factor < 1 else "close" if factor < solved.margin else "passes",
+        "status": "fails" if factor < 1 else "close" if factor < solved.margin else "passes",
         "where": _where(solved.peak_face, solved.peak_at),
     }
     return {**result, "part": solved.part} if solved.assembly else result

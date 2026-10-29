@@ -93,8 +93,8 @@ At least one. Four types:
 
 | type | fields | meaning |
 | --- | --- | --- |
-| `force` | `faces`, `vector_N: [Fx, Fy, Fz]` | the TOTAL force over the listed faces, spread as a uniform traction over their combined area |
-| `pressure` | `faces`, `pressure_MPa` | a normal pressure on the listed faces, positive pushing into the part |
+| `force` | `faces`, `vector_N: [Fx, Fy, Fz]` | the TOTAL force over the listed faces, spread as a uniform traction over their combined area; not zero |
+| `pressure` | `faces`, `pressure_MPa` | a normal pressure on the listed faces, positive pushing into the part; not zero |
 | `gravity` | `vector_g: [gx, gy, gz]`, no `faces` | the part's own weight: every bit of it is pulled along `vector_g`, in g (`[0, 0, -1]` is Earth's gravity down -Z) |
 | `acceleration` | `vector_g: [ax, ay, az]`, no `faces` | the part is accelerated by `vector_g`, in g, so it feels an inertial load the opposite way (`[5, 0, 0]`: speeding up at 5 g in +X pushes the part toward -X) |
 
@@ -103,6 +103,11 @@ density greater than zero: a material object must give `density_t_per_mm3`, and 
 material its density, or the study is refused with a sentence saying so. Their total (mass times
 acceleration) joins the applied force in the summary's `applied_force_N`, so the reactions still
 balance it. More in [linear-static.md](linear-static.md#body-loads-gravity-and-acceleration).
+
+A load never reaches the part through a face that is held: a load on a `fixed` face, or a pressure
+on a `roller` face (which a roller holds along its normal), is refused before the solve, naming the
+load and the fixture, however each names the face. A study that no load reaches anywhere (its peak
+stress zero) is refused too, rather than passed.
 
 Remote loads, bearing loads, bolt preloads and moments are not in this version; approximate a
 moment with a pair of opposite forces on two faces.
@@ -148,7 +153,8 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
   and slide, and bolts, are not in this version.
 - `contact_tolerance_mm`: default 0.1. Faces this close are touching; a gap within it is closed to
   bond the pair, and so is an overlap no thicker than it (an interference; a `gap_closed` finding
-  says which). A thicker overlap is never bonded.
+  says which). A thicker overlap is never bonded. It is set here alone: `cadgen fea parts` lists
+  against the 0.1 mm default and prints each near miss's gap, which is what to set it from.
 - Faces: `post/face 23` is face 23 of the part `post`; faces may be on any part. A face that
   another part only partly covers (a plate's top with a post standing on it) holds or loads its
   exposed area; a face wholly covered by a bonded joint is refused before the solve. At least one
@@ -183,7 +189,8 @@ shows the true deformed shape). The result's summary records the scale used.
 
 ## `margin`
 
-The safety factor against yield the part should keep. Omitted, 2. Below 1 is refused (a part that
+The safety factor against yield the part should keep, and the one the stress check holds it to (said
+here alone: the check takes none of its own). Omitted, 2. Below 1 is refused (a part that
 yields has no margin). A result under it, but above 1, is a `low_margin` warning; below 1 is a
 `yields` error. Raise it for polymers, fatigue or a part whose failure hurts someone; lower it only
 when the user says the load is known exactly.
@@ -200,7 +207,7 @@ slider scales them all (stress and displacement are linear in the load).
 
 | `kind` | judges | keys |
 | --- | --- | --- |
-| `stress` | peak von Mises against each part's yield (an assembly's weakest part): fails under a safety factor of 1, close under the margin | `margin` (default the study's `margin`; give it once, the same if both), `label` |
+| `stress` | peak von Mises against each part's yield (an assembly's weakest part): fails under a safety factor of 1, close under the study's [`margin`](#margin) | `label` |
 | `displacement` | the largest displacement over the whole model, or over `faces` (they may span parts), against `limit_mm`: fails past it, close within a tenth of it (the model's own accuracy) | `limit_mm` (required, > 0), `faces` (face refs, resolved like the fixtures'), `label` (the user's words, "Tip sag") |
 
 "Will it break", "is it strong enough": `stress`. "How much does it sag or deflect", or a
@@ -235,7 +242,13 @@ With `--vtu`, a `.vtu` beside `OUT`: the volume mesh with displacement and von M
 ParaView.
 
 Each file is written under a temporary name and moved into place only once every one is written: a
-run that fails writes nothing, and the previous result stays as it was.
+run that fails writes nothing, and the previous result stays as it was. A solve whose reactions do
+not balance the applied load is such a failure: it is refused, never written with a warning.
+
+`ok` (and the exit code) follow the validators' rule: an error blocks. A result with an error
+finding (it yields, a check fails) is `ok: false` and the command exits 1, with the GLB written all
+the same: the solve is right, and the part is unfit to use. A study stopped before the solve (a
+part nothing holds) is `ok: false` with no GLB (`glb: null`). Warnings never block.
 
 For an assembly the summary mixes two scopes. `yield_MPa` and `safety_factor` are the weakest
 part's (the part named by `weakest_part`, whose own peak is `weakest_part_peak_MPa` at

@@ -166,6 +166,10 @@ class FeaResult:
     does not carry: the study as given, its material, each face it named, each fixture's reaction, an assembly's
     joints and overlapping parts, and the first solve's size and peak when a finer one was written (``refined``).
     Nothing is written beside the GLB: ``--json`` is this whole result.
+
+    ``ok`` is the validators' rule: false when any finding is an error, the part unfit to use (it yields, misses a
+    check) or the study stopped before the solve (a part nothing holds). The command then exits 1; a solved study's
+    GLB is written all the same, as it shows where the part fails.
     """
 
     ok: bool
@@ -190,7 +194,7 @@ class FeaResult:
     def human_lines(self) -> list[str]:
         from cadgen._internal.fea.checks import safety_factor_text  # stdlib only; kept out of module import time
 
-        if not self.ok:
+        if self.glb is None:
             return [f"not solved: {_display(self.document)}"] + [f"{finding['severity']}: {finding['summary']}" for finding in self.findings]
         s = self.summary
         size = f"{self.mesh.get('elements')} tets, {self.mesh.get('dofs')} DOF, {self.mesh.get('size_mm')} mm elements"
@@ -206,6 +210,9 @@ class FeaResult:
         ]
         lines += [f"{finding['severity']}: {finding['summary']}" for finding in self.findings]
         lines += [f"warning: {warning}" for warning in self.warnings]
+        if not self.ok:
+            blocking = sum(1 for finding in self.findings if finding["severity"] == "error")
+            lines.append(f"FAILED {_display(self.document)}: {blocking} blocking finding(s)")
         return lines
 
 

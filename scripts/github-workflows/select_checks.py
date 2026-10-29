@@ -240,22 +240,23 @@ RULES: tuple[Rule, ...] = (
     Rule(VIEWER_SHARED, CADGEN_CONSUMERS, final=True),
     Rule(VIEWER_CODE, _viewer_change, final=True),
     Rule(MCP_CODE, _mcp_change, final=True),
-    # The engine and shared modules FEA reads a document and writes its result through: a change there runs the
-    # solves too, which the cadgen job skips without CalculiX. Before the engine's final rule, which adds the rest.
+    # The engine and shared modules FEA reads a document, finds CalculiX and writes its result through: a change
+    # there runs the solves too, which the cadgen job skips without CalculiX. Before the engine's final rule, which
+    # adds the rest.
     Rule((
         f"{CADGEN_SRC}/engine/document.py", f"{CADGEN_SRC}/engine/refs.py", f"{CADGEN_SRC}/engine/kernel/bounds.py",
-        f"{CADGEN_SRC}/_internal/atomic_replace.py", f"{CADGEN_SRC}/_internal/primitive_mesh.py",
-        f"{CADGEN_SRC}/_internal/cli_from_function.py",
+        f"{CADGEN_SRC}/engine/executables.py", f"{CADGEN_SRC}/_internal/atomic_replace.py",
+        f"{CADGEN_SRC}/_internal/primitive_mesh.py", f"{CADGEN_SRC}/_internal/cli_from_function.py",
     ), select(flags=["fea"])),
     Rule(ENGINE_CODE, CADGEN_CONSUMERS, final=True),
     Rule(("packages/cadgen/**", "scripts/bundle/**"), CADGEN_CONSUMERS),
     # The stress solver's own tests need CalculiX, which no other job installs: it, its commands,
-    # the result types it returns, the mesher's pin and its skill.
+    # the result types it returns and the mesher's pin. Its skill's pages are checked against it.
     Rule((
         f"{CADGEN_SRC}/_internal/fea/**", f"{CADGEN_SRC}/fea.py", f"{CADGEN_SRC}/cli/fea_*",
-        f"{CADGEN_SRC}/results.py", "packages/cadgen/pyproject.toml", "skills/fea/**",
-        f"{CADGEN_SUITE}/test_fea*.py",
+        f"{CADGEN_SRC}/results.py", "packages/cadgen/pyproject.toml", f"{CADGEN_SUITE}/test_fea*.py",
     ), select(flags=["fea"])),
+    Rule((f"{CADGEN_SRC}/_internal/fea/**",), select(skills=[f"{SKILL_SUITES}/fea"])),
 
     # The shared UI and the apps. The snapshot runtime is built from core alone, so ui
     # reaches the two hosts and the wheel, not cadgen's suites.
@@ -282,6 +283,7 @@ RULES: tuple[Rule, ...] = (
     Rule(("skills/**",), NOTHING),
     Rule(("skills/dfam-check/**",), select(skills=[f"{SKILL_SUITES}/dfam-check"])),
     Rule(("skills/dfm/**",), select(skills=[f"{SKILL_SUITES}/dfm"])),
+    Rule(("skills/fea/**",), select(skills=[f"{SKILL_SUITES}/fea"])),
 
     # The test runners and the gates each one feeds.
     Rule(("scripts/test/test-python.sh",), select(flags=["fea"], cadgen=[CADGEN_SUITE], skills=[SKILL_SUITES])),

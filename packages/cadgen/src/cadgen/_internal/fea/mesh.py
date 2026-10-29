@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from cadgen._internal.fea.assembly import Contact
     from cadgen._internal.fea.document import Document, Occurrence
 
-__all__ = ["FaceFingerprint", "VolumeMesh", "default_mesh_size", "face_area_center", "kernel_messages_on_stderr", "mesh_assembly",
+__all__ = ["NETGEN_PLATFORMS", "FaceFingerprint", "VolumeMesh", "default_mesh_size", "face_area_center", "kernel_messages_on_stderr", "mesh_assembly",
            "mesh_occurrence", "occurrence_fingerprints", "require_fea_stack", "small_feature_mm"]
 
 
@@ -57,11 +57,24 @@ def kernel_messages_on_stderr() -> Iterator[None]:
         os.close(saved)
 
 
+#: Where netgen publishes wheels, and so where cadgen installs it (its marker in ``pyproject.toml``).
+NETGEN_PLATFORMS = "macOS, Linux x86_64 and Windows x86_64"
+
+
 def require_fea_stack() -> None:
-    """Fail with how to install it when CalculiX is missing, before anything is meshed: netgen, which meshes, is a
-    dependency of every install; the solver is the one program the person installs."""
+    """Fail before anything is meshed when netgen or CalculiX is missing: netgen, which meshes, is a dependency of every
+    install where it has wheels (:data:`NETGEN_PLATFORMS`), and is looked for, never imported, in this process
+    (:mod:`.mesher`); the solver is the one program the person installs, and the error says how."""
+    import importlib.util
+    import platform
+
     from cadgen._internal.fea import calculix
 
+    if importlib.util.find_spec("netgen") is None:
+        raise RuntimeError(
+            f"cadgen fea solve needs netgen, which meshes, and it is not installed: cadgen installs it only where netgen "
+            f"publishes wheels ({NETGEN_PLATFORMS}), and this is {platform.system()} {platform.machine()}"
+        )
     try:
         calculix.find_ccx()
     except calculix.CalculixMissingError as error:

@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 
     from cadgen._internal.fea.checks import Solved
 
-__all__ = ["FieldMax", "Static", "field_max_over", "judge", "merge_finer", "peak_face", "refined_record", "solve",
-           "study_echo", "summary", "weakest"]
+__all__ = ["FieldMax", "Static", "field_max_over", "judge", "merge_finer", "peak_face", "refined_record", "require_balance",
+           "solve", "study_echo", "summary", "weakest"]
 
 
 @dataclass
@@ -215,11 +215,26 @@ def solve(volume, study, plan, ordinal_of: dict[str, int], *, part_name: str, lo
     materials = study.material if plan is None else plan.materials
     outcome = solver.solve_linear_static(volume, materials, study.fixtures, study.surface_loads, ordinal_of,
                                          log=log, automatic=automatic, body_loads=study.body_accelerations)
+    require_balance(outcome)
     if plan is None:
         solved = [solved_record(volume, outcome, study, ordinal_of, part_name)]
     else:
         solved = [solved_part_record(volume, outcome, study, plan, index, ordinal_of) for index in range(len(plan.parts))]
+    if not any(part.peak_MPa > 0 for part in solved):
+        raise ValueError(
+            "no load reaches the part: the peak stress is zero everywhere, so there is nothing to judge; put the loads "
+            "on faces that are not held, on the part the fixtures hold"
+        )
     return Static(outcome, solved)
+
+
+def require_balance(outcome) -> None:
+    """Refuse a solve whose reactions do not balance the applied load: its stresses are not the study's."""
+    reaction = tuple(sum(r[c] for r in outcome.reactions) for c in range(3))
+    mismatch = max(abs(a + r) for a, r in zip(outcome.applied, reaction))
+    if mismatch > 1e-3 * max(1.0, max(abs(a) for a in outcome.applied)):
+        raise RuntimeError(f"the reactions do not balance the applied load (mismatch {mismatch:.3g} N), so the solve is "
+                           "wrong and nothing was written")
 
 
 def weakest(result: Static) -> "Solved":
@@ -232,7 +247,7 @@ def weakest(result: Static) -> "Solved":
 # -- the automatic finer solve -------------------------------------------------------------------------------
 
 def refined_record(result: Static, size_mm: float, finer_mm: float, *, assembly: bool) -> dict:
-    """The sidecar's ``refined``, before the finer solve: the first solve's size and governing peak."""
+    """The result's ``refined``, before the finer solve: the first solve's size and governing peak."""
     part = weakest(result)
     return {
         "from_size_mm": round(size_mm, 4),
@@ -279,7 +294,7 @@ def judge(check: dict, index: int, volume, ordinal_of: dict[str, int], result: S
 
 
 def summary(result: Static, check_results: list[dict], *, scale: float | None, part_refs: list[str] | None) -> dict:
-    """The one place the numbers are rounded; the GLB's extras and the sidecar are derived from it."""
+    """The one place the numbers are rounded; the GLB's extras and the result are derived from it."""
     import numpy as np
 
     from cadgen._internal.fea import checks

@@ -73,10 +73,13 @@ dependencies = [
   # faces). build123d brings it already; it is named here because cadgen imports it itself.
   "scipy",
   # `cadgen fea solve` meshes with netgen (LGPL-2.1, its own OpenCascade, so it runs in a
-  # process of its own; wheels on every packaged target, about 8-11 MB). A dependency of every
-  # install rather than an extra: an extra is a second installation, and so a second engine.
-  # CalculiX, which solves, is a program the person installs (or the one their FreeCAD carries).
-  "netgen-mesher>=6.2.2608",
+  # process of its own; about 8-11 MB). A dependency of every install rather than an extra: an
+  # extra is a second installation, and so a second engine. netgen publishes wheels for macOS,
+  # Linux x86_64 and Windows x86_64 alone, and no sdist, so it is installed only there: anywhere
+  # else (Linux on ARM) cadgen installs without it and `cadgen fea solve` refuses, naming the
+  # platform (`_internal/fea/mesh.py`). CalculiX, which solves, is a program the person installs
+  # (or the one their FreeCAD carries).
+  "netgen-mesher>=6.2.2608; sys_platform == 'darwin' or (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64')",
 ]
 
 [project.urls]

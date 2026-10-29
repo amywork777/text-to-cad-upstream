@@ -66,6 +66,25 @@ def _resolve_faces(document: "Document", refs: "tuple[str, ...]") -> tuple[dict[
     return resolved, owners
 
 
+def _refuse_held_loads(study, resolved: dict[str, "Selection"]) -> None:
+    """A load on a face a ``fixed`` fixture holds goes straight into the support, as does a pressure on a ``roller`` face
+    (along its normal, the one way a roller holds): none of it reaches the part, so the study is refused, whichever way
+    each names the face."""
+    held: dict[str, tuple[int, str]] = {}  # each held face's canonical ref: the fixture holding it, a fixed one first
+    for index, fixture in sorted(enumerate(study.fixtures), key=lambda item: item[1].type != "fixed"):
+        for ref in fixture.faces:
+            held.setdefault(resolved[ref].ref, (index, fixture.type))
+    for index, load in enumerate(study.loads):
+        for ref in load.faces:
+            fixture, kind = held.get(resolved[ref].ref, (None, None))
+            if kind == "fixed" or (kind == "roller" and load.type == "pressure"):
+                how = "holds it still" if kind == "fixed" else "holds it along its normal, which a pressure pushes along"
+                raise ValueError(
+                    f"loads[{index}]: {ref} is held by fixtures[{fixture}] ({kind}), which {how}, so the load goes into the "
+                    "support and never reaches the part; load a face that is not held"
+                )
+
+
 def _single_occurrence(document: "Document", owners: set[str]) -> "Occurrence":
     """The one part occurrence every face ref belongs to (a study always names faces: its fixtures)."""
     if len(owners) > 1:
@@ -155,12 +174,13 @@ def _detect_pairs(parts: list, tolerance: float, reach: float, logger: Narration
     return sorted(found + pressed, key=lambda c: sorted((order[c.a], order[c.b]))), overlaps, len(found)
 
 
-def list_assembly_parts(target: Path, *, contact_tolerance_mm: float = 0.1, verbose: bool = False) -> FeaPartsResult:
+def list_assembly_parts(target: Path, *, verbose: bool = False) -> FeaPartsResult:
+    """The parts and the pairs that touch within the default tolerance a study bonds by; a study that bonds wider gaps
+    sets its own (``contact_tolerance_mm``), and the gaps listed are what it decides by."""
     # Contact detection is OCP, numpy and scipy: no solver needed.
     from cadgen._internal.fea.assembly import display_names, list_parts
+    from cadgen._internal.fea.study import CONTACT_TOLERANCE_MM as contact_tolerance_mm
 
-    if not contact_tolerance_mm >= 0:
-        raise ValueError("contact_tolerance_mm must be zero or more")
     logger = Narration(verbose=verbose)
     logger.info("reading the parts")
     parts = list_parts(_open(Path(target)))
@@ -576,6 +596,7 @@ def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool
     require_fea_stack()
     doc = _open(document)
     resolved, owners = _resolve_faces(doc, tuple(dict.fromkeys((*parsed.face_refs, *parsed.check_faces))))
+    _refuse_held_loads(parsed, resolved)
     # A document of several parts is an assembly, whichever faces the study names; one part's study keeps the one-part path.
     plan = None
     if len(doc.leaves()) > 1 or parsed.parts or parsed.connections:
@@ -690,10 +711,6 @@ def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool
     warnings = list(outcome.warnings)
     if finer_failure:
         warnings.append(finer_failure)
-    reaction_total = tuple(sum(r[c] for r in outcome.reactions) for c in range(3))
-    balance = max(abs(a + r) for a, r in zip(outcome.applied, reaction_total))
-    if balance > 1e-3 * max(1.0, max(abs(a) for a in outcome.applied)):
-        warnings.append(f"reactions do not balance the applied load (mismatch {balance:.3g} N)")
 
     fields = [{"attribute": attribute, "name": name, "units": units, "min": 0.0, "max": summary[peak], "attribute_scale": factor}
               for attribute, name, units, peak, factor in FIELDS]
@@ -817,6 +834,9 @@ def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool
         for held in (*temporary.values(), *kept.values()):
             held.unlink(missing_ok=True)
     logger.debug(f"wrote {glb_path.name}" + (f", {vtu_path.name}" if vtu_path else ""))
-    return FeaResult(ok=True, document=document, occurrence=occurrence_ref, glb=glb_path, vtu=vtu_path,
+    # ok is the validators' one rule: an error blocks. A part that yields, or misses a check, is a correct result of a
+    # part unfit to use: its GLB is written, and the command exits 1 (README, "Finite element analysis").
+    ok = not any(finding["severity"] == "error" for finding in findings)
+    return FeaResult(ok=ok, document=document, occurrence=occurrence_ref, glb=glb_path, vtu=vtu_path,
                      summary=summary, mesh=mesh_info, timings=timings, warnings=tuple(warnings), findings=tuple(findings),
                      **reported)

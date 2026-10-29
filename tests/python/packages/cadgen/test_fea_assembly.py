@@ -395,7 +395,7 @@ class FeaPartsVerbTest(unittest.TestCase):
         self.assertEqual([pair.type for pair in result.pairs], ["not_connected"])
         self.assertIn("post ↔ base · gap 0.3 mm · not connected", result.human_lines())
 
-    def test_it_needs_only_what_contact_detection_needs_not_the_fea_extra(self):
+    def test_it_needs_only_what_contact_detection_needs_not_netgen(self):
         import builtins
         from unittest import mock
 
@@ -458,7 +458,7 @@ class DuplicateNamesTest(unittest.TestCase):
     def test_a_study_can_name_each_bar_by_its_ref(self):
         study = self.study(parts={self.first: {"material": STEEL_NUMBERS}, self.second: {"material": AL6061_NUMBERS}, "base": {"material": AL6061_NUMBERS}})
         result = solve(self.step, self.tmp / "refs.glb", study)
-        self.assertTrue(result.ok)
+        self.assertIsNotNone(result.glb)  # solved; ok is the part's verdict (a bar yields under this load)
         names = [part["name"] for part in result.summary["parts"]]
         self.assertEqual(names, ["base", f"bar ({self.first})", f"bar ({self.second})"])
         materials = {part["ref"]: part["material"] for part in result.summary["parts"]}
@@ -510,6 +510,17 @@ class AssemblyStudyFileTest(unittest.TestCase):
         self.assertEqual(parsed.parts["post"].yield_strength, 250.0)
         self.assertEqual((parsed.connections[0].between, parsed.connections[0].type), (("post", "base"), "free"))
         self.assertEqual(parsed.contact_tolerance_mm, 0.2)
+
+    def test_the_tolerance_is_set_in_the_study_alone(self):
+        # The study is the document of record: `fea parts` lists against the default and takes no tolerance of its own.
+        import inspect
+
+        from cadgen import fea
+        from cadgen.cli.fea_parts import build_parser
+
+        self.assertNotIn("contact_tolerance_mm", inspect.signature(fea.parts).parameters)
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            build_parser().parse_args(["a.step", "--contact-tolerance-mm", "0.2"])
 
     def test_a_study_without_them_is_a_one_part_study(self):
         parsed = self._parse()
@@ -819,7 +830,7 @@ class SolveAssemblyTest(unittest.TestCase):
 
     def test_an_interference_that_is_closed_to_bond_is_said(self):
         result, said = self._closed(-0.01, "pressed", parts={"base": {"material": AL6061_NUMBERS}, "post": {"material": STEEL_NUMBERS}})
-        self.assertTrue(result.ok)
+        self.assertIsNotNone(result.glb)  # solved; ok is the part's verdict
         self.assertNotIn("overlapping_parts", self._types(result))
         self.assertEqual(said, "Closed a 0.01 mm interference between 'post' and 'base' to bond them")
         (joint,) = reported(result)["connections"]
@@ -827,7 +838,7 @@ class SolveAssemblyTest(unittest.TestCase):
 
     def test_a_press_fit_just_inside_the_tolerance_is_closed_to_bond(self):
         result, said = self._closed(-0.09, "pressed-deep")
-        self.assertTrue(result.ok)
+        self.assertIsNotNone(result.glb)  # solved; ok is the part's verdict
         self.assertEqual(said, "Closed a 0.09 mm interference between 'post' and 'base' to bond them")
 
     def test_a_corner_sunk_on_every_axis_is_refused_as_an_overlap(self):

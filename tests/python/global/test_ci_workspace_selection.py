@@ -259,21 +259,23 @@ class ChangesRunWhatCanBreak(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn("fea", jobs_for(f"{CADGEN}/{name}"))
         # The engine and shared modules FEA reads and writes through run its solves too; the rest of the engine doesn't.
-        for path in ("packages/cadgen/src/cadgen/engine/refs.py", "packages/cadgen/src/cadgen/_internal/atomic_replace.py"):
+        for path in ("packages/cadgen/src/cadgen/engine/refs.py", "packages/cadgen/src/cadgen/engine/executables.py",
+                     "packages/cadgen/src/cadgen/_internal/atomic_replace.py"):
             with self.subTest(path=path):
                 self.assertIn("fea", jobs_for(path))
         self.assertNotIn("fea", jobs_for("packages/cadgen/src/cadgen/engine/api.py"))
-        fea = {"fea", "skills"}
         for path in (
             "packages/cadgen/src/cadgen/_internal/fea/solve.py",
             "packages/cadgen/src/cadgen/fea.py",
             "packages/cadgen/src/cadgen/cli/fea_solve.py",
             "packages/cadgen/src/cadgen/results.py",
-            "skills/fea/SKILL.md",
         ):
             with self.subTest(path=path):
                 self.assertIn("fea", jobs_for(path))
-        self.assertEqual(jobs_for("skills/fea/SKILL.md"), fea)
+        # The skill's pages are its own suite's, which reads them against the code they document; no solve reads them.
+        self.assertEqual(jobs_for("skills/fea/SKILL.md"), {"skills"})
+        self.assertEqual(tests_for("skills/fea/references/study-file.md")["skills_tests"], [f"{SKILLS}/fea"])
+        self.assertEqual(tests_for("packages/cadgen/src/cadgen/_internal/fea/study.py")["skills_tests"], [f"{SKILLS}/fea"])
         self.assertEqual(jobs_for(f"{CADGEN}/test_fea.py"), {"cadgen-linux", "cadgen-windows", "fea", "skills"})
         self.assertNotIn("fea", jobs_for("packages/cadgen/src/cadgen/geometry.py"))
 

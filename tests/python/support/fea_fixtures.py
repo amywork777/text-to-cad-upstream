@@ -29,7 +29,7 @@ try:
 except RuntimeError:
     HAVE_FEA = False
 
-needs_fea = unittest.skipUnless(HAVE_FEA, "CalculiX (ccx) is not installed")
+needs_fea = unittest.skipUnless(HAVE_FEA, "netgen or CalculiX (ccx) is not installed")
 
 
 #: The studies' own materials, as numbers (a study names no table material): the values a datasheet gives.

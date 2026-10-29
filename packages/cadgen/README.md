@@ -445,10 +445,15 @@ no worker and no build, and names faces by the engine's refs, resolved in the do
 as `cadgen inspect` resolves them (`engine.refs`): a study's `bracket/face 17` is the face the CAD
 Viewer copies. A study is a JSON file; a solve writes only the result GLB its `out` names (and a
 `.vtu` beside it when asked), each replaced only once all are written, so a failed run leaves the
-previous result as it was; every number is in the result it returns (`--json`). `_internal/fea/` solves one kind of study: linear elastic
-stress and displacement. The mesher is netgen, a
-dependency of every install, run in a process of its own, since its OpenCascade and OCP's cannot
-share one. The solver is CalculiX (`ccx`, 2.20 or newer), which the
+previous result as it was; every number is in the result it returns (`--json`). Its `ok` is the
+validators' rule, an error blocks: a part that yields or misses a check is a correct result of a part
+unfit to use, so its GLB is written and the command exits 1, as is a study stopped before the solve
+(a part nothing holds), with none. A study whose answer would be wrong is refused instead, writing
+nothing: a zero load, a load on a held face, a study no load reaches, reactions that do not balance.
+`_internal/fea/` solves one kind of study: linear elastic stress and displacement. The mesher is
+netgen, a dependency of every install where netgen publishes wheels (macOS, Linux x86_64 and Windows
+x86_64; elsewhere `solve` refuses, naming the platform), run in a process of its own, since its
+OpenCascade and OCP's cannot share one. The solver is CalculiX (`ccx`, 2.20 or newer), which the
 person installs (`conda install -c conda-forge calculix`, `calculix-ccx` on Debian and Ubuntu, or
 FreeCAD on macOS and Windows, which carries one): `CADGEN_CCX` names it, else `ccx` on PATH, else
 FreeCAD's. A missing or older one is an error saying how to install
