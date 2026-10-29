@@ -25,9 +25,10 @@ let camView = null;
 export const loadCamView = () => import("../camView.jsx").then((module) => { camView = module; return module; });
 
 /**
- * The CAM result viewer for a scene that carries a job (`kit`), loaded the first time one does; `pending` while it
- * loads. A plain GLB's `kit` is null. Should the chunk fail to load, `failed` is the error: the result is not drawn
- * as a plain GLB, which would hide its verdict, but refused as a file that failed to load.
+ * The CAM result viewer for a scene that carries a job (`kit`), loaded the first time one does, and the job read from
+ * the scene (`cam`); `pending` while it loads. A plain GLB's `kit` and `cam` are null. Should the chunk fail to load,
+ * or the job be damaged (`CamResultError`: something cadgen always writes is missing), `failed` is the error: the
+ * result is not drawn as a plain GLB, which would hide its verdict, but refused as a file that failed to load.
  */
 export function useCamView(root) {
   const wanted = useMemo(() => carriesCamJob(root), [root]);
@@ -39,7 +40,17 @@ export function useCamView(root) {
     loadCamView().then((module) => { if (live) setKit(module); }, (error) => { if (live) setFailed(error || new Error("the CAM viewer did not load")); });
     return () => { live = false; };
   }, [wanted, kit, failed]);
-  return { kit: wanted && kit ? kit : null, pending: wanted && !kit && !failed, failed: wanted ? failed : null };
+  const read = useMemo(() => {
+    if (!wanted || !kit) return { cam: null, error: null };
+    try {
+      return { cam: kit.readCamJob(root), error: null };
+    } catch (error) {
+      if (!(error instanceof kit.CamResultError)) throw error;
+      return { cam: null, error };
+    }
+  }, [wanted, kit, root]);
+  const refused = wanted ? failed || read.error : null;
+  return { kit: wanted && kit ? kit : null, cam: refused ? null : read.cam, pending: wanted && !kit && !failed, failed: refused };
 }
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -65,12 +76,12 @@ export function useReducedMotion() {
  * GLB), the row chosen in Job (`choice`) and what Quick Edit carries for it (`references`).
  * `shellRef` is the renderer's, filled once the shell exists: its frames and its view saves.
  */
-export function useCamResult({ cv, scene, view, shellRef }) {
+export function useCamResult({ cv, job, scene, view, shellRef }) {
   const { t } = useI18n();
-  // A CAM result carries its job in the file: its verdict, setups and operations (Job), its toolpaths and its
-  // stock box. What the view shows of it is this renderer's one slice of the file's view.
+  // A CAM result carries its job in the file (`useCamView` reads it): its verdict, setups and operations (Job), its
+  // toolpaths and its stock box. What the view shows of it is this renderer's one slice of the file's view.
   const root = scene?.document?.scene || null;
-  const cam = useMemo(() => (cv && root ? cv.readCamJob(root) : null), [cv, root]);
+  const cam = cv && root ? job : null;
   const scheme = view.appearance?.colorScheme === "dark" ? "dark" : "light";
   const meshes = useMemo(() => (cam ? cv.camSceneMeshes(root) : null), [cam, root]);
   const pathKinds = useMemo(() => (cam ? cv.camPathKinds(root) : null), [cam, root]);

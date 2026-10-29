@@ -6,8 +6,9 @@ import { camExtras, camScene } from './__tests__/camFile';
 /** The ready job with a bottom setup after it: a 30 s profile (op 4), 129.533–159.533 s. */
 function twoSetups() {
   const extras = camExtras();
-  extras.setups.push({ id: 'bottom', plain: 'bottom', time_s: 30, orientation: '-Z', operations: [
-    { index: 4, op: 'profile', plain: 'Profile', tool: 'T1', tool_plain: '6 mm flat', time_s: 30, t0: 129.533, t1: 159.533, summary: 'Profile' }] });
+  extras.setups.push({ ...extras.setups[0], id: 'bottom', plain: 'bottom', time_s: 30, t0: 129.533, t1: 159.533, orientation: '-Z',
+    matrix: [[1, 0, 0], [0, -1, 0], [0, 0, -1]], operations: [{ ...extras.setups[0].operations[2], index: 4, setup: 'bottom', op: 'profile',
+      plain: 'Profile', time_s: 30, t0: 129.533, t1: 159.533, summary: 'Profile' }] });
   extras.duration_s = 159.533;
   return readCamJob(camScene({ extras }))!;
 }

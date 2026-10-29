@@ -2,7 +2,7 @@ import React, { forwardRef, useEffect, useImperativeHandle } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { camScene } from './__tests__/camFile';
+import { camExtras, camScene } from './__tests__/camFile';
 
 // The CAM result viewer is a chunk of its own (`camView.jsx`): a plain GLB never fetches it, and a result loads it
 // before it is drawn, then offers Job in the file sidebar. Only what loads the file and the WebGL viewport are replaced.
@@ -134,3 +134,13 @@ it('reduces motion where the app says so or the system does', () => {
   render(<ViewerHostContext.Provider value={testHost()}><Probe /></ViewerHostContext.Provider>);
   expect(seen.at(-1)).toBe(true);
 });
+
+it('a damaged CAM result is refused as a file that failed to load, naming what it is missing', async () => {
+  // Drawn with a default in a missing value's place, it would show a plan nobody wrote.
+  const extras = camExtras();
+  delete extras.setups[0].operations[0].t0;
+  mount(camScene({ extras }), '/models/part.cam.glb');
+  const alert = await screen.findByRole('alert', {}, { timeout: 30000 });
+  expect(alert.textContent).toContain('cam.setups[0].operations[0].t0 is not a number');
+  expect(document.querySelector('[data-file-sidebar-tool="job"]')).toBeNull();
+}, 30000);

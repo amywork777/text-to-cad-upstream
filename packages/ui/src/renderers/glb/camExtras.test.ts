@@ -1,6 +1,6 @@
 import { Group, Mesh } from 'three';
 import { expect, it } from 'vitest';
-import { camSourcePath, carriesCamJob, formatDuration, jobSummary, operationDetail, readCamJob, toolChangeWords, toolSpeeds } from '../../../dist/renderers/glb/cam/extras.js';
+import { CamResultError, camSourcePath, carriesCamJob, formatDuration, jobSummary, operationDetail, readCamJob, toolChangeWords, toolSpeeds } from '../../../dist/renderers/glb/cam/extras.js';
 import { camExtras, camScene } from './__tests__/camFile';
 
 it('reads the job a ready result carries: verdict, setups, operations, tools, posts and what it assumed', () => {
@@ -40,18 +40,30 @@ it('is no job for a plain GLB, nor for one that only names the generator or only
   expect(readCamJob(null)).toBeNull();
 });
 
-it('reads a damaged job forgivingly: plain defaults, a finding with nothing to say left out, a verdict that is not ready', () => {
-  const root = camScene({ extras: { setups: [{ operations: [{ op: 'drill', time_s: 12, t0: 0, t1: 12, tool: 'T2' }, 'junk', { op: 'profile', t0: 12, t1: 42 }] }, 7],
-    tools: [{ id: 'T2', type: 'drill', diameter_mm: 5 }],
-    findings: [{ check: 'gouge', severity: 'error', summary: 'Cuts into the part' }, { severity: 'error' }, 'junk'], verdict: 'bad' } });
-  const job = readCamJob(root)!;
-  expect(job.setups).toHaveLength(1);
-  expect(job.setups[0]).toMatchObject({ id: 'setup-1', plain: 'setup-1', timeS: 42, axis: [0, 0, 1] });
-  expect(job.operations.map((op: any) => [op.index, op.plain, op.t0, op.t1, op.toolDiameterMm, op.toolType])).toEqual([[0, 'drill', 0, 12, 5, 'drill'], [1, 'profile', 12, 42, null, '']]);
-  expect(job.operations[0].summary).toBe('drill');
-  expect(job.findings).toEqual([{ check: 'gouge', level: 'error', message: 'Cuts into the part', operation: null, operations: [], at: null }]);
-  expect(job.verdict).toEqual({ status: 'fix', headline: '', errors: 1, warnings: 0, gcode: '' });
-  expect([job.durationS, job.post]).toEqual([42, '']);
+it('refuses a damaged job, naming what is missing, never drawing a default in its place', () => {
+  // Each a value cadgen always writes: gone, or of the wrong kind.
+  const damaged: [string, (extras: any) => void][] = [
+    ['cam.safety is not text', (extras) => { delete extras.safety; }],
+    ['cam.verdict is not an object', (extras) => { extras.verdict = 'bad'; }],
+    ['cam.verdict.status is not one of ready, fix', (extras) => { extras.verdict.status = 'maybe'; }],
+    ['cam.setups[0].operations[1].t0 is not a number', (extras) => { delete extras.setups[0].operations[1].t0; }],
+    ['cam.setups[0].operations[0].tool names T9, a tool the result does not list', (extras) => { extras.setups[0].operations[0].tool = 'T9'; }],
+    ['cam.setups[0].matrix is not a list', (extras) => { delete extras.setups[0].matrix; }],
+    ['cam.tools[0].plain is not text', (extras) => { delete extras.tools[0].plain; }],
+    ['cam.findings[0].summary is not text', (extras) => { extras.findings.push({ check: 'gouge', severity: 'error', items: [] }); }],
+    ['cam.assumed[0].why is not text', (extras) => { delete extras.assumed[0].why; }],
+    ['cam.machine.post is not text', (extras) => { extras.machine = {}; }],
+  ];
+  for (const [said, damage] of damaged) {
+    const extras = camExtras();
+    damage(extras);
+    expect(() => readCamJob(camScene({ extras }))).toThrow(CamResultError);
+    expect(() => readCamJob(camScene({ extras }))).toThrow(`This CAM result is damaged: ${said}.`);
+  }
+  // What cadgen writes only where there is some reads as nothing: an operation's name, a file's one tool.
+  const extras = camExtras();
+  extras.posts[0].tool = null;
+  expect(readCamJob(camScene({ extras }))!.posts[0].tool).toBe('');
 });
 
 it('resolves the part the job was planned from against the GLB, and says durations plainly', () => {
@@ -69,9 +81,9 @@ it('reads the job\'s tools in the order the program uses them, each with the spe
     { id: 'T2', label: 'T2', plain: '6 mm drill', type: 'drill', diameterMm: 6, operations: [3], rpm: [7960, 7960], feedMmMin: [955, 955] }]);
   expect(toolSpeeds(job.tools[0])).toBe('13,260 rpm · 1,061–1,083 mm/min');
   expect(toolSpeeds({ rpm: null, feedMmMin: null })).toBe('');
-  // A listed tool no operation runs comes last, named from its size and type where it has no plain words.
+  // A listed tool no operation runs comes last.
   const extras = camExtras();
-  extras.tools.push({ id: 'T7', type: 'ball', diameter_mm: 3 });
+  extras.tools.push({ ...extras.tools[0], id: 'T7', number: 7, type: 'ball', diameter_mm: 3, plain: '3 mm ball' });
   expect(readCamJob(camScene({ extras }))!.tools.map((tool: any) => [tool.label, tool.plain, tool.operations])).toEqual([
     ['T1', '6 mm flat', [0, 1, 2]], ['T2', '6 mm drill', [3]], ['T7', '3 mm ball', []]]);
 });

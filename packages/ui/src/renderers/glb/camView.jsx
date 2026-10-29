@@ -17,7 +17,7 @@ import { createCamTool } from "./cam/tool.js";
 
 export { default as CamJobPanel } from "./CamJobPanel.jsx";
 export { camChoices } from "./CamJobPanel.jsx";
-export { camSourcePath, readCamJob } from "./cam/extras.js";
+export { CamResultError, camSourcePath, readCamJob } from "./cam/extras.js";
 export { camOpColours } from "./cam/colours.js";
 export { camClips, camReadoutWords } from "./cam/playback.js";
 export { camSceneMeshes, showCamMeshes };

@@ -236,6 +236,6 @@ export default function CamJobPanel({ job, colours, chosen, onChoose, hidden = n
     </ul>
     <JobTools job={job} chosen={chosen} onChoose={onChoose} />
     <JobShow gates={gates} onToggleGate={onToggleGate} />
-    {job.safety ? <p className="px-2.5 pb-2 pt-1 text-micro leading-4 text-muted-foreground [overflow-wrap:break-word]" data-cam-safety="">{job.safety}</p> : null}
+    <p className="px-2.5 pb-2 pt-1 text-micro leading-4 text-muted-foreground [overflow-wrap:break-word]" data-cam-safety="">{job.safety}</p>
   </ToolPanel>;
 }
