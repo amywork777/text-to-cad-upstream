@@ -47,7 +47,10 @@ to add ribs, gussets or other features.
   the wall. Sharp inside corners concentrate stress and impede flow.
 - **CNC milling.** An internal corner parallel to the tool axis takes at least
   the cutter's radius; model it at the intended cutter's radius or larger.
-  Break external edges; a chamfer is often cheaper than a fillet there.
+  A flat end mill leaves the floor-to-wall junction sharp: a root fillet there
+  takes a corner-radius or ball tool and another finishing pass, so model one
+  only where load calls for it (`$dfm`'s milling review says the same). Break
+  external edges; a chamfer is often cheaper than a fillet there.
 - **FDM printing.** Fillets on vertical edges and feature roots print well. A
   bed-facing edge usually takes a chamfer: a fillet there starts as an
   unsupported overhang.
@@ -60,7 +63,10 @@ local space, and make it an argument of the part's helper function. A radius
 with neither source is an assumption the reply names with its value.
 Report added fillets and chamfers with the process they assume. They never
 change a specified dimension, and one that fails to build is reported, not
-silently dropped; see [kernel pitfalls](#kernel-pitfalls).
+silently dropped; see [kernel pitfalls](#kernel-pitfalls). A body that catches
+a failed fillet and goes on (a retry ladder) leaves those edges sharp with no
+error, so check that each one took: the rounded edges are gone from the result
+and it has more faces than the shape before it. The reply names any it dropped.
 
 ## Labels and assemblies
 
@@ -190,5 +196,6 @@ Topology validity does not prove positive orientation, the requested shape, or
 suitability for a later Boolean ([inspection](inspection-and-validation.md#geometry-diagnostics)).
 A validity gate inside a model body (a retry ladder that keeps a fillet only when
 the result is sound) uses `shape.is_valid` and `cadgen.geometry.is_sound`; each
-check costs kernel time when its body runs. A periodic cylinder or revolved face has
+check costs kernel time when its body runs. A fillet the ladder drops is a change
+to the part, which the reply names ([fillets and chamfers](#fillets-and-chamfers)). A periodic cylinder or revolved face has
 a seam edge that appears in CAD linework; it is not a crack.
