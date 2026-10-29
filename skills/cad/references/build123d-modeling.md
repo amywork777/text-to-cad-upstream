@@ -48,16 +48,16 @@ to add ribs, gussets or other features.
 - **CNC milling.** An internal corner parallel to the tool axis takes at least
   the cutter's radius; model it at the intended cutter's radius or larger.
   Break external edges; a chamfer is often cheaper than a fillet there.
-- **Additive.** Fillets on vertical edges and feature roots print well. A
+- **FDM printing.** Fillets on vertical edges and feature roots print well. A
   bed-facing edge usually takes a chamfer: a fillet there starts as an
   unsupported overhang.
 - **Sheet metal.** Bends carry the material's inside bend radius; flange
-  corners may be rounded. Bend reliefs belong to the flat pattern.
+  corners may be rounded.
 
-Size each radius from the user's shop spec or the process source, within the
-local space, and make it an argument of the part's helper function. `$dfm`
-(sheet metal, CNC, molding) and `$dfam-check` (additive) carry the process rules
-and their sources.
+Size each radius from the user's shop spec, else from the process's design
+guide (`$dfm` names its sources for CNC, molding and sheet metal), within the
+local space, and make it an argument of the part's helper function. A radius
+with neither source is an assumption the reply names with its value.
 Report added fillets and chamfers with the process they assume. They never
 change a specified dimension, and one that fails to build is reported, not
 silently dropped; see [kernel pitfalls](#kernel-pitfalls).
