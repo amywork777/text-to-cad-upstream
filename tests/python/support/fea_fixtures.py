@@ -1,8 +1,8 @@
 """Shared fixtures for the FEA suites (``tests/python/packages/cadgen/test_fea*.py``).
 
-Importing this puts cadgen's source on ``sys.path`` and says whether the optional
-``cadgen[fea]`` stack is installed; the heavy imports (build123d, numpy, cadgen.fea)
-stay inside the helpers, so a suite's parse tests run without the extra.
+Importing this puts cadgen's source on ``sys.path`` and says whether CalculiX, which
+every solve needs, is installed; the heavy imports (build123d, numpy, cadgen.fea)
+stay inside the helpers, so a suite's parse tests run without it.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ try:
 except RuntimeError:
     HAVE_FEA = False
 
-needs_fea = unittest.skipUnless(HAVE_FEA, "the fea extra (netgen-mesher) or CalculiX (ccx) is not installed")
+needs_fea = unittest.skipUnless(HAVE_FEA, "CalculiX (ccx) is not installed")
 
 
 @contextmanager
@@ -47,8 +47,11 @@ def solve(step: Path, out: Path, study: dict, **options):
         return fea.solve(step, out, study=study, **options)
 
 
-def sidecar(result) -> dict:
-    return json.loads(result.sidecar.read_text(encoding="utf-8"))
+def reported(result) -> dict:
+    """The result as ``--json`` prints it: everything a solve says, the GLB aside."""
+    from cadgen._internal.cli_from_function import result_payload
+
+    return result_payload(result)
 
 
 def class_directory(cls) -> Path:

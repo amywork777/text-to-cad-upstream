@@ -101,7 +101,7 @@ At least one. Four types:
 `gravity` and `acceleration` act on the whole volume (of every part, in an assembly) and need a
 density greater than zero: every table material has one; a material object must give
 `density_t_per_mm3`, or the study is refused with a sentence saying so. Their total (mass times
-acceleration) joins the applied force in the sidecar's `applied_force_N`, so the reactions still
+acceleration) joins the applied force in the summary's `applied_force_N`, so the reactions still
 balance it. More in [linear-static.md](linear-static.md#body-loads-gravity-and-acceleration).
 
 Remote loads, bearing loads, bolt preloads and moments are not in this version; approximate a
@@ -155,15 +155,12 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
   exposed area; a face wholly covered by a bonded joint is refused before the solve. At least one
   part must be fixed, and every part must reach it through bonded neighbours (`not_connected`
   error otherwise).
-- `--occurrence REF` on the command line solves that one part alone. It refuses a study with
-  `parts` or `connections`: give that part's material as the study's `material` instead.
 
 ## `mesh`
 
 `size_mm` is the target element size. Omitted, it is a fortieth of the part's bounding diagonal.
 Halving it roughly multiplies the run time by eight; a first run at the default, then one
-refinement to confirm the peak, is the usual pattern. `--mesh-size` on the command line overrides
-the file for one run. Elements are quadratic tetrahedra (CalculiX's C3D10).
+refinement to confirm the peak, is the usual pattern. Elements are quadratic tetrahedra (CalculiX's C3D10).
 
 `refine` meshes balls finer than the rest, where a small detail decides the answer (two curved
 parts touching, a sharp notch):
@@ -177,13 +174,13 @@ that would pass 150 000 degrees of freedom, and up to 250 000 only when 150 000 
 meaningfully finer mesh: CalculiX's direct solver needs several GB of memory there. A model already
 too big for a finer solve keeps its first answer, with a warning that its convergence is unchecked.
 A first solve is never refused for its size; past 150 000 degrees of freedom it warns that it will
-be slow. The finer solve is the one written; the sidecar's `refined` records both sizes and peaks.
+be slow. The finer solve is the one written; the result's `refined` records both sizes and peaks.
 
 ## `output`
 
 `deformation_scale` multiplies the displacement baked into the GLB so that a small deflection is
 visible. `"auto"` shows the largest displacement as 5 % of the part's size; a number fixes it (`1`
-shows the true deformed shape). The sidecar records the scale used.
+shows the true deformed shape). The result's summary records the scale used.
 
 ## `margin`
 
@@ -216,26 +213,27 @@ or key. A failing displacement check is an error finding ("'Tip sag' moves 2.1 m
 
 ## What comes out
 
-`cadgen fea solve part.step` writes two files beside the part, or at the `OUT` path you give (which
-must end in `.glb`) plus its `.json` twin:
+`cadgen fea solve part.step OUT` writes the GLB `OUT` names (which must end in `.glb`), and nothing
+else unless asked:
 
-- `part.fea.glb`: the boundary surface, deformed and coloured by von Mises (blue low, red high);
-  the value itself rides along as the `_VON_MISES` vertex attribute, and the mesh `extras` carry
-  the field, units, range and deformation scale.
-- `part.fea.json`: the study as given, the material, the resolved faces, the summary (max von Mises
-  nodal and at the integration points, safety factor, max displacement and its location, applied and reaction
-  forces; for an assembly also `parts`, one entry per part with its material, peak stress, safety
-  factor and displacement, and the weakest part's name and peak; and `checks`, each check judged,
-  also in the GLB's `extras.checks`), per-fixture reactions, mesh statistics, timings and warnings,
-  the `findings` (also in the GLB's mesh `extras`) and `refined`: the first and the finer solve's
-  element size and peak when the run solved twice, else `null`. The mesh statistics name the
-  mesher and the solver (`"solver": "calculix 2.23 (C3D10)"`).
-- for an assembly the sidecar also records `connections` (each joint: parts, type, area, gap,
-  `interference_mm` when the parts overlapped by no more than the tolerance and were bonded,
-  interface faces), and the GLB carries `parts`, `connections` and a per-vertex `_PART` index
-  beside `_FACE`.
-- `part.fea.vtu` with `--vtu`: the volume mesh with displacement and von Mises point data, for
-  ParaView.
+- `OUT`: the boundary surface, deformed and coloured by von Mises (blue low, red high); the value
+  itself rides along as the `_VON_MISES` vertex attribute, and the mesh `extras` carry the field,
+  units, range and deformation scale, the `findings` and `checks`; for an assembly also `parts`,
+  `connections` and a per-vertex `_PART` index beside `_FACE`.
+
+The numbers are the result's (`--json`): the study as given, the material, the resolved faces, the
+summary (max von Mises nodal and at the integration points, safety factor, max displacement and its
+location, applied and reaction forces; for an assembly also `parts`, one entry per part with its
+material, peak stress, safety factor and displacement, and the weakest part's name and peak; and
+`checks`, each check judged), per-fixture reactions, mesh statistics (naming the mesher and the
+solver, `"solver": "calculix 2.23 (C3D10)"`), timings and warnings, the `findings`, and `refined`:
+the first and the finer solve's element size and peak when the run solved twice, else `null`. For
+an assembly it also records `connections` (each joint: parts, type, area, gap, `interference_mm`
+when the parts overlapped by no more than the tolerance and were bonded, interface faces) and
+`overlaps`.
+
+With `--vtu`, a `.vtu` beside `OUT`: the volume mesh with displacement and von Mises point data, for
+ParaView.
 
 Each file is written under a temporary name and moved into place only once every one is written: a
 run that fails writes nothing, and the previous result stays as it was.

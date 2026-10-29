@@ -86,7 +86,7 @@ in g (1 g = 9.81 m/s²).
   into a seat. This is a steady g-load, not a shake or an impact.
 - Both need a density greater than zero (steel 7.85e-9, aluminium 2.7e-9 t/mm³;
   [`loads`](study-file.md#loads)). In an assembly they act on every part, each with its own density.
-- The sidecar's `applied_force_N` includes them (mass times acceleration), so the reactions still
+- The summary's `applied_force_N` includes them (mass times acceleration), so the reactions still
   balance it: a 2 kg part under `gravity` alone shows about 19.6 N applied and 19.6 N of reaction.
 - A drop, as an estimate: the faces that hit the floor fixed and an `acceleration` of G g pointing away from the floor, G = drop height / stopping distance (a
   1 m drop that stops in 2 mm is 500 g). Report it as an estimate of an equivalent steady load,
@@ -109,11 +109,11 @@ in g (1 g = 9.81 m/s²).
 - When the safety factor is under 3 the run solves again by itself at half the element size (and
   half the size at fillets and holes too), capped to keep the finer solve under 150 000 degrees of
   freedom where it can and never past 250 000 (so a big part may get less than half, or none, with
-  a warning); the finer result is the one written and reported, the sidecar's `refined` block
+  a warning); the finer result is the one written and reported, the result's `refined` block
   records both sizes and peaks, and `mesh_not_converged` is listed when the peak moved more than
   10 %.
 - To check convergence yourself, solve twice and compare the peaks; how depends on where the peak
-  is. Away from small features, halve `mesh.size_mm` (`--mesh-size` on the command line). At a
+  is. Away from small features, halve `mesh.size_mm`. At a
   fillet, hole or chamfer, halving it changes little: the elements there are already sized by the
   feature, not by `mesh.size_mm` (the run's slow-solve warning says so when small features set the
   mesh). Set `mesh.size_mm` to about a third of that feature's radius instead, then halve that;
@@ -138,7 +138,7 @@ in g (1 g = 9.81 m/s²).
   integration points back.
 - A missing `ccx`, or one older than 2.20, stops the solve before meshing with an error naming how
   to install it. cadgen downloads nothing and has no fallback solver.
-- The result names the version that ran: `mesh.solver` in the sidecar (`calculix 2.23 (C3D10)`),
+- The result names the version that ran: `mesh.solver` in the result (`calculix 2.23 (C3D10)`),
   also at the end of the first line the command prints. A solve that runs past an hour is stopped
   and says so.
 
@@ -156,5 +156,5 @@ Before trusting a run, estimate the answer by hand and compare:
   stress w L² (h/2) / (2 I).
 
 If the model is within roughly 20 % of the estimate, it is doing what you asked. If it is off by a
-factor, the load, the fixture or the units are wrong; check the reactions in the sidecar first
+factor, the load, the fixture or the units are wrong; check the result's fixture reactions first
 (they must equal minus the applied force), then the face choice, then the material.

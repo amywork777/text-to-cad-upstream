@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import dataclasses
-import json
 import math
 import os
 import shutil
@@ -67,7 +66,7 @@ def _resolve_faces(document: "Document", refs: "tuple[str, ...]") -> tuple[dict[
     return resolved, owners
 
 
-def _single_occurrence(document: "Document", owners: set[str], chosen: str | None = None) -> "Occurrence":
+def _single_occurrence(document: "Document", owners: set[str]) -> "Occurrence":
     """The one part occurrence every face ref belongs to (a study always names faces: its fixtures)."""
     if len(owners) > 1:
         raise ValueError(
@@ -157,7 +156,7 @@ def _detect_pairs(parts: list, tolerance: float, reach: float, logger: Narration
 
 
 def list_assembly_parts(target: Path, *, contact_tolerance_mm: float = 0.1, verbose: bool = False) -> FeaPartsResult:
-    # Contact detection is OCP, numpy and scipy, all base dependencies: no fea extra needed.
+    # Contact detection is OCP, numpy and scipy: no solver needed.
     from cadgen._internal.fea.assembly import display_names, list_parts
 
     if not contact_tolerance_mm >= 0:
@@ -405,7 +404,7 @@ def _unheld_after_meshing(volume, held_ordinals: set[int], count: int) -> list[l
 
 
 def _connections(plan: _Plan, volume) -> list[dict]:
-    """The detected pairs and what the study did with each, for the sidecar.
+    """The detected pairs and what the study did with each, for the result.
 
     ``faces`` are the interface faces on both sides of a bonded joint, as the
     GLB's ``faces`` name them; a free pair has none.
@@ -439,7 +438,7 @@ class _NotConnected(Exception):
 
 def _unsolved(document: Path, occurrence_ref: str, findings: list[dict]) -> FeaResult:
     """The result of a study that was stopped before the solve, by errors a person fixes in the study."""
-    return FeaResult(ok=False, document=document, occurrence=occurrence_ref, glb=None, sidecar=None, findings=tuple(findings))
+    return FeaResult(ok=False, document=document, occurrence=occurrence_ref, glb=None, findings=tuple(findings))
 
 
 def _mesh_assembly(mesh_assembly, doc, plan: _Plan, parsed, resolved, ordinal_of: dict[str, int], max_h: float | None, log, refine: float = 1.0, **mesh_options):
@@ -532,13 +531,11 @@ def progress_log(logger: Narration):
     return log
 
 
-def solve_study(target: Path, out: Path | None, *, study, occurrence: str | None = None, mesh_size: float | None = None,
-                vtu: bool = False, verbose: bool = False) -> FeaResult:
-    """Mesh, solve and check one study, then write its GLB and sidecar.
+def solve_study(target: Path, out: Path, *, study, vtu: bool = False, verbose: bool = False) -> FeaResult:
+    """Mesh, solve and check one study, then write its GLB at ``out`` (and, with ``vtu``, a VTU beside it); every
+    number the result reports is in the :class:`FeaResult` returned, and no other file is written.
 
     The physics is :mod:`.static`'s: its solve, checks and summary; this is the orchestration.
-    ``occurrence`` solves that one part alone, even in a
-    document of several parts; every face of the study must be on it.
 
     When the safety factor is close to failing (:func:`checks.needs_finer`)
     the part is meshed again at half the element size (:func:`finer_mesh_size` keeps that under the DOF budget),
@@ -546,20 +543,17 @@ def solve_study(target: Path, out: Path | None, *, study, occurrence: str | None
     written, reported and checked (the first solve's peak is kept for convergence only); when it fails the GLB
     stays the first solve's and the result carries one warning saying why.
     """
-    return _solve_study(Path(target), out, study, occurrence, mesh_size, vtu, verbose)
+    return _solve_study(Path(target), Path(out), study, vtu, verbose)
 
 
-def _solve_study(document: Path, out: Path | None, study, occurrence: str | None, mesh_size: float | None, vtu: bool,
-                 verbose: bool) -> FeaResult:
+def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool) -> FeaResult:
     from cadgen._internal.fea.study import parse_study
 
     parsed = parse_study(study)  # stdlib, before any heavy import
     logger = Narration(verbose=verbose)
     progress = progress_log(logger)
-    glb_path = Path(out) if out is not None else document.with_name(f"{document.stem}.fea.glb")
     if glb_path.suffix.lower() != ".glb":
-        raise ValueError(f"OUT names the result GLB and must end in .glb: {out}")
-    sidecar_path = glb_path.with_suffix(".json")
+        raise ValueError(f"OUT names the result GLB and must end in .glb: {glb_path}")
     vtu_path = glb_path.with_suffix(".vtu") if vtu else None
 
     from cadgen._internal.fea import checks
@@ -570,27 +564,11 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     resolved, owners = _resolve_faces(doc, tuple(dict.fromkeys((*parsed.face_refs, *parsed.check_faces))))
     # A document of several parts is an assembly, whichever faces the study names; one part's study keeps the one-part path.
     plan = None
-    if occurrence is None and (len(doc.leaves()) > 1 or parsed.parts or parsed.connections):
+    if len(doc.leaves()) > 1 or parsed.parts or parsed.connections:
         plan = _plan_assembly(doc, parsed, logger)
     ordinal_of: dict[str, int] = {}
     if plan is None:
-        if occurrence is not None:
-            if parsed.parts or parsed.connections:
-                # Solving one part of an assembly study would leave its own material or joints out of the answer.
-                named = " and ".join(k for k, v in (("parts", parsed.parts), ("connections", parsed.connections)) if v)
-                raise ValueError(
-                    f"--occurrence {occurrence} solves that part alone, so the study's {named} would not apply; "
-                    "give the part's material as the study's material and leave parts and connections out"
-                )
-            chosen = _resolve_one(doc, occurrence)
-            if chosen.kind != "occurrence":
-                raise ValueError(f"{occurrence} is not a part occurrence of {document.name}")
-            if stray := sorted(owners - {chosen.ref}):
-                raise ValueError(
-                    f"--occurrence {chosen.ref}: the study's faces are also on {', '.join(stray)}; "
-                    f"every face must be on {chosen.ref}"
-                )
-        occurrence = _single_occurrence(doc, owners, chosen.ref if occurrence is not None else None)
+        occurrence = _single_occurrence(doc, owners)
         occurrence_ref = occurrence.ref
         ordinal_of.update({ref: int(selection.ordinal) for ref, selection in resolved.items()})
     else:
@@ -606,7 +584,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     from cadgen._internal.fea.outputs import RAMP, auto_deformation_scale, write_glb, write_vtu
     from cadgen._internal.fea.study import refine_points
 
-    requested = mesh_size or parsed.mesh_size
+    requested = parsed.mesh_size
 
     def mesh(max_h: float | None, refine: float = 1.0, size_field: dict | None = None):
         options: dict = {"size_field": size_field} if size_field else {}
@@ -688,7 +666,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     scale = parsed.deformation_scale if parsed.deformation_scale is not None else auto_deformation_scale(
         float(magnitude.max()), volume.bbox_diagonal)
     # The summary is the one place the numbers are rounded; everything else
-    # (the GLB's extras, the sidecar) is derived from it.
+    # (the GLB's extras, the result) is derived from it.
     summary = static.summary(result, check_results, scale=scale,
                              part_refs=None if plan is None else [part.ref for part in plan.parts])
 
@@ -763,44 +741,31 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     mesh_info = {"elements": int(len(volume.tets)), "nodes": int(len(volume.nodes)), "dofs": outcome.dofs,
                  "size_mm": round(volume.max_h, 4), "order": 2, "mesher": "netgen", "solver": outcome.solver}
     timings = {"mesh_s": round(volume.seconds, 3), **{k: round(v, 3) for k, v in outcome.timings.items()}}
-    sidecar = {
-        "generator": "cadgen fea",
-        "document": str(document),
-        "occurrence": occurrence_ref,
+    # What the GLB's extras do not carry, for the result: the study as given, its material, each face it named,
+    # each fixture's reaction, an assembly's joints and overlaps, and the first solve when there was a finer one.
+    reported = {
         "study": parsed.source,
         "material": material.as_dict(),
         "faces": {ref: dataclasses.asdict(volume.faces[ordinal]) for ref, ordinal in ordinal_of.items()},
-        "summary": summary,
-        "fixtures": [
+        "fixtures": tuple(
             {"faces": list(fixture.faces), "type": fixture.type,
              **({"reaction_N": [round(x, 4) for x in outcome.reactions[n]]} if n < len(outcome.reactions) else {})}
             for n, fixture in enumerate(parsed.fixtures)
-        ],
-        "fields": extras["fields"],
-        "mesh": mesh_info,
-        "timings": timings,
-        "warnings": warnings,
-        "findings": findings,
-        # An assembly: how its parts are joined (the parts' own results are in the summary).
-        **({} if plan is None else {"connections": connections}),
-        # An assembly: the pairs of parts whose solids overlap (never bonded).
-        **({} if plan is None else {"overlaps": [
+        ),
+        "connections": () if plan is None else tuple(connections),
+        "overlaps": () if plan is None else tuple(
             {"between": [name_of[o.a], name_of[o.b]], "refs": [o.a, o.b], "volume_mm3": round(o.volume_mm3, 4)}
             for o in plan.overlaps
-        ]}),
-        # The first and the finer solve's size and peak, when the part was solved twice.
+        ),
         "refined": refined,
-        "files": {"glb": glb_path.name, "vtu": vtu_path.name if vtu_path else None},
     }
-    sidecar_text = json.dumps(sidecar, indent=2, allow_nan=False)
     # Von Mises colours the surface (each part's own stress in an assembly), deformed by the displacement.
     by_part = outcome.von_mises_parts
     # Each file is written beside its target under a temporary name and replaced into place once every one is written.
     # Each earlier file is kept under another name (a hard link, else a copy) until every rename is done, so a failure
     # anywhere puts every earlier file back byte for byte and leaves none this run wrote.
     suffix = temp_suffix()
-    temporary = {path: path.with_name(f".{path.name}{suffix}") for path in (glb_path, vtu_path, sidecar_path)
-                 if path is not None}
+    temporary = {path: path.with_name(f".{path.name}{suffix}") for path in (glb_path, vtu_path) if path is not None}
     kept = {path: path.with_name(f".{path.name}{suffix}.old") for path in temporary if path.exists()}
     placed: list[Path] = []
     try:
@@ -815,7 +780,6 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
             vertex_count = outcome.vertices
             write_vtu(temporary[vtu_path], positions=outcome.dof_locations[:vertex_count], tets=outcome.tets,
                       displacement=outcome.displacement[:vertex_count], values=outcome.von_mises[:vertex_count])
-        temporary[sidecar_path].write_text(sidecar_text, encoding="utf-8")
         for path, old in kept.items():
             try:
                 os.link(path, old)
@@ -834,6 +798,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     finally:
         for held in (*temporary.values(), *kept.values()):
             held.unlink(missing_ok=True)
-    logger.debug(f"wrote {glb_path.name}, {sidecar_path.name}" + (f", {vtu_path.name}" if vtu_path else ""))
-    return FeaResult(ok=True, document=document, occurrence=occurrence_ref, glb=glb_path, sidecar=sidecar_path, vtu=vtu_path,
-                     summary=summary, mesh=mesh_info, timings=timings, warnings=tuple(warnings), findings=tuple(findings))
+    logger.debug(f"wrote {glb_path.name}" + (f", {vtu_path.name}" if vtu_path else ""))
+    return FeaResult(ok=True, document=document, occurrence=occurrence_ref, glb=glb_path, vtu=vtu_path,
+                     summary=summary, mesh=mesh_info, timings=timings, warnings=tuple(warnings), findings=tuple(findings),
+                     **reported)

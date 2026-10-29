@@ -71,9 +71,8 @@ Modelling the part itself is `$cad`; this skill only reads a saved `.step` or `.
 ## Setup
 
 Run cadgen through the `cadgen` command its installation writes, as the `$cad` skill does:
-`cadgen fea faces` and `cadgen fea parts` share one installation with it and with the CAD app's
-server; `cadgen fea solve` needs the `fea` extra, so it runs from its own installation, made the
-first time it is needed (below):
+`cadgen fea faces`, `parts` and `solve` share one installation with it and with the CAD app's
+server:
 
 - `cadgen` below means `cadgen +0.8.2` (`~/.local/bin/cadgen +0.8.2` where `~/.local/bin` is not on your PATH)
 - `python` below means `cadgen +0.8.2 run`
@@ -86,18 +85,8 @@ needs the sandbox's permission: it starts the engine and holds it. Without it, a
 shell cannot start the engine; when a command says no engine is running, run `cadgen server`
 outside the sandbox once.
 
-Solving needs two things `fea faces` and `fea parts` do not:
-
-- **The mesher.** cadgen's opt-in `fea` extra is netgen (`netgen-mesher`), which meshes in a
-  process of its own. Without it, `cadgen fea solve` fails with "cadgen's fea extra is not
-  installed"; that is a missing install, not a modelling error. Its `pip install` hint does not
-  apply under uv: run the same command with the extra in the requirement, and keep using that form
-  for `fea solve` from then on (uv fetches netgen on the first run; later runs reuse it). A solve
-  reads the document in its own process, so it needs no engine running:
-
-  ```bash
-  uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.8.2" cadgen fea solve part.step --study study.json
-  ```
+Solving needs one thing `fea faces` and `fea parts` do not; netgen, which meshes, comes with cadgen. A
+solve reads the document in its own process, so it needs no engine running:
 
 - **The solver.** CalculiX (`ccx`) 2.20 or newer, installed by the person: `conda install -c
   conda-forge calculix`, the `calculix-ccx` package on Debian and Ubuntu, or FreeCAD 1.0 or newer
@@ -156,21 +145,18 @@ you write it down ([study-file.md](references/study-file.md#units)).
 3. **Solve.**
 
    ```bash
-   cadgen fea solve part.step --study study.json
+   cadgen fea solve part.step FEA/part.bracket-load.glb --study study.json --json
    ```
 
-   This writes `part.fea.glb` (the colour map on the deformed shape) and `part.fea.json` (every
-   number, the study, the mesh and timings) beside the part. Name the outputs to keep several
-   studies:
-
-   ```bash
-   cadgen fea solve part.step FEA/part.bracket-load.glb --study study.json --vtu
-   ```
+   This writes the GLB it names (the colour map on the deformed shape), and nothing else: one per
+   study, so name each for its study. `--json` prints the result as one JSON line: every number,
+   the study as given, the material, the faces it named, each fixture's reaction, the mesh and the
+   timings. Without it the same result prints as lines.
 
    When the safety factor comes out under 3 the run meshes again finer (half the element size,
    less on a big model) and solves again, by itself, and reports the finer result
-   ([Mesh](references/linear-static.md#mesh)). `--vtu` adds a ParaView file. `--json` prints the
-   result as one JSON line for scripting. Progress lines (`[fea] reading the parts`, `[fea]
+   ([Mesh](references/linear-static.md#mesh)). `--vtu` adds a ParaView file beside the GLB.
+   Progress lines (`[fea] reading the parts`, `[fea]
    meshing the glued shape at 6.01 mm`) print to stderr, never into the result on stdout;
    `--verbose` adds mesh and solve detail there. A study with no fixture, a face that is not on the
    part, an unknown key or an out-of-range ref is refused with a message naming the field. The
@@ -178,7 +164,7 @@ you write it down ([study-file.md](references/study-file.md#units)).
    result as it was.
 
 4. **Read the findings.** Every solve prints them after the numbers, one line each, `error:` or
-   `warning:` and then what is wrong and what to do (`findings` in `--json` and the sidecar). Read
+   `warning:` and then what is wrong and what to do (`findings` in `--json`). Read
    them before reporting; see [Read the findings](#read-the-findings).
 
 5. **Report**, in this order, with units: max von Mises (MPa) and where (`max_von_mises_at_mm`;
@@ -187,7 +173,7 @@ you write it down ([study-file.md](references/study-file.md#units)).
    the mesh size, element count and whether a finer re-solve ran. Then say in a sentence or two
    what the model assumes and what would change the answer most (a softer fixture, a fillet at the
    peak, a different material). Open the GLB in the Viewer for the user; the deformation is
-   exaggerated by the `deformation_scale` the sidecar records, so say that too. The Viewer draws
+   exaggerated by the summary's `deformation_scale`, so say that too. The Viewer draws
    the loads as arrows and the fixed faces as cones on the model; a person can check them against
    what they meant before trusting the numbers.
 
@@ -227,13 +213,12 @@ fixed. The keys are in [study-file.md](references/study-file.md#assemblies).
 
 3. **Solve** exactly as for a part; the finer re-solve runs when the weakest part's safety factor
    is under 3. The summary leads with the weakest part (lowest safety factor), then lists every
-   part's peak stress, safety factor and displacement. `--occurrence REF` solves one part alone
-   through the single-part path instead: write that study with the part's material as `material`
-   and no `parts` or `connections` (it refuses them), and every face named must be on that part.
+   part's peak stress, safety factor and displacement. To study one part alone, solve that part's
+   own model: export it (or write it) as a document of its own, and give it its own study.
 
 4. **Read the findings by part.** Each finding names its part ("'post' yields: ..."). Fix the named
    part, not the assembly in general: a thicker section, a fillet, a different material in `parts`,
-   a larger joint area (the joint's `area_mm2` is in the sidecar's `connections`). The Viewer's
+   a larger joint area (the joint's `area_mm2` is in the result's `connections`). The Viewer's
    Study lists Parts and Connections; a part or joint the user selected there reaches you with its
    ref or refs.
 
@@ -295,7 +280,7 @@ configuration. Run the same study on each, with the faces mapped, and compare.
   ductile metal. Polymers and fatigue need more margin than that. Do not certify a design from one
   run.
 - Displacement is what the part moves, before any scale. The GLB positions carry
-  `deformation_scale` times that; the sidecar has the true number.
+  `deformation_scale` times that; the result has the true number.
 - In an assembly the summary's `yield_MPa` and `safety_factor` are the weakest part's, while the
   `max_*` peaks are the whole assembly's, wherever they fall: do not divide one by the other
   ([What comes out](references/study-file.md#what-comes-out)).

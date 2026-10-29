@@ -311,10 +311,6 @@ class StudyChecksTest(unittest.TestCase):
 
 class FieldMaxOver(unittest.TestCase):
     def test_field_max_over_takes_the_faces_nodes_or_every_node(self):
-        from tests.python.support.fea_fixtures import HAVE_FEA
-
-        if not HAVE_FEA:
-            self.skipTest("the fea extra is not installed")
         import numpy as np
 
         from cadgen._internal.fea.mesh import FaceFingerprint

@@ -21,7 +21,7 @@ module's code would.
 Outputs (GITHUB_OUTPUT), one flag per job and the test paths the narrowed jobs take:
 
     cadgen  cadgen_tests          cadgen (Linux), cadgen (Windows)
-    fea                           fea (the solver tests, with the cadgen[fea] extra installed)
+    fea                           fea (the solver tests, with CalculiX installed)
     core_js                       core-js
     web  web_ui  web_client
     mcp
@@ -241,7 +241,7 @@ RULES: tuple[Rule, ...] = (
     Rule(VIEWER_CODE, _viewer_change, final=True),
     Rule(MCP_CODE, _mcp_change, final=True),
     # The engine and shared modules FEA reads a document and writes its result through: a change there runs the
-    # solves too, which the cadgen job skips without the fea extra. Before the engine's final rule, which adds the rest.
+    # solves too, which the cadgen job skips without CalculiX. Before the engine's final rule, which adds the rest.
     Rule((
         f"{CADGEN_SRC}/engine/document.py", f"{CADGEN_SRC}/engine/refs.py", f"{CADGEN_SRC}/engine/kernel/bounds.py",
         f"{CADGEN_SRC}/_internal/atomic_replace.py", f"{CADGEN_SRC}/_internal/primitive_mesh.py",
@@ -249,8 +249,8 @@ RULES: tuple[Rule, ...] = (
     ), select(flags=["fea"])),
     Rule(ENGINE_CODE, CADGEN_CONSUMERS, final=True),
     Rule(("packages/cadgen/**", "scripts/bundle/**"), CADGEN_CONSUMERS),
-    # The stress solver's own tests need the optional cadgen[fea] stack, which no other job
-    # installs: it, its commands, the result types it returns, the extra's pins and its skill.
+    # The stress solver's own tests need CalculiX, which no other job installs: it, its commands,
+    # the result types it returns, the mesher's pin and its skill.
     Rule((
         f"{CADGEN_SRC}/_internal/fea/**", f"{CADGEN_SRC}/fea.py", f"{CADGEN_SRC}/cli/fea_*",
         f"{CADGEN_SRC}/results.py", "packages/cadgen/pyproject.toml", "skills/fea/**",

@@ -25,7 +25,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.python.support.fea_fixtures import glb_array, glb_extras, needs_fea, sidecar, solve, value_error
+from tests.python.support.fea_fixtures import glb_array, glb_extras, needs_fea, reported, solve, value_error
 
 from cadgen._internal.fea.study import parse_study  # noqa: E402
 
@@ -140,7 +140,7 @@ class UniaxialBlock(unittest.TestCase):
         reactions sum to the pull and no "do not balance" warning appears."""
         with tempfile.TemporaryDirectory() as name:
             step, faces = _block(Path(name), 0.0)
-            written = sidecar(solve(step, Path(name) / "three.fea.glb", {
+            written = reported(solve(step, Path(name) / "three.fea.glb", {
                 "material": "steel", "mesh": {"size_mm": 6.0},
                 "fixtures": [{"faces": [faces[side]], "type": "roller"} for side in ("-x", "-y", "-z")],
                 "loads": [_pull(faces)]}))

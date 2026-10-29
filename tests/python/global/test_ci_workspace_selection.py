@@ -244,8 +244,9 @@ class ChangesRunWhatCanBreak(unittest.TestCase):
                 self.assertEqual(set(chosen["skills_policy"]), {f"{POLICY}/{name}" for name in selector.HEAVY_POLICY})
                 self.assertEqual((route(path)["web_ui"], route(path)["web_viewer"]), ("false", "true"))
 
-    def test_the_solver_runs_its_own_job_with_the_extra_installed(self):
-        self.assertIn("cadgen[fea]", JOBS["fea"])
+    def test_the_solver_runs_its_own_job_with_calculix_installed(self):
+        self.assertIn("calculix-ccx", JOBS["fea"])
+        self.assertNotIn("cadgen[fea]", JOBS["fea"])              # netgen comes with cadgen: no second install
         # The accuracy tests' margins were measured with this mesher; pyproject only sets a floor.
         self.assertIn('"netgen-mesher==6.2.2608"', JOBS["fea"])
         # One glob runs every FEA suite, so a new test_fea_<name>.py needs no workflow edit.

@@ -162,7 +162,10 @@ class FeaResult:
     ``summary`` carries the answer an engineer asks for first (max von Mises, nodal and at the integration points, the
     safety factor, max displacement, the applied-versus-reaction balance) and each check judged (``checks``).
     ``findings`` is what an engineer would say about it,
-    errors first (``check``, ``severity``, ``type``, ``summary``, ``description``, ``items``). The JSON sidecar holds this whole result plus the study.
+    errors first (``check``, ``severity``, ``type``, ``summary``, ``description``, ``items``). The rest is what the GLB
+    does not carry: the study as given, its material, each face it named, each fixture's reaction, an assembly's
+    joints and overlapping parts, and the first solve's size and peak when a finer one was written (``refined``).
+    Nothing is written beside the GLB: ``--json`` is this whole result.
     """
 
     ok: bool
@@ -170,13 +173,19 @@ class FeaResult:
     occurrence: str
     #: ``None`` when the study stopped before the solve (``ok`` is false; ``findings`` say why).
     glb: Path | None
-    sidecar: Path | None
     vtu: Path | None = None
     summary: dict = field(default_factory=dict)
     mesh: dict = field(default_factory=dict)
     timings: dict = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
     findings: tuple[dict, ...] = ()
+    study: dict = field(default_factory=dict)
+    material: dict = field(default_factory=dict)
+    faces: dict = field(default_factory=dict)
+    fixtures: tuple[dict, ...] = ()
+    connections: tuple[dict, ...] = ()
+    overlaps: tuple[dict, ...] = ()
+    refined: dict | None = None
 
     def human_lines(self) -> list[str]:
         from cadgen._internal.fea.checks import safety_factor_text  # stdlib only; kept out of module import time
@@ -193,7 +202,7 @@ class FeaResult:
             *_check_lines(s),
             f"max displacement {s.get('max_displacement_mm')} mm at {s.get('max_displacement_at_mm')}",
             f"applied {s.get('applied_force_N')} N, reactions {s.get('reaction_force_N')} N",
-            f"wrote GLB: {_display(self.glb)} (deformation x{s.get('deformation_scale')}), sidecar: {_display(self.sidecar)}{vtu}",
+            f"wrote GLB: {_display(self.glb)} (deformation x{s.get('deformation_scale')}){vtu}",
         ]
         lines += [f"{finding['severity']}: {finding['summary']}" for finding in self.findings]
         lines += [f"warning: {warning}" for warning in self.warnings]

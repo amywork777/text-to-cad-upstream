@@ -16,7 +16,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from tests.python.support.fea_fixtures import (
-    class_directory, glb_array, glb_attribute_names, glb_extras, needs_fea, quiet, sidecar, solve,
+    class_directory, glb_array, glb_attribute_names, glb_extras, needs_fea, quiet, reported, solve,
 )
 
 TOLERANCE = 0.1
@@ -656,8 +656,8 @@ class SolveAssemblyTest(unittest.TestCase):
         self.assertEqual(finding["summary"], "'base' uses the default material (Aluminum 6061-T6): is that right?")
         self.assertNotIn("default_material", self._types(self.mixed))
 
-    def test_the_sidecar_records_the_joint(self):
-        written = sidecar(self.mixed)
+    def test_the_result_records_the_joint(self):
+        written = reported(self.mixed)
         (joint,) = written["connections"]
         self.assertEqual((joint["between"], joint["type"]), (["post", "base"], "bonded"))
         self.assertAlmostEqual(joint["area_mm2"], 100.0, places=3)
@@ -694,9 +694,9 @@ class SolveAssemblyTest(unittest.TestCase):
         (joint,) = extras["connections"]
         self.assertEqual(joint["faces"], sorted(joint["faces"], key=extras["faces"].index))
 
-    def test_the_glb_parts_match_the_sidecar(self):
+    def test_the_glb_parts_match_the_result(self):
         extras = glb_extras(self.mixed.glb)
-        summary = sidecar(self.mixed)["summary"]
+        summary = reported(self.mixed)["summary"]
         keys = ("ref", "name", "material", "yield_MPa", "peak_MPa", "safety_factor", "max_displacement_mm")
         self.assertEqual(extras["parts"], [{k: part[k] for k in keys} for part in summary["parts"]])
         self.assertEqual(extras["weakest_part"], "post")
@@ -714,40 +714,18 @@ class SolveAssemblyTest(unittest.TestCase):
         # The post's bottom and the base's top, as the GLB's own face list names them.
         self.assertEqual(set(joint["faces"]), {_face_at(self.scene, self.refs["post"], 10.0), _face_at(self.scene, self.refs["base"], 10.0)})
         self.assertTrue(set(joint["faces"]) <= set(extras["faces"]))
-        self.assertEqual(sidecar(self.mixed)["connections"][0]["faces"], joint["faces"])
+        self.assertEqual(reported(self.mixed)["connections"][0]["faces"], joint["faces"])
 
-    def test_occurrence_solves_one_part_alone_through_the_single_part_path(self):
-        post = self.refs["post"]
-        result = solve(self.step, self.tmp / "alone.glb", self.alone, occurrence=post)
-        self.assertTrue(result.ok)
-        self.assertEqual(result.occurrence, post)
-        self.assertNotIn("parts", result.summary)
-        extras = glb_extras(result.glb)
-        for key in ("parts", "connections", "weakest_part"):
-            self.assertNotIn(key, extras)
-        self.assertNotIn("_PART", glb_attribute_names(result.glb))
-        self.assertNotIn("connections", sidecar(result))
-        # The same study without it is an assembly study of the document.
-        with self.assertRaisesRegex(ValueError, "--occurrence"):
-            solve(self.step, self.tmp / "stray.glb", self.study(None), occurrence=post)
-        with self.assertRaisesRegex(ValueError, "has no part or assembly nope"):
-            solve(self.step, self.tmp / "nope.glb", self.alone, occurrence="nope")
-
-    def test_occurrence_refuses_the_studys_parts_and_connections(self):
-        # Solved alone, the part would take the study's default material, not the one parts gives it.
-        study = {**self.alone, "parts": {"post": {"material": "6061"}}}
-        with self.assertRaisesRegex(ValueError, r"--occurrence .* solves that part alone, so the study's parts would not apply"):
-            solve(self.step, self.tmp / "refused.glb", study, occurrence=self.refs["post"])
-        self.assertFalse((self.tmp / "refused.glb").exists())
-
-    def test_the_cli_takes_occurrence(self):
+    def test_solve_picks_no_part_and_sizes_no_mesh(self):
+        # A part on its own is its own model (law 22), and the mesh's size is the study's: the options that did either
+        # are gone, and refused as any argument the command never had (law 15).
         from cadgen.cli.fea_solve import main
 
-        out = io.StringIO()
-        with redirect_stdout(out), quiet():
-            code = main([str(self.step), str(self.tmp / "cli.glb"), "--study", json.dumps(self.alone), "--occurrence", self.refs["post"], "--json"])
-        self.assertEqual(code, 0)
-        self.assertEqual(json.loads(out.getvalue().strip().splitlines()[-1])["occurrence"], self.refs["post"])
+        for option, value in (("--occurrence", self.refs["post"]), ("--mesh-size", "2")):
+            with self.subTest(option=option), redirect_stderr(io.StringIO()) as said, self.assertRaises(SystemExit):
+                main([str(self.step), str(self.tmp / "cli.glb"), "--study", json.dumps(self.alone), option, value])
+            self.assertIn(f"unrecognized arguments: {option}", said.getvalue())
+        self.assertFalse((self.tmp / "cli.glb").exists())
 
     def _first_solve_only(self, name):
         """The mixed study solved once at the first mesh size, with the outcome and the mesh it was solved on."""
@@ -773,7 +751,7 @@ class SolveAssemblyTest(unittest.TestCase):
         import numpy as np
 
         result, volume, outcome = self._first_solve_only("once")
-        self.assertIsNone(sidecar(result)["refined"])
+        self.assertIsNone(reported(result)["refined"])
         fields = outcome.von_mises_parts
         # A node in the middle of the joint: z = 10, inside the post's footprint.
         at = outcome.dof_locations
@@ -796,7 +774,7 @@ class SolveAssemblyTest(unittest.TestCase):
         coarse, _, _ = self._first_solve_only("coarse")
         before = {part["name"]: part["peak_MPa"] for part in coarse.summary["parts"]}
         weakest = coarse.summary["weakest_part"]
-        refined = sidecar(self.mixed)["refined"]
+        refined = reported(self.mixed)["refined"]
         self.assertEqual(refined["part"], weakest)
         self.assertEqual(refined["from_max_von_mises_MPa"], before[weakest])
         after = {part["name"]: part["peak_MPa"] for part in self.mixed.summary["parts"]}
@@ -820,7 +798,7 @@ class SolveAssemblyTest(unittest.TestCase):
         }
         out = io.StringIO()
         with mock.patch("cadgen._internal.fea.solve.solve_linear_static", side_effect=AssertionError("solved")), redirect_stdout(out), quiet():
-            code = main([str(step), "--study", json.dumps(study), "--json"])
+            code = main([str(step), str(self.tmp / "stopped.glb"), "--study", json.dumps(study), "--json"])
         self.assertEqual(code, 1)
         payload = json.loads(out.getvalue().strip().splitlines()[-1])
         self.assertFalse(payload["ok"])
@@ -844,7 +822,7 @@ class SolveAssemblyTest(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertNotIn("overlapping_parts", self._types(result))
         self.assertEqual(said, "Closed a 0.01 mm interference between 'post' and 'base' to bond them")
-        (joint,) = sidecar(result)["connections"]
+        (joint,) = reported(result)["connections"]
         self.assertEqual(joint["type"], "bonded")
 
     def test_a_press_fit_just_inside_the_tolerance_is_closed_to_bond(self):
@@ -912,7 +890,7 @@ class SolveAssemblyTest(unittest.TestCase):
             finding["summary"],
             "'block' and 'base' overlap by 100 mm³: real parts can't, so the model may be wrong; fix the geometry or mark them free",
         )
-        written = sidecar(result)
+        written = reported(result)
         self.assertEqual([c["between"] for c in written["connections"]], [["post", "base"]])
         self.assertEqual([o["between"] for o in written["overlaps"]], [["block", "base"]])
 
@@ -992,7 +970,7 @@ class SolveAssemblyTest(unittest.TestCase):
         result = solve(step, self.tmp / "capped.glb", study)
         self.assertTrue(result.ok)
         self.assertNotIn("not_connected", self._types(result))
-        self.assertEqual({c["between"][0]: c["type"] for c in sidecar(result)["connections"]}, {"post": "bonded", "cap": "free"})
+        self.assertEqual({c["between"][0]: c["type"] for c in reported(result)["connections"]}, {"post": "bonded", "cap": "free"})
         # The 100 N is held by the base alone: the cap carries nothing across the free joint.
         self.assertAlmostEqual(result.summary["reaction_force_N"][0], -100.0, delta=0.5)
 

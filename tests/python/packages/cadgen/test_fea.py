@@ -21,11 +21,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from tests.python.support.fea_fixtures import (
-    box_step, class_directory, ends, glb_array, glb_extras, needs_fea, quiet, read_glb, sidecar, solve, value_error,
+    box_step, class_directory, ends, glb_array, glb_extras, needs_fea, quiet, read_glb, reported, solve, value_error,
 )
 
 from cadgen._internal.fea.materials import lookup_material  # noqa: E402
-from cadgen._internal.fea.mesh import require_fea_stack  # noqa: E402
 from cadgen._internal.fea.study import parse_study  # noqa: E402
 
 # The cantilever: length along +X, fixed at x = 0, loaded at x = L in -Z.
@@ -319,13 +318,15 @@ class Cantilever(unittest.TestCase):
 
     def test_the_result_files_are_where_the_result_says(self):
         self.assertEqual(self.result.glb, self.out)
-        self.assertEqual(self.result.sidecar, self.out.with_suffix(".json"))
-        self.assertTrue(self.result.glb.is_file() and self.result.sidecar.is_file() and self.result.vtu.is_file())
-        written = sidecar(self.result)
-        self.assertEqual(written["study"], self.study)
-        self.assertEqual(written["summary"], self.result.summary)
-        self.assertEqual(written["fields"][0]["max"], self.result.summary["max_von_mises_MPa"])
-        self.assertEqual(written["mesh"]["order"], 2)
+        self.assertTrue(self.result.glb.is_file() and self.result.vtu.is_file())
+        # The GLB and the VTU asked for, and nothing beside them: the numbers are the result's.
+        self.assertEqual(sorted(p.name for p in self.out.parent.iterdir() if p.stem == self.out.stem),
+                         sorted([self.out.name, self.out.with_suffix(".vtu").name]))
+        said = reported(self.result)
+        self.assertEqual(said["study"], self.study)
+        self.assertEqual(said["summary"], self.result.summary)
+        self.assertEqual(glb_extras(self.result.glb)["fields"][0]["max"], self.result.summary["max_von_mises_MPa"])
+        self.assertEqual(said["mesh"]["order"], 2)
 
     def test_the_glb_writes_von_mises_and_the_displacement(self):
         written = [field["attribute"] for field in glb_extras(self.result.glb)["fields"]]
@@ -355,10 +356,10 @@ class Cantilever(unittest.TestCase):
         self.assertEqual(stress["ratio"], round(1 / factor, 6))
         self.assertEqual((stress["margin"], stress["close_at"], stress["status"]), (2.0, 0.5, "passes" if factor >= 2 else "close"))
 
-    def test_the_checks_are_written_into_the_glb_the_sidecar_and_the_lines(self):
+    def test_the_checks_are_written_into_the_glb_the_result_and_the_lines(self):
         checks = self.result.summary["checks"]
         self.assertEqual(glb_extras(self.result.glb)["checks"], checks)
-        self.assertEqual(sidecar(self.result)["summary"]["checks"], checks)
+        self.assertEqual(reported(self.result)["summary"]["checks"], checks)
         lines = self.result.human_lines()
         tip = checks[2]
         self.assertIn(f"check 'Tip sag': {tip['value']:g} mm against a {tip['limit']:g} mm limit, {tip['ratio']:.2f}× it, close", lines)
@@ -366,7 +367,7 @@ class Cantilever(unittest.TestCase):
 
     def test_the_glb_names_its_step_relative_to_its_own_folder(self):
         self.assertEqual(glb_extras(self.result.glb)["document"], f"../{self.step.name}")
-        self.assertEqual(sidecar(self.result)["document"], str(self.step))
+        self.assertEqual(reported(self.result)["document"], str(self.step))
 
     def test_the_glb_names_its_step_absolutely_when_no_relative_path_exists(self):
         from unittest import mock
@@ -448,16 +449,16 @@ class Cantilever(unittest.TestCase):
     def test_a_comfortable_part_solves_once_and_has_nothing_to_say(self):
         self.assertEqual(self.solver.calls, 1)
         self.assertEqual(self.result.findings, ())
-        written = sidecar(self.result)
+        written = reported(self.result)
         self.assertEqual(written["findings"], [])
         self.assertIsNone(written["refined"])
         self.assertEqual(glb_extras(self.result.glb)["findings"], [])
         self.assertEqual(self.result.mesh["size_mm"], 2.0)
 
     def test_a_face_on_a_different_part_or_a_non_face_is_refused(self):
-        self.assertIn("faces", value_error(self, solve, self.step, None, {
+        self.assertIn("faces", value_error(self, solve, self.step, self.out, {
             **self.study, "fixtures": [{"faces": [self.fixed_ref.rsplit("/", 1)[0]]}]}))
-        value_error(self, solve, self.step, None, {**self.study, "loads": [{"faces": ["face 99"], "type": "force", "vector_N": [1, 0, 0]}]})
+        value_error(self, solve, self.step, self.out, {**self.study, "loads": [{"faces": ["face 99"], "type": "force", "vector_N": [1, 0, 0]}]})
 
     def test_out_must_be_a_glb(self):
         self.assertIn(".glb", value_error(self, solve, self.step, self.out.with_suffix(".vtu"), self.study))
@@ -469,21 +470,21 @@ class Cantilever(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "r.glb"
-            solve(self.step, out, self.study)
-            earlier = {path: path.read_bytes() for path in (out, out.with_suffix(".json"))}
+            solve(self.step, out, self.study, vtu=True)
+            earlier = {path: path.read_bytes() for path in (out, out.with_suffix(".vtu"))}
             heavier = {**self.study, "loads": [{"faces": [self.load_ref], "type": "force", "vector_N": [0, 0, -2 * FORCE]}]}
             real, calls = run.replace_atomic, []
 
             def fail_on_the_last(source, target):
                 calls.append(target)
                 if len(calls) == 2:
-                    raise OSError("the sidecar is held open")
+                    raise OSError("the VTU is held open")
                 return real(source, target)
 
             with mock.patch.object(run, "replace_atomic", fail_on_the_last), self.assertRaises(OSError):
-                solve(self.step, out, heavier)
+                solve(self.step, out, heavier, vtu=True)
             self.assertEqual({path: path.read_bytes() for path in earlier}, earlier)
-            self.assertEqual(sorted(path.name for path in Path(tmp).iterdir()), ["r.glb", "r.json"])
+            self.assertEqual(sorted(path.name for path in Path(tmp).iterdir()), ["r.glb", "r.vtu"])
 
 
 @needs_fea
@@ -518,14 +519,14 @@ class Yielding(unittest.TestCase):
         with mock.patch("cadgen._internal.fea.solve.solve_linear_static", cls.solver), \
                 mock.patch("cadgen._internal.fea.mesh.mesh_occurrence", mesh_spy):
             cls.result = solve(cls.step, cls.directory / "bar.glb", cls.study)
-        cls.sidecar = sidecar(cls.result)
+        cls.said = reported(cls.result)
 
-    def test_it_yields_as_an_error_in_the_sidecar_the_glb_and_the_cli(self):
-        first = self.sidecar["findings"][0]
+    def test_it_yields_as_an_error_in_the_result_the_glb_and_the_cli(self):
+        first = self.said["findings"][0]
         self.assertEqual((first["check"], first["severity"], first["type"]), ("fea", "error", "yields"))
         self.assertIn("The cantilever yields", first["summary"])
-        self.assertEqual(glb_extras(self.result.glb)["findings"], self.sidecar["findings"])
-        self.assertEqual(list(self.result.findings), self.sidecar["findings"])
+        self.assertEqual(glb_extras(self.result.glb)["findings"], self.said["findings"])
+        self.assertEqual(list(self.result.findings), self.said["findings"])
         self.assertIn(f"error: {first['summary']}", self.result.human_lines())
 
     def test_with_no_checks_the_stress_check_alone_says_what_the_safety_factor_says(self):
@@ -540,7 +541,7 @@ class Yielding(unittest.TestCase):
     def test_a_close_call_is_solved_again_finer_and_the_finer_result_is_written(self):
         self.assertEqual(self.solver.calls, 2)
         self.assertEqual(self.result.mesh["size_mm"], self.SIZE / 2)
-        refined = self.sidecar["refined"]
+        refined = self.said["refined"]
         self.assertEqual((refined["from_size_mm"], refined["size_mm"]), (self.SIZE, self.SIZE / 2))
         self.assertEqual(refined["max_von_mises_MPa"], self.result.summary["max_von_mises_MPa"])
         self.assertEqual(glb_extras(self.result.glb)["fields"][0]["max"], self.result.summary["max_von_mises_MPa"])
@@ -554,7 +555,7 @@ class Yielding(unittest.TestCase):
         self.assertGreater(finer["refine"], 1.0)
 
     def test_the_findings_point_at_the_written_glbs_peak(self):
-        yields = self.sidecar["findings"][0]
+        yields = self.said["findings"][0]
         self.assertEqual(yields["items"][0]["at"], self.result.summary["max_von_mises_at_mm"])
         for got, want in zip(_glb_peak_at(self.result.glb), yields["items"][0]["at"]):
             self.assertAlmostEqual(got, want, delta=1e-3)
@@ -575,7 +576,7 @@ class Yielding(unittest.TestCase):
         solver = _CountingSolve(later=halve)
         with mock.patch("cadgen._internal.fea.solve.solve_linear_static", solver):
             result = solve(self.step, self.directory / "lower.glb", self.study)
-        refined = sidecar(result)["refined"]
+        refined = reported(result)["refined"]
         self.assertLess(refined["max_von_mises_MPa"], refined["from_max_von_mises_MPa"])
         self.assertAlmostEqual(result.summary["safety_factor"], 250.0 / result.summary["max_von_mises_MPa"], places=2)
         self.assertNotAlmostEqual(result.summary["safety_factor"], 250.0 / refined["from_max_von_mises_MPa"], places=2)
@@ -583,7 +584,7 @@ class Yielding(unittest.TestCase):
         self.assertTrue(moved["summary"].startswith("The peak changed "), moved["summary"])
 
     def test_a_peak_on_a_prefixed_fixture_is_at_the_fixture(self):
-        at_fixture = [f for f in self.sidecar["findings"] if f["type"] == "peak_at_fixture"]
+        at_fixture = [f for f in self.said["findings"] if f["type"] == "peak_at_fixture"]
         self.assertEqual(len(at_fixture), 1)
         self.assertEqual(at_fixture[0]["items"][0]["ref"], self.fixed_ref)
         self.assertNotIn(".step", at_fixture[0]["items"][0]["ref"])
@@ -601,7 +602,7 @@ class Yielding(unittest.TestCase):
         self.assertNotIn("mesh_not_converged", types)
         (why,) = [warning for warning in result.warnings if "finer" in warning]
         self.assertIn("the mesher gave up at this size", why)
-        self.assertIsNone(sidecar(result)["refined"]["max_von_mises_MPa"])
+        self.assertIsNone(reported(result)["refined"]["max_von_mises_MPa"])
 
 
 @needs_fea
@@ -832,7 +833,7 @@ class DefaultSizeAccuracy(unittest.TestCase):
         })
 
     def test_the_rod_is_meshed_at_the_default_size(self):
-        self.assertIsNone(sidecar(self.rod)["refined"])
+        self.assertIsNone(reported(self.rod)["refined"])
         self.assertGreater(self.rod.mesh["size_mm"], 0.8 * self.ROD_RADIUS)
 
     def test_the_round_rods_tip_deflection_matches_beam_theory(self):
@@ -900,7 +901,7 @@ class HumanLine(unittest.TestCase):
         from cadgen.results import FeaResult
 
         result = FeaResult(
-            ok=True, document=Path("p.step"), occurrence="part", glb=Path("p.glb"), sidecar=Path("p.json"),
+            ok=True, document=Path("p.step"), occurrence="part", glb=Path("p.glb"),
             summary={"safety_factor": 1.684}, mesh={},
         )
         self.assertIn("safety factor 1.6", result.human_lines()[1])
@@ -940,22 +941,6 @@ class CurvedFacetLoads(unittest.TestCase):
         self.assertLess(result.summary["max_von_mises_MPa"], 4.0 * 22.5)
 
 
-class MissingExtra(unittest.TestCase):
-    def test_the_install_hint_names_the_extra(self):
-        import importlib.util
-        from unittest import mock
-
-        real = importlib.util.find_spec
-
-        def missing(name, *args, **kwargs):
-            return None if name == "netgen" else real(name, *args, **kwargs)
-
-        with mock.patch("importlib.util.find_spec", missing), self.assertRaises(RuntimeError) as caught:
-            require_fea_stack()
-        self.assertIn("cadgen[fea]", str(caught.exception))
-        self.assertIn("netgen", str(caught.exception))
-
-
 
 class CheckLines(unittest.TestCase):
     def test_a_check_far_under_its_limit_says_under_1_percent_not_0_00_times(self):
@@ -964,7 +949,7 @@ class CheckLines(unittest.TestCase):
         def stress(value, ratio):
             return {"label": "Strength", "value": value, "limit": 250.0, "unit": "MPa", "ratio": ratio, "status": "passes"}
 
-        result = FeaResult(ok=True, document=Path("p.step"), occurrence="part", glb=Path("p.glb"), sidecar=Path("p.json"),
+        result = FeaResult(ok=True, document=Path("p.step"), occurrence="part", glb=Path("p.glb"),
                            summary={"safety_factor": 2.5, "checks": [stress(0.0053, 2.12e-05), stress(2.5, 0.01)]},
                            mesh={"elements": 10})
         lines = result.human_lines()
