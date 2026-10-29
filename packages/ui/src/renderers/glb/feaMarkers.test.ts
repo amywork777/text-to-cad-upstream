@@ -19,8 +19,11 @@ function cube(study: Record<string, unknown>, displacement = [0, 0, 0], extras: 
   geometry.setAttribute('color', new BufferAttribute(new Uint8Array(count * 4), 4, true));
   const mesh = new Mesh(geometry);
   Object.assign(mesh.userData, {
-    generator: 'cadgen fea', deformation_scale: 1, faces: FACES, study, checks: [CHECK], ramp: [[0, [0, 0, 1]], [1, [1, 0, 0]]],
-    fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 1, attribute_scale: 1 }], ...extras,
+    generator: 'cadgen fea', name: 'bracket von Mises', document: 'bracket.step', occurrence: 'bracket', deformation_scale: 1, safety_factor: 276,
+    faces: FACES, study: { material: { name: '6061-T6', yield_MPa: 276 }, mesh: { size_mm: 1, refined_from_mm: null }, margin: 2, ...study },
+    checks: [CHECK], ramp: [[0, [0, 0, 1]], [1, [1, 0, 0]]],
+    fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 1, attribute_scale: 1 },
+      { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 1, attribute_scale: 1000 }], ...extras,
   });
   const root = new Group();
   root.add(mesh);

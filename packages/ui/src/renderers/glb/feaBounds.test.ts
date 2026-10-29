@@ -5,7 +5,7 @@ import { applyDeformation, readFeaResult } from './feaResult.js';
 import { feaDrawnBounds } from './feaBounds.js';
 
 // A cantilever 40 mm long (glTF metres) whose tip moves 0.2 mm down under its load, the file drawing it ×10.
-function cantilever({ displacement = true } = {}) {
+function cantilever() {
   const geometry = new BufferGeometry();
   const tip = [0, 0, 0, 0, -0.0002, 0, 0, -0.0002, 0, 0, 0, 0];
   const rest = [0, 0, 0, 0.04, 0, 0, 0.04, 0.004, 0, 0, 0.004, 0];
@@ -13,10 +13,10 @@ function cantilever({ displacement = true } = {}) {
   geometry.setIndex([0, 1, 2, 0, 2, 3]);
   geometry.setAttribute('color', new BufferAttribute(new Uint8Array(16), 4, true));
   geometry.setAttribute('_von_mises', new BufferAttribute(new Float32Array([1, 0, 0, 1]), 1));
-  if (displacement) geometry.setAttribute('_displacement', new BufferAttribute(new Float32Array(tip), 3));
+  geometry.setAttribute('_displacement', new BufferAttribute(new Float32Array(tip), 3));
   const mesh = new Mesh(geometry);
   Object.assign(mesh.userData, {
-    generator: 'cadgen fea', name: 'cantilever', deformation_scale: 10, safety_factor: 276, faces: [],
+    generator: 'cadgen fea', name: 'cantilever', document: 'cantilever.step', occurrence: 'cantilever', deformation_scale: 10, safety_factor: 276, faces: [],
     ramp: [[0, [0, 0, 1]], [1, [1, 0, 0]]],
     checks: [{ kind: 'stress', label: 'Strength', value: 1, limit: 276, unit: 'MPa', ratio: 0.003623, close_at: 0.5, margin: 2, status: 'passes', where: { ref: null, at: [0, 0, 0] } }],
     study: { material: { name: '6061-T6', yield_MPa: 276 }, fixtures: [], loads: [], mesh: { size_mm: 1, refined_from_mm: null }, margin: 2 },
@@ -44,9 +44,7 @@ describe('feaDrawnBounds', () => {
     expect(mesh.geometry.boundingBox!.min.y).toBeGreaterThanOrEqual(grown.min[1] - 1e-9);
   });
 
-  it('is null with nothing to grow: no displacement, or no bounds', () => {
-    const still = cantilever({ displacement: false });
-    expect(feaDrawnBounds(THREE, still.scene, still.fea)).toBeNull();
+  it('is null with no bounds to grow', () => {
     const { fea } = cantilever();
     expect(feaDrawnBounds(THREE, { object3D: new Group() }, fea)).toBeNull();
   });

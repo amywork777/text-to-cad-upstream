@@ -501,7 +501,7 @@ it('each slider\'s thumb stands at its control\'s value, where that is on its ra
 it('at twice the load, the bar and the deformation are twice the solved ones, what each part holds is half, and a part flips to yields', () => {
   const parts = [{ ref: 'part1', name: 'post', material: 'Steel', safety_factor: 5.83 }, { ref: 'part2', name: 'base', material: 'Steel', safety_factor: 1.5 }];
   const pins = [3, 4, 5, 6].map(n => ({ ref: `part${n}`, name: `pin ${n}`, material: 'Steel', safety_factor: 10 }));
-  const { container, mesh } = mount({ ...RESULT, parts: [...parts, ...pins] });
+  const { container, mesh } = mount({ ...RESULT, parts: [...parts, ...pins], weakest_part: 'base' });
   const colours = colourBytes(mesh);
   const tip = mesh.geometry.getAttribute('position').getZ(2);
   const partDetails = () => Array.from(screen.getByRole('region', { name: 'Parts' }).querySelectorAll('[data-study-detail]')).map(detail => detail.textContent!.replace(/\u00a0/g, ' ')).slice(0, 2);
@@ -621,13 +621,7 @@ it('the verdict follows the load control, and can change its word', () => {
   expect([verdictOf().status, verdictOf().caption]).toEqual(['strong', 'OK up to 3.0× this load']);
 });
 
-it('with no stress, says to check the load reaches the part, in no tone and with no bar; an assembly\'s numbers are its weakest part\'s', () => {
-  // No load reaches the part: cadgen's stress check is 0 MPa, with no safety factor.
-  const unloaded = { ...STUDIED, safety_factor: null, checks: [{ ...STRESS_CHECK, value: 0, ratio: 0 }], fields: [{ ...RESULT.fields[0], max: 0 }, RESULT.fields[1]] };
-  mount(unloaded, undefined, { faces: FACES });
-  expect(verdictOf()).toMatchObject({ status: 'none', title: 'No stress', caption: 'Check the load reaches the part', rows: [] });
-  expect(screen.queryByRole('meter')).toBeNull();
-  cleanup();
+it('an assembly\'s verdict numbers are its weakest part\'s', () => {
   mountAssembly([]);
   expect(verdictOf()).toMatchObject({ status: 'close', rows: [['close', 'Strength', '180 MPa, limit 276 MPa']] });
 });

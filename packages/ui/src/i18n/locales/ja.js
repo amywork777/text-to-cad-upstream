@@ -722,8 +722,4 @@ export default {
   "fea.partSummary": "部品「{name}」",
   "fea.noLoad": "荷重なし",
   "fea.loadIsZero": "荷重が 0 に設定されています",
-  "fea.noStress": "応力なし",
-  "fea.cantJudgeAll": "判定できないチェックがあります",
-  "fea.cantJudge": "判定できません: {checks}",
-  "fea.checkLoadReaches": "荷重が部品に届いているか確認してください",
 };

@@ -157,7 +157,8 @@ export function formatPromptMessage(context, { attachmentPath, attachmentText } 
       const { reference } = part;
       const token = formatPromptReference(reference);
       if (reference.target.kind === 'whole-resource') files.push(token);
-      // A selection with a summary (a board's check) reads that sentence, then what it names.
+      // A selection with a summary (what an FEA result's chosen row is: "Tip sag fails: ...") reads that sentence, then
+      // what it names, so the agent is told what the faces are about, not only which they are.
       else references.push(reference.target.kind === 'cad-selector' && reference.summary ? `${reference.summary} · ${token}` : token);
     }
     else if (part.kind === 'attachment') {

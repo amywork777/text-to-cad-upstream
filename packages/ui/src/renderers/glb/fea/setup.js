@@ -57,7 +57,7 @@ function loadSummary(words, refs) {
 
 const capitalised = (word) => word.charAt(0).toUpperCase() + word.slice(1);
 
-/** Whether a fixture is a roller: its face may slide in its own plane but not move off it. Any other (none given is fixed) holds it. */
+/** Whether a fixture is a roller: its face may slide in its own plane but not move off it. A fixed one holds it. */
 export const isRoller = (fixture) => fixture.type === "roller";
 
 /**

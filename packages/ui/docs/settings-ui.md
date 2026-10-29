@@ -774,8 +774,8 @@ file's raw echo. Its layout is the viewer's: a file says what was solved and jud
 
 The FEA viewer is a chunk of its own (`glb/feaView.jsx`: its surface, `glb/FeaSurface.jsx`, Study, the
 colour bar, the markers, `feaResult.js` and `fea/`), which `GlbRenderer` loads with one `import()` only once
-the scene carries a mesh `cadgen fea solve` wrote (`generator` and `fields` in its extras). A plain GLB
-never fetches it. Its words are in `glb/fea/`: per check kind one row of `checkKinds.js` (stress and
+the scene carries a mesh `cadgen fea solve` wrote (`generator` in its extras). A plain GLB
+never fetches it; a result whose chunk fails to load says so in the load's alert, never drawn as a plain GLB. Its words are in `glb/fea/`: per check kind one row of `checkKinds.js` (stress and
 displacement), per field one of `fields.js`, Study's setup in `setup.js`, What you see's controls in `controls.js`.
 
 - **Its tools, Parts and Study.** A result has every GLB's tools, Select picking its faces rather than its
@@ -789,9 +789,7 @@ displacement), per field one of `fields.js`, Study's setup in `setup.js`, What y
       ("Too weak", "Moves too much", "Fails 1 of 2 checks", "Passes all checks"), how much of this load
       the weakest check takes ("OK only to 0.8× this load", "OK up to 1.6× this load"), then each check,
       worst first, with a meter of how much of its limit it uses and its value against the limit. The
-      checks are the file's (`extras.checks`); one of a kind the viewer cannot judge leaves out any pass
-      (**Can't judge every check**, naming it, unless another fails). With no stress it says **No
-      stress**; at a load of 0, **No load**.
+      checks are the file's (`extras.checks`); at a load of 0 it says **No load**.
     - **The setup**, as sentences under glyphs that match the markers: **Held at**, **Slides on** (a
       roller), **Pushed** (each load, its faces under it, shut) and **Made of**.
     - **What you see** (`feaControls` in `glb/fea/controls.js`, each row `glb/fea/controlRow.jsx`): a
@@ -800,8 +798,10 @@ displacement), per field one of `fields.js`, Study's setup in `setup.js`, What y
       then the **Loads and fixtures** checkbox, on as the file opens, saying what it draws.
     - **Details**, shut: the mesh size and how it got there.
 
-    A group shows only where the file records something for it. A file with no `checks` or `study` in
-    its extras does not read: the viewer says so in the load's alert over the model as the file colours it.
+    A group shows only where the file records something for it. A file missing anything cadgen always
+    writes (its fields, its `checks` or `study`, the safety factor, a check's numbers, status or margin), or
+    with a check of a kind cadgen does not judge, does not read: the viewer says so in the load's alert over
+    the model as the file colours it, and stands no default in for it.
 - **Choosing.** A row of Study or Parts, a check in the verdict, or a face pressed under Select tints
   what it stands for (two thirds of the way to magenta, which no colour of the ramp is) and carries it
   into Quick Edit by the STEP the result was solved from, with what it is ("Fixed face 17", "Part

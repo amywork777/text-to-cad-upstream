@@ -58,7 +58,6 @@ function resultMesh({ generator = 'cadgen fea', scale = 10, safetyFactor = 5.83 
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 47.3, attribute_scale: 1 },
       { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 0.0288, attribute_scale: 1000 },
-      { attribute: '_MISSING', name: 'not in the file', units: '', min: 0, max: 1 },
     ],
   });
   const root = new Group();
@@ -81,7 +80,7 @@ describe('feaRamp', () => {
 });
 
 describe('readFeaResult', () => {
-  it('finds the result mesh and keeps only the fields the geometry carries', () => {
+  it('finds the result mesh and reads its fields', () => {
     const { mesh, root } = resultMesh();
     const result = readFeaResult(root);
     expect(result?.mesh).toBe(mesh);
@@ -115,6 +114,39 @@ describe('readFeaResult', () => {
       [{ parts: [{ ref: 'part1', name: '', material: 'Steel' }] }, /part 0 has no ref, name or material/],
       [{ connections: [{ between: ['part1', 'part2'], names: ['post', 'base'], type: 'contact' }] }, /connection 0 is not a pair of parts, their names and bonded or free/],
       [{ connections: [{ between: ['part1', 'part2'], type: 'bonded' }] }, /connection 0 is not a pair/],
+      [{ connections: [{ between: ['part1', 'part2'], names: ['post', 'base'], type: 'bonded', faces: [] }] }, /connection 0 has no contact area or gap/],
+      // The fields: every one on the geometry, the stress and the displacement among them.
+      [{ fields: undefined }, /no fields/],
+      [{ fields: [{ attribute: '_MISSING', name: 'not in the file', units: '', min: 0, max: 1, attribute_scale: 1 }] }, /field _MISSING is not on its geometry/],
+      [{ fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 47.3, attribute_scale: 1 }] }, /no von Mises or displacement field/],
+      // What names the result, and its answer: a study no load reaches is refused by cadgen, so every result has a factor.
+      [{ name: undefined }, /no name, document or occurrence/],
+      [{ document: '' }, /no name, document or occurrence/],
+      [{ occurrence: undefined }, /no name, document or occurrence/],
+      [{ safety_factor: null }, /no safety factor/],
+      [{ faces: undefined }, /faces are not a list of face refs/],
+      [{ faces: ['bracket/face 1', ''] }, /faces are not a list of face refs/],
+      [{ parts: [{ ref: 'part1', name: 'post', material: 'Steel' }] }, /names no weakest part/],
+      // Each check as cadgen judges one: no default stands in for a number, a status or a margin, and a kind it does not know is refused.
+      [{ checks: [{ ...STRESS_CHECK, kind: 'temperature' }] }, /check 0 is of a kind this viewer does not know/],
+      [{ checks: [{ ...STRESS_CHECK, close_at: undefined }] }, /check 0 is not a stress check as cadgen judges one/],
+      [{ checks: [{ ...STRESS_CHECK, status: 'unknown' }] }, /check 0 is not a stress check/],
+      [{ checks: [{ ...STRESS_CHECK, margin: undefined }] }, /check 0 is not a stress check/],
+      [{ checks: [{ ...STRESS_CHECK, label: '' }] }, /check 0 is not a stress check/],
+      [{ checks: [{ ...STRESS_CHECK, value: 0, ratio: 0 }] }, /check 0 is not a stress check/],
+      [{ checks: [{ ...STRESS_CHECK, where: undefined }] }, /check 0 is not a stress check/],
+      [{ checks: [STRESS_CHECK, { kind: 'displacement', label: 'Tip sag', value: 0.62, limit: 0, unit: 'mm', ratio: 1.24, close_at: 0.9, status: 'fails', where: { ref: null, at: [0, 0, 0] } }] },
+        /check 1 is not a displacement check/],
+      // The study as cadgen echoes it.
+      [{ study: { ...STUDY, margin: undefined } }, /study has no margin/],
+      [{ study: { ...STUDY, mesh: undefined } }, /study has no mesh size/],
+      [{ study: { ...STUDY, material: { name: '6061-T6' } } }, /study material has no name or yield/],
+      [{ study: { ...STUDY, fixtures: undefined } }, /study has no fixtures or loads/],
+      [{ study: { ...STUDY, fixtures: [{ faces: ['bracket/face 1'] }] } }, /fixture 0 is not fixed or a roller/],
+      [{ study: { ...STUDY, loads: [{ type: 'force', faces: ['bracket/face 2'] }] } }, /load 0 has no force vector/],
+      [{ study: { ...STUDY, loads: [{ type: 'pressure', faces: ['bracket/face 2'] }] } }, /load 0 has no pressure/],
+      [{ study: { ...STUDY, loads: [{ type: 'gravity' }] } }, /load 0 has no g vector/],
+      [{ study: { ...STUDY, loads: [{ type: 'torque', faces: ['bracket/face 2'] }] } }, /load 0 is not a force, a pressure, gravity or an acceleration/],
     ];
     for (const [extras, said] of cases) {
       const { mesh, root } = resultMesh();
@@ -240,7 +272,7 @@ describe('a result\'s study', () => {
   });
 
   it('reads a roller fixture as "Slides on", right after Held at, which keeps only the fixed ones; a picked face says it slides', () => {
-    const rolling = { ...STUDY, fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }, { faces: ['bracket/face 3'] }, { type: 'roller', faces: ['bracket/face 2', 'bracket/face 4'] }] };
+    const rolling = { ...STUDY, fixtures: [{ type: 'fixed', faces: ['bracket/face 1'] }, { type: 'fixed', faces: ['bracket/face 3'] }, { type: 'roller', faces: ['bracket/face 2', 'bracket/face 4'] }] };
     const { result } = studyResult({ study: rolling, faces: ['bracket/face 1', 'bracket/face 2', 'bracket/face 3', 'bracket/face 4'] });
     const rows = strip(studyRows(result));
     expect(rows.slice(0, 2)).toEqual([
@@ -451,6 +483,7 @@ describe('a load other than the solved one', () => {
   it('halves what each part holds at twice the load, and a part can flip to yields', () => {
     const { mesh, root } = resultMesh();
     mesh.userData.parts = [{ ref: 'part1', name: 'post', material: 'Steel', safety_factor: 3.1 }, { ref: 'part2', name: 'base', material: 'Steel', safety_factor: 1.5 }];
+    mesh.userData.weakest_part = 'base';
     const result = readFeaResult(root)!;
     expect(partRows(result).map((row: any) => row.detail)).toEqual(['Steel · holds 3.1×', 'Steel · holds 1.5×']);
     expect(partRows(result, 2).map((row: any) => row.detail)).toEqual(['Steel · holds 1.5×', 'Steel · yields']);
@@ -518,11 +551,7 @@ describe('the verdict', () => {
     expect(feaVerdict(result, 0.5)).toMatchObject({ status: 'strong', caption: 'OK up to 3.0× this load' });
   });
 
-  it('with no stress says so in a neutral tone, and at no load says that', () => {
-    // No load reaches the part: cadgen's stress check is 0 MPa, with no safety factor.
-    const none = studyResult({ study: STUDY, faces: [], safety_factor: null, checks: [{ ...STRESS_CHECK, value: 0, ratio: 0 }] }).result;
-    none.fields[0].max = 0;
-    expect(feaVerdict(none)).toEqual({ status: 'none', title: 'No stress', caption: 'Check the load reaches the part', rows: [] });
+  it('at no load says that, in a neutral tone', () => {
     expect(feaVerdict(single(1.5), 0)).toMatchObject({ status: 'none', title: 'No load', rows: [] });
   });
 
@@ -580,20 +609,6 @@ describe('the study\'s checks', () => {
     expect(half.rows.map((row: any) => [row.status, plain(row.line)])).toEqual([['strong', '0.31 mm, limit 0.5 mm'], ['strong', '24 MPa, limit 276 MPa']]);
     // 0.93 of the limit: close, within the model's own tenth.
     expect(feaVerdict(result, 0.75)).toMatchObject({ status: 'close', title: 'Close to the limit' });
-  });
-
-  it('pass nothing they cannot judge: a check of a kind this viewer does not know, or with numbers it cannot use', () => {
-    const other = { kind: 'other', label: 'Something new', value: 40, limit: 60, unit: '', ratio: 0.67, status: 'passes' };
-    // Every check it knows passes, yet one it cannot judge: no pass, in no tone, naming it; its rows are the ones it judged.
-    const open = feaVerdict(checked([STRESS_CHECK, other]))!;
-    expect(open).toMatchObject({ status: 'none', title: "Can't judge every check", caption: "Can't judge 'Something new'" });
-    expect(open.rows.map((row: any) => row.label)).toEqual(['Strength']);
-    expect(feaVerdict(checked([STRESS_CHECK, { ...SAG_CHECK, status: 'passes', limit: 0 }]))).toMatchObject({ status: 'none', caption: "Can't judge 'Tip sag'" });
-    expect(feaVerdict(checked([other]))).toMatchObject({ status: 'none', title: "Can't judge every check", rows: [] });
-    // At another load, the same.
-    expect(feaVerdict(checked([STRESS_CHECK, other]), 0.5)).toMatchObject({ status: 'none', title: "Can't judge every check" });
-    // One that fails still says so, counting every check.
-    expect(feaVerdict(checked([STRESS_CHECK, SAG_CHECK, other]))).toMatchObject({ status: 'weak', title: 'Fails 1 of 3 checks' });
   });
 
 });

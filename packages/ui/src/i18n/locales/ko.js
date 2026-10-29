@@ -722,8 +722,4 @@ export default {
   "fea.partSummary": "부품 '{name}'",
   "fea.noLoad": "하중 없음",
   "fea.loadIsZero": "하중이 0으로 설정됨",
-  "fea.noStress": "응력 없음",
-  "fea.cantJudgeAll": "판정할 수 없는 검사가 있습니다",
-  "fea.cantJudge": "판정할 수 없음: {checks}",
-  "fea.checkLoadReaches": "하중이 부품에 전달되는지 확인하세요",
 };

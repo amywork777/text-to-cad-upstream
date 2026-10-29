@@ -23,11 +23,14 @@ const NO_REFERENCES = Object.freeze([]);
 const EXPLODE_OFF = Object.freeze({ exploded: { enabled: false, amount: 0 } });
 const CLIP_OFF = Object.freeze({ clip: { enabled: false, axis: "x", invert: false } });
 
-/** Whether a loaded scene carries an FEA result: a mesh `cadgen fea solve` wrote, with its fields (`feaResult.js` reads it). */
+/**
+ * Whether a loaded scene carries an FEA result: a mesh `cadgen fea solve` wrote. Its generator alone says so; what
+ * else the result holds is `feaResult.js`'s to read, and one that does not read is the load's alert, never a plain GLB.
+ */
 function carriesFeaResult(root) {
   let found = false;
   root?.traverse?.((object) => {
-    if (!found && object?.isMesh && object.geometry && object.userData?.generator === "cadgen fea" && Array.isArray(object.userData.fields)) found = true;
+    if (!found && object?.isMesh && object.geometry && object.userData?.generator === "cadgen fea") found = true;
   });
   return found;
 }
@@ -39,18 +42,20 @@ export const loadFeaView = () => import("./feaView.jsx").then((module) => { feaV
 
 /**
  * The FEA result viewer for a scene that carries a result, loaded the first time one does; `pending` while it
- * loads. A plain GLB's is null, and so is a result's should the chunk fail to load: it is then drawn as a plain GLB.
+ * loads. A plain GLB's is null. Should the chunk fail to load, `error` says so, and the result is not drawn as
+ * the plain GLB it is not.
  */
 function useFeaView(root) {
   const wanted = useMemo(() => carriesFeaResult(root), [root]);
   const [kit, setKit] = useState(feaView);
+  const [error, setError] = useState(null);
   useEffect(() => {
-    if (!wanted || kit) return undefined;
+    if (!wanted || kit || error) return undefined;
     let live = true;
-    loadFeaView().then((module) => { if (live) setKit(module); }, () => { if (live) setKit(false); });
+    loadFeaView().then((module) => { if (live) setKit(module); }, (failure) => { if (live) setError(failure); });
     return () => { live = false; };
-  }, [wanted, kit]);
-  return { kit: wanted && kit ? kit : null, pending: wanted && kit === null };
+  }, [wanted, kit, error]);
+  return { kit: wanted && kit ? kit : null, pending: wanted && !kit && !error, error: wanted ? error : null };
 }
 
 /**
@@ -61,17 +66,17 @@ function useFeaView(root) {
 function GlbFile({ view, data }) {
   const document = useWorkspaceDocument({ view, data });
   const loaded = useGlbScene({ entry: document.entry, resources: document.client.resources });
-  const { kit: fv, pending } = useFeaView(loaded.scene?.document?.scene);
+  const { kit: fv, pending, error } = useFeaView(loaded.scene?.document?.scene);
   if (fv) return <fv.FeaSurface view={view} document={document} loaded={loaded} fv={fv} />;
-  return <GlbSurface view={view} document={document} loaded={loaded} pending={pending} />;
+  return <GlbSurface view={view} document={document} loaded={loaded} pending={pending} feaError={error} />;
 }
 
-function GlbSurface({ view, document, loaded, pending }) {
+function GlbSurface({ view, document, loaded, pending, feaError }) {
   const { t } = useI18n();
-  const scene = pending ? null : loaded.scene;
+  const scene = pending || feaError ? null : loaded.scene;
   const loadAlert = useMemo(() => workspaceLoadAlert({
-    catalogError: document.catalogError, error: loaded.error, modelKey: document.modelKey, hasScene: Boolean(scene), t
-  }), [document.catalogError, loaded.error, document.modelKey, scene, t]);
+    catalogError: document.catalogError, error: loaded.error || feaError, modelKey: document.modelKey, hasScene: Boolean(scene), t
+  }), [document.catalogError, loaded.error, feaError, document.modelKey, scene, t]);
 
   const shellRef = useRef(null);
   const sceneRef = useRef(scene);

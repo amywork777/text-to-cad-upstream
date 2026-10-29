@@ -723,8 +723,4 @@ export default {
   "fea.partSummary": "零件“{name}”",
   "fea.noLoad": "无载荷",
   "fea.loadIsZero": "载荷设为 0",
-  "fea.noStress": "无应力",
-  "fea.cantJudgeAll": "有无法判定的检查",
-  "fea.cantJudge": "无法判定：{checks}",
-  "fea.checkLoadReaches": "请检查载荷是否作用到零件",
 };

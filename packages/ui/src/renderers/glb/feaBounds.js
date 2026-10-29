@@ -13,18 +13,15 @@ import { DISPLACEMENT } from "./feaResult.js";
 /**
  * `scene.bounds` grown to hold `fea`'s model at rest, as the file holds it and as it is drawn at
  * `scale` (the deformation shown, the file's by default) and `load` (the load shown, 1 by default),
- * as `{ min, max }` in the scene's space; null where there is nothing to grow (no positions or no
- * displacement).
+ * as `{ min, max }` in the scene's space; null for a scene with no bounds to grow. Every result carries
+ * its displacement (`readFeaResult` reads none without it).
  */
-export function feaDrawnBounds(THREE, scene, fea, { scale = fea?.deformationScale, load = 1 } = {}) {
-  const mesh = fea?.mesh;
-  const geometry = mesh?.geometry;
-  const position = geometry?.getAttribute("position");
-  const baked = geometry?.getAttribute(DISPLACEMENT);
-  if (!scene?.bounds || !position || position.itemSize !== 3 || baked?.itemSize !== 3 || baked.count !== position.count) return null;
-  const at = position.array;
-  const d = baked.array;
-  const fileScale = Number(fea.deformationScale) || 0;
+export function feaDrawnBounds(THREE, scene, fea, { scale = fea.deformationScale, load = 1 } = {}) {
+  if (!scene?.bounds) return null;
+  const mesh = fea.mesh;
+  const at = mesh.geometry.getAttribute("position").array;
+  const d = mesh.geometry.getAttribute(DISPLACEMENT).array;
+  const fileScale = fea.deformationScale;
   const drawn = (Number(scale) || 0) * (Number(load) || 0);
   const low = [Infinity, Infinity, Infinity];
   const high = [-Infinity, -Infinity, -Infinity];
