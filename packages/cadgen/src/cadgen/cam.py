@@ -52,15 +52,16 @@ def plan(target: Path, *, job: str | dict | None = None, occurrence: str | None 
     target: the STEP/STP or XBF document holding the part.
     job: the job: a JSON file path, inline JSON, or (library callers) a dict, all
         lengths in mm, feeds in mm/min, speeds in rpm. "machine": {"post": grbl,
-        linuxcnc, mach3, fanuc, centroid, uccnc or smoothie, and optionally
-        "travel_mm", "min_rpm", "max_rpm", "max_feed_mm_min", "rapid_mm_min",
-        "work_offset", "name"}. "material": a feeds-table name (aluminum-6061,
+        linuxcnc, mach3, fanuc, centroid, uccnc or smoothie, and "max_rpm" (both
+        required), and optionally "travel_mm", "min_rpm", "max_feed_mm_min",
+        "rapid_mm_min", "work_offset", "name"}. "material": a feeds-table name (aluminum-6061,
         aluminum-7075, steel-1018, stainless-304, brass, delrin, acrylic, hdpe,
         mdf, hardwood, plywood) or {"name", "surface_m_min", "chipload_mm",
         "drill_mm_per_rev", "stepdown_fraction"}. "stock": {"margin_mm": [x, y,
         z]}, the part's box grown by x and y each side and z over the top.
-        "tools": [{"id", "type": flat, ball, bull or drill, "diameter_mm",
-        "flutes", "flute_length_mm", "stickout_mm", ...}]. "setups": [{"id",
+        "tools": [{"id", "type": flat, ball, bull or drill, "number" (the T
+        number), "diameter_mm", "flute_length_mm", "flutes" (not a drill's), all
+        required, and optionally "stickout_mm", ...}]. "setups": [{"id",
         "orientation": +Z or -Z, "origin", "operations": [{"op": face, profile,
         pocket, adaptive or drill, "tool", "faces", ...}]}]. Face refs are the
         ones ``cadgen cam features`` prints; a profile with "side": "inside" names

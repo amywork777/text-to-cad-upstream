@@ -24,6 +24,9 @@ OPERATIONS = {"face": "MillFace", "profile": "Profile", "pocket": "PocketShape",
 #: cadgen's tool type -> FreeCAD's built-in tool bit shape.
 SHAPES = {"flat": "endmill.fcstd", "ball": "ballend.fcstd", "bull": "bullnose.fcstd", "drill": "drill.fcstd"}
 COOLANT = {"off": "None", "flood": "Flood", "mist": "Mist"}
+#: Fanuc's post selects G54 in the tool length offset line it writes after every tool change, whatever the job's
+#: fixture: each operation after it would cut in G54. That line's G54 is the job's work offset here.
+FANUC_TOOL_LENGTH = "G91 G0 G43 G54 "
 
 
 def _tool(doc, spec):
@@ -31,7 +34,8 @@ def _tool(doc, spec):
 
     bit = ToolBit.from_shape_id(SHAPES[spec["type"]], label=spec["id"]).attach_to_doc(doc=doc)
     bit.Diameter = f"{spec['diameter_mm']} mm"
-    bit.Flutes = spec["flutes"]
+    if spec["flutes"] is not None:          # a drill's: none
+        bit.Flutes = spec["flutes"]
     bit.Length = f"{spec['stickout_mm']} mm"
     if hasattr(bit, "CuttingEdgeHeight"):
         bit.CuttingEdgeHeight = f"{spec['flute_length_mm']} mm"
@@ -190,7 +194,13 @@ def main():
                 objects.append(tc)
                 last_tc = tc
             objects.append(op)
-        post.export(objects, os.path.join(FOLDER, name), plan["post_args"])
+        path = os.path.join(FOLDER, name)
+        post.export(objects, path, plan["post_args"])
+        if plan["post"] == "fanuc":
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(text.replace(FANUC_TOOL_LENGTH, f"G91 G0 G43 {plan['work_offset']} "))
         out["posts"].append(name)
     return out
 

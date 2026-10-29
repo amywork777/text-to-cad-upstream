@@ -48,12 +48,12 @@ class Reads(unittest.TestCase):
         self.assertEqual("bracket.cam", from_file.name)
         self.assertEqual(parse_job(raw).setups, parse_job(json.dumps(raw)).setups)
 
-    def test_a_tool_left_to_the_catalogue_is_listed_once_it_is_used(self):
-        job = parse_job(mill_job([{"op": "face", "tool": "T1"}],
-                                 tools=[{"id": "T1", "type": "flat", "diameter_mm": 6}]))
-        self.assertEqual({"T1.flute_length_mm", "T1.stickout_mm", "T1.flutes"},
-                         {e["key"] for e in job.assumed} - {"machine.rapid_mm_min"})
-        self.assertEqual((18.0, 23.0), (job.tools["T1"].flute_length_mm, job.tools["T1"].stickout_mm))
+    def test_a_stickout_left_to_the_default_is_listed_once_its_tool_is_used(self):
+        job = parse_job(mill_job([{"op": "face", "tool": "T1"}], tools=[
+            {"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 18},
+            {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 50}]))
+        self.assertEqual({"T1.stickout_mm"}, {e["key"] for e in job.assumed} - {"machine.rapid_mm_min"})
+        self.assertEqual(23.0, job.tools["T1"].stickout_mm)
 
 
 class Refuses(unittest.TestCase):
@@ -79,11 +79,40 @@ class Refuses(unittest.TestCase):
 
     def test_two_tools_with_one_t_number_are_refused(self):
         # T1 and D1 both posted T1: a tool change would load the end mill for the drill.
-        tools = [{"id": "T1", "type": "flat", "diameter_mm": 6, "flute_length_mm": 20, "stickout_mm": 30},
-                 {"id": "D1", "type": "drill", "diameter_mm": 5, "flute_length_mm": 50, "stickout_mm": 60}]
+        tools = [{"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20},
+                 {"id": "D1", "type": "drill", "number": 1, "diameter_mm": 5, "flute_length_mm": 50}]
         self.assertIn("T1 and D1 are both T1", refusal(self, mill_job([{"op": "face", "tool": "T1"}], tools=tools)))
         tools[1]["number"] = 2
         self.assertEqual(2, parse_job(mill_job([{"op": "face", "tool": "T1"}], tools=tools)).tools["D1"].number)
+
+    def test_a_tools_number_flutes_and_flute_length_are_never_assumed(self):
+        # The T number came from the id's digits (EM6 posted T6), the flutes were 2 and the flute length three diameters.
+        full = {"id": "EM6", "type": "flat", "number": 4, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20}
+        for key, words in (("number", "the T number the program loads it by"),
+                           ("flutes", "which its feed is worked out from"),
+                           ("flute_length_mm", "which every cut's depth is held to")):
+            with self.subTest(key=key):
+                tool = {k: v for k, v in full.items() if k != key}
+                message = refusal(self, mill_job([{"op": "face", "tool": "EM6"}], tools=[tool]))
+                self.assertIn(f"tools[0] (EM6, a flat tool) needs \"{key}\": ", message)
+                self.assertIn(words, message)
+                self.assertIn("never assumed", message)
+        self.assertEqual(4, parse_job(mill_job([{"op": "face", "tool": "EM6"}], tools=[full])).tools["EM6"].number)
+        # A drill is fed per revolution: it takes no flutes, and needs none.
+        drill = {"id": "D1", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 50}
+        self.assertIsNone(parse_job(mill_job([{"op": "face", "tool": "EM6"}], tools=[full, drill])).tools["D1"].flutes)
+        self.assertIn("unknown key 'flutes'", refusal(self, mill_job([{"op": "face", "tool": "EM6"}],
+                                                                     tools=[full, dict(drill, flutes=2)])))
+
+    def test_the_help_says_what_is_required(self):
+        # It listed max_rpm among the optional keys, and the tool's number, flutes and flute length not at all.
+        from cadgen import cam
+
+        words = " ".join(cam.plan.__doc__.split())
+        self.assertIn('"machine": {"post": grbl, linuxcnc, mach3, fanuc, centroid, uccnc or smoothie, and "max_rpm" '
+                      '(both required), and optionally "travel_mm", "min_rpm", "max_feed_mm_min",', words)
+        self.assertIn('"number" (the T number), "diameter_mm", "flute_length_mm", "flutes" (not a drill\'s), all '
+                      'required', words)
 
     def test_a_machine_kind_is_no_key_of_a_machine(self):
         # It changed nothing in a plan, so it is gone: refused as any key the machine never had is.

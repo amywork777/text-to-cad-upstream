@@ -192,8 +192,9 @@ def mill_job(operations: list[dict], *, tools: list[dict] | None = None, stock: 
         "material": material,
         "stock": stock or {"margin_mm": [2, 2, 1]},
         "tools": tools or [
-            {"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20, "stickout_mm": 30},
-            {"id": "T2", "type": "drill", "diameter_mm": 5, "flute_length_mm": 50, "stickout_mm": 60},
+            {"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20,
+             "stickout_mm": 30},
+            {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 50, "stickout_mm": 60},
         ],
         "setups": setups or [{"id": "top", "operations": operations}],
     }

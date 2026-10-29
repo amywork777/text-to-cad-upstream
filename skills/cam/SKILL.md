@@ -101,9 +101,12 @@ mm/min).
    - The machine's travel, slowest spindle speed and feed limit (`travel_mm`, `min_rpm`,
      `max_feed_mm_min`): a 2,000 mm/min feed. Without them the plan posts the feeds table's
      travel and feeds unchecked.
-   - The tools they own, with real diameters, flute lengths and stickouts. With none, propose the
-     fewest that fit and ask before planning with them. Leave out a length the user does not
-     know; never fill one in yourself: the plan assumes it and says so.
+   - **The tools.** Each tool's T number (`number`), diameter, flute length and, for an end mill,
+     its flutes are required: the program loads the tool by its number, every cut is held to its
+     flutes, and its feed is worked out from their count. Ask for the tools they own, as their
+     tool table has them; with none, propose the fewest that fit and ask before planning with
+     them. Never fill one of these in yourself. A stickout the user does not know is left out:
+     the plan assumes it and says so.
    - The material (6061, not "aluminium"), how the part is held, and which features are
      critical.
 
@@ -117,9 +120,11 @@ mm/min).
      "material": "aluminum-6061",
      "stock": {"margin_mm": [3, 3, 1]},
      "tools": [
-       {"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20, "stickout_mm": 30},
-       {"id": "T2", "type": "drill", "diameter_mm": 5},
-       {"id": "T3", "type": "flat", "diameter_mm": 10, "flutes": 3, "flute_length_mm": 32, "stickout_mm": 45}
+       {"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20,
+        "stickout_mm": 30},
+       {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 40},
+       {"id": "T3", "type": "flat", "number": 3, "diameter_mm": 10, "flutes": 3, "flute_length_mm": 32,
+        "stickout_mm": 45}
      ],
      "setups": [
        {"id": "top", "orientation": "+Z", "origin": "stock-top-center", "operations": [
@@ -186,7 +191,10 @@ of the tool's diameter; `stepdown_mm` defaults to a fraction of the diameter set
   to the highest face it names.
 - **Every face named is cut.** FreeCAD leaves out what the tool does not fit (a floor, slot or
   hole narrower than it) and says nothing, so a face or hole no cutting move reaches at the
-  operation's depth is an `uncut` error, and so is a floor it cut only part of what the tool fits.
+  operation's depth is an `uncut` error, and so is a floor it cut only part of what the tool fits,
+  or a face a `face` operation left part of. A floor is cut where the tool comes within 0.05 mm of
+  it: a ball end mill's passes leave a ridge between them (its scallop), so a ball clears a flat
+  floor only at a small stepover; a flat end mill is the tool for one.
 - **A profile that cuts the part free** needs `through_mm` past the bottom, into a spoilboard,
   and flutes longer than the part, the top margin and `through_mm` together. There are no tabs:
   say how the part stays put (double-sided tape, screws through waste, a vacuum table).
@@ -215,10 +223,10 @@ plan, before FreeCAD runs and after. An operation with a reach error is not give
 | `gouge` | error | A move brings the tool (its real flat, ball, bull nose or drill point shape) into the part | Name only faces the tool can reach, use a smaller tool, or split the floors by depth |
 | `rapid_into_stock` | error | A rapid runs through stock that no move before it has cut | Raise the setup's `retract_mm` (and `clearance_mm`), or cut that material in an earlier operation |
 | `empty_operation` | error | FreeCAD planned no cut for an operation | Check its faces, that the tool fits them, and for `face` that the stock has a top margin |
-| `uncut` | error | No cutting move reaches a face or hole the operation names at its depth, or a floor's moves cover only part of what the tool fits on it (its sharp inside corners are the tool's to leave): FreeCAD left it out | Cut it in its own operation with a tool that fits it, or leave it out |
+| `uncut` | error | No cutting move reaches a face or hole the operation names at its depth, a floor's moves cover only part of what the tool fits on it (its sharp inside corners are the tool's to leave; a ball's ridges between passes, its scallop, are not), or a `face` leaves part of the face: FreeCAD left it out | Cut it in its own operation with a tool that fits it, or leave it out; for a ridge, a smaller `stepover` or a flat end mill |
 | `travel` | error | The setup's moves span more than `machine.travel_mm` | The part does not fit this machine in this setup |
 | `overridden` | error | FreeCAD, recomputed, holds a spindle speed, feed, step down, peck or final depth other than the one cadgen set, so its paths and G-code follow FreeCAD's | A cadgen bug with this FreeCAD: report it, with the job; nothing is posted |
-| `posted` | error | The posted program says a spindle speed (S), feed (F) or peck (Q) cadgen set for none of its operations: every program is read back | A cadgen bug with this FreeCAD and post: report it, with the job; nothing is posted |
+| `posted` | error | The posted program says a spindle speed (S), feed (F) or peck (Q) cadgen set for none of its operations, or moves in a work offset other than the job's: every program is read back | A cadgen bug with this FreeCAD and post: report it, with the job; nothing is posted |
 | `clamped` | warning | A tool's spindle speed or feed was held to `max_rpm`, raised to `min_rpm`, or held to `max_feed_mm_min`: one warning a tool | Fine as a starting point; say so. A drill the machine would turn far too fast is refused: pocket the hole with an end mill, or give the operation's `speed` |
 
 `job`, `freecad` and `internal_error` are the one finding of a plan that did not run: the job was
@@ -246,8 +254,8 @@ check.
 The file is `<part>.<setup id><ext>`, one per setup. GRBL and Smoothieware do not change tools, so
 a setup with several tools posts one file per run of one tool, `part.top.1-T1.nc`,
 `part.top.2-T2.nc` ...: the operator runs them in order, changing the tool and setting Z zero
-before each. Each tool posts as its T number (its `number`, else the digits of its `id`), and two tools
-with one T number are refused; the
+before each. Each tool posts as its T number (its `number`), and two tools with one T number are
+refused; the
 work offset is `machine.work_offset` (`G54`). Every posted file opens with two comment lines
 cadgen adds: what it is (the part, the setup, the FreeCAD version and the post) and that it is not
 proven on a machine and must be air-cut or run single block first.
@@ -263,8 +271,8 @@ Hand the program over in this order, in the user's words:
   and Z0 on its top; touch off there. The stock is the part's box plus `margin_mm`: the blank must
   be that size, its bottom on the table.
 - Each tool by its T number: diameter, rpm and feed.
-- Every warning, and every `assumed:` line as a question the user can answer: a tool's flute
-  length or stickout, the rapid rate the cycle time is worked out at. Add anything else you
+- Every warning, and every `assumed:` line as a question the user can answer: a tool's
+  stickout, the rapid rate the cycle time is worked out at. Add anything else you
   assumed (the material, the tools).
 - That feeds and speeds are starting points from a table, not tuned for their machine, and the
   cycle time is a lower bound (no spindle spin-up, tool changes or corner slow-downs).

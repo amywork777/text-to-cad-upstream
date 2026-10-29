@@ -4,6 +4,8 @@ names and never reaches after."""
 
 from __future__ import annotations
 
+import math
+import re
 import unittest
 
 from tests.python.support.cam_fixtures import (BLOCK, BRIDGE, PLATE, TSLOT, block_step, bridge_step, class_directory,
@@ -57,7 +59,8 @@ class Reach(unittest.TestCase):
 
     def test_a_cut_deeper_than_the_flutes(self):
         job = mill_job([{"op": "pocket", "tool": "T1", "faces": [self.floors["floor"]]}],
-                       tools=[{"id": "T1", "type": "flat", "diameter_mm": 6, "flute_length_mm": 8}])
+                       tools=[{"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3,
+                               "flute_length_mm": 8}])
         (op,) = parse_job(job).setups[0].operations
         found = checks.reach(op, [], {}, (self.part.vertices, self.part.triangles), self.part.face_of_triangle,
                              parse_job(job).tools["T1"], 21.0, 8.0)
@@ -81,7 +84,8 @@ class WallReach(unittest.TestCase):
 
     def reach(self, faces):
         job = parse_job(mill_job([{"op": "profile", "tool": "T1", "side": "inside", "faces": faces}],
-                                 tools=[{"id": "T1", "type": "flat", "diameter_mm": 3, "flute_length_mm": 30}]))
+                                 tools=[{"id": "T1", "type": "flat", "number": 1, "diameter_mm": 3, "flutes": 2,
+                                         "flute_length_mm": 30}]))
         (op,) = job.setups[0].operations
         return checks.reach(op, [self.part.face(ref) for ref in op.faces], {}, (self.part.vertices, self.part.triangles),
                             self.part.face_of_triangle, job.tools["T1"], TSLOT["size"][2] + 1.0, None)
@@ -215,9 +219,10 @@ class Moves_(unittest.TestCase):
 
         lower = self.part.face(floor_ref(cam.features(self.part.document), 11.0)).ordinal
         floor = self.target(lower, 11.0)
-        # The lower step, 24 x 20 round (-10, 0): passes 4 mm apart with the 6 mm tool clear all of it but the
-        # corners, which no round tool reaches.
-        rows = [[x, y, 11.0] for y in (-7, -3, 1, 5, 7) for x in ((-19, -1) if y % 2 else (-1, -19))]
+        # The lower step, 24 x 20 round (-10, 0): passes 4 mm apart with the 6 mm tool, then once round them as
+        # FreeCAD's pocket ends, clear all of it but the corners, which no round tool reaches.
+        rows = [[x, y, 11.0] for k, y in enumerate((-7, -3, 1, 5, 7)) for x in ((-19, -1) if k % 2 == 0 else (-1, -19))]
+        rows += [[-1, -7, 11.0], [-19, -7, 11.0], [-19, 7, 11.0]]
         clear = moves([[-19, -7, 40], [-19, -7, 28], *rows, [rows[-1][0], 7, 40]],
                       [True, True, *[False] * len(rows), True])
         self.assertEqual([], self.check(clear, targets=[floor]))
@@ -240,6 +245,71 @@ class Moves_(unittest.TestCase):
         away = moves([[0, -10, 40], [0, -10, 28], [0, -10, 17.0], [0, 10, 17.0], [0, 10, 40]],
                      [True, True, False, False, True])
         self.assertEqual(["uncut"], self.types(self.check(away, targets=[wall])))
+
+    def test_a_ball_s_passes_too_far_apart_leave_its_scallop_standing_uncut(self):
+        # A 6 mm ball at a stepover of 0.7 (4.2 mm) leaves ridges 3 - sqrt(9 - 2.1²) = 0.86 mm high between its
+        # passes; the flat end mill's same passes cut the floor flat, and the ball's 0.875 mm apart cut it to within
+        # 0.05 mm (its scallop, 0.03 mm).
+        import numpy as np
+
+        from cadgen import cam
+
+        job = parse_job(mill_job([{"op": "pocket", "tool": "B1", "faces": ["face 1"]}], tools=[
+            {"id": "B1", "type": "ball", "number": 3, "diameter_mm": 6, "flutes": 2, "flute_length_mm": 20},
+            *mill_job([])["tools"]]))
+        (operation,) = job.setups[0].operations
+        floor = self.target(self.part.face(floor_ref(cam.features(self.part.document), 11.0)).ordinal, 11.0)
+
+        def passes(ys):
+            rows = [[x, y, 11.0] for k, y in enumerate(ys) for x in ((-19, -1) if k % 2 == 0 else (-1, -19))]
+            rows += [[rows[-1][0], -7, 11.0], [-20 - rows[-1][0], -7, 11.0], [-20 - rows[-1][0], 7, 11.0]]
+            return moves([[-19, -7, 40], [-19, -7, 28], *rows, [rows[-1][0], 7, 40]],
+                         [True, True, *[False] * len(rows), True])
+
+        def check(path, tools):
+            return checks.check_moves("top", path, [operation], tools, self.mesh, *self.stock, job.machine,
+                                      {operation.index: [floor]})
+
+        wide = passes(np.arange(-7.0, 7.01, 4.2).tolist() + [7.0])
+        (found,) = check(wide, job.tools)
+        self.assertEqual(("coverage", "uncut"), (found["check"], found["type"]))
+        ridge = float(re.search(r"standing up to (\d+\.\d+) mm between its passes", found["summary"]).group(1))
+        self.assertGreater(ridge, 0.6)
+        self.assertLessEqual(ridge, 3 - math.sqrt(9 - 2.1 ** 2) + 0.01)
+        flat = dict(job.tools, B1=self.job.tools["T1"])
+        self.assertEqual([], check(wide, flat))
+        self.assertEqual([], check(passes(np.linspace(-7.0, 7.0, 17).tolist()), job.tools))
+
+    def test_a_face_operation_is_held_to_the_whole_face(self):
+        # Facing passes 2.4 mm apart over the whole top cut it; leave one out and the strip under it is uncut.
+        top = max((o for o, info in self.part.faces.items() if info.normal is not None and info.normal[2] > 0.99
+                   and abs(info.center_mm[2] - BLOCK["size"][2]) < 1e-6), key=lambda o: self.part.faces[o].area_mm2)
+        mine = self.part.face_of_triangle == top
+        face = checks.Target(ref=self.part.faces[top].ref, final_z=25.0, points=checks.face_points(*self.mesh, mine, 0.5))
+        ys = [-33.0 + 2.4 * k for k in range(29)]
+
+        def facing(rows):
+            path = [[x, y, 25.0] for k, y in enumerate(rows) for x in ((-45, 45) if k % 2 == 0 else (45, -45))]
+            return moves([[-45, -33, 40], [-45, -33, 26], *path, [path[-1][0], path[-1][1], 40]],
+                         [True, True, *[False] * len(path), True])
+
+        self.assertEqual([], self.check(facing(ys), targets=[face]))
+        (found,) = self.check(facing(ys[:12] + ys[14:]), targets=[face])
+        self.assertEqual("uncut", found["type"])
+        self.assertRegex(found["summary"], r"FreeCAD left \d+% of what the tool fits uncut on COMPOUND/face \d+$")
+
+    def test_a_tool_run_0_2_mm_into_a_wall_is_a_gouge_that_deep(self):
+        # Along the upper step's wall at x = 25 with the 6 mm end mill's edge 0.2 mm into it: the grid the part
+        # was once read on, 0.5 mm, passed it, and called it 8 mm deep (the wall's height over the tool).
+        beside = moves([[21.98, -10, 40], [21.98, -10, 28], [21.98, -10, 17.0], [21.98, 10, 17.0], [21.98, 10, 40]],
+                       [True, True, False, False, True])
+        self.assertEqual([], self.check(beside))
+        into = moves([[22.2, -10, 40], [22.2, -10, 28], [22.2, -10, 17.0], [22.2, 10, 17.0], [22.2, 10, 40]],
+                     [True, True, False, False, True])
+        (found,) = self.check(into)
+        self.assertEqual("gouge", found["type"])
+        self.assertIn("the tool comes 0.20 mm into the part", found["summary"])
+        self.assertAlmostEqual(22.2, found["items"][0]["at"][0], places=3)
 
     def test_an_operation_with_no_cut_and_a_setup_past_the_travel(self):
         self.assertEqual(["empty_operation"], self.types(self.check(moves([[0, 0, 40], [5, 0, 40]], [True, True]))))
@@ -271,10 +341,24 @@ class ReadBack(unittest.TestCase):
     def test_a_posted_speed_feed_or_peck_cadgen_did_not_set_is_refused(self):
         program = ("(cadgen cam: S1 F2 Q3)\nG54\nM3 S9000\nG0 X1 Y2\nG83 X1 Y2 Z-4.000 R3.000 Q1.500 F200.000 ; F7\n"
                    "G1 X5 F600.0\n")
-        self.assertEqual([], checks.posted("top", "part.top.ngc", program, [self.SPEC]))
+        self.assertEqual([], checks.posted("top", "part.top.ngc", program, [self.SPEC], "G54"))
         found = checks.posted("top", "part.top.ngc", program.replace("S9000", "S12000").replace("Q1.500", "Q3.750"),
-                              [self.SPEC])
+                              [self.SPEC], "G54")
         self.assertEqual([("post", "posted")] * 2, [(f["check"], f["type"]) for f in found])
         self.assertIn("part.top.ngc: the posted program says S12000, a spindle speed cadgen set for none of its "
                       "operations (9000)", found[0]["summary"])
         self.assertIn("Q3.750, a peck", found[1]["summary"])
+
+    def test_a_move_in_any_work_offset_but_the_setups_is_refused(self):
+        # Fanuc's post, given G55, selected G54 again in its tool length offset line after every tool change.
+        fanuc = ("G17 G54 G40 G49 G80 G90 G94\nG55\nM6 T2\nG91 G0 G43 G54 Z-[#[2000+#4120]] H#4120\nG90\nM3 S9000\n"
+                 "G0 X1 Y2\nG17 G54 G90 G80 G40\nM30\n")
+        (found,) = checks.posted("top", "part.top.nc", fanuc, [self.SPEC], "G55")
+        self.assertEqual(("post", "error", "posted"), (found["check"], found["severity"], found["type"]))
+        self.assertIn("part.top.nc: the posted program moves in G54, where the setup's work offset is G55",
+                      found["summary"])
+        # The preamble's and the postamble's G54 move nothing: only the offset each move is made in counts.
+        self.assertEqual([], checks.posted("top", "part.top.nc", fanuc.replace("G43 G54", "G43 G55"), [self.SPEC],
+                                           "G55"))
+        (unset,) = checks.posted("top", "part.top.nc", "M3 S9000\nG0 X1 Y2\n", [self.SPEC], "G55")
+        self.assertIn("moves in no work offset it selects", unset["summary"])

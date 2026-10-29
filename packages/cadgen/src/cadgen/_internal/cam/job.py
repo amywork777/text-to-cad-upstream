@@ -20,7 +20,7 @@ from pathlib import Path
 
 from cadgen._internal.cam.feeds import MATERIAL_ALIASES, MATERIALS
 from cadgen._internal.cam.job_errors import CamJobError, check_keys, choice, is_number, number_list, read_number, shown
-from cadgen._internal.cam.tools import Tool, parse_tool
+from cadgen._internal.cam.tools import EXAMPLE, Tool, parse_tool
 
 __all__ = ["COOLANTS", "OPERATIONS", "ORIENTATIONS", "ORIGINS", "POSTS", "CamJobError", "Job", "Machine", "Material",
            "Operation", "Setup", "Stock", "load_job", "parse_job"]
@@ -177,8 +177,7 @@ def parse_job(job: str | dict | None) -> Job:
     machine, assumed = _machine(raw["machine"])
     material = _material(raw["material"])
     if not isinstance(raw["tools"], list) or not raw["tools"]:
-        raise CamJobError("tools must be a list of at least one tool, like [{\"id\": \"T1\", \"type\": \"flat\", "
-                          "\"diameter_mm\": 6}]")
+        raise CamJobError(f"tools must be a list of at least one tool, like [{EXAMPLE}]")
     tools: dict[str, Tool] = {}
     for position, entry in enumerate(raw["tools"]):
         tool = parse_tool(entry, position)

@@ -2,14 +2,16 @@
 FreeCAD runs, and checks what comes back; FreeCAD's CAM workbench plans the paths and its post processors write the
 G-code.
 
-FreeCAD is installed by the person: ``CADGEN_FREECAD`` names its ``freecadcmd``, else the first of :data:`NAMES` on
-PATH, else the place each platform's installer puts it (:func:`_installed`). One that is missing, or older than
+FreeCAD is installed by the person: ``CADGEN_FREECAD`` names its ``freecadcmd`` (an absolute path, or a name found on
+PATH), else the first of :data:`NAMES` on PATH, else the place each platform's installer puts it (:func:`_installed`).
+PATH is searched as the engine searches it for any helper (``executables.find``): its absolute folders only, never the
+working folder. One that is missing, or older than
 :data:`MINIMUM`, is an error naming how to install it; cadgen downloads nothing and plans with nothing else.
 
 :func:`run` hands ``freecad_job.py`` a plan (JSON: the part as a BREP, the stock, the tools, the operations) in a
 folder of its own and reads back what FreeCAD made: each operation's path commands and the posted files. FreeCAD's own
 settings and caches go in that folder too (``FREECAD_USER_HOME``), so a plan leaves nothing in the person's FreeCAD.
-Stdlib only.
+Stdlib, and the engine's ``executables``.
 """
 
 from __future__ import annotations
@@ -17,12 +19,13 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from cadgen.engine import executables
 
 __all__ = ["FREECAD_ENV", "MINIMUM", "NAMES", "TIMEOUT_S", "FreeCAD", "FreecadMissingError", "find_freecad",
            "install_hint", "run"]
@@ -83,12 +86,16 @@ def find_freecad() -> FreeCAD:
     place. Raises :class:`FreecadMissingError` naming why and how to install it."""
     setting = os.environ.get(FREECAD_ENV, "").strip()
     if setting:
-        path = shutil.which(setting) or (setting if os.path.isfile(setting) else None)
+        if os.path.basename(setting) == setting:
+            path = executables.find(setting)
+        else:
+            path = setting if os.path.isabs(setting) and os.path.isfile(setting) else None
         if path is None:
-            raise FreecadMissingError(f"{FREECAD_ENV} names {setting}, which is not a program: {install_hint()}")
+            raise FreecadMissingError(f"{FREECAD_ENV} names {setting}, which is not a program (an absolute path, or "
+                                      f"a name on PATH): {install_hint()}")
         return _checked(path)
     for name in NAMES:
-        if found := shutil.which(name):
+        if found := executables.find(name):
             return _checked(found)
     for place in _installed():
         if os.path.isfile(place):

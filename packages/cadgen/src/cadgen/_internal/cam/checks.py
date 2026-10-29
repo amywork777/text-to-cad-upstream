@@ -9,15 +9,17 @@ overhang, it cuts through the overhang. So every plan is checked here, and a pla
   drill's point is no longer than the drawn one, and no cut goes deeper below the stock top than the tool's flutes;
 * after, :func:`check_moves` on each setup's moves (:mod:`toolpath`, setup coordinates, the tool down -Z):
   ``gouge``, a move whose tool (its real profile: flat, ball, bull nose or drill point) comes into the part, tested
-  against the part's height seen from above on a grid finer than the tool; ``rapid_into_stock``, a rapid into stock no
-  move before it has cut (the stock lowered along each cutting move, in program order); ``empty_operation``, an
-  operation FreeCAD planned no cut for; ``uncut``, a face or hole an operation names that no cutting move reaches at
-  the operation's final depth (FreeCAD skips what its tool does not fit, and says nothing); ``travel``, a setup whose
-  moves span more than the machine travels.
+  at points on the part's faces (:func:`_surface_points`) by their exact distance from each move; ``rapid_into_stock``,
+  a rapid into stock no move before it has cut (the stock lowered along each cutting move, in program order, on a
+  grid finer than the tool); ``empty_operation``, an operation FreeCAD planned no cut for; ``uncut``, a face or hole an
+  operation names that no cutting move reaches at the operation's final depth (FreeCAD skips what its tool does not
+  fit, and says nothing), a floor whose passes leave part of what the tool fits standing (a ball's scallop between
+  passes too far apart among it), and a face a face operation leaves part of; ``travel``, a setup whose moves span
+  more than the machine travels.
 
-The height grid sees the part from above, so it is exact for a part machined from one side and conservative for an
-undercut (a tool under an overhang is a hit). A finding is a dict of ``check``, ``severity``, ``type``, ``summary``,
-``description`` and ``items``. Stdlib at import; numpy inside.
+The tool is taken to reach up without end, so the gouge check is exact for a part machined from one side and
+conservative for an undercut (a tool under an overhang is a hit). A finding is a dict of ``check``, ``severity``,
+``type``, ``summary``, ``description`` and ``items``. Stdlib at import; numpy inside.
 """
 
 from __future__ import annotations
@@ -43,11 +45,21 @@ CHECKS = {
     "post": ("overridden", "posted"),
 }
 _SEVERITY = {"error": 0, "warning": 1, "info": 2}
-#: How far a move may come into the part before it is a gouge (mm): the tessellation's and the grid's own error.
-GOUGE_TOLERANCE_MM = 0.02
+#: How far a move may come into the part before it is a gouge (mm): the tessellation's own error (part.py's
+#: ``DEFAULT_DEFLECTION_MM``) and an arc's chords' (toolpath.py's ``CHORD_MM``).
+GOUGE_TOLERANCE_MM = 0.03
+#: How far apart the points a gouge is looked for at lie on the part's faces (mm). A wall is met where the tool comes
+#: into it to well under a hundredth of a millimetre, however far apart its points: they lie on it.
+SURFACE_STEP_MM = 0.25
+#: The longest piece of a move judged as one (mm): a ramp's height along a piece is the one at its closest pass.
+PIECE_MM = 1.0
+#: How much short of the tool's own reach a floor point still counts as one it fits (mm): FreeCAD's offsets, an arc's
+#: chords and the tessellation's own error.
+REACH_TOLERANCE_MM = 0.1
 #: How far a rapid may be below the stock top before it is a hit (mm).
 RAPID_TOLERANCE_MM = 0.05
-#: The most cells the height grid holds: a part over a metre wide checks on a coarser grid, never a full memory.
+#: The most cells the stock's grid, or points the part's faces, hold: a part over a metre wide checks coarser, never
+#: with a full memory.
 MAX_CELLS = 16_000_000
 #: How far off a face its reach is judged from, along its outward normal (mm): past the tessellation's own error, and
 #: far less than any overhang a tool could not pass.
@@ -62,7 +74,8 @@ POINT_TOLERANCE_MM = 0.01
 class Target:
     """What one operation must reach, at its final depth ``final_z`` (setup coordinates): a named face (``points`` on
     it, (K, 3)) that a cutting move's tool must come over (``wall``: come up beside, within its radius and
-    ``leave_mm``), or a hole (``axis_xy``) a cutting move must plunge down to that depth."""
+    ``leave_mm``), or a hole (``axis_xy``) a cutting move must plunge down to that depth. A floor with ``edges`` is
+    held to what the tool fits inside them; one without (a face operation's) to the whole of it."""
 
     ref: str
     final_z: float
@@ -116,12 +129,17 @@ def held(setup_id: str, operations, specs, report) -> list[dict]:
 
 #: A posted word cadgen sets: the spindle, a feed, a drilling cycle's peck.
 _WORD = re.compile(r"(?<![A-Z])([SFQ])\s*(-?\d*\.?\d+)")
+#: A work offset word: G54 to G59, and the extended ones some controllers take (G54.1 P2, G59.3).
+_OFFSET = re.compile(r"(?<![A-Z\d.])G(5[4-9](?:\.\d+(?:\s*P\d+)?)?)(?![\d.])")
+#: An axis word: the line moves the machine.
+_AXIS = re.compile(r"(?<![A-Z])[XYZ]\s*[-+]?[\d.\[#]")
 
 
-def posted(setup_id: str, name: str, text: str, specs) -> list[dict]:
+def posted(setup_id: str, name: str, text: str, specs, work_offset: str) -> list[dict]:
     """An error for each spindle speed (S), feed (F) or peck (Q) the posted file ``name`` says that cadgen set for none
-    of its operations (``specs``): what FreeCAD's post writes is the program a machine runs, so it is read back, not
-    taken on trust."""
+    of its operations (``specs``), and for its first move in any work offset but the setup's (``work_offset``, or
+    before the program selects one): what FreeCAD's post writes is the program a machine runs, so it is read back,
+    not taken on trust."""
     allowed = {"S": set(), "F": set(), "Q": set()}
     for spec in specs:
         given = _given(spec)
@@ -130,7 +148,7 @@ def posted(setup_id: str, name: str, text: str, specs) -> list[dict]:
         if "peck_mm" in given:
             allowed["Q"].add(given["peck_mm"])
     words = {"S": "spindle speed", "F": "feed", "Q": "peck"}
-    found, said = [], set()
+    found, said, offset, reported = [], set(), None, False
     for line in text.splitlines():
         line = re.sub(r"\(.*?\)", "", line.split(";")[0]).upper()
         for letter, number in _WORD.findall(line):
@@ -145,6 +163,17 @@ def posted(setup_id: str, name: str, text: str, specs) -> list[dict]:
                 f"set for none of its operations ({known})", "FreeCAD's post wrote a number cadgen did not give it, so "
                 "the program would run at a speed, feed or peck nobody checked. This is a cadgen bug with this "
                 "FreeCAD and post: report it, with the job", [{"setup": setup_id, "file": name}]))
+        for word in _OFFSET.findall(line):
+            offset = "G" + re.sub(r"\s+", "", word)
+        if not reported and _AXIS.search(line) and offset != work_offset:
+            reported = True
+            found.append(finding(
+                "post", "error", "posted", f"{name}: the posted program moves in "
+                + (f"{offset}, where the setup's work offset is {work_offset}" if offset else
+                   f"no work offset it selects, where the setup's is {work_offset}"),
+                "FreeCAD's post selected a work offset the job did not set, so the program would cut somewhere other "
+                "than the work zero the operator touched off. This is a cadgen bug with this FreeCAD and post: report "
+                "it, with the job", [{"setup": setup_id, "file": name}]))
     return found
 
 
@@ -207,27 +236,6 @@ def face_edges(vertices, triangles, mine):
     edges = np.sort(np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]]), axis=1)
     found, count = np.unique(edges, axis=0, return_counts=True)
     return np.asarray(vertices, dtype=float)[found[count == 1]][:, :, :2]
-
-
-def _fits(points, edges, radius: float, leave: float, cell: float):
-    """Which of a floor's ``points`` (K, 2) a tool of ``radius`` can sweep: within its radius of a centre whose whole
-    disk, and ``leave`` beside it, is on the floor -- the floor's opening by the tool, short of a cell each way. A
-    point outside it (a sharp inside corner, a neck narrower than the tool) is the tool's to leave, never FreeCAD's."""
-    import numpy as np
-
-    a, b = edges[:, 0], edges[:, 1]
-    along = b - a
-    t = np.clip(np.einsum("kmd,md->km", points[:, None, :] - a, along) / np.maximum(
-        np.einsum("md,md->m", along, along), 1e-12), 0.0, 1.0)
-    clear = np.linalg.norm(points[:, None, :] - (a + t[..., None] * along), axis=2).min(axis=1)
-    centres = points[clear >= radius + leave + cell]
-    if not len(centres):
-        return np.zeros(len(points), dtype=bool)
-    near = np.zeros(len(points), dtype=bool)
-    for chunk in range(0, len(centres), 500):
-        gap = np.linalg.norm(points[:, None, :] - centres[None, chunk:chunk + 500], axis=2)
-        near |= (gap <= radius - cell).any(axis=1)
-    return near
 
 
 def reach(op, faces, holes, mesh, face_of_triangle, tool, stock_top: float, depth_z: float | None,
@@ -336,34 +344,280 @@ def _profile_height(tool, d):
     return np.zeros_like(d)
 
 
-def _height_grid(vertices, triangles, low, high, cell: float):
-    """The part's highest point over each cell centre (``-inf`` where it has none), and the grid's origin."""
+def _profile_radius(tool, height):
+    """The tool's radius at ``height`` above its tip (an array): :func:`_profile_height` turned round, 0 below the tip
+    and the tool's radius above its profile."""
     import numpy as np
 
-    nx = max(1, int(math.ceil((high[0] - low[0]) / cell)))
-    ny = max(1, int(math.ceil((high[1] - low[1]) / cell)))
-    top = np.full((nx, ny), -np.inf)
+    r = tool.radius
+    up = np.maximum(0.0, height)
+    if tool.type == "ball":
+        out = np.sqrt(np.maximum(0.0, r * r - np.square(np.maximum(0.0, r - up))))
+    elif tool.type == "bull":
+        rc = tool.corner_radius_mm
+        out = (r - rc) + np.sqrt(np.maximum(0.0, rc * rc - np.square(np.maximum(0.0, rc - up))))
+    elif tool.type == "drill":
+        out = np.minimum(r, up * math.tan(math.radians(tool.point_angle / 2.0)))
+    else:
+        out = np.full_like(up, r)
+    return np.where(height > 0.0, out, 0.0)
+
+
+def _cut_reach(tool) -> float:
+    """How far from its axis the tool cuts a flat floor to within :data:`DEPTH_TOLERANCE_MM`: a flat end mill its
+    radius, a ball's tip far less (the ridge between two passes is the ball's scallop)."""
+    import numpy as np
+
+    return float(_profile_radius(tool, np.array([DEPTH_TOLERANCE_MM]))[0])
+
+
+def _surface_points(vertices, triangles, step: float):
+    """The part as the tool, coming down, can meet it: points on every face, none further than ``step`` from the next.
+    A triangle is spread in rows parallel to its longest edge, ``step`` apart (its corners and edges among them; a
+    sliver is one row, never a grid of its longest edge squared); a wall's, square to the tool, along its foot, each
+    at its top there: the tool reaches no lower point of a wall without reaching that one."""
+    import numpy as np
+
     tri = np.asarray(vertices, dtype=float)[np.asarray(triangles)]
-    e1, e2 = tri[:, 1, :2] - tri[:, 0, :2], tri[:, 2, :2] - tri[:, 0, :2]
-    det = e1[:, 0] * e2[:, 1] - e1[:, 1] * e2[:, 0]
-    keep = np.abs(det) > 1e-12
-    tri, det = tri[keep], det[keep]
-    lo = np.maximum(np.floor((tri[:, :, :2].min(axis=1) - low[:2]) / cell - 0.5).astype(int), 0)
-    hi = np.minimum(np.ceil((tri[:, :, :2].max(axis=1) - low[:2]) / cell - 0.5).astype(int), [nx - 1, ny - 1])
-    for t in range(len(tri)):
-        (i0, j0), (i1, j1) = lo[t], hi[t]
-        if i1 < i0 or j1 < j0:
+    if not len(tri):
+        return np.zeros((0, 3))
+    normal = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    upright = np.abs(normal[:, 2]) <= 1e-9 * np.maximum(np.linalg.norm(normal, axis=1), 1e-30)
+    return np.vstack([_spread(tri[~upright], step), _wall_tops(tri[upright], step)])
+
+
+def _spread(tri, step: float):
+    """Points over each triangle, in rows parallel to its longest edge, ``step`` apart along and across."""
+    import numpy as np
+
+    lengths = np.stack([np.linalg.norm(tri[:, (k + 1) % 3] - tri[:, k], axis=1) for k in range(3)], axis=1)
+    first = np.argmax(lengths, axis=1)
+    rows = np.arange(len(tri))
+    a, b, c = (tri[rows, (first + k) % 3] for k in range(3))      # a to b the longest edge, c across from it
+    longest = lengths[rows, first]
+    across = np.linalg.norm(np.cross(b - a, c - a), axis=1) / np.maximum(longest, 1e-12)
+    n_rows = np.ceil(across / step).astype(int) + 1
+    owner = np.repeat(rows, n_rows)
+    f = (np.arange(n_rows.sum()) - np.repeat(np.cumsum(n_rows) - n_rows, n_rows)) / np.maximum(
+        np.repeat(n_rows - 1, n_rows), 1)
+    start = a[owner] + f[:, None] * (c[owner] - a[owner])
+    end = b[owner] + f[:, None] * (c[owner] - b[owner])
+    count = np.ceil(longest[owner] * (1.0 - f) / step).astype(int) + 1
+    row = np.repeat(np.arange(len(owner)), count)
+    g = (np.arange(count.sum()) - np.repeat(np.cumsum(count) - count, count)) / np.maximum(np.repeat(count - 1, count), 1)
+    return start[row] + g[:, None] * (end[row] - start[row])
+
+
+def _wall_tops(tri, step: float):
+    """Points along each upright triangle's foot (its shadow, a segment), ``step`` apart, each at the triangle's
+    highest over it."""
+    import numpy as np
+
+    if not len(tri):
+        return np.zeros((0, 3))
+    xy = tri[:, :, :2]
+    spread = xy - xy.mean(axis=1, keepdims=True)
+    axis = spread[np.arange(len(tri)), np.argmax(np.linalg.norm(spread, axis=2), axis=1)]
+    axis /= np.maximum(np.linalg.norm(axis, axis=1, keepdims=True), 1e-12)
+    u = np.einsum("tkd,td->tk", spread, axis)                       # each corner along the shadow
+    u0, u1 = u.min(axis=1), u.max(axis=1)
+    count = np.ceil((u1 - u0) / step).astype(int) + 1
+    owner = np.repeat(np.arange(len(tri)), count)
+    g = (np.arange(count.sum()) - np.repeat(np.cumsum(count) - count, count)) / np.maximum(np.repeat(count - 1, count), 1)
+    at = u0[owner] + g * (u1 - u0)[owner]
+    top = np.full(len(at), -np.inf)
+    for k in range(3):                                              # each edge's height where it spans ``at``
+        ua, ub = u[owner, k], u[owner, (k + 1) % 3]
+        za, zb = tri[owner, k, 2], tri[owner, (k + 1) % 3, 2]
+        lo, hi = np.minimum(ua, ub), np.maximum(ua, ub)
+        spans = (at >= lo - 1e-9) & (at <= hi + 1e-9)
+        f = np.where(hi - lo > 1e-12, (at - ua) / np.where(np.abs(ub - ua) > 1e-12, ub - ua, 1.0), 0.0)
+        z = np.where(hi - lo > 1e-12, za + np.clip(f, 0.0, 1.0) * (zb - za), np.maximum(za, zb))
+        top = np.where(spans, np.maximum(top, z), top)
+    centre = xy.mean(axis=1)[owner]
+    return np.column_stack([centre + at[:, None] * axis[owner], top])
+
+
+def _pieces(moves, select):
+    """The moves ``select`` picks (each the move ending at its sample), cut into pieces no longer than
+    :data:`PIECE_MM` in XY: their ends ``(a, b)``, (M, 3) each."""
+    import numpy as np
+
+    ends = np.nonzero(select)[0]
+    ends = ends[ends > 0]
+    a, b = moves.points[ends - 1], moves.points[ends]
+    n = np.maximum(1, np.ceil(np.linalg.norm((b - a)[:, :2], axis=1) / PIECE_MM).astype(int))
+    k = np.repeat(np.arange(len(ends)), n)
+    f = (np.arange(n.sum()) - np.repeat(np.cumsum(n) - n, n)) / np.repeat(n, n)
+    step = (b - a)[k] / np.repeat(n, n)[:, None]
+    return a[k] + f[:, None] * (b - a)[k], a[k] + f[:, None] * (b - a)[k] + step
+
+
+def _near(points, a, b, reach: float, most: int = 1_000_000):
+    """Each point of ``points`` (K, 3) within ``reach`` in XY of a piece from ``a`` to ``b`` (M, 3), in chunks: ``(k,
+    at, d)``, the point's index, where the piece's path passes closest to it (a plunge, no length in XY: its lowest
+    end) and how far that is in XY. Exact for a level piece; a ramp's height is the one at its closest pass."""
+    import numpy as np
+
+    if not len(points) or not len(a):
+        return
+    # The points in buckets half the reach wide, and each piece's bounding box, grown by the reach, in buckets.
+    size = max(reach / 2.0, 0.25)
+    origin = points[:, :2].min(axis=0) - size
+    cells = np.floor((points[:, :2] - origin) / size).astype(np.int64)
+    nx, ny = int(cells[:, 0].max()) + 2, int(cells[:, 1].max()) + 2
+    keys = cells[:, 0] * ny + cells[:, 1]
+    order = np.argsort(keys, kind="stable")
+    sorted_keys = keys[order]
+    low = np.clip(np.floor((np.minimum(a, b)[:, :2] - reach - origin) / size).astype(np.int64), 0, [nx - 1, ny - 1])
+    high = np.clip(np.floor((np.maximum(a, b)[:, :2] + reach - origin) / size).astype(np.int64), -1, [nx - 1, ny - 1])
+    width = int(math.ceil((PIECE_MM + 2.0 * reach) / size)) + 1
+    dx, dy = (g.ravel() for g in np.meshgrid(np.arange(width), np.arange(width), indexing="ij"))
+    ix, iy = low[:, :1] + dx, low[:, 1:] + dy
+    wanted = (ix <= high[:, :1]) & (iy <= high[:, 1:])
+    key = ix * ny + iy
+    begin = np.where(wanted, np.searchsorted(sorted_keys, key, "left"), 0)
+    stop = np.where(wanted, np.searchsorted(sorted_keys, key, "right"), 0)
+    counts = (stop - begin).sum(axis=1)
+    cumulative = np.cumsum(counts)
+    first = 0
+    while first < len(a):
+        last = max(first + 1, int(np.searchsorted(cumulative, (cumulative[first - 1] if first else 0) + most, "right")))
+        last = min(last, len(a))
+        span = (stop[first:last] - begin[first:last]).ravel()
+        piece = np.repeat(np.repeat(np.arange(first, last), width * width), span)
+        offset = np.arange(span.sum()) - np.repeat(np.cumsum(span) - span, span)
+        k = order[np.repeat(begin[first:last].ravel(), span) + offset]
+        first = last
+        pa, ab = a[piece], b[piece] - a[piece]
+        level = np.einsum("nd,nd->n", ab[:, :2], ab[:, :2])
+        t = np.where(level > 1e-12, np.clip(np.einsum("nd,nd->n", points[k, :2] - pa[:, :2], ab[:, :2])
+                                            / np.maximum(level, 1e-12), 0.0, 1.0), (ab[:, 2] < 0).astype(float))
+        at = pa + t[:, None] * ab
+        d = np.hypot(points[k, 0] - at[:, 0], points[k, 1] - at[:, 1])
+        close = d <= reach
+        yield k[close], at[close], d[close]
+
+
+def _lowest_tip(a, b, points, reach: float):
+    """For each of ``points`` (K, 3): the lowest any piece from ``a`` to ``b`` takes the tool's tip within ``reach``
+    of it in XY, or more (the pieces' boxes, on a grid half the reach wide); ``inf`` where none comes near."""
+    import numpy as np
+
+    size = max(reach / 2.0, 0.25)
+    origin = np.minimum(np.minimum(a, b)[:, :2].min(axis=0), points[:, :2].min(axis=0)) - reach - size
+    top = np.maximum(np.maximum(a, b)[:, :2].max(axis=0), points[:, :2].max(axis=0)) + reach + size
+    shape = np.ceil((top - origin) / size).astype(int) + 1
+    lowest = np.full(int(shape[0]) * int(shape[1]), np.inf)
+    low = np.floor((np.minimum(a, b)[:, :2] - reach - origin) / size).astype(np.int64)
+    high = np.floor((np.maximum(a, b)[:, :2] + reach - origin) / size).astype(np.int64)
+    width = int(math.ceil((PIECE_MM + 2.0 * reach) / size)) + 1
+    tip = np.minimum(a[:, 2], b[:, 2])
+    for dx in range(width):
+        for dy in range(width):
+            ix, iy = low[:, 0] + dx, low[:, 1] + dy
+            ok = (ix <= high[:, 0]) & (iy <= high[:, 1])
+            np.minimum.at(lowest, ix[ok] * shape[1] + iy[ok], tip[ok])
+    cells = np.floor((points[:, :2] - origin) / size).astype(np.int64)
+    return lowest[cells[:, 0] * shape[1] + cells[:, 1]]
+
+
+def _gouge(moves, select, tool, surface):
+    """How far the tool, on the moves ``select`` picks, comes into the part at worst, and where it is then: ``(point,
+    depth)`` or None. A point of the part's ``surface`` (:func:`_surface_points`) is in the tool where it stands above
+    the tool's lower surface and inside its radius at that height; it is as deep in the part as the less of the two
+    (a wall beside the tool cut 0.2 mm under is 0.2 mm, however tall), or, under the tool's axis, as deep as the tool
+    would have to rise."""
+    import numpy as np
+
+    a, b = _pieces(moves, select)
+    if not len(a) or not len(surface):
+        return None
+    r = tool.radius
+    # Only a point above the lowest the tool comes near it can be in it.
+    points = surface[surface[:, 2] > _lowest_tip(a, b, surface, r) + GOUGE_TOLERANCE_MM]
+    worst = None
+    for k, at, d in _near(points, a, b, r):
+        height = points[k, 2] - at[:, 2]
+        up = height - _profile_height(tool, d)
+        side = _profile_radius(tool, height) - d
+        depth = np.where((up > GOUGE_TOLERANCE_MM) & (side > GOUGE_TOLERANCE_MM),
+                         np.where(d <= SURFACE_STEP_MM, up, np.minimum(up, side)), -np.inf)
+        if not len(depth):
             continue
-        ii, jj = np.meshgrid(np.arange(i0, i1 + 1), np.arange(j0, j1 + 1), indexing="ij")
-        px, py = low[0] + (ii + 0.5) * cell, low[1] + (jj + 0.5) * cell
-        a, b, c = tri[t]
-        w1 = ((px - a[0]) * (c[1] - a[1]) - (py - a[1]) * (c[0] - a[0])) / det[t]
-        w2 = ((b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0])) / det[t]
-        inside = (w1 >= -1e-9) & (w2 >= -1e-9) & (w1 + w2 <= 1 + 1e-9)
-        if inside.any():
-            z = a[2] + w1 * (b[2] - a[2]) + w2 * (c[2] - a[2])
-            np.maximum.at(top, (ii[inside], jj[inside]), z[inside])
-    return top
+        i = int(np.argmax(depth))
+        if depth[i] > GOUGE_TOLERANCE_MM and (worst is None or depth[i] > worst[1]):
+            worst = (at[i], float(depth[i]))
+    return worst
+
+
+def _fits(points, edges, radius: float, reach: float, leave: float):
+    """Which of a floor's ``points`` (K, 2) a tool of ``radius`` can cut: within its ``reach`` (:func:`_cut_reach`) of
+    a centre whose whole disk, and ``leave`` beside it, is on the floor -- the floor's opening by the tool, short of
+    :data:`REACH_TOLERANCE_MM` each way. A point outside it (a sharp inside corner, a neck narrower than the tool, a
+    ball's fillet at the wall) is the tool's to leave, never FreeCAD's."""
+    import numpy as np
+
+    a, b = edges[:, 0], edges[:, 1]
+    along = b - a
+    t = np.clip(np.einsum("kmd,md->km", points[:, None, :] - a, along) / np.maximum(
+        np.einsum("md,md->m", along, along), 1e-12), 0.0, 1.0)
+    clear = np.linalg.norm(points[:, None, :] - (a + t[..., None] * along), axis=2).min(axis=1)
+    centres = points[clear >= radius + leave + REACH_TOLERANCE_MM]
+    if not len(centres):
+        return np.zeros(len(points), dtype=bool)
+    near = np.zeros(len(points), dtype=bool)
+    for chunk in range(0, len(centres), 500):
+        gap = np.linalg.norm(points[:, None, :] - centres[None, chunk:chunk + 500], axis=2)
+        near |= (gap <= max(0.0, reach - REACH_TOLERANCE_MM)).any(axis=1)
+    return near
+
+
+def _uncut(moves, op, tool, targets) -> list[tuple[str, float | None, float | None]]:
+    """``(ref, share, ridge)`` of each of the ``targets`` (:class:`Target`) no cutting move of ``op`` reaches at its
+    final depth, ``share`` None: a hole no feed goes down the axis of, a floor or face no tool comes over, a wall no
+    tool runs beside; and of each floor it cut only part of what the tool fits (a face: of all of it), ``share`` the
+    part it left. A point of a floor or a face is cut where the tool's lower surface comes within
+    :data:`DEPTH_TOLERANCE_MM` of it, so a ball's passes too far apart leave it uncut between them: ``ridge`` is the
+    highest it left standing there, None where the tool never came over it."""
+    import numpy as np
+
+    a, b = _pieces(moves, (moves.op == op.index) & ~moves.rapid)
+    if not len(a) or not targets:
+        return []
+    missed = []
+    for target in targets:
+        if target.axis_xy is not None:
+            axis = np.array([[*target.axis_xy, target.final_z]])
+            down = any(np.any(at[:, 2] <= target.final_z + DEPTH_TOLERANCE_MM)
+                       for _, at, _ in _near(axis, a, b, DEPTH_TOLERANCE_MM))
+            if not down:
+                missed.append((target.ref, None, None))
+            continue
+        points = target.points
+        if target.wall:
+            beside = np.zeros(len(points), dtype=bool)
+            for k, at, _ in _near(points, a, b, tool.radius + target.leave_mm + REACH_TOLERANCE_MM):
+                beside[k[at[:, 2] <= target.final_z + DEPTH_TOLERANCE_MM]] = True
+            if not beside.any():
+                missed.append((target.ref, None, None))
+            continue
+        lowest = np.full(len(points), np.inf)
+        for k, at, d in _near(points, a, b, tool.radius):
+            np.minimum.at(lowest, k, at[:, 2] + _profile_height(tool, d))
+        left = lowest - target.final_z
+        hit = left <= DEPTH_TOLERANCE_MM
+        if not hit.any():
+            missed.append((target.ref, None, None))
+            continue
+        fits = np.ones(len(points), dtype=bool) if target.edges is None else _fits(
+            points[:, :2], target.edges, tool.radius, _cut_reach(tool), target.leave_mm)
+        uncut = fits & ~hit
+        if uncut.any():
+            standing = left[uncut & np.isfinite(left)]
+            missed.append((target.ref, float(uncut.sum() / fits.sum()),
+                           float(standing.max()) if len(standing) else None))
+    return missed
 
 
 def _dense(points, step: float):
@@ -379,35 +633,6 @@ def _dense(points, step: float):
         f = (np.arange(1, n + 1) / n)[:, None]
         pieces.append(points[k] + f * (points[k + 1] - points[k]))
     return np.vstack(pieces)
-
-
-def _gouges(moves, select, tool, grid, low, cell: float):
-    """The first sample of the moves ``select`` picks whose tool comes into the part, and how far: ``(point, depth)``
-    or None."""
-    import numpy as np
-
-    keep = np.nonzero(select)[0]
-    if not len(keep):
-        return None
-    worst = None
-    # Each run of selected samples is one polyline; a move's start is the sample before it.
-    runs = np.split(keep, np.nonzero(np.diff(keep) > 1)[0] + 1)
-    nx, ny = grid.shape
-    for run in runs:
-        start = max(run[0] - 1, 0)
-        points = _dense(moves.points[start:run[-1] + 1], cell)
-        for chunk in range(0, len(points), 2000):
-            here = points[chunk:chunk + 2000]
-            i, j, height, inside = _disk(tool, cell, here, low)
-            # Each cell centre's distance is from the tool's axis itself, not from the cell the axis is in; a cell at
-            # the tool's very edge is the tessellation's to decide, not a gouge.
-            d = np.hypot(low[0] + (i + 0.5) * cell - here[:, :1], low[1] + (j + 0.5) * cell - here[:, 1:2])
-            inside &= (i >= 0) & (i < nx) & (j >= 0) & (j < ny) & (d <= tool.radius - GOUGE_TOLERANCE_MM)
-            depth = np.where(inside, grid[np.clip(i, 0, nx - 1), np.clip(j, 0, ny - 1)] - height, -np.inf).max(axis=1)
-            k = int(np.argmax(depth))
-            if depth[k] > GOUGE_TOLERANCE_MM and (worst is None or depth[k] > worst[1]):
-                worst = (here[k], float(depth[k]))
-    return worst
 
 
 def _cells(here, radius: float, low, cell: float):
@@ -430,50 +655,6 @@ def _disk(tool, cell: float, here, low):
 
     i, j, d = _cells(here, tool.radius, low, cell)
     return i, j, here[:, 2:3] + _profile_height(tool, np.minimum(d, tool.radius)), d <= tool.radius
-
-
-def _uncut(moves, op, tool, targets, low, shape, cell: float) -> list[tuple[str, float | None]]:
-    """``(ref, share)`` of each of the ``targets`` (:class:`Target`) no cutting move of ``op`` reaches at its final
-    depth, ``share`` None: a hole no feed goes down the axis of, a floor no tool comes over, a wall no tool runs
-    beside; and of each floor it cut only part of, ``share`` the part of what the tool fits that it left."""
-    import numpy as np
-
-    keep = np.nonzero((moves.op == op.index) & ~moves.rapid)[0]
-    if not len(keep) or not targets:
-        return []
-    runs = np.split(keep, np.nonzero(np.diff(keep) > 1)[0] + 1)
-    points = np.vstack([_dense(moves.points[max(run[0] - 1, 0):run[-1] + 1], cell) for run in runs])
-    nx, ny = shape
-    swept: dict = {}
-    missed = []
-    for target in targets:
-        at = points[points[:, 2] <= target.final_z + DEPTH_TOLERANCE_MM]
-        if target.axis_xy is not None:
-            x, y = target.axis_xy
-            if not len(at) or not np.any(np.hypot(at[:, 0] - x, at[:, 1] - y) <= DEPTH_TOLERANCE_MM):
-                missed.append((target.ref, None))
-            continue
-        radius = tool.radius + (target.leave_mm + cell if target.wall else 0.0)
-        key = (target.final_z, radius)
-        if key not in swept:
-            cells = np.zeros(shape, dtype=bool)
-            for chunk in range(0, len(at), 2000):
-                i, j, d = _cells(at[chunk:chunk + 2000], radius, low, cell)
-                inside = (d <= radius) & (i >= 0) & (i < nx) & (j >= 0) & (j < ny)
-                cells[i[inside], j[inside]] = True
-            swept[key] = cells
-        i = np.floor((target.points[:, 0] - low[0]) / cell).astype(int)
-        j = np.floor((target.points[:, 1] - low[1]) / cell).astype(int)
-        inside = (i >= 0) & (i < nx) & (j >= 0) & (j < ny)
-        hit = swept[key][i[inside], j[inside]]
-        if not hit.any():
-            missed.append((target.ref, None))
-        elif target.edges is not None and len(target.edges):
-            fits = _fits(target.points[inside, :2], target.edges, tool.radius, target.leave_mm, cell)
-            left = fits & ~hit
-            if left.any():
-                missed.append((target.ref, float(left.sum() / fits.sum())))
-    return missed
 
 
 def _rapid_into_stock(moves, operations, tools, stock_low, stock_high, low, shape, cell: float):
@@ -533,28 +714,24 @@ def check_moves(setup_id: str, moves, operations, tools, mesh, stock_low, stock_
                                  f"{op.where}: FreeCAD planned no cut for this {op.op}",
                                  "the faces it names give it nothing to cut with this tool: check the faces "
                                  "(cadgen cam features) and that the tool fits them", [{"operation": op.index}]))
-    path_low = np.minimum(moves.points.min(axis=0), np.asarray(vertices).min(axis=0))
-    path_high = np.maximum(moves.points.max(axis=0), np.asarray(vertices).max(axis=0))
-    smallest = min(tools[op.tool].radius for op in operations)
-    cell = max(0.05, min(0.5, smallest / 4.0))
-    margin = max(tools[op.tool].radius for op in operations) + cell
-    low, high = path_low - margin, path_high + margin
-    area = (high[0] - low[0]) * (high[1] - low[1])
-    if area / cell ** 2 > MAX_CELLS:
-        cell = math.sqrt(area / MAX_CELLS)
-    grid = _height_grid(vertices, triangles, low, high, cell)
     for op in operations:
         what = "drilled nothing down" if op.op == "drill" else "cut nothing at the operation's depth over"
-        for ref, share in _uncut(moves, op, tools[op.tool], (targets or {}).get(op.index, ()), low, grid.shape, cell):
+        for ref, share, ridge in _uncut(moves, op, tools[op.tool], (targets or {}).get(op.index, ())):
             said = what if share is None else f"left {share:.0%} of what the tool fits uncut on"
+            standing = "" if ridge is None else f", standing up to {ridge:.2f} mm between its passes"
             found.append(finding(
-                "coverage", "error", "uncut", f"{op.where}: FreeCAD {said} {ref}",
+                "coverage", "error", "uncut", f"{op.where}: FreeCAD {said} {ref}{standing}",
                 "FreeCAD leaves out what the tool does not fit, and says nothing: a floor, slot or hole narrower "
                 "than the tool, a hole it did not take. Cut it in its own operation with a tool that fits it, or "
-                "leave it out of this one", [{"setup": setup_id, "operation": op.index, "face": ref}]))
+                "leave it out of this one. A floor counts as cut where the tool comes within "
+                f"{DEPTH_TOLERANCE_MM:g} mm of it: a ball's passes leave a ridge between them (its scallop, "
+                "r - sqrt(r² - (stepover / 2)²) high), which a smaller stepover or a flat end mill cuts down",
+                [{"setup": setup_id, "operation": op.index, "face": ref}]))
+    tri = np.asarray(vertices, dtype=float)[np.asarray(triangles)]
+    faces_mm2 = float(np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1).sum()) / 2.0
+    surface = _surface_points(vertices, triangles, max(SURFACE_STEP_MM, math.sqrt(faces_mm2 / MAX_CELLS)))
     for op in operations:
-        mine = moves.op == op.index
-        hit = _gouges(moves, mine, tools[op.tool], grid, low, cell)
+        hit = _gouge(moves, moves.op == op.index, tools[op.tool], surface)
         if hit is not None:
             point, depth = hit
             found.append(finding(
@@ -563,7 +740,17 @@ def check_moves(setup_id: str, moves, operations, tools, mesh, stock_low, stock_
                 "FreeCAD's path for this operation runs the tool into the part (often under an overhang it was "
                 "not told about): name only faces the tool can reach, or use a smaller tool",
                 [{"setup": setup_id, "operation": op.index, "at": _xyz(point)}]))
-    hit = _rapid_into_stock(moves, operations, tools, stock_low, stock_high, low, grid.shape, cell)
+    # The stock a rapid may not run into, on a grid finer than the smallest tool.
+    path_low = np.minimum(moves.points.min(axis=0), np.asarray(vertices).min(axis=0))
+    path_high = np.maximum(moves.points.max(axis=0), np.asarray(vertices).max(axis=0))
+    cell = max(0.05, min(0.5, min(tools[op.tool].radius for op in operations) / 4.0))
+    margin = max(tools[op.tool].radius for op in operations) + cell
+    low, high = path_low - margin, path_high + margin
+    area = (high[0] - low[0]) * (high[1] - low[1])
+    if area / cell ** 2 > MAX_CELLS:
+        cell = math.sqrt(area / MAX_CELLS)
+    shape = (max(1, int(math.ceil((high[0] - low[0]) / cell))), max(1, int(math.ceil((high[1] - low[1]) / cell))))
+    hit = _rapid_into_stock(moves, operations, tools, stock_low, stock_high, low, shape, cell)
     if hit is not None:
         k, point, depth = hit
         found.append(finding("rapid_into_stock", "error", "rapid_into_stock",

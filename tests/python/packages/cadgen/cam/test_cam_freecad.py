@@ -29,7 +29,7 @@ def _program(folder: Path, body: str) -> str:
 
 def _nowhere():
     """No FreeCAD on PATH or in an installer's place."""
-    return mock.patch.multiple(freecad, _installed=lambda: [], shutil=mock.Mock(which=lambda name: None))
+    return mock.patch.multiple(freecad, _installed=lambda: [], executables=mock.Mock(find=lambda name: None))
 
 
 class FindFreecad(unittest.TestCase):
@@ -68,6 +68,27 @@ class FindFreecad(unittest.TestCase):
             with mock.patch.dict(os.environ, {freecad.FREECAD_ENV: program}):
                 found = freecad.find_freecad()
         self.assertEqual((found.path, found.version, found.label), (program, "1.1.4", "freecad 1.1.4"))
+
+    @POSIX_ONLY
+    def test_path_is_searched_as_the_engine_searches_it_never_the_working_folder(self):
+        # A freecadcmd in the working folder, or in a relative PATH entry, is never the one run.
+        with tempfile.TemporaryDirectory() as name:
+            folder = Path(name)
+            program = _program(folder, "echo 'FreeCAD 1.1.4'")
+            cwd = os.getcwd()
+            try:
+                os.chdir(folder)
+                with mock.patch.dict(os.environ, {freecad.FREECAD_ENV: "", "PATH": "."}), \
+                        mock.patch.object(freecad, "_installed", lambda: []):
+                    with self.assertRaisesRegex(freecad.FreecadMissingError, "freecadcmd was not found"):
+                        freecad.find_freecad()
+                with mock.patch.dict(os.environ, {freecad.FREECAD_ENV: "./freecadcmd"}):
+                    with self.assertRaisesRegex(freecad.FreecadMissingError, "an absolute path, or a name on PATH"):
+                        freecad.find_freecad()
+                with mock.patch.dict(os.environ, {freecad.FREECAD_ENV: "freecadcmd", "PATH": str(folder)}):
+                    self.assertEqual(program, freecad.find_freecad().path)
+            finally:
+                os.chdir(cwd)
 
     @POSIX_ONLY
     def test_an_installers_place_is_looked_in_after_path(self):

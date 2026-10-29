@@ -289,7 +289,8 @@ def _floors_to_walls(faces, part, frame, where: str) -> tuple[list, dict[str, li
 
 def _targets(op, faces, holes, final_z, frame, mesh, face_of_triangle, tool) -> list:
     """What the coverage check holds the operation to (:class:`checks.Target`): each hole a drill names (once, however
-    many of its faces are named), each floor a pocket or adaptive names, each face a profile names."""
+    many of its faces are named), each floor a pocket or adaptive names, each face a profile names, and each face a
+    face operation faces, the whole of it (the tool runs out past the part's edges, so no corner is its to leave)."""
     from cadgen._internal.cam.checks import Target, face_edges, face_points
 
     if final_z is None:
@@ -304,13 +305,12 @@ def _targets(op, faces, holes, final_z, frame, mesh, face_of_triangle, tool) -> 
             x, y, _ = frame.to_setup([hole["center_mm"]])[0]
             out.append(Target(ref=info.ref, final_z=final_z, axis_xy=(float(x), float(y))))
         return out
-    if op.op not in ("pocket", "adaptive", "profile"):
-        return []
     vertices, triangles = mesh
     wall = op.op == "profile"
     return [Target(ref=info.ref, final_z=final_z, wall=wall, leave_mm=op.params.get("leave_mm", 0.0),
                    points=face_points(vertices, triangles, face_of_triangle == info.ordinal, max(0.25, tool.radius / 2)),
-                   edges=None if wall else face_edges(vertices, triangles, face_of_triangle == info.ordinal))
+                   edges=None if wall or op.op == "face" else face_edges(vertices, triangles,
+                                                                        face_of_triangle == info.ordinal))
             for info in faces]
 
 
@@ -415,9 +415,10 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
                 findings += checks.check_moves(setup.id, moves, planned, tools, mesh, s_low, s_high, machine, targets)
                 spec_of = {spec["index"]: spec for spec in specs}
                 for name, indices in files:
-                    findings += checks.posted(setup.id, name, texts[name], [spec_of[i] for i in indices])
-            header = (f"(cadgen cam: {document.name}, setup {setup.id}, planned and posted by {freecad.label} for "
-                      f"{machine.post})\n({_SAFETY})\n")
+                    findings += checks.posted(setup.id, name, texts[name], [spec_of[i] for i in indices],
+                                             machine.work_offset)
+            header = (_comment(f"cadgen cam: {document.name}, setup {setup.id}, planned and posted by "
+                               f"{freecad.label} for {machine.post}") + "\n" + _comment(_SAFETY) + "\n")
             posted += [(setup.id, name, header + texts[name], tool)
                        for (name, _), tool in zip(files, _file_tools(files, planned))]
             lines += line_segments(moves, setup=setup.id, t_offset=clock, to_part=frame.to_part)
@@ -490,6 +491,14 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
                          posts=tuple(dict(p, file=str(path)) for p, path in zip(posts_out, written)),
                          verdict=verdict, summary=summary, operations=tuple(operations_out), findings=tuple(findings),
                          warnings=tuple(warnings), timings=timings, assumed=tuple(dict(e) for e in parsed.assumed))
+
+
+def _comment(text: str) -> str:
+    """``text`` as one G-code comment line: in parentheses, which no controller nests (Fanuc's, LinuxCNC's and GRBL's
+    comments end at the first ``)``), so each parenthesis in it is a bracket (``part [1].step``); and anything but
+    printable ASCII, or a ``%`` (on Fanuc the end of the program's tape), is a ``?``."""
+    text = text.replace("(", "[").replace(")", "]")
+    return "(" + "".join(ch if " " <= ch <= "~" and ch != "%" else "?" for ch in text) + ")"
 
 
 def _files(stem: str, setup_id: str, planned, post) -> list[tuple[str, list[int]]]:

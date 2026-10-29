@@ -17,8 +17,9 @@ from tests.python.support.cam_fixtures import (BLOCK, HOLE_BLOCK, PLATE, block_s
 
 
 #: Tools long enough to profile the block's 26 mm, stock top to bottom.
-LONG_FLUTES = [{"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 30, "stickout_mm": 40},
-               {"id": "T2", "type": "drill", "diameter_mm": 5, "flute_length_mm": 50, "stickout_mm": 60}]
+LONG_FLUTES = [{"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 30,
+                "stickout_mm": 40},
+               {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 50, "stickout_mm": 60}]
 
 
 def plan(step: Path, job: dict, **options):
@@ -171,14 +172,24 @@ class Grbl(unittest.TestCase):
         first, second = (Path(p["file"]).read_text(encoding="utf-8") for p in result.posts)
         self.assertNotIn("G81", re.sub(r"\(.*?\)", "", second))   # GRBL has no drilling cycle: written out as moves
 
-    def test_every_other_post_posts_what_cadgen_set(self):
-        # Each program read back (S, F, Q) and found clean; Fanuc's once failed on the work offset's object.
-        step = block_step(class_directory(type(self)))
+    def test_every_other_post_posts_what_cadgen_set_in_the_setups_work_offset(self):
+        # Each program read back (S, F, Q, and the work offset of every move) and found clean; Fanuc's once failed on
+        # the work offset's object, and once cut in G54 after its tool change whatever the job's offset. The part's
+        # name, as a download names a copy, once nested a comment in the header cadgen writes.
+        step = block_step(class_directory(type(self)), name="block (1)")
         for post in ("mach3", "fanuc", "centroid", "uccnc", "smoothie"):
             with self.subTest(post=post):
-                result = plan(step, mill_job([{"op": "face", "tool": "T1"}], machine={"post": post, "max_rpm": 24000}))
+                result = plan(step, mill_job([{"op": "face", "tool": "T1"}],
+                                             machine={"post": post, "max_rpm": 24000, "work_offset": "G55"}))
                 self.assertEqual("ready", result.verdict.get("status"), result.findings)
-                self.assertTrue(Path(result.posts[0]["file"]).is_file())
+                text = Path(result.posts[0]["file"]).read_text(encoding="utf-8")
+                self.assertTrue(text.startswith("(cadgen cam: block [1].step, setup top,"), text[:80])
+                nested = [line for line in text.splitlines() if not re.fullmatch(r"[^()]*(?:\([^()]*\)[^()]*)*", line)]
+                self.assertEqual([], nested)
+                self.assertIn("G55", text)
+                if post == "fanuc":
+                    self.assertIn("G43 G55", text)              # its tool length offset line, after the tool change
+                    self.assertNotIn("G43 G54", text)
 
     def test_a_spindle_the_machine_holds_is_one_warning_a_tool(self):
         step = block_step(class_directory(type(self)))
@@ -191,9 +202,11 @@ class Grbl(unittest.TestCase):
 
 
 #: A 6 mm end mill for the bore and the pocket, a 3 mm one for the slot, a 6 mm drill.
-PLATE_TOOLS = [{"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20, "stickout_mm": 30},
-               {"id": "T3", "type": "flat", "diameter_mm": 3, "flutes": 2, "flute_length_mm": 15, "stickout_mm": 25},
-               {"id": "T2", "type": "drill", "diameter_mm": 6, "flute_length_mm": 50, "stickout_mm": 60}]
+PLATE_TOOLS = [{"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20,
+                "stickout_mm": 30},
+               {"id": "T3", "type": "flat", "number": 3, "diameter_mm": 3, "flutes": 2, "flute_length_mm": 15,
+                "stickout_mm": 25},
+               {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 6, "flute_length_mm": 50, "stickout_mm": 60}]
 
 
 @needs_freecad
@@ -343,7 +356,8 @@ class HoleBlock(unittest.TestCase):
     def test_a_drill_point_longer_than_the_drawn_one_is_a_warning_with_how_much(self):
         import math
 
-        tools = [{"id": "T2", "type": "drill", "diameter_mm": 6, "flute_length_mm": 50, "stickout_mm": 60}]
+        tools = [{"id": "T2", "type": "drill", "number": 2, "diameter_mm": 6, "flute_length_mm": 50,
+                  "stickout_mm": 60}]
         result = plan(self.step, mill_job([{"op": "drill", "tool": "T2", "faces": [self.pointed["faces"][0]]}],
                                           tools=tools))
         self.assertEqual("ready", result.verdict["status"], result.findings)

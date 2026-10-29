@@ -66,10 +66,10 @@ There is no other stock shape. The blank the user clamps must be the size this m
 | `id` | Required. The name operations use, like `T1` |
 | `type` | Required. `flat` (end mill), `ball`, `bull` (bull nose) or `drill` |
 | `diameter_mm` | Required |
-| `number` | The T number posted, 0 to 9999 (the digits of `id`, else its place in the list); one per tool, so `T1` and `D1` need a `number` each |
+| `number` | Required. The T number posted, 0 to 9999, as the machine's tool table has it; one per tool |
 | `name` | The tool's name, for the result |
-| `flutes` | 1 to 100 (2, listed as assumed) |
-| `flute_length_mm` | The cutting length (3 × the diameter, a drill's 10 ×, never past a stated `stickout_mm`; listed as assumed) |
+| `flutes` | Required for `flat`, `ball` and `bull`: 1 to 100, the feed is worked out from it. A `drill` is fed per revolution and takes none |
+| `flute_length_mm` | Required. The cutting length, which every cut's depth is held to |
 | `stickout_mm` | The length out of the holder, flutes included (the flutes and a quarter more, at least 5 mm more; listed as assumed) |
 | `shank_diameter_mm` | (the diameter) |
 | `corner_radius_mm` | `bull` only, and required: more than 0, at most the radius |
