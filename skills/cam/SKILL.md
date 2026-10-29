@@ -103,6 +103,11 @@ mm/min).
    - **The controller.** `machine.post` is required and has no default: a dialect read by the
      wrong controller moves the machine wrongly. Ask which controller runs the machine (GRBL,
      LinuxCNC, Mach3/4, Fanuc, Centroid, UCCNC, Smoothieware); never guess it from the make.
+     With a tool for asking a question, offer the four most common as its answers with none
+     marked recommended, so sending nothing picks none, and the person names any other.
+   - Everything below is optional: say what the plan will use without it (cadgen's proposed
+     tools, the feeds table's numbers, a vise) and ask only whether to change any, rather than
+     asking for each one.
    - The machine's travel, spindle speed range and feed limit (`travel_mm`, `min_rpm`,
      `max_rpm`, `max_feed_mm_min`): a 24,000 rpm router spindle, a 2,000 mm/min feed. Without
      them the plan posts the feeds table's numbers unchecked.
