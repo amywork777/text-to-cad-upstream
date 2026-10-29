@@ -383,7 +383,8 @@ src/cadgen/
                          #   dimensions, callouts, hole tables; render: a sheet
                          #   drawn; report: what is left unstated; features:
                          #   holes, slots, blends read off the B-rep; assembly:
-                         #   parts list, balloons, the set's sheets)
+                         #   parts list, balloons, the set's sheets; gdt: feature
+                         #   control frames; profile: stages and Profile)
   flatten.py             # flat patterns: exact 2D geometry from a solid's planar faces
   geometry.py            # measurements of native geometry: closest points, overlap,
                          #   soundness, mass properties

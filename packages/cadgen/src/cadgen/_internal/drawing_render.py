@@ -210,30 +210,19 @@ def _sheet_tables(sheet: Sheet, cuts: dict, work: list, s: float) -> list[_Sheet
                                     item.material or item.description) for item, family, _variant in ordered],
                                   [(family, variant) for _item, family, variant in ordered],
                                   near or sheet.views[0].at))
-    if sheet._layer_table is not None:
-        parts, rows, corner = sheet._layer_table
-        tables.append(_SheetTable("LAYER TABLE", ("ITEM", "MATERIAL", "SPEC", "THICKNESS", "COVERAGE"),
-                                  [(str(parts[key].number), parts[key].material, parts[key].spec, thickness, covers)
-                                   for key, thickness, covers in rows],
-                                  [], near or sheet.views[0].at, corner))
     return tables
 
 
 def _place_sheet_tables(sheet: Sheet, tables: list[_SheetTable], occupied: list, s: float) -> list:
-    """Each sheet table's corner: the free paper nearest what it keys, or the
-    corner its author gave, which must be clear."""
+    """Each sheet table's corner: the free paper nearest what it keys."""
     corners = []
     for table in tables:
         w, h = table.size()
-        spot = table.corner if table.corner is not None else _place_box(sheet, w, h, occupied, table.near)
+        spot = _place_box(sheet, w, h, occupied, table.near)
         if spot is None:
             raise _OffFrame(f"{table.caption.lower()}: no free paper on {sheet._size()} for a {w:.0f} x {h:.0f} mm "
-                            "table. Give it at=, a smaller scale or a larger sheet.", _next_smaller(s))
+                            "table. Give it a smaller scale or a larger sheet.", _next_smaller(s))
         box = (spot[0], spot[0] + w, spot[1] - h, spot[1])
-        if table.corner is not None and any(box[0] < o[1] and box[1] > o[0] and box[2] < o[3] and box[3] > o[2]
-                                            for o in [*occupied, *_furniture(sheet)]):
-            raise ValueError(f"layer_table(at={spot}): the table there is drawn over a view, its annotation or the "
-                             "title block; leave at= out to let the sheet place it")
         corners.append(spot)
         occupied.append((box[0] - 4.0, box[1] + 4.0, box[2] - 4.0, box[3] + 4.0))
     return corners
@@ -565,15 +554,16 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     key_mark = sheet.profile.characteristic_mark if sheet.profile is not None else "KC"
     framed = sheet.general_profile is not None or any(
         dim.frame is not None for view in sheet.views for dim in view._dims)
-    if warnings is not None and not framed:
-        # A basic dimension is exact by definition; only a frame gives it a tolerance.
+    if not framed:
+        # A basic dimension is exact by definition; only a frame gives it a tolerance, so one with
+        # none on the sheet would print a size nobody can make.
         for view in sheet.views:
             for number, dim in enumerate(view._dims):
                 if dim.basic:
                     kind = "dim" if dim.kind == "linear" else dim.kind
-                    warnings.append(f"{view.name} {kind} {number}: a basic dimension, and no GD&T frame on the "
-                                    "sheet bounds it, so it has no tolerance; add the frame that controls the "
-                                    "feature, or give the dimension tol=")
+                    raise ValueError(f"{view.name} {kind} {number}: a basic dimension, and no GD&T frame on the "
+                                     "sheet bounds it, so it has no tolerance; add the frame that controls the "
+                                     "feature, or give the dimension tol=")
     breaks = any(view._break is not None for view in sheet.views)
     if sheet._chooses() and breaks:
         # A break leaves a fixed gap of paper, so its views are drawn at the scale
@@ -1408,12 +1398,11 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 a, b = model_to_sheet(dim.p1), model_to_sheet(dim.p2)
                 check("dim", dim.index, a, b)
                 across, up = abs(b[0] - a[0]) / sv, abs(b[1] - a[1]) / sv
-                if dim.orientation is None and min(across, up) > 0.5 and min(across, up) > 0.5 * max(across, up) \
-                        and warnings is not None:
-                    warnings.append(
+                if dim.orientation is None and min(across, up) > 0.5 and min(across, up) > 0.5 * max(across, up):
+                    # Which span it measures would be a guess: the larger once printed, said only as a warning.
+                    raise ValueError(
                         f"{view.name} dim {dim.index}: its points are {_fmt(across)} apart across and {_fmt(up)} "
-                        f"up, so which one it measures was guessed: {_fmt(max(across, up))}, "
-                        f"{'horizontal' if across >= up else 'vertical'}. Pass orientation=\"h\" or \"v\", or give "
+                        f"up, so it could measure either. Pass orientation=\"h\", \"v\" or \"aligned\", or give "
                         "two points that differ in one direction only."
                     )
                 true = None
@@ -1841,12 +1830,11 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         letter, look = view._section[0], _look(view)
         parent = _plane_parent(view, [other for other in sheet.views if id(other) in drawn])
         if parent is None:
-            if warnings is not None:
-                warnings.append(
-                    f"SECTION {letter}-{letter} has no view on this sheet that sees its cutting plane edge-on, "
-                    f"so the plane is not shown; add the {_PLANE_SHOWN_ON[view.name][0]} view."
-                )
-            continue
+            # A section whose plane no view shows says nothing of where it cuts.
+            raise ValueError(
+                f"SECTION {letter}-{letter} has no view on this sheet that sees its cutting plane edge-on, "
+                f"so nothing shows where it cuts; add the {_PLANE_SHOWN_ON[view.name][0]} view."
+            )
         _draw_cutting_plane(msp, drawn[id(parent)], point, look, letter, text, th)
     # Each detail's circle and letter on the view it enlarges.
     for view in sheet.views:

@@ -187,9 +187,10 @@ by item.
 A profile is a company's or an industry's conventions, never its numbers:
 
 ```python
-from cadgen.eng_drawing import AEROSPACE, GENERIC, Profile
+from cadgen.eng_drawing import GENERIC, Profile
 
-Sheet(stage="production", profile=AEROSPACE, company="EXAMPLE AERO CO.",
+aero = Profile("EXAMPLE AERO", "ASME Y14.5-2018", fields=("CAGE CODE", "DISTRIBUTION"))
+Sheet(stage="production", profile=aero, company="EXAMPLE AERO CO.",
       fields={"CAGE CODE": "0ABC1", "DISTRIBUTION": "D"},
       material="AL 7075-T7351", spec="AMS 4078", finish="ANODIZE PER MIL-A-8625 TYPE II",
       general_profile=Frame("surface_profile", 0.2, ("A", "B", "C")), general_tolerance="±0.1")
@@ -207,14 +208,15 @@ Sheet(profile=acme, category="TYPE B")          # prints TYPE B, checked as a pr
 - `fields` adds title-block cells, blank until `Sheet(fields=...)` fills them.
 - `characteristic_mark` is the boxed letters a key characteristic carries
   ("KC"; AS9103 leaves the symbol to the customer).
-- `spec_family` is the specifications to suggest for materials: SAE AMS for
-  aerospace, ASTM for general commercial work, EN in Europe. A spec depends on
-  the product form (AMS 4027 is 6061-T6 sheet and plate; bar and forgings have
-  others), so ask the form before suggesting one.
 
-`GENERIC` follows ISO GPS; `AEROSPACE` follows ASME Y14.5-2018 and adds CAGE
-CODE and DISTRIBUTION (the distribution statement's letter; its wording goes in
-a note). A company writes its own `Profile` in its project.
+`GENERIC` follows ISO GPS. A company writes its own `Profile` in its project, as
+`aero` above: an aerospace one adds CAGE CODE and DISTRIBUTION (the distribution
+statement's letter; its wording goes in a note).
+
+A material spec to suggest follows the industry: SAE AMS for aerospace, ASTM for
+general commercial work, EN in Europe. It depends on the product form too (AMS
+4027 is 6061-T6 sheet and plate; bar and forgings have others), so ask the form
+before suggesting one.
 
 With no stage and no profile, the drawing is as it always was: no band on the
 title block, nothing asked of it beyond the features it leaves undimensioned.

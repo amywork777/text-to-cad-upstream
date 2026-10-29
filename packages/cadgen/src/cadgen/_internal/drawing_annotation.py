@@ -448,21 +448,10 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features: _Features
                                              for p in (sl.mouth, *sl.ends)):
             raise ValueError(f"{call}: that is a slot, not a hole; call it out with "
                              f"{view.name}.slot({_where(dim.p1)}).")
-        if given["diameter"] is None:
-            raise ValueError(f"{call}: no hole runs along the {view.name} view's line of sight there. "
-                             + _holes_hint(seen, look))
-        # A bore the reader does not recognise as a hole can still be stated, but
-        # only over a circle that is really there.
-        radii = _radii_at(proj, target, closed_only=True)
-        if not any(abs(2 * r - given["diameter"]) <= 0.01 for r in radii):
-            shown = ", ".join("⌀" + _fmt(2 * r) for r in radii)
-            raise ValueError(f"{call}: the {view.name} view shows no ⌀{_fmt(given['diameter'])} circle there"
-                             f"{f' (it shows {shown})' if radii else ''}, so the callout would point at a hole "
-                             "the part does not have.")
-        spec = {"diameter": given["diameter"], "depth": given["depth"], "thru": bool(given["thru"]),
-                "cbore": given["cbore"], "csk": given["csk"], "count": given["count"], "thread": thread,
-                "label": label}
-        return replace(dim, hole=spec, radius=_outer_radius(spec))
+        # A circle there is no hole (a boss's outline is one too): a callout states only what the
+        # reader read, so a hole it cannot read takes a note, never a callout it cannot check.
+        raise ValueError(f"{call}: no hole runs along the {view.name} view's line of sight there, so a callout "
+                         "there states what nothing checks. " + _holes_hint(seen, look))
     # Two holes on one line (a clevis) both match; the one whose mouth this view
     # looks into, nearest the viewer, is the one it calls out.
     here.sort(key=lambda h: (not _faces_viewer(h, look), -_dot(h.mouth, look)))
@@ -612,18 +601,16 @@ def _expand_holes(view: View, proj, bounds, dim: "_Dim", seen, look, warnings: l
                   features: _Features, slots, stated: dict) -> list["_Dim"]:
     kinds = _kinds(f for f in (*seen, *slots) if _faces_viewer(f, look))
     brk = view._break
-    if brk is not None and warnings is not None:
-        # A hole the break leaves out has no circle to point at, so it gets no
-        # callout here; said, so it is not dropped from the drawing unnoticed.
+    if brk is not None:
+        # A hole the break leaves out has no circle to point at, and holes() calls out every hole the
+        # view looks down: one it cannot would leave the sheet short of a hole, so it is refused.
         lost = [f for f in (*features.holes, *features.slots) if brk.low < f.mouth[brk.axis] < brk.high
                 and _looks_down(f.axis, look) and _faces_viewer(f, look) and id(f) not in stated]
         if lost:
-            warnings.append(f"{view.name}.holes(): {len(lost)} hole(s) or slot(s) at "
-                            f"{', '.join(_where(f.mouth) for f in lost[:6])}{', ...' if len(lost) > 6 else ''} "
-                            "are inside the break, which the view leaves out, so they are not called out; call "
-                            "them out in a view without the break.")
-            if not kinds:
-                return []
+            raise ValueError(f"{view.name}.holes(): {len(lost)} hole(s) or slot(s) at "
+                             f"{', '.join(_where(f.mouth) for f in lost[:6])}{', ...' if len(lost) > 6 else ''} "
+                             "are inside the break, which the view leaves out; call them out in a view without "
+                             f"the break, and the rest here with {view.name}.hole().")
     if not kinds:
         if warnings is not None:
             warnings.append(f"{view.name}.holes(): the {view.name} view looks down no hole or slot, so it calls "

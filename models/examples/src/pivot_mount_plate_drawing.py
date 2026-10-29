@@ -11,13 +11,11 @@ The requirements -- the datums and frames, the bore's fit and the installed bore
 limits, the key characteristics, materials, specs, finish and how the bushing is
 held -- are EXAMPLE values, written the way a design-intent interview records what
 the person confirmed. They are not a released design, and every sheet says so. The
-company's profile is the AEROSPACE one (ASME Y14.5-2018, CAGE CODE and DISTRIBUTION
-cells) with its two release categories added.
+company's profile is its own: ASME Y14.5-2018, CAGE CODE and DISTRIBUTION cells, and
+its two release categories.
 """
 
-from dataclasses import replace
-
-from cadgen.eng_drawing import AEROSPACE, Frame, Sheet, eng_drawing, parts_list
+from cadgen.eng_drawing import Frame, Profile, Sheet, eng_drawing, parts_list
 from pivot_mount_plate import (
     BOLT_HOLES, BORE_DIAMETER, BORE_X, BORE_Y, BUSHING_BORE, CORNER_RADIUS, LINER_THICKNESS, PIN_DIAMETER,
     PLATE_LENGTH, PLATE_THICKNESS, PLATE_WIDTH, pivot_mount_plate,
@@ -26,10 +24,10 @@ from pivot_mount_plate import (
 EXAMPLE = "EXAMPLE REQUIREMENTS FOR DEMONSTRATION; NOT A RELEASED DESIGN."
 DISTRIBUTION = "DISTRIBUTION STATEMENT A. APPROVED FOR PUBLIC RELEASE; DISTRIBUTION IS UNLIMITED."
 TITLE, NUMBER = "PIVOT MOUNT PLATE ASSY", "PMP-100"
-#: The design activity's profile: AEROSPACE's standard and cells, and its own names
-#: for the stages its drawings are released at.
-EXAMPLE_AERO = replace(AEROSPACE, name="EXAMPLE AERO",
-                       categories={"PRELIMINARY": "prototype", "RELEASED": "production"})
+#: The design activity's profile: the standard it tolerances by, the cells an
+#: aerospace drawing carries, and its own names for the stages it releases at.
+EXAMPLE_AERO = Profile("EXAMPLE AERO", "ASME Y14.5-2018", {"PRELIMINARY": "prototype", "RELEASED": "production"},
+                       fields=("CAGE CODE", "DISTRIBUTION"))
 RELEASE = dict(revision="A", author="text-to-cad", profile=EXAMPLE_AERO, category="RELEASED",
                company="EXAMPLE AERO CO.", fields={"CAGE CODE": "0ABC1", "DISTRIBUTION": "A"})
 
@@ -46,8 +44,10 @@ def pivot_mount_plate_drawing():
 
 def _assembly_sheet(parts) -> Sheet:
     """The bushing installed: a section through it, each part hatched as its
-    material, the layers of the lined bushing tabulated, the installed bore's limits."""
-    sheet = Sheet("A3", 2.0, title=TITLE, part_number=NUMBER, notes=[EXAMPLE, DISTRIBUTION], **RELEASE)
+    material, the layers of the lined bushing in a note, the installed bore's limits."""
+    layers = (f"ITEM 2 WALL {(BORE_DIAMETER - BUSHING_BORE) / 2:g} THK, SLEEVE, FULL LENGTH; "
+              f"ITEM 3 {LINER_THICKNESS:g} THK, BORE, FULL LENGTH.")
+    sheet = Sheet("A3", 2.0, title=TITLE, part_number=NUMBER, notes=[EXAMPLE, DISTRIBUTION, layers], **RELEASE)
     front, right = sheet.three_views(parts.assembly, views=("front", "right"))
     front.section("A", through=(BORE_X, BORE_Y, 0), parts=parts, materials=True)
     front.overall(reference=True)
@@ -64,8 +64,6 @@ def _assembly_sheet(parts) -> Sheet:
               joint="press_fit")
     wall.flag("ITEM 3 TO ITEM 2 PER AS81934", at=(liner, y, PLATE_THICKNESS / 2), joint="bond")
     sheet.parts_list(parts)
-    sheet.layer_table(parts, [("bushing", f"{(BORE_DIAMETER - BUSHING_BORE) / 2:g}", "SLEEVE, FULL LENGTH"),
-                              ("liner", f"{LINER_THICKNESS:g}", "BORE, FULL LENGTH")])
     return sheet
 
 

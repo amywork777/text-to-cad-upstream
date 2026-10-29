@@ -140,8 +140,9 @@ outside the sandbox once.
      depth, counterbore, countersink, a slot's width and length, the `4×` count
      and a bolt circle's `EQ SP ON ⌀60` are **read off the part**: do not type
      them. Anything you do
-     type is checked, and a value the part contradicts stops the script.
-     Only `thread=` (which the geometry cannot carry) and `label=` are yours;
+     type is checked, and a value the part contradicts stops the script, as
+     does a `hole()` where the part has no hole to read (a boss's circle is
+     none). Only `thread=` (which the geometry cannot carry) and `label=` are yours;
      with `thread=`, say how many of the identical bores are tapped (`count=`)
      and, for a blind one, the thread's depth (`depth=`).
      A chamfered bore end is part of its hole: it is called out as `⌵`, with
@@ -180,8 +181,6 @@ outside the sandbox once.
    - *"redundant: …"*: dimensions that state one size twice, every one in the
      loop named. Make one of them reference, or leave it out; which one is a
      design decision (the one that matters is toleranced).
-   - *"a basic dimension, and no GD&T frame … bounds it"*: add the frame the
-     person gave for that feature, or make the dimension toleranced.
    - *"measures blank paper"*: a dimension's points miss the view. Usually the
      part was built from a corner and the script assumed it was centred.
    - *"annotation overlaps"*, *"views crowded"*, *"leader crosses the view"*,
@@ -189,8 +188,6 @@ outside the sandbox once.
      not enough paper where the annotation is. The message names the view and
      side asking most, and a larger sheet or smaller scale; moving that
      annotation to a view with room to spare often does instead.
-   - *"was guessed"*: a dimension's points differ in both directions about
-     equally; say which with `orientation=`.
    - *"separate solids"*: the part is in pieces, usually a cut that runs right
      through the model. Fix the model before drawing it, or, if it is an
      assembly, draw it as one (below).
@@ -276,8 +273,8 @@ return sheets
 - A layered part (a phone case's shell, tape and lining) is a small assembly:
   `view.section("A", parts=parts, materials=True)` hatches each layer as its material family
   (`parts.set(n, family="plastic")`), fills a layer too thin to hatch solid
-  and names it, and draws a material key, a row per layer; `sheet.layer_table(parts, rows)` lists each layer's
-  thickness and coverage as the person states them.
+  and names it, and draws a material key, a row per layer; each layer's thickness and coverage,
+  as the person states them, go in a note.
 
 Parts lists, balloons on a custom GA, and what the script prints about them:
 [assemblies reference](references/assemblies.md).

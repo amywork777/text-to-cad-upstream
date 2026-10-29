@@ -95,7 +95,7 @@ shows:
 | `perforated_plate.py` | — | Plate with two rows of holes, dowel holes, a bore, a slot and rounded corners (Aluminum 6061-T6) |
 | `perforated_plate_drawing.py` | `PDF/perforated_plate_drawing.pdf` | A hole table: each hole and the slot tagged, positioned from the corner, sized from the part; the corner radius called out |
 | `pivot_mount_plate.py` | — | A plate with four bolt holes and a bore, the lined bushing pressed in it: a sleeve and its PTFE fabric liner, each a part (Aluminum 7075-T6, Stainless 303, PTFE) |
-| `pivot_mount_plate_drawing.py` | `PDF/pivot_mount_plate_drawing.pdf` | GD&T on an AEROSPACE-profile sheet (ASME Y14.5, a company's release category, CAGE CODE and DISTRIBUTION): the bushing installed, in a section hatched by material, with its layer table and the installed bore's limits as a key characteristic; then the plate, datums A, B and C on its faces, the bolt holes and the bore at true position from basic dimensions, flatness and perpendicularity qualifying the datums |
+| `pivot_mount_plate_drawing.py` | `PDF/pivot_mount_plate_drawing.pdf` | GD&T on an aerospace company's own `Profile` (ASME Y14.5, a company's release category, CAGE CODE and DISTRIBUTION): the bushing installed, in a section hatched by material, its layers in a note, and the installed bore's limits as a key characteristic; then the plate, datums A, B and C on its faces, the bolt holes and the bore at true position from basic dimensions, flatness and perpendicularity qualifying the datums |
 | `stepped_shaft_keyway_drawing.py` | `PDF/stepped_shaft_keyway_drawing.pdf` | Diameters on the profile, the keyway located, a section through it, a 5:1 detail of the end chamfer |
 
 `electronics_enclosure_base_import.py` keeps the drawing's old read: `read_step` of

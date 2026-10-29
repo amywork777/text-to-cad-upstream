@@ -77,7 +77,7 @@ from cadgen._internal.drawing_base import (
 )
 from cadgen._internal.drawing_gdt import Frame, frame_size
 from cadgen._internal.drawing_profile import (
-    AEROSPACE, GENERIC, Profile, STAGES, _check_general_tolerance, _general_tolerance_note, _STAGE_LABELS,
+    GENERIC, Profile, STAGES, _check_general_tolerance, _general_tolerance_note, _STAGE_LABELS,
     _standard_note,
 )
 from cadgen._internal.drawing_render import _render_sheet
@@ -96,7 +96,7 @@ _GENERAL_PROFILE = "UNLESS OTHERWISE SPECIFIED, ALL SURFACES"
 #: The room a flag note's flag takes where another note's number is printed.
 _FLAG_ROOM = " " * 7
 
-__all__ = ["eng_drawing", "Sheet", "View", "Frame", "Profile", "GENERIC", "AEROSPACE", "STAGES", "JOINTS",
+__all__ = ["eng_drawing", "Sheet", "View", "Frame", "Profile", "GENERIC", "STAGES", "JOINTS",
            "SHEET_SIZES", "parts_list", "PartsList", "Item", "assembly_sheets", "AssemblySheets", "geometry_notes"]
 
 
@@ -825,8 +825,8 @@ class Sheet:
     #: sets what the completeness report asks the sheet to define. None leaves it
     #: unsaid and unchecked.
     stage: str | None = None
-    #: Whose conventions the drawing follows (GENERIC, AEROSPACE or a company's
-    #: own Profile): its tolerancing standard, title cells and key mark.
+    #: Whose conventions the drawing follows (GENERIC or a company's own
+    #: Profile): its tolerancing standard, title cells and key mark.
     profile: Profile | None = None
     #: One of the profile's own category names, in place of a stage.
     category: str = ""
@@ -847,8 +847,6 @@ class Sheet:
     #: The flag notes its views flag, in the order first flagged: they follow the
     #: notes, each numbered in its flag.
     _flags: list[str] = field(default_factory=list, init=False, repr=False)
-    #: Set by :meth:`layer_table`: (parts list, rows, corner or None).
-    _layer_table: tuple | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.size is not None and self.size not in SHEET_SIZES:
@@ -907,7 +905,7 @@ class Sheet:
         if self.stage is not None and self.stage not in STAGES:
             raise ValueError(f"unknown stage {self.stage!r}; one of {', '.join(STAGES)}")
         if self.profile is not None and not isinstance(self.profile, Profile):
-            raise TypeError(f"profile takes a Profile (GENERIC, AEROSPACE or your own), got {self.profile!r}")
+            raise TypeError(f"profile takes a Profile (GENERIC or your own), got {self.profile!r}")
         if self.category:
             if self.profile is None:
                 raise ValueError(f"category={self.category!r} is a profile's name for a stage; give the profile "
@@ -1060,24 +1058,6 @@ class Sheet:
     def _chooses(self) -> bool:
         """Whether the sheet settles its own size or scale."""
         return self.size is None or self.scale is None
-
-    def layer_table(self, parts: PartsList, rows: Sequence[tuple], *, at=None) -> "Sheet":
-        """A table of a layered part's layers, as the person states them: each row
-        is ``(item, thickness, coverage)`` -- the item by number or name, its
-        thickness and where it covers in the person's words ("0.2", "BACK FACE
-        ONLY"); material and spec come from the item. The table goes in the free
-        paper nearest the sheet's section, or with its top-left corner at ``at``."""
-        if not isinstance(parts, PartsList):
-            raise TypeError(f"layer_table() takes the PartsList that parts_list() returns, got {parts!r}")
-        checked = []
-        for row in rows:
-            if isinstance(row, (str, bytes)) or len(row) != 3 or not all(isinstance(v, str) and v for v in row[1:]):
-                raise ValueError(f"each layer_table row is (item, thickness, coverage), the thickness and coverage "
-                                 f"as the person states them; got {row!r}")
-            parts[row[0]]  # refuses an item the list does not have
-            checked.append(tuple(row))
-        self._layer_table = (parts, checked, None if at is None else _pair("at", at))
-        return self
 
     def three_views(self, shape, *, gap: float | None = None, hidden: bool = True, centre_marks: bool = True,
                     iso: bool = False, views: Sequence[str] = _VIEW_NAMES) -> tuple[View, ...]:

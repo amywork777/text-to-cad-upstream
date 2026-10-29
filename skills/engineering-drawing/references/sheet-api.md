@@ -116,8 +116,8 @@ build123d shape works: a drawing takes geometry, not a file.
   "UNLESS OTHERWISE SPECIFIED, ALL SURFACES" and the frame. Its datums must be
   defined on the sheet.
 - `stage`: `"concept"`, `"prototype"` or `"production"`, printed in the title
-  block's band and checked by the report. `profile` (`GENERIC`, `AEROSPACE` or
-  a `Profile`) sets the tolerancing standard, its notes, the band's extra cells
+  block's band and checked by the report. `profile` (`GENERIC` or
+  a company's own `Profile`) sets the tolerancing standard, its notes, the band's extra cells
   and the key characteristic mark; `category` is one of the profile's names
   for a stage; `company` and `fields` fill the band's cells. With none of
   these the title block has no band. See [intent and GD&T](intent-and-gdt.md).
@@ -167,14 +167,6 @@ draws the face and what lies within its outline; the rest of the part is
 foreshortened there. A face square to a principal view is refused: draw that
 view. Give it dimensions and callouts like any view; `holes()` on it calls out
 the holes in that face.
-
-### `sheet.layer_table(parts, rows, at=None)`
-
-A layered part's layers: each row is `(item, thickness, coverage)`, the item by
-number or name, the thickness and where it covers in the person's words
-(`("tape", "0.2", "PERIMETER 6 WIDE")`); ITEM, MATERIAL and SPEC come from the
-item. Placed in the free paper nearest the sheet's section, or with its
-top-left corner at `at`.
 
 ### `sheet.view(shape, name, at=(x, y), label=None, hidden=True, centre_marks=True, scale=None)`
 
@@ -345,14 +337,15 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | `front dim 2: ... measures blank paper` | a dimension's points miss the view |
 | `annotation overlaps: '120' is printed over 'TOP' ...` | two pieces of text collide |
 | `views crowded: ... Sheet("A2") or Sheet(scale=0.5) gives them room` | the views' annotation needs more paper |
-| `SECTION A-A has no view on this sheet that sees its cutting plane ...` | add the view that shows the plane |
-| `front dim 0: ... which one it measures was guessed ...` | pass `orientation=` |
+| `SECTION A-A has no view on this sheet that sees its cutting plane ...` (stops the script) | add the view that shows the plane |
+| `front dim 0: ... so it could measure either ...` (stops the script) | pass `orientation=` |
 | `the part in the top view is 2 separate solids ...` | the model is in pieces |
 | `DETAIL B: no free paper on A3 for a 50 mm circle at 10:1 ...` | give `at=`, a smaller `scale=`, or a larger sheet |
 | `VIEW C: no free paper on A3 for it at 1:1 ...` | the same, for an auxiliary view |
 | `top.hole_table(): no free paper on A3 for a 70 x 48 mm table ...` | give the table `at=`, or a larger sheet or smaller scale |
 | `top.hole_table(): the top view looks down no hole or slot` | tabulate the view that looks down the holes |
 | `front dim 3: (250, 0, 0) is inside the break ...` (stops the script) | dimension to a point outside the broken stretch |
+| `top.holes(): 1 hole(s) or slot(s) at ... are inside the break ...` (stops the script) | call them out in a view without the break, and the rest with `hole()` |
 | `incomplete: sheet 3 (PIN): the turned diameter ⌀6 ...` | on a drawing of several parts, each line names its sheet |
 | `incomplete: 4× ⌀5.5 THRU is not located along X and Y ...` | no dimension ties the feature to an edge, a datum or a located feature; dimension it, tabulate it, or state the symmetry it sits on |
 | `incomplete: the face at Z = 8 (square to Z) is not located ...` | a step or shoulder is not placed; dimension it from an edge or a located face |
@@ -367,7 +360,7 @@ note giving the size (`CHAMFER 0.5 × 45°`, `4 FILLETS R1`) states either.
 | `incomplete: a prototype drawing states a general tolerance ...` | what the sheet's stage asks for; ask the person |
 | `incomplete: a production drawing locates its features from datums ...` | mark the datums the person gave with `view.datum` |
 | `note: a production drawing marks its key characteristics ...` | ask whether any feature is one; `key=True` marks it |
-| `top dim 2: a basic dimension, and no GD&T frame on the sheet bounds it ...` | add the frame, or make it toleranced |
+| `top dim 2: a basic dimension, and no GD&T frame on the sheet bounds it ...` (stops the script) | add the frame, or make it toleranced |
 | `sheet 2 (BRACKET), top hole 0: its frame names datum A, which no view of this sheet defines ...` | define the datum on that sheet with `view.datum` (a refusal) |
 | `the title block's MATERIAL '...' does not fit its 60 mm cell ...` | shorten the value (a refusal) |
 | `0.00001: a stated tolerance prints exactly as given, to at most 4 decimal places` | state it to four places or fewer (a refusal) |

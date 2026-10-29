@@ -5,9 +5,8 @@ The stage (concept, prototype, production) is the same everywhere: it says how
 much the drawing must define, and the completeness report checks each sheet
 against it. A profile is a company's or an industry's conventions: the
 tolerancing standard its drawings are read by, its own names for the stages,
-the extra title-block cells it asks for, the letters that mark a key
-characteristic, and the spec family a design-intent interview suggests. A
-profile carries conventions, never numbers: every value that prints as a
+the extra title-block cells it asks for and the letters that mark a key
+characteristic. A profile carries conventions, never numbers: every value that prints as a
 requirement is the person's.
 
 Part of :mod:`cadgen.eng_drawing`; nothing here imports the kernel or ezdxf at
@@ -51,15 +50,15 @@ class Profile:
     them prints it in place of the stage. ``fields`` names extra title-block
     cells (``"CAGE CODE"``), filled per sheet from ``Sheet(fields=...)`` and
     blank until then. ``characteristic_mark`` is the boxed letters that mark a
-    key characteristic: AS9103 leaves the symbol to the customer. ``spec_family``
-    is the material specifications the interview suggests ("SAE AMS")."""
+    key characteristic: AS9103 leaves the symbol to the customer. A company's
+    own conventions are one of these: ``Profile("ACME", "ASME Y14.5-2018",
+    fields=("CAGE CODE",))``."""
 
     name: str
     standard: str
     categories: Mapping[str, str] = field(default_factory=dict)
     fields: tuple[str, ...] = ()
     characteristic_mark: str = "KC"
-    spec_family: str = ""
 
     def __post_init__(self) -> None:
         if self.standard not in STANDARDS:
@@ -83,11 +82,6 @@ class Profile:
 #: ISO GPS: ISO 2768 or ISO 22081 general tolerances, ISO 1101 frames, the
 #: ISO 7200 sheet the drawing already is.
 GENERIC = Profile("GENERIC", "ISO GPS", {})
-#: ASME Y14.5-2018, with the cells an aerospace drawing carries: the CAGE code
-#: of the design activity, and the distribution statement's letter (its full
-#: wording goes in a note).
-AEROSPACE = Profile("AEROSPACE", "ASME Y14.5-2018", {}, fields=("CAGE CODE", "DISTRIBUTION"),
-                    spec_family="SAE AMS")
 
 
 def _standard_note(profile: Profile | None) -> list[str]:

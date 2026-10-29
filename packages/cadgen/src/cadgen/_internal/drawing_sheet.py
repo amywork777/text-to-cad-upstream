@@ -552,14 +552,13 @@ _TABLE_AIR = 4.0
 class _SheetTable(NamedTuple):
     """A captioned table on the sheet's paper: its column names, its rows, a swatch
     per row to draw in the first column (a material key's hatch: family and
-    variant), the point it goes nearest, and the corner the author gave, if any."""
+    variant), and the point it goes nearest."""
 
     caption: str
     names: tuple[str, ...]
     rows: list[tuple[str, ...]]
     swatches: list[tuple[str, int]]
     near: tuple[float, float]
-    corner: tuple[float, float] | None = None
 
     def widths(self) -> list[float]:
         """Each column as wide as its widest entry: a table cut short is wrong."""

@@ -1257,6 +1257,21 @@ class FromThePartTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "looks down no hole"):
             _render_sheet(sheet, index=1, count=1, label="side")
 
+    def test_a_typed_hole_over_a_boss_is_refused_not_printed(self) -> None:
+        # A ⌀15 boss draws a ⌀15 circle: a callout typed over it once printed "4× ⌀15 THRU" on a solid boss.
+        import build123d as bd
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        bottom = (bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)
+        part = bd.Box(80, 60, 10, align=bottom) + bd.Pos(25, 0, 10) * bd.Cylinder(7.5, 6, align=bottom)
+        sheet = Sheet("A3")
+        sheet.view(part, "top", at=(200, 150)).hole((25, 0, 16), 15, thru=True, count=4)
+        with self.assertRaisesRegex(ValueError, r"no hole runs along the top view's line of sight there, so a "
+                                                r"callout there states what nothing checks"):
+            _render_sheet(sheet, index=1, count=1, label="boss")
+
     def test_a_counterbore_on_the_far_side_belongs_to_the_other_view(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet
@@ -1601,19 +1616,49 @@ class ColdTrialTests(unittest.TestCase):
         self.assertEqual(_callouts(_render_sheet(sheet, index=1, count=1, label="both")),
                          ["%%c10 THRU   ⌵ %%c12 × 90° BOTH ENDS"])
 
-    def test_a_guessed_orientation_is_said(self) -> None:
+    def test_a_hole_inside_a_break_is_refused_not_left_off(self) -> None:
+        # A ⌀1 hole is under the break's own check, so holes() once dropped it with only a warning.
+        import build123d as bd
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        up = (bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)
+        bar = bd.Box(600, 40, 10, align=up) - bd.Pos(250, 0, 0) * bd.Cylinder(3, 10, align=up) \
+            - bd.Cylinder(0.5, 10, align=up)
+        sheet = Sheet("A3")
+        top = sheet.view(bar, "top", at=(200, 150))
+        top.broken((-150, 0, 5), (150, 0, 5))
+        top.holes()
+        with self.assertRaisesRegex(ValueError, r"top\.holes\(\): 1 hole\(s\) or slot\(s\) at \(0, 0, 10\) are "
+                                                r"inside the break"):
+            _render_sheet(sheet, index=1, count=1, label="lost")
+
+    def test_a_section_whose_plane_no_view_shows_is_refused(self) -> None:
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_counterbored(), "front", at=(140, 110)).section("A")
+        with self.assertRaisesRegex(ValueError, r"SECTION A-A has no view on this sheet that sees its cutting plane "
+                                                r"edge-on, so nothing shows where it cuts; add the top view"):
+            _render_sheet(sheet, index=1, count=1, label="alone")
+
+    def test_a_dimension_that_could_measure_either_span_is_refused(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet
 
         sheet = Sheet("A4")
         front = sheet.view(_plate(), "front", at=(140, 110))
-        front.dim((40, -25, 0), (34, -25, 6))
         front.dim((-40, -25, 0), (40, -25, 6))  # 80 across, 6 up: no doubt which
-        notices: list[str] = []
-        _render_sheet(sheet, index=1, count=1, label="guess", warnings=notices)
-        guessed = [n for n in notices if "was guessed" in n]
-        self.assertEqual(len(guessed), 1, notices)
-        self.assertIn("front dim 0", guessed[0])
+        _render_sheet(sheet, index=1, count=1, label="clear")
+        front.dim((40, -25, 0), (34, -25, 6))   # 6 across, 6 up: either
+        with self.assertRaisesRegex(ValueError, r"front dim 1: its points are 6 apart across and 6 up, so it could "
+                                                r"measure either\. Pass orientation="):
+            _render_sheet(sheet, index=1, count=1, label="either")
+        sheet = Sheet("A4")
+        sheet.view(_plate(), "front", at=(140, 110)).dim((40, -25, 0), (34, -25, 6), orientation="v")
+        _render_sheet(sheet, index=1, count=1, label="said")
 
     def test_a_part_that_is_several_solids_is_said(self) -> None:
         from build123d import Align, Box, Pos
@@ -3345,8 +3390,11 @@ class DimensionKindTests(unittest.TestCase):
     def test_a_basic_dimensions_value_is_boxed(self) -> None:
         from cadgen._internal.drawing_render import _render_sheet
 
+        from cadgen.eng_drawing import Frame
+
         sheet, top, front = self._block_sheet()
         top.dim((-20, -15, 10), (20, -15, 10), basic=True)
+        top.frame((0, 10, 10), Frame("flatness", 0.05))     # what bounds it
         doc = _render_sheet(sheet, index=1, count=1, label="basic", warnings=[])
         (dim,) = doc.modelspace().query("DIMENSION")
         self.assertLess(dim.override().get("dimgap"), 0, "the DXF says basic too")
@@ -3466,7 +3514,7 @@ class DimensionKindTests(unittest.TestCase):
         from build123d import Align, Box, Cylinder
 
         from cadgen._internal.drawing_render import _render_sheet
-        from cadgen.eng_drawing import Sheet
+        from cadgen.eng_drawing import Frame, Sheet
 
         up = (Align.CENTER, Align.CENTER, Align.MIN)
         sheet = Sheet("A3", 1.0)
@@ -3474,6 +3522,7 @@ class DimensionKindTests(unittest.TestCase):
         top.diameter((0, 0, 10), reference=True)
         front.overall(reference=True)
         top.angle((-30, -20, 10), (30, -20, 10), (-30, 20, 10), basic=True)
+        top.frame((20, 10, 10), Frame("flatness", 0.05))    # what bounds it
         doc = _render_sheet(sheet, index=1, count=1, label="kinds", warnings=[])
         self.assertIn("(%%c16)", _callouts(doc))
         self.assertTrue({"(60)", "(10)"} <= set(_dim_texts(doc)), _dim_texts(doc))
@@ -3506,14 +3555,14 @@ class DimensionKindTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "4 decimal places"):
             front.dim((-20, 0, 0), (20, 0, 0), limits=(39.99995, 40.0))
 
-    def test_a_basic_dimension_without_a_frame_is_reported(self) -> None:
+    def test_a_basic_dimension_without_a_frame_is_refused(self) -> None:
+        # It is exact by definition: with no frame to bound it, it prints a size nobody can make.
         from cadgen._internal.drawing_render import _render_sheet
 
         sheet, top, front = self._block_sheet()
         top.dim((-20, -15, 10), (20, -15, 10), basic=True)
-        warnings: list = []
-        _render_sheet(sheet, index=1, count=1, label="lonely", warnings=warnings)
-        self.assertTrue(any(w.startswith("top dim 0: a basic dimension") for w in warnings), warnings)
+        with self.assertRaisesRegex(ValueError, r"top dim 0: a basic dimension, and no GD&T frame on the sheet"):
+            _render_sheet(sheet, index=1, count=1, label="lonely")
 
 
 class GdtTests(unittest.TestCase):
@@ -3701,13 +3750,13 @@ class StageProfileTests(unittest.TestCase):
             Profile("ACME", "DIN 7167", {})
 
     def test_a_general_tolerance_from_the_other_standard_is_refused(self) -> None:
-        from cadgen.eng_drawing import AEROSPACE, GENERIC, Sheet
+        from cadgen.eng_drawing import GENERIC, Sheet
 
         with self.assertRaisesRegex(ValueError, "ASME Y14.5-2018"):
-            Sheet("A3", profile=AEROSPACE, general_tolerance="ISO 2768-m")
+            Sheet("A3", profile=_aero(), general_tolerance="ISO 2768-m")
         with self.assertRaisesRegex(ValueError, "ISO GPS"):
             Sheet("A3", profile=GENERIC, general_tolerance="ASME Y14.5 BLOCK")
-        notes = Sheet("A3", profile=AEROSPACE, general_tolerance="±0.1").drawn_notes()
+        notes = Sheet("A3", profile=_aero(), general_tolerance="±0.1").drawn_notes()
         self.assertEqual(notes, ["DIMENSIONS AND TOLERANCES PER ASME Y14.5-2018.",
                                  "UNLESS OTHERWISE SPECIFIED, TOLERANCES ARE ±0.1."])
 
@@ -3790,25 +3839,25 @@ class StageProfileTests(unittest.TestCase):
             _render_sheet(sheet, index=1, count=1, label="long")
 
     def test_a_profiles_extra_fields_print_blank_until_given(self) -> None:
-        from cadgen.eng_drawing import AEROSPACE, Sheet
+        from cadgen.eng_drawing import Sheet
 
-        texts = self._texts(self._sheet(profile=AEROSPACE, company="ACME AERO")[0], "TITLE")
+        texts = self._texts(self._sheet(profile=_aero(), company="ACME AERO")[0], "TITLE")
         for caption in ("COMPANY", "ACME AERO", "STAGE", "CAGE CODE", "DISTRIBUTION"):
             self.assertIn(caption, texts)
-        texts = self._texts(self._sheet(profile=AEROSPACE, fields={"CAGE CODE": "1ABC2"})[0], "TITLE")
+        texts = self._texts(self._sheet(profile=_aero(), fields={"CAGE CODE": "1ABC2"})[0], "TITLE")
         self.assertIn("1ABC2", texts)
         with self.assertRaisesRegex(ValueError, "CAGE CODE"):
             Sheet("A3", fields={"CAGE CODE": "1ABC2"})
         with self.assertRaisesRegex(ValueError, "EXPORT"):
-            Sheet("A3", profile=AEROSPACE, fields={"EXPORT": "EAR99"})
+            Sheet("A3", profile=_aero(), fields={"EXPORT": "EAR99"})
 
     def test_a_key_characteristic_is_marked(self) -> None:
-        from cadgen.eng_drawing import AEROSPACE, Profile
+        from cadgen.eng_drawing import Profile
 
-        sheet, top, front = self._sheet(profile=AEROSPACE, stage="production")
+        sheet, top, front = self._sheet(profile=_aero(), stage="production")
         self.assertTrue(any(line.startswith("note:") and "key characteristic" in line
                             for line in self._report(sheet)))
-        sheet, top, front = self._sheet(profile=AEROSPACE, stage="production", hole_key=True)
+        sheet, top, front = self._sheet(profile=_aero(), stage="production", hole_key=True)
         top.dim((-20, -15, 10), (10, -15, 10), key=True)
         texts = self._texts(sheet, "DIM")
         self.assertEqual(texts.count("KC"), 2, "the dimension's mark and the callout's")
@@ -4057,7 +4106,7 @@ class MaterialSectionTests(unittest.TestCase):
     """A section hatched by material (``materials=True``): each cut as what it is,
     for a layered part where the materials are the point."""
 
-    def _cut(self, parts, scale: float = 2.0, **table):
+    def _cut(self, parts, scale: float = 2.0):
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen.eng_drawing import Sheet
 
@@ -4065,8 +4114,6 @@ class MaterialSectionTests(unittest.TestCase):
         front = sheet.view(parts.assembly, "front", at=(150, 120), hidden=False).section("A", parts=parts,
                                                                                          materials=True)
         sheet.view(parts.assembly, "top", at=(150, 210), hidden=False)
-        if table:
-            sheet.layer_table(parts, table["rows"])
         warnings: list = []
         doc = _render_sheet(sheet, index=1, count=1, label="layers", warnings=warnings)
         return doc, front, warnings
@@ -4166,20 +4213,21 @@ class MaterialSectionTests(unittest.TestCase):
         doc, _front, _warnings = self._cut(parts_list(Compound(children=[lone])))
         self.assertNotIn("MATERIAL KEY", [e.dxf.text for e in doc.modelspace().query("TEXT")], "one part needs none")
 
-    def test_the_layer_table_lists_each_layer(self) -> None:
+    def test_a_section_by_parts_is_of_the_parts_lists_assembly(self) -> None:
         from cadgen.eng_drawing import Sheet
 
         parts = _stack(("shell", 4, "aluminium"), ("base", 6, "plastic"))
-        parts.set("shell", spec="AMS 4027")
-        doc, _front, warnings = self._cut(parts, rows=[("shell", "4.0", "FULL"), ("base", "6.0", "FULL")])
-        texts = [e.dxf.text for e in doc.modelspace().query("TEXT")]
-        for words in ("LAYER TABLE", "ITEM", "THICKNESS", "COVERAGE", "SHELL", "AMS 4027", "4.0", "6.0", "FULL"):
-            self.assertIn(words, texts)
-        self.assertFalse([w for w in warnings if "overlaps" in w], warnings)
-        with self.assertRaisesRegex(ValueError, "thickness"):
-            Sheet("A3").layer_table(parts, [("shell", "4.0")])
         with self.assertRaisesRegex(ValueError, "parts.assembly"):
             Sheet("A3").view(_part(), "front", at=(100, 100)).section("A", parts=parts)
+
+
+def _aero(**changes):
+    """An aerospace company's profile, as its project writes one: Y14.5, and the CAGE CODE and
+    DISTRIBUTION cells."""
+    from cadgen.eng_drawing import Profile
+
+    return Profile(**{"name": "AERO", "standard": "ASME Y14.5-2018", "fields": ("CAGE CODE", "DISTRIBUTION"),
+                      **changes})
 
 
 def _bushed_plate():
@@ -4208,17 +4256,15 @@ def _bushed_plate():
 
 class AerospaceExampleTests(unittest.TestCase):
     """Every requirement the vocabulary has, on one released aerospace drawing: a
-    company's profile built on AEROSPACE, datums on real faces, frames, basic,
-    toleranced and limit sizes, key characteristics, and the installed bushing cut and
-    hatched by material with its layer table."""
+    company's own Y14.5 profile, datums on real faces, frames, basic, toleranced and
+    limit sizes, key characteristics, and the installed bushing cut and hatched by
+    material."""
 
     def _drawing(self):
-        from dataclasses import replace
-
-        from cadgen.eng_drawing import AEROSPACE, Frame, Sheet
+        from cadgen.eng_drawing import Frame, Sheet
 
         parts = _bushed_plate()
-        aero = replace(AEROSPACE, name="EXAMPLE AERO", categories={"PRELIMINARY": "prototype", "RELEASED": "production"})
+        aero = _aero(name="EXAMPLE AERO", categories={"PRELIMINARY": "prototype", "RELEASED": "production"})
         release = dict(profile=aero, category="RELEASED", company="EXAMPLE AERO CO.",
                        fields={"CAGE CODE": "0ABC1", "DISTRIBUTION": "A"})
         assembly = Sheet("A3", 2.0, title="PIVOT MOUNT PLATE ASSY", **release)
@@ -4232,7 +4278,6 @@ class AerospaceExampleTests(unittest.TestCase):
         wall.flag("ITEM 2 INTO ITEM 1", at=(58, 35, 5), joint="press_fit")
         wall.flag("ITEM 3 TO ITEM 2 PER AS81934", at=(56.25, 35, 5), joint="bond")
         assembly.parts_list(parts)
-        assembly.layer_table(parts, [("bushing", "1.75", "SLEEVE, FULL LENGTH"), ("liner", "0.25", "BORE")])
 
         plate = Sheet(size=None, scale=None, title="MOUNT PLATE", material="AL 7075-T651", spec="AMS 4045",
                       finish="CHEM FILM", general_tolerance="±0.1", **release)
@@ -4299,7 +4344,7 @@ class AerospaceExampleTests(unittest.TestCase):
                         "the plate as aluminium, the sleeve as steel, the liner as fabric in the detail")
         self.assertTrue([h for h in hatches if h.dxf.solid_fill], "the liner, too thin to hatch at 2:1")
         texts = [e.dxf.text for e in msp.query("TEXT")]
-        for words in ("MATERIAL KEY", "LAYER TABLE", "THICKNESS", "SLEEVE, FULL LENGTH", "AS81934", "KC"):
+        for words in ("MATERIAL KEY", "AS81934", "KC"):
             self.assertIn(words, texts)
         limits = [d.dxf.text for d in msp.query("DIMENSION") if "\\S" in d.dxf.text]
         self.assertEqual(limits, ["%%c{\\H0.70x;\\S12.025^ 12.000;}"], "the installed bore's ⌀, between its limits")
@@ -4764,7 +4809,7 @@ class RedundancyTests(unittest.TestCase):
 
         from cadgen._internal.drawing_render import _render_sheet
         from cadgen._internal.drawing_report import _redundant
-        from cadgen.eng_drawing import Sheet
+        from cadgen.eng_drawing import Frame, Sheet
 
         sheet = Sheet("A3", 1.0)
         top, front = sheet.three_views(Box(60, 40, 8, align=(Align.MIN, Align.MIN, Align.MIN)),
@@ -4772,6 +4817,8 @@ class RedundancyTests(unittest.TestCase):
         front.overall()
         front.dim((0, 0, 8), (20, 0, 8))
         front.dim((20, 0, 8), (60, 0, 8), **last)
+        if last.get("basic"):
+            top.frame((30, 20, 8), Frame("flatness", 0.05))  # what bounds a basic one
         facts = _facts()
         _render_sheet(sheet, index=1, count=1, label="plate", warnings=[], facts=facts)
         return _redundant(facts)
@@ -5024,14 +5071,14 @@ class AssemblySetReviewTests(unittest.TestCase):
         housing.label, sleeve.label, rod.label = "housing", "sleeve", "rod"
         parts = parts_list(Compound(children=[housing, sleeve, rod], label="rig"))
         sheet = Sheet("A3", 2.0)
-        front = sheet.view(parts.assembly, "front", at=(150, 140), hidden=False).section("A", parts=parts)
+        front = sheet.view(parts.assembly, "front", at=(150, 100), hidden=False).section("A", parts=parts)
+        sheet.view(parts.assembly, "top", at=(150, 240), hidden=False)    # where the plane is shown
         front.balloons(parts)
         front.flag("BOND SLEEVE", item="sleeve")
         doc = _render_sheet(sheet, index=1, count=1, label="flag")
         keyed = {number: point for number, _centre, point in _balloons(doc)}
-        [leader] = doc.modelspace().query("LEADER")
-        start = (leader.vertices[0].x, leader.vertices[0].y)
-        self.assertLess(math.dist(start, keyed[parts["sleeve"].number]), 1e-6,
+        starts = [(leader.vertices[0].x, leader.vertices[0].y) for leader in doc.modelspace().query("LEADER")]
+        self.assertTrue(any(math.dist(start, keyed[parts["sleeve"].number]) < 1e-6 for start in starts),
                         "the flag's leader starts where the sleeve's balloon keys its cut, not on the half cut away")
 
     def test_interfaces_count_each_contact(self) -> None:

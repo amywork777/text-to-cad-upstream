@@ -172,7 +172,6 @@ parts.set("tape", material="3M VHB 4910")
 sheet = Sheet("A3", 5.0, title="CASE BACK")
 front = sheet.view(parts.assembly, "front", at=(180, 170), hidden=False).section("A", parts=parts, materials=True)
 front.flag("15 PSI, 72 H DWELL", at=(10, 0, 1.6), joint="tape")   # a point on the tape
-sheet.layer_table(parts, [("shell", "3.0", "FULL"), ("tape", "0.2", "PERIMETER 6 WIDE")])
 ```
 
 With `materials=True` each layer is hatched as its family, neighbours of one
