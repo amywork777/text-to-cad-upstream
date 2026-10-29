@@ -206,9 +206,10 @@ Laws 1 to 13 and 19 to 23 are the engine's; 14 to 18 hold for the whole package.
     after the person's no) and the daily version check (`updates.py`). Both run in the
     background and fail silently: no start, command, build, request or tool call waits on them.
     A command sends nothing itself: what it counted -- an engine verb's build, export or
-    snapshot (`_internal/engine_telemetry.py`, cadgen's observer of the engine), a drawing, a
-    crash -- is kept in a small file beside the settings (`analytics.spool`), which the CAD app's
-    and the viewer's background sends take, and a command that finds it has waited more than a
+    snapshot (`_internal/engine_telemetry.py`, cadgen's observer of the engine), a drawing or a
+    work instruction (`analytics.counted`), a crash -- is kept in a small file beside the
+    settings (`analytics.spool`), which the CAD app's and the viewer's background sends take,
+    and a command that finds it has waited more than a
     window, with no other process sending, starts a sender detached that sends it and exits
     (`_internal/telemetry_send.py`). A process that exits sends nothing either: its last batch is
     kept beside the settings, and the next process that sends sends it, in the background. One

@@ -1053,8 +1053,8 @@ def work_instruction(func: Callable[..., Any] | None = None, *, out: str | Path 
             print(f"wrote {target} ({pages} page{'s' if pages != 1 else ''})")
             return [target]
 
-        from cadgen.eng_drawing import _counted
+        from cadgen import analytics
 
-        return _counted(run, "work_instruction")  # counted as a drawing is
+        return analytics.counted(run, "work_instruction")
 
     return apply(func) if func is not None else apply

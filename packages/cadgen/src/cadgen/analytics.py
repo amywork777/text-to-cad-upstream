@@ -1236,6 +1236,30 @@ def hand_over(counts: dict[str, Any]) -> bool:
         return False
 
 
+def counted(run: Callable[..., Any], feature: str) -> Callable[..., Any]:
+    """``run``, a script's document decorator (``@eng_drawing``, ``@work_instruction``), counted as
+    ``feature`` (``FEATURES``): a document made, or a mistake in cadgen's own code making one. It is made
+    in the script's own process, which sends nothing itself: both are kept with a command's counts
+    (``hand_over``), and neither ever changes what the document does."""
+    if feature not in FEATURES:
+        raise ValueError(f"{feature!r} is not a feature; FEATURES are {', '.join(sorted(FEATURES))}")
+
+    @functools.wraps(run)
+    def made(*args: Any, **kwargs: Any) -> Any:
+        try:
+            document = run(*args, **kwargs)
+        except Exception as error:
+            report(error, "build", bugs_only=True)  # the person's own mistakes are theirs
+            raise
+        try:
+            hand_over({"features": [feature]})
+        except Exception:  # noqa: BLE001 - a count never fails the document it counts
+            LOG.debug("could not count a document", exc_info=True)
+        return document
+
+    return made
+
+
 def spool(counts: dict[str, Any], *, path: Path | None = None) -> bool:
     """Keep a command's counts for the next process that sends (``Recorder.take``, by way of its flush): its
     crashes and drawings (``hand_over``) and what the engine's verbs count
