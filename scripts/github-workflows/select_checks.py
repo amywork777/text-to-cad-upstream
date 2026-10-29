@@ -235,11 +235,14 @@ RULES: tuple[Rule, ...] = (
         "scripts/build/**",              # core's and ui's library build
     ), EVERYTHING),
 
-    # What CAM reads a part and writes its files through, in the engine and beside it: a change
-    # there reaches CAM's plans, which only the cam job (with FreeCAD) runs. Before the engine's
-    # final rule, which would stop here.
+    # What CAM imports from the engine and beside it, and the read a part goes through (model's
+    # read_step and read_xbf -> document -> the reader process, held by the kernel's memo): a
+    # change there reaches CAM's plans, which only the cam job (with FreeCAD) runs. Before the
+    # engine's final rule, which would stop here.
     Rule((
-        f"{CADGEN_SRC}/engine/model.py", f"{CADGEN_SRC}/engine/refs.py",
+        f"{CADGEN_SRC}/engine/model.py", f"{CADGEN_SRC}/engine/document.py", f"{CADGEN_SRC}/engine/reader.py",
+        f"{CADGEN_SRC}/engine/refs.py", f"{CADGEN_SRC}/engine/kernel/imported.py",
+        f"{CADGEN_SRC}/engine/kernel/memo.py", f"{CADGEN_SRC}/engine/executables.py",
         f"{CADGEN_SRC}/_internal/atomic_replace.py", f"{CADGEN_SRC}/_internal/primitive_mesh.py",
         f"{CADGEN_SRC}/_internal/cli_from_function.py",
     ), select(flags=["cam"])),
