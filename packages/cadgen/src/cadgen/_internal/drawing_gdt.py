@@ -26,9 +26,11 @@ ORIENTATION = ("angularity", "perpendicularity", "parallelism")
 #: Runout tolerances relate a feature to a datum axis.
 RUNOUT = ("circular_runout", "total_runout")
 #: The characteristics a frame may state, in Y14.5's order. Concentricity and
-#: symmetry are ISO 1101's still; ASME Y14.5-2018 dropped them.
+#: symmetry are ISO 1101's still; ASME Y14.5-2018 dropped them (``_DROPPED``).
 CHARACTERISTICS = (*FORM, "line_profile", "surface_profile", *ORIENTATION, "position", "concentricity",
                    "symmetry", *RUNOUT)
+#: Each standard's characteristics it has no symbol for, and what it states in their place.
+_DROPPED = {"ASME Y14.5-2018": {"concentricity": "position, or runout", "symmetry": "position, or surface_profile"}}
 #: The characteristics whose zone may be a diameter (an axis's).
 _DIAMETER_ZONES = ("straightness", *ORIENTATION, "position", "concentricity")
 #: The characteristics that apply to a feature of size, and so may take a material
@@ -276,17 +278,38 @@ def _draw_mark(layout, mark: str, x: float, mid: float, th: float,
     return box
 
 
+def _frames(sheet) -> list[tuple[str, "Frame"]]:
+    """Every frame on a sheet, each with where it is: a view's, by its kind and
+    number, and the general profile's."""
+    frames = [(f"{view.name} {dim.kind} {index}", dim.frame) for view in sheet.views
+              for index, dim in enumerate(view._dims) if dim.frame is not None]
+    if sheet.general_profile is not None:
+        frames.append(("the general profile", sheet.general_profile))
+    return frames
+
+
+def _check_standard(sheet, which: str) -> None:
+    """Refuse a frame whose characteristic the standard the sheet's profile reads
+    it by has no symbol for: a Y14.5-2018 drawing with a concentricity frame
+    states a requirement its own standard cannot read. A sheet with no profile
+    reads as ISO GPS, which has them all."""
+    if sheet.profile is None:
+        return
+    dropped = _DROPPED.get(sheet.profile.standard, {})
+    for where, frame in _frames(sheet):
+        if frame.characteristic in dropped:
+            raise ValueError(f"{which}, {where}: {sheet.profile.standard}, the standard its profile "
+                             f"{sheet.profile.name} reads the drawing by, has no {frame.characteristic}; state "
+                             f"{dropped[frame.characteristic]} instead")
+
+
 def _check_datums(sheet, which: str) -> None:
     """Refuse a frame that names a datum no view of its sheet (``which``, as the
     refusal names it) defines: a frame read against a datum nobody marked
     measures from nowhere."""
     defined = {d[0] for view in sheet.views for d in view._datums} | {
         dim.datum for view in sheet.views for dim in view._dims if dim.datum}
-    frames = [(f"{view.name} {dim.kind} {index}", dim.frame) for view in sheet.views
-              for index, dim in enumerate(view._dims) if dim.frame is not None]
-    if sheet.general_profile is not None:
-        frames.append(("the general profile", sheet.general_profile))
-    for where, frame in frames:
+    for where, frame in _frames(sheet):
         missing = [d for d in frame.datums if d not in defined]
         if missing:
             raise ValueError(f"{which}, {where}: its frame names datum {missing[0]}, which no view of this sheet "

@@ -32,8 +32,8 @@ from cadgen._internal.drawing_base import (
     _looks_down, _mtext_extent, _places, _runs, _scale_label, _shown, _spans, _text_box, _text_width, _where,
 )
 from cadgen._internal.drawing_gdt import (
-    _DATUM_REACH, _FRAME_HEIGHT, _check_datums, _datum_toward, _draw_datum, _draw_frame, _draw_mark, _side_of,
-    frame_size, mark_width,
+    _DATUM_REACH, _FRAME_HEIGHT, _check_datums, _check_standard, _datum_toward, _draw_datum, _draw_frame, _draw_mark,
+    _side_of, frame_size, mark_width,
 )
 from cadgen._internal.drawing_report import _Facts, _member_key, _merge_facts, _tally
 from cadgen._internal.drawing_sheet import (
@@ -551,6 +551,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     # planned before anything is placed, so the layout knows what each view carries.
     _require_settled(sheet)
     _check_datums(sheet, f"sheet {index} ({sheet.title})")
+    _check_standard(sheet, f"sheet {index} ({sheet.title})")
     key_mark = sheet.profile.characteristic_mark if sheet.profile is not None else "KC"
     framed = sheet.general_profile is not None or any(
         dim.frame is not None for view in sheet.views for dim in view._dims)

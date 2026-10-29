@@ -3579,6 +3579,28 @@ class GdtTests(unittest.TestCase):
         top, front, right = sheet.three_views(part)
         return sheet, top, front, right
 
+    def test_a_frame_its_sheets_standard_dropped_is_refused(self) -> None:
+        # Y14.5-2018 has no concentricity or symmetry; ISO 1101, which a sheet with no profile reads by, has both.
+        from build123d import Align, Box, Cylinder, Pos
+
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen.eng_drawing import Frame, Sheet
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        part = Box(80, 50, 10, align=up) - Pos(20, 0, 0) * Cylinder(5, 10, align=up)
+        for profile in (_aero(), None):
+            sheet = Sheet("A3", 1.0, profile=profile)
+            top, front, _right = sheet.three_views(part)
+            front.datum("A", (0, -25, 5))
+            top.frame((0, 25, 10), Frame("symmetry", 0.1, ("A",)))
+            if profile is None:
+                _render_sheet(sheet, index=1, count=1, label="iso")
+                continue
+            with self.assertRaisesRegex(ValueError, r"top frame 0: ASME Y14.5-2018, the standard its profile AERO "
+                                                    r"reads the drawing by, has no symmetry; state position, or "
+                                                    r"surface_profile instead"):
+                _render_sheet(sheet, index=1, count=1, label="y14")
+
     def test_frame_vocabulary_is_closed_and_follows_y14_5(self) -> None:
         from cadgen.eng_drawing import Frame
 

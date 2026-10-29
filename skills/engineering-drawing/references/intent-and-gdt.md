@@ -139,7 +139,9 @@ front.frame((0, -25, 10), Frame("flatness", 0.05)) # a free frame on a surface
   `circularity`, `cylindricity` (form, no datums); `line_profile`,
   `surface_profile`; `angularity`, `perpendicularity`, `parallelism`
   (orientation, datums required); `position`, `concentricity`, `symmetry`
-  (the last two are ISO 1101's; Y14.5-2018 dropped them); `circular_runout`,
+  (the last two are ISO 1101's; Y14.5-2018 dropped them, so a sheet whose
+  profile follows it refuses them and names what to state instead);
+  `circular_runout`,
   `total_runout` (datums required). `diameter=True` (a cylindrical zone) and
   `modifier="M"` or `"L"` (material condition) only where they apply; anything
   else is refused, with the rule.
