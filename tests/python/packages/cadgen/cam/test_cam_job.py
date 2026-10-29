@@ -12,6 +12,13 @@ from tests.python.support.cam_fixtures import mill_job
 from cadgen._internal.cam.job import CamJobError, parse_job
 
 
+#: A tool as a job must give it, every fact stated.
+FLAT = {"id": "EM6", "type": "flat", "number": 4, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20,
+        "stickout_mm": 25, "shank_diameter_mm": 6}
+DRILL = {"id": "D1", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 50, "stickout_mm": 60,
+         "point_angle": 135}
+
+
 def refusal(case: unittest.TestCase, job) -> str:
     with case.assertRaises(CamJobError) as caught:
         parse_job(job)
@@ -48,13 +55,6 @@ class Reads(unittest.TestCase):
         self.assertEqual("bracket.cam", from_file.name)
         self.assertEqual(parse_job(raw).setups, parse_job(json.dumps(raw)).setups)
 
-    def test_a_stickout_left_to_the_default_is_listed_once_its_tool_is_used(self):
-        job = parse_job(mill_job([{"op": "face", "tool": "T1"}], tools=[
-            {"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 18},
-            {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 50}]))
-        self.assertEqual({"T1.stickout_mm"}, {e["key"] for e in job.assumed} - {"machine.rapid_mm_min"})
-        self.assertEqual(23.0, job.tools["T1"].stickout_mm)
-
 
 class Refuses(unittest.TestCase):
     def test_an_unknown_key_names_the_allowed_ones(self):
@@ -79,40 +79,55 @@ class Refuses(unittest.TestCase):
 
     def test_two_tools_with_one_t_number_are_refused(self):
         # T1 and D1 both posted T1: a tool change would load the end mill for the drill.
-        tools = [{"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20},
-                 {"id": "D1", "type": "drill", "number": 1, "diameter_mm": 5, "flute_length_mm": 50}]
+        tools = [dict(FLAT, id="T1", number=1), dict(DRILL, id="D1", number=1)]
         self.assertIn("T1 and D1 are both T1", refusal(self, mill_job([{"op": "face", "tool": "T1"}], tools=tools)))
         tools[1]["number"] = 2
         self.assertEqual(2, parse_job(mill_job([{"op": "face", "tool": "T1"}], tools=tools)).tools["D1"].number)
 
-    def test_a_tools_number_flutes_and_flute_length_are_never_assumed(self):
-        # The T number came from the id's digits (EM6 posted T6), the flutes were 2 and the flute length three diameters.
-        full = {"id": "EM6", "type": "flat", "number": 4, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20}
-        for key, words in (("number", "the T number the program loads it by"),
-                           ("flutes", "which its feed is worked out from"),
-                           ("flute_length_mm", "which every cut's depth is held to")):
+    def test_nothing_about_a_tool_is_assumed(self):
+        # The T number came from the id's digits (EM6 posted T6), the flutes were 2, the flute length three diameters,
+        # the stickout the flutes and a quarter, the shank the diameter, and a drill's point 118 degrees, which set how
+        # far past a through hole's bottom it drilled.
+        for tool, key, words in (
+                (FLAT, "number", "the T number the program loads it by"),
+                (FLAT, "flutes", "which its feed is worked out from"),
+                (FLAT, "flute_length_mm", "which every cut's depth is held to"),
+                (FLAT, "stickout_mm", "how far it stands out of its holder"),
+                (FLAT, "shank_diameter_mm", "the diameter of its shank"),
+                (DRILL, "point_angle", "which sets how far past a through hole's bottom it drills")):
             with self.subTest(key=key):
-                tool = {k: v for k, v in full.items() if k != key}
-                message = refusal(self, mill_job([{"op": "face", "tool": "EM6"}], tools=[tool]))
-                self.assertIn(f"tools[0] (EM6, a flat tool) needs \"{key}\": ", message)
+                given = {k: v for k, v in tool.items() if k != key}
+                message = refusal(self, mill_job([{"op": "face", "tool": "EM6"}], tools=[FLAT, given] if
+                                                 tool is DRILL else [given]))
+                kind = tool["type"]
+                self.assertIn(f"({tool['id']}, a {kind} tool) needs \"{key}\": ", message)
                 self.assertIn(words, message)
                 self.assertIn("never assumed", message)
-        self.assertEqual(4, parse_job(mill_job([{"op": "face", "tool": "EM6"}], tools=[full])).tools["EM6"].number)
-        # A drill is fed per revolution: it takes no flutes, and needs none.
-        drill = {"id": "D1", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 50}
-        self.assertIsNone(parse_job(mill_job([{"op": "face", "tool": "EM6"}], tools=[full, drill])).tools["D1"].flutes)
-        self.assertIn("unknown key 'flutes'", refusal(self, mill_job([{"op": "face", "tool": "EM6"}],
-                                                                     tools=[full, dict(drill, flutes=2)])))
+        job = parse_job(mill_job([{"op": "face", "tool": "EM6"}], tools=[FLAT, DRILL]))
+        self.assertEqual((4, 25.0, 6.0, None), (job.tools["EM6"].number, job.tools["EM6"].stickout_mm,
+                                                job.tools["EM6"].shank_diameter_mm, job.tools["EM6"].point_angle))
+        self.assertEqual({"machine.rapid_mm_min"}, {entry["key"] for entry in job.assumed})
+        # What means nothing for a type is no key of it: a drill is fed per revolution and FreeCAD gives it no shank
+        # of its own, and only a drill has a point.
+        self.assertEqual((None, None, 135.0), (job.tools["D1"].flutes, job.tools["D1"].shank_diameter_mm,
+                                               job.tools["D1"].point_angle))
+        for tools, key in (([FLAT, dict(DRILL, flutes=2)], "flutes"), ([FLAT, dict(DRILL, shank_diameter_mm=5)],
+                                                                         "shank_diameter_mm"),
+                           ([dict(FLAT, point_angle=118)], "point_angle")):
+            with self.subTest(unknown=key):
+                self.assertIn(f"unknown key '{key}'", refusal(self, mill_job([{"op": "face", "tool": "EM6"}],
+                                                                             tools=tools)))
 
     def test_the_help_says_what_is_required(self):
-        # It listed max_rpm among the optional keys, and the tool's number, flutes and flute length not at all.
+        # It listed max_rpm and stickout_mm among the optional keys, and a tool's number and flutes not at all.
         from cadgen import cam
 
         words = " ".join(cam.plan.__doc__.split())
         self.assertIn('"machine": {"post": grbl, linuxcnc, mach3, fanuc, centroid, uccnc or smoothie, and "max_rpm" '
                       '(both required), and optionally "travel_mm", "min_rpm", "max_feed_mm_min",', words)
-        self.assertIn('"number" (the T number), "diameter_mm", "flute_length_mm", "flutes" (not a drill\'s), all '
-                      'required', words)
+        self.assertIn('"number" (the T number), "diameter_mm", "flute_length_mm", "stickout_mm"; a flat, ball or '
+                      'bull\'s "flutes" and "shank_diameter_mm", a bull\'s "corner_radius_mm", a drill\'s "point_angle"; '
+                      'all required', words)
 
     def test_a_machine_kind_is_no_key_of_a_machine(self):
         # It changed nothing in a plan, so it is gone: refused as any key the machine never had is.

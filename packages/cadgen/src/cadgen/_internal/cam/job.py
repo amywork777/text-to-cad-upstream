@@ -201,11 +201,6 @@ def parse_job(job: str | dict | None) -> Job:
             raise CamJobError(f"setups[{position}]: a second setup is called {shown(setup.id)}; each id names one")
         setups.append(setup)
         index += len(setup.operations)
-    used = {op.tool for setup in setups for op in setup.operations}
-    for tool in tools.values():
-        if tool.id in used:
-            assumed.extend({"key": f"{tool.id}.{key}", "value": getattr(tool, key),
-                            "why": "the tool does not state it: the catalogue default"} for key in tool.assumed)
     name = raw.get("name", path.stem if path else "job")
     if not isinstance(name, str) or not name.strip():
         raise CamJobError("name must be text: the job's name, for the posted files' headers")

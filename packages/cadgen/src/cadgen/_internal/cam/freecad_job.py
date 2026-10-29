@@ -39,7 +39,7 @@ def _tool(doc, spec):
     bit.Length = f"{spec['stickout_mm']} mm"
     if hasattr(bit, "CuttingEdgeHeight"):
         bit.CuttingEdgeHeight = f"{spec['flute_length_mm']} mm"
-    if hasattr(bit, "ShankDiameter"):
+    if spec["shank_diameter_mm"] is not None:      # a drill's: none
         bit.ShankDiameter = f"{spec['shank_diameter_mm']} mm"
     if spec["type"] == "bull":
         bit.CornerRadius = f"{spec['corner_radius_mm']} mm"

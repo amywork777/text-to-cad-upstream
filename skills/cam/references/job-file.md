@@ -68,14 +68,14 @@ There is no other stock shape. The blank the user clamps must be the size this m
 | `diameter_mm` | Required |
 | `number` | Required. The T number posted, 0 to 9999, as the machine's tool table has it; one per tool |
 | `name` | The tool's name, for the result |
-| `flutes` | Required for `flat`, `ball` and `bull`: 1 to 100, the feed is worked out from it. A `drill` is fed per revolution and takes none |
+| `flutes` | `flat`, `ball` and `bull` only, and required: 1 to 100, the feed is worked out from it. A `drill` is fed per revolution and takes none |
 | `flute_length_mm` | Required. The cutting length, which every cut's depth is held to |
-| `stickout_mm` | The length out of the holder, flutes included (the flutes and a quarter more, at least 5 mm more; listed as assumed) |
-| `shank_diameter_mm` | (the diameter) |
+| `stickout_mm` | Required. The length out of the holder, flutes included, at least the flute length (FreeCAD models the tool from it) |
+| `shank_diameter_mm` | `flat`, `ball` and `bull` only, and required (FreeCAD models the tool from it; its drill has no shank of its own) |
 | `corner_radius_mm` | `bull` only, and required: more than 0, at most the radius |
-| `point_angle` | `drill` only: 60 to 180 degrees (118) |
+| `point_angle` | `drill` only, and required: 60 to 180 degrees, its point's included angle, which sets how far past a through hole's bottom it drills |
 
-An `assumed:` line is a guess about the user's tool: ask about it when you report.
+Nothing about a tool has a default: a tool missing one of these is refused, naming it. Ask the user for it.
 
 ## Setups
 

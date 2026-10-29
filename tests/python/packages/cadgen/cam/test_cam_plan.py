@@ -18,8 +18,9 @@ from tests.python.support.cam_fixtures import (BLOCK, HOLE_BLOCK, PLATE, block_s
 
 #: Tools long enough to profile the block's 26 mm, stock top to bottom.
 LONG_FLUTES = [{"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 30,
-                "stickout_mm": 40},
-               {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 50, "stickout_mm": 60}]
+                "stickout_mm": 40, "shank_diameter_mm": 6},
+               {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 50, "stickout_mm": 60,
+                "point_angle": 118}]
 
 
 def plan(step: Path, job: dict, **options):
@@ -203,10 +204,11 @@ class Grbl(unittest.TestCase):
 
 #: A 6 mm end mill for the bore and the pocket, a 3 mm one for the slot, a 6 mm drill.
 PLATE_TOOLS = [{"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20,
-                "stickout_mm": 30},
+                "stickout_mm": 30, "shank_diameter_mm": 6},
                {"id": "T3", "type": "flat", "number": 3, "diameter_mm": 3, "flutes": 2, "flute_length_mm": 15,
-                "stickout_mm": 25},
-               {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 6, "flute_length_mm": 50, "stickout_mm": 60}]
+                "stickout_mm": 25, "shank_diameter_mm": 3},
+               {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 6, "flute_length_mm": 50, "stickout_mm": 60,
+                "point_angle": 118}]
 
 
 @needs_freecad
@@ -357,7 +359,7 @@ class HoleBlock(unittest.TestCase):
         import math
 
         tools = [{"id": "T2", "type": "drill", "number": 2, "diameter_mm": 6, "flute_length_mm": 50,
-                  "stickout_mm": 60}]
+                  "stickout_mm": 60, "point_angle": 118}]
         result = plan(self.step, mill_job([{"op": "drill", "tool": "T2", "faces": [self.pointed["faces"][0]]}],
                                           tools=tools))
         self.assertEqual("ready", result.verdict["status"], result.findings)

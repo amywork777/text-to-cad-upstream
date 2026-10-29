@@ -60,7 +60,7 @@ class Reach(unittest.TestCase):
     def test_a_cut_deeper_than_the_flutes(self):
         job = mill_job([{"op": "pocket", "tool": "T1", "faces": [self.floors["floor"]]}],
                        tools=[{"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3,
-                               "flute_length_mm": 8}])
+                               "flute_length_mm": 8, "stickout_mm": 15, "shank_diameter_mm": 6}])
         (op,) = parse_job(job).setups[0].operations
         found = checks.reach(op, [], {}, (self.part.vertices, self.part.triangles), self.part.face_of_triangle,
                              parse_job(job).tools["T1"], 21.0, 8.0)
@@ -85,7 +85,7 @@ class WallReach(unittest.TestCase):
     def reach(self, faces):
         job = parse_job(mill_job([{"op": "profile", "tool": "T1", "side": "inside", "faces": faces}],
                                  tools=[{"id": "T1", "type": "flat", "number": 1, "diameter_mm": 3, "flutes": 2,
-                                         "flute_length_mm": 30}]))
+                                         "flute_length_mm": 30, "stickout_mm": 35, "shank_diameter_mm": 3}]))
         (op,) = job.setups[0].operations
         return checks.reach(op, [self.part.face(ref) for ref in op.faces], {}, (self.part.vertices, self.part.triangles),
                             self.part.face_of_triangle, job.tools["T1"], TSLOT["size"][2] + 1.0, None)
@@ -255,7 +255,8 @@ class Moves_(unittest.TestCase):
         from cadgen import cam
 
         job = parse_job(mill_job([{"op": "pocket", "tool": "B1", "faces": ["face 1"]}], tools=[
-            {"id": "B1", "type": "ball", "number": 3, "diameter_mm": 6, "flutes": 2, "flute_length_mm": 20},
+            {"id": "B1", "type": "ball", "number": 3, "diameter_mm": 6, "flutes": 2, "flute_length_mm": 20,
+             "stickout_mm": 30, "shank_diameter_mm": 6},
             *mill_job([])["tools"]]))
         (operation,) = job.setups[0].operations
         floor = self.target(self.part.face(floor_ref(cam.features(self.part.document), 11.0)).ordinal, 11.0)

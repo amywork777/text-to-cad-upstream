@@ -1,16 +1,18 @@
 /**
  * The tool that rides a CAM result's path while it plays, its tip on the path, sized in mm so it reads at the
  * scale of the part, built once per shape and swapped as the program changes tools: a cylinder (a ball on a
- * cylinder for a ball end mill) under a wider holder, sized from the operation's tool (`toolDiameterMm`; 6 mm when
- * the file does not say), standing along its setup's axis (the direction its tool comes from, +Z or -Z).
+ * cylinder for a ball end mill) under a wider holder, sized from the operation's tool (`toolDiameterMm`), standing
+ * along its setup's axis (the direction its tool comes from, +Z or -Z). A path naming an operation or a setup the job
+ * does not list is no result cadgen wrote: refused (`CamResultError`), never drawn as some other tool.
  */
 
-const DEFAULT_RADIUS_MM = 3;
+import { CamResultError } from "./extras.js";
+
 const COLOURS = Object.freeze({ cutter: "#a1a1aa", holder: "#52525b" });
 
-/** What the tool is drawn as for an operation: `{ radius (mm), ball }`. */
+/** What the tool is drawn as for an operation (`readCamJob`'s): `{ radius (mm), ball }`. */
 export function toolShape(op) {
-  return { radius: op?.toolDiameterMm > 0 ? op.toolDiameterMm / 2 : DEFAULT_RADIUS_MM, ball: op?.toolType === "ball" };
+  return { radius: op.toolDiameterMm / 2, ball: op.toolType === "ball" };
 }
 
 /**
@@ -60,15 +62,17 @@ export function createCamTool(THREE, root, job, frame) {
     /** Stands the tool of the operation at `place.op` with its tip on `place.point` (the root's frame), along its setup's axis; or hides it. */
     show(place) {
       if (!place) { group.visible = false; return; }
-      const op = job.operations.find((entry) => entry.index === place.op) || null;
+      const op = job.operations.find((entry) => entry.index === place.op);
+      if (!op) throw new CamResultError(`a toolpath's _CAM_OP ${place.op}`, "names an operation the result does not list");
       const tool = build(toolShape(op));
       if (shown !== tool) {
         if (shown) group.remove(shown);
         group.add(tool);
         shown = tool;
       }
-      const setup = setups.get(place.setup || op?.setup);
-      group.quaternion.setFromUnitVectors(up, frame.direction(setup?.axis || [0, 0, 1]));
+      const setup = setups.get(place.setup);
+      if (!setup) throw new CamResultError(`a toolpath's setup ${place.setup}`, "names a setup the result does not list");
+      group.quaternion.setFromUnitVectors(up, frame.direction(setup.axis));
       group.position.fromArray(place.point);
       group.visible = true;
     },

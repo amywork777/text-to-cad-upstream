@@ -101,12 +101,13 @@ mm/min).
    - The machine's travel, slowest spindle speed and feed limit (`travel_mm`, `min_rpm`,
      `max_feed_mm_min`): a 2,000 mm/min feed. Without them the plan posts the feeds table's
      travel and feeds unchecked.
-   - **The tools.** Each tool's T number (`number`), diameter, flute length and, for an end mill,
-     its flutes are required: the program loads the tool by its number, every cut is held to its
-     flutes, and its feed is worked out from their count. Ask for the tools they own, as their
-     tool table has them; with none, propose the fewest that fit and ask before planning with
-     them. Never fill one of these in yourself. A stickout the user does not know is left out:
-     the plan assumes it and says so.
+   - **The tools.** Nothing about a tool is assumed: each one's T number (`number`), diameter,
+     flute length and stickout, an end mill's flutes and shank diameter, a bull nose's corner
+     radius and a drill's point angle are required. The program loads the tool by its number,
+     every cut is held to its flutes, its feed is worked out from their count, FreeCAD models it
+     from its stickout and shank, and a drill's point sets how far past a through hole's bottom
+     it drills. Ask for the tools they own, as their tool table has them; with none, propose the
+     fewest that fit and ask before planning with them. Never fill one of these in yourself.
    - The material (6061, not "aluminium"), how the part is held, and which features are
      critical.
 
@@ -121,10 +122,11 @@ mm/min).
      "stock": {"margin_mm": [3, 3, 1]},
      "tools": [
        {"id": "T1", "type": "flat", "number": 1, "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20,
-        "stickout_mm": 30},
-       {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 40},
+        "stickout_mm": 30, "shank_diameter_mm": 6},
+       {"id": "T2", "type": "drill", "number": 2, "diameter_mm": 5, "flute_length_mm": 40, "stickout_mm": 55,
+        "point_angle": 118},
        {"id": "T3", "type": "flat", "number": 3, "diameter_mm": 10, "flutes": 3, "flute_length_mm": 32,
-        "stickout_mm": 45}
+        "stickout_mm": 45, "shank_diameter_mm": 10}
      ],
      "setups": [
        {"id": "top", "orientation": "+Z", "origin": "stock-top-center", "operations": [
@@ -234,8 +236,7 @@ refused, FreeCAD is missing or failed, or cadgen hit a bug (report it with the p
 
 The gouge check sees the part from above, so it is exact for a part cut from one side and
 conservative under an overhang. It knows the part, the stock box and the tools, nothing else: a
-vise, clamps or a tool longer than the job says can still be hit. A guessed stickout is a guessed
-check.
+vise, clamps or a tool longer than the job says can still be hit.
 
 ## The posts and the files
 
@@ -271,9 +272,8 @@ Hand the program over in this order, in the user's words:
   and Z0 on its top; touch off there. The stock is the part's box plus `margin_mm`: the blank must
   be that size, its bottom on the table.
 - Each tool by its T number: diameter, rpm and feed.
-- Every warning, and every `assumed:` line as a question the user can answer: a tool's
-  stickout, the rapid rate the cycle time is worked out at. Add anything else you
-  assumed (the material, the tools).
+- Every warning, and every `assumed:` line as a question the user can answer: the rapid rate
+  the cycle time is worked out at. Add anything else you assumed (the material, the tools).
 - That feeds and speeds are starting points from a table, not tuned for their machine, and the
   cycle time is a lower bound (no spindle spin-up, tool changes or corner slow-downs).
 - **Always:** the G-code has not been run on a machine. Say this line word for word: "Prove this

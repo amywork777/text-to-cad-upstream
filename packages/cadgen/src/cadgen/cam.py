@@ -60,8 +60,9 @@ def plan(target: Path, *, job: str | dict | None = None, occurrence: str | None 
         "drill_mm_per_rev", "stepdown_fraction"}. "stock": {"margin_mm": [x, y,
         z]}, the part's box grown by x and y each side and z over the top.
         "tools": [{"id", "type": flat, ball, bull or drill, "number" (the T
-        number), "diameter_mm", "flute_length_mm", "flutes" (not a drill's), all
-        required, and optionally "stickout_mm", ...}]. "setups": [{"id",
+        number), "diameter_mm", "flute_length_mm", "stickout_mm"; a flat, ball or
+        bull's "flutes" and "shank_diameter_mm", a bull's "corner_radius_mm", a
+        drill's "point_angle"; all required, and optionally "name"}]. "setups": [{"id",
         "orientation": +Z or -Z, "origin", "operations": [{"op": face, profile,
         pocket, adaptive or drill, "tool", "faces", ...}]}]. Face refs are the
         ones ``cadgen cam features`` prints; a profile with "side": "inside" names

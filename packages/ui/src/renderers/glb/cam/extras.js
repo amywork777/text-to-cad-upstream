@@ -182,7 +182,7 @@ export function readCamJob(root) {
     post: text(object(cam.machine, `${where}.machine`), "post", `${where}.machine`),
     tools: readTools(listed, operations),
     toolChanges: countToolChanges(operations),
-    // What the plan took that nobody stated (a rapid rate, a tool's stickout).
+    // What the plan took that nobody stated (the rapid rate a cycle time is worked out at).
     assumed: list(cam, "assumed", where).map((entry, k) => readAssumed(entry, `${where}.assumed[${k}]`)),
     document: text(cam, "document", where),
     // The caveat every result carries: what the plan is not, and what to check before cutting.

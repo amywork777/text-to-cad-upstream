@@ -4,7 +4,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { expect, it, vi } from 'vitest';
-import { readCamJob } from '../../../dist/renderers/glb/cam/extras.js';
+import { CamResultError, readCamJob } from '../../../dist/renderers/glb/cam/extras.js';
 import { cadFrame, camToolpathObjects, createCamPaths, readCamSegments, toolPositionAt } from '../../../dist/renderers/glb/cam/lines.js';
 import { createCamTool, toolShape } from '../../../dist/renderers/glb/cam/tool.js';
 import { camExtras, camLines, camScene } from './__tests__/camFile';
@@ -142,8 +142,13 @@ it('sizes the riding tool in mm and stands it along the setup\'s axis, in a scen
   expect(root.children.includes(tool.object3D)).toBe(false);
 });
 
-it('draws a ball end mill with a ball at its tip, and a 6 mm tool where the file does not say', () => {
+it('draws a ball end mill with a ball at its tip, and refuses a path whose operation or setup the job does not list', () => {
   expect(toolShape({ toolDiameterMm: 4, toolType: 'ball' })).toEqual({ radius: 2, ball: true });
   expect(toolShape({ toolDiameterMm: 6, toolType: 'drill' })).toEqual({ radius: 3, ball: false });
-  expect(toolShape(null)).toEqual({ radius: 3, ball: false });
+  // It once stood a 6 mm tool there: no result cadgen writes names either.
+  const root = camScene();
+  const tool = createCamTool(THREE, root, readCamJob(root)!, cadFrame(THREE, root, root));
+  expect(() => tool.show({ point: [0, 0, 0], op: 9, setup: 'top' })).toThrow(CamResultError);
+  expect(() => tool.show({ point: [0, 0, 0], op: 0, setup: 'side' })).toThrow("a toolpath's setup side names a setup the result does not list");
+  tool.dispose();
 });
