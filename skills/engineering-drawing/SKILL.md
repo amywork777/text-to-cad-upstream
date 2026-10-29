@@ -48,7 +48,10 @@ outside the sandbox once.
    - **Ask** the stage (concept, prototype, production) and the use, then
      propose which interfaces need a requirement, one numbered item at a
      time, each with a picture of the part with that feature marked (`cadgen
-     snapshot --annotation`).
+     snapshot --annotation`). Offer the stage the request points to first: a
+     shop drawing, or one to make or quote the part from, is a prototype or
+     production sheet with a general tolerance (for example linear ±0.5 mm,
+     holes ±0.1 mm, bends ±1° on sheet metal), not a sheet of nominal sizes.
    - **For an assembly, ask joint by joint what it does**: turns, slides,
      locates or stays fixed, which decides its fit; how it is held (a torque,
      a press, a bond, a pin's retention); the end play it needs along its
