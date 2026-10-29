@@ -38,7 +38,6 @@ CHECKS = {
     "coverage": ("uncut",),
     "travel": ("travel",),
     "limits": ("clamped",),
-    "auto": ("not_planned",),
 }
 _SEVERITY = {"error": 0, "warning": 1, "info": 2}
 #: How far a move may come into the part before it is a gouge (mm): the tessellation's and the grid's own error.

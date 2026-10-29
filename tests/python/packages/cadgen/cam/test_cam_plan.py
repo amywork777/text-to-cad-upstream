@@ -163,13 +163,22 @@ class Grbl(unittest.TestCase):
         step = block_step(directory)
         holes = [hole["faces"][0] for hole in cam.features(step).holes]
         job = mill_job([{"op": "face", "tool": "T1"}, {"op": "drill", "tool": "T2", "faces": holes}],
-                       machine={"post": "grbl"})
+                       machine={"post": "grbl", "max_rpm": 24000})
         result = plan(step, job)
         self.assertEqual("ready", result.verdict["status"], result.findings)
         self.assertEqual([("block.top.1-T1.nc", "T1"), ("block.top.2-T2.nc", "T2")],
                          [(Path(p["file"]).name, p["tool"]) for p in result.posts])
         first, second = (Path(p["file"]).read_text(encoding="utf-8") for p in result.posts)
         self.assertNotIn("G81", re.sub(r"\(.*?\)", "", second))   # GRBL has no drilling cycle: written out as moves
+
+    def test_a_spindle_the_machine_holds_is_one_warning_a_tool(self):
+        step = block_step(class_directory(type(self)))
+        result = plan(step, mill_job([{"op": "face", "tool": "T1"},
+                                      {"op": "profile", "tool": "T1", "through_mm": 0.5}],
+                                     tools=LONG_FLUTES, machine={"post": "grbl", "max_rpm": 6000}))
+        (clamped,) = [f for f in result.findings if f["type"] == "clamped"]
+        self.assertTrue(clamped["summary"].startswith("T1 "), clamped)
+        self.assertEqual([{"operation": 0}, {"operation": 1}], clamped["items"])
 
 
 #: A 6 mm end mill for the bore and the pocket, a 3 mm one for the slot, a 6 mm drill.

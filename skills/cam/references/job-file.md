@@ -9,8 +9,8 @@ lengths are mm, feeds mm/min, speeds rev/min.
 | `machine` | Required. [Machine](#machine) |
 | `material` | Required. [Material](#material) |
 | `stock` | Required. [Stock](#stock) |
-| `tools` | A list of at least one [tool](#tools). Required with `setups`; left out without them, cadgen proposes the tools |
-| `setups` | A list of at least one [setup](#setups). Left out, cadgen writes one from the part's features (SKILL.md, Write the job) and saves the completed job as `<part>.cam.json` beside the result |
+| `tools` | Required. A list of at least one [tool](#tools) |
+| `setups` | Required. A list of at least one [setup](#setups) |
 | `name` | The job's name (the job file's name, else `job`) |
 | `tolerance_mm` | How closely FreeCAD follows curves, 0.01 to 1 (0.01) |
 | `coolant` | `off`, `flood` or `mist`, for every operation that does not say (`off`) |
@@ -22,7 +22,8 @@ lengths are mm, feeds mm/min, speeds rev/min.
 | `post` | Required, no default. `grbl`, `linuxcnc`, `mach3` (Mach3 and Mach4), `fanuc`, `centroid`, `uccnc` or `smoothie`. Ask the user which controller runs the machine |
 | `name` | The machine's name, for the result |
 | `travel_mm` | `[x, y, z]`: a setup whose moves span more is a `travel` error (not checked) |
-| `max_rpm`, `min_rpm` | The spindle's range: a faster table speed is held to `max_rpm`, a slower one raised to `min_rpm`, each a `clamped` warning (not checked) |
+| `max_rpm` | Required. The spindle's top speed: a faster table speed is held to it, a `clamped` warning |
+| `min_rpm` | The spindle's slowest: a slower table speed is raised to it, a `clamped` warning (not checked) |
 | `max_feed_mm_min` | The fastest feed: a faster one is held to it, a `clamped` warning (not checked) |
 | `rapid_mm_min` | The rapid rate, for the cycle time only (3000, listed as assumed) |
 | `work_offset` | `G54` to `G59` (`G54`) |
@@ -65,7 +66,7 @@ There is no other stock shape. The blank the user clamps must be the size this m
 | `id` | Required. The name operations use, like `T1` |
 | `type` | Required. `flat` (end mill), `ball`, `bull` (bull nose) or `drill` |
 | `diameter_mm` | Required |
-| `number` | The T number posted, 0 to 9999 (the digits of `id`, else its place in the list) |
+| `number` | The T number posted, 0 to 9999 (the digits of `id`, else its place in the list); one per tool, so `T1` and `D1` need a `number` each |
 | `name` | The tool's name, for the result |
 | `flutes` | 1 to 100 (2, listed as assumed) |
 | `flute_length_mm` | The cutting length (3 × the diameter, a drill's 10 ×, never past a stated `stickout_mm`; listed as assumed) |

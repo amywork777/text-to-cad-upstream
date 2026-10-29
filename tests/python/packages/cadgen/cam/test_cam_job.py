@@ -72,6 +72,19 @@ class Refuses(unittest.TestCase):
         self.assertIn("grbl, linuxcnc", message)
         self.assertIn("haas", refusal(self, mill_job([], machine={"post": "haas"})).split(";")[0])
 
+    def test_the_spindle_s_top_speed_is_never_assumed(self):
+        # With none, a 1 mm cutter in 6061 posted 79,580 rpm.
+        message = refusal(self, mill_job([{"op": "face", "tool": "T1"}], machine={"post": "grbl"}))
+        self.assertIn("machine.max_rpm is required", message)
+
+    def test_two_tools_with_one_t_number_are_refused(self):
+        # T1 and D1 both posted T1: a tool change would load the end mill for the drill.
+        tools = [{"id": "T1", "type": "flat", "diameter_mm": 6, "flute_length_mm": 20, "stickout_mm": 30},
+                 {"id": "D1", "type": "drill", "diameter_mm": 5, "flute_length_mm": 50, "stickout_mm": 60}]
+        self.assertIn("T1 and D1 are both T1", refusal(self, mill_job([{"op": "face", "tool": "T1"}], tools=tools)))
+        tools[1]["number"] = 2
+        self.assertEqual(2, parse_job(mill_job([{"op": "face", "tool": "T1"}], tools=tools)).tools["D1"].number)
+
     def test_a_machine_kind_is_no_key_of_a_machine(self):
         # It changed nothing in a plan, so it is gone: refused as any key the machine never had is.
         self.assertEqual("machine: unknown key 'kind'; the keys are post, name, travel_mm, min_rpm, max_rpm, "

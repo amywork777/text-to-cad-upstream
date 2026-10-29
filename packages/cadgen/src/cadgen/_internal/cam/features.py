@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import math
 
-__all__ = ["axis_word", "direction_word", "holes", "openings", "pocket_walls", "read_features", "walls_in"]
+__all__ = ["axis_word", "direction_word", "holes", "pocket_walls", "read_features", "walls_in"]
 
 _AXES = {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0), "Z": (0.0, 0.0, 1.0)}
 _COS5 = math.cos(math.radians(5.0))
@@ -512,12 +512,6 @@ def pocket_walls(part, ordinal: int) -> list[str] | None:
     if len(loops) != 1 or loops[0][0] or not loops[0][1] or not all(loops[0][1].values()):
         return None
     return [part.faces[index].ref for index in sorted(loops[0][1])]
-
-
-def openings(part, ordinal: int) -> list[list[int]]:
-    """The faces round each inner loop of the flat face ``ordinal``, one list of ordinals per loop: the holes, slots
-    and windows that open in it."""
-    return [sorted(neighbours) for inner, neighbours in _loops(part, ordinal) if inner]
 
 
 def read_features(part) -> dict:

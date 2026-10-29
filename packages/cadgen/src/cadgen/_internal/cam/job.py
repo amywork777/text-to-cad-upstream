@@ -168,21 +168,14 @@ def _refuse_constant(name: str):
     raise ValueError(f"{name} is not a number")
 
 
-def parse_job(job: str | dict | None, *, steps: bool = True) -> Job:
-    """The job, read and checked. ``steps=False`` reads one that may leave out its setups (and then its tools), for
-    cadgen to write them from the part (``auto.py``): its setups are then empty."""
+def parse_job(job: str | dict | None) -> Job:
     raw, path = load_job(job)
     check_keys(raw, JOB_KEYS, "the job")
-    planned = steps or "setups" in raw
-    for key in ("machine", "material", "stock", *(("tools", "setups") if planned else ())):
+    for key in ("machine", "material", "stock", "tools", "setups"):
         if key not in raw:
             raise CamJobError(f"the job needs \"{key}\"; its keys are {', '.join(JOB_KEYS)}")
     machine, assumed = _machine(raw["machine"])
     material = _material(raw["material"])
-    if not planned and "tools" not in raw:
-        return Job(name=str(raw.get("name", "job")), machine=machine, material=material, stock=_stock(raw["stock"]),
-                   tools={}, setups=(), tolerance_mm=0.01, coolant=choice(raw.get("coolant", "off"), COOLANTS,
-                                                                           "coolant"))
     if not isinstance(raw["tools"], list) or not raw["tools"]:
         raise CamJobError("tools must be a list of at least one tool, like [{\"id\": \"T1\", \"type\": \"flat\", "
                           "\"diameter_mm\": 6}]")
@@ -192,10 +185,13 @@ def parse_job(job: str | dict | None, *, steps: bool = True) -> Job:
         if tool.id in tools:
             raise CamJobError(f"tools[{position}]: a second tool is called {shown(tool.id)}; each id names one tool")
         tools[tool.id] = tool
+    numbers: dict[int, str] = {}
+    for tool in tools.values():
+        if tool.number in numbers:
+            raise CamJobError(f"tools: {numbers[tool.number]} and {tool.id} are both T{tool.number}, so a tool change "
+                              "loads one for the other; give one a \"number\" of its own")
+        numbers[tool.number] = tool.id
     coolant = choice(raw.get("coolant", "off"), COOLANTS, "coolant")
-    if not planned:
-        return Job(name=str(raw.get("name", "job")), machine=machine, material=material, stock=_stock(raw["stock"]),
-                   tools=tools, setups=(), tolerance_mm=0.01, coolant=coolant)
     if not isinstance(raw["setups"], list) or not raw["setups"]:
         raise CamJobError("setups must be a list of at least one setup, like [{\"id\": \"top\", \"operations\": "
                           "[...]}]")
@@ -229,6 +225,9 @@ def _machine(raw: object) -> tuple[Machine, list[dict]]:
                           "dialect read by the wrong controller moves the machine wrongly, so ask which controller "
                           "runs the machine")
     post = choice(raw["post"], tuple(POSTS), "machine.post")
+    if "max_rpm" not in raw:
+        raise CamJobError("machine.max_rpm is required: the spindle's top speed, which every operation's speed is "
+                          "held to. A small cutter's table speed is past most spindles', so ask what this one turns")
     travel = raw.get("travel_mm")
     machine = Machine(
         post=post, name=str(raw.get("name", "")),

@@ -10,12 +10,10 @@ Provenance: maintained in [earthtojake/text-to-cad](https://github.com/earthtoja
 Use the installed local skill files as the runtime source of truth; the repository link is only for
 provenance and release review.
 
-You write a small job file: the machine, the material and the stock, and the tools when the user
-has them. `cadgen cam plan` chooses the operations from the part's features (or takes the ones the
-job lists), has the user's FreeCAD plan each setup's toolpaths and post them for the named
+You write a small job file (machine, material, stock, tools, setups and their operations). `cadgen
+cam plan` has the user's FreeCAD plan each setup's toolpaths and post them for the named
 controller, checks every move against the part, and writes `<part>.cam.glb` (the part, the stock
-and the toolpaths, with the verdict), the completed job as `<part>.cam.json` and, when nothing is
-an error, the G-code beside the part.
+and the toolpaths, with the verdict) and, when nothing is an error, the G-code beside the part.
 
 Modelling the part is `$cad`; this skill reads a saved `.step`, `.stp` or `.xbf`. Reviewing whether
 a design can be machined well is `$dfm`. 3D printing is `$gcode`.
@@ -75,8 +73,7 @@ mm/min).
 
 ## Workflow
 
-1. **Read the part** when you will name faces yourself (a job's own `setups`, step 3); a job cadgen
-   completes needs none.
+1. **Read the part.** Every job names faces by their refs.
 
    ```bash
    cadgen cam features part.step
@@ -99,44 +96,24 @@ mm/min).
    - **The controller.** `machine.post` is required and has no default: a dialect read by the
      wrong controller moves the machine wrongly. Ask which controller runs the machine (GRBL,
      LinuxCNC, Mach3/4, Fanuc, Centroid, UCCNC, Smoothieware); never guess it from the make.
-   - The machine's travel, spindle speed range and feed limit (`travel_mm`, `min_rpm`,
-     `max_rpm`, `max_feed_mm_min`): a 24,000 rpm router spindle, a 2,000 mm/min feed. Without
-     them the plan posts the feeds table's numbers unchecked.
-   - The tools they own, with real diameters, flute lengths and stickouts. With none, leave
-     `tools` out: cadgen proposes the fewest that fit, and you ask about them in the report.
-     Leave out a length the user does not know; never fill one in yourself: the plan assumes it
-     and says so.
+   - **The spindle's top speed.** `machine.max_rpm` is required: a small cutter's table speed is
+     past most spindles', and every operation's speed is held to it. Ask; never assume a router's.
+   - The machine's travel, slowest spindle speed and feed limit (`travel_mm`, `min_rpm`,
+     `max_feed_mm_min`): a 2,000 mm/min feed. Without them the plan posts the feeds table's
+     travel and feeds unchecked.
+   - The tools they own, with real diameters, flute lengths and stickouts. With none, propose the
+     fewest that fit and ask before planning with them. Leave out a length the user does not
+     know; never fill one in yourself: the plan assumes it and says so.
    - The material (6061, not "aluminium"), how the part is held, and which features are
      critical.
 
-3. **Write the job** as `part.cam.json` beside the part, with no `setups`. Every key is in
+3. **Write the job** as `part.cam.json` beside the part. Every key is in
    [job-file.md](references/job-file.md).
 
    ```json
    {
      "machine": {"post": "grbl", "travel_mm": [300, 300, 80], "max_rpm": 24000,
                  "max_feed_mm_min": 2500},
-     "material": "aluminum-6061",
-     "stock": {"margin_mm": [3, 3, 1]}
-   }
-   ```
-
-   The stock is the part's bounding box grown by `margin_mm` (x and y on each side, z over the
-   top); its bottom is the part's bottom, on the table. With no `setups`, cadgen plans one setup
-   from the top, as a machinist would: face the top; each pocket; each bore, counterbore and slot
-   profiled round its walls; each hole a drill makes; then the outline cut 0.5 mm into a
-   spoilboard. Each operation is named for what it cuts (`Bore Ø22.2`, `2 slots 5.5 x 15.5`,
-   `Drill 4 holes Ø3.4`), with the largest of the job's tools that fits it and whose flutes
-   reach, or (no `tools`) the fewest standard end mills and drills that fit. What it cannot cut
-   from the top, what no tool fits, and chamfers are `not_planned` warnings. The completed job is
-   written as `<part>.cam.json` beside the result (the file you wrote, when it is there), for the
-   user to read and change: planning it again plans exactly what it lists.
-
-   A job that lists its own `setups` is planned as written, every face named by its ref:
-
-   ```json
-   {
-     "machine": {"post": "grbl", "max_rpm": 24000},
      "material": "aluminum-6061",
      "stock": {"margin_mm": [3, 3, 1]},
      "tools": [
@@ -156,11 +133,11 @@ mm/min).
    }
    ```
 
-   Write it that way for a second setup, roughing with `adaptive`, or any change to what cadgen
-   chose: edit the completed `<part>.cam.json`. Plan like a machinist: one setup per way the part
-   is held; face, rough (`adaptive` with `leave_mm`), finish, then drill, and cut the outline free
-   last; group each tool's operations together; use the shortest tool that reaches and the
-   largest that fits.
+   The stock is the part's bounding box grown by `margin_mm` (x and y on each side, z over the
+   top); its bottom is the part's bottom, on the table. Plan like a machinist: one setup per way
+   the part is held; face, rough (`adaptive` with `leave_mm`), finish, then drill, and cut the
+   outline free last; group each tool's operations together; use the shortest tool that reaches
+   and the largest that fits.
 
 4. **Plan.**
 
@@ -169,8 +146,8 @@ mm/min).
    ```
 
    It prints the headline (`Ready to cut · 42 min · 3 tools` or `2 to fix · ...`), one line per
-   operation (its name, tool, rpm, feed, time), the files written, one `assumed:` line per value
-   the job left out (one for proposed tools), then the findings, errors first. `--json` gives the same as one JSON object;
+   operation (tool, rpm, feed, time), the files written, one `assumed:` line per value the job
+   left out, then the findings, errors first. `--json` gives the same as one JSON object;
    `--out-dir DIR` writes elsewhere; `--verbose` times each stage. A job that cannot run at all
    (an unknown key, a missing face, no FreeCAD) is `not planned:` with one error that says what
    to change, exits 1 and writes nothing. A plan with errors exits 0: read the verdict, not the
@@ -241,7 +218,6 @@ plan, before FreeCAD runs and after. An operation with a reach error is not give
 | `uncut` | error | No cutting move reaches a face or hole the operation names at its depth: FreeCAD left it out | Cut it in its own operation with a tool that fits it, or leave it out |
 | `travel` | error | The setup's moves span more than `machine.travel_mm` | The part does not fit this machine in this setup |
 | `clamped` | warning | A tool's spindle speed or feed was held to `max_rpm`, raised to `min_rpm`, or held to `max_feed_mm_min`: one warning a tool | Fine as a starting point; say so. A drill the machine would turn far too fast is refused: pocket the hole with an end mill, or give the operation's `speed` |
-| `not_planned` | warning | A job cadgen completed leaves a feature uncut: the top does not reach it (an underside, a side hole, a floor under the part), none of the job's tools fits it, or it is a chamfer | Say what is left and how it is made: a second setup in the completed job, a tool that fits, or by hand |
 
 `job`, `freecad` and `internal_error` are the one finding of a plan that did not run: the job was
 refused, FreeCAD is missing or failed, or cadgen hit a bug (report it with the part).
@@ -268,7 +244,8 @@ check.
 The file is `<part>.<setup id><ext>`, one per setup. GRBL and Smoothieware do not change tools, so
 a setup with several tools posts one file per run of one tool, `part.top.1-T1.nc`,
 `part.top.2-T2.nc` ...: the operator runs them in order, changing the tool and setting Z zero
-before each. Each tool posts as its T number (its `number`, else the digits of its `id`); the
+before each. Each tool posts as its T number (its `number`, else the digits of its `id`), and two tools
+with one T number are refused; the
 work offset is `machine.work_offset` (`G54`). Every posted file opens with two comment lines
 cadgen adds: what it is (the part, the setup, the FreeCAD version and the post) and that it is not
 proven on a machine and must be air-cut or run single block first.
