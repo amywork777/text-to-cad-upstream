@@ -243,10 +243,10 @@ Laws 1 to 13 and 19 to 23 are the engine's; 14 to 18 hold for the whole package.
     engine, which runs in whatever environment started it, never does. The shim tells the engine,
     on its session, whether the page opened before its host has the answer, and keeps nothing of
     it after; the engine counts a page as open in a browser only once told it opened. Sidebar
-    sharing stays in memory, and host quirks stay in the shim and page. MCP's shared `cad_http`
-    exposes only telemetry status and opt-out to agents; other viewer routes require the session
-    capability delivered in UI-only launch metadata. Only the person can opt in through a page
-    or the telemetry CLI. See the engine's **Architecture**.
+    sharing stays in memory, and host quirks stay in the shim and page. The viewer's routes are
+    the page's alone (`cad_http`), behind the session capability delivered in UI-only launch
+    metadata. Only the person answers telemetry, through a page or the telemetry CLI. See the
+    engine's **Architecture**.
 
 21. **Operations on documents are Python functions the CLI exposes; process control is the
     CLI's alone.** `export`, `snapshot` and `inspect` are functions of the root
@@ -403,8 +403,8 @@ src/cadgen/
 ```
 
 Commands: `cadgen export`, `snapshot`, `serve`, `inspect`, `status`, `stop`, `delete` and
-`server` are the engine's verbs; `cadgen dxf snapshot`, `urdf snapshot` and `sdf snapshot` its
-snapshot for those files alone; `cadgen urdf|sdf|srdf validate` the validators; `cadgen
+`server` are the engine's verbs (`snapshot` draws every file the viewer opens, a DXF or a
+robot among them); `cadgen urdf|sdf|srdf validate` the validators; `cadgen
 doctor` the setup (the installation registered, the `cadgen` command written, the engine started),
 a skill's pin and what cadgen left behind that nothing needs, which `cadgen doctor --prune` removes
 (`_internal/leftovers.py`: engine records of an older format, the bytecode of installations no longer

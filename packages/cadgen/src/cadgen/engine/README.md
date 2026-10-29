@@ -292,23 +292,17 @@ an opaque `Mcp-Session-Id`. Every subsequent request identifies that session;
 DELETE releases it, and a missing/expired session must initialize again (the stdio shim
 does so for its host). JSON replies
 are used; GET returns 405 because this server has no unsolicited SSE events.
-Each session owns its tool server, view registry and immutable UI resource. `cad_http`
-dispatches into the same application in process. It is listed for every host, even
-without an open page. Calls without the session's app capability can only GET
-`/__cad/analytics` or POST exactly `{"share":false}` there; no other route or
-telemetry opt-in is authorized. The tool's base64 body and HTTP reply are the
-same for both callers, with readable JSON text added for agents. Launch results
-carry the app capability in UI-only `_meta["dev.texttocad/httpToken"]`, never
-content, structured content or the resource. The page sends it in `x-cadgen-app`;
-the server checks it before dispatch and strips it. Authorization precedes the
-range cache. Consent attribution is per request, so a simultaneous app opt-in
-and agent opt-out cannot exchange authority. Opt-out removes the installation ID
-and schedules deletion of previously sent data; `saved:false` reports a failed
-settings write. This is an MCP host/model boundary, not a sandbox against the
+Each session owns its tool server, view registry and immutable UI resource. `cad_http`,
+the page's requests of the viewer's routes, dispatches into the same application in
+process. It is app-only, as `cad_sync` and `cad_capture_reply` are, and absent where
+no page is drawn: no agent reaches a viewer route. Launch results carry the app
+capability in UI-only `_meta["dev.texttocad/httpToken"]`, never content, structured
+content or the resource. The page sends it in `x-cadgen-app`; the server checks it
+before dispatch and strips it, and refuses a call without it. Authorization precedes
+the range cache. This is an MCP host/model boundary, not a sandbox against the
 local authenticated host, which already has the installation's file authority.
 Page protocol 9 requires the capability, on `cad_http` and on the page's own `cad_sync` and
-`cad_capture_reply`; older pages must reopen, with no alias
-for the removed telemetry tool. Sidebar views alone are shared through
+`cad_capture_reply`; older pages must reopen. Sidebar views alone are shared through
 an in-memory registry; thread views remain session-local. The host's stdio process
 proxies JSON-RPC and owns no page, tool implementation, catalog or view state.
 Its one act of its own is a text host's browser open: the engine runs in the environment of
@@ -365,6 +359,7 @@ only, and a file's id is derived again from its path after a restart.
 | `serve.py`, `page/` | HTTP: structure JSON and one binary buffer per part; each part's facts by geometry key, measured in batches (`FactCache`, `Server.measure`); the meshing pool and its queues (`Mesher`); a STEP read in a reader process, held by its bytes; a minimal three.js page |
 | `snapshot.py` | `cadgen snapshot`: one dispatcher by suffix -- a document, a mesh file, a robot or a DXF drawn by OCCT (`render/`) into a PNG; a script's model drawn from its worker's memory |
 | `formats/` | the files the stills draw that are not documents, each read into a structure and part buffers: STL (numpy), 3MF (zip + XML), GLB (OCCT's glTF reader, textures and all; and numpy's, for a conversion: `gltf`), URDF/SDF/SRDF (XML, the viewer's forward kinematics), DXF (group codes, flattened as the viewer's pane draws it) |
+| `mesh_uri.py` | a robot description's mesh reference: its URI scheme (a drive letter is none: `C:/x` is a path) and the local file it names (`file:` read by the platform's `url2pathname`, a `file://HOST/` share a UNC path on Windows and no local file elsewhere); the standard library only, so the URDF and SDF readers and validators, the viewer's robot payload and the stills (`formats/robot.py`) all read one the same way |
 | `render/` | the stills drawn by OCCT from the engine's meshes: a document held and drawn, and the daemon's render process per served document and per file (`service.py`); the scene (`occt.py`); a DXF drawn in the 2D look (`drawing.py`); the viewer's Explode, ported (`explode.py`); a part's buffer as OCCT shapes (`shapes.py`); the headless OpenGL context per platform (`context.py`) |
 | `daemon.py`, `worker.py`, `client.py` | one daemon per installation, one warm worker per model script, at most one per core alive (`Pool`), connect-or-start, a hold; a worker's memory cap |
 | `door.py` | how a client reaches the daemon on POSIX: the door, a named pipe, and a pair of pipes per connection (**The door**) |
