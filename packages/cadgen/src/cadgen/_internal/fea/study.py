@@ -4,7 +4,7 @@ A study is JSON (a path, an inline JSON string, or a dict from a library
 caller) of this shape::
 
     {
-      "material": "aluminum-6061-t6",            # or {"name", "E_MPa", "nu", "yield_MPa", "density_t_per_mm3"}
+      "material": {"E_MPa": 68900, "nu": 0.33, "yield_MPa": 276},  # optional; the model's own material otherwise
       "fixtures": [{"faces": ["face 17"], "type": "fixed"}],
       "loads": [
         {"faces": ["face 22"], "type": "force", "vector_N": [0, -500, 0]},
@@ -14,7 +14,7 @@ caller) of this shape::
       "output": {"deformation_scale": "auto"},   # optional; a number, or "auto"
       "margin": 2.0,                             # optional; the safety factor (>= 1) the part should keep
       "checks": [{"kind": "stress"}, {"kind": "displacement", "limit_mm": 0.5}],  # optional; the stress check alone
-      "parts": {"post": {"material": "steel"}},   # assemblies: a material per part, by name or ref
+      "parts": {"post": {"material": {...}}},    # assemblies: a part's own numbers, by name or ref
       "connections": [{"between": ["post", "base"], "type": "free"}],  # assemblies: overrides of the bonded default
       "contact_tolerance_mm": 0.1                # assemblies: faces this close are bonded
     }
@@ -98,7 +98,8 @@ class Connection:
 
 @dataclass(frozen=True)
 class Study:
-    material: Material
+    #: The study's own material, or ``None``: each part is then solved with the model's (``materials``).
+    material: Material | None
     fixtures: tuple[Fixture, ...]
     loads: tuple[Load, ...]
     #: Target element size in mm; ``None`` derives one from the bounding box.
@@ -107,9 +108,9 @@ class Study:
     deformation_scale: float | None = None
     #: The safety factor the part should keep above yield; below it is a warning.
     margin: float = 2.0
-    #: The raw document, echoed into the sidecar so a result names its inputs.
+    #: The raw document, echoed into the result so it names its inputs.
     source: dict = field(default_factory=dict, compare=False)
-    #: Assemblies: the material of each part named in the study, as it named the part.
+    #: Assemblies: the study's own material of each part it names, as it named the part.
     parts: dict[str, Material] = field(default_factory=dict)
     #: Assemblies: overrides of the bonded default.
     connections: tuple[Connection, ...] = ()
@@ -189,7 +190,8 @@ def _parts(entries: Any) -> dict[str, Material]:
     if entries is None:
         return {}
     if not isinstance(entries, dict):
-        raise ValueError('study.parts: expected an object like {"post": {"material": "steel"}}')
+        raise ValueError('study.parts: expected an object like {"post": {"material": {"E_MPa": 200000, "nu": 0.3, '
+                         '"yield_MPa": 250}}}')
     parts = {}
     for name, entry in entries.items():
         if not isinstance(entry, dict) or "material" not in entry:
@@ -377,16 +379,14 @@ def parse_study(study: str | dict | Path | None) -> Study:
     """Validate a study document and return the typed :class:`Study`."""
     if study is None:
         raise ValueError(
-            "a study is required: --study study.json (or inline JSON) naming the material, "
-            "the fixed faces and the loads; run `cadgen fea faces IN.step` to list face refs"
+            "a study is required: --study study.json (or inline JSON) naming the fixed faces and the "
+            "loads; run `cadgen fea faces IN.step` to list face refs"
         )
     document = _load_document(study)
     unknown = set(document) - set(STUDY_KEYS)
     if unknown:
         raise ValueError(f"study: unknown keys {sorted(unknown)}; a study takes {', '.join(STUDY_KEYS)}")
-    if "material" not in document:
-        raise ValueError("study: 'material' is required (a table name or {E_MPa, nu, yield_MPa})")
-    material = material_from_spec(document["material"])
+    material = material_from_spec(document["material"]) if "material" in document else None
     fixtures = parse_fixtures(document)
     loads = parse_loads(document)
 
@@ -420,9 +420,10 @@ def parse_study(study: str | dict | Path | None) -> Study:
     if tolerance < 0:
         raise ValueError(f"contact_tolerance_mm: must be zero or more, got {tolerance:g}")
 
-    # A body load acts on the mass, so every material it is solved with needs a density.
+    # A body load acts on the mass, so every material it is solved with needs a density (the model's own, once
+    # read, by the solve).
     if any(load.body for load in loads):
-        for each in [material, *parts.values()]:
+        for each in [m for m in (material, *parts.values()) if m is not None]:
             if not each.density > 0:
                 raise ValueError(
                     f"material: a gravity or acceleration load needs the density, and {each.name} has none; "

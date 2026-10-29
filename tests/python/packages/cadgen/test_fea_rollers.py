@@ -26,6 +26,7 @@ import unittest
 from pathlib import Path
 
 from tests.python.support.fea_fixtures import glb_array, glb_extras, needs_fea, reported, solve, value_error
+from tests.python.support.fea_fixtures import STEEL_NUMBERS  # noqa: E402
 
 from cadgen._internal.fea.study import parse_study  # noqa: E402
 
@@ -69,7 +70,7 @@ def _pull(faces) -> dict:
 
 def _uniaxial(directory: Path, angle: float, **more):
     step, faces = _block(directory, angle)
-    study = {"material": "steel", "mesh": {"size_mm": 6.0},
+    study = {"material": STEEL_NUMBERS, "mesh": {"size_mm": 6.0},
              "fixtures": [{"faces": [faces["-x"], faces["-y"], faces["-z"]], "type": "roller"}],
              "loads": [_pull(faces)], **more}
     return solve(step, directory / f"block{angle:g}.fea.glb", study)
@@ -77,7 +78,7 @@ def _uniaxial(directory: Path, angle: float, **more):
 
 class StudyFile(unittest.TestCase):
     def test_a_fixture_is_fixed_by_default_or_a_roller(self):
-        base = {"material": "steel", "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 1]}]}
+        base = {"material": STEEL_NUMBERS, "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 1]}]}
         parsed = parse_study({**base, "fixtures": [{"faces": ["face 1"]}, {"faces": ["face 3"], "type": "roller"}]})
         self.assertEqual([fixture.type for fixture in parsed.fixtures], ["fixed", "roller"])
         with self.assertRaisesRegex(ValueError, r"fixtures\[0\]\.type: 'pinned' is not one of \('fixed', 'roller'\)"):
@@ -86,7 +87,7 @@ class StudyFile(unittest.TestCase):
     def test_mesh_refine_names_balls_meshed_finer(self):
         from cadgen._internal.fea.study import refine_points
 
-        base = {"material": "steel", "fixtures": [{"faces": ["face 1"]}],
+        base = {"material": STEEL_NUMBERS, "fixtures": [{"faces": ["face 1"]}],
                 "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 1]}]}
         ball = {"center_mm": [1, 2, 3], "radius_mm": 1.0, "size_mm": 0.5}
         parsed = parse_study({**base, "mesh": {"size_mm": 3, "refine": [ball]}})
@@ -131,7 +132,7 @@ class UniaxialBlock(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             step, faces = _block(Path(name), 0.0)
             message = value_error(self, solve, step, Path(name) / "loose.fea.glb", {
-                "material": "steel", "mesh": {"size_mm": 8.0}, "fixtures": [{"faces": [faces["-z"]], "type": "roller"}],
+                "material": STEEL_NUMBERS, "mesh": {"size_mm": 8.0}, "fixtures": [{"faces": [faces["-z"]], "type": "roller"}],
                 "loads": [_pull(faces)]})
         self.assertIn("the fixtures leave the part free to slide or turn (3 of its 6 rigid motions)", message)
 
@@ -141,7 +142,7 @@ class UniaxialBlock(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             step, faces = _block(Path(name), 0.0)
             written = reported(solve(step, Path(name) / "three.fea.glb", {
-                "material": "steel", "mesh": {"size_mm": 6.0},
+                "material": STEEL_NUMBERS, "mesh": {"size_mm": 6.0},
                 "fixtures": [{"faces": [faces[side]], "type": "roller"} for side in ("-x", "-y", "-z")],
                 "loads": [_pull(faces)]}))
         self.assertFalse([w for w in written["warnings"] if "do not balance" in w], written["warnings"])
@@ -172,7 +173,7 @@ class ConfinedCylinder(unittest.TestCase):
             listed = fea.faces(step).faces
             top = next(f.ref for f in listed if f.normal and f.normal[2] > 0.999)
             result = solve(step, Path(name) / "quarter.fea.glb", {
-                "material": "steel", "mesh": {"size_mm": 2.5},
+                "material": STEEL_NUMBERS, "mesh": {"size_mm": 2.5},
                 "fixtures": [{"faces": [f.ref for f in listed if f.ref != top], "type": "roller"}],
                 "loads": [{"faces": [top], "type": "pressure", "pressure_MPa": pressure}]})
             at, moved, von_mises, _ = _glb(result.glb)

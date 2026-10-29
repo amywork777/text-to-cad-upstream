@@ -17,7 +17,7 @@ import math
 import re
 from dataclasses import dataclass
 
-__all__ = ["CLOSE_WITHIN", "CONVERGED_WITHIN", "GAUSS_RATIO", "MATERIALLY_FINER", "LARGE_DISPLACEMENT", "RESOLVE_BELOW", "Solved", "assembly_findings", "check_findings", "check_status", "default_material", "displacement_check", "finding", "findings", "floored_factor", "gap_closed", "needs_finer", "safety_factor", "safety_factor_text", "stress_check"]
+__all__ = ["CLOSE_WITHIN", "CONVERGED_WITHIN", "GAUSS_RATIO", "MATERIALLY_FINER", "LARGE_DISPLACEMENT", "RESOLVE_BELOW", "Solved", "assembly_findings", "check_findings", "check_status", "displacement_check", "finding", "findings", "floored_factor", "gap_closed", "needs_finer", "safety_factor", "safety_factor_text", "stress_check"]
 
 #: Re-solve finer only when the safety factor is this close to failing.
 RESOLVE_BELOW = 3.0
@@ -117,12 +117,6 @@ def quoted(name: str) -> str:
 
 def _item(text: str, ref: str | None, at: tuple[float, float, float]) -> dict:
     return {"text": text, "ref": ref, "at": [round(c, 3) for c in at]}
-
-
-def default_material(part: str, material_name: str) -> dict:
-    """A part the study gave no material of its own: it got the default, which may not be what it is made of."""
-    return finding("warning", "default_material", f"{quoted(part)} uses the default material ({material_name}): is that right?",
-                    f"the study's parts name no material for {quoted(part)}")
 
 
 def gap_closed(first: str, second: str, gap_mm: float, *, interference: bool = False) -> dict:

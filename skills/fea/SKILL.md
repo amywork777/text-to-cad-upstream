@@ -61,7 +61,7 @@ Vibration, buckling, heat, flow, fatigue, impact, contact and the rest are not i
 | **Compare variants of a design** | Get the study right on one variant, then map its faces onto each other variant and solve each. | [Compare variants](#compare-variants) |
 | **Pick the faces to fix and load** | Prefer face references the user selected in the Viewer (`/work/bracket.step#bracket/face 17`). Otherwise list faces and match by description. | [Face selection](references/linear-static.md#choosing-faces) |
 | **Write or edit a study** | One JSON object: material, fixtures, loads, mesh; for an assembly also parts and connections. | [Study file](references/study-file.md) |
-| **Choose a material** | Use the table by name, or give E, ν and yield explicitly. | [Materials](references/materials.md) |
+| **Choose a material** | The model's own (solve its `.xbf`), or E, ν and yield the user gives. | [Materials](references/materials.md) |
 | **Judge the answer** | Compare with a hand estimate, read the peak away from the fixture, refine if it matters. | [Validation](references/linear-static.md#judging-the-answer) |
 
 Modelling the part itself is `$cad`; this skill only reads a saved `.step` or `.xbf` (a model's
@@ -121,7 +121,6 @@ you write it down ([study-file.md](references/study-file.md#units)).
 
    ```json
    {
-     "material": "aluminum-6061-t6",
      "fixtures": [{"faces": ["bracket/face 17"], "type": "fixed"}],
      "loads": [{"faces": ["bracket/face 22"], "type": "force", "vector_N": [0, -500, 0]}]
    }
@@ -203,10 +202,10 @@ fixed. The keys are in [study-file.md](references/study-file.md#assemblies).
    scripting. Names can repeat (two parts called `bar`): use the ref (`frame/bar.2`) whenever a name is
    ambiguous.
 
-2. **Write the study.** `material` stays the default; give `parts` a material for each part whose
-   material you know from the user or the model, by name or ref, and leave the rest to the default.
-   Do not guess a material to silence a finding: the default is reported, and asking the user is
-   better. Add `connections` only to override a detection (`free` for a pair that must not be
+2. **Write the study.** Each part is solved with its model's own material; give `parts` numbers
+   only for a part whose numbers the user gives (by name or ref). A part with no material in its
+   model and none in the study is refused, naming it: ask the user what it is made of and set it in
+   the model, never pick one to make the study run. Add `connections` only to override a detection (`free` for a pair that must not be
    glued, such as a part that only sits near another); touching pairs are bonded without it. Fixtures and loads name faces on any part
    (`post/face 23`), but not a face that is wholly a bonded joint (refused before the solve, naming the
    face: move it to a face that is not covered); on a face another part only partly covers they apply to the uncovered area alone.
@@ -227,7 +226,6 @@ Findings an assembly adds:
 | Finding | Severity | What it means | What to do |
 | --- | --- | --- | --- |
 | `not_connected` | error | A part (or group of parts) has no bonded chain to a fixed part; the solve did not run. The message names the nearest part and its distance. | Fix the model so the parts touch, fix a face on the group, raise `contact_tolerance_mm` if the gap is within what you would call touching (it closes the gap), or set the study right: a part that is meant to be loose is not part of this model. |
-| `default_material` | warning | A part got the study's default material because `parts` does not name it. | Ask the user or read the model's own material, then name it in `parts`; if the default is right, say so in the report. |
 | `overlapping_parts` | warning | Two parts' solids overlap. They are not bonded, and real parts can't overlap. | Fix the geometry so they touch, or mark the pair `free` in `connections` if the overlap is an accepted modelling shortcut (it silences this). A part held only through the overlap is reported `not_connected`. |
 | `gap_closed` | warning | Two parts a little apart, or a little into each other (an interference), within the tolerance were bonded anyway, moving geometry up to that far. | Check the gap is a modelling clearance and not a real one the joint should have, or that the interference is a slip and not a press fit whose preload matters; the stress at that joint is the model's closing, not the part's. |
 | `bonded_edge_peak` | warning | The peak sits on the edge of a bonded joint, where a rigid bond exaggerates stress. Appears wherever the part misses the study's `margin`, even when a finer mesh agreed: a rigid bond's edge is singular, so two meshes agreeing proves nothing there. | Read the stress a little away from the joint before redesigning; a bolted or welded joint is softer than this model. |

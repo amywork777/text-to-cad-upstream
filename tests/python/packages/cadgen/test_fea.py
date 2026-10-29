@@ -23,14 +23,15 @@ from types import SimpleNamespace
 from tests.python.support.fea_fixtures import (
     box_step, class_directory, ends, glb_array, glb_extras, needs_fea, quiet, read_glb, reported, solve, value_error,
 )
+from tests.python.support.fea_fixtures import AL6061_NUMBERS, AL7075_NUMBERS, PLA_NUMBERS, STEEL_NUMBERS  # noqa: E402
 
-from cadgen._internal.fea.materials import lookup_material  # noqa: E402
+from cadgen._internal.fea.materials import material_from_spec  # noqa: E402
 from cadgen._internal.fea.study import parse_study  # noqa: E402
 
 # The cantilever: length along +X, fixed at x = 0, loaded at x = L in -Z.
 # Light enough that steel keeps a safety factor above 3, so it solves once.
 LENGTH, WIDTH, HEIGHT, FORCE = 60.0, 6.0, 6.0, 20.0
-STEEL = lookup_material("steel")
+STEEL = material_from_spec(STEEL_NUMBERS)
 
 
 def _timoshenko_tip_deflection() -> float:
@@ -98,7 +99,7 @@ def _vtu_von_mises(path: Path) -> "tuple[np.ndarray, np.ndarray]":
     return block("<Points><DataArray").reshape(-1, 3), block('Name="von_mises"')
 
 
-BASE = {"material": "steel", "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [1, 0, 0]}]}
+BASE = {"material": STEEL_NUMBERS, "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [1, 0, 0]}]}
 
 
 class StudyFile(unittest.TestCase):
@@ -106,7 +107,7 @@ class StudyFile(unittest.TestCase):
 
     def test_a_named_material_and_one_fixture_and_load_parse(self):
         study = parse_study({
-            "material": "6061-T6",
+            "material": AL6061_NUMBERS,
             "fixtures": [{"faces": ["face 1"]}],
             "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, -10]}],
         })
@@ -116,28 +117,22 @@ class StudyFile(unittest.TestCase):
         self.assertEqual(study.face_refs, ("face 1", "face 2"))
         self.assertIsNone(study.mesh_size)
 
-    def test_a_custom_material_overrides_the_table(self):
-        study = parse_study({
-            "material": {"name": "steel", "yield_MPa": 900},
-            "fixtures": [{"faces": "face 1"}],
-            "loads": [{"faces": ["face 2"], "type": "pressure", "pressure_MPa": 2.5}],
-        })
-        self.assertEqual(study.material.E, STEEL.E)
-        self.assertEqual(study.material.yield_strength, 900.0)
+    def test_a_studys_material_is_optional_and_only_numbers(self):
+        # Left out, each part is solved with its model's own material; given, it is the person's numbers, whole.
+        study = parse_study({"fixtures": [{"faces": "face 1"}],
+                             "loads": [{"faces": ["face 2"], "type": "pressure", "pressure_MPa": 2.5}]})
+        self.assertIsNone(study.material)
         self.assertEqual(study.loads[0].pressure, 2.5)
-        # It is still the table's steel, by its display name, not the key it was given by.
-        self.assertEqual(study.material.name, STEEL.name)
-
-    def test_an_inline_material_is_named_by_its_table_entry_or_as_written(self):
+        with self.assertRaisesRegex(ValueError, "an object needs E_MPa, nu and yield_MPa .*it has no E_MPa, nu"):
+            parse_study({**BASE, "material": {"name": "steel", "yield_MPa": 900}})
         from cadgen._internal.fea.materials import material_from_spec
 
-        self.assertEqual(material_from_spec({"name": "steel", "yield_MPa": 355}).name, STEEL.name)
-        own = material_from_spec({"name": "Copper C110", "E_MPa": 117000, "nu": 0.34, "yield_MPa": 69})
-        self.assertEqual(own.name, "Copper C110")
+        own = material_from_spec({"name": "Copper  C110", "E_MPa": 117000, "nu": 0.34, "yield_MPa": 69})
+        self.assertEqual((own.name, own.source), ("Copper C110", "study"))
 
     def test_the_errors_name_the_field(self):
         cases = [
-            ({**BASE, "material": "unobtainium"}, "unknown material"),
+            ({**BASE, "material": "unobtainium"}, "give an object with E_MPa, nu and yield_MPa"),
             ({**BASE, "fixtures": []}, "fixtures"),
             ({**BASE, "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 0, 0]}]}, "vector_N"),
             ({**BASE, "loads": [{"faces": ["face 2"], "type": "torque"}]}, "loads[0].type"),
@@ -151,7 +146,7 @@ class StudyFile(unittest.TestCase):
              "loads[0]: unknown keys ['pressure_MPa']; it takes faces, type, vector_N"),
             ({**BASE, "loads": [{"faces": ["face 2"], "type": "pressure", "pressure_MPa": 1, "vector_N": [1, 0, 0]}]},
              "loads[0]: unknown keys ['vector_N']; it takes faces, type, pressure_MPa"),
-            ({**BASE, "parts": {"arm": {"material": "pla", "thickness_mm": 2}}}, "parts['arm']: unknown keys ['thickness_mm']"),
+            ({**BASE, "parts": {"arm": {"material": PLA_NUMBERS, "thickness_mm": 2}}}, "parts['arm']: unknown keys ['thickness_mm']"),
             ({**BASE, "connections": [{"between": ["a", "b"], "type": "free", "tolerance_mm": 1}]},
              "connections[0]: unknown keys ['tolerance_mm']; it takes between, type"),
             ({**BASE, "connections": [{"between": ["a", "b"], "type": "bolt"}]}, "connections[0].type: 'bolt' is not one of ('bonded', 'free')"),
@@ -170,7 +165,7 @@ class StudyFile(unittest.TestCase):
                 self.assertIn("margin", value_error(self, parse_study, {**BASE, "margin": bad}))
 
     def test_inline_json_and_a_file_are_accepted(self):
-        text = json.dumps({"material": "pla", "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 1, 0]}]})
+        text = json.dumps({"material": PLA_NUMBERS, "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [0, 1, 0]}]})
         self.assertEqual(parse_study(text).material.name, "PLA")
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "study.json"
@@ -257,7 +252,7 @@ class Cantilever(unittest.TestCase):
         cls.listing = fea.faces(cls.step)
         cls.fixed_ref, cls.load_ref = ends(cls.listing)
         cls.study = {
-            "material": "steel",
+            "material": STEEL_NUMBERS,
             "fixtures": [{"faces": [cls.fixed_ref], "type": "fixed"}],
             "loads": [{"faces": [cls.load_ref], "type": "force", "vector_N": [0, 0, -FORCE]}],
             "mesh": {"size_mm": 2.0},
@@ -502,7 +497,7 @@ class Yielding(unittest.TestCase):
         cls.fixed_ref, cls.load_ref = ends(cls.step)
         # The fixture names its face with the document prefix, as the viewer copies it.
         cls.study = {
-            "material": "steel",
+            "material": STEEL_NUMBERS,
             "fixtures": [{"faces": [f"{cls.step.name}#{cls.fixed_ref}"], "type": "fixed"}],
             "loads": [{"faces": [cls.load_ref], "type": "force", "vector_N": [0, 0, -100.0]}],
             "mesh": {"size_mm": cls.SIZE},
@@ -817,7 +812,7 @@ class DefaultSizeAccuracy(unittest.TestCase):
         export_step(Rot(0, 90, 0) * Cylinder(cls.ROD_RADIUS, cls.ROD_LENGTH, align=(Align.CENTER, Align.CENTER, Align.MIN)), str(rod))
         fixed, loaded = ends(rod)
         cls.rod = solve(rod, tmp / "rod.glb", {
-            "material": "steel",
+            "material": STEEL_NUMBERS,
             "fixtures": [{"faces": [fixed]}],
             "loads": [{"faces": [loaded], "type": "force", "vector_N": [0, 0, -cls.ROD_FORCE]}],
         }, vtu=True)
@@ -827,7 +822,7 @@ class DefaultSizeAccuracy(unittest.TestCase):
         export_step(body - Pos(cls.PLATE_LENGTH / 2, 0, 0) * Cylinder(cls.HOLE / 2, 2 * cls.PLATE_THICKNESS), str(plate))
         fixed, loaded = ends(plate)
         cls.plate = solve(plate, tmp / "plate.glb", {
-            "material": "steel",
+            "material": STEEL_NUMBERS,
             "fixtures": [{"faces": [fixed]}],
             "loads": [{"faces": [loaded], "type": "force", "vector_N": [cls.PULL, 0, 0]}],
         })
@@ -929,7 +924,7 @@ class CurvedFacetLoads(unittest.TestCase):
         """Before the fix this solve raised "Newton iteration didn't converge" building the pin hole's facet basis."""
         with tempfile.TemporaryDirectory() as tmp:
             # Light enough to keep a safety factor over 3: one solve, at the size that met the stalling element.
-            study = {"material": "aluminum-7075-t6", "fixtures": [{"faces": ["face 7"]}],
+            study = {"material": AL7075_NUMBERS, "fixtures": [{"faces": ["face 7"]}],
                      "loads": [{"faces": ["face 8"], "type": "force", "vector_N": [3600, 0, 0]}], "mesh": {"size_mm": 3.585}}
             result = solve(_write_link_bar(Path(tmp)), Path(tmp) / "bar.fea.glb", study)
         self.assertTrue(result.ok)
@@ -976,3 +971,48 @@ class MeshRefine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@needs_fea
+class ModelMaterial(unittest.TestCase):
+    """A part solved with its model's own material: the bd_materials its xbf holds, read when the study gives none."""
+
+    @classmethod
+    def setUpClass(cls):
+        import textwrap
+
+        from cadgen.engine import build as engine_build
+
+        cls.directory = class_directory(cls)
+        script = cls.directory / "bar.py"
+        script.write_text(textwrap.dedent('''
+            import build123d as bd
+            from bd_materials import metals
+            from cadgen.engine import xbf
+
+
+            @xbf(out="XBF/bar.xbf")
+            def bar():
+                part = bd.Box(40, 10, 10, align=(bd.Align.MIN, bd.Align.CENTER, bd.Align.CENTER))
+                part.material = metals.aluminum()
+                return part
+        '''), encoding="utf-8")
+        (report,) = engine_build.build(script, ["bar"], cwd=cls.directory, log=[].append)
+        assert report["ok"], report
+        cls.xbf = cls.directory / "XBF" / "bar.xbf"
+        fixed, load = ends(cls.xbf)
+        cls.study = {"fixtures": [{"faces": [fixed]}], "loads": [{"faces": [load], "type": "force", "vector_N": [0, 0, -100.0]}],
+                     "mesh": {"size_mm": 2.0}}
+
+    def test_a_study_with_no_material_takes_the_models(self):
+        from bd_materials import metals
+
+        physics = metals.aluminum().material
+        said = reported(solve(self.xbf, self.directory / "own.glb", self.study))["material"]
+        self.assertEqual((said["name"], said["source"]), (metals.aluminum().name, "document"))
+        self.assertEqual(said["yield_MPa"], physics.yield_strength.min)    # the low end: the weakest it may be
+        self.assertEqual(said["ranges"]["yield_MPa"], [physics.yield_strength.min, physics.yield_strength.max])
+
+    def test_a_studys_own_numbers_win_over_the_models(self):
+        said = reported(solve(self.xbf, self.directory / "given.glb", {**self.study, "material": AL6061_NUMBERS}))["material"]
+        self.assertEqual((said["name"], said["yield_MPa"], said["source"]), ("Aluminum 6061-T6", 276.0, "study"))

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -18,6 +19,10 @@ from pathlib import Path
 from tests.python.support.fea_fixtures import (
     class_directory, glb_array, glb_attribute_names, glb_extras, needs_fea, quiet, reported, solve,
 )
+from tests.python.support.fea_fixtures import AL6061_NUMBERS, STEEL_NUMBERS  # noqa: E402
+
+#: The materials the mixed studies name each part by, as numbers.
+NUMBERS = {"steel": STEEL_NUMBERS, "6061": AL6061_NUMBERS}
 
 TOLERANCE = 0.1
 MESH = {"size_mm": 4.0}
@@ -98,7 +103,7 @@ def _scene(step: Path):
 def _pushed(step: Path, part: str, z: float, force: float = 1000, **extra) -> dict:
     """A 6061 study of ``step``: the base's bottom held, ``part``'s face at height ``z`` pushed along +X."""
     scene, refs = _scene(step)
-    return {"material": "6061", **extra, "fixtures": [{"faces": [_face_at(scene, refs["base"], 0.0)]}],
+    return {"material": AL6061_NUMBERS, **extra, "fixtures": [{"faces": [_face_at(scene, refs["base"], 0.0)]}],
             "loads": [{"faces": [_face_at(scene, refs[part], z)], "type": "force", "vector_N": [force, 0, 0]}]}
 
 
@@ -435,7 +440,7 @@ class DuplicateNamesTest(unittest.TestCase):
 
     def study(self, **extra) -> dict:
         return {
-            "material": "6061",
+            "material": AL6061_NUMBERS,
             "fixtures": [{"faces": [_face_at(self.scene, self.base, 0.0)]}],
             "loads": [{"faces": [_face_at(self.scene, self.first, 40.0)], "type": "force", "vector_N": [500, 0, 0]}],
             "mesh": MESH,
@@ -451,7 +456,7 @@ class DuplicateNamesTest(unittest.TestCase):
         self.assertIn(f"bar ({self.second}) ↔ base · 100 mm² · bonded", lines)
 
     def test_a_study_can_name_each_bar_by_its_ref(self):
-        study = self.study(parts={self.first: {"material": "steel"}, self.second: {"material": "6061"}, "base": {"material": "6061"}})
+        study = self.study(parts={self.first: {"material": STEEL_NUMBERS}, self.second: {"material": AL6061_NUMBERS}, "base": {"material": AL6061_NUMBERS}})
         result = solve(self.step, self.tmp / "refs.glb", study)
         self.assertTrue(result.ok)
         names = [part["name"] for part in result.summary["parts"]]
@@ -460,16 +465,15 @@ class DuplicateNamesTest(unittest.TestCase):
         self.assertTrue(materials[self.first].startswith("Steel"))  # the ref chose the material
 
     def test_sentences_name_a_shared_name_with_its_ref(self):
-        result = solve(self.step, self.tmp / "default.glb", self.study(parts={"base": {"material": "6061"}}))
-        summaries = [f["summary"] for f in result.findings if f["type"] == "default_material"]
-        self.assertEqual(sorted(summaries), [
-            f"'bar' ({self.first}) uses the default material (Aluminum 6061-T6): is that right?",
-            f"'bar' ({self.second}) uses the default material (Aluminum 6061-T6): is that right?",
-        ])
+        # Neither the study nor the model gives the first bar a material: refused, naming it by its ref too.
+        study = {key: value for key, value in self.study(parts={"base": {"material": AL6061_NUMBERS}}).items()
+                 if key != "material"}
+        with self.assertRaisesRegex(ValueError, rf"'bar' \({re.escape(self.first)}\) has no material"):
+            solve(self.step, self.tmp / "default.glb", study)
 
     def test_a_name_both_bars_share_is_an_error_naming_the_refs(self):
         with self.assertRaisesRegex(ValueError, rf"parts\['bar'\]: 'bar' names 2 parts \({self.first}, {self.second}\); use a ref"):
-            solve(self.step, self.tmp / "ambiguous.glb", self.study(parts={"bar": {"material": "steel"}}))
+            solve(self.step, self.tmp / "ambiguous.glb", self.study(parts={"bar": {"material": STEEL_NUMBERS}}))
         connections = [{"between": ["bar", "base"], "type": "free"}]
         with self.assertRaisesRegex(ValueError, rf"connections\[0\].between: 'bar' names 2 parts \({self.first}, {self.second}\); use a ref"):
             solve(self.step, self.tmp / "ambiguous.glb", self.study(connections=connections))
@@ -487,7 +491,7 @@ class AssemblyStudyFileTest(unittest.TestCase):
     """The study's assembly keys parse without the FEA stack."""
 
     BASE = {
-        "material": "6061",
+        "material": AL6061_NUMBERS,
         "fixtures": [{"faces": ["base/face 1"]}],
         "loads": [{"faces": ["post/face 2"], "type": "force", "vector_N": [1, 0, 0]}],
     }
@@ -499,7 +503,7 @@ class AssemblyStudyFileTest(unittest.TestCase):
 
     def test_parts_connections_and_tolerance_parse(self):
         parsed = self._parse(
-            parts={"post": {"material": "steel"}},
+            parts={"post": {"material": STEEL_NUMBERS}},
             connections=[{"between": ["post", "base"], "type": "free"}],
             contact_tolerance_mm=0.2,
         )
@@ -539,7 +543,7 @@ class SolveAssemblyTest(unittest.TestCase):
         cls.fixed = _face_at(cls.scene, cls.refs["base"], 0.0)
         cls.load = _face_at(cls.scene, cls.refs["post"], 40.0)
         # The post alone: held at its foot, pushed at its top.
-        cls.alone = {"material": "steel", "fixtures": [{"faces": [_face_at(cls.scene, cls.refs["post"], 10.0)]}],
+        cls.alone = {"material": STEEL_NUMBERS, "fixtures": [{"faces": [_face_at(cls.scene, cls.refs["post"], 10.0)]}],
                      "loads": [{"faces": [cls.load], "type": "force", "vector_N": [1000, 0, 0]}], "mesh": MESH}
         with quiet():
             # Its checks: the stress check and one displacement check over a face of each part, both passing.
@@ -551,8 +555,8 @@ class SolveAssemblyTest(unittest.TestCase):
     @classmethod
     def study(cls, materials: dict | None, **extra) -> dict:
         return {
-            "material": "6061",
-            **({"parts": {name: {"material": material} for name, material in materials.items()}} if materials else {}),
+            "material": AL6061_NUMBERS,
+            **({"parts": {name: {"material": NUMBERS[material]} for name, material in materials.items()}} if materials else {}),
             "fixtures": [{"faces": [cls.fixed]}],
             "loads": [{"faces": [cls.load], "type": "force", "vector_N": [1000, 0, 0]}],
             "mesh": MESH,
@@ -649,12 +653,13 @@ class SolveAssemblyTest(unittest.TestCase):
         self.assertIn("the edge of the bonded joint with 'base'", edges["In 'post'"]["summary"])
         self.assertEqual(edges["In 'post'"]["severity"], "warning")
 
-    def test_a_part_the_study_does_not_name_uses_the_default_material(self):
-        with quiet():
-            result = self.solve_parts({"post": "steel"}, "default")
-        (finding,) = [f for f in result.findings if f["type"] == "default_material"]
-        self.assertEqual(finding["summary"], "'base' uses the default material (Aluminum 6061-T6): is that right?")
-        self.assertNotIn("default_material", self._types(self.mixed))
+    def test_a_part_with_no_material_anywhere_is_refused(self):
+        # The study names the post's alone and gives no material of its own, and the model gives the base none: no
+        # default stands in for it.
+        study = {key: value for key, value in self.study({"post": "steel"}).items() if key != "material"}
+        with self.assertRaisesRegex(ValueError, r"'base' has no material: set part.material in its model"):
+            solve(self.step, self.tmp / "nothing.glb", study)
+        self.assertFalse((self.tmp / "nothing.glb").exists())
 
     def test_the_result_records_the_joint(self):
         written = reported(self.mixed)
@@ -792,7 +797,7 @@ class SolveAssemblyTest(unittest.TestCase):
 
         step = _write_assembly(self.tmp, far_block=20.0, name="stopped")
         study = {
-            "material": "6061",
+            "material": AL6061_NUMBERS,
             "fixtures": [{"faces": [self.fixed]}],
             "loads": [{"faces": [self.load], "type": "force", "vector_N": [1000, 0, 0]}],
         }
@@ -814,11 +819,11 @@ class SolveAssemblyTest(unittest.TestCase):
         return result, finding["summary"]
 
     def test_a_gap_that_is_closed_to_bond_is_said(self):
-        _, said = self._closed(0.08, "lifted", parts={"base": {"material": "6061"}, "post": {"material": "steel"}})
+        _, said = self._closed(0.08, "lifted", parts={"base": {"material": AL6061_NUMBERS}, "post": {"material": STEEL_NUMBERS}})
         self.assertEqual(said, "Closed a 0.08 mm gap between 'post' and 'base' to bond them")
 
     def test_an_interference_that_is_closed_to_bond_is_said(self):
-        result, said = self._closed(-0.01, "pressed", parts={"base": {"material": "6061"}, "post": {"material": "steel"}})
+        result, said = self._closed(-0.01, "pressed", parts={"base": {"material": AL6061_NUMBERS}, "post": {"material": STEEL_NUMBERS}})
         self.assertTrue(result.ok)
         self.assertNotIn("overlapping_parts", self._types(result))
         self.assertEqual(said, "Closed a 0.01 mm interference between 'post' and 'base' to bond them")
@@ -957,8 +962,8 @@ class SolveAssemblyTest(unittest.TestCase):
         step = _write_assembly(self.tmp, cap=True, name="capped")
         scene, refs = _scene(step)
         study = {
-            "material": "6061",
-            "parts": {name: {"material": "6061"} for name in ("base", "post", "cap")},
+            "material": AL6061_NUMBERS,
+            "parts": {name: {"material": AL6061_NUMBERS} for name in ("base", "post", "cap")},
             "fixtures": [
                 {"faces": [_face_at(scene, refs["base"], 0.0)]},
                 {"faces": [_face_at(scene, refs["cap"], 45.0)]},
@@ -1020,7 +1025,7 @@ class RoundPartTest(unittest.TestCase):
             step = _export(tmp / "pin.step", _box("plate", (0, 0, 0), (40, 40, 10)), pin)
             scene, refs = _scene(step)
             study = {
-                "material": "6061",
+                "material": AL6061_NUMBERS,
                 "fixtures": [{"faces": [_face_at(scene, refs["plate"], 0.0)]}],
                 "loads": [{"faces": [_face_at(scene, refs["pin"], 40.0)], "type": "force", "vector_N": [100, 0, 0]}],
                 "mesh": MESH,

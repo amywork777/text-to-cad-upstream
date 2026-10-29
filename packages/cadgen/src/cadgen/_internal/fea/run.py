@@ -191,9 +191,8 @@ class _Plan:
     parts: list
     #: Per part, the occurrence's name (its ref when it has none).
     names: list[str]
+    #: Per part, what it is solved with: the study's numbers for it, else the study's own material, else the model's.
     materials: list
-    #: Indices of the parts the study gave no material of their own.
-    defaulted: list[int]
     #: Every pair in contact within the tolerance, and the ones that get bonded.
     contacts: list
     bonded: list
@@ -230,6 +229,18 @@ def find_part(parts: list, names: list[str], key: str, where: str, document: "Do
     return named[0]
 
 
+def _model_material(occurrence, name: str, parsed):
+    """The model's own material of a part, as its document holds it (``materials.material_from_document``), with the
+    density a body load needs."""
+    from cadgen._internal.fea.materials import material_from_document
+
+    material = material_from_document(occurrence._prototype().material, quoted(name))
+    if any(load.body for load in parsed.loads) and not material.density > 0:
+        raise ValueError(f"{quoted(name)}'s material {material.name} gives no density, which a gravity or acceleration "
+                         "load needs; give the study its own material with density_t_per_mm3")
+    return material
+
+
 def _plan_assembly(doc: "Document", parsed, logger: Narration) -> _Plan:
     from cadgen._internal.fea.assembly import display_names, joined_groups, list_parts
 
@@ -239,7 +250,7 @@ def _plan_assembly(doc: "Document", parsed, logger: Narration) -> _Plan:
     names = display_names(parts)
     index_of = {part.ref: i for i, part in enumerate(parts)}
 
-    materials = [parsed.material] * len(parts)
+    materials: list = [parsed.material] * len(parts)
     given: set[int] = set()
     for key, material in parsed.parts.items():
         index = find_part(parts, names, key, f"parts[{key!r}]", doc)
@@ -247,6 +258,9 @@ def _plan_assembly(doc: "Document", parsed, logger: Narration) -> _Plan:
             raise ValueError(f"parts[{key!r}]: {quoted(names[index])} is named twice in 'parts'")
         given.add(index)
         materials[index] = material
+    leaves = doc.leaves()  # list_parts' order: part i is leaf i
+    materials = [material if material is not None else _model_material(leaves[i], names[i], parsed)
+                 for i, material in enumerate(materials)]
 
     contacts, overlaps, _ = _detect_pairs(parts, parsed.contact_tolerance_mm, parsed.contact_tolerance_mm, logger)
     logger.info(f"found {len(contacts)} touching pairs")
@@ -299,7 +313,7 @@ def _plan_assembly(doc: "Document", parsed, logger: Narration) -> _Plan:
                 f"connections: {quoted(names[i])} and {quoted(names[j])} are also joined through other bonded parts, so one joint "
                 "between them can't be freed on its own (not yet supported); free the parts' other connections too"
             )
-    return _Plan(parts, names, materials, sorted(set(range(len(parts))) - given), contacts, bonded, overlaps, freed_overlaps, group_of, doc)
+    return _Plan(parts, names, materials, contacts, bonded, overlaps, freed_overlaps, group_of, doc)
 
 
 def _joined_through(pairs: list[tuple[int, int]], start: int, end: int) -> list[int]:
@@ -570,6 +584,9 @@ def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool
     if plan is None:
         occurrence = _single_occurrence(doc, owners)
         occurrence_ref = occurrence.ref
+        if parsed.material is None:
+            parsed = dataclasses.replace(parsed, material=_model_material(occurrence, occurrence.label or occurrence.ref,
+                                                                          parsed))
         ordinal_of.update({ref: int(selection.ordinal) for ref, selection in resolved.items()})
     else:
         occurrence_ref = doc.name
@@ -646,7 +663,6 @@ def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool
     findings = checks.findings(static.weakest(result)) if plan is None else checks.assembly_findings(result.solved)
     if plan is not None:
         name_of = {part.ref: plan.names[i] for i, part in enumerate(plan.parts)}
-        findings += [checks.default_material(plan.names[i], plan.materials[i].name) for i in plan.defaulted]
         findings += [checks.gap_closed(name_of[c.a], name_of[c.b], c.gap_mm) for c in plan.bonded if c.gap_mm > 0]
         findings += [
             checks.gap_closed(name_of[c.a], name_of[c.b], c.interference_mm, interference=True)
@@ -730,8 +746,8 @@ def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool
 
     extras["faces"] = [volume.faces[ordinal].ref for ordinal in face_ordinals]
     extras["study"] = {
-        "material": {"name": material.name, "yield_MPa": material.yield_strength,
-                     "youngs_GPa": round(material.E / 1000.0, 6), "poisson": material.nu},
+        "material": None if material is None else {"name": material.name, "yield_MPa": material.yield_strength,
+                                                    "youngs_GPa": round(material.E / 1000.0, 6), "poisson": material.nu},
         **static.study_echo(parsed, bare),
         "mesh": {"size_mm": round(volume.max_h, 4), "order": 2, "elements": int(len(volume.tets)),
                  "refined_from_mm": refined["from_size_mm"] if finer_written else None},
@@ -745,7 +761,8 @@ def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool
     # each fixture's reaction, an assembly's joints and overlaps, and the first solve when there was a finer one.
     reported = {
         "study": parsed.source,
-        "material": material.as_dict(),
+        # One part's material; an assembly's are each part's, in the summary's parts.
+        "material": None if material is None else material.as_dict(),
         "faces": {ref: dataclasses.asdict(volume.faces[ordinal]) for ref, ordinal in ordinal_of.items()},
         "fixtures": tuple(
             {"faces": list(fixture.faces), "type": fixture.type,

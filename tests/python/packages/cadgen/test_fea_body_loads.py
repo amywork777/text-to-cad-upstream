@@ -12,11 +12,12 @@ from __future__ import annotations
 import unittest
 
 from tests.python.support.fea_fixtures import box_step, class_directory, ends, glb_extras, needs_fea, solve
+from tests.python.support.fea_fixtures import STEEL_NUMBERS  # noqa: E402
 
-from cadgen._internal.fea.materials import lookup_material  # noqa: E402
+from cadgen._internal.fea.materials import material_from_spec  # noqa: E402
 
 LENGTH, SIDE = 100.0, 6.0
-STEEL = lookup_material("steel")
+STEEL = material_from_spec(STEEL_NUMBERS)
 G0 = 9806.65
 
 
@@ -32,7 +33,7 @@ class SelfWeight(unittest.TestCase):
     def setUpClass(cls):
         directory = class_directory(cls)
         step = box_step(directory, "beam", (LENGTH, SIDE, SIDE), "x")
-        base = {"material": "steel", "fixtures": [{"faces": [ends(step)[0]]}], "mesh": {"size_mm": 2.0}}
+        base = {"material": STEEL_NUMBERS, "fixtures": [{"faces": [ends(step)[0]]}], "mesh": {"size_mm": 2.0}}
         cls.gravity = solve(step, directory / "gravity.glb", {**base, "loads": [{"type": "gravity", "vector_g": [0, 0, -1]}]})
         cls.lifted = solve(step, directory / "lifted.glb", {**base, "loads": [{"type": "acceleration", "vector_g": [0, 0, 1]}]})
 
@@ -58,7 +59,7 @@ class SelfWeight(unittest.TestCase):
 
 
 
-BASE = {"material": "steel", "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [1, 0, 0]}]}
+BASE = {"material": STEEL_NUMBERS, "fixtures": [{"faces": ["face 1"]}], "loads": [{"faces": ["face 2"], "type": "force", "vector_N": [1, 0, 0]}]}
 
 
 class StudyFile(unittest.TestCase):

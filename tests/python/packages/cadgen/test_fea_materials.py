@@ -1,79 +1,69 @@
-"""``cadgen._internal.fea.materials``: the table and the material object.
+"""``cadgen._internal.fea.materials``: a study's own material object, and the model's material read off its document.
 
-Stdlib only: no FEA stack. The table and the skill's materials reference must agree number for number.
+No FEA stack: the document's material is bd_materials' own, built here as a model sets it.
 """
 
 from __future__ import annotations
 
-import re
 import unittest
-from pathlib import Path
 
 from tests.python.support.fea_fixtures import value_error
 
-from cadgen._internal.fea.materials import MATERIALS, lookup_material, material_from_spec  # noqa: E402
+from cadgen._internal.fea.materials import material_from_document, material_from_spec  # noqa: E402
 
-REFERENCE = Path(__file__).resolve().parents[4] / "skills" / "fea" / "references" / "materials.md"
-
-
-def _reference_rows() -> dict[str, list[float]]:
-    """materials.md's table: table key -> E, ν, yield and density as written."""
-    rows = {}
-    for line in REFERENCE.read_text(encoding="utf-8").splitlines():
-        match = re.match(r"\|\s*`([a-z0-9-]+)`", line)
-        if match:
-            cells = [cell.strip() for cell in line.strip().strip("|").split("|")][1:5]
-            rows[match.group(1)] = [float(cell.replace(" ", "").replace(" ", "")) for cell in cells]
-    return rows
-
-
-class Table(unittest.TestCase):
-    def test_the_reference_gives_the_tables_numbers(self):
-        rows = _reference_rows()
-        self.assertEqual(set(rows), set(MATERIALS))
-        for key, material in MATERIALS.items():
-            with self.subTest(material=key):
-                self.assertEqual(rows[key], [material.E, material.nu, material.yield_strength, material.density])
+OWN = {"E_MPa": 1000, "nu": 0.3, "yield_MPa": 10}
 
 
 class MaterialObject(unittest.TestCase):
-    def test_a_name_reads_the_table(self):
-        self.assertIs(material_from_spec("6061"), lookup_material("aluminum-6061-t6"))
-
-    def test_an_object_extends_a_table_entry(self):
-        steel = material_from_spec({"name": "steel", "yield_MPa": 355})
-        self.assertEqual((steel.name, steel.E, steel.yield_strength), (MATERIALS["steel"].name, MATERIALS["steel"].E, 355.0))
-
-    def test_an_object_is_called_by_a_tidy_name(self):
-        """A table entry's display name where the name is one or an alias; an object's own name tidied, never left raw."""
-        own = {"E_MPa": 10, "nu": 0.45, "yield_MPa": 8}
-        names = {
-            "steel": "Steel (structural, generic)", "Mild_Steel": "Steel (structural, generic)", "stainless": "Stainless steel 304",
-            "copper-c110": "Copper C110", "soft silicone": "Soft silicone", "rubber reed": "Rubber reed",
-            "rubber 50A (estimate)": "Rubber 50A (estimate)", "Viton": "Viton",
-        }
-        for written, shown in names.items():
-            with self.subTest(written=written):
-                self.assertEqual(material_from_spec({"name": written, **own}).name, shown)
-        self.assertEqual(material_from_spec(own).name, "Custom")
-
     def test_the_errors_name_the_field(self):
         cases = [
-            ({"name": "steel", "uts_MPa": 400}, "material: unknown keys ['uts_MPa']; a material object takes name, E_MPa, nu"),
-            ({"name": "steel", "nu": 0.5}, "material.nu: Poisson's ratio must be in [0, 0.5)"),
-            ({"name": "steel", "yield_MPa": 0}, "material.yield_MPa: must be > 0"),
-            ({"name": "steel", "density_t_per_mm3": -1}, "material.density_t_per_mm3: must be zero or more"),
-            ({"E_MPa": 1}, "an object needs E_MPa, nu and yield_MPa"),
-            ("unobtainium", "unknown material 'unobtainium'"),
-            (3, "give a name from the table"),
+            ({**OWN, "uts_MPa": 400}, "material: unknown keys ['uts_MPa']; a material object takes name, E_MPa, nu"),
+            ({**OWN, "nu": 0.5}, "material.nu: Poisson's ratio must be in [0, 0.5)"),
+            ({**OWN, "yield_MPa": 0}, "material.yield_MPa: must be > 0"),
+            ({**OWN, "density_t_per_mm3": -1}, "material.density_t_per_mm3: must be zero or more"),
+            ({"E_MPa": 1}, "an object needs E_MPa, nu and yield_MPa (density_t_per_mm3 optional); it has no nu, yield_MPa"),
+            ({**OWN, "name": ""}, "material.name: a material's name is text"),
+            # A name alone is no material: no table reads an alloy off it.
+            ("6061", "give an object with E_MPa, nu and yield_MPa"),
+            ({"name": "steel", "yield_MPa": 355}, "it has no E_MPa, nu"),
         ]
         for spec, fragment in cases:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, value_error(self, material_from_spec, spec))
 
-    def test_as_dict_names_the_five_numbers(self):
-        custom = material_from_spec({"E_MPa": 1000, "nu": 0.3, "yield_MPa": 10})
-        self.assertEqual(custom.as_dict(), {"name": "Custom", "E_MPa": 1000.0, "nu": 0.3, "yield_MPa": 10.0, "density_t_per_mm3": 0.0})
+    def test_as_dict_names_the_numbers_and_where_they_are_from(self):
+        custom = material_from_spec(OWN)
+        self.assertEqual(custom.as_dict(), {"name": "Custom", "E_MPa": 1000.0, "nu": 0.3, "yield_MPa": 10.0,
+                                            "density_t_per_mm3": 0.0, "source": "study"})
+
+
+class ModelMaterial(unittest.TestCase):
+    """The material a model sets (``part.material = bd_materials.metals.aluminum()``), as its document holds it."""
+
+    def test_yield_is_the_low_end_and_stiffness_the_middle(self):
+        import bd_materials
+
+        aluminium = material_from_document(bd_materials.metals.aluminum(), "'plate'")
+        physics = bd_materials.metals.aluminum().material
+        self.assertEqual(aluminium.yield_strength, physics.yield_strength.min)         # 240 of 240-280 MPa
+        self.assertAlmostEqual(aluminium.E, (physics.modulus_of_elasticity.min + physics.modulus_of_elasticity.max) / 2 * 1000)
+        self.assertAlmostEqual(aluminium.nu, (physics.poisson_ratio.min + physics.poisson_ratio.max) / 2)
+        self.assertAlmostEqual(aluminium.density, physics.density * 1e-12)              # kg/m^3 -> t/mm^3
+        said = aluminium.as_dict()
+        self.assertEqual(said["source"], "document")
+        self.assertEqual(said["ranges"]["yield_MPa"], [physics.yield_strength.min, physics.yield_strength.max])
+
+    def test_a_part_with_no_material_or_no_mechanics_is_refused(self):
+        from bd_materials.core import RangeMaterial
+        from bd_materials import FinishedMaterial
+
+        with self.assertRaisesRegex(ValueError, r"'post' has no material: set part.material in its model"):
+            material_from_document(None, "'post'")
+        # A STEP keeps a material's name and density, and none of its mechanics.
+        named = FinishedMaterial(RangeMaterial(name="Alu_G6061_T6", density=2700.0))
+        with self.assertRaisesRegex(ValueError, r"'post''s material Alu_G6061_T6 gives no modulus_of_elasticity, "
+                                                r"poisson_ratio, yield_strength: .*solve the model's \.xbf"):
+            material_from_document(named, "'post'")
 
 
 if __name__ == "__main__":

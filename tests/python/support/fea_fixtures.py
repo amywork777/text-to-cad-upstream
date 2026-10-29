@@ -32,6 +32,16 @@ except RuntimeError:
 needs_fea = unittest.skipUnless(HAVE_FEA, "CalculiX (ccx) is not installed")
 
 
+#: The studies' own materials, as numbers (a study names no table material): the values a datasheet gives.
+STEEL_NUMBERS = {"name": "Steel (structural, generic)", "E_MPa": 200_000.0, "nu": 0.30, "yield_MPa": 250.0,
+                 "density_t_per_mm3": 7.85e-9}
+AL6061_NUMBERS = {"name": "Aluminum 6061-T6", "E_MPa": 68_900.0, "nu": 0.33, "yield_MPa": 276.0,
+                  "density_t_per_mm3": 2.70e-9}
+AL7075_NUMBERS = {"name": "Aluminum 7075-T6", "E_MPa": 71_700.0, "nu": 0.33, "yield_MPa": 503.0,
+                  "density_t_per_mm3": 2.81e-9}
+PLA_NUMBERS = {"name": "PLA", "E_MPa": 3_500.0, "nu": 0.36, "yield_MPa": 60.0, "density_t_per_mm3": 1.24e-9}
+
+
 @contextmanager
 def quiet():
     """The solver's progress lines go to stderr; a test that is not about them keeps them out of the run's output."""

@@ -9,7 +9,7 @@ from tests.python.support.paths import add_repo_path
 add_repo_path("packages/cadgen/src")
 
 from cadgen._internal.fea.checks import (  # noqa: E402
-    Solved, assembly_findings, check_findings, default_material, displacement_check, findings, gap_closed, needs_finer, safety_factor,
+    Solved, assembly_findings, check_findings, displacement_check, findings, gap_closed, needs_finer, safety_factor,
     safety_factor_text, stress_check,
 )
 
@@ -191,11 +191,6 @@ class ChecksTest(unittest.TestCase):
 
 
 class AssemblyChecksTest(unittest.TestCase):
-    def test_default_material_asks_whether_the_default_is_right(self):
-        f = default_material("post", "6061-T6")
-        self.assertEqual((f["check"], f["severity"], f["type"]), ("fea", "warning", "default_material"))
-        self.assertEqual(f["summary"], "'post' uses the default material (6061-T6): is that right?")
-
     def test_gap_closed_names_the_gap_and_the_parts(self):
         f = gap_closed("post", "base", 0.08)
         self.assertEqual((f["severity"], f["type"]), ("warning", "gap_closed"))

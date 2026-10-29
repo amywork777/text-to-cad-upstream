@@ -1,14 +1,13 @@
 # The study file
 
 One JSON object, passed as `--study study.json` (or inline: `--study '{...}'`). Every key other
-than `material`, `fixtures` and `loads` is optional. The assembly keys (`parts`, `connections`,
+than `fixtures` and `loads` is optional. The assembly keys (`parts`, `connections`,
 `contact_tolerance_mm`) are in [Assemblies](#assemblies); a study without them on a one-part
 document is unchanged. Every check here runs before anything is meshed, so a malformed study fails
 at once with a sentence naming the field.
 
 ```json
 {
-  "material": "aluminum-6061-t6",
   "fixtures": [
     {"faces": ["bracket/face 17"], "type": "fixed"}
   ],
@@ -28,7 +27,7 @@ at once with a sentence naming the field.
 
 | key | meaning |
 | --- | --- |
-| `material` | a table name or an object ([`material`](#material)) |
+| `material` | the study's own numbers for every part; left out, each part's model material ([`material`](#material)) |
 | `fixtures` | the faces held, `fixed` or `roller` ([`fixtures`](#fixtures)); at least one |
 | `loads` | forces and pressures on faces, gravity and acceleration on the whole part ([`loads`](#loads)); at least one |
 | `mesh` | element size and finer balls ([`mesh`](#mesh)) |
@@ -55,15 +54,16 @@ accelerations in g.
 
 ## `material`
 
-A name from [materials.md](materials.md), or an object:
+Optional. Left out, each part is solved with the material its model set, read from its `.xbf`
+([materials.md](materials.md)). Given, it is the study's own numbers for every part, over the
+model's:
 
 ```json
 {"name": "custom", "E_MPa": 70000, "nu": 0.33, "yield_MPa": 240, "density_t_per_mm3": 2.7e-9}
 ```
 
-An object may also name a table entry and override some of its fields:
-`{"name": "steel", "yield_MPa": 355}`. An object takes `name`, `E_MPa`, `nu`, `yield_MPa` and
-`density_t_per_mm3`, nothing else; one with no table name needs the first three.
+An object takes `name`, `E_MPa`, `nu`, `yield_MPa` and `density_t_per_mm3`, nothing else, and
+needs the middle three. A name alone is refused.
 
 ## `fixtures`
 
@@ -99,8 +99,8 @@ At least one. Four types:
 | `acceleration` | `vector_g: [ax, ay, az]`, no `faces` | the part is accelerated by `vector_g`, in g, so it feels an inertial load the opposite way (`[5, 0, 0]`: speeding up at 5 g in +X pushes the part toward -X) |
 
 `gravity` and `acceleration` act on the whole volume (of every part, in an assembly) and need a
-density greater than zero: every table material has one; a material object must give
-`density_t_per_mm3`, or the study is refused with a sentence saying so. Their total (mass times
+density greater than zero: a material object must give `density_t_per_mm3`, and a model's
+material its density, or the study is refused with a sentence saying so. Their total (mass times
 acceleration) joins the applied force in the summary's `applied_force_N`, so the reactions still
 balance it. More in [linear-static.md](linear-static.md#body-loads-gravity-and-acceleration).
 
@@ -127,9 +127,7 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
 
 ```json
 {
-  "material": "aluminum-6061-t6",
   "parts": {
-    "post": {"material": "steel"},
     "frame/bar.2": {"material": {"name": "custom", "E_MPa": 70000, "nu": 0.33, "yield_MPa": 240}}
   },
   "connections": [{"between": ["post", "base"], "type": "free"}],
@@ -139,9 +137,10 @@ A document of several parts is solved as an assembly, bonded where parts touch. 
 }
 ```
 
-- `parts`: a material per part, keyed by its ref (`frame/bar.2`) or by its name; same forms as
-  `material`. A part left out gets the default `material` and a `default_material` finding. A name
-  that two parts share is refused: use a ref. A part named twice is refused.
+- `parts`: the study's own numbers for a part, keyed by its ref (`frame/bar.2`) or by its name;
+  the same object as `material`. A part left out takes the study's `material` if it has one, else
+  its model's; a part with neither is refused, naming it. A name that two parts share is refused:
+  use a ref. A part named twice is refused.
 - `connections`: optional overrides, `{"between": [A, B], "type": ...}` with `bonded` or `free`.
   Without it every pair that touches within the tolerance is bonded. `bonded` needs the pair to
   touch within the tolerance; `free` leaves them unjoined (their faces stay separate and may not
