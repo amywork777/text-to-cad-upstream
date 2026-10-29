@@ -250,13 +250,21 @@ class ChangesRunWhatCanBreak(unittest.TestCase):
         self.assertIn("sha256sum -c", job)                  # the download is the release's, checked
         self.assertIn("CADGEN_FREECAD=", job)
         self.assertIn(f"{CADGEN}/cam", job)
-        self.assertIn("timeout-minutes: 15", job)
+        self.assertIn("timeout-minutes: 5", job)             # twice its slowest run, about 2 minutes
         for path in ("packages/cadgen/src/cadgen/_internal/cam/run.py", "packages/cadgen/src/cadgen/cam.py",
                      "packages/cadgen/src/cadgen/cli/cam_plan.py", "packages/cadgen/src/cadgen/results.py",
                      f"{CADGEN}/cam/test_cam_plan.py", "tests/python/support/cam_fixtures.py", "skills/cam/SKILL.md"):
             with self.subTest(path=path):
                 self.assertIn("cam", jobs_for(path))
         self.assertNotIn("cam", jobs_for("packages/cadgen/src/cadgen/geometry.py"))
+        # What CAM reads a part and writes its files through reaches its plans too, the engine's final rule
+        # notwithstanding; the rest of the engine does not.
+        for path in ("packages/cadgen/src/cadgen/engine/model.py", "packages/cadgen/src/cadgen/engine/refs.py",
+                     "packages/cadgen/src/cadgen/_internal/atomic_replace.py"):
+            with self.subTest(path=path):
+                self.assertIn("cam", jobs_for(path))
+                self.assertEqual(tests_for(path)["cadgen_tests"], [CADGEN])
+        self.assertNotIn("cam", jobs_for("packages/cadgen/src/cadgen/engine/api.py"))
 
     def test_the_viewer_and_the_mcp_server_reach_only_what_reaches_them(self):
         viewer = tests_for("packages/cadgen/src/cadgen/viewer/scanner.py")

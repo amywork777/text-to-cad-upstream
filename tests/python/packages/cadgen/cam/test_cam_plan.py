@@ -171,6 +171,15 @@ class Grbl(unittest.TestCase):
         first, second = (Path(p["file"]).read_text(encoding="utf-8") for p in result.posts)
         self.assertNotIn("G81", re.sub(r"\(.*?\)", "", second))   # GRBL has no drilling cycle: written out as moves
 
+    def test_every_other_post_posts_what_cadgen_set(self):
+        # Each program read back (S, F, Q) and found clean; Fanuc's once failed on the work offset's object.
+        step = block_step(class_directory(type(self)))
+        for post in ("mach3", "fanuc", "centroid", "uccnc", "smoothie"):
+            with self.subTest(post=post):
+                result = plan(step, mill_job([{"op": "face", "tool": "T1"}], machine={"post": post, "max_rpm": 24000}))
+                self.assertEqual("ready", result.verdict.get("status"), result.findings)
+                self.assertTrue(Path(result.posts[0]["file"]).is_file())
+
     def test_a_spindle_the_machine_holds_is_one_warning_a_tool(self):
         step = block_step(class_directory(type(self)))
         result = plan(step, mill_job([{"op": "face", "tool": "T1"},
@@ -390,3 +399,18 @@ class FailedWrite(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EarlierPosts(unittest.TestCase):
+    def test_only_a_program_named_as_a_plan_names_one_is_taken_for_an_earlier_post(self):
+        # An earlier GLB's list of posts is a file the person can open and edit: a name in it that is not a
+        # program's is never deleted beside the part.
+        from cadgen._internal.cam import run
+
+        glb = class_directory(type(self)) / "bracket.cam.glb"
+        glb.write_bytes(b"")
+        listed = {"posts": [{"file": name} for name in ("bracket.top.ngc", "bracket.top.1-T1.nc", "bracket.step",
+                                                        "bracket.cam.json", "../bracket.top.nc", "other.top.nc")]}
+        with mock.patch.object(run, "_glb_cam", return_value=listed):
+            found = [path.name for path in run._previous_posts(glb, "bracket")]
+        self.assertEqual(["bracket.top.ngc", "bracket.top.1-T1.nc"], found)

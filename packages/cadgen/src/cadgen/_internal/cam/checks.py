@@ -23,10 +23,12 @@ undercut (a tool under an overhang is a hit). A finding is a dict of ``check``, 
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["CHECKS", "Target", "by_severity", "check_moves", "face_points", "finding", "reach"]
+__all__ = ["CHECKS", "Target", "by_severity", "check_moves", "face_edges", "face_points", "finding", "held", "posted",
+           "reach"]
 
 #: Each check and the finding types it raises.
 CHECKS = {
@@ -38,6 +40,7 @@ CHECKS = {
     "coverage": ("uncut",),
     "travel": ("travel",),
     "limits": ("clamped",),
+    "post": ("overridden", "posted"),
 }
 _SEVERITY = {"error": 0, "warning": 1, "info": 2}
 #: How far a move may come into the part before it is a gouge (mm): the tessellation's and the grid's own error.
@@ -67,6 +70,9 @@ class Target:
     axis_xy: tuple[float, float] | None = None
     wall: bool = False
     leave_mm: float = 0.0
+    #: A floor's outline, (M, 2, 2) segments in the setup's x and y: what tells the floor a tool fits from the
+    #: corners a round tool never reaches.
+    edges: Any = None
 
 
 def finding(check: str, severity: str, kind: str, summary: str, description: str = "", items=()) -> dict:
@@ -74,6 +80,72 @@ def finding(check: str, severity: str, kind: str, summary: str, description: str
         raise ValueError(f"finding {check}/{kind} ({severity}) is not one cadgen raises")
     return {"check": check, "severity": severity, "type": kind, "summary": summary, "description": description,
             "items": list(items)}
+
+
+#: What FreeCAD reports it holds of what cadgen set, each beside the operation's value cadgen gave it.
+_HELD = {"rpm": ("spindle", "rpm"), "feed_mm_min": ("feed", "mm/min"), "plunge_mm_min": ("plunge", "mm/min"),
+         "stepdown_mm": ("step down", "mm"), "peck_mm": ("peck", "mm"), "final_z": ("final depth", "mm")}
+
+
+def _given(spec: dict) -> dict:
+    """What cadgen set of one operation (``spec``, as ``freecad_job.py`` reads it), by ``_HELD``'s keys."""
+    given = {**spec["feeds"], "stepdown_mm": spec.get("stepdown_mm"), "peck_mm": spec.get("peck_mm"),
+             "final_z": spec.get("final_z")}
+    return {key: float(value) for key, value in given.items() if value is not None}
+
+
+def held(setup_id: str, operations, specs, report) -> list[dict]:
+    """An error for each value FreeCAD holds, recomputed, that is not the one cadgen set (``report``: ``result.json``'s
+    operations, each with its ``held``): an expression of FreeCAD's own puts its number back over a value, and the
+    paths and the posts are then planned to it, whatever the job says."""
+    where = {op.index: op.where for op in operations}
+    found = []
+    for spec, entry in zip(specs, report):
+        given = _given(spec)
+        for key, value in entry["held"].items():
+            want = given.get(key)
+            if want is not None and abs(value - want) > 1e-6 + 1e-4 * abs(want):
+                what, unit = _HELD[key]
+                found.append(finding(
+                    "post", "error", "overridden", f"{where[spec['index']]}: FreeCAD holds a {what} of {value:g} "
+                    f"{unit} where cadgen set {want:g}", "FreeCAD put its own value back over cadgen's on recompute, so "
+                    "its paths and the G-code follow FreeCAD's, not the job's. This is a cadgen bug with this FreeCAD: "
+                    "report it, with the job", [{"setup": setup_id, "operation": spec["index"]}]))
+    return found
+
+
+#: A posted word cadgen sets: the spindle, a feed, a drilling cycle's peck.
+_WORD = re.compile(r"(?<![A-Z])([SFQ])\s*(-?\d*\.?\d+)")
+
+
+def posted(setup_id: str, name: str, text: str, specs) -> list[dict]:
+    """An error for each spindle speed (S), feed (F) or peck (Q) the posted file ``name`` says that cadgen set for none
+    of its operations (``specs``): what FreeCAD's post writes is the program a machine runs, so it is read back, not
+    taken on trust."""
+    allowed = {"S": set(), "F": set(), "Q": set()}
+    for spec in specs:
+        given = _given(spec)
+        allowed["S"].add(given["rpm"])
+        allowed["F"] |= {given["feed_mm_min"], given["plunge_mm_min"]}
+        if "peck_mm" in given:
+            allowed["Q"].add(given["peck_mm"])
+    words = {"S": "spindle speed", "F": "feed", "Q": "peck"}
+    found, said = [], set()
+    for line in text.splitlines():
+        line = re.sub(r"\(.*?\)", "", line.split(";")[0]).upper()
+        for letter, number in _WORD.findall(line):
+            value = float(number)
+            if any(abs(value - want) <= 0.5 if letter == "S" else abs(value - want) <= 1e-3 * max(1.0, abs(want))
+                   for want in allowed[letter]) or (letter, value) in said:
+                continue
+            said.add((letter, value))
+            known = ", ".join(f"{want:g}" for want in sorted(allowed[letter])) or "none"
+            found.append(finding(
+                "post", "error", "posted", f"{name}: the posted program says {letter}{number}, a {words[letter]} cadgen "
+                f"set for none of its operations ({known})", "FreeCAD's post wrote a number cadgen did not give it, so "
+                "the program would run at a speed, feed or peck nobody checked. This is a cadgen bug with this "
+                "FreeCAD and post: report it, with the job", [{"setup": setup_id, "file": name}]))
+    return found
 
 
 def by_severity(found) -> list[dict]:
@@ -124,6 +196,38 @@ def face_points(vertices, triangles, mine, step: float, most: int = 2000, nudge:
     if len(points) > most:
         points = points[np.linspace(0, len(points) - 1, most).astype(int)]
     return points
+
+
+def face_edges(vertices, triangles, mine):
+    """The outline of the triangles ``mine`` selects, as (M, 2, 2) segments in x and y: each edge only one of them
+    has."""
+    import numpy as np
+
+    tri = np.asarray(triangles)[mine]
+    edges = np.sort(np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]]), axis=1)
+    found, count = np.unique(edges, axis=0, return_counts=True)
+    return np.asarray(vertices, dtype=float)[found[count == 1]][:, :, :2]
+
+
+def _fits(points, edges, radius: float, leave: float, cell: float):
+    """Which of a floor's ``points`` (K, 2) a tool of ``radius`` can sweep: within its radius of a centre whose whole
+    disk, and ``leave`` beside it, is on the floor -- the floor's opening by the tool, short of a cell each way. A
+    point outside it (a sharp inside corner, a neck narrower than the tool) is the tool's to leave, never FreeCAD's."""
+    import numpy as np
+
+    a, b = edges[:, 0], edges[:, 1]
+    along = b - a
+    t = np.clip(np.einsum("kmd,md->km", points[:, None, :] - a, along) / np.maximum(
+        np.einsum("md,md->m", along, along), 1e-12), 0.0, 1.0)
+    clear = np.linalg.norm(points[:, None, :] - (a + t[..., None] * along), axis=2).min(axis=1)
+    centres = points[clear >= radius + leave + cell]
+    if not len(centres):
+        return np.zeros(len(points), dtype=bool)
+    near = np.zeros(len(points), dtype=bool)
+    for chunk in range(0, len(centres), 500):
+        gap = np.linalg.norm(points[:, None, :] - centres[None, chunk:chunk + 500], axis=2)
+        near |= (gap <= radius - cell).any(axis=1)
+    return near
 
 
 def reach(op, faces, holes, mesh, face_of_triangle, tool, stock_top: float, depth_z: float | None,
@@ -328,9 +432,10 @@ def _disk(tool, cell: float, here, low):
     return i, j, here[:, 2:3] + _profile_height(tool, np.minimum(d, tool.radius)), d <= tool.radius
 
 
-def _uncut(moves, op, tool, targets, low, shape, cell: float) -> list[str]:
-    """The refs of the ``targets`` (:class:`Target`) no cutting move of ``op`` reaches at its final depth: a hole no
-    feed goes down the axis of, a floor no tool comes over, a wall no tool runs beside."""
+def _uncut(moves, op, tool, targets, low, shape, cell: float) -> list[tuple[str, float | None]]:
+    """``(ref, share)`` of each of the ``targets`` (:class:`Target`) no cutting move of ``op`` reaches at its final
+    depth, ``share`` None: a hole no feed goes down the axis of, a floor no tool comes over, a wall no tool runs
+    beside; and of each floor it cut only part of, ``share`` the part of what the tool fits that it left."""
     import numpy as np
 
     keep = np.nonzero((moves.op == op.index) & ~moves.rapid)[0]
@@ -346,7 +451,7 @@ def _uncut(moves, op, tool, targets, low, shape, cell: float) -> list[str]:
         if target.axis_xy is not None:
             x, y = target.axis_xy
             if not len(at) or not np.any(np.hypot(at[:, 0] - x, at[:, 1] - y) <= DEPTH_TOLERANCE_MM):
-                missed.append(target.ref)
+                missed.append((target.ref, None))
             continue
         radius = tool.radius + (target.leave_mm + cell if target.wall else 0.0)
         key = (target.final_z, radius)
@@ -360,8 +465,14 @@ def _uncut(moves, op, tool, targets, low, shape, cell: float) -> list[str]:
         i = np.floor((target.points[:, 0] - low[0]) / cell).astype(int)
         j = np.floor((target.points[:, 1] - low[1]) / cell).astype(int)
         inside = (i >= 0) & (i < nx) & (j >= 0) & (j < ny)
-        if not swept[key][i[inside], j[inside]].any():
-            missed.append(target.ref)
+        hit = swept[key][i[inside], j[inside]]
+        if not hit.any():
+            missed.append((target.ref, None))
+        elif target.edges is not None and len(target.edges):
+            fits = _fits(target.points[inside, :2], target.edges, tool.radius, target.leave_mm, cell)
+            left = fits & ~hit
+            if left.any():
+                missed.append((target.ref, float(left.sum() / fits.sum())))
     return missed
 
 
@@ -434,9 +545,10 @@ def check_moves(setup_id: str, moves, operations, tools, mesh, stock_low, stock_
     grid = _height_grid(vertices, triangles, low, high, cell)
     for op in operations:
         what = "drilled nothing down" if op.op == "drill" else "cut nothing at the operation's depth over"
-        for ref in _uncut(moves, op, tools[op.tool], (targets or {}).get(op.index, ()), low, grid.shape, cell):
+        for ref, share in _uncut(moves, op, tools[op.tool], (targets or {}).get(op.index, ()), low, grid.shape, cell):
+            said = what if share is None else f"left {share:.0%} of what the tool fits uncut on"
             found.append(finding(
-                "coverage", "error", "uncut", f"{op.where}: FreeCAD {what} {ref}",
+                "coverage", "error", "uncut", f"{op.where}: FreeCAD {said} {ref}",
                 "FreeCAD leaves out what the tool does not fit, and says nothing: a floor, slot or hole narrower "
                 "than the tool, a hole it did not take. Cut it in its own operation with a tool that fits it, or "
                 "leave it out of this one", [{"setup": setup_id, "operation": op.index, "face": ref}]))

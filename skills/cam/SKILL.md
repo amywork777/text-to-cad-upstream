@@ -186,7 +186,7 @@ of the tool's diameter; `stepdown_mm` defaults to a fraction of the diameter set
   to the highest face it names.
 - **Every face named is cut.** FreeCAD leaves out what the tool does not fit (a floor, slot or
   hole narrower than it) and says nothing, so a face or hole no cutting move reaches at the
-  operation's depth is an `uncut` error.
+  operation's depth is an `uncut` error, and so is a floor it cut only part of what the tool fits.
 - **A profile that cuts the part free** needs `through_mm` past the bottom, into a spoilboard,
   and flutes longer than the part, the top margin and `through_mm` together. There are no tabs:
   say how the part stays put (double-sided tape, screws through waste, a vacuum table).
@@ -215,8 +215,10 @@ plan, before FreeCAD runs and after. An operation with a reach error is not give
 | `gouge` | error | A move brings the tool (its real flat, ball, bull nose or drill point shape) into the part | Name only faces the tool can reach, use a smaller tool, or split the floors by depth |
 | `rapid_into_stock` | error | A rapid runs through stock that no move before it has cut | Raise the setup's `retract_mm` (and `clearance_mm`), or cut that material in an earlier operation |
 | `empty_operation` | error | FreeCAD planned no cut for an operation | Check its faces, that the tool fits them, and for `face` that the stock has a top margin |
-| `uncut` | error | No cutting move reaches a face or hole the operation names at its depth: FreeCAD left it out | Cut it in its own operation with a tool that fits it, or leave it out |
+| `uncut` | error | No cutting move reaches a face or hole the operation names at its depth, or a floor's moves cover only part of what the tool fits on it (its sharp inside corners are the tool's to leave): FreeCAD left it out | Cut it in its own operation with a tool that fits it, or leave it out |
 | `travel` | error | The setup's moves span more than `machine.travel_mm` | The part does not fit this machine in this setup |
+| `overridden` | error | FreeCAD, recomputed, holds a spindle speed, feed, step down, peck or final depth other than the one cadgen set, so its paths and G-code follow FreeCAD's | A cadgen bug with this FreeCAD: report it, with the job; nothing is posted |
+| `posted` | error | The posted program says a spindle speed (S), feed (F) or peck (Q) cadgen set for none of its operations: every program is read back | A cadgen bug with this FreeCAD and post: report it, with the job; nothing is posted |
 | `clamped` | warning | A tool's spindle speed or feed was held to `max_rpm`, raised to `min_rpm`, or held to `max_feed_mm_min`: one warning a tool | Fine as a starting point; say so. A drill the machine would turn far too fast is refused: pocket the hole with an end mill, or give the operation's `speed` |
 
 `job`, `freecad` and `internal_error` are the one finding of a plan that did not run: the job was

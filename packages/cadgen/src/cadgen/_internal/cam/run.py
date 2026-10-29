@@ -118,13 +118,19 @@ def _glb_cam(path: Path) -> dict | None:
 
 
 def _previous_posts(glb_path: Path, stem: str) -> list[Path]:
-    """The posted files an earlier plan's GLB at ``glb_path`` lists: plain names beside it, named for this document."""
+    """The posted files an earlier plan's GLB at ``glb_path`` lists: plain names beside it, named for this document as
+    a plan names a program (``<stem>.<setup>[.<n>-<tool>]<ext>``, a post's extension), so a name the GLB carries is
+    never taken for one of the person's own files (``bracket.step``)."""
+    from cadgen._internal.cam.job import POSTS
+
     cam = _glb_cam(glb_path) if glb_path.is_file() else None
     posts = cam.get("posts") if cam else None
+    extensions = tuple({post["ext"] for post in POSTS.values()})
     out = []
     for entry in posts if isinstance(posts, list) else ():
         name = entry.get("file") if isinstance(entry, dict) else None
-        if isinstance(name, str) and name.startswith(f"{stem}.") and "/" not in name and "\\" not in name:
+        if (isinstance(name, str) and name.startswith(f"{stem}.") and name.endswith(extensions)
+                and "/" not in name and "\\" not in name):
             out.append(glb_path.parent / name)
     return out
 
@@ -284,7 +290,7 @@ def _floors_to_walls(faces, part, frame, where: str) -> tuple[list, dict[str, li
 def _targets(op, faces, holes, final_z, frame, mesh, face_of_triangle, tool) -> list:
     """What the coverage check holds the operation to (:class:`checks.Target`): each hole a drill names (once, however
     many of its faces are named), each floor a pocket or adaptive names, each face a profile names."""
-    from cadgen._internal.cam.checks import Target, face_points
+    from cadgen._internal.cam.checks import Target, face_edges, face_points
 
     if final_z is None:
         return []
@@ -301,8 +307,10 @@ def _targets(op, faces, holes, final_z, frame, mesh, face_of_triangle, tool) -> 
     if op.op not in ("pocket", "adaptive", "profile"):
         return []
     vertices, triangles = mesh
-    return [Target(ref=info.ref, final_z=final_z, wall=op.op == "profile", leave_mm=op.params.get("leave_mm", 0.0),
-                   points=face_points(vertices, triangles, face_of_triangle == info.ordinal, max(0.25, tool.radius / 2)))
+    wall = op.op == "profile"
+    return [Target(ref=info.ref, final_z=final_z, wall=wall, leave_mm=op.params.get("leave_mm", 0.0),
+                   points=face_points(vertices, triangles, face_of_triangle == info.ordinal, max(0.25, tool.radius / 2)),
+                   edges=None if wall else face_edges(vertices, triangles, face_of_triangle == info.ordinal))
             for info in faces]
 
 
@@ -403,7 +411,11 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
             start = (0.0, 0.0, stock_top + setup.clearance_mm)
             moves = toolpath.read([(op.index, commands[op.index]) for op in planned], start, machine.rapid_mm_min)
             with logger.timed(f"check setup {setup.id}"):
+                findings += checks.held(setup.id, planned, specs, report["operations"])
                 findings += checks.check_moves(setup.id, moves, planned, tools, mesh, s_low, s_high, machine, targets)
+                spec_of = {spec["index"]: spec for spec in specs}
+                for name, indices in files:
+                    findings += checks.posted(setup.id, name, texts[name], [spec_of[i] for i in indices])
             header = (f"(cadgen cam: {document.name}, setup {setup.id}, planned and posted by {freecad.label} for "
                       f"{machine.post})\n({_SAFETY})\n")
             posted += [(setup.id, name, header + texts[name], tool)

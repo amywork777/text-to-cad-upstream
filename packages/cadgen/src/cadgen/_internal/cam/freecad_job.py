@@ -5,8 +5,10 @@ It reads ``plan.json`` from the folder ``CADGEN_CAM_FOLDER`` names, with the par
 placed in the setup's work coordinates (the tool comes from +Z, the origin is the work zero). It makes one FreeCAD
 job: the part, a box of stock, a tool controller per tool and feed, and one FreeCAD operation per cadgen operation,
 its faces named ``FaceN`` (the N of cadgen's ``face N``: both number a solid's faces in the same order). It writes
-``result.json``: each operation's path commands, in the order run, and the files posted, each holding the operations
-``plan["files"]`` gives it. Any failure is ``{"error": ...}`` in ``result.json``.
+``result.json``: each operation's path commands, in the order run, with what it and its tool controller hold of what
+cadgen set once FreeCAD has recomputed (``held``: an expression of FreeCAD's own can put its value back over one), and
+the files posted, each holding the operations ``plan["files"]`` gives it. Any failure is ``{"error": ...}`` in
+``result.json``.
 
 FreeCAD's Python, FreeCAD's modules and the standard library only.
 """
@@ -104,14 +106,31 @@ def _operation(model, spec, tc, plan):
     return op
 
 
-class _Fixture:
-    """The work offset a posted file starts with, as FreeCAD's own job hands its posts one."""
+def _held(spec, tc, op):
+    """What ``op`` and its controller ``tc`` hold of the values cadgen set (``spec``), recomputed: lengths in mm, feeds
+    in mm/min, the spindle in rpm."""
+    held = {"rpm": float(tc.SpindleSpeed), "feed_mm_min": float(tc.HorizFeed.getValueAs("mm/min")),
+            "plunge_mm_min": float(tc.VertFeed.getValueAs("mm/min"))}
+    if spec["op"] == "drill":
+        if op.PeckEnabled:
+            held["peck_mm"] = float(op.PeckDepth.getValueAs("mm"))
+    else:
+        held["stepdown_mm"] = float(op.StepDown.getValueAs("mm"))
+    if spec.get("final_z") is not None:
+        held["final_z"] = float(op.FinalDepth.getValueAs("mm"))
+    return held
 
-    def __init__(self, word):
+
+class _Fixture:
+    """The work offset a posted file starts with, as FreeCAD's own job hands its posts one (``Processor._TempObject``):
+    in its job, which a post that names the job in its header (Fanuc's) looks up from it."""
+
+    def __init__(self, word, job):
         import Path
 
         self.Name = self.Label = "Fixture"
         self.Path = Path.Path([Path.Command(word)])
+        self.InList = [job]
 
 
 def main():
@@ -155,16 +174,16 @@ def main():
     doc.recompute()
 
     out = {"freecad": ".".join(FreeCAD.Version()[:3]), "operations": [], "posts": []}
-    for spec, _, op in ops:
+    for spec, tc, op in ops:
         commands = [[c.Name, {k: float(v) for k, v in c.Parameters.items()}] for c in op.Path.Commands]
-        out["operations"].append({"index": spec["index"], "commands": commands})
+        out["operations"].append({"index": spec["index"], "commands": commands, "held": _held(spec, tc, op)})
 
     import importlib
 
     post = importlib.import_module(f"Path.Post.scripts.{plan['post']}_post")
     by_index = {spec["index"]: (tc, op) for spec, tc, op in ops}
     for name, indices in plan["files"]:
-        objects, last_tc = [_Fixture(plan["work_offset"])], None
+        objects, last_tc = [_Fixture(plan["work_offset"], job)], None
         for index in indices:
             tc, op = by_index[index]
             if tc is not last_tc:

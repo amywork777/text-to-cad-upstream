@@ -235,6 +235,15 @@ RULES: tuple[Rule, ...] = (
         "scripts/build/**",              # core's and ui's library build
     ), EVERYTHING),
 
+    # What CAM reads a part and writes its files through, in the engine and beside it: a change
+    # there reaches CAM's plans, which only the cam job (with FreeCAD) runs. Before the engine's
+    # final rule, which would stop here.
+    Rule((
+        f"{CADGEN_SRC}/engine/model.py", f"{CADGEN_SRC}/engine/refs.py",
+        f"{CADGEN_SRC}/_internal/atomic_replace.py", f"{CADGEN_SRC}/_internal/primitive_mesh.py",
+        f"{CADGEN_SRC}/_internal/cli_from_function.py",
+    ), select(flags=["cam"])),
+
     # cadgen, and the runtime bundle it executes. The viewer's backend and the CAD app's
     # server reach only what names them (above).
     Rule(VIEWER_SHARED, CADGEN_CONSUMERS, final=True),

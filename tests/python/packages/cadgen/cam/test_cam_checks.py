@@ -149,8 +149,10 @@ class Moves_(unittest.TestCase):
                                   {operation.index: targets or []})
 
     def target(self, ordinal: int, final_z: float, wall: bool = False):
-        points = checks.face_points(*self.mesh, self.part.face_of_triangle == ordinal, 0.5)
-        return checks.Target(ref=self.part.faces[ordinal].ref, final_z=final_z, points=points, wall=wall)
+        mine = self.part.face_of_triangle == ordinal
+        return checks.Target(ref=self.part.faces[ordinal].ref, final_z=final_z, wall=wall,
+                             points=checks.face_points(*self.mesh, mine, 0.5),
+                             edges=None if wall else checks.face_edges(*self.mesh, mine))
 
     def types(self, found):
         return sorted(f["type"] for f in found)
@@ -213,9 +215,18 @@ class Moves_(unittest.TestCase):
 
         lower = self.part.face(floor_ref(cam.features(self.part.document), 11.0)).ordinal
         floor = self.target(lower, 11.0)
-        inside = moves([[-10, 0, 40], [-10, 0, 28], [-10, 0, 11.0], [-15, 0, 11.0], [-15, 0, 40]],
+        # The lower step, 24 x 20 round (-10, 0): passes 4 mm apart with the 6 mm tool clear all of it but the
+        # corners, which no round tool reaches.
+        rows = [[x, y, 11.0] for y in (-7, -3, 1, 5, 7) for x in ((-19, -1) if y % 2 else (-1, -19))]
+        clear = moves([[-19, -7, 40], [-19, -7, 28], *rows, [rows[-1][0], 7, 40]],
+                      [True, True, *[False] * len(rows), True])
+        self.assertEqual([], self.check(clear, targets=[floor]))
+        # One stroke across part of it: what the tool fits and FreeCAD left is said, not passed.
+        stroke = moves([[-10, 0, 40], [-10, 0, 28], [-10, 0, 11.0], [-15, 0, 11.0], [-15, 0, 40]],
                        [True, True, False, False, True])
-        self.assertEqual([], self.check(inside, targets=[floor]))
+        (found,) = self.check(stroke, targets=[floor])
+        self.assertEqual("uncut", found["type"])
+        self.assertRegex(found["summary"], r"FreeCAD left \d+% of what the tool fits uncut on")
         above = moves([[-10, 0, 40], [-10, 0, 28], [-10, 0, 12.0], [-15, 0, 12.0], [-15, 0, 40]],
                       [True, True, False, False, True])
         self.assertEqual(["uncut"], self.types(self.check(above, targets=[floor])))
@@ -238,3 +249,32 @@ class Moves_(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadBack(unittest.TestCase):
+    """What FreeCAD holds after recomputing, and what its post wrote, held to what cadgen set."""
+
+    SPEC = {"index": 0, "op": "drill", "feeds": {"rpm": 9000.0, "feed_mm_min": 600.0, "plunge_mm_min": 200.0},
+            "stepdown_mm": None, "peck_mm": 1.5, "final_z": -4.0}
+
+    def setUp(self):
+        self.job = parse_job(mill_job([{"op": "drill", "tool": "T2", "faces": ["face 1"], "peck_mm": 1.5}]))
+
+    def test_a_value_freecad_put_back_over_cadgen_s_is_refused(self):
+        operations = self.job.setups[0].operations
+        same = {"rpm": 9000.0, "feed_mm_min": 600.0, "plunge_mm_min": 200.0, "peck_mm": 1.5, "final_z": -4.0}
+        self.assertEqual([], checks.held("top", operations, [self.SPEC], [{"held": same}]))
+        (found,) = checks.held("top", operations, [self.SPEC], [{"held": {**same, "peck_mm": 3.75}}])
+        self.assertEqual(("post", "error", "overridden"), (found["check"], found["severity"], found["type"]))
+        self.assertIn("FreeCAD holds a peck of 3.75 mm where cadgen set 1.5", found["summary"])
+
+    def test_a_posted_speed_feed_or_peck_cadgen_did_not_set_is_refused(self):
+        program = ("(cadgen cam: S1 F2 Q3)\nG54\nM3 S9000\nG0 X1 Y2\nG83 X1 Y2 Z-4.000 R3.000 Q1.500 F200.000 ; F7\n"
+                   "G1 X5 F600.0\n")
+        self.assertEqual([], checks.posted("top", "part.top.ngc", program, [self.SPEC]))
+        found = checks.posted("top", "part.top.ngc", program.replace("S9000", "S12000").replace("Q1.500", "Q3.750"),
+                              [self.SPEC])
+        self.assertEqual([("post", "posted")] * 2, [(f["check"], f["type"]) for f in found])
+        self.assertIn("part.top.ngc: the posted program says S12000, a spindle speed cadgen set for none of its "
+                      "operations (9000)", found[0]["summary"])
+        self.assertIn("Q3.750, a peck", found[1]["summary"])

@@ -240,7 +240,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cam == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
 
     steps:
       - name: Check out repository
