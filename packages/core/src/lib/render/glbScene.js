@@ -157,6 +157,7 @@ export function createGlbScene(THREE, document, { sibling = false } = {}) {
   return {
     document,
     meshCount: look.meshCount,
+    keepsAuthoredFinish: [...authored.values()].some(list => list.some(material => material?.userData?.cadAuthoredFinish === true)),
     object3D: root,
     get bounds() { return explodedBounds || bounds; },
     // A view that draws the file larger than authored (an FEA result's deformation, a drop's whole fall) grows them.

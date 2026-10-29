@@ -19,7 +19,7 @@ the look the viewer's viewport resolves for the same display settings. The answe
 which this writes to OUT.
 
 The request is the snapshot contract's where it applies (``--display`` mode or JSON, ``--grid``,
-``--camera``, ``--preview``, ``clip`` -- its ``at`` in the file's unit, as the viewer reads it: a
+``--camera``, ``clip`` -- its ``at`` in the file's unit, as the viewer reads it: a
 document's millimetres, a robot's or a GLB's metres, a 3MF's declared unit (``render/clip.py``) --
 the sizes, ``--json``), and what a kind does not offer is
 refused by name before anything renders: ``parts`` and ``exploded`` for a file that places a single
@@ -120,7 +120,7 @@ MAX_SIDE = 8192
 # ``--job``: a Quick Edit packet (``cadgen.viewer``'s ``.snapshot.json``), a job, or a list of jobs; each job a
 # view, its outputs the pictures it writes, its output settings how they are framed and finished.
 PACKET_KEYS = frozenset({"input", "jobs", "annotation", "measurements", "hidden", "isolated"})
-JOB_KEYS = frozenset({"input", "camera", "display", "preview", "jointValues", "selection", "annotation", "measurements",
+JOB_KEYS = frozenset({"input", "camera", "display", "jointValues", "selection", "annotation", "measurements",
                       "output", "outputs"})
 OUTPUT_KEYS = frozenset({"path", "width", "height", "camera", "label"})
 SETTINGS_KEYS = frozenset({"sizeProfile", "padding", "tightFrame", "transparent", "renderScale"})
@@ -754,7 +754,7 @@ def options(display: Any = None, camera: Any = None, grid: bool = False, width: 
 
 
 def draw(source: Any, out: Path, *, display: Any = None, camera: Any = None, grid: bool = False,
-         preview: bool = False, pose: Any = None, width: int | None = None, height: int | None = None,
+         pose: Any = None, width: int | None = None, height: int | None = None,
          size_profile: str | None = None, annotation: Any = None, measurements: Any = None,
          view: str | None = None) -> dict[str, Any]:
     """A build's document (an ``export.Source``, in this process's memory) drawn into ``out``:
@@ -762,7 +762,7 @@ def draw(source: Any, out: Path, *, display: Any = None, camera: Any = None, gri
     cache, so nothing the build meshed is meshed again."""
     shown, framed, size = options(display, camera, grid, width, height, size_profile, view)
     path = source.path or Path(out).with_suffix(".xbf")
-    return snapshot(path, Path(out), display=shown, camera=framed, preview=preview,
+    return snapshot(path, Path(out), display=shown, camera=framed,
                     size=None if width is None and height is None and size_profile is None else size, pose=pose,
                     source=source, annotation=parse_annotation(annotation), measurements=parse_measurements(measurements),
                     annotation_source=annotation, view=view)
@@ -997,7 +997,7 @@ def _job_size(output: dict[str, Any], settings: dict[str, Any], flags: tuple[Any
 
 
 def job_pictures(job: Any, source: Any = None, *, display: Any = None, camera: Any = None, grid: bool = False,
-                 preview: bool = False, pose: Any = None, width: int | None = None, height: int | None = None,
+                 pose: Any = None, width: int | None = None, height: int | None = None,
                  size_profile: str | None = None, annotation: Any = None,
                  measurements: Any = None, view: str | None = None) -> list[tuple[Path, Path, Still]]:
     """Every picture a job names (``--job``: a Quick Edit packet, a job, or a list of jobs), each
@@ -1073,8 +1073,7 @@ def job_pictures(job: Any, source: Any = None, *, display: Any = None, camera: A
         # The view it is drawn as: --view's for every job, else its display's own.
         own = shown.pop("view", None)
         named = own if view_flag is None else view_flag
-        projection = (shown.get("camera") or {}).get("projection") or ("perspective" if preview or view.get("preview")
-                                                                      else "orthographic")
+        projection = (shown.get("camera") or {}).get("projection") or "orthographic"
         ink = ink_flag if annotation is not None else parse_annotation(view.get("annotation", shared.get("annotation")))
         dimensions = dimensions_flag if measurements is not None else parse_measurements(
             view.get("measurements", shared.get("measurements")))
@@ -1083,8 +1082,6 @@ def job_pictures(job: Any, source: Any = None, *, display: Any = None, camera: A
             posed = parse_pose(posed)
         if posed is not None and document.suffix.lower() in MESHES:
             raise SnapshotRefused(f"{where}: --pose poses a document's mechanism; {document.name} is a mesh and has none")
-        if view.get("preview") is not None and not isinstance(view["preview"], bool):
-            raise SnapshotRefused(f"{where}.preview is true or false")
         outputs = view.get("outputs")
         if not isinstance(outputs, list) or not outputs:
             raise SnapshotRefused(f"{where}.outputs lists the pictures it writes, at least one")
@@ -1114,7 +1111,7 @@ def job_pictures(job: Any, source: Any = None, *, display: Any = None, camera: A
                 framed, exact = None, False
             if framed == AUTHORED:
                 framed, exact, _view = authored(AUTHORED, ink, given if isinstance(given, dict) else None, document)
-            pictures.append((document, out, Still(shown, framed, exact, bool(preview or view.get("preview")), size,
+            pictures.append((document, out, Still(shown, framed, exact, False, size,
                                                   posed, ink, dimensions, padding, tight,
                                                   bool(settings.get("transparent")), scale, named)))
     written = [out for _document, out, _still in pictures]
@@ -1230,7 +1227,6 @@ def _arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--view", metavar="NAME", help="a part's named view (cadgen.ap242's view; PART/NAME where two "
                                                        "parts have one): drawn down its camera, cut by its section, "
                                                        "its PMI alone at its placements; not with --camera")
-    parser.add_argument("--preview", action="store_true", help="Preview's photographic look instead of the mode")
     parser.add_argument("--width", type=int)
     parser.add_argument("--height", type=int)
     parser.add_argument("--size-profile", choices=sorted(SIZE_PROFILES))
@@ -1261,18 +1257,11 @@ def build_parser(prog: str = "cadgen snapshot") -> argparse.ArgumentParser:
     return _arguments(argparse.ArgumentParser(prog=prog, description=_HELP))
 
 
-def main(argv: list[str] | None = None, prog: str = "cadgen snapshot", suffixes: tuple[str, ...] = ()) -> int:
-    """``cadgen snapshot SRC OUT.png``; with ``suffixes``, a command that draws those files alone
-    (``cadgen dxf snapshot`` draws a ``.dxf``), refusing any other SRC by name before anything renders."""
-    from cadgen.engine.cli import Failed, answered
+def main(argv: list[str] | None = None, prog: str = "cadgen snapshot") -> int:
+    """``cadgen snapshot SRC OUT.png``."""
+    from cadgen.engine.cli import answered
 
-    def drawn(args: argparse.Namespace, prog: str) -> int:
-        named = args.document if args.job is None or args.document is not None else job_input(args.job)
-        if suffixes and named is not None and Path(named).suffix.lower() not in suffixes:
-            raise Failed(f"{named} is not a {' or '.join(suffixes)} file", 2)
-        return run(args, prog)
-
-    return answered(drawn, build_parser(prog).parse_args(argv), prog)
+    return answered(run, build_parser(prog).parse_args(argv), prog)
 
 
 def run(args: argparse.Namespace, prog: str = "cadgen snapshot") -> int:
@@ -1292,7 +1281,7 @@ def run(args: argparse.Namespace, prog: str = "cadgen snapshot") -> int:
     try:
         # The verb as a function (``api.snapshot``), which checks the flags as ``snapshot`` does.
         report = api.snapshot(Path(args.document), args.out, display=args.display, camera=args.camera, grid=args.grid,
-                              preview=args.preview, pose=args.pose, width=args.width, height=args.height,
+                              pose=args.pose, width=args.width, height=args.height,
                               size_profile=args.size_profile, annotation=args.annotation,
                               measurements=args.measurements, view=args.view).report
     except SnapshotRefused as error:
@@ -1318,7 +1307,7 @@ def _run_held(args: argparse.Namespace, prog: str) -> int:
 
     try:
         drawn = api.snapshot(args.document, args.out, display=args.display, camera=args.camera, grid=args.grid,
-                             preview=args.preview, pose=args.pose, width=args.width, height=args.height,
+                             pose=args.pose, width=args.width, height=args.height,
                              size_profile=args.size_profile, annotation=args.annotation,
                              measurements=args.measurements, view=args.view)
     except (SnapshotRefused, ValueError) as error:
@@ -1346,7 +1335,7 @@ def _run_job(args: argparse.Namespace, prog: str) -> int:
     started = time.perf_counter()
     try:
         drawn = api.snapshot(args.document, job=args.job, display=args.display, camera=args.camera, grid=args.grid,
-                                 preview=args.preview, pose=args.pose, width=args.width, height=args.height,
+                                 pose=args.pose, width=args.width, height=args.height,
                                  size_profile=args.size_profile, annotation=args.annotation,
                                  measurements=args.measurements, view=args.view)
     except SnapshotRefused as error:
