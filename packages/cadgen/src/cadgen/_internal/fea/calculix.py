@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -69,12 +68,16 @@ def _in_freecad() -> list[str]:
         apps = [Path("/Applications"), Path.home() / "Applications"]
         return [str(app / "FreeCAD.app" / "Contents" / "Resources" / "bin" / "ccx") for app in apps]
     if sys.platform == "win32":
-        # The installer's folder is "FreeCAD 1.1", for every user under Program Files or for one under Programs.
+        # The installer's folder is "FreeCAD 1.1", for every user under Program Files or for one under Programs:
+        # exactly that name, newest version first by number (1.10 after 1.9), never by spelling.
         roots = [Path(os.environ[name]) / under for name, under in (("ProgramFiles", ""), ("LOCALAPPDATA", "Programs"))
                  if os.environ.get(name)]
-        found = sorted((folder for root in roots for folder in root.glob("FreeCAD *")), key=lambda f: f.name,
-                       reverse=True)
-        return [str(folder / "bin" / "ccx.exe") for folder in found]
+        found = []
+        for root in roots:
+            for folder in (root.iterdir() if root.is_dir() else ()):
+                if version := re.fullmatch(r"FreeCAD (\d+)\.(\d+)", folder.name):
+                    found.append(((int(version.group(1)), int(version.group(2))), folder))
+        return [str(folder / "bin" / "ccx.exe") for _version, folder in sorted(found, key=lambda each: each[0], reverse=True)]
     return []
 
 
@@ -92,16 +95,23 @@ class Ccx:
 
 
 def find_ccx() -> Ccx:
-    """The ``ccx`` to run: ``CADGEN_CCX``, else the first of :data:`NAMES` on PATH, else a FreeCAD install's. Raises
-    :class:`CalculixMissingError` naming why and how to install it."""
+    """The ``ccx`` to run: ``CADGEN_CCX`` (an absolute path, or a bare name on PATH), else the first of :data:`NAMES`
+    on PATH, else a FreeCAD install's. PATH is searched as the engine searches it (``executables.find``: its absolute
+    folders alone, never the working folder). Raises :class:`CalculixMissingError` naming why and how to install it."""
+    from cadgen.engine.executables import find
+
     setting = os.environ.get(CCX_ENV, "").strip()
     if setting:
-        path = shutil.which(setting) or (setting if os.path.isfile(setting) else None)
+        if os.path.basename(setting) == setting:
+            path = find(setting)
+        else:
+            path = setting if os.path.isabs(setting) and os.path.isfile(setting) else None
         if path is None:
-            raise CalculixMissingError(f"{CCX_ENV} names {setting}, which is not a program: {install_hint()}")
+            raise CalculixMissingError(f"{CCX_ENV} names {setting}, which is not a program (give its absolute path, "
+                                       f"or a name on PATH): {install_hint()}")
         return _checked(path)
     for name in NAMES:
-        if found := shutil.which(name):
+        if found := find(name):
             return _checked(found)
     for path in _in_freecad():
         if os.path.isfile(path):

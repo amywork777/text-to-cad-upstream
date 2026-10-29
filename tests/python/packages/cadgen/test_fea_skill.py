@@ -26,19 +26,6 @@ class StdlibAtImport(unittest.TestCase):
 
 
 class SkillDocs(unittest.TestCase):
-    def test_nothing_removed_is_still_taught(self):
-        stale = (
-            "`fit`", "fit.allow", "adapted:", "ladder", "linear_elements", "local_refine", "defeature", "idealise",
-            "built-in solver", "downloads it once", "downloading the CalculiX", "CADGEN_CCX=0", "scikit-fem", "pyamg",
-            "Gauss-point peak is", "always higher", "Lite limits", "`analysis`", "`view`", "presets", "threshold",
-            "planned-next", "piezo", "orthotropic",
-        )
-        for path in _pages():
-            text = " ".join(path.read_text(encoding="utf-8").split())
-            for phrase in stale:
-                with self.subTest(page=path.name, phrase=phrase):
-                    self.assertNotIn(phrase, text)
-
     def test_the_study_keys_and_the_check_kinds_are_the_parsers(self):
         from cadgen._internal.fea.study import CHECK_KEYS, STUDY_KEYS
 

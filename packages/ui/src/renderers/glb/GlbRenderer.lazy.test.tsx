@@ -60,6 +60,7 @@ it('a plain GLB never requests the FEA viewer', async () => {
 
 it('an FEA result loads the FEA viewer, then shows Study', async () => {
   mount({ generator: 'cadgen fea', name: 'part von Mises', document: 'part.step', occurrence: 'part', deformation_scale: 1, safety_factor: 2.76, faces: [], findings: [],
+    ramp: [[0, [0, 0, 1]], [1, [1, 0, 0]]],
     fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 100, attribute_scale: 1 }],
     checks: [{ kind: 'stress', label: 'Strength', value: 100, limit: 276, unit: 'MPa', ratio: 0.362319, close_at: 0.5, margin: 2, status: 'passes', where: { ref: null, at: [0, 0, 0] } }],
     study: { material: { name: '6061-T6', yield_MPa: 276 }, fixtures: [], loads: [], mesh: { size_mm: 1, refined_from_mm: null }, margin: 2 } });

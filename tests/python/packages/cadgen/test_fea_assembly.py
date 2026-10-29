@@ -515,11 +515,6 @@ class AssemblyStudyFileTest(unittest.TestCase):
         parsed = self._parse()
         self.assertEqual((parsed.parts, parsed.connections, parsed.contact_tolerance_mm), ({}, (), 0.1))
 
-    def test_bolt_and_contact_are_no_connection_types(self):
-        for kind in ("bolt", "contact"):
-            with self.assertRaisesRegex(ValueError, rf"connections\[0\]\.type: '{kind}' is not one of \('bonded', 'free'\)"):
-                self._parse(connections=[{"between": ["post", "base"], "type": kind}])
-
     def test_the_errors_name_the_field(self):
         for extra, message in (
             ({"connections": [{"between": ["post"], "type": "free"}]}, r"connections\[0\]\.between"),

@@ -643,7 +643,8 @@ def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool
             # Finer at fillets and holes too, by the same ratio: there the curvature, not the size, sets the mesh.
             finer_volume = mesh(finer_size, volume.max_h / finer_size, size_field=study_field)
             finer_result = solve_on(finer_volume, automatic=True)
-        except Exception as exc:  # a finer solve is a second opinion; the first answer stands without it
+        except RuntimeError as exc:  # the mesher or CalculiX failed: a second opinion, so the first answer stands
+            # without it. Anything else is a fault of cadgen's, and fails the solve as the first one would.
             finer_failure = (
                 f"the finer solve at {refined['size_mm']:g} mm failed ({exc}); "
                 "the result is the first solve's, and its convergence is unchecked"

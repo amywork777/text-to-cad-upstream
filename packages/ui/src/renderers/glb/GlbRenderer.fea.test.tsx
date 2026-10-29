@@ -68,6 +68,8 @@ const RESULT = {
     { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 0.0288, attribute_scale: 1000 },
   ],
   findings: [], checks: [STRESS_CHECK], faces: [], study: STUDY,
+  // The writer's colour ramp, as every result carries it: blue -> red.
+  ramp: [[0, [0.05, 0.10, 0.90]], [0.25, [0.05, 0.85, 0.95]], [0.5, [0.10, 0.85, 0.15]], [0.75, [0.98, 0.90, 0.10]], [1, [0.90, 0.08, 0.05]]],
 };
 // The viewer's own element, which the shell asks whose Escape it is.
 function ViewerElement({ children }: { children: React.ReactNode }) {

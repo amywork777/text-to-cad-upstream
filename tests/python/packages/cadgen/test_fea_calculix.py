@@ -35,7 +35,7 @@ class FindCcx(unittest.TestCase):
                 calculix.find_ccx()
 
     def test_none_on_path_or_in_freecad_is_refused_with_the_install_hint(self):
-        with mock.patch.dict(os.environ, {calculix.CCX_ENV: ""}), mock.patch.object(calculix.shutil, "which", return_value=None), \
+        with mock.patch.dict(os.environ, {calculix.CCX_ENV: ""}), mock.patch("cadgen.engine.executables.find", return_value=None), \
                 mock.patch.object(calculix, "_in_freecad", return_value=["/no/FreeCAD.app/Contents/Resources/bin/ccx"]):
             with self.assertRaises(calculix.CalculixMissingError) as caught:
                 calculix.find_ccx()
@@ -47,7 +47,7 @@ class FindCcx(unittest.TestCase):
     def test_with_none_on_path_the_ccx_a_freecad_install_carries_is_found(self):
         with tempfile.TemporaryDirectory() as name:
             program = _program(Path(name), "This is Version 2.23")
-            with mock.patch.dict(os.environ, {calculix.CCX_ENV: ""}), mock.patch.object(calculix.shutil, "which", return_value=None), \
+            with mock.patch.dict(os.environ, {calculix.CCX_ENV: ""}), mock.patch("cadgen.engine.executables.find", return_value=None), \
                     mock.patch.object(calculix, "_in_freecad", return_value=["/no/such/ccx", program]):
                 found = calculix.find_ccx()
         self.assertEqual((found.path, found.version), (program, "2.23"))
@@ -57,6 +57,27 @@ class FindCcx(unittest.TestCase):
             self.assertIn(str(Path("/Applications/FreeCAD.app/Contents/Resources/bin/ccx")), calculix._in_freecad())
         with mock.patch.object(calculix.sys, "platform", "linux"):
             self.assertEqual(calculix._in_freecad(), [])
+        # Windows: the installer's "FreeCAD 1.1" folders, newest by number (1.10 after 1.9, which spelling sorts
+        # the other way round), and nothing else that starts with the name.
+        with tempfile.TemporaryDirectory() as name:
+            for folder in ("FreeCAD 1.9", "FreeCAD 1.10", "FreeCAD 1.1 dev", "FreeCAD-backup"):
+                (Path(name) / folder).mkdir()
+            with mock.patch.object(calculix.sys, "platform", "win32"), \
+                    mock.patch.dict(os.environ, {"ProgramFiles": name, "LOCALAPPDATA": ""}):
+                self.assertEqual(calculix._in_freecad(), [str(Path(name) / "FreeCAD 1.10" / "bin" / "ccx.exe"),
+                                                          str(Path(name) / "FreeCAD 1.9" / "bin" / "ccx.exe")])
+
+    def test_a_setting_is_an_absolute_path_or_a_name_on_path(self):
+        # A relative path would be read in whatever folder the solve runs in.
+        with mock.patch.dict(os.environ, {calculix.CCX_ENV: "bin/ccx"}):
+            with self.assertRaisesRegex(calculix.CalculixMissingError, r"CADGEN_CCX names bin/ccx, which is not a "
+                                                                       r"program \(give its absolute path"):
+                calculix.find_ccx()
+        with mock.patch.dict(os.environ, {calculix.CCX_ENV: "ccx"}), \
+                mock.patch("cadgen.engine.executables.find", return_value=None) as find:
+            with self.assertRaises(calculix.CalculixMissingError):
+                calculix.find_ccx()
+        find.assert_called_once_with("ccx")
 
     @unittest.skipIf(sys.platform == "win32", "a shell script stands in for ccx")
     def test_a_version_older_than_the_minimum_is_refused(self):

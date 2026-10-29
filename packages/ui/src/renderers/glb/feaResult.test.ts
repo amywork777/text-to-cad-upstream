@@ -7,6 +7,15 @@ import {
 } from './feaResult.js';
 import { translator } from '../../i18n/core.js';
 
+// The writer's colour ramp (cadgen `_internal/fea/outputs.py` RAMP), as every result carries it: blue -> red.
+const RAMP = [
+  [0.0, [0.05, 0.10, 0.90]],
+  [0.25, [0.05, 0.85, 0.95]],
+  [0.5, [0.10, 0.85, 0.15]],
+  [0.75, [0.98, 0.90, 0.10]],
+  [1.0, [0.90, 0.08, 0.05]],
+];
+
 // The study the result was solved for, and the stress check cadgen judged (one over the safety factor), as it writes them into the extras.
 const STUDY = {
   material: { name: '6061-T6', yield_MPa: 276, youngs_GPa: 68.9, poisson: 0.33 },
@@ -45,6 +54,7 @@ function resultMesh({ generator = 'cadgen fea', scale = 10, safetyFactor = 5.83 
     checks: [STRESS_CHECK],
     faces: [],
     study: STUDY,
+    ramp: RAMP,
     fields: [
       { attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 47.3, attribute_scale: 1 },
       { attribute: '_DISPLACEMENT', name: 'displacement', units: 'mm', min: 0, max: 0.0288, attribute_scale: 1000 },
@@ -58,15 +68,15 @@ function resultMesh({ generator = 'cadgen fea', scale = 10, safetyFactor = 5.83 
 
 describe('feaRamp', () => {
   it('runs blue to red through the writer\'s stops', () => {
-    expect(feaRamp(0)).toEqual([0.05, 0.10, 0.90]);
-    expect(feaRamp(1)).toEqual([0.90, 0.08, 0.05]);
-    expect(feaRamp(0.5)).toEqual([0.10, 0.85, 0.15]);
-    const [r, g, b] = feaRamp(0.125);
+    expect(feaRamp(0, RAMP)).toEqual([0.05, 0.10, 0.90]);
+    expect(feaRamp(1, RAMP)).toEqual([0.90, 0.08, 0.05]);
+    expect(feaRamp(0.5, RAMP)).toEqual([0.10, 0.85, 0.15]);
+    const [r, g, b] = feaRamp(0.125, RAMP);
     expect(r).toBeCloseTo(0.05);
     expect(g).toBeCloseTo(0.475);
     expect(b).toBeCloseTo(0.925);
-    expect(feaRamp(-3)).toEqual(feaRamp(0));
-    expect(feaRamp(9)).toEqual(feaRamp(1));
+    expect(feaRamp(-3, RAMP)).toEqual(feaRamp(0, RAMP));
+    expect(feaRamp(9, RAMP)).toEqual(feaRamp(1, RAMP));
   });
 });
 
@@ -78,7 +88,7 @@ describe('readFeaResult', () => {
     expect(result?.deformationScale).toBe(10);
     expect(result?.fields.map((f) => f.attribute)).toEqual(['_von_mises', '_displacement']);
     expect(result?.fields[1]).toMatchObject({ units: 'mm', max: 0.0288, attributeScale: 1000 });
-    expect(result?.ramp.length).toBe(5);  // no ramp in the file: the default
+    expect(result?.ramp).toEqual(RAMP);
     expect(result?.safetyFactor).toBe(5.83);
   });
 
@@ -92,6 +102,24 @@ describe('readFeaResult', () => {
       const { mesh, root } = resultMesh();
       mesh.userData[key] = missing;
       expect(() => readFeaResult(root)).toThrow(new RegExp(`no ${key}`));
+    }
+  });
+
+  it('throws for what cadgen always writes, missing or malformed, rather than stand a default in for it', () => {
+    const cases: [Record<string, unknown>, RegExp][] = [
+      [{ ramp: undefined }, /no colour ramp/],
+      [{ ramp: [[0, [0, 0, 1]]] }, /no colour ramp/],
+      [{ deformation_scale: undefined }, /no deformation scale/],
+      [{ deformation_scale: 0 }, /no deformation scale/],
+      [{ fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 47.3 }] }, /field _VON_MISES has no name, units, range or scale/],
+      [{ parts: [{ ref: 'part1', name: '', material: 'Steel' }] }, /part 0 has no ref, name or material/],
+      [{ connections: [{ between: ['part1', 'part2'], names: ['post', 'base'], type: 'contact' }] }, /connection 0 is not a pair of parts, their names and bonded or free/],
+      [{ connections: [{ between: ['part1', 'part2'], type: 'bonded' }] }, /connection 0 is not a pair/],
+    ];
+    for (const [extras, said] of cases) {
+      const { mesh, root } = resultMesh();
+      Object.assign(mesh.userData, extras);
+      expect(() => readFeaResult(root)).toThrow(said);
     }
   });
 
@@ -115,8 +143,8 @@ describe('fields on the geometry', () => {
   it('recolours the byte colour attribute over the field range', () => {
     const { mesh, root } = resultMesh();
     const [vm] = readFeaResult(root)!.fields;
-    expect(recolorByField(mesh, vm)).toBe(true);
-    expect(recolorByField(mesh, vm)).toBe(false);  // already shown
+    expect(recolorByField(mesh, vm, RAMP)).toBe(true);
+    expect(recolorByField(mesh, vm, RAMP)).toBe(false);  // already shown
     const bytes = Array.from(mesh.geometry.getAttribute('color').array as Uint8Array);
     expect(bytes.slice(0, 4)).toEqual([13, 26, 230, 255]);   // 0 MPa: blue
     expect(bytes.slice(8, 12)).toEqual([230, 20, 13, 255]);  // 100 MPa: red
@@ -432,13 +460,13 @@ describe('a load other than the solved one', () => {
   it('draws the values at the load over the range at that load, and the values alone climbing while a ramp plays', () => {
     const { mesh, root } = resultMesh();
     const [vm] = readFeaResult(root)!.fields;
-    recolorByField(mesh, vm);
+    recolorByField(mesh, vm, RAMP);
     const solved = Array.from(mesh.geometry.getAttribute('color').array as Uint8Array);
     // Values and range both doubled: every colour keeps its place on the doubled bar.
-    expect(recolorByField(mesh, vm, undefined, null, null, null, { valueScale: 2, rangeScale: 2 })).toBe(true);
+    expect(recolorByField(mesh, vm, RAMP, null, null, null, { valueScale: 2, rangeScale: 2 })).toBe(true);
     expect(Array.from(mesh.geometry.getAttribute('color').array as Uint8Array)).toEqual(solved);
     // Halfway up the ramp to that load: half the values under the same doubled range, so cooler.
-    recolorByField(mesh, vm, undefined, null, null, null, { valueScale: 1, rangeScale: 2 });
+    recolorByField(mesh, vm, RAMP, null, null, null, { valueScale: 1, rangeScale: 2 });
     const bytes = Array.from(mesh.geometry.getAttribute('color').array as Uint8Array);
     expect(bytes.slice(4, 8)).toEqual(solvedAt(vm, 50 / 2));
   });
@@ -450,7 +478,7 @@ describe('a load other than the solved one', () => {
     const array = attribute.array;
     let reads = 0;
     Object.defineProperty(attribute, 'array', { configurable: true, get: () => { reads += 1; return array; } });
-    for (let frame = 1; frame <= 10; frame += 1) recolorByField(mesh, vm, undefined, null, null, null, { valueScale: frame / 10 });
+    for (let frame = 1; frame <= 10; frame += 1) recolorByField(mesh, vm, RAMP, null, null, null, { valueScale: frame / 10 });
     expect(reads).toBe(1);
   });
 
@@ -459,7 +487,7 @@ describe('a load other than the solved one', () => {
 /** The ramp's colour (with alpha) for a stress over the 47.3 MPa range. */
 function solvedAt(field: any, value: number) {
   // The byte table rounds t to 1/255 first.
-  const [r, g, b] = feaRamp(Math.round(Math.min(1, value / field.max) * 255) / 255);
+  const [r, g, b] = feaRamp(Math.round(Math.min(1, value / field.max) * 255) / 255, RAMP);
   return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255), 255];
 }
 

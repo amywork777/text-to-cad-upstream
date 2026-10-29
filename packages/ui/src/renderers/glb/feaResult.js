@@ -16,8 +16,8 @@
  * `connections` (each detected pair: type, contact area, gap and the interface
  * faces of both sides), `_PART` (the index into `parts` of the part each vertex
  * belongs to) and the weakest part's name and peak; a single part has none of
- * these. A file without its `checks` or `study` does not read (`readFeaResult`
- * throws). The words the viewer says are in `fea/`: `checkKinds.js` (each check kind's),
+ * these. A file without its `checks`, `study` or `ramp`, or with a part, joint or field not as cadgen
+ * writes it, does not read (`readFeaResult` throws): nothing here stands in for what the file should hold. The words the viewer says are in `fea/`: `checkKinds.js` (each check kind's),
  * `fields.js` (each field's), `setup.js` (Study's setup) and `controls.js` (What you see's controls).
  * GLTFLoader lower-cases custom attribute names and copies extras into
  * `userData`, which is what is read here.
@@ -45,17 +45,8 @@ const GENERATOR = "cadgen fea";
 /** The deformation's own attribute: the displacement the file baked into its positions. */
 export const DISPLACEMENT = "_displacement";
 
-// The ramp the writer uses when a file carries none: blue -> red.
-export const DEFAULT_RAMP = Object.freeze([
-  [0.0, [0.05, 0.10, 0.90]],
-  [0.25, [0.05, 0.85, 0.95]],
-  [0.5, [0.10, 0.85, 0.15]],
-  [0.75, [0.98, 0.90, 0.10]],
-  [1.0, [0.90, 0.08, 0.05]],
-]);
-
-/** RGB in [0, 1] for t in [0, 1], piecewise linear between the ramp stops. */
-export function feaRamp(t, stops = DEFAULT_RAMP) {
+/** RGB in [0, 1] for t in [0, 1], piecewise linear between the ramp's stops (the file's `ramp`). */
+export function feaRamp(t, stops) {
   const x = clamp(Number(t) || 0, 0, 1);
   for (let i = 1; i < stops.length; i += 1) {
     const [t1, c1] = stops[i];
@@ -70,7 +61,7 @@ export function feaRamp(t, stops = DEFAULT_RAMP) {
 }
 
 /** The CSS gradient of the ramp, low at the start, for a colour bar. */
-export function feaRampGradient(stops = DEFAULT_RAMP, direction = "to right") {
+export function feaRampGradient(stops, direction = "to right") {
   const parts = stops.map(([t, [r, g, b]]) =>
     `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}) ${Math.round(t * 100)}%`);
   return `linear-gradient(${direction}, ${parts.join(", ")})`;
@@ -88,10 +79,12 @@ function rampTable(stops) {
   return table;
 }
 
-function rampStops(raw) {
+/** The colour ramp the writer coloured the file with: two stops or more, each a position and an RGB triple. */
+function readRamp(raw) {
   const valid = Array.isArray(raw) && raw.length >= 2 && raw.every((stop) =>
-    Array.isArray(stop) && Number.isFinite(stop[0]) && Array.isArray(stop[1]) && stop[1].length === 3);
-  return valid ? raw : DEFAULT_RAMP;
+    Array.isArray(stop) && Number.isFinite(stop[0]) && Array.isArray(stop[1]) && stop[1].length === 3 && stop[1].every(Number.isFinite));
+  if (!valid) throw new Error("The FEA result has no colour ramp in its extras.");
+  return raw;
 }
 
 const vector = (value) => (Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? value.map(Number) : null);
@@ -100,25 +93,35 @@ const text = (value) => (typeof value === "string" ? value : "");
 const faceRefs = (raw) => (Array.isArray(raw) ? raw.filter((ref) => typeof ref === "string" && ref) : []);
 const finiteOrNull = (value) => (Number.isFinite(value) ? Number(value) : null);
 
-/** An assembly's parts in `_PART` order, each its name, material and safety factor (a malformed entry keeps its place, empty); [] for a single part. */
+const named = (value) => typeof value === "string" && value !== "";
+
+/** An assembly's parts in `_PART` order, each its ref, name, material and safety factor; [] for a single part, which has none. */
 function readParts(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((part) => ({
-    ref: text(part?.ref), name: text(part?.name), material: text(part?.material), safetyFactor: finiteOrNull(part?.safety_factor),
-  }));
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) throw new Error("The FEA result's parts are not a list.");
+  return raw.map((part, index) => {
+    if (!(named(part?.ref) && named(part.name) && typeof part.material === "string")) {
+      throw new Error(`The FEA result's part ${index} has no ref, name or material.`);
+    }
+    return { ref: part.ref, name: part.name, material: part.material, safetyFactor: finiteOrNull(part.safety_factor) };
+  });
 }
+
+/** The joints cadgen writes: a touching pair bonded, or left free. */
+const JOINT_TYPES = ["bonded", "free"];
 
 /** An assembly's detected pairs: `between` the two part refs, `names` theirs, the interface `faces` of both sides (none for a free pair). */
 function readConnections(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((joint) => joint && Array.isArray(joint.between) && joint.between.length === 2).map((joint) => ({
-    between: joint.between.map(text),
-    names: [0, 1].map((side) => text(joint.names?.[side]) || text(joint.between[side])),
-    type: text(joint.type) || "free",
-    areaMm2: finiteOrNull(joint.area_mm2),
-    gapMm: finiteOrNull(joint.gap_mm),
-    faces: faceRefs(joint.faces),
-  }));
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) throw new Error("The FEA result's connections are not a list.");
+  return raw.map((joint, index) => {
+    const pair = (value) => Array.isArray(value) && value.length === 2 && value.every(named);
+    if (!(pair(joint?.between) && pair(joint.names) && JOINT_TYPES.includes(joint.type))) {
+      throw new Error(`The FEA result's connection ${index} is not a pair of parts, their names and ${JOINT_TYPES.join(" or ")}.`);
+    }
+    return { between: [...joint.between], names: [...joint.names], type: joint.type, areaMm2: finiteOrNull(joint.area_mm2),
+      gapMm: finiteOrNull(joint.gap_mm), faces: faceRefs(joint.faces) };
+  });
 }
 
 /** Whether the viewer can judge a check: a kind it knows (`FEA_CHECK_KINDS`), with numbers it can use. */
@@ -205,26 +208,29 @@ export function readFeaResult(root) {
     }
     const fields = extras.fields
       .filter((field) => typeof field?.attribute === "string" && object.geometry.getAttribute(field.attribute.toLowerCase()))
-      .map((field) => ({
-        attribute: field.attribute.toLowerCase(),
-        name: String(field.name || field.attribute),
-        units: String(field.units || ""),
-        min: Number(field.min) || 0,
-        max: Number(field.max) || 0,
-        attributeScale: Number(field.attribute_scale) || 1,
-      }));
+      .map((field) => {
+        if (!(named(field.name) && typeof field.units === "string" && Number.isFinite(field.min) && Number.isFinite(field.max)
+          && Number.isFinite(field.attribute_scale) && field.attribute_scale > 0)) {
+          throw new Error(`The FEA result's field ${field.attribute} has no name, units, range or scale.`);
+        }
+        return { attribute: field.attribute.toLowerCase(), name: field.name, units: field.units, min: field.min, max: field.max,
+          attributeScale: field.attribute_scale };
+      });
     if (fields.length === 0) {
       return;
+    }
+    if (!(Number.isFinite(extras.deformation_scale) && extras.deformation_scale > 0)) {
+      throw new Error("The FEA result has no deformation scale in its extras.");
     }
     found = {
       mesh: object,
       name: String(extras.name || ""),
       document: String(extras.document || ""),
       occurrence: String(extras.occurrence || ""),
-      deformationScale: Number(extras.deformation_scale) || 1,
+      deformationScale: extras.deformation_scale,
       safetyFactor: Number.isFinite(extras.safety_factor) ? extras.safety_factor : null,
       fields,
-      ramp: rampStops(extras.ramp),
+      ramp: readRamp(extras.ramp),
       study: readStudy(extras.study),
       faces: faceRefs(extras.faces),
       parts: readParts(extras.parts),
@@ -302,7 +308,7 @@ function vertexIndex(mesh, name) {
  * field's range (both the load scale; while a load ramp plays the values climb toward the range).
  * Returns true when the colours changed; false when that field and tint were already shown.
  */
-export function recolorByField(mesh, field, ramp = DEFAULT_RAMP, highlight = null, parts = null, softParts = null,
+export function recolorByField(mesh, field, ramp, highlight = null, parts = null, softParts = null,
   { valueScale = 1, rangeScale = 1 } = {}) {
   const color = mesh.geometry.getAttribute("color");
   // The attribute's presence, not its values: a ramp playing recolours every frame, and keptValues

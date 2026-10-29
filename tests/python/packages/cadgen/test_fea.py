@@ -149,7 +149,7 @@ class StudyFile(unittest.TestCase):
             ({**BASE, "parts": {"arm": {"material": PLA_NUMBERS, "thickness_mm": 2}}}, "parts['arm']: unknown keys ['thickness_mm']"),
             ({**BASE, "connections": [{"between": ["a", "b"], "type": "free", "tolerance_mm": 1}]},
              "connections[0]: unknown keys ['tolerance_mm']; it takes between, type"),
-            ({**BASE, "connections": [{"between": ["a", "b"], "type": "bolt"}]}, "connections[0].type: 'bolt' is not one of ('bonded', 'free')"),
+            ({**BASE, "connections": [{"between": ["a", "b"], "type": "welded"}]}, "connections[0].type: 'welded' is not one of ('bonded', 'free')"),
             ({**BASE, "output": {"deformation_scale": 0}}, "output.deformation_scale: must be > 0"),
             ({**BASE, "output": {"deformation_scale": -5}}, "output.deformation_scale: must be > 0"),
         ]
@@ -198,7 +198,7 @@ class StudyChecks(unittest.TestCase):
         cases = [
             ([], "study.checks is empty: leave it out for the stress check alone"),
             ({"kind": "stress"}, "study.checks: expected a list"),
-            ([{"kind": "frequency"}], 'checks[0].kind: "frequency" is not a check this cadgen makes; use one of [\'stress\', \'displacement\']'),
+            ([{"kind": "temperature"}], 'checks[0].kind: "temperature" is not a check this cadgen makes; use one of [\'stress\', \'displacement\']'),
             (["stress"], "checks[0]: expected an object"),
             ([{"kind": "stress"}, {"kind": "stress"}], "only one stress check"),
             ([{"kind": "stress", "limit_mm": 1}], "checks[0]: unknown keys ['limit_mm']; a stress check takes"),
@@ -598,6 +598,22 @@ class Yielding(unittest.TestCase):
         (why,) = [warning for warning in result.warnings if "finer" in warning]
         self.assertIn("the mesher gave up at this size", why)
         self.assertIsNone(reported(result)["refined"]["max_von_mises_MPa"])
+
+    def test_a_fault_in_the_finer_solve_fails_the_study(self):
+        # Only the mesher or CalculiX failing is a second opinion lost; a fault of cadgen's is no warning at exit 0.
+        from unittest import mock
+
+        solver = _CountingSolve()
+
+        def faulty(*args, **kwargs):
+            if solver.calls == 1:
+                raise KeyError("a fault of cadgen's")
+            return solver(*args, **kwargs)
+
+        out = self.directory / "faulty-resolve.glb"
+        with mock.patch("cadgen._internal.fea.solve.solve_linear_static", faulty), self.assertRaises(KeyError):
+            solve(self.step, out, self.study)
+        self.assertFalse(out.exists())
 
 
 @needs_fea

@@ -11,10 +11,7 @@ Benchmarks:
   side (normal per facet), pressed on its top, is confined: σ_r = σ_θ =
   ν/(1-ν) σ_z, so von Mises p (1-2ν)/(1-ν), within 3 %;
 - rollers on one face alone leave the part free to slide: a plain error;
-- ``mesh.refine`` (the Hertz benchmark's finer ball) parses and places its points;
-- a modal, a harmonic and a nonlinear study on rollers give the same answer
-  with the block square to the axes and turned (the turned frame through the
-  eigen solves and the nonlinear driver).
+- ``mesh.refine`` (the Hertz benchmark's finer ball) parses and places its points.
 The STEPs are build123d solids written to temporary directories.
 """
 
