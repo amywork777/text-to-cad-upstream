@@ -17,6 +17,10 @@ controller, checks every move against the part, and writes `<part>.cam.glb` (the
 and the toolpaths, with the verdict), the completed job as `<part>.cam.json` and, when nothing is
 an error, the G-code beside the part.
 
+When the user leaves something out ("skip the outside contour", "only the holes"), list the
+operations in the job yourself, without it, rather than letting the plan choose them all; the plan
+cuts every feature it finds. Say in the report what is left uncut and why.
+
 Modelling the part is `$cad`; this skill reads a saved `.step`, `.stp` or `.xbf`. Reviewing whether
 a design can be machined well is `$dfm`. 3D printing is `$gcode`.
 
