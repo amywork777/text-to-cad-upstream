@@ -166,7 +166,7 @@ geometry, names, colours and materials. Keep the xbf beside the STEP, and read t
 - **3MF**: an object per part, a build item per placement, in millimetres, with colours
   and materials through the materials extension.
 - **STL**: binary, every placed triangle, in millimetres.
-- **xbf**: of a model (not yet of one holding PMI its code made: [PMI](pmi.md#export)),
+- **xbf**: of a model (its document's own bytes, PMI and all: [PMI](pmi.md#export)),
   or of a STEP (converting a vendor file, its GD&T kept as read).
 - **DXF**: of a planar document only (`$dxf`); a solid is refused.
 

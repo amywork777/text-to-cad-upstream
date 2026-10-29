@@ -1659,9 +1659,14 @@ class _Run:
         # The model whose body is running (``scope``): its calls are counted, and keyed,
         # as its own.
         self.scope: str | None = None
-        # The annotations each model body's ``pmi.annotate`` calls gave, by its scope: those its
-        # document does not hold fail its build (``pmi.unattached``).
+        # The model whose body is running, through the @memo functions it calls (``scope``'s
+        # ``model``): what a ``pmi.annotate`` call inside either belongs to.
+        self.model: str | None = None
+        # The annotations each model's ``pmi.annotate`` calls gave, its @memo functions' among them,
+        # by the model's scope: those its document does not hold fail its build (``pmi.unattached``);
+        # and the bodies that gave them, which that failure forgets.
         self.pmi: dict[str | None, list[str]] = {}
+        self.annotating: dict[str | None, set[str | None]] = {}
         # The logs of the model bodies running, innermost last (``body``), and the bodies
         # this run has run or replayed: each is in the trace once.
         self.bodies: list[_BodyLog] = []
@@ -1757,20 +1762,23 @@ class _Run:
 
 
 @contextlib.contextmanager
-def scope(name: str) -> Iterator[None]:
+def scope(name: str, *, model: bool = False) -> Iterator[None]:
     """Inside it, the calls of this thread's run are the model ``name``'s own: counted
     from its first, and keyed with its name. A child's body opens its own scope and the
-    parent's resumes after it, so neither shifts the other's ordinals."""
+    parent's resumes after it, so neither shifts the other's ordinals. ``model`` says
+    ``name`` is a model's, not a @memo function's: the run's ``model`` until it closes."""
     state = getattr(_LOCAL, "run", None)
     if state is None:
         yield
         return
-    previous, saved = state.scope, state.counts
+    previous, saved, owner = state.scope, state.counts, state.model
     state.scope, state.counts = name, {}
+    if model:
+        state.model = name
     try:
         yield
     finally:
-        state.scope, state.counts = previous, saved
+        state.scope, state.counts, state.model = previous, saved, owner
 
 
 @contextlib.contextmanager

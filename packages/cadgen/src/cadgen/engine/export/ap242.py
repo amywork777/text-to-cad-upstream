@@ -717,7 +717,9 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any], surfaces: dict
     nothing. A general profile that covers no face matches no record, and is verified by none
     being left over. A note is the document's alone (a STEP carries none): it is neither expected
     nor counted. Nothing is guessed: any problem fails the check."""
-    entries = _carried(entries)
+    from cadgen.engine.pmi import step_entries
+
+    entries = step_entries(entries)
     parts = parts or {}
     problems = list(found.get("problems") or [])
     result = {"matched": 0, "total": len(entries), "problems": problems}
@@ -804,21 +806,18 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any], surfaces: dict
     return result
 
 
-def _carried(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The entries a STEP carries: every one but the notes, the xbf's alone (``pmi.step_entries``)."""
-    return [entry for entry in entries if entry.get("kind") != "note"]
-
-
 def check(entries: list[dict[str, Any]], target: Path, surfaces: dict[str, Any] | None = None,
           parts: dict[int, str] | None = None) -> dict[str, Any]:
     """``compare`` of the file at ``target`` (against the model's faces, ``surfaces``, each part
     as its product, ``parts``), with the SHA-256 of the bytes checked, read once: the result
     belongs to those bytes, whatever the viewer opens next. A file the reader cannot read is a
     check that found a problem, counted as ``compare`` counts, the notes never."""
+    from cadgen.engine.pmi import step_entries
+
     data = target.read_bytes()
     try:
         result = compare(entries, report(target, data), surfaces, parts)
     except Exception as error:  # noqa: BLE001 - said as the check's problem, which refuses the file
-        result = {"matched": 0, "total": len(_carried(entries)),
+        result = {"matched": 0, "total": len(step_entries(entries)),
                   "problems": [f"The STEP reader could not complete the check: {error}"]}
     return {**result, "sha256": hashlib.sha256(data).hexdigest()}

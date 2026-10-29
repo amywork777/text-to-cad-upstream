@@ -740,9 +740,10 @@ def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[
     not ok and why (kept in the document linked to nothing, refused by a STEP), and each part's
     faces no requirement is on and its requirements that cannot both hold (``coverage``: the served
     structure's ``pmi_coverage`` of each part with something to say, by its name; warned of, never
-    failing the build); each logged, none dropped in silence. Annotations its body gave a shape the
-    result does not hold fail the build, by id (``pmi.unattached``): its files would carry none of
-    them; the body's run is forgotten (``memo.forget``), so a build again runs it and fails again,
+    failing the build); each logged, none dropped in silence. Annotations its body, or a @memo
+    function it called, gave a shape the result does not hold fail the build, by id
+    (``pmi.unattached``): its files would carry none of them; the runs of the bodies that gave them
+    are forgotten (``memo.forget``), so a build again runs them and fails again,
     never replaying it into a pass. Of this build alone: nothing of an earlier one is read. Timed
     as ``pmi``."""
     from cadgen.engine import document, pmi
@@ -752,8 +753,10 @@ def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[
     scope = f"{model.script}::{model.name}"
     lost = pmi.unattached(run, scope, tree) if run is not None else []
     if lost:
-        # A replay of this body would not call annotate again, and so not say it: the body runs again.
-        memo.forget(scope)
+        # A replay of this body, or of a @memo function that annotated, would not call annotate
+        # again, and so not say it: each runs again.
+        for body in {scope, *run.annotating.get(scope, ())} - {None}:
+            memo.forget(body)
         raise pmi.PMIError(f"{model.name}: {', '.join(lost)} given to a shape that is not in the result, so no file "
                            "would carry them: annotate the shape the model returns (an operation after annotate() "
                            "makes another shape)")

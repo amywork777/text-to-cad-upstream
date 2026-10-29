@@ -566,6 +566,9 @@ def _keys(given: Any) -> None:
     kind = given.get("kind")
     if kind == "view":
         _closed(given, _VIEW, f"view {given.get('name')!r}")
+        # Its camera, section and placements as ``view`` checks them, each of its closed keys.
+        view(given["name"], camera=given["camera"], shows=given["shows"], section=given["section"],
+             place=given["place"], label=given["label"])
         return
     if kind not in _BLOCKS:
         raise PMIError(f"an annotation's kind is {', '.join(_BLOCKS)} or view, not {kind!r}")
@@ -654,17 +657,19 @@ def _point(value: Any, what: str) -> list[float]:
 
 
 def _note_call(held: list[dict[str, Any]]) -> None:
-    """``annotate``'s annotations, kept on the build's run under the model whose body gave them."""
+    """``annotate``'s annotations, kept on the build's run under the model whose body gave them,
+    directly or through a @memo function it called, with the body that called ``annotate``."""
     from cadgen.engine.kernel import memo
 
     run = getattr(memo._LOCAL, "run", None)  # the memo run of a build on this thread, or None
     if run is not None:
-        run.pmi.setdefault(run.scope, []).extend(_text(entry) for entry in held)
+        run.pmi.setdefault(run.model, []).extend(_text(entry) for entry in held)
+        run.annotating.setdefault(run.model, set()).add(run.scope)
 
 
 def unattached(run: Any, scope: str, tree: Any) -> list[str]:
-    """The ids of the annotations the model ``scope``'s body gave to a shape its result does not
-    hold (one a later operation replaced), each once."""
+    """The ids of the annotations the model ``scope``'s body, or a @memo function it called, gave to
+    a shape its result does not hold (one a later operation replaced), each once."""
     held = {_text(entry) for _part, given in tree.pmi for entry in given}
     return sorted({json.loads(text)["id"] for text in run.pmi.get(scope, ()) if text not in held})
 

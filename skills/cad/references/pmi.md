@@ -350,10 +350,9 @@ has none (`nominal` is null), since the file states limits, not a nominal.
 A STEP of the model writes the PMI: `cadgen export "$ID" STEP/plate.step`, `export(plate(),
 ...)` in an `exports.py`, or the viewer's Export ([exports](exports.md)). A STEP that
 would drop an annotation the code made (one linked to no geometry, [After an
-edit](#after-an-edit)) is refused, naming each. An `.xbf` exported from the model is the
-document made again from what the engine holds, which carries none of its PMI yet, so
-`cadgen export "$ID" plate.xbf` is refused for a part with PMI, naming what it would
-lose; the engine keeps the document itself, PMI and all. No export poses a model or
+edit](#after-an-edit)) is refused, naming each. An `.xbf` exported from the model
+(`cadgen export "$ID" plate.xbf`, the viewer's XBF) is the document's own bytes, the ones
+its `@xbf` holds: every annotation, note and view kept. No export poses a model or
 takes a part out of it: a posed file or a part on its own is a model of its own
 ([exports](exports.md#posed-files-and-parts-on-their-own)).
 

@@ -6,7 +6,7 @@ given limits, written as AP242's lower and upper limit and its nominal still mea
 profile on several faces of any kind, written as one AP242 surface profile tolerance; a general
 profile on every face nothing else controls, computed each build and written on exactly those
 faces, or as nothing where it covers none; general and flag notes, numbered after the general
-profile, and a project's notes library, kept in the xbf as XCAF notes (the same bytes from the same
+profile, kept in the xbf as XCAF notes (the same bytes from the same
 code) and never in a STEP, which neither refuses nor checks them; named views of a part (their
 camera, a preset's the snapshot's own, section, shown ids and placements) kept in the xbf as XCAF
 views and served as ``pmi_views``, never in a STEP; each part's coverage (the faces no requirement
@@ -945,9 +945,6 @@ class NoteTest(_Folder):
         # A note's id is one of its part's ids, as its annotations' are.
         with self.assertRaisesRegex(PMIError, "two annotations on one part are 'top-flat'"):
             annotate(box, flatness_tolerance("top-flat", top, 0.05), note("top-flat", "Lap this face"))
-        # annotate() takes annotations alone: a notes library is no argument of it.
-        with self.assertRaisesRegex(TypeError, "unexpected keyword argument 'library'"):
-            annotate(box, library={"primer-mask": MASK})  # type: ignore[call-arg]
 
     def test_notes_survive_the_xbf_and_make_the_same_bytes(self) -> None:
         from OCP.TDF import TDF_Label, TDF_Tool
@@ -957,7 +954,6 @@ class NoteTest(_Folder):
         self.build(notes())
         loaded = document.Loaded(self.xbf)
         structure = loaded.structure()
-        self.assertNotIn("pmi_library", structure)
         self.assertEqual(self.served()["pmi"], structure["pmi"])
         # XCAF's notes: comments by one fixed user with no timestamp, in the code's order.
         tool = XCAFDoc_DocumentTool.NotesTool_s(loaded.doc.Main())
@@ -1838,6 +1834,34 @@ def pmi_plate():
             self.assertFalse(self.xbf.exists())
             self.assertFalse(self.step.exists())
 
+    def test_a_memo_function_s_annotations_the_result_lost_fail_its_model(self) -> None:
+        """A @memo function's annotate is its calling model's: a shape it annotated that the
+        model's body replaced fails that model's build, as the model's own would. Built again,
+        the function runs again too: a replay of it, which calls no annotate, never passes."""
+        model = '''
+import build123d as bd
+from cadgen import memo
+from cadgen.ap242 import annotate, flatness_tolerance
+from cadgen.engine import step, xbf
+
+
+@memo
+def plate():
+    body = bd.Box(100, 60, 10)
+    return annotate(body, flatness_tolerance("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    return bd.fillet(plate().edges().filter_by(bd.Axis.Z), 2)
+'''
+        for _again in range(2):
+            report = self.build(model, ok=False)
+            self.assertIn("PMIError: pmi_plate: top given to a shape that is not in the result", report["error"])
+            self.assertFalse(self.xbf.exists())
+            self.assertFalse(self.step.exists())
+
     def test_each_model_of_a_script_fails_only_for_the_annotations_its_own_body_lost(self) -> None:
         # The first model keeps its annotations: a run's record taken by its first report would
         # say the second's loss there.
@@ -2033,6 +2057,15 @@ class RefusedTest(_Folder):
             annotate(box, {**flat, "kind": "fit"})
         with self.assertRaisesRegex(PMIError, r"view 'iso': unknown key 'zoom'"):
             annotate(box, {**view("iso", camera="iso"), "zoom": 2})
+        # A view's camera, section and placements are checked as view() checks them.
+        side = view("side", camera=camera((1, 0, 0), (0, 0, 1)), section=section("z", 0.0),
+                    place={"f": place((0, 0, 0))})
+        for nested, said in ((("camera", {**side["camera"], "fov": 30}), r"view 'side': a camera is a preset"),
+                             (("section", {**side["section"], "depth": 1}), r"view 'side': a section is section"),
+                             (("place", {"f": {"anchor": [0, 0, 0], "offset": [0, 0, 0], "spin": 1}}),
+                              r"view 'side': a placement is place")):
+            with self.assertRaisesRegex(PMIError, said):
+                annotate(box, flat, {**side, nested[0]: nested[1]})
         # A tolerance's keys are its type's, its values checked by its function.
         with self.assertRaisesRegex(PMIError, r"dimension 'd''s tolerance: unknown key 'fit'; its keys are type, "
                                               r"lower, upper"):
@@ -2058,14 +2091,14 @@ class RefusedTest(_Folder):
 
     def test_an_xbf_of_a_models_document_is_its_own_and_carries_its_pmi(self) -> None:
         """An xbf written from a model's document (Save As, ``cadgen export ID m.xbf``) is the
-        document's own bytes, the ones its declared xbf would hold: its annotations, notes, views and
-        notes library all kept. Its STEP is the document's own, its GD&T checked in the file."""
+        document's own bytes, the ones its declared xbf would hold: its annotations, notes and views
+        all kept. Its STEP is the document's own, its GD&T checked in the file."""
         for model in (plate(), views()):
             held = self.unsaved(model)
             written = self.folder / "part.xbf"
             export.translate(held, "xbf", written)
             structure = document.Loaded(written).structure()
-            for key in ("pmi", "pmi_views", "pmi_library"):
+            for key in ("pmi", "pmi_views"):
                 self.assertTrue(held.structure.get(key) or key != "pmi", key)
                 self.assertEqual(structure.get(key), held.structure.get(key), key)
         held = self.unsaved(plate())

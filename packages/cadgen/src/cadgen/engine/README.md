@@ -2203,9 +2203,10 @@ carries no annotation id (the writer leaves every name empty), no graphical PMI,
 view (OCCT's writer writes neither): **notes and views stay in the document** and
 its xbf, and no STEP is refused for one. No export poses a document or takes a part out of it (law 22): a posed
 file and a part's own file are models of their own. An xbf that `export.translate` writes of a
-document this engine made (`cadgen export ID out.xbf`, the viewer's XBF of a held model) is that
-document made again from its view (`export/tree.py`), which carries no PMI yet; a declared `@xbf`
-is the document's own bytes, and carries it whole. Every export that would not carry the PMI the
+document this engine made and holds (`cadgen export ID out.xbf`, the viewer's XBF of a held model)
+is that document's own bytes, the ones its declared `@xbf` holds, and carries its PMI whole
+(`export/tree.py`); only a document held without its XCAF document is made again from its view,
+which carries none. Every export that would not carry the PMI the
 code made whole is refused by name (`pmi.refuse_dropped`, in `export.translate`: a STEP held to
 the GD&T, an xbf made again to the notes and the views as well, a part given views alone
 included, each named, a STEP's by each annotation's id and the ref
