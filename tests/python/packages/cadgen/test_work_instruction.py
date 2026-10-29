@@ -339,6 +339,8 @@ class DocumentTests(_Assembly):
         handed.assert_not_called()
         with mock.patch.object(analytics, "hand_over", side_effect=RuntimeError("broken")):
             self._write("uncounted.pdf", self._complete)  # a count never fails what it counts
+        with self.assertRaisesRegex(ValueError, "'instruction' is not a feature"):
+            analytics.counted(lambda: None, "instruction")  # a closed set, as the receiver's is
 
     def test_the_output_path_is_required_and_names_a_pdf(self) -> None:
         from cadgen.work_instruction import work_instruction
@@ -528,6 +530,89 @@ class WhatTheTestsFoundTests(_Assembly):
         wi = self.instruction()
         wi.step("Load", install=["base_plate"])
         self.assertIn("None stated.", [t for page in _page_texts(wi) for t in page])
+
+
+class FreeTextValueTests(_Assembly):
+    """A value written into free text cites its source as a Torque does, or its source is owed."""
+
+    def _uncited(self, **kwargs):
+        from cadgen.work_instruction import Torque
+
+        spec, _ = _sources()
+        wi = self.instruction(**kwargs)
+        (wi.step("Bolt the base plate", install=["base_plate"])
+           .warning("Torque the four M5 screws to 45 in-lbf")
+           .instruct("Torque the four M5 screws to 45 in-lbf")
+           .fasten("M5 screw", qty=4, torque=Torque(40, 45, unit="in-lbf", per=spec.at("4.2")),
+                   sequence="Cross pattern, then 45 in-lbf"))
+        wi.step("Set the bracket 0.5 mm proud", install=["bracket", "pin"]).inspect("Gap under 0.25 in")
+        return wi
+
+    def _cited(self, **kwargs):
+        from cadgen.work_instruction import Cited, Torque
+
+        spec, drawing = _sources()
+        wi = self.instruction(**kwargs)
+        (wi.step("Bolt the base plate", install=["base_plate"])
+           .warning("Torque the four M5 screws to 45 in-lbf", per=spec.at("4.2"))
+           .instruct("Torque the four M5 screws to 45 in-lbf", per=spec.at("4.2"))
+           .fasten("M5 screw", qty=4, torque=Torque(40, 45, unit="in-lbf", per=spec.at("4.2")),
+                   sequence=Cited("Cross pattern, then 45 in-lbf", per=spec.at("4.3"))))
+        wi.step("Set the bracket proud", install=["bracket", "pin"]).inspect(
+            "Gap under 0.25 in", per=drawing.at("note 2"))
+        return wi
+
+    def test_a_value_in_free_text_with_no_source_is_an_open_item_a_draft_lists(self) -> None:
+        for rigor in ("production", "controlled"):
+            with self.subTest(rigor=rigor):
+                wi = self._uncited(rigor=rigor)
+                self.assertEqual(wi.open_items(), [
+                    "step 1 (warning): source of 45 in-lbf not stated",
+                    "step 1 (instruct): source of 45 in-lbf not stated",
+                    "step 1 (fasten): source of 45 in-lbf not stated",
+                    "step 2 (title): source of 0.5 mm not stated",
+                    "step 2 (inspect): " + ("criterion source" if rigor == "controlled" else "source of 0.25 in")
+                    + " not stated",
+                ])
+                pages = _page_texts(wi)
+                self.assertEqual(sum(page.count("NOT STATED") for page in pages), 5, "each owed source prints")
+                self.assertEqual(self._cited(rigor=rigor).open_items(), [], "a cited value owes nothing")
+
+    def test_a_released_instruction_refuses_an_uncited_value_and_writes_nothing(self) -> None:
+        from cadgen.work_instruction import work_instruction
+
+        for rigor in ("production", "controlled"):
+            with self.subTest(rigor=rigor):
+                target = self.root / f"released-{rigor}.pdf"
+
+                @work_instruction(out=str(target))
+                def uncited():
+                    return self._uncited(rigor=rigor, status="released")
+
+                @work_instruction(out=str(target))
+                def cited():
+                    return self._cited(rigor=rigor, status="released")
+
+                with self.assertRaisesRegex(ValueError, r"(?s)released with 5 open item.*source of 45 in-lbf"):
+                    uncited()
+                self.assertFalse(target.exists())
+                self.assertEqual(cited(), [target])
+
+    def test_a_value_is_a_number_and_a_unit_never_a_count_or_a_part_number(self) -> None:
+        from cadgen.work_instruction import _owed
+
+        for text in ("Support the carrier under the boss while pressing.", "Press planet pin 1 into the carrier",
+                     "Slide planet gear 2 in place", "Fasten 4 screws", "Install 2 C-clips", "Step 3 of 4",
+                     "Cross pattern, two passes", "Torque the M5 screws"):
+            with self.subTest(text=text):
+                self.assertEqual(_owed(text, None), [])
+        for text, value in (("Cure 5 days at 77 F", "5 days, 77 F"), ("Mix 100:17 by weight", "100:17"),
+                            ("Heat to 150°F", "150°F"), ("Torque to 40 to 45 IN-LBS", "40 to 45 IN-LBS"),
+                            ("Hold 30 min", "30 min"), ("Gap 0.25 in max", "0.25 in"), ("Load 50 N", "50 N"),
+                            ("Rotate 90°", "90°"), ("Torque 12 N·m", "12 N·m")):
+            with self.subTest(text=text):
+                self.assertEqual(_owed(text, None), [f"source of {value}"])
+                self.assertEqual(_owed(text, _sources()[0].at("1")), [], "a cited value owes nothing")
 
 
 class SubassemblyTests(unittest.TestCase):

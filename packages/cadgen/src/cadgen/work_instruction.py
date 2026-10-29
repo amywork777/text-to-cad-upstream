@@ -14,8 +14,10 @@ supplied (:class:`Spec`), a callout on the assembly drawing (:class:`Drawing`),
 or something the user said (:class:`Stated`). Nothing here has a default value
 for any of them. A value nobody stated prints as a captioned blank, ``NOT
 STATED``, and the run lists it, so a draft says exactly what engineering still
-owes the floor. A released
-instruction (``status="released"``) refuses to be written with one.
+owes the floor; so does a value written into free text (a step's title, an
+instruction, a notice, a sequence, an inspection: :data:`VALUE_UNITS`) that
+cites no source. A released instruction (``status="released"``) refuses to be
+written with one.
 
 Usage (every document and value here is a placeholder: a real one is copied
 from the section of the user's document it cites)::
@@ -67,6 +69,7 @@ from __future__ import annotations
 
 import functools
 import math
+import re
 from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Sequence
@@ -76,7 +79,7 @@ __all__ = [
     "Spec", "Drawing", "Datasheet", "Stated", "Source", "Cited",
     "Torque", "Material", "Adhesive", "Cure",
     "Format", "TORQUE_UNITS", "CAMERAS", "PAGE_SIZES", "STATUSES", "SOURCE_KINDS", "NOTICES",
-    "RIGORS", "EMPHASES", "NUMBERINGS", "FRAMES", "Unspecified",
+    "RIGORS", "EMPHASES", "NUMBERINGS", "FRAMES", "VALUE_UNITS", "Unspecified",
 ]
 
 TORQUE_UNITS = ("in-lbf", "ft-lbf", "N-m")
@@ -258,6 +261,37 @@ class Unspecified:
     def __post_init__(self) -> None:
         object.__setattr__(self, "text", _text("Unspecified text", self.text))
         _source("Unspecified", self.per)
+
+
+# What makes free text a value: a number followed by one of these units. A step's title, an
+# instruction, a notice, a tightening sequence or an inspection that states one cites where it comes
+# from (``per=``, or ``Cited``) as a Torque does; one that does not leaves its source an open item, so
+# a released instruction carries no value without a source. A one-letter unit is matched as written
+# (``N`` is a newton, ``n`` is not), the rest in any case; a bare ``in`` is an inch only after a
+# decimal or a fraction (``0.25 in``), since ``pin 2 in place`` states no length.
+VALUE_UNITS = (
+    "in-lbf", "in-lb", "in-lbs", "lbf-in", "ft-lbf", "ft-lb", "ft-lbs", "lbf-ft", "N-m", "N\u00b7m", "Nm", "cN-m",
+    "kgf-cm", "N", "kN", "lbf", "lb", "lbs", "kg", "g", "oz",
+    "mm", "cm", "m", "\u00b5m", "um", "in.", "inch", "inches", '"', "ft", "mil", "mils", "thou",
+    "\u00b0F", "\u00b0C", "\u00b0", "F", "C", "deg", "degrees", "turn", "turns",
+    "psi", "psig", "bar", "kPa", "MPa", "Pa",
+    "s", "sec", "second", "seconds", "min", "minute", "minutes", "h", "hr", "hrs", "hour", "hours", "day", "days",
+    "mL", "ml", "L", "cc", "%", "rpm",
+)
+_NUMBER = r"(?<![\w.])\d+(?:[.,]\d+)?(?:/\d+)?"
+_UNIT = "|".join(re.escape(unit) if len(unit) == 1 else f"(?i:{re.escape(unit)})"
+                 for unit in sorted(VALUE_UNITS, key=len, reverse=True))
+_VALUE = re.compile(
+    rf"{_NUMBER}(?:\s*(?:-|\u2013|to)\s*\d+(?:[.,]\d+)?(?:/\d+)?)?\s*(?:{_UNIT})(?![\w-])"
+    r"|(?<![\w.])\d*[./]\d+\s*in(?![\w-])"  # 0.25 in, 1/4 in
+    r"|(?<![\w.:])\d+:\d+(?![\w:])"  # a ratio, 100:17
+)
+
+
+def _owed(text: str, per: Source | None) -> list[str]:
+    """The source free text owes: of each value it states (``VALUE_UNITS``), where it cites none."""
+    found = [] if per is not None else [match.group(0) for match in _VALUE.finditer(text)]
+    return [f"source of {', '.join(found)}"] if found else []
 
 
 def _cited(name: str, value) -> tuple[str | None, Source | None]:
@@ -532,15 +566,18 @@ class Step:
         self.picture = picture
         self.operation = operation
         self.ops: list[_Op] = []
-        self.notices: list[tuple[str, str, Source | None]] = []
+        self.notices: list[_Line] = []  # captioned WARNING, CAUTION or NOTE
+        # What the step's title and notices owe, as (where, what): a title cites nothing, so a value in
+        # one is owed until it moves into the operation that cites it.
+        self.missing: list[tuple[str, str]] = [("title", name) for name in _owed(title, None)]
         self.hold = False
         self.record: str | None = None
 
     def sources(self) -> Iterator[Source]:
         """Every source the step cites, in the order it prints them."""
-        for _kind, _text_, source in self.notices:
-            if source is not None:
-                yield source
+        for notice in self.notices:
+            if notice.source is not None:
+                yield notice.source
         for op in self.ops:
             for line in op.lines:
                 if line.source is not None:
@@ -552,10 +589,13 @@ class Step:
 
     def instruct(self, text: str, *, per: Source | None = None) -> "Step":
         """A plain instruction, in the words the user gave, or as the cited document
-        states it (``per=``): a clamping rule, a witness coupon, a lubrication step."""
+        states it (``per=``): a clamping rule, a witness coupon, a lubrication step. Text
+        that states a value (:data:`VALUE_UNITS`) with no ``per=`` leaves its source an open item."""
         if per is not None:
             _source("instruct", per)
-        return self._add(_Op("instruct", [_Line("", _text("instruct text", text), per)]))
+        text = _text("instruct text", text)
+        owed = _owed(text, per)
+        return self._add(_Op("instruct", [_Line("", text, per, cite=bool(owed))], missing=owed))
 
     def not_stated(self, what: str) -> "Step":
         """Something this step needs that nobody has stated yet -- a retention
@@ -566,11 +606,15 @@ class Step:
     def _notice(self, kind: str, text: str, per: Source | None) -> "Step":
         if per is not None:
             _source(kind.lower(), per)
-        self.notices.append((kind, _text(f"{kind.lower()} text", text), per))
+        text = _text(f"{kind.lower()} text", text)
+        owed = _owed(text, per)
+        self.notices.append(_Line(kind, text, per, cite=bool(owed)))
+        self.missing += [(kind.lower(), name) for name in owed]
         return self
 
     def warning(self, text: str, *, per: Source | None = None) -> "Step":
-        """A WARNING (harm to people), boxed above the step it governs."""
+        """A WARNING (harm to people), boxed above the step it governs. A notice that states a
+        value (:data:`VALUE_UNITS`) cites it (``per=``), or its source is an open item."""
         return self._notice("WARNING", text, per)
 
     def caution(self, text: str, *, per: Source | None = None) -> "Step":
@@ -588,7 +632,9 @@ class Step:
         joint with no stated torque is an open item, not a default. Where the
         user says no torque exists, ``torque=Unspecified(what to do, per=...)``.
         ``surfaces`` are the faces the hardware goes into (``bracket/face 3``), marked on
-        the figure: hardware the model does not carry is drawn nowhere else."""
+        the figure: hardware the model does not carry is drawn nowhere else. A ``sequence``
+        that states a value (:data:`VALUE_UNITS`) is ``Cited(text, per=...)``, or its source is
+        an open item."""
         hardware = _text("fasten hardware", hardware)
         if qty is not None and (isinstance(qty, bool) or not isinstance(qty, int) or qty < 1):
             raise ValueError(f"fasten qty must be a positive integer, got {qty!r}")
@@ -609,10 +655,13 @@ class Step:
             self._instruction._use(locking)
             lines += [_Line("Locking", locking.name, locking.per)]
             lines += [_Line(caption.capitalize(), value, source) for caption, value, source in locking.fields()]
+        missing = [] if torque else ["torque"]
         if sequence is not None:
             text, source = _cited("fasten sequence", sequence)
-            lines.append(_Line("Sequence", text, source))
-        return self._add(_Op("fasten", lines, missing=[] if torque else ["torque"], records=records,
+            owed = _owed(text, source)
+            lines.append(_Line("Sequence", text, source, cite=bool(owed)))
+            missing += owed
+        return self._add(_Op("fasten", lines, missing=missing, records=records,
                              equipment=isinstance(torque, Torque), surfaces=self._faces(surfaces)))
 
     def _record(self, kind: str, record, cls, label: str, surfaces=()) -> "Step":
@@ -663,16 +712,19 @@ class Step:
 
     def inspect(self, text: str, *, per: Source | None = None, record: str | None = None) -> "Step":
         """An inspection hold point: the step is not complete until QA stamps it.
-        The criterion cites where it comes from; with ``per=None`` its source
-        prints NOT STATED and is an open item. ``record`` captions a blank for
-        the measured value (``"Pin height, mm"``)."""
+        The criterion cites where it comes from: in a ``controlled`` instruction,
+        or where it states a value (:data:`VALUE_UNITS`), with ``per=None`` its
+        source prints NOT STATED and is an open item. ``record`` captions a blank
+        for the measured value (``"Pin height, mm"``)."""
         if per is not None:
             _source("inspect", per)
         layout = self._instruction.layout
         self.hold = self.hold or layout.holds
-        owed = layout.cite_inspections
-        line = _Line("Inspect", _text("inspect text", text), per, cite=owed)
-        op = _Op("inspect", [line], missing=["criterion source"] if owed and per is None else [])
+        text = _text("inspect text", text)
+        # A controlled instruction owes every criterion its source; any other, a criterion stating a value.
+        missing = (["criterion source"] if per is None else []) if layout.cite_inspections else _owed(text, per)
+        op = _Op("inspect", [_Line("Inspect", text, per, cite=layout.cite_inspections or bool(missing))],
+                 missing=missing)
         op.record = _text("inspect record", record, required=False)
         return self._add(op)
 
@@ -981,9 +1033,11 @@ class Instruction:
         return list(dict.fromkeys(implied + self.tools))
 
     def open_items(self) -> list[str]:
-        """Everything engineering still owes: each NOT STATED value, and each part no step installs."""
+        """Everything engineering still owes: each NOT STATED value, the source of each value free text
+        states uncited, and each part no step installs."""
         items = []
         for step in self.steps:
+            items += [f"step {step.label} ({where}): {name} not stated" for where, name in step.missing]
             for op in step.ops:
                 items += [f"step {step.label} ({op.kind}): {name} not stated" for name in op.missing]
         for leaf in self.leaves():

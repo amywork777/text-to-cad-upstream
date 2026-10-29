@@ -130,7 +130,8 @@ that share it, `pin.2`, or a path where the label alone names several,
 `arm/pin`): what `install=` takes, beside a part's label. Print it before writing the steps.
 
 `wi.open_items()` returns what the run prints: each NOT STATED value, each
-inspection criterion with no source, and each part no step installs.
+inspection criterion with no source, each value free text states with no
+source (below), and each part no step installs.
 
 ## Rigor, emphasis and a house format
 
@@ -167,14 +168,14 @@ Each returns the step, so they chain, and prints in the order called.
 
 | Method | Prints | The floor records (from `production` up) |
 | --- | --- | --- |
-| `instruct(text, *, per=None)` | the user's words, or a document's (cited) | |
+| `instruct(text, *, per=None)` | the user's words, or a document's (cited); a value in it with no `per` is an open item | |
 | `not_stated(what)` | `what` with NOT STATED: something the step needs that nobody has stated; an open item | |
-| `fasten(hardware, *, qty=None, torque=None, locking=None, sequence=None, surfaces=())` | hardware, torque (NOT STATED when `None`; as said for an `Unspecified`), threadlocker, sequence (text, or `Cited`) | actual torque, one per fastener up to 8 |
+| `fasten(hardware, *, qty=None, torque=None, locking=None, sequence=None, surfaces=())` | hardware, torque (NOT STATED when `None`; as said for an `Unspecified`), threadlocker, sequence (text, or `Cited`: a value in it is cited) | actual torque, one per fastener up to 8 |
 | `bond(adhesive, *, surfaces=())` | adhesive, prep, mix, pot life, cure, the surfaces named | prepared at, adhesive lot, expiry, mixed at, mated at |
 | `cure(cure)` | the cycle | oven or autoclave ID, start, end, chart no. |
 | `apply(material, *, surfaces=())` | a sealant, primer or other consumable and how it goes on | |
-| `inspect(text, *, per=None, record=None)` | an inspection; when `controlled`, a hold point whose criterion with no `per` prints NOT STATED and is an open item | the measured value `record` names |
-| `warning(text, *, per=None)`, `caution(...)`, `note(...)` | a box above the step, in the user's words or a document's (cited) | |
+| `inspect(text, *, per=None, record=None)` | an inspection; when `controlled`, a hold point whose criterion with no `per` prints NOT STATED and is an open item (at any rigor when it states a value) | the measured value `record` names |
+| `warning(text, *, per=None)`, `caution(...)`, `note(...)` | a box above the step, in the user's words or a document's (cited); a value in it with no `per` is an open item | |
 
 `bond` and `cure` take `None` for a record nobody has stated yet; it prints
 NOT STATED. `surfaces` (on `bond`, `apply` and `fasten`, where it marks the
@@ -198,6 +199,15 @@ A record's `per` covers every field. A field from a different document is
 `Cited(text, per=...)` in place of the plain text, and prints its own source.
 A citation prints once for the lines of one operation it covers; the next
 operation prints its own, even from the same section.
+
+Free text that states a value -- a number followed by a unit of
+`VALUE_UNITS` (`45 in-lbf`, `0.5 mm`, `150 °F`, `30 min`, `50%`) or a ratio
+(`100:17`) -- cites it as a record does: `per=` on `instruct`, `inspect` and
+the notices, `Cited(text, per=...)` for a `fasten` sequence. Without one its
+source prints NOT STATED and is an open item, so a released instruction
+refuses it. A step's title cites nothing: a value goes in the operation
+that cites it ("Fasten the bracket", then `fasten(..., torque=Torque(...))`),
+never in the title.
 
 `Unspecified(text, *, per)` is a value that does not exist, as the user says
 ("Snug; no torque is specified"), in place of a `Torque`. It prints as said
@@ -239,6 +249,7 @@ so a part stays in place across them.
 | --- | --- |
 | `open item: step 2 (bond): pot life not stated` | a value the documents or the user still owe |
 | `open item: step 4 (inspect): criterion source not stated` | an inspection with no document behind it |
+| `open item: step 3 (caution): source of 45 in-lbf not stated` | a value written into free text with no source |
 | `open item: assembly/pin.2: no step installs it` | a part the order leaves out |
 | `wrote <path> (N pages)` | the PDF |
 

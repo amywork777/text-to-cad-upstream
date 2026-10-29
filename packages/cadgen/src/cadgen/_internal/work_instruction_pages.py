@@ -608,6 +608,8 @@ def _legend(flow: _Flow) -> None:
 def _instruction(flow: _Flow, wi, step, width: float) -> _Cell:
     cell = _Cell(flow.measure, width - 3.0)
     cell.text(step.title, BODY + 0.5, weight="bold")
+    if any(where == "title" for where, _name in step.missing):
+        cell.not_stated("source", SMALL)
     if step.units:
         cell.text("Install: " + ", ".join(
             f"{name} ×{len(refs)} ({_refs(refs)})" if len(refs) > 1 else f"{name} ({refs[0]})"
@@ -662,12 +664,14 @@ def _citation(source) -> str:
     return source.cite() if source.kind == "stated" else f"per {source.cite()}"
 
 
-def _notice(flow: _Flow, kind: str, text: str, source=None) -> _Cell:
+def _notice(flow: _Flow, notice) -> _Cell:
     cell = _Cell(flow.measure, flow.inner - 6.0)
-    cell.text(kind, BODY, weight="bold")
-    cell.text(text)
-    if source is not None:
-        cell.text(_citation(source), SMALL, color="#444444")
+    cell.text(notice.caption, BODY, weight="bold")
+    cell.text(notice.value)
+    if notice.source is not None:
+        cell.text(_citation(notice.source), SMALL, color="#444444")
+    elif notice.cite:
+        cell.not_stated("source", SMALL)
     return cell
 
 
@@ -698,7 +702,7 @@ def _procedure(flow: _Flow, wi, pictures: dict[int, Path]) -> None:
         xs.append(xs[-1] + width)
     operation = None
     for step in wi.steps:
-        notices = [_notice(flow, kind, text, source) for kind, text, source in step.notices]
+        notices = [_notice(flow, notice) for notice in step.notices]
         body = _instruction(flow, wi, step, columns[1][1])
         fig_h, fig = _figure(pictures.get(step.number), FIG_W)
         row_h = max(body.height, fig_h, 10.0) + 3.0
@@ -711,10 +715,10 @@ def _procedure(flow: _Flow, wi, pictures: dict[int, Path]) -> None:
             flow.room(head.height + 2.4 + notice_h + row_h, f"step {step.label}")
             flow._table_row([(head, MARGIN, flow.inner)], f"operation {operation}", shade=True)
         flow.room(notice_h + row_h, f"step {step.label}")
-        for kind_text, n in zip(step.notices, notices):
+        for notice, n in zip(step.notices, notices):
             top = flow.y
             h = n.height + 3.0
-            heavy = kind_text[0] in ("WARNING", "CAUTION")
+            heavy = notice.caption in ("WARNING", "CAUTION")
             flow.add(lambda ax, top=top, h=h, heavy=heavy: ax.add_patch(_rect(
                 MARGIN + 0.5, top - h + 0.5, flow.inner - 1.0, h - 1.0, lw=1.2 if heavy else 0.5, edge="black")))
             flow.add(lambda ax, n=n, top=top: n.draw(ax, MARGIN + 3.0, top - 1.5))

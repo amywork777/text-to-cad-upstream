@@ -107,7 +107,10 @@ outside the sandbox once.
    second document is `Cited(text, per=...)`. A drawing callout that changes a
    spec value (a torque different from the general table) cites the DRAWING:
    that is what a deviation is. Instructions and notices a document states
-   cite it too (`instruct(text, per=...)`, `caution(text, per=...)`). Put each
+   cite it too (`instruct(text, per=...)`, `caution(text, per=...)`), and a
+   value written into free text (a torque, a dimension, a temperature, a
+   time) is cited like any other or is an open item; a step's title carries
+   none. Put each
    WARNING, CAUTION and NOTE on the step it governs, and cite every inspection
    criterion you have a source for (a `controlled` instruction requires it).
    Apply a general rule only where it fits (a cross pattern is for a joint of
@@ -119,8 +122,9 @@ outside the sandbox once.
    is `Unspecified("Snug; no torque is specified", per=Stated(...))`, which
    prints as said and is not.
 6. **Run `python <name>_wi.py`.** It prints every open item, then the PDF it
-   wrote. Each open item is a question for the user: a value not stated, an
-   inspection with no source, or a part no step installs. Ask them together,
+   wrote. Each open item is a question for the user: a value not stated, a
+   value in free text with no source, an inspection with no source, or a part
+   no step installs. Ask them together,
    in one message, and rerun with the answers.
 7. **Read the PDF.** Check each figure shows what its step does (the parts the
    step installs are filled blue over line art; a surface it names is
