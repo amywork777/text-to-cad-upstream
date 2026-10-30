@@ -35,6 +35,7 @@ function mount(extras: Record<string, unknown> | null) {
   geometry.setAttribute('color', new BufferAttribute(new Uint8Array(12), 4, true));
   geometry.setAttribute('_von_mises', new BufferAttribute(new Float32Array([0, 50, 100]), 1));
   geometry.setAttribute('_displacement', new BufferAttribute(new Float32Array(9), 3));
+  geometry.setAttribute('_face', new BufferAttribute(new Float32Array(3), 1));
   const mesh = new Mesh(geometry);
   if (extras) Object.assign(mesh.userData, extras);
   const root = new Group();

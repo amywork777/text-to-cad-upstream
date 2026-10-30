@@ -42,6 +42,7 @@ function resultMesh({ generator = 'cadgen fea', scale = 10, safetyFactor = 5.83 
   geometry.setAttribute('_von_mises', new BufferAttribute(new Float32Array([0, 50, 100, 25]), 1));
   // metres in the file; the field says x1000 to read them in mm
   geometry.setAttribute('_displacement', new BufferAttribute(new Float32Array([0, 0, 0, 0, 0, 0.001, 0, 0, 0.002, 0, 0, 0.0005]), 3));
+  geometry.setAttribute('_face', new BufferAttribute(new Float32Array([0, 0, 0, 0]), 1));
   const mesh = new Mesh(geometry);
   Object.assign(mesh.userData, {
     generator,
@@ -102,6 +103,20 @@ describe('readFeaResult', () => {
       mesh.userData[key] = missing;
       expect(() => readFeaResult(root)).toThrow(new RegExp(`no ${key}`));
     }
+  });
+
+  it('throws for a result without the vertex data cadgen writes on every vertex', () => {
+    for (const [name, said] of [['color', /no vertex colours/], ['_face', /no face per vertex/]] as const) {
+      const { mesh, root } = resultMesh();
+      mesh.geometry.deleteAttribute(name);
+      expect(() => readFeaResult(root)).toThrow(said);
+    }
+    const flat = resultMesh();
+    flat.mesh.geometry.setAttribute('_displacement', new BufferAttribute(new Float32Array(4), 1));
+    expect(() => readFeaResult(flat.root)).toThrow(/displacement is not a vector/);
+    const { mesh, root } = resultMesh();
+    Object.assign(mesh.userData, { parts: [{ ref: 'part1', name: 'post', material: 'Steel' }], weakest_part: 'part1' });
+    expect(() => readFeaResult(root)).toThrow(/assembly has no part per vertex/);
   });
 
   it('throws for what cadgen always writes, missing or malformed, rather than stand a default in for it', () => {
@@ -210,10 +225,13 @@ describe('legend helpers', () => {
   });
 });
 
-// The face each vertex came from, and the study's faces.
+// The face each vertex came from, and the study's faces; an assembly's, the part each vertex belongs to, as cadgen writes it.
 function studyResult(extras: Record<string, unknown> = { study: STUDY, faces: ['bracket/face 1', 'bracket/face 2', 'bracket/face 3', 'bracket/face 4'] }) {
   const built = resultMesh();
   built.mesh.geometry.setAttribute('_face', new BufferAttribute(new Float32Array([0, 0, 0, 1]), 1));
+  if (Array.isArray(extras.parts) && extras.parts.length) {
+    built.mesh.geometry.setAttribute('_part', new BufferAttribute(new Float32Array([0, 0, 0, 1]), 1));
+  }
   Object.assign(built.mesh.userData, extras);
   return { ...built, result: readFeaResult(built.root)! };
 }
@@ -348,9 +366,7 @@ const ASSEMBLY = {
   ],
 };
 function assemblyResult() {
-  const built = studyResult(ASSEMBLY);
-  built.mesh.geometry.setAttribute('_part', new BufferAttribute(new Float32Array([0, 0, 0, 1]), 1));
-  return built;
+  return studyResult(ASSEMBLY);
 }
 const colours = (mesh: Mesh) => Array.from(mesh.geometry.getAttribute('color').array as Uint8Array);
 const vertexColour = (bytes: number[], vertex: number) => bytes.slice(vertex * 4, vertex * 4 + 3);
@@ -484,6 +500,7 @@ describe('a load other than the solved one', () => {
     const { mesh, root } = resultMesh();
     mesh.userData.parts = [{ ref: 'part1', name: 'post', material: 'Steel', safety_factor: 3.1 }, { ref: 'part2', name: 'base', material: 'Steel', safety_factor: 1.5 }];
     mesh.userData.weakest_part = 'base';
+    mesh.geometry.setAttribute('_part', new BufferAttribute(new Float32Array([0, 0, 0, 1]), 1));
     const result = readFeaResult(root)!;
     expect(partRows(result).map((row: any) => row.detail)).toEqual(['Steel · holds 3.1×', 'Steel · holds 1.5×']);
     expect(partRows(result, 2).map((row: any) => row.detail)).toEqual(['Steel · holds 1.5×', 'Steel · yields']);

@@ -260,6 +260,12 @@ export function readFeaResult(root) {
     if (!(fields.some((field) => field.attribute === "_von_mises") && fields.some((field) => field.attribute === DISPLACEMENT))) {
       throw new Error("The FEA result has no von Mises or displacement field.");
     }
+    // What cadgen writes on every vertex: the colours the ramp rewrites, the displacement the view scales,
+    // the face each vertex lies on (`_face`); and, for an assembly, the part it belongs to (`_part`).
+    const attribute = (name, sizes) => sizes.includes(object.geometry.getAttribute(name)?.itemSize);
+    if (!attribute("color", [3, 4])) throw new Error("The FEA result has no vertex colours.");
+    if (!attribute(DISPLACEMENT, [3])) throw new Error("The FEA result's displacement is not a vector per vertex.");
+    if (!attribute("_face", [1])) throw new Error("The FEA result has no face per vertex.");
     if (!(Number.isFinite(extras.deformation_scale) && extras.deformation_scale > 0)) {
       throw new Error("The FEA result has no deformation scale in its extras.");
     }
@@ -270,6 +276,7 @@ export function readFeaResult(root) {
     if (!(Number.isFinite(extras.safety_factor) && extras.safety_factor > 0)) throw new Error("The FEA result has no safety factor in its extras.");
     const parts = readParts(extras.parts);
     if (parts.length && !named(extras.weakest_part)) throw new Error("The FEA result's assembly names no weakest part.");
+    if (parts.length && !attribute("_part", [1])) throw new Error("The FEA result's assembly has no part per vertex.");
     found = {
       mesh: object,
       name: extras.name,
@@ -337,10 +344,10 @@ const HIGHLIGHT_BLEND = 0.68;
 // A chosen joint also tints the two parts it joins, lightly: the interface faces sit hidden between them.
 const SOFT_BLEND = 0.3;
 
-/** A per-vertex index the file writes: the face each vertex lies on (`_face`), the part it belongs to (`_part`); null where it does not say. */
+/** A per-vertex index the file writes: the face each vertex lies on (`_face`), the part it belongs to (`_part`, an
+ * assembly's alone: null for one part). `readFeaResult` refuses a result without the ones it has. */
 function vertexIndex(mesh, name) {
-  const attribute = mesh.geometry.getAttribute(name);
-  return attribute?.itemSize === 1 ? attribute.array : null;
+  return mesh.geometry.getAttribute(name)?.array ?? null;
 }
 
 /**
@@ -355,15 +362,10 @@ function vertexIndex(mesh, name) {
 export function recolorByField(mesh, field, ramp, highlight = null, parts = null, softParts = null,
   { valueScale = 1, rangeScale = 1 } = {}) {
   const color = mesh.geometry.getAttribute("color");
-  // The attribute's presence, not its values: a ramp playing recolours every frame, and keptValues
-  // reads them once per field.
-  const values = mesh.geometry.getAttribute(field.attribute) && keptValues(mesh, field);
-  if (!color || !values) {
-    return false;
-  }
+  const values = keptValues(mesh, field);
   const kept = shown(mesh);
   const faces = vertexIndex(mesh, "_face");
-  const tinted = faces && highlight?.length ? new Set(highlight) : null;
+  const tinted = highlight?.length ? new Set(highlight) : null;
   const partOf = vertexIndex(mesh, "_part");
   const tintedParts = partOf && parts?.length ? new Set(parts) : null;
   const lightParts = partOf && softParts?.length ? new Set(softParts) : null;
@@ -404,9 +406,6 @@ export function applyDeformation(mesh, scale, baseScale) {
   const geometry = mesh.geometry;
   const position = geometry.getAttribute("position");
   const displacement = geometry.getAttribute(DISPLACEMENT);
-  if (!position || displacement?.itemSize !== 3) {
-    return false;
-  }
   const kept = shown(mesh);
   const wanted = Number(scale) || 0;
   if (kept.scale === wanted || (kept.scale === null && wanted === (Number(baseScale) || 0))) {
@@ -652,7 +651,6 @@ const raycaster = new Raycaster();
  */
 export function pickFace(result, ray, clip = null) {
   const faces = vertexIndex(result.mesh, "_face");
-  if (!faces) return null;
   raycaster.ray.copy(ray);
   const hit = raycaster.intersectObject(result.mesh, false).find((entry) => !clip || clip.distanceToPoint(entry.point) >= -1e-6);
   const ref = hit?.face ? result.faces[Math.round(faces[hit.face.a])] : null;

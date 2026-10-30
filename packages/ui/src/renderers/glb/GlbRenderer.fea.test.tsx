@@ -33,15 +33,17 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); loaded.animation = null; loaded.runtime = null; loaded.host = null; cleanup(); vi.unstubAllGlobals(); document.querySelectorAll('[data-test-navbar]').forEach(slot => slot.remove()); });
 
 // Two triangles the way GLTFLoader hands a result over: lower-cased custom attributes, extras in userData.
-// `faces`: the source face of each vertex (`_FACE`), for a result that records its study.
-function resultRoot(extras: Record<string, unknown> | null, faces: number[] | null = null) {
+// `faces`: the source face of each vertex (`_FACE`, which cadgen writes on every result); an assembly's
+// vertices also carry their part (`_PART`).
+function resultRoot(extras: Record<string, unknown> | null, faces: number[] = [0, 0, 0, 0]) {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]), 3));
   geometry.setIndex([0, 1, 2, 1, 3, 2]);
   geometry.setAttribute('color', new BufferAttribute(new Uint8Array(16).fill(7), 4, true));
   geometry.setAttribute('_von_mises', new BufferAttribute(new Float32Array([0, 50, 100, 25]), 1));
   geometry.setAttribute('_displacement', new BufferAttribute(new Float32Array([0, 0, 0, 0, 0, 0.001, 0, 0, 0.002, 0, 0, 0.0005]), 3));
-  if (faces) geometry.setAttribute('_face', new BufferAttribute(new Float32Array(faces), 1));
+  geometry.setAttribute('_face', new BufferAttribute(new Float32Array(faces), 1));
+  if (Array.isArray(extras?.parts) && extras.parts.length) geometry.setAttribute('_part', new BufferAttribute(new Float32Array([0, 0, 0, 1]), 1));
   const mesh = new Mesh(geometry);
   if (extras) Object.assign(mesh.userData, extras);
   const root = new Group();
@@ -78,7 +80,7 @@ function ViewerElement({ children }: { children: React.ReactNode }) {
 }
 const colourBytes = (mesh: Mesh) => Array.from(mesh.geometry.getAttribute('color').array as Uint8Array);
 
-function mount(extras: Record<string, unknown> | null, state?: unknown, { actions = () => {}, host = testHost(), faces = null, settings = { toolStack: { panels: {}, collapsed: {} } } }: { actions?: (actions: readonly any[]) => void, host?: any, faces?: number[] | null, settings?: any } = {}) {
+function mount(extras: Record<string, unknown> | null, state?: unknown, { actions = () => {}, host = testHost(), faces = [0, 0, 0, 0], settings = { toolStack: { panels: {}, collapsed: {} } } }: { actions?: (actions: readonly any[]) => void, host?: any, faces?: number[], settings?: any } = {}) {
   const built = resultRoot(extras, faces);
   loaded.root = built.root;
   // One scene per file, as the hook holds it: a render is not a new result.
@@ -349,9 +351,7 @@ const ASSEMBLED = {
 // The Parts panel shows from six parts up: four more parts beside post and base, joined to nothing.
 const SIX_PARTS = [...ASSEMBLED.parts, ...[3, 4, 5, 6].map(n => ({ ...ASSEMBLED.parts[1], ref: `part${n}`, name: `pin ${n}` }))];
 function mountAssembly(copied: string[], extras: Record<string, unknown> = { parts: SIX_PARTS }) {
-  const built = mount({ ...ASSEMBLED, ...extras }, undefined, { faces: [0, 0, 2, 1], host: clipboardHost(copied) });
-  built.mesh.geometry.setAttribute('_part', new BufferAttribute(new Float32Array([0, 0, 0, 1]), 1));
-  return built;
+  return mount({ ...ASSEMBLED, ...extras }, undefined, { faces: [0, 0, 2, 1], host: clipboardHost(copied) });
 }
 
 const partsPanel = () => screen.queryByRole('region', { name: 'Parts' });

@@ -14,6 +14,7 @@ function cantilever() {
   geometry.setAttribute('color', new BufferAttribute(new Uint8Array(16), 4, true));
   geometry.setAttribute('_von_mises', new BufferAttribute(new Float32Array([1, 0, 0, 1]), 1));
   geometry.setAttribute('_displacement', new BufferAttribute(new Float32Array(tip), 3));
+  geometry.setAttribute('_face', new BufferAttribute(new Float32Array(4), 1));
   const mesh = new Mesh(geometry);
   Object.assign(mesh.userData, {
     generator: 'cadgen fea', name: 'cantilever', document: 'cantilever.step', occurrence: 'cantilever', deformation_scale: 10, safety_factor: 276, faces: [],
