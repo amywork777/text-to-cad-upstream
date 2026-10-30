@@ -273,7 +273,8 @@ it('choosing a fixed face tints only its triangles and carries it into Quick Edi
   for (const vertex of [0, 1, 2]) expect(tinted.slice(vertex * 4, vertex * 4 + 3)).not.toEqual(plain.slice(vertex * 4, vertex * 4 + 3));
   expect(tinted.slice(12)).toEqual(plain.slice(12));
   expect(screen.getByRole('button', { name: 'Select Face 1' }).getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByRole('region', { name: 'Quick Edit' }).textContent).toContain('Face 1');
+  // Chosen in Study, its chip says what it is, as its prompt does.
+  expect(screen.getByRole('region', { name: 'Quick Edit' }).textContent).toContain('Fixed face 1');
   expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nFixed face 1 · /models/part.step#bracket/face 1');
   // Escape lets go, and the colours come back.
   act(() => { fireEvent.keyDown(document.querySelector('[data-stand-in-viewport]')!, { key: 'Escape' }); });
@@ -466,7 +467,25 @@ it('What you see is the field, the deformation and the load', () => {
     .toEqual([['0', '40', '10'], ['0.1', '3', '1']]);
   expect(resultRows().map(row => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Stress', 'Deformation', 'Load']);
   expect(screen.getByRole('textbox', { name: 'Deformation scale value' }).getAttribute('value')).toBe('×10.0');
-  expect(screen.getByRole('textbox', { name: 'Load value' }).getAttribute('value')).toBe('×1.00');
+  expect(screen.getByRole('textbox', { name: 'Load value' }).getAttribute('value')).toBe('×1.0');
+});
+
+it('shows each multiple to its slider\'s step, in boxes of one width that keep it as the value moves', () => {
+  mount(RESULT);
+  const box = (name: string) => screen.getByRole('textbox', { name: `${name} value` });
+  const width = (name: string) => box(name).className.split(/\s+/).find(name => name.startsWith('w-'));
+  const before = [width('Load'), width('Deformation scale')];
+  // One width for both, so their sliders end together.
+  expect(width('Load')).toBe(width('Deformation scale'));
+  // The Load's step is 0.1: half the load is "×0.5", never "×0.500", and its box stays as it was.
+  setValue('Load value', '0.5');
+  expect(box('Load').getAttribute('value')).toBe('×0.5');
+  setValue('Deformation scale value', '2.5');
+  expect(box('Deformation scale').getAttribute('value')).toBe('×2.5');
+  expect([width('Load'), width('Deformation scale')]).toEqual(before);
+  // A value typed between the steps keeps its own figures: the box never shows a load that is not drawn.
+  setValue('Load value', '0.55');
+  expect(box('Load').getAttribute('value')).toBe('×0.550');
 });
 
 it('sizes What you see\'s value boxes to hold the whole value, its padding and its borders: a large exaggeration is never cut off', () => {
@@ -478,7 +497,9 @@ it('sizes What you see\'s value boxes to hold the whole value, its padding and i
     const widths = box.className.split(/\s+/).filter(name => name.startsWith('w-'));
     expect(widths, value).toHaveLength(1);
     const [, ch, rem, px] = /^w-\[calc\((\d+)ch\+([\d.]+)rem\+(\d+)px\)\]$/.exec(widths[0]) || [];
-    expect(Number(ch), `${value}: ${widths[0]}`).toBeGreaterThanOrEqual(Math.min(value.length + 1, 14));
+    // A figure and the × are 1ch each with tabular figures, a point half of one; half a ch is spare.
+    const needed = [...value].reduce((sum, glyph) => sum + (glyph === '.' ? 0.5 : 1), 0.5);
+    expect(Number(ch), `${value}: ${widths[0]}`).toBeGreaterThanOrEqual(Math.min(Math.ceil(needed), 14));
     expect([rem, px], value).toEqual(['0.75', '2']);
     cleanup();
   }
@@ -651,6 +672,8 @@ it('every part of Study is chattable: a check in the verdict, the material and t
   // A check by the faces it is over, which it tints; another by the face it peaks on.
   expect(await prompt(['Select Tip sag'])).toEqual({ tinted: true, pressed: 'true',
     text: 'Tip sag fails: moves 0.62 mm, limit 0.5 mm (OK only to 0.8× this load) · /models/part.step#bracket/face 2' });
+  // The sentence is on screen too, on its chip in Quick Edit, not only in the prompt it copies.
+  expect(screen.getByRole('region', { name: 'Quick Edit' }).textContent).toContain('Tip sag fails: moves 0.62 mm, limit 0.5 mm');
   expect((await prompt(['Select Strength'])).text).toBe('Strength passes: peak 47 MPa, limit 276 MPa (OK up to 5.8× this load) · /models/part.step#bracket/face 1');
   // The material and the mesh are about the whole part, so they tint nothing.
   expect(await prompt(['Select 6061-T6'])).toEqual({ tinted: false, pressed: 'true', text: 'Made of 6061-T6 (yield 276 MPa) · /models/part.step#bracket' });

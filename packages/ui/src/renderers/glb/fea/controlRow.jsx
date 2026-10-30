@@ -13,17 +13,19 @@ import {
 
 const TARGET_SLIDER_STEPS = 1000;
 
-// A value box wide enough for the whole of a multiple: its characters, the padding (0.75rem) and the box's
-// 1px borders, and a character's room more for the "×", wider than a figure ("×6000"); a large exaggeration
-// ("×9500000", "×120000000") takes the box its length needs, so its last figures are never cut off. It
-// overrides the sheet's own width, which a joint's figure fits.
-const valueInputWidth = (value) => {
-  const length = String(value ?? "").length;
-  if (length <= 5) return "w-[calc(6ch+0.75rem+2px)]";
-  if (length <= 7) return "w-[calc(8ch+0.75rem+2px)]";
-  if (length <= 9) return "w-[calc(10ch+0.75rem+2px)]";
-  if (length <= 11) return "w-[calc(12ch+0.75rem+2px)]";
-  return "w-[calc(14ch+0.75rem+2px)]";
+// A value box as wide as the widest value its control shows (its range's ends and the value now), so it never
+// changes width as the value moves: with tabular figures a figure and the "×" are each 1ch and a point half
+// of one, and half a ch more is spare; then the padding (0.75rem) and the box's 1px borders. "×6000" is
+// 6ch, "×12.0" 5ch, "×9500000" 9ch, so a large exaggeration's last figures are never cut off. It overrides
+// the sheet's own width, which a joint's figure fits.
+const VALUE_WIDTHS = ["w-[calc(3ch+0.75rem+2px)]", "w-[calc(4ch+0.75rem+2px)]", "w-[calc(5ch+0.75rem+2px)]",
+  "w-[calc(6ch+0.75rem+2px)]", "w-[calc(7ch+0.75rem+2px)]", "w-[calc(8ch+0.75rem+2px)]", "w-[calc(9ch+0.75rem+2px)]",
+  "w-[calc(10ch+0.75rem+2px)]", "w-[calc(11ch+0.75rem+2px)]", "w-[calc(12ch+0.75rem+2px)]", "w-[calc(13ch+0.75rem+2px)]",
+  "w-[calc(14ch+0.75rem+2px)]"];
+const textCh = (text) => [...String(text ?? "")].reduce((sum, glyph) => sum + (glyph === "." || glyph === "," ? 0.5 : 1), 0) + 0.5;
+const valueInputWidth = (texts) => {
+  const ch = Math.ceil(Math.max(...texts.map(textCh)));
+  return VALUE_WIDTHS[Math.min(Math.max(ch, 3), 14) - 3];
 };
 
 /** A slider's step from its range: about a thousand steps across it, a power of ten, never finer than a millionth. */
@@ -39,11 +41,13 @@ export function controlStep(control) {
  * settings draw one), full width with no label where its options say what it is (`hideLabel`).
  * A plain function, not a component: the panel's rows are its own elements, in its own order.
  *
- * @param {{ control: object, value: unknown, onChange(value: unknown): void, valueText(value: number, control: object): string }} props
+ * @param {{ control: object, value: unknown, onChange(value: unknown): void, valueText(value: number, control: object): string,
+ *   boxTexts?: string[] | null }} props  `boxTexts`: the values its box is sized to hold, where rows share one width;
+ *   else its own range's ends and its value.
  *   `control.ariaLabel`: the accessible name, where it differs from its label; `control.step`: a slider's increment,
  *   otherwise about a thousandth of its range.
  */
-export function controlRow({ control, value, onChange, valueText, t = english }) {
+export function controlRow({ control, value, onChange, valueText, t = english, boxTexts = null }) {
   const label = control.label;
   const name = control.ariaLabel || label;
   if (control.type === "enum") {
@@ -65,7 +69,8 @@ export function controlRow({ control, value, onChange, valueText, t = english })
       labelTitle={control.labelTitle || label}
       value={text}
       onValueCommit={(draft) => onChange(parseFileSheetNumberInput(draft, { fallback: value, min: control.min, max: control.max }))}
-      valueInputProps={{ ariaLabel: t("fea.controlValue", { name }), className: valueInputWidth(text) }}
+      valueInputProps={{ ariaLabel: t("fea.controlValue", { name }),
+        className: valueInputWidth(boxTexts || [text, valueText(control.min, control), valueText(control.max, control)]) }}
     >
       <Slider
         className={FILE_SHEET_PRECISION_SLIDER_CLASSES}

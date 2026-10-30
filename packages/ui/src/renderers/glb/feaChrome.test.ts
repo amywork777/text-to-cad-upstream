@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { besideEnd, chromeCover, colourBarCover, framingInset, panelInset, settleLabels } from './feaChrome.js';
+import { besideEnd, chromeCovers, clearAlong, colourBarCover, framingInset, panelInset, roomAlong, settleLabels } from './feaChrome.js';
 
 describe('a load\'s label on screen', () => {
   it('sits just past the outer end of its own arrow, running on the way it points', () => {
@@ -10,6 +10,20 @@ describe('a load\'s label on screen', () => {
     expect(besideEnd([100, 50], [120, 50], 10)).toEqual({ x: 90, y: 50, align: 'right' });
     // Seen end on: to its right.
     expect(besideEnd([100, 50], [100.5, 50], 10)).toEqual({ x: 110, y: 50, align: 'left' });
+  });
+
+  it('slides along its own arrow\'s line just past the part when its spot at the tail is over it, never across the model\'s box', () => {
+    // The part covers the line up to 37 px past the tail: the label stands just past it, within a few px.
+    const clear = (distance: number) => distance >= 37;
+    const slid = clearAlong(clear, 400)!;
+    expect(slid).toBeGreaterThanOrEqual(37);
+    expect(slid).toBeLessThan(37 + 400 / 2 ** 6 + 1e-9);
+    // Clear at the tail: it stays there. Over the part all the way to the view's edge: no place on the line.
+    expect(clearAlong(() => true, 400)).toBe(0);
+    expect(clearAlong(() => false, 400)).toBeNull();
+    // The room on the line before the view's edge, a margin in: rightwards from x 100 in a 500 px view.
+    expect(roomAlong(100, 50, 1, 0, 500, 300, 8)).toBe(392);
+    expect(roomAlong(100, 50, 0, -1, 500, 300, 8)).toBe(42);
   });
 
   it('moves out from under the panels at the left, and two labels never sit on each other', () => {
@@ -37,7 +51,7 @@ describe('a load\'s label on screen', () => {
     expect(lifted.x).toBe(700);
   });
 
-  it('reads the strip and the shown panels from the page, in the view\'s own pixels; nothing while they are put away', () => {
+  it('reads the strip and the shown panels from the page, each its own box in the view\'s own pixels; nothing while they are put away', () => {
     document.body.innerHTML = `<div data-cad-scene-backdrop><div id="host"></div>
       <div data-cad-tool-groups><div id="strip"></div><div data-cad-tool-stack><section id="study" data-tool-panel="tree"></section>
       <section id="clip" data-tool-panel="fixed" hidden></section></div></div></div>`;
@@ -49,7 +63,8 @@ describe('a load\'s label on screen', () => {
     box('study', 8, 86, 164, 700);
     box('clip', 8, 790, 164, 60);
     const host = document.getElementById('host')!;
-    expect(chromeCover(host)).toEqual({ left: 8, top: 8, right: 172, bottom: 750 });
+    // Each its own box: a label between the strip at the top and the panel at the left is under neither.
+    expect(chromeCovers(host)).toEqual([{ left: 8, top: 8, right: 68, bottom: 42 }, { left: 8, top: 50, right: 172, bottom: 750 }]);
     // No colour bar: nothing at the foot.
     expect(colourBarCover(host)).toBeNull();
     expect(framingInset(host)).toEqual({ left: 172, bottom: 0 });
@@ -64,9 +79,9 @@ describe('a load\'s label on screen', () => {
     // The camera frames right of the panels: 172px of the view.
     expect(panelInset(host)).toBe(172);
     document.querySelector('[data-cad-tool-stack]')!.setAttribute('hidden', '');
-    expect(chromeCover(host)).toEqual({ left: 8, top: 8, right: 68, bottom: 42 });
+    expect(chromeCovers(host)).toEqual([{ left: 8, top: 8, right: 68, bottom: 42 }]);
     // The strip alone covers only its corner: the camera takes the whole width.
     expect(panelInset(host)).toBe(0);
-    expect(chromeCover(document.createElement('div'))).toBeNull();
+    expect(chromeCovers(document.createElement('div'))).toEqual([]);
   });
 });

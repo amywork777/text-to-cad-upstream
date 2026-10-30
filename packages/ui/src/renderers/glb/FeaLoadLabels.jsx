@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { besideEnd, chromeCover, colourBarCover, settleLabels } from "./feaChrome.js";
+import { besideEnd, chromeCovers, clearAlong, colourBarCover, roomAlong, settleLabels } from "./feaChrome.js";
 import { GHOST_OPACITY, pastOutline } from "./feaMarkers.js";
 
 // The panels' 11px, in the viewer's own face.
@@ -11,7 +11,7 @@ const LINE_PX = 14;
 // Whether the model hides a label is cast at most this often while the view moves, and once more
 // when it stops: a ray through the result mesh per label, not per frame.
 const HIDDEN_EVERY_MS = 100;
-// Where the chrome over the view is (the panels, `chromeCover`; the colour bar, `colourBarCover`) is read from
+// Where the chrome over the view is (the strip and the panels, `chromeCovers`; the colour bar, `colourBarCover`) is read from
 // the page at most this often.
 const COVER_EVERY_MS = 250;
 
@@ -22,8 +22,8 @@ const COVER_EVERY_MS = 250;
  * camera. A label behind the camera is left out. A label stands outside the model's outline on screen
  * (`pastOutline`, from its box's `corners`), carried on along its marker's line; one whose marker stands on
  * its face sits at its own arrow's outer end instead (`besideEnd`, its text running on the way the arrow
- * points) wherever that end is in sight and the label drawn there lies over none of the model, so no label
- * is ever drawn inside or behind the part. No label is drawn past the view's edge, under the tool strip and its
+ * points) wherever that end is in sight, slid on along the arrow's line just past the part where the end's own
+ * spot lies over it (`clearAlong`), so it stays by its arrow and no label is ever drawn inside or behind the part. No label is drawn past the view's edge, under the tool strip and its
  * panels at the view's left or the colour bar at its foot, nor over another label (`settleLabels`), on every
  * frame, however the view has turned. `colours`: the ink and the halo it sits on. A label the model hides
  * all the same (a ray from the eye meets the part before it) is drawn as its arrows are there, a faint ghost.
@@ -76,16 +76,19 @@ export default function FeaLoadLabels({ runtimeRef, hostRef, mesh, labels, colou
         caster.far = caster.ray.origin.distanceTo(target) * 0.99;
         return caster.intersectObject(shownMesh, false).length > 0;
       };
-      // Whether a label drawn here lies over the model on screen: a ray through its middle meets the part at all.
+      // Whether a label drawn here lies over the model on screen: a ray through its middle, or its end nearer its
+      // arrow, meets the part at all.
       const overModel = (caster, label) => {
         const middle = label.align === "right" ? label.x - label.width / 2 : label.align === "center" ? label.x : label.x + label.width / 2;
-        caster.setFromCamera(ndc.set((middle / width) * 2 - 1, 1 - (label.y / height) * 2), runtime.camera);
         caster.far = Infinity;
-        return caster.intersectObject(shownMesh, false).length > 0;
+        return [label.x, middle].some((x) => {
+          caster.setFromCamera(ndc.set((x / width) * 2 - 1, 1 - (label.y / height) * 2), runtime.camera);
+          return caster.intersectObject(shownMesh, false).length > 0;
+        });
       };
       const now = window.performance.now();
       if (now - coverAt >= COVER_EVERY_MS) {
-        covers = [chromeCover(host), colourBarCover(host)];
+        covers = [...chromeCovers(host), colourBarCover(host)];
         coverAt = now;
       }
       if (!measure) {
@@ -104,21 +107,29 @@ export default function FeaLoadLabels({ runtimeRef, hostRef, mesh, labels, colou
         const { x, y, dx } = pastOutline(free, face, outline, OFFSET_PX);
         const out = { text: label.text, at: label.at, x, y, align: dx < 0 ? "right" : "left", width: measure(label.text) };
         const endAt = label.end ? screen(label.end.at) : null;
-        const end = endAt ? { ...out, at: label.end.at, ...besideEnd(endAt, label.end.face ? screen(label.end.face) : null, OFFSET_PX, LINE_PX) } : null;
-        candidates.push({ out, end });
+        const endFace = endAt && label.end.face ? screen(label.end.face) : null;
+        // At the arrow's outer end, `gap` px on along its line.
+        const endBy = endAt ? (gap) => ({ ...out, at: label.end.at, ...besideEnd(endAt, endFace, gap, LINE_PX) }) : null;
+        candidates.push({ out, endBy, endAt });
       }
-      const where = JSON.stringify(candidates.map(({ out, end }) => [out.text, Math.round(out.x), Math.round(out.y), end ? [Math.round(end.x), Math.round(end.y)] : 0]));
+      const where = JSON.stringify(candidates.map(({ out, endAt }) => [out.text, Math.round(out.x), Math.round(out.y), endAt ? endAt.map(Math.round) : 0]));
       const due = where !== castFor && now - castAt >= HIDDEN_EVERY_MS;
       if (due) {
         castFor = where;
         castAt = now;
         raycaster ??= new runtime.THREE.Raycaster();
-        // An arrow's end is used only where it is in sight (no part between the eye and it) and its label drawn
-        // there lies over nothing of the model: never a label inside a fin, a hole or behind the part.
-        endClear = candidates.map(({ end }) => Boolean(end) && !blocked(raycaster, end.at, null, true) && !overModel(raycaster, end));
+        // An arrow's end is used only where it is in sight (no part between the eye and it), its label slid on along
+        // the arrow's line until it lies over nothing of the model: never a label inside a fin, a hole or behind the part.
+        endClear = candidates.map(({ endBy, endAt }) => {
+          if (!endBy || blocked(raycaster, endBy(OFFSET_PX).at, null, true)) return null;
+          const first = endBy(OFFSET_PX);
+          const run = Math.hypot(first.x - endAt[0], first.y - endAt[1]) || 1;
+          const room = roomAlong(first.x, first.y, (first.x - endAt[0]) / run, (first.y - endAt[1]) / run, width, height, first.width + OFFSET_PX);
+          return clearAlong((slide) => !overModel(raycaster, endBy(OFFSET_PX + slide)), room);
+        });
       }
       // Inside the view, off the panels at the left and the colour bar at the foot, and off each other.
-      const placed = settleLabels(candidates.map(({ out, end }, index) => (end && endClear[index] ? end : out)), covers,
+      const placed = settleLabels(candidates.map(({ out, endBy }, index) => (endBy && endClear[index] != null ? endBy(OFFSET_PX + endClear[index]) : out)), covers,
         { height: LINE_PX, bounds: { width, height } });
       if (due) {
         // Through where each label is drawn, to its depth: past the outline, the model hides none in practice.

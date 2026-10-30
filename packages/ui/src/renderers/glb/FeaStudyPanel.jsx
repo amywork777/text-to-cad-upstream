@@ -11,8 +11,17 @@ import { formatValue } from "./feaResult.js";
 import FeaVerdict from "./FeaVerdict.jsx";
 import { STUDY_GLYPHS } from "./feaGlyphs.jsx";
 
-/** A control's number as its value field shows it: a multiple as "×12.0", others with their unit after ("138 MPa"). */
-const controlText = (value, control) => (control.unit === "×" ? `×${formatValue(value)}` : `${formatValue(value)}${control.unit ? ` ${control.unit}` : ""}`);
+/** A multiple on its slider's steps, to the step: the Load's 0.1 as "0.5", a deformation's 0.5 as "12.0", its 1 as
+ * "6000"; one typed between them keeps its own figures ("0.55"), never shown as a value it is not. */
+const stepped = (value, step) => {
+  const v = Number(value) || 0;
+  if (!(step > 0) || Math.abs(v / step - Math.round(v / step)) > 1e-6) return formatValue(v);
+  return v.toFixed(step >= 1 ? 0 : Math.ceil(-Math.log10(step) - 1e-9));
+};
+
+/** A control's number as its value field shows it: a multiple to its step ("×12.0", "×0.5"), others with their unit after ("138 MPa"). */
+const controlText = (value, control) => (control.unit === "×" ? `×${stepped(value, control.step)}`
+  : `${formatValue(value)}${control.unit ? ` ${control.unit}` : ""}`);
 
 /**
  * Study's What you see: the field, the deformation and the load (`feaControls`), each a settings row
@@ -22,11 +31,14 @@ const controlText = (value, control) => (control.unit === "×" ? `×${formatValu
  */
 function FeaResultControls({ controls, values, onChange, markers = null }) {
   const { t } = useI18n();
+  // One value box width for every number, the widest any of them shows, so their sliders end together.
+  const boxTexts = controls.filter((control) => control.type === "number")
+    .flatMap((control) => [values[control.id], control.min, control.max].map((value) => controlText(value, control)));
   return (
     // A select gives way before its label in the narrow panel ("Displacement" would squeeze "Show" away).
     <div className="flex flex-col gap-1.5 [&_span:has(+span>[data-slot=select-trigger])]:shrink-0 [&_span:has(>[data-slot=select-trigger])]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:shrink [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:max-w-full">
       {controls.map((control) => controlRow({
-        control, value: values[control.id], valueText: controlText, t,
+        control, value: values[control.id], valueText: controlText, t, boxTexts,
         onChange: (value) => onChange(control.id, value),
       }))}
       {markers ? <div className="flex min-w-0 items-center gap-2 px-2 text-tiny" data-fea-markers="">
@@ -204,6 +216,7 @@ export default function FeaStudyPanel({ parts = NONE, openPart = -1, setup, deta
 export function FaceCard({ face }) {
   const { t } = useI18n();
   return <>
+    {face.chosen ? <InfoRow label={t("fea.chosen")}>{unbroken(face.chosen)}</InfoRow> : null}
     <InfoRow label={t("fea.study")}>{face.role}</InfoRow>
     {face.part ? <InfoRow label={t("fea.part")}>{unbroken(face.part)}</InfoRow> : null}
   </>;

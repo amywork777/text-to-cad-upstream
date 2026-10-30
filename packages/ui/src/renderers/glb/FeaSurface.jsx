@@ -25,7 +25,7 @@ const NO_CHOICE = Object.freeze({ field: null, scale: null, loadScale: null, mar
 const DRIVE_KEYS = Object.freeze({ field: "field", deformation: "scale", load_scale: "loadScale" });
 const EMPTY = Object.freeze([]);
 // `refs`: what Quick Edit gets when it is not the faces' own (a part's or a joint's parts); `parts`: parts to tint.
-const NO_FACES = Object.freeze({ result: null, id: "", faces: EMPTY, refs: EMPTY, parts: EMPTY, softParts: EMPTY, summary: "" });
+const NO_FACES = Object.freeze({ result: null, id: "", faces: EMPTY, refs: EMPTY, parts: EMPTY, softParts: EMPTY, summary: "", picked: false });
 // The markers' checkbox, and what it says it draws before they are built.
 const MARKERS_TITLE = "Loads and fixtures";
 const MARKER_GATE_KINDS = Object.freeze(["load", "fixture"]);
@@ -104,7 +104,8 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   // The answer at a glance, at the load shown: it follows the load control, and may change its word.
   const verdict = useMemo(() => (fea ? fv.feaVerdict(fea, loadScale, t) : null), [fea, loadScale, t]);
   const chooseFaces = useCallback((row) => {
-    setChosenFaces({ result: fea, id: row.id, faces: row.faces || EMPTY, refs: row.refs || EMPTY, parts: row.parts || EMPTY, softParts: row.softParts || EMPTY, summary: row.summary });
+    setChosenFaces({ result: fea, id: row.id, faces: row.faces || EMPTY, refs: row.refs || EMPTY, parts: row.parts || EMPTY, softParts: row.softParts || EMPTY,
+      summary: row.summary, picked: row.picked === true });
   }, [fea]);
   // The view's Clip is the viewport's (`kit/tools/model-effects`): its plane in force is the runtime's (three.js's
   // clipping plane, what lies on its negative side cut away), read as a press or a label needs it.
@@ -119,7 +120,7 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   const pick = useCallback((hit) => {
     if (!hit) { clearChoice(); return; }
     const row = fv.faceRow(rows, hit.ref);
-    chooseFaces({ id: row?.id || hit.ref, faces: [hit.ref], summary: fv.facePromptSummary(fea, hit.ref) });
+    chooseFaces({ id: row?.id || hit.ref, faces: [hit.ref], summary: fv.facePromptSummary(fea, hit.ref), picked: true });
   }, [fea, rows, chooseFaces, clearChoice]);
   // The part the result was solved from, the file a choice's references name.
   const source = useMemo(() => (fea ? fv.resultSourcePath(view.file.path, fea.document) : ""), [fea, view.file.path]);
@@ -276,10 +277,13 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     verdict={verdict} chosen={faces.id} onChoose={chooseFaces} result={resultControls} /> : null;
 
   // ---- Quick Edit: the faces chosen, as references into the part the result was solved from --------------
+  // A row chosen in Study says on its chip what it is ("Bulkhead top sag fails: moves 1.03 mm, limit 0.5 mm"), the
+  // sentence its prompt carries; a face picked on the model is named, its card saying what the study does to it.
   const chips = useMemo(() => {
     if (!fea || !references?.length) return NO_REFERENCES;
-    const face = single ? { ref: single, role: fv.faceRole(fea, single), part: fv.facePartDetail(fea, single, loadScale) } : null;
-    return [{ key: `fea:${faces.id}`, label: single ? fv.faceTitle(fea, single) : faces.summary || faces.id, glyph: "face", id: single || faces.id,
+    const face = single ? { ref: single, role: fv.faceRole(fea, single), part: fv.facePartDetail(fea, single, loadScale),
+      chosen: faces.summary && !faces.picked ? faces.summary : "" } : null;
+    return [{ key: `fea:${faces.id}`, label: faces.summary && !faces.picked ? faces.summary : single ? fv.faceTitle(fea, single) : faces.summary || faces.id, glyph: "face", id: single || faces.id,
       copy: formatPromptReference(references[0]), card: face ? <fv.FaceCard face={face} /> : null, onRemove: clearChoice }];
   }, [fea, references, single, faces, loadScale, clearChoice]);
   const nameReference = useCallback((reference) => {

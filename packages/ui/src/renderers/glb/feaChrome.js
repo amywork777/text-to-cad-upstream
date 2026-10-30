@@ -3,7 +3,7 @@
  * assembly's Parts, the Reference, Clip) at the viewport's left. The camera frames the model into the
  * width they leave and above the colour bar (`framingInset`, `runtime.framingInset`), and a load's label sits
  * at the outer end of its own arrows where that is in sight (`besideEnd`), never under that chrome, past the
- * view's edge nor on another label (`settleLabels`). Pure but for what reads the page (`chromeCover`,
+ * view's edge nor on another label (`settleLabels`). Pure but for what reads the page (`chromeCovers`,
  * `colourBarCover`, `panelInset`, `framingInset`).
  */
 
@@ -11,29 +11,25 @@
 export const FEA_BOTTOM_LINE = "1rem";
 
 /**
- * The box the tool strip and its open panels cover, in the viewport host's own pixels (`{ left, top,
- * right, bottom }`), from the page as it is laid out now: the union of the strip and every panel of the
- * stack that is shown (the panels alone with `strip: false`). null where nothing is shown (Preview puts
- * the tools away), or outside a viewer.
+ * What the tool strip and its open panels cover, in the viewport host's own pixels: one `{ left, top, right,
+ * bottom }` box each, from the page as it is laid out now (the strip, every panel of the stack that is shown,
+ * the file sidebar's tiles and open section), so a label is kept off each and not off the room between them:
+ * the strip stands at the top of the view and the panels at its left. Empty where nothing is shown (Preview
+ * puts the tools away), or outside a viewer. `strip: false` leaves the strip out.
  * @param {HTMLElement | null | undefined} host
  * @param {{ strip?: boolean }} [options]
  */
-export function chromeCover(host, { strip = true } = {}) {
+export function chromeCovers(host, { strip = true } = {}) {
   const viewer = host?.closest?.("[data-cad-scene-backdrop]");
   const groups = viewer?.querySelector?.("[data-cad-tool-groups]");
-  if (!groups) return null;
+  if (!groups) return [];
   const base = host.getBoundingClientRect();
-  // The strip, the tool stack's panels, and the file sidebar's tiles and open section (Study, Parts).
   const sidebar = viewer.querySelector("[data-file-sidebar-room]");
-  const shown = [strip ? groups.firstElementChild : null, ...groups.querySelectorAll("[data-tool-panel]"), ...(sidebar ? sidebar.children : [])]
+  return [strip ? groups.firstElementChild : null, ...groups.querySelectorAll("[data-tool-panel]"), ...(sidebar ? sidebar.children : [])]
     .filter((element) => element && !element.closest("[hidden]"))
     .map((element) => element.getBoundingClientRect())
-    .filter((box) => box.width > 0 && box.height > 0);
-  if (!shown.length) return null;
-  return {
-    left: Math.min(...shown.map((box) => box.left)) - base.left, top: Math.min(...shown.map((box) => box.top)) - base.top,
-    right: Math.max(...shown.map((box) => box.right)) - base.left, bottom: Math.max(...shown.map((box) => box.bottom)) - base.top,
-  };
+    .filter((box) => box.width > 0 && box.height > 0)
+    .map((box) => ({ left: box.left - base.left, top: box.top - base.top, right: box.right - base.left, bottom: box.bottom - base.top }));
 }
 
 /**
@@ -60,7 +56,7 @@ const BAR_GAP_PX = 8;
  * @param {HTMLElement | null | undefined} host
  */
 export function panelInset(host) {
-  return Math.max(chromeCover(host, { strip: false })?.right ?? 0, 0);
+  return Math.max(0, ...chromeCovers(host, { strip: false }).map((box) => box.right));
 }
 
 /**
@@ -97,6 +93,31 @@ export function besideEnd(free, face, gap, lineHeight = 14) {
   return { x: free[0] + dx * gap, y: free[1] + dy * gap + Math.sign(dy) * lineHeight / 2, align: "center" };
 }
 
+/**
+ * How far past `besideEnd`'s place a label must slide along its arrow's line to lie over none of the model: the
+ * least distance in `[0, limit]` at which `clear(distance)` holds, found by halving `steps` times from the two ends,
+ * or null when even `limit` is not clear. So a label whose own spot at the arrow's tail is over the part sits just
+ * past the part on that arrow's line, not across the model's whole box from it.
+ */
+export function clearAlong(clear, limit, steps = 6) {
+  if (clear(0)) return 0;
+  if (!(limit > 0) || !clear(limit)) return null;
+  let low = 0;
+  let high = limit;
+  for (let step = 0; step < steps; step += 1) {
+    const middle = (low + high) / 2;
+    if (clear(middle)) high = middle;
+    else low = middle;
+  }
+  return high;
+}
+
+/** How far a label can go from (`x`, `y`) along (`dx`, `dy`) and stay `margin` inside a view `width` by `height`. */
+export function roomAlong(x, y, dx, dy, width, height, margin) {
+  const along = (at, d, size) => (d > 1e-9 ? (size - margin - at) / d : d < -1e-9 ? (margin - at) / d : Infinity);
+  return Math.max(0, Math.min(along(x, dx, width), along(y, dy, height)));
+}
+
 /** A label's box on screen, from where it is drawn (`x`, its text's middle at `y`), how it is aligned and its `width`. */
 function boxOf({ x, y, align, width }, height) {
   const left = align === "right" ? x - width : align === "center" ? x - width / 2 : x;
@@ -120,8 +141,8 @@ function clamped(label, height, bounds, margin) {
 /**
  * Labels placed on screen (`{ x, y, align, width }` each, in the host's pixels), moved where they must
  * be: inside the view (`bounds`, its `width` and `height`: a label past an edge is drawn whole, against it);
- * off the chrome over the view (`covers`, boxes in the host's pixels, one or a list: the panels at the left,
- * `chromeCover`, which a label under moves right of, reading on from there; the colour bar at the foot,
+ * off the chrome over the view (`covers`, boxes in the host's pixels, one or a list: the strip and the panels,
+ * `chromeCovers`, each of which a label under moves right of, reading on from there; the colour bar at the foot,
  * `colourBarCover`, which a label over moves above); then off each other, each in turn nudged up or down, away
  * from the one it would cover, until it is clear. Returns new labels in the same order, each with `x`, `y` and `align`.
  * @param {{ x: number, y: number, align: string, width: number }[]} labels

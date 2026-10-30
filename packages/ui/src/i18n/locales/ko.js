@@ -698,6 +698,7 @@ export default {
   "fea.study": "해석",
   "fea.parts": "부품",
   "fea.part": "부품",
+  "fea.chosen": "선택",
   "fea.whatYouSee": "표시 내용",
   "fea.verdict": "판정",
   "fea.checks": "검사",
