@@ -84,7 +84,12 @@ outside the sandbox once.
    `read_step` for a STEP, `read_xbf` for an xbf, anchored on
    `Path(__file__).parent`. Any build123d shape works. The drawing documents
    geometry; it does not build it.
-2. **Write `<name>_drawing.py`** beside the model, from
+2. **Write `<name>_drawing.py`** beside the model. For a single part, start
+   from its first pass: `part_sheet(part, title=..., part_number=...)` draws
+   the views that earn their place, overall sizes, holes called out and located
+   (a table past six), every step placed and edges noted, from the part alone
+   ([part_sheet](references/sheet-api.md#part_sheetpart-fields)); refine that
+   sheet with the person's requirements. To lay it out yourself, start from
    [the template](references/sheet-api.md#template). Import the facts your
    dimensions reference (hole pitch, wall, step lengths) from the model module
    rather than retyping them, so moving a feature moves its dimension. If the
@@ -255,13 +260,14 @@ return sheets
   `parts.merge(a, b)` lists them as one after checking the shapes match.
 - `assembly_sheets` makes the GA (views, overall sizes as reference
   dimensions, balloons, the parts list with each item's SHEET) and a
-  first-pass sheet per part: one view per distinct picture, an isometric,
-  overall sizes, the holes and slots its views look down called out and
-  located, and for a part turned whole (a cross hole or a cotter hole
+  first-pass sheet per part, as `part_sheet` draws one: the views that earn
+  their place and an isometric, overall sizes, the holes and slots its views
+  look down called out and located, steps placed and edges noted, and for a
+  part turned whole (a cross hole or a cotter hole
   allowed) its diameters, its tapers' end diameters, each groove's radius,
   and every shoulder, taper end and groove placed from one end. Each is an
-  ordinary `Sheet`: refine `sheets.part(name)` like any other (a prismatic
-  part's steps are yours to place), then run and read the report.
+  ordinary `Sheet`: refine `sheets.part(name)` like any other (past six steps
+  along an axis, the rest are yours to place), then run and read the report.
 - The GA states the finished state, each requirement a flag note where it
   applies: how each joint is held (torque, threadlocker, press fit, bond and
   its cure, weld, rivet), work done at assembly, gaps and orientation that
@@ -352,9 +358,8 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
   touch away from a turned joint are not found: ask about them.
 - Millimetres only; one part per arrangement.
 - Assembly sheets: balloons go on whole views and on sections cut part by
-  part, not on details; a
-  part sheet always starts from three views; parts are drawn in their model
-  frame. Say which part sheets are still a first pass.
+  part, not on details; parts are drawn in their model frame. Say which part
+  sheets are still a first pass.
 
 ## References
 

@@ -174,6 +174,12 @@ class _OffFrame(ValueError):
         self.fits = fits
 
 
+class _Crowded(ValueError):
+    """Two values that would print in one place. On a sheet the author laid out,
+    which gives way is the author's call; one choosing its own size takes more
+    paper first."""
+
+
 def _assert_views_fit(sheet: Sheet, placed: Sequence[tuple], *, index: int, groups: Sequence[tuple] = ()) -> None:
     """Refuse a sheet whose views run off the frame, naming the scale that fits.
 
@@ -748,7 +754,8 @@ def _choose_size_and_scale(sheet: Sheet, extent, iso, room: dict, gap: float | N
     A chosen scale is the largest standard one, up to 10:1 and no larger than
     ``ceiling``, that fits. A chosen size is the smallest of A4 to A2, from the
     ``floor``-th size up, that draws the part at 1:1 or larger, else A3 (or the
-    floor's size, if larger) reduced; given a fixed scale, it is the smallest
+    floor's size, if larger) reduced, or the next size up where no standard scale
+    fits A3 (scale before sheet); given a fixed scale, it is the smallest
     sheet from the floor up that fits it. A fixed size or scale is kept. A part
     too big for a fixed scale takes the largest sheet, and the render refuses it,
     naming the scale that fits."""
@@ -786,8 +793,12 @@ def _choose_size_and_scale(sheet: Sheet, extent, iso, room: dict, gap: float | N
                 paper = name
                 break
         if paper is None:
-            paper = _SIZES_SMALLEST_FIRST[max(floor, _SIZES_SMALLEST_FIRST.index(_SIZE_REDUCED))]
-            fit = largest(paper)
+            # Reduced on A3 (or the floor's size); where no standard scale fits it,
+            # the next sheet up that one does, scale before sheet.
+            for paper in _SIZES_SMALLEST_FIRST[max(floor, _SIZES_SMALLEST_FIRST.index(_SIZE_REDUCED)):]:
+                fit = largest(paper)
+                if fit is not None:
+                    break
     if fit is None and sheet.scale is not None:
         fit = sheet.scale  # the render refuses it, naming the scale that fits
     if fit is None:

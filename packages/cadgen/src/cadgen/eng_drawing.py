@@ -97,7 +97,7 @@ _GENERAL_PROFILE = "UNLESS OTHERWISE SPECIFIED, ALL SURFACES"
 _FLAG_ROOM = " " * 7
 
 __all__ = ["eng_drawing", "Sheet", "View", "Frame", "Profile", "GENERIC", "STAGES", "JOINTS",
-           "SHEET_SIZES", "parts_list", "PartsList", "Item", "assembly_sheets", "AssemblySheets", "geometry_notes"]
+           "SHEET_SIZES", "parts_list", "PartsList", "Item", "assembly_sheets", "AssemblySheets", "geometry_notes", "part_sheet"]
 
 
 class _Detail(NamedTuple):
@@ -1286,6 +1286,314 @@ class AssemblySheets(list):
         return self._by_item[item.number]
 
 
+def _first_pass(sheet: Sheet, shape) -> None:
+    """A part's first-pass views and dimensions on ``sheet``: three views and an
+    isometric at the largest standard scale that fits (a turned part's two alike
+    side views drawn once, a long one lying down), its overall sizes, and every
+    hole and slot its views look down called out and located; a part turned whole
+    has its diameters, tapers, grooves and every step placed from one end. The
+    sheet's views take the author's points in ``shape``'s own frame."""
+    from build123d import GeomType
+
+    from cadgen._internal.drawing_features import (
+        grooves, holes as find_holes, revolved, slots as find_slots, tapers, turned_surfaces,
+    )
+    from cadgen._internal.drawing_report import _owned
+
+    turn = None
+    turned = revolved(shape, bores=True)
+    if turned is not None and turned.axis != 0:
+        size = shape.bounding_box().size
+        if (size.X, size.Y, size.Z)[turned.axis] > turned.diameter:
+            # A long turned part is drawn lying down, as it sits in a lathe: its
+            # axis across the sheet, where the paper is widest.
+            from build123d import Rot
+
+            turn = Rot(0, 90, 0) if turned.axis == 2 else Rot(0, 0, -90)
+            shape = turn * shape
+            turned = revolved(shape, bores=True)
+    features = [*find_holes(shape), *find_slots(shape)]
+    names = list(_VIEW_NAMES) if turned is not None else _earned_views(shape, features)
+    if turned is not None:
+        # Turned whole: the two views square to its axis draw the same picture,
+        # so the first of them in front, top, right order is drawn, unless only
+        # the other looks down a hole drilled across it.
+        beside = [n for n in ("front", "top", "right") if not VIEW_DIRECTIONS[n][0][turned.axis]]
+        sees = [any(_looks_into(f, VIEW_DIRECTIONS[n][0]) for f in features) for n in beside]
+        names.remove(beside[0] if sees[1] and not sees[0] else beside[1])
+    views = sheet.three_views(shape, iso=True, views=names)[:-1]
+    stated: set[int] = set()  # the model axes whose overall size is stated
+    if turned is not None:
+        # Its diameters, across the profile in the view that sees the axis
+        # side-on; the largest states the part's size across the axis both ways.
+        side = next(v for v in views if not VIEW_DIRECTIONS[v.name][0][turned.axis])
+        unit = tuple(float(k == turned.axis) for k in range(3))
+        across = _cross(unit, _look(side))
+        steps = [(s.diameter, s.middle) for s in turned_surfaces(shape)
+                 if abs(abs(s.axis[turned.axis]) - 1) < 1e-9]
+        if all(abs(d - turned.diameter) > 0.01 for d, _m in steps):
+            steps.append((turned.diameter, turned.at))
+        k = turned.axis
+
+        def on_profile(z: float, r: float, side_of: float = 1.0) -> tuple[float, ...]:
+            return tuple((z if j == k else turned.at[j]) + side_of * r * across[j] for j in range(3))
+
+        # Along the axis, every step from one end: each shoulder, each end of a
+        # taper and the middle of each groove. The far end is the overall
+        # size's; a dimension to it as well would close a loop. A counterbore's
+        # floor or a blind bore's bottom is its callout's depth, not a step.
+        ends = shape.bounding_box()
+        near, far = tuple(ends.min)[k], tuple(ends.max)[k]
+        stations: dict[float, float] = {}
+        for face in shape.faces():
+            normal = tuple(face.normal_at()) if face.geom_type == GeomType.PLANE else (0.0, 0.0, 0.0)
+            if abs(abs(normal[k]) - 1) < 1e-9 and not _owned(face, features):
+                reach = max(math.dist(tuple(v), on_profile(tuple(v)[k], 0.0)) for v in face.vertices())
+                z = round(tuple(face.center())[k], 3)
+                stations[z] = max(stations.get(z, 0.0), reach)
+        for taper in tapers(shape):
+            for end, diameter in zip(taper.ends, (taper.small, taper.large)):
+                z = round(end[k], 3)
+                stations[z] = max(stations.get(z, 0.0), diameter / 2)
+                if all(abs(d - diameter) > 0.01 for d, _m in steps):
+                    steps.append((diameter, end))
+        for groove in grooves(shape):
+            z = round(groove.middle[k], 3)
+            stations[z] = max(stations.get(z, 0.0), groove.ring)
+            side.radius(on_profile(z, groove.ring), size=groove.radius)
+        for diameter, middle in steps:
+            side.dim(on_profile(middle[k], diameter / 2), on_profile(middle[k], diameter / 2, -1.0), text="%%c<>")
+        lengthwise = "h" if _view_axes(side.name)[0] == k else "v"
+        start = on_profile(near, stations.get(round(near, 3), turned.diameter / 2))
+        for z, r in sorted(stations.items()):
+            if abs(z - near) > 0.01 and abs(z - far) > 0.01:
+                side.dim(start, on_profile(z, r), orientation=lengthwise)
+        placed = set(stations)
+        stated = {j for j in range(3) if j != k}
+    for view in views:
+        width_axis, height_axis = _view_axes(view.name)
+        if width_axis not in stated or height_axis not in stated:
+            view.overall(width=width_axis not in stated, height=height_axis not in stated)
+        stated |= {width_axis, height_axis}
+    low = shape.bounding_box().min
+    if turned is None:
+        placed: Any = {}
+    for view in views:
+        look = _look(view)
+        seen = [f for f in features if _looks_into(f, look)]
+        if not seen:
+            continue
+        if turned is None:
+            if len(seen) > _FEW_HOLES or not _locate(view, shape, [(f.mouth, (0, 1, 2)) for f in seen], placed):
+                view.hole_table()  # each hole's X and Y from one corner: called out and located
+            else:
+                view.holes()
+            continue
+        view.holes()
+        # A turned part's axis locates what lies on it; a hole off it is placed
+        # along the axis from the part's end.
+        k = turned.axis
+        for feature in seen:
+            if all(abs(feature.mouth[j] - turned.at[j]) <= 0.01 for j in range(3) if j != k):
+                continue
+            if round(feature.mouth[k], 3) in placed:
+                continue
+            placed.add(round(feature.mouth[k], 3))
+            end = tuple((low.X, low.Y, low.Z)[j] if j == k else feature.mouth[j] for j in range(3))
+            view.dim(end, feature.mouth)
+    if turned is None:
+        _place_faces(views, shape, features, placed)
+        _state_edges(sheet, shape)
+    for view in sheet.views:
+        # The author's points are in the part's own frame, as the shape given is.
+        view._turn = turn
+
+
+#: Up to this many holes and slots in a view are called out on it and located by
+#: dimensions; more go in a hole table, which lists each position instead.
+_FEW_HOLES = 6
+#: The most faces a first pass places along one axis, the largest first: past
+#: these a ladder of dimensions shrinks the part on the sheet more than it helps,
+#: and the report names the rest.
+_FEW_STEPS = 6
+
+
+def _earned_views(shape, features) -> list[str]:
+    """The principal views a part's first pass draws: each earns its place by
+    showing what the others chosen do not. First the view looking down the most
+    holes and slots, then, in top, front, right order, a view for each hole none
+    chosen looks down, for each slope none sees edge-on, and for each model axis
+    none shows across or up the sheet. A plate's two edge views show one thing,
+    its thickness: one is drawn. A chamfer is no slope: its note states it."""
+    from build123d import GeomType
+
+    slopes = []
+    bevel = _bevels(shape)
+    for face in shape.faces():
+        if face.geom_type == GeomType.PLANE and not bevel(face):
+            normal = tuple(face.normal_at())
+            if not any(abs(abs(c) - 1) < 1e-9 for c in normal) and sum(abs(c) < 1e-9 for c in normal) == 1:
+                slopes.append(normal)
+
+    def shows(name: str) -> set:
+        look = VIEW_DIRECTIONS[name][0]
+        return ({("axis", k) for k in _view_axes(name)}
+                | {("feature", at) for at, f in enumerate(features) if _looks_into(f, look)}
+                | {("slope", at) for at, n in enumerate(slopes) if abs(_dot(n, look)) < 1e-9})
+
+    shown = {name: shows(name) for name in _VIEW_NAMES}
+    chosen = [max(_VIEW_NAMES, key=lambda n: (sum(kind == "feature" for kind, _at in shown[n]),
+                                               -_VIEW_NAMES.index(n)))]
+    wanted = set().union(*shown.values())
+    while True:
+        left = wanted - set().union(*(shown[n] for n in chosen))
+        name = max((n for n in _VIEW_NAMES if n not in chosen), key=lambda n: (len(shown[n] & left),
+                                                                               -_VIEW_NAMES.index(n)), default=None)
+        if not left or name is None or not shown[name] & left:
+            return [n for n in _VIEW_NAMES if n in chosen]
+        chosen.append(name)
+
+
+def _bevels(shape) -> Callable[[Any], bool]:
+    """Whether a flat face is one of the part's chamfers (its note states it): the
+    chamfers found once, each face then tested against them."""
+    from build123d import Vector
+
+    from cadgen._internal.drawing_features import chamfers
+
+    points = [Vector(*c.point) for c in chamfers(shape)]
+    return lambda face: any(face.distance_to(point) < 1e-6 for point in points)
+
+
+def _edge_face(shape, axis: int):
+    """The flat face at a part's least extent along ``axis``, square to it (the
+    largest where several share that place): the edge a first pass dimensions
+    from, or None where the part ends there in a curve or a point."""
+    from build123d import GeomType
+
+    low = tuple(shape.bounding_box().min)[axis]
+    ends = [f for f in shape.faces() if f.geom_type == GeomType.PLANE
+            and abs(abs(tuple(f.normal_at())[axis]) - 1) < 1e-9 and abs(tuple(f.center())[axis] - low) < 1e-6]
+    return max(ends, key=lambda f: f.area, default=None)
+
+
+def _locate(view: "View", shape, points, placed: dict, *, most: int | None = None) -> bool:
+    """Each of ``points`` located in ``view`` from the part's edge faces: a point
+    with the model axes it states (a hole's mouth, both; a face, the one it is
+    square to), a dimension from the edge along each the view shows, to each
+    place not stated yet (``placed``, by axis; places shared are stated once), at
+    most ``most`` new places an axis, the first given first. False, and nothing
+    added, where the part has no flat edge to measure from along an axis the
+    view shows."""
+    axes = _view_axes(view.name)
+    edges = [_edge_face(shape, k) for k in axes]
+    if None in edges:
+        return False
+    high = tuple(shape.bounding_box().max)
+    for k, edge, orientation in zip(axes, edges, ("h", "v")):
+        start = tuple(edge.center())
+        chosen: dict[float, tuple] = {}
+        for point in (q for q, stated in points if k in stated):
+            place = round(point[k], 3)
+            if (place in placed.setdefault(k, set()) or place in chosen or abs(point[k] - start[k]) < 1e-6
+                    or abs(point[k] - high[k]) < 1e-6):
+                continue
+            if most is not None and len(chosen) >= most:
+                break
+            chosen[place] = point
+        for place, point in sorted(chosen.items()):
+            placed[k].add(place)
+            view.dim(start, tuple(point), orientation=orientation)
+    return True
+
+
+def _place_faces(views, shape, features, placed: dict) -> None:
+    """The flat faces of a part not turned, square to a model axis, placed from
+    the part's edge along that axis, in the first view that shows the axis; and
+    both ends of each slope (a flat face leaning in one model plane), which then
+    state it: the largest faces first, at most ``_FEW_STEPS`` places an axis.
+    Faces a hole or slot owns are its callout's, chamfers their note's; the far
+    end along an axis is the overall size's."""
+    from build123d import GeomType
+
+    from cadgen._internal.drawing_report import _owned
+
+    bevel = _bevels(shape)
+    flats = [face for face in shape.faces()
+             if face.geom_type == GeomType.PLANE and not _owned(face, features) and not bevel(face)]
+    for view in views:
+        points = []
+        for face in flats:
+            normal = tuple(face.normal_at())
+            square = next((k for k in range(3) if abs(abs(normal[k]) - 1) < 1e-9), None)
+            if square is not None:
+                points.append((face.area, tuple(face.center()), (square,)))
+            elif sum(abs(c) < 1e-9 for c in normal) == 1 and abs(_dot(normal, _look(view))) < 1e-9:
+                leans = tuple(k for k in range(3) if abs(normal[k]) >= 1e-9)
+                points.extend((face.area, tuple(v), leans) for v in face.vertices())
+        shown = set(_view_axes(view.name))
+        points = [(q, stated) for _area, q, stated in sorted(points, key=lambda p: -p[0])
+                  if any(k in shown and round(q[k], 3) not in placed.get(k, set()) for k in stated)]
+        if points:
+            _locate(view, shape, points, placed, most=_FEW_STEPS)
+
+
+def _state_edges(sheet: Sheet, shape) -> None:
+    """A part's fillets, rounds and chamfers stated in its notes: the general
+    note its edges make true (``geometry_notes``), then a note for each size it
+    leaves, with how many edges are that size."""
+    from cadgen._internal.drawing_features import blends, chamfers
+
+    notes = [*sheet.notes, *(n for n in geometry_notes(shape) if n not in sheet.notes)]
+    said = " ".join(notes).upper()
+    sizes: dict[tuple, int] = {}
+    for blend in blends(shape):
+        key = ("FILLET" if blend.concave else "ROUND", round(blend.radius, 3))
+        sizes[key] = sizes.get(key, 0) + 1
+    for chamfer in chamfers(shape):
+        key = ("CHAMFER", *sorted((round(chamfer.legs[0], 3), round(chamfer.legs[1], 3))))
+        sizes[key] = sizes.get(key, 0) + 1
+    for key, count in sorted(sizes.items()):
+        if key[0] == "CHAMFER":
+            a, b = key[1:]
+            size = f"{_fmt(a)} × 45°" if abs(a - b) < 1e-3 else f"{_fmt(a)} × {_fmt(b)}"
+            if size.upper() in said:
+                continue
+            notes.append(f"{count}× CHAMFER {size}." if count > 1 else f"CHAMFER {size}.")
+        else:
+            word, radius = key
+            if f"R{_fmt(radius)} " in said + " " and (word in said or "RADII" in said):
+                continue
+            notes.append(f"{count}× {word}S R{_fmt(radius)}." if count > 1 else f"{word} R{_fmt(radius)}.")
+    sheet.notes = notes
+
+
+def part_sheet(part, **fields: Any) -> Sheet:
+    """A first-pass drawing of one part, a sheet the script refines before
+    returning it: ``part_sheet(read_step(path), title="BRACKET")``. ``fields`` are
+    :class:`Sheet`'s own (``title``, ``part_number``, ``material`` ...); the sheet
+    chooses its size and scale unless they are given.
+
+    The views are the ones that earn their place: the view looking down most of
+    the part's holes, and each further principal view that shows a hole, a slope
+    seen edge-on or a model axis no view chosen shows (a plate's two edge views
+    show one thing, its thickness, and one is drawn), with an isometric. On them:
+    the overall sizes; up to six holes and slots in a view called out and
+    located from the part's edge faces (more in a hole table); every flat face
+    square to a model axis, and both ends of every slope, placed from the same
+    edges; and the fillets, rounds and chamfers stated in notes. A part turned
+    whole is drawn as :func:`assembly_sheets` draws one: its diameters, tapers and
+    grooves, every step placed from one end, a long one lying down.
+
+    It states geometry, never a requirement: every size is nominal until the
+    script gives it a tolerance, and the run's report names what is still
+    unstated. Dimensions it adds are ordinary ones; add or replace any."""
+    fields = {"size": None, "scale": None, **fields}
+    sheet = Sheet(**fields)
+    _first_pass(sheet, part)
+    return sheet
+
+
 def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revision: str = "A",
                     size: str = "A3", author: str = "", date: str = "", projection: str = "THIRD ANGLE",
                     ink: str = "mono", notes: Sequence[str] = (), general_tolerance: str = "",
@@ -1319,13 +1627,6 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
     dimensions: an assembly's envelope is information, never inspected; what
     it requires once assembled goes in flag notes (:meth:`View.flag`).
     """
-    from build123d import GeomType
-
-    from cadgen._internal.drawing_features import (
-        grooves, holes as find_holes, revolved, slots as find_slots, tapers, turned_surfaces,
-    )
-    from cadgen._internal.drawing_report import _owned
-
     if not isinstance(parts, PartsList):
         raise TypeError(f"assembly_sheets() takes the PartsList that parts_list() returns, got {type(parts).__name__}")
     common = dict(size=size, part_number=part_number, revision=revision, author=author, date=date,
@@ -1363,107 +1664,7 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
         sheet = Sheet(title=shown[0], material=shown[1], spec=shown[2], subtitle=shown[3],
                       general_tolerance=general_tolerance, **(common | {"size": None, "scale": None}))
         sheet._item = _PartOf(item, title, shown)
-        shape, turn = item.shape, None
-        turned = revolved(shape, bores=True)
-        if turned is not None and turned.axis != 0:
-            size = shape.bounding_box().size
-            if (size.X, size.Y, size.Z)[turned.axis] > turned.diameter:
-                # A long turned part is drawn lying down, as it sits in a lathe: its
-                # axis across the sheet, where the paper is widest.
-                from build123d import Rot
-
-                turn = Rot(0, 90, 0) if turned.axis == 2 else Rot(0, 0, -90)
-                shape = turn * shape
-                turned = revolved(shape, bores=True)
-        names = list(_VIEW_NAMES)
-        features = [*find_holes(shape), *find_slots(shape)]
-        if turned is not None:
-            # Turned whole: the two views square to its axis draw the same picture,
-            # so the first of them in front, top, right order is drawn, unless only
-            # the other looks down a hole drilled across it.
-            beside = [n for n in ("front", "top", "right") if not VIEW_DIRECTIONS[n][0][turned.axis]]
-            sees = [any(_looks_into(f, VIEW_DIRECTIONS[n][0]) for f in features) for n in beside]
-            names.remove(beside[0] if sees[1] and not sees[0] else beside[1])
-        views = sheet.three_views(shape, iso=True, views=names)[:-1]
-        stated: set[int] = set()  # the model axes whose overall size is stated
-        if turned is not None:
-            # Its diameters, across the profile in the view that sees the axis
-            # side-on; the largest states the part's size across the axis both ways.
-            side = next(v for v in views if not VIEW_DIRECTIONS[v.name][0][turned.axis])
-            unit = tuple(float(k == turned.axis) for k in range(3))
-            across = _cross(unit, _look(side))
-            steps = [(s.diameter, s.middle) for s in turned_surfaces(shape)
-                     if abs(abs(s.axis[turned.axis]) - 1) < 1e-9]
-            if all(abs(d - turned.diameter) > 0.01 for d, _m in steps):
-                steps.append((turned.diameter, turned.at))
-            k = turned.axis
-
-            def on_profile(z: float, r: float, side_of: float = 1.0) -> tuple[float, ...]:
-                return tuple((z if j == k else turned.at[j]) + side_of * r * across[j] for j in range(3))
-
-            # Along the axis, every step from one end: each shoulder, each end of a
-            # taper and the middle of each groove. The far end is the overall
-            # size's; a dimension to it as well would close a loop. A counterbore's
-            # floor or a blind bore's bottom is its callout's depth, not a step.
-            ends = shape.bounding_box()
-            near, far = tuple(ends.min)[k], tuple(ends.max)[k]
-            stations: dict[float, float] = {}
-            for face in shape.faces():
-                normal = tuple(face.normal_at()) if face.geom_type == GeomType.PLANE else (0.0, 0.0, 0.0)
-                if abs(abs(normal[k]) - 1) < 1e-9 and not _owned(face, features):
-                    reach = max(math.dist(tuple(v), on_profile(tuple(v)[k], 0.0)) for v in face.vertices())
-                    z = round(tuple(face.center())[k], 3)
-                    stations[z] = max(stations.get(z, 0.0), reach)
-            for taper in tapers(shape):
-                for end, diameter in zip(taper.ends, (taper.small, taper.large)):
-                    z = round(end[k], 3)
-                    stations[z] = max(stations.get(z, 0.0), diameter / 2)
-                    if all(abs(d - diameter) > 0.01 for d, _m in steps):
-                        steps.append((diameter, end))
-            for groove in grooves(shape):
-                z = round(groove.middle[k], 3)
-                stations[z] = max(stations.get(z, 0.0), groove.ring)
-                side.radius(on_profile(z, groove.ring), size=groove.radius)
-            for diameter, middle in steps:
-                side.dim(on_profile(middle[k], diameter / 2), on_profile(middle[k], diameter / 2, -1.0), text="%%c<>")
-            lengthwise = "h" if _view_axes(side.name)[0] == k else "v"
-            start = on_profile(near, stations.get(round(near, 3), turned.diameter / 2))
-            for z, r in sorted(stations.items()):
-                if abs(z - near) > 0.01 and abs(z - far) > 0.01:
-                    side.dim(start, on_profile(z, r), orientation=lengthwise)
-            placed = set(stations)
-            stated = {j for j in range(3) if j != k}
-        for view in views:
-            width_axis, height_axis = _view_axes(view.name)
-            if width_axis not in stated or height_axis not in stated:
-                view.overall(width=width_axis not in stated, height=height_axis not in stated)
-            stated |= {width_axis, height_axis}
-        low = shape.bounding_box().min
-        if turned is None:
-            placed = set()
-        for view in views:
-            look = _look(view)
-            seen = [f for f in features if _looks_into(f, look)]
-            if not seen:
-                continue
-            if turned is None:
-                view.hole_table()  # each hole's X and Y from one corner: called out and located
-                continue
-            view.holes()
-            # A turned part's axis locates what lies on it; a hole off it is placed
-            # along the axis from the part's end.
-            k = turned.axis
-            for feature in seen:
-                if all(abs(feature.mouth[j] - turned.at[j]) <= 0.01 for j in range(3) if j != k):
-                    continue
-                if round(feature.mouth[k], 3) in placed:
-                    continue
-                placed.add(round(feature.mouth[k], 3))
-                end = tuple((low.X, low.Y, low.Z)[j] if j == k else feature.mouth[j] for j in range(3))
-                view.dim(end, feature.mouth)
-        for view in sheet.views:
-            # The author's points are in the item's own frame, as item.shape is.
-            view._turn = turn
+        _first_pass(sheet, item.shape)
         by_item[item.number] = sheet
     return AssemblySheets([ga, *more, *by_item.values()], parts, by_item)
 

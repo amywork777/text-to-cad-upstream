@@ -310,6 +310,41 @@ orientation and runout need one, a diameter zone and a material condition only
 where they apply) are in [intent and GD&T](intent-and-gdt.md#frames-and-datums).
 A frame naming a datum no view of its sheet defines is refused.
 
+## `part_sheet(part, **fields)`
+
+A first pass of one part, from the part alone, as a `Sheet` the script refines
+before returning it. `fields` are `Sheet`'s own; the sheet chooses its size and
+scale unless they are given.
+
+```python
+@eng_drawing(out="../PDF/bracket_drawing.pdf")
+def bracket_drawing():
+    sheet = part_sheet(read_step(STEP), title="BRACKET", part_number="BR-100")
+    top = next(v for v in sheet.views if v.name == "top")
+    top.dim(...)            # what the first pass left, and the person's requirements
+    return sheet
+```
+
+- **Views that earn their place**: the principal view looking down most of
+  the holes and slots, then each further one that looks down a hole, sees a
+  slope edge-on, or shows a model axis no view chosen shows, with an
+  isometric. A plate's two edge views show one thing, its thickness, and one
+  is drawn. A part turned whole is drawn as `assembly_sheets` draws one (its
+  diameters, tapers and grooves, every step placed from one end, a long one
+  lying down).
+- **Holes**: up to six in a view called out once (`5× ⌀5.5 THRU`) and located
+  from the part's edge faces; more in a hole table.
+- **Faces**: every flat face square to a model axis placed from the same
+  edges, and both ends of every slope (which then states it), the largest
+  faces first, at most six places along an axis. A ladder past that shrinks
+  the part more than it helps; the report names the rest.
+- **Edges**: `geometry_notes(part)`, then a note for each fillet, round and
+  chamfer size it leaves (`5× CHAMFER 0.5 × 45°.`).
+
+It states geometry only: every size is nominal, and the run's `requirements:`
+line says so. Dimensions it adds are ordinary ones: add, or replace any by
+building the sheet by hand instead.
+
 ## `geometry_notes(part)`
 
 The general notes the part's own geometry makes true, for `Sheet(notes=...)`.

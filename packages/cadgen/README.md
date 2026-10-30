@@ -375,7 +375,7 @@ src/cadgen/
                          #   articulation, its visuals in rest space, the facts a person
                          #   reads off it; held in memory
   drawing_payload.py     # a DXF flattened by ezdxf for the viewer's pane
-  eng_drawing.py         # @eng_drawing: Sheet, View and assembly_sheets, one PDF
+  eng_drawing.py         # @eng_drawing: Sheet, View, part_sheet and assembly_sheets, one PDF
                          #   projected from a part or an assembly; its engine
                          #   is _internal/drawing_* (base: sizes, scales, text;
                          #   sheet: frame, layout, chosen size and scale; views:

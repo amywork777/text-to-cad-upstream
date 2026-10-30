@@ -343,13 +343,17 @@ def _shows(view: View, proj, feature, run: float, cut) -> bool:
 
 def _faces_viewer(feature, look) -> bool:
     """Whether a view sees a hole's or a slot's mouth: its axis runs into the
-    material away from the viewer, or it is plain and through, which reads the
-    same from either end. A counterbore or countersink on the far side is not
-    something this view shows."""
+    material away from the viewer, or it is through and reads the same from either
+    end, plain or opened out alike at both (a hole chamfered both ends). A
+    counterbore or countersink on the far side alone is not something this view
+    shows."""
     if _dot(feature.axis, look) < 0:
         return True
-    sunk = feature.cbore if isinstance(feature, Slot) else feature.cbore or feature.csk
-    return feature.thru and not sunk
+    if isinstance(feature, Slot):
+        return feature.thru and not feature.cbore
+    # Its signature's near and far ends, rounded as a 4× count compares holes.
+    _size, _thru, _depth, cbore, csk, far_cbore, far_csk, _problem = feature.signature()
+    return feature.thru and ((far_cbore, far_csk) == (cbore, csk) or not (cbore or csk))
 
 
 def _looks_into(feature, look) -> bool:
@@ -965,13 +969,25 @@ def _lower_left(shape, proj) -> tuple[float, float, float]:
 
 
 def _draw_hole_tags(msp, table: _HoleTable, proj, to_sheet, sv: float, th: float, text) -> None:
-    """Each tabulated hole's tag beside it, and the origin its X and Y run from."""
+    """Each tabulated hole's tag beside it, and the origin its X and Y run from. A
+    tag leans off its hole up and to the right, or, where that would print over a
+    tag already placed (holes close together at the sheet's scale), off the next
+    corner round that is clear, and failing all four, a tag's height further out."""
     from ezdxf.enums import TextEntityAlignment as A
 
+    from cadgen._internal.drawing_render import _text_box
+
+    placed: list[tuple[float, float, float, float]] = []
+    corners = [(1, 1, A.BOTTOM_LEFT), (-1, 1, A.BOTTOM_RIGHT), (1, -1, A.TOP_LEFT), (-1, -1, A.TOP_RIGHT)]
     for row in table.rows:
         c, r = to_sheet(row.beside), row.radius * sv
-        lean = r * 0.71 + 0.8
-        text(row.tag, c[0] + lean, c[1] + lean, 2.5, A.BOTTOM_LEFT, "DIM")
+        tries = [(r * 0.71 + 0.8 + 2.5 * ring, sx, sy, align) for ring in range(4) for sx, sy, align in corners]
+        boxes = [(_text_box(row.tag, c[0] + sx * lean, c[1] + sy * lean, 2.5, align), lean, sx, sy, align)
+                 for lean, sx, sy, align in tries]
+        box, lean, sx, sy, align = next((b for b in boxes if not any(
+            b[0][0] < q[2] and q[0] < b[0][2] and b[0][1] < q[3] and q[1] < b[0][3] for q in placed)), boxes[0])
+        placed.append(box)
+        text(row.tag, c[0] + sx * lean, c[1] + sy * lean, 2.5, align, "DIM")
     o = to_sheet(proj.point(table.origin))
     # The arrows often lie along the part's edges, so each letter stands off its
     # arrow's tip on the far side of the corner, clear of those edges.

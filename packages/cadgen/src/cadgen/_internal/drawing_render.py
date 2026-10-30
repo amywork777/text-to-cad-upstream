@@ -7,7 +7,9 @@ for the annotation they carry, places details, auxiliary views and hole tables i
 free paper, and draws it all with the sheet's furniture. What the sheet leaves
 unstated, and what it noticed on the way, goes on the drawing's facts for the
 report. Paper that runs out raises ``_OffFrame``, which a sheet choosing its own
-size or scale answers with a larger sheet or a smaller scale.
+size or scale answers with a larger sheet or a smaller scale; two values in one
+place raise ``_Crowded``, which a sheet choosing its size answers with a larger
+sheet.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ from cadgen._internal.drawing_gdt import (
 )
 from cadgen._internal.drawing_report import _Facts, _member_key, _merge_facts, _tally
 from cadgen._internal.drawing_sheet import (
-    _AIR, _LARGEST_SCALE, _SIZES_CHOSEN, _SIZES_SMALLEST_FIRST, _OffFrame, _arrange_three_views, _assert_views_fit,
+    _AIR, _LARGEST_SCALE, _SIZES_CHOSEN, _SIZES_SMALLEST_FIRST, _Crowded, _OffFrame, _arrange_three_views, _assert_views_fit,
     _SheetTable, _choose_for_breaks, _choose_size_and_scale, _draw_furniture, _draw_sheet_table, _furniture,
     _list_height, _next_smaller,
     _notes_box, _place_box, _place_detail, _require_settled, _settle, _within,
@@ -379,8 +381,11 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     drawn again rather than refused, those being the sheet's choices, not the
     author's. A part drawn enlarged is drawn smaller on the same sheet first, down
     to 1:1; then the sheet takes the next size up if it chooses its size, or the
-    next standard scale down if it chooses its scale. Only the drawing that
-    succeeds reports anything.
+    next standard scale down if it chooses its scale. Two values printed in one
+    place on a sheet choosing its size take the next size up too, up to A0, at
+    the largest scale it fits: more paper between the features, never a smaller
+    scale, which crowds them more.
+    Only the drawing that succeeds reports anything.
     """
     if sheet._item is not None:
         _refresh_from_item(sheet)
@@ -392,6 +397,15 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
         try:
             doc = _draw_sheet(sheet, index=index, count=count, label=label, warnings=tried_warnings,
                               facts=tried_facts, continued=continued, floor=floor, ceiling=ceiling)
+        except _Crowded:
+            attempt = (sheet._size(), sheet._scale())
+            index_now = _SIZES_SMALLEST_FIRST.index(attempt[0])
+            if sheet.size is not None or attempt in tried or index_now == len(_SIZES_SMALLEST_FIRST) - 1:
+                raise
+            tried.add(attempt)
+            # Room between the features: the larger sheet draws them as large as it fits.
+            floor, ceiling = index_now + 1, None
+            continue
         except _OffFrame as exc:
             attempt = (sheet._size(), sheet._scale())
             if not sheet._chooses() or attempt in tried:
@@ -525,7 +539,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         for other, taken in claimed:
             if (box[0] < taken[2] and box[2] > taken[0] and box[1] < taken[3] and box[3] > taken[1]):
                 # Two values in one place read as neither: the sheet is wrong, not cramped.
-                raise ValueError(
+                raise _Crowded(
                     f"annotation overlaps: {value.strip()!r} would print over {other.strip()!r} "
                     f"around ({box[0]:.0f}, {box[1]:.0f}). Give the view more room "
                     "(three_views(gap=...), a larger sheet), or place one of them with offset=."

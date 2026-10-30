@@ -73,18 +73,19 @@ sizes as reference dimensions, an assembly's envelope being information nobody
 inspects; balloons; the parts list, continued on further sheets past 16 items
 on A3), then one sheet per modelled item. A GA that does not fit `size` beside its
 parts list at 1:50 or larger is refused, naming a larger size. A part's sheet
-draws `item.shape` in one view per distinct picture and an isometric on a
+draws `item.shape` as `part_sheet` draws a part, in the views that earn their place and an isometric on a
 sheet that chooses its own size and scale (`Sheet(size=None, scale=None)`); a
 long turned part lies down, and the points you give its views stay in the
 part's own frame, as `item.shape` is. It states its overall sizes, calls out
 the holes and slots each view looks down and locates them (a prismatic part's
-in a hole table, a turned part's from its axis and its end, a cross hole
-included), and is titled
+from its edge faces, or in a hole table past six; a turned part's from its axis
+and its end, a cross hole included), and is titled
 with the item's description over `ITEM n (QTY q) OF <title>`. A part turned
 whole states its profile: its diameters, each taper's end diameters, each
 groove's radius, and every shoulder, taper end and groove placed along the
 axis from its near end (the far end is the overall length's). A prismatic
-part's steps and faces are left to you; the report names each. Every sheet carries the drawing number, revision, author
+part's steps and faces are placed from its edges, the largest six along an
+axis, and its edges noted; the report names any step left. Every sheet carries the drawing number, revision, author
 and date, and the stage, profile, category, company and fields; `notes` and
 `revisions` go on the GA, `general_tolerance` on the part sheets.
 `sheets.part(key)` is an item's sheet; `sheets.parts` the list. A detail of a

@@ -5603,6 +5603,124 @@ class ViewChoiceTests(unittest.TestCase):
         _render_sheet(sheet, index=1, count=1, label="unlike", warnings=warnings)
         self.assertFalse([w for w in warnings if "same picture" in w], warnings)
 
+def _joining_plate(holes=((10, 10), (30, 10), (50, 10), (50, 30), (50, 50)), *, ends: int = 2):
+    """A 60 x 60 x 4 plate with one corner cut at 45 degrees, 40 along each edge,
+    and 5.5 mm holes chamfered 0.5 at both ends (``ends=1``: the top alone): the
+    shape of a T-slot joining plate."""
+    from build123d import Axis, Cylinder, GeomType, Polygon, Pos, chamfer, extrude
+
+    plate = extrude(Polygon((0, 0), (60, 0), (60, 60), (40, 60), (0, 20), align=None), 4)
+    for x, y in holes:
+        plate -= Pos(x, y, 2) * Cylinder(2.75, 4)
+    rims = plate.edges().filter_by(GeomType.CIRCLE)
+    return chamfer(rims if ends == 2 else rims.group_by(Axis.Z)[-1], 0.5)
+
+
+def _staircase(steps: int = 8):
+    """``steps`` steps, each 10 along X and 5 higher than the last, 20 deep."""
+    from build123d import Align, Box, Pos
+
+    lowest = (Align.MIN, Align.MIN, Align.MIN)
+    part = Box(10, 20, 5, align=lowest)
+    for at in range(1, steps):
+        part += Pos(10 * at, 0, 0) * Box(10, 20, 5 * (at + 1), align=lowest)
+    return part
+
+
+class PartSheetTests(unittest.TestCase):
+    """``part_sheet``: one call draws a part's first pass, which states its
+    geometry and leaves its requirements to the person."""
+
+    def _drawn(self, part, **fields):
+        from cadgen._internal.drawing_render import _render_sheet
+        from cadgen._internal.drawing_report import _unstated
+        from cadgen.eng_drawing import part_sheet
+
+        sheet = part_sheet(part, title="PART", **fields)
+        facts = _facts()
+        doc = _render_sheet(sheet, index=1, count=1, label="first", facts=facts)
+        return sheet, doc, _unstated(facts)
+
+    def test_a_plate_s_first_pass_states_all_of_it(self) -> None:
+        """Paul Fremantle's Draftwright drew this plate from its STEP with one call;
+        so does this: one edge view (a plate's two say one thing), the holes called
+        out once and located from the edges, the cut corner placed by both its
+        ends, and the chamfers in a note. Nothing is left unstated."""
+        sheet, doc, unstated = self._drawn(_joining_plate())
+        self.assertEqual([v.name for v in sheet.views], ["top", "front", "iso"])
+        self.assertEqual(unstated, [])
+        callouts = _callouts(doc)
+        self.assertTrue(any(c.startswith("5× %%c5.5 THRU") and c.endswith("BOTH ENDS") for c in callouts), callouts)
+        self.assertIsNone(sheet.views[0]._table)
+        self.assertEqual(sorted(_dim_texts(doc)), sorted(["10", "10", "20", "30", "30", "4", "40", "50", "50",
+                                                          "60", "60"]))
+
+    def test_more_holes_than_a_few_go_in_a_table(self) -> None:
+        grid = tuple((x, y) for x in (10, 25, 40) for y in (5, 15, 25))  # nine, clear of the cut corner
+        sheet, _doc, unstated = self._drawn(_joining_plate(grid))
+        self.assertIsNotNone(sheet.views[0]._table)
+        self.assertEqual(unstated, [])
+
+    def test_steps_past_a_few_are_left_to_the_report(self) -> None:
+        """Placing every step of a long ladder shrinks the part more than it helps:
+        the largest six go on, and the report names the step it leaves."""
+        sheet, _doc, unstated = self._drawn(_staircase())
+        self.assertEqual([v.name for v in sheet.views], ["top", "front", "iso"])  # the top for its depth
+        self.assertEqual(len(unstated), 1, unstated)
+        self.assertIn("is not located", unstated[0])
+        self.assertEqual(self._drawn(_staircase(6))[2], [], "five risers and five treads each fit")
+
+    def test_edges_of_several_sizes_are_each_noted(self) -> None:
+        from build123d import Align, Axis, Box, fillet
+
+        block = Box(40, 30, 10, align=(Align.MIN, Align.MIN, Align.MIN))
+        block = fillet(block.edges().filter_by(Axis.Z).sort_by(Axis.X)[:2], 2)
+        part = fillet(block.edges().filter_by(Axis.Z).sort_by(Axis.X)[-2:], 5)
+        sheet, _doc, unstated = self._drawn(part)
+        self.assertEqual([n for n in sheet.notes if "ROUND" in n], ["2× ROUNDS R2.", "2× ROUNDS R5."])
+        self.assertEqual(unstated, [])
+
+    def test_a_through_hole_opened_out_alike_at_both_ends_is_seen_from_either(self) -> None:
+        from cadgen._internal.drawing_annotation import _looks_into
+        from cadgen._internal.drawing_features import holes
+
+        hole = holes(_joining_plate(((30, 30),)))[0]
+        self.assertEqual((hole.csk, hole.far_csk), ((6.5, 90.0), (6.5, 90.0)))
+        self.assertTrue(_looks_into(hole, (0.0, 0.0, 1.0)) and _looks_into(hole, (0.0, 0.0, -1.0)))
+        one_end = holes(_joining_plate(((30, 30),), ends=1))[0]
+        self.assertEqual((one_end.csk, one_end.far_csk), ((6.5, 90.0), None))
+        self.assertFalse(_looks_into(one_end, one_end.axis), "a chamfer at one end alone is not what the far view shows")
+
+
+class CrowdedSheetTests(unittest.TestCase):
+    """Two values in one place on a sheet choosing its size take a larger sheet;
+    on a sheet whose size the author fixed, they are refused, as before."""
+
+    def test_a_sheet_choosing_its_size_takes_the_next_one_up(self) -> None:
+        from unittest import mock
+
+        from cadgen._internal import drawing_render
+        from cadgen._internal.drawing_sheet import _Crowded
+        from cadgen.eng_drawing import Sheet
+
+        tried = []
+
+        def draw(sheet, *, floor, ceiling, **_kwargs):
+            tried.append((floor, ceiling))
+            sheet._chosen_size, sheet._chosen_scale = ("A4", "A3", "A2")[min(floor, 2)], 1.0
+            if floor < 2:
+                raise _Crowded("annotation overlaps")
+            return "drawn"
+
+        with mock.patch.object(drawing_render, "_draw_sheet", side_effect=draw):
+            self.assertEqual(drawing_render._render_sheet(Sheet(None, None), index=1, count=1, label="c"), "drawn")
+            self.assertEqual(tried, [(0, None), (1, None), (2, None)])
+            tried.clear()
+            with self.assertRaises(_Crowded):
+                drawing_render._render_sheet(Sheet("A4", None), index=1, count=1, label="c")
+            self.assertEqual(tried, [(0, None)])
+
+
 def _points(entity):
     kind = entity.dxftype()
     if kind == "LINE":
