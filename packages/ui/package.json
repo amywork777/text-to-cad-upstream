@@ -99,6 +99,7 @@
     "radix-ui": "1.8.1",
     "@text-to-cad/core": "*",
     "clsx": "^2.1.1",
+    "pdfjs-dist": "6.4.299",
     "tailwind-merge": "^3.7.0",
     "perfect-freehand": "1.2.3",
     "sonner": "2.0.8",

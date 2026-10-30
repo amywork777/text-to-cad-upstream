@@ -46,13 +46,15 @@ export const quickEditSelection = references => references.filter(reference => r
  * selection in it (`references`, in the prompt grammar), the marks drawn on a face as shapes in its
  * coordinates (`marks`, the text `faceShapes.js` words them in: a `marks` text part, none without any), and — once the host has made them
  * (`files`) — the current and drawn views with the annotation, inline
- * when small or named by the saved .snapshot.json path. No pictures are rendered or attached. Built at the press.
+ * when small or named by the saved .snapshot.json path. No pictures are rendered for those: the
+ * agent draws them again. A view nothing can draw again (a picture marked up as it is) attaches
+ * itself instead, with its marks, as a PNG (`picture`). Built at the press.
  *
  * @param {{ resource: object, references?: object[], text?: string, views?: { label: string }[],
  *   files?: Promise<{ snapshot?: string, inline?: string }> | null,
- *   read?: (path: string) => Promise<Blob>, marks?: string }} quickEdit
+ *   read?: (path: string) => Promise<Blob>, marks?: string, picture?: Promise<Blob> | null }} quickEdit
  */
-export function createQuickEditContext({ resource, references = [], text, views = [], files = null, read = null, marks = "", viewUnavailable = "", requests = [] }) {
+export function createQuickEditContext({ resource, references = [], text, views = [], files = null, read = null, marks = "", viewUnavailable = "", requests = [], picture = null }) {
   const note = String(text || "").trim();
   const parts = [
     ...(note ? [textPart(note, "text")] : []),
@@ -74,6 +76,10 @@ export function createQuickEditContext({ resource, references = [], text, views 
       content: lazy(() => files.then(result => typeof result.inline === "string"
         ? new Blob([result.inline], { type: "application/json" }) : read(result.snapshot))), about: ["file"] });
   }
+  if (picture) {
+    parts.push({ id: "picture", kind: "attachment", name: `${stemOf(resource)}-view.png`, mimeType: "image/png",
+      content: picture, about: ["file"] });
+  }
   return createPromptContext(parts);
 }
 
@@ -93,7 +99,7 @@ export async function copiedQuickEdit(context) {
  * every way a Quick Edit goes and for Add to context, so they carry the same.
  *
  * @param {{ views(): { label: string }[], files(views: { label: string }[]): Promise<object> | null, read(path: string): Promise<Blob>,
- *   marks?(): string } | null | undefined} prompt
+ *   marks?(): string, picture?(): Promise<Blob> | null } | null | undefined} prompt
  */
 export function promptAttachments(prompt) {
   // A view the renderer cannot replay is said in words instead of being drawn.
@@ -101,7 +107,10 @@ export function promptAttachments(prompt) {
   const views = viewUnavailable ? [] : prompt?.views() ?? [];
   const files = views.length ? prompt.files(views) : null;
   void files?.catch(() => {});
-  return { views, files, read: prompt?.read, marks: prompt?.marks?.() || "", viewUnavailable };
+  // A view nothing can draw again sends itself as it is on screen, marks and all.
+  const picture = prompt?.picture?.() ?? null;
+  void picture?.catch(() => {});
+  return { views, files, read: prompt?.read, marks: prompt?.marks?.() || "", viewUnavailable, picture };
 }
 
 /**

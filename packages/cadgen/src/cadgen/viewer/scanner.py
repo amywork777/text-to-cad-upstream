@@ -37,6 +37,7 @@ from .encoding import file_version, local_asset_url_for_path
 
 __all__ = [
     "CAD_CATALOG_SCHEMA_VERSION",
+    "PICTURE_EXTENSIONS",
     "SOURCE_EXTENSIONS",
     "VIEWER_EXTENSIONS",
     "VIEWER_SKIPPED_DIRECTORIES",
@@ -53,10 +54,13 @@ __all__ = [
 # 5: a STEP's row is its file's, as every format's is (the engine draws it), no longer its tree's.
 CAD_CATALOG_SCHEMA_VERSION = 5
 
-# The CAD files whose bytes the asset route sends.
+# The engineering pictures a flat view shows and marks up as it does a DXF: a drawing's PDF, a
+# render or a photo (`renderers/picture` in @text-to-cad/ui).
+PICTURE_EXTENSIONS = frozenset({".pdf", ".png", ".jpg", ".jpeg", ".webp"})
+# The files whose bytes the asset route sends: the CAD files, and those pictures.
 SOURCE_EXTENSIONS = frozenset(
     {".step", ".stp", ".stl", ".3mf", ".glb", ".dxf", ".urdf", ".srdf", ".sdf"}
-)
+) | PICTURE_EXTENSIONS
 # What every CAD view lists and opens: every CAD source, and a cadgen engine document (`.xbf`),
 # which the engine serves to the page as it serves a STEP (`documents.py`).
 VIEWER_EXTENSIONS = SOURCE_EXTENSIONS | frozenset({".xbf"})

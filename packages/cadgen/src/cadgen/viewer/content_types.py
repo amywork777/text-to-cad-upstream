@@ -42,6 +42,11 @@ _ASSET_CONTENT_TYPES = {
     ".urdf": "application/xml; charset=utf-8",
     ".srdf": "application/xml; charset=utf-8",
     ".sdf": "application/xml; charset=utf-8",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
 }
 
 
