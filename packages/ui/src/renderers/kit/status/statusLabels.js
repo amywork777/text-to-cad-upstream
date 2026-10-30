@@ -16,8 +16,10 @@ const KEYS = Object.freeze({
   "Loading geometry": "loading.loadingGeometry",
   "Preparing view": "loading.preparingView",
   "Reading drawing": "loading.readingDrawing",
+  "Reading picture": "loading.readingPicture",
   "Updating model…": "viewUpdate.updatingModel",
   "Updating drawing…": "viewUpdate.updatingDrawing",
+  "Updating picture…": "viewUpdate.updatingPicture",
   "Updating view…": "viewUpdate.updatingView",
   "Preparing section view…": "viewUpdate.preparingSection",
 });

@@ -158,3 +158,18 @@ test("a note is its own part, and none is made of an empty one", () => {
     assert.equal(formatPromptMessage(blank), "File: /work/bracket/bracket.step\nReferences:\n/work/bracket/bracket.step#o1.f12");
   }
 });
+
+test("a view nothing draws again sends itself with its marks as a picture, and no snapshot", async () => {
+  const PICTURE = { kind: "workspace-file", path: "/work/bracket/drawings/bracket.pdf", revision: "r1" };
+  const png = new Blob(["png"], { type: "image/png" });
+  const prompt = { views: () => [], files: () => assert.fail("a picture has no snapshot"), read: null, picture: () => Promise.resolve(png) };
+  const context = createQuickEditContext({ resource: PICTURE, text: "Make this hole 5 mm.", ...promptAttachments(prompt) });
+  assert.deepEqual(parts(context), [["text", "text"], ["file", "reference"], ["picture", "attachment"]]);
+  const picture = context.parts.at(-1);
+  assert.equal(picture.mimeType, "image/png");
+  assert.equal(picture.name, "bracket-view.png");
+  assert.equal(await picture.content, png);
+  // Without marks the view sends the file alone.
+  const plain = createQuickEditContext({ resource: PICTURE, text: "Check it.", ...promptAttachments({ ...prompt, picture: () => null }) });
+  assert.deepEqual(parts(plain), [["text", "text"], ["file", "reference"]]);
+});

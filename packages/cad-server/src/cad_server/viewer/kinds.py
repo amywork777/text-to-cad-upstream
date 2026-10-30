@@ -13,6 +13,8 @@ a document of that kind, and the same id under another kind is a 404 that names 
 * ``urdf``, ``srdf``, ``sdf``: ``structure`` (the robot resolved for the page), ``parts/<digest>``
   (a primitive's mesh), ``source``.
 * ``stl``, ``glb``, ``3mf``: ``source``, which the page parses itself.
+* ``pdf``, ``picture`` (a ``.png``, ``.jpg`` or ``.webp``): ``source``, which the page shows on a flat
+  view to mark up (Studio's ``renderers/picture``).
 """
 from __future__ import annotations
 
@@ -21,8 +23,9 @@ import os
 API = "/api/v1"
 
 FILE_KINDS = {".xbf": "xbf", ".step": "step", ".stp": "step", ".stl": "stl", ".glb": "glb", ".3mf": "3mf",
-              ".dxf": "dxf", ".urdf": "urdf", ".srdf": "srdf", ".sdf": "sdf"}
-KINDS = ("model", "xbf", "step", "stl", "glb", "3mf", "dxf", "urdf", "srdf", "sdf")
+              ".dxf": "dxf", ".urdf": "urdf", ".srdf": "srdf", ".sdf": "sdf",
+              ".pdf": "pdf", ".png": "picture", ".jpg": "picture", ".jpeg": "picture", ".webp": "picture"}
+KINDS = ("model", "xbf", "step", "stl", "glb", "3mf", "dxf", "urdf", "srdf", "sdf", "pdf", "picture")
 # The documents the engine itself serves: their structure, parts and version are its reads.
 ENGINE_KINDS = frozenset({"model", "xbf", "step"})
 ROBOT_KINDS = frozenset({"urdf", "srdf", "sdf"})
@@ -32,7 +35,7 @@ ROBOT_KINDS = frozenset({"urdf", "srdf", "sdf"})
 _SOLID = ["step", "stl", "threemf", "glb", "dxf"]
 EXPORTS = {"model": [*_SOLID, "xbf"], "step": [*_SOLID, "xbf"], "xbf": [*_SOLID, "original"],
            "glb": ["stl", "threemf"], "stl": ["threemf", "glb"], "3mf": ["stl", "glb"],
-           "dxf": [], "urdf": [], "srdf": [], "sdf": []}
+           "dxf": [], "urdf": [], "srdf": [], "sdf": [], "pdf": [], "picture": []}
 
 
 def file_kind(path) -> str | None:

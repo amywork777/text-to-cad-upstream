@@ -215,7 +215,7 @@ _ENGINE_ROUTES = ("structure, parts/<key> (/faces|edges|vertices/<ordinal>, /gro
 _KIND_ROUTES = {"model": _ENGINE_ROUTES, "xbf": _ENGINE_ROUTES + ", source", "step": _ENGINE_ROUTES + ", source",
                 "dxf": "drawing, source", "urdf": "structure, parts/<digest>, source",
                 "srdf": "structure, parts/<digest>, source", "sdf": "structure, parts/<digest>, source",
-                "stl": "source", "glb": "source", "3mf": "source"}
+                "stl": "source", "glb": "source", "3mf": "source", "pdf": "source", "picture": "source"}
 # This start of the engine: a page that sees another one (``GET /api/v1/server``'s ``instance``) is
 # served by an engine that restarted since it loaded. One per process, the engine's.
 INSTANCE = secrets.token_hex(8)

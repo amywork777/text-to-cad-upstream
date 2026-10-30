@@ -76,8 +76,9 @@ class OneRowPerNamedFile(ScannerTestCase):
             with self.subTest(rel=rel):
                 self.assertIsNone(catalog_entry(self.path(rel)))
 
-    def test_only_the_cad_extensions_have_rows(self):
-        for name in ("a.step", "b.stp", "c.stl", "d.3mf", "e.glb", "f.dxf", "g.urdf", "h.srdf", "i.sdf", "p.xbf"):
+    def test_only_the_cad_extensions_and_pictures_have_rows(self):
+        for name in ("a.step", "b.stp", "c.stl", "d.3mf", "e.glb", "f.dxf", "g.urdf", "h.srdf", "i.sdf", "p.xbf",
+                     "q.pdf", "r.png", "s.jpg", "t.jpeg", "u.webp"):
             self.write(name, "x")
             self.assertIsNotNone(catalog_entry(self.path(name)), name)
         for name in ("j.json", "k.js", "l.txt", "n", "o.stepx"):
