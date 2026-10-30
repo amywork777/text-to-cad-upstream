@@ -271,7 +271,7 @@ class PlateTest(_Folder):
                         for entry in read(self.step) if entry["presentation"] is not None)
         self.assertEqual(len(ours), 9)
         self.assertEqual(theirs, ours)
-        text = self.step.read_text()
+        text = self.step.read_text(encoding="utf-8")
         self.assertEqual(len(re.findall(r"= TESSELLATED_ANNOTATION_OCCURRENCE\(", text)), 9)
         self.assertEqual(len(re.findall(r"= ANNOTATION_PLANE\(", text)), 9)
         self.assertIn("DRAUGHTING_CALLOUT('hole-position'", text)
@@ -1430,7 +1430,8 @@ class CoverageTest(_Folder):
         checked = ap242.check(read(self.xbf), self.step, parts={0: "plate"})
         self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (6, 6, []))
         # Another class in the file is no match.
-        self.step.write_text(self.step.read_text().replace("'ISO 2768-mK'", "'ISO 2768-fH'"))
+        self.step.write_text(self.step.read_text(encoding="utf-8").replace("'ISO 2768-mK'", "'ISO 2768-fH'"),
+                             encoding="utf-8")
         checked = ap242.check(read(self.xbf), self.step, parts={0: "plate"})
         self.assertEqual(checked["matched"], 5)
         self.assertIn("general: values, units, datum order or face association could not be verified.",

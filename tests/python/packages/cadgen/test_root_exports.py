@@ -24,10 +24,10 @@ ENGINE = ("model", "xbf", "step", "glb", "stl", "threemf", "dxf", "memo", "paint
 VERBS = ("export", "snapshot", "inspect")
 ROOT = (*ENGINE, *VERBS, "__version__")
 # The names that are the standards' rather than the engine's: PMI's after the AP242 entities they write,
-# and those that write none (limits, the general profile, notes, views and placements) plainly.
+# and those that write none (limits, the general profile and tolerance, notes, views and placements) plainly.
 PMI = ("annotate", "datum", "dimensional_size", "dimensional_location", "plus_minus_tolerance", "limits",
-       "flatness_tolerance", "position_tolerance", "surface_profile_tolerance", "general_profile", "note", "view",
-       "camera", "section", "place")
+       "flatness_tolerance", "position_tolerance", "surface_profile_tolerance", "general_profile", "general_tolerance",
+       "note", "view", "camera", "section", "place")
 NAMESPACES = {
     "cadgen.ap242": ("mechanism_state", "configuration_sequence", "gear_pair", "rack_and_pinion_pair", "screw_pair",
                      "posed", *PMI),
