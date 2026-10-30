@@ -3,7 +3,8 @@
 POST /__cad/prompt-files validates a snapshot packet in memory, then returns 200
 with compact inline JSON up to 1024 UTF-8 bytes, or writes one .snapshot.json and
 returns its path. A view nothing draws again (a picture marked up as it is) sends the PNG of
-what is on screen instead (``{name, picture}``, base64): it is saved here and its path returned.
+what is on screen instead (``{name, picture}``, base64, and ``{picture, append}`` for each next part
+of a picture longer than a host carries in one message): it is saved here and its path returned.
 Shared input and inline annotation are stored once (Measure's
 measurements are the person's alone: a prompt carries none);
 jobs reserve output names for an agent to render later (``cadgen snapshot --job`` draws
@@ -44,6 +45,7 @@ SNAPSHOT_SUFFIXES = (".xbf", ".step", ".stp", ".stl", ".3mf", ".glb", ".urdf", "
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 _FILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.json")
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_PICTURE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*-view\.png")
 
 
 def _slug(text: str, fallback: str) -> str:
@@ -135,24 +137,35 @@ class PromptFiles:
         return 200, {"ok": True, "snapshot": str(snapshot_path)}
 
     def _picture(self, request: dict) -> Path:
-        """A view's picture, as the page drew it: a PNG, saved beside the snapshots."""
-        if set(request) - {"name", "picture"}:
-            raise ValueError("a picture is requested as {name, picture}")
+        """A view's picture, as the page drew it: a PNG, saved beside the snapshots. A host carries
+        a view's messages with a ceiling (a quarter of a megabyte in T3 Code), so a picture comes in
+        parts: the first makes the file (``{name, picture}``) and each next one adds to it
+        (``{picture, append}``, the file's name as the first answered it)."""
+        if set(request) - {"name", "picture", "append"}:
+            raise ValueError("a picture is requested as {name, picture} or {picture, append}")
         name = request.get("name")
         if name is not None and type(name) is not str:
             raise ValueError("name is the file's name, a string")
         try:
-            png = base64.b64decode(str(request["picture"]), validate=True)
+            part = base64.b64decode(str(request["picture"]), validate=True)
         except (binascii.Error, ValueError):
             raise ValueError("picture is a PNG, base64") from None
-        if not png.startswith(_PNG_SIGNATURE):
+        append = request.get("append")
+        if append is not None:
+            path = self.directory / str(append)
+            if type(append) is not str or not _PICTURE_NAME.fullmatch(append) or not path.is_file() or path.is_symlink():
+                raise ValueError("append names a picture this viewer saved")
+            with self._lock, path.open("ab") as file:
+                file.write(part)
+            return path
+        if not part.startswith(_PNG_SIGNATURE):
             raise ValueError("picture is a PNG, base64")
         with self._lock:
             self._count += 1
             base = os.path.splitext(os.path.basename(str(name or "").replace("\\", "/")))[0]
             prefix = f"{_slug(base, 'view')}-{self._count}"
         path = self.directory / f"{prefix}-view.png"
-        write_bytes_atomic(path, png)
+        write_bytes_atomic(path, part)
         return path
 
     def file(self, name: str) -> tuple[bytes, str] | None:

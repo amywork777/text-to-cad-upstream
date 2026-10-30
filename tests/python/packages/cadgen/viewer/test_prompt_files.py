@@ -111,6 +111,15 @@ class PromptFilesRouteTest(unittest.TestCase):
         saved = self.files / "bracket_drawing-1-view.png"
         self.assertEqual((status, json.loads(body)), (200, {"ok": True, "picture": str(saved)}))
         self.assertEqual(saved.read_bytes(), png)
+        # A picture longer than a host carries comes in parts, each added to the first.
+        status, body, _ = self.call("POST", "/__cad/prompt-files", {"picture": base64.b64encode(b"more").decode("ascii"),
+                                                                   "append": saved.name})
+        self.assertEqual((status, json.loads(body)), (200, {"ok": True, "picture": str(saved)}))
+        self.assertEqual(saved.read_bytes(), png + b"more")
+        for name in ("part-1.snapshot.json", "../x-view.png", "missing-9-view.png"):
+            with self.subTest(append=name):
+                status, _, _ = self.call("POST", "/__cad/prompt-files", {"picture": "AA==", "append": name})
+                self.assertEqual(status, 400)
         # Only a PNG, and nothing beside it.
         for bad in ({"name": "x.pdf", "picture": base64.b64encode(b"not a png").decode("ascii")},
                     {"name": "x.pdf", "picture": "%%%"},
