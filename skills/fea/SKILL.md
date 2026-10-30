@@ -74,11 +74,11 @@ Run cadgen through the `cadgen` command its installation writes, as the `$cad` s
 `cadgen fea faces`, `parts` and `solve` share one installation with it and with the CAD app's
 server:
 
-- `cadgen` below means `cadgen +0.8.2` (`~/.local/bin/cadgen +0.8.2` where `~/.local/bin` is not on your PATH)
-- `python` below means `cadgen +0.8.2 run`
+- `cadgen` below means `cadgen +0.8.3` (`~/.local/bin/cadgen +0.8.3` where `~/.local/bin` is not on your PATH)
+- `python` below means `cadgen +0.8.3 run`
 
-If `cadgen` is not on your PATH, or it says 0.8.2 is not installed, run
-`uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.2 cadgen doctor` once,
+If `cadgen` is not on your PATH, or it says 0.8.3 is not installed, run
+`uvx --no-config --managed-python --python 3.13 --from cadgen==0.8.3 cadgen doctor` once,
 outside any sandbox or with its permission: it installs cadgen, registers it, writes the
 `cadgen` command and starts the engine. With the CAD app's server running, nothing else
 needs the sandbox's permission: it starts the engine and holds it. Without it, a sandboxed
