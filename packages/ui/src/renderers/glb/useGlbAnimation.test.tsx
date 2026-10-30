@@ -20,15 +20,15 @@ it('every clip opens looping, a motion once that the player repeats, and the vie
   expect(view.result.current!.loopEnabled).toBe(true);
 });
 
-// A renderer's own clip (an FEA result's Load ramp) on the playbar's runtime: listed after the
+// A renderer's own clip (a result's own routine) on the playbar's runtime: listed after the
 // file's, posed by its own `apply` while it owns the model, and let go of with `release`.
 it('plays a renderer\'s own clip through its apply, and lets go of it on release', () => {
   const apply = vi.fn();
   const release = vi.fn();
-  const own = [{ id: 'fea:load-ramp', label: 'Load ramp', duration: 2, play: { apply, release } }];
+  const own = [{ id: 'own:routine', label: 'Routine', duration: 2, play: { apply, release } }];
   const requestRender = vi.fn();
   const { result } = renderHook(() => useGlbAnimation(null, requestRender, own));
-  expect(result.current!.clips.map((row: any) => row.label)).toEqual(['Load ramp']);
+  expect(result.current!.clips.map((clip: any) => clip.label)).toEqual(['Routine']);
   expect(apply).not.toHaveBeenCalled();
   act(() => { result.current!.onScrub(1.5); });
   expect(apply).toHaveBeenLastCalledWith(1.5);
