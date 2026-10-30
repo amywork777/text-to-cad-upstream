@@ -2,19 +2,23 @@
 
 POST /__cad/prompt-files validates a snapshot packet in memory, then returns 200
 with compact inline JSON up to 1024 UTF-8 bytes, or writes one .snapshot.json and
-returns its path. Shared input and inline annotation are stored once (Measure's
+returns its path. A view nothing draws again (a picture marked up as it is) sends the PNG of
+what is on screen instead (``{name, picture}``, base64): it is saved here and its path returned.
+Shared input and inline annotation are stored once (Measure's
 measurements are the person's alone: a prompt carries none);
 jobs reserve output names for an agent to render later (``cadgen snapshot --job`` draws
 every one of them; ``cadgen snapshot`` reads the packet as ``--annotation``, and ``--camera
 authored`` draws a job's view). A packet with
 ink also names the parts hidden and isolated where the ink was last drawn, which
-``--annotation`` leaves out of its stills. No PNG is produced by this route.
+``--annotation`` leaves out of its stills. This route renders nothing: a picture is the page's own.
 Guarded GET /__cad/prompt-files/<name> reads only JSON from this process's
 scratch directory. Files outlive the viewer until the system clears them.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import re
@@ -39,6 +43,7 @@ _ANNOTATION_KEYS = frozenset({"units", "parts", "marks"})
 SNAPSHOT_SUFFIXES = (".xbf", ".step", ".stp", ".stl", ".3mf", ".glb", ".urdf", ".srdf", ".sdf", ".dxf")
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 _FILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.json")
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 def _slug(text: str, fallback: str) -> str:
@@ -78,11 +83,14 @@ class PromptFiles:
     # --- POST ----------------------------------------------------------------
 
     def create(self, body: bytes) -> tuple[int, dict]:
-        """Validate one snapshot packet, then return inline JSON or its saved path with ``200``."""
+        """Validate one snapshot packet, then return inline JSON or its saved path with ``200``; or
+        save a view's picture (``{name, picture}``) and return its path."""
         try:
             request = json.loads(body or b"null")
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError(f"a prompt's files are requested as JSON: {error}") from None
+        if type(request) is dict and "picture" in request:
+            return 200, {"ok": True, "picture": str(self._picture(request))}
         name, input_path, views, annotation = _checked(request)
         directory = self.directory
         with self._lock:
@@ -125,6 +133,27 @@ class PromptFiles:
         snapshot_path = directory / f"{prefix}.snapshot.json"
         write_bytes_atomic(snapshot_path, (json.dumps(packet, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
         return 200, {"ok": True, "snapshot": str(snapshot_path)}
+
+    def _picture(self, request: dict) -> Path:
+        """A view's picture, as the page drew it: a PNG, saved beside the snapshots."""
+        if set(request) - {"name", "picture"}:
+            raise ValueError("a picture is requested as {name, picture}")
+        name = request.get("name")
+        if name is not None and type(name) is not str:
+            raise ValueError("name is the file's name, a string")
+        try:
+            png = base64.b64decode(str(request["picture"]), validate=True)
+        except (binascii.Error, ValueError):
+            raise ValueError("picture is a PNG, base64") from None
+        if not png.startswith(_PNG_SIGNATURE):
+            raise ValueError("picture is a PNG, base64")
+        with self._lock:
+            self._count += 1
+            base = os.path.splitext(os.path.basename(str(name or "").replace("\\", "/")))[0]
+            prefix = f"{_slug(base, 'view')}-{self._count}"
+        path = self.directory / f"{prefix}-view.png"
+        write_bytes_atomic(path, png)
+        return path
 
     def file(self, name: str) -> tuple[bytes, str] | None:
         """A file of this directory, by its bare name, and its content type; ``None`` for any other."""

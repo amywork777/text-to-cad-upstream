@@ -7,6 +7,7 @@ A packet is what ``cadgen snapshot`` reads: ``--annotation PACKET`` draws its in
 
 from __future__ import annotations
 
+import base64
 import http.client
 import json
 import shutil
@@ -102,6 +103,21 @@ class PromptFilesRouteTest(unittest.TestCase):
         # Ink drawn where nothing was hidden leaves the packet nothing to hide; no ink, nothing at all.
         self.assertEqual(packet_visibility(packet(ink, hid, plain)), {})
         self.assertNotIn("hidden", packet(None, plain, hid))
+
+    def test_a_views_picture_is_saved_as_the_page_drew_it_and_its_path_returned(self) -> None:
+        png = b"\x89PNG\r\n\x1a\n" + b"pixels"
+        picture = base64.b64encode(png).decode("ascii")
+        status, body, _ = self.call("POST", "/__cad/prompt-files", {"name": "bracket_drawing.pdf", "picture": picture})
+        saved = self.files / "bracket_drawing-1-view.png"
+        self.assertEqual((status, json.loads(body)), (200, {"ok": True, "picture": str(saved)}))
+        self.assertEqual(saved.read_bytes(), png)
+        # Only a PNG, and nothing beside it.
+        for bad in ({"name": "x.pdf", "picture": base64.b64encode(b"not a png").decode("ascii")},
+                    {"name": "x.pdf", "picture": "%%%"},
+                    {"name": "x.pdf", "picture": picture, "input": str(self.model)}):
+            with self.subTest(bad=list(bad)):
+                status, _, _ = self.call("POST", "/__cad/prompt-files", bad)
+                self.assertEqual(status, 400)
 
     def test_a_drawings_view_is_its_plan_view_and_its_job_carries_ink(self) -> None:
         """A DXF's Quick Edit: the window on screen as a plan-view camera and the ink on the sheet -- no

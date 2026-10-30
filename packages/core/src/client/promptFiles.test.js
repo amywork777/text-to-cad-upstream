@@ -34,3 +34,13 @@ test('a small snapshot is returned inline without a file read', async () => {
   const files = createHttpPromptFiles({ fetch: async () => Response.json({ ok: true, inline }) });
   assert.deepEqual(await files.create({}), { inline });
 });
+
+test("a view's picture is sent as base64 PNG and answered with where it was saved", async () => {
+  const calls = [];
+  const files = createHttpPromptFiles({ origin: 'http://cad.invalid',
+    fetch: async (url, options = {}) => { calls.push({ url, body: options.body }); return Response.json({ ok: true, picture: '/tmp/p/drawing-1-view.png' }); } });
+  const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' });
+  assert.equal(await files.picture({ name: 'drawing.pdf', png }), '/tmp/p/drawing-1-view.png');
+  assert.equal(calls[0].url, 'http://cad.invalid/__cad/prompt-files');
+  assert.deepEqual(JSON.parse(calls[0].body), { name: 'drawing.pdf', picture: btoa(String.fromCharCode(137, 80, 78, 71)) });
+});

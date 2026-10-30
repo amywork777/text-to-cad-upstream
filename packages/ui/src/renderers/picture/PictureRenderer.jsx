@@ -4,6 +4,7 @@ import { clearSurface, fitTransform } from "@text-to-cad/core/lib/drawing2d/inde
 import { drawAnnotationMarks } from "@text-to-cad/core/lib/drawing2d/marks.js";
 import { planCamera } from "@text-to-cad/core/lib/drawing2d/planView.js";
 import { useViewerMobile } from "../../file-viewer/responsive.js";
+import { useViewerHost } from "../../host/context.js";
 import { annotationAt, withGroups } from "../../annotation/geometry.js";
 import { promptView } from "../../annotation/views.js";
 import FlatViewFrame, { flatViewTools } from "../kit/shell/FlatViewFrame.jsx";
@@ -210,13 +211,21 @@ function PictureSurface({ view, data }) {
     capture, currentView, annotationDocument, runtime, live: PICTURE_LIVE, captureFailed: t("alert.capturePictureFailed"), fit
   });
   // Nothing draws a picture again from a snapshot packet (`cadgen snapshot` draws CAD files), so a
-  // note sends the view itself with its marks, as a PNG, whenever there are marks; else the file alone.
+  // note sends the view itself with its marks, as a PNG the host saves and names by its path,
+  // whenever there are marks; else the file alone.
+  const host = useViewerHost();
+  const fileName = view.file.name;
   const picturePrompt = useMemo(() => ({
     views: () => [],
     files: () => null,
     read: null,
-    picture: () => (annotationRef.current.items.length ? capture() : null)
-  }), [capture]);
+    picture: () => {
+      if (!annotationRef.current.items.length) return null;
+      const png = capture();
+      const save = host.promptFiles?.picture;
+      return { png, path: save ? png.then(blob => save({ name: fileName, png: blob })) : null };
+    }
+  }), [capture, host.promptFiles, fileName]);
   const quickEdit = { ...handover.quickEdit, prompt: picturePrompt };
 
   // ---- the frame ---------------------------------------------------------------
