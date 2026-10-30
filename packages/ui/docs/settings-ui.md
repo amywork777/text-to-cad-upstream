@@ -1077,9 +1077,10 @@ The sidebar and Quick Edit keep their corners, 8px in, and neither reaches under
 strip or its tool's row: the sidebar's panel is never wider than the room left of the strip
 (`--cad-file-sidebar-max-width`), and the top-right column starts past the strip's right edge
 (`--cad-top-right-left`), both measured by the shell (`RendererShell.jsx`), so the strip is never
-covered. They may overlap each other.
+covered. A pane too narrow for that column beside the strip still has Quick Edit on the right,
+starting under the strip (`--cad-top-right-top`): only a phone docks it. They may overlap each other.
 
-On a phone Quick Edit is a bottom sheet, shadcn's drawer as it ships (`primitives/drawer.jsx`,
+On a phone (a narrow pane on a touch screen) Quick Edit is a bottom sheet, shadcn's drawer as it ships (`primitives/drawer.jsx`,
 vaul): full width, non-modal, never swiped away (its X clears it). It opens at a peek of its
 handle, header (its title, what goes with the note, the X) and chips, and a pick never brings up
 the keyboard. A swipe up, or a tap on its way in (below), takes it to its open stop,
