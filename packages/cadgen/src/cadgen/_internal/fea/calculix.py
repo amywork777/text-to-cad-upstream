@@ -31,8 +31,8 @@ if TYPE_CHECKING:
 
     from cadgen._internal.fea.study import Material
 
-__all__ = ["C3D10_EDGES", "CCX_ENV", "MINIMUM", "NAMES", "TIMEOUT_S", "CalculixMissingError", "Ccx", "c3d10_elements",
-           "find_ccx", "install_hint", "read_dat", "run", "write_inp"]
+__all__ = ["C3D10_EDGES", "C3D10_POINTS", "CCX_ENV", "MINIMUM", "NAMES", "NETGEN_EDGES", "SMALLEST_JACOBIAN", "TIMEOUT_S",
+           "CalculixMissingError", "Ccx", "c3d10_elements", "find_ccx", "install_hint", "read_dat", "run", "write_inp"]
 
 #: The environment variable naming the ``ccx`` program.
 CCX_ENV = "CADGEN_CCX"
@@ -46,6 +46,11 @@ TIMEOUT_S = 3600.0
 C3D10_EDGES = ((0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3))
 #: netgen's: its tetrahedron's mid-edge nodes 5-10 sit on these corner pairs.
 NETGEN_EDGES = ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))
+#: C3D10's four integration points, barycentric on its corners: point k is the one nearest corner k.
+C3D10_POINTS = tuple(tuple(0.585410196624968 if k == n else 0.138196601125011 for k in range(4)) for n in range(4))
+#: CalculiX refuses an element whose Jacobian determinant is under this at any of :data:`C3D10_POINTS`
+#: (``*ERROR in e_c3d: nonpositive jacobian``), and checks nowhere else.
+SMALLEST_JACOBIAN = 1e-20
 #: CalculiX reads each number from its first 20 characters: 13 significant digits fit with sign and exponent.
 _REAL = "{:.12e}"
 _JOB = "study"

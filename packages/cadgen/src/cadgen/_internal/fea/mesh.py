@@ -11,7 +11,8 @@ face where another part sits on it. Each part's face is then followed through th
 and those are matched to netgen's by area and centre.
 
 netgen is never imported in this process: its OpenCascade (7.8) and OCP's (8) cannot share one
-(:mod:`.mesher`). ``match_faces`` and ``generate_mesh`` run in the mesher's process, on netgen's objects.
+(:mod:`.mesher`). ``match_faces`` and ``generate_mesh`` run in the mesher's process, on netgen's objects. Back here,
+an element netgen's curving turned inside out is made straight (:func:`straighten_inverted`) before anything reads it.
 """
 
 from __future__ import annotations
@@ -110,6 +111,8 @@ class VolumeMesh:
     max_h: float
     bbox_diagonal: float
     seconds: float
+    #: The elements :func:`straighten_inverted` made straight, so CalculiX takes them.
+    straightened: int
     #: (E,) for an assembly, the part each element belongs to (an index into
     #: the part refs meshed); ``None`` for one occurrence.
     domain: "np.ndarray | None" = None
@@ -307,16 +310,17 @@ def mesh_occurrence(
     if len(e3) == 0:
         raise RuntimeError(f"the mesher produced no volume elements for {occurrence.ref}; is it a closed solid?")
     require_elements(e3)
+    tets = np.ascontiguousarray(e3["nodes"][:, :10].astype(np.int64) - 1)
+    straightened = straighten_inverted(coordinates, tets)
     ordinal_of = np.zeros(int(e2["index"].max()) + 1, dtype=np.int64)
     for index, ordinal in mapping.items():
         ordinal_of[index + 1] = ordinal
 
     return VolumeMesh(
-        nodes=coordinates, tets=np.ascontiguousarray(e3["nodes"][:, :10].astype(np.int64) - 1),
-        boundary=np.ascontiguousarray(e2["nodes"][:, :6].astype(np.int64) - 1),
+        nodes=coordinates, tets=tets, boundary=np.ascontiguousarray(e2["nodes"][:, :6].astype(np.int64) - 1),
         boundary_ordinal=ordinal_of[e2["index"].astype(np.int64)],
         faces={fp.ordinal: fp for fp in fingerprints},
-        max_h=h, bbox_diagonal=diagonal, seconds=time.perf_counter() - started,
+        max_h=h, bbox_diagonal=diagonal, seconds=time.perf_counter() - started, straightened=straightened,
     )
 
 
@@ -336,7 +340,24 @@ _KEAST = (
     ((0.25, 0.25, 0.25, 0.25), -2.0 / 15.0),
     *((tuple(0.5 if k == n else 1.0 / 6.0 for k in range(4)), 3.0 / 40.0) for n in range(4)),
 )
-_EDGES = ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))
+
+
+def jacobians(points, edges, at) -> "np.ndarray":
+    """(E, P) the Jacobian determinant of each 10-node tet at each barycentric point of ``at``: ``points`` (E, 10, 3)
+    are its corners, then its mid-edge nodes on ``edges``' corner pairs."""
+    import numpy as np
+
+    out = np.empty((len(points), len(at)))
+    for p, bary in enumerate(at):
+        # d(shape function)/d(barycentric coordinate), (4 coordinates, 10 nodes)
+        slope = np.zeros((4, 10))
+        for i in range(4):
+            slope[i, i] = 4.0 * bary[i] - 1.0
+        for n, (i, j) in enumerate(edges, 4):
+            slope[i, n], slope[j, n] = 4.0 * bary[j], 4.0 * bary[i]
+        # x depends on three free coordinates (L0 = 1 - L1 - L2 - L3)
+        out[:, p] = np.linalg.det(np.einsum("ka,eki->eai", (slope[1:] - slope[:1]).T, points))
+    return out
 
 
 def curved_volumes(nodes, tets):
@@ -347,19 +368,43 @@ def curved_volumes(nodes, tets):
     """
     import numpy as np
 
-    points = nodes[tets]  # (E, 10, 3)
-    total = np.zeros(len(tets))
-    for bary, weight in _KEAST:
-        # d(shape function)/d(barycentric coordinate), (4 coordinates, 10 nodes)
-        slope = np.zeros((4, 10))
-        for i in range(4):
-            slope[i, i] = 4.0 * bary[i] - 1.0
-        for n, (i, j) in enumerate(_EDGES, 4):
-            slope[i, n], slope[j, n] = 4.0 * bary[j], 4.0 * bary[i]
-        # x depends on three free coordinates (L0 = 1 - L1 - L2 - L3)
-        jacobian = np.einsum("ka,eki->eai", (slope[1:] - slope[:1]).T, points)
-        total += weight * np.abs(np.linalg.det(jacobian))
-    return total
+    from cadgen._internal.fea.calculix import NETGEN_EDGES
+
+    determinants = jacobians(nodes[tets], NETGEN_EDGES, [bary for bary, _ in _KEAST])
+    return np.abs(determinants) @ np.array([weight for _, weight in _KEAST])
+
+
+def straighten_inverted(nodes, tets) -> int:
+    """Make straight every element CalculiX would refuse, moving ``nodes`` in place; the number of elements straightened.
+
+    netgen's ``SecondOrder`` moves each mid-edge node on the surface onto the curved face it lies on. In an element thin
+    across a fillet or a small hole, that node can pass the element's opposite face, and the element turns inside out at
+    an integration point: CalculiX refuses the whole mesh (``nonpositive jacobian``). Such an element's six mid-edge nodes
+    go back to their edges' straight midpoints, where an element of sound corners is valid everywhere; its neighbours
+    share those nodes, so the check repeats until no element is inverted. The surface there is drawn and solved as the
+    straight element's, a little less curved. An element still inverted when straight has corners that enclose no
+    volume, and the mesh is refused rather than handed to CalculiX.
+    """
+    import numpy as np
+
+    from cadgen._internal.fea.calculix import C3D10_EDGES, C3D10_POINTS, NETGEN_EDGES, SMALLEST_JACOBIAN, c3d10_elements
+
+    elements = c3d10_elements(nodes, tets)  # corners turned as CalculiX takes them, so a sound element is positive
+    straightened = np.zeros(len(tets), dtype=bool)
+    while True:
+        inverted = (jacobians(nodes[elements], C3D10_EDGES, C3D10_POINTS) < SMALLEST_JACOBIAN).any(axis=1)
+        if not inverted.any():
+            return int(straightened.sum())
+        if (flat := np.flatnonzero(inverted & straightened)).size:
+            corners = "; ".join(f"({x:.4g}, {y:.4g}, {z:.4g})" for x, y, z in nodes[tets[flat[0], :4]].tolist())
+            raise RuntimeError(
+                f"the mesher made {flat.size} element(s) whose corners enclose no volume, the first at {corners} mm; "
+                "CalculiX cannot solve them"
+            )
+        rows = tets[inverted]
+        for k, (i, j) in enumerate(NETGEN_EDGES, 4):
+            nodes[rows[:, k]] = 0.5 * (nodes[rows[:, i]] + nodes[rows[:, j]])
+        straightened |= inverted
 
 
 def check_domains(nodes, tets, domain, parts) -> None:
@@ -492,6 +537,7 @@ def mesh_assembly(document: "Document", part_refs: list[str], bonded: "list[Cont
     solid_part = np.array(glued.solid_part, dtype=np.int64)
     domain = solid_part[e3["index"].astype(np.int64) - 1]
     tets = np.ascontiguousarray(e3["nodes"][:, :10].astype(np.int64) - 1)
+    straightened = straighten_inverted(coordinates, tets)
     check_domains(coordinates, tets, domain, parts)
 
     # netgen keeps the faces where parts are glued as surface elements, but they are interior: they go to
@@ -520,6 +566,6 @@ def mesh_assembly(document: "Document", part_refs: list[str], bonded: "list[Cont
     return VolumeMesh(
         nodes=coordinates, tets=tets, boundary=np.ascontiguousarray(surface[outer]),
         boundary_ordinal=position_of_glued[surface_index[outer]], faces=faces, max_h=h, bbox_diagonal=diagonal,
-        seconds=time.perf_counter() - started, domain=domain, interface_faces=interface_faces,
+        seconds=time.perf_counter() - started, straightened=straightened, domain=domain, interface_faces=interface_faces,
         interface_triangles=interface_triangles, joint_faces=joint_faces,
     )

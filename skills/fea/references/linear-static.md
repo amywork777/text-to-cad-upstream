@@ -100,6 +100,11 @@ in g (1 g = 9.81 m/s²).
   largest element; small features (thin walls, fillets, chamfers, small holes) make the mesher go
   finer there by itself, with elements under about their radius or thickness, so they, not only
   the bounding box, can set the element count.
+- netgen curves the elements on a curved face onto it. Where an element is thin across a fillet,
+  a hole or a thin wall, that can turn it inside out, which CalculiX cannot solve: such an element
+  is made straight (the surface there is a little less curved), and the result's
+  `mesh.straightened` counts them, also in the GLB's study. An element whose corners enclose no
+  volume cannot be straightened, and the run refuses the mesh.
 - The run reports two von Mises peaks. The nodal one (the reported peak, which the safety factor
   uses) is each element's stress at its four integration points, extrapolated to its nodes and
   averaged over the elements at a node, per part in an assembly; it is usually the higher of the

@@ -232,7 +232,8 @@ summary (max von Mises nodal and at the integration points, safety factor, max d
 location, applied and reaction forces; for an assembly also `parts`, one entry per part with its
 material, peak stress, safety factor and displacement, and the weakest part's name and peak; and
 `checks`, each check judged), per-fixture reactions, mesh statistics (naming the mesher and the
-solver, `"solver": "calculix 2.23 (C3D10)"`), timings and warnings, the `findings`, and `refined`:
+solver, `"solver": "calculix 2.23 (C3D10)"`, and `straightened`, the elements made straight so
+CalculiX could solve them: [Mesh](linear-static.md#mesh)), timings and warnings, the `findings`, and `refined`:
 the first and the finer solve's element size and peak when the run solved twice, else `null`. For
 an assembly it also records `connections` (each joint: parts, type, area, gap, `interference_mm`
 when the parts overlapped by no more than the tolerance and were bonded, interface faces) and

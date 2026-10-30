@@ -631,7 +631,8 @@ def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool
             volume = mesh_occurrence(occurrence, max_h=max_h, refine=refine, **options)
         else:
             volume = _mesh_assembly(mesh_assembly, doc, plan, parsed, resolved, ordinal_of, max_h, logger.info, refine, **options)
-        progress(f"meshed: {len(volume.tets)} tets, {len(volume.nodes)} nodes, size {volume.max_h:.3g} mm in {volume.seconds:.1f}s")
+        progress(f"meshed: {len(volume.tets)} tets ({volume.straightened} straightened), {len(volume.nodes)} nodes, "
+                 f"size {volume.max_h:.3g} mm in {volume.seconds:.1f}s")
         return volume
 
     def solve_on(volume, automatic: bool = False):
@@ -768,12 +769,13 @@ def _solve_study(document: Path, glb_path: Path, study, vtu: bool, verbose: bool
                                                     "youngs_GPa": round(material.E / 1000.0, 6), "poisson": material.nu},
         **static.study_echo(parsed, bare),
         "mesh": {"size_mm": round(volume.max_h, 4), "order": 2, "elements": int(len(volume.tets)),
-                 "refined_from_mm": refined["from_size_mm"] if finer_written else None},
+                 "straightened": volume.straightened, "refined_from_mm": refined["from_size_mm"] if finer_written else None},
         "margin": parsed.margin,
     }
 
-    mesh_info = {"elements": int(len(volume.tets)), "nodes": int(len(volume.nodes)), "dofs": outcome.dofs,
-                 "size_mm": round(volume.max_h, 4), "order": 2, "mesher": "netgen", "solver": outcome.solver}
+    mesh_info = {"elements": int(len(volume.tets)), "straightened": volume.straightened, "nodes": int(len(volume.nodes)),
+                 "dofs": outcome.dofs, "size_mm": round(volume.max_h, 4), "order": 2, "mesher": "netgen",
+                 "solver": outcome.solver}
     timings = {"mesh_s": round(volume.seconds, 3), **{k: round(v, 3) for k, v in outcome.timings.items()}}
     # What the GLB's extras do not carry, for the result: the study as given, its material, each face it named,
     # each fixture's reaction, an assembly's joints and overlaps, and the first solve when there was a finer one.

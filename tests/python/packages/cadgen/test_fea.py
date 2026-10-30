@@ -772,6 +772,94 @@ class MeshOrderGuard(unittest.TestCase):
         require_elements(self._elements(second_order=True))
 
 
+class InvertedElements(unittest.TestCase):
+    """An element whose curved mid-edge node crossed its opposite face is made straight before CalculiX sees it."""
+
+    def _pair(self):
+        """Two unit tets sharing a face, mid-edge nodes shared: A's node on its edge (0, 1) is pushed through the
+        opposite face, B's node on its edge (1, 4) is curved a little and stays sound. Returns (nodes, tets, slot)
+        with ``slot`` the node id of each corner pair's mid-edge node."""
+        import numpy as np
+
+        from cadgen._internal.fea.calculix import NETGEN_EDGES
+
+        corners = np.array([[0.0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1]])
+        points, slot = list(corners), {}
+        for tet in ((0, 1, 2, 3), (1, 2, 3, 4)):
+            for i, j in NETGEN_EDGES:
+                pair = tuple(sorted((tet[i], tet[j])))
+                if pair not in slot:
+                    slot[pair] = len(points)
+                    points.append((corners[pair[0]] + corners[pair[1]]) / 2)
+        tets = np.array([[*tet, *(slot[tuple(sorted((tet[i], tet[j])))] for i, j in NETGEN_EDGES)]
+                         for tet in ((0, 1, 2, 3), (1, 2, 3, 4))])
+        nodes = np.array(points)
+        nodes[slot[(0, 1)]] = [1.0, 0.5, 0.5]  # past the face x + y + z = 1
+        nodes[slot[(1, 4)]] += [0.05, -0.05, 0.0]
+        return nodes, tets, slot
+
+    def test_the_inverted_element_alone_is_made_straight_and_counted(self):
+        import numpy as np
+
+        from cadgen._internal.fea.calculix import C3D10_EDGES, C3D10_POINTS, SMALLEST_JACOBIAN, c3d10_elements
+        from cadgen._internal.fea.mesh import jacobians, straighten_inverted
+
+        nodes, tets, slot = self._pair()
+        curved = nodes[slot[(1, 4)]].copy()
+        before = jacobians(nodes[c3d10_elements(nodes, tets)], C3D10_EDGES, C3D10_POINTS)
+        self.assertEqual((before < SMALLEST_JACOBIAN).any(axis=1).tolist(), [True, False])
+
+        self.assertEqual(straighten_inverted(nodes, tets), 1)
+        after = jacobians(nodes[c3d10_elements(nodes, tets)], C3D10_EDGES, C3D10_POINTS)
+        self.assertTrue((after >= SMALLEST_JACOBIAN).all())
+        np.testing.assert_allclose(after[0], 1.0)  # the straight unit tet: its corners' Jacobian everywhere
+        np.testing.assert_allclose(nodes[slot[(0, 1)]], [0.5, 0.0, 0.0])
+        np.testing.assert_array_equal(nodes[slot[(1, 4)]], curved)  # the sound neighbour keeps its curve
+
+    def test_a_sound_mesh_is_left_alone(self):
+        import numpy as np
+
+        from cadgen._internal.fea.mesh import straighten_inverted
+
+        nodes, tets, slot = self._pair()
+        nodes[slot[(0, 1)]] = [0.5, 0.0, 0.0]
+        kept = nodes.copy()
+        self.assertEqual(straighten_inverted(nodes, tets), 0)
+        np.testing.assert_array_equal(nodes, kept)
+
+    def test_an_element_of_flat_corners_is_refused_with_where_it_is(self):
+        from cadgen._internal.fea.mesh import straighten_inverted
+
+        nodes, tets, _ = self._pair()
+        nodes[3] = [0.5, 0.5, 0.0]  # A's fourth corner in the plane of the other three
+        with self.assertRaisesRegex(RuntimeError, r"corners enclose no volume, the first at \(0, 0, 0\); \(1, 0, 0\)"):
+            straighten_inverted(nodes, tets)
+
+
+@needs_fea
+class ThinTube(unittest.TestCase):
+    """A tube of a 0.5 mm wall at 3 mm elements: netgen's ``SecondOrder`` turns some elements inside out where it
+    curves them onto the bore, which CalculiX refused (``nonpositive jacobian``). They are straightened, and it solves."""
+
+    @classmethod
+    def setUpClass(cls):
+        from build123d import Cylinder, export_step
+
+        directory = class_directory(cls)
+        cls.step = directory / "tube.step"
+        export_step(Cylinder(5.0, 20.0) - Cylinder(4.5, 20.0), str(cls.step))
+        bottom, top = ends(cls.step, axis=2)
+        cls.study = {"material": STEEL_NUMBERS, "fixtures": [{"faces": [bottom], "type": "fixed"}],
+                     "loads": [{"faces": [top], "type": "force", "vector_N": [50.0, 0, 0]}], "mesh": {"size_mm": 3.0}}
+        cls.result = solve(cls.step, directory / "tube.glb", cls.study)
+
+    def test_it_solves_and_says_how_many_elements_were_straightened(self):
+        straightened = self.result.mesh["straightened"]
+        self.assertGreater(straightened, 0)
+        self.assertEqual(reported(self.result)["mesh"]["straightened"], straightened)
+        self.assertEqual(glb_extras(self.result.glb)["study"]["mesh"]["straightened"], straightened)
+
+
 class PeakFace(unittest.TestCase):
     """Which face the peak node sits on, from the boundary triangles alone."""
 

@@ -39,7 +39,6 @@ _A1, _B1, _W1 = 0.445948490915965, 0.091576213509771, 0.111690794839005
 _A2, _B2, _W2 = 0.108103018168070, 0.816847572980459, 0.054975871827661
 _TRIANGLE_POINTS = ((_A1, _A1), (1 - 2 * _A1, _A1), (_A1, 1 - 2 * _A1), (_B1, _B1), (1 - 2 * _B1, _B1), (_B1, 1 - 2 * _B1))
 _TRIANGLE_WEIGHTS = (_W1,) * 3 + (_W2,) * 3
-_A, _B = 0.138196601125011, 0.585410196624968
 
 
 @dataclass
@@ -187,9 +186,9 @@ def _corner_extrapolation() -> "np.ndarray":
     nearest corner k): the inverse of the corner shape functions there."""
     import numpy as np
 
-    at_points = np.full((4, 4), _A)
-    np.fill_diagonal(at_points, _B)
-    return np.linalg.inv(at_points)
+    from cadgen._internal.fea.calculix import C3D10_POINTS
+
+    return np.linalg.inv(np.array(C3D10_POINTS))
 
 
 def _von_mises(s: "np.ndarray") -> "np.ndarray":
