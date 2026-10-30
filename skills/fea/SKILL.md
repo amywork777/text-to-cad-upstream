@@ -203,9 +203,13 @@ you write it down ([study-file.md](references/study-file.md#units)).
    they gave none), end with the smallest change you would make and what you expect it to give,
    from a hand estimate: in bending, stress scales with 1 / thickness², so 3 mm to 4 mm sheet takes
    a 1.5 safety factor to about 2.7; a gusset or a larger fillet at the peak, a stronger alloy by
-   its yield. Offer it as a choice: that change first, one or two others, and leaving the part as it
-   is last (your host's question tool, if it has one). Do not change the part until the user picks;
-   then change it and solve again to confirm.
+   its yield. Aim it at where the part falls short: a peak at the screw holes is the joint (more or
+   wider-spaced screws, a washer, a thicker leg), not the arm. Give every choice its estimated
+   result, and recommend the one the estimates favour; a change you cannot estimate is not the
+   recommended one. Offer it as a choice: that change first, one or two others, and leaving the
+   part as it is last (your host's question tool, if it has one). Do not change the part until the user picks;
+   then change it and solve again to confirm. If it still falls short, offer the next change the
+   same way.
 
 ## Assemblies
 
