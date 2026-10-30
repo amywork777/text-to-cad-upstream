@@ -176,15 +176,15 @@ class Grbl(unittest.TestCase):
     def test_every_other_post_posts_what_cadgen_set_in_the_setups_work_offset(self):
         # Each program read back (S, F, Q, and the work offset of every move) and found clean; Fanuc's once failed on
         # the work offset's object, and once cut in G54 after its tool change whatever the job's offset. The part's
-        # name, as a download names a copy, once nested a comment in the header cadgen writes.
+        # name, as a download names a copy, once nested a comment in the header cadgen writes; the job's name heads it.
         step = block_step(class_directory(type(self)), name="block (1)")
         for post in ("mach3", "fanuc", "centroid", "uccnc", "smoothie"):
             with self.subTest(post=post):
-                result = plan(step, mill_job([{"op": "face", "tool": "T1"}],
-                                             machine={"post": post, "max_rpm": 24000, "work_offset": "G55"}))
+                job = mill_job([{"op": "face", "tool": "T1"}], machine={"post": post, "max_rpm": 24000, "work_offset": "G55"})
+                result = plan(step, {**job, "name": "bracket (rev B)"})
                 self.assertEqual("ready", result.verdict.get("status"), result.findings)
                 text = Path(result.posts[0]["file"]).read_text(encoding="utf-8")
-                self.assertTrue(text.startswith("(cadgen cam: block [1].step, setup top,"), text[:80])
+                self.assertTrue(text.startswith("(cadgen cam: bracket [rev B], from block [1].step, setup top,"), text[:80])
                 nested = [line for line in text.splitlines() if not re.fullmatch(r"[^()]*(?:\([^()]*\)[^()]*)*", line)]
                 self.assertEqual([], nested)
                 self.assertIn("G55", text)

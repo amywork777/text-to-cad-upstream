@@ -171,6 +171,13 @@ class Refuses(unittest.TestCase):
         message = refusal(self, mill_job([], setups=[{"id": "top side", "operations": [{"op": "face", "tool": "T1"}]}]))
         self.assertIn("letters, digits, - and _", message)
 
+    def test_a_tool_id_can_name_a_file(self):
+        # A post that takes one tool a program names each program for its tool: EM/6 would write into a folder.
+        for tool_id in ("EM/6", "EM 6", "../T1", ""):
+            with self.subTest(tool_id=tool_id):
+                tools = [dict(mill_job([])["tools"][0], id=tool_id)]
+                self.assertIn("letters, digits, - and _", refusal(self, mill_job([], tools=tools)))
+
 
 if __name__ == "__main__":
     unittest.main()

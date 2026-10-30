@@ -103,9 +103,10 @@ def parse_tool(raw: object, position: int) -> Tool:
     kind = choice(raw.get("type"), tuple(TOOL_TYPES), f"{where}.type")
     check_keys(raw, (*TOOL_KEYS, *TOOL_TYPES[kind]["keys"]), where, hint=f"a {kind} tool")
     tool_id = raw.get("id")
-    if not isinstance(tool_id, str) or not tool_id.strip() or tool_id != tool_id.strip() or len(tool_id) > 40:
-        raise CamJobError(f"{where} needs an \"id\": a short name the operations use, like \"T1\" (not "
-                          f"{shown(tool_id)})")
+    if (not isinstance(tool_id, str) or not tool_id or len(tool_id) > 40
+            or not all(c.isalnum() or c in "-_" for c in tool_id)):
+        raise CamJobError(f"{where} needs an \"id\": a short name of letters, digits, - and _ the operations use, "
+                          f"like \"T1\" (it names a posted file when a post takes one tool a program), not {shown(tool_id)}")
     for key in (*_REQUIRED, *TOOL_TYPES[kind]["keys"]):
         if key not in raw:
             raise CamJobError(f"{where} ({tool_id}, a {kind} tool) needs \"{key}\": {_WHY[key]}. It is never "

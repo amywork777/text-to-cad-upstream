@@ -66,8 +66,8 @@ it('says a refused job\'s errors under its verdict, each a row that chooses it; 
 it('says under the verdict what the plan assumed, one small line each with its reason on hover', () => {
   const { container } = render(<CamJobPanel job={job()} colours={{}} chosen="" onChoose={() => {}} />);
   const lines = [...container.querySelectorAll('[data-cam-verdict] [data-cam-assumed] li')];
-  expect(lines.map((line) => line.textContent)).toEqual(['Assumed machine.rapid_mm_min 3000', 'Assumed T1.stickout_mm 27.5', 'Assumed T1.flutes 2',
-    'Assumed T2.flute_length_mm 60', 'Assumed T2.stickout_mm 75']);
+  // A tool states every fact of itself, so the machine's rapid rate is all a plan assumes.
+  expect(lines.map((line) => line.textContent)).toEqual(['Assumed machine.rapid_mm_min 3000']);
   expect(lines[0].getAttribute('title')).toBe('for the cycle time only');
   cleanup();
   const extras = camExtras();

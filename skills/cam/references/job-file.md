@@ -11,7 +11,7 @@ lengths are mm, feeds mm/min, speeds rev/min.
 | `stock` | Required. [Stock](#stock) |
 | `tools` | Required. A list of at least one [tool](#tools) |
 | `setups` | Required. A list of at least one [setup](#setups) |
-| `name` | The job's name (the job file's name, else `job`) |
+| `name` | The job's name, heading each posted program (the job file's name, else `job`) |
 | `tolerance_mm` | How closely FreeCAD follows curves, 0.01 to 1 (0.01) |
 | `coolant` | `off`, `flood` or `mist`, for every operation that does not say (`off`) |
 
@@ -63,7 +63,7 @@ There is no other stock shape. The blank the user clamps must be the size this m
 
 | Key | Value (default) |
 | --- | --- |
-| `id` | Required. The name operations use, like `T1` |
+| `id` | Required. The name operations use, like `T1`: letters, digits, `-` and `_`, since it names a posted file when a post takes one tool a program |
 | `type` | Required. `flat` (end mill), `ball`, `bull` (bull nose) or `drill` |
 | `diameter_mm` | Required |
 | `number` | Required. The T number posted, 0 to 9999, as the machine's tool table has it; one per tool |

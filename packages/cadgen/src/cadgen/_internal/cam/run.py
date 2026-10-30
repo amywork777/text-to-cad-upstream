@@ -417,7 +417,7 @@ def _plan(document, parsed, part, freecad, glb_path, logger, started) -> CamPlan
                 for name, indices in files:
                     findings += checks.posted(setup.id, name, texts[name], [spec_of[i] for i in indices],
                                              machine.work_offset)
-            header = (_comment(f"cadgen cam: {document.name}, setup {setup.id}, planned and posted by "
+            header = (_comment(f"cadgen cam: {parsed.name}, from {document.name}, setup {setup.id}, planned and posted by "
                                f"{freecad.label} for {machine.post}") + "\n" + _comment(_SAFETY) + "\n")
             posted += [(setup.id, name, header + texts[name], tool)
                        for (name, _), tool in zip(files, _file_tools(files, planned))]
