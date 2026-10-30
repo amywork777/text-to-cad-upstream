@@ -123,7 +123,9 @@ basic dimension, a datum and a note cover nothing, and the datum features a gene
 are left to controls of their own), and the requirements that cannot both hold or hold nothing --
 a datum no frame names, a flag note every link of which is broken, two dimensions of one type on
 the same faces whose zones do not meet, a flatness wider than a profile on its face. Derived, never
-held, and warned of: it never fails a build. A limits dimension its measured nominal lies outside is
+held, and warned of: it never fails a build. Beside it, what the part's requirements leave unsaid
+(``suggestions``): each a question with the answer a standard gives and why, read off this module's
+tables (ISO 273, ISO 261/2306, ISO 286), asked and never applied. A limits dimension its measured nominal lies outside is
 no conflict but a size the model does not have: the build fails, naming it (``outside_limits``).
 
 **A document another system wrote** (a vendor's STEP, or an xbf converted from one) lists its
@@ -169,9 +171,8 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 __all__ = ["PMIError", "PMIUnsupported", "annotate", "camera", "coverage", "datum", "dimensional_location",
            "dimensional_size", "flatness_tolerance", "general_profile", "general_tolerance", "limits", "note",
-           "otherwise_controlled",
-           "place", "plus_minus_tolerance", "position_tolerance", "read", "section", "step_entries",
-           "surface_profile_tolerance", "view"]
+           "otherwise_controlled", "place", "plus_minus_tolerance", "position_tolerance", "read", "section",
+           "step_entries", "suggestions", "surface_profile_tolerance", "view"]
 
 # The attribute an annotated shape holds its annotations in (a tuple of plain dicts), as a part's
 # configurations are held (``kernel.memo`` keys it).
@@ -927,6 +928,117 @@ def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, A
                     f"its form within {_mm(width)} already: make the flatness narrower than the profile, or remove it")
     return {"uncovered": sorted(set(faces) - covered),
             "conflicts": [found for kind in CONFLICTS for found in said[kind]]}
+
+
+# What coverage suggests (``suggestions``) is read off these tables, millimetres, never invented.
+# ISO 273: the clearance hole of each coarse metric fastener, its fine, medium and coarse series
+# (their tolerance classes H12, H13 and H14).
+CLEARANCE_HOLES = {1.6: (1.7, 1.8, 2.0), 2: (2.2, 2.4, 2.6), 2.5: (2.7, 2.9, 3.1), 3: (3.2, 3.4, 3.6),
+                   4: (4.3, 4.5, 4.8), 5: (5.3, 5.5, 5.8), 6: (6.4, 6.6, 7.0), 8: (8.4, 9.0, 10.0),
+                   10: (10.5, 11.0, 12.0), 12: (13.0, 13.5, 14.5), 16: (17.0, 17.5, 18.5), 20: (21.0, 22.0, 24.0),
+                   24: (25.0, 26.0, 28.0)}
+SERIES = (("fine", "H12"), ("medium", "H13"), ("coarse", "H14"))
+# The coarse thread of each metric size (ISO 261): its pitch and the usual tap drill (ISO 2306).
+TAP_DRILLS = {1.6: (0.35, 1.25), 2: (0.4, 1.6), 2.5: (0.45, 2.05), 3: (0.5, 2.5), 4: (0.7, 3.3), 5: (0.8, 4.2),
+              6: (1.0, 5.0), 8: (1.25, 6.8), 10: (1.5, 8.5), 12: (1.75, 10.2), 16: (2.0, 14.0), 20: (2.5, 17.5),
+              24: (3.0, 21.0)}
+# ISO 286-1's standard tolerance grades, micrometres, for nominal sizes up to each bound (mm): a
+# hole's H grade is +grade/0.
+GRADE_BOUNDS = (3, 6, 10, 18, 30, 50, 80, 120, 180, 250)
+GRADES = {"IT7": (10, 12, 15, 18, 21, 25, 30, 35, 40, 46), "IT12": (100, 120, 150, 180, 210, 250, 300, 350, 400, 460),
+          "IT13": (140, 180, 220, 270, 330, 390, 460, 540, 630, 720),
+          "IT14": (250, 300, 360, 430, 520, 620, 740, 870, 1000, 1150)}
+# A size read off a table matches a measured one within this.
+_TABLE = 0.005
+
+
+def _grade(name: str, size: float) -> float | None:
+    """ISO 286-1's grade ``name`` (``IT7``) for a nominal ``size``, mm; None beyond its table."""
+    at = next((at for at, bound in enumerate(GRADE_BOUNDS) if size <= bound), None)
+    return None if at is None else GRADES[name][at] / 1000
+
+
+def suggestions(entries: list[dict[str, Any]], faces: Sequence[dict[str, Any]], *, material: bool) -> list[dict[str, Any]]:
+    """What one part's requirements leave unsaid, each a question with a standard answer and why:
+    the questions to put to the person who knows the part, never applied for them. Of its
+    structure entries (``entries``), its faces (``faces``: each ``{"ref", "surface", "area"}`` and a
+    cylinder's ``diameter`` and ``hole``, whether it bounds a hole) and whether it has a material.
+    Each is ``{"kind", "faces", "question", "answer", "why"}``, the answer the call that says it
+    (``material`` the part's attribute), in this order:
+
+    - ``material``: a part with none (a shop makes it of something; it decides which tolerances
+      are sensible);
+    - ``datum``: a part with none, datum A on its largest flat face (the one it usually sits on);
+    - ``general``: a part whose faces some requirement leaves uncovered and that has no general
+      requirement, ISO 2768-mK (``general_tolerance``), the usual default for a machined part;
+    - ``hole``: each hole no size requirement is on, by its diameter: an ISO 273 clearance hole
+      (its series' H class; a position to the part's datums by the floating-fastener formula,
+      hole less fastener), a coarse thread's tap drill (a note of the thread, 6H; a position by the
+      fixed-fastener formula, half the mating medium clearance hole less the fastener), else a bore
+      something fits in (H7, ISO 286).
+
+    A default is a standard's, said with its standard: the answer is the person's. Pure."""
+    found: list[dict[str, Any]] = []
+    ok = [entry for entry in entries if entry["status"] == "ok"]
+
+    def say(kind: str, on: list[str], question: str, answer: str, why: str) -> None:
+        found.append({"kind": kind, "faces": on, "question": question, "answer": answer, "why": why})
+
+    if not material:
+        say("material", [], "What is the part made of?", "the part's material (bd_materials), before annotate()",
+            "a shop makes and quotes it from its material, which also decides which tolerances are sensible")
+    letters = sorted(entry["datum"]["letter"] for entry in ok if entry["kind"] == "datum")
+    planes = [face for face in faces if face["surface"] == "plane"]
+    if not letters and planes:
+        largest = max(planes, key=lambda face: face["area"])
+        say("datum", [largest["ref"]], "Which face is the part located and measured from?",
+            f'datum("A", "{largest["ref"]}")',
+            "the largest flat face is usually the one it sits or mounts on: primary datum A")
+    frame = letters[:3] or ["A"]
+    if coverage(entries, [face["ref"] for face in faces])["uncovered"] and not any(
+            _stated(entry) or _general(entry) for entry in ok):
+        say("general", [], "What holds the faces nothing else controls?",
+            'general_tolerance("general", "ISO 2768-mK")',
+            "ISO 2768-mK (medium sizes, K form) is the usual default for a machined part and holds every size "
+            "and form nothing else tolerances; general_profile(...) says the same in ASME terms")
+    sized = {ref["ref"] for entry in ok if entry["kind"] == "dimension" and entry["dimension"]["type"] == "diameter"
+             for ref in entry["refs"]}
+    datums = ", ".join(f'"{letter}"' for letter in frame)
+    for number, face in enumerate((face for face in faces if face.get("hole") and face["ref"] not in sized), 1):
+        ref, size, id = face["ref"], face["diameter"], f"hole-{number}"
+        question = f"What is the {_mm(size)} mm hole for?"
+        clearance = [(fastener, series, grade) for fastener, holes in CLEARANCE_HOLES.items()
+                     for (series, grade), hole in zip(SERIES, holes) if abs(hole - size) <= _TABLE]
+        tapped = [fastener for fastener, (_pitch, drill) in TAP_DRILLS.items() if abs(drill - size) <= _TABLE]
+        if clearance:
+            fastener, series, grade = clearance[0]
+            upper, position = _grade("IT" + grade[1:], size), size - fastener
+            others = "".join(f"; or the tap drill of M{_mm(other)}" for other in tapped)
+            if (fit := _grade("IT7", size)) is not None:
+                others += f"; or, where a pin or bearing fits in it, H7 +{_mm(fit)}/0"
+            say("hole", [ref], question,
+                f'dimensional_size("{id}-size", "{ref}", tolerance=plus_minus_tolerance({_mm(upper)}, 0)), '
+                f'position_tolerance("{id}-position", "{ref}", {_mm(position)}, datums=[{datums}])',
+                f"{_mm(size)} mm is ISO 273's {series} clearance hole for M{_mm(fastener)}: {grade} is "
+                f"+{_mm(upper)}/0, and a floating M{_mm(fastener)} fastener assembles with a position of "
+                f"{_mm(position)} (hole {_mm(size)} less fastener {_mm(fastener)}){others}")
+        elif tapped:
+            fastener = tapped[0]
+            pitch, _drill = TAP_DRILLS[fastener]
+            position = (CLEARANCE_HOLES[fastener][1] - fastener) / 2
+            say("hole", [ref], question,
+                f'note("{id}-thread", "M{_mm(fastener)}x{_mm(pitch)}-6H", faces=["{ref}"]), '
+                f'position_tolerance("{id}-position", "{ref}", {_mm(position)}, datums=[{datums}])',
+                f"{_mm(size)} mm is the tap drill of M{_mm(fastener)}x{_mm(pitch)}: a tapped hole, its thread "
+                f"6H (ISO 965), and a fixed M{_mm(fastener)} fastener in it assembles with a position of "
+                f"{_mm(position)} (half its medium clearance hole {_mm(CLEARANCE_HOLES[fastener][1])} less "
+                f"{_mm(fastener)})")
+        elif (upper := _grade("IT7", size)) is not None:
+            say("hole", [ref], question,
+                f'dimensional_size("{id}-size", "{ref}", tolerance=plus_minus_tolerance({_mm(upper)}, 0))',
+                f"{_mm(size)} mm is no clearance hole or tap drill of ISO 273: a bore a pin or bearing fits in "
+                f"is usually H7 (ISO 286), +{_mm(upper)}/0; a looser hole wants less")
+    return found
 
 
 def _requirement(entry: dict[str, Any]) -> bool:
@@ -2112,16 +2224,49 @@ def _canonical(structure: dict[str, Any]) -> Callable[[int, str, int], str]:
 
 
 def coverage_of(structure: dict[str, Any], shapes: Mapping[int, Any]) -> list[dict[str, Any]]:
-    """The structure's ``pmi_coverage``: ``coverage`` of each part its ``pmi`` has an entry on, as
-    ``{"part", "uncovered", "conflicts"}``, by part (a prototype index), its faces every face of its
-    shape (``shapes``, by prototype index) as the structure spells them. A part with no entry says
-    nothing. Derived where the structure is served, the build's report read from the same."""
+    """The structure's ``pmi_coverage``: ``coverage`` of each part its ``pmi`` has an entry on, and
+    what its requirements leave unsaid (``suggestions``), as ``{"part", "uncovered", "conflicts",
+    "suggestions"}``, by part (a prototype index), its faces every face of its shape (``shapes``, by
+    prototype index) as the structure spells them, each measured (``_measured``). A part with no
+    entry says nothing. Derived where the structure is served, the build's report read from the same."""
     entries = structure.get("pmi") or []
     canonical = _canonical(structure)
+    prototypes = structure.get("prototypes") or []
     found = []
     for index in sorted({entry["part"] for entry in entries if entry["part"] is not None}):
-        faces = [canonical(index, "face", at) for at in range(1, _faces(shapes[index]).Extent() + 1)]
-        found.append({"part": index, **coverage([entry for entry in entries if entry["part"] == index], faces)})
+        faces = _faces(shapes[index])
+        measured = [{"ref": canonical(index, "face", at), **_measured(faces.FindKey(at))}
+                    for at in range(1, faces.Extent() + 1)]
+        mine = [entry for entry in entries if entry["part"] == index]
+        material = index < len(prototypes) and prototypes[index].get("material") is not None
+        found.append({"part": index, **coverage(mine, [face["ref"] for face in measured]),
+                      "suggestions": suggestions(mine, measured, material=material)})
+    return found
+
+
+def _measured(face: Any) -> dict[str, Any]:
+    """What ``suggestions`` reads of a face: its surface's kind (``_surface``) and area, and a
+    cylinder's diameter and whether it bounds a hole (its material outside it: the face's outward
+    normal toward its axis)."""
+    from OCP.BRepGProp import BRepGProp, BRepGProp_Face
+    from OCP.GProp import GProp_GProps
+    from OCP.gp import gp_Pnt, gp_Vec
+    from OCP.TopoDS import TopoDS
+
+    kind, values = _surface(face)
+    props = GProp_GProps()
+    BRepGProp.SurfaceProperties_s(face, props)
+    found = {"surface": kind, "area": props.Mass()}
+    if kind == "cylinder":
+        side = BRepGProp_Face(TopoDS.Face(face))
+        low_u, high_u, low_v, high_v = side.Bounds()
+        point, normal = gp_Pnt(), gp_Vec()
+        side.Normal((low_u + high_u) / 2, (low_v + high_v) / 2, point, normal)
+        axis = _axis(face)
+        along = gp_Vec(*axis["direction"])
+        out = gp_Vec(gp_Pnt(*axis["point"]), point)
+        out.Subtract(along.Multiplied(out.Dot(along)))
+        found.update(diameter=_as_held(round(2 * values["radius"], 6)), hole=normal.Dot(out) < 0)
     return found
 
 

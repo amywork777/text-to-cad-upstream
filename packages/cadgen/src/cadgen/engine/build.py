@@ -738,8 +738,9 @@ def _finish(model: Any, result: Any, run: Any, report: dict[str, Any], log: Call
 def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[[str], None]) -> None:
     """The tree's PMI resolved and said, the build report's ``pmi``: how many annotations, each one
     not ok and why (kept in the document linked to nothing, refused by a STEP), and each part's
-    faces no requirement is on and its requirements that cannot both hold (``coverage``: the served
-    structure's ``pmi_coverage`` of each part with something to say, by its name; warned of, never
+    faces no requirement is on, its requirements that cannot both hold, and the questions its
+    requirements leave open with a standard answer each (``coverage``: the served structure's
+    ``pmi_coverage`` of each part with something to say, by its name; warned of and asked, never
     failing the build); each logged, none dropped in silence. Annotations its body, or a @memo
     function it called, gave a shape the result does not hold fail the build, by id
     (``pmi.unattached``): its files would carry none of them; a body replayed gives its annotations
@@ -766,8 +767,10 @@ def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[
         for problem in report["pmi"]["problems"]:
             log(f"pmi {problem['part']}/{problem['id']}: {problem['status']}: {problem['problem']}")
         names = [prototype["name"] for prototype in served["prototypes"]]
-        coverage = [{"part": names[found["part"]], "uncovered": found["uncovered"], "conflicts": found["conflicts"]}
-                    for found in served["pmi_coverage"] if found["uncovered"] or found["conflicts"]]
+        coverage = [{"part": names[found["part"]], "uncovered": found["uncovered"], "conflicts": found["conflicts"],
+                     "suggestions": found["suggestions"]}
+                    for found in served["pmi_coverage"]
+                    if found["uncovered"] or found["conflicts"] or found["suggestions"]]
         if coverage:
             report["pmi"]["coverage"] = coverage
         for found in coverage:
@@ -777,6 +780,9 @@ def _pmi(model: Any, tree: Any, run: Any, report: dict[str, Any], log: Callable[
                     f"requirement: {', '.join(found['uncovered'])}")
             for conflict in found["conflicts"]:
                 log(f"warning: pmi: {found['part']}: {', '.join(conflict['ids'])}: {conflict['problem']}")
+            for said in found["suggestions"]:
+                # A question for the person who knows the part, its standard answer and why: never applied.
+                log(f"pmi: {found['part']}: ask: {said['question']} Suggest {said['answer']} ({said['why']})")
         report["timings"]["pmi"] = round(time.perf_counter() - clock, 4)
 
 

@@ -1,7 +1,7 @@
 {
  "name": "plate",
  "path": "pmi_plate.xbf",
- "version": "1793339653072157036-27752",
+ "version": "1793340163087830180-27752",
  "units": "mm",
  "prototypes": [
   {
@@ -630,7 +630,16 @@
   {
    "part": 0,
    "uncovered": [],
-   "conflicts": []
+   "conflicts": [],
+   "suggestions": [
+    {
+     "kind": "material",
+     "faces": [],
+     "question": "What is the part made of?",
+     "answer": "the part's material (bd_materials), before annotate()",
+     "why": "a shop makes and quotes it from its material, which also decides which tolerances are sensible"
+    }
+   ]
   }
  ]
 }

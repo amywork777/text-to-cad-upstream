@@ -22,8 +22,9 @@ import { PMI_SECTION_OFF, pmiViewShowsText } from "./pmiViews.js";
 // applies one (`usePmiViewApplied`: its camera and section, and only its PMI drawn, where it
 // places it) and a second leaves it --, its **Notes** in their numbers (the general profile Note
 // 1, a flag note with its flag, lit on its faces when picked), its **Coverage** (how many faces no
-// requirement is on, which a checkbox lights, and each requirement that cannot hold with another,
-// a warning), then its **Annotations**: every one, a row each -- its glyph and what its callout
+// requirement is on, which a checkbox lights, each requirement that cannot hold with another, a
+// warning, and each question the requirements leave open, with the standard answer the engine
+// suggests and, on hover, why: asked, never applied), then its **Annotations**: every one, a row each -- its glyph and what its callout
 // says, and its eye -- in the document's order. The one picked opens under its row, its values
 // read out with their units and where each came from (a nominal measured on the geometry or as
 // another system's file gives it, a tolerance as the code gave it, or none given), its references
@@ -424,6 +425,12 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
           <FileSheetStatusText className="px-0 py-0.5">{`${coverageOfParts && item.partName ? `${item.partName}: ` : ""}${uncoveredText(item.uncovered.length, t)}`}</FileSheetStatusText>
           {item.conflicts.map(conflict => <Warning key={`${conflict.kind}:${conflict.ids.join(",")}`} data-pmi-conflict={conflict.kind}>
             {`${conflict.ids.join(", ")}: ${conflict.problem}`}</Warning>)}
+          {item.suggestions.map(said => <TooltipHint key={`${said.kind}:${said.faces.join(",")}`} content={said.why}>
+            <div className="py-0.5 text-tiny" data-pmi-suggestion={said.kind}>
+              <div>{said.question}</div>
+              <code className="block break-words font-mono text-micro text-muted-foreground">{said.answer}</code>
+            </div>
+          </TooltipHint>)}
         </div>)}
       </FileSheetSettingsSection> : null}
       {annotations.length ? <FileSheetSettingsSection title={t("pmi.annotations")} sectionId="pmi-annotations">

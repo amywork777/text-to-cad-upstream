@@ -218,6 +218,19 @@ it('the coverage checkbox lights the faces with no requirement', () => {
   expect(live.highlight.selected).toEqual([]);
 });
 
+it('coverage asks what the requirements leave open, with the answer the engine suggests', () => {
+  // Test-owned: the engine's words, drawn as given; a question, never a warning.
+  openMbd(structure => ({ ...structure, pmi_coverage: [{ part: 0, uncovered: [], conflicts: [],
+    suggestions: [{ kind: 'hole', faces: [V4_BOTTOM], question: 'What is the 9 mm hole for?',
+      answer: 'dimensional_size("hole-1-size", ...)', why: "9 mm is ISO 273's medium clearance hole for M8" }] }] }));
+  const coverage = within(screen.getByRole('region', { name: 'Coverage' }));
+  expect(coverage.getByText('What is the 9 mm hole for?')).toBeTruthy();
+  const answer = coverage.getByText('dimensional_size("hole-1-size", ...)');
+  expect(answer.tagName).toBe('CODE');
+  expect(coverage.queryByRole('status')).toBeNull();
+  expect(answer.closest('[data-pmi-suggestion]')?.getAttribute('data-pmi-suggestion')).toBe('hole');
+});
+
 it("a view whose section is off the placement's axes says so and applies its camera alone", () => {
   // The plate placed an eighth turn about z: the section's y is no world axis there.
   const { viewer, store, fit } = openMbd(structure => ({ ...structure, instances: structure.instances.map((instance: any) => ({ ...instance, matrix: EIGHTH_Z })) }));

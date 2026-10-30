@@ -2093,6 +2093,17 @@ return annotate(body,
   a declared xbf is never a source): a ref written as text names whatever face holds that name
   now, measured as it now is. The build report's `pmi` is `{"annotations", "problems"}`, with
   `"coverage"` where there is any, each logged.
+- **Suggestions.** What a part's requirements leave unsaid is asked, each with the answer a
+  standard gives (`pmi.suggestions(entries, faces, material=)`, pure; served in `pmi_coverage`
+  and logged by the build as `pmi: PART: ask: QUESTION Suggest ANSWER (WHY)`), never applied: the
+  part's material where it has none; datum A on its largest flat face where it has no datum; a
+  general requirement (`general_tolerance("general", "ISO 2768-mK")`) where faces are uncovered and
+  none is given; and each hole no size is on, by its diameter, from the tables in `pmi.py`: an ISO
+  273 clearance hole (its series' H class, ISO 286, and a position by the floating-fastener formula,
+  hole less fastener), a coarse thread's tap drill (a thread note, 6H, and a position by the
+  fixed-fastener formula, half the mating medium clearance hole less the fastener), else a bore
+  (H7). Each is `{"kind", "faces", "question", "answer", "why"}`, its answer the call that says it
+  on the face's canonical ref; the viewer lists them under the part's coverage.
 - **Coverage.** Every face of a part is to have a requirement, most of them through its general
   profile, and what is not is said (`pmi.coverage(entries, faces)`, pure, of one part's
   structure entries and the canonical refs of all its faces). A face is covered by an `ok`

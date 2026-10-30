@@ -239,12 +239,14 @@ const partRank = part => (part === null ? Number.MAX_SAFE_INTEGER : part);
  * - `notes`: the entries said as a part's numbered notes, each part's by its number: its general
  *   profile (Note 1, where it has one), then its notes. The same objects as in `entries`.
  * - `views`: each part's named views, in the code's order, keyed by part and name.
- * - `coverage`: of each part carrying PMI, the faces no requirement names and the requirements that
- *   cannot both hold.
+ * - `coverage`: of each part carrying PMI, the faces no requirement names, the requirements that
+ *   cannot both hold, and what its requirements leave unsaid: each a question for the person who
+ *   knows the part, the standard answer the engine suggests (the call that says it) and why.
  *
  * @param {object | null} structure  A served document's structure.
  * @returns {{ entries: XbfPmiEntry[], notes: XbfPmiEntry[], views: XbfPmiView[],
- *   coverage: Array<{ part: number | null, uncovered: string[], conflicts: Array<{ kind: string, ids: string[], problem: string }> }> }}
+ *   coverage: Array<{ part: number | null, uncovered: string[], conflicts: Array<{ kind: string, ids: string[], problem: string }>,
+ *     suggestions: Array<{ kind: string, faces: string[], question: string, answer: string, why: string }> }> }}
  */
 export function readXbfPmi(structure) {
   const entries = keyedByPart(structure?.pmi, item => text(item.id), readEntry);
@@ -253,7 +255,11 @@ export function readXbfPmi(structure) {
   const coverage = (Array.isArray(structure?.pmi_coverage) ? structure.pmi_coverage : []).filter(isRecord).map(item => ({
     part: partOf(item.part), uncovered: words(item.uncovered),
     conflicts: (Array.isArray(item.conflicts) ? item.conflicts : []).filter(isRecord)
-      .map(conflict => ({ kind: text(conflict.kind), ids: words(conflict.ids), problem: text(conflict.problem) })) }));
+      .map(conflict => ({ kind: text(conflict.kind), ids: words(conflict.ids), problem: text(conflict.problem) })),
+    suggestions: (Array.isArray(item.suggestions) ? item.suggestions : []).filter(isRecord)
+      .map(said => ({ kind: text(said.kind), faces: words(said.faces), question: text(said.question),
+        answer: text(said.answer), why: text(said.why) }))
+      .filter(said => said.question && said.answer) }));
   return { entries, notes, views: keyedByPart(structure?.pmi_views, item => text(item.name), readView), coverage };
 }
 

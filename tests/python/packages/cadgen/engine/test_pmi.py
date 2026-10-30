@@ -41,7 +41,7 @@ from cadgen.engine import build as engine_build
 from cadgen.engine import document, export
 from cadgen.engine.export import ap242
 from cadgen.engine.pmi import (PMI, PMIError, PMIUnsupported, _faces, _ref, _resolved_part, _surface, coverage, dropped,
-                               otherwise_controlled, read, records_of_document, refuse_dropped)
+                               otherwise_controlled, read, records_of_document, refuse_dropped, suggestions)
 
 FIXTURE = Path(__file__).resolve().parent / "pmi_golden"
 WRITE = os.environ.get("CADGEN_RENDER_GOLDENS") == "write"
@@ -713,6 +713,7 @@ def pmi_plate():
 CONTROLLED = '''
 import build123d as bd
 from cadgen.ap242 import annotate, datum, dimensional_location, general_profile, limits, plus_minus_tolerance
+from bd_materials import metals
 from cadgen.engine import step, xbf
 
 
@@ -721,6 +722,7 @@ from cadgen.engine import step, xbf
 def pmi_plate():
     body = bd.Box(100, 60, 10)
     body.label = "plate"
+    body.material = metals.aluminum()
     x, y, z = (body.faces().sort_by(axis) for axis in (bd.Axis.X, bd.Axis.Y, bd.Axis.Z))
     return annotate(
         body,
@@ -1308,6 +1310,7 @@ import build123d as bd
 from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, general_profile,
                           general_tolerance, limits, plus_minus_tolerance, position_tolerance,
                           surface_profile_tolerance)
+from bd_materials import metals
 from cadgen.engine import step, xbf
 
 
@@ -1316,6 +1319,7 @@ from cadgen.engine import step, xbf
 def pmi_plate():
     body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
     body.label = "plate"
+    body.material = metals.aluminum()
     bottom, top = body.faces().sort_by(bd.Axis.Z)[0], body.faces().sort_by(bd.Axis.Z)[-1]
     front, left = body.faces().sort_by(bd.Axis.Y)[0], body.faces().sort_by(bd.Axis.X)[0]
     hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
@@ -1337,6 +1341,26 @@ EACH_CONFLICT = '''dimensional_size("hole-under", hole, tolerance=plus_minus_tol
         surface_profile_tolerance("left-profile", left, 0.2),
         flatness_tolerance("left-flatness", left, 0.3),
         general_profile("general", 0.5, datums=["A"]),'''
+
+
+# A plate with an M8 clearance hole, an M8 tap drill and a boss, its top's flatness alone said:
+# what coverage asks of it. Values ILLUSTRATIVE.
+SUGGESTED = '''
+import build123d as bd
+from bd_materials import metals
+from cadgen.ap242 import annotate, flatness_tolerance
+from cadgen.engine import step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = (bd.Box(100, 60, 10) - bd.Pos(-30, 0) * bd.Cylinder(4.5, 10) - bd.Cylinder(3.4, 10)
+            + bd.Pos(30, 0, 10) * bd.Cylinder(8, 10))
+    body.label = "plate"
+    body.material = metals.aluminum()
+    return annotate(body, flatness_tolerance("top-flatness", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+'''
 
 
 def requirements(more: str) -> str:
@@ -1362,8 +1386,13 @@ class CoverageTest(_Folder):
         self.assertEqual(len(planes), 6)
         self.assertEqual(found["uncovered"], sorted(found["uncovered"]))
         self.assertEqual(sorted(_ordinal(loaded, ref) for ref in found["uncovered"]), planes)
+        # Nothing general holds them: the build asks what does, with ISO 2768's usual class.
+        [general] = found["suggestions"]
+        self.assertEqual((general["kind"], general["faces"], general["question"], general["answer"]),
+                         ("general", [], "What holds the faces nothing else controls?",
+                          'general_tolerance("general", "ISO 2768-mK")'))
         self.assertEqual(report["pmi"]["coverage"], [{"part": "plate", "uncovered": found["uncovered"],
-                                                      "conflicts": []}])
+                                                      "conflicts": [], "suggestions": [general]}])
         # Pure: of a part's entries and its faces alone, in any order.
         hole = _by_id(structure["pmi"])["hole-size"]["refs"][0]["ref"]
         self.assertEqual(coverage(structure["pmi"], [hole, *reversed(found["uncovered"])]),
@@ -1373,22 +1402,23 @@ class CoverageTest(_Folder):
         # A's own flatness, and a general profile to A of every other face nothing controls.
         general = 'flatness_tolerance("bottom-flatness", bottom, 0.05), general_profile("general", 0.5, datums=["A"]),'
         report = self.build(requirements(LOCATED + general))
-        self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": []}])
+        self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": [], "suggestions": []}])
         self.assertNotIn("coverage", report["pmi"])
         # Profiled to A|B|C, it leaves the datum features it names to their own control: B and C have none.
         report = self.build(requirements(LOCATED + general.replace('["A"]', '["A", "B", "C"]')))
         structure = self.served()
         found = _by_id(structure["pmi"])
         named = sorted(found[letter]["refs"][0]["ref"] for letter in "BC")
-        self.assertEqual(structure["pmi_coverage"], [{"part": 0, "uncovered": named, "conflicts": []}])
-        self.assertEqual(report["pmi"]["coverage"], [{"part": "plate", "uncovered": named, "conflicts": []}])
+        self.assertEqual(structure["pmi_coverage"], [{"part": 0, "uncovered": named, "conflicts": [], "suggestions": []}])
+        self.assertEqual(report["pmi"]["coverage"], [{"part": "plate", "uncovered": named, "conflicts": [],
+                                                      "suggestions": []}])
 
     def test_a_general_tolerance_covers_them_and_a_step_states_it(self) -> None:
         """ISO 2768's general tolerances cover every face nothing else does, the datum features too:
         a general note saying so, which a STEP states as its part's 'default tolerances' (CAx-IF's
         'tolerance class'), the export check matching it as it matches any requirement."""
         report = self.build(requirements(LOCATED + 'general_tolerance("general", "ISO 2768-mK"),'))
-        self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": []}])
+        self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": [], "suggestions": []}])
         self.assertNotIn("coverage", report["pmi"])
         stated = _by_id(read(self.xbf))["general"]
         self.assertEqual(stated["note"], {"number": 1, "text": "General tolerances ISO 2768-mK", "general": True,
@@ -1414,6 +1444,61 @@ class CoverageTest(_Folder):
                                          '"ISO 2768-c"),'), ok=False)
         self.assertIn("a part has one general tolerance, not 'one' and 'two'", report["error"])
 
+    def test_what_is_left_unsaid_is_asked_with_a_standard_answer(self) -> None:
+        """Pure: a part with no material, no datum and no general requirement is asked for each, and
+        each hole no size is on by its diameter -- ISO 273's clearance hole (its series' H class, the
+        floating-fastener position), a coarse thread's tap drill (its thread note, the fixed-fastener
+        position), a size both tables hold (both said), and a bore (H7) -- never a boss, nor a hole a
+        size is on already."""
+        def face(at: int, surface: str, area: float, **more) -> dict:
+            return {"ref": f"plate/face {at}", "surface": surface, "area": area, **more}
+
+        faces = [face(1, "plane", 6000.0), face(2, "plane", 1000.0),
+                 face(3, "cylinder", 280.0, diameter=9.0, hole=True), face(4, "cylinder", 210.0, diameter=6.8, hole=True),
+                 face(5, "cylinder", 550.0, diameter=17.5, hole=True), face(6, "cylinder", 470.0, diameter=15.0, hole=True),
+                 face(7, "cylinder", 500.0, diameter=16.0, hole=False)]
+        found = suggestions([], faces, material=False)
+        self.assertEqual([(said["kind"], said["faces"]) for said in found],
+                         [("material", []), ("datum", ["plate/face 1"]), ("general", []), ("hole", ["plate/face 3"]),
+                          ("hole", ["plate/face 4"]), ("hole", ["plate/face 5"]), ("hole", ["plate/face 6"])])
+        answers = [said["answer"] for said in found]
+        self.assertEqual(answers[1], 'datum("A", "plate/face 1")')
+        self.assertEqual(answers[3], 'dimensional_size("hole-1-size", "plate/face 3", tolerance=plus_minus_tolerance(0.22, '
+                                     '0)), position_tolerance("hole-1-position", "plate/face 3", 1, datums=["A"])')
+        self.assertIn("ISO 273's medium clearance hole for M8: H13 is +0.22/0", found[3]["why"])
+        self.assertIn("; or, where a pin or bearing fits in it, H7 +0.015/0", found[3]["why"])
+        self.assertEqual(answers[4], 'note("hole-2-thread", "M8x1.25-6H", faces=["plate/face 4"]), '
+                                     'position_tolerance("hole-2-position", "plate/face 4", 0.5, datums=["A"])')
+        self.assertIn("ISO 273's medium clearance hole for M16", found[5]["why"])
+        self.assertIn("; or the tap drill of M20", found[5]["why"])
+        self.assertEqual(answers[6], 'dimensional_size("hole-4-size", "plate/face 6", tolerance=plus_minus_tolerance(0.018, '
+                                     '0))')
+        self.assertEqual(found[6]["question"], "What is the 15 mm hole for?")
+        # Said already: a material, a datum (the frame its letters), a general tolerance, a hole's size.
+        entries = [{"id": "B", "kind": "datum", "status": "ok", "datum": {"letter": "B"}, "refs": [{"ref": "plate/face 2"}]},
+                   {"id": "A", "kind": "datum", "status": "ok", "datum": {"letter": "A"}, "refs": [{"ref": "plate/face 1"}]},
+                   {"id": "general", "kind": "note", "status": "ok", "refs": [],
+                    "note": {"general": True, "annotations": [], "general_tolerance": "ISO 2768-m"}},
+                   {"id": "bore", "kind": "dimension", "status": "ok", "refs": [{"ref": "plate/face 6"}],
+                    "dimension": {"type": "diameter", "nominal": {"value": 15.0, "unit": "mm"},
+                                  "tolerance": {"type": "plus_minus", "upper": 0.1, "lower": 0}}}]
+        found = suggestions(entries, faces, material=True)
+        self.assertEqual([said["faces"] for said in found], [["plate/face 3"], ["plate/face 4"], ["plate/face 5"]])
+        self.assertIn('datums=["A", "B"]', found[0]["answer"])
+
+    def test_a_built_part_s_holes_are_measured_and_its_boss_is_not_one(self) -> None:
+        said: list[str] = []
+        self.build(SUGGESTED, log=said)
+        [found] = self.served()["pmi_coverage"]
+        holes = [(entry["question"], entry["answer"].split("(", 1)[0]) for entry in found["suggestions"]
+                 if entry["kind"] == "hole"]
+        self.assertEqual(holes, [("What is the 9 mm hole for?", "dimensional_size"),
+                                 ("What is the 6.8 mm hole for?", "note")])
+        self.assertEqual([entry["kind"] for entry in found["suggestions"]], ["datum", "general", "hole", "hole"])
+        asked = [line for line in said if ": ask: " in line]
+        self.assertEqual(len(asked), 4)
+        self.assertTrue(asked[2].startswith("pmi: plate: ask: What is the 9 mm hole for? Suggest dimensional_size("))
+
     def test_a_basic_dimension_covers_no_face(self) -> None:
         """A basic dimension is no requirement: the position it locates covers the hole, and the
         datum features it starts from (B, C) still want controls of their own, as A does."""
@@ -1424,12 +1509,12 @@ class CoverageTest(_Folder):
         structure = self.served()
         found = _by_id(structure["pmi"])
         named = sorted(found[letter]["refs"][0]["ref"] for letter in "ABC")
-        self.assertEqual(structure["pmi_coverage"], [{"part": 0, "uncovered": named, "conflicts": []}])
+        self.assertEqual(structure["pmi_coverage"], [{"part": 0, "uncovered": named, "conflicts": [], "suggestions": []}])
         # Each datum feature given a flatness of its own: every face has a requirement.
         flatness = "".join(f'flatness_tolerance("{letter}-flatness", {face}, 0.05),'
                            for letter, face in (("A", "bottom"), ("B", "front"), ("C", "left")))
         report = self.build(requirements(LOCATED + basics + general + flatness))
-        self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": []}])
+        self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": [], "suggestions": []}])
         self.assertNotIn("coverage", report["pmi"])
 
     def test_each_conflict_is_said(self) -> None:
@@ -1493,7 +1578,7 @@ class CoverageTest(_Folder):
         self.assertTrue(self.step.is_file())
         [found] = self.served()["pmi_coverage"]
         self.assertEqual(report["pmi"]["coverage"], [{"part": "plate", "uncovered": found["uncovered"],
-                                                      "conflicts": found["conflicts"]}])
+                                                      "conflicts": found["conflicts"], "suggestions": []}])
         self.assertEqual([line for line in said if line.startswith("warning: pmi:")],
                          [f"warning: pmi: plate: 1 face has no requirement: {found['uncovered'][0]}"]
                          + [f"warning: pmi: plate: {', '.join(conflict['ids'])}: {conflict['problem']}"

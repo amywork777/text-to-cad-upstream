@@ -1,7 +1,7 @@
 {
  "name": "plate",
  "path": "pmi_plate.xbf",
- "version": "1793339652973600931-21328",
+ "version": "1793340162975138743-21328",
  "units": "mm",
  "prototypes": [
   {
@@ -413,7 +413,23 @@
     "plate/f:edit_plate.body_make_box1.3",
     "plate/f:edit_plate.body_make_box1.4"
    ],
-   "conflicts": []
+   "conflicts": [],
+   "suggestions": [
+    {
+     "kind": "material",
+     "faces": [],
+     "question": "What is the part made of?",
+     "answer": "the part's material (bd_materials), before annotate()",
+     "why": "a shop makes and quotes it from its material, which also decides which tolerances are sensible"
+    },
+    {
+     "kind": "general",
+     "faces": [],
+     "question": "What holds the faces nothing else controls?",
+     "answer": "general_tolerance(\"general\", \"ISO 2768-mK\")",
+     "why": "ISO 2768-mK (medium sizes, K form) is the usual default for a machined part and holds every size and form nothing else tolerances; general_profile(...) says the same in ASME terms"
+    }
+   ]
   }
  ]
 }

@@ -41,7 +41,9 @@ named view.
 
 A part a shop can make and inspect with no drawing has a requirement on every face. Build
 it in this order, in the part's one `annotate` call, and take every value from the
-user (ask for what they have not given; never pick a tolerance):
+user: ask for what they have not given, offering the run's suggested answer as the
+default ([Ask with a default](#ask-with-a-default)), and never apply a value they have
+not confirmed:
 
 1. **Datums**, primary first: the faces the part is located and measured from.
 2. **The general requirement first**: `general_profile("general", value, datums=[...])`,
@@ -62,9 +64,10 @@ user (ask for what they have not given; never pick a tolerance):
    faces ([Notes](#notes)).
 6. **Views**: a section through each feature a reader must see cut, and an iso view
    showing everything ([Views](#views)).
-7. **Run the script, and read the coverage warnings** ([Coverage](#coverage)): fix each
-   in the model and run it again, until its run lists no face without a requirement and
-   no conflict.
+7. **Run the script, and read the coverage warnings and questions** ([Coverage](#coverage)):
+   fix each warning in the model, put each question to the user with its suggested answer,
+   and run it again, until its run lists no face without a requirement, no conflict and
+   nothing left to ask.
 
 ```python
 from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance,
@@ -322,7 +325,33 @@ warning: pmi: PART: IDS: PROBLEM
 - **It warns and never fails**: the run succeeds and a STEP is written all the same. The
   run's report has it in its `pmi`, `coverage` for each part with something to say
   (`plate.build().models[0]["pmi"]`), and the document's structure has `pmi_coverage`,
-  `{"part", "uncovered", "conflicts"}` for every part with PMI.
+  `{"part", "uncovered", "conflicts", "suggestions"}` for every part with PMI.
+
+## Ask with a default
+
+A run also lists what the part's requirements leave unsaid, each a question with the
+answer a standard gives and why:
+
+```text
+pmi: PART: ask: What is the 9 mm hole for? Suggest dimensional_size(...), position_tolerance(...) (9 mm is ISO 273's medium clearance hole for M8: ...)
+```
+
+- **What it asks**, in this order: the part's material, where it has none; datum A, on
+  the largest flat face, where it has no datum; a general requirement
+  (`general_tolerance("general", "ISO 2768-mK")`), where faces are uncovered and none is
+  given; and each hole no size is on, read by its diameter: an ISO 273 clearance hole
+  (its H class, and a position by the floating-fastener formula, hole less fastener), a
+  coarse thread's tap drill (a thread note, 6H, and a position by the fixed-fastener
+  formula), or a bore something fits in (H7).
+- **Put each to the user as a question** in plain words, the suggested answer as the
+  default they can take or change, its why in brackets: "The 9 mm hole looks like an M8
+  clearance hole: +0.22/0 and position 1 to A (ISO 273, H13)? Or is something located in
+  it?" Write what they confirm; a suggestion is never applied for them.
+- **Also ask what the run cannot see**: the surface finish (Ra 3.2 is ordinary
+  machining) and the edge break (break sharp edges 0.2 max) as notes, the coating or
+  heat treatment if any, each with that default.
+- **A ref in an answer** is the face's canonical ref, which `annotate` takes as written;
+  a build123d face of the part says the same.
 
 ## Read and check
 
