@@ -26,6 +26,8 @@ export interface PromptFiles {
     annotation: Record<string, unknown> | null;
   }): Promise<{ snapshot: string; inline?: never } | { inline: string; snapshot?: never }>;
   read(path: string): Promise<Blob>;
+  /** Saves a view's picture as the page drew it (a picture marked up as it is), and answers its path. */
+  picture?(request: { name: string; png: Blob }): Promise<string>;
 }
 /**
  * What the app menu links to — the running version (its release notes), the source and the

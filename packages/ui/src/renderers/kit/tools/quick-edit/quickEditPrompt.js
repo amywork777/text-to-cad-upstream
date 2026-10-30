@@ -48,11 +48,13 @@ export const quickEditSelection = references => references.filter(reference => r
  * (`files`) — the current and drawn views with the annotation, inline
  * when small or named by the saved .snapshot.json path. No pictures are rendered for those: the
  * agent draws them again. A view nothing can draw again (a picture marked up as it is) attaches
- * itself instead, with its marks, as a PNG (`picture`). Built at the press.
+ * itself instead, with its marks, as a PNG (`picture`), named in the message by the path the host
+ * saved it at, as a snapshot is, where the host saves it. Built at the press.
  *
  * @param {{ resource: object, references?: object[], text?: string, views?: { label: string }[],
  *   files?: Promise<{ snapshot?: string, inline?: string }> | null,
- *   read?: (path: string) => Promise<Blob>, marks?: string, picture?: Promise<Blob> | null }} quickEdit
+ *   read?: (path: string) => Promise<Blob>, marks?: string,
+ *   picture?: { png: Promise<Blob>, path: Promise<string> | null } | null }} quickEdit
  */
 export function createQuickEditContext({ resource, references = [], text, views = [], files = null, read = null, marks = "", viewUnavailable = "", requests = [], picture = null }) {
   const note = String(text || "").trim();
@@ -77,8 +79,9 @@ export function createQuickEditContext({ resource, references = [], text, views 
         ? new Blob([result.inline], { type: "application/json" }) : read(result.snapshot))), about: ["file"] });
   }
   if (picture) {
-    parts.push({ id: "picture", kind: "attachment", name: `${stemOf(resource)}-view.png`, mimeType: "image/png",
-      content: picture, about: ["file"] });
+    parts.push({ id: "picture", kind: "attachment", label: "Picture of the view, with the marks drawn on it",
+      name: `${stemOf(resource)}-view.png`, mimeType: "image/png", content: picture.png,
+      ...(picture.path ? { path: picture.path } : {}), about: ["file"] });
   }
   return createPromptContext(parts);
 }
@@ -99,7 +102,7 @@ export async function copiedQuickEdit(context) {
  * every way a Quick Edit goes and for Add to context, so they carry the same.
  *
  * @param {{ views(): { label: string }[], files(views: { label: string }[]): Promise<object> | null, read(path: string): Promise<Blob>,
- *   marks?(): string, picture?(): Promise<Blob> | null } | null | undefined} prompt
+ *   marks?(): string, picture?(): { png: Promise<Blob>, path: Promise<string> | null } | null } | null | undefined} prompt
  */
 export function promptAttachments(prompt) {
   // A view the renderer cannot replay is said in words instead of being drawn.
@@ -109,7 +112,8 @@ export function promptAttachments(prompt) {
   void files?.catch(() => {});
   // A view nothing can draw again sends itself as it is on screen, marks and all.
   const picture = prompt?.picture?.() ?? null;
-  void picture?.catch(() => {});
+  void picture?.png.catch(() => {});
+  void picture?.path?.catch(() => {});
   return { views, files, read: prompt?.read, marks: prompt?.marks?.() || "", viewUnavailable, picture };
 }
 
