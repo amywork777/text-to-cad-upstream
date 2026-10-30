@@ -888,7 +888,9 @@ class Instruction:
     overrides what the rigor lays out, and nothing else.
 
     The front pages carry ``scope`` (a sentence: what this instruction builds and
-    when it applies), ``safety`` (the PPE and hazards the user's documents state),
+    when it applies), ``safety`` (the PPE and hazards the user's documents state;
+    a line that states a value, :data:`VALUE_UNITS`, is ``Cited(text, per=...)``
+    or its source is an open item, as in a step),
     ``tools`` (fixtures and tooling the user names, beside the equipment the steps
     imply) and ``revisions`` (``(rev, date, change)`` rows), each only if given.
     """
@@ -896,7 +898,7 @@ class Instruction:
     def __init__(self, assembly: Any, *, title: str, number: str, revision: str,
                  part_number: str = "", drawing: Drawing | None = None, author: str = "",
                  status: str = "draft", size: str = "LETTER", camera: str = "iso", pictures: bool = True,
-                 scope: str = "", safety: Sequence[str] = (), tools: Sequence[str] = (),
+                 scope: str | Cited = "", safety: Sequence[str | Cited] = (), tools: Sequence[str] = (),
                  revisions: Sequence[tuple[str, str, str]] = (), rigor: str = "production",
                  emphasis: str = "visual", format: Format | None = None) -> None:  # noqa: A002
         shape, self.source, self.source_name = _assembly(assembly)
@@ -915,8 +917,13 @@ class Instruction:
         self.emphasis = _one_of("emphasis", emphasis, EMPHASES)
         self.layout = _layout(rigor, format)
         self.pictures = bool(pictures) and self.emphasis == "visual" and self.layout.figures
-        self.scope = _text("scope", scope or None, required=False) or ""
-        self.safety = _lines("safety", safety)
+        # The front page's free text, held to the steps' rule: a value it states cites a source
+        # (``Cited(text, per=...)``), or that source is an open item (``missing``, as (where, what)).
+        self.missing: list[tuple[str, str]] = []
+        self.scope = self._front("scope", scope) if scope else None
+        if isinstance(safety, (str, bytes, Cited)):
+            raise TypeError(f"safety takes a list of lines, not one: safety=[{safety!r}]")
+        self.safety = [self._front("safety", line) for line in safety]
         self.tools = _lines("tools", tools)
         if isinstance(revisions, (str, bytes)) or any(
                 not isinstance(row, (tuple, list)) or len(row) != 3 for row in revisions):
@@ -930,6 +937,16 @@ class Instruction:
         if len(self.scene.leaves()) < 2:  # refused before any step
             raise TypeError(f"{self.source_name} is a single part: work instructions are for an assembly; "
                             "instructions for machining or processing one detail part are not supported yet")
+
+    def _front(self, where: str, value: str | Cited) -> _Line:
+        text, source = _cited(f"{where} line", value)
+        if text is None:
+            raise ValueError(f"{where} takes a line of text or Cited(text, per=...), got {value!r}")
+        if source is not None:
+            _source(where, source)
+        owed = _owed(text, source)
+        self.missing += [(where, name) for name in owed]
+        return _Line("", text, source, cite=bool(owed))
 
     def leaves(self) -> list[_Occurrence]:
         return self.scene.leaves()
@@ -1035,7 +1052,7 @@ class Instruction:
     def open_items(self) -> list[str]:
         """Everything engineering still owes: each NOT STATED value, the source of each value free text
         states uncited, and each part no step installs."""
-        items = []
+        items = [f"{where}: {name} not stated" for where, name in self.missing]
         for step in self.steps:
             items += [f"step {step.label} ({where}): {name} not stated" for where, name in step.missing]
             for op in step.ops:
@@ -1050,10 +1067,10 @@ class Instruction:
         seen: dict[str, str] = {}
         if self.drawing is not None:
             seen[self.drawing.name] = self.drawing.title or "Assembly drawing"
-        for step in self.steps:
-            for source in step.sources():
-                if source.kind in ("spec", "drawing", "datasheet"):
-                    seen.setdefault(source.document, source.title)
+        front = [line.source for line in ([self.scope] if self.scope else []) + self.safety if line.source is not None]
+        for source in [*front, *(source for step in self.steps for source in step.sources())]:
+            if source.kind in ("spec", "drawing", "datasheet"):
+                seen.setdefault(source.document, source.title)
         return list(seen.items())
 
 

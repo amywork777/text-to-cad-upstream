@@ -203,7 +203,8 @@ operation prints its own, even from the same section.
 Free text that states a value -- a number followed by a unit of
 `VALUE_UNITS` (`45 in-lbf`, `0.5 mm`, `150 °F`, `30 min`, `50%`) or a ratio
 (`100:17`) -- cites it as a record does: `per=` on `instruct`, `inspect` and
-the notices, `Cited(text, per=...)` for a `fasten` sequence. Without one its
+the notices, `Cited(text, per=...)` for a `fasten` sequence and for a `scope`
+or `safety` line. Without one its
 source prints NOT STATED and is an open item, so a released instruction
 refuses it. A step's title cites nothing: a value goes in the operation
 that cites it ("Fasten the bracket", then `fasten(..., torque=Torque(...))`),

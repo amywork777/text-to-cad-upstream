@@ -109,8 +109,9 @@ outside the sandbox once.
    that is what a deviation is. Instructions and notices a document states
    cite it too (`instruct(text, per=...)`, `caution(text, per=...)`), and a
    value written into free text (a torque, a dimension, a temperature, a
-   time) is cited like any other or is an open item; a step's title carries
-   none. Put each
+   time), the front page's scope and safety lines among it, is cited like
+   any other (`Cited(text, per=...)`) or is an open item; a step's title
+   carries none. Put each
    WARNING, CAUTION and NOTE on the step it governs, and cite every inspection
    criterion you have a source for (a `controlled` instruction requires it).
    Apply a general rule only where it fits (a cross pattern is for a joint of

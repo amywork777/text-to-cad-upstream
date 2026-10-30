@@ -496,7 +496,7 @@ def _front(flow: _Flow, wi, open_items: list[str]) -> None:
 
     if wi.scope:
         _section(flow, "SCOPE")
-        flow.cell(_text_cell(m, wi.scope, flow.inner), "the scope")
+        flow.cell(_front_line(m, wi.scope, flow.inner), "the scope")
 
     _section(flow, "APPLICABLE DOCUMENTS")
     documents = wi.documents()
@@ -514,8 +514,10 @@ def _front(flow: _Flow, wi, open_items: list[str]) -> None:
                        "process references")
 
     _section(flow, "SAFETY")
-    for line in wi.safety or ["None stated."]:
-        flow.cell(_text_cell(m, f"• {line}" if wi.safety else line, flow.inner), "safety")
+    for line in wi.safety:
+        flow.cell(_front_line(m, line, flow.inner, bullet="• "), "safety")
+    if not wi.safety:
+        flow.cell(_text_cell(m, "None stated.", flow.inner), "safety")
 
     _section(flow, "PARTS")
     rows = [[name, str(len(refs)), ", ".join(steps) or None, _refs(refs)] for name, refs, steps in parts(wi)]
@@ -657,6 +659,16 @@ def _figure(path: Path | None, width: float):
         ax.add_patch(_rect(x, top - h, w, h, lw=0.3, edge="#bbbbbb"))
 
     return h, draw
+
+
+def _front_line(measure, line, width, bullet: str = "") -> _Cell:
+    """A front-page line, its citation under it, or NOT STATED where it states a value it cites no source for."""
+    cell = _text_cell(measure, bullet + line.value, width)
+    if line.source is not None:
+        cell.text(_citation(line.source), SMALL, color="#444444", indent=3.0)
+    elif line.cite:
+        cell.not_stated("source", SMALL)
+    return cell
 
 
 def _citation(source) -> str:

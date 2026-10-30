@@ -598,6 +598,23 @@ class FreeTextValueTests(_Assembly):
                 self.assertFalse(target.exists())
                 self.assertEqual(cited(), [target])
 
+    def test_the_front_page_s_scope_and_safety_are_held_to_the_same_rule(self) -> None:
+        from cadgen.work_instruction import Cited
+
+        spec, _ = _sources()
+        wi = self.instruction(scope="Bonding at 77 F and above", safety=["Wear gloves", "Parts reach 150 F in cure"])
+        wi.step("Fit the plate", install=["base_plate", "bracket", "pin"])
+        self.assertEqual(wi.open_items(), ["scope: source of 77 F not stated", "safety: source of 150 F not stated"])
+        self.assertEqual(sum(page.count("NOT STATED") for page in _page_texts(wi)), 2, "each owed source prints")
+
+        cited = self.instruction(scope=Cited("Bonding at 77 F and above", per=spec.at("2.1")),
+                                 safety=["Wear gloves", Cited("Parts reach 150 F in cure", per=spec.at("5.4"))])
+        cited.step("Fit the plate", install=["base_plate", "bracket", "pin"])
+        self.assertEqual(cited.open_items(), [])
+        self.assertIn(spec.at("2.1").document, [document for document, _ in cited.documents()], "a cited section is applicable")
+        with self.assertRaisesRegex(TypeError, "a list of lines"):
+            self.instruction(safety="Wear gloves")
+
     def test_a_value_is_a_number_and_a_unit_never_a_count_or_a_part_number(self) -> None:
         from cadgen.work_instruction import _owed
 
