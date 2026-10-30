@@ -11,7 +11,7 @@ import FileSidebar from "../tools/FileSidebar.jsx";
 import PreviewChrome from "../tools/PreviewChrome.jsx";
 import { MeasureIcon } from "../tools/measure/SceneMeasure.jsx";
 import { MeasurementsBar } from "../tools/measure/measurementChips.jsx";
-import QuickEdit from "../tools/quick-edit/QuickEdit.jsx";
+import QuickEdit, { quickEditDocked } from "../tools/quick-edit/QuickEdit.jsx";
 import { DRAWING_SHORTCUTS, TOOL_SHORTCUTS } from "../tools/toolShortcuts.js";
 import { FLAT_TOOL } from "./useFlatView.js";
 import { VIEWPORT_INSET_PX, VIEWPORT_TOP_BAR_PX } from "./viewportLayout.js";
@@ -143,7 +143,7 @@ export default function FlatViewFrame({ surface, containerRef, busy, children, f
         {/* The top-right: the host's notice once the picture is on screen, and Quick Edit under it —
             hidden, not unmounted, while the picture loads: a note being written outlives a reload. */}
         <ViewportTopRight notice={chromeHidden ? null : notice}>
-          {compact || !quickEdit ? null : <QuickEdit key={file} className="self-stretch" hidden={chromeHidden} docked={mobile} {...quickEdit} />}
+          {compact || !quickEdit ? null : <QuickEdit key={file} className="self-stretch" hidden={chromeHidden} docked={quickEditDocked(mobile)} {...quickEdit} />}
         </ViewportTopRight>
       </PreviewChrome>
       {toolsHidden || !sided ? null : <FileSidebar style={mobile ? SIDEBAR_POSITION_PHONE : SIDEBAR_POSITION} phone={mobile}

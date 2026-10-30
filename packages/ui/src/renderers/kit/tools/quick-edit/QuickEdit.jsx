@@ -17,6 +17,7 @@ import {
 import { insertAtCaret, markSelectedPills, noteText, pasteNodes, selectPillAt } from "./noteEditor.js";
 import ReferenceChips from "./ReferenceChips.jsx";
 import { useControlUsage } from "../../../../usage/controls.js";
+import { prefersCoarsePointer } from "../../viewport/dom.js";
 import { useI18n } from "@text-to-cad/ui/i18n";
 
 // The sheet's open stop: most of the screen, so the note has room; the box fills it, the note
@@ -31,6 +32,14 @@ const PICK_MS = 1500;
 // 15rem wide, its note growing with what is written.
 export const QUICK_EDIT_LIMITS = Object.freeze({ minWidth: 208, maxWidth: 640, minHeight: 56, maxHeight: 320 });
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+/**
+ * Whether Quick Edit is the bottom sheet rather than the box at the top right: on a phone only, a
+ * narrow view on a touch screen. A narrow desktop pane (a side panel, a split window) keeps the
+ * box on the side, so it is in one place wherever the view is shown on a computer.
+ * @param {boolean} narrow  The view is under the phone breakpoint (`useViewerMobile`).
+ */
+export const quickEditDocked = narrow => narrow && prefersCoarsePointer();
 
 /** Each selected reference by its ids, one a line, as the prompt grammar names them (`promptReferenceIds`). */
 export function quickEditReferenceIds(selection) {

@@ -152,9 +152,14 @@ function neutralExtreme(image, pick) {
 }
 const darkestInk = image => neutralExtreme(image, (next, best) => next < best);
 const lightestInk = image => neutralExtreme(image, (next, best) => next > best);
-const wheelAt = (page, box, point, deltaY) => page.mouse.move(box.x + point.x, box.y + point.y)
-  .then(() => page.mouse.wheel(0, deltaY));
-/** The wheel delta this renderer reads as `factor`: it zooms by exp(-deltaY * 0.0015). */
+// A drawing is read as a page: the plain wheel scrolls it, and ⌘ with the wheel zooms.
+const wheelAt = async (page, box, point, deltaY) => {
+  await page.mouse.move(box.x + point.x, box.y + point.y);
+  await page.keyboard.down('Meta');
+  await page.mouse.wheel(0, deltaY);
+  await page.keyboard.up('Meta');
+};
+/** The wheel delta this renderer reads as `factor`: ⌘-wheel zooms by exp(-deltaY * 0.0015). */
 const deltaForFactor = factor => -Math.log(factor) / 0.0015;
 
 // The room the view measures for its tool strip at the pane's top, which a fit keeps clear of.
@@ -258,7 +263,7 @@ test('strokes stay hairlines when the drawing is zoomed in eight times', async (
   assert.deepEqual(errors, []);
 });
 
-test('the wheel zooms about the pointer, dragging pans, and a double-click fits again', async (t) => {
+test('⌘ with the wheel zooms about the pointer, dragging pans, and a double-click fits again', async (t) => {
   const { page, pane, errors } = await open(t, 'sample.dxf');
   await drawn(pane);
   const fittedShot = await frame(pane);
@@ -294,6 +299,25 @@ test('the wheel zooms about the pointer, dragging pans, and a double-click fits 
   const refitted = inkBox(await frame(pane, pannedShot));
   assert.ok(Math.abs(refitted.height - fitted.height) <= 2 && Math.abs(refitted.centreX - fitted.centreX) <= 2,
     `back to the fit: ${JSON.stringify(refitted)} vs ${JSON.stringify(fitted)}`);
+  assert.deepEqual(errors, []);
+});
+
+test('the plain wheel scrolls a zoomed drawing as a page and does not zoom it', async (t) => {
+  const { page, pane, errors } = await open(t, 'sample.dxf');
+  await drawn(pane);
+  const fittedShot = await frame(pane);
+  const fitted = inkBox(fittedShot);
+  const canvas = await canvasOf(pane).boundingBox();
+  // Zoomed in about its top-left corner, the drawing's top stays in view and its bottom runs off
+  // the pane, so there is somewhere to scroll to.
+  await wheelAt(page, canvas, { x: fitted.minX, y: fitted.minY }, deltaForFactor(3));
+  const zoomedShot = await frame(pane, fittedShot);
+  const zoomed = inkBox(zoomedShot);
+  await page.mouse.wheel(0, 30);
+  const scrolled = inkBox(await frame(pane, zoomedShot));
+  assert.ok(Math.abs((zoomed.minY - scrolled.minY) - 30) <= 2, `the page moved up by the wheel's travel: ${zoomed.minY - scrolled.minY}`);
+  assert.ok(Math.abs(scrolled.minX - zoomed.minX) <= 2 && Math.abs(scrolled.width - zoomed.width) <= 2,
+    `scrolling is not zooming or panning across: ${JSON.stringify(zoomed)} -> ${JSON.stringify(scrolled)}`);
   assert.deepEqual(errors, []);
 });
 

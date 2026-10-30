@@ -1,7 +1,7 @@
 /**
  * A flat picture read as a page is read (`useFlatCanvasView`'s `scroll`): it opens at its width
- * with its top in view where it is much taller than the pane (sheets one under another), else
- * whole; the wheel and a two-finger swipe scroll it, its edges stopping at the pane's, and a pinch
+ * with its top in view where it is upright and much taller than the pane (sheets one under
+ * another), else whole, as a landscape drawing sheet does; the wheel and a two-finger swipe scroll it, its edges stopping at the pane's, and a pinch
  * or ⌘/Ctrl with the wheel zooms. Plain arithmetic on the view's transform
  * (`@text-to-cad/core/lib/drawing2d/transform.js`: model y up, screen y down).
  */
@@ -11,8 +11,8 @@ import { DRAWING_FIT_MARGIN, fitTransform } from "@text-to-cad/core/lib/drawing2
 const WIDTH_FIT_GAIN = 1.5;
 
 /**
- * The fit of a page: the whole of it, unless it is so much taller than the pane that read whole it
- * would be small, then its width, its top in view under `top` (the tool strip).
+ * The fit of a page: the whole of it, unless it is upright and so much taller than the pane that
+ * read whole it would be small, then its width, its top in view under `top` (the tool strip).
  * @param {readonly [number, number, number, number]} bounds
  * @param {number} width
  * @param {number} height
@@ -20,17 +20,17 @@ const WIDTH_FIT_GAIN = 1.5;
  */
 export function pageFit(bounds, width, height, { top = 0, margin = DRAWING_FIT_MARGIN } = {}) {
   const whole = fitTransform(bounds, width, height, { margin, top });
-  const [minX, , maxX, maxY] = bounds;
+  const [minX, minY, maxX, maxY] = bounds;
   const across = Math.max(Number.EPSILON, maxX - minX);
   const scale = Math.max(Number.EPSILON, (width - 2 * margin) / across);
-  if (scale <= whole.scale * WIDTH_FIT_GAIN) return whole;
+  if (maxY - minY <= across || scale <= whole.scale * WIDTH_FIT_GAIN) return whole;
   return { scale, offsetX: (width - across * scale) / 2 - minX * scale, offsetY: top + margin + maxY * scale };
 }
 
 /**
- * A page scrolled by (dx, dy) screen pixels. Along an axis where it is larger than the pane, its
- * edges stop at the pane's (less a margin, and the strip at the top); along one where it fits, it
- * stays where it is.
+ * A page scrolled by (dx, dy) screen pixels. Along an axis it moves on where it is larger than the
+ * pane, its edges stop at the pane's (less a margin, and the strip at the top); along one where it
+ * fits, or one it does not move on, it stays where it is, so scrolling down never jumps it across.
  * @param {{ scale: number, offsetX: number, offsetY: number }} transform
  * @param {number} dx
  * @param {number} dy
@@ -44,10 +44,10 @@ export function scrollPage(transform, dx, dy, bounds, width, height, { top = 0, 
   const [minX, minY, maxX, maxY] = bounds;
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
   let { offsetX, offsetY } = transform;
-  if ((maxX - minX) * scale > width - 2 * margin) {
+  if (dx && (maxX - minX) * scale > width - 2 * margin) {
     offsetX = clamp(offsetX + dx, width - margin - maxX * scale, margin - minX * scale);
   }
-  if ((maxY - minY) * scale > height - top - 2 * margin) {
+  if (dy && (maxY - minY) * scale > height - top - 2 * margin) {
     offsetY = clamp(offsetY + dy, height - margin + minY * scale, top + margin + maxY * scale);
   }
   return { scale, offsetX, offsetY };

@@ -33,8 +33,8 @@ import { useI18n } from "@text-to-cad/ui/i18n";
  * inventing from it.
  *
  * What it has is what a person needs to talk about a drawing (`tools.js`): Select, which picks its
- * entities (by handle: `drawingReferences.js`) and is the view's hand — a drag pans, the wheel or a
- * pinch zooms, a double-click fits; Annotate, which draws on the sheet; and Measure, between points
+ * entities (by handle: `drawingReferences.js`) and is the view's hand — a drag pans, the wheel
+ * scrolls it as a page, a pinch or ⌘/Ctrl with the wheel zooms, a double-click fits; Annotate, which draws on the sheet; and Measure, between points
  * snapped to its ends, centres and lines, in the unit the drawing declares (bare drawing units when
  * it declares none). What is picked and drawn is Quick Edit's (what is measured, Measure's row's), whose views are the window
  * on screen as a plan-view camera, which `cadgen snapshot --annotation PACKET --camera authored` draws again. A drawing with
@@ -230,7 +230,9 @@ function DxfSurface({ view, data }) {
   }, [annotationSurface, requestPaint]);
 
   const drawingView = useDrawingView({
-    drawing, restored, colorScheme, onViewMoved: rememberView, hiddenLayers, overlay, onTap: handlers.tap, onHover: handlers.hover
+    drawing, restored, colorScheme, onViewMoved: rememberView, hiddenLayers, overlay, onTap: handlers.tap, onHover: handlers.hover,
+    // Flat, so read as a page is, as a picture is: the wheel scrolls it and a pinch zooms.
+    scroll: true
   });
   viewRef.current = drawingView;
   paintRef.current = drawingView.requestPaint;
