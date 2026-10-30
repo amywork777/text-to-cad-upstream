@@ -252,7 +252,8 @@ it('host commands a flat drawing cannot answer are declined in words', async () 
   expect(controller.setZoom).toBeUndefined();
 
   const fitted = painted.at(-1)!;
-  fireEvent.wheel(canvas, { deltaY: -Math.log(0.5) / 0.0015, clientX: 300, clientY: 300 });
+  // A drawing reads as a page: the plain wheel scrolls it, and ⌘ with the wheel zooms.
+  fireEvent.wheel(canvas, { deltaY: -Math.log(0.5) / 0.0015, clientX: 300, clientY: 300, metaKey: true });
   await waitFor(() => expect(painted.at(-1)!.scale).toBeCloseTo(fitted.scale * 0.5, 6));
   await act(async () => { await controller.resetCamera(); });
   expect(painted.at(-1)).toEqual(fitted);
