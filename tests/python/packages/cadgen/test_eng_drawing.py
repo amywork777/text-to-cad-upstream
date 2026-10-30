@@ -1627,8 +1627,9 @@ class ColdTrialTests(unittest.TestCase):
                 - Pos(0, 0, 11) * Cone(5, 6, 1, align=align) - Cone(6, 5, 1, align=align))
         sheet = Sheet("A4")
         sheet.view(part, "top", at=(140, 110)).holes()
+        # Wider than a line holds (_CALLOUT_WRAP), it stacks a stage a line, as drafters write one.
         self.assertEqual(_callouts(_render_sheet(sheet, index=1, count=1, label="both")),
-                         ["%%c10 THRU   ⌵ %%c12 × 90° BOTH ENDS"])
+                         ["%%c10 THRU", "⌵ %%c12 × 90° BOTH ENDS"])
 
     def test_a_hole_inside_a_break_is_refused_not_left_off(self) -> None:
         # A ⌀1 hole is under the break's own check, so holes() once dropped it with only a warning.
@@ -2859,7 +2860,12 @@ class AssemblyDrawingTests(unittest.TestCase):
         self.assertEqual([v.name for v in ga.views], ["front", "top", "iso"])
         self.assertTrue(all(not v.hidden for v in ga.views))
         self.assertEqual((pin.title, pin.subtitle, pin.part_number), ("PIN", "ITEM 2 (QTY 2) OF FIXTURE", "FX-100"))
-        self.assertEqual(sheets.part(1).views[0].shape.bounding_box().size.Z, 6, "drawn in its own frame")
+        base = sheets.part(1)
+        # Turned to face the front, the view looking down its holes, as a turned part
+        # lies down; the points an author gives its views stay in its own frame.
+        self.assertEqual([v.name for v in base.views], ["front", "right", "iso"])
+        self.assertAlmostEqual(base.views[0].shape.bounding_box().size.Y, 6)
+        self.assertIsNotNone(base.views[0]._turn)
         with temporary_directory(prefix="tmp-cad-eng-drawing-") as tmp:
             printed: list[str] = []
 
@@ -5647,10 +5653,11 @@ class PartSheetTests(unittest.TestCase):
         out once and located from the edges, the cut corner placed by both its
         ends, and the chamfers in a note. Nothing is left unstated."""
         sheet, doc, unstated = self._drawn(_joining_plate())
-        self.assertEqual([v.name for v in sheet.views], ["top", "front", "iso"])
+        # Its holes are seen from above: it is turned to face the front, the edge view beside.
+        self.assertEqual([v.name for v in sheet.views], ["front", "right", "iso"])
+        self.assertEqual(sheet._size(), "A4")
         self.assertEqual(unstated, [])
-        callouts = _callouts(doc)
-        self.assertTrue(any(c.startswith("5× %%c5.5 THRU") and c.endswith("BOTH ENDS") for c in callouts), callouts)
+        self.assertEqual(_callouts(doc), ["5× %%c5.5 THRU", "⌵ %%c6.5 × 90° BOTH ENDS"])  # stacked
         self.assertIsNone(sheet.views[0]._table)
         self.assertEqual(sorted(_dim_texts(doc)), sorted(["10", "10", "20", "30", "30", "4", "40", "50", "50",
                                                           "60", "60"]))
@@ -5665,10 +5672,18 @@ class PartSheetTests(unittest.TestCase):
         """Placing every step of a long ladder shrinks the part more than it helps:
         the largest six go on, and the report names the step it leaves."""
         sheet, _doc, unstated = self._drawn(_staircase())
-        self.assertEqual([v.name for v in sheet.views], ["top", "front", "iso"])  # the top for its depth
+        self.assertEqual([v.name for v in sheet.views], ["front", "right", "iso"])  # the right for its depth
         self.assertEqual(len(unstated), 1, unstated)
         self.assertIn("is not located", unstated[0])
         self.assertEqual(self._drawn(_staircase(6))[2], [], "five risers and five treads each fit")
+
+    def test_a_view_repeating_one_chosen_goes_last_on_a_tie(self) -> None:
+        """A square column's right view is its front again; its top shows what the
+        front does not, so the top is the one drawn."""
+        from build123d import Align, Box
+
+        sheet, _doc, _unstated = self._drawn(Box(30, 30, 60, align=(Align.MIN, Align.MIN, Align.MIN)))
+        self.assertEqual([v.name for v in sheet.views], ["top", "front", "iso"])
 
     def test_edges_of_several_sizes_are_each_noted(self) -> None:
         from build123d import Align, Axis, Box, fillet

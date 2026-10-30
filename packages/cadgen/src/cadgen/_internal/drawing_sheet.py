@@ -127,21 +127,13 @@ def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso,
     if not iso:
         return slots, over
     # Where the pictorial can go: the corner right of the upper row's annotation
-    # (above the right view's, in third angle), or the full height right of every
-    # view. It takes whichever draws it larger, at the sheet's scale if it fits,
-    # else at the largest STANDARD scale that does: a pictorial still states its
-    # scale, and 1:1.17 is not one anybody can use.
+    # (above the right view's, in third angle), the row a front with no view above
+    # it leaves empty, or the full height right of every view. It takes whichever
+    # draws it larger, at the sheet's scale if it fits, else at the largest
+    # STANDARD scale that does: a pictorial still states its scale, and 1:1.17 is
+    # not one anybody can use.
     upper = "top" if third else "front"
-    rightmost = max(at[n][0] + sizes[n][0] / 2 + need[n]["right"] for n in at) + 4.0
     label_room = 12.0  # the pictorial's own label hangs under it
-    regions = [(rightmost, y_lo + label_room)]
-    if upper in at:
-        upper_w, upper_h = sizes[upper]
-        upper_right = at[upper][0] + upper_w / 2 + need[upper]["right"] + 4.0
-        corner_bottom = at[upper][1] - upper_h / 2
-        if third and "right" in at:
-            corner_bottom = max(corner_bottom, at["right"][1] + H / 2 + need["right"]["top"] + 4.0)
-        regions.insert(0, (upper_right, corner_bottom + label_room))
     # The revision table, when there is one, owns the top-right corner.
     x_top, y_top = sheet_w - m - 6.0, sheet_h - m - 6.0 - _revisions_height(sheet)
     iso_w, iso_h = iso
@@ -150,8 +142,32 @@ def _arrange_three_views(sheet: "Sheet", size, gap: float | None, s: float, iso,
         x0, y0 = region
         return min((x_top - x0) / iso_w if iso_w else s, (y_top - y0) / iso_h if iso_h else s)
 
-    x_free, y_free = max(regions, key=fit_in)
+    def regions_at(at: dict) -> list[tuple[float, float]]:
+        rightmost = max(at[n][0] + sizes[n][0] / 2 + need[n]["right"] for n in at) + 4.0
+        found = [(rightmost, y_lo + label_room)]
+        if upper in at:
+            upper_w, upper_h = sizes[upper]
+            upper_right = at[upper][0] + upper_w / 2 + need[upper]["right"] + 4.0
+            corner_bottom = at[upper][1] - upper_h / 2
+            if third and "right" in at:
+                corner_bottom = max(corner_bottom, at["right"][1] + H / 2 + need["right"]["top"] + 4.0)
+            found.insert(0, (upper_right, corner_bottom + label_room))
+        elif "front" in at:
+            front_w, front_h = sizes["front"]
+            found.append((at["front"][0] - front_w / 2 - need["front"]["left"],
+                          at["front"][1] + front_h / 2 + need["front"]["top"] + 4.0 + label_room))
+        return found
+
+    x_free, y_free = max(regions_at(at), key=fit_in)
     fit = fit_in((x_free, y_free))
+    if fit < s and upper not in at and "front" in at:
+        # The views kept to the foot of the paper leave the empty row above the
+        # front its full height: where that draws the pictorial larger, they go there.
+        low = {n: (x, y - (dy - (y_lo - block[2]))) for n, (x, y) in at.items()}
+        region = max(regions_at(low), key=fit_in)
+        if fit_in(region) > fit:
+            at, (x_free, y_free), fit = low, region, fit_in(region)
+            slots = [(n, at[n], None, None) for n in _VIEW_NAMES if n in names]
     iso_scale = s if fit >= s else next((c for c in _STANDARD_SCALES if c <= max(fit, s / 5)),
                                         _STANDARD_SCALES[-1])
     w, h = iso_w * iso_scale, iso_h * iso_scale

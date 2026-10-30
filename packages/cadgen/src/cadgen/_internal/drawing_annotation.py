@@ -446,6 +446,25 @@ def _radii_at(proj, target, *, closed_only: bool) -> list[float]:
     return sorted(radii)
 
 
+#: A hole callout wider than this on the sheet, mm, breaks after each of its
+#: stages (the bore, then a counterbore or countersink, then the far end), a line
+#: each, as a drafter stacks one: the long line pushed every view after it out.
+_CALLOUT_WRAP = 60.0
+#: The pitch of a stacked callout's lines, in text heights.
+_CALLOUT_LINE = 1.5
+
+
+def _callout_lines(dim: "_Dim", th: float) -> list[str]:
+    """A callout's text as the lines it is drawn in: its stages a line each where
+    the whole is wider than ``_CALLOUT_WRAP``, else one line. A basic callout,
+    boxed as one value, is never broken."""
+    value = _callout_value(dim)
+    stages = value.split("   ")
+    if dim.basic or len(stages) == 1 or _ink_width(value, th) <= _CALLOUT_WRAP:
+        return [value]
+    return stages
+
+
 def _callout_value(dim: "_Dim") -> str:
     if dim.kind in ("hole", "slot"):
         return hole_callout_text(dim.hole, tol=dim.tol, fit=dim.fit)
@@ -833,7 +852,7 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
             # The side a callout prefers is its hole's own half of the view, the
             # short way out, past every dimension row on that side.
             side = "right" if proj.point(dim.p1)[0] > cx + 1e-6 else "left"
-            width = _ink_width(_callout_value(dim), th)
+            width = max(_ink_width(line, th) for line in _callout_lines(dim, th))
             if dim.frame is not None:
                 width = max(width, frame_size(dim.frame, th)[0])
             room[side] = max(room[side], rowed[side] + _CALLOUT_CLEAR + _CALLOUT_LANDING + _CALLOUT_GAP

@@ -325,11 +325,13 @@ def bracket_drawing():
     return sheet
 ```
 
-- **Views that earn their place**: the principal view looking down most of
-  the holes and slots, then each further one that looks down a hole, sees a
-  slope edge-on, or shows a model axis no view chosen shows, with an
-  isometric. A plate's two edge views show one thing, its thickness, and one
-  is drawn. A part turned whole is drawn as `assembly_sheets` draws one (its
+- **Views that earn their place**: the view looking down most of the holes
+  and slots is drawn as the front, the part turned to face it as drafters
+  choose a front (your points stay in the part's own frame); then each further
+  view that looks down a hole, sees a slope edge-on, or shows a model axis no
+  view chosen shows, a tie going to the view beside the front before the one
+  above it, with an isometric. A plate's two edge views show one thing, its
+  thickness, and one is drawn, beside the front. A part turned whole is drawn as `assembly_sheets` draws one (its
   diameters, tapers and grooves, every step placed from one end, a long one
   lying down).
 - **Holes**: up to six in a view called out once (`5× ⌀5.5 THRU`) and located
@@ -344,6 +346,10 @@ def bracket_drawing():
 It states geometry only: every size is nominal, and the run's `requirements:`
 line says so. Dimensions it adds are ordinary ones: add, or replace any by
 building the sheet by hand instead.
+
+A hole callout wider than 60 mm on the sheet stacks a stage a line (the bore,
+then its counterbore or countersink), as drafters write one, so one long callout
+no longer pushes every view after it onto a larger sheet.
 
 ## `geometry_notes(part)`
 

@@ -20,7 +20,8 @@ import math
 from typing import TYPE_CHECKING
 
 from cadgen._internal.drawing_annotation import (
-    _Features, _HoleTable, _callout_value, _draw_hole_table, _draw_hole_tags, _hole_table, _plan_view,
+    _CALLOUT_LINE, _Features, _HoleTable, _callout_lines, _callout_value, _draw_hole_table, _draw_hole_tags,
+    _hole_table, _plan_view,
     _resolve_view, _shows, _tol_suffix,
 )
 from cadgen._internal.drawing_assembly import (
@@ -1171,15 +1172,17 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 reach[side] = max(reach[side], _SYMMETRY_REACH + 1.0)
         landings: dict[str, list[float]] = {side: [] for side in _SIDES}
 
-        def landing_y(side, y, *, commit: bool = False):
+        def landing_y(side, y, *, commit: bool = False, lines: int = 1):
             """The first free height for a callout landing on ``side`` at or past
-            ``y``; ``commit`` takes it. Stacked callouts climb, except below the
-            view, where they go down."""
+            ``y``, clear for each of its ``lines`` (stacked down from the landing);
+            ``commit`` takes them. Stacked callouts climb, except below the view,
+            where they go down."""
             step = _CALLOUT_STACK * th * (-1.0 if side == "bottom" else 1.0)
-            while any(abs(y - used) < th * 1.6 for used in landings[side]):
+            pitch = _CALLOUT_LINE * th
+            while any(abs(y - k * pitch - used) < th * 1.6 for used in landings[side] for k in range(lines)):
                 y += step
             if commit:
-                landings[side].append(y)
+                landings[side].extend(y - k * pitch for k in range(lines))
             return y
 
         def state(value: float, axis: int | None) -> None:
@@ -1471,7 +1474,9 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             check(dim.kind, dim.index, centre)
             r = dim.radius * sv
             value = _callout_value(dim)
-            text_w = _CALLOUT_LANDING + _CALLOUT_GAP + _ink_width(value, th)
+            lines = _callout_lines(dim, th)
+            wide = max(_ink_width(line, th) for line in lines)
+            pitch = _CALLOUT_LINE * th
             # Exit on the hole's own side of the view (the short way out), unless the
             # landing there would run into another view or off the frame; then the
             # other side. A leader across the whole part is the last resort.
@@ -1494,7 +1499,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # How far the callout's line reaches down: its text, or a key mark's box.
             head = _FRAME_HEIGHT * th / 2 if dim.key else th * 0.6
             under_depth = (head - th * 0.6 + (frame_size(dim.frame, th)[1] + 1.0 if dim.frame is not None else 0.0)
-                           + (_DATUM_REACH * th if dim.datum is not None else 0.0))
+                           + (_DATUM_REACH * th if dim.datum is not None else 0.0) + (len(lines) - 1) * pitch)
 
             def past(vertical: str, step: int) -> float:
                 """A landing height past the dimension rows above or below the view, and
@@ -1508,7 +1513,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 or below the view reads toward the hole's own side, or ``inward``."""
                 if kind == "vertical":
                     sign = (1.0 if prefer_right else -1.0) * (-1.0 if inward else 1.0)
-                    y = landing_y(side, past(side, step))
+                    y = landing_y(side, past(side, step), lines=len(lines))
                     return side, (centre[0] + sign * abs(y - centre[1]) / math.tan(math.radians(60.0)), y), sign
                 beside, vertical = (side, None) if kind == "side" else (own, side)
                 sign = 1.0 if beside == "right" else -1.0
@@ -1516,7 +1521,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 y = centre[1] + r * math.sin(exit_angle) + 6.0
                 if vertical is not None:
                     y = max(y, past(vertical, step)) if vertical == "top" else min(y, past(vertical, step))
-                return beside, (x, landing_y(beside, y)), sign
+                return beside, (x, landing_y(beside, y, lines=len(lines))), sign
 
             def clear_of(knee, sign: float, below: bool) -> tuple[bool, bool]:
                 """Whether a way out runs into nothing, and whether it crosses no line.
@@ -1525,7 +1530,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 run = math.hypot(knee[0] - centre[0], knee[1] - centre[1]) or 1.0
                 start = (centre[0] + r * (knee[0] - centre[0]) / run, centre[1] + r * (knee[1] - centre[1]) / run)
                 landing = (knee[0] + sign * _CALLOUT_LANDING, knee[1])
-                far_end = landing[0] + sign * (_CALLOUT_GAP + max(_ink_width(value, th) + beside, under_width))
+                far_end = landing[0] + sign * (_CALLOUT_GAP + max(wide + beside, under_width))
                 x0, x1 = min(landing[0], far_end), max(landing[0], far_end)
                 y0, y1 = knee[1] - th - under_depth, knee[1] + th
                 free = (not blocked(x0, x1, y0, y1, own_box)
@@ -1564,7 +1569,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 landed, knee, sign = way("side", own)
                 chosen = ("side", own, landed, knee, sign)
             kind, way_side, side, knee, sign = chosen
-            knee = (knee[0], landing_y(side, knee[1], commit=True))
+            knee = (knee[0], landing_y(side, knee[1], commit=True, lines=len(lines)))
             if kind == "side" and side == far and warnings is not None:
                 warnings.append(
                     f"{view.name} {dim.kind} {dim.index}: there is no room for {_shown(value)!r} on the {own}, "
@@ -1580,9 +1585,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                            override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
             leaders.append((start, knee, landing))
             align = TextEntityAlignment.MIDDLE_LEFT if sign > 0 else TextEntityAlignment.MIDDLE_RIGHT
-            text(value, landing[0] + sign * _CALLOUT_GAP, landing[1], th, align, "DIM")
+            for k, line in enumerate(lines):
+                text(line, landing[0] + sign * _CALLOUT_GAP, landing[1] - k * pitch, th, align, "DIM")
             if dim.key:
-                outer = landing[0] + sign * (_CALLOUT_GAP + _ink_width(value, th) + th * 0.5)
+                outer = landing[0] + sign * (_CALLOUT_GAP + _ink_width(lines[0], th) + th * 0.5)
                 claim(f"{view.name} {dim.kind} {dim.index} key mark",
                       _draw_mark(msp, key_mark, outer if sign > 0 else outer - mark_width(key_mark, th),
                                  landing[1], th))
@@ -1590,7 +1596,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 _box_text(msp, _text_box(value, landing[0] + sign * _CALLOUT_GAP, landing[1], th, align))
             if dim.frame is not None or dim.datum is not None:
                 # Under the callout: its frame, then the datum symbol the feature is.
-                attach, under = landing[0] + sign * _CALLOUT_GAP, landing[1] - head - 1.0
+                attach, under = landing[0] + sign * _CALLOUT_GAP, landing[1] - head - 1.0 - (len(lines) - 1) * pitch
                 box = (attach, under, attach, under)
                 if dim.frame is not None:
                     width, cell = frame_size(dim.frame, th)
@@ -1600,7 +1606,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     claim(f"datum {dim.datum}", _draw_datum(msp, dim.datum, ((box[0] + box[2]) / 2, box[1]),
                                                             (0.0, -1.0), th))
             if side in ("left", "right"):
-                tip = landing[0] + sign * (_CALLOUT_GAP + _ink_width(value, th))
+                tip = landing[0] + sign * (_CALLOUT_GAP + wide)
                 callout_reach[side] = max(callout_reach[side], abs(tip - (vx1 if side == "right" else vx0)) + _CALLOUT_GAP)
             if kind == "vertical":
                 # Straight above or below the view: the label and anything placed later

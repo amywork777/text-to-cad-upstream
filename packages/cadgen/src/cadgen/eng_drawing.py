@@ -1313,6 +1313,16 @@ def _first_pass(sheet: Sheet, shape) -> None:
             shape = turn * shape
             turned = revolved(shape, bores=True)
     features = [*find_holes(shape), *find_slots(shape)]
+    if turned is None:
+        # The view showing most is drawn as the front, as drafters choose it: a
+        # part whose holes are seen from above or the side is turned to face it.
+        from build123d import Rot
+
+        main = _main_view(features)
+        if main != "front":
+            turn = Rot(90, 0, 0) if main == "top" else Rot(0, 0, -90)
+            shape = turn * shape
+            features = [*find_holes(shape), *find_slots(shape)]
     names = list(_VIEW_NAMES) if turned is not None else _earned_views(shape, features)
     if turned is not None:
         # Turned whole: the two views square to its axis draw the same picture,
@@ -1418,12 +1428,25 @@ _FEW_HOLES = 6
 _FEW_STEPS = 6
 
 
+#: The principal views in the order a tie goes: the front, then the view beside it
+#: (a sheet is landscape: a thin view beside the front costs less paper than one
+#: above it), then the one above.
+_PREFERRED = ("front", "right", "top")
+
+
+def _main_view(features) -> str:
+    """The principal view looking down the most holes and slots, the front on a tie."""
+    return max(_PREFERRED, key=lambda n: (sum(_looks_into(f, VIEW_DIRECTIONS[n][0]) for f in features),
+                                          -_PREFERRED.index(n)))
+
+
 def _earned_views(shape, features) -> list[str]:
     """The principal views a part's first pass draws: each earns its place by
     showing what the others chosen do not. First the view looking down the most
-    holes and slots, then, in top, front, right order, a view for each hole none
-    chosen looks down, for each slope none sees edge-on, and for each model axis
-    none shows across or up the sheet. A plate's two edge views show one thing,
+    holes and slots (``_main_view``), then, ties going in ``_PREFERRED`` order, a
+    view for each hole none chosen looks down, for each slope none sees edge-on,
+    and for each model axis none shows across or up the sheet; on a tie, one as
+    wide and tall as a view chosen (the same picture, most likely) goes last. A plate's two edge views show one thing,
     its thickness: one is drawn. A chamfer is no slope: its note states it."""
     from build123d import GeomType
 
@@ -1442,13 +1465,21 @@ def _earned_views(shape, features) -> list[str]:
                 | {("slope", at) for at, n in enumerate(slopes) if abs(_dot(n, look)) < 1e-9})
 
     shown = {name: shows(name) for name in _VIEW_NAMES}
-    chosen = [max(_VIEW_NAMES, key=lambda n: (sum(kind == "feature" for kind, _at in shown[n]),
-                                               -_VIEW_NAMES.index(n)))]
+    box = tuple(shape.bounding_box().size)
+
+    def extents(name: str) -> tuple[float, float]:
+        across, up = _view_axes(name)
+        return round(box[across], 3), round(box[up], 3)
+
+    chosen = [_main_view(features)]
     wanted = set().union(*shown.values())
     while True:
         left = wanted - set().union(*(shown[n] for n in chosen))
-        name = max((n for n in _VIEW_NAMES if n not in chosen), key=lambda n: (len(shown[n] & left),
-                                                                               -_VIEW_NAMES.index(n)), default=None)
+        # A view as wide and tall as one chosen is most likely the same picture (a
+        # symmetric part's next view round): on a tie it goes last.
+        name = max((n for n in _PREFERRED if n not in chosen),
+                   key=lambda n: (len(shown[n] & left), extents(n) not in {extents(c) for c in chosen},
+                                  -_PREFERRED.index(n)), default=None)
         if not left or name is None or not shown[name] & left:
             return [n for n in _VIEW_NAMES if n in chosen]
         chosen.append(name)
@@ -1575,9 +1606,12 @@ def part_sheet(part, **fields: Any) -> Sheet:
     chooses its size and scale unless they are given.
 
     The views are the ones that earn their place: the view looking down most of
-    the part's holes, and each further principal view that shows a hole, a slope
-    seen edge-on or a model axis no view chosen shows (a plate's two edge views
-    show one thing, its thickness, and one is drawn), with an isometric. On them:
+    the part's holes, drawn as the front (the part turned to face it, as drafters
+    choose a front; points given its views stay in the part's own frame), and
+    each further principal view that shows a hole, a slope seen edge-on or a
+    model axis no view chosen shows, the one beside the front before the one
+    above (a plate's two edge views show one thing, its thickness, and one is
+    drawn), with an isometric. On them:
     the overall sizes; up to six holes and slots in a view called out and
     located from the part's edge faces (more in a hole table); every flat face
     square to a model axis, and both ends of every slope, placed from the same
