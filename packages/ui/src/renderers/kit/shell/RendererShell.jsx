@@ -26,7 +26,7 @@ import AnimationSection from "../tools/playbar/AnimationSection.jsx";
 import PreviewPlaybar from "../tools/playbar/PreviewPlaybar.jsx";
 import FileSidebar from "../tools/FileSidebar.jsx";
 import { animationControlsHaveContent } from "../tools/playbar/AnimationTimeControl.js";
-import QuickEdit from "../tools/quick-edit/QuickEdit.jsx";
+import QuickEdit, { quickEditDocked } from "../tools/quick-edit/QuickEdit.jsx";
 import { ViewportTopRight } from "./ViewportTopRight.jsx";
 import ShellViewport from "./ShellViewport.jsx";
 import PreviewView from "./PreviewView.jsx";
@@ -622,7 +622,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
     controls: viewControls("bottom").map(control => <Fragment key={control.id}>{control.tile}</Fragment>),
     status: failed ? null : <ViewUpdateStatus status={viewUpdateStatus} onRetry={frame.viewUpdate.retry} className="text-tiny" />
   } : null;
-  const quickEdit = references ? <QuickEdit key={frame.modelKey} className="self-stretch" hidden={chromeHidden} docked={mobile}
+  const quickEdit = references ? <QuickEdit key={frame.modelKey} className="self-stretch" hidden={chromeHidden} docked={quickEditDocked(mobile)}
     resource={frame.resource} references={references} chips={referenceChips} nameReference={nameReference} annotation={annotation} requests={requests} prompt={frame.quickEditPrompt}
     asked={quickEditAsked} onCopy={copyAction} onEscape={frame.escape} onClear={clearQuickEdit} disabled={viewerLoading || !scene} /> : null;
   const body = (

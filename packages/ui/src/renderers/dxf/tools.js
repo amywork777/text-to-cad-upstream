@@ -1,10 +1,10 @@
 import { createToolModes } from "../kit/tools/toolModes.js";
 
 // A drawing's tools: Select picks its entities — what Quick Edit names (`drawing.dxf#h2F`, the
-// entity with handle 2F) — and is the view's hand: a drag pans, the wheel or a pinch zooms, a
-// double-click fits; Pencil and Shapes draw on the sheet; Measure takes distances between points snapped to
-// the drawing's ends, centres and lines, in the unit it declares. A drawing has no view controls:
-// Display, Projection and Preview are a 3D view's.
+// entity with handle 2F) — and is the view's hand: a drag pans, the wheel scrolls as a page's does,
+// a pinch or ⌘/Ctrl with the wheel zooms, a double-click fits; Pencil and Shapes draw on the sheet;
+// Measure takes distances between points snapped to the drawing's ends, centres and lines, in the
+// unit it declares. A drawing has no view controls: Display, Projection and Preview are a 3D view's.
 export const DXF_TOOL = Object.freeze({ SELECT: "select", PENCIL: "pencil", SHAPES: "shapes", MEASURE: "measure" });
 
 export const DXF_TOOL_MODES = createToolModes({
