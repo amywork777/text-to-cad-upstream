@@ -83,9 +83,11 @@ def write_document(doc: Any, path: Path) -> None:
     from OCP.STEPCAFControl import STEPCAFControl_Writer
     from OCP.STEPControl import STEPControl_AsIs
 
+    from cadgen.engine import pmi
     from cadgen.engine.document import _XCAF_LOCK
 
     with _XCAF_LOCK:
+        stated = pmi.general_tolerances(doc)
         _quiet(Message)
         # The writer defines the translator's parameters: set them once it exists.
         writer = STEPCAFControl_Writer()
@@ -108,6 +110,8 @@ def write_document(doc: Any, path: Path) -> None:
         if writer.Write(str(path)) != IFSelect_RetDone:
             raise OSError(f"could not write {path}")
     _settle(Path(path), changed_styles)
+    if stated:
+        _default_tolerances(Path(path), stated)
 
 
 @contextmanager
@@ -459,6 +463,41 @@ def _pmi_records(data: bytes) -> bytes:
     pieces = [body[:heads[0].start()]]
     pieces.extend(replaced.get(number, text(number)) for number in spans if number not in dropped)
     return data[:start] + b"".join(pieces) + data[end:]
+
+
+def _default_tolerances(path: Path, stated: list[tuple[str, str]]) -> None:
+    """Each part's general tolerance (``pmi.general_tolerance``: its product's name, the standard)
+    appended to the written file as CAx-IF's PMI practice states a part's default tolerances, which
+    OCCT's writer has no entity for: a ``PROPERTY_DEFINITION`` 'default tolerances' of the part's
+    ``PRODUCT_DEFINITION_SHAPE``, its representation's item the 'tolerance class'. Numbered on from
+    the file's last record, in the document's order, so the same document writes the same bytes. A
+    part is found by its name among the products that hold geometry; two of one name refuse the file."""
+    from cadgen.engine.export import ap242
+
+    data = path.read_bytes()
+    end = data.rindex(b"ENDSEC;")
+    found = ap242.Report(ap242.parse(data.decode("utf-8")))
+    # Each part's shape by its product's name: the products that hold faces (an assembly, a part's
+    # own name too where it holds one part, holds none).
+    held = {product for product, names in found.faces_of().items() if names}
+    shapes: dict[str, list[int]] = {}
+    for shape in found.of_type("PRODUCT_DEFINITION_SHAPE"):
+        if found._product(shape) in held:
+            shapes.setdefault(found.product(shape), []).append(shape)
+    number = max(int(match.group(1)) for match in _RECORD.finditer(data))
+    added = []
+    for name, standard in stated:
+        if len(shapes.get(name, ())) != 1:
+            raise OSError(f"{path.name}: the general tolerance of part {name!r} has no one product of that name to "
+                          "be written on: name each part apart")
+        text = standard.encode("utf-8")
+        added.append(b"#%d = REPRESENTATION_CONTEXT('','default setting');\n" % (number + 1)
+                     + b"#%d = DESCRIPTIVE_REPRESENTATION_ITEM('tolerance class','%s');\n" % (number + 2, text)
+                     + b"#%d = REPRESENTATION('default tolerances',(#%d),#%d);\n" % (number + 3, number + 2, number + 1)
+                     + b"#%d = PROPERTY_DEFINITION('default tolerances','',#%d);\n" % (number + 4, shapes[name][0])
+                     + b"#%d = PROPERTY_DEFINITION_REPRESENTATION(#%d,#%d);\n" % (number + 5, number + 4, number + 3))
+        number += 5
+    path.write_bytes(data[:end] + b"".join(added) + data[end:])
 
 
 def _quiet(message: Any) -> None:

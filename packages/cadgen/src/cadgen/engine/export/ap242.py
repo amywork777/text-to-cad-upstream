@@ -20,6 +20,9 @@ no code with the engine's writer or OCCT's STEP translator, and walks AP242's PM
   normal) or a ``CYLINDRICAL_SURFACE`` (radius), another by its type; a tolerance on several
   faces is on a ``COMPOSITE_SHAPE_ASPECT``, each face's through the aspect a
   ``SHAPE_ASPECT_RELATIONSHIP`` relates to it;
+- a part's general tolerances: the CAx-IF PMI practice's ``PROPERTY_DEFINITION`` 'default
+  tolerances' of its ``PRODUCT_DEFINITION_SHAPE``, its representation's ``DESCRIPTIVE_REPRESENTATION_ITEM``
+  'tolerance class' (``ISO 2768-mK``);
 - every measure's unit, from its unit entity (``SI_UNIT(.MILLI.,.METRE.)`` is mm);
 - the product each record is of: its shape aspect's ``of_shape`` (a ``PRODUCT_DEFINITION_SHAPE``,
   through its ``PRODUCT_DEFINITION`` and formation to the ``PRODUCT``'s name), its faces' (the
@@ -464,6 +467,27 @@ class Report:
                           "product": _one([self.of_shape(aspect) for aspect in aspects], features)})
         return found
 
+    def general_tolerances(self) -> list[dict[str, Any]]:
+        """Each part's general tolerances: a 'default tolerances' property of a product's shape, its
+        'tolerance class' (the standard, ``ISO 2768-mK``) and the product it is of."""
+        found = []
+        for number in self.of_type("PROPERTY_DEFINITION"):
+            name, _description, definition = self.part(number, "PROPERTY_DEFINITION")[:3]
+            if name != "default tolerances" or not isinstance(definition, Ref):
+                continue
+            classes = []
+            for link in self.referring(number, "PROPERTY_DEFINITION_REPRESENTATION"):
+                representation = self.part(link, "PROPERTY_DEFINITION_REPRESENTATION")[1]
+                items = self.part(representation.id, "REPRESENTATION")[1] if isinstance(representation, Ref) else []
+                for item in items:
+                    if "DESCRIPTIVE_REPRESENTATION_ITEM" in self.types(item.id):
+                        label, said = self.part(item.id, "DESCRIPTIVE_REPRESENTATION_ITEM")[:2]
+                        if label == "tolerance class":
+                            classes.append(said)
+            found.append({"record": f"#{number}", "class": classes[0] if len(classes) == 1 else None,
+                          "product": self.product(definition.id)})
+        return found
+
     def tolerances(self) -> list[dict[str, Any]]:
         found = []
         for number, parts in sorted(self.records.items()):
@@ -538,7 +562,8 @@ def report(path: Path, data: bytes | None = None) -> dict[str, Any]:
     held = {product: names for product, names in faces.items() if names}
     result = {"file": path.name, "schema": schema.group(1) if schema else None,
               "products": sorted(str(found._name(product)) for product in held),
-              "dimensions": found.dimensions(), "datums": found.datums(), "tolerances": found.tolerances()}
+              "dimensions": found.dimensions(), "datums": found.datums(), "tolerances": found.tolerances(),
+              "generalTolerances": found.general_tolerances()}
     # Every face of a product counts, annotated or not: one it holds twice names neither.
     by_name: dict[str | None, list[str]] = defaultdict(list)
     for product, names in held.items():
@@ -676,7 +701,11 @@ def _same_surface(found: Any, model: Any) -> bool:
 
 def _matches(entry: dict[str, Any], row: dict[str, Any], surfaces: dict[str, Any] | None = None) -> bool:
     """Whether ``row`` of a file is ``entry``: on the faces of its names, each face's surface the
-    model's (``surfaces``, by canonical ref; not compared where None), with its values."""
+    model's (``surfaces``, by canonical ref; not compared where None), with its values. A general
+    tolerance (a note stating one) is on no face: its part's 'default tolerances', of its standard."""
+    stated = (entry.get("note") or {}).get("general_tolerance") if entry["kind"] == "note" else None
+    if stated:
+        return "class" in row and row["class"] == stated
     given = entry.get("refs") or []
     if not given or any(not isinstance(ref.get("ref"), str) or ref.get("status", "ok") != "ok" for ref in given):
         return False
@@ -716,7 +745,8 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any], surfaces: dict
     faces are held to their geometry too, so a face of the right name on the wrong surface matches
     nothing. A general profile that covers no face matches no record, and is verified by none
     being left over. A note is the document's alone (a STEP carries none): it is neither expected
-    nor counted. Nothing is guessed: any problem fails the check."""
+    nor counted, but a general tolerance, which the file states as its part's 'default
+    tolerances'. Nothing is guessed: any problem fails the check."""
     from cadgen.engine.pmi import step_entries
 
     entries = step_entries(entries)
@@ -729,7 +759,8 @@ def compare(entries: list[dict[str, Any]], found: dict[str, Any], surfaces: dict
         problems.append("The file does not declare AP242.")
     if problems:
         return result
-    rows = list(found.get("datums", [])) + list(found.get("dimensions", [])) + list(found.get("tolerances", []))
+    rows = (list(found.get("datums", [])) + list(found.get("dimensions", [])) + list(found.get("tolerances", []))
+            + list(found.get("generalTolerances", [])))
     products = Counter(found.get("products") or [])
     ambiguous = found.get("ambiguousFaceNames")
     # Each part's entries, by the product the file names it as: checked apart, or not at all.

@@ -2042,6 +2042,15 @@ return annotate(body,
   datum leave a face to it, but the datum features it names are controlled on their own and left
   out of it: no face is profiled relative to itself. It is not XCAF's `All_Over` modifier, which
   in ASME means every surface beside any other requirement.
+- **General tolerances.** `general_tolerance(id, standard)` states ISO 2768's general
+  tolerances, as a drawing does: `"ISO 2768-m"` (part 1's class, f, m, c or v, for every size
+  nothing else tolerances), or `"ISO 2768-mK"` with part 2's class (H, K or L) for general
+  geometrical tolerances; another standard is refused by name (`PMIUnsupported`). It is a general
+  note ("General tolerances ISO 2768-mK", numbered as any note is, its `note` block's
+  `general_tolerance` the standard) that covers every face nothing else does, datum features too,
+  and the one note a STEP carries: the CAx-IF PMI practice's `'default tolerances'` property of
+  the part's `PRODUCT_DEFINITION_SHAPE`, its `'tolerance class'` the standard, which the export
+  check matches as any requirement. One per part.
 - **Notes.** `note(id, text, faces=(), annotations=())` says what to do in the code's words:
   a general note where it names no face and no annotation, a flag note on its faces (of any
   kind) and on the annotations of the same `annotate` call it names by id (an id no annotation of
@@ -2088,7 +2097,7 @@ return annotate(body,
   profile, and what is not is said (`pmi.coverage(entries, faces)`, pure, of one part's
   structure entries and the canonical refs of all its faces). A face is covered by an `ok`
   toleranced dimension (plus-minus or limits) or geometric tolerance whose refs name it, the
-  general profile by the faces it covers; another system's annotation listed `unsupported` covers
+  general profile by the faces it covers, and every face by a general tolerance (ISO 2768); another system's annotation listed `unsupported` covers
   its faces as any does, but a datum or a basic dimension. A basic dimension covers nothing: it is
   no requirement, but locates the feature a position or a profile controls, which covers it. A
   datum and a note cover nothing, and the datum features a general profile names are left out of

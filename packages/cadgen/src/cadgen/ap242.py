@@ -25,7 +25,8 @@ dimension's tolerance; ``flatness_tolerance(id, ref, value)``, ``position_tolera
 datums=)`` and ``surface_profile_tolerance(id, refs, value, datums=)``. The rest write no entity of
 their own and keep plain names: ``limits(lower, upper)`` (a dimension's 'lower limit' and 'upper
 limit' values), ``general_profile(id, value, datums=)`` (ASME's "unless otherwise noted", its faces
-computed), ``note`` and ``view`` (with ``camera`` and ``section``: XCAF's, in the xbf, in no STEP)
+computed), ``general_tolerance(id, standard)`` (ISO 2768's general tolerances, a general note a STEP
+states as its part's 'default tolerances'), ``note`` and ``view`` (with ``camera`` and ``section``: XCAF's, in the xbf, in no STEP)
 and ``place(anchor, offset)`` (presentation: a STEP's callout of the annotation, never its
 meaning). A STEP carries the datums, dimensions (their limits too) and tolerances, the general
 profile among them, each placed annotation drawn where it was placed; the notes and views stay in
@@ -40,7 +41,7 @@ from typing import TYPE_CHECKING, Any
 
 # PMI's names (``cadgen.engine.pmi``), each the call a model makes.
 _PMI = ("annotate", "camera", "datum", "dimensional_location", "dimensional_size", "flatness_tolerance",
-        "general_profile", "limits", "note", "place", "plus_minus_tolerance", "position_tolerance", "section",
+        "general_profile", "general_tolerance", "limits", "note", "place", "plus_minus_tolerance", "position_tolerance", "section",
         "surface_profile_tolerance", "view")
 
 __all__ = ["configuration_sequence", "gear_pair", "mechanism_state", "posed", "rack_and_pinion_pair", "screw_pair",
@@ -81,6 +82,7 @@ if TYPE_CHECKING:
         dimensional_size,
         flatness_tolerance,
         general_profile,
+        general_tolerance,
         limits,
         note,
         place,

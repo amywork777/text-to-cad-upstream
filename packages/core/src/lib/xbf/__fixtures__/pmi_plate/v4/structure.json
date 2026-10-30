@@ -1,7 +1,7 @@
 {
  "name": "plate",
  "path": "pmi_plate.xbf",
- "version": "1793204796597019223-23560",
+ "version": "1793339653072157036-27752",
  "units": "mm",
  "prototypes": [
   {
@@ -513,7 +513,8 @@
     "number": 2,
     "text": "Break all sharp edges 0.2 max",
     "general": true,
-    "annotations": []
+    "annotations": [],
+    "general_tolerance": null
    }
   },
   {
@@ -552,7 +553,8 @@
     "general": false,
     "annotations": [
      "hole-diameter"
-    ]
+    ],
+    "general_tolerance": null
    }
   }
  ],

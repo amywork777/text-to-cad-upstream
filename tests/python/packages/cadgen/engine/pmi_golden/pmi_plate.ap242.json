@@ -367,6 +367,7 @@
       "product": "plate"
     }
   ],
+  "generalTolerances": [],
   "ambiguousFaceNames": {
     "plate": []
   },

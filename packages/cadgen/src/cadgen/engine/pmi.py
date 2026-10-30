@@ -55,6 +55,13 @@ one, then each note in the code's order. OCCT's STEP writer writes no notes, so 
 none and is never refused for one (``step_entries``). A note this module did not write (no cadgen
 attribute) is not read.
 
+**A general tolerance** (``general_tolerance``) is ISO 2768's, as a drawing states it: a general
+note (``General tolerances ISO 2768-mK``) whose cadgen attribute holds the standard too, so the
+note's served block says it (``general_tolerance``). It covers every face nothing else does
+(``coverage``) and is the one note a STEP carries (``step_entries``): OCCT's writer has no entity
+for it, so the engine appends CAx-IF's 'default tolerances' property of its part's shape, its
+'tolerance class' the standard (``export.step``), which the export check reads back and matches.
+
 **Views** (``view``) are the xbf's alone too: a part's named views, the views its requirements are
 walked through in (a front, a section, a detail; an iso view showing all). Each is seen down a camera
 -- a preset's name, ``cadgen snapshot --camera``'s own table (``render/presets.py``), or
@@ -144,7 +151,7 @@ tolerance or limits; basic (theoretically exact) distances, from planes and hole
 tolerance, marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); flatness; position
 with an ordered datum reference frame and a diametral zone; a surface profile on one face or
 several, of any kind, with a frame of up to three datums or none; a part's general profile, on
-the faces nothing else controls; and, in the xbf alone, general and flag notes and a part's named
+the faces nothing else controls; a part's ISO 2768 general tolerances; and, in the xbf alone, general and flag notes and a part's named
 views. Each
 is written by the function named after its AP242 entity (``cadgen.ap242``'s); no function writes
 another XCAF characteristic or dimension type, and every other modifier and tolerance form is
@@ -161,7 +168,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 __all__ = ["PMIError", "PMIUnsupported", "annotate", "camera", "coverage", "datum", "dimensional_location",
-           "dimensional_size", "flatness_tolerance", "general_profile", "limits", "note", "otherwise_controlled",
+           "dimensional_size", "flatness_tolerance", "general_profile", "general_tolerance", "limits", "note",
+           "otherwise_controlled",
            "place", "plus_minus_tolerance", "position_tolerance", "read", "section", "step_entries",
            "surface_profile_tolerance", "view"]
 
@@ -347,6 +355,26 @@ def general_profile(id: str, value: float, *, datums: Iterable[str] = (), label:
     return _geometric(id, "surface_profile", [], value, datums, False, label, None, general=True)
 
 
+# ISO 2768's general tolerances as a drawing states them: its class for linear and angular sizes
+# (part 1: f, m, c or v), and for general geometrical tolerances its class (part 2: H, K or L) after it.
+GENERAL_TOLERANCE = re.compile(r"ISO 2768-([fmcv])([HKL])?")
+
+
+def general_tolerance(id: str, standard: str, *, label: str | None = None) -> dict[str, Any]:
+    """The part's general tolerances, ``standard`` -- ISO 2768, as a drawing states it:
+    ``"ISO 2768-m"``, or ``"ISO 2768-mK"`` with the general geometrical tolerances of its part 2 --
+    the limits of every size and form nothing else tolerances. A general note saying so (numbered
+    as any note is) that covers every face nothing else does (``coverage``), and the one note a STEP
+    carries: CAx-IF's 'default tolerances' property of the part, its 'tolerance class' the standard
+    (``export.step``). Another standard is refused by name, never approximated. One per part."""
+    if not isinstance(standard, str) or not GENERAL_TOLERANCE.fullmatch(standard):
+        raise PMIUnsupported(f"general tolerance {id!r}: ISO 2768 is written as 'ISO 2768-m' or 'ISO 2768-mK' (its "
+                             f"class f, m, c or v; then H, K or L for general geometrical tolerances), not "
+                             f"{standard!r}")
+    return _annotation(id, "note", [], label, None,
+                       note={"text": f"General tolerances {standard}", "annotations": [], "general_tolerance": standard})
+
+
 def note(id: str, text: str, *, faces: Any = (), annotations: Iterable[str] = (), label: str | None = None,
          presentation: dict | None = None) -> dict[str, Any]:
     """A note of the part saying ``text``, the code's words: a general note where it names no face
@@ -365,7 +393,7 @@ def note(id: str, text: str, *, faces: Any = (), annotations: Iterable[str] = ()
         if given in named[:at]:
             raise PMIError(f"note {id!r}: names {given!r} twice; a note names each annotation once")
     return _annotation(id, "note", [("feature", face) for face in refs], label, presentation,
-                       note={"text": text, "annotations": named})
+                       note={"text": text, "annotations": named, "general_tolerance": None})
 
 
 def camera(direction: Iterable[float], up: Iterable[float]) -> dict[str, Any]:
@@ -516,6 +544,9 @@ def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
     general = [entry["id"] for entry in held if _general(entry)]
     if len(general) > 1:
         raise PMIError(f"a part has one general profile, not {' and '.join(map(repr, general))}")
+    stated = [entry["id"] for entry in held if (entry.get("note") or {}).get("general_tolerance")]
+    if len(stated) > 1:
+        raise PMIError(f"a part has one general tolerance, not {' and '.join(map(repr, stated))}")
     kinds = {entry["id"]: entry["kind"] for entry in held}
     for entry in held:
         for named in (entry.get("note") or {}).get("annotations") or ():
@@ -550,7 +581,7 @@ def annotate(shape: Any, *annotations: dict[str, Any]) -> Any:
 _COMMON = ("pmi", "id", "kind", "label", "presentation", "refs")
 _BLOCKS = {"datum": ("letter",), "dimension": ("type", "basic", "tolerance"),
            "geometric_tolerance": ("characteristic", "value", "unit", "zone", "modifier", "datums", "general"),
-           "note": ("text", "annotations")}
+           "note": ("text", "annotations", "general_tolerance")}
 _REF_KEYS = ("role", "target")
 _TOLERANCES = {"plus_minus": ("type", "upper", "lower"), "limits": ("type", "lower", "upper")}
 _VIEW = ("pmi", "kind", "name", "label", "camera", "shows", "section", "place")
@@ -825,7 +856,9 @@ def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, A
     sorted, and ``conflicts``, the requirements that cannot both hold or hold nothing, each
     ``{"kind", "ids", "problem"}``. A face is covered by a requirement that is ``ok`` and names it
     (``_requirement``): a toleranced dimension (plus-minus or limits) or a geometric tolerance, the
-    general profile by the faces it covers (``otherwise_controlled`` leaves them to it); one another
+    general profile by the faces it covers (``otherwise_controlled`` leaves them to it), and every
+    face by a general tolerance (``general_tolerance``: ISO 2768 holds every size and form nothing
+    else tolerances); one another
     system wrote that this module does not hold whole (``unsupported``) covers its faces as any does,
     but a datum or a basic dimension. A basic dimension covers nothing: it locates the feature a
     position or a profile controls, and leaves the datum it starts from to that datum. A datum and a
@@ -839,6 +872,8 @@ def coverage(entries: list[dict[str, Any]], faces: Sequence[str]) -> dict[str, A
     general one). Warned of, never failing a build. Pure: of its arguments alone."""
     ok = [entry for entry in entries if entry["status"] == "ok"]
     covered = {ref["ref"] for entry in ok if _requirement(entry) for ref in entry["refs"]}
+    if any(_stated(entry) for entry in ok):
+        covered = set(faces)  # ISO 2768: every size and form nothing else tolerances
     said: dict[str, list[dict[str, Any]]] = {kind: [] for kind in CONFLICTS}
 
     def say(kind: str, ids: list[str], problem: str) -> None:
@@ -1184,8 +1219,10 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
             refs = [sub(ref.ordinal) for ref in item.refs] if linked else []
             if spec["kind"] == "datum":
                 at = tool.AddDatum()
-                _datum(at, spec["datum"]["letter"], positions.get(spec["datum"]["letter"], 0), spec["id"],
-                       spec["presentation"] if linked else None)
+                # Placed only where a frame names it: OCCT's writer writes a datum no frame names as
+                # nothing, and fails the transfer on a callout of nothing.
+                place = positions.get(spec["datum"]["letter"], 0)
+                _datum(at, spec["datum"]["letter"], place, spec["id"], spec["presentation"] if linked and place else None)
                 if linked:
                     sequence = Sequence_TDF_Label()
                     sequence.Append(refs[0])
@@ -1330,7 +1367,8 @@ def _extra(item: Resolved) -> dict[str, Any]:
     if spec["kind"] == "note":
         return {"schema": SCHEMA, "id": spec["id"], "kind": "note", "label": spec["label"],
                 "presentation": spec["presentation"], "refs": spec["refs"],
-                "annotations": list(spec["note"]["annotations"])}
+                "annotations": list(spec["note"]["annotations"]),
+                "general_tolerance": spec["note"]["general_tolerance"]}
     found = {"schema": SCHEMA, "id": spec["id"], "kind": spec["kind"], "label": spec["label"],
              "presentation": spec["presentation"], "refs": spec["refs"],
              # What an unlinked annotation meant, for a reader: XCAF links values to geometry alone.
@@ -1760,7 +1798,8 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
             continue
         # Its text is XCAF's comment; its faces are resolved with its part's annotations, below.
         text = XCAFDoc_NoteComment.Get_s(label).Comment().ToExtString()
-        records.append({"kind": "note", "values": {"text": text, "annotations": list(held["annotations"])},
+        records.append({"kind": "note", "values": {"text": text, "annotations": list(held["annotations"]),
+                                                   "general_tolerance": held.get("general_tolerance")},
                         "targets": [], "extra": held, "entry": _entry(label), "xcaf_type": NOTE_TYPE,
                         "reason": None, "part": _part_of(label, by_entry)})
     # The code's annotations resolved as their build resolved them, each part's together (its general
@@ -1890,7 +1929,8 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
                           "tolerance": None if tolerance is None else
                           {key: given if key == "type" else _as_held(given) for key, given in tolerance.items()}}
             elif spec["kind"] == "note":
-                values = {"text": spec["note"]["text"], "annotations": list(spec["note"]["annotations"])}
+                values = {"text": spec["note"]["text"], "annotations": list(spec["note"]["annotations"]),
+                          "general_tolerance": spec["note"]["general_tolerance"]}
             else:
                 given = spec["geometric_tolerance"]
                 values = {"characteristic": given["characteristic"], "value": _as_held(given["value"]), "unit": UNIT,
@@ -2038,7 +2078,8 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
             numbers[record["part"]] = numbers.get(record["part"], 0) + 1
             entry["note"] = {"number": numbers[record["part"]], "text": values["text"],
                              "general": not extra["refs"] and not values["annotations"],
-                             "annotations": list(values["annotations"])}
+                             "annotations": list(values["annotations"]),
+                             "general_tolerance": values.get("general_tolerance")}
         else:
             entry["reason"] = record["reason"]
             entry["values"] = values
@@ -2099,8 +2140,36 @@ def read(source: Any) -> list[dict[str, Any]]:
 
 def step_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The entries of a document's PMI (``entries``) a STEP carries: every one but its notes, which
-    are the xbf's alone (OCCT's STEP writer writes no notes)."""
-    return [entry for entry in entries if entry.get("kind") != "note"]
+    are the xbf's alone (OCCT's STEP writer writes no notes), but a general tolerance
+    (``general_tolerance``), which the engine writes itself (``export.step``)."""
+    return [entry for entry in entries if entry.get("kind") != "note" or _stated(entry)]
+
+
+def _stated(entry: dict[str, Any]) -> str | None:
+    """The general tolerance an entry states (``general_tolerance``), or None."""
+    return (entry.get("note") or {}).get("general_tolerance") if entry.get("kind") == "note" else None
+
+
+def general_tolerances(doc: Any) -> list[tuple[str, str]]:
+    """Each general tolerance a document holds (``general_tolerance``), as its STEP writes it: its
+    part's name (the ``PRODUCT`` the writer makes of the part's shape label) and the standard."""
+    from OCP.collections import Sequence_TDF_Label
+    from OCP.TDataStd import TDataStd_Name
+    from OCP.TDF import TDF_Reference
+
+    tool = _notes_tool(doc)
+    if tool is None:
+        return []
+    labels, found = Sequence_TDF_Label(), []
+    tool.GetNotes(labels)
+    for label in (labels.Value(at) for at in range(1, labels.Length() + 1)):
+        held = _held_extra(label) or {}
+        reference = TDF_Reference()
+        if held.get("general_tolerance") and label.FindAttribute(TDF_Reference.GetID_s(), reference):
+            name = TDataStd_Name()
+            if reference.Get().FindAttribute(TDataStd_Name.GetID_s(), name):
+                found.append((name.Get().ToExtString(), held["general_tolerance"]))
+    return found
 
 
 def dropped(view: Any, kind: str) -> list[tuple[dict[str, Any], str]]:

@@ -35,8 +35,8 @@ import unittest
 from pathlib import Path
 
 from cadgen.ap242 import (annotate, camera, datum, dimensional_location, dimensional_size, flatness_tolerance,
-                          general_profile, limits, note, place, plus_minus_tolerance, position_tolerance, section,
-                          surface_profile_tolerance, view)
+                          general_profile, general_tolerance, limits, note, place, plus_minus_tolerance,
+                          position_tolerance, section, surface_profile_tolerance, view)
 from cadgen.engine import build as engine_build
 from cadgen.engine import document, export
 from cadgen.engine.export import ap242
@@ -909,7 +909,7 @@ class NoteTest(_Folder):
         deburr = _by_id(served)["deburr"]
         self.assertEqual((deburr["status"], deburr["problem"], deburr["refs"]), ("ok", None, []))
         self.assertEqual(deburr["note"], {"number": 2, "text": "Break all sharp edges 0.2 max", "general": True,
-                                          "annotations": []})
+                                          "annotations": [], "general_tolerance": None})
         # With no general profile, the first note is Note 1.
         self.build(notes(general=False))
         self.assertEqual(_numbers(read(self.xbf)), [("deburr", 1, True), ("mask", 2, False)])
@@ -924,7 +924,8 @@ class NoteTest(_Folder):
         self.assertEqual((mask["kind"], mask["label"], mask["status"], mask["problem"], mask["part"],
                           mask["presentation"], mask["xcaf_type"]),
                          ("note", None, "ok", None, 0, None, "XCAFDoc_NoteComment"))
-        self.assertEqual(mask["note"], {"number": 3, "text": MASK, "general": False, "annotations": ["hole-dia"]})
+        self.assertEqual(mask["note"], {"number": 3, "text": MASK, "general": False, "annotations": ["hole-dia"],
+                                        "general_tolerance": None})
         # On the hole's face, a ref as any other annotation's.
         hole = found["hole-dia"]["refs"][0]
         self.assertEqual(mask["refs"], [{"role": "feature", "written": hole["written"], "status": "ok", "ref": hole["ref"],
@@ -1305,7 +1306,8 @@ class ViewTest(_Folder):
 REQUIREMENTS = '''
 import build123d as bd
 from cadgen.ap242 import (annotate, datum, dimensional_location, dimensional_size, flatness_tolerance, general_profile,
-                          limits, plus_minus_tolerance, position_tolerance, surface_profile_tolerance)
+                          general_tolerance, limits, plus_minus_tolerance, position_tolerance,
+                          surface_profile_tolerance)
 from cadgen.engine import step, xbf
 
 
@@ -1380,6 +1382,37 @@ class CoverageTest(_Folder):
         named = sorted(found[letter]["refs"][0]["ref"] for letter in "BC")
         self.assertEqual(structure["pmi_coverage"], [{"part": 0, "uncovered": named, "conflicts": []}])
         self.assertEqual(report["pmi"]["coverage"], [{"part": "plate", "uncovered": named, "conflicts": []}])
+
+    def test_a_general_tolerance_covers_them_and_a_step_states_it(self) -> None:
+        """ISO 2768's general tolerances cover every face nothing else does, the datum features too:
+        a general note saying so, which a STEP states as its part's 'default tolerances' (CAx-IF's
+        'tolerance class'), the export check matching it as it matches any requirement."""
+        report = self.build(requirements(LOCATED + 'general_tolerance("general", "ISO 2768-mK"),'))
+        self.assertEqual(self.served()["pmi_coverage"], [{"part": 0, "uncovered": [], "conflicts": []}])
+        self.assertNotIn("coverage", report["pmi"])
+        stated = _by_id(read(self.xbf))["general"]
+        self.assertEqual(stated["note"], {"number": 1, "text": "General tolerances ISO 2768-mK", "general": True,
+                                          "annotations": [], "general_tolerance": "ISO 2768-mK"})
+        found = ap242.report(self.step)
+        self.assertEqual([(row["class"], row["product"]) for row in found["generalTolerances"]],
+                         [("ISO 2768-mK", "plate")])
+        self.assertEqual(found["problems"], [])
+        checked = ap242.check(read(self.xbf), self.step, parts={0: "plate"})
+        self.assertEqual((checked["matched"], checked["total"], checked["problems"]), (6, 6, []))
+        # Another class in the file is no match.
+        self.step.write_text(self.step.read_text().replace("'ISO 2768-mK'", "'ISO 2768-fH'"))
+        checked = ap242.check(read(self.xbf), self.step, parts={0: "plate"})
+        self.assertEqual(checked["matched"], 5)
+        self.assertIn("general: values, units, datum order or face association could not be verified.",
+                      checked["problems"])
+
+    def test_a_general_tolerance_is_iso_2768_once_a_part(self) -> None:
+        for standard in ("ISO 2768", "ISO 2768-mX", "ISO 2768-1 m", "ASME Y14.5 title block", "iso 2768-m"):
+            with self.assertRaisesRegex(PMIUnsupported, r"general tolerance 'general': ISO 2768 is written as"):
+                general_tolerance("general", standard)
+        report = self.build(requirements('general_tolerance("one", "ISO 2768-m"), general_tolerance("two", '
+                                         '"ISO 2768-c"),'), ok=False)
+        self.assertIn("a part has one general tolerance, not 'one' and 'two'", report["error"])
 
     def test_a_basic_dimension_covers_no_face(self) -> None:
         """A basic dimension is no requirement: the position it locates covers the hole, and the

@@ -21,6 +21,8 @@ STEP carries (`from cadgen.ap242 import annotate, datum, ...`):
 - **Geometric tolerances**: `flatness_tolerance`, `position_tolerance` and
   `surface_profile_tolerance`, and `general_profile` for every face nothing else
   controls.
+- **General tolerances**: `general_tolerance`, ISO 2768's ("ISO 2768-mK") for every
+  size and form nothing else tolerances.
 - **Notes**: `note`, a general note or a flag note on faces and annotations,
   numbered per part.
 - **Views**: `view`, a named view of the part (a camera, a section, the
@@ -42,9 +44,11 @@ it in this order, in the part's one `annotate` call, and take every value from t
 user (ask for what they have not given; never pick a tolerance):
 
 1. **Datums**, primary first: the faces the part is located and measured from.
-2. **The general profile first**: `general_profile("general", value, datums=[...])`,
-   Note 1, the user's "unless otherwise noted" profile. It holds every face nothing
-   else controls, so most faces need nothing more.
+2. **The general requirement first**: `general_profile("general", value, datums=[...])`,
+   Note 1, the user's "unless otherwise noted" profile (ASME), or
+   `general_tolerance("general", "ISO 2768-mK")`, ISO's general tolerances, which a
+   STEP carries as the part's default tolerances. Either holds every face nothing else
+   controls, so most faces need nothing more.
 3. **Then each feature's own requirements**, where the general profile is not enough: a
    size (`dimensional_size`, `dimensional_location` with `plus_minus_tolerance` or
    `limits`), a location (`position_tolerance` and the basic dimensions to its true
@@ -176,6 +180,12 @@ Its run warns that the four sides have no requirement: nothing here holds them.
   give each one its own control, such as datum A's flatness. It is not XCAF's
   `All_Over` modifier (every surface, beside any other requirement). One per part. A
   general profile with no face left to cover is fine: it is `ok` and written to no STEP.
+- **A general tolerance** (`general_tolerance("general", "ISO 2768-mK")`) states ISO
+  2768's general tolerances: part 1's class (f fine, m medium, c coarse, v very coarse)
+  for sizes, and optionally part 2's (H, K, L) for form and orientation. It is a general
+  note the viewer lists, it covers every face nothing else does, and a STEP carries it
+  as the part's 'default tolerances'. Write it as a drawing does: `"ISO 2768-m"` or
+  `"ISO 2768-mK"`; anything else is refused. One per part.
 - **Anything else is not written**, never approximated: no function writes another
   characteristic or dimension type, and fits, material modifiers, reference dimensions
   and assembly-level PMI are refused (`PMIUnsupported`).
