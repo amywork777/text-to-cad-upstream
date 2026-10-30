@@ -28,8 +28,8 @@ const REST = Object.freeze({ activeClipId: "", enabled: false, playing: false, e
  * first play, scrub or clip choice, and disposing it restores every animated
  * property to the value it had at rest.
  *
- * The renderer may add clips of its own that the file does not carry (a CAM
- * result's Simulate): `{ id, label, duration, play: { apply(elapsedSec), release() } }`,
+ * The renderer may add clips of its own that the file does not carry (a
+ * result's own routine): `{ id, label, duration, play: { apply(elapsedSec), release() } }`,
  * listed after the file's. While one owns the pose, each frame is `apply` instead
  * of a mixer's, and `release` puts the model back as it was. Hand the same array
  * while they are the same clips: a new one puts the routine back at rest.

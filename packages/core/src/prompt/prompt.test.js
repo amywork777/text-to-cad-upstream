@@ -107,8 +107,8 @@ test('a selection with a summary reads its summary, then its references', () => 
 });
 
 test('a part picked in a model keeps its message: a label alone is not written', () => {
-  const part = { resource: { kind: 'workspace-file', path: '/models/x.step' }, target: { kind: 'cad-selector', selectors: ['kit/arm'] }, label: 'arm' };
-  assert.equal(formatPromptMessage(createPromptContext([textPart('fix this'), referencePart(part)])), 'fix this\n\nReferences:\n/models/x.step#kit/arm');
+  const part = { resource: { kind: 'workspace-file', path: '/models/x.step' }, target: { kind: 'cad-selector', selectors: ['arm'] }, label: 'arm' };
+  assert.equal(formatPromptMessage(createPromptContext([textPart('fix this'), referencePart(part)])), 'fix this\n\nReferences:\n/models/x.step#arm');
 });
 
 test('a summary must be text', () => {
