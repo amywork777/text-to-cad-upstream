@@ -1975,8 +1975,8 @@ with explicit tolerances, basic dimensions and geometric tolerances, a general p
 face nothing else controls, numbered notes and named views -- a model-based definition, authored
 in the model and kept in its document. The functions that author them are `cadgen.ap242`'s, beside
 the mechanism's (the root and `cadgen.engine` hold none of them): AP242's semantic PMI, which a STEP
-carries, and the notes, named views and presentation around it, which the xbf keeps and a STEP
-does not. Those that write an AP242 entity are named after it; those that write no entity of their
+carries with each annotation's placement (AP242's presentation of it), and the notes and named
+views around it, which the xbf keeps and a STEP does not. Those that write an AP242 entity are named after it; those that write no entity of their
 own keep plain names: `limits` (a dimension's 'lower limit' and 'upper limit' values),
 `general_profile`, `note` and `view` (with `camera` and `section`), and `place`. `pmi.read` returns them as the structure's
 `pmi`, the contract a viewer and a downstream reader build on, served with each part's views
@@ -2025,8 +2025,10 @@ return annotate(body,
   upper)`, the least and the greatest size, absolute (`limits(10.0, 10.05)` is 10.00–10.05). A
   basic dimension (`dimensional_location(..., basic=True)`) has none, and a tolerance on one is
   refused; a diameter is never basic. `presentation=place(anchor, offset)` (millimetres, the
-  part's frame) is where a viewer draws the callout, never a
-  requirement and never in a STEP.
+  part's frame) is where a viewer draws the callout, never a requirement. A STEP draws it there:
+  its text point, an annotation plane through it, and a leader from the anchor (a callout named by
+  the id), which OCCT reads back as the same place; one with no offset has no leader to draw and is
+  written without one.
 - **Surface profiles.** `surface_profile_tolerance(id, refs, value, datums=())` is one
   requirement on a face or on a list of faces, of any kind, to up to three datums or none; its
   zone is a width about the true profile (no diametral one), and a profile on no face is refused.

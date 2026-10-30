@@ -180,8 +180,10 @@ Its run warns that the four sides have no requirement: nothing here holds them.
   characteristic or dimension type, and fits, material modifiers, reference dimensions
   and assembly-level PMI are refused (`PMIUnsupported`).
 - **`presentation=place(anchor, offset)`** says where a callout's label is drawn,
-  in millimetres in the part's frame. It is not a requirement, and no export writes
-  it. Dragging a label in the viewer asks for this change.
+  in millimetres in the part's frame. It is not a requirement: a STEP draws the callout
+  there (a leader from the anchor to the label) so a shop's viewer shows it where you put
+  it, and moving it changes nothing it means. Give every annotation one with an offset.
+  Dragging a label in the viewer asks for this change.
 
 ## Notes
 

@@ -260,6 +260,23 @@ class PlateTest(_Folder):
         self.assertNotIn("zone_definitions", position)
         self.assertEqual(position["features"][0]["name"], ours["hole-position"]["refs"][0]["ref"].split("/", 1)[1])
 
+    def test_the_step_places_each_annotation_where_the_code_did(self) -> None:
+        """Each placed annotation's place reaches the STEP as AP242's presentation of it -- a callout
+        named by its id, its leader from the anchor to its text point, on an annotation plane -- and
+        OCCT reads the same place back; the semantic records are the same as without one."""
+        self.build(plate())
+        ours = sorted(entry["presentation"]["anchor"] + entry["presentation"]["offset"]
+                      for entry in read(self.xbf) if entry["presentation"] is not None)
+        theirs = sorted(entry["presentation"]["anchor"] + entry["presentation"]["offset"]
+                        for entry in read(self.step) if entry["presentation"] is not None)
+        self.assertEqual(len(ours), 9)
+        self.assertEqual(theirs, ours)
+        text = self.step.read_text()
+        self.assertEqual(len(re.findall(r"= TESSELLATED_ANNOTATION_OCCURRENCE\(", text)), 9)
+        self.assertEqual(len(re.findall(r"= ANNOTATION_PLANE\(", text)), 9)
+        self.assertIn("DRAUGHTING_CALLOUT('hole-position'", text)
+        self.assertEqual(ap242.report(self.step)["problems"], [])
+
     def test_the_saved_document_exports_the_pmi_the_build_wrote(self) -> None:
         """Reopened from its xbf, the document writes a STEP whose PMI is the build's, to a reader of
         no OCCT. (Not its bytes: geometry read back from BinXCAF writes some zeros signed.)"""

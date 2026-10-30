@@ -26,9 +26,10 @@ datums=)`` and ``surface_profile_tolerance(id, refs, value, datums=)``. The rest
 their own and keep plain names: ``limits(lower, upper)`` (a dimension's 'lower limit' and 'upper
 limit' values), ``general_profile(id, value, datums=)`` (ASME's "unless otherwise noted", its faces
 computed), ``note`` and ``view`` (with ``camera`` and ``section``: XCAF's, in the xbf, in no STEP)
-and ``place(anchor, offset)`` (presentation, in no STEP). A STEP carries the datums, dimensions
-(their limits too) and tolerances, the general profile among them; the notes, views and
-placements stay in the xbf.
+and ``place(anchor, offset)`` (presentation: a STEP's callout of the annotation, never its
+meaning). A STEP carries the datums, dimensions (their limits too) and tolerances, the general
+profile among them, each placed annotation drawn where it was placed; the notes and views stay in
+the xbf.
 
 Every name loads on first use: ``import cadgen.ap242`` imports no CAD kernel.
 """

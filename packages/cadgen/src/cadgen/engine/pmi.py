@@ -128,8 +128,14 @@ An xbf converted from it copies its GD&T as read (``copy``); an export of it say
 out (``dropped``) where one of a document the code made is refused (``refuse_dropped``).
 
 **Presentation** (``place``) is where a viewer draws an annotation: an anchor and a text offset in
-millimetres, in the annotated part's frame. It is no part of the semantic record: it is never
-written to a STEP, and moving it changes nothing an annotation means.
+millimetres, in the annotated part's frame. It is no part of the semantic record, and moving it
+changes nothing an annotation means. A STEP draws it there, as AP242's presentation of the
+annotation (``_present``): its text point, an annotation plane through it and a leader from the
+anchor, a ``DRAUGHTING_CALLOUT`` named by its id that a ``DRAUGHTING_MODEL_ITEM_ASSOCIATION`` links
+to the semantic record, so another system's viewer draws the callout where this one does. One with
+no offset has no leader to draw and is written with none (OCCT writes no callout without a shape).
+Read from a file (``_presentation_of``), a callout drawn as one straight line is a leader, its far
+end the anchor; another system's lettering is placed at its text point.
 
 **Scope.** What is written and read back is verified end to end (the engine's PMI tests, with
 an AP242 reader of no OCCT):
@@ -230,8 +236,8 @@ def limits(lower: float, upper: float) -> dict[str, Any]:
 
 def place(anchor: Iterable[float], offset: Iterable[float] = (0.0, 0.0, 0.0)) -> dict[str, Any]:
     """Where a viewer draws an annotation (provisional): ``anchor`` on or near its feature and the
-    text ``offset`` from it, millimetres in the annotated part's frame. Not semantic: never in a
-    STEP, and moving it changes nothing the annotation means."""
+    text ``offset`` from it, millimetres in the annotated part's frame. Not semantic: a STEP draws
+    the callout there (``_present``), and moving it changes nothing the annotation means."""
     return _place(anchor, offset)
 
 
@@ -1178,7 +1184,8 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
             refs = [sub(ref.ordinal) for ref in item.refs] if linked else []
             if spec["kind"] == "datum":
                 at = tool.AddDatum()
-                _datum(at, spec["datum"]["letter"], positions.get(spec["datum"]["letter"], 0), spec["id"])
+                _datum(at, spec["datum"]["letter"], positions.get(spec["datum"]["letter"], 0), spec["id"],
+                       spec["presentation"] if linked else None)
                 if linked:
                     sequence = Sequence_TDF_Label()
                     sequence.Append(refs[0])
@@ -1186,14 +1193,14 @@ def write(doc: Any, tree: Any, label_of: Any) -> None:
                 datums[spec["datum"]["letter"]] = at
             elif spec["kind"] == "dimension":
                 at = tool.AddDimension()
-                _dimension(at, spec, item.nominal)
+                _dimension(at, spec, item.nominal, spec["presentation"] if linked else None)
                 if linked and len(refs) == 1:
                     tool.SetDimension(refs[0], at)
                 elif linked:
                     tool.SetDimension(refs[0], refs[1], at)
             else:
                 at = tool.AddGeomTolerance()
-                _tolerance_object(at, spec)
+                _tolerance_object(at, spec, spec["presentation"] if linked else None)
                 if linked:
                     sequence = Sequence_TDF_Label()
                     for ref in refs:
@@ -1340,7 +1347,7 @@ def _ascii(text: str) -> Any:
     return TCollection_HAsciiString(text)
 
 
-def _datum(label: Any, letter: str, place: int, id: str) -> None:
+def _datum(label: Any, letter: str, place: int, id: str, presentation: dict | None) -> None:
     from OCP.XCAFDimTolObjects import XCAFDimTolObjects_DatumObject
     from OCP.XCAFDoc import XCAFDoc_Datum
 
@@ -1351,10 +1358,11 @@ def _datum(label: Any, letter: str, place: int, id: str) -> None:
         # A datum's place in the frames that name it: the writer writes a datum system of the
         # datums with a place, in its order, and none without.
         found.SetPosition(place)
+    _present(found, presentation, id)
     XCAFDoc_Datum.Set_s(label).SetObject(found)
 
 
-def _dimension(label: Any, spec: dict[str, Any], nominal: float | None) -> None:
+def _dimension(label: Any, spec: dict[str, Any], nominal: float | None, presentation: dict | None) -> None:
     from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_DimensionObject,
                                         XCAFDimTolObjects_DimensionType_Location_LinearDistance,
                                         XCAFDimTolObjects_DimensionType_Size_Diameter)
@@ -1381,6 +1389,7 @@ def _dimension(label: Any, spec: dict[str, Any], nominal: float | None) -> None:
             # XCAF's lower deviation is a magnitude the writer negates (see the module): -lower.
             found.SetLowerTolValue(-tolerance["lower"])
             found.SetUpperTolValue(tolerance["upper"])
+    _present(found, presentation, spec["id"])
     XCAFDoc_Dimension.Set_s(label).SetObject(found)
 
 
@@ -1396,7 +1405,7 @@ def _xcaf_characteristics() -> dict[str, Any]:
             "surface_profile": XCAFDimTolObjects_GeomToleranceType_ProfileOfSurface}
 
 
-def _tolerance_object(label: Any, spec: dict[str, Any]) -> None:
+def _tolerance_object(label: Any, spec: dict[str, Any], presentation: dict | None) -> None:
     from OCP.XCAFDimTolObjects import (XCAFDimTolObjects_GeomToleranceObject,
                                         XCAFDimTolObjects_GeomToleranceTypeValue_Diameter)
     from OCP.XCAFDoc import XCAFDoc_GeomTolerance
@@ -1408,7 +1417,62 @@ def _tolerance_object(label: Any, spec: dict[str, Any]) -> None:
     found.SetValue(given["value"])
     if given["zone"] == "diameter":
         found.SetTypeOfValue(XCAFDimTolObjects_GeomToleranceTypeValue_Diameter)
+    _present(found, presentation, spec["id"])
     XCAFDoc_GeomTolerance.Set_s(label).SetObject(found)
+
+
+def _present(found: Any, presentation: dict | None, id: str) -> None:
+    """An annotation's place (``place``) on its XCAF object, as AP242's presentation of it: its text
+    point (the anchor moved by the offset), an annotation plane through that point, and a leader from
+    the anchor to it, the callout named by the annotation's id. OCCT's STEP writer writes a callout
+    only where an object has a presentation shape, so an annotation whose offset is nil (no leader to
+    draw) is written with none, as one with no place is. Graphic, never semantic: a reader that draws
+    PMI puts the annotation where the viewer does, and nothing it means changes."""
+    if presentation is None:
+        return
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
+
+    anchor = presentation["anchor"]
+    text = [at + by for at, by in zip(anchor, presentation["offset"])]
+    if math.dist(anchor, text) <= _ROUNDING:
+        return
+    # The plane the text lies in: the leader in it, its normal the axis the leader is least along.
+    leader = [by / math.dist(anchor, text) for by in presentation["offset"]]
+    normal = min(((0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)),
+                 key=lambda axis: abs(sum(a * b for a, b in zip(axis, leader))))
+    found.SetPointTextAttach(gp_Pnt(*text))
+    found.SetPlane(gp_Ax2(gp_Pnt(*text), gp_Dir(*normal)))
+    found.SetPresentation(BRepBuilderAPI_MakeEdge(gp_Pnt(*anchor), gp_Pnt(*text)).Edge(), _ascii(id))
+
+
+def _presentation_of(found: Any) -> dict[str, Any] | None:
+    """An XCAF object's place as ``place`` makes one, where a file gives its text a point: a callout
+    drawn as one straight line (a leader, as ``_present`` writes it) from its end away from the text,
+    any other (another system's lettering) at its text point, with no offset. None where none is given."""
+    # XCAF's dimension says it as HasTextPoint, its datum and tolerance as HasPointText.
+    if not (found.HasTextPoint() if hasattr(found, "HasTextPoint") else found.HasPointText()):
+        return None
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepAdaptor import BRepAdaptor_Curve
+    from OCP.GeomAbs import GeomAbs_Line
+    from OCP.TopAbs import TopAbs_EDGE
+    from OCP.TopExp import TopExp, TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    point = found.GetPointTextAttach()
+    text = [_as_held(point.X()), _as_held(point.Y()), _as_held(point.Z())]
+    drawn, edges = found.GetPresentation(), []
+    explorer = TopExp_Explorer() if drawn.IsNull() else TopExp_Explorer(drawn, TopAbs_EDGE)
+    while explorer.More():
+        edges.append(TopoDS.Edge(explorer.Current()))
+        explorer.Next()
+    if len(edges) != 1 or BRepAdaptor_Curve(edges[0]).GetType() != GeomAbs_Line:
+        return _place(text, (0.0, 0.0, 0.0))
+    ends = [BRep_Tool.Pnt_s(TopExp.FirstVertex_s(edges[0])), BRep_Tool.Pnt_s(TopExp.LastVertex_s(edges[0]))]
+    far = max(ends, key=lambda end: math.dist((end.X(), end.Y(), end.Z()), text))
+    anchor = [_as_held(far.X()), _as_held(far.Y()), _as_held(far.Z())]
+    return _place(anchor, [_as_held(at - by) for at, by in zip(text, anchor)])
 
 
 def copy(doc: Any, loaded: Any, label_of: Callable[[int], Any]) -> None:
@@ -1604,8 +1668,9 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
     maps: dict[tuple[int, str], Any] = {}
     records: list[dict[str, Any]] = []
 
-    def add(label: Any, kind: str, values: dict[str, Any], beyond: list[str], xcaf_type: str | None) -> None:
-        """The record of a GD&T label holding an object of ``kind``."""
+    def add(label: Any, kind: str, values: dict[str, Any], beyond: list[str], xcaf_type: str | None,
+            given: Any) -> None:
+        """The record of a GD&T label holding ``given``, an XCAF object of ``kind``."""
         held = _held_extra(label)
         first, second = ([_element(sequence.Value(at), by_entry, maps) for at in range(1, sequence.Length() + 1)]
                          for sequence in _linked(tool, label))
@@ -1613,7 +1678,8 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
             targets = [("from", hit) for hit in first] + [("to", hit) for hit in second]
         else:
             targets = [("feature", hit) for hit in first]
-        found = {"values": values, "targets": targets, "extra": held, "entry": _entry(label)}
+        found = {"values": values, "targets": targets, "extra": held, "entry": _entry(label),
+                 "presentation": _presentation_of(given)}
         if held is not None:
             found.update(kind=held["kind"], xcaf_type=None, reason=None, part=_part_of(label, by_entry))
             records.append(found)
@@ -1646,7 +1712,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         if datum in datums:
             continue
         datums.add(datum)
-        add(label, "datum", {"letter": _name_of(found)}, beyond, "XCAFDimTolObjects_DatumObject")
+        add(label, "datum", {"letter": _name_of(found)}, beyond, "XCAFDimTolObjects_DatumObject", found)
     for label in _labels(tool, "dimension"):
         found = XCAFDoc_Dimension.Set_s(label).GetObject()
         kind = dimensions.get(found.GetType())
@@ -1665,7 +1731,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         values = {"type": kind, "basic": THEORETICAL in notes, "nominal": nominal, "tolerance": tolerance}
         if notes:
             values["notes"] = [list(note) for note in notes]
-        add(label, "dimension", values, _beyond_dimension(found, kind, notes), found.GetType().name)
+        add(label, "dimension", values, _beyond_dimension(found, kind, notes), found.GetType().name, found)
     for label in _labels(tool, "geometric_tolerance"):
         found = XCAFDoc_GeomTolerance.Set_s(label).GetObject()
         datums = _datums_of(label)
@@ -1684,7 +1750,7 @@ def records_of_document(doc: Any, prototypes: list[Any], root: str) -> list[dict
         beyond = _beyond_tolerance(found, characteristic, zone)
         if any(_entry(named) in modified for named in datums):
             beyond.append("a datum it names has modifiers or is a datum target")
-        add(label, "geometric_tolerance", values, beyond, found.GetType().name)
+        add(label, "geometric_tolerance", values, beyond, found.GetType().name, found)
     labels = Sequence_TDF_Label()
     if notes_tool is not None:
         notes_tool.GetNotes(labels)
@@ -1946,7 +2012,7 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
         else:
             counters[kind] = counters.get(kind, 0) + 1
             ident = (record["values"].get("letter") or kind) if kind == "datum" else f"{kind}-{counters[kind]}"
-            label, presentation, unlinked = None, None, None
+            label, presentation, unlinked = None, record.get("presentation"), None
         entry = {"id": ident, "kind": kind, "label": label, "status": record["status"], "problem": record["problem"],
                  "part": record["part"], "refs": refs,
                  "presentation": presentation, "xcaf_type": record["xcaf_type"]}
