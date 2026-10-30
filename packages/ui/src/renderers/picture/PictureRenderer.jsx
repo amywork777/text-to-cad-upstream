@@ -25,7 +25,8 @@ import { useI18n } from "@text-to-cad/ui/i18n";
 
 /**
  * A picture (a drawing's PDF, a render, a photo) is shown as a DXF is: on a canvas, head on, with
- * every flat view's chrome (`kit/shell/FlatViewFrame.jsx`) — Select as the view's hand, Pencil and
+ * every flat view's chrome (`kit/shell/FlatViewFrame.jsx`), but read as a page is: the wheel and a
+ * two-finger swipe scroll it and a pinch zooms (`scroll`). Select is the view's hand, Pencil and
  * Shapes to mark it up, and Quick Edit to send the marks with a note, whose views are the window on
  * screen as a plan-view camera. A PDF is a sheet per page, top to bottom (`pictureSheets.js`). The
  * ink lies on the sheet in its units (an image's pixels, a PDF's points), so it pans and zooms with
@@ -137,7 +138,7 @@ function PictureSurface({ view, data }) {
 
   const flat = useFlatCanvasView({
     content: picture, bounds: picture?.bounds ?? null, restored, colorScheme, onViewMoved: rememberView, paint,
-    onTap: handlers.tap, onHover: handlers.hover
+    onTap: handlers.tap, onHover: handlers.hover, scroll: true
   });
   viewRef.current = flat;
   paintRef.current = flat.requestPaint;

@@ -1,6 +1,6 @@
 /**
  * A flat picture on a canvas, and the three things a person does to it: drag to pan, wheel or
- * pinch to zoom about the pointer, double-click to fit — and, for the tool in hand, a tap (a press
+ * pinch to zoom about the pointer (or, read as a page, the wheel scrolls: `scroll`), double-click to fit — and, for the tool in hand, a tap (a press
  * that lets go without dragging) and the pointer resting over the picture (`onTap`, `onHover`), in
  * the pane's CSS pixels. A drag that has gone further than a tap may is a pan, whatever the tool.
  * Every flat view (a 2D drawing, a board) is this one hook under its own paint.
@@ -33,6 +33,7 @@ import {
   zoomLimits,
   zoomTransform
 } from "@text-to-cad/core/lib/drawing2d/transform.js";
+import { pageFit, scrollPage } from "./pageView.js";
 import { IDLE_PIXEL_RATIO_CAP, getPixelRatioCap } from "./pixelRatio.js";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
 
@@ -68,9 +69,12 @@ function wheelZoomFactor(event) {
  *   end(point: { x: number, y: number }): void, cancel?(): void } | null)} [options.onGrab]
  *   A press on something the tool in hand drags (a drawing's view, say): what it returns follows
  *   the drag in place of a pan, and is let go with it; a press that never travels is a tap still.
+ * @param {boolean} [options.scroll]  Read as a page is (`pageView.js`): it fits to its width when it
+ *   is much taller than the pane, the wheel and a two-finger swipe scroll it, and a pinch or ⌘/Ctrl
+ *   with the wheel zooms. Without it the wheel zooms, as a drawing's does.
  */
 export function useFlatCanvasView({ content, bounds, restored = null, colorScheme = "light", onViewMoved, paint: paintFrame,
-  onTap = null, onHover = null, onGrab = null }) {
+  onTap = null, onHover = null, onGrab = null, scroll = false }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
@@ -95,6 +99,8 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
   hoverRef.current = onHover;
   const grabRef = useRef(onGrab);
   grabRef.current = onGrab;
+  const scrollRef = useRef(scroll);
+  scrollRef.current = scroll;
   const [dragging, setDragging] = useState(false);
   const frameRef = useRef(0);
 
@@ -122,15 +128,20 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
     paint();
   }, [paint]);
 
+  /** Where the view's tool strip ends, which it measures as `--cad-tools-bottom`: the view frames clear of it. */
+  const stripBottom = useCallback(() => {
+    const frame = containerRef.current?.closest?.("[data-slot=cad-file-view]");
+    const strip = frame ? Number.parseFloat(getComputedStyle(frame).getPropertyValue("--cad-tools-bottom")) : 0;
+    return Number.isFinite(strip) ? strip : 0;
+  }, []);
+
   /** Recompute the fitted scale for the current pane, and adopt it unless the view is the person's. */
   const refit = useCallback((force) => {
     const box = boundsRef.current;
     const { width, height } = sizeRef.current;
     if (!box || width <= 0 || height <= 0) return;
-    // The view frames clear of its tool strip, which the view measures as `--cad-tools-bottom`.
-    const frame = containerRef.current?.closest?.("[data-slot=cad-file-view]");
-    const strip = frame ? Number.parseFloat(getComputedStyle(frame).getPropertyValue("--cad-tools-bottom")) : 0;
-    const fitted = fitTransform(box, width, height, { top: Number.isFinite(strip) ? strip : 0 });
+    const top = stripBottom();
+    const fitted = scrollRef.current ? pageFit(box, width, height, { top }) : fitTransform(box, width, height, { top });
     fitScaleRef.current = fitted.scale;
     if (force || !movedRef.current) {
       movedRef.current = false;
@@ -140,7 +151,7 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
       transformRef.current = restoredRef.current;
     }
     requestPaint();
-  }, [requestPaint]);
+  }, [requestPaint, stripBottom]);
 
   /** Record a view the person chose. */
   const moveTo = useCallback((next) => {
@@ -329,6 +340,14 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
       // The page must not scroll under a picture being zoomed, so this listener
       // is registered non-passive and always consumes the event.
       event.preventDefault();
+      // A page scrolls under the wheel and a two-finger swipe; a pinch (a ctrl-wheel) or ⌘ zooms it.
+      if (scrollRef.current && !event.ctrlKey && !event.metaKey && boundsRef.current) {
+        const unit = event.deltaMode === 1 ? LINE_HEIGHT_PX : event.deltaMode === 2 ? PAGE_HEIGHT_PX : 1;
+        const { width, height } = sizeRef.current;
+        moveTo(scrollPage(transformRef.current, -event.deltaX * unit, -event.deltaY * unit, boundsRef.current, width, height,
+          { top: stripBottom() }));
+        return;
+      }
       zoomBy(wheelZoomFactor(event), local(event));
     };
     const onDoubleClick = (event) => { event.preventDefault(); fit(); };
@@ -349,7 +368,7 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("dblclick", onDoubleClick);
     };
-  }, [fit, moveTo, zoomBy]);
+  }, [fit, moveTo, stripBottom, zoomBy]);
 
   /** The framed picture as a PNG, the surface included: it is painted into the canvas. */
   const encode = useCallback((noun) => new Promise((resolve, reject) => {
