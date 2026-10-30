@@ -137,8 +137,6 @@ def nodal_forces(volume: "VolumeMesh", loads: "tuple[Load, ...]", ordinal_of: di
 _BODY_POINTS = 4
 #: Elements integrated at once, to keep the arrays small.
 _CHUNK = 4096
-#: netgen's tetrahedron's mid-edge nodes 5-10 sit on these corner pairs.
-_TET10_EDGES = ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))
 
 
 def _tet_rule() -> "tuple[np.ndarray, np.ndarray]":
@@ -160,16 +158,18 @@ def body_forces(volume: "VolumeMesh", density: "np.ndarray", accelerations: "Seq
     ``density`` (tonne/mm^3) per element."""
     import numpy as np
 
+    from cadgen._internal.fea.calculix import NETGEN_EDGES
+
     total = np.sum(np.asarray(accelerations, dtype=float).reshape(-1, 3), axis=0)
     forces = np.zeros((len(volume.nodes), 3))
     if not np.any(total):
         return forces
     points, weights = _tet_rule()
     l = np.c_[1.0 - points.sum(axis=1), points]                                     # (Q, 4) barycentric
-    shape = np.concatenate([l * (2 * l - 1), np.stack([4 * l[:, i] * l[:, j] for i, j in _TET10_EDGES], axis=1)], axis=1)
+    shape = np.concatenate([l * (2 * l - 1), np.stack([4 * l[:, i] * l[:, j] for i, j in NETGEN_EDGES], axis=1)], axis=1)
     d_l = np.array([[-1.0, -1.0, -1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
     d_shape = np.concatenate([(4 * l - 1)[:, :, None] * d_l[None], np.stack(
-        [4 * (l[:, i, None] * d_l[j] + l[:, j, None] * d_l[i]) for i, j in _TET10_EDGES], axis=1)], axis=1)  # (Q, 10, 3)
+        [4 * (l[:, i, None] * d_l[j] + l[:, j, None] * d_l[i]) for i, j in NETGEN_EDGES], axis=1)], axis=1)  # (Q, 10, 3)
     tets = np.asarray(volume.tets)
     for start in range(0, len(tets), _CHUNK):
         rows = tets[start:start + _CHUNK]
