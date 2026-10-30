@@ -61,14 +61,15 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   }), [document.catalogError, loaded.error, read.error, document.modelKey, scene, t]);
   // The box the model is drawn in over its Load ramp (`feaBounds.js`), at the deformation and load it opens on, grown on
   // the scene before the shell frames it (Preview frames on it once) and fits the camera's near and far planes to it:
-  // a part drawn larger than the file's own exaggeration is never sliced off.
+  // a part drawn larger than the file's own exaggeration is never sliced off. The view frames `restBounds`
+  // (`sceneFramingBounds`); `bounds` is the scene's own getter, Explode's.
   useMemo(() => {
     if (!fea) return;
     const opening = fv.feaControls(fea);
     const scale = opening.find((control) => control.drives === "deformation").defaultValue;
     const load = opening.find((control) => control.drives === "load_scale").defaultValue;
     const grown = fv.feaDrawnBounds(THREE, scene, fea, { scale, load });
-    if (grown) Object.assign(scene, { bounds: grown, restBounds: grown });
+    if (grown) scene.restBounds = grown;
   }, [scene, fea]);
   const controls = useMemo(() => (fea ? fv.feaControls(fea, t) : EMPTY), [fea, t]);
   const signature = fea ? `${fea.fields.map((entry) => entry.attribute).join(",")}:${fea.deformationScale}` : "";

@@ -41,7 +41,8 @@ function mount(extras: Record<string, unknown> | null) {
   const root = new Group();
   root.add(mesh);
   const bounds = { min: [0, 0, 0], max: [1, 1, 0] };
-  loaded.scene = { document: { scene: root }, object3D: root, bounds, restBounds: bounds, revision: 'one' };
+  // As `createGlbScene` hands it over: `bounds` is a getter (Explode's), `restBounds` what the view frames.
+  loaded.scene = { document: { scene: root }, object3D: root, get bounds() { return bounds; }, restBounds: bounds, revision: 'one' };
   const settings = { toolStack: { panels: {}, collapsed: {} } };
   const catalog = { entries: [], error: null };
   const preferences = { getSnapshot: () => settings, subscribe: () => () => {}, update() {} };
