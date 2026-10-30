@@ -60,9 +60,9 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     catalogError: document.catalogError, error: loaded.error || read.error, modelKey: document.modelKey, hasScene: Boolean(scene), t
   }), [document.catalogError, loaded.error, read.error, document.modelKey, scene, t]);
   // The box the model is drawn in over its Load ramp (`feaBounds.js`), at the deformation and load it opens on, grown on
-  // the scene before the shell frames it (Preview frames on it once) and fits the camera's near and far planes to it:
-  // a part drawn larger than the file's own exaggeration is never sliced off. The view frames `restBounds`
-  // (`sceneFramingBounds`); `bounds` is the scene's own getter, Explode's.
+  // the scene before the shell frames it (Preview frames on it once): its `restBounds`, which the scene's `bounds` reads
+  // at rest, so the camera's near and far planes, the floor and the shadows hold the part as drawn, larger than the
+  // file's own exaggeration, never slicing it off.
   useMemo(() => {
     if (!fea) return;
     const opening = fv.feaControls(fea);
@@ -281,8 +281,9 @@ export default function FeaSurface({ view, document, loaded, fv }) {
   // sentence its prompt carries; a face picked on the model is named, its card saying what the study does to it.
   const chips = useMemo(() => {
     if (!fea || !references?.length) return NO_REFERENCES;
-    const face = single ? { ref: single, role: fv.faceRole(fea, single), part: fv.facePartDetail(fea, single, loadScale),
-      chosen: faces.summary && !faces.picked ? faces.summary : "" } : null;
+    // Its card's Study row: what the row chosen says about the face, whole; for a face picked, what the study does to it.
+    const face = single ? { ref: single, role: faces.summary && !faces.picked ? faces.summary : fv.faceRole(fea, single),
+      part: fv.facePartDetail(fea, single, loadScale) } : null;
     return [{ key: `fea:${faces.id}`, label: faces.summary && !faces.picked ? faces.summary : single ? fv.faceTitle(fea, single) : faces.summary || faces.id, glyph: "face", id: single || faces.id,
       copy: formatPromptReference(references[0]), card: face ? <fv.FaceCard face={face} /> : null, onRemove: clearChoice }];
   }, [fea, references, single, faces, loadScale, clearChoice]);

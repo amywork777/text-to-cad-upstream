@@ -726,7 +726,6 @@ export default {
   "fea.study": "Study",
   "fea.parts": "Parts",
   "fea.part": "Part",
-  "fea.chosen": "Chosen",
   "fea.whatYouSee": "What you see",
   "fea.verdict": "Verdict",
   "fea.checks": "Checks",

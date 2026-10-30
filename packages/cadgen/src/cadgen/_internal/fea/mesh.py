@@ -375,11 +375,13 @@ def curved_volumes(nodes, tets):
 
 
 def straighten_inverted(nodes, tets) -> int:
-    """Make straight every element CalculiX would refuse, moving ``nodes`` in place; the number of elements straightened.
+    """Make straight every element turned inside out, moving ``nodes`` in place; the number of elements straightened.
 
     netgen's ``SecondOrder`` moves each mid-edge node on the surface onto the curved face it lies on. In an element thin
-    across a fillet or a small hole, that node can pass the element's opposite face, and the element turns inside out at
-    an integration point: CalculiX refuses the whole mesh (``nonpositive jacobian``). Such an element's six mid-edge nodes
+    across a fillet or a small hole, that node can pass the element's opposite face, and the element turns inside out:
+    at an integration point CalculiX refuses the whole mesh (``nonpositive jacobian``); at one of its nodes alone it
+    solves it, folded, and its stress and displacement there are wrong. So an element is checked at both, CalculiX's
+    four points (:data:`.calculix.C3D10_POINTS`) and its ten nodes, and one inside out at any is made straight: its six mid-edge nodes
     go back to their edges' straight midpoints, where an element of sound corners is valid everywhere; its neighbours
     share those nodes, so the check repeats until no element is inverted. The surface there is drawn and solved as the
     straight element's, a little less curved. An element still inverted when straight has corners that enclose no
@@ -390,9 +392,12 @@ def straighten_inverted(nodes, tets) -> int:
     from cadgen._internal.fea.calculix import C3D10_EDGES, C3D10_POINTS, NETGEN_EDGES, SMALLEST_JACOBIAN, c3d10_elements
 
     elements = c3d10_elements(nodes, tets)  # corners turned as CalculiX takes them, so a sound element is positive
+    # CalculiX's integration points, then the element's corners and mid-edge nodes (C3D10's order) as barycentric points.
+    checked = (*C3D10_POINTS, *(tuple(float(k == n) for k in range(4)) for n in range(4)),
+               *(tuple(0.5 if k in edge else 0.0 for k in range(4)) for edge in C3D10_EDGES))
     straightened = np.zeros(len(tets), dtype=bool)
     while True:
-        inverted = (jacobians(nodes[elements], C3D10_EDGES, C3D10_POINTS) < SMALLEST_JACOBIAN).any(axis=1)
+        inverted = (jacobians(nodes[elements], C3D10_EDGES, checked) < SMALLEST_JACOBIAN).any(axis=1)
         if not inverted.any():
             return int(straightened.sum())
         if (flat := np.flatnonzero(inverted & straightened)).size:

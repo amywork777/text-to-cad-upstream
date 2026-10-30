@@ -816,6 +816,20 @@ class InvertedElements(unittest.TestCase):
         np.testing.assert_allclose(nodes[slot[(0, 1)]], [0.5, 0.0, 0.0])
         np.testing.assert_array_equal(nodes[slot[(1, 4)]], curved)  # the sound neighbour keeps its curve
 
+    def test_an_element_folded_at_a_node_alone_is_made_straight_too(self):
+        """CalculiX checks its four integration points only, and solves an element folded at a node, wrongly."""
+        import numpy as np
+
+        from cadgen._internal.fea.calculix import C3D10_EDGES, C3D10_POINTS, SMALLEST_JACOBIAN, c3d10_elements
+        from cadgen._internal.fea.mesh import jacobians, straighten_inverted
+
+        nodes, tets, slot = self._pair()
+        nodes[slot[(0, 1)]] = [0.5875, 0.0875, 0.0875]  # short of the opposite face, past where the node's own map folds
+        sound = jacobians(nodes[c3d10_elements(nodes, tets)], C3D10_EDGES, C3D10_POINTS)
+        self.assertTrue((sound >= SMALLEST_JACOBIAN).all())  # CalculiX would take it
+        self.assertEqual(straighten_inverted(nodes, tets), 1)
+        np.testing.assert_allclose(nodes[slot[(0, 1)]], [0.5, 0.0, 0.0])
+
     def test_a_sound_mesh_is_left_alone(self):
         import numpy as np
 

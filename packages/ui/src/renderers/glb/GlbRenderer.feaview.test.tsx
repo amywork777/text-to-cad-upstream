@@ -65,8 +65,8 @@ function mount(extras: Record<string, unknown> | null = STATIC) {
   const root = new Group();
   root.add(mesh);
   const bounds = { min: [0, 0, 0], max: [1, 1, 0] };
-  // As `createGlbScene` hands it over: `bounds` is a getter (Explode's), `restBounds` what the view frames.
-  loaded.scene = { document: { scene: root }, object3D: root, get bounds() { return bounds; }, restBounds: bounds, revision: 'one' };
+  // As `createGlbScene` hands it over: `bounds` a getter reading `restBounds` at rest, which the view frames.
+  loaded.scene = { document: { scene: root }, object3D: root, get bounds() { return this.restBounds; }, restBounds: bounds, revision: 'one' };
   const slot = document.createElement('div');
   slot.setAttribute('data-test-navbar', '');
   document.body.append(slot);
@@ -94,6 +94,7 @@ it('the Load ramp in preview climbs the colours and the deformation from no load
   expect(z2()).toBeCloseTo(-0.02, 6);
   // The view frames the part as drawn, deformed: the box it frames grew to hold vertex 2.
   expect(loaded.scene.restBounds.min[2]).toBeCloseTo(-0.02, 6);
+  expect(loaded.scene.bounds).toBe(loaded.scene.restBounds);
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Preview' })); });
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Play animation' })); });
   // The ramp starts with no load on: the colours at the ramp's low end, the part at rest.

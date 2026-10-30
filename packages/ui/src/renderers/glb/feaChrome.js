@@ -94,9 +94,9 @@ export function besideEnd(free, face, gap, lineHeight = 14) {
 }
 
 /**
- * How far past `besideEnd`'s place a label must slide along its arrow's line to lie over none of the model: the
- * least distance in `[0, limit]` at which `clear(distance)` holds, found by halving `steps` times from the two ends,
- * or null when even `limit` is not clear. So a label whose own spot at the arrow's tail is over the part sits just
+ * How far past `besideEnd`'s place a label must slide along its arrow's line to lie over none of the model: 0 where it
+ * is clear already; else, by halving `steps` times between there and `limit`, a distance where it turns clear (the
+ * first such, unless the line crosses a gap in the part before it), or null when even `limit` is not clear. So a label whose own spot at the arrow's tail is over the part sits just
  * past the part on that arrow's line, not across the model's whole box from it.
  */
 export function clearAlong(clear, limit, steps = 6) {
@@ -142,7 +142,8 @@ function clamped(label, height, bounds, margin) {
  * Labels placed on screen (`{ x, y, align, width }` each, in the host's pixels), moved where they must
  * be: inside the view (`bounds`, its `width` and `height`: a label past an edge is drawn whole, against it);
  * off the chrome over the view (`covers`, boxes in the host's pixels, one or a list: the strip and the panels,
- * `chromeCovers`, each of which a label under moves right of, reading on from there; the colour bar at the foot,
+ * `chromeCovers`: the panels at the left, which a label under moves right of, reading on from there, and the
+ * strip at the top, which it moves under; the colour bar at the foot,
  * `colourBarCover`, which a label over moves above); then off each other, each in turn nudged up or down, away
  * from the one it would cover, until it is clear. Returns new labels in the same order, each with `x`, `y` and `align`.
  * @param {{ x: number, y: number, align: string, width: number }[]} labels
@@ -156,8 +157,10 @@ export function settleLabels(labels, covers, { height = 14, gap = 4, bounds = nu
     let placed = clamped({ ...label }, height, bounds, gap);
     for (const cover of boxes) {
       if (!overlaps(boxOf(placed, height), cover, 0)) continue;
-      // The panels stand at the view's left: right of them. Anything lower (the colour bar): above it.
-      placed = cover.left <= gap * 4 ? { ...placed, x: cover.right + gap, align: "left" } : { ...placed, y: cover.top - gap - height / 2 };
+      // The panels stand at the view's left: right of them. The toolbar strip at its top: under it. Anything
+      // lower (the colour bar): above it.
+      placed = cover.left <= gap * 4 ? { ...placed, x: cover.right + gap, align: "left" }
+        : cover.top <= gap * 4 ? { ...placed, y: cover.bottom + gap + height / 2 } : { ...placed, y: cover.top - gap - height / 2 };
     }
     for (let nudge = 0; nudge < MOST_NUDGES; nudge += 1) {
       const box = boxOf(placed, height);

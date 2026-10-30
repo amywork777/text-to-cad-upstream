@@ -216,7 +216,6 @@ export default function FeaStudyPanel({ parts = NONE, openPart = -1, setup, deta
 export function FaceCard({ face }) {
   const { t } = useI18n();
   return <>
-    {face.chosen ? <InfoRow label={t("fea.chosen")}>{unbroken(face.chosen)}</InfoRow> : null}
     <InfoRow label={t("fea.study")}>{face.role}</InfoRow>
     {face.part ? <InfoRow label={t("fea.part")}>{unbroken(face.part)}</InfoRow> : null}
   </>;

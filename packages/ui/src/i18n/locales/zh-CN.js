@@ -699,7 +699,6 @@ export default {
   "fea.study": "分析",
   "fea.parts": "零件",
   "fea.part": "零件",
-  "fea.chosen": "所选",
   "fea.whatYouSee": "显示内容",
   "fea.verdict": "结论",
   "fea.checks": "检查",

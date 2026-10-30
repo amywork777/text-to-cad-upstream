@@ -39,6 +39,14 @@ describe('a load\'s label on screen', () => {
     expect(Math.abs(weight.y - load.y)).toBeGreaterThanOrEqual(14);
   });
 
+  it('moves a label from under the toolbar strip centred at the view\'s top to just below it, and leaves one clear of it', () => {
+    const strip = { left: 380, top: 8, right: 620, bottom: 44 };
+    const [under] = settleLabels([{ x: 500, y: 30, align: 'left', width: 40 }], [strip], { bounds: { width: 1000, height: 700 } });
+    expect(under).toMatchObject({ x: 500, y: 55, align: 'left' });
+    const [beside] = settleLabels([{ x: 700, y: 30, align: 'left', width: 40 }], [strip], { bounds: { width: 1000, height: 700 } });
+    expect(beside).toMatchObject({ x: 700, y: 30 });
+  });
+
   it('keeps a label inside the view and off the colour bar at its foot', () => {
     const bounds = { width: 1440, height: 864 };
     // "72 N" past the view's foot: drawn whole, against it.

@@ -698,7 +698,6 @@ export default {
   "fea.study": "解析",
   "fea.parts": "部品",
   "fea.part": "部品",
-  "fea.chosen": "選択",
   "fea.whatYouSee": "表示内容",
   "fea.verdict": "判定",
   "fea.checks": "チェック",

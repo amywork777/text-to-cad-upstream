@@ -8,8 +8,9 @@ const FONT_SIZE = "500 11px";
 const OFFSET_PX = 10;
 // A label's line, for keeping labels off each other: the 11px text and its halo.
 const LINE_PX = 14;
-// Whether the model hides a label is cast at most this often while the view moves, and once more
-// when it stops: a ray through the result mesh per label, not per frame.
+// Whether the model hides a label, and where along its arrow it lies clear of the part, is cast at most this often
+// while the view moves, and once more when it stops: about a dozen rays through the result mesh per label (the slide's
+// halving one at a time), not per frame.
 const HIDDEN_EVERY_MS = 100;
 // Where the chrome over the view is (the strip and the panels, `chromeCovers`; the colour bar, `colourBarCover`) is read from
 // the page at most this often.
@@ -76,12 +77,12 @@ export default function FeaLoadLabels({ runtimeRef, hostRef, mesh, labels, colou
         caster.far = caster.ray.origin.distanceTo(target) * 0.99;
         return caster.intersectObject(shownMesh, false).length > 0;
       };
-      // Whether a label drawn here lies over the model on screen: a ray through its middle, or its end nearer its
-      // arrow, meets the part at all.
-      const overModel = (caster, label) => {
-        const middle = label.align === "right" ? label.x - label.width / 2 : label.align === "center" ? label.x : label.x + label.width / 2;
+      // Whether a label drawn here lies over the model on screen: a ray through its end nearer its arrow meets the part
+      // at all (`whole`: or through its middle or its far end).
+      const overModel = (caster, label, whole = true) => {
+        const toward = label.align === "right" ? -1 : label.align === "center" ? 0 : 1;
         caster.far = Infinity;
-        return [label.x, middle].some((x) => {
+        return (whole ? [0, 0.5, 1] : [0]).map((share) => label.x + toward * share * label.width).some((x) => {
           caster.setFromCamera(ndc.set((x / width) * 2 - 1, 1 - (label.y / height) * 2), runtime.camera);
           return caster.intersectObject(shownMesh, false).length > 0;
         });
@@ -124,8 +125,11 @@ export default function FeaLoadLabels({ runtimeRef, hostRef, mesh, labels, colou
           if (!endBy || blocked(raycaster, endBy(OFFSET_PX).at, null, true)) return null;
           const first = endBy(OFFSET_PX);
           const run = Math.hypot(first.x - endAt[0], first.y - endAt[1]) || 1;
-          const room = roomAlong(first.x, first.y, (first.x - endAt[0]) / run, (first.y - endAt[1]) / run, width, height, first.width + OFFSET_PX);
-          return clearAlong((slide) => !overModel(raycaster, endBy(OFFSET_PX + slide)), room);
+          const [dx, dy] = [(first.x - endAt[0]) / run, (first.y - endAt[1]) / run];
+          const room = roomAlong(first.x, first.y, dx, dy, width, height, Math.abs(dx) * first.width + OFFSET_PX);
+          // Halving on the label's near end, one ray a step; then the whole label, where it ends up, must lie clear.
+          const slide = clearAlong((distance) => !overModel(raycaster, endBy(OFFSET_PX + distance), false), room, 5);
+          return slide != null && !overModel(raycaster, endBy(OFFSET_PX + slide)) ? slide : null;
         });
       }
       // Inside the view, off the panels at the left and the colour bar at the foot, and off each other.

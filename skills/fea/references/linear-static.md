@@ -101,8 +101,11 @@ in g (1 g = 9.81 m/s²).
   finer there by itself, with elements under about their radius or thickness, so they, not only
   the bounding box, can set the element count.
 - netgen curves the elements on a curved face onto it. Where an element is thin across a fillet,
-  a hole or a thin wall, that can turn it inside out, which CalculiX cannot solve: such an element
-  is made straight (the surface there is a little less curved), and the result's
+  a hole or a thin wall, that can turn it inside out: at one of CalculiX's integration points it
+  refuses the mesh, at a node alone it would solve it folded. Each element is checked at both, and
+  one inside out at either is made straight (the surface there is a little less curved). Many
+  straightened elements mean the elements are larger than the wall is thick: a smaller
+  `mesh.size_mm` keeps them curved. The result's
   `mesh.straightened` counts them, also in the GLB's study. An element whose corners enclose no
   volume cannot be straightened, and the run refuses the mesh.
 - The run reports two von Mises peaks. The nodal one (the reported peak, which the safety factor
