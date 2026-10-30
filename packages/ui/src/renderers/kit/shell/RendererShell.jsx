@@ -528,8 +528,12 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
       if (mobile || !rows.length) {
         viewport.style.removeProperty("--cad-file-sidebar-max-width");
         viewport.style.removeProperty("--cad-top-right-left");
+        // Too narrow for Quick Edit beside the strip: it stays on the right, under it.
+        if (rows.length) viewport.style.setProperty("--cad-top-right-top", below);
+        else viewport.style.removeProperty("--cad-top-right-top");
         return;
       }
+      viewport.style.removeProperty("--cad-top-right-top");
       // The column's sides, the widest of its rows: the sidebar's panel stops short of the left one,
       // and the top-right corner (Quick Edit) starts past the right one, an inset away, so neither
       // ever reaches under the strip.
@@ -560,7 +564,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
       resized.disconnect(); changed?.disconnect();
       controls.style.removeProperty("left");
       for (const name of ["margin-left", "margin-right"]) controls.parentElement?.style.removeProperty(name);
-      for (const name of ["--cad-tools-bottom", "--cad-file-sidebar-max-width", "--cad-top-right-left"]) viewport.style.removeProperty(name);
+      for (const name of ["--cad-tools-bottom", "--cad-file-sidebar-max-width", "--cad-top-right-left", "--cad-top-right-top"]) viewport.style.removeProperty(name);
     };
   }, [toolsHidden, mobile, besideSidebarTile, Boolean(sidebar), Boolean(references), toolbarUp, besideDialog, navigatorUp]);
   // Display's tile is its mode's sphere; on a phone with no room for it, its More row shows the same.

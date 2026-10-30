@@ -106,8 +106,12 @@ export default function FlatViewFrame({ surface, containerRef, busy, children, f
       if (mobile || !rows.length) {
         viewport.style.removeProperty("--cad-file-sidebar-max-width");
         viewport.style.removeProperty("--cad-top-right-left");
+        // Too narrow for Quick Edit beside the strip: it stays on the right, under it.
+        if (rows.length) viewport.style.setProperty("--cad-top-right-top", viewport.style.getPropertyValue("--cad-tools-bottom"));
+        else viewport.style.removeProperty("--cad-top-right-top");
         return;
       }
+      viewport.style.removeProperty("--cad-top-right-top");
       const box = viewport.getBoundingClientRect();
       const left = Math.min(...rows.map(row => row.left)) - box.left, right = Math.max(...rows.map(row => row.right)) - box.left;
       viewport.style.setProperty("--cad-file-sidebar-max-width", `${Math.max(0, Math.round(left - 2 * VIEWPORT_INSET_PX))}px`);
@@ -120,7 +124,7 @@ export default function FlatViewFrame({ surface, containerRef, busy, children, f
     resized.observe(viewport);
     return () => {
       resized.disconnect();
-      for (const name of ["--cad-tools-bottom", "--cad-file-sidebar-max-width", "--cad-top-right-left"]) viewport.style.removeProperty(name);
+      for (const name of ["--cad-tools-bottom", "--cad-file-sidebar-max-width", "--cad-top-right-left", "--cad-top-right-top"]) viewport.style.removeProperty(name);
     };
   }, [toolsHidden, mobile, sided]);
 
