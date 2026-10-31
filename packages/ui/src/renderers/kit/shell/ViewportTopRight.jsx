@@ -4,8 +4,9 @@ import { VIEWPORT_INSET_PX } from "./viewportLayout.js";
 const INSET = `${VIEWPORT_INSET_PX}px`;
 
 /**
- * The viewport's top-right corner, one column: the host's notice first (`notice`, a question it
- * asks once, such as whether to share anonymous usage statistics), then what the view keeps there,
+ * The viewport's top-right corner, one column: the notice first (`notice`: the host's, a question it
+ * asks once, such as whether to share anonymous usage statistics, and the view's own about its file,
+ * such as a file brought in, offered to model on), then what the view keeps there,
  * Quick Edit, which steps down below the notice while it is up rather than hiding under it. It never
  * reaches under the tool strip: its column starts an inset past the strip's right side
  * (`--cad-top-right-left`, the shell's measure), and what it holds is never wider than that; in a

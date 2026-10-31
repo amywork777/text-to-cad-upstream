@@ -561,12 +561,13 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
         ? <PreviewLayer viewport={viewport} preview={edit.featurePreview} mark={edit.preview?.mark ? edit.preview : null} extent={partExtent} />
         : null}
     </> : null}
-    {edit.status === "none" && edit.imported && openFile
-      ? <ImportedBody imported={edit.imported} onAdopt={edit.adopt} onOpenPart={edit.importedPart} onOpen={openFile} /> : null}
   </>;
+  // A STEP brought in, with no part script: offered as a part, in the top-right corner's notice.
+  const notice = edit.status === "none" && edit.imported && openFile
+    ? <ImportedBody imported={edit.imported} onAdopt={edit.adopt} onOpenPart={edit.importedPart} onOpen={openFile} /> : null;
 
   return {
-    edit, editing, cad, editable, frame, overlay, references, faces, litFaces, nameChips, drawingTools, quickEdit,
+    edit, editing, cad, editable, frame, overlay, notice, references, faces, litFaces, nameChips, drawingTools, quickEdit,
     beforePick, modelPicks, doubleClickFace, doubleClickEmpty, faceMenu, escape, escapeActive: editing && (featureBarShown || commandHeld),
     rollback, rollbackGone,
     // The units the part reads in, which Measure reads in too, as SolidWorks' does.

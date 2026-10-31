@@ -215,8 +215,11 @@ is `chrome`: the navbar (`"page"`, the default) or the view alone (`"bare"`).
   [The file sidebar and the tool stack](#the-file-sidebar-and-the-tool-stack)).
 - **Quick Edit** at top-right, 8px in, a STEP's or a robot's: the box of the note a
   person writes to their agent, there only while something is picked, drawn or measured
-  (see [Quick Edit](#quick-edit)), under the host's notice where there is one (the CAD app's
-  file handler's corner: Full size and its update). The rest of the right side of the view is clear.
+  (see [Quick Edit](#quick-edit)), under the notices where there are any: the host's (the CAD app's
+  file handler's corner: Full size and its update), then the view's own about its file (a STEP
+  brought in with no part script: *Imported STEP, no history* and **Edit as a part**). Quick Edit
+  steps down under them at every width, so neither covers the other. The rest of the right side of
+  the view is clear.
 - **View cube** at bottom-right, 2px from the right and 8px off the bottom so the axes
   drawn in its lower corner never touch the edge (`VIEWPORT_CUBE_BOTTOM`), in a 6rem area:
   enlarged face/edge/corner hit areas and neutral hover and XYZ guides. It carries no button:
