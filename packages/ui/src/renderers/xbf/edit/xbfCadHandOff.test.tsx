@@ -222,11 +222,11 @@ describe('the rollback bar', () => {
 describe('a STEP brought in', () => {
   it("is offered as a part to model on in the AI's layout too, which is how Studio opens it", async () => {
     const client = server();
-    function Overlay() {
+    function Notice() {
       const cad = useXbfCadMode(props(client, { layout: 'ai', file: STEP }) as never);
-      return cad.overlay({ runtimeRef: { current: null }, hostRef: { current: null }, viewerReadyTick: 0 });
+      return cad.notice;
     }
-    render(<Overlay />, { wrapper });
+    render(<Notice />, { wrapper });
     await waitFor(() => expect(document.querySelector('[data-cad-imported-body]')?.textContent).toContain('Edit as a part'));
   });
 });

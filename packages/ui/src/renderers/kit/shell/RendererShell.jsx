@@ -249,6 +249,9 @@ const DOUBLE_PRESS_MS = 600;
  *   strip's: `ribbon(tools, view)` is handed them (`view.controls`, small tiles for its tab row's right
  *   end, and `view.status`; null while it fades). `dialogOpen`: the dialog's place holds something,
  *   and the top column, a tool's own row and its panels, keeps to the room past it.
+ *   `notice`: a notice of the renderer's own about its file (one brought in, offered to model on),
+ *   in the top-right corner under the host's (`view.notice`): Quick Edit opens under both, so
+ *   neither ever covers the other, at any width.
  *   `layoutControl`: a control of the renderer's own that lays the view out (a `ViewportViewControl`,
  *   `FloatingToolBar.js`), the first of the view's own controls: at the strip's end before Projection,
  *   or at the toolbar's tab row's right end while the workspace is up (edit mode's switch between
@@ -262,7 +265,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
   onContextMenuOpenChange = null, viewportOverlay = null, previewView = null,
   frameProvider = null, iconSprite = null, onCanvasPointerDown = null, onSelectPress = null, onSelectHover = null, selectsAnnotations = true, inkTouches = null,
   alertBody = null, alertStartsDismissed = false, ribbon = null, leftDock = null, bottomDock = null, dialogPlace = null, dialogOpen = false,
-  layoutControl = null, quickEditAsked = null }) {
+  layoutControl = null, quickEditAsked = null, notice = null }) {
   const { t } = useI18n();
   const frame = shell.frame;
   // What a tool's letter takes up (`useRendererShell`'s `onKey`): the strip as drawn now, none
@@ -775,10 +778,11 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
                 <ToolStack hidden={previewing} layout={frame.toolStack} onLayoutChange={frame.changeToolStack}>{toolPanels}</ToolStack>
               </StripTouchProvider>
               </div>}
-              {/* The top-right: the host's notice once a model is on screen (`view.notice`), and Quick Edit
-                  under it -- hidden, not unmounted, while the view loads: a note being written outlives a
-                  reload of the model. */}
-              <ViewportTopRight notice={chromeHidden ? null : view.notice}>
+              {/* The top-right: the host's notice once a model is on screen (`view.notice`), the
+                  renderer's own under it (`notice`), and Quick Edit under them -- hidden, not unmounted,
+                  while the view loads: a note being written outlives a reload of the model. */}
+              <ViewportTopRight notice={chromeHidden || !(view.notice || notice) ? null
+                : <div className="flex flex-col gap-2">{view.notice}{notice}</div>}>
                 {/* On a phone Quick Edit is a bottom sheet (`docked`), portalled out of this corner. */}
                 {compact || !references ? null : quickEdit}
               </ViewportTopRight>
