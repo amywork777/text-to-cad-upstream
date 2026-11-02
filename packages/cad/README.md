@@ -440,7 +440,16 @@ src/cad/
   srdf.py                #   `validate` verb, and the checks behind it (*_source.py,
                          #   *_validation.py, sdf_external.py, findings.py, xml_common.py)
   results.py             # what a `validate` verb returns: the JSON line protocol, typed
-  eng_drawing.py         # @eng_drawing: Sheets and Views over a part, one PDF
+  eng_drawing.py         # @eng_drawing: Sheet, View, part_sheet and assembly_sheets, one PDF
+                         #   projected from a part or an assembly; its engine
+                         #   is _internal/drawing_* (base: sizes, scales, text;
+                         #   sheet: frame, layout, chosen size and scale; views:
+                         #   projection, sections, details, breaks; annotation:
+                         #   dimensions, callouts, hole tables; render: a sheet
+                         #   drawn; report: what is left unstated; features:
+                         #   holes, slots, blends read off the B-rep; assembly:
+                         #   parts list, balloons, the set's sheets; gdt: feature
+                         #   control frames; profile: stages and Profile)
   work_instruction.py    # @work_instruction: the steps that build one assembly, one PDF;
                          #   its pages and figures in _internal/work_instruction_pages.py
   flatten.py             # flat patterns: exact 2D geometry from a solid's planar faces
