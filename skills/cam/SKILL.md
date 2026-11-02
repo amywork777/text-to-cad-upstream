@@ -92,6 +92,8 @@ mm/min).
    - **The controller.** `machine.post` is required and has no default: a dialect read by the
      wrong controller moves the machine wrongly. Ask which controller runs the machine (GRBL,
      LinuxCNC, Mach3/4, Fanuc, Centroid, UCCNC, Smoothieware); never guess it from the make.
+     With a tool for asking a question, offer the four most common as its answers with none
+     marked recommended, so sending nothing picks none, and the person names any other.
    - **The spindle's top speed.** `machine.max_rpm` is required: a small cutter's table speed is
      past most spindles', and every operation's speed is held to it. Ask; never assume a router's.
    - The machine's travel, slowest spindle speed and feed limit (`travel_mm`, `min_rpm`,

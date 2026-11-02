@@ -45,7 +45,10 @@ says what to do, and `cad doctor` explains the installation.
    - **Ask** the stage (concept, prototype, production) and the use, then
      propose which interfaces need a requirement, one numbered item at a
      time, each with a picture of the part with that feature marked (`cad
-     snapshot --annotation`).
+     snapshot --annotation`). Offer the stage the request points to first: a
+     shop drawing, or one to make or quote the part from, is a prototype or
+     production sheet with a general tolerance (for example linear ±0.5 mm,
+     holes ±0.1 mm, bends ±1° on sheet metal), not a sheet of nominal sizes.
    - **For an assembly, ask joint by joint what it does**: turns, slides,
      locates or stays fixed, which decides its fit; how it is held (a torque,
      a press, a bond, a pin's retention); the end play it needs along its
@@ -174,6 +177,12 @@ says what to do, and `cad doctor` explains the installation.
      one, and never present a guess as a requirement: a field you leave blank
      prints as an empty, captioned cell, which says the drawing does not
      state it, and the run reports what the sheet's stage still needs.
+   - A sheet's notes state what to make, not what is still open: questions,
+     unfinished analysis and "not released" lines go in the handoff to the
+     person, not on a prototype or production sheet.
+   - A bent sheet-metal part goes to the shop with its flat pattern: write it
+     as a DXF in the same job and name it in a note (FLAT PATTERN PER
+     `bracket_flat.dxf`), so the blank and bend lines are not left to guess.
 5. **Run the drawing script and read what it prints** before the PDF:
 
    ```bash
