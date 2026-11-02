@@ -125,16 +125,16 @@ def document_of(script: Path) -> str | None:
 
 def _model_home(ident: str) -> Path | None:
     """The script a model's document is built from, as the engine's registry of documents records it
-    (``cad.engine.registry``, in the caller's state folder; no kernel). None for an id it does
-    not hold as a model's: a shape handed over, an opened file, or one never built."""
-    from cad_server.engine import registry
+    (read alone, ``cad.engine.records``, in the caller's state folder; no kernel). None for an id it
+    does not hold as a model's: a shape handed over, an opened file, or one never built."""
+    from cad.engine import records
 
-    held = registry.current()
-    record = held.get(ident) if held is not None else None
+    held = records.current()
+    record = held.get(ident)
     if not record or record.get("kind") != "model":
         return None
     try:
-        return registry.home(held, record)
+        return records.home(held, record)
     except (KeyError, TypeError, ValueError, OSError):
         return None
 
