@@ -4,7 +4,7 @@ ordinary Python scripts call decorated models explicitly.
     python SCRIPT.py                                 the models the script explicitly calls
     cad export SRC DST [DST ...] [--json]
     cad snapshot SRC OUT.png [--display MODE|exploded=A|JSON] [--camera PRESET|az:el|JSON|authored] [--grid]
-        [--pose NAME|JSON] [--annotation FILE] [--measurements FILE] [--width N] [--height N]
+        [--view NAME] [--pose NAME|JSON] [--annotation FILE] [--measurements FILE] [--width N] [--height N]
         [--size-profile P] [--json]
     cad serve DOC [--port N]
     cad status [--json] | stop [--json] | server [--port N] [--rotate-token]
@@ -116,9 +116,10 @@ def _snapshot_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
                              "dimensions, at its output settings (padding, tightFrame, transparent, renderScale, "
                              "sizeProfile); the other flags override every job")
     parser.add_argument("--display", help="a mode (solid, shaded, parts, xray, hidden-line, wireframe), exploded=AMOUNT "
-                                          "(the parts moved apart, 0 to 1; with a mode: hidden-line,exploded=0.6), or "
+                                          "(the parts moved apart, 0 to 1; with a mode: hidden-line,exploded=0.6), pmi=off "
+                                          "(a document's PMI not drawn; pmi or pmi=on asks for it), or "
                                           "the display JSON object (mode, grid, appearance, camera, clip, exploded, "
-                                          "hidden, isolated: part refs the picture leaves out, or alone draws), or "
+                                          "pmi, view, hidden, isolated: part refs the picture leaves out, or alone draws), or "
                                           "a JSON file of it; a drawing takes appearance alone: light or dark, as the word "
                                           "or as {\"appearance\": ...}")
     parser.add_argument("--grid", action="store_true", help="draw the measuring grid")
@@ -127,6 +128,9 @@ def _snapshot_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
                                          "the viewer's scene coordinates, as a Quick Edit packet carries them: a "
                                          "document's or a GLB's mm, a robot's m, a 3MF's unit), or authored: the "
                                          "view --annotation's ink was drawn in, from its Quick Edit packet, exactly")
+    parser.add_argument("--view", metavar="NAME", help="a part's named view (cad.ap242's view; PART/NAME where two "
+                                                       "parts have one): drawn down its camera, cut by its section, "
+                                                       "its PMI alone at its placements; not with --camera")
     parser.add_argument("--width", type=int)
     parser.add_argument("--height", type=int)
     parser.add_argument("--size-profile", choices=sorted(snapshot.SIZE_PROFILES))
@@ -162,7 +166,7 @@ def _snapshot(args: argparse.Namespace, prog: str = "cad snapshot") -> int:
         report = api.snapshot(Path(args.document), args.out, display=args.display, camera=args.camera, grid=args.grid,
                               pose=args.pose, width=args.width, height=args.height,
                               size_profile=args.size_profile, annotation=args.annotation,
-                              measurements=args.measurements).report
+                              measurements=args.measurements, view=args.view).report
     except snapshot.SnapshotRefused as error:
         raise Failed(str(error), 2) from None
     except ConnectionError:
@@ -187,7 +191,7 @@ def _snapshot_held(args: argparse.Namespace, prog: str) -> int:
         drawn = api.snapshot(args.document, args.out, display=args.display, camera=args.camera, grid=args.grid,
                              pose=args.pose, width=args.width, height=args.height,
                              size_profile=args.size_profile, annotation=args.annotation,
-                             measurements=args.measurements)
+                             measurements=args.measurements, view=args.view)
     except (snapshot.SnapshotRefused, ValueError) as error:
         raise Failed(str(error), 2) from None
     except api.EngineError as error:
@@ -216,7 +220,7 @@ def _snapshot_job(args: argparse.Namespace, prog: str) -> int:
         drawn = api.snapshot(args.document, job=args.job, display=args.display, camera=args.camera, grid=args.grid,
                                  pose=args.pose, width=args.width, height=args.height,
                                  size_profile=args.size_profile, annotation=args.annotation,
-                                 measurements=args.measurements)
+                                 measurements=args.measurements, view=args.view)
     except snapshot.SnapshotRefused as error:
         raise Failed(str(error), 2) from None
     except Exception as error:  # noqa: BLE001 - a failed render is the command's answer

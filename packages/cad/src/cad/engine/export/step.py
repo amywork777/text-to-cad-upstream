@@ -2,8 +2,11 @@
 
 The assembly with its instance and product names, colours per part and per painted face,
 material names and densities (the writer's material mode), approximate standard surface
-reflectance and transparency for material-bearing parts and faces, and the element names on face
-and edge sub-shape labels (``write.stepcaf.subshapes.name``). A document as built is
+reflectance and transparency for material-bearing parts and faces, the element names on face
+and edge sub-shape labels (``write.stepcaf.subshapes.name``) and what each folded atom of them
+stands for (``_part_properties``), and the document's semantic PMI
+(``pmi``: the writer's GD&T mode; ``export.translate`` refuses a STEP that would drop the code's,
+``pmi.refuse_dropped``). A document as built is
 written from its XCAF document itself; one held without it (a foreign STEP's), from the
 view made a document again (``tree.tree_of``). The mechanism, its
 configurations and the model's provenance are never in a STEP: the kernel has no writer
@@ -81,9 +84,12 @@ def write_document(doc: Any, path: Path) -> None:
     from OCP.STEPCAFControl import STEPCAFControl_Writer
     from OCP.STEPControl import STEPControl_AsIs
 
-    from cad.engine.document import _XCAF_LOCK
+    from cad.engine import pmi
+    from cad.engine.document import _XCAF_LOCK, folded_names
 
     with _XCAF_LOCK:
+        stated = pmi.general_tolerances(doc)
+        folded = folded_names(doc)
         _quiet(Message)
         # The writer defines the translator's parameters: set them once it exists.
         writer = STEPCAFControl_Writer()
@@ -94,6 +100,8 @@ def write_document(doc: Any, path: Path) -> None:
         writer.SetColorMode(True)
         writer.SetMaterialMode(True)
         writer.SetLayerMode(False)
+        # The document's semantic PMI (``pmi``), as AP242's: the writer's default, said.
+        writer.SetDimTolMode(True)
         with _usages_apart(doc):
             if not writer.Transfer(doc, STEPControl_AsIs):
                 raise OSError(f"could not write {path}")
@@ -104,6 +112,8 @@ def write_document(doc: Any, path: Path) -> None:
         if writer.Write(str(path)) != IFSelect_RetDone:
             raise OSError(f"could not write {path}")
     _settle(Path(path), changed_styles)
+    if stated or folded:
+        _part_properties(Path(path), stated, folded)
 
 
 @contextmanager
@@ -200,12 +210,12 @@ _BREAK = re.compile(rb"\r?\n *")
 
 def _settle(path: Path, changed_styles: bool = False) -> None:
     """The written file made a function of the document alone (see the module docstring): its
-    presentations in the document's order (``_presentations``) and its assembly occurrences
-    numbered as a fresh process numbers them (``_occurrences``); written again when either
-    changed it."""
+    presentations in the document's order (``_presentations``), its assembly occurrences
+    numbered as a fresh process numbers them (``_occurrences``), and its PMI records as AP242
+    has them (``_pmi_records``); written again when any changed it."""
     original = path.read_bytes()
     data = _prune_unused_styles(original) if changed_styles else original
-    settled = _occurrences(_presentations(data))
+    settled = _pmi_records(_occurrences(_presentations(data)))
     if settled != original:
         path.write_bytes(settled)
 
@@ -359,6 +369,161 @@ def _one_line(text: bytes) -> bytes:
     for at in range(1, len(pieces), 2):
         pieces[at] = pieces[at].replace(b"\r", b"").replace(b"\n", b"")
     return b"'".join(pieces)
+
+
+# The kernel's writer gets three PMI records wrong, found by an AP242 reader of no OCCT
+# (``ap242.py``, and the standard's EXPRESS):
+# - a tolerance's bounds, ``TOLERANCE_VALUE``'s, as ``MEASURE_WITH_UNIT(0.2,#u)``: the value
+#   untyped, where ``measure_value`` is a select a strict reader needs typed. They are written as
+#   the CAx-IF practice has them, ``LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#u)``, where
+#   ``#u`` is a length unit;
+# - beside every diametral zone, a ``RUNOUT_ZONE_DEFINITION`` of two attributes (the schema's
+#   has three: no orientation) and the ``RUNOUT_ZONE_ORIENTATION`` of 0 it leaves unreferenced: a
+#   runout zone's, on a tolerance that is no runout. Both dropped, with the angle only they
+#   refer to; the zone and its form stay;
+# - in a document with no dimension, every tolerance's magnitude in metres: the writer takes the
+#   GD&T unit from the first dimension's context and, with none, a bare ``SI_UNIT($,.METRE.)``
+#   (``STEPCAFControl_Writer::GetUnit``), the value left in the document's millimetres -- a
+#   flatness of 0.05 mm written as 0.05 m. Each such measure refers to the file's millimetre
+#   unit instead, and the bare metre, then unreferenced, is dropped.
+_TOLERANCE_VALUE = re.compile(rb"TOLERANCE_VALUE\s*\(\s*#(\d+)\s*,\s*#(\d+)\s*\)")
+_UNTYPED_BOUND = re.compile(rb"MEASURE_WITH_UNIT\s*\(\s*([-+]?[0-9.]+(?:[eE][-+]?[0-9]+)?)\s*,\s*#(\d+)\s*\)\s*;")
+_RUNOUT = re.compile(rb"RUNOUT_ZONE_DEFINITION\s*\(\s*#\d+\s*,\s*\(\s*\)\s*\)\s*;")
+_ORIENTATION = re.compile(rb"RUNOUT_ZONE_ORIENTATION\s*\(\s*#(\d+)\s*\)\s*;")
+_MILLIMETRE = re.compile(rb"\(\s*LENGTH_UNIT\s*\(\s*\)\s*NAMED_UNIT\s*\(\s*\*\s*\)\s*SI_UNIT\s*\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)\s*\)")
+_METRE = re.compile(rb"\(\s*LENGTH_UNIT\s*\(\s*\)\s*NAMED_UNIT\s*\(\s*\*\s*\)\s*SI_UNIT\s*\(\s*\$\s*,\s*\.METRE\.\s*\)\s*\)")
+_MEASURE = re.compile(rb"MEASURE_WITH_UNIT\s*\(.*,\s*#(\d+)\s*\)\s*;", re.S)
+_GDT_MAGNITUDE = re.compile(rb"_TOLERANCE\s*\(\s*'(?:[^']|'')*'\s*,\s*'(?:[^']|'')*'\s*,\s*#(\d+)")
+
+
+def _pmi_records(data: bytes) -> bytes:
+    """The PMI records the kernel's writer gets wrong, put right (see above); a file with no PMI
+    is left as it is."""
+    if b"_TOLERANCE" not in data:
+        return data
+    start = data.find(b"\nDATA;")
+    end = data.find(b"ENDSEC;", start)
+    body = data[start:end]
+    heads = list(_RECORD.finditer(body))
+    spans = {int(match.group(1)): (match.start(), heads[at + 1].start() if at + 1 < len(heads) else len(body))
+             for at, match in enumerate(heads)}
+
+    def text(number: int) -> bytes:
+        begun, ended = spans[number]
+        return body[begun:ended]
+
+    replaced: dict[int, bytes] = {}
+    for match in _TOLERANCE_VALUE.finditer(body):
+        for bound in (int(match.group(1)), int(match.group(2))):
+            found = _UNTYPED_BOUND.search(text(bound)) if bound in spans else None
+            if found is None:
+                continue
+            unit = int(found.group(2))
+            if unit not in spans or b"LENGTH_UNIT" not in text(unit):
+                continue
+            head = text(bound)[:text(bound).index(b"=") + 1]
+            replaced[bound] = head + b" LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(%s),#%d);\n" % (found.group(1), unit)
+    # A tolerance's magnitude in the writer's default metre: in the file's millimetre instead.
+    millimetre = next((number for number in spans if _MILLIMETRE.search(text(number))), None)
+    metres = {number for number in spans if _METRE.search(text(number))}
+    if millimetre is not None and metres:
+        for match in _GDT_MAGNITUDE.finditer(body):
+            magnitude = int(match.group(1))
+            record = replaced.get(magnitude, text(magnitude)) if magnitude in spans else b""
+            found = _MEASURE.search(record)
+            if found and int(found.group(1)) in metres:
+                replaced[magnitude] = record[:found.start(1) - 1] + b"#%d" % millimetre + record[found.end(1):]
+    runouts = [number for number in spans if b"RUNOUT_ZONE_" in text(number)[:64]]
+    candidates: dict[int, int] = {}  # a record that may go: its angle, or 0
+    for number in runouts:
+        record = text(number)
+        if _RUNOUT.search(record):
+            candidates[number] = 0
+        else:
+            found = _ORIENTATION.search(record)
+            if found:
+                candidates[number] = int(found.group(1))
+    if not candidates and not replaced:
+        return data
+    # Who refers to each record that may go (one pass, strings blanked, each as it is written).
+    for number in metres:
+        candidates.setdefault(number, 0)
+    watched = set(candidates) | {angle for angle in candidates.values() if angle}
+    referred: dict[int, set[int]] = {number: set() for number in watched}
+    for number in spans:
+        record = _QUOTED.sub(b"''", replaced.get(number, text(number)))
+        for ref in _REFERENCE.findall(record[record.index(b"=") + 1:]):
+            if int(ref) in referred:
+                referred[int(ref)].add(number)
+    dropped = {number for number in candidates if not referred[number]}
+    for number in list(dropped):
+        angle = candidates[number]
+        if angle and angle in spans and b"PLANE_ANGLE_MEASURE_WITH_UNIT" in text(angle) and referred[angle] <= dropped:
+            dropped.add(angle)
+    if not replaced and not dropped:
+        return data
+    pieces = [body[:heads[0].start()]]
+    pieces.extend(replaced.get(number, text(number)) for number in spans if number not in dropped)
+    return data[:start] + b"".join(pieces) + data[end:]
+
+
+def _part_properties(path: Path, stated: list[tuple[str, str]], folded: list[tuple[str, dict[str, str]]]) -> None:
+    """Properties of the parts OCCT's writer has no entity for, appended to the written file, each a
+    ``PROPERTY_DEFINITION`` of the part's ``PRODUCT_DEFINITION_SHAPE`` whose representation's items say it:
+
+    - each part's general tolerance (``pmi.general_tolerance``: its product's name, the standard), as
+      CAx-IF's PMI practice states a part's default tolerances: 'default tolerances', its item the
+      'tolerance class';
+    - each part's folded element names (``document.folded_names``): 'folded element names', an item
+      per folded atom, named the atom and described by what it stands for, so a reader of the file
+      alone spells a name out to where its element was made.
+
+    Numbered on from the file's last record, in the document's order, so the same document writes
+    the same bytes. A part is found by its name among the products that hold geometry; two of one
+    name refuse a general tolerance, and leave folded names unwritten (they name nothing apart)."""
+    from cad.engine.export import ap242
+
+    data = path.read_bytes()
+    end = data.rindex(b"ENDSEC;")
+    found = ap242.Report(ap242.parse(data.decode("utf-8")))
+    # Each part's shape by its product's name: the products that hold faces (an assembly, a part's
+    # own name too where it holds one part, holds none).
+    held = {product for product, names in found.faces_of().items() if names}
+    shapes: dict[str, list[int]] = {}
+    for shape in found.of_type("PRODUCT_DEFINITION_SHAPE"):
+        if found._product(shape) in held:
+            shapes.setdefault(found.product(shape), []).append(shape)
+    number = max(int(match.group(1)) for match in _RECORD.finditer(data))
+    added = []
+
+    def add(shape: int, name: bytes, context: bytes, items: list[tuple[str, str]]) -> None:
+        nonlocal number
+        first = number + 2
+        records = [b"#%d = REPRESENTATION_CONTEXT('','%s');\n" % (number + 1, context)]
+        records += [b"#%d = DESCRIPTIVE_REPRESENTATION_ITEM('%s','%s');\n" % (first + at, _text(key), _text(value))
+                    for at, (key, value) in enumerate(items)]
+        number = first + len(items)
+        held = b",".join(b"#%d" % at for at in range(first, number))
+        records += [b"#%d = REPRESENTATION('%s',(%s),#%d);\n" % (number, name, held, first - 1),
+                    b"#%d = PROPERTY_DEFINITION('%s','',#%d);\n" % (number + 1, name, shape),
+                    b"#%d = PROPERTY_DEFINITION_REPRESENTATION(#%d,#%d);\n" % (number + 2, number + 1, number)]
+        number += 2
+        added.extend(records)
+
+    for name, standard in stated:
+        if len(shapes.get(name, ())) != 1:
+            raise OSError(f"{path.name}: the general tolerance of part {name!r} has no one product of that name to "
+                          "be written on: name each part apart")
+        add(shapes[name][0], b"default tolerances", b"default setting", [("tolerance class", standard)])
+    for name, table in folded:
+        if len(shapes.get(name, ())) == 1:
+            add(shapes[name][0], b"folded element names", b"", sorted(table.items()))
+    path.write_bytes(data[:end] + b"".join(added) + data[end:])
+
+
+def _text(value: str) -> bytes:
+    """A STEP string's contents: its quotes doubled, its text UTF-8 as the writer writes names."""
+    return value.replace("'", "''").encode("utf-8")
 
 
 def _quiet(message: Any) -> None:
