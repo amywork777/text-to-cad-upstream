@@ -23,6 +23,7 @@ Outputs (GITHUB_OUTPUT), one flag per job and the test paths the narrowed jobs t
 
     cadgen  cadgen_tests          cadgen (Linux), cadgen (Windows)
     cam                           cam (the CAM suites, with FreeCAD installed)
+    fea                           fea (the solver tests, with CalculiX installed)
     core_js                       core-js
     web  web_ui  web_client
     mcp
@@ -61,7 +62,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CADGEN_SUITE = "tests/python/packages"
 POLICY_SUITE = "tests/python/global"
 SKILL_SUITES = "tests/python/skills"
-FLAGS = ("cam", "core_js", "web_ui", "web_client", "web_viewer", "mcp", "api", "docs", "packaging")
+FLAGS = ("cam", "fea", "core_js", "web_ui", "web_client", "web_viewer", "mcp", "api", "docs", "packaging")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -275,6 +276,15 @@ RULES: tuple[Rule, ...] = (
     Rule(VIEWER_CODE, _viewer_change, final=True),
     Rule(MCP_CODE, _mcp_change, final=True),
     Rule(SHIM_CODE, _shim_change, final=True),
+    # The engine and shared modules FEA reads a document, finds CalculiX and writes its result through: a change
+    # there runs the solves too, which the cadgen job skips without CalculiX. Before the engine's final rule, which
+    # adds the rest.
+    Rule((
+        f"{LIBRARY_SRC}/engine/document.py", f"{LIBRARY_SRC}/engine/refs.py", f"{LIBRARY_SRC}/engine/kernel/bounds.py",
+        f"{LIBRARY_SRC}/engine/executables.py", f"{LIBRARY_SRC}/engine/export/glb.py",
+        f"{LIBRARY_SRC}/_internal/atomic_replace.py", f"{LIBRARY_SRC}/_internal/kernel_run.py",
+        f"{SERVER_SRC}/_internal/cli_from_function.py",
+    ), select(flags=["fea"])),
     Rule(ENGINE_CODE, CADGEN_CONSUMERS, final=True),
     Rule(tuple(f"{project}/**" for project in PACKAGE_PROJECTS + ALIAS_PROJECTS) + ("scripts/bundle/**",),
          CADGEN_CONSUMERS),
@@ -285,6 +295,14 @@ RULES: tuple[Rule, ...] = (
         f"{SERVER_SRC}/_internal/kernel_verb.py", f"{CADGEN_SUITE}/cad/cam/**", "tests/python/support/cam_fixtures.py",
         "skills/cam/**",
     ), select(flags=["cam"])),
+    # The stress solver's own tests need CalculiX, which no other job installs: it, its commands,
+    # the result types it returns and the mesher's pin. Its skill's pages are checked against it.
+    Rule((
+        f"{LIBRARY_SRC}/_internal/fea/**", f"{LIBRARY_SRC}/fea.py", f"{SERVER_SRC}/cli/fea_*",
+        f"{SERVER_SRC}/_internal/kernel_verb.py",
+        f"{LIBRARY_SRC}/results.py", "packages/cad/pyproject.toml", f"{CADGEN_SUITE}/cad/test_fea*.py",
+    ), select(flags=["fea"])),
+    Rule((f"{LIBRARY_SRC}/_internal/fea/**",), select(skills=[f"{SKILL_SUITES}/fea"])),
 
     # The shared UI and the apps. The snapshot runtime is built from core alone, so ui
     # reaches the two hosts and the wheel, not cadgen's suites.
@@ -316,9 +334,10 @@ RULES: tuple[Rule, ...] = (
     Rule(("skills/work-instructions/**",), select(cadgen=[f"{CADGEN_SUITE}/cad/test_work_instruction.py"])),
     # The cam skill's pages are checked against the job vocabulary the library reads.
     Rule(("skills/cam/**",), select(cadgen=[f"{CADGEN_SUITE}/cad/cam/test_cam_skill.py"])),
+    Rule(("skills/fea/**",), select(skills=[f"{SKILL_SUITES}/fea"])),
 
     # The test runners and the gates each one feeds.
-    Rule(("scripts/test/test-python.sh",), select(flags=["cam"], cadgen=[CADGEN_SUITE], skills=[SKILL_SUITES])),
+    Rule(("scripts/test/test-python.sh",), select(flags=["cam", "fea"], cadgen=[CADGEN_SUITE], skills=[SKILL_SUITES])),
     Rule(("scripts/test/test-global.sh",), select(policy=[POLICY_SUITE])),
     Rule(("scripts/test/test-js.sh", "scripts/test/check-*.mjs"), select(flags=["core_js", "web_ui", "web_client", "mcp"])),
     Rule(("scripts/test/test-api.sh",), select(flags=["api"])),

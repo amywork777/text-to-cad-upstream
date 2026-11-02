@@ -14,6 +14,7 @@
         "dfm",
         "cam",
         "dfam-check",
+        "fea",
         "gcode",
         "bambu-labs",
         "sendcutsend"

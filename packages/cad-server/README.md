@@ -73,7 +73,9 @@ src/cad_server/
 engine's verbs (`snapshot` draws every file the viewer opens, a DXF or a robot among them);
 `cad urdf|sdf|srdf validate` the validators; `cad cam features|plan` CAM (a part and a job in, a
 `.cam.glb` and G-code out: the library's `cad.cam`, run in the CAD kernel environment by
-`_internal/kernel_verb.py`); `cad doctor` the setup (the installation registered,
+`_internal/kernel_verb.py`);
+`cad fea faces|parts|solve` finite element analysis
+(`cad.fea`, run in the CAD kernel environment by `_internal/kernel_verb.py`; `solve` needs CalculiX); `cad doctor` the setup (the installation registered,
 the `cad` command written, the CAD kernel environment made, the engine started; the releases on
 disk, the current one, the engine's and each app's plugin's) and what earlier releases left behind
 that nothing needs, which `cad doctor --prune` removes (`_internal/leftovers.py`: engine records of

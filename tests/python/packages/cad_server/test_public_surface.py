@@ -35,6 +35,8 @@ PUBLIC_SURFACE: dict[str, tuple[str, ...]] = {
     # Not a format: a part and a job go in, a result GLB and G-code come out. Run by its commands in
     # the CAD kernel's environment (cad_server._internal.kernel_verb).
     "cad.cam": ("features", "plan"),
+    # Not a format: a part goes in, a result GLB comes out.
+    "cad.fea": ("faces", "parts", "solve"),
 }
 
 # Commands whose parser is GENERATED from the verb it calls. No allowlist is possible here:
@@ -44,6 +46,9 @@ MIRRORS: dict[str, tuple[str, str]] = {
     "srdf validate": ("cad.srdf", "validate"),
     "cam features": ("cad.cam", "features"),
     "cam plan": ("cad.cam", "plan"),
+    "fea faces": ("cad.fea", "faces"),
+    "fea parts": ("cad.fea", "parts"),
+    "fea solve": ("cad.fea", "solve"),
 }
 
 # The engine snapshot's options (``cad.engine.snapshot``).

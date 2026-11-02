@@ -108,7 +108,7 @@ COPY_MARK = ".text-to-cad-copy"
 # release's said so in its body); a loose skill naming it, under one of this repository's skill names
 # (its skills/ folder), is ours.
 PROVENANCE = REPOSITORY
-SKILLS = ("bambu-labs", "cad", "cam", "dfam-check", "dfm", "dxf", "engineering-drawing", "gcode", "sdf",
+SKILLS = ("bambu-labs", "cad", "cam", "dfam-check", "dfm", "dxf", "engineering-drawing", "fea", "gcode", "sdf",
           "sendcutsend", "srdf", "step-parts", "urdf", "work-instructions")
 # Claude Desktop's server key, and the variable its server is told its install channel by.
 DESKTOP_KEY = "cad"
