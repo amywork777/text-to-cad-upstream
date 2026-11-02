@@ -1,6 +1,6 @@
 /**
  * Edit mode's rules, pure: how a part's history, sizes and dimensions read in the viewer
- * (`cadgen/edit` reads them from the part's script), the modeling commands of the ribbon and
+ * (`cad/edit` reads them from the part's script), the modeling commands of the ribbon and
  * what each sends, what the note of a hand change says, and the undo history of hand changes.
  */
 
@@ -132,7 +132,7 @@ export function featureTree(state) {
   if (state?.components?.length) {
     return { assembly: true, components: state.components.map(component => ({
       id: `component:${component.file}`, title: `${sizeName(component.name)}<1>`, features: partFeatures(component.features),
-      // The part's own model, which Open Part opens to model it: its document's id (cadgen 0.8's
+      // The part's own model, which Open Part opens to model it: its document's id (the engine's
       // `@model`), else the STEP it writes; null for neither.
       document: component.document || null, step: component.step || null, name: sizeName(component.name),
     })) };
@@ -571,7 +571,7 @@ export function mirrorOutline(mark, bounds) {
 const GRAMS_PER_OUNCE = 28.349523125;
 
 /**
- * Mass Properties as SolidWorks lists them, in the part's units (`mass`, as `cadgen/edit` works
+ * Mass Properties as SolidWorks lists them, in the part's units (`mass`, as `cad/edit` works
  * them out in millimetres): its mass in a material of `density` g/cm^3 (grams, or ounces with the
  * grams beside them in an inch part; none without a material), its volume, surface area, center of
  * mass and overall size.
@@ -645,7 +645,7 @@ export function notASketch(title) {
 /** The job that redraws such a profile as a sketch the person can edit, for the chat. */
 export function redrawJob(sketch) {
   const where = sketch.file ? ` (${sketch.file}${sketch.line ? `, line ${sketch.line}` : ""})` : "";
-  return `Redraw ${sketch.title}${where} as an editable sketch with cadgen.sketch, keeping its shape and sizes, so I can edit it by hand.`;
+  return `Redraw ${sketch.title}${where} as an editable sketch with cad.sketch, keeping its shape and sizes, so I can edit it by hand.`;
 }
 
 export function changeNote(change) {
@@ -740,7 +740,7 @@ export function commandDefaults(id, units) {
 /**
  * What the viewer's selection is to a command: each face or edge by its selector (the engine's ref to
  * it by number, `selectors.js`), with what the viewer read of it (its kind, centre, and area or length),
- * so `cadgen/edit` finds it on the part as its script makes it now.
+ * so `cad/edit` finds it on the part as its script makes it now.
  */
 export function selectionItems(references = []) {
   return references.filter(reference => reference?.selectorType === "face" || reference?.selectorType === "edge").map(reference => {
@@ -832,7 +832,7 @@ export function clickOffsets(point, center, normal, units) {
 }
 
 /**
- * The request a command's OK sends (`cadgen/edit`): the command, its selection, its inputs as
+ * The request a command's OK sends (`cad/edit`): the command, its selection, its inputs as
  * typed and, for Mirror and Pattern, the history feature they copy (none copies the body).
  */
 /**
@@ -1180,7 +1180,7 @@ export function drawingNote(change) {
   return `In edit mode I ${change.words} (${change.file}); it wrote ${change.pdf}.`;
 }
 
-/** What the agent is told of a Mate: what it did, or the mate taken out, and where (`cadgen/edit/mates.py`). */
+/** What the agent is told of a Mate: what it did, or the mate taken out, and where (`cad/edit/mates.py`). */
 export function mateNote(change, { undo = false, redo = false } = {}) {
   const where = `(${change.file}, line ${change.line})`;
   // Insert Components: a part added to the assembly.

@@ -66,7 +66,7 @@ const changedLines = change => !change?.undo?.hunks || change.undo.hunks.length 
 const sketchTarget = sketch => ({ file: sketch.file, line: sketch.line, name: sketch.name });
 
 /**
- * Edit mode for the file on screen (`cadgen/edit`, through the CAD client): the part's script read
+ * Edit mode for the file on screen (`cad/edit`, through the CAD client): the part's script read
  * as a design, kept current while the view is up, one number of it changed by hand, the ribbon's
  * modeling commands (`command`, the one whose panel is open; `previewFeature` shows what its OK
  * would make, without writing it; `run` writes its line), and sketch
@@ -152,7 +152,7 @@ export function useEditMode({ client, file, active, reading = true }) {
   // extrude in yellow while its PropertyManager is open: set by the command's panel.
   const [preview, setPreview] = useState(null);
   // Preview, for the commands the view cannot sweep itself: what OK would make, made by the server
-  // without writing it (`cadgen/edit`), the material it adds and the material it takes away
+  // without writing it (`cad/edit`), the material it adds and the material it takes away
   // (`{ key, status, added, removed, error }`). While a new one is made (`updating`) the last one
   // stays drawn; one that failed (`failed`) draws nothing and says why. `previewOn` is the panels'
   // Preview switch, kept for the session.
@@ -221,7 +221,7 @@ export function useEditMode({ client, file, active, reading = true }) {
     watchBuild(reply?.building);
     if (reply.unchanged) {
       // The part reads as it did, but who made its features moves on as a turn of the agent's ends
-      // (`cadgen/edit/authors.py`): the read says it as it is now.
+      // (`cad/edit/authors.py`): the read says it as it is now.
       setState(current => (current ? { ...current, building: reply.building, ...("authors" in reply ? { authors: reply.authors } : {}) } : current));
       // The rollback bar moved alone: the part as it was read, and the bar where it went.
       if ("bar" in reply) setBar(reply.bar);
@@ -846,7 +846,7 @@ export function useEditMode({ client, file, active, reading = true }) {
     return probe;
   }, [client, file]);
   // The part made of the STEP brought in, by its document's id, once the engine holds it: an id never built is not built by
-  // opening it (cadgen's law 23), so the probe is asked again while its build runs (`partBuilding`) until it is built
+  // opening it (the server's law 23), so the probe is asked again while its build runs (`partBuilding`) until it is built
   // (`partBuilt`), for as long as a build may take; null where none was made, its build ended without it (its error is then
   // `imported.error`), the view went or the file moved on meanwhile.
   const importedPart = useCallback(async () => {
@@ -888,7 +888,7 @@ export function useEditMode({ client, file, active, reading = true }) {
     }
     return null;
   }, [client, file, supported]);
-  // The STEP brought in made a part beside it (`cadgen/edit/service.py` `adopt`), built, and named by its document's id, to
+  // The STEP brought in made a part beside it (`cad/edit/service.py` `adopt`), built, and named by its document's id, to
   // open; null where it could not be made or did not build. Either way the chip learns of the part made, so a second press
   // opens it rather than making another.
   const adopt = useCallback(async () => {

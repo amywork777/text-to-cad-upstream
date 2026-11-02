@@ -1,5 +1,5 @@
 /**
- * Sketch mode's rules, pure: a constrained sketch (`cadgen.sketch`, solved by `cadgen/edit`) read
+ * Sketch mode's rules, pure: a constrained sketch (`cad.sketch`, solved by `cad/edit`) read
  * for drawing, what a click lands on (an existing point, a curve, a line's midpoint), what a
  * stroke infers (a line drawn horizontal), what each sketch tool sends, which dimension Smart
  * Dimension makes of what is picked, which relations a selection can take, where a dimension is
@@ -514,7 +514,7 @@ export function polygonCorners(center, vertex, sides) {
 
 /**
  * The change a drawing tool sends once it has its clicks (`picks`, refs from `snap`): an entity
- * drawn (`cadgen/edit`'s `draw`), with what it infers. `options.construction` draws it for
+ * drawn (`cad/edit`'s `draw`), with what it infers. `options.construction` draws it for
  * construction; `options.clockwise` says which way an arc was swept; `options.sides`, a polygon's.
  */
 export function drawOp(tool, picks, state, { construction = false, clockwise = false, sides = 6, closed = false } = {}) {
@@ -1172,7 +1172,7 @@ export function patternSettings(tool, settings = {}, selection = [], state = nul
     angle: String(settings.linearAngle ?? "").trim() || "0" };
 }
 
-/** A sketch pattern's change (`patternSettings`), as `cadgen/edit` takes it. */
+/** A sketch pattern's change (`patternSettings`), as `cad/edit` takes it. */
 export function patternOp(pattern) {
   const { center, ...rest } = pattern;
   return { kind: "pattern", ...rest, count: String(pattern.count), ...(center ? { center } : {}) };

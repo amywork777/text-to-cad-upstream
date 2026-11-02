@@ -771,9 +771,9 @@ test("a profile made from build123d's shapes says what it is and how to make it 
   assert.equal(notASketch("Sketch1"),
     "Sketch1 isn't an editable sketch yet: it's built from fixed shapes, so only its sizes change, in the panel.");
   assert.equal(redrawJob({ title: "Sketch1", file: "parts/hook.py", line: 12 }),
-    "Redraw Sketch1 (parts/hook.py, line 12) as an editable sketch with cadgen.sketch, keeping its shape and sizes, so I can edit it by hand.");
+    "Redraw Sketch1 (parts/hook.py, line 12) as an editable sketch with cad.sketch, keeping its shape and sizes, so I can edit it by hand.");
   assert.equal(redrawJob({ title: "Sketch2", file: null, line: null }),
-    "Redraw Sketch2 as an editable sketch with cadgen.sketch, keeping its shape and sizes, so I can edit it by hand.");
+    "Redraw Sketch2 as an editable sketch with cad.sketch, keeping its shape and sizes, so I can edit it by hand.");
 });
 
 test("a Mid Plane is drawn midway between its two faces, square to the first, and the standard views look as SolidWorks' do", () => {

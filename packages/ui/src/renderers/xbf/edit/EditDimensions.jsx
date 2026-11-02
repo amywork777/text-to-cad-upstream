@@ -72,7 +72,7 @@ function DimensionChip({ dimension, units, editing, active, disabled, onEdit, on
 /**
  * Edit mode's layer over the viewport: the selected feature's dimensions on the model, drawn in
  * Measure's color, each with its value, which a double-click changes. The points are the part's
- * own millimetres (`cadgen/edit`), placed as the model is (under the model group), and laid out
+ * own millimetres (`cad/edit`), placed as the model is (under the model group), and laid out
  * again only when the view is drawn or the dimensions changed.
  *
  * @param {{ viewport: { runtimeRef: object, hostRef: object, viewerReadyTick: number },

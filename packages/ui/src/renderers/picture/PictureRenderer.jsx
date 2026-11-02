@@ -211,7 +211,7 @@ function PictureSurface({ view, data }) {
     view, data, workspace, file, shown, ready, alert, tools, selection, references, chips, nameReference,
     capture, currentView, annotationDocument, runtime, live: PICTURE_LIVE, captureFailed: t("alert.capturePictureFailed"), fit
   });
-  // Nothing draws a picture again from a snapshot packet (`cadgen snapshot` draws CAD files), so a
+  // Nothing draws a picture again from a snapshot packet (`cad snapshot` draws CAD files), so a
   // note sends the view itself with its marks, as a PNG the host saves and names by its path,
   // whenever there are marks; else the file alone.
   const host = useViewerHost();

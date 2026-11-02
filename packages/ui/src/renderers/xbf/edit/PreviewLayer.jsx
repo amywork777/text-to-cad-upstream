@@ -79,7 +79,7 @@ function drawCenterOfMass(context, [x, y], color, font) {
  * A feature's preview over the model, as SolidWorks previews a feature while its PropertyManager is
  * open: the material OK would take away shaded red and the material it would add amber, each with
  * its edges, as the extrude preview draws them (`SketchesLayer.jsx`), drawn over the model rather
- * than hidden inside it. `preview` is what `cadgen/edit` made of the open command without writing
+ * than hidden inside it. `preview` is what `cad/edit` made of the open command without writing
  * it (`edit.featurePreview`: its `removed` and `added` solids, in the part's millimetres).
  *
  * With `mark` (`edit.preview`, the panel's own), the way the command goes is drawn too: a linear

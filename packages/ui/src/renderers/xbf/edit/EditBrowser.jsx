@@ -58,7 +58,7 @@ function ValueField({ value, unit, label, disabled, onCommit }) {
  * design tree (`EditTree.jsx`: the part, its Parameters, the origin's planes, its features with their
  * sketches), and under it the selection's own values, as a PropertyManager shows them: a
  * feature's inputs, or a sketch's dimensions. Every value is typed over to change it; a change is
- * one number in the part's script (`cadgen/edit`). While a modeling command is open, its panel
+ * one number in the part's script (`cad/edit`). While a modeling command is open, its panel
  * floats in a card of its own over the model (`card`), apart from the tree, where a feature to copy
  * is picked; while a sketch is edited, or the Sketch command waits for its plane, the sketch's
  * PropertyManager does (`SketchPanel.jsx`). What went wrong is said in that card too, so the Part

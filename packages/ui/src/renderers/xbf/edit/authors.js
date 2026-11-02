@@ -1,5 +1,5 @@
 /**
- * Who made a feature, as the engine records it (`cadgen/edit/authors.py`; `edit.state.authors`, by the
+ * Who made a feature, as the engine records it (`cad/edit/authors.py`; `edit.state.authors`, by the
  * feature's id): the agent, or you. The timeline draws it as a 6px dot under each item and the Part
  * Navigator at each row's right, the agent's purple (`--cad-agent`) and yours grey, each said in words
  * on hover. A feature from before Studio kept track, or one nobody is known to have made, has neither.

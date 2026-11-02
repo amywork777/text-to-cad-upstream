@@ -114,23 +114,21 @@ describe('what CAD mode draws on the xbf scene', () => {
   // How many frames the layers have asked for.
   let frames = 0;
 
-  // The engine's document of a filleted plate and its pegs, as `cadgen serve` answers it (core's fixture).
+  // The engine's document of a filleted plate and its pegs, as `cad serve` answers it (core's fixture).
   const FIXTURE = join(dirname(createRequire(import.meta.url).resolve('@cad/core/lib/xbf/xbfDocument.js')), '__fixtures__');
   async function xbfScene() {
     const structure = JSON.parse(readFileSync(join(FIXTURE, 'bracket', 'structure.json'), 'utf8'));
     const look = readFileSync(join(FIXTURE, 'look.json'), 'utf8');
-    const base = 'http://127.0.0.1:9/api/doc/abc123';
+    const base = 'http://127.0.0.1:9/api/v1/documents/xbf/abc123';
     const fetch = async (url: string) => {
-      if (url.endsWith('/api/look')) return new Response(look);
+      if (url.endsWith('/api/v1/look')) return new Response(look);
       // An environment image for the look: 1 x 1, radiance 1.
-      if (url.endsWith('/api/look/environment')) {
+      if (url.endsWith('/api/v1/look/environment')) {
         return new Response(new Uint8Array([...new TextEncoder().encode('#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n'), 255, 255, 255, 128]).buffer);
       }
-      const rest = url.slice(base.length).replace(/\?tessellation=[^&]*$/, '');
-      if (rest === '') return new Response(JSON.stringify(structure));
-      const part = /^\/part\/([^/]+)$/.exec(rest);
+      const part = /\/parts\/([^/?]+)/.exec(url);
       if (part) return new Response(readFileSync(join(FIXTURE, 'bracket', `${part[1]}.xbm`)));
-      return new Response(JSON.stringify({ version: structure.version }));
+      return new Response(JSON.stringify(structure));
     };
     return createXbfScene(THREE, await loadXbfDocument(base, { fetch }));
   }

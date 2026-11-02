@@ -287,7 +287,7 @@ const failed = (line: number, code = SOURCE.fillet) => [
   'The above exception was the direct cause of the following exception:',
   '',
   'Traceback (most recent call last):',
-  '  File "/work/packages/cadgen/src/cadgen/edit/tracer.py", line 1668, in trace',
+  '  File "/work/packages/cad/src/cad/edit/tracer.py", line 1668, in trace',
   '    shape = model.func()',
   `  File "/work/parts/bracket.py", line ${line}, in bracket`,
   `    ${code}`,

@@ -180,7 +180,7 @@ function KeptList({ text, hint }) {
  * on in selection boxes (the faces or edges selected on the model, the
  * sketch an extrude takes, picked on the model or in the design tree, or the history feature it
  * copies); and its inputs in the part's units. OK writes the command's line into the part's script
- * (`cadgen/edit`) and the new feature is selected in the history below; Cancel, or Escape, leaves
+ * (`cad/edit`) and the new feature is selected in the history below; Cancel, or Escape, leaves
  * the script as it was.
  *
  * Choose, as SolidCraft's feature dialogs walk through their inputs: a line under the title names

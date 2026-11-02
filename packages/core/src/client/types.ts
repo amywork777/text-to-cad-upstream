@@ -81,7 +81,7 @@ export interface CadRecent {
 }
 /** Whether the person's usage stats are sent (`/api/v1/settings`' `telemetry`; nothing asks): `reason` says who decided. */
 export interface CadConsent { share: boolean; reason: 'default' | 'untold' | 'choice' | 'environment' | 'unavailable'; policy: string; saved?: boolean }
-/** A newer text-to-cad, as cadgen's version check says it (`/api/v1/server`'s `notice`): the release offered, and this install's. */
+/** A newer text-to-cad, as the CAD server's version check says it (`/api/v1/server`'s `notice`): the release offered, and this install's. */
 export interface CadUpdateNotice { latest: string; version: string }
 /** Where an update the update button started is (`cad_server/_internal/update.py`). */
 export interface CadUpdateState {
@@ -156,7 +156,7 @@ export interface CadDrawingPayload {
   [key: string]: unknown;
 }
 /**
- * Where a page reads a document the cadgen engine serves (an `.xbf`, a STEP, a model): its id, its
+ * Where a page reads a document the CAD engine serves (an `.xbf`, a STEP, a model): its id, its
  * kind, its kind's API URL (`/api/v1/documents/<kind>/<id>`, on the client's origin), and the fetch
  * every read of it is made with (the client's own: the CAD app's travels over its tunnel).
  */
@@ -167,7 +167,7 @@ export interface CadEngineDocument {
   fetch: typeof fetch;
 }
 /**
- * What `GET /api/v1/documents/<urdf|srdf|sdf>/<id>/structure` answers: a URDF, SDF or SRDF resolved by cadgen into the articulation
+ * What `GET /api/v1/documents/<urdf|srdf|sdf>/<id>/structure` answers: a URDF, SDF or SRDF resolved by the CAD server into the articulation
  * the page plays (`common/articulation.js`), the visuals it draws (each at its rest placement,
  * with its colour and the URL of the mesh it draws), and what the description says about its
  * links and joints, as written. See `packages/cad-server/src/cad_server/robot_payload.py`.
@@ -272,7 +272,7 @@ export interface CadWorkspaceService {
   /** A robot description resolved for the page (`cad_server.robot_payload`): its document's `structure`. */
   robot(file: string, options?: CadRequestOptions): Promise<CadRobotPayload>;
   /**
-   * `POST /api/v1/documents`: where the page reads a document the cadgen engine serves (an `.xbf`, a STEP, a model),
+   * `POST /api/v1/documents`: where the page reads a document the CAD engine serves (an `.xbf`, a STEP, a model),
    * through this server (`lib/xbf/xbfDocument.js`), once the engine holds it. A host without an
    * engine leaves it out, and the xbf renderer says it cannot open the file.
    */
@@ -327,7 +327,7 @@ export interface CadEditRow {
 }
 
 /**
- * One feature of the design tree (`cadgen/edit/tracer.py`): the rows of the history it stands for (`rows`, in the history's
+ * One feature of the design tree (`cad/edit/tracer.py`): the rows of the history it stands for (`rows`, in the history's
  * order: the lines of a profile drawn for it, its own, then the rows folded into it), at the statement that makes it, from
  * its first line (`line`, as `text` reads it) to its last (`end`, where the engine read the statement whole). The viewer
  * reads the rest of it as it finds it (`xbf/edit/editMode.js`'s `featureTree`).
@@ -370,14 +370,14 @@ export interface CadEditState {
   /** A part's design tree; an assembly's is each of its components'. */
   features?: CadEditFeature[];
   /**
-   * Which feature made each face (`cadgen/edit/face_features.py`): a face's number on the part, as its selector has it ("12" for
+   * Which feature made each face (`cad/edit/face_features.py`): a face's number on the part, as its selector has it ("12" for
    * `f12`), → the key of the feature that made it. Only the faces the engine knows; `{}` for an assembly.
    */
   faceFeatures?: Record<string, string>;
   /** How many faces the part read has, for a view to check the faces on screen are that part's before naming one by `faceFeatures`. */
   faceCount?: number;
   /**
-   * Who made each feature (`cadgen/edit/authors.py`), by its key: "you" when a hand edit wrote the first line of its
+   * Who made each feature (`cad/edit/authors.py`), by its key: "you" when a hand edit wrote the first line of its
    * statement, "agent" when a turn's checkpoint holds it. A feature from before Studio kept track, or one a turn still
    * running made, has no entry. An unchanged read says it again, as it moves on when a turn ends.
    */
@@ -408,16 +408,16 @@ export interface CadEditChangeRequest {
   dimension?: string;
   input?: { row: string; index: number };
   leaf?: string;
-  /** A modeling command's line (`cadgen/edit/commands.py`), or lines put back by Undo and Redo. */
+  /** A modeling command's line (`cad/edit/commands.py`), or lines put back by Undo and Redo. */
   command?: Record<string, unknown>;
   /** A modeling command made without writing it, for its panel to draw what OK would make. */
   preview?: Record<string, unknown>;
   splice?: { file: string; hunks: unknown[] };
-  /** A sketch mode change (`cadgen/edit/sketching.py`): the sketch's file and line, and what to do to it. */
+  /** A sketch mode change (`cad/edit/sketching.py`): the sketch's file and line, and what to do to it. */
   sketch?: { file?: string; line?: number; name?: string; op: Record<string, unknown> };
-  /** Delete on a feature of the design tree (`cadgen/edit/deleting.py`), by its key and its title. */
+  /** Delete on a feature of the design tree (`cad/edit/deleting.py`), by its key and its title. */
   remove?: { feature: string; title?: string };
-  /** Suppress (`on`) or Unsuppress on a feature of the design tree (`cadgen/edit/deleting.py`). */
+  /** Suppress (`on`) or Unsuppress on a feature of the design tree (`cad/edit/deleting.py`). */
   suppress?: { feature: string; title?: string; on: boolean };
   /** Where the rollback bar is for this change (alone, the change only moves it), and where it goes once made. */
   bar?: CadEditBar | null;

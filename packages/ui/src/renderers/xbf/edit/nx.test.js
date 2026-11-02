@@ -97,7 +97,7 @@ test("a sketch that is a row of its own is numbered like the rest", () => {
 // What a part's script stops with: the tracer's frame, the part's own line, build123d's, then the error.
 const traceback = (...frames) => ["Traceback (most recent call last):", ...frames.flatMap(([file, line, code]) => [
   `  File "${file}", line ${line}, in part`, `    ${code}`]), "OCP.StdFail.StdFail_NotDone: BRep_API: command not done"].join("\n");
-const TRACER = ["/work/.venv/lib/python3.13/site-packages/cadgen/edit/tracer.py", 1660, "shape = model.func()"];
+const TRACER = ["/work/.venv/lib/python3.13/site-packages/cad/edit/tracer.py", 1660, "shape = model.func()"];
 const KERNEL = ["/work/.venv/lib/python3.13/site-packages/build123d/operations_generic.py", 541, "return Solid.fillet(...)"];
 const WHY = "OCP.StdFail.StdFail_NotDone: BRep_API: command not done";
 
@@ -228,11 +228,11 @@ test("says why in the last line of the traceback the tracer gives for a fillet t
     "The above exception was the direct cause of the following exception:",
     "",
     "Traceback (most recent call last):",
-    '  File "/work/packages/cadgen/src/cadgen/edit/tracer.py", line 1668, in trace',
+    '  File "/work/packages/cad/src/cad/edit/tracer.py", line 1668, in trace',
     "    shape = model.func()",
     '  File "/work/servo/servo.py", line 24, in servo',
     `    ${SOURCE.blend}`,
-    '  File "/work/packages/cadgen/src/cadgen/edit/tracer.py", line 431, in wrapper',
+    '  File "/work/packages/cad/src/cad/edit/tracer.py", line 431, in wrapper',
     "    result = original(*args, **kwargs)",
     '  File "/work/.venv/lib/python3.13/site-packages/build123d/topology/three_d.py", line 371, in fillet',
     "    raise ValueError(",

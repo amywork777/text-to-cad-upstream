@@ -419,7 +419,7 @@ export function createCadClient({ origin = '', fetch: fetchImpl = globalThis.fet
       return request(`${api}/structure`, { signal, timeoutMs: 10_000, operation: 'robot' });
     },
     async engineDocument(file, { signal, onProgress } = {}) {
-      // A document the cadgen ENGINE reads -- an `.xbf`, or a STEP, or a model it holds -- is served
+      // A document the CAD ENGINE reads -- an `.xbf`, or a STEP, or a model it holds -- is served
       // by the engine: the client opens it (`POST /api/v1/documents`, `cad_server.viewer.documents`)
       // and answers where the page reads it, its kind's API through this server
       // (`/api/v1/documents/<kind>/<id>`), so the reads travel as every request does (over the CAD
@@ -439,7 +439,7 @@ export function createCadClient({ origin = '', fetch: fetchImpl = globalThis.fet
         if (disposed) throw abortError();
       }
     },
-    // Edit mode (`cadgen/edit`): the part script behind `file` read as a design, and one number
+    // Edit mode (`cad/edit`): the part script behind `file` read as a design, and one number
     // of it changed. A cold read runs the part once, so its bound is far past the house 10 s.
     editState(file, files = null, { signal, probe = false, bar = null } = {}) {
       if (!file) return Promise.reject(new Error('Missing file'));

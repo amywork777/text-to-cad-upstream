@@ -1,7 +1,7 @@
 /**
  * How CAD mode names a face or an edge of the model, one way throughout: the engine's own ref
- * (`cadgen.engine.refs`, `parseEngineRef`), by its kind and number under its part (`face 12`,
- * `plate/face 12`, `hand/finger.2/edge 3`), as the xbf renderer copies a pick and `cadgen inspect`
+ * (`cad.engine.refs`, `parseEngineRef`), by its kind and number under its part (`face 12`,
+ * `plate/face 12`, `hand/finger.2/edge 3`), as the xbf renderer copies a pick and `cad inspect`
  * reads one. The renderer's selection holds its own ids for the same elements (`i0/face/12`,
  * `parseXbfElementId`); `xbfEditReference` turns one into what CAD mode's panels read of a pick.
  *

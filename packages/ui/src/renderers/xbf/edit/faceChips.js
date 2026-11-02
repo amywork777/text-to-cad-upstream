@@ -1,9 +1,9 @@
 /**
- * Which feature made a face, as the engine says (`cadgen/edit/face_features.py`), for whatever names a face: its chip, in the Part
+ * Which feature made a face, as the engine says (`cad/edit/face_features.py`), for whatever names a face: its chip, in the Part
  * Navigator's words ("Hole (6) · face 12" rather than today's "bracket · face 12"), and the selection bar's Edit on it, which opens
  * that feature (`selectionBar.js`'s `facePick`). The engine's map (`faceFeatures`) is a face's number on the part → the key of the
  * feature it credits with the face, the id the design tree's rows go by: the first feature with a face there on that surface
- * (`cadgen/edit/face_features.py`, whose blind spot it names). A face where no feature's face overlaps is not known, and keeps today's
+ * (`cad/edit/face_features.py`, whose blind spot it names). A face where no feature's face overlaps is not known, and keeps today's
  * words. The map is used for the faces it was read for alone (`shownFaces`).
  */
 import { navigatorLabel } from "./nx.js";
