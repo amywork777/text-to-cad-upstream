@@ -35,6 +35,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from cad._internal.atomic_replace import replace_atomic
 
 __all__ = ["VersionsError", "compare", "named_sizes", "restore", "versions"]
 
@@ -241,7 +242,7 @@ def _write_once(path: Path, data: bytes) -> None:
         return
     partial = path.with_name(f".{path.name}.{os.getpid()}")
     partial.write_bytes(data)
-    os.replace(partial, path)
+    replace_atomic(partial, path)
 
 
 def _shape(out: Path, suffix: str, *, retry: bool, wait: bool) -> dict:
@@ -266,7 +267,7 @@ def _shape(out: Path, suffix: str, *, retry: bool, wait: bool) -> dict:
     os.close(mark)
     from cad.edit.service import kernel_python
 
-    command = [kernel_python(), "-m", "cad.edit.solid_diff", str(out / f"older{suffix}"), str(out / f"newer{suffix}"), str(out)]
+    command = [kernel_python(), "-P", "-m", "cad.edit.solid_diff", str(out / f"older{suffix}"), str(out / f"newer{suffix}"), str(out)]
     if wait:
         subprocess.run(command, capture_output=True, check=False, timeout=DIFF_TIMEOUT, **_no_window())
         return _shape(out, suffix, retry=False, wait=False)
@@ -424,6 +425,6 @@ def restore(folder: str, path: str, version: str) -> dict:
         partial.write_bytes(data)
         if target.exists():
             shutil.copymode(target, partial)
-        os.replace(partial, target)
+        replace_atomic(partial, target)
     shown = [Path(os.path.relpath(top / file, folder_path.resolve())).as_posix() for file in files]
     return {"ok": True, "restored": shown, "kept": kept}
