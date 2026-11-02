@@ -4,7 +4,7 @@
  * wires it). Picking a face, an edge or a feature with no command open offers a small bar beside it: Ask,
  * Add to context, Annotate and Edit.
  */
-import { validatePromptReference } from "@text-to-cad/core/prompt";
+import { validatePromptReference } from "@cad/core/prompt";
 import { treeFeatures } from "./editMode.js";
 import { faceFeature, faceReference } from "./faceChips.js";
 import { navigatorLabel } from "./nx.js";

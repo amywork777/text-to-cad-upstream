@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { cn } from "@text-to-cad/ui/utils";
-import { Button } from "@text-to-cad/ui/primitives/button";
-import { ScrollArea } from "@text-to-cad/ui/primitives/scroll-area";
+import { cn } from "@cad/ui/utils";
+import { Button } from "@cad/ui/primitives/button";
+import { ScrollArea } from "@cad/ui/primitives/scroll-area";
 import {
   FILE_SHEET_COMPACT_BUTTON_CLASSES,
   FILE_SHEET_STATUS_TEXT_CLASSES,

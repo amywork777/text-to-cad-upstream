@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { CircleAlert, LoaderCircle } from "lucide-react";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@text-to-cad/ui/primitives/context-menu";
-import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
-import { TREE_INDENT_PX, TreeRowChevron, TreeRowSurface } from "@text-to-cad/ui/primitives/tree-row";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@cad/ui/primitives/context-menu";
+import { TooltipHint } from "@cad/ui/primitives/tooltip";
+import { TREE_INDENT_PX, TreeRowChevron, TreeRowSurface } from "@cad/ui/primitives/tree-row";
 import { FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
 import { AUTHOR_DOT_CLASS, AUTHOR_WORDS, authorOf } from "./authors.js";
 import { ORIGIN_PLANES, barIndex, planeDetail, rolledBack, sizeName, treeFeatures } from "./editMode.js";

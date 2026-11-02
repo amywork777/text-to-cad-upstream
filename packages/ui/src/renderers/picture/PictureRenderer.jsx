@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cn } from "@text-to-cad/ui/utils";
-import { clearSurface, fitTransform } from "@text-to-cad/core/lib/drawing2d/index.js";
-import { drawAnnotationMarks } from "@text-to-cad/core/lib/drawing2d/marks.js";
-import { planCamera } from "@text-to-cad/core/lib/drawing2d/planView.js";
+import { cn } from "@cad/ui/utils";
+import { clearSurface, fitTransform } from "@cad/core/lib/drawing2d/index.js";
+import { drawAnnotationMarks } from "@cad/core/lib/drawing2d/marks.js";
+import { planCamera } from "@cad/core/lib/drawing2d/planView.js";
 import { useViewerMobile } from "../../file-viewer/responsive.js";
 import { annotationAt, withGroups } from "../../annotation/geometry.js";
 import { promptView } from "../../annotation/views.js";
@@ -20,7 +20,7 @@ import { drawingTransformCamera, readDrawingTransform } from "../dxf/drawingTran
 import { DRAWING_THEME_FALLBACK, readDrawingThemeColors } from "../dxf/themeColors.js";
 import { paintSheets, readSheets } from "./pictureSheets.js";
 import { PICTURE_DECLINED_LIVE_COMMANDS, PICTURE_NO_CAMERA, PICTURE_NO_DISPLAY, PICTURE_TOOL_MODES } from "./tools.js";
-import { useI18n } from "@text-to-cad/ui/i18n";
+import { useI18n } from "@cad/ui/i18n";
 
 /**
  * A picture (a drawing's PDF, a render, a photo) is shown as a DXF is: on a canvas, head on, with

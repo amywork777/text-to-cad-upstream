@@ -5,8 +5,8 @@ import { act, cleanup, render, renderHook, waitFor } from '@testing-library/reac
 import type { ReactNode } from 'react';
 import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadXbfDocument } from '@text-to-cad/core/lib/xbf/xbfDocument.js';
-import { createXbfScene } from '@text-to-cad/core/lib/xbf/xbfScene.js';
+import { loadXbfDocument } from '@cad/core/lib/xbf/xbfDocument.js';
+import { createXbfScene } from '@cad/core/lib/xbf/xbfScene.js';
 import { ViewerHostContext } from '../../../../dist/host/context.js';
 import { testHost } from '../../../../dist/host/testing/host.js';
 import { editLayoutHost } from '../../../../dist/tab-store/editLayoutHost.js';
@@ -115,7 +115,7 @@ describe('what CAD mode draws on the xbf scene', () => {
   let frames = 0;
 
   // The engine's document of a filleted plate and its pegs, as `cadgen serve` answers it (core's fixture).
-  const FIXTURE = join(dirname(createRequire(import.meta.url).resolve('@text-to-cad/core/lib/xbf/xbfDocument.js')), '__fixtures__');
+  const FIXTURE = join(dirname(createRequire(import.meta.url).resolve('@cad/core/lib/xbf/xbfDocument.js')), '__fixtures__');
   async function xbfScene() {
     const structure = JSON.parse(readFileSync(join(FIXTURE, 'bracket', 'structure.json'), 'utf8'));
     const look = readFileSync(join(FIXTURE, 'look.json'), 'utf8');

@@ -136,10 +136,10 @@ export const canAddToContext = destination => destination?.kind === "composer" &
  * Made and handed over inside the press, as Queue is, so the host binds its destination in the gesture. Never throws: a context that
  * cannot be made, or a host that cannot take it, is a rejection. Settles with the host's receipt (`deliveryFailure` reads it).
  *
- * @param {{ promptContext: import("@text-to-cad/core/prompt").PromptContextPort }} host
+ * @param {{ promptContext: import("@cad/core/prompt").PromptContextPort }} host
  * @param {{ resource: object, references: object[], views?: { label: string }[], files?: Promise<object> | null,
  *   read?: ((path: string) => Promise<Blob>) | null, marks?: string, requests?: string[] }} input
- * @returns {Promise<import("@text-to-cad/core/prompt").PromptDeliveryResult>}
+ * @returns {Promise<import("@cad/core/prompt").PromptDeliveryResult>}
  */
 export function addToContext(host, { resource, references, views = [], files = null, read = null, marks = "", requests = [] }) {
   try {

@@ -8,7 +8,7 @@
  * A ref in 0.7's spelling (`o1.f12`, `o1.2.e3`, `f12`), from a note or a study written then, still
  * reads, here and nowhere else (`elementOf`).
  */
-import { engineSelectorText, parseEngineRef } from "@text-to-cad/core/lib/cadRefs.js";
+import { engineSelectorText, parseEngineRef } from "@cad/core/lib/cadRefs.js";
 
 // 0.7's spelling: the occurrence (`o1`, the second part of it `o1.2`), then `f` or `e` and the number.
 const LEGACY_RE = /^(?:o\d+((?:\.\d+)*)\.)?([fe])([1-9][0-9]*)$/;

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { cn } from "@text-to-cad/ui/utils";
+import { cn } from "@cad/ui/utils";
 import { WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
 import { VIEWER_DOUBLE_CLICK_ACTIVATION_DELAY_MS } from "../clickActivation.js";
 import { AddContextIcon, AnnotateIcon, AskIcon } from "./cadIcons.jsx";

@@ -1,5 +1,5 @@
-import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
-import { cn } from "@text-to-cad/ui/utils";
+import { TooltipHint } from "@cad/ui/primitives/tooltip";
+import { cn } from "@cad/ui/utils";
 
 const BUTTON_CLASS = "flex h-7 min-w-14 items-center justify-center rounded-md border px-2.5 text-tiny font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40";
 const PRIMARY_CLASS = "border-primary bg-primary text-primary-foreground hover:bg-primary/90";

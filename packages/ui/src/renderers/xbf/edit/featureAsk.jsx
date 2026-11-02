@@ -8,7 +8,7 @@ import { featureReference, projectRoot, rowLabel } from "./selectionBar.js";
  * its own icon, whose X is `onRemove`: it lets go of the pick. Null where the statement's place is not known.
  *
  * @param {{ state: object | null, tree: object, pick: object | null, onRemove?: () => void }} input
- * @returns {{ reference: import("@text-to-cad/core/prompt").PromptReference, chip: import("../../kit/tools/quick-edit/ReferenceChips.jsx").ReferenceChip } | null}
+ * @returns {{ reference: import("@cad/core/prompt").PromptReference, chip: import("../../kit/tools/quick-edit/ReferenceChips.jsx").ReferenceChip } | null}
  */
 export function featureAsk({ state, tree, pick, onRemove }) {
   if (!pick) return null;

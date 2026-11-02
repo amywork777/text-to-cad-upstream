@@ -8,11 +8,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger
-} from "@text-to-cad/ui/primitives/dropdown-menu";
-import { Progress } from "@text-to-cad/ui/primitives/progress";
-import { ToolbarButton } from "@text-to-cad/ui/primitives/toolbar-button";
-import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
-import { cn } from "@text-to-cad/ui/utils";
+} from "@cad/ui/primitives/dropdown-menu";
+import { Progress } from "@cad/ui/primitives/progress";
+import { ToolbarButton } from "@cad/ui/primitives/toolbar-button";
+import { TooltipHint } from "@cad/ui/primitives/tooltip";
+import { cn } from "@cad/ui/utils";
 import { FLOATING_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
 import { AppearanceIcon, COMMAND_ICONS, CompareIcon, DraftAnalysisIcon, InterferenceIcon, DrawingIcon, ExitSketchIcon, ExpressionsIcon, MassPropertiesIcon, InsertComponentIcon, MateIcon, RedoIcon, SketchIcon, UndoIcon } from "./cadIcons.jsx";
 import { EDIT_COMMANDS, buildingText, busyState, unitWord } from "./editMode.js";

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { cn } from "@text-to-cad/ui/utils";
+import { cn } from "@cad/ui/utils";
 import { FILE_SHEET_STATUS_TEXT_CLASSES, FileSheetSettingsSection } from "../../kit/inspector/FileSheet.js";
 import { CompareIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Button } from "@text-to-cad/ui/primitives/button";
-import { cn } from "@text-to-cad/ui/utils";
+import { Button } from "@cad/ui/primitives/button";
+import { cn } from "@cad/ui/utils";
 
 /**
  * A STEP brought in, with no part script to edit: offered as a part to model on, as SolidWorks makes

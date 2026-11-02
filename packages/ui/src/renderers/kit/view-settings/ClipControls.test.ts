@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { normalizeViewSettings } from '@text-to-cad/core/common/viewSettings.js';
+import { normalizeViewSettings } from '@cad/core/common/viewSettings.js';
 import { NEUTRAL_CLIP, clipApplied, clipSummary } from '../../../../dist/renderers/kit/view-settings/ClipControls.js';
 
 const BOUNDS = { min: [0, 0, 0], max: [10, 10, 10] };

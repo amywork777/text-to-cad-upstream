@@ -1,4 +1,4 @@
-import { normalizeStepClipSettings } from "@text-to-cad/core/lib/viewer/clipPlane.js";
+import { normalizeStepClipSettings } from "@cad/core/lib/viewer/clipPlane.js";
 import { CrossSectionControls } from "../tools/model-effects/ModelViewControls.js";
 
 export { clipSummary } from "../tools/model-effects/ModelViewControls.js";

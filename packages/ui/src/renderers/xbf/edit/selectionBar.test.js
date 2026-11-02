@@ -3,7 +3,7 @@ import test from "node:test";
 
 import * as THREE from "three";
 
-import { formatPromptMessage, formatPromptReference } from "@text-to-cad/core/prompt";
+import { formatPromptMessage, formatPromptReference } from "@cad/core/prompt";
 import { createQuickEditContext } from "../../kit/tools/quick-edit/quickEditPrompt.js";
 import { cadChosen } from "./editLayout.js";
 import { featureTree } from "./editMode.js";

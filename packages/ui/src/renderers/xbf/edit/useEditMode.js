@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPromptContext, textPart } from "@text-to-cad/core/prompt";
+import { createPromptContext, textPart } from "@cad/core/prompt";
 import { useViewerHost } from "../../../host/context.js";
 import {
   changeNote,

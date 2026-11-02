@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import { MousePointer2 } from "lucide-react";
-import { cn } from "@text-to-cad/ui/utils";
+import { cn } from "@cad/ui/utils";
 import { AnnotationToolbar, DRAWING_TOOLS, annotationToolIcon, drawingToolLabel, drawingToolVariant } from "../../../annotation/toolbar.jsx";
 import { english } from "../../../i18n/core.js";
 import ViewerAlertCard from "../status/ViewerAlertCard.jsx";

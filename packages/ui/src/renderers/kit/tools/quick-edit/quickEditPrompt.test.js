@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatPromptMessage, resolvePromptMessage } from "@text-to-cad/core/prompt";
+import { formatPromptMessage, resolvePromptMessage } from "@cad/core/prompt";
 import {
   addToContext, canAddToContext, createQuickEditContext, deliveryFailure, promptAttachments
 } from "./quickEditPrompt.js";

@@ -1,6 +1,6 @@
-import { cn } from "@text-to-cad/ui/utils";
-import { Button } from "@text-to-cad/ui/primitives/button";
-import { Slider } from "@text-to-cad/ui/primitives/slider";
+import { cn } from "@cad/ui/utils";
+import { Button } from "@cad/ui/primitives/button";
+import { Slider } from "@cad/ui/primitives/slider";
 import {
   FILE_SHEET_COMPACT_BUTTON_CLASSES,
   FILE_SHEET_PRECISION_SLIDER_CLASSES,
@@ -19,7 +19,7 @@ import { formatControlNumber, resolveParameterNumberControlStep, unitSuffix } fr
 const defaultValueText = (value, parameter) => `${formatControlNumber(value)}${unitSuffix(parameter.unit)}`;
 
 /**
- * One generic parameter (`@text-to-cad/core/common/parameters.js`: number, boolean, enum, color,
+ * One generic parameter (`@cad/core/common/parameters.js`: number, boolean, enum, color,
  * string, button) as its settings-ui.md row: a slider with its committed value, a select, a
  * checkbox, a colour, a text field or a button. Every panel that shows parameters draws them with
  * this, Position's joints and an FEA result's controls alike, so a type reads the same in both.

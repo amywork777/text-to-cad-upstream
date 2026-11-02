@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
-import { TREE_GLYPH_STROKE } from "@text-to-cad/ui/primitives/tree-row";
-import { cn } from "@text-to-cad/ui/utils";
+import { TREE_GLYPH_STROKE } from "@cad/ui/primitives/tree-row";
+import { cn } from "@cad/ui/utils";
 import {
   FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetCheckboxRow,
@@ -8,7 +8,7 @@ import {
   FileSheetSettingsSection,
   FileSheetValueInput
 } from "../../kit/inspector/FileSheet.js";
-import { Button } from "@text-to-cad/ui/primitives/button";
+import { Button } from "@cad/ui/primitives/button";
 import { TOOL_PANEL_BUTTON_CLASS } from "../../kit/tools/ToolPanel.jsx";
 import { SketchIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";

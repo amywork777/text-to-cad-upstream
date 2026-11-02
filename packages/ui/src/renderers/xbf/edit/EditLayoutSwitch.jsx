@@ -1,7 +1,7 @@
 import { PencilRuler } from "lucide-react";
-import { DropdownMenuRadioGroup, DropdownMenuRadioItem } from "@text-to-cad/ui/primitives/dropdown-menu";
-import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
-import { cn } from "@text-to-cad/ui/utils";
+import { DropdownMenuRadioGroup, DropdownMenuRadioItem } from "@cad/ui/primitives/dropdown-menu";
+import { TooltipHint } from "@cad/ui/primitives/tooltip";
+import { cn } from "@cad/ui/utils";
 
 const OPTIONS = Object.freeze([
   { value: "ai", label: "AI", hint: "Select on the model and ask the agent to change it" },

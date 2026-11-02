@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { MEASURE_DIMENSION_COMMITTED_COLOR } from "@text-to-cad/core/lib/viewer/measureDimension.js";
-import { Button } from "@text-to-cad/ui/primitives/button";
-import { cn } from "@text-to-cad/ui/utils";
+import { MEASURE_DIMENSION_COMMITTED_COLOR } from "@cad/core/lib/viewer/measureDimension.js";
+import { Button } from "@cad/ui/primitives/button";
+import { cn } from "@cad/ui/utils";
 import { sizeName } from "./editMode.js";
 import { useSceneRendered } from "./sceneRendered.js";
 

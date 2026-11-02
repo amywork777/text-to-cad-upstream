@@ -5,7 +5,7 @@
  * PDF's points, so a drawing reads at its printed size at 100% and a page is rendered sharper than
  * that to stay crisp as the person zooms in.
  *
- * Coordinates are the flat view's (`@text-to-cad/core/lib/drawing2d/transform.js`: y up), so the
+ * Coordinates are the flat view's (`@cad/core/lib/drawing2d/transform.js`: y up), so the
  * first sheet's top-left corner is the origin and the sheets go down into negative y.
  */
 

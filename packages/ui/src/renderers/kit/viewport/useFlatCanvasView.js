@@ -6,7 +6,7 @@
  * Every flat view (a 2D drawing, a board) is this one hook under its own paint.
  *
  * The renderer brings the picture: `content` (a new one frames itself, unless this file's view is
- * already the person's), the `bounds` the fit frames (`@text-to-cad/core`'s plane maths,
+ * already the person's), the `bounds` the fit frames (`@cad/core`'s plane maths,
  * `lib/drawing2d/transform.js`: model space, y up) and `paint(ctx, frame)`, which draws one whole
  * frame — the surface around the picture included — at the frame's view. A frame is
  * `{ width, height, pixelRatio, transform, element, colorScheme }`: the pane in CSS pixels, the
@@ -32,7 +32,7 @@ import {
   screenToModel,
   zoomLimits,
   zoomTransform
-} from "@text-to-cad/core/lib/drawing2d/transform.js";
+} from "@cad/core/lib/drawing2d/transform.js";
 import { IDLE_PIXEL_RATIO_CAP, getPixelRatioCap } from "./pixelRatio.js";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
 
