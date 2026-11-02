@@ -19,7 +19,7 @@ then reads back as a new feature of the history.
 The engineer also sketches there, as in SolidWorks: Sketch on a plane or a flat face, draw lines,
 rectangles, circles, arcs (Centerpoint, 3 Point, and Tangent Arc, written as a centerpoint arc and
 `s.tangent(<curve>, arc)`), slots, polygons and points, add relations and Smart Dimensions, Exit Sketch, then
-extrude or revolve it, as a boss or a cut. Each stroke is a line of `cadgen.sketch` code
+extrude or revolve it, as a boss or a cut. Each stroke is a line of `cad.sketch` code
 ([sketching.md](sketching.md)) in the part's script, written as it is drawn; see "Sketches drawn
 by hand" below.
 
@@ -52,10 +52,10 @@ by hand" below.
 - A unit constant named in the file (`INCH = 25.4`; build123d's own is `bd.IN`, 25.4) is fine: lengths
   show in the project's units, and the commands write theirs by that name (`.03*INCH`).
 - **Bring a STEP in as its own line**, `part = read_step(Path(__file__).parent / "bracket.step")`
-  (`from cadgen import read_step`; `read_xbf` of an xbf converted from it once reads faster), and
+  (`from cad import read_step`; `read_xbf` of an xbf converted from it once reads faster), and
   model on that name. It is one feature, the imported body (NX's Body, SolidWorks' Imported1),
   with no history under it, as other CAD tools hold one. Change its faces with direct editing
-  (`from cadgen.direct import offset_faces, delete_faces`): `part = offset_faces(part, <faces>,
+  (`from cad.direct import offset_faces, delete_faces`): `part = offset_faces(part, <faces>,
   distance=2)` moves faces along their normals (negative pushes in), `part = delete_faces(part,
   <faces>)` takes a hole, round or boss out and heals the solid. Edit mode writes and reopens both
   (Move Face, Delete Face) on any body.
@@ -213,7 +213,7 @@ by hand" below.
   inserted again (the design tree lists each part's model once); ask for another instance in code.
 - **Mate** (the Assemble tab's Mate) places an assembly's part by a face or an edge picked on
   the part that stays and one on the part that moves to it, as SolidWorks' Standard Mates do. It
-  adds a constraint from `cadgen.mates` to the moved part's `mate` call, on what was picked (found
+  adds a constraint from `cad.mates` to the moved part's `mate` call, on what was picked (found
   again by selector each run): `mate(pin_part, Coincident(<pin face>, <base face>),
   Concentric(<pin face>, <base hole>))`, the parts named before the `return Compound(children=[...])`
   that lists them. `mate` solves a part's mates together each run and moves it the least it can, so
@@ -235,7 +235,7 @@ by hand" below.
   as its document carries the color.
 - **Mass Properties** (the Inspect tab's Measure group, or the part's menu in the design tree) weighs the part as
   it is, at the rollback bar when it is up: its volume, surface area, center of mass (marked on
-  the model) and overall size, worked out from its solids, and its mass in a material of cadgen's
+  the model) and overall size, worked out from its solids, and its mass in a material of the engine's
   table, the project brief's own as it opens. It writes nothing.
 - **Draft Analysis** (the Inspect tab's Analyze group) shades the part by its draft against a direction of pull (an
   origin plane's normal, reversed or not): green where a face leans with the pull by at least the

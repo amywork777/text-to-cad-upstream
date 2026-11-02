@@ -100,7 +100,7 @@ where two parts have a view of that name). With `--json`, `view` names it; what 
 view does not show is not drawn and not left out.
 
 ```bash
-cadgen snapshot "$ID" tmp/a-a.png --view A-A
+cad snapshot "$ID" tmp/a-a.png --view A-A
 ```
 
 A view has its own camera and section, so `--view` with `--camera`, or with a

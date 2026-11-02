@@ -1,6 +1,6 @@
 # Sketching
 
-`cadgen.sketch` draws a part's profiles the way a CAD tool's sketcher does: points, lines, arcs
+`cad.sketch` draws a part's profiles the way a CAD tool's sketcher does: points, lines, arcs
 and circles on a plane, held by relations and dimensions, solved when the script runs. Use it
 for a profile an engineer will want to read and change as a sketch: a bracket's outline, a slot,
 a plate with holes. The CAD viewer's edit mode shows it under its feature in the design tree
@@ -9,8 +9,8 @@ under defined, as SolidWorks marks it.
 
 ```python
 import build123d as bd
-from cadgen import model
-from cadgen.sketch import Sketch
+from cad import model
+from cad.sketch import Sketch
 
 LENGTH = 70
 WIDTH = 25

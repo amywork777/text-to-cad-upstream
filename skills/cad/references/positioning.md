@@ -79,7 +79,7 @@ assembly's body, on the parts it places.
 ## Mates
 
 A part placed against faces and edges of others, as a CAD tool's mates place it, takes
-`cadgen.mates` constraints; Studio's Mate command writes them.
+`cad.mates` constraints; Studio's Mate command writes them.
 `mate(part, Coincident(a, b), Concentric(c, d), ...)` takes each mate's first item on the
 part that moves and its second on the part it is mated to, solves them together each run
 and moves the part the least it can, so what they leave free stays put
@@ -91,7 +91,7 @@ takes its joints, authored where the mates leave it ([native joints](#native-joi
 
 ```python
 # Inside an assembly model: a screw seated in a plate's hole, its head on the plate's top.
-from cadgen.mates import Coincident, Concentric, mate
+from cad.mates import Coincident, Concentric, mate
 
 hole = plate.faces().filter_by(bd.GeomType.CYLINDER)[0]
 shank = screw.faces().filter_by(bd.GeomType.CYLINDER).sort_by(bd.Axis.Z)[0]
