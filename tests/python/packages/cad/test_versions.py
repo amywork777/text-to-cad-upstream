@@ -156,6 +156,68 @@ class Compare(Project):
             versions.compare(str(self.repo), "missing.step", self.older, self.newer)
 
 
+HOOK_MODEL = """
+import build123d as bd
+from cad import model
+from rib import RIB
+
+DEPTH = {depth}
+
+
+@model
+def hook():
+    return bd.Box(DEPTH, 30, 10) + bd.Pos(0, 0, 9) * bd.Cylinder(5, RIB)
+"""
+
+
+class CompareModel(Project):
+    """A model's script (cadgen 0.10's part, which writes no file of its own) compared as the solids
+    its model builds at each version, from that version's files."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        write(self.repo, "rib.py", "RIB = 8\n")
+        write(self.repo, "hook.py", HOOK_MODEL.format(depth=40))
+        self.older = checkpoint(self.repo, 0, 1_000)
+        write(self.repo, "hook.py", HOOK_MODEL.format(depth=48))
+        self.newer = checkpoint(self.repo, 1, 2_000)
+
+    def test_the_model_built_at_each_version_is_compared_as_solids(self):
+        result = versions.compare(str(self.repo), "hook.py", self.older, self.newer, model="hook", wait=True)
+        shape = result["shape"]
+        self.assertEqual(shape["status"], "done", shape)
+        self.assertAlmostEqual(shape["added_mm3"], 8 * 30 * 10, delta=1)
+        self.assertLess(shape["removed_mm3"], 1)
+        for side in ("older", "newer", "diff"):
+            self.assertTrue(result["files"][side].endswith(".step"), result["files"])
+            self.assertTrue((self.repo / result["files"][side]).is_file())
+        self.assertEqual(result["script"]["newerSizes"][0]["value"], 48)
+
+    def test_the_file_on_disk_builds_as_now(self):
+        write(self.repo, "hook.py", HOOK_MODEL.format(depth=44))
+        result = versions.compare(str(self.repo), "hook.py", self.newer, "now", model="hook", wait=True)
+        self.assertEqual(result["shape"]["status"], "done", result["shape"])
+        self.assertAlmostEqual(result["shape"]["removed_mm3"], 4 * 30 * 10, delta=1)
+
+    def test_building_a_version_writes_nothing_into_the_project(self):
+        before = sorted(path.name for path in self.repo.iterdir())
+        versions.compare(str(self.repo), "hook.py", self.older, "now", model="hook", wait=True)
+        self.assertEqual(sorted(path.name for path in self.repo.iterdir()), sorted([*before, ".studio"]))
+
+    def test_a_version_without_the_model_fails_and_says_which(self):
+        write(self.repo, "hook.py", HOOK_MODEL.format(depth=44).replace("def hook", "def clip"))
+        result = versions.compare(str(self.repo), "hook.py", self.newer, "now", model="hook", wait=True)
+        self.assertEqual(result["shape"]["status"], "failed")
+        self.assertIn("no model named hook", result["shape"]["error"])
+        self.assertIn("newer", result["shape"]["error"])
+        self.assertTrue(result["files"]["newer"].endswith(".py"), "no solid to open while one is missing")
+
+    def test_a_script_with_no_model_named_has_no_solids(self):
+        result = versions.compare(str(self.repo), "hook.py", self.older, self.newer)
+        self.assertEqual(result["shape"], {"status": "unsupported"})
+        self.assertTrue(result["files"]["newer"].endswith(".py"))
+
+
 class Restore(Project):
     """Going back to a version, as Google Docs' Restore this version does: the part's file and its
     script as that version had them, what was on disk kept as a version first."""

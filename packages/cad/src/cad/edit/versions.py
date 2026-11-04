@@ -245,8 +245,9 @@ def _write_once(path: Path, data: bytes) -> None:
     replace_atomic(partial, path)
 
 
-def _shape(out: Path, suffix: str, *, retry: bool, wait: bool) -> dict:
-    """The solids' comparison: done (its result), working (asked again in ``retryMs``), or failed."""
+def _shape(out: Path, arguments: list[str], *, retry: bool, wait: bool) -> dict:
+    """The solids' comparison, ``solid_diff`` run with ``arguments``: done (its result), working
+    (asked again in ``retryMs``), or failed."""
     done, started = out / "result.json", out / "started"
     if retry:
         for stale in (done, started):
@@ -267,10 +268,10 @@ def _shape(out: Path, suffix: str, *, retry: bool, wait: bool) -> dict:
     os.close(mark)
     from cad.edit.service import kernel_python
 
-    command = [kernel_python(), "-P", "-m", "cad.edit.solid_diff", str(out / f"older{suffix}"), str(out / f"newer{suffix}"), str(out)]
+    command = [kernel_python(), "-P", "-m", "cad.edit.solid_diff", *arguments]
     if wait:
         subprocess.run(command, capture_output=True, check=False, timeout=DIFF_TIMEOUT, **_no_window())
-        return _shape(out, suffix, retry=False, wait=False)
+        return _shape(out, arguments, retry=False, wait=False)
     process = subprocess.Popen(
         command,
         stdout=subprocess.DEVNULL,
@@ -290,13 +291,17 @@ def compare(
     newer: str,
     texts: list | None = None,
     *,
+    model: str | None = None,
     retry: bool = False,
     wait: bool = False,
 ) -> dict:
     """What changed in one file between two of its versions (each a checkpoint's commit, or ``now``).
 
     ``files`` are the two versions' files and, once the solids are compared, the difference, each
-    by its path in the folder. ``shape`` is the solids' comparison (STEP files only). ``script`` is
+    by its path in the folder. ``shape`` is the solids' comparison: of a STEP file, or of a script's
+    ``model`` (its name) as each version builds it, whose two STEP files are then ``files`` once both
+    are built. A model is compared again when its script changes, not when only a module it imports
+    does. ``script`` is
     the part script at both versions with its named sizes, and ``texts`` the text files asked for
     (check results, say), at both. ``wait`` compares the solids before answering, for tests and the
     command line; a request answers at once and is asked again while the solids are compared.
@@ -307,7 +312,7 @@ def compare(
     older_blob, newer_blob = _blob_at(top, rel, older), _blob_at(top, rel, newer)
     if older_blob is None or newer_blob is None:
         raise VersionsError(f"{path} is not in one of the two versions")
-    key = hashlib.sha256(f"{rel}\n{older_blob}\n{newer_blob}".encode("utf-8")).hexdigest()[:20]
+    key = hashlib.sha256(f"{rel}\n{older_blob}\n{newer_blob}\n{model or ''}".encode("utf-8")).hexdigest()[:20]
     out = folder_path.resolve() / COMPARE_DIR / key
     out.mkdir(parents=True, exist_ok=True)
     _leave_out_of_git(top)
@@ -320,11 +325,19 @@ def compare(
                 raise VersionsError(f"{path} could not be read at one of the two versions")
             _write_once(target, data)
     shown = (out.relative_to(folder_path.resolve())).as_posix()
+    if suffix in (".step", ".stp"):
+        shape = _shape(out, [str(out / f"older{suffix}"), str(out / f"newer{suffix}"), str(out)], retry=retry, wait=wait)
+    elif suffix == ".py" and model:
+        shape = _shape(out, ["--model", model, str(top), rel, older, newer, str(out)], retry=retry, wait=wait)
+    else:
+        shape = {"status": "unsupported"}
+    solids = suffix == ".py" and all((out / f"{name}.step").is_file() for name in ("older", "newer"))
+    pictured = ".step" if solids else suffix
     result: dict = {
         "ok": True,
         "key": key,
-        "files": {"older": f"{shown}/older{suffix}", "newer": f"{shown}/newer{suffix}", "diff": None},
-        "shape": _shape(out, suffix, retry=retry, wait=wait) if suffix in (".step", ".stp") else {"status": "unsupported"},
+        "files": {"older": f"{shown}/older{pictured}", "newer": f"{shown}/newer{pictured}", "diff": None},
+        "shape": shape,
     }
     if result["shape"].get("diff"):
         result["files"]["diff"] = f"{shown}/{result['shape']['diff']}"

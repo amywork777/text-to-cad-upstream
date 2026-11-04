@@ -1,6 +1,9 @@
 """What changed between two versions of a part, as solids, for Studio's versions (``versions.py``).
 
-Run as ``python -m cad.edit.solid_diff OLDER.step NEWER.step OUT_DIR``. Ported from Fixture's
+Run as ``python -m cad.edit.solid_diff OLDER.step NEWER.step OUT_DIR``, or, for a model's script
+(cadgen 0.10's part, which writes no file of its own), as ``python -m cad.edit.solid_diff --model
+NAME REPOSITORY SCRIPT OLDER NEWER OUT_DIR``: the model is built at each version (a commit, or
+``now``) into ``OUT_DIR/older.step`` and ``OUT_DIR/newer.step``, then those are compared. Ported from Fixture's
 ``apps/server/py/diff_revision.py``. The two STEP files are compared as solids and the material is
 split into unchanged (grey, see-through), added (green) and removed (red), written as
 ``OUT_DIR/what-changed.step`` (the viewer's tab reads "What changed") with each kind a labelled child of its own, so the viewer and the model
@@ -16,13 +19,17 @@ it (``test_module_boundaries``).
 
 from __future__ import annotations
 
+import io
 import json
 import os
+import shutil
 import sys
+import tarfile
+import tempfile
 from pathlib import Path
 from cad._internal.atomic_replace import replace_atomic
 
-__all__ = ["compare", "main"]
+__all__ = ["build", "compare", "main"]
 
 EPS_MM3 = 1e-6
 UNCHANGED = (0.5, 0.5, 0.5, 0.3)
@@ -101,6 +108,54 @@ def compare(older: Path, newer: Path, out: Path) -> dict:
     return result
 
 
+def _tree(repository: Path, version: str, into: Path) -> None:
+    """The repository's files as a version had them, written into ``into``: a commit's tree, or for
+    ``now`` the files on disk that git would keep (``.studio`` left out)."""
+    from cad.edit.versions import NOW, _git
+
+    if version != NOW:
+        archive = _git(repository, "archive", "--format=tar", version)
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+            tar.extractall(into, filter="data")
+        return
+    listed = _git(repository, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+    for name in filter(None, listed.decode("utf-8").split("\0")):
+        source = repository / name
+        if ".studio" in Path(name).parts or not source.is_file():
+            continue
+        (into / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, into / name)
+
+
+def build(repository: Path, script: str, version: str, name: str, step: Path, side: str) -> None:
+    """Model ``name`` of ``script`` (its path in the repository) built as ``version`` had it, written
+    to ``step``. It is built from a scratch copy of that version's files, so it runs that version's
+    code (the modules beside it too) and writes none of its outputs into the project. ``side``
+    ("older" or "newer") names the version in a failure."""
+    from cad.engine.api import export
+    from cad.engine.build import load_script
+    from cad.engine.model import models_in
+
+    step.unlink(missing_ok=True)
+    with tempfile.TemporaryDirectory(prefix="studio-version-") as scratch:
+        tree = Path(scratch).resolve()
+        _tree(repository, version, tree)
+        path = tree / script
+        if not path.is_file():
+            raise ValueError(f"the {side} version has no {Path(script).name}")
+        try:
+            module = load_script(path)
+        except Exception as error:  # noqa: BLE001 - the script's own failure, said as its
+            raise ValueError(f"the {side} version's {path.name} failed: {error}") from error
+        found = [model for model in models_in(vars(module), path) if name in (model.name, model.explicit_name)]
+        if not found:
+            raise ValueError(f"the {side} version's {path.name} has no model named {name}")
+        try:
+            export(found[0], step, daemon=False)
+        except Exception as error:  # noqa: BLE001
+            raise ValueError(f"the {side} version's {name} did not build: {error}") from error
+
+
 def _write(path: Path, payload: dict) -> None:
     """Write the result whole or not at all: a reader never sees half of it."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -111,11 +166,19 @@ def _write(path: Path, payload: dict) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if len(args) != 3:
-        print("usage: python -m cad.edit.solid_diff OLDER.step NEWER.step OUT_DIR", file=sys.stderr)
+    model = args[:1] == ["--model"]
+    if len(args) != (7 if model else 3):
+        print("usage: python -m cad.edit.solid_diff OLDER.step NEWER.step OUT_DIR\n"
+              "       python -m cad.edit.solid_diff --model NAME REPOSITORY SCRIPT OLDER NEWER OUT_DIR", file=sys.stderr)
         return 2
-    older, newer, out = (Path(arg) for arg in args)
+    out = Path(args[-1])
+    older, newer = (out / "older.step", out / "newer.step") if model else (Path(args[0]), Path(args[1]))
     try:
+        if model:
+            name, repository, script = args[1], Path(args[2]), args[3]
+            out.mkdir(parents=True, exist_ok=True)
+            for side, version, step in (("older", args[4], older), ("newer", args[5], newer)):
+                build(repository, script, version, name, step, side)
         result = compare(older, newer, out)
     except (ImportError, MemoryError, OSError) as error:
         result = {"error": str(error) or type(error).__name__, "environment": True}

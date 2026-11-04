@@ -1080,6 +1080,7 @@ class CadApp:
                     str(payload.get("older") or ""),
                     str(payload.get("newer") or ""),
                     payload.get("texts") if type(payload.get("texts")) is list else None,
+                    model=str(payload.get("model") or "") or None,
                     retry=payload.get("retry") is True,
                 )
             elif rest == ["restore"]:
