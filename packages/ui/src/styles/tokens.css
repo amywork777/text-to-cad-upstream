@@ -203,8 +203,9 @@
   --cad-picked: oklch(0.69 0.16 256);
   --cad-ok: oklch(0.58 0.15 150);
   --cad-cancel: oklch(0.58 0.21 27);
-  --cad-ws-hover: #eef4fc;
-  --cad-ws-selected: #e1ecfa;
+  /* The CAD workspace's hover and selection, made from the theme's accent so a host's theme reaches them. */
+  --cad-ws-hover: var(--accent);
+  --cad-ws-selected: color-mix(in oklab, var(--accent), var(--foreground) 8%);
   --cad-agent: #7c3aed;
 }
 
@@ -294,7 +295,8 @@
   --cad-picked: oklch(0.74 0.14 252);
   --cad-ok: oklch(0.74 0.17 150);
   --cad-cancel: oklch(0.7 0.19 27);
-  --cad-ws-hover: #1d2a3a;
-  --cad-ws-selected: #24364d;
+  /* The CAD workspace's hover and selection, made from the theme's accent so a host's theme reaches them. */
+  --cad-ws-hover: var(--accent);
+  --cad-ws-selected: color-mix(in oklab, var(--accent), var(--foreground) 8%);
   --cad-agent: #a78bfa;
 }
