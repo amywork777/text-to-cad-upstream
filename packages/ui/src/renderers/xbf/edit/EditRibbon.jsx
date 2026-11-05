@@ -296,8 +296,16 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
     ? "An assembly places its parts. Double-click a part in the design tree to open it and model it."
     : "An assembly places its parts. Ask the agent to change a part.";
   const commandIcon = id => { const Icon = COMMAND_ICONS[id]; return <Icon aria-hidden="true" />; };
+  // A model effect of the strip (Exploded View, Section View) has no tool to take in hand: its row opens in a popover
+  // under the button pressed, or under the ribbon when it is run from a group's menu or the command search.
+  const ribbonRef = useRef(null);
+  const [effect, setEffect] = useState(null);
   const toolItem = tool => ({ id: tool.id, label: LABELS[tool.id] || tool.label, icon: tool.icon, active: tool.active === true,
-    disabled: tool.disabled, description: tool.description, menu: tool.menu, onClick: () => tool.onSelect() });
+    disabled: tool.disabled, description: tool.description, menu: tool.menu,
+    onClick: tool.popover
+      ? event => setEffect({ id: tool.id, anchor: { current: event?.currentTarget instanceof Element ? event.currentTarget : ribbonRef.current } })
+      : () => tool.onSelect() });
+  const effectTool = effect ? byId.get(effect.id) : null;
   // The tab row: Undo and Redo as small icons at its left, the tabs, and at its right where the part stands.
   const tabRow = (list, active, onPick, end) => <div data-cad-ribbon-tabs="" className="flex h-7 shrink-0 items-center gap-0.5 border-b border-border px-1.5">
     <div className="flex shrink-0 items-center gap-0.5 pr-2">
@@ -324,7 +332,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   </div>;
   // `finds`: the items the command search may run, whichever tab each is on (`searchable`); the box is the toolbar's neighbour, for the toolbar clips.
   const ribbon = (label, groups, end, { tabs, active, onPick, key = label, sketching = false, finds }) => <>
-    <div data-cad-ribbon="" data-cad-sketch-ribbon={sketching ? "" : undefined}
+    <div ref={ribbonRef} data-cad-ribbon="" data-cad-sketch-ribbon={sketching ? "" : undefined}
       aria-busy={busy ? true : undefined}
       className="relative flex min-h-0 shrink-0 flex-col overflow-hidden border-b border-border bg-background" role="toolbar" aria-label={label}>
       {tabRow(tabs, active, onPick, end)}
@@ -334,6 +342,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
       {busy ? <Progress value={busy.progress} className="absolute inset-x-0 bottom-0" aria-label={busy.text} /> : null}
     </div>
     {finding ? <CommandSearchBox items={finds()} sketching={sketching} onClose={() => setFinding(false)} /> : null}
+    {effectTool?.popover ? effectTool.popover({ anchor: effect.anchor, open: true, onOpenChange: open => { if (!open) setEffect(null); } }) : null}
   </>;
   const statusLine = (text, failed = false) => <span className={cn("flex min-w-0 items-center gap-1",
     busy ? "text-foreground" : failed ? "text-destructive" : "text-muted-foreground")}>

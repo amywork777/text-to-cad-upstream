@@ -551,3 +551,17 @@ it("never disagrees with the toolbar while a sketch is open: every tool of every
   const listed = new Set(foundNames().filter(text => !text.endsWith(' Cut')));
   expect([...listed].sort()).toEqual([...has].sort());
 });
+
+it("opens a model effect's row under its button, as the strip's tile does, for a tool with nothing to take in hand", async () => {
+  const user = userEvent.setup();
+  // Section View and Exploded View come from the strip as popovers, with no onSelect.
+  const popover = vi.fn(({ open }: { open: boolean }) => (open ? <div role="dialog" aria-label="Clip row" /> : null));
+  const clip = { id: 'clip', label: 'Clip', icon: <svg />, disabled: false, popover };
+  render(<EditRibbon tools={[tool('select', 'Select'), tool('measure', 'Measure'), clip]} edit={edit() as never} />);
+  await user.click(screen.getAllByRole('tab').find(tab => /evaluate/i.test(tab.textContent || ''))!);
+  await user.click(command('Section', 'Section View'));
+  expect(screen.getByRole('dialog', { name: 'Clip row' })).toBeTruthy();
+  const asked = popover.mock.calls.at(-1)![0] as unknown as { open: boolean; anchor: { current: Element } };
+  expect(asked.open).toBe(true);
+  expect(asked.anchor.current === command('Section', 'Section View')).toBe(true);
+});
