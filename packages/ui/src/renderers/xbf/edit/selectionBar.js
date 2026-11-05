@@ -68,7 +68,8 @@ export function stripDrawingTools({ cad, drawing }) {
 
 /**
  * What Quick Edit is handed to carry: in the AI layout the picks while it shows (`open`), else nothing. The CAD workspace chosen
- * (`cad`, `cadChosen`) has no agent to send them to, so it is given no box at all (`references: null`).
+ * (`cad`, `cadChosen`) is given no box at all (`references: null`): its picks go to the host's own chat box, by its pick bar's
+ * Add to chat.
  */
 export function quickEditCarries({ cad, open, carried, empty }) {
   if (cad) return { references: null, chips: empty };

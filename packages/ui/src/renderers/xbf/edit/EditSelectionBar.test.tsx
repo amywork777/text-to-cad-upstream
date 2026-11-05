@@ -84,15 +84,25 @@ it('draws the actions it has a handler for, each with its icon and its name, and
   expect([view.onAsk, view.onAnnotate, view.onEdit].map(handler => handler.mock.calls.length)).toEqual([1, 1, 1]);
   // With it, the four of the design, in its order.
   view.show({ onAddContext: view.onAddContext });
-  expect(names()).toEqual(['Ask', 'Add to context', 'Annotate', 'Edit']);
-  fireEvent.click(screen.getByRole('button', { name: 'Add to context' }));
+  expect(names()).toEqual(['Ask', 'Add to chat', 'Annotate', 'Edit']);
+  fireEvent.click(screen.getByRole('button', { name: 'Add to chat' }));
+  expect(view.onAddContext).toHaveBeenCalledTimes(1);
+});
+
+it('says on Add to chat why the chat box did not take the picks, and keeps it to try again', () => {
+  const view = bar({ onAsk: undefined, onAnnotate: undefined, addContextReason: 'The chat is busy.' });
+  wait();
+  const add = within(toolbar()!).getByRole('button', { name: 'Add to chat' });
+  expect([names(), add.getAttribute('title'), add.getAttribute('aria-description'), (add as HTMLButtonElement).disabled])
+    .toEqual([['Add to chat', 'Edit'], 'The chat is busy.', 'The chat is busy.', false]);
+  fireEvent.click(add);
   expect(view.onAddContext).toHaveBeenCalledTimes(1);
 });
 
 it('draws only what it is offered: no Edit for a pick that has no feature to edit', () => {
   bar({ actions: ALL.slice(0, 3) });
   wait();
-  expect(names()).toEqual(['Ask', 'Add to context', 'Annotate']);
+  expect(names()).toEqual(['Ask', 'Add to chat', 'Annotate']);
 });
 
 it('draws Edit with the picked feature\'s own icon, naming what it opens, and holds it, saying why, while a change is on its way', () => {

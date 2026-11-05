@@ -12,6 +12,8 @@ import EditDimensions from "./EditDimensions.jsx";
 import { editLayoutControl } from "./EditLayoutSwitch.jsx";
 import EditRibbon from "./EditRibbon.jsx";
 import EditSelectionBar from "./EditSelectionBar.jsx";
+import { featureAsk } from "./featureAsk.jsx";
+import { useAddToContext } from "./useAddToContext.js";
 import ImportedBody from "./ImportedBody.jsx";
 import AssemblyNotice from "./AssemblyNotice.jsx";
 import PreviewLayer from "./PreviewLayer.jsx";
@@ -100,8 +102,10 @@ export function useXbfEditLayout({ client, file, services, active, compact = fal
  * renderer's picks as the panels and commands read them (`selectors.js`'s `xbfEditReference`: the
  * engine's refs by number), names a face picked by the feature that made it (`useFaceFeatures`: its
  * chip, the selection bar's Edit, a double-click selecting the feature, the face's menu), and turns
- * Select to what a command picks. The agent's pieces (Pencil and Shapes, Quick Edit, and so Ask, Add to
- * context and Annotate) are the AI layout's alone: the CAD workspace has no agent in it.
+ * Select to what a command picks. The agent's writing pieces (Pencil and Shapes, Quick Edit, and so Ask
+ * and Annotate) are the AI layout's alone: the CAD workspace writes to the agent only through the host's
+ * own chat box, the selection bar's Add to chat putting what is picked there (`useAddToContext`), where
+ * the host has one.
  *
  * Over the viewport (`overlay`) it draws on the shell's runtime, whose model group holds the xbf scene:
  * the sketches, an open sketch, a feature's preview, the draft and mass marks, a command's value
@@ -135,9 +139,14 @@ export function useXbfEditLayout({ client, file, services, active, compact = fal
  * @param {boolean} [options.isolated]  Something is isolated: a double-click on empty space leaves the isolation first.
  * @param {string[]} [options.isolatedLabels]  The isolated rows' labels in the model tree, which say on an assembly
  *   which part to open to change it (`isolatedPart`).
+ * @param {readonly object[]} [options.askReferences]  The faces and edges picked as the prompt carries them (the
+ *   renderer's `useXbfSelectionChips`), for Add to chat.
+ * @param {object | null} [options.resource]  The file on screen, as the prompt names it.
+ * @param {object | null} [options.prompt]  The shell's `quickEditPrompt`: the views and marks a delivery attaches.
  */
 export function useXbfCadMode({ view, document, scene, tree, assembly, loading, updating, revision, selectedElementIds, setChosen, facts, toolMode,
-  previewing, ensureSelect, setSelectFilter, viewportRef, lookAt, pickAt = null, isolated = false, isolatedLabels = EMPTY }) {
+  previewing, ensureSelect, setSelectFilter, viewportRef, lookAt, pickAt = null, isolated = false, isolatedLabels = EMPTY,
+  askReferences = EMPTY, resource = null, prompt = null }) {
   const host = useViewerHost();
   const file = view.file.path;
   const services = document.services;
@@ -309,6 +318,18 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
   const barActions = selecting ? selectionBarActions({ editing, picks: barPicks, commandOpen, sketching: sketchOpen, busy: edit.saving || edit.rolling,
     featureOf: faceRow ? pick => (pick.kind === "face" ? faceRow.id : null) : null }) : EMPTY;
   const rowChosen = barPicks.length === 1 && barPicks[0].kind === "feature" ? barPicks[0] : null;
+  // Add to chat: what is picked into the host's chat box, as context for the person's next message, nothing sent, the
+  // picks let go of once it is there. A feature chosen in the design tree goes as its statement in the script
+  // (`featureAsk`), faces and edges as Ask would carry them. A refusal is said on the button, the picks kept.
+  const [chatRefused, setChatRefused] = useState("");
+  const featureCarried = useMemo(() => (rowChosen ? featureAsk({ state: edit.state, tree: editTree, pick: rowChosen }) : null),
+    [rowChosen, edit.state, editTree]);
+  const chatReferences = useMemo(() => (featureCarried ? [featureCarried.reference] : askReferences), [featureCarried, askReferences]);
+  const toChat = useAddToContext({ resource, references: chatReferences, prompt, held: commandOpen || sketchOpen,
+    onAdded: () => { setChatRefused(""); clearPicks(); dropFeature(); }, onFailed: setChatRefused });
+  // A refusal is of the picks it was for.
+  useEffect(() => { setChatRefused(""); }, [chatReferences]);
+  const chatAction = toChat.offered && toChat.picked ? (chatRefused ? { reason: chatRefused } : {}) : null;
   const rowEdited = rowChosen || faceRow;
   // The bar beside a feature chosen is put away by Escape, the feature staying selected.
   const featureBarShown = barActions.length > 0 && rowChosen !== null;
@@ -540,6 +561,7 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
       {barActions.length ? <EditSelectionBar viewport={viewport} actions={barActions} anchor={barAnchor}
         anchorKey={barPicks.map(pick => `${pick.kind}:${pick.id}`).join(",")}
         editKind={rowEdited?.sketch ? "Sketch" : rowEdited?.feature.kind} editHint={rowEdited?.sketch ? "Edit Sketch" : "Edit Feature"}
+        onAddContext={chatAction ? toChat.add : undefined} addContextReason={chatAction?.reason}
         onEdit={rowEdited ? editRow : undefined} /> : null}
       {edit.command && edit.callout ? <ValueCallout viewport={viewport} callout={edit.callout} /> : null}
       {dimensionsShown ? <EditDimensions viewport={viewport} dimensions={dimensions} units={units}
