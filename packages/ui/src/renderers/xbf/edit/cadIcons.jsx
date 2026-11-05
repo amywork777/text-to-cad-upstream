@@ -58,9 +58,18 @@ export const COMMAND_ICONS = Object.freeze(Object.fromEntries(Object.entries(COM
 
 /**
  * The generator's icon of Select and Measure, the strip's tools that the CAD workspace draws its own way
- * (`XbfSelectionModes.jsx`); the AI layout, and the model's effects, keep the kit's.
+ * (`XbfSelectionModes.jsx`); the AI layout keeps the kit's.
  */
 export const TOOL_ICON_NAMES = Object.freeze({ select: "select", measure: "measure" });
+
+/**
+ * The model's effects on the CAD workspace's strip (`useModelTools`' `icons`): Section View and
+ * Exploded View in the generator's language, as Select and Measure beside them are.
+ */
+export const EFFECT_ICONS = Object.freeze({
+  clip: <NxIcon name="section" className="size-3.5" />,
+  exploded: <NxIcon name="exploded" className="size-3.5" />,
+});
 
 // What Select and Measure show they have in hand, as the strip always has: what their filters have
 // them pick alone (All, the tool's own icon).

@@ -65,9 +65,11 @@ function EffectPopover({ label, icon, changed = false, disabled = false, row, on
  * zero, Clip's axis and settings kept), idle while none is set. (Measure's results are Quick Edit's chips.)
  *
  * Each is offered where the view's features list it (`ViewFeatures`): a renderer decides which of its
- * files have them, and lists Explode only where there are parts to separate.
+ * files have them, and lists Explode only where there are parts to separate. A renderer with icons
+ * of its own for the strip (`icons`, by id: Studio's CAD workspace, as its Select and Measure) draws
+ * the tiles with them; else they are the kit's.
  */
-export function useModelTools({ view, features, store, mesh, disabled }) {
+export function useModelTools({ view, features, store, mesh, disabled, icons = null }) {
   const { t } = useI18n();
   const controls = useControlUsage();
   const applied = [
@@ -93,7 +95,7 @@ export function useModelTools({ view, features, store, mesh, disabled }) {
   return {
     tools: definitions.map(tool => {
       const changed = applied.includes(tool.id);
-      const icon = <tool.Icon className="size-3" strokeWidth={2} aria-hidden="true" />;
+      const icon = icons?.[tool.id] ?? <tool.Icon className="size-3" strokeWidth={2} aria-hidden="true" />;
       // Its row, unnamed but for what leads it: the slider, the amount, Reset.
       const row = <SubToolbar label={t("effects.controls", { tool: tool.label })} className={SLIDER_SUB_TOOLBAR_CLASS} data-model-tool={tool.id}>
         {tool.lead || null}

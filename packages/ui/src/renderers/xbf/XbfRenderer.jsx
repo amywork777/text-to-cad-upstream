@@ -36,6 +36,7 @@ import { MeasureIcon, SelectIcon, SelectModeMenu, XBF_CAD_MEASURE_MODES, XBF_SEL
 import { WORKSPACE_SELECTION_COLOR } from "./edit/editLayout.js";
 import { rollbackExport } from "./edit/rollbackExport.js";
 import { useXbfCadMode } from "./edit/useXbfCadMode.jsx";
+import { EFFECT_ICONS } from "./edit/cadIcons.jsx";
 import { useXbfElementFacts, useXbfSelectionChips, xbfCopyText, xbfNodeRefs } from "./xbfChips.jsx";
 import { xbfJointHandles } from "./xbfJointHandles.js";
 import { pmiMenuEntries, viewportMenuEntries } from "./xbfMenuItems.js";
@@ -776,9 +777,11 @@ function XbfSurface({ view, data }) {
 
   // ---- the strip --------------------------------------------------------------------------------
   const bounds = scene ? boundsInUnits(sceneFramingBounds(scene), scene.units) : null;
-  const effects = useModelTools({ view: viewSettings, features, store, mesh: bounds ? { bounds } : null, disabled: shell.idle });
-  // The AI layout wears the kit's icons, Studio's CAD workspace its own (`XbfSelectionModes.jsx`).
+  // The AI layout wears the kit's icons, Studio's CAD workspace its own (`XbfSelectionModes.jsx`,
+  // `EFFECT_ICONS`).
   const cadIcons = cad.editing;
+  const effects = useModelTools({ view: viewSettings, features, store, mesh: bounds ? { bounds } : null, disabled: shell.idle,
+    icons: cadIcons ? EFFECT_ICONS : null });
   const selectModeMenu = useMemo(() => <SelectModeMenu value={selectFilter} assembly={assembly} posable={posable} disabled={shell.idle} cad={cadIcons}
     onChange={value => { setSelectFilter(value); shellRef.current?.selectTool(XBF_TOOL.SELECT); }}
     connected={connected} onConnectedChange={(id, checked) => setConnected(now => ({ ...now, [id]: checked }))} />,
