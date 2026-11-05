@@ -30,7 +30,7 @@ const FAMILY_NAMES = Object.freeze({ rectangle: "Rectangle", circle: "Circle", a
 // Each command a picture large enough to tell apart, as SolidWorks' CommandManager draws its own: every
 // one the icon generator's (`cadIcons.jsx`, `sketchIcons.jsx`), the view's tools as the strip shows them.
 // Under the pointer the workspace's pale blue (`--cad-ws-hover`), pressed its deeper one (`PRESSED_CLASS`).
-const BUTTON_CLASS = "flex h-[3.875rem] min-w-12 flex-col items-center justify-start gap-1 rounded-md px-1 pt-1.5 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-6 [&_svg]:shrink-0";
+const BUTTON_CLASS = "flex h-[3.25rem] min-w-11 flex-col items-center justify-start gap-1 rounded-md px-1 pt-1 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-5 [&_svg]:shrink-0";
 const PRESSED_CLASS = "bg-cad-ws-selected text-sidebar-accent-foreground hover:bg-cad-ws-selected";
 // A long name wraps to two lines under its icon, as SolidWorks' CommandManager sets them; without
 // names (`compact`) the buttons narrow to their icons.
@@ -38,12 +38,10 @@ const LABEL_CLASS = "max-w-[4.75rem] whitespace-normal text-center leading-[1.1]
 // The view's own controls the frame hands over (Projection, Display, Preview: the strip's small tiles), lit as
 // the toolbar's buttons are: the workspace's pale blue under the pointer, its deeper one while a menu is open.
 const VIEW_CONTROLS_CLASS = "flex shrink-0 items-center gap-0.5 [&_button:hover]:bg-cad-ws-hover [&_button[aria-expanded=true]]:bg-cad-ws-selected";
-// A tab: its name in capitals, the one in front underlined.
-// The command search's button at the tab row's right, a field to look at as NX's Command Finder is.
-const FINDER_CLASS = "flex h-5 w-44 min-w-0 shrink items-center gap-1.5 rounded-md border border-border bg-background px-1.5 text-tiny text-muted-foreground transition-colors hover:bg-cad-ws-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
-const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-tiny uppercase leading-none tracking-wider text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
-// A group's title, in capitals under its buttons; where it is the group's menu it is a button too.
-const TITLE_CLASS = "text-micro uppercase leading-3 tracking-wider text-muted-foreground";
+// A tab: its name as it is written, the one in front underlined.
+const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-tiny leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
+// A group's title under its buttons; where it is the group's menu it is a button too.
+const TITLE_CLASS = "text-micro leading-3 text-muted-foreground";
 const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-blue-600 dark:text-blue-400",
   "Over defined": "text-red-600 dark:text-red-400" });
 // The More button's box, before it is first laid out.
@@ -181,7 +179,7 @@ function MoreMenu({ groups }) {
       className={cn(FLOATING_SURFACE_CLASS, "w-56 data-[state=closed]:animate-none!")}>
       {groups.map((group, index) => <Fragment key={group.title}>
         {index ? <DropdownMenuSeparator /> : null}
-        <DropdownMenuLabel className="text-micro uppercase tracking-wider text-muted-foreground">{group.title}</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-micro text-muted-foreground">{group.title}</DropdownMenuLabel>
         <GroupItems items={group.items} />
       </Fragment>)}
     </DropdownMenuContent>
@@ -320,13 +318,9 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
         onClick={() => onPick(each.id)}>{each.title}</button>)}
     </div>
     <div className="ml-auto flex min-w-0 items-center gap-2 pl-2">
-      {/* The command search in view, as NX's Command Finder is, S its key. */}
-      <button type="button" data-cad-command-finder="" aria-haspopup="dialog" aria-expanded={finding} title="Search commands (S)"
-        className={FINDER_CLASS} onClick={() => setFinding(true)}>
-        <Search aria-hidden="true" className="size-3.5 shrink-0" />
-        <span className="min-w-0 truncate">Search commands</span>
-        <kbd className="ml-auto shrink-0 rounded border border-border px-1 font-sans text-[0.625rem] leading-3">S</kbd>
-      </button>
+      {/* The command search, as NX's Command Finder is: an icon, S its key (its tooltip says so). */}
+      <ToolbarButton label="Search commands" shortcut="S" data-cad-command-finder="" aria-haspopup="dialog" aria-expanded={finding}
+        className="hover:bg-cad-ws-hover" onClick={() => setFinding(true)}><Search className="size-4" /></ToolbarButton>
       {view?.controls ? <div className={VIEW_CONTROLS_CLASS} data-cad-ribbon-view="">{view.controls}</div> : null}
       {view?.status || null}
       <div className="flex min-w-0 items-center gap-2 text-tiny leading-4" aria-live="polite">{end}</div>
@@ -473,7 +467,9 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
     {statusLine(status, Boolean(state?.building?.error))}
     {state?.units ? <span className="shrink-0 text-micro text-muted-foreground/80">{unitWord(state.units)}</span> : null}
   </>, { tabs, active: front.id, onPick: setTab, key: `Design:${front.id}`,
-    // Every tab's items, not the one in front; a command's Subtract is the Boolean of the unite command's dialog.
-    finds: () => searchable(tabs.flatMap(each => groupsOf[each.id]()),
+    // Every tab's items, not the one in front; a command's Subtract is the Boolean of the unite command's dialog. An
+    // assembly has no Features or Sketch tab, but its search finds their commands all the same, dimmed, saying to
+    // isolate a part.
+    finds: () => searchable([...(placing ? ["solid", "sketch"] : []), ...tabs.map(each => each.id)].flatMap(id => groupsOf[id]()),
       [...EDIT_COMMANDS.filter(command => booleanOf(command.id)?.value === "subtract").map(commandItem), ...stripTools]) });
 }

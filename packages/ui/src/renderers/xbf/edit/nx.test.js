@@ -6,15 +6,15 @@ import { SOLID_GROUPS, booleanOf, buildFailure, navigatorLabel, navigatorTitles,
 
 const titles = options => workspaceTabs(options).map(tab => tab.title);
 
-test("lists Features, Sketch and Evaluate, and Assembly only in an assembly", () => {
+test("lists Features, Sketch and Evaluate for a part, and Assembly then Evaluate for an assembly", () => {
   assert.deepEqual(titles({ assembly: false, sketching: false, drawing: false }), ["Features", "Sketch", "Evaluate"]);
-  assert.deepEqual(titles({ assembly: true, sketching: false, drawing: false }), ["Features", "Sketch", "Evaluate", "Assembly"]);
-  assert.deepEqual(workspaceTabs({ assembly: true, sketching: false, drawing: false }).map(tab => tab.id), ["solid", "sketch", "inspect", "assemble"]);
+  assert.deepEqual(titles({ assembly: true, sketching: false, drawing: false }), ["Assembly", "Evaluate"]);
+  assert.deepEqual(workspaceTabs({ assembly: true, sketching: false, drawing: false }).map(tab => tab.id), ["assemble", "inspect"]);
 });
 
 test("keeps Drawing where the drawing's commands are, after the rest", () => {
   assert.deepEqual(titles({ assembly: false, sketching: false, drawing: true }), ["Features", "Sketch", "Evaluate", "Drawing"]);
-  assert.deepEqual(titles({ assembly: true, sketching: false, drawing: true }), ["Features", "Sketch", "Evaluate", "Assembly", "Drawing"]);
+  assert.deepEqual(titles({ assembly: true, sketching: false, drawing: true }), ["Assembly", "Evaluate", "Drawing"]);
 });
 
 test("a sketch being edited has the Sketch tab alone, as the sketch task environment has", () => {

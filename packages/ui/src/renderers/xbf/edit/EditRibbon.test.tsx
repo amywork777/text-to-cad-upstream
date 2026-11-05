@@ -59,13 +59,14 @@ it("has no agent in it: no Ask the agent group, and no Ask, Add to context or An
   expect(named.filter(name => ['Ask', 'Add to context', 'Annotate', 'Pencil', 'Shapes'].includes(name || ''))).toEqual([]);
 });
 
-it("heads the toolbar with Features, Sketch and Evaluate, Assembly only for an assembly, and Drawing where a part has its sheet", () => {
+it("heads the toolbar with Features, Sketch and Evaluate, and Drawing where a part has its sheet; an assembly with Assembly, then Evaluate", () => {
   const { rerender } = render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} />);
   expect(tabNames()).toEqual(['Features', 'Sketch', 'Evaluate', 'Drawing']);
   expect(frontTab()).toBe('Features');
-  // An assembly places its parts, so its sheet is not offered; its Assembly tab is.
+  // An assembly places its parts, each modeled on its own: no Features or Sketch tab of commands that cannot run there,
+  // and no sheet. It opens on Assembly, as SolidWorks' assembly CommandManager does.
   rerender(<EditRibbon tools={ASSEMBLY_TOOLS} edit={edit({ state: { units: 'mm', components: [{ id: 'base' }], drawing: null } }) as never} />);
-  expect(tabNames()).toEqual(['Features', 'Sketch', 'Evaluate', 'Assembly']);
+  expect([tabNames(), frontTab()]).toEqual([['Assembly', 'Evaluate'], 'Assembly']);
 });
 
 it("groups the Features tab's commands as the design does, each under SolidWorks' name", () => {
@@ -111,7 +112,7 @@ it("gives every command of the old Analysis, View and Assemblies tabs a group", 
 
 it("names each group's menu apart from a command of the same name, the group's word in its name", async () => {
   const user = userEvent.setup();
-  render(<EditRibbon tools={ASSEMBLY_TOOLS} edit={edit({ state: { units: 'mm', components: [{ id: 'base' }], drawing: null } }) as never} onNormalTo={vi.fn()} />);
+  const { rerender } = render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} onNormalTo={vi.fn()} />);
   // Equations is a group and its one command, so a button called by that name is the command, and one call finds one.
   const menuOf = (title: string) => within(group(title)).getByRole('button', { name: `${title} commands` });
   const namesOnTab = () => screen.getAllByRole('button').map(button => button.getAttribute('aria-label') || '');
@@ -122,6 +123,7 @@ it("names each group's menu apart from a command of the same name, the group's w
   await user.click(screen.getByRole('tab', { name: 'Evaluate' }));
   expect(screen.getAllByRole('button', { name: 'Equations' })).toHaveLength(1);
   for (const title of ['Mass', 'Analyze', 'Display', 'Equations']) expect(menuOf(title).textContent).toBe(title);
+  rerender(<EditRibbon tools={ASSEMBLY_TOOLS} edit={edit({ state: { units: 'mm', components: [{ id: 'base' }], drawing: null } }) as never} onNormalTo={vi.fn()} />);
   await user.click(screen.getByRole('tab', { name: 'Assembly' }));
   expect(menuOf('Constraints').textContent).toBe('Constraints');
   // No two buttons of the toolbar are called alike.
@@ -314,7 +316,7 @@ it("shows the search in the tab row, as SolidWorks' Search Commands is, and open
   render(<EditRibbon tools={PART_TOOLS} edit={hand as never} />);
   searchGone();
   const finder = screen.getByRole('button', { name: /Search commands/ });
-  expect(finder.textContent).toContain('S');
+  expect(finder.getAttribute('aria-keyshortcuts')).toBe('S');
   await user.click(finder);
   expect(foundNames()).toEqual(PART_NAMES);
 });
@@ -421,9 +423,9 @@ it("lists a command the toolbar shows dimmed as dimmed, with the toolbar's reaso
   await user.keyboard('{Enter}');
   expect(onCommand).not.toHaveBeenCalled();
   expect(search()).toBeTruthy();
-  // The same buttons are dimmed in the toolbar.
+  // The toolbar has no tab for them at all in an assembly.
   await user.keyboard('{Escape}');
-  expect((command('Create', 'Extruded Boss/Base') as HTMLButtonElement).disabled).toBe(true);
+  expect(tabNames()).not.toContain('Features');
 });
 
 it("dims what the toolbar dims while a change is made, and Normal To until there is something to look at", async () => {
@@ -533,7 +535,11 @@ it("never disagrees with the toolbar: it lists each command of every tab the too
     view.rerender(<EditRibbon tools={PART_TOOLS} edit={hand as never} {...shown} />);
     // A cut is the Cut of its Boss/Base's Boolean: the toolbar has it in Extruded Boss/Base's dialog, not as a button.
     const listed = new Set(foundNames().filter(text => !text.endsWith(' Cut')));
-    expect([name, [...listed].filter(each => !STRIP.has(each)).sort()]).toEqual([name, [...has].sort()]);
+    // An assembly's search finds the part commands too, though it has no tab of them, each dimmed.
+    const dimmed = new Set(found().filter(row => row.getAttribute('aria-disabled') === 'true').map(row => row.textContent));
+    const partOnly = name === 'an assembly' ? [...listed].filter(each => !has.has(each) && !STRIP.has(each)) : [];
+    expect([name, partOnly.filter(each => !dimmed.has(each))]).toEqual([name, []]);
+    expect([name, [...listed].filter(each => !STRIP.has(each) && !partOnly.includes(each)).sort()]).toEqual([name, [...has].sort()]);
     cleanup();
   }
 });

@@ -802,7 +802,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
                 {workspace.chrome.leftDock ? <aside aria-label="FeatureManager design tree" data-cad-dock="navigator" style={NAVIGATOR_POSITION}
                   className={cn(WORKSPACE_SURFACE_CLASS, "pointer-events-auto absolute left-2 flex w-64 flex-col overflow-hidden @max-xl/cad-viewport:hidden")}>
                   <button type="button" aria-expanded={!navigatorFolded} onClick={() => setNavigatorFolded(folded => !folded)}
-                    className="flex h-7 shrink-0 items-center gap-1 px-2.5 text-left text-micro uppercase leading-3 tracking-wider text-muted-foreground hover:bg-cad-ws-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/45">
+                    className="flex h-7 shrink-0 items-center gap-1 px-2.5 text-left text-micro leading-3 text-muted-foreground hover:bg-cad-ws-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/45">
                     <span className="min-w-0 flex-1 truncate">FeatureManager</span>
                     <ChevronDown className={cn("size-3 shrink-0", navigatorFolded && "-rotate-90")} aria-hidden="true" />
                   </button>

@@ -1444,6 +1444,20 @@ class Renaming(Commands):
         self.assertTrue(undone["ok"], undone.get("error"))
         self.assertIn("  # Top edge round\n", script.read_text(encoding="utf-8"))
 
+    def test_a_remark_at_the_end_of_a_line_is_no_name_and_rename_gives_none_that_would_read_as_one(self):
+        root, file, state = self.open(BLOCK, "block.step")
+        made = self.command(file, state, "fillet", BLOCK_TOP_EDGES, {"radius": "1"})
+        script = root / "block.py"
+        # The agent's remark beside the fillet's line: the tree keeps its own name for it.
+        script.write_text(script.read_text(encoding="utf-8").replace(", radius=1)\n", ", radius=1)  # rounded so it is kind to hands, then shelled\n"),
+                          encoding="utf-8")
+        traced = self.service.state(file)
+        fillet = next(feature for feature in traced["features"] if feature["kind"] == "Fillet")
+        self.assertNotIn("named", fillet)
+        refused = self.rename(file, traced, feature=fillet["key"], name="Top edge, rounded", title="Fillet1")
+        self.assertFalse(refused["ok"])
+        self.assertIn("no commas", refused["error"])
+
     def test_a_sketch_is_renamed_on_its_own_line_and_no_two_share_a_name(self):
         root, file, state = self.open(SKETCHED, "bracket.step")
         renamed = self.rename(file, state, sketch=sketch("Sketch2", 11), name="Handle path", title="Sketch2")

@@ -1613,9 +1613,10 @@ def _editable(features, rows, steps, sketches, units):
         if statement.lineno != row["line"]:
             continue
         # A name given in the design tree: the comment at the end of the feature's line (a hole's
-        # Hole Wizard callout reads as one too, as SolidWorks names a hole by its size).
+        # Hole Wizard callout reads as one too, as SolidWorks names a hole by its size); a remark
+        # there is no name, and the tree's own stands.
         named = commands.trailing_comment(text, statement)
-        if named:
+        if commands.reads_as_name(named):
             feature["named"] = named
         elif feature.get("kind") == "Imported":
             # An imported body is named by the file it came from, as SolidWorks' Imported1 says its source.
@@ -3046,6 +3047,8 @@ def rename(request):
     name = " ".join(str(spec.get("name") or "").split())
     if len(name) > 60:
         return {"ok": False, "error": "A name is 60 characters at most."}
+    if name and not commands.reads_as_name(name):
+        return {"ok": False, "error": f"A name is {commands.NAME_WORDS} words at most, with no commas, colons, brackets or full stop."}
     features = traced["features"] or [feature for component in traced["components"] for feature in component["features"]]
     taken = {str(feature.get("named") or "").lower() for feature in features}
     taken |= {str((feature.get("sketch") or {}).get("name") or "").lower() for feature in features}

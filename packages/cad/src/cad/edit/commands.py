@@ -749,6 +749,18 @@ def trailing_comment(text: str, statement: ast.stmt) -> str:
     return rest[1:].strip() if rest.startswith("#") else ""
 
 
+# A remark left beside a line, rather than a name a design tree shows: a sentence, as a comma, a colon, a
+# bracket or a full stop at its end says, or more words than a name has (`NAME_WORDS`).
+_REMARK = re.compile(r"[,;:()]|\.\s*$")
+NAME_WORDS = 6
+
+
+def reads_as_name(comment: str) -> bool:
+    """Whether a line's comment names its feature (``Cable notch``, a hole's callout) rather than
+    remarks on it (``placed near its mates, then pinned``), as the agent's comments often do."""
+    return bool(comment) and (bool(_SIZED.match(comment)) or (not _REMARK.search(comment) and len(comment.split()) <= NAME_WORDS))
+
+
 def with_comment(text: str, statement: ast.stmt, comment: str) -> str:
     """``text`` with the comment at the end of ``statement``'s last line made ``comment``, or taken off for ""."""
     lines = text.splitlines(keepends=True)

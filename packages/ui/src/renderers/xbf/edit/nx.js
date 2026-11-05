@@ -53,12 +53,14 @@ export const SOLID_GROUPS = Object.freeze([
 const TAB_TITLES = Object.freeze({ solid: "Features", sketch: "Sketch", inspect: "Evaluate", assemble: "Assembly", drafting: "Drawing" });
 
 /**
- * The toolbar's tabs, in order, each `{ id, title }`: Solid, Sketch and Inspect; Assemble for an
- * assembly (`assembly`); Drafting where a drawing's sheet has commands to offer (`drawing`). While a
- * sketch is edited (`sketching`) its task environment has the Sketch tab alone.
+ * The toolbar's tabs, in order, each `{ id, title }`: Solid, Sketch and Inspect for a part; for an
+ * assembly (`assembly`) Assemble first, then Inspect, as SolidWorks' assembly CommandManager opens on
+ * Assembly: its parts are modeled each on its own, so a Features or Sketch tab there would hold only
+ * commands that cannot run. Drafting where a drawing's sheet has commands to offer (`drawing`). While
+ * a sketch is edited (`sketching`) its task environment has the Sketch tab alone.
  */
 export function workspaceTabs({ assembly = false, sketching = false, drawing = false } = {}) {
-  const ids = sketching ? ["sketch"] : ["solid", "sketch", "inspect", ...(assembly ? ["assemble"] : []), ...(drawing ? ["drafting"] : [])];
+  const ids = sketching ? ["sketch"] : [...(assembly ? ["assemble", "inspect"] : ["solid", "sketch", "inspect"]), ...(drawing ? ["drafting"] : [])];
   return ids.map(id => ({ id, title: TAB_TITLES[id] }));
 }
 
