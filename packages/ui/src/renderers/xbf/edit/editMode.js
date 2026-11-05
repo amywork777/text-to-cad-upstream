@@ -210,6 +210,25 @@ export const ROLLS_BACK = Object.freeze(new Set(["extrude", "cut", "revolve", "r
 /** Every feature of a tree, an assembly's parts' too, in order. */
 export const treeFeatures = tree => (tree?.assembly ? tree.components.flatMap(component => component.features) : tree?.features || []);
 
+// A model tree's label as a part's name: `m5x30_screw:base` and `Arm<1>` both read by their stem.
+const partStem = label => String(label ?? "").replace(/[:<].*$/, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * What an assembly's isolation means for editing it, for CAD mode's notice: none (nothing isolated,
+ * or not an assembly), several parts, or one part by its name with its own part (`component`, which
+ * Open Part opens) when it has one, matched by name to the assembly's parts. A part no script makes,
+ * as a bought screw, has none.
+ * @param {object} tree  The design tree (`editTree`).
+ * @param {string[]} labels  The isolated rows' labels in the model tree.
+ */
+export function isolatedPart(tree, labels) {
+  if (!tree?.assembly || !labels?.length) return null;
+  if (labels.length > 1) return { several: true };
+  const stem = partStem(labels[0]);
+  const component = tree.components.find(each => (each.document || each.step) && partStem(each.name) === stem) || null;
+  return { name: component?.name || sizeName(String(labels[0]).replace(/:.*$/, "")), component };
+}
+
 /** What can be selected in a tree: its features, their sketches, the origin, its planes and an assembly's parts. */
 export function treeIds(tree) {
   const ids = new Set(["origin", ...ORIGIN_PLANES.map(plane => `plane:${plane}`)]);

@@ -625,9 +625,11 @@ function XbfSurface({ view, data }) {
   }, [scene]);
 
   // ---- CAD mode: the part's script modeled by hand (`edit/useXbfCadMode.jsx`) -------------------
+  // The isolated rows by name, which CAD mode reads to say which part of an assembly to open to change it.
+  const isolatedLabels = useMemo(() => isolatedIds.map(id => tree.nodes.get(id)?.label).filter(Boolean), [tree, isolatedIds]);
   const cad = useXbfCadMode({ view, document, scene, tree, assembly, loading: loaded.busy && !scene, updating: loaded.busy && Boolean(scene),
     revision: loaded.revision, selectedElementIds, setChosen, facts, toolMode, previewing, ensureSelect, setSelectFilter, viewportRef, lookAt,
-    pickAt: pickAtClient, isolated: isolatedIds.length > 0 });
+    pickAt: pickAtClient, isolated: isolatedIds.length > 0, isolatedLabels });
   cadRef.current = cad;
   useEffect(() => { setPartUnits(cad.units); }, [cad.units]);
   useEffect(() => { setRollback(cad.rollback); }, [cad.rollback]);

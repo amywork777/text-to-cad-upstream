@@ -14,13 +14,14 @@ import EditRibbon from "./EditRibbon.jsx";
 import EditSelectionBar from "./EditSelectionBar.jsx";
 import EditTimeline from "./EditTimeline.jsx";
 import ImportedBody from "./ImportedBody.jsx";
+import IsolatedPart from "./IsolatedPart.jsx";
 import PreviewLayer from "./PreviewLayer.jsx";
 import SketchOverlay from "./SketchOverlay.jsx";
 import SketchesLayer from "./SketchesLayer.jsx";
 import ValueCallout from "./ValueCallout.jsx";
 import { cadChosen, doubleClickLayout, editLayoutState, pendingFaceStep, useEditLayout } from "./editLayout.js";
 import {
-  ORIGIN_PLANES, STANDARD_VIEWS, editCommand, featureNames, featureTree, mirrorOutline, nextSketchName, notASketch, originAxis,
+  ORIGIN_PLANES, STANDARD_VIEWS, editCommand, featureNames, featureTree, isolatedPart, mirrorOutline, nextSketchName, notASketch, originAxis,
   planeOutline, rolledBack, selectionDimensions, selectionItems, sizeName, sketchTreeId, sketchView, treeFeatures, treeSketch
 } from "./editMode.js";
 import { faceChipName, faceNumber, faceReference, shownFaces } from "./faceChips.js";
@@ -132,9 +133,11 @@ export function useXbfEditLayout({ client, file, services, active, compact = fal
  * @param {((clientX: number, clientY: number) => object | null) | null} [options.pickAt]  What a press at a point of the
  *   view takes, as Select's filter has it (the renderer's `pickAtClient`): Smart Dimension's and Convert Entities' edge.
  * @param {boolean} [options.isolated]  Something is isolated: a double-click on empty space leaves the isolation first.
+ * @param {string[]} [options.isolatedLabels]  The isolated rows' labels in the model tree, which say on an assembly
+ *   which part to open to change it (`isolatedPart`).
  */
 export function useXbfCadMode({ view, document, scene, tree, assembly, loading, updating, revision, selectedElementIds, setChosen, facts, toolMode,
-  previewing, ensureSelect, setSelectFilter, viewportRef, lookAt, pickAt = null, isolated = false }) {
+  previewing, ensureSelect, setSelectFilter, viewportRef, lookAt, pickAt = null, isolated = false, isolatedLabels = EMPTY }) {
   const host = useViewerHost();
   const file = view.file.path;
   const services = document.services;
@@ -562,9 +565,12 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
         : null}
     </> : null}
   </>;
-  // A STEP brought in, with no part script: offered as a part, in the top-right corner's notice.
+  // A STEP brought in, with no part script: offered as a part, in the top-right corner's notice. An assembly's
+  // isolated part, which is changed on its own, says so there too, with Open Part.
+  const isolatedNow = editing && edit.status === "ready" ? isolatedPart(editTree, isolatedLabels) : null;
   const notice = edit.status === "none" && edit.imported && openFile
-    ? <ImportedBody imported={edit.imported} onAdopt={edit.adopt} onOpenPart={edit.importedPart} onOpen={openFile} /> : null;
+    ? <ImportedBody imported={edit.imported} onAdopt={edit.adopt} onOpenPart={edit.importedPart} onOpen={openFile} />
+    : isolatedNow ? <IsolatedPart isolated={isolatedNow} onOpenPart={openPart} /> : null;
 
   return {
     edit, editing, cad, editable, frame, overlay, notice, references, faces, litFaces, nameChips, drawingTools, quickEdit,

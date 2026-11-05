@@ -26,6 +26,7 @@ import {
   reorderNote,
   revolveSweep,
   inertiaRows,
+  isolatedPart,
   deleteRefusal,
   editingValues,
   planeDetail,
@@ -804,4 +805,17 @@ test("Mass Properties lists the moments of inertia once a material gives the den
   assert.equal(rows[0].value, "650 g·mm²");
   assert.equal(rows[3].value, "250 g·mm² about (0, 0, 1)");
   assert.match(inertiaRows(mass, "in", 1)[0].value, / lb·in²$/);
+});
+
+test("an assembly's isolated part names the part Open Part opens, or says it has none", () => {
+  const tree = { assembly: true, components: [
+    { id: "component:arm.py", name: "Arm", document: "doc-arm", step: null },
+    { id: "component:base.py", name: "Base", document: null, step: "parts/base.step" }] };
+  assert.equal(isolatedPart(tree, []), null);
+  assert.equal(isolatedPart({ assembly: false, features: [] }, ["arm"]), null);
+  assert.equal(isolatedPart(tree, ["arm"]).component, tree.components[0]);
+  assert.equal(isolatedPart(tree, ["Base<1>"]).component, tree.components[1]);
+  // A bought screw has no part of its own: named, with nothing to open.
+  assert.deepEqual(isolatedPart(tree, ["m5x30_screw:base"]), { name: "M5x30 screw", component: null });
+  assert.deepEqual(isolatedPart(tree, ["arm", "base"]), { several: true });
 });
