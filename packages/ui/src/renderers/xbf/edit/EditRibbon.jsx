@@ -293,8 +293,8 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   const placing = Boolean(edit.state?.components?.length);
   const modelingOff = commandsIdle || placing;
   const placingWords = !placing ? undefined : canOpenParts
-    ? "An assembly places its parts. Double-click a part in the design tree to open it and model it."
-    : "An assembly places its parts. Ask the agent to change a part.";
+    ? "This is the assembly. Isolate a part to edit it: double-click it in the design tree."
+    : "This is the assembly. Ask the agent to change a part.";
   const commandIcon = id => { const Icon = COMMAND_ICONS[id]; return <Icon aria-hidden="true" />; };
   // A model effect of the strip (Exploded View, Section View) has no tool to take in hand: its row opens in a popover
   // under the button pressed, or under the ribbon when it is run from a group's menu or the command search.

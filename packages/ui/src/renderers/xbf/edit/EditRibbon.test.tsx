@@ -415,7 +415,7 @@ it("lists a command the toolbar shows dimmed as dimmed, with the toolbar's reaso
   openSearch({ state: ASSEMBLY }, { onCommand, tools: ASSEMBLY_TOOLS, canOpenParts: true });
   await user.keyboard('extrude');
   expect(foundRow('Extruded Boss/Base').getAttribute('aria-disabled')).toBe('true');
-  expect(within(search()).getByRole('status').textContent).toBe('An assembly places its parts. Double-click a part in the design tree to open it and model it.');
+  expect(within(search()).getByRole('status').textContent).toBe('This is the assembly. Isolate a part to edit it: double-click it in the design tree.');
   await user.keyboard('{Enter}');
   expect(onCommand).not.toHaveBeenCalled();
   expect(search()).toBeTruthy();

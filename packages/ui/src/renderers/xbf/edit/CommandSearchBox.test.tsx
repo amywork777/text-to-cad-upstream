@@ -114,7 +114,7 @@ it('runs a result clicked, and keeps the text field in hand while it is pressed'
 
 it("lists a command the toolbar shows dimmed as dimmed, says why while it is the choice, and runs nothing", async () => {
   const user = userEvent.setup();
-  const why = 'An assembly places its parts. Ask the agent to change a part.';
+  const why = 'This is the assembly. Ask the agent to change a part.';
   const extrude = item('extrude', 'Extrude', { disabled: true, description: why });
   const hole = item('hole', 'Hole');
   const { onClose } = box([extrude, hole]);

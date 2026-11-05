@@ -438,6 +438,8 @@ function XbfSurface({ view, data }) {
     if (!assembly) return;
     const targets = [ids].flat().filter(id => tree.nodes.has(id));
     if (!targets.length) { setIsolatedIds(EMPTY); return; }
+    // In CAD mode a part of an assembly isolated is a part to model: it opens on its own instead.
+    if (cadRef.current?.isolateToEdit(targets.map(id => tree.nodes.get(id)?.label).filter(Boolean))) return;
     const leaves = new Set(leavesOf(targets));
     setChosen(EMPTY);
     setIsolatedIds(targets);

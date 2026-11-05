@@ -154,11 +154,11 @@ export default function EditBrowser({ edit, names, tree, references = [], onEdit
       <EditTree edit={edit} tree={tree} onEditSketch={onEditSketch} onOpenPart={onOpenPart} backTo={backTo} />
       {component && !edit.command && !edit.sketch ? <FileSheetSettingsSection title={component.title} sectionId="edit-component">
         <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`}>
-          {(component.document || component.step) && onOpenPart ? "A part of this assembly. Open it to change its features, sketch on it and add new ones."
+          {(component.document || component.step) && onOpenPart ? "A part of this assembly. Isolate it to edit its features, sketch on it and add new ones."
             : "A part of this assembly. Ask the agent to change it."}</p>
         {(component.document || component.step) && onOpenPart ? <div className="pb-2"><FileSheetButtonRow>
           <Button type="button" variant="outline" size="sm" className={cn(FILE_SHEET_COMPACT_BUTTON_CLASSES, "justify-center")}
-            onClick={() => onOpenPart(component)}>Open Part</Button>
+            onClick={() => onOpenPart(component)}>Isolate to edit</Button>
         </FileSheetButtonRow></div> : null}
       </FileSheetSettingsSection> : null}
       {feature && !edit.command && !edit.sketch ? <FileSheetSettingsSection title={title} sectionId="edit-feature" open={open} onOpenChange={setOpen}>

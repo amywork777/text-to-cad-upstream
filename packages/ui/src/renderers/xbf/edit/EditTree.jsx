@@ -422,14 +422,14 @@ export default function EditTree({ edit, tree, onEditSketch = () => {}, onOpenPa
       <Row id="origin" depth={1} icon={<OriginIcon />} title="Origin" expanded={open.has("datum")} onToggle={toggle("datum")} {...rowProps} />
       {open.has("datum") ? ORIGIN_PLANES.map(plane => <Row key={plane} id={`plane:${plane}`} depth={2} icon={<PlaneIcon />} title={nxPlane(plane)} {...rowProps} />) : null}
       {tree.assembly && onOpenPart && tree.components.some(component => component.document || component.step)
-        ? <p className="px-2 py-1 text-tiny leading-4 text-muted-foreground">Double-click a part to open it and model it.</p> : null}
+        ? <p className="px-2 py-1 text-tiny leading-4 text-muted-foreground">Double-click a part to isolate and edit it.</p> : null}
       {tree.assembly
         ? tree.components.flatMap(component => [
           // A part of the assembly opens on its own to be modeled, as SolidWorks' Open Part opens it.
           <Row key={component.id} id={component.id} depth={1} icon={<PartIcon />} title={component.title}
             expanded={open.has(component.id)} onToggle={toggle(component.id)}
             onActivate={(component.document || component.step) && onOpenPart ? () => onOpenPart(component) : null}
-            menu={(component.document || component.step) && onOpenPart ? [{ id: "open-part", label: "Open Part", onSelect: () => onOpenPart(component) }] : null}
+            menu={(component.document || component.step) && onOpenPart ? [{ id: "open-part", label: "Isolate to edit", onSelect: () => onOpenPart(component) }] : null}
             {...rowProps} />,
           ...(open.has(component.id) ? features(component.features, 2) : []),
         ]).concat(mateRows())

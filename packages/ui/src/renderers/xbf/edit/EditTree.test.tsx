@@ -270,7 +270,7 @@ it("lists an assembly's parts and mates in the tree, under the same header", () 
   expect(rows.map(each => each.textContent)).toEqual(['Origin', 'Front Plane', 'Top Plane', 'Right Plane', 'Base<1>', 'Mates', 'Coincident1 (base, pin)']);
   expect(screen.getByText('Stack')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Equations' })).toBeTruthy();
-  expect(menuOf('Base<1>')).toEqual(['Open Part']);
+  expect(menuOf('Base<1>')).toEqual(['Isolate to edit']);
   cleanup();
   render(<EditTree edit={part({ state: stack }) as never} tree={featureTree(stack)} onOpenPart={vi.fn()} />);
   expect(menuOf('Coincident1 (base, pin)')).toEqual(['Delete']);

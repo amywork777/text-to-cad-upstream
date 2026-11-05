@@ -182,9 +182,10 @@ by hand" below.
   A value left as it was keeps how it was written (`radius=WALL` stays `radius=WALL`). A line
   written in the commands' form opens this way even when you wrote it.
 - **An assembly places its parts; a part is modeled on its own.** In an assembly the design tree
-  lists its parts (Daisy tray<1>), and Open Part (double-click, or the part's menu) opens the part's
-  own model in the view, where its features, sketches and commands are. The toolbar's modeling
-  commands are off in an assembly, as in SolidWorks.
+  lists its parts (Daisy tray<1>), and isolating one (Isolate to edit: double-click, the part's
+  menu, or Isolate on the model tree) opens the part's own model in the view, where its features,
+  sketches and commands are. The view says so in its corner. The toolbar's modeling commands are
+  off in an assembly, as in SolidWorks.
 - **Compare** (the Inspect tab's Analyze group, as SolidWorks' Compare Geometry) lists the versions of
   the part edit mode read this session, newest first (each a change the agent or a hand edit made,
   named by the files that changed after it); one picked draws the material the part has gained

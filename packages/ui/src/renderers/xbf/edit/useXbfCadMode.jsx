@@ -14,7 +14,7 @@ import EditRibbon from "./EditRibbon.jsx";
 import EditSelectionBar from "./EditSelectionBar.jsx";
 import EditTimeline from "./EditTimeline.jsx";
 import ImportedBody from "./ImportedBody.jsx";
-import IsolatedPart from "./IsolatedPart.jsx";
+import AssemblyNotice from "./AssemblyNotice.jsx";
 import PreviewLayer from "./PreviewLayer.jsx";
 import SketchOverlay from "./SketchOverlay.jsx";
 import SketchesLayer from "./SketchesLayer.jsx";
@@ -565,15 +565,23 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
         : null}
     </> : null}
   </>;
-  // A STEP brought in, with no part script: offered as a part, in the top-right corner's notice. An assembly's
-  // isolated part, which is changed on its own, says so there too, with Open Part.
-  const isolatedNow = editing && edit.status === "ready" ? isolatedPart(editTree, isolatedLabels) : null;
+  // A STEP brought in, with no part script: offered as a part, in the top-right corner's notice. An assembly says
+  // there how its parts are edited: isolated (`isolateToEdit`).
+  const assemblyEditing = editing && edit.status === "ready" && editTree.assembly;
   const notice = edit.status === "none" && edit.imported && openFile
     ? <ImportedBody imported={edit.imported} onAdopt={edit.adopt} onOpenPart={edit.importedPart} onOpen={openFile} />
-    : isolatedNow ? <IsolatedPart isolated={isolatedNow} onOpenPart={openPart} /> : null;
+    : assemblyEditing ? <AssemblyNotice isolated={isolatedPart(editTree, isolatedLabels)} editable={Boolean(openPart)} /> : null;
+  // Isolating one part of an assembly in CAD mode opens it to be modeled, the isolation's whole point here; true
+  // when it did, and the view leaves the assembly unisolated.
+  const isolateToEdit = labels => {
+    const found = assemblyEditing && openPart ? isolatedPart(editTree, labels) : null;
+    if (!found?.component) return false;
+    openPart(found.component);
+    return true;
+  };
 
   return {
-    edit, editing, cad, editable, frame, overlay, notice, references, faces, litFaces, nameChips, drawingTools, quickEdit,
+    edit, editing, cad, editable, frame, overlay, notice, isolateToEdit, references, faces, litFaces, nameChips, drawingTools, quickEdit,
     beforePick, modelPicks, doubleClickFace, doubleClickEmpty, faceMenu, escape, escapeActive: editing && (featureBarShown || commandHeld),
     rollback, rollbackGone,
     // The units the part reads in, which Measure reads in too, as SolidWorks' does.
