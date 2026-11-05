@@ -393,13 +393,13 @@ it("a view keeps its own history of files, as a browser's tab does: the agent's 
   expect(viewer.props!.history).toBeUndefined();
 });
 
-it("a host that opens files beside the thread (Studio) moves between them itself: its views have no Back or Forward, and keep their home", () => {
+it("a host that opens files beside the thread (Studio) moves between them itself: every view of it is bare, with no home, Back or Forward, and opens another file in the host", async () => {
   const { bridge, server } = host({ displayMode: 'fullscreen' }, { openFiles: {} });
   render(<App bridge={bridge as any} server={server as any} launch={{ protocol: 7, page: 'viewer', model: '/work/a.step' }} />);
-  expect(viewer.props!.history).toBeUndefined();
-  expect(viewer.props!.chrome).toBe('page');
-  act(() => viewer.props!.onShow('/work/b.step'));
-  expect([viewer.props!.file, viewer.props!.history]).toEqual(['/work/b.step', undefined]);
+  expect([viewer.props!.chrome, viewer.props!.history, viewer.props!.library]).toEqual(['bare', undefined, undefined]);
+  // A part opened from its assembly opens in a tab of the host's own.
+  act(() => viewer.props!.openElsewhere!('/work/b.step'));
+  expect(bridge.request).toHaveBeenCalledWith('studio/open-file', { path: '/work/b.step' });
 });
 
 it('an inline host that cannot show a view full size gets no Full size, and still the whole viewer', () => {

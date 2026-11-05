@@ -27,7 +27,7 @@ export interface ViewReporter {
 /**
  * One view: the shared CAD viewer over this host — the model a launch names, by its absolute path,
  * or with none, the home (the library, and Open) — under the navbar (`chrome: "page"`): its logo and
- * app menu, Back and Forward (not where the host opens files itself), the file's name and menus (its ⋯: Copy path, and Open in › Browser and
+ * app menu, Back and Forward, the file's name and menus (its ⋯: Copy path, and Open in › Browser and
  * the file manager), and at the right the host's update and Full size. A view browses from its model's folder, shows what is opened in place, and adds what it
  * shows to the library. Everything differs by data — what a Quick Edit can do in the chat, whether
  * the view has a home — never by where the view is.
@@ -35,7 +35,8 @@ export interface ViewReporter {
  * Codex's file handler (`surface: file`, `alone`) shows its file alone (`chrome: "bare"`): the host's
  * own file tree is its navigation, so it has no navbar, no home and no file menu (no Open in › Browser); what the
  * navbar would carry that it still has (the update notice, Full size where the host offers it) is its
- * corner (`CardCorner`) at the viewport's top-right.
+ * corner (`CardCorner`) at the viewport's top-right. Every view of a host that opens files beside the
+ * thread itself (`openFiles`: Studio) is bare in the same way, with the agent's shows still shown.
  */
 export default function ModelView({ launch, sequence, alone = false, bridge, client, tunnel, tabStore, live, links, colorScheme, theme, locale, language, platform, reporter, sync, chat, appSettings, update, fullSize, openInBrowser, engineOrigin }: {
   launch: Launch; sequence: number; bridge: Bridge; tabStore: TabStore; live: LiveRegistry; links: ViewerLinks;
@@ -80,8 +81,11 @@ export default function ModelView({ launch, sequence, alone = false, bridge, cli
   engineOrigin?: string;
 }) {
   // Codex's file handler shows its file alone: the host's own file tree is its navigation, so it
-  // has neither the home nor the explorer (a source that cannot list or search offers none).
-  const homed = !alone;
+  // has neither the home nor the explorer (a source that cannot list or search offers none). So does
+  // every view of a host that opens files beside the thread (Studio): its file list and tabs are how
+  // a person moves between files, and its tab names the file, so a view of it has no navbar either.
+  const ownNavigation = Boolean(bridge.hostCapabilities.openFiles);
+  const homed = !alone && !ownNavigation;
   const source = useMemo(() => {
     const { list, search, ...alone } = createCadFileSource(client);
     return homed ? { ...alone, list, search } : alone;
@@ -147,12 +151,10 @@ export default function ModelView({ launch, sequence, alone = false, bridge, cli
     // Open, with the desktop's chooser where this computer has one: what it picks is shown in place.
     ...(launch.pick ? { pick: async () => { const picked = await client.pick(); if (picked) navigate(normalizePath(picked)); } } : {}),
   } : undefined, [client, homed, launch.pick, navigate]);
-  // Back and Forward, wherever the view can go elsewhere: not a file handler's, which shows its file alone, and not
-  // in a host that opens files beside the thread (Studio), whose own file list and tabs are how a person moves between them.
-  const ownNavigation = Boolean(bridge.hostCapabilities.openFiles);
-  const viewerHistory = useMemo(() => homed && !ownNavigation ? {
+  // Back and Forward, wherever the view can go elsewhere: not a file handler's, which shows its file alone.
+  const viewerHistory = useMemo(() => homed ? {
     canGoBack: history.index > 0, canGoForward: history.index < history.entries.length - 1, back, forward,
-  } : undefined, [homed, ownNavigation, history, back, forward]);
+  } : undefined, [homed, history, back, forward]);
   const host = useMemo<Omit<ViewerHost, 'navigation'>>(() => ({
     files: source, fileActions, clipboard: frameClipboard, promptContext, promptFiles, links,
     // A Quick Edit copied, queued or sent, counted by the CAD app's server for its telemetry.
@@ -162,10 +164,10 @@ export default function ModelView({ launch, sequence, alone = false, bridge, cli
     environment: { colorScheme, locale, platform },
   }), [client, source, fileActions, promptContext, promptFiles, links, colorScheme, locale, platform]);
 
-  // A file tab shows its file alone, but a host that opens files beside the thread (Studio) opens
-  // another in a tab of its own: a part opened from its assembly.
-  const openElsewhere = useMemo(() => (alone && bridge.hostCapabilities.openFiles
-    ? (path: string) => void bridge.request('studio/open-file', { path }).catch(() => {}) : undefined), [alone, bridge]);
+  // A host that opens files beside the thread (Studio) opens another in a tab of its own, from any of its
+  // views: a part opened from its assembly.
+  const openElsewhere = useMemo(() => (ownNavigation
+    ? (path: string) => void bridge.request('studio/open-file', { path }).catch(() => {}) : undefined), [ownNavigation, bridge]);
   // The navbar carries the host's controls; the file handler, which has none, has its corner: the
   // host's notice at the viewport's top-right, Quick Edit under it.
   // The file on screen joins the library every CAD view shares, with its picture.
