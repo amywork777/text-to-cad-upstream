@@ -260,7 +260,7 @@ it('S, pressed in the viewer, opens the box under the toolbar, and a command fou
   const onCommand = vi.fn();
   render(<Workspace onCommand={onCommand} />);
   expect(screen.queryByRole('dialog', { name: 'Command search' })).toBeNull();
-  await user.click(screen.getByRole('button', { name: 'Select' }));
+  await user.click(screen.getByRole('tab', { name: 'Features' }));
   await user.keyboard('s');
   const search = screen.getByRole('dialog', { name: 'Command search' });
   expect(document.activeElement).toBe(within(search).getByRole('combobox'));
@@ -278,14 +278,14 @@ it('S, pressed in the viewer, opens the box under the toolbar, and a command fou
 it('S types into the box once it is open, and Escape puts it away', async () => {
   const user = userEvent.setup();
   render(<Workspace onCommand={vi.fn()} />);
-  await user.click(screen.getByRole('button', { name: 'Select' }));
+  await user.click(screen.getByRole('tab', { name: 'Features' }));
   await user.keyboard('s');
   await user.keyboard('shell');
   expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('shell');
   await user.keyboard('{Escape}');
   expect(screen.queryByRole('dialog', { name: 'Command search' })).toBeNull();
   // Asked again, it opens empty.
-  await user.click(screen.getByRole('button', { name: 'Select' }));
+  await user.click(screen.getByRole('tab', { name: 'Features' }));
   await user.keyboard('s');
   expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('');
 });
@@ -293,7 +293,7 @@ it('S types into the box once it is open, and Escape puts it away', async () => 
 it('S does nothing without the workspace, as in Simple view', async () => {
   const user = userEvent.setup();
   render(<Workspace onCommand={vi.fn()} active={false} />);
-  await user.click(screen.getByRole('button', { name: 'Select' }));
+  await user.click(screen.getByRole('tab', { name: 'Features' }));
   await user.keyboard('s');
   expect(screen.queryByRole('dialog', { name: 'Command search' })).toBeNull();
 });

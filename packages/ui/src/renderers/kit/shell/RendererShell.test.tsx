@@ -159,8 +159,8 @@ it("puts Projection, Display and Preview, and the view catching up, in the toolb
   const named = (root: Element) => [...root.querySelectorAll('button')].map(button => (button.getAttribute('aria-label') || '').split(':')[0])
     .filter(name => controls.includes(name));
   expect([named(toolbar), named(column())]).toEqual([controls, []]);
-  // The toolbar holds the tools too: the column keeps no strip at all.
-  expect(within(column()).queryByRole('group', { name: 'Interaction tools' })).toBeNull();
+  // The tools stay on the strip, in the column, as in Simple view: the toolbar holds the modeling.
+  expect(within(column()).getByRole('group', { name: 'Interaction tools' })).toBeTruthy();
   // A newer revision loading behind the model is said with the part's build status, at the toolbar's end.
   stage('editing');
   await waitFor(() => expect(toolbar.querySelector('[data-view-update-status]')).not.toBeNull());
@@ -189,9 +189,6 @@ it("moves the column beside an open dialog, so a tool's own row and its panels n
 
 // A toolbar that holds the strip's tools as buttons, as EditRibbon does: the Pencil taken up from it brings the drawing
 // tools' row under it, the column's one row, and Keep (`panel.harness`'s) a panel to the tool stack under that.
-const WITH_TOOLS = Object.freeze({ ...WORKSPACE,
-  ribbon: (tools: { id: string, label: string, onSelect: () => void }[]) => <div role="toolbar" aria-label="Design">
-    {tools.map(tool => <button key={tool.id} type="button" onClick={tool.onSelect}>{tool.label}</button>)}</div> });
 const controls = () => document.querySelector<HTMLElement>('[data-cad-top-controls]')!;
 const topRightLeft = () => backdrop().style.getPropertyValue('--cad-top-right-left');
 /** How far the column is moved right: its margins, the one shift. */
@@ -233,8 +230,8 @@ function resizing() {
   });
   return () => act(() => { for (const callback of [...live]) callback(); });
 }
-/** The frame with the workspace up and the Pencil taken up from its toolbar, measured. */
-function drawing(resize: () => void, workspace: object = WITH_TOOLS) {
+/** The frame with the workspace up and the Pencil taken up from its strip, measured. */
+function drawing(resize: () => void, workspace: object = WORKSPACE) {
   const view = shell(workspace);
   fireEvent.click(screen.getByRole('button', { name: 'Pencil' }));
   resize();
@@ -249,7 +246,7 @@ it("leaves a row that clears the design tree centred across the view, and Quick 
   const view = drawing(resize);
   expect([...shifted(), topRightLeft()]).toEqual(['', '', '798px']);
   // The same as with no design tree at all.
-  view.show({ ...WITH_TOOLS, leftDock: null });
+  view.show({ ...WORKSPACE, leftDock: null });
   resize();
   expect([...shifted(), topRightLeft()]).toEqual(['', '', '798px']);
 });
@@ -284,7 +281,7 @@ it("moves the column past the design tree folded to its title too, and not while
   expect([...shifted(), topRightLeft()]).toEqual(['', '', `${200 + 300 + 8}px`]);
   // A dialog beside it: the column is the room past both (above), and is not moved within it.
   layOut({ view: 700, row: 300 });
-  view.show({ ...WITH_TOOLS, dialogOpen: true });
+  view.show({ ...WORKSPACE, dialogOpen: true });
   resize();
   expect(shifted()).toEqual(['', '']);
   expect(column().className).toMatch(/\bleft-\[calc\(35rem\+8px\)\]/);
@@ -294,7 +291,7 @@ it("moves the tool stack's panels with the rows, one shift for the column, so a 
   const resize = resizing();
   // A 400px panel alone, centred in a 700px view, starts at 150: 122px short of the navigator's edge and an inset.
   layOut({ view: 700, panel: 400 });
-  shell(WITH_TOOLS);
+  shell(WORKSPACE);
   fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
   resize();
   expect(document.querySelector('[data-cad-tool-stack] [data-tool-panel]')).not.toBeNull();

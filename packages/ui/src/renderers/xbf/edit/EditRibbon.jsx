@@ -21,7 +21,9 @@ import { ConstructionIcon, NormalToIcon, SKETCH_TOOL_ICONS } from "./sketchIcons
 import { SOLID_GROUPS, booleanOf, nxCommand, workspaceTabs } from "./nx.js";
 import CommandSearchBox from "./CommandSearchBox.jsx";
 
-// The viewer's tools the tabs place, by id, under SolidWorks' names (Clip is its Section View).
+// The viewer's tools, by id, under SolidWorks' names (Clip is its Section View). They stay on the view's own strip,
+// in CAD mode as in AI, as SolidWorks keeps its view tools on the Heads-up View toolbar: the ribbon never repeats
+// one, and its command search finds them all the same.
 const LABELS = Object.freeze({ clip: "Section View", select: "Select", exploded: "Exploded View" });
 // A sketch tool family's button name, as SolidWorks' flyouts are named.
 const FAMILY_NAMES = Object.freeze({ rectangle: "Rectangle", circle: "Circle", arc: "Arc", slot: "Slot", move_entities: "Move Entities" });
@@ -237,10 +239,10 @@ function searchable(groups, extras = []) {
  * row has Undo and Redo of the hand changes at the left, the tabs after them, and at the right the
  * part's units and where its build stands (or the sketch and how defined it is). Solid holds the
  * modeling commands in groups (`SOLID_GROUPS`: Create, Modify, Construct), each opening its
- * dialog, then Select (Measure and Section View are on the Evaluate tab). Sketch
- * holds the Sketch command (Edit Sketch on a sketch selected); Evaluate measures and checks the
+ * dialog; Select, Measure, Section View and Exploded View stay on the view's strip. Sketch
+ * holds the Sketch command (Edit Sketch on a sketch selected); Evaluate weighs and checks the
  * part, orients and colors its view and lists its Expressions; Assemble, for an assembly, holds
- * Assembly Constraints and Exploded Views; Drafting the part's drawing. A group shows its
+ * Assembly Constraints; Drafting the part's drawing. A group shows its
  * most-used commands as buttons over its title, which is its menu of them all. While a sketch is
  * edited the Sketch tab alone is up, holding the sketch's tools as NX's sketch task environment
  * does: Finish Sketch (back to Solid), the curves to draw and edit (Quick Trim, Offset Curve...),
@@ -429,18 +431,14 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   const panelItem = (id, label, icon, what, disabled = edit.status !== "ready") => ({ id, label, icon, active: edit.inspecting === what, disabled,
     onClick: () => (edit.inspecting === what ? edit.stopInspecting() : edit.inspect(what)) });
   const viewerTool = id => (byId.has(id) ? [toolItem(byId.get(id))] : []);
-  // What a SOLID_GROUPS item is, drawn: the Sketch command, a modeling command, or a tool of the viewer's strip (Select).
-  const solidItems = id => {
-    if (id === "sketch") return [sketchCommand];
-    const command = EDIT_COMMANDS.find(each => each.id === id);
-    if (command) return [commandItem(command)];
-    return viewerTool(id);
-  };
+  // What a SOLID_GROUPS item is, drawn: the Sketch command or a modeling command.
+  const solidItems = id => (id === "sketch" ? [sketchCommand] : EDIT_COMMANDS.filter(each => each.id === id).map(commandItem));
+  const stripTools = ["select", "measure", "clip", "exploded"].flatMap(viewerTool);
   const drawing = placing ? [] : state?.drawing ? [panelItem("drawing", "Drawing", <DrawingIcon />, "drawing")]
     : [{ id: "make-drawing", label: "Make Drawing", icon: <DrawingIcon />, disabled: edit.status !== "ready" || edit.saving,
       onClick: async () => { const reply = await edit.drawing({ make: true }); if (reply?.ok) edit.inspect("drawing"); } }];
   // An assembly: it places its parts (Assembly Constraints), or the view has parts to separate (Exploded Views).
-  const tabs = workspaceTabs({ assembly: placing || byId.has("exploded"), drawing: drawing.length > 0 });
+  const tabs = workspaceTabs({ assembly: placing, drawing: drawing.length > 0 });
   const front = tabs.find(each => each.id === tab) || tabs[0];
   // Solid's groups (`SOLID_GROUPS`) show their most-used commands as buttons; the other tabs' groups are small
   // enough to show every one (`whole`). Every group's title is its menu all the same.
@@ -450,12 +448,11 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
     sketch: () => [whole("Direct Sketch", [sketchCommand])],
     // Evaluate: what measures and checks the part, how it is seen, and the part's named sizes.
     inspect: () => [
-      whole("Measure", [...viewerTool("measure"), panelItem("mass", "Mass Properties", <MassPropertiesIcon />, "mass")]),
+      whole("Mass", [panelItem("mass", "Mass Properties", <MassPropertiesIcon />, "mass")]),
       whole("Analyze", [
         ...(placing ? [] : [panelItem("draft-analysis", "Draft Analysis", <DraftAnalysisIcon />, "draft")]),
         panelItem("interference", "Interference Detection", <InterferenceIcon />, "interference"),
         ...(placing ? [] : [panelItem("compare", "Compare", <CompareIcon />, "compare")])]),
-      whole("Section", viewerTool("clip")),
       whole("Display", [
         { id: "normal-to", label: "Normal To", icon: <NormalToIcon />,
           disabled: !onNormalTo, hint: "Orient View: look straight at the face or plane selected",
@@ -468,7 +465,6 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
     assemble: () => [
       whole("Constraints", placing ? [panelItem("insert-components", "Insert Components", <InsertComponentIcon />, "insert", edit.status !== "ready" || edit.saving),
         panelItem("mate", "Mate", <MateIcon />, "mate", edit.status !== "ready" || edit.saving)] : []),
-      whole("Exploded View", viewerTool("exploded")),
     ],
     // Drafting: the part's drawing.
     drafting: () => [whole("Sheet", drawing)],
@@ -478,5 +474,6 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
     {state?.units ? <span className="shrink-0 text-micro text-muted-foreground/80">{unitWord(state.units)}</span> : null}
   </>, { tabs, active: front.id, onPick: setTab, key: `Design:${front.id}`,
     // Every tab's items, not the one in front; a command's Subtract is the Boolean of the unite command's dialog.
-    finds: () => searchable(tabs.flatMap(each => groupsOf[each.id]()), EDIT_COMMANDS.filter(command => booleanOf(command.id)?.value === "subtract").map(commandItem)) });
+    finds: () => searchable(tabs.flatMap(each => groupsOf[each.id]()),
+      [...EDIT_COMMANDS.filter(command => booleanOf(command.id)?.value === "subtract").map(commandItem), ...stripTools]) });
 }

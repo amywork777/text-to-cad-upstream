@@ -53,7 +53,7 @@ it("opens a group's command from its menu", async () => {
 it("has no agent in it: no Ask the agent group, and no Ask, Add to context or Annotate, though the strip has Pencil and Shapes", () => {
   // The strip's Pencil and Shapes are Annotate's tools; the workspace is no place for them either.
   render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} />);
-  expect(Object.keys(layout())).toEqual(['Create', 'Modify', 'Construct', 'Select']);
+  expect(Object.keys(layout())).toEqual(['Create', 'Modify', 'Construct']);
   expect(screen.queryByRole('group', { name: 'Ask the agent' })).toBeNull();
   const named = screen.getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent);
   expect(named.filter(name => ['Ask', 'Add to context', 'Annotate', 'Pencil', 'Shapes'].includes(name || ''))).toEqual([]);
@@ -74,8 +74,17 @@ it("groups the Features tab's commands as the design does, each under SolidWorks
     Create: ['Sketch', 'Extruded Boss/Base', 'Revolved Boss/Base', 'Swept Boss/Base'],
     Modify: ['Move Face', 'Fillet', 'Chamfer', 'Shell'],
     Construct: ['Plane'],
-    Select: ['Select'],
   });
+});
+
+it("leaves the view's own tools to its strip: no Select, Measure, Section View or Exploded View on any tab", async () => {
+  const user = userEvent.setup();
+  render(<EditRibbon tools={ASSEMBLY_TOOLS} edit={edit({ state: { units: 'mm', components: [{ id: 'base' }], drawing: null } }) as never} onNormalTo={vi.fn()} />);
+  for (const name of tabNames()) {
+    await user.click(screen.getByRole('tab', { name: name! }));
+    const named = screen.getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent);
+    expect([name, named.filter(each => ['Select', 'Measure', 'Section View', 'Exploded View'].includes(each || ''))]).toEqual([name, []]);
+  }
 });
 
 it("gives every command of the old Analysis, View and Assemblies tabs a group", async () => {
@@ -83,45 +92,38 @@ it("gives every command of the old Analysis, View and Assemblies tabs a group", 
   const { rerender } = render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} onNormalTo={vi.fn()} />);
   await user.click(screen.getByRole('tab', { name: 'Evaluate' }));
   expect(layout()).toEqual({
-    Measure: ['Measure', 'Mass Properties'],
+    Mass: ['Mass Properties'],
     Analyze: ['Draft Analysis', 'Interference Detection', 'Compare'],
-    Section: ['Section View'],
     Display: ['Normal To', 'Appearance'],
     Equations: ['Equations'],
   });
   // An assembly has no body of its own to analyze or color.
   rerender(<EditRibbon tools={ASSEMBLY_TOOLS} edit={edit({ state: { units: 'mm', components: [{ id: 'base' }], drawing: null } }) as never} onNormalTo={vi.fn()} />);
   expect(layout()).toEqual({
-    Measure: ['Measure', 'Mass Properties'],
+    Mass: ['Mass Properties'],
     Analyze: ['Interference Detection'],
-    Section: ['Section View'],
     Display: ['Normal To'],
     Equations: ['Equations'],
   });
   await user.click(screen.getByRole('tab', { name: 'Assembly' }));
-  expect(layout()).toEqual({ Constraints: ['Insert Components', 'Mate'], 'Exploded View': ['Exploded View'] });
+  expect(layout()).toEqual({ Constraints: ['Insert Components', 'Mate'] });
 });
 
 it("names each group's menu apart from a command of the same name, the group's word in its name", async () => {
   const user = userEvent.setup();
   render(<EditRibbon tools={ASSEMBLY_TOOLS} edit={edit({ state: { units: 'mm', components: [{ id: 'base' }], drawing: null } }) as never} onNormalTo={vi.fn()} />);
-  // Select, Measure, Expressions and Exploded View are a group and its one command (or a command and the group it is in),
-  // so a button called by that name is the command, and one call finds one.
+  // Equations is a group and its one command, so a button called by that name is the command, and one call finds one.
   const menuOf = (title: string) => within(group(title)).getByRole('button', { name: `${title} commands` });
   const namesOnTab = () => screen.getAllByRole('button').map(button => button.getAttribute('aria-label') || '');
-  expect(screen.getAllByRole('button', { name: 'Select' })).toHaveLength(1);
-  expect(command('Select', 'Select')).toBe(screen.getByRole('button', { name: 'Select' }));
-  for (const title of ['Create', 'Modify', 'Construct', 'Select']) {
+  for (const title of ['Create', 'Modify', 'Construct']) {
     // The title is what the menu shows, and is in the name it is called by.
     expect([menuOf(title).getAttribute('aria-haspopup'), menuOf(title).textContent]).toEqual(['menu', title]);
   }
   await user.click(screen.getByRole('tab', { name: 'Evaluate' }));
-  expect(screen.getAllByRole('button', { name: 'Measure' })).toHaveLength(1);
   expect(screen.getAllByRole('button', { name: 'Equations' })).toHaveLength(1);
-  for (const title of ['Measure', 'Analyze', 'Section', 'Display', 'Equations']) expect(menuOf(title).textContent).toBe(title);
+  for (const title of ['Mass', 'Analyze', 'Display', 'Equations']) expect(menuOf(title).textContent).toBe(title);
   await user.click(screen.getByRole('tab', { name: 'Assembly' }));
-  expect(screen.getAllByRole('button', { name: 'Exploded View' })).toHaveLength(1);
-  for (const title of ['Constraints', 'Exploded View']) expect(menuOf(title).textContent).toBe(title);
+  expect(menuOf('Constraints').textContent).toBe('Constraints');
   // No two buttons of the toolbar are called alike.
   const names = namesOnTab().filter(Boolean);
   expect(new Set(names).size).toBe(names.length);
@@ -203,7 +205,7 @@ it("brings the Sketch tab to the front while a sketch is open, and Exit Sketch r
 
 /**
  * jsdom lays nothing out: each group is 150px wide with its names and 100px without them, and the row
- * 400px, less the More button's 46px while it stands beside the row. Returns the undo.
+ * 260px, less the More button's 46px while it stands beside the row. Returns the undo.
  */
 function layOutRibbon() {
   const keys = ['offsetWidth', 'clientWidth'] as const;
@@ -214,7 +216,7 @@ function layOutRibbon() {
   } });
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) {
     if (!this.hasAttribute('data-compact')) return 0;
-    return this.parentElement?.querySelector('[data-cad-ribbon-more]') ? 299 : 345;
+    return this.parentElement?.querySelector('[data-cad-ribbon-more]') ? 214 : 260;
   } });
   return () => keys.forEach((key, index) => {
     const descriptor = saved[index];
@@ -228,10 +230,10 @@ it("drops the groups' names, then folds the groups at the right into More, where
     render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} />);
     // A folded group is hidden from the accessibility tree, so it has no name to be found by.
     const labelled = (title: string) => document.querySelector<HTMLElement>(`[role="group"][aria-label="${title}"]`)!;
-    // Four groups need 600px with their names and 400px without: the names go, then the groups at the
-    // right fold behind More.
+    // Three groups need 450px with their names and 300px without, in a 260px row: the names go, then the
+    // group at the right folds behind More.
     expect(screen.getByRole('button', { name: 'More commands' })).toBeTruthy();
-    expect(['Construct', 'Select'].map(title => labelled(title).getAttribute('aria-hidden'))).toEqual([null, 'true']);
+    expect(['Modify', 'Construct'].map(title => labelled(title).getAttribute('aria-hidden'))).toEqual([null, 'true']);
     expect(command('Create', 'Extruded Boss/Base').textContent).toBe('');
   } finally {
     restore();
@@ -515,8 +517,8 @@ async function toolbarHas(user: ReturnType<typeof userEvent.setup>) {
 
 it("never disagrees with the toolbar: it lists each command of every tab the toolbar has, under the same name, and nothing else", async () => {
   const user = userEvent.setup();
-  // The strip's Select is the toolbar's, and no CAD command.
-  const NOT_CAD = new Set(['Select']);
+  // The strip's tools are the view's, found by the search though the toolbar has no button for them.
+  const STRIP = new Set(['Select', 'Measure', 'Section View', 'Exploded View']);
   const states: [string, Record<string, unknown>, Record<string, unknown>][] = [
     ['a part', {}, {}],
     ['a part with its sheet', { state: { units: 'mm', components: [], drawing: { sheets: 1 } } }, {}],
@@ -531,7 +533,7 @@ it("never disagrees with the toolbar: it lists each command of every tab the too
     view.rerender(<EditRibbon tools={PART_TOOLS} edit={hand as never} {...shown} />);
     // A cut is the Cut of its Boss/Base's Boolean: the toolbar has it in Extruded Boss/Base's dialog, not as a button.
     const listed = new Set(foundNames().filter(text => !text.endsWith(' Cut')));
-    expect([name, [...listed].sort()]).toEqual([name, [...has].filter(each => !NOT_CAD.has(each)).sort()]);
+    expect([name, [...listed].filter(each => !STRIP.has(each)).sort()]).toEqual([name, [...has].sort()]);
     cleanup();
   }
 });
@@ -552,16 +554,15 @@ it("never disagrees with the toolbar while a sketch is open: every tool of every
   expect([...listed].sort()).toEqual([...has].sort());
 });
 
-it("opens a model effect's row under its button, as the strip's tile does, for a tool with nothing to take in hand", async () => {
+it("opens a model effect's row under the toolbar when the search runs it, for a tool with nothing to take in hand", async () => {
   const user = userEvent.setup();
   // Section View and Exploded View come from the strip as popovers, with no onSelect.
   const popover = vi.fn(({ open }: { open: boolean }) => (open ? <div role="dialog" aria-label="Clip row" /> : null));
   const clip = { id: 'clip', label: 'Clip', icon: <svg />, disabled: false, popover };
-  render(<EditRibbon tools={[tool('select', 'Select'), tool('measure', 'Measure'), clip]} edit={edit() as never} />);
-  await user.click(screen.getAllByRole('tab').find(tab => /evaluate/i.test(tab.textContent || ''))!);
-  await user.click(command('Section', 'Section View'));
+  openSearch({}, { tools: [tool('select', 'Select'), tool('measure', 'Measure'), clip] });
+  await user.keyboard('section{Enter}');
   expect(screen.getByRole('dialog', { name: 'Clip row' })).toBeTruthy();
   const asked = popover.mock.calls.at(-1)![0] as unknown as { open: boolean; anchor: { current: Element } };
   expect(asked.open).toBe(true);
-  expect(asked.anchor.current === command('Section', 'Section View')).toBe(true);
+  expect(asked.anchor.current.contains(screen.getByRole('toolbar'))).toBe(true);
 });

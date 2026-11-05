@@ -237,8 +237,8 @@ const DOUBLE_PRESS_MS = 600;
  *   `ribbon`, `leftDock`, `bottomDock`, `dialogPlace`: edit mode's frame (`xbf/edit/`), the workspace,
  *   laid out as a CAD tool lays out its window and floating over the canvas, so the canvas keeps its
  *   box, and the model its place, whether the workspace or Simple view's ai layout is up: the toolbar
- *   across the top (`ribbon`, given the strip's tools; the strip then keeps only the view's own
- *   controls, under the toolbar with its panels and Quick Edit); the design tree, a card at the
+ *   across the top (`ribbon`, given the strip's tools for its command search; the strip keeps them,
+ *   less the view's own controls, under the toolbar with its panels and Quick Edit); the design tree, a card at the
  *   top-left under it holding `leftDock`, which folds to its title and stands in for the file sidebar;
  *   beside it the place the open command's dialog mounts in (`dialogPlace`, a ref callback); and the
  *   timeline along the bottom up to the cube (`bottomDock`, drawing its own surface, as the toolbar
@@ -268,9 +268,9 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
   layoutControl = null, quickEditAsked = null, notice = null }) {
   const { t } = useI18n();
   const frame = shell.frame;
-  // What a tool's letter takes up (`useRendererShell`'s `onKey`): the strip as drawn now, none
-  // while edit mode's ribbon stands in for it.
-  frame.toolKeys.current = ribbon ? [] : tools;
+  // What a tool's letter takes up (`useRendererShell`'s `onKey`): the strip as drawn now, in edit
+  // mode too (its S, the command search, is taken first: `xbf/edit/useEditShortcuts.js`).
+  frame.toolKeys.current = tools;
   const mobile = useViewerMobile();
   const { view, resolvedScene, viewerLoading, scene } = frame;
   // The one presentation state: every gate — the viewport's, the renderer's — reads it.
@@ -770,7 +770,8 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
                 {/* The view's controls end the strip, after a rule: Projection, Display, then Preview (on a
                     phone, always in its More menu); the workspace's toolbar holds them while it is up. */}
                 <div ref={topControls} className="relative flex max-w-full shrink-0 flex-col items-center gap-2" data-cad-top-controls="">
-                  <FloatingToolBar tools={ribbon ? [] : tools} touch={mobile} views={toolbarUp ? [] : viewControls("top")} />
+                  {/* The same strip in CAD mode as out of it: the view's tools stay here, the ribbon holding the modeling. */}
+                  <FloatingToolBar tools={tools} touch={mobile} views={toolbarUp ? [] : viewControls("top")} />
                   {/* The tool in hand's own row, then the view catching up, under the strip. */}
                   {previewing ? null : toolRow}
                   {previewing ? null : updateStatus}

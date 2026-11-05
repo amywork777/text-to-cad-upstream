@@ -234,7 +234,7 @@ by hand" below.
   the hex picked: written where its body takes its color, `tray.color = "#B7A1D7"` (an alpha kept
   as the hex's last byte, `"#B7A1D7CC"`), or just before it is returned; the part is built again,
   as its document carries the color.
-- **Mass Properties** (the Inspect tab's Measure group, or the part's menu in the design tree) weighs the part as
+- **Mass Properties** (the Evaluate tab's Mass group, or the part's menu in the design tree) weighs the part as
   it is, at the rollback bar when it is up: its volume, surface area, center of mass (marked on
   the model) and overall size, worked out from its solids, and its mass in a material of the engine's
   table, the project brief's own as it opens. It writes nothing.

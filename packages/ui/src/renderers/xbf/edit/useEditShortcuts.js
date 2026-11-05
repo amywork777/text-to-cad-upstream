@@ -40,7 +40,7 @@ export function useEditShortcuts(edit, active) {
         return;
       }
       // S, the command search: a single key as a tool's letter is (`kit/tools/toolShortcuts.js`), so with Cmd, Ctrl, Alt or Shift held it
-      // is not S, and held down it asks once. The viewer's own letters are off while the toolbar stands, so the key is free.
+      // is not S, and held down it asks once. No strip tool takes S, and this is heard first.
       if (shortcutOfEvent(event) === "S") {
         const target = event.target;
         const inViewer = target instanceof Node && element.contains(target);
