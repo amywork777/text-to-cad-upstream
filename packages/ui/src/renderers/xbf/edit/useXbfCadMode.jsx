@@ -12,7 +12,6 @@ import EditDimensions from "./EditDimensions.jsx";
 import { editLayoutControl } from "./EditLayoutSwitch.jsx";
 import EditRibbon from "./EditRibbon.jsx";
 import EditSelectionBar from "./EditSelectionBar.jsx";
-import EditTimeline from "./EditTimeline.jsx";
 import ImportedBody from "./ImportedBody.jsx";
 import AssemblyNotice from "./AssemblyNotice.jsx";
 import PreviewLayer from "./PreviewLayer.jsx";
@@ -94,8 +93,9 @@ export function useXbfEditLayout({ client, file, services, active, compact = fal
  * CAD mode on an engine document (`XbfRenderer.jsx`): the edit service's part (`useEditMode`) laid out
  * as a CAD tool lays out its window, over the xbf renderer's own view and selection. It is up where
  * the document's part has a script CAD mode edits and the tab keeps the CAD layout (`useXbfEditLayout`).
- * Up, it gives the shell its toolbar (`ribbon`), design tree (`leftDock`), timeline (`bottomDock`) and
- * the place an open command's dialog floats (`dialogPlace`); the AI | CAD switch is the first of the
+ * Up, it gives the shell its toolbar (`ribbon`), design tree (`leftDock`) and
+ * the place an open command's dialog floats (`dialogPlace`); no timeline (`EditTimeline.jsx`): it
+ * listed what the design tree lists, with the same rollback, so the tree alone is the history; the AI | CAD switch is the first of the
  * view's own controls (`layoutControl`) wherever a host does not switch it itself. It reads the
  * renderer's picks as the panels and commands read them (`selectors.js`'s `xbfEditReference`: the
  * engine's refs by number), names a face picked by the feature that made it (`useFaceFeatures`: its
@@ -489,7 +489,6 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
       sketchLabel={selectedTreeSketch ? "Edit Sketch" : "Sketch"} canOpenParts={Boolean(openPart)} onNormalTo={normalTarget ? edit.lookNormalTo : null} /> : null,
     leftDock: editing ? <EditBrowser edit={editWithRows} names={editNames} tree={editTree} references={references} onEditSketch={openTreeSketch}
       onPlane={sketchOnPlane} onOpenPart={openPart} backTo={backTo} card={commandCard} onDeselect={deselect} /> : null,
-    bottomDock: editing ? <EditTimeline edit={editWithRows} tree={editTree} onEditSketch={openTreeSketch} /> : null,
     dialogPlace: editing ? setCommandCard : null,
     dialogOpen: editing && floatsCard(edit),
   };

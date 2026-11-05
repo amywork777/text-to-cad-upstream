@@ -247,12 +247,6 @@ by hand" below.
   the body there and write their line right above the feature below the bar (a new sketch goes
   there too), so a feature can be put in early in the history. Nothing below the bar changes. Make
   Current Feature on the last feature brings the part back.
-- **The timeline** along the bottom of the workspace lists the same features as icons, in the same
-  order, each with the sketch it was made from just before it (a sketch nothing uses yet is an icon
-  of its own). A click selects one and a double-click edits it (Edit Feature, or Edit Sketch on
-  a sketch). The rollback bar's marker stands after the last feature the part still has: dragged
-  back, it rolls the part back to there, as Rollback does, a feature and its sketch
-  going together. It is put away while the drawing's sheet is up.
 - **Command search** (S, anywhere in the workspace but a text field) is a box under the toolbar that
   runs any button of the toolbar by name, on whichever tab: type "fillet" and Fillet is the
   first result, "pocket" or "cut" Extruded Cut, "mate" Mate. The SolidWorks name for a command is

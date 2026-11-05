@@ -27,7 +27,7 @@ export interface ViewReporter {
 /**
  * One view: the shared CAD viewer over this host — the model a launch names, by its absolute path,
  * or with none, the home (the library, and Open) — under the navbar (`chrome: "page"`): its logo and
- * app menu, Back and Forward, the file's name and menus (its ⋯: Copy path, and Open in › Browser and
+ * app menu, Back and Forward (not where the host opens files itself), the file's name and menus (its ⋯: Copy path, and Open in › Browser and
  * the file manager), and at the right the host's update and Full size. A view browses from its model's folder, shows what is opened in place, and adds what it
  * shows to the library. Everything differs by data — what a Quick Edit can do in the chat, whether
  * the view has a home — never by where the view is.
@@ -147,10 +147,12 @@ export default function ModelView({ launch, sequence, alone = false, bridge, cli
     // Open, with the desktop's chooser where this computer has one: what it picks is shown in place.
     ...(launch.pick ? { pick: async () => { const picked = await client.pick(); if (picked) navigate(normalizePath(picked)); } } : {}),
   } : undefined, [client, homed, launch.pick, navigate]);
-  // Back and Forward, wherever the view can go elsewhere: not a file handler's, which shows its file alone.
-  const viewerHistory = useMemo(() => homed ? {
+  // Back and Forward, wherever the view can go elsewhere: not a file handler's, which shows its file alone, and not
+  // in a host that opens files beside the thread (Studio), whose own file list and tabs are how a person moves between them.
+  const ownNavigation = Boolean(bridge.hostCapabilities.openFiles);
+  const viewerHistory = useMemo(() => homed && !ownNavigation ? {
     canGoBack: history.index > 0, canGoForward: history.index < history.entries.length - 1, back, forward,
-  } : undefined, [homed, history, back, forward]);
+  } : undefined, [homed, ownNavigation, history, back, forward]);
   const host = useMemo<Omit<ViewerHost, 'navigation'>>(() => ({
     files: source, fileActions, clipboard: frameClipboard, promptContext, promptFiles, links,
     // A Quick Edit copied, queued or sent, counted by the CAD app's server for its telemetry.

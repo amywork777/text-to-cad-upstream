@@ -74,7 +74,7 @@ const MENU_CONTROLS = Object.freeze({
 // hand from the start, so nothing waits on topology. And what only a document has: its PMI, drawn
 // on the model and read and asked for in the file sidebar's PMI section (`pmi/`). A document whose
 // part has a script CAD mode edits is CAD mode's too (`edit/useXbfCadMode.jsx`): laid out for
-// modeling it by hand, a CAD tool's toolbar, design tree and timeline over the same view and picks.
+// modeling it by hand, a CAD tool's toolbar and design tree over the same view and picks.
 
 const NO_REFERENCES = Object.freeze([]);
 const EMPTY = Object.freeze([]);
