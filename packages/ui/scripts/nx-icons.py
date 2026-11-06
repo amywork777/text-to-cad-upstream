@@ -3,9 +3,9 @@
 
 Every icon is built from boxes, cylinders and faces in model space, projected the same way
 (2:1 isometric, 1 unit = 1 px at 32 px) and lit the same way (top lightest, the side facing +y
-mid, the side facing +x darkest), in flat tones of five materials: yellow-orange for what a feature
+mid, the side facing +x darkest), in flat tones of five materials: blue for what a feature
 makes (and what a pick takes), gray for the body it works on, blue for sketches, planes and
-directions, tan for datums, purple for the agent. A sketch tool is drawn flat, in the sketch's
+directions, pale blue for datums, the same blue for the agent. A sketch tool is drawn flat, in the sketch's
 blue, as NX draws its curve tools: its curves, and white handles where its clicks go. Outlines stay
 1 px at every size. Red, amber and green say how something went, so no icon wears them: the check
 is a status mark, not an icon.
@@ -26,14 +26,13 @@ import re
 import sys
 from xml.etree import ElementTree
 
-FEAT = dict(top="#FFD660", mid="#FAC44B", slope="#F4BC48", left="#F6B337", right="#E29620", edge="#A9620A")
+FEAT = dict(top="#A9D5EC", mid="#8CC4E2", slope="#7FB9D9", left="#62A6CC", right="#3F87B0", edge="#1F5B7E")
 BODY = dict(top="#F4F6F9", left="#D3DAE2", right="#AFB9C5", edge="#66727F")
-TAN = dict(top="#F8E7C4", left="#EFD6A6", right="#E4C287", edge="#B5853A")
-GHOST = dict(top="#FFEBC0", left="#FCDDA2", right="#F7CF86", edge="#CF9235")
-BLUE, BLUE_FILL, DARK = "#2F73D9", "#DFEBFC", "#39424D"
-PURPLE, PURPLE_FILL = "#7C3AED", "#F1EAFE"
-# The agent's purple as a material, for what it draws with (Annotate's marker).
-AGENT = dict(top="#C9AEFB", left="#A47AF6", right="#8B55F0", edge="#5B21B6")
+TAN = dict(top="#DCECF5", left="#C6DFEE", right="#AACFE4", edge="#4F8BAD")
+GHOST = dict(top="#E4F1F8", left="#D2E6F2", right="#BBD9EA", edge="#5F9ABB")
+BLUE, BLUE_FILL, DARK = "#2C7197", "#DCECF5", "#39424D"
+# The agent's blue as a material, for what it draws with (Annotate's marker).
+AGENT = dict(top="#A9D5EC", left="#62A6CC", right="#3F87B0", edge="#1F5B7E")
 # Faces as Draft Analysis shades them against the pull, in the direction's blue.
 DRAWS = dict(left="#C4D8F6", right="#94B6EA")
 DASH = "2.2 1.6"
@@ -46,8 +45,8 @@ MODULE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sr
 
 SHARED = (
     f'<linearGradient id="{FSIDE}" x1="0" y1="0" x2="1" y2="0">'
-    '<stop offset="0" stop-color="#F9BE45"/><stop offset=".55" stop-color="#EFA72D"/>'
-    '<stop offset="1" stop-color="#DC8E1A"/></linearGradient>'
+    '<stop offset="0" stop-color="#8CC4E2"/><stop offset=".55" stop-color="#62A6CC"/>'
+    '<stop offset="1" stop-color="#3F87B0"/></linearGradient>'
     f'<linearGradient id="{BSIDE}" x1="0" y1="0" x2="1" y2="0">'
     f'<stop offset="0" stop-color="{BODY["left"]}"/><stop offset="1" stop-color="{BODY["right"]}"/></linearGradient>'
 )
@@ -185,7 +184,7 @@ class Icon:
             return (tip[0] + ux * s + nx * k * width / 2, tip[1] + uy * s + ny * k * width / 2)
 
         cone, end, lead = 5.0, length - 2.8, 1.9
-        self.shape([tip, at(cone, -1), at(cone, 1)], "#F6DFB9")
+        self.shape([tip, at(cone, -1), at(cone, 1)], "#C6DFEE")
         self.shape([tip, at(lead, -lead / cone), at(lead, lead / cone)], DARK)
         for k0, k1, tone in ((-1, -1 / 3, FEAT["top"]), (-1 / 3, 1 / 3, FEAT["left"]), (1 / 3, 1, FEAT["right"])):
             self.shape([at(cone, k0), at(end, k0), at(end, k1), at(cone, k1)], tone)
@@ -193,7 +192,7 @@ class Icon:
         self.outline([tip, at(cone, -1), at(length, -1), at(length, 1), at(cone, 1)], FEAT["edge"])
 
     def marker(self, tip, length=13, width=4.6, chisel=False):
-        """The agent's marker, drawing at tip: Annotate's, in the agent's purple; `chisel`, the highlighter's broad nib."""
+        """The agent's marker, drawing at tip: Annotate's, in the agent's blue; `chisel`, the highlighter's broad nib."""
         ux, uy = math.sqrt(0.5), -math.sqrt(0.5)
         nx, ny = -uy, ux
 
@@ -203,15 +202,15 @@ class Icon:
         nib, cap = 3.6, length - 3
         # the nib: a point, or the chisel's flat, slanted edge
         nose = [at(0, -0.55), at(1.4, 0.55)] if chisel else [tip]
-        self.shape(nose + [at(nib, 0.55), at(nib, -0.55)], PURPLE)
+        self.shape(nose + [at(nib, 0.55), at(nib, -0.55)], BLUE)
         for k0, k1, tone in ((-1, -1 / 3, AGENT["top"]), (-1 / 3, 1 / 3, AGENT["left"]), (1 / 3, 1, AGENT["right"])):
             self.shape([at(nib, k0 * 0.55), at(nib + 1.6, k0), at(cap, k0), at(cap, k1), at(nib + 1.6, k1), at(nib, k1 * 0.55)], tone)
-        self.shape([at(cap, -1), at(length, -1), at(length, 1), at(cap, 1)], PURPLE)
+        self.shape([at(cap, -1), at(length, -1), at(length, 1), at(cap, 1)], BLUE)
         self.outline(nose[:1] + [at(nib, -0.55), at(nib + 1.6, -1), at(length, -1), at(length, 1), at(nib + 1.6, 1), at(nib, 0.55)] + nose[1:],
                      AGENT["edge"])
 
     def rubber(self, tip, length=11, width=7.4):
-        """The agent's eraser, rubbing at tip: a block of white rubber in a purple sleeve."""
+        """The agent's eraser, rubbing at tip: a block of white rubber in a blue sleeve."""
         ux, uy = math.sqrt(0.5), -math.sqrt(0.5)
         nx, ny = -uy, ux
 
@@ -362,9 +361,9 @@ def shell():
     sil = ic.box(0, 0, 0, s, s, h, FEAT, outline=False)
     opening = ic.proj([(t, t, h), (s - t, t, h), (s - t, s - t, h), (t, s - t, h)])
     ic.raw(f'<g clip-path="url(#{ic.clip(opening)})">')
-    ic.face([(t, t, t), (s - t, t, t), (s - t, s - t, t), (t, s - t, t)], "#F2B944")
-    ic.face([(t, t, h), (s - t, t, h), (s - t, t, t), (t, t, t)], "#E9A12A")
-    ic.face([(t, t, h), (t, s - t, h), (t, s - t, t), (t, t, t)], "#CF8410")
+    ic.face([(t, t, t), (s - t, t, t), (s - t, s - t, t), (t, s - t, t)], "#8CC4E2")
+    ic.face([(t, t, h), (s - t, t, h), (s - t, t, t), (t, t, t)], "#62A6CC")
+    ic.face([(t, t, h), (t, s - t, h), (t, s - t, t), (t, t, t)], "#3F87B0")
     ic.raw("</g>")
     ic.outline(opening, FEAT["edge"])
     ic.outline(sil, FEAT["edge"])
@@ -378,8 +377,8 @@ def draft():
     sil = [P(a, a, h), P(b - a, a, h), P(b, 0, 0), P(b, b, 0), P(0, b, 0), P(a, b - a, h)]
     ic.shape(sil, FEAT["right"])
     ic.face([(a, a, h), (b - a, a, h), (b - a, b - a, h), (a, b - a, h)], FEAT["top"])
-    ic.face([(a, b - a, h), (b - a, b - a, h), (b, b, 0), (0, b, 0)], "#F8BC42")
-    ic.face([(b - a, a, h), (b - a, b - a, h), (b, b, 0), (b, 0, 0)], "#E9A12B")
+    ic.face([(a, b - a, h), (b - a, b - a, h), (b, b, 0), (0, b, 0)], "#8CC4E2")
+    ic.face([(b - a, a, h), (b - a, b - a, h), (b, b, 0), (b, 0, 0)], "#62A6CC")
     ic.outline(sil, FEAT["edge"])
     # the pull direction, and the draft angle from it
     foot = P(b, 0, 0)
@@ -570,10 +569,10 @@ def ask():
         "M-7.5 -10 H7.5 A4.5 4.5 0 0 1 12 -5.5 V1 A4.5 4.5 0 0 1 7.5 5.5 H-1.5 L-6.5 10.5 V5.5 H-7.5 "
         "A4.5 4.5 0 0 1 -12 1 V-5.5 A4.5 4.5 0 0 1 -7.5 -10 Z"
     )
-    ic.raw(f'<path d="{bubble}" fill="{PURPLE_FILL}"/>', [(-12, -10), (12, 10.5)])
-    ic.raw(f'<path d="{bubble}" {edge(PURPLE)}/>')
+    ic.raw(f'<path d="{bubble}" fill="{BLUE_FILL}"/>', [(-12, -10), (12, 10.5)])
+    ic.raw(f'<path d="{bubble}" {edge(BLUE)}/>')
     star = "M0 -8 C.7 -4.6 1.9 -3.4 5.4 -2.7 C1.9 -2 .7 -.8 0 2.6 C-.7 -.8 -1.9 -2 -5.4 -2.7 C-1.9 -3.4 -.7 -4.6 0 -8 Z"
-    ic.raw(f'<path d="{star}" fill="{PURPLE}"/>')
+    ic.raw(f'<path d="{star}" fill="{BLUE}"/>')
     return ic
 
 
@@ -926,7 +925,7 @@ SELECT_KINDS = ("all", "face", "edge", "face-group", "edge-group", "body", "part
 
 
 def select(kind):
-    """Select, and each of its filters: the pointer on a block, what it picks in the pick's orange."""
+    """Select, and each of its filters: the pointer on a block, what it picks in the pick's blue."""
     ic = Icon("select" if kind == "all" else f"select-{kind}")
     s, h = 10, 6
     if kind == "part":
@@ -971,7 +970,7 @@ MEASURE_KINDS = ("all", "vertex", "edge", "face")
 
 
 def measure(kind):
-    """Measure, and each of its filters: a distance over a block, what it measures alone in the pick's orange."""
+    """Measure, and each of its filters: a distance over a block, what it measures alone in the pick's blue."""
     ic = Icon("measure" if kind == "all" else f"measure-{kind}")
     s, h = 12, 6
     ic.box(0, 0, 0, s, s, h, BODY)
@@ -1206,7 +1205,7 @@ def expressions():
     return ic
 
 
-# The agent's tools, in its purple.
+# The agent's tools, in its blue.
 
 
 def smooth(points):
@@ -1223,10 +1222,10 @@ def add_context():
         "M-7.5 -10 H7.5 A4.5 4.5 0 0 1 12 -5.5 V1 A4.5 4.5 0 0 1 7.5 5.5 H-1.5 L-6.5 10.5 V5.5 H-7.5 "
         "A4.5 4.5 0 0 1 -12 1 V-5.5 A4.5 4.5 0 0 1 -7.5 -10 Z"
     )
-    ic.raw(f'<path d="{bubble}" fill="{PURPLE_FILL}"/>', [(-12, -10), (12, 10.5)])
-    ic.raw(f'<path d="{bubble}" {edge(PURPLE)}/>')
-    ic.stroke([(-4.8, -2.25), (4.8, -2.25)], PURPLE, width=2.4)
-    ic.stroke([(0, -7), (0, 2.5)], PURPLE, width=2.4)
+    ic.raw(f'<path d="{bubble}" fill="{BLUE_FILL}"/>', [(-12, -10), (12, 10.5)])
+    ic.raw(f'<path d="{bubble}" {edge(BLUE)}/>')
+    ic.stroke([(-4.8, -2.25), (4.8, -2.25)], BLUE, width=2.4)
+    ic.stroke([(0, -7), (0, 2.5)], BLUE, width=2.4)
     return ic
 
 
@@ -1235,7 +1234,7 @@ def annotate():
     ic = Icon("annotate")
     drawn_on(ic)
     mark = ic.proj([(1.5, 10.5, 5), (3.5, 7, 5), (6, 8.5, 5), (8, 4.5, 5), (10.5, 5.5, 5)])
-    ic.raw(f'<path d="{smooth(mark)}" fill="none" stroke="{PURPLE}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>', mark)
+    ic.raw(f'<path d="{smooth(mark)}" fill="none" stroke="{BLUE}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>', mark)
     ic.marker(mark[-1])
     return ic
 
@@ -1250,7 +1249,7 @@ def highlighter():
     ic = Icon("annotate-highlighter")
     drawn_on(ic)
     a, b = ic.P(1.5, 9, 5), ic.P(9.5, 2.5, 5)
-    ic.raw(f'<path d="M{num(a[0])} {num(a[1])} L{num(b[0])} {num(b[1])}" fill="none" stroke="{PURPLE}" stroke-width="4.4" '
+    ic.raw(f'<path d="M{num(a[0])} {num(a[1])} L{num(b[0])} {num(b[1])}" fill="none" stroke="{BLUE}" stroke-width="4.4" '
            f'stroke-opacity=".45" stroke-linecap="butt"/>', [a, b])
     ic.marker(b, chisel=True)
     return ic
@@ -1262,8 +1261,8 @@ def eraser():
     drawn_on(ic)
     mark = ic.proj([(1.5, 10.5, 5), (3.5, 7, 5), (6, 8.5, 5), (8, 4.5, 5), (10.5, 5.5, 5)])
     kept, gone = smooth(mark[:3]), smooth(mark[2:])
-    ic.raw(f'<path d="{kept}" fill="none" stroke="{PURPLE}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>', mark)
-    ic.raw(f'<path d="{gone}" fill="none" stroke="{PURPLE}" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="{DASH}" opacity="{num(GHOSTLY)}"/>')
+    ic.raw(f'<path d="{kept}" fill="none" stroke="{BLUE}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>', mark)
+    ic.raw(f'<path d="{gone}" fill="none" stroke="{BLUE}" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="{DASH}" opacity="{num(GHOSTLY)}"/>')
     ic.rubber(mark[-1])
     return ic
 
@@ -1275,32 +1274,32 @@ def shape_mark(kind):
     """Each of Shapes' tools, as its mark on the part."""
     ic = Icon(f"shapes-{kind}")
     drawn_on(ic)
-    stroke = f'fill="none" stroke="{PURPLE}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"'
+    stroke = f'fill="none" stroke="{BLUE}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"'
     if kind == "rectangle":
         box = ic.proj([(2, 3, 5), (10, 3, 5), (10, 10, 5), (2, 10, 5)])
-        ic.raw(f'<path d="{ic.d(box)}" fill="{PURPLE_FILL}" stroke="{PURPLE}" stroke-width="1.9" stroke-linejoin="round"/>', box)
+        ic.raw(f'<path d="{ic.d(box)}" fill="{BLUE_FILL}" stroke="{BLUE}" stroke-width="1.9" stroke-linejoin="round"/>', box)
     elif kind == "line":
         a, b = ic.P(1.5, 9.5, 5), ic.P(10.5, 2.5, 5)
         ic.raw(f'<path d="M{num(a[0])} {num(a[1])} L{num(b[0])} {num(b[1])}" {stroke}/>', [a, b])
     elif kind == "arrow":
-        ic.arrow((11, -10.5), (1.5, 0.5), PURPLE, width=1.9, length=4.8, half=2.8)
+        ic.arrow((11, -10.5), (1.5, 0.5), BLUE, width=1.9, length=4.8, half=2.8)
     elif kind == "ellipse":
         cx, cy = ic.P(6, 6, 5)
-        ic.raw(f'<ellipse cx="{num(cx)}" cy="{num(cy)}" rx="7.4" ry="3.7" fill="{PURPLE_FILL}" stroke="{PURPLE}" stroke-width="1.9"/>',
+        ic.raw(f'<ellipse cx="{num(cx)}" cy="{num(cy)}" rx="7.4" ry="3.7" fill="{BLUE_FILL}" stroke="{BLUE}" stroke-width="1.9"/>',
                [(cx - 7.4, cy - 3.7), (cx + 7.4, cy + 3.7)])
     else:
         # a T, as text is set over the part
-        ic.raw(f'<path d="M-5 -9 H5 M0 -9 V3" fill="none" stroke="{PURPLE}" stroke-width="2.6" stroke-linecap="round"/>', [(-5, -9), (5, 3)])
+        ic.raw(f'<path d="M-5 -9 H5 M0 -9 V3" fill="none" stroke="{BLUE}" stroke-width="2.6" stroke-linecap="round"/>', [(-5, -9), (5, 3)])
     return ic
 
 
 def shapes():
-    """Shapes: a box drawn on the part and an arrow at it, in the agent's purple."""
+    """Shapes: a box drawn on the part and an arrow at it, in the agent's blue."""
     ic = Icon("shapes")
     drawn_on(ic)
     box = ic.proj([(2, 4, 5), (9, 4, 5), (9, 11, 5), (2, 11, 5)])
-    ic.raw(f'<path d="{ic.d(box)}" fill="{PURPLE_FILL}" stroke="{PURPLE}" stroke-width="1.7" stroke-linejoin="round"/>', box)
-    ic.arrow((12.5, -9.5), (5, -1.2), PURPLE, width=1.8, length=4.4, half=2.6)
+    ic.raw(f'<path d="{ic.d(box)}" fill="{BLUE_FILL}" stroke="{BLUE}" stroke-width="1.7" stroke-linejoin="round"/>', box)
+    ic.arrow((12.5, -9.5), (5, -1.2), BLUE, width=1.8, length=4.4, half=2.6)
     return ic
 
 
@@ -1311,7 +1310,7 @@ GROUPS = (
         sketch, extrude, revolve, hole, lambda: rounded("blend"), lambda: rounded("chamfer"), shell, draft, rib,
         pattern, mirror, datum_plane, csys, sweep, loft, split, delete, body, offset_face, delete_face, ask,
     )),
-    ("The agent's tools", "Beside Ask, in the agent's purple: Add to context; Annotate (the Pencil) with its pen, "
+    ("The agent's tools", "Beside Ask, in the agent's blue: Add to context; Annotate (the Pencil) with its pen, "
      "highlighter and eraser; Shapes, and each shape it draws.", (
         add_context, annotate, highlighter, eraser, shapes, *((lambda kind=kind: shape_mark(kind)) for kind in SHAPE_KINDS),
     )),
@@ -1321,7 +1320,7 @@ GROUPS = (
         compare, appearance, orient_view, drawing, assembly_constraints, expressions,
         lambda: turn("undo", back=True), lambda: turn("redo", back=False),
     )),
-    ("Select's and Measure's filters", "What each picks alone, the pick in the selection's orange, and how Select grows a pick.", (
+    ("Select's and Measure's filters", "What each picks alone, the pick in the selection's blue, and how Select grows a pick.", (
         *((lambda kind=kind: select(kind)) for kind in SELECT_KINDS if kind != "all"),
         *((lambda kind=kind: measure(kind)) for kind in MEASURE_KINDS if kind != "all"),
     )),

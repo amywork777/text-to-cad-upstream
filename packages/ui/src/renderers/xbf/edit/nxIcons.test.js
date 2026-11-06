@@ -137,7 +137,7 @@ test("draws each icon from its symbol in the sprite", () => {
 });
 
 // Red and green say how something went (failed, passed), so no icon is drawn in them; the set's
-// yellow-orange is the one warm color it has. The check is a status mark, not an icon.
+// color is the brand's blue on greys. The check is a status mark, not an icon.
 test("draws no icon in a status color", () => {
   const hue = hex => {
     const [r, g, b] = [0, 2, 4].map(at => Number.parseInt(hex.slice(at, at + 2), 16) / 255);
