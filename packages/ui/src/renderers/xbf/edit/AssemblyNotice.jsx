@@ -11,7 +11,7 @@ export default function AssemblyNotice({ isolated, editable }) {
   const words = !editable ? "This is the assembly. Ask the agent to change a part."
     : !isolated ? "This is the assembly. Isolate a part to edit it."
       : isolated.several ? "Isolate one part to edit it."
-        : `${isolated.name} has no script of its own. Ask the agent to change it.`;
+        : `${isolated.name} can't be edited here because it has no script, like a bought part. Ask the agent to change it.`;
   return <div data-cad-assembly-notice="" className="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-muted-foreground shadow-sm">
     {words}
   </div>;

@@ -640,6 +640,26 @@ MODELS = {
         def post():
             return bd.Pos(0, 0, 10) * bd.Cylinder(2, 15)
     """,
+    "labelled.py": """
+        import build123d as bd
+        from cad import model
+
+        @model
+        def frame():
+            made = bd.Box(10, 10, 2)
+            made.label = "Offset frame with side clamps"
+            return made
+    """,
+    "labelled_rig.py": """
+        import build123d as bd
+        from cad import model
+        from labelled import frame
+        from post import post
+
+        @model
+        def labelled_rig():
+            return bd.Compound(children=[frame().shape, post().shape])
+    """,
     "rig.py": """
         import build123d as bd
         from cad import model
@@ -741,6 +761,12 @@ class ModelsOfTheEngine(unittest.TestCase):
                          [("plate", model_id(self.root / "plate.py", "plate"), None),
                           ("post", model_id(self.root / "post.py", "post"), None)])
         self.assertEqual([feature["kind"] for feature in state["components"][0]["features"]], ["Boss-Extrude", "Hole"])
+
+    def test_an_assembly_part_carries_the_label_its_body_gave_it(self):
+        state = self.service.state(str(self.root / "labelled_rig.py"))
+        self.assertTrue(state["ok"], state.get("error"))
+        self.assertEqual([(c["name"], c["label"]) for c in state["components"]],
+                         [("frame", "Offset frame with side clamps"), ("post", "post")])
 
     def test_tracing_never_asks_the_engine(self):
         guard = Path(tempfile.mkdtemp(prefix="tracer-guard-"))

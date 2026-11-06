@@ -755,6 +755,10 @@ def _tag_children(method):
 B.Shape.edges = _tag_children(_shape_edges)
 B.Shape.faces = _tag_children(_shape_faces)
 
+# The label each model called in this trace came back with, by its address, which is what the
+# viewer's model tree names the part by (`_component_label`).
+LABELS: dict[str, str] = {}
+
 # A model inside the tracer is its plain function: calling one (a child in an assembly's body,
 # `child().shape`) runs its body here, as a child runs inside the engine's build, and hands back
 # the handle a child's call does there (`api.Document.inside`: its id, and `.shape`, the result in
@@ -767,8 +771,10 @@ from cad.engine.ids import canonical  # noqa: E402
 
 def _traced_call(self):
     made = self.function()
-    if isinstance(made, B.Shape) and not made.__dict__.get("label"):
-        made.label = self.name
+    if isinstance(made, B.Shape):
+        if not made.__dict__.get("label"):
+            made.label = self.name
+        LABELS[self.address] = made.label
     return _engine_api.Document.inside(self, made)
 
 
@@ -1806,6 +1812,13 @@ def _component_document(component):
     return model.id if model is not None else None
 
 
+def _component_label(component):
+    """The label a component's own part came back with: its function's name unless its body gave
+    it one. The model tree names the part by this, which is how an isolated row finds its part."""
+    model = _component_model(component)
+    return LABELS.get(model.address) if model is not None else None
+
+
 def _bounds(shape):
     try:
         box = shape.bounding_box()
@@ -1862,6 +1875,7 @@ def trace(request):
     LITERALS.clear()
     FILES.clear()
     STEPS.clear()
+    LABELS.clear()
     PLACED.clear()
     SKETCHES.clear()
     OUTSIDE.clear()
@@ -1987,7 +2001,7 @@ def trace(request):
         "faceCount": 0 if components else face_count(shape),
         "sketches": sketches,
         "components": [{"name": c["function"], "file": c["file"], "features": c["features"], "step": _component_step(c),
-                        "document": _component_document(c)} for c in components],
+                        "document": _component_document(c), "label": _component_label(c)} for c in components],
         # Who made each feature, by its key: "you" or "agent", none where it is not known (`authors.py`).
         "authors": made_by,
         # An assembly's mates, as its joints are labelled (`mates.py`), for the design tree's Mates.

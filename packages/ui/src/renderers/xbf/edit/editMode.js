@@ -135,7 +135,7 @@ export function featureTree(state) {
       id: `component:${component.file}:${component.name}`, title: `${sizeName(component.name)}<1>`, features: partFeatures(component.features),
       // The part's own model, which Open Part opens to model it: its document's id (the engine's
       // `@model`), else the STEP it writes; null for neither.
-      document: component.document || null, step: component.step || null, name: sizeName(component.name),
+      document: component.document || null, step: component.step || null, name: sizeName(component.name), label: component.label || null,
     })) };
   }
   return { assembly: false, features: partFeatures(state?.features) };
@@ -217,8 +217,8 @@ const partStem = label => String(label ?? "").replace(/[:<].*$/, "").toLowerCase
 /**
  * What an assembly's isolation means for editing it, for CAD mode's notice: none (nothing isolated,
  * or not an assembly), several parts, or one part by its name with its own part (`component`, which
- * Open Part opens) when it has one, matched by name to the assembly's parts. A part no script makes,
- * as a bought screw, has none.
+ * Open Part opens) when it has one, matched to the assembly's parts by their name or the label their
+ * script gives them, which is what the model tree shows. A part no script makes, as a bought screw, has none.
  * @param {object} tree  The design tree (`editTree`).
  * @param {string[]} labels  The isolated rows' labels in the model tree.
  */
@@ -226,7 +226,7 @@ export function isolatedPart(tree, labels) {
   if (!tree?.assembly || !labels?.length) return null;
   if (labels.length > 1) return { several: true };
   const stem = partStem(labels[0]);
-  const component = tree.components.find(each => (each.document || each.step) && partStem(each.name) === stem) || null;
+  const component = tree.components.find(each => (each.document || each.step) && [each.name, each.label].some(name => name && partStem(name) === stem)) || null;
   return { name: component?.name || sizeName(String(labels[0]).replace(/:.*$/, "")), component };
 }
 

@@ -815,6 +815,11 @@ test("an assembly's isolated part names the part Open Part opens, or says it has
   assert.equal(isolatedPart({ assembly: false, features: [] }, ["arm"]), null);
   assert.equal(isolatedPart(tree, ["arm"]).component, tree.components[0]);
   assert.equal(isolatedPart(tree, ["Base<1>"]).component, tree.components[1]);
+  // A script's own label is what the model tree shows, however far it is from the function's name.
+  const labelled = { assembly: true, components: [
+    { id: "component:holder.py", name: "Mounting frame", label: "Offset frame with adjustable side clamps", document: "doc-frame", step: null }] };
+  assert.equal(isolatedPart(labelled, ["Offset frame with adjustable side clamps"]).component, labelled.components[0]);
+  assert.equal(isolatedPart(labelled, ["Mounting frame<1>"]).component, labelled.components[0]);
   // A bought screw has no part of its own: named, with nothing to open.
   assert.deepEqual(isolatedPart(tree, ["m5x30_screw:base"]), { name: "M5x30 screw", component: null });
   assert.deepEqual(isolatedPart(tree, ["arm", "base"]), { several: true });
