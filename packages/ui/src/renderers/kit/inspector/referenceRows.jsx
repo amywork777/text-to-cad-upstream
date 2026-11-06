@@ -50,7 +50,7 @@ export function InfoRow({ label, children, title, copy }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-0.5" data-info-row="">
       <TooltipHint content={title}><span className="shrink-0 text-tiny text-muted-foreground">{label}</span></TooltipHint>
-      <div onClick={onClick} data-copied={copied ? "" : undefined}
+      <div onClick={onClick} data-copied={copied ? "" : undefined} data-info-value=""
         className={cn("relative min-w-0 text-right text-tiny text-sidebar-foreground [overflow-wrap:break-word]",
           copyable && "cursor-pointer rounded-sm transition-colors hover:text-foreground")}>
         <div ref={value} className={copied ? "invisible" : undefined}>{children}</div>

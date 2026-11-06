@@ -123,7 +123,7 @@ it("the strip is at the top centre with the stack under it, the file sidebar's t
   // The strip and the stack under it, 8px down from the viewer's top, centred, stopping 8px above
   // the cube's line (the cube itself 8px off the bottom); the sidebar's room 8px in from the top
   // and left, down the viewer's full height to 8px off its bottom.
-  expect(document.querySelector<HTMLElement>('[data-cad-tool-groups]')!.style).toMatchObject({ top: '8px', left: '8px', right: '8px', bottom: 'calc(16px + 6rem)' });
+  expect(document.querySelector<HTMLElement>('[data-cad-tool-groups]')!.style).toMatchObject({ top: '8px', left: '8px', right: '8px', bottom: 'calc(16px + 7.5rem)' });
   expect(document.querySelector<HTMLElement>('[data-file-sidebar-room]')!.style).toMatchObject({ top: '8px', left: '8px', bottom: '8px' });
   // A tile per section; none open as the file opens, the panel away and out of reach.
   expect([tileNames(), sections(), shown()]).toEqual([['Harness tree', 'Reference'], ['Harness tree', 'Harness reference'], []]);

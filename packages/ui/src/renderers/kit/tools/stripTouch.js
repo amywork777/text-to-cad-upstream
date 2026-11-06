@@ -1,9 +1,9 @@
 import { createContext, useContext } from "react";
 
-// The strip's tiles: 24px, their icons 14px (a little over half the tile), whatever size the icon
-// was handed at. The view's controls after its tools (Display, Preview) are its tiles too. On a
-// touch strip (a phone) they are 36px, their icons 18px.
-export const STRIP_BUTTON_CLASS = "size-6 [&>svg]:size-3.5!";
+// The strip's tiles: 24px, their icons 16px, whatever size the icon was handed at. The view's
+// controls after its tools (Display, Preview) are its tiles too. On a touch strip (a phone) they
+// are 36px, their icons 18px.
+export const STRIP_BUTTON_CLASS = "size-6 [&>svg]:size-4!";
 export const TOUCH_STRIP_BUTTON_CLASS = "size-9 rounded-md [&>svg]:size-4.5!";
 
 const StripTouch = createContext(false);

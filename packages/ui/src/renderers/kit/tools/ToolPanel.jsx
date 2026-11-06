@@ -29,10 +29,10 @@ const FIT = Object.freeze({
 const FLOOR = Object.freeze({ tree: 128, details: 96 });
 const KEY_NUDGE_PX = 16;
 /**
- * Every panel's heading text: the size and weight of Display's section headings
- * (`FILE_SHEET_SECTION_HEADING_CLASSES`, 11px), so every heading in the stack reads alike.
+ * Every panel's heading text: Display's section headings' tracked caps
+ * (`FILE_SHEET_SECTION_HEADING_CLASSES`), so every heading in the stack reads alike.
  */
-export const TOOL_PANEL_HEADING_TEXT_CLASS = "text-tiny font-normal leading-4 text-foreground";
+export const TOOL_PANEL_HEADING_TEXT_CLASS = "text-xs font-medium leading-4 tracking-widest text-muted-foreground uppercase";
 
 /** A panel header's small icon button: the chevron, the X, and a tool's settings menu (`ToolModeMenu.jsx`'s `ToolSettingsMenu`). */
 export const TOOL_PANEL_BUTTON_CLASS = "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
@@ -274,7 +274,7 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
         section's name, 12px in; a tree keeps its rows' width and sets its glyphs on that column itself. */}
     {fit === "fixed" || inSidebar ? <div ref={body} hidden={collapsed} data-tool-panel-body="" className={cn("min-w-0 overflow-x-clip rounded-b-md", inSidebar && fit !== "tree" && "px-1")}>
       <div ref={content} className="flow-root"><HeadSlotContext.Provider value={headSlot}>{children}</HeadSlotContext.Provider></div>
-    </div> : <ScrollArea hidden={collapsed} className="min-w-0 flex-1 rounded-b-md" viewportRef={body} viewportProps={{ "data-tool-panel-body": "" }}>
+    </div> : <ScrollArea hidden={collapsed} barShown={solid} className="min-w-0 flex-1 rounded-b-md" viewportRef={body} viewportProps={{ "data-tool-panel-body": "" }}>
       <div ref={content} className="flow-root"><HeadSlotContext.Provider value={headSlot}>{children}</HeadSlotContext.Provider></div>
     </ScrollArea>}
     {/* The person's to size, from its bottom-right corner alone: Quick Edit's grip, inside the

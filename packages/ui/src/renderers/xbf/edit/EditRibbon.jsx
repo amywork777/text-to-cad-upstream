@@ -28,7 +28,7 @@ const LABELS = Object.freeze({ clip: "Section View", select: "Select", exploded:
 // A sketch tool family's button name, as SolidWorks' flyouts are named.
 const FAMILY_NAMES = Object.freeze({ rectangle: "Rectangle", circle: "Circle", arc: "Arc", slot: "Slot", move_entities: "Move Entities" });
 // Each command a picture large enough to tell apart, as SolidWorks' CommandManager draws its own: every
-// one the icon generator's (`cadIcons.jsx`, `sketchIcons.jsx`), the view's tools as the strip shows them.
+// one the icon generator's (`cadIcons.jsx`, `sketchIcons.jsx`), the view's tools too (`ribbonIcon`): the strip keeps plain glyphs.
 // The icons take the button's text color, so the palette is grey: under the pointer the workspace's
 // pale ground (`--cad-ws-hover`), and blue only on the command pressed (`PRESSED_CLASS`).
 const BUTTON_CLASS = "flex h-[3.25rem] w-[4.25rem] shrink-0 flex-col items-center justify-start gap-px rounded-md pt-0.5 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-6 [&_svg]:shrink-0";
@@ -44,7 +44,7 @@ const VIEW_CONTROLS_CLASS = "flex shrink-0 items-center gap-0.5 [&_button:hover]
 // A tab: its name as it is written, the one in front underlined.
 const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-tiny leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
 // A group's title under its buttons; where it is the group's menu it is a button too.
-const TITLE_CLASS = "text-micro leading-3 text-muted-foreground";
+const TITLE_CLASS = "text-tiny leading-3 text-muted-foreground";
 // The title's band: a rule the width of the group, meeting the divider, so the title names the whole group and not the button over it.
 const TITLE_BAND_CLASS = "flex w-full justify-start border-t border-border px-1.5 pb-1 pt-px";
 const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-blue-600 dark:text-blue-400",
@@ -206,7 +206,7 @@ function MoreMenu({ groups }) {
       className={cn(FLOATING_SURFACE_CLASS, "w-56 data-[state=closed]:animate-none!")}>
       {groups.map((group, index) => <Fragment key={group.title}>
         {index ? <DropdownMenuSeparator /> : null}
-        <DropdownMenuLabel className="text-micro text-muted-foreground">{group.title}</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-tiny text-muted-foreground">{group.title}</DropdownMenuLabel>
         <GroupItems items={group.items} />
       </Fragment>)}
     </DropdownMenuContent>
@@ -333,7 +333,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   // under the button pressed, or under the ribbon when it is run from a group's menu or the command search.
   const ribbonRef = useRef(null);
   const [effect, setEffect] = useState(null);
-  const toolItem = tool => ({ id: tool.id, label: LABELS[tool.id] || tool.label, icon: tool.icon, active: tool.active === true,
+  const toolItem = tool => ({ id: tool.id, label: LABELS[tool.id] || tool.label, icon: tool.ribbonIcon ?? tool.icon, active: tool.active === true,
     disabled: tool.disabled, description: tool.description, menu: tool.menu,
     onClick: tool.popover
       ? event => setEffect({ id: tool.id, anchor: { current: event?.currentTarget instanceof Element ? event.currentTarget : ribbonRef.current } })
@@ -374,7 +374,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
     {effectTool?.popover ? effectTool.popover({ anchor: effect.anchor, open: true, onOpenChange: open => { if (!open) setEffect(null); } }) : null}
   </>;
   const statusLine = (text, failed = false) => <span className={cn("flex min-w-0 items-center gap-1",
-    busy ? "text-foreground" : failed ? "text-destructive" : "text-muted-foreground")}>
+    busy ? "text-foreground" : failed ? "text-destructive" : "text-sidebar-foreground/85")}>
     {busy ? <LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden="true" /> : null}<span className="truncate">{text}</span>
   </span>;
 
@@ -439,7 +439,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
     ];
     return ribbon("Sketch", groups, <>
       {statusLine(edit.saving ? "Solving" : `Editing ${sketch.name}`)}
-      <span className={cn("shrink-0 text-micro", STATUS_CLASSES[sketchStatus] || "text-destructive")}>{sketchStatus}</span>
+      <span className={cn("shrink-0 text-tiny", STATUS_CLASSES[sketchStatus] || "text-destructive")}>{sketchStatus}</span>
     </>, { sketching: true, tabs: workspaceTabs({ sketching: true }), active: "sketch", onPick: () => {},
       finds: () => searchable(groups, features.filter(isSubtract).map(featureItem)) });
   }
@@ -498,7 +498,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   };
   return ribbon("Design", groupsOf[front.id]().filter(group => group.items.length), <>
     {statusLine(status, Boolean(state?.building?.error))}
-    {state?.units ? <span className="shrink-0 text-micro text-muted-foreground/80">{unitWord(state.units)}</span> : null}
+    {state?.units ? <span className="shrink-0 text-tiny text-sidebar-foreground/85">{unitWord(state.units)}</span> : null}
   </>, { tabs, active: front.id, onPick: setTab, key: `Design:${front.id}`,
     // Every tab's items, not the one in front; a command's Subtract is the Boolean of the unite command's dialog. An
     // assembly has no Features or Sketch tab, but its search finds their commands all the same, dimmed, saying to

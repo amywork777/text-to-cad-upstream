@@ -4,7 +4,7 @@ import { pmiCallText, pmiNumber, pmiToleranceText } from "@cad/core/lib/xbf/xbfP
 import { Button } from "@cad/ui/primitives/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@cad/ui/primitives/dropdown-menu";
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
-import { ROW_NAME_UNDER_ACTIONS, TreeRowLabel, TreeRowSurface, treeRowActionsClass } from "@cad/ui/primitives/tree-row";
+import { TreeRowLabel, TreeRowSurface, treeRowActionsClass, useTreeRowHeight } from "@cad/ui/primitives/tree-row";
 import { cn } from "@cad/ui/utils";
 import { useI18n } from "@cad/ui/i18n";
 import { FileSheetSettingsSection, FileSheetStatusText, FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
@@ -24,7 +24,8 @@ import { PMI_SECTION_OFF, pmiViewShowsText } from "./pmiViews.js";
 // 1, a flag note with its flag, lit on its faces when picked), its **Coverage** (how many faces no
 // requirement is on, which a checkbox lights, each requirement that cannot hold with another, a
 // warning, and each question the requirements leave open, with what the engine suggests in words:
-// asked, never applied; the call that would say it is the agent's, never shown), then its **Annotations**: every one, a row each -- its glyph and what its callout
+// asked, never applied; the call that would say it is the agent's, never shown; a question lights
+// its faces under the pointer or picked), then its **Annotations**: every one, a row each -- its glyph and what its callout
 // says, and its eye -- in the document's order. The one picked opens under its row, its values
 // read out with their units and where each came from (a nominal measured on the geometry or as
 // another system's file gives it, a tolerance as the code gave it, or none given), its references
@@ -55,6 +56,11 @@ const selectionKeyOf = ids => JSON.stringify(ids);
 // Drawn on the part, so its eye hides it: what is said in the notes alone is not.
 const drawnKind = entry => entry.drawable ?? entry.supported;
 const ROW_BUTTON = "flex h-full min-w-0 flex-1 items-center gap-1.5 rounded pl-1 pr-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+// What an annotation's values read out at: its rows' size, in full, in tabular figures, in the
+// column at the right (`InfoRow`), and an editable one the same.
+const VALUES_CLASS = "[&_[data-info-value]]:text-xs [&_[data-info-value]]:tabular-nums [&_[data-info-value]]:text-foreground [&_input]:text-xs";
+// A row that says all it has to say, over as many lines as that takes: one line stands as tall as any row.
+const WRAPPED_ROW_BUTTON = "items-start py-1 leading-4";
 
 /** A requirement that cannot hold with another: in a warning's colour. */
 function Warning({ children, ...props }) {
@@ -143,7 +149,7 @@ function EntryDetails({ entry, pmi, onSelectRelated }) {
   const limits = dimensionLimits(entry);
   const datumLinks = datumRelationships(entry, pmi.entries);
   const dependents = datumDependents(entry, pmi.entries);
-  return <div className="px-2 pb-1.5 pt-0.5" data-pmi-details={entry.id}>
+  return <div className={cn("px-2 pb-1.5 pt-0.5", VALUES_CLASS)} data-pmi-details={entry.id}>
     {entry.statusText ? <p className={cn("flex items-start gap-1 py-0.5 text-tiny", STATUS_TEXT[entry.status])} role="status">
       <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" /><span className="min-w-0 [overflow-wrap:anywhere]">{entry.statusText}</span>
     </p> : null}
@@ -236,7 +242,7 @@ function NewEntry({ option, onAdd, onCancel }) {
     if (!problem) setCall(now => ({ ...now, name }));
   };
   const write = text => setCall(now => (text === now.text ? now : { ...now, text }));
-  return <div className="border-b border-border px-2 pb-2 pt-1" data-pmi-new={option.kind}>
+  return <div className={cn("border-b border-border px-2 pb-2 pt-1", VALUES_CLASS)} data-pmi-new={option.kind}>
     <p className="flex items-center gap-1.5 py-0.5 text-tiny text-foreground"><PmiGlyph name={optionGlyph(option.kind)} className="size-3" aria-hidden="true" />
       {t("pmi.newNamed", { name: newPmiName(call, t) })}</p>
     {option.nominal !== null && option.nominal !== undefined ? <InfoRow label={t("pmi.nominal")} title={t("pmi.nominalMeshHint")} copy={false}>
@@ -267,20 +273,22 @@ function NewEntry({ option, onAdd, onCancel }) {
 
 /**
  * An annotation's or a note's row: its glyph (a 12px column; a general note's empty), what it says
- * (`children`) and its eye where it is drawn on the part; picked, its values open under it.
+ * (`children`) and its eye where it is drawn on the part, in a column of its own so a value at the
+ * row's right end is never under it; picked, its values open under it.
  */
-function EntryRow({ entry, pmi, label, rowProps, onSelectRelated, children }) {
+function EntryRow({ entry, pmi, label, rowProps, onSelectRelated, wrapped = false, children }) {
   const { t } = useI18n();
   const hidden = pmi.hiddenKeys.includes(entry.key);
   const picked = entry.key === pmi.selectedKey;
+  const rowHeight = useTreeRowHeight();
   return <li className="min-w-0">
-    <TreeRowSurface active={picked} className={cn("group/row gap-0 pr-0", !picked && "text-foreground")} style={{ "--row-actions": ROW_ACTIONS_WIDTH }} {...rowProps}
+    <TreeRowSurface active={picked} className={cn("group/row gap-0 pr-0", !picked && "text-foreground")}
+      style={{ "--row-actions": ROW_ACTIONS_WIDTH, ...(wrapped ? { height: "auto", minHeight: rowHeight } : null) }} {...rowProps}
       onMouseEnter={() => pmi.hover(entry.key)} onMouseLeave={() => pmi.hover("")}>
       <button type="button" aria-pressed={picked} aria-label={`${label}${entry.statusText ? `: ${entry.statusText}` : ""}`} data-pmi-pick={entry.id}
         onClick={() => pmi.select(picked ? "" : entry.key)}
-        className={cn(ROW_BUTTON, (hidden || !entry.supported) && "text-muted-foreground",
-          drawnKind(entry) && (hidden ? ROW_NAME_UNDER_ACTIONS.shown : ROW_NAME_UNDER_ACTIONS.hover))}>
-        {entry.glyph ? <PmiGlyph name={entry.glyph} className="size-3 shrink-0" aria-hidden="true" /> : <span className="size-3 shrink-0" aria-hidden="true" />}
+        className={cn(ROW_BUTTON, wrapped && WRAPPED_ROW_BUTTON, (hidden || !entry.supported) && "text-muted-foreground", drawnKind(entry) && "pr-6")}>
+        {entry.glyph ? <PmiGlyph name={entry.glyph} className={cn("size-3 shrink-0", wrapped && "mt-0.5")} aria-hidden="true" /> : <span className="size-3 shrink-0" aria-hidden="true" />}
         {children}
         {entry.status !== "ok" ? <CircleAlert className={cn("size-3 shrink-0", STATUS_TEXT[entry.status])} aria-label={t(STATUS_KEYS[entry.status])} /> : null}
       </button>
@@ -332,15 +340,28 @@ export function coverageLine(item, ofParts, t) {
   return name && said ? `${name}: ${said}` : name || said;
 }
 
-/** The coverage's questions, each once with how many faces ask it: six like holes are one line. */
-export function sameQuestions(suggestions) {
-  const lines = new Map();
-  for (const said of suggestions) {
-    const key = `${said.kind}\n${said.question}\n${said.why}`;
-    const line = lines.get(key);
-    lines.set(key, { said: line?.said ?? said, count: (line?.count ?? 0) + 1 });
-  }
-  return [...lines.values()];
+/**
+ * A question coverage leaves open, each once with how many ask it (`sameQuestions`): all its words,
+ * over as many lines as they take, and why in its tooltip. Under the pointer or picked, its faces
+ * light on the model, every one, as a picked note's do; one about the whole part has none to light.
+ */
+function QuestionRow({ line, pmi }) {
+  const { said, count, key } = line;
+  const picked = key === pmi.questionKey;
+  const rowHeight = useTreeRowHeight();
+  const lights = line.faces.length > 0;
+  return <TooltipHint side="right" content={<>
+    <div>{said.question}</div>
+    <div className="text-micro first-letter:uppercase [overflow-wrap:anywhere]">{said.why}</div>
+  </>}>
+    <TreeRowSurface active={picked} className={cn("-mx-1 w-auto gap-0 pr-0", !picked && "text-foreground")} style={{ height: "auto", minHeight: rowHeight }}
+      data-pmi-suggestion={said.kind} onMouseEnter={() => pmi.hoverQuestion(key)} onMouseLeave={() => pmi.hoverQuestion("")}>
+      <button type="button" aria-pressed={lights ? picked : undefined} disabled={!lights} onClick={() => pmi.pickQuestion(key)} className={cn(ROW_BUTTON, WRAPPED_ROW_BUTTON)}>
+        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{said.question}</span>
+        {count > 1 ? <span className="shrink-0 tabular-nums text-muted-foreground">{`×${count}`}</span> : null}
+      </button>
+    </TreeRowSurface>
+  </TooltipHint>;
 }
 
 /**
@@ -427,17 +448,16 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
       onCancel={closeDraft} onAdd={(call) => { pmi.add(draft.part, call); closeDraft(); }} /> : null}
     {moving ? <FileSheetStatusText className="py-1">{t("pmi.moving")}</FileSheetStatusText> : null}
     {!pmi.entries.length && !views.length && !draft ? <FileSheetStatusText className="py-1">{t("pmi.empty")}</FileSheetStatusText> : null}
-    {/* Each group's head stands clear of its rows, in the section heading's own markup. */}
-    <div data-pmi-groups="" className="[&_h2>span]:text-xs [&_h2>span]:font-semibold">
+    <div data-pmi-groups="">
       {views.length ? <FileSheetSettingsSection title={t("pmi.views")} sectionId="pmi-views">
         <ul className="px-1 text-xs" aria-label={t("pmi.views")}>{views.map(view => <ViewRow key={view.key} view={view} pmi={pmi} ofParts={viewsOfParts} />)}</ul>
       </FileSheetSettingsSection> : null}
       {notes.length ? <FileSheetSettingsSection title={t("pmi.notes")} sectionId="pmi-notes">
-        <ul className={cn("px-1 text-xs", pmi.off && "opacity-60")} aria-label={t("pmi.notes")}>
+        <ul className="px-1 text-xs" aria-label={t("pmi.notes")}>
           {notes.map((entry) => {
             const { number, text } = entry.callout;
-            return <EntryRow key={entry.key} entry={entry} pmi={pmi} label={t("pmi.noteLabel", { number, text })} rowProps={{ "data-pmi-note": entry.id }} onSelectRelated={selectRelated}>
-              <TooltipHint content={text} overflowOnly><span className="min-w-0 flex-1 truncate">{`${number}. ${text}`}</span></TooltipHint>
+            return <EntryRow key={entry.key} entry={entry} pmi={pmi} label={t("pmi.noteLabel", { number, text })} rowProps={{ "data-pmi-note": entry.id }} onSelectRelated={selectRelated} wrapped>
+              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{`${number}. ${text}`}</span>
               {notesOfParts ? <TreeRowLabel className="shrink-0 text-tiny">{entry.partName}</TreeRowLabel> : null}
             </EntryRow>;
           })}
@@ -449,15 +469,7 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
           {coverageLine(item, coverageOfParts, t) ? <p className="py-0.5 text-xs text-foreground">{coverageLine(item, coverageOfParts, t)}</p> : null}
           {item.conflicts.map(conflict => <Warning key={`${conflict.kind}:${conflict.ids.join(",")}`} data-pmi-conflict={conflict.kind}>
             {`${conflict.ids.join(", ")}: ${conflict.problem}`}</Warning>)}
-          {sameQuestions(item.suggestions).map(({ said, count }) => <TooltipHint key={`${said.kind}:${said.question}:${said.why}`} side="right" content={<>
-            <div>{said.question}</div>
-            <div className="text-micro first-letter:uppercase [overflow-wrap:anywhere]">{said.why}</div>
-          </>}>
-            <div className="flex min-w-0 items-center gap-1 py-0.5 text-xs text-foreground" data-pmi-suggestion={said.kind}>
-              <span className="min-w-0 flex-1 truncate">{said.question}</span>
-              {count > 1 ? <span className="shrink-0 tabular-nums text-muted-foreground">{`×${count}`}</span> : null}
-            </div>
-          </TooltipHint>)}
+          {item.questions.map(line => <QuestionRow key={line.key} line={line} pmi={pmi} />)}
         </div>)}
       </FileSheetSettingsSection> : null}
       {annotations.length ? <FileSheetSettingsSection title={t("pmi.annotations")} sectionId="pmi-annotations">
@@ -466,11 +478,13 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
           <Button type="button" variant="ghost" size="xs" className="h-6 text-tiny" onClick={() => setShowAllFor(filtered ? selectionKey : "")}>{t(filtered ? "pmi.showAllPmi" : "pmi.forSelection")}</Button>
         </div> : null}
         {filtered && !visible.length ? <FileSheetStatusText className="py-1">{t("pmi.noneForSelection")}</FileSheetStatusText> : null}
-        <ul className={cn("px-1 text-xs", pmi.off && "opacity-60")} aria-label="PMI" data-pmi-rows="">
+        <ul className="px-1 text-xs" aria-label="PMI" data-pmi-rows="">
           {visible.map(entry => <EntryRow key={entry.key} entry={entry} pmi={pmi} label={entry.callout.text} rowProps={{ "data-pmi-row": entry.id }} onSelectRelated={selectRelated}>
-            <TreeRowLabel className="min-w-0 shrink tabular-nums">{entry.supported ? entry.callout.text : entry.label || entry.id}</TreeRowLabel>
-            {/* Its id, where it says more than the callout (a datum's id is its letter). */}
-            <TreeRowLabel className="flex-1 text-tiny">{!entry.supported ? t("pmi.notShown") : entry.kind === "datum" ? "" : entry.id}</TreeRowLabel>
+            {/* A datum's callout is its name (its id, its letter); any other's, the value, in its own column at the right, after its id. */}
+            {entry.supported && entry.kind === "datum" ? <TreeRowLabel className="flex-1">{entry.callout.text}</TreeRowLabel> : <>
+              <TreeRowLabel className="flex-1 text-muted-foreground">{entry.supported ? entry.id : entry.label || entry.id}</TreeRowLabel>
+              <TreeRowLabel className="max-w-3/4 shrink-0 text-right tabular-nums">{entry.supported ? entry.callout.text : t("pmi.notShown")}</TreeRowLabel>
+            </>}
           </EntryRow>)}
         </ul>
       </FileSheetSettingsSection> : null}

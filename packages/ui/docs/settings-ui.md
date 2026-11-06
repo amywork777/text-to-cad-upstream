@@ -216,7 +216,7 @@ is `chrome`: the navbar (`"page"`, the default) or the view alone (`"bare"`).
   model's effects, Explode and Clip), and the view's controls, **Projection**, **Display** and
   **Preview**, directly after the last tool, in the same second section with no rule
   between (a file with only tools that pick has its view's controls after a rule, as their own second
-  section), in every host, with a navbar or without. 24px tiles with 14px icons,
+  section), in every host, with a navbar or without. 24px tiles with 16px icons,
   an even 4px apart, a tool's chevron touching its button, in a 34px row (`FloatingToolBar`,
   `data-cad-toolbar`). A file with no tools and no 3D view has no strip. On a phone
   ([mobile](#the-file-sidebar-and-the-tool-stack)) the tiles are 36px with 18px icons, a chevron
@@ -250,7 +250,7 @@ is `chrome`: the navbar (`"page"`, the default) or the view alone (`"bare"`).
   steps down under them at every width, so neither covers the other. The rest of the right side of
   the view is clear.
 - **View cube** at bottom-right, 2px from the right and 8px off the bottom so the axes
-  drawn in its lower corner never touch the edge (`VIEWPORT_CUBE_BOTTOM`), in a 6rem area:
+  drawn in its lower corner never touch the edge (`VIEWPORT_CUBE_BOTTOM`), in a 7.5rem area:
   enlarged face/edge/corner hit areas and neutral hover and XYZ guides. It carries no button:
   the fit is **F**'s (and the context menu's Zoom to fit), the orientation the cube's. A host whose own
   control floats over that corner lifts it clear with `--cad-viewport-corner-bottom`, the
@@ -593,11 +593,11 @@ Its panels follow these rules:
   Edit's grip, moving its width and cap at once, a separator in the tab order named after its
   panel, keyed as the sidebar's is. A folded panel has no grip: there is no height to set.
 - **Never past the viewer.** The column stops 8px above the cube's line
-  (`VIEWPORT_STACK_BOTTOM`, `calc(6rem + 16px)`). When the panels need more, a `"tree"` panel
+  (`VIEWPORT_STACK_BOTTOM`, `calc(7.5rem + 16px)`). When the panels need more, a `"tree"` panel
   gives way first, down to 128px or its content, then the `"details"` panels together, each in
   proportion to its height, down to 96px or its content; a `"fixed"` panel keeps its height.
   If what cannot give way still does not fit, the column itself scrolls — a panel is never cut.
-- **Headings.** A panel's heading row reads as Display's section headings do (11px, regular,
+- **Headings.** A panel's heading row reads as Display's section headings do (12px tracked caps,
   `TOOL_PANEL_HEADING_TEXT_CLASS`), 28px tall, 8px in: a title, a summary where there is one,
   then at its right end its own actions, the chevron where it folds (up while open, down while
   folded) and an X where it has something to remove. Every small button in a heading is 20px,

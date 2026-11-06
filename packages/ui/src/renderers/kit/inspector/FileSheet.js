@@ -41,8 +41,8 @@ export const FILE_SHEET_COMPACT_INPUT_CLASSES = "!h-7 px-2 text-tiny !text-foreg
 // bar from the left end up to the thumb would mean nothing.
 export const FILE_SHEET_PRECISION_SLIDER_CLASSES = "h-4 [&_[data-slot=slider-range]]:hidden";
 
-/** A section heading: 24px, regular 11px, never a disclosure (`docs/settings-ui.md`). */
-export const FILE_SHEET_SECTION_HEADING_CLASSES = "flex h-6 min-w-0 items-center gap-2 px-2 text-tiny font-normal leading-4 text-foreground";
+/** A section heading: 24px, tracked caps in CSS, the words as written, never a disclosure (`docs/settings-ui.md`). */
+export const FILE_SHEET_SECTION_HEADING_CLASSES = "flex h-6 min-w-0 items-center gap-2 px-2 text-xs font-medium leading-4 tracking-widest text-muted-foreground uppercase";
 
 /**
  * One settings section: a heading and its rows, a rule above it when another section precedes

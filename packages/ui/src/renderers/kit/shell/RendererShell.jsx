@@ -814,7 +814,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
                   className={cn(WORKSPACE_DOCK_CLASS, "pointer-events-auto absolute left-0 flex w-[16rem] flex-col overflow-hidden @max-xl/cad-viewport:hidden",
                     navigatorFolded ? "border-b" : "bottom-0")}>
                   <button type="button" aria-expanded={!navigatorFolded} onClick={() => setNavigatorFolded(folded => !folded)}
-                    className="flex h-7 shrink-0 items-center gap-1 px-2.5 text-left text-micro leading-3 text-muted-foreground hover:bg-cad-ws-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/45">
+                    className="flex h-7 shrink-0 items-center gap-1 px-2.5 text-left text-xs font-medium leading-4 tracking-widest text-muted-foreground uppercase hover:bg-cad-ws-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/45">
                     <span className="min-w-0 flex-1 truncate">FeatureManager</span>
                     <ChevronDown className={cn("size-3 shrink-0", navigatorFolded && "-rotate-90")} aria-hidden="true" />
                   </button>

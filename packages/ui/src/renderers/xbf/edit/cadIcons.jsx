@@ -58,13 +58,13 @@ export const COMMAND_ICON_NAMES = Object.freeze({
 export const COMMAND_ICONS = Object.freeze(Object.fromEntries(Object.entries(COMMAND_ICON_NAMES).map(([id, name]) => [id, generatedIcon(name)])));
 
 /**
- * The generator's icon of Select and Measure, the strip's tools that the CAD workspace draws its own way
- * (`XbfSelectionModes.jsx`); the AI layout keeps the kit's.
+ * The generator's icon of Select and Measure, as the CAD workspace's ribbon and menus draw them
+ * (`XbfSelectionModes.jsx`); the strip keeps the kit's plain glyphs.
  */
 export const TOOL_ICON_NAMES = Object.freeze({ select: "select", measure: "measure" });
 
 /**
- * The model's effects on the CAD workspace's strip (`useModelTools`' `icons`): Section View and
+ * The model's effects on the CAD workspace's ribbon (`useModelTools`' `icons`): Section View and
  * Exploded View in the generator's language, as Select and Measure beside them are.
  */
 export const EFFECT_ICONS = Object.freeze({
@@ -84,7 +84,7 @@ export const MEASURE_ICON_NAMES = Object.freeze({ all: "measure", vertex: "measu
 const IN_HAND = Object.freeze({ select: SELECT_ICON_NAMES, measure: MEASURE_ICON_NAMES });
 
 /**
- * Select's or Measure's icon on the CAD workspace's strip, by what it has in hand (`mode`): its filter
+ * Select's or Measure's icon in the CAD workspace's ribbon, by what it has in hand (`mode`): its filter
  * mode (`pickModeOf`).
  */
 export function ToolIcon({ id, mode = "all", className }) {

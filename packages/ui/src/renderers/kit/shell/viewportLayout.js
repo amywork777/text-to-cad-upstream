@@ -20,7 +20,7 @@ export const VIEWPORT_TOP_BAR_PX = 34;
 // `--cad-viewport-corner-bottom`, the room that control takes from the bottom edge. Hosts can also
 // choose the left corner with `--cad-viewport-corner-left` and `--cad-viewport-corner-right`
 // (ViewPlaneControl); the default remains the right.
-export const VIEWPORT_CUBE_SIZE = "6rem";
+export const VIEWPORT_CUBE_SIZE = "7.5rem";
 export const VIEWPORT_CORNER_INSET_PX = 2;
 export const VIEWPORT_CUBE_BOTTOM_PX = 8;
 export const VIEWPORT_CUBE_BOTTOM = `calc(${VIEWPORT_CUBE_BOTTOM_PX}px + var(--cad-viewport-corner-bottom, 0px))`;

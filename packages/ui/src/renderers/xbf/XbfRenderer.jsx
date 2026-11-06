@@ -780,8 +780,8 @@ function XbfSurface({ view, data }) {
 
   // ---- the strip --------------------------------------------------------------------------------
   const bounds = scene ? boundsInUnits(sceneFramingBounds(scene), scene.units) : null;
-  // The AI layout wears the kit's icons, Studio's CAD workspace its own (`XbfSelectionModes.jsx`,
-  // `EFFECT_ICONS`).
+  // The strip wears the kit's plain glyphs in both layouts; the CAD workspace's ribbon and menus its
+  // own icons (`XbfSelectionModes.jsx`, `EFFECT_ICONS`), each tool's `ribbonIcon`.
   const cadIcons = cad.editing;
   const effects = useModelTools({ view: viewSettings, features, store, mesh: bounds ? { bounds } : null, disabled: shell.idle,
     icons: cadIcons ? EFFECT_ICONS : null });
@@ -793,14 +793,16 @@ function XbfSurface({ view, data }) {
   const measureFilterMenu = useMemo(() => <MeasureFilterMenu value={measureFilter} disabled={shell.idle} modes={cadIcons ? XBF_CAD_MEASURE_MODES : MEASURE_MODES}
     onChange={value => { setMeasureFilter(value); shellRef.current?.selectTool(XBF_TOOL.MEASURE); }} />,
   [measureFilter, shell.idle, cadIcons]);
+  const selectMode = pickModeOf(selectFilter, xbfSelectModes({ assembly, posable })).id;
+  const measureMode = pickModeOf(measureFilter, MEASURE_MODES).id;
   const strip = [
     // Each button badged with what its tool picks alone (its chevron's menu), none for All.
     shell.tools.own({ id: XBF_TOOL.SELECT, label: t("tool.select"), shortcut: TOOL_SHORTCUTS.select, menu: selectModeMenu,
-      icon: <SelectIcon mode={pickModeOf(selectFilter, xbfSelectModes({ assembly, posable })).id} cad={cadIcons} className="size-3.5" aria-hidden="true" /> }),
+      icon: <SelectIcon mode={selectMode} className="size-3.5" aria-hidden="true" />, ribbonIcon: cadIcons ? <SelectIcon mode={selectMode} cad className="size-3.5" /> : null }),
     // Pencil and Shapes write to the agent: CAD mode's workspace, which has none, has neither.
     ...cad.drawingTools(shell.tools.drawing).map(tool => ({ ...tool, disabled: shell.idle })),
     shell.tools.own({ id: XBF_TOOL.MEASURE, label: t("tool.measure"), shortcut: TOOL_SHORTCUTS.measure, menu: measureFilterMenu,
-      icon: <MeasureIcon mode={pickModeOf(measureFilter, MEASURE_MODES).id} cad={cadIcons} className="size-3.5" aria-hidden="true" />,
+      icon: <MeasureIcon mode={measureMode} className="size-3.5" aria-hidden="true" />, ribbonIcon: cadIcons ? <MeasureIcon mode={measureMode} cad className="size-3.5" /> : null,
       onSelect: () => { if (shell.toolMode !== XBF_TOOL.MEASURE) shell.selectTool(XBF_TOOL.MEASURE); } }),
     ...effects.tools
   ];

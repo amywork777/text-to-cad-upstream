@@ -93,6 +93,7 @@ it('says a nominal another system\'s file gives as the file\'s, and one the engi
 const FIXTURES = join(dirname(createRequire(import.meta.url).resolve('@cad/core/lib/xbf/xbfDocument.js')), '__fixtures__');
 const V4 = JSON.parse(readFileSync(join(FIXTURES, 'pmi_plate', 'v4', 'structure.json'), 'utf8'));
 const V4_BOTTOM = 'plate/f:edit_plate.body_make_box1.5;M:edit_plate.body';
+const V4_TOP = 'plate/f:edit_plate.body_make_box1.6;M:edit_plate.body';
 const PLATE = { min: [-50, -30, -5], max: [50, 30, 5] };
 const EIGHTH_Z = [Math.SQRT1_2, Math.SQRT1_2, 0, 0, -Math.SQRT1_2, Math.SQRT1_2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const BEFORE = { position: [100, -100, 100], target: [0, 0, 0], up: [0, 0, 1] };
@@ -450,6 +451,36 @@ it("a limits dimension's tolerance field reads back as its limits, and limits ty
   await user.clear(field);
   await user.type(field, '9.9 to 10.2{Enter}');
   expect(requests()).toEqual([expect.stringMatching(/^Change the PMI "thickness" .*: tolerance=limits\(9\.9, 10\.2\)\. .*tolerance=limits\(9\.9, 10\.2\)/s)]);
+});
+
+it('a question wraps, and lights every face that asks it under the pointer or picked', () => {
+  const ask = (face: string) => ({ kind: 'hole', faces: [face], question: 'What is the 9 mm hole for?', answer: 'clearance', why: 'a shop reads it' });
+  openMbd(structure => ({ ...structure, pmi_coverage: [{ part: 0, uncovered: [], conflicts: [], suggestions: [V4_BOTTOM, V4_TOP].map(ask) }] }));
+  const faces = ['i0/face/5', 'i0/face/3'];
+  const row = () => screen.getByText('What is the 9 mm hole for?').closest('[data-pmi-suggestion]') as HTMLElement;
+  expect(screen.getByText('What is the 9 mm hole for?').className).not.toContain('truncate');
+  expect(live.highlight.selected).toEqual([]);
+  fireEvent.mouseEnter(row());
+  expect(live.highlight.selected).toEqual(faces);
+  fireEvent.mouseLeave(row());
+  expect(live.highlight.selected).toEqual([]);
+  const pick = () => within(row()).getByRole('button');
+  fireEvent.click(pick());
+  expect(pick().getAttribute('aria-pressed')).toBe('true');
+  expect(live.highlight.selected).toEqual(faces);
+  // An annotation picked leaves it.
+  fireEvent.click(screen.getByRole('button', { name: 'Datum A', exact: true }));
+  expect(pick().getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(pick());
+  fireEvent.click(pick());
+  expect(live.highlight.selected).toEqual([]);
+});
+
+it('a note reads in full, however long', () => {
+  openMbd();
+  const note = screen.getByText('3. Mask these features before coating with primer');
+  expect(note.className).not.toContain('truncate');
+  expect((note.closest('[data-pmi-note]') as HTMLElement).style.height).toBe('auto');
 });
 
 it("says coverage is not verification, and gives no last word while a question stands", () => {

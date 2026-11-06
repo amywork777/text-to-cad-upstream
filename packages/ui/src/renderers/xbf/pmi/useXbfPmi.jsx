@@ -7,6 +7,7 @@ import { xbfElementLabel } from "../xbfChips.jsx";
 import { newPmiName } from "./pmiCreate.js";
 import { PmiGlyph } from "./pmiGlyphs.jsx";
 import { createPmiRefResolver, pmiDrawnAt, pmiFeatureIds, resolvePmiEntryRefs } from "./pmiRefs.js";
+import { sameQuestions } from "./pmiReview.js";
 import { pmiViewAt, pmiViewFromHere, pmiViewPlacements, pmiViewShows } from "./pmiViews.js";
 
 // An engine document's PMI in the viewer: what the document carries (`structure.pmi`), found on
@@ -75,9 +76,12 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
     return served.notes.map(note => byKey.get(note.key));
   }, [served, entries]);
   // What coverage found of each part: the faces no requirement is on, found on the page on every
-  // occurrence of the part, and the requirements that cannot both hold.
+  // occurrence of the part, the requirements that cannot both hold, and each question it leaves open
+  // once (`sameQuestions`), with the faces it asks about found on the page.
   const coverage = useMemo(() => served.coverage.map(item => ({ ...item, partName: partNameOf(item.part),
-    faceIds: pmiFeatureIds({ part: item.part, refs: [{ ids: item.uncovered.flatMap(ref => resolver.resolve(ref)) }] }, instances) })),
+    faceIds: pmiFeatureIds({ part: item.part, refs: [{ ids: item.uncovered.flatMap(ref => resolver.resolve(ref)) }] }, instances),
+    questions: sameQuestions(item.suggestions).map(line => ({ ...line, key: `${item.part}:${line.said.kind}:${line.said.question}:${line.said.why}`,
+      refs: [{ ids: line.faces.flatMap(ref => resolver.resolve(ref)) }] })) })),
   [served, partNameOf, resolver, instances]);
 
   const [hoveredKey, setHoveredKey] = useState("");
@@ -92,6 +96,11 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
   useEffect(() => { setDatumFocus(""); }, [selectedKey, structure]);
   const [viewKey, setViewKey] = useState("");
   const [uncoveredShown, setUncoveredShown] = useState(false);
+  // A coverage question under the pointer and the one picked: a pick of an annotation leaves it.
+  const [questionHovered, hoverQuestion] = useState("");
+  const [questionKey, setQuestionKey] = useState("");
+  useEffect(() => { if (selectedKey) setQuestionKey(""); }, [selectedKey]);
+  const pickQuestion = useCallback((key) => { setQuestionKey(now => (now === key ? "" : key)); onSelect(""); }, [onSelect]);
   const restore = useCallback((slice) => { setHiddenKeys(slice?.hidden || EMPTY); setOff(Boolean(slice?.off)); }, []);
   const known = useMemo(() => new Set(entries.map(entry => entry.key)), [entries]);
   // Every annotation this open has seen, from its first scene: one a later build brings is new.
@@ -181,10 +190,16 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
   const focusedDatum = entries.find(entry => entry.key === datumFocus && entry.kind === "datum" && entry.part === selectedEntry?.part) || null;
   // And, where asked, the faces no requirement is on.
   const uncoveredIds = useMemo(() => (uncoveredShown ? coverage.flatMap(item => item.faceIds) : EMPTY), [uncoveredShown, coverage]);
+  // And a question's faces, every one of them where a note's are, under the pointer or picked.
+  const questionIds = useMemo(() => unique(coverage.flatMap(item => item.questions
+    .filter(line => line.key === questionKey || line.key === questionHovered)
+    .flatMap(line => pmiDrawnAt({ part: item.part, refs: line.refs }, instances, shownParts)?.featureIds || EMPTY))),
+  [coverage, questionKey, questionHovered, instances, shownParts]);
   const highlight = useMemo(() => {
     const picks = drawnFeatureIds((focusedDatum || selectedEntry)?.key);
-    return { selected: uncoveredIds.length ? unique([...picks, ...uncoveredIds]) : picks, hovered: drawnFeatureIds(hovered)[0] || null };
-  }, [drawnFeatureIds, focusedDatum, selectedEntry, hovered, uncoveredIds]);
+    const also = [...uncoveredIds, ...questionIds];
+    return { selected: also.length ? unique([...picks, ...also]) : picks, hovered: drawnFeatureIds(hovered)[0] || null };
+  }, [drawnFeatureIds, focusedDatum, selectedEntry, hovered, uncoveredIds, questionIds]);
 
   // ---- changes: what Quick Edit hands the agent -------------------------------------------------
   const edit = useCallback((key, values, { placementOnly = false } = {}) => setChanges((now) => {
@@ -257,7 +272,7 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
     // The views, each where it is seen from (`at`, null where its part is not shown); the one picked
     // (`viewKey`) and, placed, what applying it takes (`view`: `usePmiViewApplied`'s); a second pick leaves it.
     views, viewKey: view ? viewKey : "", view, chooseView,
-    uncoveredShown, showUncovered: setUncoveredShown,
+    uncoveredShown, showUncovered: setUncoveredShown, questionKey, hoverQuestion, pickQuestion,
     focusDatum: key => setDatumFocus(now => (now === key ? "" : key)),
     hiddenKeys, off, alone, setOff: setAllOff, restore, toggleHidden,
     slice,

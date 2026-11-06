@@ -14,6 +14,7 @@ import { cn } from "@cad/ui/utils"
  * `"vertical"` (the default) lays content out at the region's width, so rows truncate;
  * `"both"` lets wide content scroll sideways too. `scrollbar={false}`: no visible bar, for a region
  * whose bar would stand outside what it holds (the tool stack's column); the wheel, a trackpad and the keyboard still scroll.
+ * `barShown`: the bar stands whenever there is more to scroll to, hover or not, in a tone that shows: a long list read closely (PMI).
  * The bar stays mounted, hidden: the primitive lets its viewport scroll on an axis only while that
  * axis has a bar, and clips it otherwise.
  */
@@ -24,13 +25,15 @@ const ScrollArea = React.forwardRef(function ScrollArea({
   viewportProps,
   orientation = "vertical",
   scrollbar = true,
+  barShown = false,
   children,
   ...props
 }, ref) {
   return (
     <ScrollAreaPrimitive.Root
       ref={ref}
-      className={cn("relative flex min-h-0 flex-col overflow-hidden", className)}
+      type={barShown ? "auto" : undefined}
+      className={cn("relative flex min-h-0 flex-col overflow-hidden", barShown && "[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/40", className)}
       {...props}
       // After the props: a trigger wrapping the region (`asChild`) names its own slot, and the
       // region is still a scroll area.

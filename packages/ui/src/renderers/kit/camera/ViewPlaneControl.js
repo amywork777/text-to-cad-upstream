@@ -22,8 +22,12 @@ const HOME_CORNER_ID = "iso+-+";
 // What a hover changes eases in, briefly; what it lights is one plain, lighter shade.
 const HOVER_TRANSITION = Object.freeze({ transition: "fill 120ms ease-out" });
 const HOVER_FILL = "color-mix(in oklch, var(--background) 55%, var(--foreground))";
+// The faces' greys, how much of the theme's background each mix keeps, as CSS so the theme picks
+// them. On a light view a face stands near white; on a dark one, a couple of grey steps above the
+// view, and a face turning to the camera lightens (`--cube-turn`), so the cube never reads dark on dark.
+const CUBE_GREYS_CLASS = "[--cube-base:94%] [--cube-turn:5%] [--cube-bevel:90%] [--cube-active:82%] dark:[--cube-base:72%] dark:[--cube-turn:-8%] dark:[--cube-bevel:78%] dark:[--cube-active:58%]";
 // SVG units: the cube's half-size on screen, and where its centre sits.
-const SCALE = 21;
+const SCALE = 23;
 const CENTER = 50;
 // An axis label's centre, kept inside the 0–100 view box by more than half its 10-unit glyph.
 const inBox = value => Math.min(94, Math.max(6, value));
@@ -304,7 +308,7 @@ function ViewPlaneControl({
         </div>
       ) : null}
       {showSelector ? <div
-        className={`pointer-events-auto relative touch-none select-none text-foreground ${compact ? "h-20 w-20" : ""} ${dragging ? "cursor-grabbing" : ""}`}
+        className={`pointer-events-auto relative touch-none select-none text-foreground ${CUBE_GREYS_CLASS} ${compact ? "h-20 w-20" : ""} ${dragging ? "cursor-grabbing" : ""}`}
         style={sizeStyle}
         onPointerDown={(event) => { event.stopPropagation(); startDrag(event); }}
       >
@@ -312,23 +316,23 @@ function ViewPlaneControl({
           {faces.map((face) => {
             const active = activeViewPlaneFace === face.id;
             const hovered = hoveredId === face.id;
-            // Faces turned away from the camera are shaded darker, so the cube reads as solid.
-            const shade = Math.round(94 + face.facing * 5);
+            // Each face shaded by how far it turns from the camera, so the cube reads as solid.
+            const shade = `calc(var(--cube-base) + ${face.facing.toFixed(2)} * var(--cube-turn))`;
             // Hovered, a face lights plainly (the patch colour an edge or corner lights with), its
             // label at full strength; the view on screen a little less.
             const fill = hovered
               ? HOVER_FILL
               : active
-                ? "color-mix(in oklch, var(--background) 82%, var(--foreground))"
-                : `color-mix(in oklch, var(--background) ${shade}%, var(--foreground))`;
+                ? "color-mix(in oklch, var(--background) var(--cube-active), var(--foreground))"
+                : `color-mix(in oklch, var(--background) ${shade}, var(--foreground))`;
             return (
               <g key={face.id} {...pickProps(face.id, viewPlaneTitle(face, t), () => activateViewPlaneFace?.(face.id))}>
                 <polygon points={face.points.map((point) => point.join(",")).join(" ")}
-                  fill="color-mix(in oklch, var(--background) 90%, var(--foreground))" stroke="var(--background)" strokeWidth="0.6" strokeLinejoin="round" />
+                  fill="color-mix(in oklch, var(--background) var(--cube-bevel), var(--foreground))" stroke="var(--background)" strokeWidth="0.6" strokeLinejoin="round" />
                 <path d={roundedInsetFace(face.points)} fill={fill} pointerEvents="none" style={HOVER_TRANSITION} />
                 {face.facing > 0.25 ? (
                   <text x="0" y="0" transform={face.labelTransform} textAnchor="middle" dominantBaseline="central"
-                    fontSize="0.43" fontWeight={hovered || active ? 600 : 500} fill={hovered || active ? "var(--foreground)" : "color-mix(in oklch, var(--foreground) 90%, transparent)"}
+                    fontSize="0.5" fontWeight={hovered || active ? 600 : 500} fill={hovered || active ? "var(--foreground)" : "color-mix(in oklch, var(--foreground) 90%, transparent)"}
                     opacity={Math.min(1, face.facing * 1.6)} pointerEvents="none" aria-hidden="true">
                     {face.label}
                   </text>

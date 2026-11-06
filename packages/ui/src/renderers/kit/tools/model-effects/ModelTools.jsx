@@ -95,7 +95,7 @@ export function useModelTools({ view, features, store, mesh, disabled, icons = n
   return {
     tools: definitions.map(tool => {
       const changed = applied.includes(tool.id);
-      const icon = icons?.[tool.id] ?? <tool.Icon className="size-3" strokeWidth={2} aria-hidden="true" />;
+      const icon = <tool.Icon className="size-3" strokeWidth={2} aria-hidden="true" />;
       // Its row, unnamed but for what leads it: the slider, the amount, Reset.
       const row = <SubToolbar label={t("effects.controls", { tool: tool.label })} className={SLIDER_SUB_TOOLBAR_CLASS} data-model-tool={tool.id}>
         {tool.lead || null}
@@ -109,7 +109,7 @@ export function useModelTools({ view, features, store, mesh, disabled, icons = n
       // seconds: it is no tool in hand.
       const shared = { label: tool.label, icon, changed, disabled, row, onOpen: () => controls.used(tool.id === "exploded" ? "explode" : "clip") };
       // Their own group on the strip, ruled off from the tools that pick.
-      return { id: tool.id, label: tool.label, group: "model", disabled, changed, icon,
+      return { id: tool.id, label: tool.label, group: "model", disabled, changed, icon, ribbonIcon: icons?.[tool.id] ?? null,
         tile: <EffectPopover {...shared} />,
         popover: ({ anchor, open, onOpenChange }) => <EffectPopover {...shared} anchor={anchor} open={open} onOpenChange={onOpenChange} /> };
     }),

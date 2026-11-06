@@ -286,7 +286,7 @@ export default function FileSidebar({ layout: stored, onLayoutChange, hidden = f
         <X className="size-4" aria-hidden="true" />
       </button>
     </div> : null}
-    <ScrollArea className="min-h-0 flex-1" viewportRef={scroller} viewportProps={{ "data-file-sidebar-scroller": "" }}>
+    <ScrollArea barShown={Boolean(meta.current.get(shown)?.solid)} className="min-h-0 flex-1" viewportRef={scroller} viewportProps={{ "data-file-sidebar-scroller": "" }}>
       {/* The section's head needs no rule above it: the panel's edge is there. */}
       <div ref={column} className="flex flex-col [&>section>[data-sidebar-head]]:border-t-0">
         <ToolStackContext.Provider value={sections}>{children}</ToolStackContext.Provider>
