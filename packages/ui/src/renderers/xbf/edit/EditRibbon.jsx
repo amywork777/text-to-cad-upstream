@@ -40,11 +40,14 @@ const PRESSED_CLASS = "bg-cad-ws-selected text-info hover:bg-cad-ws-selected hov
 // pitch is as wide as the longest word a name has ("Construction"). Without names (`compact`, where not even one named group
 // fits) the buttons narrow to their icons.
 const LABEL_CLASS = "w-full whitespace-normal text-center leading-[1.1]";
-// The view's own controls the frame hands over (Projection, Display, Preview: the strip's small tiles), lit as
-// the toolbar's buttons are: the workspace's pale blue under the pointer, its deeper one while a menu is open.
-const VIEW_CONTROLS_CLASS = "flex shrink-0 items-center gap-0.5 [&_button:hover]:bg-cad-ws-hover [&_button[aria-expanded=true]]:bg-cad-ws-selected";
+// The tab row's icon buttons: a 28px target round a 16px icon.
+const TAB_ROW_BUTTON_CLASS = "size-7 hover:bg-cad-ws-hover";
+// The view's own controls the frame hands over (Projection, Display, Preview: the strip's small tiles), sized as
+// Search is beside them (the layout switch keeps its segments) and lit as the toolbar's buttons are: the workspace's
+// pale blue under the pointer, its deeper one while a menu is open.
+const VIEW_CONTROLS_CLASS = "flex shrink-0 items-center gap-0.5 [&_button:not([role=radio])]:size-7 [&_button:hover]:bg-cad-ws-hover [&_button[aria-expanded=true]]:bg-cad-ws-selected";
 // A tab: its name as it is written, the one in front underlined.
-const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-tiny leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
+const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-tiny leading-none text-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
 // A group's title under its buttons; where it is the group's menu it is a button too.
 const TITLE_CLASS = "text-tiny leading-3 text-muted-foreground";
 // The title's band: a rule the width of the group, meeting the divider, so the title names the whole group and not the button over it.
@@ -355,10 +358,11 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
     <div className="ml-auto flex min-w-0 items-center gap-2 pl-2">
       {/* The command search, as NX's Command Finder is: an icon, S its key (its tooltip says so). */}
       <ToolbarButton label="Search commands" shortcut="S" data-cad-command-finder="" aria-haspopup="dialog" aria-expanded={finding}
-        className="hover:bg-cad-ws-hover" onClick={() => setFinding(true)}><Search className="size-4" /></ToolbarButton>
+        className={TAB_ROW_BUTTON_CLASS} onClick={() => setFinding(true)}><Search className="size-4" /></ToolbarButton>
       {view?.controls ? <div className={VIEW_CONTROLS_CLASS} data-cad-ribbon-view="">{view.controls}</div> : null}
       {view?.status || null}
-      <div className="flex min-w-0 items-center gap-2 text-tiny leading-4" aria-live="polite">{end}</div>
+      {/* Where the part stands, one quiet group behind a thin rule. */}
+      <div className="flex min-w-0 items-center gap-2 border-l border-border pl-2 text-tiny leading-4 text-muted-foreground empty:hidden" aria-live="polite">{end}</div>
     </div>
   </div>;
   // `finds`: the items the command search may run, whichever tab each is on (`searchable`); the box is the toolbar's neighbour, for the toolbar clips.
@@ -375,8 +379,8 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
     {finding ? <CommandSearchBox items={finds()} sketching={sketching} onClose={() => setFinding(false)} /> : null}
     {effectTool?.popover ? effectTool.popover({ anchor: effect.anchor, open: true, onOpenChange: open => { if (!open) setEffect(null); } }) : null}
   </>;
-  const statusLine = (text, failed = false) => <span className={cn("flex min-w-0 items-center gap-1",
-    busy ? "text-foreground" : failed ? "text-destructive" : "text-sidebar-foreground/85")}>
+  const statusLine = (text, failed = false) => !text ? null : <span className={cn("flex min-w-0 items-center gap-1",
+    busy ? "text-foreground" : failed ? "text-destructive" : "text-muted-foreground")}>
     {busy ? <LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden="true" /> : null}<span className="truncate">{text}</span>
   </span>;
 
@@ -502,7 +506,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   };
   return ribbon("Design", groupsOf[front.id]().filter(group => group.items.length), <>
     {statusLine(status, Boolean(state?.building?.error))}
-    {state?.units ? <span className="shrink-0 text-tiny text-sidebar-foreground/85">{unitWord(state.units)}</span> : null}
+    {state?.units ? <span className="shrink-0 text-tiny text-muted-foreground">{unitWord(state.units)}</span> : null}
   </>, { tabs, active: front.id, onPick: setTab, key: `Design:${front.id}`,
     // Every tab's items, not the one in front; a command's Subtract is the Boolean of the unite command's dialog. An
     // assembly has no Features or Sketch tab, but its search finds their commands all the same, dimmed, saying to

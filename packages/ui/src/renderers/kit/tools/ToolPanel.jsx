@@ -34,6 +34,13 @@ const KEY_NUDGE_PX = 16;
  */
 export const TOOL_PANEL_HEADING_TEXT_CLASS = "text-xs font-medium leading-4 tracking-widest text-muted-foreground uppercase";
 
+/**
+ * The head of a panel of CAD mode's left dock (the FeatureManager, PMI): one 28px row 8px in, the
+ * words as written, a level above the tracked-caps headings inside the panel. The caller ends it:
+ * 8px past a bare chevron, 4px past a 20px button, so the glyphs end on one line.
+ */
+export const DOCK_PANEL_HEAD_CLASS = "flex h-7 w-full shrink-0 items-center gap-1 pl-2 text-left text-xs font-medium leading-4 text-foreground";
+
 /** A panel header's small icon button: the chevron, the X, and a tool's settings menu (`ToolModeMenu.jsx`'s `ToolSettingsMenu`). */
 export const TOOL_PANEL_BUTTON_CLASS = "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
 
@@ -235,13 +242,17 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
   // panel, its tile no longer pressed.
   const sidebarToggle = inSidebar && stack.closeSection && stack.closeInHead !== false ? <button type="button" aria-label={t("panel.close", { name: tileTitle.toLowerCase() })} data-file-sidebar-close=""
     className={TOOL_PANEL_BUTTON_CLASS} onClick={stack.closeSection}><X className="size-3" aria-hidden="true" /></button> : null;
+  // Docked in CAD mode's left column (`stack.panelHead`), it is that column's panel head instead, pinned
+  // over what it scrolls.
+  const panelHead = inSidebar && stack.panelHead;
   const sidebarHead = inSidebar ? <div data-sidebar-head=""
-    className="sticky z-10 border-t border-border/60 px-1 pb-0.5 pt-1 data-[pinned]:z-20 data-[pinned]:bg-background data-[stuck]:bg-background data-[stuck]:shadow-[0_-1px_3px_rgb(0_0_0/0.12)] data-[pinned]:shadow-[0_1px_3px_rgb(0_0_0/0.12)]">
+    className={panelHead ? "sticky top-0 z-10 border-b border-border bg-cad-ws-panel"
+      : "sticky z-10 border-t border-border/60 px-1 pb-0.5 pt-1 data-[pinned]:z-20 data-[pinned]:bg-background data-[stuck]:bg-background data-[stuck]:shadow-[0_-1px_3px_rgb(0_0_0/0.12)] data-[pinned]:shadow-[0_1px_3px_rgb(0_0_0/0.12)]"}>
     {header ? <div className="flex min-w-0 items-center gap-1 pr-0.5" data-tool-panel-header=""><div className="min-w-0 flex-1">{header}</div>{sidebarToggle}</div>
       : <div data-tool-panel-heading=""
       // The name is as far in from the bar's left edge as from its top (12px).
-      className="relative flex h-6 min-w-0 items-center gap-1 pl-2 pr-0.5 text-foreground">
-      <h3 className={cn("flex min-w-0 flex-1", TOOL_PANEL_HEADING_TEXT_CLASS)}>
+      className={panelHead ? cn(DOCK_PANEL_HEAD_CLASS, "pr-1") : "relative flex h-6 min-w-0 items-center gap-1 pl-2 pr-0.5 text-foreground"}>
+      <h3 className={cn("flex min-w-0 flex-1", !panelHead && TOOL_PANEL_HEADING_TEXT_CLASS)}>
         <span className="min-w-0 truncate">{title}</span>
       </h3>
       {summary ? <span className="shrink-0 text-tiny text-muted-foreground">{summary}</span> : null}

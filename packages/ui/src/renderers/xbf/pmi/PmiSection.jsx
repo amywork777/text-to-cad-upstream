@@ -149,7 +149,7 @@ function EntryDetails({ entry, pmi, onSelectRelated }) {
   const limits = dimensionLimits(entry);
   const datumLinks = datumRelationships(entry, pmi.entries);
   const dependents = datumDependents(entry, pmi.entries);
-  return <div className={cn("px-2 pb-1.5 pt-0.5", VALUES_CLASS)} data-pmi-details={entry.id}>
+  return <div className={cn("px-1 pb-1.5 pt-0.5", VALUES_CLASS)} data-pmi-details={entry.id}>
     {entry.statusText ? <p className={cn("flex items-start gap-1 py-0.5 text-tiny", STATUS_TEXT[entry.status])} role="status">
       <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" /><span className="min-w-0 [overflow-wrap:anywhere]">{entry.statusText}</span>
     </p> : null}

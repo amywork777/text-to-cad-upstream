@@ -15,6 +15,7 @@ import { usePreviewState, useRendererShell } from "../kit/shell/useRendererShell
 import { usePreviewScene } from "../kit/shell/usePreviewScene.js";
 import { useViewportLoadStatus } from "../kit/shell/useViewportLoadStatus.js";
 import { buildFailedAlert, noGeometryAlert } from "../kit/status/loadAlerts.js";
+import { ScrollArea } from "@cad/ui/primitives/scroll-area";
 import { ToolStackContext } from "../kit/tools/ToolStack.jsx";
 import { useModelTools } from "../kit/tools/model-effects/ModelTools.jsx";
 import { useMotionExclusion } from "../kit/tools/model-effects/motionExclusion.js";
@@ -79,7 +80,7 @@ const MENU_CONTROLS = Object.freeze({
 // modeling it by hand, a CAD tool's toolbar and design tree over the same view and picks.
 
 // CAD mode's PMI, a section docked under the FeatureManager and always open: nothing sits on the model.
-const PMI_DOCKED = Object.freeze({ sidebar: true, openSection: "pmi" });
+const PMI_DOCKED = Object.freeze({ sidebar: true, openSection: "pmi", panelHead: true });
 const NO_REFERENCES = Object.freeze([]);
 const EMPTY = Object.freeze([]);
 const NO_HOVER = Object.freeze({ parts: EMPTY, element: null });
@@ -876,13 +877,13 @@ function XbfSurface({ view, data }) {
   }, []);
   usePmiViewApplied({ applied: pmi.view, viewer: () => shellRef.current?.frame.viewerRef.current, store, fit: fitPmiView });
 
-  // The tree is as tall as its rows, up to 60% of the column, past which it scrolls; PMI sits directly
+  // The tree is as tall as its rows, up to 75% of the column, past which it scrolls; PMI sits directly
   // under it, fills the rest and scrolls inside itself.
-  const leftDock = cad.frame.leftDock && pmiSection ? <div className="grid min-h-0 flex-1 grid-rows-[fit-content(60%)_minmax(0,1fr)]">
+  const leftDock = cad.frame.leftDock && pmiSection ? <div className="grid min-h-0 flex-1 grid-rows-[fit-content(75%)_minmax(0,1fr)]">
     <div className="flex min-h-0 flex-col overflow-hidden">{cad.frame.leftDock}</div>
-    <div className="flex min-h-0 flex-col overflow-x-hidden overflow-y-auto border-t border-border [&_h3]:text-xs [&_h3]:font-semibold" data-cad-dock="pmi">
+    <ScrollArea barShown className="border-t border-border" data-cad-dock="pmi">
       <ToolStackContext.Provider value={PMI_DOCKED}>{pmiSection}</ToolStackContext.Provider>
-    </div>
+    </ScrollArea>
   </div> : cad.frame.leftDock;
 
   return <RendererShell shell={shell} tools={strip} subToolbar={measuring ? <MeasurementsBar measure={measure} /> : null} sidebar={sidebar} previewView={previewView}

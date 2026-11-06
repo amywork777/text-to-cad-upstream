@@ -25,7 +25,7 @@ export default function EditLayoutSwitch({ value, onChange, disabled = false }) 
       const chosen = value === option.value;
       return <TooltipHint key={option.value} content={option.hint}>
         <button type="button" role="radio" aria-checked={chosen} disabled={disabled && !chosen}
-          className={cn("flex h-5 items-center rounded px-2 text-tiny leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40",
+          className={cn("flex h-5 items-center rounded px-2 text-tiny leading-none text-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40",
             chosen && "bg-background text-foreground shadow-sm ring-1 ring-border")}
           onClick={() => { if (!chosen) onChange(option.value); }}>{option.label}</button>
       </TooltipHint>;

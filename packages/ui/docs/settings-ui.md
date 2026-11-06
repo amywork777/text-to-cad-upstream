@@ -601,7 +601,11 @@ Its panels follow these rules:
   `TOOL_PANEL_HEADING_TEXT_CLASS`), 28px tall, 8px in: a title, a summary where there is one,
   then at its right end its own actions, the chevron where it folds (up while open, down while
   folded) and an X where it has something to remove. Every small button in a heading is 20px,
-  2px apart and 4px from the edge.
+  2px apart and 4px from the edge. In CAD mode's left dock the FeatureManager and PMI share one
+  panel head instead (`DOCK_PANEL_HEAD_CLASS`): 28px, 8px in, the words as written, its glyphs
+  ending 8px from the right edge. The tracked-caps headings inside PMI sit a level below it, and
+  every heading and row of the dock starts on the same 8px edge. The tree takes up to 75% of the
+  column; PMI stays open and scrolls in the rest.
 
 - **Surfaces.** Three, defined once (`lib/floatingSurface.js`), with one border: the
   tool strip, its sub-toolbars and the stack's panels, which stay up beside the model, share

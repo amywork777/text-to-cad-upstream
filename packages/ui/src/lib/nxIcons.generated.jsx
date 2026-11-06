@@ -112,8 +112,8 @@ const SPRITE = (
         <stop offset="1" stopColor="var(--nx-blue, #2C7197)" />
       </linearGradient>
       <linearGradient id="nx-bside" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stopColor="#D3DAE2" />
-        <stop offset="1" stopColor="#AFB9C5" />
+        <stop offset="0" stopColor="var(--nx-blue, #2C7197)" />
+        <stop offset="1" stopColor="var(--nx-blue, #2C7197)" />
       </linearGradient>
     </defs>
     <symbol id="nx-check" viewBox="0 0 12 12">
@@ -135,11 +135,11 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-extrude" viewBox="0 0 32 32">
       <g transform="translate(16 15.5)">
-        <path d="M0 -4 L12 2 L12 6 L0 12 L-12 6 L-12 2 Z" fill="#AFB9C5" />
-        <path d="M0 -4 L12 2 L0 8 L-12 2 Z" fill="#F4F6F9" />
-        <path d="M-12 2 L0 8 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 2 L0 8 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -4 L12 2 L12 6 L0 12 L-12 6 L-12 2 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -4 L12 2 L12 6 L0 12 L-12 6 L-12 2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -4 L12 2 L0 8 L-12 2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 2 L0 8 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 2 L0 8 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -4 L12 2 L12 6 L0 12 L-12 6 L-12 2 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M0 -7 L6 -4 L6 2 L0 5 L-6 2 L-6 -4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M0 -7 L6 -4 L0 -1 L-6 -4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M-6 -4 L0 -1 L0 5 L-6 2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
@@ -150,23 +150,14 @@ const SPRITE = (
       </g>
     </symbol>
     <symbol id="nx-cut" viewBox="0 0 32 32">
-      <defs>
-        <clipPath id="nx-cut-c0">
-          <path d="M0 -6.5 L7 -3 L0 0.5 L-7 -3 Z" />
-        </clipPath>
-      </defs>
       <g transform="translate(16 15)">
-        <path d="M0 -9 L12 -3 L12 6 L0 12 L-12 6 L-12 -3 Z" fill="#AFB9C5" />
-        <path d="M0 -9 L12 -3 L0 3 L-12 -3 Z" fill="#F4F6F9" />
-        <path d="M-12 -3 L0 3 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 -3 L0 3 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -9 L12 -3 L12 6 L0 12 L-12 6 L-12 -3 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <g clipPath="url(#nx-cut-c0)">
-          <path d="M0 -0.5 L7 3 L0 6.5 L-7 3 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-          <path d="M0 -6.5 L7 -3 L7 3 L0 -0.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-          <path d="M0 -6.5 L-7 -3 L-7 3 L0 -0.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        </g>
-        <path d="M0 -6.5 L7 -3 L0 0.5 L-7 -3 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -9 L12 -3 L12 6 L0 12 L-12 6 L-12 -3 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -9 L12 -3 L0 3 L-12 -3 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 -3 L0 3 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 -3 L0 3 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -9 L12 -3 L12 6 L0 12 L-12 6 L-12 -3 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6.5 L7 -3 L0 0.5 L-7 -3 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M0 -10 L0 2.5" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M0 2.5 L-2.5 -1.9 L2.5 -1.9 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M0 -10 L0 -1.1" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
       </g>
@@ -186,40 +177,26 @@ const SPRITE = (
       </g>
     </symbol>
     <symbol id="nx-revolve-cut" viewBox="0 0 32 32">
-      <defs>
-        <clipPath id="nx-revolve-cut-c0">
-          <ellipse cx="0" cy="-1" rx="7.5" ry="3.75" />
-        </clipPath>
-      </defs>
       <g transform="translate(16 15)">
-        <path d="M0 -7 L12 -1 L12 6 L0 12 L-12 6 L-12 -1 Z" fill="#AFB9C5" />
-        <path d="M0 -7 L12 -1 L0 5 L-12 -1 Z" fill="#F4F6F9" />
-        <path d="M-12 -1 L0 5 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 -1 L0 5 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -7 L12 -1 L12 6 L0 12 L-12 6 L-12 -1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <ellipse cx="0" cy="-1" rx="7.5" ry="3.75" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <ellipse cx="0" cy="2.6" rx="7.5" ry="3.75" fill="#39424D" clipPath="url(#nx-revolve-cut-c0)" />
-        <ellipse cx="0" cy="-1" rx="7.5" ry="3.75" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -7 L12 -1 L12 6 L0 12 L-12 6 L-12 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -7 L12 -1 L0 5 L-12 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 -1 L0 5 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 -1 L0 5 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -7 L12 -1 L12 6 L0 12 L-12 6 L-12 -1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <ellipse cx="0" cy="-1" rx="7.5" ry="3.75" fill="var(--nx-line, #ffffff)" />
         <path d="M0 -1 L0 -10" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2.2 1.6" />
         <path d="M-5.8 -7.22 L-5.64 -6.97 L-5.44 -6.73 L-5.2 -6.5 L-4.91 -6.28 L-4.6 -6.07 L-4.24 -5.88 L-3.86 -5.7 L-3.44 -5.54 L-3 -5.4 L-2.54 -5.28 L-2.05 -5.18 L-1.55 -5.1 L-1.04 -5.05 L-0.52 -5.01 L0 -5 L0.52 -5.01 L1.04 -5.05 L1.55 -5.1 L2.05 -5.18 L2.54 -5.28 L3 -5.4 L3.44 -5.54 L3.86 -5.7 L4.24 -5.88 L4.6 -6.07 L4.91 -6.28 L5.2 -6.5 L5.44 -6.73 L5.64 -6.97 L5.8 -7.22 L5.91 -7.48 L5.98 -7.74 L6 -8 L5.98 -8.26 L5.91 -8.52" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M4.91 -9.72 L8.91 -8.52 L5.83 -5.66 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
       </g>
     </symbol>
     <symbol id="nx-hole" viewBox="0 0 32 32">
-      <defs>
-        <clipPath id="nx-hole-c0">
-          <ellipse cx="0" cy="-2" rx="5.4" ry="2.7" />
-        </clipPath>
-      </defs>
       <g transform="translate(16 14)">
-        <path d="M0 -8 L12 -2 L12 6 L0 12 L-12 6 L-12 -2 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L12 -2 L0 4 L-12 -2 Z" fill="#F4F6F9" />
-        <path d="M-12 -2 L0 4 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 -2 L0 4 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L12 -2 L12 6 L0 12 L-12 6 L-12 -2 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <ellipse cx="0" cy="-2" rx="5.4" ry="2.7" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <ellipse cx="0" cy="1.4" rx="5.4" ry="2.7" fill="#39424D" clipPath="url(#nx-hole-c0)" />
-        <ellipse cx="0" cy="-2" rx="5.4" ry="2.7" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -8 L12 -2 L12 6 L0 12 L-12 6 L-12 -2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L12 -2 L0 4 L-12 -2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 -2 L0 4 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 -2 L0 4 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L12 -2 L12 6 L0 12 L-12 6 L-12 -2 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <ellipse cx="0" cy="-2" rx="5.4" ry="2.7" fill="var(--nx-line, #ffffff)" />
       </g>
     </symbol>
     <symbol id="nx-blend" viewBox="0 0 32 32">
@@ -230,22 +207,22 @@ const SPRITE = (
         </linearGradient>
       </defs>
       <g transform="translate(16 15)">
-        <path d="M0 -10 L12 -4 L12 6 L0 12 L-12 6 L-12 2.5 L-11.88 1.17 L-11.51 -0.23 L-10.9 -1.66 L-10.1 -3.05 L-9.11 -4.35 L-7.99 -5.51 L-6.77 -6.49 L-5.5 -7.25 Z" fill="#AFB9C5" />
-        <path d="M0 -10 L12 -4 L6.5 -1.25 L-5.5 -7.25 Z" fill="#F4F6F9" />
-        <path d="M-12 2.5 L0 8.5 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 -4 L12 6 L0 12 L0 8.5 L0.12 7.17 L0.49 5.77 L1.1 4.34 L1.9 2.95 L2.89 1.65 L4.01 0.49 L5.23 -0.49 L6.5 -1.25 Z" fill="#AFB9C5" />
-        <path d="M0 -10 L12 -4 L12 6 L0 12 L-12 6 L-12 2.5 L-11.88 1.17 L-11.51 -0.23 L-10.9 -1.66 L-10.1 -3.05 L-9.11 -4.35 L-7.99 -5.51 L-6.77 -6.49 L-5.5 -7.25 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -10 L12 -4 L12 6 L0 12 L-12 6 L-12 2.5 L-11.88 1.17 L-11.51 -0.23 L-10.9 -1.66 L-10.1 -3.05 L-9.11 -4.35 L-7.99 -5.51 L-6.77 -6.49 L-5.5 -7.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -10 L12 -4 L6.5 -1.25 L-5.5 -7.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 2.5 L0 8.5 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 -4 L12 6 L0 12 L0 8.5 L0.12 7.17 L0.49 5.77 L1.1 4.34 L1.9 2.95 L2.89 1.65 L4.01 0.49 L5.23 -0.49 L6.5 -1.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -10 L12 -4 L12 6 L0 12 L-12 6 L-12 2.5 L-11.88 1.17 L-11.51 -0.23 L-10.9 -1.66 L-10.1 -3.05 L-9.11 -4.35 L-7.99 -5.51 L-6.77 -6.49 L-5.5 -7.25 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-5.5 -7.25 L-6.77 -6.49 L-7.99 -5.51 L-9.11 -4.35 L-10.1 -3.05 L-10.9 -1.66 L-11.51 -0.23 L-11.88 1.17 L-12 2.5 L0 8.5 L0.12 7.17 L0.49 5.77 L1.1 4.34 L1.9 2.95 L2.89 1.65 L4.01 0.49 L5.23 -0.49 L6.5 -1.25 Z" fill="url(#nx-blend-g0)" />
         <path d="M-5.5 -7.25 L-6.77 -6.49 L-7.99 -5.51 L-9.11 -4.35 L-10.1 -3.05 L-10.9 -1.66 L-11.51 -0.23 L-11.88 1.17 L-12 2.5 L0 8.5 L0.12 7.17 L0.49 5.77 L1.1 4.34 L1.9 2.95 L2.89 1.65 L4.01 0.49 L5.23 -0.49 L6.5 -1.25 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-chamfer" viewBox="0 0 32 32">
       <g transform="translate(16 15)">
-        <path d="M0 -10 L12 -4 L12 6 L0 12 L-12 6 L-12 2.5 L-5.5 -7.25 Z" fill="#AFB9C5" />
-        <path d="M0 -10 L12 -4 L6.5 -1.25 L-5.5 -7.25 Z" fill="#F4F6F9" />
-        <path d="M-12 2.5 L0 8.5 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 -4 L12 6 L0 12 L0 8.5 L6.5 -1.25 Z" fill="#AFB9C5" />
-        <path d="M0 -10 L12 -4 L12 6 L0 12 L-12 6 L-12 2.5 L-5.5 -7.25 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -10 L12 -4 L12 6 L0 12 L-12 6 L-12 2.5 L-5.5 -7.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -10 L12 -4 L6.5 -1.25 L-5.5 -7.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 2.5 L0 8.5 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 -4 L12 6 L0 12 L0 8.5 L6.5 -1.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -10 L12 -4 L12 6 L0 12 L-12 6 L-12 2.5 L-5.5 -7.25 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-5.5 -7.25 L-12 2.5 L0 8.5 L6.5 -1.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M-5.5 -7.25 L-12 2.5 L0 8.5 L6.5 -1.25 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
@@ -283,13 +260,13 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-rib" viewBox="0 0 32 32">
       <g transform="translate(16 16)">
-        <path d="M0 -12 L2 -11 L2 -1 L12 4 L12 6 L0 12 L-12 6 L-12 -6 Z" fill="#AFB9C5" />
-        <path d="M0 -12 L2 -11 L-10 -5 L-12 -6 Z" fill="#F4F6F9" />
-        <path d="M2 -1 L12 4 L0 10 L-10 5 Z" fill="#F4F6F9" />
-        <path d="M2 -11 L-10 -5 L-10 5 L2 -1 Z" fill="#AFB9C5" />
-        <path d="M12 4 L0 10 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M-12 6 L0 12 L0 10 L-10 5 L-10 -5 L-12 -6 Z" fill="#D3DAE2" />
-        <path d="M0 -12 L2 -11 L2 -1 L12 4 L12 6 L0 12 L-12 6 L-12 -6 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -12 L2 -11 L2 -1 L12 4 L12 6 L0 12 L-12 6 L-12 -6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -12 L2 -11 L-10 -5 L-12 -6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M2 -1 L12 4 L0 10 L-10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M2 -11 L-10 -5 L-10 5 L2 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 4 L0 10 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 6 L0 12 L0 10 L-10 5 L-10 -5 L-12 -6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -12 L2 -11 L2 -1 L12 4 L12 6 L0 12 L-12 6 L-12 -6 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-5 2.5 L3.5 6.75 L-5 -6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M-3 -7 L-5 -6 L3.5 6.75 L5.5 5.75 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M-3 -7 L5.5 5.75 L3.5 6.75 L-5 2.5 L-5 -6 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
@@ -297,11 +274,11 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-pattern" viewBox="0 0 32 32">
       <g transform="translate(16 12)">
-        <path d="M0 -2 L13 4.5 L13 6.5 L0 13 L-13 6.5 L-13 4.5 Z" fill="#AFB9C5" />
-        <path d="M0 -2 L13 4.5 L0 11 L-13 4.5 Z" fill="#F4F6F9" />
-        <path d="M-13 4.5 L0 11 L0 13 L-13 6.5 Z" fill="#D3DAE2" />
-        <path d="M13 4.5 L0 11 L0 13 L13 6.5 Z" fill="#AFB9C5" />
-        <path d="M0 -2 L13 4.5 L13 6.5 L0 13 L-13 6.5 L-13 4.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -2 L13 4.5 L13 6.5 L0 13 L-13 6.5 L-13 4.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -2 L13 4.5 L0 11 L-13 4.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-13 4.5 L0 11 L0 13 L-13 6.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M13 4.5 L0 11 L0 13 L13 6.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -2 L13 4.5 L13 6.5 L0 13 L-13 6.5 L-13 4.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-2.8 -3.1 L-2.8 1.4 A2.8 1.4 0 0 0 2.8 1.4 L2.8 -3.1 Z" fill="url(#nx-fside)" />
         <ellipse cx="0" cy="-3.1" rx="2.8" ry="1.4" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M-2.8 -3.1 L-2.8 1.4 A2.8 1.4 0 0 0 2.8 1.4 L2.8 -3.1 A2.8 1.4 0 0 0 -2.8 -3.1" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
@@ -382,47 +359,47 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-split" viewBox="0 0 32 32">
       <g transform="translate(15.5 14)">
-        <path d="M0 -8 L5 -5.5 L5 2.5 L-6 8 L-11 5.5 L-11 -2.5 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L5 -5.5 L-6 0 L-11 -2.5 Z" fill="#F4F6F9" />
-        <path d="M-11 -2.5 L-6 0 L-6 8 L-11 5.5 Z" fill="#D3DAE2" />
-        <path d="M5 -5.5 L-6 0 L-6 8 L5 2.5 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L5 -5.5 L5 2.5 L-6 8 L-11 5.5 L-11 -2.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -8 L5 -5.5 L5 2.5 L-6 8 L-11 5.5 L-11 -2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L5 -5.5 L-6 0 L-11 -2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-11 -2.5 L-6 0 L-6 8 L-11 5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M5 -5.5 L-6 0 L-6 8 L5 2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L5 -5.5 L5 2.5 L-6 8 L-11 5.5 L-11 -2.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M8 3 L-7 10.5 L-7 -0.5 L8 -8 Z" fill="var(--nx-blue, #2C7197)" fillOpacity=".85" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M8 3 L-7 10.5 L-7 -0.5 L8 -8 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M7 -4.5 L12 -2 L12 6 L1 11.5 L-4 9 L-4 1 Z" fill="#AFB9C5" />
-        <path d="M7 -4.5 L12 -2 L1 3.5 L-4 1 Z" fill="#F4F6F9" />
-        <path d="M-4 1 L1 3.5 L1 11.5 L-4 9 Z" fill="#D3DAE2" />
-        <path d="M12 -2 L1 3.5 L1 11.5 L12 6 Z" fill="#AFB9C5" />
-        <path d="M7 -4.5 L12 -2 L12 6 L1 11.5 L-4 9 L-4 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M7 -4.5 L12 -2 L12 6 L1 11.5 L-4 9 L-4 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M7 -4.5 L12 -2 L1 3.5 L-4 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-4 1 L1 3.5 L1 11.5 L-4 9 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 -2 L1 3.5 L1 11.5 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M7 -4.5 L12 -2 L12 6 L1 11.5 L-4 9 L-4 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-delete" viewBox="0 0 32 32">
       <g transform="translate(15 14)">
-        <path d="M0 -8 L11 -2.5 L11 5.5 L0 11 L-11 5.5 L-11 -2.5 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L11 -2.5 L0 3 L-11 -2.5 Z" fill="#F4F6F9" />
-        <path d="M-11 -2.5 L0 3 L0 11 L-11 5.5 Z" fill="#D3DAE2" />
-        <path d="M11 -2.5 L0 3 L0 11 L11 5.5 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L11 -2.5 L11 5.5 L0 11 L-11 5.5 L-11 -2.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -8 L11 -2.5 L11 5.5 L0 11 L-11 5.5 L-11 -2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L11 -2.5 L0 3 L-11 -2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-11 -2.5 L0 3 L0 11 L-11 5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M11 -2.5 L0 3 L0 11 L11 5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L11 -2.5 L11 5.5 L0 11 L-11 5.5 L-11 -2.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <circle cx="7.5" cy="7" r="5.2" fill="#39424D" stroke="#fff" strokeWidth="1.4" />
         <path d="M5.4 4.9 L9.6 9.1 M9.6 4.9 L5.4 9.1" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
       </g>
     </symbol>
     <symbol id="nx-body" viewBox="0 0 32 32">
       <g transform="translate(16 14.5)">
-        <path d="M0 -9 L12 -3 L12 6 L0 12 L-12 6 L-12 -3 Z" fill="#AFB9C5" />
-        <path d="M0 -9 L12 -3 L0 3 L-12 -3 Z" fill="#F4F6F9" />
-        <path d="M-12 -3 L0 3 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 -3 L0 3 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -9 L12 -3 L12 6 L0 12 L-12 6 L-12 -3 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -9 L12 -3 L12 6 L0 12 L-12 6 L-12 -3 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -9 L12 -3 L0 3 L-12 -3 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 -3 L0 3 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 -3 L0 3 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -9 L12 -3 L12 6 L0 12 L-12 6 L-12 -3 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-offset-face" viewBox="0 0 32 32">
       <g transform="translate(16 16)">
-        <path d="M0 -6 L11 -0.5 L11 5.5 L0 11 L-11 5.5 L-11 -0.5 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L11 -0.5 L0 5 L-11 -0.5 Z" fill="#F4F6F9" />
-        <path d="M-11 -0.5 L0 5 L0 11 L-11 5.5 Z" fill="#D3DAE2" />
-        <path d="M11 -0.5 L0 5 L0 11 L11 5.5 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L11 -0.5 L11 5.5 L0 11 L-11 5.5 L-11 -0.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L11 -0.5 L11 5.5 L0 11 L-11 5.5 L-11 -0.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L11 -0.5 L0 5 L-11 -0.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-11 -0.5 L0 5 L0 11 L-11 5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M11 -0.5 L0 5 L0 11 L11 5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L11 -0.5 L11 5.5 L0 11 L-11 5.5 L-11 -0.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M0 -9 L11 -3.5 L11 -0.5 L0 5 L-11 -0.5 L-11 -3.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M0 -9 L11 -3.5 L0 2 L-11 -3.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M-11 -3.5 L0 2 L0 5 L-11 -0.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
@@ -434,13 +411,13 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-delete-face" viewBox="0 0 32 32">
       <g transform="translate(15 14)">
-        <path d="M0 -8 L11 -2.5 L11 5.5 L0 11 L-11 5.5 L-11 -2.5 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L11 -2.5 L0 3 L-11 -2.5 Z" fill="#F4F6F9" />
-        <path d="M-11 -2.5 L0 3 L0 11 L-11 5.5 Z" fill="#D3DAE2" />
-        <path d="M11 -2.5 L0 3 L0 11 L11 5.5 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L11 -2.5 L11 5.5 L0 11 L-11 5.5 L-11 -2.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -8 L11 -2.5 L11 5.5 L0 11 L-11 5.5 L-11 -2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L11 -2.5 L0 3 L-11 -2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-11 -2.5 L0 3 L0 11 L-11 5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M11 -2.5 L0 3 L0 11 L11 5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M11 -2.5 L0 3 L0 11 L11 5.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -8 L11 -2.5 L11 5.5 L0 11 L-11 5.5 L-11 -2.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M11 -2.5 L0 3 L0 11 L11 5.5 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M11 -2.5 L0 3 L0 11 L11 5.5 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <circle cx="7.5" cy="7" r="5.2" fill="#39424D" stroke="#fff" strokeWidth="1.4" />
         <path d="M5.4 4.9 L9.6 9.1 M9.6 4.9 L5.4 9.1" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
       </g>
@@ -462,12 +439,12 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-annotate" viewBox="0 0 32 32">
       <g transform="translate(14 14)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M-9 1 Q-3.5 0.25 -3 1.25 Q-2.5 2.25 0.5 1.75 Q3.5 1.25 4.25 2.12 L5 3" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-9 1 Q-3.5 0.25 -3 1.25 Q-2.5 2.25 0.5 1.75 Q3.5 1.25 4.25 2.12 L5 3" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M5 3 L8.44 1.35 L6.65 -0.44 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M6.65 -0.44 L7.05 -2.3 L10.44 -5.7 L11.53 -4.61 L8.13 -1.22 L7.25 0.16 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M7.25 0.16 L8.13 -1.22 L11.53 -4.61 L12.61 -3.53 L9.22 -0.13 L7.84 0.75 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
@@ -478,12 +455,12 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-annotate-highlighter" viewBox="0 0 32 32">
       <g transform="translate(13 15)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M-7.5 0.25 L7 1" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="4.4" strokeOpacity=".45" strokeLinecap="butt" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-7.5 0.25 L7 1" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="4.4" strokeOpacity=".6" strokeLinecap="butt" />
         <path d="M6.11 0.11 L8.88 0.9 L10.44 -0.65 L8.65 -2.44 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M8.65 -2.44 L9.05 -4.3 L12.44 -7.7 L13.53 -6.61 L10.13 -3.22 L9.25 -1.84 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M9.25 -1.84 L10.13 -3.22 L13.53 -6.61 L14.61 -5.53 L11.22 -2.13 L9.84 -1.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
@@ -494,13 +471,13 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-annotate-eraser" viewBox="0 0 32 32">
       <g transform="translate(14.5 13.5)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M-9 1 Q-3.5 0.25 -3 1.25 L-2.5 2.25" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M-2.5 2.25 Q3.5 1.25 4.25 2.12 L5 3" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="2.2 1.6" opacity="0.6" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-9 1 Q-3.5 0.25 -3 1.25 L-2.5 2.25" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M-2.5 2.25 Q3.5 1.25 4.25 2.12 L5 3" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="2.2 1.6" opacity="0.6" />
         <path d="M2.38 0.38 L5.92 -3.15 L11.15 2.08 L7.62 5.62 Z" fill="#fff" />
         <path d="M5.92 -3.15 L10.16 -7.39 L11.91 -5.65 L7.66 -1.41 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M7.66 -1.41 L11.91 -5.65 L13.65 -3.91 L9.41 0.34 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
@@ -511,85 +488,88 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-shapes" viewBox="0 0 32 32">
       <g transform="translate(16 15)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M-2 -2 L5 1.5 L-2 5 L-9 1.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-2 -2 L5 1.5 L-2 5 L-9 1.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1.7" strokeLinejoin="round" />
+        <path d="M12.5 -9.5 L5 -1.2" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M5 -1.2 L6.02 -6.21 L9.88 -2.72 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M12.5 -9.5 L7.41 -3.87" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </g>
     </symbol>
     <symbol id="nx-shapes-rectangle" viewBox="0 0 32 32">
       <g transform="translate(16 12.5)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M-1 -2.5 L7 1.5 L0 5 L-8 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.9" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-1 -2.5 L7 1.5 L0 5 L-8 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
       </g>
     </symbol>
     <symbol id="nx-shapes-line" viewBox="0 0 32 32">
       <g transform="translate(16 12.5)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M-8 0.5 L8 1.5" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-8 0.5 L8 1.5" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
       </g>
     </symbol>
     <symbol id="nx-shapes-arrow" viewBox="0 0 32 32">
       <g transform="translate(16 15)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M11 -10.5 L1.5 0.5" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M1.5 0.5 L2.52 -4.96 L6.76 -1.3 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M11 -10.5 L4.11 -2.53" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
       </g>
     </symbol>
     <symbol id="nx-shapes-ellipse" viewBox="0 0 32 32">
       <g transform="translate(16 12.5)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <ellipse cx="0" cy="1" rx="7.4" ry="3.7" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.9" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <ellipse cx="0" cy="1" rx="7.4" ry="3.7" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
       </g>
     </symbol>
     <symbol id="nx-shapes-text" viewBox="0 0 32 32">
       <g transform="translate(16 14.5)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-5 -9 H5 M0 -9 V3" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="4.2" strokeLinecap="round" />
         <path d="M-5 -9 H5 M0 -9 V3" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="2.6" strokeLinecap="round" />
       </g>
     </symbol>
     <symbol id="nx-select" viewBox="0 0 32 32">
       <g transform="translate(15 10.5)">
-        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="#F4F6F9" />
-        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="#D3DAE2" />
-        <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M3.5 4.5 L3.5 15.1 L6.2 12.6 L8 16.7 L9.9 15.9 L8.1 11.9 L11.7 11.9 Z" fill="#fff" />
         <path d="M3.5 4.5 L3.5 15.1 L6.2 12.6 L8 16.7 L9.9 15.9 L8.1 11.9 L11.7 11.9 Z" fill="none" stroke="#39424D" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-measure" viewBox="0 0 32 32">
       <g transform="translate(16 16)">
-        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="#F4F6F9" />
-        <path d="M-12 0 L0 6 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 0 L0 6 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 0 L0 6 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 0 L0 6 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-12 -1.5 L-12 -11.7" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M12 -1.5 L12 -11.7" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M-12 -9.5 L-8.6 -11.5 L-8.6 -7.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
@@ -609,21 +589,21 @@ const SPRITE = (
         </clipPath>
       </defs>
       <g transform="translate(16 14)">
-        <path d="M6 -5 L12 -2 L12 6 L0 12 L-6 9 L-6 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" strokeDasharray="1.6 1.4" />
-        <path d="M0 -8 L6 -5 L6 3 L-6 9 L-12 6 L-12 -2 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L6 -5 L-6 1 L-12 -2 Z" fill="#F4F6F9" />
-        <path d="M-12 -2 L-6 1 L-6 9 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M6 -5 L-6 1 L-6 9 L6 3 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L6 -5 L6 3 L-6 9 L-12 6 L-12 -2 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M6 -5 L12 -2 L12 6 L0 12 L-6 9 L-6 1 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" strokeDasharray="1.6 1.4" />
+        <path d="M0 -8 L6 -5 L6 3 L-6 9 L-12 6 L-12 -2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L6 -5 L-6 1 L-12 -2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 -2 L-6 1 L-6 9 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M6 -5 L-6 1 L-6 9 L6 3 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L6 -5 L6 3 L-6 9 L-12 6 L-12 -2 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M6 -5 L-6 1 L-6 9 L6 3 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <g clipPath="url(#nx-section-c0)">
-          <path d="M12 -10 L2 5" stroke="var(--nx-blue, #2C7197)" strokeWidth=".9" />
-          <path d="M9 -8.5 L-1 6.5" stroke="var(--nx-blue, #2C7197)" strokeWidth=".9" />
-          <path d="M6 -7 L-4 8" stroke="var(--nx-blue, #2C7197)" strokeWidth=".9" />
-          <path d="M3 -5.5 L-7 9.5" stroke="var(--nx-blue, #2C7197)" strokeWidth=".9" />
-          <path d="M0 -4 L-10 11" stroke="var(--nx-blue, #2C7197)" strokeWidth=".9" />
-          <path d="M-3 -2.5 L-13 12.5" stroke="var(--nx-blue, #2C7197)" strokeWidth=".9" />
-          <path d="M-6 -1 L-16 14" stroke="var(--nx-blue, #2C7197)" strokeWidth=".9" />
+          <path d="M12 -10 L2 5" stroke="var(--nx-line, #ffffff)" strokeWidth=".9" />
+          <path d="M9 -8.5 L-1 6.5" stroke="var(--nx-line, #ffffff)" strokeWidth=".9" />
+          <path d="M6 -7 L-4 8" stroke="var(--nx-line, #ffffff)" strokeWidth=".9" />
+          <path d="M3 -5.5 L-7 9.5" stroke="var(--nx-line, #ffffff)" strokeWidth=".9" />
+          <path d="M0 -4 L-10 11" stroke="var(--nx-line, #ffffff)" strokeWidth=".9" />
+          <path d="M-3 -2.5 L-13 12.5" stroke="var(--nx-line, #ffffff)" strokeWidth=".9" />
+          <path d="M-6 -1 L-16 14" stroke="var(--nx-line, #ffffff)" strokeWidth=".9" />
         </g>
         <path d="M6 -5 L-6 1 L-6 9 L6 3 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M8 3.5 L-8 11.5 L-8 0.5 L8 -7.5 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
@@ -631,28 +611,28 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-exploded" viewBox="0 0 32 32">
       <g transform="translate(16 15.5)">
-        <path d="M0 -4 L11 1.5 L11 5.5 L0 11 L-11 5.5 L-11 1.5 Z" fill="#AFB9C5" />
-        <path d="M0 -4 L11 1.5 L0 7 L-11 1.5 Z" fill="#F4F6F9" />
-        <path d="M-11 1.5 L0 7 L0 11 L-11 5.5 Z" fill="#D3DAE2" />
-        <path d="M11 1.5 L0 7 L0 11 L11 5.5 Z" fill="#AFB9C5" />
-        <path d="M0 -4 L11 1.5 L11 5.5 L0 11 L-11 5.5 L-11 1.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -4 L11 1.5 L11 5.5 L0 11 L-11 5.5 L-11 1.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -4 L11 1.5 L0 7 L-11 1.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-11 1.5 L0 7 L0 11 L-11 5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M11 1.5 L0 7 L0 11 L11 5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -4 L11 1.5 L11 5.5 L0 11 L-11 5.5 L-11 1.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M6 1.5 L6 -3" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1.6 1.4" />
         <path d="M0 4.5 L0 0" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1.6 1.4" />
         <path d="M-6 1.5 L-6 -3" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1.6 1.4" />
-        <path d="M0 -10 L6 -7 L6 -3 L0 0 L-6 -3 L-6 -7 Z" fill="#AFB9C5" />
-        <path d="M0 -10 L6 -7 L0 -4 L-6 -7 Z" fill="#F4F6F9" />
-        <path d="M-6 -7 L0 -4 L0 0 L-6 -3 Z" fill="#D3DAE2" />
-        <path d="M6 -7 L0 -4 L0 0 L6 -3 Z" fill="#AFB9C5" />
-        <path d="M0 -10 L6 -7 L6 -3 L0 0 L-6 -3 L-6 -7 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -10 L6 -7 L6 -3 L0 0 L-6 -3 L-6 -7 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -10 L6 -7 L0 -4 L-6 -7 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-6 -7 L0 -4 L0 0 L-6 -3 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M6 -7 L0 -4 L0 0 L6 -3 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -10 L6 -7 L6 -3 L0 0 L-6 -3 L-6 -7 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-measure-bodies" viewBox="0 0 32 32">
       <g transform="translate(16 14)">
-        <path d="M0 -8 L12 -2 L12 6 L0 12 L-12 6 L-12 -2 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L12 -2 L0 4 L-12 -2 Z" fill="#F4F6F9" />
-        <path d="M-12 -2 L0 4 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 -2 L0 4 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -8 L12 -2 L12 6 L0 12 L-12 6 L-12 -2 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -8 L12 -2 L12 6 L0 12 L-12 6 L-12 -2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L12 -2 L0 4 L-12 -2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 -2 L0 4 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 -2 L0 4 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -8 L12 -2 L12 6 L0 12 L-12 6 L-12 -2 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <circle cx="0" cy="1.5" r="5" fill="#fff" />
         <path d="M0 1.5 V-3.5 A5 5 0 0 1 5 1.5 Z M0 1.5 V6.5 A5 5 0 0 1 -5 1.5 Z" fill="#39424D" />
         <circle cx="0" cy="1.5" r="5" fill="none" stroke="#39424D" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
@@ -660,47 +640,47 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-draft-analysis" viewBox="0 0 32 32">
       <g transform="translate(16 17)">
-        <path d="M0 -5.4 L6.8 -2 L12 6 L0 12 L-12 6 L-6.8 -2 Z" fill="#AFB9C5" />
-        <path d="M0 -5.4 L6.8 -2 L0 1.4 L-6.8 -2 Z" fill="#F4F6F9" />
+        <path d="M0 -5.4 L6.8 -2 L12 6 L0 12 L-12 6 L-6.8 -2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5.4 L6.8 -2 L0 1.4 L-6.8 -2 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M-6.8 -2 L0 1.4 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M6.8 -2 L0 1.4 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M0 -5.4 L6.8 -2 L12 6 L0 12 L-12 6 L-6.8 -2 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -5.4 L6.8 -2 L12 6 L0 12 L-12 6 L-6.8 -2 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M0 -13.5 L2.5 -9.1 L-2.5 -9.1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M0 -2 L0 -9.9" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
       </g>
     </symbol>
     <symbol id="nx-interference" viewBox="0 0 32 32">
       <g transform="translate(16 14)">
-        <path d="M0 -9.5 L8 -5.5 L8 4 L0 8 L-8 4 L-8 -5.5 Z" fill="#AFB9C5" />
-        <path d="M0 -9.5 L8 -5.5 L0 -1.5 L-8 -5.5 Z" fill="#F4F6F9" />
-        <path d="M-8 -5.5 L0 -1.5 L0 8 L-8 4 Z" fill="#D3DAE2" />
-        <path d="M8 -5.5 L0 -1.5 L0 8 L8 4 Z" fill="#AFB9C5" />
-        <path d="M0 -9.5 L8 -5.5 L8 4 L0 8 L-8 4 L-8 -5.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M0 -1.5 L9.5 3.25 L9.5 8.25 L0 13 L-9.5 8.25 L-9.5 3.25 Z" fill="#AFB9C5" />
-        <path d="M0 -1.5 L9.5 3.25 L0 8 L-9.5 3.25 Z" fill="#F4F6F9" />
-        <path d="M-9.5 3.25 L0 8 L0 13 L-9.5 8.25 Z" fill="#D3DAE2" />
-        <path d="M9.5 3.25 L0 8 L0 13 L9.5 8.25 Z" fill="#AFB9C5" />
-        <path d="M0 -1.5 L9.5 3.25 L9.5 8.25 L0 13 L-9.5 8.25 L-9.5 3.25 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M0 -1.5 L4.5 0.75 L4.5 5.75 L0 8 L-4.5 5.75 L-4.5 0.75 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M0 -1.5 L4.5 0.75 L0 3 L-4.5 0.75 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M-4.5 0.75 L0 3 L0 8 L-4.5 5.75 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M4.5 0.75 L0 3 L0 8 L4.5 5.75 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M0 -1.5 L4.5 0.75 L4.5 5.75 L0 8 L-4.5 5.75 L-4.5 0.75 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M0 -9.5 L8 -5.5 L8 -1 L0 3 L-8 -1 L-8 -5.5 Z" fill="#AFB9C5" />
-        <path d="M0 -9.5 L8 -5.5 L0 -1.5 L-8 -5.5 Z" fill="#F4F6F9" />
-        <path d="M-8 -5.5 L0 -1.5 L0 3 L-8 -1 Z" fill="#D3DAE2" />
-        <path d="M8 -5.5 L0 -1.5 L0 3 L8 -1 Z" fill="#AFB9C5" />
-        <path d="M0 -9.5 L8 -5.5 L8 -1 L0 3 L-8 -1 L-8 -5.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -9.5 L8 -5.5 L8 4 L0 8 L-8 4 L-8 -5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -9.5 L8 -5.5 L0 -1.5 L-8 -5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-8 -5.5 L0 -1.5 L0 8 L-8 4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M8 -5.5 L0 -1.5 L0 8 L8 4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -9.5 L8 -5.5 L8 4 L0 8 L-8 4 L-8 -5.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -1.5 L9.5 3.25 L9.5 8.25 L0 13 L-9.5 8.25 L-9.5 3.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -1.5 L9.5 3.25 L0 8 L-9.5 3.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-9.5 3.25 L0 8 L0 13 L-9.5 8.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M9.5 3.25 L0 8 L0 13 L9.5 8.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -1.5 L9.5 3.25 L9.5 8.25 L0 13 L-9.5 8.25 L-9.5 3.25 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -1.5 L4.5 0.75 L4.5 5.75 L0 8 L-4.5 5.75 L-4.5 0.75 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M0 -1.5 L4.5 0.75 L0 3 L-4.5 0.75 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M-4.5 0.75 L0 3 L0 8 L-4.5 5.75 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M4.5 0.75 L0 3 L0 8 L4.5 5.75 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M0 -1.5 L4.5 0.75 L4.5 5.75 L0 8 L-4.5 5.75 L-4.5 0.75 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -9.5 L8 -5.5 L8 -1 L0 3 L-8 -1 L-8 -5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -9.5 L8 -5.5 L0 -1.5 L-8 -5.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-8 -5.5 L0 -1.5 L0 3 L-8 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M8 -5.5 L0 -1.5 L0 3 L8 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -9.5 L8 -5.5 L8 -1 L0 3 L-8 -1 L-8 -5.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-compare" viewBox="0 0 32 32">
       <g transform="translate(16 13.5)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M6.5 -6.25 L11 -4 L11 1 L6.5 3.25 L2 1 L2 -4 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" strokeDasharray="1.6 1.4" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M6.5 -6.25 L11 -4 L11 1 L6.5 3.25 L2 1 L2 -4 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" strokeDasharray="1.6 1.4" />
         <path d="M-5.5 -6.75 L-0.5 -4.25 L-0.5 0.75 L-6 3.5 L-11 1 L-11 -4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M-5.5 -6.75 L-0.5 -4.25 L-6 -1.5 L-11 -4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M-11 -4 L-6 -1.5 L-6 3.5 L-11 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
@@ -712,13 +692,13 @@ const SPRITE = (
       <defs>
         <linearGradient id="nx-appearance-g0" gradientUnits="userSpaceOnUse" x1="-5" y1="-6" x2="6" y2="8">
           <stop offset="0" stopColor="#FFFFFF" />
-          <stop offset="0.35" stopColor="#D3DAE2" />
-          <stop offset="1" stopColor="#AFB9C5" />
+          <stop offset="0.35" stopColor="var(--nx-blue, #2C7197)" />
+          <stop offset="1" stopColor="var(--nx-blue, #2C7197)" />
         </linearGradient>
       </defs>
       <g transform="translate(16 16)">
         <circle cx="0" cy="0" r="10.5" fill="url(#nx-appearance-g0)" />
-        <circle cx="0" cy="0" r="10.5" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <circle cx="0" cy="0" r="10.5" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M5.5 -1 C5.5 -1 1.5 3.6 1.5 6.2 A4 4 0 0 0 9.5 6.2 C9.5 3.6 5.5 -1 5.5 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M5.5 -1 C5.5 -1 1.5 3.6 1.5 6.2 A4 4 0 0 0 9.5 6.2 C9.5 3.6 5.5 -1 5.5 -1 Z" fill="none" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
       </g>
@@ -739,36 +719,29 @@ const SPRITE = (
     <symbol id="nx-drawing" viewBox="0 0 32 32">
       <g transform="translate(16 16)">
         <path d="M-12 -9 L12 -9 L12 9 L-12 9 Z" fill="#fff" />
-        <path d="M-12 -9 L12 -9 L12 9 L-12 9 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M3 4 L12 4 L12 9 L3 9 Z" fill="#F4F6F9" />
-        <path d="M3 4 L12 4 L12 9 L3 9 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M3 6.5 L12 6.5" fill="none" stroke="#66727F" strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M-5.5 -6.25 L0.5 -3.25 L0.5 1.25 L-5.5 4.25 L-11.5 1.25 L-11.5 -3.25 Z" fill="#AFB9C5" />
-        <path d="M-5.5 -6.25 L0.5 -3.25 L-5.5 -0.25 L-11.5 -3.25 Z" fill="#F4F6F9" />
-        <path d="M-11.5 -3.25 L-5.5 -0.25 L-5.5 4.25 L-11.5 1.25 Z" fill="#D3DAE2" />
-        <path d="M0.5 -3.25 L-5.5 -0.25 L-5.5 4.25 L0.5 1.25 Z" fill="#AFB9C5" />
-        <path d="M-5.5 -6.25 L0.5 -3.25 L0.5 1.25 L-5.5 4.25 L-11.5 1.25 L-11.5 -3.25 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-12 -9 L12 -9 L12 9 L-12 9 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M3 4 L12 4 L12 9 L3 9 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M3 4 L12 4 L12 9 L3 9 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M3 6.5 L12 6.5" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M-5.5 -6.25 L0.5 -3.25 L0.5 1.25 L-5.5 4.25 L-11.5 1.25 L-11.5 -3.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-5.5 -6.25 L0.5 -3.25 L-5.5 -0.25 L-11.5 -3.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-11.5 -3.25 L-5.5 -0.25 L-5.5 4.25 L-11.5 1.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0.5 -3.25 L-5.5 -0.25 L-5.5 4.25 L0.5 1.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-5.5 -6.25 L0.5 -3.25 L0.5 1.25 L-5.5 4.25 L-11.5 1.25 L-11.5 -3.25 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-assembly-constraints" viewBox="0 0 32 32">
-      <defs>
-        <clipPath id="nx-assembly-constraints-c0">
-          <ellipse cx="0" cy="1" rx="3.6" ry="1.8" />
-        </clipPath>
-      </defs>
       <g transform="translate(16 17)">
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="#F4F6F9" />
-        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <ellipse cx="0" cy="1" rx="3.6" ry="1.8" fill="#AFB9C5" />
-        <ellipse cx="0" cy="3.4" rx="3.6" ry="1.8" fill="#39424D" clipPath="url(#nx-assembly-constraints-c0)" />
-        <ellipse cx="0" cy="1" rx="3.6" ry="1.8" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L0 7 L-12 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 1 L0 7 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 1 L0 7 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -5 L12 1 L12 6 L0 12 L-12 6 L-12 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <ellipse cx="0" cy="1" rx="3.6" ry="1.8" fill="var(--nx-line, #ffffff)" />
         <path d="M0 1 L0 -14" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2.2 1.6" />
         <path d="M-3.6 -9.5 L-3.6 -4 A3.6 1.8 0 0 0 3.6 -4 L3.6 -9.5 Z" fill="url(#nx-bside)" />
-        <ellipse cx="0" cy="-9.5" rx="3.6" ry="1.8" fill="#F4F6F9" />
-        <path d="M-3.6 -9.5 L-3.6 -4 A3.6 1.8 0 0 0 3.6 -4 L3.6 -9.5 A3.6 1.8 0 0 0 -3.6 -9.5" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <ellipse cx="0" cy="-9.5" rx="3.6" ry="1.8" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-3.6 -9.5 L-3.6 -4 A3.6 1.8 0 0 0 3.6 -4 L3.6 -9.5 A3.6 1.8 0 0 0 -3.6 -9.5" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M6.5 -2.5 L4.5 -5.9 L8.5 -5.9 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M6.5 -12 L6.5 -5.1" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </g>
@@ -776,7 +749,7 @@ const SPRITE = (
     <symbol id="nx-expressions" viewBox="0 0 32 32">
       <g transform="translate(16 16)">
         <path d="M-11.5 -8 L11.5 -8 L11.5 8 L-11.5 8 Z" fill="#fff" />
-        <path d="M-11.5 -8 L11.5 -8 L11.5 8 L-11.5 8 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-11.5 -8 L11.5 -8 L11.5 8 L-11.5 8 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-8 -3 L-3 3" fill="none" stroke="#39424D" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M-3 -3 L-8 3" fill="none" stroke="#39424D" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M-0.5 -1.6 L3.5 -1.6" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -799,90 +772,91 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-select-face" viewBox="0 0 32 32">
       <g transform="translate(16 13.5)">
-        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="#F4F6F9" />
-        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="#D3DAE2" />
-        <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M1 -1.5 L1 9.1 L3.7 6.6 L5.5 10.7 L7.4 9.9 L5.6 5.9 L9.2 5.9 Z" fill="#fff" />
         <path d="M1 -1.5 L1 9.1 L3.7 6.6 L5.5 10.7 L7.4 9.9 L5.6 5.9 L9.2 5.9 Z" fill="none" stroke="#39424D" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-select-edge" viewBox="0 0 32 32">
       <g transform="translate(15 12)">
-        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="#F4F6F9" />
-        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="#D3DAE2" />
-        <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M10 -1 L0 4" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M10 -1 L0 4" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M4 2 L4 12.6 L6.7 10.1 L8.5 14.2 L10.4 13.4 L8.6 9.4 L12.2 9.4 Z" fill="#fff" />
         <path d="M4 2 L4 12.6 L6.7 10.1 L8.5 14.2 L10.4 13.4 L8.6 9.4 L12.2 9.4 Z" fill="none" stroke="#39424D" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-select-face-group" viewBox="0 0 32 32">
       <g transform="translate(16 11)">
-        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="#F4F6F9" />
-        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="#D3DAE2" />
-        <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-4 3.5 L-4 14.1 L-1.3 11.6 L0.5 15.7 L2.4 14.9 L0.6 10.9 L4.2 10.9 Z" fill="#fff" />
         <path d="M-4 3.5 L-4 14.1 L-1.3 11.6 L0.5 15.7 L2.4 14.9 L0.6 10.9 L4.2 10.9 Z" fill="none" stroke="#39424D" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-select-edge-group" viewBox="0 0 32 32">
       <g transform="translate(15 12)">
-        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="#F4F6F9" />
-        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="#D3DAE2" />
-        <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M0 -6 L10 -1 L0 4 L-10 -1 L0 -6" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M4 2 L4 12.6 L6.7 10.1 L8.5 14.2 L10.4 13.4 L8.6 9.4 L12.2 9.4 Z" fill="#fff" />
-        <path d="M4 2 L4 12.6 L6.7 10.1 L8.5 14.2 L10.4 13.4 L8.6 9.4 L12.2 9.4 Z" fill="none" stroke="#39424D" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      </g>
-    </symbol>
-    <symbol id="nx-select-body" viewBox="0 0 32 32">
-      <g transform="translate(15 10.5)">
         <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L10 -1 L0 4 L-10 -1 L0 -6" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M4 2 L4 12.6 L6.7 10.1 L8.5 14.2 L10.4 13.4 L8.6 9.4 L12.2 9.4 Z" fill="#fff" />
+        <path d="M4 2 L4 12.6 L6.7 10.1 L8.5 14.2 L10.4 13.4 L8.6 9.4 L12.2 9.4 Z" fill="none" stroke="#39424D" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </g>
+    </symbol>
+    <symbol id="nx-select-body" viewBox="0 0 32 32">
+      <g transform="translate(16 12.5)">
+        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L10 -1 L0 4 L-10 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-10 -1 L0 4 L0 10 L-10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M10 -1 L0 4 L0 10 L10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L10 -1 L10 5 L0 10 L-10 5 L-10 -1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -9.5 L14 -2.5 L14 6.5 L0 13.5 L-14 6.5 L-14 -2.5 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M3.5 4.5 L3.5 15.1 L6.2 12.6 L8 16.7 L9.9 15.9 L8.1 11.9 L11.7 11.9 Z" fill="#fff" />
         <path d="M3.5 4.5 L3.5 15.1 L6.2 12.6 L8 16.7 L9.9 15.9 L8.1 11.9 L11.7 11.9 Z" fill="none" stroke="#39424D" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-select-part" viewBox="0 0 32 32">
       <g transform="translate(16 13)">
-        <path d="M0 -4 L13 2.5 L13 5 L0 11.5 L-13 5 L-13 2.5 Z" fill="#AFB9C5" />
-        <path d="M0 -4 L13 2.5 L0 9 L-13 2.5 Z" fill="#F4F6F9" />
-        <path d="M-13 2.5 L0 9 L0 11.5 L-13 5 Z" fill="#D3DAE2" />
-        <path d="M13 2.5 L0 9 L0 11.5 L13 5 Z" fill="#AFB9C5" />
-        <path d="M0 -4 L13 2.5 L13 5 L0 11.5 L-13 5 L-13 2.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M0 -7 L7 -3.5 L7 2.5 L0 6 L-7 2.5 L-7 -3.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M0 -7 L7 -3.5 L0 0 L-7 -3.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M-7 -3.5 L0 0 L0 6 L-7 2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M7 -3.5 L0 0 L0 6 L7 2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M0 -7 L7 -3.5 L7 2.5 L0 6 L-7 2.5 L-7 -3.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -4 L13 2.5 L13 5 L0 11.5 L-13 5 L-13 2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -4 L13 2.5 L0 9 L-13 2.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-13 2.5 L0 9 L0 11.5 L-13 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M13 2.5 L0 9 L0 11.5 L13 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -4 L13 2.5 L13 5 L0 11.5 L-13 5 L-13 2.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -7 L7 -3.5 L7 2.5 L0 6 L-7 2.5 L-7 -3.5 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M0 -7 L7 -3.5 L0 0 L-7 -3.5 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M-7 -3.5 L0 0 L0 6 L-7 2.5 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M7 -3.5 L0 0 L0 6 L7 2.5 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M0 -7 L7 -3.5 L7 2.5 L0 6 L-7 2.5 L-7 -3.5 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M2.5 0.5 L2.5 11.1 L5.2 8.6 L7 12.7 L8.9 11.9 L7.1 7.9 L10.7 7.9 Z" fill="#fff" />
         <path d="M2.5 0.5 L2.5 11.1 L5.2 8.6 L7 12.7 L8.9 11.9 L7.1 7.9 L10.7 7.9 Z" fill="none" stroke="#39424D" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-select-position" viewBox="0 0 32 32">
       <g transform="translate(16 12)">
-        <path d="M0 -4 L10 1 L10 5 L0 10 L-10 5 L-10 1 Z" fill="#AFB9C5" />
-        <path d="M0 -4 L10 1 L0 6 L-10 1 Z" fill="#F4F6F9" />
-        <path d="M-10 1 L0 6 L0 10 L-10 5 Z" fill="#D3DAE2" />
-        <path d="M10 1 L0 6 L0 10 L10 5 Z" fill="#AFB9C5" />
-        <path d="M0 -4 L10 1 L10 5 L0 10 L-10 5 L-10 1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -4 L10 1 L10 5 L0 10 L-10 5 L-10 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -4 L10 1 L0 6 L-10 1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-10 1 L0 6 L0 10 L-10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M10 1 L0 6 L0 10 L10 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -4 L10 1 L10 5 L0 10 L-10 5 L-10 1 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-9 -4 A9 4.5 0 0 0 7.8 -1.75" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.5" strokeLinecap="round" />
         <path d="M9.6 -4.6 L9.54 -0.38 L5.82 -2.73 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <circle cx="-3.5" cy="0.15" r="2.6" fill="#fff" />
@@ -893,11 +867,11 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-measure-vertex" viewBox="0 0 32 32">
       <g transform="translate(16 16)">
-        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="#F4F6F9" />
-        <path d="M-12 0 L0 6 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 0 L0 6 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 0 L0 6 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 0 L0 6 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-12 -1.5 L-12 -11.7" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M12 -1.5 L12 -11.7" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M-12 -9.5 L-8.6 -11.5 L-8.6 -7.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
@@ -912,12 +886,12 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-measure-edge" viewBox="0 0 32 32">
       <g transform="translate(16 16)">
-        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="#F4F6F9" />
-        <path d="M-12 0 L0 6 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 0 L0 6 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M-12 0 L0 6" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 0 L0 6 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 0 L0 6 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-12 0 L0 6" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M-12 -1.5 L-12 -11.7" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M12 -1.5 L12 -11.7" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M-12 -9.5 L-8.6 -11.5 L-8.6 -7.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
@@ -928,13 +902,13 @@ const SPRITE = (
     </symbol>
     <symbol id="nx-measure-face" viewBox="0 0 32 32">
       <g transform="translate(16 16)">
-        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="#F4F6F9" />
-        <path d="M-12 0 L0 6 L0 12 L-12 6 Z" fill="#D3DAE2" />
-        <path d="M12 0 L0 6 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
-        <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-12 0 L0 6 L0 12 L-12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 0 L0 6 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -6 L12 0 L12 6 L0 12 L-12 6 L-12 0 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="var(--nx-line, #ffffff)" />
+        <path d="M0 -6 L12 0 L0 6 L-12 0 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M-12 -1.5 L-12 -11.7" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M12 -1.5 L12 -11.7" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M-12 -9.5 L-8.6 -11.5 L-8.6 -7.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
@@ -944,39 +918,32 @@ const SPRITE = (
       </g>
     </symbol>
     <symbol id="nx-part" viewBox="0 0 32 32">
-      <defs>
-        <clipPath id="nx-part-c0">
-          <ellipse cx="1.5" cy="4.25" rx="2.4" ry="1.2" />
-        </clipPath>
-      </defs>
       <g transform="translate(16 15)">
-        <path d="M0 -10 L2.5 -8.75 L2.5 -1.25 L12 3.5 L12 6 L0 12 L-12 6 L-12 -4 Z" fill="#AFB9C5" />
-        <path d="M0 -10 L2.5 -8.75 L-9.5 -2.75 L-12 -4 Z" fill="#F4F6F9" />
-        <path d="M2.5 -1.25 L12 3.5 L0 9.5 L-9.5 4.75 Z" fill="#F4F6F9" />
-        <path d="M2.5 -8.75 L-9.5 -2.75 L-9.5 4.75 L2.5 -1.25 Z" fill="#AFB9C5" />
-        <path d="M12 3.5 L0 9.5 L0 12 L12 6 Z" fill="#AFB9C5" />
-        <path d="M-12 6 L0 12 L0 9.5 L-9.5 4.75 L-9.5 -2.75 L-12 -4 Z" fill="#D3DAE2" />
-        <path d="M0 -10 L2.5 -8.75 L2.5 -1.25 L12 3.5 L12 6 L0 12 L-12 6 L-12 -4 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <ellipse cx="1.5" cy="4.25" rx="2.4" ry="1.2" fill="#AFB9C5" />
-        <ellipse cx="1.5" cy="5.85" rx="2.4" ry="1.2" fill="#39424D" clipPath="url(#nx-part-c0)" />
-        <ellipse cx="1.5" cy="4.25" rx="2.4" ry="1.2" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -10 L2.5 -8.75 L2.5 -1.25 L12 3.5 L12 6 L0 12 L-12 6 L-12 -4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -10 L2.5 -8.75 L-9.5 -2.75 L-12 -4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M2.5 -1.25 L12 3.5 L0 9.5 L-9.5 4.75 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M2.5 -8.75 L-9.5 -2.75 L-9.5 4.75 L2.5 -1.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M12 3.5 L0 9.5 L0 12 L12 6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-12 6 L0 12 L0 9.5 L-9.5 4.75 L-9.5 -2.75 L-12 -4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -10 L2.5 -8.75 L2.5 -1.25 L12 3.5 L12 6 L0 12 L-12 6 L-12 -4 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <ellipse cx="1.5" cy="4.25" rx="2.4" ry="1.2" fill="var(--nx-line, #ffffff)" />
       </g>
     </symbol>
     <symbol id="nx-assembly" viewBox="0 0 32 32">
       <g transform="translate(16 13)">
-        <path d="M0 -2.5 L13 4 L13 6.5 L0 13 L-13 6.5 L-13 4 Z" fill="#AFB9C5" />
-        <path d="M0 -2.5 L13 4 L0 10.5 L-13 4 Z" fill="#F4F6F9" />
-        <path d="M-13 4 L0 10.5 L0 13 L-13 6.5 Z" fill="#D3DAE2" />
-        <path d="M13 4 L0 10.5 L0 13 L13 6.5 Z" fill="#AFB9C5" />
-        <path d="M0 -2.5 L13 4 L13 6.5 L0 13 L-13 6.5 L-13 4 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M0 -7 L5.5 -4.25 L5.5 1.25 L-5.5 6.75 L-11 4 L-11 -1.5 Z" fill="#AFB9C5" />
-        <path d="M0 -7 L5.5 -4.25 L-5.5 1.25 L-11 -1.5 Z" fill="#F4F6F9" />
-        <path d="M-11 -1.5 L-5.5 1.25 L-5.5 6.75 L-11 4 Z" fill="#D3DAE2" />
-        <path d="M5.5 -4.25 L-5.5 1.25 L-5.5 6.75 L5.5 1.25 Z" fill="#AFB9C5" />
-        <path d="M0 -7 L5.5 -4.25 L5.5 1.25 L-5.5 6.75 L-11 4 L-11 -1.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -2.5 L13 4 L13 6.5 L0 13 L-13 6.5 L-13 4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -2.5 L13 4 L0 10.5 L-13 4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-13 4 L0 10.5 L0 13 L-13 6.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M13 4 L0 10.5 L0 13 L13 6.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -2.5 L13 4 L13 6.5 L0 13 L-13 6.5 L-13 4 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -7 L5.5 -4.25 L5.5 1.25 L-5.5 6.75 L-11 4 L-11 -1.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -7 L5.5 -4.25 L-5.5 1.25 L-11 -1.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-11 -1.5 L-5.5 1.25 L-5.5 6.75 L-11 4 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M5.5 -4.25 L-5.5 1.25 L-5.5 6.75 L5.5 1.25 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -7 L5.5 -4.25 L5.5 1.25 L-5.5 6.75 L-11 4 L-11 -1.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M0.2 -0.1 L0.2 5.9 A2.6 1.3 0 0 0 5.4 5.9 L5.4 -0.1 Z" fill="url(#nx-bside)" />
-        <ellipse cx="2.8" cy="-0.1" rx="2.6" ry="1.3" fill="#F4F6F9" />
-        <path d="M0.2 -0.1 L0.2 5.9 A2.6 1.3 0 0 0 5.4 5.9 L5.4 -0.1 A2.6 1.3 0 0 0 0.2 -0.1" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <ellipse cx="2.8" cy="-0.1" rx="2.6" ry="1.3" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0.2 -0.1 L0.2 5.9 A2.6 1.3 0 0 0 5.4 5.9 L5.4 -0.1 A2.6 1.3 0 0 0 0.2 -0.1" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-move" viewBox="0 0 32 32">
@@ -1292,28 +1259,28 @@ const SPRITE = (
         <path d="M8 5 L8 -1" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1.6 1.4" />
         <path d="M0 9 L0 3" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1.6 1.4" />
         <path d="M-8 5 L-8 -1" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1.6 1.4" />
-        <path d="M0 -10 L8 -6 L8 -1 L0 3 L-8 -1 L-8 -6 Z" fill="#AFB9C5" />
-        <path d="M0 -10 L8 -6 L0 -2 L-8 -6 Z" fill="#F4F6F9" />
-        <path d="M-8 -6 L0 -2 L0 3 L-8 -1 Z" fill="#D3DAE2" />
-        <path d="M8 -6 L0 -2 L0 3 L8 -1 Z" fill="#AFB9C5" />
-        <path d="M0 -10 L8 -6 L8 -1 L0 3 L-8 -1 L-8 -6 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -10 L8 -6 L8 -1 L0 3 L-8 -1 L-8 -6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -10 L8 -6 L0 -2 L-8 -6 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-8 -6 L0 -2 L0 3 L-8 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M8 -6 L0 -2 L0 3 L8 -1 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -10 L8 -6 L8 -1 L0 3 L-8 -1 L-8 -6 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-sketch-intersection" viewBox="0 0 32 32">
       <g transform="translate(16 16)">
-        <path d="M0 -3.5 L8 0.5 L8 5 L0 9 L-8 5 L-8 0.5 Z" fill="#AFB9C5" />
-        <path d="M0 -3.5 L8 0.5 L0 4.5 L-8 0.5 Z" fill="#F4F6F9" />
-        <path d="M-8 0.5 L0 4.5 L0 9 L-8 5 Z" fill="#D3DAE2" />
-        <path d="M8 0.5 L0 4.5 L0 9 L8 5 Z" fill="#AFB9C5" />
-        <path d="M0 -3.5 L8 0.5 L8 5 L0 9 L-8 5 L-8 0.5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -3.5 L8 0.5 L8 5 L0 9 L-8 5 L-8 0.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -3.5 L8 0.5 L0 4.5 L-8 0.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-8 0.5 L0 4.5 L0 9 L-8 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M8 0.5 L0 4.5 L0 9 L8 5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -3.5 L8 0.5 L8 5 L0 9 L-8 5 L-8 0.5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M0 -5.5 L12 0.5 L0 6.5 L-12 0.5 Z" fill="var(--nx-blue, #2C7197)" fillOpacity=".85" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
         <path d="M0 -5.5 L12 0.5 L0 6.5 L-12 0.5 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M0 -9 L8 -5 L8 0.5 L0 4.5 L-8 0.5 L-8 -5 Z" fill="#AFB9C5" />
-        <path d="M0 -9 L8 -5 L0 -1 L-8 -5 Z" fill="#F4F6F9" />
-        <path d="M-8 -5 L0 -1 L0 4.5 L-8 0.5 Z" fill="#D3DAE2" />
-        <path d="M8 -5 L0 -1 L0 4.5 L8 0.5 Z" fill="#AFB9C5" />
-        <path d="M0 -9 L8 -5 L8 0.5 L0 4.5 L-8 0.5 L-8 -5 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d="M8 0.5 L0 4.5 L-8 0.5" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M0 -9 L8 -5 L8 0.5 L0 4.5 L-8 0.5 L-8 -5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -9 L8 -5 L0 -1 L-8 -5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M-8 -5 L0 -1 L0 4.5 L-8 0.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M8 -5 L0 -1 L0 4.5 L8 0.5 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <path d="M0 -9 L8 -5 L8 0.5 L0 4.5 L-8 0.5 L-8 -5 Z" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M8 0.5 L0 4.5 L-8 0.5" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
       </g>
     </symbol>
     <symbol id="nx-sketch-convert-reference" viewBox="0 0 32 32">
