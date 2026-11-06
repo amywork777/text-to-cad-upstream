@@ -757,7 +757,7 @@ B.Shape.faces = _tag_children(_shape_faces)
 
 # The label each model called in this trace came back with, by its address, which is what the
 # viewer's model tree names the part by (`_component_label`).
-LABELS: dict[str, str] = {}
+PART_LABELS: dict[str, str] = {}
 
 # A model inside the tracer is its plain function: calling one (a child in an assembly's body,
 # `child().shape`) runs its body here, as a child runs inside the engine's build, and hands back
@@ -774,7 +774,7 @@ def _traced_call(self):
     if isinstance(made, B.Shape):
         if not made.__dict__.get("label"):
             made.label = self.name
-        LABELS[self.address] = made.label
+        PART_LABELS[self.address] = made.label
     return _engine_api.Document.inside(self, made)
 
 
@@ -1816,7 +1816,7 @@ def _component_label(component):
     """The label a component's own part came back with: its function's name unless its body gave
     it one. The model tree names the part by this, which is how an isolated row finds its part."""
     model = _component_model(component)
-    return LABELS.get(model.address) if model is not None else None
+    return PART_LABELS.get(model.address) if model is not None else None
 
 
 def _bounds(shape):
@@ -1875,7 +1875,7 @@ def trace(request):
     LITERALS.clear()
     FILES.clear()
     STEPS.clear()
-    LABELS.clear()
+    PART_LABELS.clear()
     PLACED.clear()
     SKETCHES.clear()
     OUTSIDE.clear()
