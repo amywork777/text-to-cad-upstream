@@ -641,8 +641,8 @@ const SPRITE = (
       <g transform="translate(16 17)">
         <path d="M0 -5.4 L6.8 -2 L12 6 L0 12 L-12 6 L-6.8 -2 Z" fill="#AFB9C5" />
         <path d="M0 -5.4 L6.8 -2 L0 1.4 L-6.8 -2 Z" fill="#F4F6F9" />
-        <path d="M-6.8 -2 L0 1.4 L0 12 L-12 6 Z" fill="#C4D8F6" />
-        <path d="M6.8 -2 L0 1.4 L0 12 L12 6 Z" fill="#94B6EA" />
+        <path d="M-6.8 -2 L0 1.4 L0 12 L-12 6 Z" fill="#C6DFEE" />
+        <path d="M6.8 -2 L0 1.4 L0 12 L12 6 Z" fill="#8CC4E2" />
         <path d="M0 -5.4 L6.8 -2 L12 6 L0 12 L-12 6 L-6.8 -2 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         <path d="M0 -13.5 L2.5 -9.1 L-2.5 -9.1 Z" fill="#2C7197" />
         <path d="M0 -2 L0 -9.9" fill="none" stroke="#2C7197" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />

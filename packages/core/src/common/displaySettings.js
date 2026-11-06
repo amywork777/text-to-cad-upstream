@@ -22,7 +22,7 @@ export const CAD_DISPLAY_MODE_VALUES = Object.freeze(Object.values(CAD_DISPLAY_M
 
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
 
-export const CAD_EDGE_HIGHLIGHT_COLOR = "#8dc5ff";
+export const CAD_EDGE_HIGHLIGHT_COLOR = "#62b7ec";
 export const CAD_EDGE_CLASS_IDS = Object.freeze(["feature", "tangent", "seam", "degenerate"]);
 
 // Persist only CAD visibility choices; ink is a renderer policy.

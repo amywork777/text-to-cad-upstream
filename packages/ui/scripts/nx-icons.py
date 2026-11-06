@@ -34,7 +34,7 @@ BLUE, BLUE_FILL, DARK = "#2C7197", "#DCECF5", "#39424D"
 # The agent's blue as a material, for what it draws with (Annotate's marker).
 AGENT = dict(top="#A9D5EC", left="#62A6CC", right="#3F87B0", edge="#1F5B7E")
 # Faces as Draft Analysis shades them against the pull, in the direction's blue.
-DRAWS = dict(left="#C4D8F6", right="#94B6EA")
+DRAWS = dict(left="#C6DFEE", right="#8CC4E2")
 DASH = "2.2 1.6"
 CURVE, REFERENCE = 1.8, 1.3  # a sketch curve's width, and a reference line's, dashed
 GHOSTLY = 0.6  # the opacity of a sketch's ghost: what a tool takes away, or what was there before
