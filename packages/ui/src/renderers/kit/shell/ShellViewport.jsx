@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { createInspectEnvironmentResource, INSPECT_ENVIRONMENT_ID } from "@cad/core/common/inspectEnvironment.js";
 import { resolveCadGridSettings } from "@cad/core/common/cadInk.js";
 import { resolveSceneSurfaceLook, scenePhotographicLighting } from "@cad/core/common/sceneSettings.js";
-import { applySceneRig, sceneRigFor } from "@cad/core/lib/viewer/sceneRig.js";
+import { applySceneRig, sceneRigFor, sceneRigInAppearance } from "@cad/core/lib/viewer/sceneRig.js";
 import {
   CAMERA_PROJECTION, normalizeCameraProjection, perspectiveSnapshotMatchesScene, resolvePerspectiveSnapshot
 } from "@cad/core/lib/perspective.js";
@@ -778,9 +778,9 @@ const ShellViewport = forwardRef(function ShellViewport({
 
   // The look: lighting rig or studio, background, floor, grid and axes. A scene that brings its own
   // lighting (`sceneContract.js`'s `rig`, or `rigFor` the look it wears) is lit by it outside
-  // Preview's Render, in place of the theme's lights, its environment the scene's (`sceneRig.js`);
-  // the theme's background, floor and grid stay.
-  const sceneRig = !renderMode ? sceneRigFor(scene, surfaceLook) : null;
+  // Preview's Render, in place of the theme's lights, its environment the scene's (`sceneRig.js`),
+  // a step brighter on the dark canvas; the theme's background, floor and grid stay.
+  const sceneRig = !renderMode ? sceneRigInAppearance(sceneRigFor(scene, surfaceLook), appearance) : null;
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;

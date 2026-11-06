@@ -58,7 +58,7 @@ function Row({ id, depth, icon, title, detail = "", hint = "", expanded = null, 
       <TreeRowChevron expanded={Boolean(expanded)} branch={expanded !== null} />
     </span>
     {check ? <input type="checkbox" checked={check.checked} disabled={check.disabled} aria-label={check.label}
-      className="size-3 shrink-0 cursor-pointer accent-primary disabled:cursor-default"
+      className="size-3 shrink-0 cursor-pointer accent-muted-foreground disabled:cursor-default"
       onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
       onChange={event => check.onChange(event.currentTarget.checked)} /> : null}
     {icon}

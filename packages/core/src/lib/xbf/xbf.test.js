@@ -355,6 +355,23 @@ test("display modes: the edges a mode draws, Hidden line's depth-only surfaces a
   document.release();
 });
 
+test("Solid on the dark canvas: a part drawn darker than it takes the light ink, a lighter one keeps the dark", async () => {
+  const structure = structuredClone(STRUCTURE);
+  structure.instances[0].color = [0.09, 0.11, 0.15, 1];
+  structure.instances[1].color = [0.8, 0.8, 0.8, 1];
+  const document = await loadXbfDocument(URL_BASE, { fetch: engine({ structure }).fetch });
+  const scene = createXbfScene(THREE, document);
+  const feature = at => scene.object3D.children[at].children[0].children.find(child => child.name === "feature edges");
+  const darkParts = { canvas: "#36393f", color: "#c9d3de" };
+  scene.setEdgeLook({ enabled: true, visibility: "visible", color: "#253443", darkParts });
+  assert.equal(feature(0).material.color.getHexString(), "c9d3de", "darker than the canvas");
+  assert.equal(feature(1).material.color.getHexString(), "253443", "lighter than the canvas");
+  scene.setEdgeLook({ enabled: true, visibility: "visible", color: "#253443" });
+  assert.equal(feature(0).material.color.getHexString(), "253443", "the light canvas: the one ink");
+  scene.dispose();
+  document.release();
+});
+
 test("X-ray draws an engine document in linear light, through its rig's half-float frame; every other mode as three draws it", async () => {
   const document = await loadXbfDocument(URL_BASE, { fetch: engine().fetch });
   const scene = createXbfScene(THREE, document);

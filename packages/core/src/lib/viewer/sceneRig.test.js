@@ -8,8 +8,8 @@ import * as THREE from "three";
 
 import { recordingRenderer } from "./__tests__/recordingRenderer.js";
 import {
-  SCENE_RIG_TONE_CURVES, applySceneRig, compileWithSceneRig, drawnOverSurfaces, installSceneRigToneCurve, isSceneRig,
-  renderWithSceneRig, sceneRigFor
+  DARK_CANVAS_EXPOSURE, SCENE_RIG_TONE_CURVES, applySceneRig, compileWithSceneRig, drawnOverSurfaces, installSceneRigToneCurve,
+  isSceneRig, renderWithSceneRig, sceneRigFor, sceneRigInAppearance
 } from "./sceneRig.js";
 
 const IMAGE = Object.freeze({ width: 2, height: 1, data: new Float32Array([1, 1, 1, 1, 2, 2, 2, 1]) });
@@ -221,4 +221,16 @@ test("what a stage compiles before it draws is what it draws: the surfaces' prog
   draws.length = 0;
   await compileWithSceneRig(null, renderer, scene, camera);
   assert.deepEqual(draws, [{ compiled: scene, target: null }]);
+});
+
+test("the dark canvas draws a regular mode's rig a step brighter, and X-ray's and the light canvas's as they are", () => {
+  const lifted = sceneRigInAppearance(RIG, "dark");
+  assert.equal(lifted.exposure, RIG.exposure * DARK_CANVAS_EXPOSURE);
+  assert.equal(isSceneRig(lifted), true);
+  assert.equal(lifted.environment, RIG.environment, "the same image, so the same PMREM");
+  assert.equal(sceneRigInAppearance(RIG, "dark"), lifted, "one rig each time: a stage tells them apart by identity");
+  assert.equal(sceneRigInAppearance(RIG, "light"), RIG);
+  const xray = { ...RIG, blend: "linear" };
+  assert.equal(sceneRigInAppearance(xray, "dark"), xray);
+  assert.equal(sceneRigInAppearance(null, "dark"), null);
 });

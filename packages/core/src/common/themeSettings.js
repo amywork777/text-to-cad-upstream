@@ -2,6 +2,7 @@ import {
   CAMERA_PROJECTION,
   normalizeCameraProjection
 } from "./displaySettings.js";
+import { DARK_CANVAS_EXPOSURE } from "../lib/viewer/sceneRig.js";
 
 export {
   CAD_EDGE_CLASS_IDS,
@@ -913,19 +914,19 @@ const WORKBENCH_BASE_THEME_SETTINGS = Object.freeze({
 // #2c2e31 at its centre to #202226 at its edges), the tools view's canvas a
 // step lighter than that (#36393f) because lit near-black faces land at the
 // stage's own tone and a dark part's silhouette goes with them. Mode
-// overrides can only swap colors, not light intensities, so dark-part
-// visibility is tuned entirely through these colors: lifted ambient and
-// hemisphere-ground fill so shaded faces of dark parts keep their form and
-// a canvas/floor luminance step for silhouette separation. Edges stay deep
-// navy so they read as subtle technical linework on light fills; wireframe
-// display relies on the automatic light-edge contrast fallback.
+// overrides can only swap colors, not light intensities, so these colors
+// lift ambient and hemisphere-ground fill and step the canvas and floor, and
+// the baked dark preset below takes the exposure step of its own. Edges stay
+// deep navy on parts lighter than the canvas; a part darker than it, and a
+// line drawing, take the light ink (`viewSettings.js`).
+export const WORKBENCH_DARK_CANVAS_COLOR = "#36393f";
 const WORKBENCH_DARK_FLOOR_COLOR = "#30333a";
 
 const WORKBENCH_DARK_THEME_SETTINGS = Object.freeze({
   ...WORKBENCH_BASE_THEME_SETTINGS,
   background: {
     ...WORKBENCH_BASE_THEME_SETTINGS.background,
-    solidColor: "#36393f",
+    solidColor: WORKBENCH_DARK_CANVAS_COLOR,
     linearStart: "#2c2e31",
     linearEnd: "#202226",
     radialInner: "#2c2e31",
@@ -950,15 +951,16 @@ const WORKBENCH_LIGHT_THEME_PRESET_SETTINGS = withThemeColorMode(
   WORKBENCH_BASE_THEME_SETTINGS,
   THEME_COLOR_MODES.LIGHT
 );
-// Workbench Dark keeps the shared Workbench materials and lighting intensities,
+// Workbench Dark keeps the shared Workbench materials and light intensities,
 // swapping in the dark canvas/floor/light colors (the same color set the old
 // system theme applied for its dark mode) so the two variants read as one theme
-// on two canvases.
+// on two canvases, and draws a step brighter, as a scene's own rig does there.
 const WORKBENCH_DARK_BAKED_SETTINGS = deepClone(WORKBENCH_BASE_THEME_SETTINGS);
 applyThemeModeColorOverrides(
   WORKBENCH_DARK_BAKED_SETTINGS,
   createThemeModeColors(WORKBENCH_BASE_THEME_SETTINGS, WORKBENCH_DARK_THEME_SETTINGS).dark
 );
+WORKBENCH_DARK_BAKED_SETTINGS.lighting.toneMappingExposure *= DARK_CANVAS_EXPOSURE;
 const WORKBENCH_DARK_THEME_PRESET_SETTINGS = withThemeColorMode(
   WORKBENCH_DARK_BAKED_SETTINGS,
   THEME_COLOR_MODES.DARK
