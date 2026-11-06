@@ -1568,9 +1568,10 @@ annotation left out, with why (`pmiLeftOut`, `{id, part, status, reason}`, each 
 stderr): one the viewer does not draw, a note (a general note, the part's general profile, a flag
 note on annotations alone: the viewer lists it in its notes, a still does not draw it), one whose
 part the picture hides, or a broken one its code never placed.
-`pmi=off` (`display.pmi` false) draws none. PMI is shown only on the parts as made, as the viewer
-shows it: an exploded or posed picture draws none, and asking for it there (`pmi` or
-`pmi=on`, `display.pmi` true), or of a document that carries none, is refused by name. `--view
+A picture draws none unless asked (`pmi` or `pmi=on`, `display.pmi` true), as the viewer opens a
+part clean; `pmi=off` says so outright. PMI is shown only on the parts as made, as the viewer
+shows it: asking for it on an exploded or posed picture, or of a document that carries none, is
+refused by name. `--view
 NAME` (`PART/NAME` where two parts have one; every job's, in a `--job`) draws a part's named view (**PMI**, Views) as the viewer applies it
 (`snapshot.view_of`, `render/pmi.py`'s `view_at`): its camera's direction and up placed by its
 part's first placement the picture shows, fitted as any camera object is; its section as the clip,

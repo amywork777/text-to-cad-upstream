@@ -24,7 +24,10 @@ bake reads.
 dielectric) over its colour, linear, raised to ``colour_power``: squared, which keeps the
 saturated colours of OCCT's Phong look, whose ASPECT material multiplied the colour by itself. A
 part with a material is its colour as authored and its finish: metallic, roughness, IOR, emission
-and alpha, which both renderers draw alike. Anisotropy neither draws: OCCT's raster has no term for
+and alpha, which both renderers draw alike, at least ``least_roughness`` rough: a shaded model is
+read by its form, and a polished metal's mirror shows the studio instead (Preview keeps it as
+authored). No rougher: a wider lobe holds the key's highlight over a whole flat metal face as the
+model turns. Anisotropy neither draws: OCCT's raster has no term for
 it, and the viewer draws OCCT's program (three's bent reflection turned a brushed plate's top, seen
 from above, from the studio's softbox to its dark wall). What else OCCT's raster has no term for,
 the viewer draws and OCCT approximates (``finish.py``): a clear coat (OCCT: the base's roughness
@@ -165,6 +168,7 @@ class Look:
     environment: Environment
     colour_power: float
     plain: Finish
+    least_roughness: float
     brdf: str
     tone: str
     exposure: float
@@ -175,7 +179,7 @@ class Look:
     modes: tuple[Mode, ...]
     grid: Grid
     xray: ColourOnly
-    version: int = field(default=4)
+    version: int = field(default=5)
 
     @property
     def environment_path(self) -> Path:
@@ -198,6 +202,7 @@ class Look:
             "environment": {"url": "/api/v1/look/environment", "intensity": self.environment.intensity},
             "colourPower": self.colour_power,
             "plain": {"metallic": self.plain.metallic, "roughness": self.plain.roughness, "ior": self.plain.ior},
+            "leastRoughness": self.least_roughness,
             "brdf": self.brdf, "tone": self.tone, "exposure": self.exposure, "fill": self.fill,
             "palette": list(self.palette), "edges": {"colours": dict(self.edge_colours), "width": self.edge_width},
             "modes": {mode.name: {"faces": mode.faces, "edges": mode.edges, "opacity": mode.opacity,
@@ -213,10 +218,11 @@ class Look:
 
 LOOK = Look(
     backdrop="#f0f4f9",
-    lights=(Light("key", (-0.35, 0.55, -1.0), 4.0),),
-    environment=Environment("studio.hdr", 0.5),
+    lights=(Light("key", (-0.35, 0.55, -1.0), 2.4),),
+    environment=Environment("studio.hdr", 0.36),
     colour_power=2.0,
     plain=Finish(metallic=0.0, roughness=0.5, ior=1.5),
+    least_roughness=0.15,
     brdf="occt",
     tone="clamp",
     exposure=0.0,

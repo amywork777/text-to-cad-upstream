@@ -242,7 +242,7 @@ function XbfSurface({ view, data }) {
   // A prompt's view, as a STEP's carried its pose and what it hid: the pose Position holds off as
   // built, as `cad snapshot --pose` takes it (`jointValues`), and the parts hidden and isolated as
   // its `--display` takes them (`hidden`, `isolated`), each node as Copy Prompt copies it and the
-  // hidden parts by the fewest nodes that name them, and the PMI where it is off (`pmi`) -- so the
+  // hidden parts by the fewest nodes that name them, and the PMI where it is on (`pmi`) -- so the
   // view ink was drawn in is drawn as it was. While a motion owns the pose, the pose on screen is its frame.
   const positionGiven = useMemo(() => (poseApplied && kinematics && poseValues ? xbfPoseGiven(kinematics, poseValues, poseCouplings) : null),
     [poseApplied, kinematics, poseValues, poseCouplings]);
@@ -256,7 +256,7 @@ function XbfSurface({ view, data }) {
     const refs = ids => xbfNodeRefs({ scene, tree, resource: shellRef.current?.frame.resource, ids });
     const playing = motionRef.current?.enabled && motionRef.current.playing;
     return { jointValues: playing ? motionGiven(motionRef.current.clock.getAnimationClock()) : poseGiven,
-      hidden: refs(xbfCoveringIds(tree, hiddenIds)), isolated: refs(isolatedIds), pmi: !pmiViewRef.current.slice?.off };
+      hidden: refs(xbfCoveringIds(tree, hiddenIds)), isolated: refs(isolatedIds), ...(pmiViewRef.current.drawn ? { pmi: true } : {}) };
   }, [poseGiven, motionGiven, scene, tree, hiddenIds, isolatedIds]);
 
   // ---- this document's own slices of the file's view: the tree and the pose --------------------
@@ -374,7 +374,7 @@ function XbfSurface({ view, data }) {
     hiddenParts: hiddenIds, isolatedParts, selectedKey: pmiPicked, onSelect: setPmiPicked, here: pmiHere });
   const pmiRef = useRef(pmi);
   pmiRef.current = pmi;
-  pmiViewRef.current = { restore: pmi.restore, slice: pmi.slice };
+  pmiViewRef.current = { restore: pmi.restore, slice: pmi.slice, drawn: !pmi.off && pmi.items.length > 0 };
   useEffect(() => { if (viewRestored) shellRef.current?.scheduleStateSave(); }, [viewRestored, pmi.slice]);
 
   // Export writes the document as its code built it: the displayed document and revision alone,

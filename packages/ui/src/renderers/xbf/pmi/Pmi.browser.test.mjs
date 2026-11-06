@@ -37,6 +37,13 @@ async function openBracket(t, options = { edit: withPmi }) {
   const controller = 'window.cadHarness.a.controller';
   const loaded = () => page.waitForFunction(`${controller}?.readState().loading === false`);
   await loaded();
+  // A part opens clean: what these drive is the PMI asked for, by the section's eye, the section left as it was.
+  if (options.revealed !== false) {
+    const section = pane.getByRole('button', { name: 'PMI', exact: true });
+    await section.click();
+    await pane.getByRole('button', { name: 'Reveal PMI', exact: true }).click();
+    await section.click();
+  }
   const canvas = pane.locator('canvas').first();
   const label = id => pane.locator(`[data-pmi-label="${id}"]`);
   // Every label of the PMI drawn, laid out where the camera puts it.
@@ -326,7 +333,7 @@ test('PMI the engine built follows the model through edits: nominals measured an
 // A document with no PMI has no PMI tile. A face's menu offers what it can carry, and a choice
 // opens the PMI section on that kind's form, the face picked: the first annotation is made there.
 test('a file with no PMI has no tile for it, and a face\'s menu starts the first one', async (t) => {
-  const { page, pane, errors, view, loaded } = await openBracket(t, { fixture: 'bracket' });
+  const { page, pane, errors, view, loaded } = await openBracket(t, { fixture: 'bracket', revealed: false });
   await loaded();
   assert.equal(await pane.getByRole('button', { name: 'PMI', exact: true }).count(), 0, 'no tile while there is no PMI');
   await pane.locator('[data-select-filter-trigger]').click();

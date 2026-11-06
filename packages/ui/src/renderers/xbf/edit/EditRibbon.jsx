@@ -31,12 +31,13 @@ const FAMILY_NAMES = Object.freeze({ rectangle: "Rectangle", circle: "Circle", a
 // one the icon generator's (`cadIcons.jsx`, `sketchIcons.jsx`), the view's tools as the strip shows them.
 // The icons take the button's text color, so the palette is grey: under the pointer the workspace's
 // pale ground (`--cad-ws-hover`), and blue only on the command pressed (`PRESSED_CLASS`).
-const BUTTON_CLASS = "flex h-[3.25rem] w-14 shrink-0 flex-col items-center justify-start gap-1 rounded-md pt-1 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-5 [&_svg]:shrink-0";
+const BUTTON_CLASS = "flex h-[3.25rem] w-[4.25rem] shrink-0 flex-col items-center justify-start gap-1 rounded-md pt-1 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-5 [&_svg]:shrink-0";
 const PRESSED_CLASS = "bg-cad-ws-selected text-info hover:bg-cad-ws-selected hover:text-info";
 // Every tool stands on one pitch, its button's width. A long name wraps to two lines under its icon,
-// as SolidWorks' CommandManager sets them, a word too long for the pitch at its edge; without names
-// (`compact`, where not even one named group fits) the buttons narrow to their icons.
-const LABEL_CLASS = "w-full whitespace-normal text-center leading-[1.1] [overflow-wrap:anywhere]";
+// as SolidWorks' CommandManager sets them, at a space or after a slash and never inside a word: the
+// pitch is as wide as the longest word a name has ("Construction"). Without names (`compact`, where not even one named group
+// fits) the buttons narrow to their icons.
+const LABEL_CLASS = "w-full whitespace-normal text-center leading-[1.1]";
 // The view's own controls the frame hands over (Projection, Display, Preview: the strip's small tiles), lit as
 // the toolbar's buttons are: the workspace's pale blue under the pointer, its deeper one while a menu is open.
 const VIEW_CONTROLS_CLASS = "flex shrink-0 items-center gap-0.5 [&_button:hover]:bg-cad-ws-hover [&_button[aria-expanded=true]]:bg-cad-ws-selected";

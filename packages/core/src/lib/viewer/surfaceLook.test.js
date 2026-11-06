@@ -192,6 +192,22 @@ test("authored Standard and Physical finishes survive shaded modes, with reversi
 });
 
 
+test("a look's least roughness eases an authored mirror in its regular modes, and Render keeps it as authored", () => {
+  const material = new THREE.MeshPhysicalMaterial({ color: "#c0c0c0", metalness: 1, roughness: 0 });
+  material.userData.cadAuthoredFinish = true;
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(), material), root = new THREE.Group(); root.add(mesh);
+  const surface = createSurfaceLook(THREE, root);
+  const regular = { materialSettings: INSPECT, authored: false, surface: { style: "shaded", opacity: 1 } };
+  surface.apply({ ...regular, leastRoughness: 0.15 });
+  assert.equal(mesh.material.roughness, 0.15);
+  surface.apply(regular);
+  assert.equal(mesh.material.roughness, 0, "no such look, as authored");
+  surface.apply({ ...regular, authored: true, leastRoughness: 0.15 });
+  assert.equal(mesh.material.roughness, 0);
+  surface.dispose(); mesh.geometry.dispose(); material.dispose();
+});
+
+
 test("an emitting authored finish restores its own glow after X-ray without changing the non-emitting Inspect lift", () => {
   const root = new THREE.Group();
   const emitting = new THREE.MeshPhysicalMaterial({ color: "#336699", metalness: 1, roughness: 0.3,

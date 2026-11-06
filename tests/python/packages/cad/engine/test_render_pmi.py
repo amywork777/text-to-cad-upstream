@@ -441,9 +441,11 @@ if __name__ == "__main__":
 class PmiAskedTest(unittest.TestCase):
     """What a still is asked to draw of the PMI, checked before anything renders: no OpenGL."""
 
-    def test_pmi_is_drawn_by_default_at_rest_and_refused_by_name_where_it_cannot_be(self) -> None:
+    def test_pmi_is_drawn_when_asked_and_refused_by_name_where_it_cannot_be(self) -> None:
         carried, bare = {"pmi": [{"id": "A"}]}, {"name": "box"}
-        self.assertTrue(draws_pmi(Still(), carried, "plate.xbf"))
+        self.assertFalse(draws_pmi(Still(), carried, "plate.xbf"), "the model alone unless asked, as the viewer opens it")
+        self.assertTrue(draws_pmi(Still(display={"pmi": True}), carried, "plate.xbf"))
+        self.assertTrue(draws_pmi(Still(view="A-A"), carried, "plate.xbf"), "a view is its PMI")
         self.assertFalse(draws_pmi(Still(), bare, "box.xbf"), "a document with none draws none, asked for nothing")
         self.assertFalse(draws_pmi(Still(display={"pmi": False}), carried, "plate.xbf"))
         # Moved parts draw none by default, as the viewer shows none; asked for, it is refused.
@@ -612,16 +614,16 @@ class PmiStillTest(unittest.TestCase):
             print(f"GOLDEN {PLATFORM}/{row} {base64.b64encode(drawn).decode()}")
         self.assertLessEqual(share, 0.015, f"{row}: {share:.1%} of its pixels are not the golden's")
 
-    def test_a_still_draws_the_document_s_pmi_unless_asked_not_to(self) -> None:
+    def test_a_still_draws_the_document_s_pmi_when_asked(self) -> None:
         self.assertEqual([entry["id"] for entry in self.structure["pmi"]], [
             "A", "thickness", "hole-from-left", "top-flat", "hole-profile", "general", "edges", "mask"])
         # As tall as the viewer the callouts are drawn for (`overlay.REFERENCE_HEIGHT`): their words full size.
-        drawn, report = self.held.draw(Still(size=(1200, 900)))
+        drawn, report = self.held.draw(Still(size=(1200, 900), display={"pmi": True}))
         note = "a note: the viewer lists it, a still does not draw it"
         self.assertEqual((report["pmi"], report["pmiLeftOut"]), (6, [
             {"id": ident, "part": "plate", "status": "ok", "reason": note} for ident in ("general", "edges")]), report)
         self.golden("pmi", drawn)
-        bare, report_bare = self.held.draw(Still(size=(1200, 900), display={"pmi": False}))
+        bare, report_bare = self.held.draw(Still(size=(1200, 900)))
         self.assertNotIn("pmi", report_bare)
         # The callouts' words are the ink, near black: nothing of the model is as dark. The fit takes
         # the callouts in, so the two pictures are framed apart and only the ink is compared.
@@ -680,7 +682,7 @@ class PmiStillTest(unittest.TestCase):
         held.hold({**twice(self.structure), "version": "twice"}, self.buffers)
         # TURNED stands the plate at x 80 to 120, FLIPPED at x -80 to -20: its callouts beside it.
         for hide, side in (("plate/plate.2", 1), ("plate/plate.1", -1)):
-            _drawn, report = held.draw(Still(size=(320, 240), display={"hidden": [hide]}))
+            _drawn, report = held.draw(Still(size=(320, 240), display={"pmi": True, "hidden": [hide]}))
             self.assertEqual((report["pmi"], len(report["pmiLeftOut"])), (6, 2), hide)
             fitted = held.scenes[False].pmi_points[:, 0] * side
             self.assertGreater(float(fitted.min()), 0, f"{hide} hidden: the callouts and the fit at the other")

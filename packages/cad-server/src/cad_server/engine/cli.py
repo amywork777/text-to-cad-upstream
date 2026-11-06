@@ -122,8 +122,8 @@ def _snapshot_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
                              "dimensions, at its output settings (padding, tightFrame, transparent, renderScale, "
                              "sizeProfile); the other flags override every job")
     parser.add_argument("--display", help="a mode (solid, shaded, parts, xray, hidden-line, wireframe), exploded=AMOUNT "
-                                          "(the parts moved apart, 0 to 1; with a mode: hidden-line,exploded=0.6), pmi=off "
-                                          "(a document's PMI not drawn; pmi or pmi=on asks for it), or "
+                                          "(the parts moved apart, 0 to 1; with a mode: hidden-line,exploded=0.6), pmi or pmi=on "
+                                          "(a document's PMI drawn; none is unless asked, pmi=off says so), or "
                                           "the display JSON object (mode, grid, appearance, camera, clip, exploded, "
                                           "pmi, view, hidden, isolated: part refs the picture leaves out, or alone draws), or "
                                           "a JSON file of it; a drawing takes appearance alone: light or dark, as the word "

@@ -63,10 +63,10 @@ function Warning({ children, ...props }) {
   </p>;
 }
 
-function RowEye({ entry, hidden, onToggle }) {
+function RowEye({ entry, hidden, kept, onToggle }) {
   const { t } = useI18n();
   const action = t(hidden ? "tree.reveal" : "tree.hide");
-  return <div data-row-actions="" className={treeRowActionsClass(hidden)}>
+  return <div data-row-actions="" className={treeRowActionsClass(kept)}>
     <TooltipHint content={action}>
       <Button type="button" variant="ghost" size="icon-xs" aria-label={`${action} ${entry.id}`} aria-pressed={hidden} className="h-5 w-4 text-muted-foreground"
         data-pmi-visibility={entry.id} onClick={event => { event.stopPropagation(); onToggle(entry.key); }}>
@@ -284,7 +284,8 @@ function EntryRow({ entry, pmi, label, rowProps, onSelectRelated, children }) {
         {children}
         {entry.status !== "ok" ? <CircleAlert className={cn("size-3 shrink-0", STATUS_TEXT[entry.status])} aria-label={t(STATUS_KEYS[entry.status])} /> : null}
       </button>
-      {drawnKind(entry) ? <RowEye entry={entry} hidden={hidden} onToggle={pmi.toggleHidden} /> : null}
+      {drawnKind(entry) ? <RowEye entry={entry} kept={hidden} onToggle={pmi.toggleHidden}
+        hidden={hidden || Boolean(pmi.off && !pmi.alone.includes(entry.key))} /> : null}
     </TreeRowSurface>
     {picked ? <EntryDetails entry={entry} pmi={pmi} onSelectRelated={onSelectRelated} /> : null}
   </li>;

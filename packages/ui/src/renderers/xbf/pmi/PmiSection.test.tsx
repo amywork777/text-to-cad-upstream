@@ -2,7 +2,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PmiSection from '../../../../dist/renderers/xbf/pmi/PmiSection.js';
@@ -179,7 +179,7 @@ it('says there is no PMI yet only where a document has none at all, views includ
 
 it("a view's row applies its camera, section and PMI, and a second pick leaves it", () => {
   const { viewer, store, fit } = openMbd();
-  expect(drawnKeys()).toEqual(ALL_DRAWN);
+  expect(drawnKeys()).toEqual([]);
   const row = () => screen.getByRole('button', { name: 'A-A', exact: true });
   fireEvent.click(row());
   expect(row().getAttribute('aria-pressed')).toBe('true');
@@ -195,8 +195,86 @@ it("a view's row applies its camera, section and PMI, and a second pick leaves i
   expect(row().getAttribute('aria-pressed')).toBe('false');
   expect(viewer.setPerspective).toHaveBeenLastCalledWith(BEFORE);
   expect(store.getSnapshot().display.clip).toBeUndefined();
-  expect(drawnKeys()).toEqual(ALL_DRAWN);
+  expect(drawnKeys()).toEqual([]);
   expect(live.constructions.get('0:hole-diameter').label).toEqual([20, 15, 5]);
+});
+
+// The section's eye, as its head (in the file sidebar) presses it.
+const pressEye = () => act(() => live.setOff(!live.off));
+
+it('a part opens clean, every row listed, and the eye shows and hides it all', () => {
+  openMbd();
+  expect(drawnKeys()).toEqual([]);
+  expect(rowsOf('Views')).toHaveLength(2);
+  expect(rowsOf('Annotations').length).toBeGreaterThan(0);
+  expect(live.slice).toEqual({ hidden: [], off: true });
+  pressEye();
+  expect(drawnKeys()).toEqual(ALL_DRAWN);
+  expect(live.slice).toEqual({ hidden: [], off: false });
+  pressEye();
+  expect(drawnKeys()).toEqual([]);
+});
+
+it('a saved slice is respected: shown stays shown, what it hid stays hidden', () => {
+  openMbd();
+  act(() => live.restore({ hidden: ['0:thickness'], off: false }));
+  expect(drawnKeys()).toEqual(ALL_DRAWN.filter(key => key !== '0:thickness'));
+  act(() => live.restore({ hidden: [], off: true }));
+  expect(drawnKeys()).toEqual([]);
+});
+
+it("a view picked shows its own, the file's view still saying off; the eye's word there outlasts the view", () => {
+  openMbd();
+  const row = () => screen.getByRole('button', { name: 'A-A', exact: true });
+  fireEvent.click(row());
+  expect(drawnKeys().length).toBeGreaterThan(0);
+  expect(live.slice.off).toBe(true);
+  pressEye();
+  expect(drawnKeys()).toEqual([]);
+  fireEvent.click(row());
+  expect(drawnKeys()).toEqual([]);
+  fireEvent.click(row());
+  fireEvent.click(row());
+  expect(drawnKeys()).toEqual([]);
+  pressEye();
+  expect(drawnKeys()).toEqual(ALL_DRAWN);
+  fireEvent.click(row());
+  fireEvent.click(row());
+  expect(drawnKeys()).toEqual(ALL_DRAWN);
+});
+
+it("a row's eye shows that one alone while the rest are off, and lets it go", () => {
+  openMbd();
+  const rowEye = () => document.querySelector<HTMLElement>('[data-pmi-visibility="thickness"]')!;
+  expect(rowEye().getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(rowEye());
+  expect(drawnKeys()).toEqual(['0:thickness']);
+  expect(rowEye().getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(rowEye());
+  expect(drawnKeys()).toEqual([]);
+});
+
+it('what a build adds while the part is open is drawn, on a clean part, and only that; a reopen is clean', () => {
+  const store = createViewSettingsStore({ mode: 'solid' });
+  const viewer = { getPerspective: () => BEFORE, setPerspective: () => true };
+  const shown = (structure: any) => <Mbd structure={structure} viewer={viewer} store={store} fit={() => null} />;
+  const before = structuredClone(V4);
+  const { rerender, unmount } = render(shown(before));
+  expect(drawnKeys()).toEqual([]);
+  const thickness = before.pmi.find((entry: any) => entry.id === 'thickness');
+  const after = { ...before, pmi: [...before.pmi, { ...thickness, id: 'just-made' }] };
+  rerender(shown(after));
+  expect(drawnKeys()).toEqual(['0:just-made']);
+  // The rollback bar's body and back: nothing it took away is new again.
+  rerender(shown({ ...after, pmi: after.pmi.filter((entry: any) => entry.id !== 'thickness') }));
+  rerender(shown(after));
+  expect(drawnKeys()).toEqual(['0:just-made']);
+  pressEye();
+  pressEye();
+  expect(drawnKeys()).toEqual([]);
+  unmount();
+  render(shown(after));
+  expect(drawnKeys()).toEqual([]);
 });
 
 it('the coverage checkbox lights the faces with no requirement', () => {

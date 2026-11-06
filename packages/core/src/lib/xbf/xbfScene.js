@@ -837,6 +837,7 @@ export function createXbfScene(THREE, document) {
         const worn = xbfLookXray(next) ? xraySurface : lookSurface;
         lastLook.colorPower = worn.colorPower;
         lastLook.brdf = worn.brdf;
+        lastLook.leastRoughness = worn.leastRoughness;
         if (worn.finishes === false) lastLook.finishes = false;
         lastLook.materialSettings = { ...next.materialSettings, ...worn.materialSettings };
       }
