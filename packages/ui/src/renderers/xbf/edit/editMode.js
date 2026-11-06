@@ -131,7 +131,8 @@ export function featureTree(state) {
   };
   if (state?.components?.length) {
     return { assembly: true, components: state.components.map(component => ({
-      id: `component:${component.file}`, title: `${sizeName(component.name)}<1>`, features: partFeatures(component.features),
+      // By file and part: an assembly's parts can all be written in the one script.
+      id: `component:${component.file}:${component.name}`, title: `${sizeName(component.name)}<1>`, features: partFeatures(component.features),
       // The part's own model, which Open Part opens to model it: its document's id (the engine's
       // `@model`), else the STEP it writes; null for neither.
       document: component.document || null, step: component.step || null, name: sizeName(component.name),

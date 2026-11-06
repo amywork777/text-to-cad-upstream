@@ -42,12 +42,12 @@ function RenameInput({ value, onDone }) {
  * who made it (`authors.js`), its dot at the row's right, said on hover. `role`: "treeitem" for a row
  * of the tree; a row above it (the part's name) has none.
  */
-function Row({ id, depth, icon, title, detail = "", expanded = null, onToggle = null, onActivate = null, selected, onSelect, onHover, muted = false, menu = null,
+function Row({ id, depth, icon, title, detail = "", hint = "", expanded = null, onToggle = null, onActivate = null, selected, onSelect, onHover, muted = false, menu = null,
   slot = null, renaming = null, onRename = null, check = null, warn = null, author = null, role = "treeitem", drag = null }) {
   const active = Boolean(id) && selected === id;
   const detailed = Boolean(detail) && renaming === null;
   const row = <TreeRowSurface as="div" dense active={active} role={role} aria-selected={role === "treeitem" ? active : undefined}
-    aria-expanded={expanded === null ? undefined : expanded} tabIndex={-1} title={warn ? `${BUILD_FAILED}: ${warn}` : undefined}
+    aria-expanded={expanded === null ? undefined : expanded} tabIndex={-1} title={warn ? `${BUILD_FAILED}: ${warn}` : hint || undefined}
     className={`cursor-default select-none ${active ? ROW_SELECTED_CLASS : ROW_HOVER_CLASS}`} style={{ paddingLeft: 4 + depth * (TREE_INDENT_PX + 2) }}
     data-cad-edit-tree-row={id || title} data-cad-edit-bar-slot={slot ?? undefined}
     onClick={() => { if (id) onSelect(id); else onToggle?.(); }}
@@ -393,6 +393,9 @@ export default function EditTree({ edit, tree, onEditSketch = () => {}, onOpenPa
   // An assembly's Mates, as SolidWorks lists them under its parts: each by its name and the parts it
   // places, deleted from its menu (its part goes back where it was).
   const mates = tree.assembly ? edit.state?.mates || [] : [];
+  // A part's Origin opens on its planes; an assembly's stays folded, its parts being what it lists.
+  const datum = tree.assembly ? "assembly-datum" : "datum";
+  const opensAlone = component => Boolean((component.document || component.step) && onOpenPart);
   const mateRows = () => (mates.length ? [
     <Row key="mates" id="mates" depth={1} icon={<MateTreeIcon />} title="Mates" expanded={open.has("mates")} onToggle={toggle("mates")} {...rowProps} />,
     ...(open.has("mates") ? mates.map(mate => <Row key={mate.label} id={`mate:${mate.label}`} depth={2} icon={<MateTreeIcon />}
@@ -419,17 +422,16 @@ export default function EditTree({ edit, tree, onEditSketch = () => {}, onOpenPa
         title={edit.state?.materialName || "Material <not specified>"} onActivate={() => edit.inspect("mass")}
         menu={[{ id: "edit-material", label: "Edit Material", disabled: busy, onSelect: () => edit.inspect("mass") }]} {...rowProps} /> : null}
       {/* The Origin and its planes, before the features. */}
-      <Row id="origin" depth={1} icon={<OriginIcon />} title="Origin" expanded={open.has("datum")} onToggle={toggle("datum")} {...rowProps} />
-      {open.has("datum") ? ORIGIN_PLANES.map(plane => <Row key={plane} id={`plane:${plane}`} depth={2} icon={<PlaneIcon />} title={nxPlane(plane)} {...rowProps} />) : null}
-      {tree.assembly && onOpenPart && tree.components.some(component => component.document || component.step)
-        ? <p className="px-2 py-1 text-tiny leading-4 text-muted-foreground">Double-click a part to isolate and edit it.</p> : null}
+      <Row id="origin" depth={1} icon={<OriginIcon />} title="Origin" expanded={open.has(datum)} onToggle={toggle(datum)} {...rowProps} />
+      {open.has(datum) ? ORIGIN_PLANES.map(plane => <Row key={plane} id={`plane:${plane}`} depth={2} icon={<PlaneIcon />} title={nxPlane(plane)} {...rowProps} />) : null}
       {tree.assembly
         ? tree.components.flatMap(component => [
           // A part of the assembly opens on its own to be modeled, as SolidWorks' Open Part opens it.
           <Row key={component.id} id={component.id} depth={1} icon={<PartIcon />} title={component.title}
-            expanded={open.has(component.id)} onToggle={toggle(component.id)}
-            onActivate={(component.document || component.step) && onOpenPart ? () => onOpenPart(component) : null}
-            menu={(component.document || component.step) && onOpenPart ? [{ id: "open-part", label: "Isolate to edit", onSelect: () => onOpenPart(component) }] : null}
+            hint={opensAlone(component) ? "Double-click to isolate and edit" : ""}
+            expanded={component.features.length ? open.has(component.id) : null} onToggle={component.features.length ? toggle(component.id) : null}
+            onActivate={opensAlone(component) ? () => onOpenPart(component) : null}
+            menu={opensAlone(component) ? [{ id: "open-part", label: "Isolate to edit", onSelect: () => onOpenPart(component) }] : null}
             {...rowProps} />,
           ...(open.has(component.id) ? features(component.features, 2) : []),
         ]).concat(mateRows())

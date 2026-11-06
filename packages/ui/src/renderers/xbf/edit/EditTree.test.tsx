@@ -267,13 +267,38 @@ it("lists an assembly's parts and mates in the tree, under the same header", () 
   };
   render(<EditTree edit={part({ state: stack }) as never} tree={featureTree(stack)} onOpenPart={vi.fn()} />);
   const rows = within(screen.getByRole('tree', { name: 'FeatureManager design tree' })).getAllByRole('treeitem');
-  expect(rows.map(each => each.textContent)).toEqual(['Origin', 'Front Plane', 'Top Plane', 'Right Plane', 'Base<1>', 'Mates', 'Coincident1 (base, pin)']);
+  expect(rows.map(each => each.textContent)).toEqual(['Origin', 'Base<1>', 'Mates', 'Coincident1 (base, pin)']);
   expect(screen.getByText('Stack')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Equations' })).toBeTruthy();
   expect(menuOf('Base<1>')).toEqual(['Isolate to edit']);
   cleanup();
   render(<EditTree edit={part({ state: stack }) as never} tree={featureTree(stack)} onOpenPart={vi.fn()} />);
   expect(menuOf('Coincident1 (base, pin)')).toEqual(['Delete']);
+});
+
+it("keeps one row a part when an assembly's parts are all written in one script, however often they are opened", () => {
+  const plotter = {
+    units: 'mm', name: 'plotter', params: [], rows: [], mates: [],
+    components: [
+      { file: 'plotter.py', name: 'mounting_frame', features: [{ key: 'plotter.py:6', kind: 'Boss-Extrude', name: 'frame', file: 'plotter.py', line: 6 }] },
+      { file: 'plotter.py', name: 'pen_carriage', features: [{ key: 'plotter.py:20', kind: 'Boss-Extrude', name: 'carriage', file: 'plotter.py', line: 20 }] },
+      { file: 'plotter.py', name: 'spacer', features: [] },
+    ],
+  };
+  const tree = featureTree(plotter);
+  const view = render(<EditTree edit={part({ state: plotter, selected: '' }) as never} tree={tree} />);
+  const parts = () => within(screen.getByRole('tree', { name: 'FeatureManager design tree' })).getAllByRole('treeitem')
+    .map(each => each.textContent).filter(text => text?.includes('<1>'));
+  for (let round = 0; round < 4; round += 1) {
+    for (const component of tree.components) {
+      view.rerender(<EditTree edit={part({ state: plotter, selected: component.id }) as never} tree={tree} />);
+      fireEvent.doubleClick(row(component.title));
+    }
+  }
+  expect(parts()).toEqual(['Mounting frame<1>', 'Pen carriage<1>', 'Spacer<1>']);
+  // Selected, it alone is; and a part with no features of its own has nothing to open.
+  expect(screen.getAllByRole('treeitem').filter(each => each.getAttribute('aria-selected') === 'true').length).toBe(1);
+  expect(row('Spacer<1>').hasAttribute('aria-expanded')).toBe(false);
 });
 
 // What the part's script stops with when a fillet cannot be made, as the tracer words it (a real one, its
