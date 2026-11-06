@@ -2,10 +2,9 @@
 """Studio's NX-style icons, drawn from 3D on one isometric grid.
 
 Every icon is built from boxes, cylinders and faces in model space, projected the same way
-(2:1 isometric, 1 unit = 1 px at 32 px) and lit the same way (top lightest, the side facing +y
-mid, the side facing +x darkest), in flat tones of five materials: blue for what a feature
-makes (and what a pick takes), gray for the body it works on, blue for sketches, planes and
-directions, pale blue for datums, the same blue for the agent. A sketch tool is drawn flat, in the sketch's
+(2:1 isometric, 1 unit = 1 px at 32 px), in one flat blue (`--nx-blue`, the theme's) with thin lines
+between its faces, for what a feature makes, sketches, planes, directions, datums and the agent,
+and greys lit the same way for the body it works on. A sketch tool is drawn flat, in the sketch's
 blue, as NX draws its curve tools: its curves, and white handles where its clicks go. Outlines stay
 1 px at every size. Red, amber and green say how something went, so no icon wears them: the check
 is a status mark, not an icon.
@@ -54,6 +53,38 @@ CHECK = (
     f'<symbol id="{PREFIX}check" viewBox="0 0 12 12"><path d="m2.3 6.3 2.4 2.4 5-5.4" fill="none" '
     'stroke="#2e8540" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>'
 )
+
+
+# Every blue is one flat blue, the theme's; lines between its faces take the panel's color, so a
+# solid still reads. Applied to what the icons draw, so the materials above keep their roles.
+ONE_BLUE = "var(--nx-blue, #2C7197)"
+LINE = "var(--nx-line, #ffffff)"
+BLUE_LINES = {FEAT["edge"].upper()}
+BLUE_FACES = {
+    tone.upper()
+    for material in (FEAT, TAN, GHOST, AGENT, DRAWS)
+    for tone in material.values()
+} | {BLUE.upper(), BLUE_FILL.upper(), "#C6DFEE", "#7FB9D9"}
+BLUE_FACES -= BLUE_LINES
+
+
+def flat_blue(markup):
+    """Draws the markup in the one blue, with a thin line round each blue face."""
+
+    def path(match):
+        tag = match.group(0)
+        if "stroke=" not in tag and f'fill="{BLUE_MARK}"' in tag:
+            tag = tag[:-2] + f' stroke="{LINE}" stroke-width=".7" stroke-linejoin="round"/>'
+        return tag
+
+    BLUE_MARK = "\0blue"
+    markup = re.sub(
+        r"#[0-9a-fA-F]{6}\b",
+        lambda hex_: BLUE_MARK if hex_.group(0).upper() in BLUE_FACES
+        else LINE if hex_.group(0).upper() in BLUE_LINES else hex_.group(0),
+        markup,
+    )
+    return re.sub(r"<(?:path|ellipse|circle|rect)\b[^>]*/>", path, markup).replace(BLUE_MARK, ONE_BLUE)
 
 
 def num(v):
@@ -273,7 +304,7 @@ class Icon:
         print(f"{self.name}: {w:.1f} x {h:.1f}", file=sys.stderr)
         dx, dy = round(size - min(xs) - max(xs)) / 2, round(size - min(ys) - max(ys)) / 2
         defs = f"<defs>{''.join(self.defs)}</defs>" if self.defs else ""
-        return (
+        return flat_blue(
             f'<symbol id="{self.id}" viewBox="0 0 {size} {size}">{defs}'
             f'<g transform="translate({num(dx)} {num(dy)})">{"".join(self.parts)}</g></symbol>'
         )
@@ -1363,7 +1394,7 @@ def symbols():
 def sprite(drawn=None):
     """The hidden <svg> of <symbol>s, for a page to paste in."""
     return "\n".join(
-        ['<svg width="0" height="0" style="position:absolute" aria-hidden="true">', f"<defs>{SHARED}</defs>"]
+        ['<svg width="0" height="0" style="position:absolute" aria-hidden="true">', f"<defs>{flat_blue(SHARED)}</defs>"]
         + [markup for _, markup in drawn or symbols()]
         + ["</svg>"]
     )
@@ -1431,7 +1462,7 @@ export function NxIcon({ name, className }) {
 def module():
     """The viewer's module: the icons' names, the sprite as a component, and NxIcon."""
     drawn = symbols()
-    markup = [f"<defs>{SHARED}</defs>"] + [symbol for _, symbol in drawn]
+    markup = [f"<defs>{flat_blue(SHARED)}</defs>"] + [symbol for _, symbol in drawn]
     values = {
         "PREFIX": PREFIX,
         "NAMES": "\n".join(f'  "{name}",' for name, _ in drawn),
@@ -1463,8 +1494,8 @@ p { margin: 0; color: var(--muted); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; margin-top: 12px; }
 figure { margin: 0; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
 .sizes { display: flex; align-items: center; justify-content: space-evenly; height: 48px; }
-.light { background: #ffffff; }
-.dark { background: #27292d; }
+.light { background: #ffffff; --nx-blue: #2c7197; --nx-line: #ffffff; }
+.dark { background: #27292d; --nx-blue: #62b7ec; --nx-line: #27292d; }
 figcaption { padding: 6px 8px; font-size: 12px; border-top: 1px solid var(--rule); overflow-wrap: anywhere; }
 </style>
 </head>
