@@ -85,6 +85,22 @@ class Versions(Project):
         self.assertTrue(listed[1]["ref"].endswith(f"{SCOPE}/ordinal/2"))
         self.assertIsNone(listed[2]["ref"])
 
+    def test_a_folder_cannot_run_a_program_through_its_git_settings(self):
+        step(self.repo, "hook.step", Box(40, 30, 10))
+        checkpoint(self.repo, 0, 1_000)
+        marker = self.repo / "ran"
+        program = self.repo / "program.sh"
+        program.write_text(f'#!/bin/sh\ntouch "{marker}"\ncat\n', encoding="utf-8")
+        program.chmod(0o755)
+        git(self.repo, "config", "core.fsmonitor", str(program))
+        git(self.repo, "config", "filter.supplier.clean", str(program))
+        write(self.repo, ".gitattributes", "*.step filter=supplier\n")
+        step(self.repo, "hook.step", Box(48, 30, 10))
+
+        listed = versions.versions(str(self.repo), "hook.step")["versions"]
+        self.assertEqual(listed[-1]["id"], "now")
+        self.assertFalse(marker.exists())
+
     def test_a_file_starts_its_versions_when_it_first_appears(self):
         write(self.repo, "notes.md", "before the part\n")
         checkpoint(self.repo, 0, 1_000)

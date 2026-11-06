@@ -69,14 +69,51 @@ def _no_window() -> dict:
     return {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
 
+# What a folder's own git settings may not do: a project can arrive from anyone, and its config can
+# name programs for git to run. As Studio's own git steps do (`gitFolderSafety.ts`).
+FOLDER_SAFE = ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.pager=")
+
+
+def _blanked_filters(cwd: Path) -> dict:
+    """The environment blanking each filter the folder's own config names; a person's own settings stand."""
+    listed = subprocess.run(
+        ["git", "config", "--show-scope", "--name-only", "-z", "--get-regexp", r"^filter\."],
+        cwd=str(cwd),
+        capture_output=True,
+        check=False,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        **_no_window(),
+    ).stdout.decode("utf-8", "replace").split("\0")
+    names = {
+        found.group(1)
+        for scope, name in zip(listed[0::2], listed[1::2])
+        if scope in ("local", "worktree") and (found := re.fullmatch(r"filter\.(.+)\.[^.]+", name, re.DOTALL))
+    }
+    blanks = [
+        pair
+        for name in sorted(names)
+        for pair in (
+            (f"filter.{name}.clean", ""),
+            (f"filter.{name}.smudge", ""),
+            (f"filter.{name}.process", ""),
+            (f"filter.{name}.required", "false"),
+        )
+    ]
+    env = {"GIT_CONFIG_COUNT": str(len(blanks))} if blanks else {}
+    for index, (key, value) in enumerate(blanks):
+        env[f"GIT_CONFIG_KEY_{index}"] = key
+        env[f"GIT_CONFIG_VALUE_{index}"] = value
+    return env
+
+
 def _git(cwd: Path, *args: str, stdin: bytes | None = None, env: dict | None = None) -> bytes:
     ran = subprocess.run(
-        ["git", *args],
+        ["git", *FOLDER_SAFE, *args],
         cwd=str(cwd),
         input=stdin,
         capture_output=True,
         check=False,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0", **(env or {})},
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0", **_blanked_filters(cwd), **(env or {})},
         **_no_window(),
     )
     if ran.returncode != 0:
