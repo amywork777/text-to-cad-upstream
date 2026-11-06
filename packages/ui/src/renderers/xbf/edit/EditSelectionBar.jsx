@@ -11,9 +11,9 @@ import { SELECTION_BAR_EDGE_PX, placeBar, screenBox } from "./selectionBar.js";
 // while it is pressed, and nothing that grows, glows or moves.
 const BUTTON_CLASS = "flex h-6 shrink-0 items-center gap-1.5 rounded-sm px-2 text-tiny font-medium leading-none text-foreground transition-colors hover:bg-cad-ws-hover active:bg-cad-ws-selected focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4 [&_svg]:shrink-0";
 const AGENT_BUTTONS = Object.freeze({
-  ask: { label: "Ask", Icon: AskIcon },
-  // Studio's name for what writes into its chat box, as the viewer's other Add to chat.
-  "add-context": { label: "Add to chat", Icon: AddContextIcon },
+  // The box it opens is the same Quick Edit the AI layout shows, so it says so.
+  ask: { label: "Quick Edit", Icon: AskIcon },
+  "add-context": { label: "Add to context", Icon: AddContextIcon },
   annotate: { label: "Annotate", Icon: AnnotateIcon },
 });
 // The cards the workspace floats over the view, which the bar keeps clear of: its toolbar (the top of the room the bar
@@ -81,11 +81,10 @@ function useFrame(viewport, anchorKey, anchorRef, active) {
  *
  * @param {{ viewport: { runtimeRef: object, hostRef?: object, viewerReadyTick?: number },
  *   actions: { id: string, enabled: boolean, reason?: string }[], anchor: () => number[][], anchorKey: string,
- *   editKind?: string, editHint?: string, onAsk?: () => void, onAddContext?: () => void, addContextReason?: string, onAnnotate?: () => void,
+ *   editKind?: string, editHint?: string, onAsk?: () => void, onAddContext?: () => void, onAnnotate?: () => void,
  *   onEdit?: () => void }} props
  */
-export default function EditSelectionBar({ viewport, actions, anchor, anchorKey, editKind = "", editHint = "", onAsk, onAddContext, addContextReason = "",
-  onAnnotate, onEdit }) {
+export default function EditSelectionBar({ viewport, actions, anchor, anchorKey, editKind = "", editHint = "", onAsk, onAddContext, onAnnotate, onEdit }) {
   const handlers = { ask: onAsk, "add-context": onAddContext, annotate: onAnnotate, edit: onEdit };
   const drawn = actions.filter(action => handlers[action.id]);
   const [ready, setReady] = useState(false);
@@ -116,11 +115,9 @@ export default function EditSelectionBar({ viewport, actions, anchor, anchorKey,
     {drawn.map(action => {
       const agent = AGENT_BUTTONS[action.id];
       const label = agent ? agent.label : "Edit";
-      // A delivery the host refused is said on Add to chat, which stays to try again.
-      const refused = action.id === "add-context" ? addContextReason : "";
-      const describes = action.enabled ? refused || (action.id === "edit" ? editHint : "") : action.reason;
+      const describes = action.enabled ? (action.id === "edit" ? editHint : "") : action.reason;
       return <button key={action.id} type="button" className={BUTTON_CLASS} disabled={!action.enabled} aria-description={describes || undefined}
-        title={refused || undefined} onClick={press(handlers[action.id])}>
+        onClick={press(handlers[action.id])}>
         {agent ? <agent.Icon /> : <FeatureIcon kind={editKind} />}
         {label}
       </button>;

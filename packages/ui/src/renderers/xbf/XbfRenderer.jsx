@@ -632,9 +632,7 @@ function XbfSurface({ view, data }) {
   const isolatedLabels = useMemo(() => isolatedIds.map(id => tree.nodes.get(id)?.label).filter(Boolean), [tree, isolatedIds]);
   const cad = useXbfCadMode({ view, document, scene, tree, assembly, loading: loaded.busy && !scene, updating: loaded.busy && Boolean(scene),
     revision: loaded.revision, selectedElementIds, setChosen, facts, toolMode, previewing, ensureSelect, setSelectFilter, viewportRef, lookAt,
-    pickAt: pickAtClient, isolated: isolatedIds.length > 0, isolatedLabels,
-    // What its pick bar's Add to chat puts in the host's chat box.
-    askReferences: references, resource, prompt: shell.frame.quickEditPrompt });
+    pickAt: pickAtClient, isolated: isolatedIds.length > 0, isolatedLabels });
   cadRef.current = cad;
   useEffect(() => { setPartUnits(cad.units); }, [cad.units]);
   useEffect(() => { setRollback(cad.rollback); }, [cad.rollback]);
@@ -840,8 +838,7 @@ function XbfSurface({ view, data }) {
       changed={poseApplied} onValues={setPoseValues} onPreset={choosePreset} onReset={resetPose} /> : null}
     {pmiInSidebar ? pmiSection : null}
   </> : null;
-  // What Quick Edit carries: the AI layout's picks; CAD mode has no Quick Edit, its picks going to the host's chat box by
-  // its pick bar's Add to chat (`useXbfCadMode`).
+  // What Quick Edit carries: what is picked, in either layout (`useXbfCadMode`'s `quickEdit`).
   const quickEdit = cad.quickEdit({ references: previewing ? NO_REFERENCES : references, chips: previewing ? NO_REFERENCES : chips });
   // Whether the model hides a point of a callout from the camera now (its leader's start, an
   // extension line's): drawn faint. Within a thousandth of the model's size, a point is on the
@@ -878,7 +875,7 @@ function XbfSurface({ view, data }) {
     toolPanels={cad.editing ? pmiSection : null} notice={cad.notice} {...cad.frame}
     references={quickEdit.references} referenceChips={quickEdit.chips} nameReference={nameReference}
     requests={previewing ? NO_REFERENCES : pmi.changeChips} onClearRequests={pmi.clearChanges}
-    onClearReferences={() => { setChosen(EMPTY); measure.select([]); }} copySelection={copySelection}
+    onClearReferences={() => { setChosen(EMPTY); measure.select([]); cad.letGoAsked(); }} copySelection={copySelection}
     onSelectPress={measureSelect.press} onSelectHover={measureSelect.hover} selectsAnnotations={selects(selectFilter, "annotation")}
     inkTouches={inkTouches} contextMenuItems={contextMenuItems}
     viewportOverlay={viewport => {

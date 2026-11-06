@@ -74,35 +74,25 @@ it('draws the actions it has a handler for, each with its icon and its name, and
   const view = bar({ onAddContext: undefined });
   wait();
   // Add to context waits for the handler that does it (the chat box to fill); the three that work are there.
-  expect(names()).toEqual(['Ask', 'Annotate', 'Edit']);
-  for (const name of ['Ask', 'Annotate', 'Edit']) {
+  expect(names()).toEqual(['Quick Edit', 'Annotate', 'Edit']);
+  for (const name of ['Quick Edit', 'Annotate', 'Edit']) {
     expect(within(toolbar()!).getByRole('button', { name }).querySelector('svg use')!.getAttribute('href')).toMatch(/^#nx-/);
   }
-  fireEvent.click(screen.getByRole('button', { name: 'Ask' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Quick Edit' }));
   fireEvent.click(screen.getByRole('button', { name: 'Annotate' }));
   fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   expect([view.onAsk, view.onAnnotate, view.onEdit].map(handler => handler.mock.calls.length)).toEqual([1, 1, 1]);
   // With it, the four of the design, in its order.
   view.show({ onAddContext: view.onAddContext });
-  expect(names()).toEqual(['Ask', 'Add to chat', 'Annotate', 'Edit']);
-  fireEvent.click(screen.getByRole('button', { name: 'Add to chat' }));
-  expect(view.onAddContext).toHaveBeenCalledTimes(1);
-});
-
-it('says on Add to chat why the chat box did not take the picks, and keeps it to try again', () => {
-  const view = bar({ onAsk: undefined, onAnnotate: undefined, addContextReason: 'The chat is busy.' });
-  wait();
-  const add = within(toolbar()!).getByRole('button', { name: 'Add to chat' });
-  expect([names(), add.getAttribute('title'), add.getAttribute('aria-description'), (add as HTMLButtonElement).disabled])
-    .toEqual([['Add to chat', 'Edit'], 'The chat is busy.', 'The chat is busy.', false]);
-  fireEvent.click(add);
+  expect(names()).toEqual(['Quick Edit', 'Add to context', 'Annotate', 'Edit']);
+  fireEvent.click(screen.getByRole('button', { name: 'Add to context' }));
   expect(view.onAddContext).toHaveBeenCalledTimes(1);
 });
 
 it('draws only what it is offered: no Edit for a pick that has no feature to edit', () => {
   bar({ actions: ALL.slice(0, 3) });
   wait();
-  expect(names()).toEqual(['Ask', 'Add to chat', 'Annotate']);
+  expect(names()).toEqual(['Quick Edit', 'Add to context', 'Annotate']);
 });
 
 it('draws Edit with the picked feature\'s own icon, naming what it opens, and holds it, saying why, while a change is on its way', () => {
@@ -117,7 +107,7 @@ it('draws Edit with the picked feature\'s own icon, naming what it opens, and ho
   expect(edit().getAttribute('aria-description')).toBe('Wait for the change in progress to finish.');
   fireEvent.click(edit());
   expect(view.onEdit).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: 'Ask' }).hasAttribute('disabled')).toBe(false);
+  expect(screen.getByRole('button', { name: 'Quick Edit' }).hasAttribute('disabled')).toBe(false);
 });
 
 it('stands above the pick, centred on it, and follows the camera as it moves', () => {
@@ -211,7 +201,7 @@ it('never takes a double-click: a press or a double-click on it stops at it, and
     <EditSelectionBar viewport={rig.viewport} actions={ALL} anchorKey="k" anchor={() => PLATE} editKind="Hole" onAsk={noop} onAnnotate={noop} onEdit={noop} />
   </div>);
   wait();
-  const ask = screen.getByRole('button', { name: 'Ask' });
+  const ask = screen.getByRole('button', { name: 'Quick Edit' });
   fireEvent.pointerDown(ask);
   fireEvent.doubleClick(ask);
   fireEvent.pointerDown(toolbar()!);

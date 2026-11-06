@@ -156,7 +156,7 @@ it("a click for Hole on a face not picked before keeps its place: the face's mid
 describe('CAD mode over the renderer', () => {
   // The plate read with twelve faces: the trace credits face 1 to the base and face 3 to the hole; the engine says what
   // made each face picked (face 12, the hole), and of face 5 that nothing it lists did.
-  const PART = { ...READ, faceCount: 12, faceFeatures: { '1': 'plate.py:8', '3': 'plate.py:11' } };
+  const PART = { ...READ, root: '/work/plate', faceCount: 12, faceFeatures: { '1': 'plate.py:8', '3': 'plate.py:11' } };
   const made: Record<number, string | null> = { 12: 'plate.py:11', 5: null };
   function mount({ file = DOCUMENT, faces = 12, picked = ['i0/face/12'] } = {}) {
     const client = {
@@ -210,6 +210,44 @@ describe('CAD mode over the renderer', () => {
     expect(lookAt).toHaveBeenCalledWith('i0/face/5');
     // An edge is the renderer's own double-click.
     expect(result.current.doubleClickFace({ id: 'i0/edge/2', kind: 'edge', ordinal: 2 })).toBe(false);
+  });
+
+  /** The press the bar over the viewport offers for Quick Edit, if it is up. */
+  function barAsk(element: unknown): (() => void) | undefined {
+    if (Array.isArray(element)) return element.map(barAsk).find(Boolean);
+    const props = (element as { props?: { onAsk?: () => void; children?: unknown } } | null)?.props;
+    return props?.onAsk ?? (props?.children ? barAsk(props.children) : undefined);
+  }
+  const askOf = (result: { current: { overlay: (viewport: unknown) => unknown } }) => barAsk(result.current.overlay({}));
+
+  it("the pick bar's Quick Edit opens the box on a face picked, the bar giving way to it, and Escape puts it away", async () => {
+    const { result } = mount();
+    await waitFor(() => expect(askOf(result)).toBeTruthy());
+    expect(result.current.frame.quickEditAsked).toBe(false);
+    act(() => askOf(result)!());
+    expect(result.current.frame.quickEditAsked).toBe(true);
+    expect(askOf(result)).toBeUndefined();
+    expect(result.current.escapeActive).toBe(true);
+    // What is picked goes with it, as it does in the AI layout.
+    const picked = { references: [{ id: 'face' }], chips: [{ key: 'face' }] };
+    expect(result.current.quickEdit(picked as never)).toEqual(picked);
+    act(() => { expect(result.current.escape()).toBe(true); });
+    expect(result.current.frame.quickEditAsked).toBe(false);
+    expect(askOf(result)).toBeTruthy();
+  });
+
+  it("a feature chosen in the tree goes to Quick Edit as its chip, and the box's X lets go of it", async () => {
+    const { result } = mount({ picked: [] });
+    await waitFor(() => expect(result.current.editing).toBe(true));
+    await act(async () => { result.current.doubleClickFace({ id: 'i0/face/12', kind: 'face', ordinal: 12 }); });
+    await waitFor(() => expect(askOf(result)).toBeTruthy());
+    act(() => askOf(result)!());
+    const carried = result.current.quickEdit({ references: [], chips: [] });
+    expect(carried.references).toHaveLength(1);
+    expect(carried.chips).toHaveLength(1);
+    act(() => result.current.letGoAsked());
+    expect(result.current.frame.quickEditAsked).toBe(false);
+    expect(result.current.quickEdit({ references: [], chips: [] })).toEqual({ references: [], chips: [] });
   });
 
   it('has no switch and names nothing on a plain STEP with no script', async () => {

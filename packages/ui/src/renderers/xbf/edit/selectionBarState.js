@@ -24,8 +24,8 @@ function useLatch(seen, gone) {
 }
 
 /**
- * Whether the person has asked for Quick Edit in the workspace (`asked`): the answer to Ask, in the selection bar or the
- * toolbar, which Quick Edit waits for (`quickEditShown`). It is the workspace's, and a file's: the AI layout
+ * Whether the person has asked for Quick Edit in the workspace (`asked`): the answer to the selection bar's Quick Edit,
+ * which the box waits for (the shell's `quickEditAsked`). It is the workspace's, and a file's: the AI layout
  * has none, and another file opening starts without. It goes with the picks it was asked about, when they are let go
  * of (a click on the background, a box's Clear), and when a command or a sketch opens (`held`: one is open); asked
  * with nothing picked, which is Quick Edit on the part as a whole, it stays until something puts it away. Escape, a
