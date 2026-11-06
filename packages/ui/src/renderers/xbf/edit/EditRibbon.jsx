@@ -29,11 +29,12 @@ const LABELS = Object.freeze({ clip: "Section View", select: "Select", exploded:
 const FAMILY_NAMES = Object.freeze({ rectangle: "Rectangle", circle: "Circle", arc: "Arc", slot: "Slot", move_entities: "Move Entities" });
 // Each command a picture large enough to tell apart, as SolidWorks' CommandManager draws its own: every
 // one the icon generator's (`cadIcons.jsx`, `sketchIcons.jsx`), the view's tools as the strip shows them.
-// Under the pointer the workspace's pale blue (`--cad-ws-hover`), pressed its deeper one (`PRESSED_CLASS`).
+// The icons take the button's text color, so the palette is grey: under the pointer the workspace's
+// pale ground (`--cad-ws-hover`), and blue only on the command pressed (`PRESSED_CLASS`).
 const BUTTON_CLASS = "flex h-[3.25rem] min-w-11 flex-col items-center justify-start gap-1 rounded-md px-1 pt-1 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-5 [&_svg]:shrink-0";
-const PRESSED_CLASS = "bg-cad-ws-selected text-sidebar-accent-foreground hover:bg-cad-ws-selected";
+const PRESSED_CLASS = "bg-cad-ws-selected text-info hover:bg-cad-ws-selected hover:text-info";
 // A long name wraps to two lines under its icon, as SolidWorks' CommandManager sets them; without
-// names (`compact`) the buttons narrow to their icons.
+// names (`compact`, where not even one named group fits) the buttons narrow to their icons.
 const LABEL_CLASS = "max-w-[4.75rem] whitespace-normal text-center leading-[1.1]";
 // The view's own controls the frame hands over (Projection, Display, Preview: the strip's small tiles), lit as
 // the toolbar's buttons are: the workspace's pale blue under the pointer, its deeper one while a menu is open.
@@ -69,40 +70,45 @@ function RibbonGroup({ title, folded = false, end = false, menu = null, children
 }
 
 /**
- * How the ribbon's groups fit, giving way as SolidWorks' CommandManager does: first the names go
- * (`compact`: the icons alone, each name in its tooltip), then whole groups fold from the right
- * behind the More button (`count`: the groups shown; Infinity, all of them). Each layout is
- * measured before it is painted. A folded group keeps its place, unseen past the edge, so each
- * group's right edge reads the same whichever are folded; the width the groups took with their
- * names is kept, to know when they fit again. The edges are the groups' widths summed, as the row
- * packs them with no gap: where they place themselves (a group at the row's end) does
- * not change what they need.
+ * How the ribbon's groups fit: every button keeps its name for as long as a named group fits. First
+ * whole groups fold from the right behind the More button (`count`: the groups shown; Infinity, all
+ * of them); only where not even one named group fits beside More do the names go (`compact`: the
+ * icons alone, each name in its tooltip), and groups fold on from there. Each layout is measured
+ * before it is painted. A folded group keeps its place, unseen past the edge, so each group's right
+ * edge reads the same whichever are folded; the widths the groups took with their names are kept,
+ * to know when they fit again. The edges are the groups' widths summed, as the row packs them with
+ * no gap: where they place themselves (a group at the row's end) does not change what they need.
  */
 function useRibbonFit(rowRef, moreRef, key) {
   const [fit, setFit] = useState(ALL_NAMED);
-  const named = useRef(0);
+  const named = useRef(null);
+  const moreWidth = useRef(MORE_WIDTH_PX);
   const measure = useCallback(() => {
     const row = rowRef.current;
     const groups = row ? [...row.querySelectorAll(":scope > [data-cad-ribbon-group]")] : [];
     if (!groups.length) return;
     const more = moreRef.current?.offsetWidth || 0;
+    if (more) moreWidth.current = more;
     // The room the groups have with no More button beside them.
     const room = row.clientWidth + more + 1;
     let packed = 0;
     const rights = groups.map(group => (packed += group.offsetWidth));
+    // How many fit beside More, and whether all of them fit with no More at all.
+    const shown = rights.filter(right => right <= room - moreWidth.current).length;
+    const count = rights.at(-1) <= room ? Infinity : shown;
     let next;
     if (row.dataset.compact !== "true") {
-      named.current = rights.at(-1);
-      next = named.current <= room ? ALL_NAMED : { compact: true, count: Infinity };
-    } else if (!named.current || named.current <= room) {
+      named.current = { first: rights[0], all: rights.at(-1) };
+      next = count ? { compact: false, count } : { compact: true, count: Infinity };
+    } else if (!named.current || named.current.all <= room || named.current.first <= room - moreWidth.current) {
       next = ALL_NAMED; // the names fit again, or their width is not known yet: shown to learn it
     } else {
-      next = { compact: true, count: rights.at(-1) <= room ? Infinity : rights.filter(right => right <= room - (more || MORE_WIDTH_PX)).length };
+      next = { compact: true, count };
     }
     setFit(current => (current.compact === next.compact && current.count === next.count ? current : next));
   }, [rowRef, moreRef]);
   // Other groups or names: their width with names is learnt again.
-  useLayoutEffect(() => { named.current = 0; }, [key]);
+  useLayoutEffect(() => { named.current = null; }, [key]);
   useLayoutEffect(measure, [measure, key, fit]);
   // A change in the room is measured on the next frame.
   useEffect(() => {
@@ -244,10 +250,11 @@ function searchable(groups, extras = []) {
  * most-used commands as buttons over its title, which is its menu of them all. While a sketch is
  * edited the Sketch tab alone is up, holding the sketch's tools as NX's sketch task environment
  * does: Finish Sketch (back to Solid), the curves to draw and edit (Quick Trim, Offset Curve...),
- * Rapid Dimension, and the features to make of it. A narrow view keeps the icons and drops the
- * names, then folds the groups at the right into a More menu. At the tab row's right end, before
- * where the part stands, the view's own (`view`, the frame's: `RendererShell`'s `ribbon(tools, view)`):
- * its controls, Projection, Display and Preview, and the view catching up.
+ * Rapid Dimension, and the features to make of it. A narrow view folds the groups at the right
+ * into a More menu and keeps the buttons' names; they go only where one named group cannot fit.
+ * At the tab row's right end, before where the part stands, the view's own (`view`, the frame's:
+ * `RendererShell`'s `ribbon(tools, view)`): its controls, Projection, Display and Preview, and the
+ * view catching up.
  *
  * S asks for the command search (`edit.findAsked` counts the asks, `useEditShortcuts.js`): a box under
  * the toolbar (`CommandSearchBox.jsx`) that finds any button of the toolbar by name, on whichever tab, and

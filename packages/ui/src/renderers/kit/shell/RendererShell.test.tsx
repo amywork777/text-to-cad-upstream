@@ -19,7 +19,7 @@ import HarnessRenderer from '../../../../dist/renderers/shell-harness/HarnessRen
 import { ViewerHostContext } from '../../../../dist/host/context.js';
 import { testHost } from '../../../../dist/host/testing/host.js';
 import { ViewerMobileContext } from '../../../../dist/file-viewer/responsive.js';
-import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/floatingSurface.js';
+import { WORKSPACE_DOCK_CLASS, WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/floatingSurface.js';
 
 // jsdom lays nothing out: the toolbar is given the height it has in the app.
 const TOOLBAR_HEIGHT = 114;
@@ -67,33 +67,45 @@ const dock = (name: string) => document.querySelector<HTMLElement>(`[data-cad-do
 const workspaceLayer = () => document.querySelector<HTMLElement>('[data-cad-workspace]');
 const stage = (name: string) => act(() => { fireEvent.click(document.querySelector(`[data-harness-stage="${name}"]`)!); });
 
-it("keeps the canvas's box when the workspace shows", async () => {
+it("keeps the render pane when the workspace shows, and starts the canvas at the design tree's hairline", async () => {
   const view = shell();
   const box = backdrop();
   const frame = box.parentElement;
-  // Nothing stands beside the canvas's box in the frame, in either layout: the chrome is over it.
+  // Nothing stands beside the render pane in the frame, in either layout: the chrome is over it.
   const beside = () => [backdrop().previousElementSibling, backdrop().nextElementSibling];
+  const canvas = () => document.querySelector<HTMLElement>('[data-cad-canvas]')!;
+  const pastTree = /\bleft-\[13\.75rem\] @max-xl\/cad-viewport:left-0/;
   expect(beside()).toEqual([null, null]);
+  expect(canvas().className).not.toMatch(pastTree);
   view.show(WORKSPACE);
+  // The canvas has the room past the column, and the whole view again where the view hides it.
+  expect(canvas().className).toMatch(pastTree);
   expect([backdrop(), backdrop().parentElement, beside()]).toEqual([box, frame, [null, null]]);
   const toolbar = screen.getByRole('toolbar', { name: 'Design' });
   for (const part of [toolbar, dock('navigator'), screen.getByRole('toolbar', { name: 'Timeline' })]) expect(box.contains(part)).toBe(true);
   // The strip's tools are the toolbar's.
   expect(toolbar.textContent).toBe('select pencil shapes keep pose');
-  // Simple view again: the same box, and the canvas was never mounted again.
+  // Folded to its title, the column gives the canvas its room back.
+  fireEvent.click(within(dock('navigator')!).getByRole('button', { name: 'FeatureManager' }));
+  expect(canvas().className).not.toMatch(pastTree);
+  fireEvent.click(within(dock('navigator')!).getByRole('button', { name: 'FeatureManager' }));
+  // Simple view again: the same pane, the whole of it the canvas's, and the canvas was never mounted again.
   view.show({});
   expect([backdrop(), backdrop().parentElement, beside()]).toEqual([box, frame, [null, null]]);
+  expect(canvas().className).not.toMatch(pastTree);
   await waitFor(() => expect(dock('navigator')).toBeNull());
   expect([screen.queryByRole('toolbar', { name: 'Design' }), screen.queryByRole('toolbar', { name: 'Timeline' }), viewport.mounts]).toEqual([null, null, 1]);
 });
 
-it("floats the design tree at the canvas's top left, folding to its title, and the dialog's place beside it", () => {
+it("docks the design tree at the view's left under the toolbar, folding to its title, and the dialog's place beside it", () => {
   places.length = 0;
   shell(WORKSPACE);
   const navigator = dock('navigator')!;
-  // White, as the toolbar is: opaque, and blurring nothing of the live canvas under it.
-  expect(navigator.className.split(/\s+/)).toEqual(expect.arrayContaining(WORKSPACE_SURFACE_CLASS.split(' ')));
-  expect(navigator.className).not.toMatch(/\bbackdrop-|bg-background\//);
+  // Flush, one hairline on its right edge: no card's border or corners, and white as the toolbar is.
+  expect(navigator.className.split(/\s+/)).toEqual(expect.arrayContaining(WORKSPACE_DOCK_CLASS.split(' ')));
+  expect(navigator.className.split(/\s+/)).not.toEqual(expect.arrayContaining(WORKSPACE_SURFACE_CLASS.split(' ')));
+  expect(navigator.className).toMatch(/\bleft-0\b.*\bw-\[13\.75rem\].*\bbottom-0\b/);
+  expect(navigator.className).not.toMatch(/\brounded|\bbackdrop-|bg-background\//);
   const fold = within(navigator).getByRole('button', { name: 'FeatureManager' });
   const tree = within(navigator).getByRole('tree', { name: 'Features' });
   expect(fold.getAttribute('aria-expanded')).toBe('true');
@@ -173,15 +185,16 @@ it("puts Projection, Display and Preview, and the view catching up, in the toolb
 
 it("moves the column beside an open dialog, so a tool's own row and its panels never hide under it", () => {
   const view = shell({ ...WORKSPACE, dialogOpen: false });
-  // No dialog: the column spans the view, an inset in, and centres what it holds.
-  expect([column().style.left, column().className]).toEqual(['8px', expect.not.stringMatching(/\bleft-\[/)]);
+  // No dialog: the column spans the canvas, an inset past the design tree, and centres what it holds.
+  const pastTree = /\bleft-\[calc\(13\.75rem\+8px\)\] @max-xl\/cad-viewport:left-2/;
+  expect([column().style.left, column().className]).toEqual(['', expect.stringMatching(pastTree)]);
   // A dialog beside the design tree: the column is the room past the dialog, or past the dialog alone in a
   // view too narrow for the navigator.
   view.show({ ...WORKSPACE, dialogOpen: true });
   expect(column().style.left).toBe('');
-  expect(column().className).toMatch(/\bleft-\[calc\(35rem\+8px\)\] @max-xl\/cad-viewport:left-\[calc\(18rem\+16px\)\]/);
+  expect(column().className).toMatch(/\bleft-\[calc\(31\.75rem\+16px\)\] @max-xl\/cad-viewport:left-\[calc\(18rem\+16px\)\]/);
   view.show({ ...WORKSPACE, dialogOpen: false });
-  expect(column().style.left).toBe('8px');
+  expect(column().className).toMatch(pastTree);
   // Simple view has no dialog's place to keep clear of.
   view.show({ dialogOpen: true });
   expect(column().style.left).toBe('8px');
@@ -197,7 +210,7 @@ const shifted = () => [column().style.marginLeft, column().style.marginRight];
 /**
  * A view laid out as the app lays it, for the top controls' measure: `view` px wide; the column an inset in from its
  * sides, moved by its margins; its one row (`row` px wide) and the tool stack's panel (`panel`), each centred in it; and
- * the design tree 16rem wide, an inset in, open or folded to its 28px title, or no box at all where a view too narrow
+ * the design tree 13.75rem wide, flush at the left, open or folded to its 28px title, or no box at all where a view too narrow
  * for it hides it.
  */
 function layOut({ view, row = 0, panel = 0, navigator = 'open' }:
@@ -210,7 +223,7 @@ function layOut({ view, row = 0, panel = 0, navigator = 'open' }:
     if (this.matches('[data-cad-scene-backdrop]')) return box(0, 0, view, 700);
     if (this.matches('[data-cad-tool-groups]')) return box(8 + shift, TOOLBAR_HEIGHT + 8, view - 16, 500);
     if (this.matches('[data-cad-dock="navigator"]')) {
-      return navigator === 'hidden' ? box(0, 0, 0, 0) : box(8, TOOLBAR_HEIGHT + 8, 256, navigator === 'folded' ? 28 : 400);
+      return navigator === 'hidden' ? box(0, 0, 0, 0) : box(0, TOOLBAR_HEIGHT, 220, navigator === 'folded' ? 28 : 400);
     }
     if (this.matches('[data-cad-tool-stack] [data-tool-panel]')) return panel ? box(centred(panel), TOOLBAR_HEIGHT + 60, panel, 120) : box(0, 0, 0, 0);
     const top = this.closest<HTMLElement>('[data-cad-top-controls]');
@@ -241,7 +254,7 @@ function drawing(resize: () => void, workspace: object = WORKSPACE) {
 
 it("leaves a row that clears the design tree centred across the view, and Quick Edit's room as it was", () => {
   const resize = resizing();
-  // Centred in a 1280px view, a 300px row starts at 490, well past the navigator's right edge and an inset (264 + 8).
+  // Centred in a 1280px view, a 300px row starts at 490, well past the navigator's right edge and an inset (220 + 8).
   layOut({ view: 1280, row: 300 });
   const view = drawing(resize);
   expect([...shifted(), topRightLeft()]).toEqual(['', '', '798px']);
@@ -251,54 +264,57 @@ it("leaves a row that clears the design tree centred across the view, and Quick 
   expect([...shifted(), topRightLeft()]).toEqual(['', '', '798px']);
 });
 
-it("moves the column right by just the overlap of a row that would run under the design tree, and no further than it has room", () => {
+/** Folds the design tree to its title: the column spans the view again, and the title is what it keeps clear of. */
+const foldTree = () => fireEvent.click(within(dock('navigator')!).getByRole('button', { name: 'FeatureManager' }));
+
+it("moves the column right by just the overlap of a row that would run under the folded design tree, and no further than it has room", () => {
   const resize = resizing();
-  // Centred in a 700px view, a 300px row starts at 200: 72px short of the navigator's right edge and an inset.
-  layOut({ view: 700, row: 300 });
+  // Centred in a 700px view, a 300px row starts at 200: 28px short of the title's right edge and an inset.
+  layOut({ view: 700, row: 300, navigator: 'folded' });
   drawing(resize);
-  expect(shifted()).toEqual(['72px', '-72px']);
+  foldTree();
+  resize();
+  expect(shifted()).toEqual(['28px', '-28px']);
   // Quick Edit's corner starts an inset past where the row now ends.
-  expect(topRightLeft()).toBe(`${200 + 72 + 300 + 8}px`);
+  expect(topRightLeft()).toBe(`${200 + 28 + 300 + 8}px`);
   // A row too wide to clear it goes as far as the column lets it: its right edge at the column's, (584 - 500) / 2 on.
-  layOut({ view: 600, row: 500 });
+  layOut({ view: 600, row: 500, navigator: 'folded' });
   resize();
   expect(shifted()).toEqual(['42px', '-42px']);
 });
 
-it("moves the column past the design tree folded to its title too, and not while a narrow view hides it or a dialog stands beside it", () => {
+it("does not move the column while a narrow view hides the design tree or a dialog stands beside it", () => {
   const resize = resizing();
-  layOut({ view: 700, row: 300 });
-  const view = drawing(resize);
-  expect(shifted()).toEqual(['72px', '-72px']);
-  // Folded, its title still stands at the rows' height, as wide: the row clears its right edge and an inset.
-  fireEvent.click(within(dock('navigator')!).getByRole('button', { name: 'FeatureManager' }));
   layOut({ view: 700, row: 300, navigator: 'folded' });
+  const view = drawing(resize);
+  foldTree();
   resize();
-  expect([...shifted(), topRightLeft()]).toEqual(['72px', '-72px', `${200 + 72 + 300 + 8}px`]);
+  expect(shifted()).toEqual(['28px', '-28px']);
   // A view too narrow for it hides it: it has no box, and the row is centred again.
   layOut({ view: 700, row: 300, navigator: 'hidden' });
   resize();
   expect([...shifted(), topRightLeft()]).toEqual(['', '', `${200 + 300 + 8}px`]);
   // A dialog beside it: the column is the room past both (above), and is not moved within it.
-  layOut({ view: 700, row: 300 });
+  layOut({ view: 700, row: 300, navigator: 'folded' });
   view.show({ ...WORKSPACE, dialogOpen: true });
   resize();
   expect(shifted()).toEqual(['', '']);
-  expect(column().className).toMatch(/\bleft-\[calc\(35rem\+8px\)\]/);
+  expect(column().className).toMatch(/\bleft-\[calc\(31\.75rem\+16px\)\]/);
 });
 
-it("moves the tool stack's panels with the rows, one shift for the column, so a panel never runs under the design tree", () => {
+it("moves the tool stack's panels with the rows, one shift for the column, so a panel never runs under the folded design tree", () => {
   const resize = resizing();
-  // A 400px panel alone, centred in a 700px view, starts at 150: 122px short of the navigator's edge and an inset.
-  layOut({ view: 700, panel: 400 });
+  // A 400px panel alone, centred in a 700px view, starts at 150: 78px short of the title's edge and an inset.
+  layOut({ view: 700, panel: 400, navigator: 'folded' });
   shell(WORKSPACE);
+  foldTree();
   fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
   resize();
   expect(document.querySelector('[data-cad-tool-stack] [data-tool-panel]')).not.toBeNull();
-  expect(shifted()).toEqual(['122px', '-122px']);
-  // With the drawing tools' row over it, the panel, further left, decides, and both move as one: the row ends 122px on.
+  expect(shifted()).toEqual(['78px', '-78px']);
+  // With the drawing tools' row over it, the panel, further left, decides, and both move as one: the row ends 78px on.
   fireEvent.click(screen.getByRole('button', { name: 'Pencil' }));
-  layOut({ view: 700, row: 300, panel: 400 });
+  layOut({ view: 700, row: 300, panel: 400, navigator: 'folded' });
   resize();
-  expect([...shifted(), topRightLeft()]).toEqual(['122px', '-122px', `${200 + 122 + 300 + 8}px`]);
+  expect([...shifted(), topRightLeft()]).toEqual(['78px', '-78px', `${200 + 78 + 300 + 8}px`]);
 });

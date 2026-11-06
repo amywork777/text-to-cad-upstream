@@ -76,7 +76,7 @@ function RollbackMarker({ index, left, count, label, disabled, centersOf, onPrev
         event.stopPropagation();
         if (place(target) !== index) onMove(place(target));
       }}>
-      <span className="h-full w-[3px] rounded-full bg-info/70 group-hover/marker:bg-info group-focus-visible/marker:bg-info" />
+      <span className="h-full w-[3px] rounded-full bg-muted-foreground/50 group-hover/marker:bg-muted-foreground group-active/marker:bg-info group-focus-visible/marker:bg-info" />
     </div>
   </TooltipHint>;
 }

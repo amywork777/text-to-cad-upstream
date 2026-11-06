@@ -130,7 +130,7 @@ function RollbackBar({ index, count, label, disabled, slotAt, onPreview, onMove 
       event.stopPropagation();
       if (place(target) !== index) onMove(place(target));
     }}>
-    <span className="h-[3px] w-full rounded-full bg-info/70 group-hover:bg-info group-focus-visible:bg-info" />
+    <span className="h-[3px] w-full rounded-full bg-muted-foreground/50 group-hover:bg-muted-foreground group-active:bg-info group-focus-visible:bg-info" />
   </div>;
 }
 

@@ -207,9 +207,9 @@ it("brings the Sketch tab to the front while a sketch is open, and Exit Sketch r
 
 /**
  * jsdom lays nothing out: each group is 150px wide with its names and 100px without them, and the row
- * 260px, less the More button's 46px while it stands beside the row. Returns the undo.
+ * `width`, less the More button's 46px while it stands beside the row. Returns the undo.
  */
-function layOutRibbon() {
+function layOutRibbon(width = 260) {
   const keys = ['offsetWidth', 'clientWidth'] as const;
   const saved = keys.map(key => Object.getOwnPropertyDescriptor(HTMLElement.prototype, key));
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get(this: HTMLElement) {
@@ -218,7 +218,7 @@ function layOutRibbon() {
   } });
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) {
     if (!this.hasAttribute('data-compact')) return 0;
-    return this.parentElement?.querySelector('[data-cad-ribbon-more]') ? 214 : 260;
+    return this.parentElement?.querySelector('[data-cad-ribbon-more]') ? width - 46 : width;
   } });
   return () => keys.forEach((key, index) => {
     const descriptor = saved[index];
@@ -226,16 +226,29 @@ function layOutRibbon() {
   });
 }
 
-it("drops the groups' names, then folds the groups at the right into More, where the row is narrow", () => {
+// A folded group is hidden from the accessibility tree, so it has no name to be found by.
+const foldedGroups = () => ['Create', 'Modify', 'Construct'].map(title =>
+  document.querySelector<HTMLElement>(`[role="group"][aria-label="${title}"]`)!.getAttribute('aria-hidden'));
+
+it("folds whole groups from the right into More and keeps the buttons' names, where the row is narrow", () => {
   const restore = layOutRibbon();
   try {
     render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} />);
-    // A folded group is hidden from the accessibility tree, so it has no name to be found by.
-    const labelled = (title: string) => document.querySelector<HTMLElement>(`[role="group"][aria-label="${title}"]`)!;
-    // Three groups need 450px with their names and 300px without, in a 260px row: the names go, then the
-    // group at the right folds behind More.
+    // Three groups need 450px with their names in a 260px row: one fits beside More, named as it is on a wide row.
     expect(screen.getByRole('button', { name: 'More commands' })).toBeTruthy();
-    expect(['Modify', 'Construct'].map(title => labelled(title).getAttribute('aria-hidden'))).toEqual([null, 'true']);
+    expect(foldedGroups()).toEqual([null, 'true', 'true']);
+    expect(command('Create', 'Extruded Boss/Base').textContent).toBe('Extruded Boss/Base');
+  } finally {
+    restore();
+  }
+});
+
+it("drops the names only where not even one named group fits beside More", () => {
+  const restore = layOutRibbon(180);
+  try {
+    render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} />);
+    // A named group's 150px does not fit in 180px less More's 46px; 100px without its names does.
+    expect(foldedGroups()).toEqual([null, 'true', 'true']);
     expect(command('Create', 'Extruded Boss/Base').textContent).toBe('');
   } finally {
     restore();

@@ -115,13 +115,10 @@ test("draws every design tree row", () => {
 
 test("keeps ids of its own", () => {
   const ids = [...GENERATED.matchAll(/\bid="([^"]*)"/g)].map(([, id]) => id);
-  assert.ok(ids.length > NX_ICON_NAMES.length, "the module defines its symbols and what they use");
+  assert.equal(ids.length, NX_ICON_NAMES.length, "the module defines its symbols and nothing else");
   assert.deepEqual(ids.filter(id => !id.startsWith("nx-")), []);
   assert.equal(new Set(ids).size, ids.length, "each id is defined once");
-  // What points at an id points at one of these.
-  const used = [...GENERATED.matchAll(/url\(#([^)]*)\)/g)].map(([, id]) => id);
-  assert.ok(used.length > 0);
-  assert.deepEqual(used.filter(id => !ids.includes(id)), []);
+  assert.deepEqual([...GENERATED.matchAll(/url\(#([^)]*)\)/g)], [], "a line glyph has no gradient or clip to point at");
 });
 
 test("draws each icon from its symbol in the sprite", () => {
@@ -136,25 +133,29 @@ test("draws each icon from its symbol in the sprite", () => {
   }
 });
 
-// Red and green say how something went (failed, passed), so no icon is drawn in them; the set's
-// color is the brand's blue on greys. The check is a status mark, not an icon.
-test("draws no icon in a status color", () => {
-  const hue = hex => {
-    const [r, g, b] = [0, 2, 4].map(at => Number.parseInt(hex.slice(at, at + 2), 16) / 255);
-    const max = Math.max(r, g, b), min = Math.min(r, g, b), chroma = max - min;
-    if (chroma < 0.2) return null; // a grey
-    const turn = max === r ? (g - b) / chroma : max === g ? (b - r) / chroma + 2 : (r - g) / chroma + 4;
-    return (turn * 60 + 360) % 360;
-  };
-  const status = [];
+// Every icon is one weight of line in the text's own color, so both themes and a pressed button need
+// nothing of their own, and no icon can wear a status color. The check is a status mark, not an icon.
+test("draws every icon in one weight of the text's color", () => {
+  const widths = new Set();
   for (const [, name, body] of GENERATED.matchAll(/<symbol id="nx-([^"]+)"([\s\S]*?)<\/symbol>/g)) {
     if (name === "check") continue;
-    for (const [, hex] of body.matchAll(/#([0-9a-fA-F]{6})\b/g)) {
-      const at = hue(hex);
-      if (at !== null && (at < 20 || at > 340 || (at > 75 && at < 165))) status.push(`${name}: #${hex}`);
-    }
+    assert.deepEqual([...body.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map(([hex]) => `${name}: ${hex}`), [], "no color of its own");
+    for (const [, value] of body.matchAll(/(?:fill|stroke)="([^"]*)"/g)) assert.ok(["none", "currentColor"].includes(value), `${name}: ${value}`);
+    for (const [, width] of body.matchAll(/strokeWidth="([^"]*)"/g)) widths.add(width);
+    assert.ok(!body.includes("opacity"), `${name} has one tone`);
+    // A line stays its weight at the tree's 16 px and the ribbon's 20.
+    assert.equal(body.match(/stroke="currentColor"/g)?.length, body.match(/vectorEffect="non-scaling-stroke"/g)?.length, name);
   }
-  assert.deepEqual(status, []);
+  assert.equal(widths.size, 1);
+});
+
+test("gives each command a silhouette of its own", () => {
+  const drawings = new Map();
+  for (const [, name, body] of GENERATED.matchAll(/<symbol id="nx-([^"]+)"([\s\S]*?)<\/symbol>/g)) {
+    const shape = body.replace(/\s+/g, " ");
+    assert.equal(drawings.get(shape), undefined, `${name} draws what ${drawings.get(shape)} does`);
+    drawings.set(shape, name);
+  }
 });
 
 test("the module is exactly what the generator writes", () => {
