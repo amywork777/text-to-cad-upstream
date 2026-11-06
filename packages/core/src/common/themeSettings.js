@@ -909,9 +909,10 @@ const WORKBENCH_BASE_THEME_SETTINGS = Object.freeze({
   }
 });
 
-// Workbench dark mode treatment: Preview's cool blue-grey, at its mid-tone
-// (#25272b; Preview's stage runs #2c2e31 at its centre to #202226 at its
-// edges), so the tools view and Preview read as one look. Mode
+// Workbench dark mode treatment: Preview's cool blue-grey (its stage runs
+// #2c2e31 at its centre to #202226 at its edges), the tools view's canvas a
+// step lighter than that (#36393f) because lit near-black faces land at the
+// stage's own tone and a dark part's silhouette goes with them. Mode
 // overrides can only swap colors, not light intensities, so dark-part
 // visibility is tuned entirely through these colors: lifted ambient and
 // hemisphere-ground fill so shaded faces of dark parts keep their form and
@@ -924,7 +925,7 @@ const WORKBENCH_DARK_THEME_SETTINGS = Object.freeze({
   ...WORKBENCH_BASE_THEME_SETTINGS,
   background: {
     ...WORKBENCH_BASE_THEME_SETTINGS.background,
-    solidColor: "#25272b",
+    solidColor: "#36393f",
     linearStart: "#2c2e31",
     linearEnd: "#202226",
     radialInner: "#2c2e31",
@@ -1216,7 +1217,7 @@ export const THEME_PRESETS = Object.freeze([
     id: "workbench-dark",
     label: "Dark",
     preview: {
-      background: "#25272b",
+      background: "#36393f",
       modelColor: "#b6c4ce"
     },
     settings: WORKBENCH_DARK_THEME_PRESET_SETTINGS

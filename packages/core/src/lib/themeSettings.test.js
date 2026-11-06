@@ -141,7 +141,7 @@ test("workbench-dark preset uses the workbench dark color treatment", () => {
   assert.equal(resolveThemeFillColor(dark.materials, 3), "#b6c4ce");
   assert.equal(Object.hasOwn(dark, "edges"), false);
   assert.equal(dark.background.type, "solid");
-  assert.equal(dark.background.solidColor, "#25272b");
+  assert.equal(dark.background.solidColor, "#36393f");
   assert.equal(dark.background.linearStart, "#2c2e31");
   assert.equal(dark.background.linearEnd, "#202226");
   assert.equal(dark.background.radialInner, "#2c2e31");

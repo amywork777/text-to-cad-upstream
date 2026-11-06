@@ -1613,8 +1613,8 @@ one between them (`lib/floatingSurface.js`); every scroll region is the
 surface makes a containing block.
 
 The shared dark UI and the tools view's canvas take Preview's cool blue-grey (hue 264): the
-tokens at chroma 0.008 on the shadcn lightness steps, the canvas Preview's stage mid-tone
-`#25272b` (its stage runs `#2c2e31` to `#202226`), so the two views read as one look; light
+tokens at chroma 0.008 on the shadcn lightness steps, the canvas `#36393f`, a step lighter than
+Preview's stage (`#2c2e31` to `#202226`) so a near-black part's silhouette holds against it; light
 app appearance selects its light basis.
 The shared loading star and the marks use blue branding.
 

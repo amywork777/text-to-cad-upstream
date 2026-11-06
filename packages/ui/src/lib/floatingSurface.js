@@ -18,7 +18,8 @@ export const FILE_SIDEBAR_SURFACE_CLASS = "border border-border bg-background/55
 export const FLOATING_CHROME_SURFACE_CLASS = "border border-border bg-background/30 text-foreground shadow-sm backdrop-blur-[1px]";
 /**
  * `WORKSPACE_SURFACE_CLASS`: the cards of the workspace (edit mode laid out for modeling by hand), up over the live
- * canvas for as long as it is: the design tree, the open command's dialog and the timeline. White as the
+ * canvas for as long as it is: the design tree, the open command's dialog and the timeline, and a tool panel
+ * of small text read closely over the model (PMI, `ToolPanel`'s `solid`). White as the
  * workspace's toolbar is (the background, opaque, in either theme), a 1px hairline and 6px corners (`rounded-sm`),
  * and no backdrop filter: a blur over the live canvas is computed again for every frame the canvas draws.
  */

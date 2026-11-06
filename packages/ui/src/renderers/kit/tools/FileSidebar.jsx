@@ -4,7 +4,7 @@ import { ChangedDot, PositionIcon } from "./ChangedDot.jsx";
 import { ToggleGroup, ToggleGroupItem } from "@cad/ui/primitives/toggle-group";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
 import { cn } from "@cad/ui/utils";
-import { FILE_SIDEBAR_SURFACE_CLASS, FLOATING_CHROME_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
+import { FILE_SIDEBAR_SURFACE_CLASS, FLOATING_CHROME_SURFACE_CLASS, WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
 import { ToolbarButton } from "@cad/ui/primitives/toolbar-button";
 import { STRIP_BUTTON_CLASS, TOUCH_STRIP_BUTTON_CLASS } from "./stripTouch.js";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
@@ -34,7 +34,8 @@ export const SIDEBAR_SLIDE_CLASS = "transition-[translate,opacity] duration-200 
  * opens its section in a panel under the toolbar, a second press on it closes it, and so does the
  * section's own collapse button; another tile opens its section instead. One section at a time.
  * The panel is read for as long as it is open, so it has its own surface (`FILE_SIDEBAR_SURFACE_CLASS`):
- * lighter than a menu's, heavier than the strip's. Every section stays mounted, closed or not, so
+ * lighter than a menu's, heavier than the strip's, or the FeatureManager's opaque card for a section
+ * that asks for it (`ToolPanel`'s `solid`). Every section stays mounted, closed or not, so
  * a tree keeps its expansion, filter and scroll.
  *
  * The open section is its content's height, up to the panel's cap — the room under the toolbar
@@ -186,7 +187,7 @@ export default function FileSidebar({ layout: stored, onLayoutChange, hidden = f
   const register = useCallback((id, next) => {
     const current = meta.current.get(id);
     if (current && current.title === next.title && current.fit === next.fit && current.icon === next.icon
-      && Boolean(current.changed) === Boolean(next.changed)) return;
+      && Boolean(current.changed) === Boolean(next.changed) && Boolean(current.solid) === Boolean(next.solid)) return;
     meta.current.set(id, next);
     setMetaTick(tick => tick + 1);
   }, []);
@@ -265,7 +266,7 @@ export default function FileSidebar({ layout: stored, onLayoutChange, hidden = f
 
   const aside = <aside ref={bar} aria-label={t("sidebar.file")} data-cad-file-sidebar="" data-open={open ? "" : undefined} inert={!open}
     className={cn("relative flex max-w-full flex-col overflow-hidden text-tiny", SIDEBAR_SLIDE_CLASS,
-      "rounded-md", FILE_SIDEBAR_SURFACE_CLASS,
+      "rounded-md", meta.current.get(shown)?.solid ? WORKSPACE_SURFACE_CLASS : FILE_SIDEBAR_SURFACE_CLASS,
       open ? "pointer-events-auto" : "pointer-events-none -translate-x-[calc(100%+1rem)] opacity-0")}
     // Never wider than the room left of the tool strip (`--cad-file-sidebar-max-width`, the shell's
     // measure): it stops an inset short of the strip and its row rather than reaching under them.

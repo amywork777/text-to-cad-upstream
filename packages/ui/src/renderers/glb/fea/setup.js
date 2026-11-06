@@ -8,21 +8,32 @@ import { english } from "../../../i18n/core.js";
 
 /** A face ref's own number ("bracket/face 17": 17), or null for a ref that names no face by its number. */
 function faceNumber(ref) {
-  const match = /(?:^|\/)face (\d+)$/.exec(String(ref || ""));
+  const match = /(?:^|[/#])face (\d+)$/.exec(String(ref || ""));
   return match ? Number(match[1]) : null;
 }
 
-/** A face as a person reads it: "Face 17"; the ref itself for one that names no face. */
+/**
+ * Whether a ref is a face the file names by how the model made it ("motor_plate/f:plate_pognb.3;M:cut"):
+ * the agent's to quote and nobody's to read, and no number to say it by.
+ */
+const madeName = (ref) => /[/#]|^f:/.test(String(ref || ""));
+
+/** A face as a person reads it: "Face 17", plain "Face" for one the file has no number for; the ref itself for one that names no face. */
 export function faceLabel(ref) {
   const number = faceNumber(ref);
-  return number === null ? String(ref || "") : `Face ${number}`;
+  if (number !== null) return `Face ${number}`;
+  return madeName(ref) ? "Face" : String(ref || "");
 }
+
+/** How many faces: "1 face", "9 faces". */
+const faceCount = (count) => `${count} ${count === 1 ? "face" : "faces"}`;
 
 /** A part's name as a person reads it, its underscores spaces so a long one wraps at words. */
 export const spaced = (name) => String(name).replace(/_/g, " ");
 
-/** Faces after a word: "face 17", "faces 17, 18". */
+/** Faces after a word: "face 17", "faces 17, 18"; how many, where any has no number ("9 faces"). */
 export function facesWords(refs) {
+  if (refs.some((ref) => faceNumber(ref) === null && madeName(ref))) return faceCount(refs.length);
   const names = refs.map((ref) => faceNumber(ref) ?? ref);
   return `${names.length === 1 ? "face" : "faces"} ${names.join(", ")}`;
 }
@@ -91,46 +102,64 @@ export const wholeRefs = (result) => (result.occurrence ? [result.occurrence] : 
 export const group = (id, label, glyph, rows) => (rows.length ? [{ id, label, detail: "", glyph, children: rows }] : []);
 
 /**
- * Study's "Held at": one row per fixed face, its name alone ("Face 9", "base · face 9"), under the
- * fixture glyph; then, right after it, "Slides on" (`slidesOnRows`).
+ * A list's rows for faces: one per face with a number, its name alone ("Face 9", "base · face 9",
+ * `row(ref, [ref], title, summary)`), and those the file has no number for together, part by part
+ * ("9 faces", "base · 9 faces"), a row chosen as them all. `summary(refs)`: what a prompt calls them.
+ */
+function faceRows(result, refs, row, summary) {
+  const unnumbered = new Map();
+  for (const ref of refs) {
+    if (faceNumber(ref) !== null) continue;
+    const part = result.parts[facePartIndex(result, ref)]?.name || "";
+    unnumbered.set(part, [...(unnumbered.get(part) || []), ref]);
+  }
+  return [
+    ...refs.filter((ref) => faceNumber(ref) !== null).map((ref) => row(ref, [ref], faceTitle(result, ref), summary([ref]))),
+    ...[...unnumbered].map(([part, faces]) => row(faces[0], faces, `${part ? `${spaced(part)} · ` : ""}${faceCount(faces.length)}`, summary(faces))),
+  ];
+}
+
+/**
+ * Study's "Held at": one row per fixed face (`faceRows`), under the fixture glyph; then, right after
+ * it, "Slides on" (`slidesOnRows`).
  */
 export function heldRows(result) {
   const study = result.study;
-  const fixed = study.fixtures.flatMap((fixture, index) => (isRoller(fixture) ? [] : fixture.faces.map((ref) => ({
-    id: `fixed:${index}:${ref}`, label: faceTitle(result, ref), detail: "", faces: [ref], summary: faceSummary(study, ref), wrap: true,
-  }))));
+  const fixed = study.fixtures.flatMap((fixture, index) => (isRoller(fixture) ? [] : faceRows(result, fixture.faces,
+    (ref, faces, label, summary) => ({ id: `fixed:${index}:${ref}`, label, detail: "", faces, summary, wrap: true }),
+    (faces) => (faces.length === 1 ? faceSummary(study, faces[0]) : `${capitalised(fixture.type)} ${facesWords(faces)}`))));
   return [...group("fixed", "Held at", "fixture", fixed), ...slidesOnRows(result)];
 }
 
 /**
  * Study's "Slides on", under the roller glyph: one row per face of a roller fixture (a frictionless
- * sliding support), its name alone, the hint saying what that means. Its rows number their fixture
+ * sliding support; `faceRows`), the hint saying what that means. Its rows number their fixture
  * as Held at's do (`roller:<fixture>:<ref>`), so a row chooses its own markers.
  */
 export function slidesOnRows(result, t = english) {
   const study = result.study;
-  const rows = study.fixtures.flatMap((fixture, index) => (isRoller(fixture) ? fixture.faces.map((ref) => ({
-    id: `roller:${index}:${ref}`, label: faceTitle(result, ref), detail: "", faces: [ref], summary: faceSummary(study, ref), wrap: true,
-    hint: t("fea.slideHint"),
-  })) : []));
+  const rows = study.fixtures.flatMap((fixture, index) => (isRoller(fixture) ? faceRows(result, fixture.faces,
+    (ref, faces, label, summary) => ({ id: `roller:${index}:${ref}`, label, detail: "", faces, summary, wrap: true, hint: t("fea.slideHint") }),
+    (faces) => (faces.length === 1 ? faceSummary(study, faces[0]) : `Slides on ${facesWords(faces)}`)) : []));
   return group("roller", "Slides on", "roller", rows);
 }
 
 /**
  * Study's "Pushed": one row per load, how much and which way ("300 N along −X"), under the arrow
- * glyph, its faces under it by name alone, shut until opened (`collapsed`).
+ * glyph, its faces under it (`faceRows`), shut until opened (`collapsed`); faces with no number that
+ * would only be one row saying them all are its detail instead ("300 N along −X  9 faces").
  */
 export function pushedRows(result, t = english) {
   const study = result.study;
   const faceLoads = study.loads.filter((load) => load.faces.length).map((load, index) => {
     const words = loadWords(load);
     const label = [words.amount, words.direction].filter(Boolean).join(" ");
-    return {
-      id: `load:${index}`, label, detail: "", faces: load.faces,
-      summary: loadSummary(words, load.faces), collapsed: true,
-      children: load.faces.map((ref) => ({ id: `load:${index}:${ref}`, label: faceTitle(result, ref), detail: "", faces: [ref], wrap: true,
-        summary: study.fixtures.some((fixture) => fixture.faces.includes(ref)) ? faceSummary(study, ref) : loadSummary(words, [ref]) })),
-    };
+    const children = faceRows(result, load.faces,
+      (ref, faces, title, summary) => ({ id: `load:${index}:${ref}`, label: title, detail: "", faces, wrap: true, summary }),
+      (faces) => (faces.length === 1 && study.fixtures.some((fixture) => fixture.faces.includes(faces[0])) ? faceSummary(study, faces[0]) : loadSummary(words, faces)));
+    const whole = children.length === 1 && load.faces.every((ref) => faceNumber(ref) === null);
+    return { id: `load:${index}`, label, detail: whole ? children[0].label : "", faces: load.faces, summary: loadSummary(words, load.faces),
+      ...(whole ? {} : { collapsed: true, children }) };
   });
   // A body load (gravity, an acceleration) acts on the whole part: chosen, it carries the whole result.
   const refs = wholeRefs(result);

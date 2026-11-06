@@ -11,6 +11,7 @@ import { usePmiViewApplied } from '../../../../dist/renderers/xbf/pmi/usePmiView
 import { presentXbfTree } from '../../../../dist/renderers/xbf/xbfTree.js';
 import { createViewSettingsStore } from '../../../../dist/renderers/kit/view-settings/viewSettingsStore.js';
 import FileSidebar from '../../../../dist/renderers/kit/tools/FileSidebar.js';
+import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/floatingSurface.js';
 
 const restores: (() => void)[] = [];
 function override(target: object, key: string, descriptor: PropertyDescriptor) {
@@ -218,17 +219,31 @@ it('the coverage checkbox lights the faces with no requirement', () => {
   expect(live.highlight.selected).toEqual([]);
 });
 
-it('coverage asks what the requirements leave open, with the answer the engine suggests', () => {
+it('coverage asks what the requirements leave open, in plain words, never the call that would answer it', () => {
   // Test-owned: the engine's words, drawn as given; a question, never a warning.
   openMbd(structure => ({ ...structure, pmi_coverage: [{ part: 0, uncovered: [], conflicts: [],
     suggestions: [{ kind: 'hole', faces: [V4_BOTTOM], question: 'What is the 9 mm hole for?',
-      answer: 'dimensional_size("hole-1-size", ...)', why: "9 mm is ISO 273's medium clearance hole for M8" }] }] }));
+      answer: `dimensional_size("hole-1-size", "${V4_BOTTOM}")`, why: "9 mm is ISO 273's medium clearance hole for M8" }] }] }));
   const coverage = within(screen.getByRole('region', { name: 'Coverage' }));
   expect(coverage.getByText('What is the 9 mm hole for?')).toBeTruthy();
-  const answer = coverage.getByText('dimensional_size("hole-1-size", ...)');
-  expect(answer.tagName).toBe('CODE');
+  const suggestion = coverage.getByText("9 mm is ISO 273's medium clearance hole for M8");
   expect(coverage.queryByRole('status')).toBeNull();
-  expect(answer.closest('[data-pmi-suggestion]')?.getAttribute('data-pmi-suggestion')).toBe('hole');
+  expect(suggestion.closest('[data-pmi-suggestion]')?.getAttribute('data-pmi-suggestion')).toBe('hole');
+  expect(screen.queryByText(/dimensional_size/)).toBeNull();
+  expect(document.querySelector('code')).toBeNull();
+});
+
+it('sits on the FeatureManager\'s opaque card, in the tool stack and in the file sidebar alike', () => {
+  const opaque = (element: Element) => WORKSPACE_SURFACE_CLASS.split(' ').every(name => element.classList.contains(name))
+    && ![...element.classList].some(name => /^(bg-background\/|backdrop-)/.test(name));
+  openMbd();
+  expect(opaque(document.querySelector('[data-tool-panel-id="pmi"]')!)).toBe(true);
+  cleanup();
+  openMbd(structure => structure, { sidebar: true });
+  const sidebar = () => document.querySelector('[data-cad-file-sidebar]')!;
+  expect(opaque(sidebar())).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'PMI', exact: true }));
+  expect(opaque(sidebar())).toBe(true);
 });
 
 it("a view whose section is off the placement's axes says so and applies its camera alone", () => {

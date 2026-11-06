@@ -395,6 +395,27 @@ describe('an assembly result', () => {
     expect(weakestPartIndex(result)).toBe(0);
   });
 
+  it('says faces the file has no number for by how many, a row standing for them all, and never their names', () => {
+    const named = (part: string, n: number) => `${part}/f:plate_pognb.${n};M:plate_pognb.body`;
+    const held = [named('part1', 1), named('part1', 2), named('part2', 3)];
+    const pushed = [named('part1', 4), named('part1', 5)];
+    const study = { ...STUDY, fixtures: [{ type: 'fixed', faces: held }], loads: [{ type: 'force', faces: pushed, vector_N: [0, 0, -500] }] };
+    const { result } = studyResult({ ...ASSEMBLY, study, faces: [...held, ...pushed] });
+    const [heldAt, push] = strip(studySections(result).setup as any[]);
+    expect(heldAt.children).toEqual([
+      { id: `fixed:0:${held[0]}`, label: 'post · 2 faces', detail: '', summary: 'Fixed 2 faces', faces: held.slice(0, 2) },
+      { id: `fixed:0:${held[2]}`, label: 'base · 1 face', detail: '', summary: 'Fixed 1 face', faces: held.slice(2) },
+    ]);
+    // Only one row would say them all: the load's own row does, and nothing opens under it.
+    expect(push.children).toEqual([{ id: 'load:0', label: '500 N down', detail: 'post · 2 faces', summary: '500 N load on 2 faces', faces: pushed }]);
+    expect(faceTitle(result, held[0])).toBe('post · face');
+    expect(faceLabel(held[0])).toBe('Face');
+    expect(JSON.stringify(studySections(result).setup.map(({ label, detail }: any) => [label, detail]))).not.toContain('pognb');
+    // A number is still a face's name, however it is mixed with the rest.
+    const mixed = studyResult({ study: { ...STUDY, fixtures: [{ type: 'fixed', faces: ['bracket/face 7', named('bracket', 1)] }], loads: [] }, faces: ['bracket/face 7', named('bracket', 1)] }).result;
+    expect(strip(studySections(mixed).setup as any[])[0].children.map((row: any) => row.label)).toEqual(['Face 7', '1 face']);
+  });
+
   it('says a part that yields, and names a picked face\'s part', () => {
     const { result } = studyResult({ ...ASSEMBLY, parts: [{ ...ASSEMBLY.parts[0], safety_factor: 0.8 }, ASSEMBLY.parts[1]] });
     expect((partRows(result)[0] as any).detail).toBe('6061-T6 · yields');

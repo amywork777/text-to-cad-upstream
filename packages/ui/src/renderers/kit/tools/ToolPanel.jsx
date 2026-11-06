@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@cad/ui/utils";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
-import { FLOATING_CHROME_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
+import { FLOATING_CHROME_SURFACE_CLASS, WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
 import ResizeGrip from "./ResizeGrip.jsx";
 import { ToolStackContext } from "./ToolStack.jsx";
@@ -76,7 +76,8 @@ const REVEAL_CLASS = "animate-in fade-in-0 zoom-in-75 duration-150 motion-reduce
  * `hidden` keeps a panel mounted while its tool is not up, so a tree keeps its expansion, filter
  * and scroll across a trip to another tool. `header` never scrolls; the body under it does, for a
  * panel that gives way. `lead`: the panel of the tool in hand, drawn at the top of the stack above every kept
- * panel, wherever it sits among them.
+ * panel, wherever it sits among them. `solid`: a panel of small text read closely over the model
+ * (PMI), on the FeatureManager's opaque card, in the stack or as the sidebar's open section.
  *
  * In the file sidebar a section's tile is its `title` and its `icon` (a component drawn as lucide's
  * are), where it gives one; otherwise the sidebar's own for its kind (`FileSidebar.jsx`).
@@ -85,7 +86,7 @@ const REVEAL_CLASS = "animate-in fade-in-0 zoom-in-75 duration-150 motion-reduce
  *   actions?: import("react").ReactNode, icon?: import("react").ComponentType<{ className?: string }> | null,
  *   header?: import("react").ReactNode, collapsible?: boolean, onClose?: (() => void) | null, closeLabel?: string,
  *   fit?: "fixed" | "tree" | "details", resizable?: boolean, hidden?: boolean, defaultCollapsed?: boolean,
- *   lead?: boolean, children?: import("react").ReactNode }} props
+ *   lead?: boolean, solid?: boolean, children?: import("react").ReactNode }} props
  *   `label` names the panel for assistive technology ("Clip controls"), with a heading or
  *   without; the chevron, the X and the grip take their names from it, unless the X says
  *   what it does itself (`closeLabel`, "Clear selection").
@@ -103,7 +104,7 @@ export function ToolPanelHeadAction({ children }) {
 }
 
 export default function ToolPanel({ id, title = null, name = "", label, summary = null, actions = null, header = null, collapsible = true, onClose = null, closeLabel = "", changed = false,
-  icon = null, fit = "fixed", resizable = false, hidden = false, defaultCollapsed = false, lead = false, children }) {
+  icon = null, fit = "fixed", resizable = false, hidden = false, defaultCollapsed = false, lead = false, solid = false, children }) {
   const { t } = useI18n();
   const [headSlot, setHeadSlot] = useState(null);
   const stack = useContext(ToolStackContext);
@@ -120,7 +121,7 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
   const closedInSidebar = inSidebar && stack.openSection !== id;
   const register = inSidebar ? stack.register : null;
   const tileTitle = typeof title === "string" ? title : name || label;
-  useLayoutEffect(() => { if (register && id && !hidden) register(id, { title: tileTitle, fit, changed, icon }); }, [register, id, hidden, tileTitle, fit, changed, icon]);
+  useLayoutEffect(() => { if (register && id && !hidden) register(id, { title: tileTitle, fit, changed, icon, solid }); }, [register, id, hidden, tileTitle, fit, changed, icon, solid]);
   // Folded: the person's, kept by the stack across files; a panel drawn alone keeps its own.
   const [ownCollapsed, setOwnCollapsed] = useState(defaultCollapsed);
   const collapsed = collapsible && (kept ? stack.collapsed(id, defaultCollapsed) : ownCollapsed);
@@ -260,7 +261,7 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
       // A section draws no box of its own: its heading, header and body are rows of the panel's one
       // scrolling column, its head pinned to the column's top.
       ? (hidden ? undefined : closedInSidebar ? "hidden" : "contents text-tiny")
-      : cn("pointer-events-auto relative flex max-w-full flex-col rounded-md text-tiny", FLOATING_CHROME_SURFACE_CLASS, collapsed ? "shrink-0" : FIT[fit])}
+      : cn("pointer-events-auto relative flex max-w-full flex-col rounded-md text-tiny", solid ? WORKSPACE_SURFACE_CLASS : FLOATING_CHROME_SURFACE_CLASS, collapsed ? "shrink-0" : FIT[fit])}
     style={{ width, maxHeight: inSidebar || collapsed || cap === null ? undefined : `${cap}px`, minHeight, order: lead && !inSidebar ? -1 : undefined }}>
     {/* Where a section's heading sits when it is not docked: what the sidebar scrolls to. */}
     {inSidebar ? <div aria-hidden="true" data-sidebar-anchor="" /> : null}
