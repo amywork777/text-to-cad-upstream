@@ -28,4 +28,4 @@ export const WORKSPACE_SURFACE_CLASS = "rounded-sm border border-border bg-backg
  * `WORKSPACE_DOCK_CLASS`: the design tree's column, flush against the canvas rather than over it: the workspace's
  * opaque background, one hairline on the side it meets the canvas, and no card's border or corners.
  */
-export const WORKSPACE_DOCK_CLASS = "border-r border-border bg-background text-foreground";
+export const WORKSPACE_DOCK_CLASS = "border-r border-border bg-cad-ws-panel text-foreground";

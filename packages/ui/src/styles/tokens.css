@@ -107,6 +107,7 @@
   --color-cad-cancel: var(--cad-cancel);
   /* The workspace's pale blues (edit mode laid out for modeling by hand): what the pointer rests on
    * (a toolbar button, a Part Navigator row, a timeline item) and what is pressed or selected. */
+  --color-cad-ws-panel: var(--cad-ws-panel);
   --color-cad-ws-hover: var(--cad-ws-hover);
   --color-cad-ws-selected: var(--cad-ws-selected);
   /* What the agent made, as the timeline marks it with a dot (what you made is the muted foreground). */
@@ -203,6 +204,7 @@
   --cad-ok: oklch(0.58 0.15 150);
   --cad-cancel: oklch(0.58 0.21 27);
   /* The CAD workspace's hover and selection, made from the theme's accent so a host's theme reaches them. */
+  --cad-ws-panel: color-mix(in oklab, var(--background), black 5%);
   --cad-ws-hover: var(--accent);
   --cad-ws-selected: color-mix(in oklab, var(--accent), var(--foreground) 8%);
   --cad-agent: #7c3aed;
@@ -294,6 +296,7 @@
   --cad-ok: oklch(0.74 0.17 150);
   --cad-cancel: oklch(0.7 0.19 27);
   /* The CAD workspace's hover and selection, made from the theme's accent so a host's theme reaches them. */
+  --cad-ws-panel: color-mix(in oklab, var(--background), black 32%);
   --cad-ws-hover: var(--accent);
   --cad-ws-selected: color-mix(in oklab, var(--accent), var(--foreground) 8%);
   --cad-agent: #a78bfa;

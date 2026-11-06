@@ -337,7 +337,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   const ribbon = (label, groups, end, { tabs, active, onPick, key = label, sketching = false, finds }) => <>
     <div ref={ribbonRef} data-cad-ribbon="" data-cad-sketch-ribbon={sketching ? "" : undefined}
       aria-busy={busy ? true : undefined}
-      className="relative flex min-h-0 shrink-0 flex-col overflow-hidden border-b border-border bg-background" role="toolbar" aria-label={label}>
+      className="relative flex min-h-0 shrink-0 flex-col overflow-hidden border-b border-border bg-cad-ws-panel" role="toolbar" aria-label={label}>
       {tabRow(tabs, active, onPick, end)}
       <div className="flex min-h-0 items-stretch overflow-hidden">
         <RibbonGroups key={key} groups={groups} />
