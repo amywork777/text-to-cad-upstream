@@ -804,6 +804,10 @@ tessellations, is under one memory budget: **Document lifetime**.)
   `CAD_ENGINE_STANDBY=0` keeps none (`daemon.standby`): an operator's seam for CI and machines
   short of memory, not a setting a model's author touches; unset or any other value, the standby
   stands by. A test suite sets it for every daemon it starts but the standby's own.
+- **A busy process has a ceiling.** Retiring never touches a busy process, and a build in native code
+  cannot stop itself, so `Daemon.tend` kills a busy process past `CAD_ENGINE_WORKER_CEILING_MB`
+  (default: half the machine's memory, at least 4 GiB; `0` for none; `Supervisor.overrun`), counted
+  by the system (`worker.footprint_mb`, compressed and swapped pages too), and its request says why.
 - **Memory retires, never a timer.** The workers' resident memory -- each one's as it measured it at
   its start and after each build, the standby's and the render processes' with it -- is held to one
   cap, `CAD_ENGINE_WORKER_RSS_MB` (default: a quarter of the machine's memory, at least 2 GiB;
