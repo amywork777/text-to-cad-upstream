@@ -52,12 +52,12 @@ test("draws every command from the generator", () => {
   for (const { id } of EDIT_COMMANDS) assert.equal(drawnName(COMMAND_ICONS[id], id), COMMAND_ICON_NAMES[id]);
 });
 
-test("Extruded Cut draws its own pocket; another subtracting command its unite command's, its Boolean being set in its dialog", () => {
+test("Extruded Cut and Revolved Cut draw their own; another subtracting command its unite command's, its Boolean being set in its dialog", () => {
   const subtracting = EDIT_COMMANDS.filter(({ id }) => booleanOf(id)?.value === "subtract").map(({ id }) => id);
   assert.deepEqual(subtracting, ["cut", "revolve_cut", "sweep_cut", "loft_cut"]);
   assert.notEqual(COMMAND_ICON_NAMES.cut, COMMAND_ICON_NAMES.extrude);
   assert.equal(featureIconName("Cut-Extrude"), COMMAND_ICON_NAMES.cut);
-  for (const id of subtracting.filter(id => id !== "cut")) assert.equal(COMMAND_ICON_NAMES[id], COMMAND_ICON_NAMES[booleanOf(id).other], id);
+  for (const id of subtracting.filter(id => id !== "cut" && id !== "revolve_cut")) assert.equal(COMMAND_ICON_NAMES[id], COMMAND_ICON_NAMES[booleanOf(id).other], id);
 });
 
 test("draws every sketch tool, each its own picture", () => {

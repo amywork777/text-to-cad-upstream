@@ -88,14 +88,14 @@ test("lists everything in the toolbar's order when nothing is typed", () => {
   const commands = ids("").filter(id => EDIT_COMMANDS.some(command => command.id === id));
   assert.deepEqual([...commands].sort(), EDIT_COMMANDS.map(command => command.id).sort());
   // The Solid tab's order is the one it draws (`SOLID_GROUPS`), less what is not a CAD command (Select, Ask the agent).
-  const subtracts = new Set(["cut", "revolve_cut", "sweep_cut", "loft_cut"]);
+  const subtracts = new Set(["sweep_cut", "loft_cut"]);
   const drawn = SOLID_GROUPS.flatMap(group => group.items).filter(id => SOLID.includes(id));
   assert.deepEqual(SOLID.filter(id => !subtracts.has(id)), drawn);
 });
 
-test("leaves out of the search what is not a CAD command: the filter of Select", () => {
+test("lists every item of the Features tab", () => {
   const left = SOLID_GROUPS.flatMap(group => group.items).filter(id => !ids("").includes(id));
-  assert.deepEqual(left, ["select"]);
+  assert.deepEqual(left, []);
 });
 
 test("lists a sketch's own tools first while it is open, then the rest", () => {

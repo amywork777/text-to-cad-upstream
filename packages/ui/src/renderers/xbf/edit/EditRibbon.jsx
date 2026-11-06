@@ -31,6 +31,8 @@ const FAMILY_NAMES = Object.freeze({ rectangle: "Rectangle", circle: "Circle", a
 // one the icon generator's (`cadIcons.jsx`, `sketchIcons.jsx`), the view's tools too (`ribbonIcon`): the strip keeps plain glyphs.
 // The icons take the button's text color, so the palette is grey: under the pointer the workspace's
 // pale ground (`--cad-ws-hover`), and blue only on the command pressed (`PRESSED_CLASS`).
+// What the Features tab has a button for.
+const ON_THE_RIBBON = new Set(SOLID_GROUPS.flatMap(group => group.items));
 const BUTTON_CLASS = "flex h-[3.25rem] w-[4.25rem] shrink-0 flex-col items-center justify-start gap-px rounded-md pt-0.5 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-6 [&_svg]:shrink-0";
 const PRESSED_CLASS = "bg-cad-ws-selected text-info hover:bg-cad-ws-selected hover:text-info";
 // Every tool stands on one pitch, its button's width. A long name wraps to two lines under its icon,
@@ -445,7 +447,9 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   }
 
   const commandItem = command => {
-    const open = edit.command === command.id || edit.command === booleanOf(command.id)?.other;
+    // A Boss/Base stays lit while its dialog is switched to a Cut that has no button of its own.
+    const other = booleanOf(command.id)?.other;
+    const open = edit.command === command.id || (edit.command === other && !ON_THE_RIBBON.has(other));
     // The search opens it as `onCommand` does, and not again one already open: an open Extrude is turned to its Subtract, not closed.
     return { id: command.id, label: nxCommand(command), icon: commandIcon(command.id), active: open, disabled: modelingOff,
       description: placingWords, run: () => { if (edit.command !== command.id) onCommand(command.id); },

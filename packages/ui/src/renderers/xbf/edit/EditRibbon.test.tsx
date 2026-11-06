@@ -39,11 +39,11 @@ it("opens a group's command from its menu", async () => {
   const user = userEvent.setup();
   const onCommand = vi.fn();
   render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} onCommand={onCommand} />);
-  // Create's nine commands show as buttons; the group's title is its menu, with all of them.
-  expect(commandsIn('Create')).toEqual(['Sketch', 'Extruded Boss/Base', 'Revolved Boss/Base', 'Swept Boss/Base', 'Lofted Boss/Base', 'Rib', 'Hole Wizard', 'Pattern', 'Mirror']);
+  // Create's commands show as buttons; the group's title is its menu, with all of them.
+  expect(commandsIn('Create')).toEqual(['Sketch', 'Extruded Boss/Base', 'Extruded Cut', 'Revolved Boss/Base', 'Revolved Cut', 'Swept Boss/Base', 'Lofted Boss/Base', 'Rib', 'Hole Wizard', 'Pattern', 'Mirror']);
   await user.click(menuButton(group('Create')));
   const menu = screen.getByRole('menu');
-  expect(within(menu).getAllByRole('menuitemcheckbox').map(item => item.textContent)).toEqual(['Sketch', 'Extruded Boss/Base', 'Revolved Boss/Base',
+  expect(within(menu).getAllByRole('menuitemcheckbox').map(item => item.textContent)).toEqual(['Sketch', 'Extruded Boss/Base', 'Extruded Cut', 'Revolved Boss/Base', 'Revolved Cut',
     'Swept Boss/Base', 'Lofted Boss/Base', 'Rib', 'Hole Wizard', 'Pattern', 'Mirror']);
   await user.click(within(menu).getByText('Lofted Boss/Base'));
   expect(onCommand).toHaveBeenCalledWith('loft');
@@ -72,7 +72,7 @@ it("heads the toolbar with Features, Sketch and Evaluate, and Drawing where a pa
 it("groups the Features tab's commands as the design does, each under SolidWorks' name", () => {
   render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} />);
   expect(layout()).toEqual({
-    Create: ['Sketch', 'Extruded Boss/Base', 'Revolved Boss/Base', 'Swept Boss/Base', 'Lofted Boss/Base', 'Rib', 'Hole Wizard', 'Pattern', 'Mirror'],
+    Create: ['Sketch', 'Extruded Boss/Base', 'Extruded Cut', 'Revolved Boss/Base', 'Revolved Cut', 'Swept Boss/Base', 'Lofted Boss/Base', 'Rib', 'Hole Wizard', 'Pattern', 'Mirror'],
     Modify: ['Move Face', 'Fillet', 'Chamfer', 'Shell', 'Draft', 'Split', 'Delete Face', 'Delete/Keep Body'],
     Construct: ['Plane'],
   });
@@ -569,7 +569,7 @@ it("never disagrees with the toolbar: it lists each command of every tab the too
     hand.findAsked = 1;
     view.rerender(<EditRibbon tools={PART_TOOLS} edit={hand as never} {...shown} />);
     // A cut is the Cut of its Boss/Base's Boolean: the toolbar has it in Extruded Boss/Base's dialog, not as a button.
-    const listed = new Set(foundNames().filter(text => !text.endsWith(' Cut')));
+    const listed = new Set(foundNames().filter(text => text !== 'Swept Cut' && text !== 'Lofted Cut'));
     // An assembly's search finds the part commands too, though it has no tab of them, each dimmed.
     const dimmed = new Set(found().filter(row => row.getAttribute('aria-disabled') === 'true').map(row => row.textContent));
     const partOnly = name === 'an assembly' ? [...listed].filter(each => !has.has(each) && !STRIP.has(each)) : [];

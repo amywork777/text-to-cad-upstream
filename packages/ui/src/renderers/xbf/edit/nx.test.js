@@ -22,8 +22,9 @@ test("a sketch being edited has the Sketch tab alone, as the sketch task environ
 });
 
 test("puts every modeling command in one group", () => {
-  // A subtracting command (Extruded Cut...) is reached by its unite command's Boolean, so it has no place of its own.
-  const modeling = EDIT_COMMANDS.filter(({ id }) => booleanOf(id)?.value !== "subtract").map(({ id }) => id);
+  // Extruded Cut and Revolved Cut have buttons; another subtracting command is reached by its unite command's Boolean.
+  const byBoolean = new Set(["sweep_cut", "loft_cut"]);
+  const modeling = EDIT_COMMANDS.filter(({ id }) => !byBoolean.has(id)).map(({ id }) => id);
   const placed = SOLID_GROUPS.flatMap(group => group.items).filter(item => EDIT_COMMANDS.some(({ id }) => id === item));
   assert.deepEqual([...placed].sort(), [...modeling].sort());
   assert.equal(new Set(placed).size, placed.length);

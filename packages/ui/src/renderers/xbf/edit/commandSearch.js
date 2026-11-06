@@ -62,6 +62,7 @@ function workspaceEntries() {
   const entries = [];
   for (const id of SOLID_GROUPS.flatMap(group => group.items)) {
     const command = editCommand(id);
+    if (booleanOf(id)?.value === "subtract") continue; // Listed after its Boss/Base, just below.
     if (command) {
       entries.push(commandEntry(command));
       const boolean = booleanOf(id);

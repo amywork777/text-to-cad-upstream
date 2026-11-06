@@ -364,6 +364,20 @@ def revolve():
     return ic
 
 
+def revolve_cut():
+    """A round groove turned out of the block, the turn around its axis: `revolve`'s Subtract."""
+    ic = Icon("revolve-cut")
+    ic.box(0, 0, 0, 12, 12, 7, BODY)
+    ic.hole(6, 6, 7, 7.5, 3.6)
+    top = ic.P(6, 6, 7)
+    ic.stroke([top, (top[0], top[1] - 9)], width=1.3, dash=DASH)
+    cy, rx, ry = top[1] - 7, 6, 3
+    arc = [(top[0] + rx * math.cos(math.radians(a)), cy + ry * math.sin(math.radians(a))) for a in range(165, -36, -5)]
+    ic.stroke(arc[:-5], width=1.3)
+    ic.head(arc[-1], arc[-5], length=3.6, half=2.1)
+    return ic
+
+
 def hole():
     ic = Icon("hole")
     ic.box(0, 0, 0, 12, 12, 8, BODY)
@@ -1356,7 +1370,7 @@ def shapes():
 # what the workspace adds to it.
 GROUPS = (
     ("Approved", "The modeling commands and the Part Navigator's features, as Amy approved them; the check is a status mark.", (
-        sketch, extrude, cut, revolve, hole, lambda: rounded("blend"), lambda: rounded("chamfer"), shell, draft, rib,
+        sketch, extrude, cut, revolve, revolve_cut, hole, lambda: rounded("blend"), lambda: rounded("chamfer"), shell, draft, rib,
         pattern, mirror, datum_plane, csys, sweep, loft, split, delete, body, offset_face, delete_face, ask,
     )),
     ("The agent's tools", "Beside Ask, in the agent's blue: Add to context; Annotate (the Pencil) with its pen, "

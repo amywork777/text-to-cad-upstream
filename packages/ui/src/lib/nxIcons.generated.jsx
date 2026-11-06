@@ -11,6 +11,7 @@ export const NX_ICON_NAMES = Object.freeze([
   "extrude",
   "cut",
   "revolve",
+  "revolve-cut",
   "hole",
   "blend",
   "chamfer",
@@ -182,6 +183,26 @@ const SPRITE = (
         <path d="M0 6.5 L0 9.5" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2.2 1.6" />
         <path d="M-5.8 -13.72 L-5.64 -13.47 L-5.44 -13.23 L-5.2 -13 L-4.91 -12.78 L-4.6 -12.57 L-4.24 -12.38 L-3.86 -12.2 L-3.44 -12.04 L-3 -11.9 L-2.54 -11.78 L-2.05 -11.68 L-1.55 -11.6 L-1.04 -11.55 L-0.52 -11.51 L0 -11.5 L0.52 -11.51 L1.04 -11.55 L1.55 -11.6 L2.05 -11.68 L2.54 -11.78 L3 -11.9 L3.44 -12.04 L3.86 -12.2 L4.24 -12.38 L4.6 -12.57 L4.91 -12.78 L5.2 -13 L5.44 -13.23 L5.64 -13.47 L5.8 -13.72 L5.91 -13.98 L5.98 -14.24 L6 -14.5 L5.98 -14.76 L5.91 -15.02" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M4.91 -16.22 L8.91 -15.02 L5.83 -12.16 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+      </g>
+    </symbol>
+    <symbol id="nx-revolve-cut" viewBox="0 0 32 32">
+      <defs>
+        <clipPath id="nx-revolve-cut-c0">
+          <ellipse cx="0" cy="-1" rx="7.5" ry="3.75" />
+        </clipPath>
+      </defs>
+      <g transform="translate(16 15)">
+        <path d="M0 -7 L12 -1 L12 6 L0 12 L-12 6 L-12 -1 Z" fill="#AFB9C5" />
+        <path d="M0 -7 L12 -1 L0 5 L-12 -1 Z" fill="#F4F6F9" />
+        <path d="M-12 -1 L0 5 L0 12 L-12 6 Z" fill="#D3DAE2" />
+        <path d="M12 -1 L0 5 L0 12 L12 6 Z" fill="#AFB9C5" />
+        <path d="M0 -7 L12 -1 L12 6 L0 12 L-12 6 L-12 -1 Z" fill="none" stroke="#66727F" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <ellipse cx="0" cy="-1" rx="7.5" ry="3.75" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
+        <ellipse cx="0" cy="2.6" rx="7.5" ry="3.75" fill="#39424D" clipPath="url(#nx-revolve-cut-c0)" />
+        <ellipse cx="0" cy="-1" rx="7.5" ry="3.75" fill="none" stroke="var(--nx-line, #ffffff)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M0 -1 L0 -10" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2.2 1.6" />
+        <path d="M-5.8 -7.22 L-5.64 -6.97 L-5.44 -6.73 L-5.2 -6.5 L-4.91 -6.28 L-4.6 -6.07 L-4.24 -5.88 L-3.86 -5.7 L-3.44 -5.54 L-3 -5.4 L-2.54 -5.28 L-2.05 -5.18 L-1.55 -5.1 L-1.04 -5.05 L-0.52 -5.01 L0 -5 L0.52 -5.01 L1.04 -5.05 L1.55 -5.1 L2.05 -5.18 L2.54 -5.28 L3 -5.4 L3.44 -5.54 L3.86 -5.7 L4.24 -5.88 L4.6 -6.07 L4.91 -6.28 L5.2 -6.5 L5.44 -6.73 L5.64 -6.97 L5.8 -7.22 L5.91 -7.48 L5.98 -7.74 L6 -8 L5.98 -8.26 L5.91 -8.52" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M4.91 -9.72 L8.91 -8.52 L5.83 -5.66 Z" fill="var(--nx-blue, #2C7197)" stroke="var(--nx-line, #ffffff)" strokeWidth=".7" strokeLinejoin="round" />
       </g>
     </symbol>
     <symbol id="nx-hole" viewBox="0 0 32 32">

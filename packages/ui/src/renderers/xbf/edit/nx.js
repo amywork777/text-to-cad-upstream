@@ -38,11 +38,11 @@ export function booleanOf(id) {
  * holds (modeling commands by their `EDIT_COMMANDS` id, or "sketch"; the viewer's own tools,
  * Select among them, stay on its strip), and how many of them show as buttons (`shown`); the group's
  * title is its menu, with every one. `end`: it stands at the row's right end. The workspace has
- * no agent, so no group of Ask, Add to context or Annotate. A subtracting command (Extruded Cut...) is not
- * listed: it opens by its unite command's Boolean.
+ * no agent, so no group of Ask, Add to context or Annotate. Extruded Cut and Revolved Cut stand beside their
+ * Boss/Base, where SolidWorks has them; another subtracting command opens by its unite command's Boolean.
  */
 export const SOLID_GROUPS = Object.freeze([
-  { title: "Create", items: ["sketch", "extrude", "revolve", "sweep", "loft", "rib", "hole", "pattern", "mirror"], shown: 9 },
+  { title: "Create", items: ["sketch", "extrude", "cut", "revolve", "revolve_cut", "sweep", "loft", "rib", "hole", "pattern", "mirror"], shown: 11 },
   // Move Face first, as Fusion's Modify leads with Press Pull: Move Face and Delete Face edit faces where
   // they are, an imported body's (no history) as well as any.
   { title: "Modify", items: ["offset_face", "fillet", "chamfer", "shell", "draft", "split", "delete_face", "delete_body"], shown: 8 },
