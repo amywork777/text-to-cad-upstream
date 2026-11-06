@@ -43,11 +43,12 @@ export const UndoIcon = generatedIcon("undo");
 export const RedoIcon = generatedIcon("redo");
 
 /**
- * The generator's icon each modeling command draws. A subtracting command draws its unite
- * command's, because its Boolean is set in its dialog.
+ * The generator's icon each modeling command draws. Extruded Cut draws its pocket, so adding and
+ * removing material differ at a glance in the tree and on its panel; another subtracting command
+ * draws its unite command's, because its Boolean is set in its dialog.
  */
 export const COMMAND_ICON_NAMES = Object.freeze({
-  extrude: "extrude", cut: "extrude", revolve: "revolve", revolve_cut: "revolve", sweep: "sweep", sweep_cut: "sweep",
+  extrude: "extrude", cut: "cut", revolve: "revolve", revolve_cut: "revolve", sweep: "sweep", sweep_cut: "sweep",
   loft: "loft", loft_cut: "loft", rib: "rib", hole: "hole", pattern: "pattern", mirror: "mirror", fillet: "blend",
   chamfer: "chamfer", shell: "shell", draft: "draft", plane: "plane", split: "split", delete_body: "delete",
   offset_face: "offset-face", delete_face: "delete-face",

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CircleAlert, LoaderCircle } from "lucide-react";
+import { Check, CircleAlert, LoaderCircle } from "lucide-react";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@cad/ui/primitives/context-menu";
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
 import { TREE_INDENT_PX, TreeRowChevron, TreeRowSurface } from "@cad/ui/primitives/tree-row";
@@ -7,7 +7,7 @@ import { FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
 import { AUTHOR_DOT_CLASS, AUTHOR_WORDS, authorOf } from "./authors.js";
 import { ORIGIN_PLANES, barIndex, planeDetail, rolledBack, sizeName, treeFeatures } from "./editMode.js";
 import { AssemblyIcon, FeatureIcon, MateTreeIcon, OriginIcon, ParametersIcon, PartIcon, PlaneIcon, SketchIcon } from "./featureIcons.jsx";
-import { buildFailure, nxPlane, treeTitles } from "./nx.js";
+import { buildFailure, nxPlane, repeatedNames, treeTitles } from "./nx.js";
 import { MassPropertiesIcon } from "./cadIcons.jsx";
 
 const UNIT_MARKS = Object.freeze({ mm: "mm", in: "in" });
@@ -57,10 +57,14 @@ function Row({ id, depth, icon, title, detail = "", hint = "", expanded = null, 
     <span className="flex w-3 shrink-0 justify-center" onClick={event => { if (onToggle) { event.stopPropagation(); onToggle(); } }}>
       <TreeRowChevron expanded={Boolean(expanded)} branch={expanded !== null} />
     </span>
-    {check ? <input type="checkbox" checked={check.checked} disabled={check.disabled} aria-label={check.label}
-      className="size-3 shrink-0 cursor-pointer accent-muted-foreground disabled:cursor-default"
-      onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
-      onChange={event => check.onChange(event.currentTarget.checked)} /> : null}
+    {/* A thin outline and its tick, lighter than the row's name. */}
+    {check ? <span className="relative flex size-3 shrink-0">
+      <input type="checkbox" checked={check.checked} disabled={check.disabled} aria-label={check.label}
+        className="peer size-3 cursor-pointer appearance-none rounded-[2px] border border-muted-foreground/50 bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default"
+        onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
+        onChange={event => check.onChange(event.currentTarget.checked)} />
+      <Check aria-hidden="true" strokeWidth={2} className="pointer-events-none absolute inset-0 hidden size-3 p-px text-muted-foreground peer-checked:block" />
+    </span> : null}
     {icon}
     {renaming !== null && onRename ? <RenameInput value={renaming} onDone={onRename} />
       : <span className={muted ? "truncate text-muted-foreground" : "truncate"}>{title}</span>}
@@ -276,6 +280,8 @@ export default function EditTree({ edit, tree, onEditSketch = () => {}, onOpenPa
   // Each row's title as SolidWorks' design tree numbers it (Boss-Extrude2), a part's own or each of an assembly's.
   const titles = treeTitles(tree);
   const titleOf = row => titles.get(row.id) || row.title;
+  // A script variable every feature shares is left off the rows; one that differs tells them apart.
+  const repeated = repeatedNames(tree);
   const barAt = barIndex(tree, edit.bar);
   // SolidWorks' Rollback: the rollback bar just above the feature, it and what follows rolled back;
   // and, while the bar is up, Roll to End, the bar past the last feature again.
@@ -335,7 +341,7 @@ export default function EditTree({ edit, tree, onEditSketch = () => {}, onOpenPa
     const branch = Boolean(feature.sketch);
     const expanded = open.has(feature.id);
     const detail = feature.suppressed ? "Suppressed" : feature.kind === "Plane" ? planeDetail(feature, edit.state?.units || "")
-      : `${feature.name}${feature.count > 1 ? ` ×${feature.count}` : ""}`;
+      : [repeated.has(feature.id) ? "" : feature.name, feature.count > 1 ? `×${feature.count}` : ""].filter(Boolean).join(" ");
     const grey = feature.suppressed || out;
     const slot = partItems.findIndex(each => each.id === feature.id);
     return [

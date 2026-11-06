@@ -15,6 +15,7 @@ import { usePreviewState, useRendererShell } from "../kit/shell/useRendererShell
 import { usePreviewScene } from "../kit/shell/usePreviewScene.js";
 import { useViewportLoadStatus } from "../kit/shell/useViewportLoadStatus.js";
 import { buildFailedAlert, noGeometryAlert } from "../kit/status/loadAlerts.js";
+import { ToolStackContext } from "../kit/tools/ToolStack.jsx";
 import { useModelTools } from "../kit/tools/model-effects/ModelTools.jsx";
 import { useMotionExclusion } from "../kit/tools/model-effects/motionExclusion.js";
 import { useMeasureSession } from "../kit/tools/measure/useMeasureSession.js";
@@ -77,6 +78,8 @@ const MENU_CONTROLS = Object.freeze({
 // part has a script CAD mode edits is CAD mode's too (`edit/useXbfCadMode.jsx`): laid out for
 // modeling it by hand, a CAD tool's toolbar and design tree over the same view and picks.
 
+// CAD mode's PMI, a section docked under the FeatureManager and always open: nothing sits on the model.
+const PMI_DOCKED = Object.freeze({ sidebar: true, openSection: "pmi" });
 const NO_REFERENCES = Object.freeze([]);
 const EMPTY = Object.freeze([]);
 const NO_HOVER = Object.freeze({ parts: EMPTY, element: null });
@@ -829,7 +832,7 @@ function XbfSurface({ view, data }) {
 
   const pmiSection = pmiShown ? <PmiSection pmi={pmi} picked={pmiPickedFaces} selectedFeatureIds={selectedElementIds} moving={moving}
     request={pmiRequest} onRequestDone={() => setPmiRequest(null)} quickEditAway={cad.editing} /> : null;
-  // CAD mode's design tree stands in for the file sidebar (`leftDock`): its PMI is a panel of the tool stack, under the toolbar.
+  // CAD mode's design tree stands in for the file sidebar (`leftDock`): its PMI docks under the tree there.
   const pmiInSidebar = pmiShown && !cad.editing;
   const sidebar = scene && (assembly || kinematics || pmiInSidebar) ? <>
     {assembly ? <XbfModelTree key={document.modelKey} tree={tree} active={!previewing} disabled={shell.idle} mode={shape}
@@ -871,8 +874,15 @@ function XbfSurface({ view, data }) {
   }, []);
   usePmiViewApplied({ applied: pmi.view, viewer: () => shellRef.current?.frame.viewerRef.current, store, fit: fitPmiView });
 
+  const leftDock = cad.frame.leftDock && pmiSection ? <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">{cad.frame.leftDock}</div>
+    <div className="flex max-h-[50%] min-h-0 shrink-0 flex-col overflow-y-auto border-t border-border" data-cad-dock="pmi">
+      <ToolStackContext.Provider value={PMI_DOCKED}>{pmiSection}</ToolStackContext.Provider>
+    </div>
+  </div> : cad.frame.leftDock;
+
   return <RendererShell shell={shell} tools={strip} subToolbar={measuring ? <MeasurementsBar measure={measure} /> : null} sidebar={sidebar} previewView={previewView}
-    toolPanels={cad.editing ? pmiSection : null} notice={cad.notice} {...cad.frame}
+    notice={cad.notice} {...cad.frame} leftDock={leftDock}
     references={quickEdit.references} referenceChips={quickEdit.chips} nameReference={nameReference}
     requests={previewing ? NO_REFERENCES : pmi.changeChips} onClearRequests={pmi.clearChanges}
     onClearReferences={() => { setChosen(EMPTY); measure.select([]); cad.letGoAsked(); }} copySelection={copySelection}

@@ -69,13 +69,17 @@ function datumTriangle(context, base, from, hollow = false) {
   if (hollow) context.stroke(); else context.fill();
 }
 
-function drawItem(context, item, at, inks) {
-  const color = item.status !== "ok" ? inks[item.status] || inks.ok : item.selected ? SELECTED_COLOR : inks.ok;
+// The canvas's thin halo either side of a line, so a leader survives on any face.
+const HALO_PX = 1;
+
+// `halo`: this pass draws the item's halo in that colour, under the ink's own pass.
+function drawItem(context, item, at, inks, halo = null) {
+  const color = halo || (item.status !== "ok" ? inks[item.status] || inks.ok : item.selected ? SELECTED_COLOR : inks.ok);
   context.strokeStyle = color;
   context.fillStyle = color;
   const alpha = item.hovered || item.selected ? 1 : 0.85;
   context.globalAlpha = alpha;
-  context.lineWidth = item.selected ? 1.5 : 1;
+  context.lineWidth = (item.selected ? 1.5 : 1) + (halo ? HALO_PX * 2 : 0);
   context.setLineDash(item.status !== "ok" ? [4, 3] : []);
   const line = (a, b) => { if (!a || !b) return; context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke(); };
   if (at.dimension) {
@@ -177,6 +181,11 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
       const style = getComputedStyle(root);
       const inks = { ok: style.color || "#888" };
       for (const [status, token] of Object.entries(PMI_STATUS_TOKENS)) inks[status] = style.getPropertyValue(token).trim() || inks.ok;
+      // The viewport's colour, for the halo round leaders and bare dimensions; none on a clear one.
+      const backdrop = root.closest("[data-cad-scene-backdrop]");
+      const ground = backdrop ? getComputedStyle(backdrop).backgroundColor : "";
+      const halo = ground && !/^(transparent|rgba\(.*,\s*0\))$/.test(ground) ? ground : null;
+      root.style.setProperty("--pmi-halo", halo || "transparent");
       const project = projectWith(runtime.THREE, camera, width, height);
       // Where each label falls, then set apart where two would cover one another (a dimension's
       // stays on its line, and a dragged one where the pointer has it).
@@ -209,6 +218,8 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
       }
       const shown = drawn.filter(entry => entry.label);
       separateLabels(shown.map(entry => entry.box)).forEach((at, index) => Object.assign(shown[index].box, at));
+      // Every halo first, so none is drawn over another item's ink.
+      const inked = [];
       for (const { item, element, label, box } of drawn) {
         if (!element) continue;
         if (!label) { element.style.visibility = "hidden"; continue; }
@@ -221,9 +232,11 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
           extensions: construction.dimension.extensions.map(([a, b]) => [project(a), project(b)]),
           behind: construction.dimension.extensions.map(([a]) => behind(a))
         } : null;
-        drawItem(context, item, { anchor: project(construction?.anchor), box, dimension, broken: Boolean(construction?.broken),
-          behind: !construction?.broken && !construction?.dimension && behind(construction?.anchor) }, inks);
+        inked.push([item, { anchor: project(construction?.anchor), box, dimension, broken: Boolean(construction?.broken),
+          behind: !construction?.broken && !construction?.dimension && behind(construction?.anchor) }]);
       }
+      if (halo) for (const [item, at] of inked) drawItem(context, item, at, inks, halo);
+      for (const [item, at] of inked) drawItem(context, item, at, inks);
       context.globalAlpha = 1;
       context.setLineDash([]);
     };
@@ -285,7 +298,7 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
     element.addEventListener("pointercancel", cancel);
   };
 
-  return <div ref={rootRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden text-foreground" style={{ "--pmi-selected": SELECTED_COLOR }} data-cad-pmi="">
+  return <div ref={rootRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden text-foreground" style={{ "--pmi-selected": SELECTED_COLOR, "--pmi-halo": "transparent" }} data-cad-pmi="">
     <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />
     {items.map(item => <button key={item.key} type="button" ref={node => { if (node) labels.current.set(item.key, node); else labels.current.delete(item.key); }}
       tabIndex={interactive ? 0 : -1} aria-label={`${item.callout.text}${item.problem ? `: ${item.problem}` : ""}`} aria-pressed={item.selected}

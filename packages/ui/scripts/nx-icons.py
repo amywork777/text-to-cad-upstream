@@ -292,13 +292,29 @@ def sketch():
 
 
 def extrude():
+    """A Boss rising out of the block, an arrow lifting it: material added, opposite `cut`."""
     ic = Icon("extrude")
-    plane = ic.proj([(-2, -2, 0), (12, -2, 0), (12, 12, 0), (-2, 12, 0)])
-    ic.shape(plane, BLUE_FILL)
-    ic.outline(plane, BLUE)
-    ic.box(0, 0, 0, 10, 10, 9, FEAT)
-    start = ic.P(5, 5, 9)
-    ic.arrow(start, (start[0], start[1] - 9.5))
+    ic.box(0, 0, 0, 12, 12, 4, BODY)
+    ic.box(3, 3, 4, 9, 9, 10, FEAT)
+    start = ic.P(6, 6, 10)
+    ic.arrow(start, (start[0], start[1] - 7))
+    return ic
+
+
+def cut():
+    """A pocket going down into the block, an arrow into it: material taken away, opposite `extrude`."""
+    ic = Icon("cut")
+    s, h, a, b, floor = 12, 9, 2.5, 9.5, 3
+    ic.box(0, 0, 0, s, s, h, BODY)
+    opening = ic.proj([(a, a, h), (b, a, h), (b, b, h), (a, b, h)])
+    ic.raw(f'<g clip-path="url(#{ic.clip(opening)})">')
+    ic.face([(a, a, floor), (b, a, floor), (b, b, floor), (a, b, floor)], FEAT["mid"])
+    ic.face([(a, a, h), (b, a, h), (b, a, floor), (a, a, floor)], FEAT["left"])
+    ic.face([(a, a, h), (a, b, h), (a, b, floor), (a, a, floor)], FEAT["right"])
+    ic.raw("</g>")
+    ic.outline(opening, FEAT["edge"])
+    x, top = ic.P(6, 6, h + 7)
+    ic.arrow((x, top), (x, top + 12.5))
     return ic
 
 
@@ -325,9 +341,10 @@ def hole():
 
 
 def rounded(kind):
-    """A block with its top front-left edge blended or chamfered: that edge is the feature."""
+    """A block with its top front-left edge blended or chamfered, large enough to change the
+    block's silhouette at 16 px: one rounded corner, one cut corner. That edge is the feature."""
     ic = Icon(kind)
-    s, h, r = 12, 9, 4.5
+    s, h, r = 12, 10, 6.5
     P = ic.P
     if kind == "blend":
         steps = [i * math.pi / 16 for i in range(9)]
@@ -356,12 +373,13 @@ def rounded(kind):
 
 
 def shell():
+    """An open hollow box: thick enough walls, and a dark floor, to read as hollow at 16 px."""
     ic = Icon("shell")
-    s, h, t = 13, 8, 1.6
+    s, h, t = 13, 9, 2.4
     sil = ic.box(0, 0, 0, s, s, h, FEAT, outline=False)
     opening = ic.proj([(t, t, h), (s - t, t, h), (s - t, s - t, h), (t, s - t, h)])
     ic.raw(f'<g clip-path="url(#{ic.clip(opening)})">')
-    ic.face([(t, t, t), (s - t, t, t), (s - t, s - t, t), (t, s - t, t)], "#8CC4E2")
+    ic.face([(t, t, t), (s - t, t, t), (s - t, s - t, t), (t, s - t, t)], DARK)
     ic.face([(t, t, h), (s - t, t, h), (s - t, t, t), (t, t, t)], "#62A6CC")
     ic.face([(t, t, h), (t, s - t, h), (t, s - t, t), (t, t, t)], "#3F87B0")
     ic.raw("</g>")
@@ -1307,7 +1325,7 @@ def shapes():
 # what the workspace adds to it.
 GROUPS = (
     ("Approved", "The modeling commands and the Part Navigator's features, as Amy approved them; the check is a status mark.", (
-        sketch, extrude, revolve, hole, lambda: rounded("blend"), lambda: rounded("chamfer"), shell, draft, rib,
+        sketch, extrude, cut, revolve, hole, lambda: rounded("blend"), lambda: rounded("chamfer"), shell, draft, rib,
         pattern, mirror, datum_plane, csys, sweep, loft, split, delete, body, offset_face, delete_face, ask,
     )),
     ("The agent's tools", "Beside Ask, in the agent's blue: Add to context; Annotate (the Pencil) with its pen, "

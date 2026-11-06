@@ -93,8 +93,8 @@ it("opens with the part's Material, then the Origin", () => {
   // Drawn with the generator's coordinate system icon, its planes hanging from it, open.
   expect(rows[0].querySelector('use')?.getAttribute('href')).toBe('#nx-csys');
   expect(rows.slice(1, 4).map(each => each.textContent)).toEqual(['Front Plane', 'Top Plane', 'Right Plane']);
-  // The features follow, each kind numbered on its own, its variable name at the right.
-  expect(rows.slice(4).map(each => each.textContent)).toEqual(['Boss-Extrude1Plate', 'Fillet1Plate', 'Hole1Plate']);
+  // The features follow, each kind numbered on its own; the variable they all share is left off.
+  expect(rows.slice(4).map(each => each.textContent)).toEqual(['Boss-Extrude1', 'Fillet1', 'Hole1']);
   const named = part();
   rerender(<EditTree edit={{ ...named, state: { ...named.state, materialName: 'PLA' } } as never} tree={partTree()} />);
   expect(rowsOf()[0].textContent).toBe('PLA');
@@ -338,7 +338,7 @@ it("marks the feature whose build failed with the viewer's warning, and says why
   const mark = within(marked).getByRole('img', { name: 'Did not build' });
   expect(mark.getAttribute('class')).toMatch(/\btext-amber-500\b/);
   expect(marked.getAttribute('title')).toBe(`Did not build: ${WHY}`);
-  expect(marked.textContent).toBe('Fillet1Plate');
+  expect(marked.textContent).toBe('Fillet1');
   // No other row says it.
   expect(markedRows()).toEqual([FILLET]);
   expect(row('Hole1').getAttribute('title')).toBeNull();

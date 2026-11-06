@@ -42,10 +42,10 @@ export function booleanOf(id) {
  * listed: it opens by its unite command's Boolean.
  */
 export const SOLID_GROUPS = Object.freeze([
-  { title: "Create", items: ["sketch", "extrude", "revolve", "sweep", "loft", "rib", "hole", "pattern", "mirror"], shown: 4 },
+  { title: "Create", items: ["sketch", "extrude", "revolve", "sweep", "loft", "rib", "hole", "pattern", "mirror"], shown: 9 },
   // Move Face first, as Fusion's Modify leads with Press Pull: Move Face and Delete Face edit faces where
   // they are, an imported body's (no history) as well as any.
-  { title: "Modify", items: ["offset_face", "fillet", "chamfer", "shell", "draft", "split", "delete_face", "delete_body"], shown: 4 },
+  { title: "Modify", items: ["offset_face", "fillet", "chamfer", "shell", "draft", "split", "delete_face", "delete_body"], shown: 8 },
   { title: "Construct", items: ["plane"], shown: 1 },
 ]);
 
@@ -76,7 +76,7 @@ export const nxKind = kind => NX_KINDS[kind] || kind || "Feature";
 // gives the row: a feature's kind, the Origin, a sketch, the part or assembly it opens on, its Equations,
 // and an assembly's Mates.
 const FEATURE_ICON_NAMES = Object.freeze({
-  "Boss-Extrude": "extrude", "Cut-Extrude": "extrude", "Intersect-Extrude": "extrude", Revolve: "revolve", "Cut-Revolve": "revolve",
+  "Boss-Extrude": "extrude", "Cut-Extrude": "cut", "Intersect-Extrude": "extrude", Revolve: "revolve", "Cut-Revolve": "revolve",
   Sweep: "sweep", "Cut-Sweep": "sweep", Loft: "loft", "Cut-Loft": "loft", Hole: "hole", Rib: "rib",
   Fillet: "blend", Chamfer: "chamfer", Draft: "draft", Shell: "shell", Pattern: "pattern",
   Mirror: "mirror", Split: "split", "Move/Copy Body": "move", Plane: "plane",
@@ -86,7 +86,8 @@ const FEATURE_ICON_NAMES = Object.freeze({
 
 /**
  * The generator's icon for a row of the design tree, by its kind as the engine names it ("Boss-Revolve") or as
- * the tree does ("Revolve"): a Cut wears its Boss's icon. A kind without one of its own reads as a solid feature.
+ * the tree does ("Revolve"): an Extruded Cut wears its pocket, another Cut its Boss's icon. A kind without one of
+ * its own reads as a solid feature.
  */
 export const featureIconName = kind => FEATURE_ICON_NAMES[nxKind(kind)] || "extrude";
 
@@ -130,6 +131,19 @@ export const navigatorLabel = (features, id) => numbered(features).get(id)?.labe
 export function treeTitles(tree) {
   const lists = tree?.assembly ? (tree.components || []).map(component => component.features) : [tree?.features || []];
   return new Map(lists.flatMap(features => [...navigatorTitles(features)]));
+}
+
+/**
+ * The ids of the features whose `name` says nothing: a feature's name is the variable its script
+ * builds it into, not a body, so where every feature of a part has the same one ("Plate") it tells
+ * no rows apart and is left off them, and where they differ each keeps its own.
+ */
+export function repeatedNames(tree) {
+  const lists = tree?.assembly ? (tree.components || []).map(component => component.features) : [tree?.features || []];
+  return new Set(lists.flatMap(features => {
+    const named = features.filter(feature => feature.kind !== "Sketch" && feature.kind !== "Plane");
+    return new Set(named.map(feature => feature.name)).size > 1 ? [] : named.map(feature => feature.id);
+  }));
 }
 
 const slashed = path => String(path).replace(/\\/g, "/");

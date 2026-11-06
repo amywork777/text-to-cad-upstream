@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { EDIT_COMMANDS, featureTree } from "./editMode.js";
-import { SOLID_GROUPS, booleanOf, buildFailure, navigatorLabel, navigatorTitles, workspaceTabs } from "./nx.js";
+import { SOLID_GROUPS, booleanOf, buildFailure, navigatorLabel, navigatorTitles, repeatedNames, workspaceTabs } from "./nx.js";
 
 const titles = options => workspaceTabs(options).map(tab => tab.title);
 
@@ -269,4 +269,16 @@ test("a failed build in an assembly points at the part's feature, by its file", 
   assert.equal(buildFailure(assembly, WHY, stoppedAt(at(7, "tray = extrude(base, amount=3)", "lid.py"))), null);
   // A helper both parts share, called from the lid: the lid's row.
   assert.equal(buildFailure(assembly, WHY, stoppedAt(at(3, "raise ValueError", "helpers.py"), at(7, "lid = extrude(base, amount=3)", "lid.py")))?.id, "lid.py:7");
+});
+
+test("leaves a script variable off the rows only where every feature of the part shares it", () => {
+  const boss = { id: "boss", kind: "Boss-Extrude", name: "Plate" };
+  const fillet = { id: "fillet", kind: "Fillet", name: "Plate" };
+  const lid = { id: "lid", kind: "Boss-Extrude", name: "Lid" };
+  const sketch = { id: "sketch", kind: "Sketch", name: "" };
+  assert.deepEqual([...repeatedNames({ features: [sketch, boss, fillet] })], ["boss", "fillet"]);
+  assert.deepEqual([...repeatedNames({ features: [boss, lid] })], []);
+  // Each part of an assembly on its own.
+  const components = [{ features: [boss, fillet] }, { features: [{ ...boss, id: "a" }, lid] }];
+  assert.deepEqual([...repeatedNames({ assembly: true, components })], ["boss", "fillet"]);
 });

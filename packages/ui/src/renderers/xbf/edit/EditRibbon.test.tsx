@@ -39,8 +39,8 @@ it("opens a group's command from its menu", async () => {
   const user = userEvent.setup();
   const onCommand = vi.fn();
   render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} onCommand={onCommand} />);
-  // Four of Create's nine commands show as buttons; the group's title is its menu, with all of them.
-  expect(commandsIn('Create')).toEqual(['Sketch', 'Extruded Boss/Base', 'Revolved Boss/Base', 'Swept Boss/Base']);
+  // Create's nine commands show as buttons; the group's title is its menu, with all of them.
+  expect(commandsIn('Create')).toEqual(['Sketch', 'Extruded Boss/Base', 'Revolved Boss/Base', 'Swept Boss/Base', 'Lofted Boss/Base', 'Rib', 'Hole Wizard', 'Pattern', 'Mirror']);
   await user.click(menuButton(group('Create')));
   const menu = screen.getByRole('menu');
   expect(within(menu).getAllByRole('menuitemcheckbox').map(item => item.textContent)).toEqual(['Sketch', 'Extruded Boss/Base', 'Revolved Boss/Base',
@@ -72,8 +72,8 @@ it("heads the toolbar with Features, Sketch and Evaluate, and Drawing where a pa
 it("groups the Features tab's commands as the design does, each under SolidWorks' name", () => {
   render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} />);
   expect(layout()).toEqual({
-    Create: ['Sketch', 'Extruded Boss/Base', 'Revolved Boss/Base', 'Swept Boss/Base'],
-    Modify: ['Move Face', 'Fillet', 'Chamfer', 'Shell'],
+    Create: ['Sketch', 'Extruded Boss/Base', 'Revolved Boss/Base', 'Swept Boss/Base', 'Lofted Boss/Base', 'Rib', 'Hole Wizard', 'Pattern', 'Mirror'],
+    Modify: ['Move Face', 'Fillet', 'Chamfer', 'Shell', 'Draft', 'Split', 'Delete Face', 'Delete/Keep Body'],
     Construct: ['Plane'],
   });
 });

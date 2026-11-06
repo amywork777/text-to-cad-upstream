@@ -320,6 +320,17 @@ const FIRST_OF_PART = "note";
 // What coverage found of a part, in words: how many of its faces no requirement is on.
 const uncoveredText = (count, t) => (!count ? t("pmi.coverageAll") : t(count === 1 ? "pmi.coverageOne" : "pmi.coverageMany", { count }));
 
+/** The coverage's questions, each once with how many faces ask it: six like holes are one line. */
+export function sameQuestions(suggestions) {
+  const lines = new Map();
+  for (const said of suggestions) {
+    const key = `${said.kind}\n${said.question}\n${said.why}`;
+    const line = lines.get(key);
+    lines.set(key, { said: line?.said ?? said, count: (line?.count ?? 0) + 1 });
+  }
+  return [...lines.values()];
+}
+
 /**
  * @param {{ pmi: ReturnType<typeof import("./useXbfPmi.jsx").useXbfPmi>, picked: Parameters<typeof pmiCreateOptions>[0]["picked"],
  *   selectedFeatureIds?: readonly string[], moving: boolean, request?: { kind: string, key: number } | null,
@@ -425,10 +436,15 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
           <FileSheetStatusText className="px-0 py-0.5">{`${coverageOfParts && item.partName ? `${item.partName}: ` : ""}${uncoveredText(item.uncovered.length, t)}`}</FileSheetStatusText>
           {item.conflicts.map(conflict => <Warning key={`${conflict.kind}:${conflict.ids.join(",")}`} data-pmi-conflict={conflict.kind}>
             {`${conflict.ids.join(", ")}: ${conflict.problem}`}</Warning>)}
-          {item.suggestions.map(said => <div key={`${said.kind}:${said.faces.join(",")}`} className="py-0.5 text-tiny" data-pmi-suggestion={said.kind}>
+          {sameQuestions(item.suggestions).map(({ said, count }) => <TooltipHint key={`${said.kind}:${said.question}:${said.why}`} side="right" content={<>
             <div>{said.question}</div>
-            <div className="text-micro text-muted-foreground first-letter:uppercase [overflow-wrap:anywhere]">{said.why}</div>
-          </div>)}
+            <div className="text-micro first-letter:uppercase [overflow-wrap:anywhere]">{said.why}</div>
+          </>}>
+            <div className="flex min-w-0 items-center gap-1 py-0.5 text-tiny" data-pmi-suggestion={said.kind}>
+              <span className="min-w-0 flex-1 truncate">{said.question}</span>
+              {count > 1 ? <span className="shrink-0 tabular-nums text-muted-foreground">{`×${count}`}</span> : null}
+            </div>
+          </TooltipHint>)}
         </div>)}
       </FileSheetSettingsSection> : null}
       {annotations.length ? <FileSheetSettingsSection title={t("pmi.annotations")} sectionId="pmi-annotations">

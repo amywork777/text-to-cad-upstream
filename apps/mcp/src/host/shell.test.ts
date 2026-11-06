@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { APP_ROUTE, viaEngine, viaTunnel } from './shell';
+import { APP_ROUTE, COULD_NOT_OPEN, say, viaEngine, viaTunnel } from './shell';
 
 const encode = (text: string) => btoa(text);
 
@@ -40,4 +40,19 @@ it('where the host carries no call, the shell reads the app from the engine with
     headers: { authorization: 'Bearer day-link' }, credentials: 'omit' }));
   await expect(viaEngine({ browser: 'http://elsewhere/?token=x', engine: 'http://127.0.0.1:3245' }, fetch as any))
     .rejects.toThrow('This chat cannot reach the CAD engine.');
+});
+
+it('the shell\'s line wears the host\'s font and muted colour, on its theme, with no stylesheet to lean on', () => {
+  document.body.innerHTML = '<div id="root"></div>';
+  say(COULD_NOT_OPEN, { theme: 'dark', styles: { variables: { '--font-sans': 'Studio Sans', '--color-text-secondary': 'rgb(120, 120, 120)' } } });
+  const line = document.querySelector<HTMLElement>('#root p')!;
+  expect(line.textContent).toBe("The viewer couldn't open this.");
+  expect(line.style.fontSize).toBe('13px');
+  expect(line.style.fontFamily).toContain('Studio Sans');
+  expect(line.style.color).toBe('rgb(120, 120, 120)');
+  expect(document.documentElement.style.colorScheme).toBe('dark');
+  // A host that sent none still gets a sans line, never the browser's default serif.
+  say(COULD_NOT_OPEN);
+  expect(document.querySelector<HTMLElement>('#root p')!.style.fontFamily).toContain('sans-serif');
+  expect(document.querySelectorAll('#root p')).toHaveLength(1);
 });

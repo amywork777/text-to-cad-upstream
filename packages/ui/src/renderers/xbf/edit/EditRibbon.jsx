@@ -31,11 +31,12 @@ const FAMILY_NAMES = Object.freeze({ rectangle: "Rectangle", circle: "Circle", a
 // one the icon generator's (`cadIcons.jsx`, `sketchIcons.jsx`), the view's tools as the strip shows them.
 // The icons take the button's text color, so the palette is grey: under the pointer the workspace's
 // pale ground (`--cad-ws-hover`), and blue only on the command pressed (`PRESSED_CLASS`).
-const BUTTON_CLASS = "flex h-[3.25rem] min-w-11 flex-col items-center justify-start gap-1 rounded-md px-1 pt-1 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-5 [&_svg]:shrink-0";
+const BUTTON_CLASS = "flex h-[3.25rem] w-14 shrink-0 flex-col items-center justify-start gap-1 rounded-md pt-1 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-5 [&_svg]:shrink-0";
 const PRESSED_CLASS = "bg-cad-ws-selected text-info hover:bg-cad-ws-selected hover:text-info";
-// A long name wraps to two lines under its icon, as SolidWorks' CommandManager sets them; without
-// names (`compact`, where not even one named group fits) the buttons narrow to their icons.
-const LABEL_CLASS = "max-w-[4.75rem] whitespace-normal text-center leading-[1.1]";
+// Every tool stands on one pitch, its button's width. A long name wraps to two lines under its icon,
+// as SolidWorks' CommandManager sets them, a word too long for the pitch at its edge; without names
+// (`compact`, where not even one named group fits) the buttons narrow to their icons.
+const LABEL_CLASS = "w-full whitespace-normal text-center leading-[1.1] [overflow-wrap:anywhere]";
 // The view's own controls the frame hands over (Projection, Display, Preview: the strip's small tiles), lit as
 // the toolbar's buttons are: the workspace's pale blue under the pointer, its deeper one while a menu is open.
 const VIEW_CONTROLS_CLASS = "flex shrink-0 items-center gap-0.5 [&_button:hover]:bg-cad-ws-hover [&_button[aria-expanded=true]]:bg-cad-ws-selected";
@@ -52,7 +53,7 @@ const ALL_NAMED = Object.freeze({ compact: false, count: Infinity });
 function RibbonButton({ label, icon, active, disabled = false, description, onClick, compact = false, hint }) {
   return <TooltipHint content={hint || label}>
     <button type="button" aria-label={label} aria-pressed={active} aria-description={description} disabled={disabled}
-      className={cn(BUTTON_CLASS, active && PRESSED_CLASS, compact && "min-w-9 justify-center pt-0")}
+      className={cn(BUTTON_CLASS, active && PRESSED_CLASS, compact && "w-9 justify-center pt-0")}
       onClick={onClick}>
       {icon}
       {compact ? null : <span className={LABEL_CLASS}>{label}</span>}
@@ -175,7 +176,7 @@ function MoreMenu({ groups }) {
   return <DropdownMenu modal={false}>
     <TooltipHint content="More commands">
       <DropdownMenuTrigger asChild>
-        <button type="button" aria-label="More commands" className={cn(BUTTON_CLASS, "min-w-9 justify-center pt-0 aria-expanded:bg-cad-ws-selected")}>
+        <button type="button" aria-label="More commands" className={cn(BUTTON_CLASS, "w-9 justify-center pt-0 aria-expanded:bg-cad-ws-selected")}>
           <ChevronsRight aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>

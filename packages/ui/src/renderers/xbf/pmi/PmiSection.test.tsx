@@ -222,11 +222,13 @@ it('the coverage checkbox lights the faces with no requirement', () => {
 it('coverage asks what the requirements leave open, in plain words, never the call that would answer it', () => {
   // Test-owned: the engine's words, drawn as given; a question, never a warning.
   openMbd(structure => ({ ...structure, pmi_coverage: [{ part: 0, uncovered: [], conflicts: [],
-    suggestions: [{ kind: 'hole', faces: [V4_BOTTOM], question: 'What is the 9 mm hole for?',
-      answer: `dimensional_size("hole-1-size", "${V4_BOTTOM}")`, why: "9 mm is ISO 273's medium clearance hole for M8" }] }] }));
+    suggestions: ['hole-1-size', 'hole-2-size'].map(id => ({ kind: 'hole', faces: [`${V4_BOTTOM}:${id}`], question: 'What is the 9 mm hole for?',
+      answer: `dimensional_size("${id}", "${V4_BOTTOM}")`, why: "9 mm is ISO 273's medium clearance hole for M8" })) }] }));
   const coverage = within(screen.getByRole('region', { name: 'Coverage' }));
-  expect(coverage.getByText('What is the 9 mm hole for?')).toBeTruthy();
-  const suggestion = coverage.getByText("9 mm is ISO 273's medium clearance hole for M8");
+  // Two like holes ask one question, once, with its count; why it asks is the line's tooltip.
+  const suggestion = coverage.getByText('What is the 9 mm hole for?');
+  expect(coverage.getByText('×2')).toBeTruthy();
+  expect(coverage.queryByText("9 mm is ISO 273's medium clearance hole for M8")).toBeNull();
   expect(coverage.queryByRole('status')).toBeNull();
   expect(suggestion.closest('[data-pmi-suggestion]')?.getAttribute('data-pmi-suggestion')).toBe('hole');
   expect(screen.queryByText(/dimensional_size/)).toBeNull();
