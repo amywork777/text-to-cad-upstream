@@ -846,7 +846,7 @@ export default {
   "pmi.noteLabel": "註解 {number}：{text}",
   "pmi.coverage": "涵蓋",
   "pmi.showUncovered": "顯示無要求的面",
-  "pmi.coverageAll": "每個面都有要求",
+  "pmi.coverageAll": "所有面均已覆蓋，未驗證",
   "pmi.coverageOne": "{count} 個面沒有要求",
   "pmi.coverageMany": "{count} 個面沒有要求",
   "pmi.annotations": "標註",

@@ -69,15 +69,15 @@ const SIDEBAR_POSITION_PHONE = Object.freeze({ top: INSET, left: INSET, bottom: 
 // (`--cad-workspace-top`), is what the rest at the top keeps below.
 const WORKSPACE_TOP = "var(--cad-workspace-top, 0px)";
 const UNDER_TOOLBAR = `calc(${WORKSPACE_TOP} + ${INSET})`;
-// The design tree is a column docked at the view's left, 13.75rem wide, from under the toolbar to the view's foot.
+// The design tree is a column docked at the view's left, 16rem wide, from under the toolbar to the view's foot.
 // The canvas and what lines up with it start at the column's hairline, so the model is framed in the room it really
 // has; a view too narrow for the column hides it, and they have the whole view back (`PAST_NAVIGATOR_CLASS`).
 const NAVIGATOR_POSITION = Object.freeze({ top: WORKSPACE_TOP });
-const PAST_NAVIGATOR_CLASS = "left-[13.75rem] @max-xl/cad-viewport:left-0";
+const PAST_NAVIGATOR_CLASS = "left-[16rem] @max-xl/cad-viewport:left-0";
 // The dialog stops an inset above the cube's line, as the tool stack does, whichever bottom corner the cube is in.
 const DIALOG_PLACE_POSITION = Object.freeze({ top: UNDER_TOOLBAR, bottom: VIEWPORT_STACK_BOTTOM });
 // While a dialog is open there, the top column (a tool's own row and its panels) is the room past it, so none of
-// it hides under the dialog: past the navigator (13.75rem) and the dialog (18rem, an inset past it), or past the
+// it hides under the dialog: past the navigator (16rem) and the dialog (18rem, an inset past it), or past the
 // dialog alone where the navigator gives way to a narrow view (`BESIDE_DIALOG_CLASS`). With none open, the column
 // spans the room past the navigator's column (`PAST_NAVIGATOR_COLUMN_CLASS`), so it centres on the canvas; with the
 // navigator folded to its title it spans the view, and moves right only as far as clears the title (the top
@@ -85,7 +85,7 @@ const DIALOG_PLACE_POSITION = Object.freeze({ top: UNDER_TOOLBAR, bottom: VIEWPO
 const TOOLBAR_POSITION_LEFT_BY_CLASS = Object.freeze({ top: INSET, right: INSET, bottom: VIEWPORT_STACK_BOTTOM });
 const BESIDE_DIALOG_CLASS = Object.freeze({ navigator: "left-[calc(31.75rem+16px)] @max-xl/cad-viewport:left-[calc(18rem+16px)]",
   alone: "left-[calc(18rem+16px)]" });
-const PAST_NAVIGATOR_COLUMN_CLASS = "left-[calc(13.75rem+8px)] @max-xl/cad-viewport:left-2";
+const PAST_NAVIGATOR_COLUMN_CLASS = "left-[calc(16rem+8px)] @max-xl/cad-viewport:left-2";
 // The timeline runs along the bottom edge up to the cube, its corner's room (the cube's box and an inset) kept
 // on the cube's side. A corner a host leaves to the default reads `auto` (`ViewPlaneControl`), which makes the
 // margin on that side invalid, and an invalid margin is none: the timeline reaches the edge where the cube is not.
@@ -811,7 +811,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
                   {workspace.chrome.ribbon(tools, toolbarView)}
                 </div> : null}
                 {workspace.chrome.leftDock ? <aside aria-label="FeatureManager design tree" data-cad-dock="navigator" style={NAVIGATOR_POSITION}
-                  className={cn(WORKSPACE_DOCK_CLASS, "pointer-events-auto absolute left-0 flex w-[13.75rem] flex-col overflow-hidden @max-xl/cad-viewport:hidden",
+                  className={cn(WORKSPACE_DOCK_CLASS, "pointer-events-auto absolute left-0 flex w-[16rem] flex-col overflow-hidden @max-xl/cad-viewport:hidden",
                     navigatorFolded ? "border-b" : "bottom-0")}>
                   <button type="button" aria-expanded={!navigatorFolded} onClick={() => setNavigatorFolded(folded => !folded)}
                     className="flex h-7 shrink-0 items-center gap-1 px-2.5 text-left text-micro leading-3 text-muted-foreground hover:bg-cad-ws-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/45">
@@ -822,7 +822,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
                 </aside> : null}
                 {workspace.chrome.dialogPlace ? <div ref={workspace.chrome.dialogPlace} data-cad-command-card-place="" style={DIALOG_PLACE_POSITION}
                   className={cn("pointer-events-none absolute flex w-72 max-w-[calc(100%-1rem)] flex-col items-stretch",
-                    workspace.chrome.leftDock ? "left-[calc(13.75rem+0.5rem)] @max-xl/cad-viewport:left-2" : "left-2")} /> : null}
+                    workspace.chrome.leftDock ? "left-[calc(16rem+0.5rem)] @max-xl/cad-viewport:left-2" : "left-2")} /> : null}
                 {workspace.chrome.bottomDock ? <div className={cn("pointer-events-auto absolute inset-x-0 bottom-0", pastNavigator && PAST_NAVIGATOR_CLASS)} data-cad-dock="timeline" style={TIMELINE_POSITION}>
                   {workspace.chrome.bottomDock}
                 </div> : null}

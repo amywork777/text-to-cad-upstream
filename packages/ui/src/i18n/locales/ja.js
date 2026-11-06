@@ -845,7 +845,7 @@ export default {
   "pmi.noteLabel": "ノート {number}: {text}",
   "pmi.coverage": "カバレッジ",
   "pmi.showUncovered": "要件のない面を表示",
-  "pmi.coverageAll": "すべての面に要件があります",
+  "pmi.coverageAll": "すべての面をカバー、未検証",
   "pmi.coverageOne": "{count} 面に要件がありません",
   "pmi.coverageMany": "{count} 面に要件がありません",
   "pmi.annotations": "注記",

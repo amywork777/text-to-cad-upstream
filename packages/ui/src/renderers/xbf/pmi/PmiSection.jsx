@@ -274,7 +274,7 @@ function EntryRow({ entry, pmi, label, rowProps, onSelectRelated, children }) {
   const hidden = pmi.hiddenKeys.includes(entry.key);
   const picked = entry.key === pmi.selectedKey;
   return <li className="min-w-0">
-    <TreeRowSurface dense active={picked} className="group/row gap-0 pr-0" style={{ "--row-actions": ROW_ACTIONS_WIDTH }} {...rowProps}
+    <TreeRowSurface active={picked} className={cn("group/row gap-0 pr-0", !picked && "text-foreground")} style={{ "--row-actions": ROW_ACTIONS_WIDTH }} {...rowProps}
       onMouseEnter={() => pmi.hover(entry.key)} onMouseLeave={() => pmi.hover("")}>
       <button type="button" aria-pressed={picked} aria-label={`${label}${entry.statusText ? `: ${entry.statusText}` : ""}`} data-pmi-pick={entry.id}
         onClick={() => pmi.select(picked ? "" : entry.key)}
@@ -301,13 +301,13 @@ function ViewRow({ view, pmi, ofParts }) {
   const active = view.key === pmi.viewKey;
   const note = !view.supported ? t("pmi.notShownReason", { reason: view.unsupported }) : view.at?.sectionOff ? t(PMI_SECTION_OFF) : "";
   return <li className="min-w-0">
-    <TreeRowSurface dense active={active} className="gap-0 pr-0" data-pmi-view={view.name}>
+    <TreeRowSurface active={active} className={cn("gap-0 pr-0", !active && "text-foreground")} data-pmi-view={view.name}>
       <button type="button" aria-pressed={active} aria-label={`${view.name}${note ? `: ${note}` : ""}`} disabled={!view.at}
         onClick={() => pmi.chooseView(view.key)} className={cn(ROW_BUTTON, !view.at && "text-muted-foreground")}>
         <PmiGlyph name="view" className="size-3 shrink-0" aria-hidden="true" />
         <TreeRowLabel className="min-w-0 shrink">{view.name}</TreeRowLabel>
-        <TreeRowLabel className="flex-1 text-micro text-muted-foreground">{view.supported ? pmiViewShowsText(view, t) : t("pmi.notShown")}</TreeRowLabel>
-        {ofParts ? <TreeRowLabel className="shrink-0 text-micro text-muted-foreground">{view.partName}</TreeRowLabel> : null}
+        <TreeRowLabel className="flex-1 text-tiny text-muted-foreground">{view.supported ? pmiViewShowsText(view, t) : t("pmi.notShown")}</TreeRowLabel>
+        {ofParts ? <TreeRowLabel className="shrink-0 text-tiny">{view.partName}</TreeRowLabel> : null}
       </button>
     </TreeRowSurface>
     {note ? <FileSheetStatusText className="pb-0.5 pl-6">{note}</FileSheetStatusText> : null}
@@ -320,6 +320,17 @@ const FIRST_OF_PART = "note";
 
 // What coverage found of a part, in words: how many of its faces no requirement is on.
 const uncoveredText = (count, t) => (!count ? t("pmi.coverageAll") : t(count === 1 ? "pmi.coverageOne" : "pmi.coverageMany", { count }));
+
+/**
+ * What to say of a part's coverage: its name among several, and how many of its faces no requirement is on.
+ * With every face covered and a question or conflict still standing there is no count to say: it would read as the last word.
+ */
+export function coverageLine(item, ofParts, t) {
+  const name = ofParts && item.partName ? item.partName : "";
+  const open = !item.uncovered.length && item.suggestions.length + item.conflicts.length > 0;
+  const said = open ? "" : uncoveredText(item.uncovered.length, t);
+  return name && said ? `${name}: ${said}` : name || said;
+}
 
 /** The coverage's questions, each once with how many faces ask it: six like holes are one line. */
 export function sameQuestions(suggestions) {
@@ -416,17 +427,18 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
       onCancel={closeDraft} onAdd={(call) => { pmi.add(draft.part, call); closeDraft(); }} /> : null}
     {moving ? <FileSheetStatusText className="py-1">{t("pmi.moving")}</FileSheetStatusText> : null}
     {!pmi.entries.length && !views.length && !draft ? <FileSheetStatusText className="py-1">{t("pmi.empty")}</FileSheetStatusText> : null}
-    <div data-pmi-groups="">
+    {/* Each group's head stands clear of its rows, in the section heading's own markup. */}
+    <div data-pmi-groups="" className="[&_h2>span]:text-xs [&_h2>span]:font-semibold">
       {views.length ? <FileSheetSettingsSection title={t("pmi.views")} sectionId="pmi-views">
-        <ul className="px-1 text-tiny" aria-label={t("pmi.views")}>{views.map(view => <ViewRow key={view.key} view={view} pmi={pmi} ofParts={viewsOfParts} />)}</ul>
+        <ul className="px-1 text-xs" aria-label={t("pmi.views")}>{views.map(view => <ViewRow key={view.key} view={view} pmi={pmi} ofParts={viewsOfParts} />)}</ul>
       </FileSheetSettingsSection> : null}
       {notes.length ? <FileSheetSettingsSection title={t("pmi.notes")} sectionId="pmi-notes">
-        <ul className={cn("px-1 text-tiny", pmi.off && "opacity-60")} aria-label={t("pmi.notes")}>
+        <ul className={cn("px-1 text-xs", pmi.off && "opacity-60")} aria-label={t("pmi.notes")}>
           {notes.map((entry) => {
             const { number, text } = entry.callout;
             return <EntryRow key={entry.key} entry={entry} pmi={pmi} label={t("pmi.noteLabel", { number, text })} rowProps={{ "data-pmi-note": entry.id }} onSelectRelated={selectRelated}>
               <TooltipHint content={text} overflowOnly><span className="min-w-0 flex-1 truncate">{`${number}. ${text}`}</span></TooltipHint>
-              {notesOfParts ? <TreeRowLabel className="shrink-0 text-micro text-muted-foreground">{entry.partName}</TreeRowLabel> : null}
+              {notesOfParts ? <TreeRowLabel className="shrink-0 text-tiny">{entry.partName}</TreeRowLabel> : null}
             </EntryRow>;
           })}
         </ul>
@@ -434,14 +446,14 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
       {coverage.length ? <FileSheetSettingsSection title={t("pmi.coverage")} sectionId="pmi-coverage" switchLabel={t("pmi.showUncovered")}
         enabled={Boolean(pmi.uncoveredShown)} onEnabledChange={shown => pmi.showUncovered(shown)}>
         {coverage.map(item => <div key={item.part ?? "none"} className="px-2" data-pmi-coverage={item.part ?? ""}>
-          <FileSheetStatusText className="px-0 py-0.5">{`${coverageOfParts && item.partName ? `${item.partName}: ` : ""}${uncoveredText(item.uncovered.length, t)}`}</FileSheetStatusText>
+          {coverageLine(item, coverageOfParts, t) ? <p className="py-0.5 text-xs text-foreground">{coverageLine(item, coverageOfParts, t)}</p> : null}
           {item.conflicts.map(conflict => <Warning key={`${conflict.kind}:${conflict.ids.join(",")}`} data-pmi-conflict={conflict.kind}>
             {`${conflict.ids.join(", ")}: ${conflict.problem}`}</Warning>)}
           {sameQuestions(item.suggestions).map(({ said, count }) => <TooltipHint key={`${said.kind}:${said.question}:${said.why}`} side="right" content={<>
             <div>{said.question}</div>
             <div className="text-micro first-letter:uppercase [overflow-wrap:anywhere]">{said.why}</div>
           </>}>
-            <div className="flex min-w-0 items-center gap-1 py-0.5 text-tiny" data-pmi-suggestion={said.kind}>
+            <div className="flex min-w-0 items-center gap-1 py-0.5 text-xs text-foreground" data-pmi-suggestion={said.kind}>
               <span className="min-w-0 flex-1 truncate">{said.question}</span>
               {count > 1 ? <span className="shrink-0 tabular-nums text-muted-foreground">{`×${count}`}</span> : null}
             </div>
@@ -454,11 +466,11 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
           <Button type="button" variant="ghost" size="xs" className="h-6 text-tiny" onClick={() => setShowAllFor(filtered ? selectionKey : "")}>{t(filtered ? "pmi.showAllPmi" : "pmi.forSelection")}</Button>
         </div> : null}
         {filtered && !visible.length ? <FileSheetStatusText className="py-1">{t("pmi.noneForSelection")}</FileSheetStatusText> : null}
-        <ul className={cn("px-1 text-tiny", pmi.off && "opacity-60")} aria-label="PMI" data-pmi-rows="">
+        <ul className={cn("px-1 text-xs", pmi.off && "opacity-60")} aria-label="PMI" data-pmi-rows="">
           {visible.map(entry => <EntryRow key={entry.key} entry={entry} pmi={pmi} label={entry.callout.text} rowProps={{ "data-pmi-row": entry.id }} onSelectRelated={selectRelated}>
             <TreeRowLabel className="min-w-0 shrink tabular-nums">{entry.supported ? entry.callout.text : entry.label || entry.id}</TreeRowLabel>
             {/* Its id, where it says more than the callout (a datum's id is its letter). */}
-            <TreeRowLabel className="flex-1 text-micro text-muted-foreground">{!entry.supported ? t("pmi.notShown") : entry.kind === "datum" ? "" : entry.id}</TreeRowLabel>
+            <TreeRowLabel className="flex-1 text-tiny">{!entry.supported ? t("pmi.notShown") : entry.kind === "datum" ? "" : entry.id}</TreeRowLabel>
           </EntryRow>)}
         </ul>
       </FileSheetSettingsSection> : null}

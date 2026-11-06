@@ -206,11 +206,11 @@ it("brings the Sketch tab to the front while a sketch is open, and Exit Sketch r
 });
 
 /**
- * jsdom lays nothing out: each group is 150px wide with its names and 100px without them, and the row
- * `width`, less the More button's 46px while it stands beside the row. Returns the undo.
+ * jsdom lays nothing out: each group is 150px wide with its names and 100px without them, its buttons on
+ * a 50px pitch, and the row `width`, less the More button's 46px while it stands beside the row. Returns the undo.
  */
 function layOutRibbon(width = 260) {
-  const keys = ['offsetWidth', 'clientWidth'] as const;
+  const keys = ['offsetWidth', 'clientWidth', 'offsetLeft'] as const;
   const saved = keys.map(key => Object.getOwnPropertyDescriptor(HTMLElement.prototype, key));
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get(this: HTMLElement) {
     if (this.hasAttribute('data-cad-ribbon-group')) return this.closest('[data-compact="true"]') ? 100 : 150;
@@ -219,6 +219,10 @@ function layOutRibbon(width = 260) {
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) {
     if (!this.hasAttribute('data-compact')) return 0;
     return this.parentElement?.querySelector('[data-cad-ribbon-more]') ? width - 46 : width;
+  } });
+  Object.defineProperty(HTMLElement.prototype, 'offsetLeft', { configurable: true, get(this: HTMLElement) {
+    const item = this.parentElement!;
+    return item.parentElement?.hasAttribute('data-cad-ribbon-items') ? [...item.parentElement.children].indexOf(item) * 50 : 0;
   } });
   return () => keys.forEach((key, index) => {
     const descriptor = saved[index];
@@ -230,14 +234,32 @@ function layOutRibbon(width = 260) {
 const foldedGroups = () => ['Create', 'Modify', 'Construct'].map(title =>
   document.querySelector<HTMLElement>(`[role="group"][aria-label="${title}"]`)!.getAttribute('aria-hidden'));
 
-it("folds whole groups from the right into More and keeps the buttons' names, where the row is narrow", () => {
+it("shows as much of the next group as fits, its title the menu of all of it, and folds the rest into More", () => {
   const restore = layOutRibbon();
   try {
     render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} />);
-    // Three groups need 450px with their names in a 260px row: one fits beside More, named as it is on a wide row.
+    // Three groups need 450px with their names in a 260px row: one fits beside More, named as it is on a wide
+    // row, and one button of the next (150 + 4 + 50 of 215px); the last is whole behind More.
     expect(screen.getByRole('button', { name: 'More commands' })).toBeTruthy();
-    expect(foldedGroups()).toEqual([null, 'true', 'true']);
+    expect(foldedGroups()).toEqual([null, null, 'true']);
     expect(command('Create', 'Extruded Boss/Base').textContent).toBe('Extruded Boss/Base');
+    const modify = screen.getByRole('group', { name: 'Modify' });
+    const buttons = [...modify.querySelectorAll('[data-cad-ribbon-items] > *')];
+    expect(buttons.filter(button => !button.className.includes('invisible'))).toHaveLength(1);
+    expect(within(modify).getByRole('button', { name: 'Modify commands' })).toBeTruthy();
+  } finally {
+    restore();
+  }
+});
+
+it("shows no More while only part of the last group is off the row", () => {
+  const restore = layOutRibbon(660);
+  try {
+    render(<EditRibbon tools={PART_TOOLS} edit={edit({ sketch: SKETCH }) as never} />);
+    // The Sketch tab's four groups and a button of its last fit in 660px: no whole group is off the row.
+    expect(screen.queryByRole('button', { name: 'More commands' })).toBeNull();
+    expect(screen.getByRole('group', { name: 'Feature' }).getAttribute('aria-hidden')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Feature commands' })).toBeTruthy();
   } finally {
     restore();
   }

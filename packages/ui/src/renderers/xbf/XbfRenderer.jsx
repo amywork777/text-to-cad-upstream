@@ -874,9 +874,11 @@ function XbfSurface({ view, data }) {
   }, []);
   usePmiViewApplied({ applied: pmi.view, viewer: () => shellRef.current?.frame.viewerRef.current, store, fit: fitPmiView });
 
-  const leftDock = cad.frame.leftDock && pmiSection ? <div className="flex min-h-0 flex-1 flex-col">
-    <div className="flex min-h-0 flex-1 flex-col">{cad.frame.leftDock}</div>
-    <div className="flex max-h-[50%] min-h-0 shrink-0 flex-col overflow-y-auto border-t border-border" data-cad-dock="pmi">
+  // The tree is as tall as its rows, up to 60% of the column, past which it scrolls; PMI sits directly
+  // under it, fills the rest and scrolls inside itself.
+  const leftDock = cad.frame.leftDock && pmiSection ? <div className="grid min-h-0 flex-1 grid-rows-[fit-content(60%)_minmax(0,1fr)]">
+    <div className="flex min-h-0 flex-col overflow-hidden">{cad.frame.leftDock}</div>
+    <div className="flex min-h-0 flex-col overflow-x-hidden overflow-y-auto border-t border-border [&_h3]:text-xs [&_h3]:font-semibold" data-cad-dock="pmi">
       <ToolStackContext.Provider value={PMI_DOCKED}>{pmiSection}</ToolStackContext.Provider>
     </div>
   </div> : cad.frame.leftDock;

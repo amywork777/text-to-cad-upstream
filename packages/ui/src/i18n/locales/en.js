@@ -878,7 +878,7 @@ export default {
   "pmi.noteLabel": "Note {number}: {text}",
   "pmi.coverage": "Coverage",
   "pmi.showUncovered": "Show faces with no requirement",
-  "pmi.coverageAll": "Every face has a requirement",
+  "pmi.coverageAll": "All faces covered, not verified",
   "pmi.coverageOne": "{count} face has no requirement",
   "pmi.coverageMany": "{count} faces have no requirement",
   "pmi.annotations": "Annotations",

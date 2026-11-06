@@ -74,7 +74,7 @@ it("keeps the render pane when the workspace shows, and starts the canvas at the
   // Nothing stands beside the render pane in the frame, in either layout: the chrome is over it.
   const beside = () => [backdrop().previousElementSibling, backdrop().nextElementSibling];
   const canvas = () => document.querySelector<HTMLElement>('[data-cad-canvas]')!;
-  const pastTree = /\bleft-\[13\.75rem\] @max-xl\/cad-viewport:left-0/;
+  const pastTree = /\bleft-\[16rem\] @max-xl\/cad-viewport:left-0/;
   expect(beside()).toEqual([null, null]);
   expect(canvas().className).not.toMatch(pastTree);
   view.show(WORKSPACE);
@@ -104,7 +104,7 @@ it("docks the design tree at the view's left under the toolbar, folding to its t
   // Flush, one hairline on its right edge: no card's border or corners, and white as the toolbar is.
   expect(navigator.className.split(/\s+/)).toEqual(expect.arrayContaining(WORKSPACE_DOCK_CLASS.split(' ')));
   expect(navigator.className.split(/\s+/)).not.toEqual(expect.arrayContaining(WORKSPACE_SURFACE_CLASS.split(' ')));
-  expect(navigator.className).toMatch(/\bleft-0\b.*\bw-\[13\.75rem\].*\bbottom-0\b/);
+  expect(navigator.className).toMatch(/\bleft-0\b.*\bw-\[16rem\].*\bbottom-0\b/);
   expect(navigator.className).not.toMatch(/\brounded|\bbackdrop-|bg-background\//);
   const fold = within(navigator).getByRole('button', { name: 'FeatureManager' });
   const tree = within(navigator).getByRole('tree', { name: 'Features' });
@@ -186,7 +186,7 @@ it("puts Projection, Display and Preview, and the view catching up, in the toolb
 it("moves the column beside an open dialog, so a tool's own row and its panels never hide under it", () => {
   const view = shell({ ...WORKSPACE, dialogOpen: false });
   // No dialog: the column spans the canvas, an inset past the design tree, and centres what it holds.
-  const pastTree = /\bleft-\[calc\(13\.75rem\+8px\)\] @max-xl\/cad-viewport:left-2/;
+  const pastTree = /\bleft-\[calc\(16rem\+8px\)\] @max-xl\/cad-viewport:left-2/;
   expect([column().style.left, column().className]).toEqual(['', expect.stringMatching(pastTree)]);
   // A dialog beside the design tree: the column is the room past the dialog, or past the dialog alone in a
   // view too narrow for the navigator.
@@ -210,7 +210,7 @@ const shifted = () => [column().style.marginLeft, column().style.marginRight];
 /**
  * A view laid out as the app lays it, for the top controls' measure: `view` px wide; the column an inset in from its
  * sides, moved by its margins; its one row (`row` px wide) and the tool stack's panel (`panel`), each centred in it; and
- * the design tree 13.75rem wide, flush at the left, open or folded to its 28px title, or no box at all where a view too narrow
+ * the design tree 16rem wide, flush at the left, open or folded to its 28px title, or no box at all where a view too narrow
  * for it hides it.
  */
 function layOut({ view, row = 0, panel = 0, navigator = 'open' }:

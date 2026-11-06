@@ -31,7 +31,7 @@ const FAMILY_NAMES = Object.freeze({ rectangle: "Rectangle", circle: "Circle", a
 // one the icon generator's (`cadIcons.jsx`, `sketchIcons.jsx`), the view's tools as the strip shows them.
 // The icons take the button's text color, so the palette is grey: under the pointer the workspace's
 // pale ground (`--cad-ws-hover`), and blue only on the command pressed (`PRESSED_CLASS`).
-const BUTTON_CLASS = "flex h-[3.25rem] w-[4.25rem] shrink-0 flex-col items-center justify-start gap-1 rounded-md pt-1 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-5 [&_svg]:shrink-0";
+const BUTTON_CLASS = "flex h-[3.25rem] w-[4.25rem] shrink-0 flex-col items-center justify-start gap-px rounded-md pt-0.5 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-6 [&_svg]:shrink-0";
 const PRESSED_CLASS = "bg-cad-ws-selected text-info hover:bg-cad-ws-selected hover:text-info";
 // Every tool stands on one pitch, its button's width. A long name wraps to two lines under its icon,
 // as SolidWorks' CommandManager sets them, at a space or after a slash and never inside a word: the
@@ -45,11 +45,13 @@ const VIEW_CONTROLS_CLASS = "flex shrink-0 items-center gap-0.5 [&_button:hover]
 const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-tiny leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
 // A group's title under its buttons; where it is the group's menu it is a button too.
 const TITLE_CLASS = "text-micro leading-3 text-muted-foreground";
+// The title's band: a rule the width of the group, meeting the divider, so the title names the whole group and not the button over it.
+const TITLE_BAND_CLASS = "flex w-full justify-start border-t border-border px-1.5 pb-1 pt-px";
 const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-blue-600 dark:text-blue-400",
   "Over defined": "text-red-600 dark:text-red-400" });
 // The More button's box, before it is first laid out.
 const MORE_WIDTH_PX = 46;
-const ALL_NAMED = Object.freeze({ compact: false, count: Infinity });
+const ALL_NAMED = Object.freeze({ compact: false, count: Infinity, partial: 0 });
 
 function RibbonButton({ label, icon, active, disabled = false, description, onClick, compact = false, hint }) {
   return <TooltipHint content={hint || label}>
@@ -65,21 +67,35 @@ function RibbonButton({ label, icon, active, disabled = false, description, onCl
 /** A group: its buttons over its title, which is its menu (`menu`) where the group has one; `end`, at the row's right end. */
 function RibbonGroup({ title, folded = false, end = false, menu = null, children }) {
   return <div role="group" aria-label={title} aria-hidden={folded || undefined} data-cad-ribbon-group=""
-    className={cn("flex shrink-0 flex-col items-center border-r border-border px-1 last:border-r-0", end && "ml-auto", folded && "invisible")}>
-    <div className="flex items-center gap-0.5 pt-1">{children}</div>
-    {menu || <span className={cn(TITLE_CLASS, "pb-1 pt-0.5")}>{title}</span>}
+    className={cn("flex shrink-0 flex-col border-r border-border last:border-r-0", end && "ml-auto", folded && "invisible")}>
+    <div className="flex items-center gap-0.5 px-1 pt-1" data-cad-ribbon-items="">{children}</div>
+    <div className={TITLE_BAND_CLASS}>{menu || <span className={TITLE_CLASS}>{title}</span>}</div>
   </div>;
 }
 
 /**
- * How the ribbon's groups fit: every button keeps its name for as long as a named group fits. First
- * whole groups fold from the right behind the More button (`count`: the groups shown; Infinity, all
- * of them); only where not even one named group fits beside More do the names go (`compact`: the
- * icons alone, each name in its tooltip), and groups fold on from there. Each layout is measured
- * before it is painted. A folded group keeps its place, unseen past the edge, so each group's right
- * edge reads the same whichever are folded; the widths the groups took with their names are kept,
- * to know when they fit again. The edges are the groups' widths summed, as the row packs them with
- * no gap: where they place themselves (a group at the row's end) does not change what they need.
+ * How many of a group's buttons fit where the group starts at `start` and the row ends at `end`: each
+ * reaches to where the next one starts (a tool's chevron is part of it), the last to the group's edge.
+ */
+function buttonsFitting(group, start, end) {
+  const row = group.querySelector("[data-cad-ribbon-items]");
+  const starts = [...row.children].map(item => item.firstElementChild.offsetLeft);
+  const padding = Number.parseFloat(getComputedStyle(row).paddingLeft) || 0;
+  const reach = index => (index + 1 < starts.length ? starts[index + 1] - starts[0] : group.offsetWidth - padding);
+  return starts.filter((_, index) => start + padding + reach(index) <= end).length;
+}
+
+/**
+ * How the ribbon's groups fit: every button keeps its name for as long as a named group fits. Groups
+ * stand whole from the left (`count`: the whole ones; Infinity, all of them), then as many buttons of
+ * the next as fit (`partial`), its title the menu of all its items; the rest fold behind the More
+ * button, which stands only while a whole group is off the row. Only where not even one named group
+ * fits beside More do the names go (`compact`: the icons alone, each name in its tooltip), and
+ * groups fold on from there. Each layout is measured before it is painted. A folded group or button
+ * keeps its place, unseen past the edge, so each group's right edge reads the same whichever are
+ * folded; the widths the groups took with their names are kept, to know when they fit again. The
+ * edges are the groups' widths summed, as the row packs them with no gap: where they place
+ * themselves (a group at the row's end) does not change what they need.
  */
 function useRibbonFit(rowRef, moreRef, key) {
   const [fit, setFit] = useState(ALL_NAMED);
@@ -98,16 +114,19 @@ function useRibbonFit(rowRef, moreRef, key) {
     // How many fit beside More, and whether all of them fit with no More at all.
     const shown = rights.filter(right => right <= room - moreWidth.current).length;
     const count = rights.at(-1) <= room ? Infinity : shown;
+    // The next group's buttons that fit: beside More unless it is the last group, and so the only one left to hold back.
+    const partial = count === Infinity ? 0
+      : buttonsFitting(groups[count], (rights[count - 1] || 0), room - (count === groups.length - 1 ? 0 : moreWidth.current));
     let next;
     if (row.dataset.compact !== "true") {
       named.current = { first: rights[0], all: rights.at(-1) };
-      next = count ? { compact: false, count } : { compact: true, count: Infinity };
+      next = count ? { compact: false, count, partial } : { compact: true, count: Infinity, partial: 0 };
     } else if (!named.current || named.current.all <= room || named.current.first <= room - moreWidth.current) {
       next = ALL_NAMED; // the names fit again, or their width is not known yet: shown to learn it
     } else {
-      next = { compact: true, count };
+      next = { compact: true, count, partial };
     }
-    setFit(current => (current.compact === next.compact && current.count === next.count ? current : next));
+    setFit(current => (current.compact === next.compact && current.count === next.count && current.partial === next.partial ? current : next));
   }, [rowRef, moreRef]);
   // Other groups or names: their width with names is learnt again.
   useLayoutEffect(() => { named.current = null; }, [key]);
@@ -160,7 +179,7 @@ function GroupItems({ items }) {
 function GroupMenu({ title, items }) {
   return <DropdownMenu modal={false}>
     <DropdownMenuTrigger asChild>
-      <button type="button" aria-label={`${title} commands`} className={cn(TITLE_CLASS, "mb-1 mt-0.5 flex items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 aria-expanded:bg-cad-ws-selected")}>
+      <button type="button" aria-label={`${title} commands`} className={cn(TITLE_CLASS, "flex items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 aria-expanded:bg-cad-ws-selected")}>
         {title}<ChevronDown className="size-2.5 shrink-0" aria-hidden="true" />
       </button>
     </DropdownMenuTrigger>
@@ -177,7 +196,7 @@ function MoreMenu({ groups }) {
   return <DropdownMenu modal={false}>
     <TooltipHint content="More commands">
       <DropdownMenuTrigger asChild>
-        <button type="button" aria-label="More commands" className={cn(BUTTON_CLASS, "w-9 justify-center pt-0 aria-expanded:bg-cad-ws-selected")}>
+        <button type="button" aria-label="More commands" className={cn(BUTTON_CLASS, "w-9 justify-center pt-0 aria-expanded:bg-cad-ws-selected [&_svg]:size-5")}>
           <ChevronsRight aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
@@ -201,25 +220,30 @@ const shownItems = group => (group.shown === undefined ? group.items : group.ite
  * The ribbon's groups (`{ title, items, shown? }`, each item a button's `{ id, label, icon, active?,
  * disabled?, description?, menu?, onClick }`) in one row, and what does not fit in its More menu.
  * A group with `shown` draws that many of its items as buttons and its title as a menu of all of
- * them; one without draws them all, under a plain title.
+ * them; one without draws them all, under a plain title, until they do not all fit.
  */
 function RibbonGroups({ groups }) {
   const rowRef = useRef(null);
   const moreRef = useRef(null);
   const key = groups.map(group => `${group.title}:${shownItems(group).map(item => item.label).join(",")}`).join("|");
   const fit = useRibbonFit(rowRef, moreRef, key);
-  const folded = groups.slice(fit.count);
+  const folded = groups.slice(fit.count + (fit.partial ? 1 : 0));
   return <>
     <div ref={rowRef} data-compact={fit.compact ? "true" : "false"} className="relative flex min-w-0 flex-1 items-stretch overflow-hidden">
-      {groups.map((group, index) => <RibbonGroup key={group.title} title={group.title} folded={index >= fit.count} end={group.end}
-        menu={group.shown === undefined ? null : <GroupMenu title={group.title} items={group.items} />}>
-        {/* A tool's settings (Select's filter) are its chevron after its button, as on the strip. */}
-        {shownItems(group).map(({ id, menu, ...item }) => <Fragment key={id}><RibbonButton {...item} compact={fit.compact} />{menu || null}</Fragment>)}
-      </RibbonGroup>)}
+      {groups.map((group, index) => {
+        const partly = fit.partial > 0 && index === fit.count;
+        return <RibbonGroup key={group.title} title={group.title} folded={index >= fit.count && !partly} end={group.end}
+          menu={group.shown === undefined && !partly ? null : <GroupMenu title={group.title} items={group.items} />}>
+          {/* A tool's settings (Select's filter) are its chevron after its button, as on the strip. */}
+          {shownItems(group).map(({ id, menu, ...item }, at) => <span key={id} className={cn("contents", partly && at >= fit.partial && "invisible")}>
+            <RibbonButton {...item} compact={fit.compact} />{menu || null}
+          </span>)}
+        </RibbonGroup>;
+      })}
     </div>
-    {folded.length ? <div ref={moreRef} className="flex shrink-0 flex-col items-center border-x border-border px-1" data-cad-ribbon-more="">
-      <div className="flex items-center pt-1"><MoreMenu groups={folded} /></div>
-      <span className={cn(TITLE_CLASS, "pb-1 pt-0.5")}>More</span>
+    {folded.length ? <div ref={moreRef} className="flex shrink-0 flex-col border-x border-border" data-cad-ribbon-more="">
+      <div className="flex items-center px-1 pt-1"><MoreMenu groups={folded} /></div>
+      <div className={TITLE_BAND_CLASS}><span className={TITLE_CLASS}>More</span></div>
     </div> : null}
   </>;
 }
@@ -252,7 +276,7 @@ function searchable(groups, extras = []) {
  * most-used commands as buttons over its title, which is its menu of them all. While a sketch is
  * edited the Sketch tab alone is up, holding the sketch's tools as NX's sketch task environment
  * does: Finish Sketch (back to Solid), the curves to draw and edit (Quick Trim, Offset Curve...),
- * Rapid Dimension, and the features to make of it. A narrow view folds the groups at the right
+ * Rapid Dimension, and the features to make of it. A narrow view shows as much of the groups as fits, folds the whole ones past it
  * into a More menu and keeps the buttons' names; they go only where one named group cannot fit.
  * At the tab row's right end, before where the part stands, the view's own (`view`, the frame's:
  * `RendererShell`'s `ribbon(tools, view)`): its controls, Projection, Display and Preview, and the

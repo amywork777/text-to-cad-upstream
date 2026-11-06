@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import PmiSection from '../../../../dist/renderers/xbf/pmi/PmiSection.js';
+import PmiSection, { coverageLine } from '../../../../dist/renderers/xbf/pmi/PmiSection.js';
 import { useXbfPmi } from '../../../../dist/renderers/xbf/pmi/useXbfPmi.js';
 import { usePmiViewApplied } from '../../../../dist/renderers/xbf/pmi/usePmiView.js';
 import { presentXbfTree } from '../../../../dist/renderers/xbf/xbfTree.js';
@@ -132,7 +132,9 @@ it('groups views, notes, coverage and annotations under static headings', () => 
   // The flag note its flag, the general profile its profile, a general note none.
   expect([...document.querySelectorAll('[data-pmi-note]')].map(row => row.querySelector('[data-pmi-glyph]')?.getAttribute('data-pmi-glyph') || ''))
     .toEqual(['surface_profile', '', 'flag']);
-  expect(within(screen.getByRole('region', { name: 'Coverage' })).getByText('Every face has a requirement')).toBeTruthy();
+  // Every face has a requirement, but a question stands: the count is not said beside it as the last word.
+  expect(within(screen.getByRole('region', { name: 'Coverage' })).queryByText('All faces covered, not verified')).toBeNull();
+  expect(within(screen.getByRole('region', { name: 'Coverage' })).getByText('What is the part made of?')).toBeTruthy();
   // The annotations as before, but the notes: limits stacked in words as the callout says them.
   expect([...screen.getByRole('region', { name: 'Annotations' }).querySelectorAll('[data-pmi-pick]')].map(row => row.getAttribute('aria-label')))
     .toEqual(['Datum A', '9.8–10.2', '⌀10.0 +0.1/0', '30 basic', '50 basic', 'Flatness 0.05', 'Position ⌀0.1 | A', 'Surface profile 0.2 | A']);
@@ -448,4 +450,15 @@ it("a limits dimension's tolerance field reads back as its limits, and limits ty
   await user.clear(field);
   await user.type(field, '9.9 to 10.2{Enter}');
   expect(requests()).toEqual([expect.stringMatching(/^Change the PMI "thickness" .*: tolerance=limits\(9\.9, 10\.2\)\. .*tolerance=limits\(9\.9, 10\.2\)/s)]);
+});
+
+it("says coverage is not verification, and gives no last word while a question stands", () => {
+  const t = (key: string, values?: { count: number }) => `${key}${values ? `:${values.count}` : ''}`;
+  const item = (patch = {}) => ({ partName: 'Clip', uncovered: [], suggestions: [], conflicts: [], ...patch });
+  expect(coverageLine(item(), false, t)).toBe('pmi.coverageAll');
+  expect(coverageLine(item(), true, t)).toBe('Clip: pmi.coverageAll');
+  expect(coverageLine(item({ suggestions: [{ kind: 'datum' }] }), false, t)).toBe('');
+  expect(coverageLine(item({ suggestions: [{ kind: 'datum' }] }), true, t)).toBe('Clip');
+  expect(coverageLine(item({ conflicts: [{ kind: 'overlap' }] }), false, t)).toBe('');
+  expect(coverageLine(item({ uncovered: ['a', 'b'], suggestions: [{ kind: 'datum' }] }), false, t)).toBe('pmi.coverageMany:2');
 });

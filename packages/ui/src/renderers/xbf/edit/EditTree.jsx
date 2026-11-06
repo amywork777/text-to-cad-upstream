@@ -16,6 +16,16 @@ const ROW_HOVER_CLASS = "hover:bg-cad-ws-hover", ROW_SELECTED_CLASS = "bg-cad-ws
 // What a feature that failed to build says, beside its title and on hover.
 const BUILD_FAILED = "Did not build";
 
+// A name this long may not fit the column: its last characters stay, as they tell it from its neighbours.
+const NAME_TAIL = 8, LONG_NAME = 24;
+/** A row's name, cut in its middle where it does not fit ("iso4762_socket_h…_M3x12"), so its end still shows. */
+function RowName({ text, className = "" }) {
+  if (text.length < LONG_NAME) return <span className={`truncate ${className}`}>{text}</span>;
+  return <span className={`flex min-w-0 whitespace-pre ${className}`}>
+    <span className="truncate">{text.slice(0, -NAME_TAIL)}</span><span className="shrink-0">{text.slice(-NAME_TAIL)}</span>
+  </span>;
+}
+
 /** A row's name typed over in place, as SolidWorks' tree renames one: Enter or a click away keeps
  * it, Escape leaves it as it was (`onDone` given the name, or null). */
 function RenameInput({ value, onDone }) {
@@ -35,7 +45,8 @@ function RenameInput({ value, onDone }) {
 }
 
 /** One row of the tree: its place (depth), its disclosure when it has rows under it, its icon and
- * name. A double-click opens it (`onActivate`: Edit Sketch on a sketch, Edit Feature on a feature),
+ * name; `detail` (what the script calls it, how many, its plane) is said with the name on the row's
+ * tooltip, for the column has no room for a second column. A double-click opens it (`onActivate`: Edit Sketch on a sketch, Edit Feature on a feature),
  * else opens or closes it; a right-click selects it and opens its menu (`menu`, in NX's words and order).
  * While `renaming`, its name is typed over (`onRename`, given the name or null). `warn`: why the
  * feature did not build, marked beside its name with the viewer's warning and said on hover. `author`:
@@ -45,10 +56,10 @@ function RenameInput({ value, onDone }) {
 function Row({ id, depth, icon, title, detail = "", hint = "", expanded = null, onToggle = null, onActivate = null, selected, onSelect, onHover, muted = false, menu = null,
   slot = null, renaming = null, onRename = null, check = null, warn = null, author = null, role = "treeitem", drag = null }) {
   const active = Boolean(id) && selected === id;
-  const detailed = Boolean(detail) && renaming === null;
-  const row = <TreeRowSurface as="div" dense active={active} role={role} aria-selected={role === "treeitem" ? active : undefined}
-    aria-expanded={expanded === null ? undefined : expanded} tabIndex={-1} title={warn ? `${BUILD_FAILED}: ${warn}` : hint || undefined}
-    className={`cursor-default select-none ${active ? ROW_SELECTED_CLASS : ROW_HOVER_CLASS}`} style={{ paddingLeft: 4 + depth * (TREE_INDENT_PX + 2) }}
+  const row = <TreeRowSurface as="div" active={active} role={role} aria-selected={role === "treeitem" ? active : undefined}
+    aria-expanded={expanded === null ? undefined : expanded} tabIndex={-1}
+    title={warn ? `${BUILD_FAILED}: ${warn}` : hint || (detail ? `${title}: ${detail}` : title.length < LONG_NAME ? undefined : title)}
+    className={`cursor-default select-none ${active ? ROW_SELECTED_CLASS : `text-foreground ${ROW_HOVER_CLASS}`}`} style={{ paddingLeft: 4 + depth * (TREE_INDENT_PX + 2) }}
     data-cad-edit-tree-row={id || title} data-cad-edit-bar-slot={slot ?? undefined}
     onClick={() => { if (id) onSelect(id); else onToggle?.(); }}
     onContextMenu={() => { if (id && menu?.length) onSelect(id); }}
@@ -67,13 +78,12 @@ function Row({ id, depth, icon, title, detail = "", hint = "", expanded = null, 
     </span> : null}
     {icon}
     {renaming !== null && onRename ? <RenameInput value={renaming} onDone={onRename} />
-      : <span className={muted ? "truncate text-muted-foreground" : "truncate"}>{title}</span>}
+      : <RowName text={title} className={muted ? "text-muted-foreground" : ""} />}
     {/* The alert card's warning icon, amber as the card draws a warning. */}
     {warn && renaming === null ? <CircleAlert role="img" aria-label={BUILD_FAILED} className="size-3.5 shrink-0 text-amber-500" /> : null}
-    {detailed ? <span className="ml-auto truncate pl-2 text-muted-foreground">{detail}</span> : null}
     {/* The timeline's 6px dot; the box around it takes no room of its own, so the pointer finds it more easily. */}
     {author ? <TooltipHint content={AUTHOR_WORDS[author]} side="top">
-      <span className={`-m-1 flex shrink-0 p-1 ${detailed ? "" : "ml-auto"}`}>
+      <span className="-m-1 ml-auto flex shrink-0 p-1">
         <span role="img" aria-label={AUTHOR_WORDS[author]} data-cad-edit-tree-author={author} className={`size-1.5 rounded-full ${AUTHOR_DOT_CLASS[author]}`} />
       </span>
     </TooltipHint> : null}
@@ -134,7 +144,7 @@ function RollbackBar({ index, count, label, disabled, slotAt, onPreview, onMove 
       event.stopPropagation();
       if (place(target) !== index) onMove(place(target));
     }}>
-    <span className="h-[3px] w-full rounded-full bg-muted-foreground/50 group-hover:bg-muted-foreground group-active:bg-info group-focus-visible:bg-info" />
+    <span className="h-0.5 w-full rounded-full bg-primary/60 group-hover:bg-primary group-active:bg-info group-focus-visible:bg-info" />
   </div>;
 }
 
@@ -143,8 +153,8 @@ function RollbackBar({ index, count, label, disabled, slotAt, onPreview, onMove 
  * Expressions, which NX lists above the model's history. A button, as the tree's rows are not.
  */
 function HeadFold({ depth, icon, title, expanded, onToggle }) {
-  return <TreeRowSurface as="button" type="button" dense aria-expanded={expanded} data-cad-edit-tree-row={title} onClick={onToggle}
-    className={`cursor-default select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 ${ROW_HOVER_CLASS}`}
+  return <TreeRowSurface as="button" type="button" aria-expanded={expanded} data-cad-edit-tree-row={title} onClick={onToggle}
+    className={`cursor-default select-none text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 ${ROW_HOVER_CLASS}`}
     style={{ paddingLeft: 4 + depth * (TREE_INDENT_PX + 2) }}>
     <span className="flex w-3 shrink-0 justify-center"><TreeRowChevron expanded={expanded} /></span>
     {icon}<span className="truncate">{title}</span>
@@ -218,7 +228,7 @@ export function ExpressionRows({ edit }) {
  * Edit mode's design tree, as SolidWorks' FeatureManager lists a part: its name, then Equations folded
  * above the tree (the named sizes, typed over to change), and the tree, which opens with the Origin and
  * the Front, Top and Right Planes and goes on with the features in the order the script makes them,
- * numbered as SolidWorks numbers them (`nx.js`): each with its icon, its own name, its variable's name at the right, a
+ * numbered as SolidWorks numbers them (`nx.js`): each with its icon, its own name (its variable's name on its tooltip), a
  * dot past it for who made it (the agent's purple, yours grey, none where it is not known: `authors.js`;
  * a sketch carries its feature's) and a box to suppress it, a solid's sketch under it, a sketch nothing
  * uses yet on a row of its own. An assembly lists its parts as components, each opening to its own

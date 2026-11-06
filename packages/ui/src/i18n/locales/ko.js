@@ -845,7 +845,7 @@ export default {
   "pmi.noteLabel": "노트 {number}: {text}",
   "pmi.coverage": "적용 범위",
   "pmi.showUncovered": "요구 사항이 없는 면 표시",
-  "pmi.coverageAll": "모든 면에 요구 사항이 있습니다",
+  "pmi.coverageAll": "모든 면이 포함됨, 검증되지 않음",
   "pmi.coverageOne": "요구 사항이 없는 면 {count}개",
   "pmi.coverageMany": "요구 사항이 없는 면 {count}개",
   "pmi.annotations": "주석",
