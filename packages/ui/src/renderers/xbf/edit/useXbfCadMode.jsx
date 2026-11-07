@@ -21,7 +21,7 @@ import SketchesLayer from "./SketchesLayer.jsx";
 import ValueCallout from "./ValueCallout.jsx";
 import { cadChosen, doubleClickLayout, editLayoutState, pendingFaceStep, useEditLayout } from "./editLayout.js";
 import {
-  ORIGIN_PLANES, STANDARD_VIEWS, assemblyRowParts, editCommand, featureNames, featureTree, isolatedPart, mirrorOutline, nextSketchName, notASketch, originAxis,
+  ORIGIN_PLANES, STANDARD_VIEWS, assemblyRowParts, editCommand, sketchPart, featureNames, featureTree, isolatedPart, mirrorOutline, nextSketchName, notASketch, originAxis,
   planeOutline, rolledBack, selectionDimensions, selectionItems, sizeName, sketchTreeId, sketchView, treeFeatures, treeSketch
 } from "./editMode.js";
 import { faceChipName, faceNumber, faceReference, shownFaces } from "./faceChips.js";
@@ -522,6 +522,13 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
       || (previewedSketch && shown.file === previewedSketch.file && shown.line === previewedSketch.line)
       || (previewedSketches || []).some(each => shown.file === each.file && shown.line === each.line)))),
   [edit.sketch, edit.state?.sketches, selectedTreeSketch, previewedSketch, previewedSketches]);
+  // What places a sketch on the model: the part it stands on where that stands now (`sketchPart`), the pose and Explode
+  // included; null for the document's own frame.
+  const sketchPlace = useCallback((sketch) => {
+    const traced = (edit.state?.sketches || EMPTY).find(each => each.file === sketch.file && each.line === sketch.line);
+    const part = traced ? sketchPart(edit.state, tree.nodes, traced) : null;
+    return part ? scene?.placedPart?.(part) || null : null;
+  }, [edit.state, tree, scene]);
   // A sketch is picked on the model as in the design tree, with Select in hand and nothing else asking for a pick: the sketch
   // an extrude takes (inside its outline too, while it waits for one), or one to work on next; a sweep's or a loft's
   // sketches one after another. The part's extent is how far Through All goes in a preview.
@@ -567,11 +574,11 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
         disabled={edit.saving || Boolean(edit.command)} planes={planes} origin={origin}
         choice={edit.choice} onChange={(dimension, text) => void edit.change({ dimension: dimension.id, text })}
         onChoose={edit.choose} onDismissChoice={edit.dismissChoice} /> : null}
-      {edit.sketch ? <SketchOverlay viewport={viewport} edit={edit} units={units} modelEdgeAt={modelEdgeAt} /> : null}
+      {edit.sketch ? <SketchOverlay viewport={viewport} edit={edit} units={units} modelEdgeAt={modelEdgeAt} place={sketchPlace} /> : null}
       {shownSketches.length ? <SketchesLayer viewport={viewport} sketches={shownSketches} selected={previewedSketches || selectedTreeSketch}
         onPick={sketchesPickable ? pickSketch : null} profiles={sketchFeature && (!selectedTreeSketch || takesSketches)} preview={edit.preview}
         onEdit={sketchesPickable && !edit.command ? shown => openTreeSketch({ file: shown.file, line: shown.line, title: shown.name }) : null}
-        through={partExtent} /> : null}
+        through={partExtent} place={sketchPlace} /> : null}
       {edit.inspecting === "mass" && massMark ? <PreviewLayer viewport={viewport} preview={null} mark={massMark} extent={partExtent} /> : null}
       {edit.inspecting === "draft" && edit.draftCheck?.positions ? <DraftAnalysisLayer viewport={viewport} check={edit.draftCheck} /> : null}
       {edit.inspecting === "interference" && edit.interference?.shown

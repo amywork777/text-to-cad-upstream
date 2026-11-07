@@ -52,6 +52,12 @@ const viewKey = (width, height, camera, modelGroup) => [width, height, camera.ma
   camera.projectionMatrix.elements.join(), modelGroup.matrixWorld.elements.join()].join("|");
 
 /**
+ * The runtime as a drawing on `part` sees it: the mappings below read the model's transform from its `modelGroup`, so
+ * a sketch placed by a part (`sketchPart`) is drawn through that part's group. The runtime itself with no part.
+ */
+export const onPart = (runtime, part) => (part && runtime ? { ...runtime, modelGroup: part } : runtime);
+
+/**
  * The part in the view: `toScreen(x, y, z)` a place in the part's own millimetres to the
  * viewport's pixels, or null behind the camera; `toView(x, y, z)` the place as the camera sees it
  * (it looks down its -z); `key` what that depends on, to paint again only when it changed. Null

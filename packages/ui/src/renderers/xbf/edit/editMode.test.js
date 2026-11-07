@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  sketchPart,
   COMMAND_GROUPS,
   EDIT_COMMANDS,
   barIndex,
@@ -849,4 +850,17 @@ test("an assembly's isolated part names the part Open Part opens, or says it has
   // A bought screw has no part of its own: named, with nothing to open.
   assert.deepEqual(isolatedPart(tree, ["m5x30_screw:base"]), { name: "M5x30 screw", component: null });
   assert.deepEqual(isolatedPart(tree, ["arm", "base"]), { several: true });
+});
+
+test("a sketch stands on the part it was drawn for: an assembly's component, or a one-part document's part where a feature used it", () => {
+  const part = (id, label) => [id, { kind: "part", label, leafPartIds: [id] }];
+  const assembly = new Map([part("i0", "base"), part("i1", "arm<1>"), part("i2", "arm<2>"), ["group", { kind: "group", label: "Arms", leafPartIds: ["i1", "i2"] }]]);
+  const state = { components: [{ name: "base", file: "parts/base.py", label: "base" }, { name: "arm", file: "parts/arm.py", label: "arm" }] };
+  assert.equal(sketchPart(state, assembly, { file: "parts/arm.py", function: "arm" }), "i1", "the first copy");
+  assert.equal(sketchPart(state, assembly, { file: "assembly.py", function: "lamp" }), null, "the assembly's own sketch");
+  const single = new Map([part("i0", "stand")]);
+  const none = { components: [] };
+  assert.equal(sketchPart(none, single, { file: "parts/stand.py", function: "stand", consumed: "parts/stand.py:14" }), "i0");
+  assert.equal(sketchPart(none, single, { file: "parts/stand.py", function: "stand", consumed: null }), null, "nothing has used it yet");
+  assert.equal(sketchPart(none, new Map(), { file: "parts/stand.py", function: "stand", consumed: "parts/stand.py:14" }), null, "no model yet");
 });

@@ -251,6 +251,28 @@ export function assemblyRowParts(tree, nodes, id, mates = []) {
   return [...new Set([...nodes.values()].filter(node => wanted.has(partStem(node.label))).flatMap(node => node.leafPartIds))];
 }
 
+/**
+ * The part a sketch stands on, by its id, or null for none but the document itself. A sketch's frame is in the part's own
+ * coordinates, as its script drew it, wherever an assembly's mates or the part's own last move put that part. So it is
+ * placed by the part: in an assembly, the first copy of the component whose model made it (`file` and `function`,
+ * matched to the model tree as `assemblyRowParts` matches); in a document of one part, that part where a feature used
+ * the sketch. A sketch nothing uses yet in such a document, or one an assembly's own script drew, stands where the
+ * script put it.
+ * @param {object} state  The trace (`edit.state`).
+ * @param {Map<string, {kind: string, label: string, leafPartIds: string[]}>} nodes  The model tree's nodes.
+ * @param {{ file: string, function: string, consumed?: string | null }} sketch
+ */
+export function sketchPart(state, nodes, sketch) {
+  const parts = [...(nodes?.values() || [])].filter(node => node.kind === "part");
+  if (!parts.length) return null;
+  if (state?.components?.length) {
+    const owner = state.components.find(component => component.file === sketch.file && component.name === sketch.function);
+    const stems = new Set([owner?.name, owner?.label].filter(Boolean).map(partStem));
+    return parts.find(node => stems.has(partStem(node.label)))?.leafPartIds[0] ?? null;
+  }
+  return parts.length === 1 && sketch.consumed != null ? parts[0].leafPartIds[0] ?? null : null;
+}
+
 /** What can be selected in a tree: its features, their sketches, the origin, its planes and an assembly's parts. */
 export function treeIds(tree) {
   const ids = new Set(["origin", ...ORIGIN_PLANES.map(plane => `plane:${plane}`)]);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, X } from "lucide-react";
 import { transitionCameraToViewPreset } from "../../kit/camera/runtimeCamera.js";
 import { requestSceneFrame } from "../../kit/viewport/sceneFrames.js";
-import { arrowHead, boxSelect, circlePoints, colorsFor, curvePoints, drawGlyph, GLYPH_PX, overlaps, planeMapping, strokePath } from "./sketchDrawing.js";
+import { arrowHead, boxSelect, circlePoints, colorsFor, curvePoints, drawGlyph, GLYPH_PX, onPart, overlaps, planeMapping, strokePath } from "./sketchDrawing.js";
 import {
   alignTo,
   chainOf,
@@ -116,7 +116,7 @@ function ModifyBox({ box, onDone }) {
  * @param {{ viewport: { runtimeRef: object, hostRef: object, viewerReadyTick: number },
  *   edit: ReturnType<typeof import("./useEditMode.js").useEditMode>, units: string }} props
  */
-export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = null }) {
+export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = null, place = null }) {
   const canvasRef = useRef(null);
   const [box, setBox] = useState(null);
   const sketch = edit.sketch;
@@ -125,7 +125,7 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
   // What the layer's handlers read when they run: the latest of everything.
   const live = useRef(null);
   live.current = { sketch, tool: edit.sketchTool, selection: edit.sketchSelection, construction: edit.construction, units, edit, box,
-    settings: edit.sketchSettings, modelEdgeAt };
+    settings: edit.sketchSettings, modelEdgeAt, place };
   // Bumped whenever something not in the camera changed, so the next frame paints again.
   const version = useRef(0);
   version.current += 1;
@@ -135,7 +135,8 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
   useEffect(() => {
     const runtime = viewport.runtimeRef?.current;
     if (!runtime?.THREE || !runtime.modelGroup || !frame) return;
-    const { THREE, modelGroup } = runtime;
+    const { THREE } = runtime;
+    const { modelGroup } = onPart(runtime, place?.(sketch));
     modelGroup.updateMatrixWorld();
     const origin = new THREE.Vector3(...frame.origin).applyMatrix4(modelGroup.matrixWorld);
     const toward = axis => new THREE.Vector3(...frame.origin).add(new THREE.Vector3(...axis)).applyMatrix4(modelGroup.matrixWorld).sub(origin).normalize().toArray();
@@ -209,7 +210,7 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
     const map = () => {
       const state = live.current.sketch?.state;
       const { width, height } = size();
-      return state ? planeMapping(viewport.runtimeRef?.current, width, height, state.frame, state.unit || 1) : null;
+      return state ? planeMapping(onPart(viewport.runtimeRef?.current, live.current.place?.(live.current.sketch)), width, height, state.frame, state.unit || 1) : null;
     };
     // The panel's prompt follows the clicks a tool has had.
     const report = () => {

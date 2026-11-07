@@ -11,6 +11,7 @@ import {
   lineNearestRay,
   loopsCentroid,
   modelMapping,
+  onPart,
   modelRay,
   planeMapping,
   PREVIEW_FILL_ALPHA,
@@ -318,13 +319,14 @@ function drawRevolvePreview(context, view, shape, cad, at, font, boxed) {
  *   sketches: { file: string, line: number, name: string, state: object | null }[],
  *   selected?: { file: string, line: number } | { file: string, line: number }[] | null,
  *   onPick?: ((view: object) => void) | null, onEdit?: ((view: object) => void) | null, profiles?: boolean,
- *   preview?: object | null, through?: number }} props
+ *   preview?: object | null, through?: number, place?: ((view: object) => object | null) | null }} props
+ *   `place`: the part a sketch stands on, as a scene object, or null for the document's own frame (`sketchPart`).
  */
 export default function SketchesLayer({ viewport, sketches, selected = null, onPick = null, onEdit = null, profiles = false, preview = null,
-  through = 0 }) {
+  through = 0, place = null }) {
   const canvasRef = useRef(null);
   const live = useRef(null);
-  live.current = { sketches, selected, onPick, onEdit, profiles, preview, through };
+  live.current = { sketches, selected, onPick, onEdit, profiles, preview, through, place };
   const version = useRef(0);
   version.current += 1;
   // The sketch under the pointer, and the sketches as last painted, in the view's pixels.
@@ -363,7 +365,8 @@ export default function SketchesLayer({ viewport, sketches, selected = null, onP
           label: `${dragged.text}°` } : given)
           : dragged.mm ? (dragged.which === "depth2" ? { ...given, depth2: dragged.mm, label2: withUnit(dragged.text, given.units) }
             : { ...given, depth: dragged.mm, label: withUnit(dragged.text, given.units) }) : given;
-      const mappings = shown.map(view => (view.state ? planeMapping(runtime, width, height, view.state.frame, view.state.unit || 1) : null));
+      const placed = view => onPart(runtime, live.current.place?.(view));
+      const mappings = shown.map(view => (view.state ? planeMapping(placed(view), width, height, view.state.frame, view.state.unit || 1) : null));
       const key = `${mappings.map(mapping => mapping?.key || "").join("/")}|${version.current}|${dpr}|${hover.current}|${dragged?.text || ""}`;
       if (key === painted) return;
       painted = key;
@@ -396,12 +399,12 @@ export default function SketchesLayer({ viewport, sketches, selected = null, onP
             const { a, b } = shape.revolve;
             handlesRef.current = drawRevolvePreview(context, view, shape, cad, degrees => {
               const turned = revolvedFrame(frame, unit, a, b, degrees);
-              return turned ? planeMapping(runtime, width, height, turned, unit) : null;
+              return turned ? planeMapping(placed(view), width, height, turned, unit) : null;
             }, colors.font, boxedValues(shape));
           } else {
-            const at = offset => planeMapping(runtime, width, height,
+            const at = offset => planeMapping(placed(view), width, height,
               { ...frame, origin: frame.origin.map((value, axis) => value + frame.z[axis] * offset) }, unit);
-            handlesRef.current = drawPreview(context, view, shape, extent, cad, at, modelMapping(runtime, width, height), colors.font,
+            handlesRef.current = drawPreview(context, view, shape, extent, cad, at, modelMapping(placed(view), width, height), colors.font,
               boxedValues(shape));
           }
         }
@@ -454,7 +457,7 @@ export default function SketchesLayer({ viewport, sketches, selected = null, onP
     // How far from the sketch's plane, along a handle's line, the pointer is: in the part's millimetres.
     const reachAt = (event, handle) => {
       const [x, y] = at(event);
-      const ray = modelRay(viewport.runtimeRef?.current, host.clientWidth || 1, host.clientHeight || 1, x, y);
+      const ray = modelRay(onPart(viewport.runtimeRef?.current, live.current.place?.(live.current.preview)), host.clientWidth || 1, host.clientHeight || 1, x, y);
       return ray ? lineNearestRay(handle.anchor, handle.along, ray.origin, ray.direction) : null;
     };
     let drag = null;
