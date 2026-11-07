@@ -212,7 +212,7 @@ export function ExpressionRows({ edit }) {
   return <>
     {edit.status === "reading" ? <span className="flex items-center gap-1 py-1 text-tiny text-foreground"><LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />Reading the part</span>
       : params.length === 0 ? <span className="py-1 text-tiny text-muted-foreground">No expressions yet.</span>
-        : params.map(param => <div key={param.id} className="flex min-h-7 items-center justify-between gap-2 pr-1">
+        : params.map(param => <div key={param.id} className="flex min-h-7 items-center justify-between gap-2 py-0.5 pr-1">
           <span className="truncate text-tiny text-foreground/80">{sizeName(param.name)}</span>
           <span className="flex shrink-0 items-center gap-1">
             <FileSheetValueInput value={param.text} ariaLabel={`${sizeName(param.name)} value`} disabled={disabled}
