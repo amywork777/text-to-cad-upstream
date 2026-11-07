@@ -49,9 +49,9 @@ const VIEW_CONTROLS_CLASS = "flex shrink-0 items-center gap-0.5 [&_button:not([r
 // A tab: its name as it is written, the one in front underlined.
 const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-tiny leading-none text-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
 // A group's title under its buttons; where it is the group's menu it is a button too.
-const TITLE_CLASS = "text-tiny leading-3 text-muted-foreground";
-// The title's band: a rule the width of the group, meeting the divider, so the title names the whole group and not the button over it.
-const TITLE_BAND_CLASS = "flex w-full justify-start border-t border-border px-1.5 pb-1 pt-px";
+const TITLE_CLASS = "py-0.5 text-tiny leading-3 text-muted-foreground";
+// The title's band: a rule the width of the group, meeting the divider, the title centered under it, so it names the whole group and not the button over it.
+const TITLE_BAND_CLASS = "flex w-full justify-center border-t border-border px-1.5 py-0.5";
 const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-blue-600 dark:text-blue-400",
   "Over defined": "text-red-600 dark:text-red-400" });
 // The More button's box, before it is first laid out.
@@ -184,12 +184,12 @@ function GroupItems({ items }) {
 function GroupMenu({ title, items }) {
   return <DropdownMenu modal={false}>
     <DropdownMenuTrigger asChild>
-      <button type="button" aria-label={`${title} commands`} className={cn(TITLE_CLASS, "flex items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 aria-expanded:bg-cad-ws-selected")}>
+      <button type="button" aria-label={`${title} commands`} className={cn(TITLE_CLASS, "flex items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 aria-expanded:bg-cad-ws-selected")}>
         {title}<ChevronDown className="size-2.5 shrink-0" aria-hidden="true" />
       </button>
     </DropdownMenuTrigger>
     {/* Closes with no exit animation, so a quick second press always reaches the title. */}
-    <DropdownMenuContent align="start" sideOffset={4} collisionPadding={8} aria-label={title}
+    <DropdownMenuContent align="center" sideOffset={4} collisionPadding={8} aria-label={title}
       className={cn(FLOATING_SURFACE_CLASS, "w-56 data-[state=closed]:animate-none!")}>
       <GroupItems items={items} />
     </DropdownMenuContent>
