@@ -14,6 +14,7 @@ caller) of this shape::
       "output": {"deformation_scale": "auto"},   # optional; a number, or "auto"
       "margin": 2.0,                             # optional; the safety factor (>= 1) the part should keep, the stress check's
       "checks": [{"kind": "stress"}, {"kind": "displacement", "limit_mm": 0.5}],  # optional; the stress check alone
+      "hand_check": {"stress_MPa": 70, "method": "Bending stress (M c / I)", "about": "120 N at 90 mm"},  # optional
       "parts": {"post": {"material": {...}}},    # assemblies: a part's own numbers, by name or ref
       "connections": [{"between": ["post", "base"], "type": "free"}],  # assemblies: overrides of the bonded default
       "contact_tolerance_mm": 0.1                # assemblies: faces this close are bonded
@@ -49,10 +50,12 @@ LOAD_TYPES = ("force", "pressure")
 BODY_LOAD_TYPES = ("gravity", "acceleration")
 #: Every key a study may carry.
 STUDY_KEYS = (
-    "material", "fixtures", "loads", "mesh", "output", "margin", "checks", "parts", "connections", "contact_tolerance_mm",
+    "material", "fixtures", "loads", "mesh", "output", "margin", "checks", "hand_check", "parts", "connections",
+    "contact_tolerance_mm",
 )
 MESH_KEYS = ("size_mm", "refine")
 OUTPUT_KEYS = ("deformation_scale",)
+HAND_CHECK_KEYS = ("stress_MPa", "method", "about")
 CONNECTION_TYPES = ("bonded", "free")
 #: What a check can judge, and the keys each takes; cad evaluates each (checks.py).
 CHECK_KEYS = {
@@ -122,6 +125,9 @@ class Study:
     checks: tuple[dict, ...] = DEFAULT_CHECKS
     #: ``mesh.refine``: balls meshed finer, ``(centre (x, y, z), radius_mm, size_mm)`` each.
     mesh_refine: tuple = ()
+    #: The sum done by hand before the solve (``stress_MPa``, ``method``, ``about``), or ``None``: read against the
+    #: peak (``checks.hand_check``), it never changes a check.
+    hand_check: dict | None = None
 
     @property
     def face_refs(self) -> tuple[str, ...]:
@@ -225,6 +231,22 @@ def _connections(entries: Any) -> tuple[Connection, ...]:
             raise ValueError(f"{where}.type: {kind!r} is not one of {CONNECTION_TYPES}")
         connections.append(Connection((between[0].strip(), between[1].strip()), kind))
     return tuple(connections)
+
+
+def _hand_check(raw: Any) -> dict | None:
+    """The study's ``hand_check``, the person's or agent's own sum: nothing fills in a figure left out."""
+    if raw is None:
+        return None
+    example = '{"stress_MPa": 70, "method": "Bending stress (M c / I)"}'
+    hand = _known(raw, HAND_CHECK_KEYS, "study.hand_check", example)
+    missing = [key for key in ("stress_MPa", "method") if key not in hand]
+    if missing:
+        raise ValueError(f"study.hand_check: needs {' and '.join(missing)}, like {example}")
+    return {
+        "stress_MPa": _number(hand["stress_MPa"], where="hand_check.stress_MPa", positive=True),
+        **_text(hand, "method", where="hand_check"),
+        **_text(hand, "about", where="hand_check"),
+    }
 
 
 def _check(entry: Any, *, where: str) -> dict:
@@ -406,6 +428,7 @@ def parse_study(study: str | dict | Path | None) -> Study:
     if margin < 1:
         raise ValueError(f"margin: a safety factor below 1 means the part yields; must be >= 1, got {margin:g}")
     checks = _checks(document.get("checks"))
+    hand_check = _hand_check(document.get("hand_check"))
 
     parts = _parts(document.get("parts"))
     connections = _connections(document.get("connections"))
@@ -426,4 +449,5 @@ def parse_study(study: str | dict | Path | None) -> Study:
     return Study(
         material, fixtures, loads, mesh_size, deformation_scale, margin, document,
         parts=parts, connections=connections, contact_tolerance_mm=tolerance, checks=checks, mesh_refine=refine,
+        hand_check=hand_check,
     )

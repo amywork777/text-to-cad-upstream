@@ -71,10 +71,23 @@ function CheckRow({ row, chosen, onChoose }) {
 }
 
 /**
+ * The study's hand figure under the checks: quiet, as it judges nothing. Only a figure far from the
+ * peak takes the warning tone, as it is one: look closer before trusting either.
+ */
+function HandCheck({ row }) {
+  return <div className="min-w-0 border-t border-foreground/10 py-1 text-micro leading-3.5 tabular-nums [overflow-wrap:break-word]"
+    title={row.about || undefined} data-fea-hand-check={row.agrees ? "agrees" : "far"}>
+    <p className="text-muted-foreground" data-fea-hand-check-line="">{row.line}</p>
+    <p className={row.agrees ? "text-muted-foreground" : "text-warning"} data-fea-hand-check-reading="">{row.reading}</p>
+  </div>;
+}
+
+/**
  * The answer at a glance, at the top of Study (`feaVerdict`): the headline in the worst check's tone
  * ("Fails both checks", "Strong enough"), what it means for the load ("OK only to 0.4× this load"),
  * then each check as one row, each chosen on a press (`chosen`, `onChoose`) so what it says goes to
- * Quick Edit with the faces it is about. It follows the load shown.
+ * Quick Edit with the faces it is about, then the study's hand figure when it gave one. It follows
+ * the load shown.
  */
 export default function FeaVerdict({ verdict, chosen = "", onChoose = null }) {
   const { t } = useI18n();
@@ -89,5 +102,6 @@ export default function FeaVerdict({ verdict, chosen = "", onChoose = null }) {
       {verdict.caption ? <p className="text-tiny leading-4 text-foreground" data-fea-verdict-caption="">{verdict.caption}</p> : null}
     </div>
     {verdict.rows.length ? <ul className="flex flex-col" aria-label={t("fea.checks")}>{verdict.rows.map((row) => <CheckRow key={row.id} row={row} chosen={chosen} onChoose={onChoose} />)}</ul> : null}
+    {verdict.handCheck ? <HandCheck row={verdict.handCheck} /> : null}
   </section>;
 }

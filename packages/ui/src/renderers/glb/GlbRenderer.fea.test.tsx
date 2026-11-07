@@ -615,6 +615,27 @@ it('leads Study with the verdict: too weak, close to the limit or strong enough,
   }
 });
 
+it('shows the hand figure quietly under the checks, in the warning tone only when the two are far apart, and nothing without one', () => {
+  const hand = { stress_MPa: 36, method: 'Bending stress (M c / I)', about: '120 N at 90 mm', peak_MPa: 47.3, within: 2 };
+  mount({ ...STUDIED, ...factored(2.5), hand_check: { ...hand, times: 1.3, agrees: true } }, undefined, { faces: FACES });
+  const row = () => verdictOf().section.querySelector('[data-fea-hand-check]') as HTMLElement | null;
+  expect(row()!.getAttribute('data-fea-hand-check')).toBe('agrees');
+  expect(row()!.title).toBe('120 N at 90 mm');
+  expect(row()!.querySelector('[data-fea-hand-check-line]')!.textContent).toBe('Hand check: 36 MPa. Bending stress (M c / I)');
+  const reading = () => row()!.querySelector('[data-fea-hand-check-reading]')!;
+  expect(reading().textContent).toBe("Simulation's peak is 1.3 times this, so the two agree.");
+  expect(row()!.innerHTML).not.toMatch(/text-(error|warning|success)/);
+  cleanup();
+
+  mount({ ...STUDIED, ...factored(2.5), hand_check: { ...hand, times: 3.2, agrees: false } }, undefined, { faces: FACES });
+  expect(reading().className).toContain('text-warning');
+  expect(verdictOf().status).toBe('strong');
+  cleanup();
+
+  mount({ ...STUDIED, ...factored(2.5) }, undefined, { faces: FACES });
+  expect(row()).toBeNull();
+});
+
 it('draws how hard each check works: filled to the value over the limit, held at full and striped past it, with a tick at the margin', () => {
   mount({ ...STUDIED, ...factored(1.6) }, undefined, { faces: FACES });
   const bar = () => screen.getByRole('meter', { name: 'Strength: how much of its limit' });

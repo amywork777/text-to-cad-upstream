@@ -211,6 +211,28 @@ class Mesher(unittest.TestCase):
         self.assertEqual(NETGEN_PLATFORMS, "macOS, Linux x86_64 and Windows x86_64")
 
 
+class StudyHandCheck(unittest.TestCase):
+    """The study's optional ``hand_check``: the sum as written, with nothing filled in."""
+
+    def test_it_parses_as_written_and_a_study_without_one_has_none(self):
+        hand = {"stress_MPa": 70, "method": " Bending stress (M c / I) ", "about": "120 N at 90 mm"}
+        self.assertEqual(parse_study({**BASE, "hand_check": hand}).hand_check,
+                         {"stress_MPa": 70.0, "method": "Bending stress (M c / I)", "about": "120 N at 90 mm"})
+        self.assertIsNone(parse_study(BASE).hand_check)
+
+    def test_a_bad_one_is_refused_naming_the_field(self):
+        for hand, said in (
+            ({"method": "Bending"}, "needs stress_MPa"),
+            ({"stress_MPa": 70}, "needs method"),
+            ({"stress_MPa": 0, "method": "Bending"}, "hand_check.stress_MPa: must be > 0"),
+            ({"stress_MPa": "70", "method": "Bending"}, "hand_check.stress_MPa: expected a number"),
+            ({"stress_MPa": 70, "method": " "}, "hand_check.method: expected a short piece of text"),
+            ({"stress_MPa": 70, "method": "Bending", "note": "x"}, "study.hand_check"),
+            (70, "study.hand_check: expected an object"),
+        ):
+            self.assertIn(said, value_error(self, parse_study, {**BASE, "hand_check": hand}))
+
+
 class StudyChecks(unittest.TestCase):
     """The study's optional ``checks``: checked like the rest of the study, before any heavy import."""
 
@@ -295,6 +317,8 @@ class Cantilever(unittest.TestCase):
                 {"kind": "displacement", "limit_mm": 1.05 * TIP, "faces": [cls.load_ref], "label": "Tip sag"},
                 {"kind": "displacement", "limit_mm": TIP, "faces": [cls.fixed_ref], "label": "Clamp"},
             ],
+            # The beam's own sum, which the peak lands near.
+            "hand_check": {"stress_MPa": round(_bending_stress(0.0), 3), "method": "Bending stress (M c / I)"},
         }
         cls.out = directory / "results" / "cantilever.glb"
         cls.solver = _CountingSolve()
@@ -481,6 +505,30 @@ class Cantilever(unittest.TestCase):
         self.assertIsNone(written["refined"])
         self.assertEqual(glb_extras(self.result.glb)["findings"], [])
         self.assertEqual(self.result.mesh["size_mm"], 2.0)
+
+    def test_the_hand_figure_comes_back_beside_the_peak_on_every_surface(self):
+        peak = self.result.summary["max_von_mises_MPa"]
+        reading = self.result.summary["hand_check"]
+        self.assertEqual({key: reading[key] for key in ("stress_MPa", "method")}, self.study["hand_check"])
+        self.assertAlmostEqual(reading["peak_MPa"], peak, places=3)
+        self.assertAlmostEqual(reading["times"], peak / reading["stress_MPa"], places=3)
+        self.assertTrue(reading["agrees"])
+        self.assertEqual(glb_extras(self.result.glb)["hand_check"], reading)
+        self.assertEqual(reported(self.result)["summary"]["hand_check"], reading)
+        self.assertTrue(any(line.startswith("hand check: ") and line.endswith("they agree") for line in self.result.human_lines()))
+
+    def test_a_hand_figure_far_from_the_peak_warns_and_changes_no_verdict(self):
+        far = solve(self.step, self.out.with_name("far.glb"), {**self.study, "hand_check": {"stress_MPa": 1, "method": "A wrong sum"}})
+        self.assertFalse(far.summary["hand_check"]["agrees"])
+        self.assertEqual([(found["severity"], found["type"]) for found in far.findings], [("warning", "hand_check_far")])
+        self.assertTrue(far.ok)
+        self.assertEqual(far.summary["checks"], self.result.summary["checks"])
+
+    def test_a_study_with_no_hand_figure_has_no_reading(self):
+        study = {key: value for key, value in self.study.items() if key != "hand_check"}
+        bare = solve(self.step, self.out.with_name("bare.glb"), study)
+        self.assertNotIn("hand_check", bare.summary)
+        self.assertNotIn("hand_check", glb_extras(bare.glb))
 
     def test_a_face_on_a_different_part_or_a_non_face_is_refused(self):
         self.assertIn("faces", value_error(self, solve, self.step, self.out, {

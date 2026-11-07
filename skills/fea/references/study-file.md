@@ -34,6 +34,7 @@ at once with a sentence naming the field.
 | `output` | how the result is drawn ([`output`](#output)) |
 | `margin` | the safety factor to keep ([`margin`](#margin)) |
 | `checks` | what the result is judged by ([`checks`](#checks)) |
+| `hand_check` | the sum you did by hand before solving, read against the peak ([`hand_check`](#hand_check)) |
 | `parts`, `connections`, `contact_tolerance_mm` | an assembly ([Assemblies](#assemblies)) |
 
 Any other key is refused with a sentence naming the keys a study takes, and so is an unknown key
@@ -216,6 +217,28 @@ words; keep `stress` too unless they only care about stiffness. At most one `str
 empty list is refused (leave `checks` out for the stress check alone), and so is an unknown `kind`
 or key. A failing displacement check is an error finding ("'Tip sag' moves 2.1 mm, more than the
 0.5 mm allowed"); the stress check's findings are the yields and margin findings already made.
+
+## `hand_check`
+
+The stress you worked out by hand before solving, so the first thing the result does is meet a
+number from outside the solver. Optional, and it judges nothing: the verdict stays the checks'.
+
+```json
+"hand_check": {"stress_MPa": 70, "method": "Bending stress (M c / I)", "about": "120 N at 90 mm on a 3 by 20 mm strip"}
+```
+
+| key | meaning |
+| --- | --- |
+| `stress_MPa` | your figure at the study's full load; required, above zero |
+| `method` | how you got it, plain words first and the formula in parentheses; required |
+| `about` | the section and load the sum was done on; optional |
+
+Only write a figure you actually worked out: nothing fills one in, and a study without a hand check
+says nothing about one. The result carries it as given with the peak beside it (`peak_MPa`, in an
+assembly the weakest part's), `times`, the peak over your figure, `within`, the factor the two must
+stay within, and `agrees`, in `summary.hand_check`, the GLB's `extras.hand_check` and a CLI line. The
+Viewer shows it under the verdict's checks. Far apart it is also a `hand_check_far` warning finding.
+How to pick the section: [Judging the answer](linear-static.md#judging-the-answer).
 
 ## What comes out
 

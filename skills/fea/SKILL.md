@@ -60,7 +60,7 @@ Vibration, buckling, heat, flow, fatigue, impact, contact and the rest are not i
 | **Pick the faces to fix and load** | Prefer face references the user selected in the Viewer (`/work/bracket.step#bracket/face 17`). Otherwise list faces and match by description. | [Face selection](references/linear-static.md#choosing-faces) |
 | **Write or edit a study** | One JSON object: material, fixtures, loads, mesh; for an assembly also parts and connections. | [Study file](references/study-file.md) |
 | **Choose a material** | The model's own (solve its `.xbf`), or E, ν and yield the user gives. | [Materials](references/materials.md) |
-| **Judge the answer** | Compare with a hand estimate, read the peak away from the fixture, refine if it matters. | [Validation](references/linear-static.md#judging-the-answer) |
+| **Judge the answer** | Work out a hand figure before the solve and put it in the study's `hand_check`, read the peak away from the fixture, refine if it matters. | [Validation](references/linear-static.md#judging-the-answer) |
 
 This skill studies a part, it does not model one: build or fix the model first. It reads a saved
 `.step` or `.xbf` (a model's `@step` or `@xbf` output, or `cad export <id> part.step`). Open the
@@ -138,6 +138,11 @@ you write it down ([study-file.md](references/study-file.md#units)).
    `stress` for "will it break", a `displacement` check with their limit for a sag or stiffness
    spec. Without them the verdict is the stress check alone.
 
+   Before you solve, work out the stress by hand at the section you expect to carry it, and add it
+   as [`hand_check`](references/study-file.md#hand_check): `{"stress_MPa": 70, "method": "Bending
+   stress (M c / I)", "about": "120 N at 90 mm on a 3 by 20 mm strip"}`. Do the sum for real, and
+   leave the key out when no section suits a sum: never write a figure you did not work out.
+
 3. **Solve.**
 
    ```bash
@@ -171,7 +176,8 @@ you write it down ([study-file.md](references/study-file.md#units)).
 5. **Report**, in this order, with units: max von Mises (MPa) and where (`max_von_mises_at_mm`;
    say which feature it is near); the safety factor against yield and the yield used; max
    displacement (mm) and where; the applied load and the reaction (they balance: a solve where they
-   do not is refused);
+   do not is refused); your hand figure and how many times the peak is of it (`hand_check_far` means
+   they are far apart: find out why before reporting a verdict);
    the mesh size, element count and whether a finer re-solve ran. Then say in a sentence or two
    what the model assumes and what would change the answer most (a softer fixture, a fillet at the
    peak, a different material). Open the GLB in the Viewer for the user; the deformation is

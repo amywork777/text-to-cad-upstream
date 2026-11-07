@@ -124,6 +124,8 @@ describe('readFeaResult', () => {
       [{ ramp: undefined }, /no colour ramp/],
       [{ ramp: [[0, [0, 0, 1]]] }, /no colour ramp/],
       [{ deformation_scale: undefined }, /no deformation scale/],
+      [{ hand_check: { stress_MPa: 0, method: 'Bending', times: 1, agrees: true } }, /hand check has no figure, method or reading/],
+      [{ hand_check: { stress_MPa: 70, method: 'Bending', times: 1 } }, /hand check has no figure, method or reading/],
       [{ deformation_scale: 0 }, /no deformation scale/],
       [{ fields: [{ attribute: '_VON_MISES', name: 'von Mises stress', units: 'MPa', min: 0, max: 47.3 }] }, /field _VON_MISES has no name, units, range or scale/],
       [{ parts: [{ ref: 'part1', name: '', material: 'Steel' }] }, /part 0 has no ref, name or material/],
@@ -565,6 +567,27 @@ function solvedAt(field: any, value: number) {
 describe('the verdict', () => {
   const single = (safety_factor: number, extras: Record<string, unknown> = {}) =>
     studyResult({ study: STUDY, faces: [], safety_factor, checks: [stressAt(safety_factor)], ...extras }).result;
+  const HAND = { stress_MPa: 36, method: 'Bending stress (M c / I)', about: '120 N at 90 mm', peak_MPa: 47.3, within: 2 };
+
+  it('says nothing of a hand check on a result without one, as every older result is', () => {
+    expect(single(2).handCheck).toBeNull();
+    expect(feaVerdict(single(2))!.handCheck).toBeNull();
+  });
+
+  it('reads a hand figure against the peak in plain words, and it follows the load shown', () => {
+    const agrees = single(2, { hand_check: { ...HAND, times: 1.3139, agrees: true } });
+    expect(feaVerdict(agrees)!.handCheck).toEqual({ agrees: true, about: '120 N at 90 mm', line: 'Hand check: 36 MPa. Bending stress (M c / I)',
+      reading: "Simulation's peak is 1.3 times this, so the two agree." });
+    expect(feaVerdict(agrees, 0.5)!.handCheck!.line).toBe('Hand check: 18 MPa. Bending stress (M c / I)');
+    expect(feaVerdict(single(2, { hand_check: { ...HAND, times: 3.2, agrees: false } }))!.handCheck).toMatchObject({ agrees: false,
+      reading: "Simulation's peak is 3.2 times this. They are far apart, so look closer before trusting either." });
+  });
+
+  it('keeps the verdict the checks gave, whatever the hand figure reads', () => {
+    const { handCheck: _none, ...plain } = feaVerdict(single(0.68))!;
+    const { handCheck: _far, ...read } = feaVerdict(single(0.68, { hand_check: { ...HAND, times: 3.2, agrees: false } }))!;
+    expect(JSON.stringify(read)).toBe(JSON.stringify(plain));
+  });
 
   it('says too weak under a safety factor of 1, close to the limit under the margin, strong enough from it up', () => {
     expect(feaVerdict(single(0.68))).toMatchObject({ status: 'weak', title: 'Too weak', caption: 'OK only to 0.6× this load' });

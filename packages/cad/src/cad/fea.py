@@ -69,7 +69,8 @@ def solve(
     out: the result .glb path, written nowhere else.
     study: the study: a JSON file path, inline JSON, or (library callers) a
         dict. It names the fixed faces and the loads (forces, pressures,
-        gravity and acceleration), and a material where the model has none; an unknown or
+        gravity and acceleration), a material where the model has none, and a ``hand_check``
+        when a sum was done by hand; an unknown or
         malformed key is refused naming the keys it takes. Face refs are the ones ``cad fea faces``
         prints. A document of several parts is solved as one bonded assembly:
         ``parts`` gives each its material, ``connections`` overrides which

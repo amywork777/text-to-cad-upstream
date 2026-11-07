@@ -9,7 +9,8 @@
  * `units`, `min`, `max`, `attribute_scale`), `deformation_scale` (the
  * multiplier already baked into the positions), the colour `ramp` it used, the
  * result's `safety_factor` (null when it has none), the `checks` cadgen judged
- * (`feaVerdict`), the `study` it was solved for (material, fixtures, loads, mesh,
+ * (`feaVerdict`), the study's `hand_check` read against the peak when it gave one,
+ * the `study` it was solved for (material, fixtures, loads, mesh,
  * margin), `faces` (the occurrence's face refs) and `_FACE`, the index into
  * `faces` of the face each vertex lies on (-1 for none). A bonded assembly also
  * carries `parts` (name, material, peak stress, safety factor of each part),
@@ -158,6 +159,15 @@ function readChecks(raw) {
   });
 }
 
+/** The study's hand figure against the peak as cadgen reads it; null on a study that gave none, as every older result. */
+function readHandCheck(raw) {
+  if (raw === undefined || raw === null) return null;
+  if (!(Number.isFinite(raw.stress_MPa) && raw.stress_MPa > 0 && named(raw.method) && Number.isFinite(raw.times) && typeof raw.agrees === "boolean")) {
+    throw new Error("The FEA result's hand check has no figure, method or reading.");
+  }
+  return { stressMPa: raw.stress_MPa, method: raw.method, about: raw.about ?? "", times: raw.times, agrees: raw.agrees };
+}
+
 const FIXTURE_TYPES = ["fixed", "roller"];
 const BODY_LOADS = ["gravity", "acceleration"];
 
@@ -292,6 +302,7 @@ export function readFeaResult(root) {
       connections: readConnections(extras.connections),
       weakestPart: parts.length ? extras.weakest_part : "",
       checks: readChecks(extras.checks),
+      handCheck: readHandCheck(extras.hand_check),
     };
   });
   return found;
@@ -592,7 +603,19 @@ export function feaVerdict(result, loadScale = 1, t = english) {
       return { id: `check:${check.index}`, kind: check.kind, status: TONE_OF[check.status], label, part, line: checkLine(check, { bare: true }),
         use: check.use, margin: check.margin, choice: checkChoice(result, check, part, label) };
     }),
+    handCheck: handCheckRow(result.handCheck, k, t),
   };
+}
+
+/**
+ * The study's hand figure, under the checks: at the load shown (stress is linear in it, so the reading holds at any
+ * load), and whether Simulation's peak agrees with it. It judges nothing: the verdict is the checks'.
+ */
+function handCheckRow(hand, k, t) {
+  if (!hand) return null;
+  const times = plainNumber(hand.times);
+  return { agrees: hand.agrees, about: hand.about, line: t("fea.handCheck", { value: plainNumber(hand.stressMPa * k), method: hand.method }),
+    reading: t(hand.agrees ? "fea.handCheckAgrees" : "fea.handCheckFar", { times }) };
 }
 
 /**

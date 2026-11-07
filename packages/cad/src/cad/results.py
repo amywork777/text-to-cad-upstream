@@ -249,6 +249,15 @@ def _stress_lines(s: dict, safety_factor_text) -> list[str]:
     return lines
 
 
+def _hand_check_lines(s: dict) -> list[str]:
+    """The study's hand figure against the peak, when it gave one."""
+    hand = s.get("hand_check")
+    if hand is None:
+        return []
+    reading = "they agree" if hand["agrees"] else "far apart"
+    return [f"hand check: {hand['stress_MPa']:g} MPa ({hand['method']}), the peak is {hand['times']:.2g} times it, {reading}"]
+
+
 def _check_lines(s: dict) -> list[str]:
     """One line per check the study asked for: what it measured against its limit, and whether it passes."""
     def unit(check: dict) -> str:  # " MPa", or nothing for a unitless check (a safety factor)
@@ -268,7 +277,8 @@ class FeaResult:
     """The outcome of ``cad fea solve``: where the results went, and the numbers.
 
     ``summary`` carries the answer an engineer asks for first (max von Mises, nodal and at the integration points, the
-    safety factor, max displacement, the applied-versus-reaction balance) and each check judged (``checks``).
+    safety factor, max displacement, the applied-versus-reaction balance), each check judged (``checks``) and the
+    study's hand figure against the peak when it gave one (``hand_check``).
     ``findings`` is what an engineer would say about it,
     errors first (``check``, ``severity``, ``type``, ``summary``, ``description``, ``items``). The rest is what the GLB
     does not carry: the study as given, its material, each face it named, each fixture's reaction, an assembly's
@@ -312,6 +322,7 @@ class FeaResult:
             f"solved {self.occurrence} of {_display(self.document)}: {size}{solver}",
             *_stress_lines(s, safety_factor_text),
             *_check_lines(s),
+            *_hand_check_lines(s),
             f"max displacement {s.get('max_displacement_mm')} mm at {s.get('max_displacement_at_mm')}",
             f"applied {s.get('applied_force_N')} N, reactions {s.get('reaction_force_N')} N",
             f"wrote GLB: {_display(self.glb)} (deformation x{s.get('deformation_scale')}){vtu}",

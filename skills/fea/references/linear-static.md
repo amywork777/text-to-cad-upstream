@@ -163,6 +163,22 @@ Before trusting a run, estimate the answer by hand and compare:
   length L under its own weight w per unit length: tip deflection w L⁴ / (8 E I), root bending
   stress w L² (h/2) / (2 I).
 
-If the model is within roughly 20 % of the estimate, it is doing what you asked. If it is off by a
-factor, the load, the fixture or the units are wrong; check the result's fixture reactions first
-(they must equal minus the applied force), then the face choice, then the material.
+On a shape that really is the textbook case, the model lands within roughly 20 % of the estimate. If
+it is off by a factor, the load, the fixture or the units are wrong; check the result's fixture
+reactions first (they must equal minus the applied force), then the face choice, then the material.
+
+Do the sum before the solve and write it in the study's
+[`hand_check`](study-file.md#hand_check), so it cannot lean on the answer. Pick the section where
+you expect the peak: the root of the arm, the net section at the hole, the thinnest wall. Take the
+load through it by statics, and use the plain section there, without the fillet or the corner. Where
+the peak will sit at a hole or notch, multiply the nominal stress by its concentration factor (about
+3 at a round hole) and say so in `method`.
+
+The result reads your figure against the peak and calls them agreed within a factor of 2, either
+way. That band is wider than the 20 % above on purpose: a real part is not the textbook case, a hand
+sum sees a nominal section, and a local peak at a corner rightly sits above it, so a tighter band
+would call good models wrong. Past a factor of 2 the sum and the model are not describing the same
+thing. That says one of them is wrong, not which, so look closer before trusting either: the
+reactions, the faces, the units, the mesh at the peak, then the section you chose. Fix what is wrong
+and solve again; never change the figure to fit the peak. A peak well above your figure on a sharp
+inside corner may be the mesh chasing a singularity, so refine there before believing either number.
