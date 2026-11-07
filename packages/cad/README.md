@@ -456,7 +456,9 @@ src/cad/
                          #   parts list, balloons, the set's sheets; gdt: feature
                          #   control frames; profile: stages and Profile)
   work_instruction.py    # @work_instruction: the steps that build one assembly, one PDF;
-                         #   its pages and figures in _internal/work_instruction_pages.py
+                         #   its pages and figures in _internal/work_instruction_pages.py,
+                         #   a simple one's picture guide in _internal/work_instruction_guide.py
+                         #   and its 3D page in _internal/work_instruction_player.py
   cam.py                 # CAM: features (what a job can name) and plan (FreeCAD's toolpaths
                          #   and G-code, checked against the part, one result GLB); behind it
                          #   _internal/cam

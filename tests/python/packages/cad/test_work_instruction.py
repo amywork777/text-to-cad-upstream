@@ -73,6 +73,7 @@ class _Assembly(unittest.TestCase):
         from cad.work_instruction import Instruction
 
         kwargs.setdefault("pictures", False)
+        kwargs.setdefault("rigor", "production")
         return Instruction(self.document, title="BRACKET ASSEMBLY", number="WI-1", revision="A", **kwargs)
 
 
@@ -362,10 +363,10 @@ class LayoutTests(_Assembly):
         return [t for page in _page_texts(wi) for t in page]
 
     def test_each_rigor_lays_out_what_it_names(self) -> None:
-        prototype = self._texts(rigor="prototype")
-        self.assertIn("DONE", prototype)
+        simple = self._texts(rigor="simple")
+        self.assertIn("DONE", simple, "with no pictures to guide by, simple is the table with a done column")
         for absent in ("WORK ORDER", "APPROVALS", "Close-out", "TECH", "QA", "HOLD"):
-            self.assertNotIn(absent, prototype, absent)
+            self.assertNotIn(absent, simple, absent)
         production = self._texts()
         for present in ("WORK ORDER", "TECH", "APPROVALS", "Close-out"):
             self.assertIn(present, production, present)
@@ -832,7 +833,7 @@ class PictureTests(_Assembly):
         shim = Pos(0, 0, 6) * Box(40, 40, 2)
         shim.label = "shim"
         document = model(Compound(children=[base, shim], label="stack"), name="stack")
-        wi = Instruction(document, title="T", number="N", revision="A")
+        wi = Instruction(document, title="T", number="N", revision="A", rigor="production")
         wi.step("Base", install=["base_plate"])
         wi.step("Shim", install=["shim"], frame="assembly")
         folder = self.root / "shim"
@@ -870,6 +871,238 @@ class PictureTests(_Assembly):
 
         pictured()
         self.assertEqual(len(re.findall(rb"/Subtype\s*/Image", target.read_bytes())), 2)
+
+
+class GuideTests(_Assembly):
+    """A ``simple`` instruction with pictures is a picture guide, in plain words."""
+
+    def _guide(self, **kwargs):
+        from cad.work_instruction import Instruction
+
+        return Instruction(self.document, title="Bracket", **kwargs)
+
+    def _pages(self, wi) -> list[list[str]]:
+        return _page_texts(wi)
+
+    def test_simple_is_the_default_and_needs_no_number(self) -> None:
+        from cad.work_instruction import Instruction
+
+        self.assertEqual(self._guide().rigor, "simple")
+        for rigor in ("production", "controlled"):
+            with self.subTest(rigor=rigor), self.assertRaisesRegex(ValueError, "number= and revision="):
+                Instruction(self.document, title="Bracket", rigor=rigor)
+
+    def test_a_guide_carries_no_paperwork(self) -> None:
+        wi = self._guide()
+        wi.step("Lay the base flat", install=["base_plate"])
+        wi.step("Fit the bracket", install=["bracket", "pin"]).caution("Mind the edge.").inspect("Pins seated")
+        text = " ".join(t for page in self._pages(wi) for t in page)
+        for present in ("What you need", "Lay the base flat", "Careful: Mind the edge.", "Check: Pins seated"):
+            self.assertIn(present, text)
+        for absent in ("INSTRUCTION", "DRAFT", "NOT STATED", "OPEN ITEMS", "Rev", "PROCEDURE", "DONE"):
+            self.assertNotIn(absent, text, absent)
+
+    def test_a_guide_says_what_is_missing_in_plain_words(self) -> None:
+        wi = self._guide()
+        wi.step("Lay the base flat", install=["base_plate"])
+        wi.step("Fit the bracket", install=["bracket"]).fasten("M3 screw", qty=4)
+        text = " ".join(t for page in self._pages(wi) for t in page)
+        self.assertIn("Torque: not decided yet", text)
+        self.assertIn("Step 2: torque not decided yet", text)
+        self.assertIn("Also: M3 screw, qty 4", text)
+        self.assertNotIn("NOT STATED", text)
+        self.assertEqual(wi.open_items()[0], "step 2 (fasten): torque not stated", "the run still lists it")
+
+    def test_names_join_parts_on_one_line_and_a_label_reads_plainly(self) -> None:
+        from cad._internal.work_instruction_guide import plain
+        from cad._internal.work_instruction_pages import parts
+
+        wi = self._guide(names={"Pin": ["assembly/pin.1", "assembly/pin.2"], "Base": ["base_plate"]})
+        wi.step("Lay the base flat", install=["base_plate"])
+        wi.step("Fit the pins", install=["pin"])
+        self.assertEqual([(name, len(refs)) for name, refs, _steps in parts(wi)][:2], [("Base", 1), ("Pin", 2)])
+        self.assertEqual(plain("base_plate"), "Base plate")
+        self.assertEqual(plain("Ring gear"), "Ring gear")
+
+    def test_names_are_held_to_the_assembly(self) -> None:
+        with self.assertRaisesRegex(KeyError, "names no one part"):
+            self._guide(names={"Lid": ["lid"]})
+        with self.assertRaisesRegex(TypeError, "not one string"):
+            self._guide(names={"Base": "base_plate"})
+
+    def test_a_guide_frames_the_whole_assembly_and_any_other_layout_the_step(self) -> None:
+        wi = self._guide()
+        self.assertEqual(wi.step("Lay it flat", install=["base_plate"]).frame, "assembly")
+        self.assertEqual(wi.step("Close in", install=["bracket"], frame="step").frame, "step")
+        self.assertEqual(self.instruction().step("Load", install=["base_plate"]).frame, "step")
+
+    def test_an_arrow_is_two_strokes_stopping_short_of_the_part_along_its_way(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        from cad._internal.work_instruction_pages import picture_jobs
+
+        wi = self._guide()
+        wi.step("Lay it flat", install=["base_plate"])
+        wi.step("Fit the bracket", install=["bracket"], arrow="down")
+        wi.step("Pins", install=["pin"])
+        with TemporaryDirectory() as folder:
+            jobs = picture_jobs(wi, Path(folder))
+        self.assertNotIn("annotation", jobs[1])
+        marks = jobs[2]["annotation"]["marks"]
+        self.assertEqual([mark["kind"] for mark in marks], ["stroke", "stroke"])
+        shaft = marks[0]["points"]
+        self.assertGreater(shaft[2], shaft[5], "it travels down")
+        self.assertEqual(shaft[:2], shaft[3:5], "straight down")
+        self.assertEqual(jobs[1]["camera"]["orthographicHalfHeight"], jobs[2]["camera"]["orthographicHalfHeight"],
+                         "one camera for every step, so the assembly stays where it was")
+
+    def test_an_arrow_is_a_way_the_vocabulary_names(self) -> None:
+        with self.assertRaisesRegex(ValueError, "arrow"):
+            self._guide().step("Fit", install=["bracket"], arrow="sideways")
+
+    def test_no_arrow_outside_a_guide(self) -> None:
+        from cad._internal.work_instruction_pages import picture_plan
+
+        wi = self.instruction(pictures=True)
+        wi.step("Fit", install=["bracket"], arrow="down")
+        self.assertIsNone(picture_plan(wi)[0].arrow)
+
+    def test_a_guide_pictures_the_finished_assembly_and_each_line_of_what_you_need(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        from cad._internal.work_instruction_pages import guide_jobs, parts
+
+        wi = self._guide()
+        wi.step("Lay it flat", install=["base_plate"])
+        wi.step("Fit", install=["bracket", "pin"])
+        with TemporaryDirectory() as folder:
+            jobs = guide_jobs(wi, Path(folder))
+        self.assertEqual(sorted(jobs), sorted(["cover", *(f"part-{i}" for i in range(len(parts(wi))))]))
+        self.assertNotIn("hidden", jobs["cover"]["display"])
+        self.assertEqual(jobs["part-0"]["display"]["isolated"], ["base_plate"])
+
+    def test_with_no_pictures_a_simple_instruction_stays_the_table(self) -> None:
+        wi = self._guide(pictures=False)
+        wi.step("Lay it flat", install=["base_plate"])
+        wi.step("Fit", install=["bracket", "pin"])
+        self.assertIn("DONE", [t for page in self._pages(wi) for t in page])
+
+
+class PlayerTests(_Assembly):
+    """A picture guide's steps as a GLB's animation, and the page that plays it."""
+
+    def _guide(self, **kwargs):
+        from cad.work_instruction import Instruction
+
+        wi = Instruction(self.document, title="Bracket", **kwargs)
+        wi.step("Lay it flat", install=["base_plate"])
+        wi.step("Fit the bracket", install=["bracket"], arrow="down")
+        wi.step("Add the pins", install=["pin"])
+        return wi
+
+    def test_each_part_hides_until_its_step_and_travels_in_along_its_arrow(self) -> None:
+        from cad._internal.work_instruction_player import REACH, TRAVEL, TURN, channels
+        from cad._internal.work_instruction_pages import _extent
+
+        wi = self._guide()
+        found = {(ref, path): (keys, kind) for ref, path, keys, kind in channels(wi)}
+        self.assertNotIn(("base_plate", "scale"), found, "the first step's parts are there from the start")
+        self.assertEqual(found[("bracket", "scale")], ([(0.0, 0.0), (TURN, 1.0)], "STEP"))
+        keys, _kind = found[("bracket", "translation")]
+        reach = round(REACH * _extent(wi)[1], 4)
+        self.assertEqual(keys, [(0.0, (0.0, 0.0, reach)), (TURN, (0.0, 0.0, reach)), (TURN + TRAVEL, (0.0, 0.0, 0.0))],
+                         "down from above, held until its turn, so the curve is one")
+        self.assertFalse([path for ref, path in found if ref == "assembly/pin.1" and path == "translation"],
+                         "a step with no arrow appears in place")
+        self.assertLess(TRAVEL, TURN)
+
+    def test_a_guide_writes_its_pdf_glb_and_page_together(self) -> None:
+        import json
+        import struct
+        from unittest import mock
+
+        from cad.work_instruction import work_instruction
+
+        target = self.root / "player" / "bracket.pdf"
+
+        @work_instruction(out=str(target))
+        def guide():
+            return self._guide()
+
+        with mock.patch("cad._internal.work_instruction_pages.render_pictures", return_value={}):
+            written = guide()
+            self.assertEqual(guide(), written, "a second run over one document writes the same files")
+        self.assertEqual([path.suffix for path in written], [".pdf", ".glb", ".html"])
+        glb = target.with_suffix(".glb").read_bytes()
+        size = struct.unpack("<I", glb[12:16])[0]
+        clips = json.loads(glb[20:20 + size])["animations"]
+        self.assertEqual([clip["name"] for clip in clips], ["assemble"])
+        page = target.with_suffix(".html").read_text(encoding="utf-8")
+        for present in ("Bracket", "Fit the bracket", "You need: "):
+            self.assertIn(present, page)
+
+    def test_a_guide_of_a_file_names_its_glb_s_document_plainly(self) -> None:
+        from unittest import mock
+
+        from cad._internal.work_instruction_player import write_glb
+
+        wi = self._guide()
+        wi.source_name = "cart v2.step"
+        with mock.patch("cad.export") as export, mock.patch("cad.model") as handed:
+            write_glb(wi, self.root / "named.glb")
+        self.assertEqual(handed.call_args.kwargs["name"], "cart_v2_step_guide")
+        export.assert_called_once()
+
+    def test_animated_false_writes_only_the_pdf(self) -> None:
+        from unittest import mock
+
+        from cad.work_instruction import work_instruction
+
+        target = self.root / "flat" / "bracket.pdf"
+
+        @work_instruction(out=str(target))
+        def guide():
+            return self._guide(animated=False)
+
+        with mock.patch("cad._internal.work_instruction_pages.render_pictures", return_value={}):
+            self.assertEqual(guide(), [target])
+        self.assertFalse(target.with_suffix(".html").exists())
+
+    def test_a_failed_pdf_leaves_an_earlier_page_as_it_was(self) -> None:
+        from unittest import mock
+
+        from cad.work_instruction import work_instruction
+
+        target = self.root / "failed" / "bracket.pdf"
+        target.parent.mkdir()
+        earlier = target.with_suffix(".html")
+        earlier.write_text("an earlier page", encoding="utf-8")
+
+        @work_instruction(out=str(target))
+        def guide():
+            return self._guide()
+
+        with mock.patch("cad._internal.work_instruction_pages.write_pdf", side_effect=RuntimeError("no")), \
+                self.assertRaises(RuntimeError):
+            guide()
+        self.assertEqual(earlier.read_text(encoding="utf-8"), "an earlier page")
+
+    def test_the_page_holds_its_words_safely_and_three_at_the_viewer_s_version(self) -> None:
+        import json
+
+        from cad._internal.work_instruction_player import THREE, page
+        from cad.work_instruction import Instruction
+
+        wi = Instruction(self.document, title="A <b> & c")
+        wi.step("Close </script> it", install=["base_plate"]).caution("Mind it.")
+        text = page(wi, b"glb")
+        self.assertIn("<title>A &lt;b&gt; &amp; c</title>", text)
+        self.assertNotIn("Close </script>", text, "a step's words cannot end the page's script")
+        self.assertIn('"text": "Careful: Mind it."', text)
+        viewer = json.loads(repo_path("packages/ui/package.json").read_text(encoding="utf-8"))
+        self.assertEqual(THREE, viewer["peerDependencies"]["three"])
+        self.assertEqual(sorted(set(re.findall(r"https://[\w./-]*?/npm/three@", text))),
+                         ["https://cdn.jsdelivr.net/npm/three@"], "three.js is all it fetches")
 
 
 class DocumentedTemplateTests(unittest.TestCase):
