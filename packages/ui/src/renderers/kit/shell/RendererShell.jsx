@@ -75,6 +75,9 @@ const UNDER_TOOLBAR = `calc(${WORKSPACE_TOP} + ${INSET})`;
 // has; a view too narrow for the column hides it, and they have the whole view back (`PAST_NAVIGATOR_CLASS`).
 const NAVIGATOR_POSITION = Object.freeze({ top: WORKSPACE_TOP });
 const PAST_NAVIGATOR_CLASS = "left-[16rem] @max-xl/cad-viewport:left-0";
+// An active feature's box shows only on its hovered or focused row and keeps its place when hidden,
+// so names never shift; a suppressed feature keeps its box. EditTree's Row is held: it moves there after.
+const NAVIGATOR_QUIET_CHECKS_CLASS = "[&_[data-cad-edit-tree-row]:not(:hover,:focus-within)_span:has(>input:checked)]:opacity-0";
 // The dialog stops an inset above the cube's line, as the tool stack does, whichever bottom corner the cube is in.
 const DIALOG_PLACE_POSITION = Object.freeze({ top: UNDER_TOOLBAR, bottom: VIEWPORT_STACK_BOTTOM });
 // While a dialog is open there, the top column (a tool's own row and its panels) is the room past it, so none of
@@ -812,7 +815,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
                   {workspace.chrome.ribbon(tools, toolbarView)}
                 </div> : null}
                 {workspace.chrome.leftDock ? <aside aria-label="FeatureManager design tree" data-cad-dock="navigator" style={NAVIGATOR_POSITION}
-                  className={cn(WORKSPACE_DOCK_CLASS, "pointer-events-auto absolute left-0 flex w-[16rem] flex-col overflow-hidden @max-xl/cad-viewport:hidden",
+                  className={cn(WORKSPACE_DOCK_CLASS, NAVIGATOR_QUIET_CHECKS_CLASS, "pointer-events-auto absolute left-0 flex w-[16rem] flex-col overflow-hidden @max-xl/cad-viewport:hidden",
                     navigatorFolded ? "border-b" : "bottom-0")}>
                   <button type="button" aria-expanded={!navigatorFolded} onClick={() => setNavigatorFolded(folded => !folded)}
                     className={cn(DOCK_PANEL_HEAD_CLASS, "pr-2 hover:bg-cad-ws-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/45")}>
