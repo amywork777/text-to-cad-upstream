@@ -413,3 +413,20 @@ it("reorders a feature dragged to another place, as SolidWorks' tree does, and a
   expect(editing.reorder).toHaveBeenCalledWith('block.py:7', 3, tree);
   expect(document.querySelector('[data-cad-edit-drop]')).toBeNull();
 });
+
+it("a hovered row that went away without saying so is let go: by the next move off the rows, the pointer leaving, or the tree going", () => {
+  const tree = featureTree(STATE);
+  const shown = { ...edit(), hovered: 'plane:Front' };
+  const view = render(<EditTree edit={shown as never} tree={tree} />);
+  const hover = shown.hover as ReturnType<typeof vi.fn>;
+  fireEvent.pointerMove(screen.getAllByRole('treeitem')[0]);
+  expect(hover, 'the pointer is still over the tree').not.toHaveBeenCalled();
+  fireEvent.pointerMove(document.body);
+  expect(hover).toHaveBeenLastCalledWith(null);
+  hover.mockClear();
+  fireEvent.pointerLeave(document.documentElement);
+  expect(hover).toHaveBeenLastCalledWith(null);
+  hover.mockClear();
+  view.unmount();
+  expect(hover).toHaveBeenLastCalledWith(null);
+});

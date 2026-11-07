@@ -70,13 +70,13 @@ it('hover is one pick per frame, reported on change, with the cursor saying so',
   fire(canvas, 'pointermove', { clientX: 60, clientY: 50 });
   frame();
   expect(onHover).toHaveBeenCalledTimes(1);
-  // A camera gesture under way is not a hover.
+  // A camera gesture under way is not a hover: what was lit is let go at once, and nothing new is sought.
   fire(canvas, 'pointermove', { clientX: 150, clientY: 50, buttons: 1 });
   frame();
-  expect(onHover).toHaveBeenCalledTimes(1);
+  expect(onHover.mock.calls.map(([hit]) => hit?.id ?? null)).toEqual(['left', null]);
   fire(canvas, 'pointermove', { clientX: 150, clientY: 50 });
   frame();
-  expect(onHover.mock.calls.map(([hit]) => hit?.id ?? null)).toEqual(['left', null]);
+  expect(onHover).toHaveBeenCalledTimes(2);
   expect(host.style.cursor).toBe('');
 });
 
@@ -111,4 +111,16 @@ it('pinch, cancelled touches, and a drag returning to its start never become pic
   touch('pointerdown');
   touch('pointerup');
   expect(onPick).toHaveBeenCalledTimes(1);
+});
+
+it('a press that turns the view lets go of what was hovered, and no hover is sought until it ends', () => {
+  const { canvas, onHover, fire, scene } = mount();
+  fire(canvas, 'pointermove', { clientX: 50, clientY: 50 });
+  frame();
+  expect(onHover.mock.calls.at(-1)?.[0]?.id).toBe('left');
+  scene.pick.mockClear();
+  fire(canvas, 'pointermove', { clientX: 52, clientY: 50, buttons: 1 });
+  frame();
+  expect(onHover.mock.lastCall?.[0]).toBeNull();
+  expect(scene.pick).not.toHaveBeenCalled();
 });

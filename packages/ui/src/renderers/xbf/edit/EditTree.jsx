@@ -246,6 +246,23 @@ export function ExpressionRows({ edit }) {
  */
 export default function EditTree({ edit, tree, onEditSketch = () => {}, onOpenPart = null, backTo = null }) {
   const [open, setOpen] = useState(() => new Set(["mates", "datum"]));
+  // A row says when the pointer leaves it, but one that goes away under the pointer (folded, the tree swapped for a
+  // panel or rebuilt) says nothing: the plane it drew stays on the model until something clears it. So while a row is
+  // hovered, the pointer anywhere but a row, or out of the view, lets it go, and so does the tree going.
+  const { hovered, hover } = edit;
+  useEffect(() => {
+    if (!hovered) return undefined;
+    const clear = () => hover(null);
+    const moved = event => { if (!event.target?.closest?.("[data-cad-edit-tree-row]")) clear(); };
+    const page = document.documentElement;
+    window.addEventListener("pointermove", moved, true);
+    page.addEventListener("pointerleave", clear);
+    return () => {
+      window.removeEventListener("pointermove", moved, true);
+      page.removeEventListener("pointerleave", clear);
+    };
+  }, [hovered, hover]);
+  useEffect(() => () => hover(null), [hover]);
   // A selection inside a closed part, or a sketch under a closed feature, opens them to it.
   useEffect(() => {
     const selected = edit.selected || "";
