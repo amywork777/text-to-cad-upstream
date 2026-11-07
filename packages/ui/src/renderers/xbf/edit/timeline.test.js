@@ -109,8 +109,8 @@ test("places a dragged marker between items", () => {
 });
 
 test("marks who made each item, and nothing unknown", () => {
-  const { items } = timelineItems(PART, null, { e2: "agent" });
-  assert.deepEqual(items.map(item => item.author), [null, "agent", null]);
+  const { items } = timelineItems(PART, null, { e2: "agent", b1: "you" });
+  assert.deepEqual(items.map(item => item.author), [null, "agent", "you"]);
   // A sketch has no author of its own: it carries its feature's, if the feature has one.
   assert.deepEqual(items.map(item => item.sketch?.author ?? null), [null, "agent", null]);
   assert.deepEqual(timelineItems(PART, null, { e1: "you", b1: "agent" }).items.map(item => item.author), ["you", null, "agent"]);
@@ -121,6 +121,8 @@ test("marks who made each item, and nothing unknown", () => {
   assert.ok(unmarked({}));
   assert.ok(unmarked({ e1: "someone", e2: 1, b1: null }));
   assert.ok(unmarked({ e1: {}, e2: "Agent" }));
+  // All one author's: a dot on every row tells none of them apart.
+  assert.ok(unmarked({ e1: "agent", e2: "agent", b1: "agent" }));
 });
 
 /** Each `bottomDock` CAD mode hands the frame (`useXbfCadMode.jsx`), read from its source: the view cannot be mounted here. */
