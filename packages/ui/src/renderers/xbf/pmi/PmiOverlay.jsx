@@ -3,7 +3,7 @@ import { ANNOTATION_HIDDEN_OPACITY } from "@cad/core/common/annotation.js";
 import { cn } from "@cad/ui/utils";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
 import PmiLabel, { PMI_STATUS_TOKENS } from "./PmiLabel.jsx";
-import { separateLabels } from "./separateLabels.js";
+import { labelInView, separateLabels } from "./separateLabels.js";
 
 // An engine document's PMI over the viewport: each annotation's label, a few words at the UI's
 // size whatever the zoom, standing where its construction puts it (`xbfPmiLayout.js`) -- set apart
@@ -27,6 +27,18 @@ const ARROW_PX = 7, ARROW_HALF_PX = 2.6, DATUM_PX = 6;
 const FINE_SLOP_PX = 4, COARSE_SLOP_PX = 12;
 // How far a distance's words stand off its dimension line.
 const LABEL_CLEAR_PX = 6;
+// A label's margin from the edge of the view.
+const VIEW_MARGIN_PX = 8;
+// What is drawn over the view, which a label keeps out from under: the tools' strip, the file's panel, the corner's boxes and the cube.
+const OVER_VIEW = "[data-cad-top-controls], aside[data-cad-file-sidebar][data-open], [data-file-sidebar-tools], [data-viewport-notice], [data-quick-edit-box], [data-cad-view-cube]";
+
+// What covers the overlay `root`, each rectangle in its pixels.
+function viewCovers(root) {
+  const within = root.getBoundingClientRect();
+  return [...(root.closest("[data-cad-scene-backdrop]") || root).querySelectorAll(OVER_VIEW)].map(element => element.getBoundingClientRect())
+    .filter(box => box.width > 0 && box.height > 0)
+    .map(box => ({ left: box.left - within.left, right: box.right - within.left, top: box.top - within.top, bottom: box.bottom - within.top }));
+}
 
 const projectWith = (THREE, camera, width, height) => {
   const scratch = new THREE.Vector3();
@@ -217,7 +229,17 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
         Object.assign(entry.box, { x: mid.x + out.x * reach, y: mid.y + out.y * reach });
       }
       const shown = drawn.filter(entry => entry.label);
-      separateLabels(shown.map(entry => entry.box)).forEach((at, index) => Object.assign(shown[index].box, at));
+      // A label whose feature is in the view stands where it can be read, whatever its construction says; with its
+      // feature out of the view it goes with it, as a zoom in means it to. Never the one in the pointer's hand.
+      const area = { left: VIEW_MARGIN_PX, top: VIEW_MARGIN_PX, right: width - VIEW_MARGIN_PX, bottom: height - VIEW_MARGIN_PX };
+      const covers = viewCovers(root);
+      for (const { item, box } of shown) {
+        const feature = project(item.construction?.anchor) || box;
+        if (drag?.key === item.key || feature.x < 0 || feature.x > width || feature.y < 0 || feature.y > height) continue;
+        const at = labelInView(box, area, covers);
+        if (at.x !== box.x || at.y !== box.y) Object.assign(box, at, { movable: true });
+      }
+      separateLabels(shown.map(entry => entry.box), area).forEach((at, index) => Object.assign(shown[index].box, at));
       // Every halo first, so none is drawn over another item's ink.
       const inked = [];
       for (const { item, element, label, box } of drawn) {

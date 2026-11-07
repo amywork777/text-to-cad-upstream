@@ -75,6 +75,9 @@ const UNDER_TOOLBAR = `calc(${WORKSPACE_TOP} + ${INSET})`;
 // has; a view too narrow for the column hides it, and they have the whole view back (`PAST_NAVIGATOR_CLASS`).
 const NAVIGATOR_POSITION = Object.freeze({ top: WORKSPACE_TOP });
 const PAST_NAVIGATOR_CLASS = "left-[16rem] @max-xl/cad-viewport:left-0";
+// So too under the toolbar: every fit and every view is centred in the canvas, which under the toolbar put the model's
+// top behind it.
+const CANVAS_UNDER_TOOLBAR = Object.freeze({ top: WORKSPACE_TOP });
 // An active feature's box shows only on its hovered or focused row and keeps its place when hidden,
 // so names never shift; a suppressed feature keeps its box. EditTree's Row is held: it moves there after.
 const NAVIGATOR_QUIET_CHECKS_CLASS = "[&_[data-cad-edit-tree-row]:not(:hover,:focus-within)_span:has(>input:checked)]:opacity-0";
@@ -705,7 +708,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
             {/* The render pane's box, with nothing beside it, the workspace included (it stands over
                 it), so the box is the same in either layout. The canvas fills it, less the design
                 tree's column while that is docked, and a change of either reaches the scene as a
-                plain resize. Its background is the scene's edge colour: the canvas is resized on the
+                plain resize. It starts under the toolbar for the same reason. Its background is the scene's edge colour: the canvas is resized on the
                 next frame, and one frame of the chrome's background above a dark stage is a visible
                 band. */}
             <div
@@ -713,7 +716,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
               data-cad-scene-backdrop={frame.sceneBackdrop}
               style={{ backgroundColor: frame.sceneBackdrop }}
             >
-              <div className={cn("pointer-events-auto absolute inset-0 z-0", pastNavigator && PAST_NAVIGATOR_CLASS)} data-cad-canvas="">
+              <div className={cn("pointer-events-auto absolute inset-0 z-0", pastNavigator && PAST_NAVIGATOR_CLASS)} style={toolbarUp ? CANVAS_UNDER_TOOLBAR : undefined} data-cad-canvas="">
                 <div className="absolute inset-0">
                   <ShellViewport
                     ref={frame.viewerRef}

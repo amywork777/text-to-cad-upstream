@@ -80,6 +80,8 @@ it("keeps the render pane when the workspace shows, and starts the canvas at the
   view.show(WORKSPACE);
   // The canvas has the room past the column, and the whole view again where the view hides it.
   expect(canvas().className).toMatch(pastTree);
+  // And starts under the toolbar, so a fit is centred in what can be seen of the view.
+  expect(canvas().style.top).toBe('var(--cad-workspace-top, 0px)');
   expect([backdrop(), backdrop().parentElement, beside()]).toEqual([box, frame, [null, null]]);
   const toolbar = screen.getByRole('toolbar', { name: 'Design' });
   for (const part of [toolbar, dock('navigator'), screen.getByRole('toolbar', { name: 'Timeline' })]) expect(box.contains(part)).toBe(true);

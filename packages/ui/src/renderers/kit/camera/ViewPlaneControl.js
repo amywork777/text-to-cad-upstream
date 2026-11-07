@@ -308,6 +308,7 @@ function ViewPlaneControl({
         </div>
       ) : null}
       {showSelector ? <div
+        data-cad-view-cube=""
         className={`pointer-events-auto relative touch-none select-none text-foreground ${CUBE_GREYS_CLASS} ${compact ? "h-20 w-20" : ""} ${dragging ? "cursor-grabbing" : ""}`}
         style={sizeStyle}
         onPointerDown={(event) => { event.stopPropagation(); startDrag(event); }}
