@@ -32,7 +32,7 @@ const KEY_NUDGE_PX = 16;
  * Every panel's heading text: Display's section headings' tracked caps
  * (`FILE_SHEET_SECTION_HEADING_CLASSES`), so every heading in the stack reads alike.
  */
-export const TOOL_PANEL_HEADING_TEXT_CLASS = "text-xs font-medium leading-4 tracking-widest text-muted-foreground uppercase";
+export const TOOL_PANEL_HEADING_TEXT_CLASS = "text-tiny font-medium leading-4 tracking-wide text-muted-foreground uppercase";
 
 /**
  * The head of a panel of CAD mode's left dock (the FeatureManager, PMI): one 28px row 8px in, the

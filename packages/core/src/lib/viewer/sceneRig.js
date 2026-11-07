@@ -70,10 +70,11 @@ export function sceneRigFor(scene, look) {
 }
 
 // On the dark canvas a part has to stand out of the ground rather than off a bright page, so the
-// regular modes draw a step brighter there; the theme's own rig takes the same step
+// regular modes draw a small step brighter there, enough to lift the walls off the ground and no
+// more, so a part reads alike on both canvases; the theme's own rig takes the same step
 // (`themeSettings.js`). A viewer's choice: the engine's look, its stills and the parity page stay
 // as they are.
-export const DARK_CANVAS_EXPOSURE = 1.2;
+export const DARK_CANVAS_EXPOSURE = 1.08;
 
 const onDarkCanvas = new WeakMap();
 

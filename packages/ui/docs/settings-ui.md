@@ -597,7 +597,7 @@ Its panels follow these rules:
   gives way first, down to 128px or its content, then the `"details"` panels together, each in
   proportion to its height, down to 96px or its content; a `"fixed"` panel keeps its height.
   If what cannot give way still does not fit, the column itself scrolls — a panel is never cut.
-- **Headings.** A panel's heading row reads as Display's section headings do (12px tracked caps,
+- **Headings.** A panel's heading row reads as Display's section headings do (11px tracked caps,
   `TOOL_PANEL_HEADING_TEXT_CLASS`), 28px tall, 8px in: a title, a summary where there is one,
   then at its right end its own actions, the chevron where it folds (up while open, down while
   folded) and an X where it has something to remove. Every small button in a heading is 20px,

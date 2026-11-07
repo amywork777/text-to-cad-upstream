@@ -229,7 +229,7 @@ LOOK = Look(
     fill="#b6c4ce",
     palette=("#b6c4ce", "#f4a7a7", "#f8c77e", "#f7e38d", "#b9e88f", "#8fe3c0", "#92d7f5", "#a9b8ff", "#c7a8ff",
              "#f2a7d9"),
-    edge_colours=(("feature", "#253443"), ("tangent", "#667788"), ("seam", "#495b6c")),
+    edge_colours=(("feature", "#253443"), ("tangent", "#3d4b59"), ("seam", "#495b6c")),
     edge_width=1.0,
     modes=(Mode("solid", "lit", "visible"), Mode("shaded", "lit", "none"),
            Mode("parts", "lit", "visible", palette=True), Mode("xray", "lit", "all", opacity=0.22),

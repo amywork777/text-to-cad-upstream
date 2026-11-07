@@ -7,8 +7,10 @@ import { GRID_AXIS_COLORS, GRID_LINE_DEFAULTS } from "../lib/viewer/stageGrid.js
 // Full widths in drawing-buffer (device) pixels. Both the instanced CAD pass
 // and LineMaterial use the same values and analytic antialiasing feather.
 const WIDTHS = Object.freeze({ feature: 1, tangent: 0.65, seam: 0.8, degenerate: 0 });
-// Model ink is appearance-independent; only the canvas and guides adapt.
-const PALETTE = Object.freeze({ feature: "#253443", tangent: "#667788", seam: "#495b6c", degenerate: "#667788" });
+// Model ink is appearance-independent; only the canvas and guides adapt. A fillet's boundary is a
+// tangent edge, so tangent ink stays darker than a shaded wall on either canvas, or the outline of
+// a rounded part reads as a pale line. The engine's look (`render/look.py`) says the same ink.
+const PALETTE = Object.freeze({ feature: "#253443", tangent: "#3d4b59", seam: "#495b6c", degenerate: "#3d4b59" });
 
 export function resolveCadEdgeSettings(value = null) {
   const customColor = value?.color && value.color !== PALETTE.feature ? value.color : null;

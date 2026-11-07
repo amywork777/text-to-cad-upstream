@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createFramePresentation, viewerTransitionBackdrop } from "./framePresentation.js";
+import { createFramePresentation, viewerTransitionBackdrop, viewportGround } from "./framePresentation.js";
+
+test("only a flat light canvas takes the viewport's gradient", () => {
+  const flat = { type: "solid", solidColor: "#f0f4f9" };
+  assert.deepEqual(viewportGround(flat, "light"), { ...flat, type: "linear", linearStart: "#ffffff", linearEnd: "#cfcfcf", linearAngle: 90 });
+  assert.equal(viewportGround(flat, "dark"), flat);
+  const painted = { type: "radial", solidColor: "#ffffff" };
+  assert.equal(viewportGround(painted, "light"), painted);
+  assert.equal(viewportGround(null, "light"), null);
+});
 
 test("Render stays covered until both geometry and the studio can produce a frame", () => {
   const canvas = { style: {} }, events = [];

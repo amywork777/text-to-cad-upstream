@@ -52,7 +52,7 @@ import { annotationWorldPoints, annotationsOnScreen, mountAnnotations } from "..
 import { createViewerRenderStateResolver } from "../view-settings/renderState.js";
 import { shareSettingsValue } from "../view-settings/shareSettingsValue.js";
 import { createViewUpdateGate } from "../view-settings/viewUpdateGate.js";
-import { viewerTransitionBackdrop } from "../viewport/framePresentation.js";
+import { viewerTransitionBackdrop, viewportGround } from "../viewport/framePresentation.js";
 import { IDLE_PIXEL_RATIO_CAP, INTERACTION_IDLE_DELAY_MS, INTERACTION_PIXEL_RATIO_CAP, getPixelRatioCap } from "../viewport/pixelRatio.js";
 import { disposeSceneObject } from "../viewport/sceneObjects.js";
 import { requestSceneFrame } from "../viewport/sceneFrames.js";
@@ -801,7 +801,7 @@ const ShellViewport = forwardRef(function ShellViewport({
     }
     if (!renderMode) studioScene()?.disposePhotographicStudio(runtime);
     const lighting = normalizedThemeSettings.lighting;
-    applySceneBackground(runtime, viewerTheme, normalizedThemeSettings.background);
+    applySceneBackground(runtime, viewerTheme, viewportGround(normalizedThemeSettings.background, appearance));
     runtime.renderer.toneMappingExposure = Math.max(lighting.toneMappingExposure, 0.05);
     runtime.hemisphereLight.visible = lighting.hemisphere.enabled;
     runtime.hemisphereLight.color.set(lighting.hemisphere.skyColor);
@@ -887,7 +887,7 @@ const ShellViewport = forwardRef(function ShellViewport({
         runtime.scene.environmentIntensity = 0;
       }
       if (renderMode) applyActivePhotographicStudio(runtime);
-      else applySceneBackground(runtime, viewerTheme, normalizedThemeSettings.background);
+      else applySceneBackground(runtime, viewerTheme, viewportGround(normalizedThemeSettings.background, appearance));
       viewerAlertChangeRef.current?.(null);
       runtime.requestRender();
       return;
@@ -935,7 +935,7 @@ const ShellViewport = forwardRef(function ShellViewport({
   }, [
     applyActivePhotographicStudio, renderConfiguration, renderEnvironmentMapSize, photographicLighting,
     scene?.keepsAuthoredFinish, renderMode, studioSceneTick, viewerReadyTick, viewerTheme, normalizedThemeSettings.background,
-    sceneRig
+    appearance, sceneRig
   ]);
 
   // Preview's orbit.
