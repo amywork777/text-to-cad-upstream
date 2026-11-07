@@ -52,6 +52,8 @@ const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-t
 const TITLE_CLASS = "py-0.5 text-tiny leading-3 text-muted-foreground";
 // The title's band: a rule the width of the group, meeting the divider, the title centered under it, so it names the whole group and not the button over it.
 const TITLE_BAND_CLASS = "flex w-full justify-center border-t border-border px-1.5 py-0.5";
+// The same rule on across the row past the last group, 20px up being the band under it, so it never stops short.
+const TITLE_RULE_CLASS = "after:pointer-events-none after:absolute after:inset-x-0 after:bottom-5 after:border-t after:border-border";
 const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-blue-600 dark:text-blue-400",
   "Over defined": "text-red-600 dark:text-red-400" });
 // The More button's box, before it is first laid out.
@@ -234,7 +236,7 @@ function RibbonGroups({ groups }) {
   const fit = useRibbonFit(rowRef, moreRef, key);
   const folded = groups.slice(fit.count + (fit.partial ? 1 : 0));
   return <>
-    <div ref={rowRef} data-compact={fit.compact ? "true" : "false"} className="relative flex min-w-0 flex-1 items-stretch overflow-hidden">
+    <div ref={rowRef} data-compact={fit.compact ? "true" : "false"} className={cn("relative flex min-w-0 flex-1 items-stretch overflow-hidden", TITLE_RULE_CLASS)}>
       {groups.map((group, index) => {
         const partly = fit.partial > 0 && index === fit.count;
         return <RibbonGroup key={group.title} title={group.title} folded={index >= fit.count && !partly} end={group.end}
