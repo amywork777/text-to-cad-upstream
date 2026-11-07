@@ -14,7 +14,7 @@ import RendererShell from "../kit/shell/RendererShell.jsx";
 import { usePreviewState, useRendererShell } from "../kit/shell/useRendererShell.js";
 import { usePreviewScene } from "../kit/shell/usePreviewScene.js";
 import { useViewportLoadStatus } from "../kit/shell/useViewportLoadStatus.js";
-import { buildFailedAlert, noGeometryAlert } from "../kit/status/loadAlerts.js";
+import { alertStartsPutAway, buildFailedAlert, noGeometryAlert } from "../kit/status/loadAlerts.js";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
 import { ToolStackContext } from "../kit/tools/ToolStack.jsx";
 import { useModelTools } from "../kit/tools/model-effects/ModelTools.jsx";
@@ -888,7 +888,7 @@ function XbfSurface({ view, data }) {
   </div> : cad.frame.leftDock;
 
   return <RendererShell shell={shell} tools={strip} subToolbar={measuring ? <MeasurementsBar measure={measure} /> : null} sidebar={sidebar} previewView={previewView}
-    notice={cad.notice} {...cad.frame} leftDock={leftDock}
+    notice={cad.notice} {...cad.frame} leftDock={leftDock} alertStartsDismissed={alertStartsPutAway(loadAlert)}
     references={quickEdit.references} referenceChips={quickEdit.chips} nameReference={nameReference}
     requests={previewing ? NO_REFERENCES : pmi.changeChips} onClearRequests={pmi.clearChanges}
     onClearReferences={() => { setChosen(EMPTY); measure.select([]); cad.letGoAsked(); }} copySelection={copySelection}

@@ -746,9 +746,11 @@ class Daemon:
                     outcomes[child["id"]] = None if child.get("ok") else {
                         "model": identity, "error": child.get("error"), "progress": frame}
         if "failed" in answer:
+            # A worker gone before its build said a frame names no model: it fails none of them.
             frame = worker.progress or {}
+            named = self.models.paths(worker, frame["job"]) if frame.get("job") else []
             outcomes = {path: {"model": frame.get("job"), "error": answer["failed"], "progress": frame}
-                        for path in [*outcomes, *self.models.paths(worker, frame.get("job"))]}
+                        for path in [*outcomes, *named]}
         if outcomes:
             server.built(outcomes)
         if not verb:

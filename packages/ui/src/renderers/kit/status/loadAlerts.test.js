@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildFailedAlert, failureAlert } from "./loadAlerts.js";
+import { alertStartsPutAway, buildFailedAlert, failureAlert } from "./loadAlerts.js";
 
 test("a failed build is said over the model on screen: what was raised, the traceback in the details", () => {
   const failed = { model: "demo.py::demo", progress: { kind: "build", stage: "body", job: "demo.py::demo", outputs: [], detail: "base", done: 0, total: null, elapsedMs: 9 },
@@ -25,4 +25,10 @@ test("a request that failed says what it was doing in words, and keeps the clien
   // An operation already in words is said as it is.
   assert.match(failureAlert("/m/a.step", "", { kind: "network", operation: "preparing display assets", detail: "Failed to fetch" }).message,
     /while preparing display assets for/);
+});
+
+test("a failed update over the last version starts put away; a model that never built does not", () => {
+  assert.equal(alertStartsPutAway(buildFailedAlert("XBF/demo.xbf", { error: "boom" }, true)), true);
+  assert.equal(alertStartsPutAway(buildFailedAlert("XBF/demo.xbf", { error: "boom" }, false)), false);
+  assert.equal(alertStartsPutAway(null), false);
 });
