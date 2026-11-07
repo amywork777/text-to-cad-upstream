@@ -123,29 +123,19 @@ test("marks who made each item, and nothing unknown", () => {
   assert.ok(unmarked({ e1: {}, e2: "Agent" }));
 });
 
-/**
- * CAD mode's own condition for handing the frame its timeline (`bottomDock`, `useXbfCadMode.jsx`), as written there, to be run on
- * a state of the view: the view itself cannot be mounted here (its viewport is the browser suite's), and a copy of the rule
- * written in this test would pin nothing.
- */
-function timelineCondition() {
+/** Each `bottomDock` CAD mode hands the frame (`useXbfCadMode.jsx`), read from its source: the view cannot be mounted here. */
+function timelineDocks() {
   const source = fs.readFileSync(new URL("./useXbfCadMode.jsx", import.meta.url), "utf8");
   const ast = parse(source, { sourceType: "module", plugins: ["jsx"] });
   const found = [];
   traverse(ast, {
     ObjectProperty(path) {
-      const { key, value } = path.node;
-      if (key.name === "bottomDock" && value?.type === "ConditionalExpression") found.push(value.test);
+      if (path.node.key.name === "bottomDock") found.push(path.node);
     },
   });
-  assert.equal(found.length, 1, "CAD mode hands the frame its timeline under one condition");
-  const condition = source.slice(found[0].start, found[0].end);
-  return scope => Boolean(Function("scope", `with (scope) { return (${condition}); }`)(scope));
+  return found;
 }
 
-test("is up while the part is edited, and not in Simple view", () => {
-  const up = timelineCondition();
-  assert.equal(up({ editing: true, edit: {} }), true);
-  // Simple view lays the view out for asking the AI, with no timeline.
-  assert.equal(up({ editing: false, edit: {} }), false);
+test("CAD mode hands the frame no timeline: a host that opens files itself has none", () => {
+  assert.equal(timelineDocks().length, 0);
 });
