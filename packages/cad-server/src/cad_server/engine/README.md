@@ -86,10 +86,9 @@ A part's material is native: `part.material = bd_materials.metals.aluminum()`.
 `paint(part, faces, material)` gives faces one. Set an assembly's material before reading
 its children's inherited properties. Set an explicit `part.color` after `.material`, since
 build123d's material setter sets colour. Set materials on finished parts, after the
-last operation: an edit of one is then no kernel call. Two limits of OCCT's STEP writer show in a STEP export: it names the density
-unit gram³·cm² (the exponents wrong, the number right: the reader gives the density back as
-written), and it writes materials sharing a name as one entity, so a STEP gives every such
-material the first one's description.
+last operation: an edit of one is then no kernel call. A limit of OCCT's STEP writer shows in a STEP
+export: it writes materials sharing a name as one entity, so a STEP gives every such material the
+first one's description.
 
 An assembly's mechanism is build123d's joints: `RevoluteJoint`,
 `LinearJoint`, `CylindricalJoint`, `BallJoint` and `RigidJoint` on its parts, placed with
@@ -1786,7 +1785,7 @@ changed or new one fails in one line naming the folder and its mode.
   document's is.
 - **STEP** (AP242, `export/step.py`): the assembly with instance and product names, colours per
   part and per painted face, material names and densities, element names on face, edge and
-  vertex sub-shape labels, and what their folded atoms stand for (**Element names**). Read back through the engine's own reader, the instance tree, every
+  vertex sub-shape labels. Read back through the engine's own reader, the instance tree, every
   name (on the same elements: the reader numbers edges and vertices in its own order), colours
   and materials' names and densities are the xbf's. Standard STEP surface rendering records
   carry an approximate diffuse/specular finish and transparency for parts and material-painted
@@ -1922,7 +1921,7 @@ follows that file's bytes (**Document lifetime**), so it moves once every declar
 `status`, `stop`, `delete` and `server` only the CLI calls): one per command, each through the daemon. No function builds source text;
 a shape made elsewhere is handed over, never built (`model(shape, name=...)`, **Shapes handed over**).
 `export(source, *destinations)` a list of `Written`; `snapshot(source, out, ...)` a `Drawn`, and `snapshot(job=PACKET, ...)` (with `source` in place of the packet's input, as `--job PACKET SRC`) a list of them, one verb with two input shapes, anything else refused as Python refuses a call; `inspect(doc)` what
-the document holds and its build closure (`query="summary"`; `"structure"` the same with nothing measured, and with no
+the document holds, its PMI among it, and its build closure (`query="summary"`; `"structure"` the same with nothing measured, and with no
 query the closure alone), `inspect(doc, ref)` an element's facts. Each takes a handle (what a model call
 returns), a document id or a file path; `export` and `snapshot` take the decorated function too,
 building it first. A handle exports and draws its document the same way (`.export()`,
@@ -2363,7 +2362,8 @@ return annotate(body,
   and logged by the build as `pmi: PART: ask: QUESTION Suggest ANSWER (WHY)`), never applied: the
   part's material where it has none; datum A on its largest flat face where it has no datum; a
   general requirement (`general_tolerance("general", "ISO 2768-mK")`) where faces are uncovered and
-  none is given; and each hole no size is on, by its diameter, from the tables in `pmi.py`: an ISO
+  none is given; and each hole no size is on (faces going all the way round an axis, so a slot's
+  round end is none), by its diameter, from the tables in `pmi.py`: an ISO
   273 clearance hole (its series' H class, ISO 286, and a position by the floating-fastener formula,
   hole less fastener), a coarse thread's tap drill (a thread note, 6H, and a position by the
   fixed-fastener formula, half the mating medium clearance hole less the fastener), else a bore
@@ -2495,11 +2495,12 @@ included, each named, a STEP's by each annotation's id and the ref
 that holds no geometry: `a STEP would drop PMI linked to no geometry: ID (ref 'REF': WHY). Fix the
 refs in the model, or remove the annotations`); one of a document another system wrote is
 written, and what it leaves out is said (`pmi.dropped`: `warning: pmi: FILE: ID is not carried
-whole: WHY` in the export's log). OCCT's writer gets three PMI records wrong, and the STEP export
+whole: WHY` in the export's log). OCCT's writer gets four PMI records wrong, and the STEP export
 puts them right (`export/step.py`, `_pmi_records`; found and checked by the AP242 reader below):
 a plus-minus tolerance's bounds untyped (`MEASURE_WITH_UNIT(0.2,#u)`); a two-attribute
-`RUNOUT_ZONE_DEFINITION` beside every diametral zone; and, in a document with no dimension, every
-tolerance magnitude in a bare metre while its value is millimetres. OCCT's own reader finds a
+`RUNOUT_ZONE_DEFINITION` beside every diametral zone; in a document with no dimension, every
+tolerance magnitude in a bare metre while its value is millimetres; and a `DATUM_SYSTEM` per
+tolerance, where each frame is written once. OCCT's own reader finds a
 datum only through a tolerance that names it.
 
 **The check in the written file.** Every STEP written of a document that holds PMI a STEP
@@ -2950,10 +2951,7 @@ changed (`kernel/trace.py`). A name is its kind and its derivation: the atom it
 starts from, the n-th element of its kind a feature made, and a step per feature that
 made it out of another (`f:plate.body.3;M:plate.relief`: face 3 of the box, modified
 by the relief cut). A long derivation folds to its last feature and a digest
-(`f:plate.relief~5d1e0c2f9a3b`); the worker that built it spells it out, and so does the
-part's file: its xbf holds what each folded atom stands for, and a STEP of it writes that as the
-part's `'folded element names'` property (an item per atom, `export/step.py`), so a reader of the
-file alone follows a face back to where it was made. Every name is a
+(`f:plate.relief~5d1e0c2f9a3b`); the worker that built it spells it out. Every name is a
 reference the CAD Viewer's ref grammar parses (`cadRefs` in the bundled `@cad/core` runtime, mirrored as
 `refs.py`'s `ELEMENT_NAME`, which the naming in `kernel/trace.py` reads and which loads no kernel): a feature name has at most one dot, every segment
 is an identifier, and an atom ends in a number or a digest. A name holds no line or file (law 9): a line is

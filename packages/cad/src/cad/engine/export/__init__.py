@@ -432,13 +432,13 @@ def translate(document: Any, kind: str | None, path: Any, tolerance: float | Non
               told: Callable[[str], None] | None = None, *, check: Callable[[Path], None] | None = None) -> int:
     """Write ``document`` (a ``Source``, or the path of an ``.xbf``/``.step`` or a mesh file) to ``path``
     as ``kind`` (from the suffix when None), an STL or a 3MF meshed to within ``tolerance`` (mm) when
-    one is given (``told`` hears each part it left faces of without triangles); returns the file's size. The
-    translation lands only where the file does not hold its bytes already (``put``): a file written
-    again the same is left as it is. Every declared file is written this way too, after the build or
-    the take-up that made its document (``build``). A file that would not carry whole the PMI the code
-    made is refused by name (``pmi.refuse_dropped``); what one of a document another system wrote
-    leaves out is said to ``told``. ``check`` reads the file staged before it lands (an atomic kind's, a
-    STEP's): one it refuses (raises) is not written, and the file there keeps its bytes."""
+    one is given; returns the file's size. The translation lands only where the file does not hold its
+    bytes already (``put``): a file written again the same is left as it is. Every declared file is
+    written this way too, after the build or the take-up that made its document (``build``). A file
+    that would not carry whole the PMI the code made is refused by name (``pmi.refuse_dropped``).
+    ``told`` hears what one of a document another system wrote leaves out, and each part it left faces
+    of without triangles. ``check`` reads the file staged before it lands (an atomic kind's, a STEP's):
+    one it refuses (raises) is not written, and the file there keeps its bytes."""
     from cad.engine import pmi
 
     path = Path(path)

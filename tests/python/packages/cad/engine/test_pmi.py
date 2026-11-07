@@ -40,8 +40,8 @@ from cad.ap242 import (annotate, camera, datum, dimensional_location, dimensiona
 from cad.engine import build as engine_build
 from cad.engine import document, export
 from cad.engine.export import ap242
-from cad.engine.pmi import (PMI, PMIError, PMIUnsupported, _faces, _ref, _resolved_part, _surface, coverage, dropped,
-                               otherwise_controlled, read, records_of_document, refuse_dropped, suggestions)
+from cad.engine.pmi import (PMI, PMIError, PMIUnsupported, _bores, _faces, _ref, _resolved_part, _surface, coverage,
+                               dropped, otherwise_controlled, read, records_of_document, refuse_dropped, suggestions)
 
 FIXTURE = Path(__file__).resolve().parent / "pmi_golden"
 WRITE = os.environ.get("CAD_RENDER_GOLDENS") == "write"
@@ -165,6 +165,18 @@ def _face(loaded: document.Loaded, entry: dict, at: int = 0) -> tuple[str, dict]
 
 
 class PlateTest(_Folder):
+    def test_inspect_gives_what_the_structure_serves(self) -> None:
+        from cad.engine.api import _summary
+
+        self.build(plate())
+        for source in (self.xbf, self.step):
+            with self.subTest(source=source.suffix):
+                structure = document.Loaded(source).structure()
+                self.assertTrue(structure["pmi"])
+                summary = _summary(structure, source, lambda *_: {}, "id", measured=False)
+                self.assertEqual([summary[name] for name in ("pmi", "pmi_views", "pmi_coverage")],
+                                 [structure[name] for name in ("pmi", "pmi_views", "pmi_coverage")])
+
     def test_the_document_holds_each_annotation_on_its_face(self) -> None:
         report = self.build(plate())
         self.assertEqual(_but_coverage(report), {"annotations": 9, "problems": []})
@@ -1487,6 +1499,24 @@ class CoverageTest(_Folder):
         self.assertEqual([said["faces"] for said in found], [["plate/face 3"], ["plate/face 4"], ["plate/face 5"]])
         self.assertIn('datums=["A", "B"]', found[0]["answer"])
 
+    def test_a_slot_s_round_ends_are_no_holes_and_a_hole_of_two_halves_is_one(self) -> None:
+        """A hole's faces go all the way round their axis (``_bores``): a slot's end turns half way,
+        and asks nothing; a hole another system wrote as two half cylinders is still a hole."""
+        said = self.build(SUGGESTED.replace("+ bd.Pos(30, 0, 10) * bd.Cylinder(8, 10))",
+                                            "- bd.Pos(30, 0, -5) * bd.extrude(bd.SlotOverall(24, 8), amount=10))"))
+        [found] = self.served()["pmi_coverage"]
+        self.assertEqual([entry["question"] for entry in found["suggestions"] if entry["kind"] == "hole"],
+                         ["What is the 9 mm hole for?", "What is the 6.8 mm hole for?"], said)
+
+        def half(at: int, y: float, turn: float = math.pi, diameter: float = 8.0) -> dict:
+            return {"ref": f"plate/face {at}", "surface": "cylinder", "area": 50.0, "diameter": diameter, "hole": True,
+                    "axis": (0.0, 0.0, 1.0, 0.0, y, 0.0), "turn": turn}
+
+        kept = _bores([half(1, 0.0), half(2, 0.0), half(3, 8.0), half(4, -8.0, 1.5 * math.pi), half(5, 20.0),
+                       half(6, 20.0, diameter=12.0), {"ref": "plate/face 7", "surface": "plane", "area": 9.0}])
+        self.assertEqual([face.get("hole") for face in kept], [True, True, False, False, False, False, None])
+        self.assertFalse(any("turn" in face or "axis" in face for face in kept))
+
     def test_a_built_part_s_holes_are_measured_and_its_boss_is_not_one(self) -> None:
         said: list[str] = []
         self.build(SUGGESTED, log=said)
@@ -1899,6 +1929,52 @@ def pmi_plate():
         self.assertEqual((tolerance["magnitude"]["value"], tolerance["magnitude"]["unit"]), (0.05, "mm"))
         self.assertNotIn(b"SI_UNIT($,.METRE.)", self.step.read_bytes())
         self.assertEqual(read(self.step)[0]["geometric_tolerance"]["value"], 0.05)
+
+
+# A plate whose tolerances name one frame three times and another once. Tolerance values
+# ILLUSTRATIVE.
+FRAMES = '''
+import build123d as bd
+from cad.ap242 import annotate, datum, position_tolerance, surface_profile_tolerance
+from cad.engine import step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
+    body.label = "plate"
+    bottom = body.faces().sort_by(bd.Axis.Z)[0]
+    front, back = body.faces().sort_by(bd.Axis.Y)[0], body.faces().sort_by(bd.Axis.Y)[-1]
+    left, right = body.faces().sort_by(bd.Axis.X)[0], body.faces().sort_by(bd.Axis.X)[-1]
+    hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
+    return annotate(body, datum("A", bottom), datum("B", front),
+                    position_tolerance("hole", hole, 0.1, datums=["A", "B"]),
+                    surface_profile_tolerance("right", right, 0.5, datums=["A", "B"]),
+                    surface_profile_tolerance("back", back, 0.5, datums=["A", "B"]),
+                    surface_profile_tolerance("left", left, 0.5, datums=["A"]))
+'''
+
+
+class DatumFrameTest(_Folder):
+    def test_a_frame_several_tolerances_name_is_one_datum_system(self) -> None:
+        """OCCT's writer writes a ``DATUM_SYSTEM`` per tolerance: the export writes each frame once
+        (``export.step._pmi_records``). A frame is its datums: A stays apart from A|B, and every
+        tolerance still reads its own to OCCT and to a reader of no OCCT."""
+        self.build(FRAMES)
+        data = self.step.read_bytes()
+        self.assertEqual(data.count(b"DATUM_SYSTEM("), 2)
+        self.assertEqual(data.count(b"DATUM_REFERENCE_COMPARTMENT("), 3)
+        found = ap242.report(self.step)
+        self.assertEqual(found["problems"], [])
+        self.assertEqual(sorted((entry["entity"], entry["datums"]) for entry in found["tolerances"]),
+                         [("POSITION_TOLERANCE", ["A", "B"]), ("SURFACE_PROFILE_TOLERANCE", ["A"]),
+                          ("SURFACE_PROFILE_TOLERANCE", ["A", "B"]), ("SURFACE_PROFILE_TOLERANCE", ["A", "B"])])
+        frames = [json.dumps(entry["geometric_tolerance"]["datums"]) for entry in read(self.step)
+                  if entry["kind"] == "geometric_tolerance"]
+        self.assertEqual(sorted(frames), sorted(json.dumps(entry["geometric_tolerance"]["datums"])
+                                                for entry in read(self.xbf) if entry["kind"] == "geometric_tolerance"))
+        self.assertEqual(sorted(json.loads(frame) for frame in frames), [["A"], ["A", "B"], ["A", "B"], ["A", "B"]])
 
 
 class RefTest(_Folder):

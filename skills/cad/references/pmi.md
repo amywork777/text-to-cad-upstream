@@ -295,14 +295,6 @@ is now: a hole's name can pass to a flat side of the cut that replaced it. Each 
 of itself alone and says nothing of the last, so after an edit that changes how a face
 is made, read the served PMI's nominals and statuses, and point a ref at the face meant.
 
-A tool that reads only the STEP (an interview that asks for tolerances, an inspection
-plan) keeps its answers on faces by their names. Assign the features PMI stands on:
-`bore = bd.Cylinder(5, 10)` makes the face `bore.1`, which no other feature's insertion
-renames, while a cylinder made on the way in `body = stock - bd.Cylinder(5, 10)` is
-counted within its statement (`body_make_cylinder1`) and renumbered by a cylinder put
-before it. A face whose name grows past the fold is spelled out in the STEP (`'folded
-element names'`), so such a tool can follow it from the feature that made it.
-
 ## Coverage
 
 Every face of a part is to have a requirement. After each run of a part with PMI,
@@ -347,7 +339,8 @@ pmi: PART: ask: What is the 9 mm hole for? Suggest dimensional_size(...), positi
 - **What it asks**, in this order: the part's material, where it has none; datum A, on
   the largest flat face, where it has no datum; a general requirement
   (`general_tolerance("general", "ISO 2768-mK")`), where faces are uncovered and none is
-  given; and each hole no size is on, read by its diameter: an ISO 273 clearance hole
+  given; and each hole no size is on (a slot's round end is none), read by its diameter:
+  an ISO 273 clearance hole
   (its H class, and a position by the floating-fastener formula, hole less fastener), a
   coarse thread's tap drill (a thread note, 6H, and a position by the fixed-fastener
   formula), or a bore something fits in (H7).
@@ -363,31 +356,26 @@ pmi: PART: ask: What is the 9 mm hole for? Suggest dimensional_size(...), positi
 
 ## Read and check
 
-The engine's `read` (`cad.engine.pmi`) reads the PMI a file holds: the STEP a model
-was exported to (what a supplier reads), an `.xbf`, or a vendor's STEP.
+`cad inspect` reads the PMI a document or a file holds: a model's id, the STEP it was
+exported to (what a supplier reads), an `.xbf`, or a vendor's STEP. Its first screen lists
+each annotation's id, kind and status; `--json` gives all of it under `summary`, as `pmi`,
+`pmi_views` and `pmi_coverage`.
 
 ```bash
 cad export "$ID" STEP/plate.step
+cad inspect STEP/plate.step --json
 ```
 
-```python
-from cad.engine.pmi import read
-
-for entry in read("STEP/plate.step"):   # or an .xbf
-    print(entry["id"], entry["kind"], entry["status"], entry["problem"])
-```
-
-Each entry has `id`, `kind` (`datum`, `dimension`, `geometric_tolerance`, `note`),
+Each entry of `pmi` has `id`, `kind` (`datum`, `dimension`, `geometric_tolerance`, `note`),
 `status` (`ok`, `missing`, `ambiguous`, `invalid`), `problem`, `refs` (each with its
 canonical ref and status), and one of `datum`, `dimension`, `geometric_tolerance` or
 `note` holding its values. A note's is `{"number", "text", "general", "annotations"}`,
-its `refs` its faces. The document's structure lists each part's views as `pmi_views`
+its `refs` its faces. `pmi_views` lists each part's views
 (`{"part", "name", "label", "camera", "section", "shows", "place"}`, the camera's
-`direction` and `up` unit vectors and its `preset` the name or null), and each part's
-coverage as `pmi_coverage` ([Coverage](#coverage)). A general profile says
+`direction` and `up` unit vectors and its `preset` the name or null), and `pmi_coverage`
+each part's coverage ([Coverage](#coverage)). A general profile says
 `"general": true`, and its `refs` are the faces it covers on this build, each with
-`written` null; `otherwise_controlled(entries)` (`cad.engine.pmi`) gives the faces the
-rest control.
+`written` null.
 PMI read from another system's STEP that this does not model whole (another
 characteristic, a fit, modifiers, limits beside any of these, a link to an edge or a
 point) is listed as `kind: "unsupported"` with its `xcaf_type` and a `reason`, never
