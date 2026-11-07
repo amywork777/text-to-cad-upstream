@@ -161,7 +161,7 @@ class Compare(Project):
 
     def test_no_checkpoint_takes_a_comparison(self):
         versions.compare(str(self.repo), "hook.step", self.older, self.newer, wait=True)
-        self.assertIn(".studio/", (self.repo / ".git" / "info" / "exclude").read_text().splitlines())
+        self.assertIn(".studio/", (self.repo / ".git" / "info" / "exclude").read_text(encoding="utf-8").splitlines())
         later = checkpoint(self.repo, 2, 3_000)
         files = git(self.repo, "ls-tree", "-r", "--name-only", later).splitlines()
         self.assertFalse([name for name in files if name.startswith(".studio")])
@@ -255,8 +255,8 @@ class Restore(Project):
         write(self.repo, "hook.step", "ISO-10303-21; depth 52\n")
         result = versions.restore(str(self.repo), "hook.step", self.first)
         self.assertEqual(sorted(result["restored"]), ["hook.py", "hook.step"])
-        self.assertEqual((self.repo / "hook.py").read_text(), "HOOK_DEPTH = 40\n")
-        self.assertEqual((self.repo / "hook.step").read_text(), "ISO-10303-21; depth 40\n")
+        self.assertEqual((self.repo / "hook.py").read_text(encoding="utf-8"), "HOOK_DEPTH = 40\n")
+        self.assertEqual((self.repo / "hook.step").read_text(encoding="utf-8"), "ISO-10303-21; depth 40\n")
         kept = result["kept"]
         self.assertEqual(git(self.repo, "show", f"{kept}:hook.py"), "HOOK_DEPTH = 52")
         self.assertEqual(self.listed(), [self.first, self.second, kept, "now"])
@@ -276,7 +276,7 @@ class Restore(Project):
         versions.restore(str(self.repo), "hook.step", self.first)
         again = versions.restore(str(self.repo), "hook.step", self.second)
         self.assertIsNone(again["kept"])
-        self.assertEqual((self.repo / "hook.py").read_text(), "HOOK_DEPTH = 48\n")
+        self.assertEqual((self.repo / "hook.py").read_text(encoding="utf-8"), "HOOK_DEPTH = 48\n")
         self.assertEqual(self.listed(), [self.first, self.second])
 
     def test_going_back_to_the_file_on_disk_or_to_no_version_is_refused(self):
@@ -311,7 +311,7 @@ class SolidDiff(unittest.TestCase):
         export_step(newer, str(self.folder / "newer.step"))
         out = self.folder / "out"
         code = solid_diff.main([str(self.folder / "older.step"), str(self.folder / "newer.step"), str(out)])
-        result = json.loads((out / "result.json").read_text())
+        result = json.loads((out / "result.json").read_text(encoding="utf-8"))
         self.assertEqual(code, 1 if "error" in result else 0)
         return result
 
@@ -334,11 +334,11 @@ class SolidDiff(unittest.TestCase):
         self.assertIsNone(result["diff"])
 
     def test_a_file_that_is_no_step_fails_in_the_result(self):
-        (self.folder / "older.step").write_text("not a step file")
-        (self.folder / "newer.step").write_text("not a step file")
+        (self.folder / "older.step").write_text("not a step file", encoding="utf-8")
+        (self.folder / "newer.step").write_text("not a step file", encoding="utf-8")
         out = self.folder / "out"
         self.assertEqual(solid_diff.main([str(self.folder / "older.step"), str(self.folder / "newer.step"), str(out)]), 1)
-        self.assertIn("error", json.loads((out / "result.json").read_text()))
+        self.assertIn("error", json.loads((out / "result.json").read_text(encoding="utf-8")))
 
 
 if __name__ == "__main__":
