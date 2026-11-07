@@ -650,6 +650,22 @@ MODELS = {
             made.label = "Offset frame with side clamps"
             return made
     """,
+    "bought_rig.py": """
+        from pathlib import Path
+
+        import build123d as bd
+        from cad import model, read_step
+        from plate import plate
+        from post import post
+
+        @model
+        def bought_rig():
+            screw = read_step(Path(__file__).parent / "m3_screw.step")
+            placed = [bd.Pos(x, 0, 0) * screw for x in (10, -10)]
+            for index, part in enumerate(placed):
+                part.label = f"fastener:{index}"
+            return bd.Compound(children=[plate().shape, post().shape, *placed])
+    """,
     "labelled_rig.py": """
         import build123d as bd
         from cad import model
@@ -767,6 +783,20 @@ class ModelsOfTheEngine(unittest.TestCase):
         self.assertTrue(state["ok"], state.get("error"))
         self.assertEqual([(c["name"], c["label"]) for c in state["components"]],
                          [("frame", "Offset frame with side clamps"), ("post", "post")])
+
+    def test_a_file_an_assembly_reads_is_a_part_of_it(self):
+        import build123d as bd
+
+        screw = self.root / "m3_screw.step"
+        bd.export_step(bd.Cylinder(1.5, 6), screw)
+        state = self.service.state(str(self.root / "bought_rig.py"))
+        self.assertTrue(state["ok"], state.get("error"))
+        self.assertEqual([(c["name"], c["label"]) for c in state["components"]],
+                         [("m3_screw", "fastener:0"), ("plate", "plate"), ("post", "post")])
+        bought = state["components"][0]
+        # It opens by its file, and has no history of its own to list under its row.
+        self.assertEqual((bought["document"], Path(bought["step"]).resolve(), bought["features"]), (None, screw.resolve(), []))
+        self.assertEqual([feature["kind"] for feature in state["components"][1]["features"]], ["Boss-Extrude", "Hole"])
 
     def test_tracing_never_asks_the_engine(self):
         guard = Path(tempfile.mkdtemp(prefix="tracer-guard-"))

@@ -218,7 +218,7 @@ const partStem = label => String(label ?? "").replace(/[:<].*$/, "").toLowerCase
  * What an assembly's isolation means for editing it, for CAD mode's notice: none (nothing isolated,
  * or not an assembly), several parts, or one part by its name with its own part (`component`, which
  * Open Part opens) when it has one, matched to the assembly's parts by their name or the label their
- * script gives them, which is what the model tree shows. A part no script makes, as a bought screw, has none.
+ * script gives them, which is what the model tree shows. A part with neither a document nor a file has none.
  * @param {object} tree  The design tree (`editTree`).
  * @param {string[]} labels  The isolated rows' labels in the model tree.
  */
@@ -228,6 +228,27 @@ export function isolatedPart(tree, labels) {
   const stem = partStem(labels[0]);
   const component = tree.components.find(each => (each.document || each.step) && [each.name, each.label].some(name => name && partStem(name) === stem)) || null;
   return { name: component?.name || sizeName(String(labels[0]).replace(/:.*$/, "")), component };
+}
+
+/**
+ * The model's parts a row of an assembly's design tree stands for, by their ids: a part's every copy,
+ * for its row and the rows under it, and the two parts a mate holds. Matched as `isolatedPart` matches
+ * them, by the part's name or the label its script gives it; none for a row that is no part, or a part's tree.
+ * @param {object} tree  The design tree (`editTree`).
+ * @param {Map<string, {label: string, leafPartIds: string[]}>} nodes  The model tree's nodes.
+ * @param {string|null} id  The row.
+ * @param {{label: string, parts: string[]}[]} mates  The assembly's mates.
+ */
+export function assemblyRowParts(tree, nodes, id, mates = []) {
+  if (!tree?.assembly || !id) return [];
+  const stems = component => [component.name, component.label].filter(Boolean).map(partStem);
+  const mate = mates.find(each => `mate:${each.label}` === id);
+  const held = new Set(mate?.parts.map(partStem));
+  const owners = tree.components.filter(component => (mate
+    ? stems(component).some(stem => held.has(stem))
+    : component.id === id || component.features.some(feature => feature.id === id || feature.sketch?.id === id)));
+  const wanted = new Set(owners.flatMap(stems));
+  return [...new Set([...nodes.values()].filter(node => wanted.has(partStem(node.label))).flatMap(node => node.leafPartIds))];
 }
 
 /** What can be selected in a tree: its features, their sketches, the origin, its planes and an assembly's parts. */

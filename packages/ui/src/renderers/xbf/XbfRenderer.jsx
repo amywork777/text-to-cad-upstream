@@ -656,14 +656,15 @@ function XbfSurface({ view, data }) {
   // design tree's row under the pointer (`litFaces`), in the workspace's own colour.
   const pmiLit = pmi.highlight;
   const cadLit = cad.litFaces;
+  const cadParts = cad.litParts;
   useEffect(() => {
     if (!scene) return;
-    scene.setHighlight({ hovered: hover.parts, selected: leavesOf(selectedNodeIds) });
+    scene.setHighlight({ hovered: [...hover.parts, ...cadParts.hovered], selected: [...leavesOf(selectedNodeIds), ...cadParts.selected] });
     const extra = [...pmiLit.selected, ...cadLit];
     scene.setElementHighlight({ hovered: hover.element || pmiLit.hovered,
       selected: extra.length ? [...new Set([...selectedElementIds, ...extra])] : selectedElementIds });
     requestFrame();
-  }, [scene, hover, selectedNodeIds, selectedElementIds, leavesOf, requestFrame, pmiLit, cadLit]);
+  }, [scene, hover, selectedNodeIds, selectedElementIds, leavesOf, requestFrame, pmiLit, cadLit, cadParts]);
   useEffect(() => { scene?.setHighlightColor(cad.editing ? WORKSPACE_SELECTION_COLOR : null); requestFrame(); }, [scene, cad.editing, requestFrame]);
   // The rollback bar's body is not the file: its faces and edges are named to nothing, copied or sent.
   promptReferencesRef.current = previewing || rollback ? NO_REFERENCES : references;

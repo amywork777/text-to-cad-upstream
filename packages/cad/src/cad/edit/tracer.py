@@ -566,7 +566,7 @@ def _wrap_import():
                 raise FileNotFoundError(f"{GONE}{path}")
             result = __reader(path)
             if RECORDING and _called_from_project():
-                _record("import", "Imported", __original, (path,), {}, result, {"source": Path(str(path)).name})
+                _record("import", "Imported", __original, (path,), {}, result, {"source": Path(str(path)).name, "path": str(path)})
             return result
 
         setattr(_declarations, name, functools.wraps(original)(read))
@@ -1773,7 +1773,9 @@ def _is_model(file, function):
 
 def _components(steps):
     """An assembly's parts: the operations split by the part model each runs in (`daisy_tray()`),
-    when the assembly calls more than one; empty for a single part."""
+    with a file the assembly reads on its own lines (a bought screw) a part of it by that file's
+    name, when there is more than one; empty for a single part and for a script that models on its
+    own lines."""
     chains = [step["frames"] for step in steps if step["frames"]]
     if not chains:
         return []
@@ -1781,14 +1783,21 @@ def _components(steps):
     while all(len(chain) > depth for chain in chains) and len({(c[depth]["file"], c[depth]["function"]) for c in chains}) == 1:
         depth += 1
     groups: dict[tuple, list] = {}
+    read: dict[tuple, str] = {}
     for step in steps:
         frames = step["frames"]
-        if len(frames) <= depth:
+        if len(frames) > depth:
+            groups.setdefault((frames[depth]["file"], frames[depth]["function"]), []).append(step)
+        elif frames and step["op"] == "import":
+            key = (frames[-1]["file"], Path(step["path"]).stem)
+            read[key] = step["path"]
+            groups.setdefault(key, []).append(step)
+        elif not frames or step["op"] != "move":  # placing a part is the assembly's, and no part's
             return []
-        groups.setdefault((frames[depth]["file"], frames[depth]["function"]), []).append(step)
-    if len(groups) < 2 or not all(_is_model(file, function) for file, function in groups):
+    if len(groups) < 2 or not all(key in read or _is_model(*key) for key in groups):
         return []
-    return [{"file": file, "function": function, "steps": group} for (file, function), group in groups.items()]
+    return [{"file": file, "function": function, "steps": group, "read": read.get((file, function))}
+            for (file, function), group in groups.items()]
 
 
 def _component_model(component):
@@ -1799,7 +1808,10 @@ def _component_model(component):
 
 def _component_step(component):
     """The STEP file a component's own part model writes (`@step(out=...)`), which Open Part opens
-    where the part has one: None for one that writes none (a bare `@model`, opened by its document)."""
+    where the part has one: None for one that writes none (a bare `@model`, opened by its document).
+    A part read from a file opens by that file."""
+    if component["read"]:
+        return component["read"]
     model = _component_model(component)
     steps = [path for kind, path in model.targets() if kind == "step"] if model is not None else []
     return str(steps[0]) if steps else None
@@ -1812,9 +1824,13 @@ def _component_document(component):
     return model.id if model is not None else None
 
 
-def _component_label(component):
+def _component_label(component, shape):
     """The label a component's own part came back with: its function's name unless its body gave
-    it one. The model tree names the part by this, which is how an isolated row finds its part."""
+    it one. The model tree names the part by this, which is how an isolated row finds its part.
+    A file's part is labelled by the assembly, on the copies of it that share its shape."""
+    if component["read"]:
+        made = component["steps"][0]["result"]._wrapped
+        return next((part.label for part in getattr(shape, "descendants", ()) if part.label and part._wrapped.IsPartner(made)), None)
     model = _component_model(component)
     return PART_LABELS.get(model.address) if model is not None else None
 
@@ -1928,6 +1944,8 @@ def trace(request):
         hidden = _suppressed_in(component["file"], {component["function"]}, sketches)
         component["features"] = _with_text(_editable(_with_suppressed(_with_sketches(component["features"], sketches, component), hidden),
                                                      rows, steps, sketches, units))
+        if component["read"]:
+            component["features"] = []  # its one row would only say its name again
     if not components:
         scopes: dict = {}
         for row in timeline:
@@ -2001,7 +2019,7 @@ def trace(request):
         "faceCount": 0 if components else face_count(shape),
         "sketches": sketches,
         "components": [{"name": c["function"], "file": c["file"], "features": c["features"], "step": _component_step(c),
-                        "document": _component_document(c), "label": _component_label(c)} for c in components],
+                        "document": _component_document(c), "label": _component_label(c, shape)} for c in components],
         # Who made each feature, by its key: "you" or "agent", none where it is not known (`authors.py`).
         "authors": made_by,
         # An assembly's mates, as its joints are labelled (`mates.py`), for the design tree's Mates.

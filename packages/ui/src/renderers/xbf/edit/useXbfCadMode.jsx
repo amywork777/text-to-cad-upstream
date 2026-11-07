@@ -21,7 +21,7 @@ import SketchesLayer from "./SketchesLayer.jsx";
 import ValueCallout from "./ValueCallout.jsx";
 import { cadChosen, doubleClickLayout, editLayoutState, pendingFaceStep, useEditLayout } from "./editLayout.js";
 import {
-  ORIGIN_PLANES, STANDARD_VIEWS, editCommand, featureNames, featureTree, isolatedPart, mirrorOutline, nextSketchName, notASketch, originAxis,
+  ORIGIN_PLANES, STANDARD_VIEWS, assemblyRowParts, editCommand, featureNames, featureTree, isolatedPart, mirrorOutline, nextSketchName, notASketch, originAxis,
   planeOutline, rolledBack, selectionDimensions, selectionItems, sizeName, sketchTreeId, sketchView, treeFeatures, treeSketch
 } from "./editMode.js";
 import { faceChipName, faceNumber, faceReference, shownFaces } from "./faceChips.js";
@@ -192,6 +192,12 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
     const lit = Object.entries(map).filter(([, key]) => key === edit.hovered).map(([number]) => `i0/face/${number}`);
     return lit.length ? lit : EMPTY;
   }, [faces, edit.sketch, edit.hovered]);
+  // In an assembly the row stands for a part, or for what a mate holds: its whole bodies are lit, under the pointer and picked.
+  const litParts = useMemo(() => {
+    const mates = edit.state?.mates;
+    return { hovered: editing ? assemblyRowParts(editTree, tree.nodes, edit.hovered, mates) : EMPTY,
+      selected: editing ? assemblyRowParts(editTree, tree.nodes, edit.selected, mates) : EMPTY };
+  }, [editing, editTree, tree, edit.hovered, edit.selected, edit.state?.mates]);
   /** Quick Edit's chips, a face's named by the feature that made it, as the design tree numbers it ("Hole1 · face 12"). */
   const nameChips = useCallback(chips => (faces ? chips.map((chip) => {
     const number = Number(chip.compact?.number);
@@ -594,7 +600,7 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
   };
 
   return {
-    edit, editing, cad, editable, frame, overlay, notice, isolateToEdit, references, faces, litFaces, nameChips, drawingTools, quickEdit, letGoAsked,
+    edit, editing, cad, editable, frame, overlay, notice, isolateToEdit, references, faces, litFaces, litParts, nameChips, drawingTools, quickEdit, letGoAsked,
     beforePick, modelPicks, doubleClickFace, doubleClickEmpty, faceMenu, escape, escapeActive: editing && (asked || featureBarShown || commandHeld),
     rollback, rollbackGone,
     // The units the part reads in, which Measure reads in too, as SolidWorks' does.

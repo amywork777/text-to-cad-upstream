@@ -27,6 +27,7 @@ import {
   revolveSweep,
   inertiaRows,
   isolatedPart,
+  assemblyRowParts,
   deleteRefusal,
   editingValues,
   planeDetail,
@@ -805,6 +806,31 @@ test("Mass Properties lists the moments of inertia once a material gives the den
   assert.equal(rows[0].value, "650 g·mm²");
   assert.equal(rows[3].value, "250 g·mm² about (0, 0, 1)");
   assert.match(inertiaRows(mass, "in", 1)[0].value, / lb·in²$/);
+});
+
+test("an assembly's design tree row stands for that part's every copy in the model", () => {
+  const nodes = new Map([
+    ["n0", { label: "motor_mount", leafPartIds: ["i0", "i1", "i2", "i3"] }],
+    ["i0", { label: "motor_plate", leafPartIds: ["i0"] }],
+    ["i1", { label: "nema17_stepper", leafPartIds: ["i1"] }],
+    ["i2", { label: "m3x6_screw:front_left", leafPartIds: ["i2"] }],
+    ["i3", { label: "m3x6_screw:back_right", leafPartIds: ["i3"] }]]);
+  const tree = { assembly: true, components: [
+    { id: "component:plate", name: "Motor plate", label: "motor_plate", features: [{ id: "a:3", sketch: { id: "a:3:sketch" } }] },
+    { id: "component:motor", name: "Nema17", label: "nema17_stepper", features: [] },
+    { id: "component:screw", name: "Iso4762 screw", label: "m3x6_screw:front_left", features: [] }] };
+  assert.deepEqual(assemblyRowParts(tree, nodes, "component:plate"), ["i0"]);
+  assert.deepEqual(assemblyRowParts(tree, nodes, "component:screw"), ["i2", "i3"]);
+  // A feature, or its sketch, is of its part.
+  assert.deepEqual(assemblyRowParts(tree, nodes, "a:3"), ["i0"]);
+  assert.deepEqual(assemblyRowParts(tree, nodes, "a:3:sketch"), ["i0"]);
+  // A mate stands for the two parts it holds, which it names by part or by the assembly's own word.
+  const mates = [{ label: "concentric1", parts: ["Motor plate", "Nema17"] }];
+  assert.deepEqual(assemblyRowParts(tree, nodes, "mate:concentric1", mates), ["i0", "i1"]);
+  // Rows that are no part, nothing under the pointer, and a part's own tree.
+  assert.deepEqual(assemblyRowParts(tree, nodes, "origin"), []);
+  assert.deepEqual(assemblyRowParts(tree, nodes, null), []);
+  assert.deepEqual(assemblyRowParts({ assembly: false, features: [] }, nodes, "a:3"), []);
 });
 
 test("an assembly's isolated part names the part Open Part opens, or says it has none", () => {
