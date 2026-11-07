@@ -3,18 +3,18 @@
 
 Every icon is built from boxes, cylinders and faces in model space, projected the same way
 (2:1 isometric, 1 unit = 1 px at 32 px), in one flat blue (`--nx-blue`, the theme's) with thin lines
-between its faces in the panel's color (`--nx-line`), so the body a feature works on weighs what the
-feature does. What is taken away, or picked, is told by shape: an opening or a pick in the panel's
-color (`LINE`, `PICK`), never a second tone. A sketch tool is drawn flat, in the sketch's blue, as NX
-draws its curve tools: its curves, and white handles where its clicks go. Outlines stay 1 px at
-every size. Red, amber and green say how something went, so no icon wears them: the check
+between its faces, for what a feature makes, sketches, planes, directions, datums and the agent,
+and greys lit the same way for the body it works on. A sketch tool is drawn flat, in the sketch's
+blue, as NX draws its curve tools: its curves, and white handles where its clicks go. Outlines stay
+1 px at every size. Red, amber and green say how something went, so no icon wears them: the check
 is a status mark, not an icon.
 
 With no arguments it prints the hidden <svg> of <symbol>s the mockup uses. `--jsx [OUT]` writes the
 viewer's module instead (src/lib/nxIcons.generated.jsx unless OUT is given): the sprite as a
 component, the icons' names, and NxIcon, which draws one by name. `--sheet OUT` writes a page of
-every icon, named, at 16, 24 and 32 px on light and on dark. Run it again whenever an icon changes.
-Every id is "nx-" and the icon's name, so nothing collides with the page the sprite is mounted in.
+every icon, named, at 16, 24 and 32 px on light and on dark, the set Amy approved first. Run it
+again whenever an icon changes. Every id is "nx-" and the icon's name, so nothing collides with the
+page the sprite is mounted in.
 """
 
 import argparse
@@ -35,7 +35,6 @@ AGENT = dict(top="#A9D5EC", left="#62A6CC", right="#3F87B0", edge="#1F5B7E")
 # Faces as Draft Analysis shades them against the pull, in the direction's blue.
 DRAWS = dict(left="#C6DFEE", right="#8CC4E2")
 DASH = "2.2 1.6"
-AXIS = "3.4 2"  # an axis or a pull: dashed long enough to stay a line at 16 px
 CURVE, REFERENCE = 1.8, 1.3  # a sketch curve's width, and a reference line's, dashed
 GHOSTLY = 0.6  # the opacity of a sketch's ghost: what a tool takes away, or what was there before
 PREFIX = "nx-"  # on every id this writes: symbols, gradients, clip paths
@@ -60,12 +59,10 @@ CHECK = (
 # solid still reads. Applied to what the icons draw, so the materials above keep their roles.
 ONE_BLUE = "var(--nx-blue, #2C7197)"
 LINE = "var(--nx-line, #ffffff)"
-# What a pick shows in: the panel's color on the blue body, its edge the blue.
-PICK = dict(top=LINE, left=LINE, right=LINE, edge=BLUE)
-BLUE_LINES = {FEAT["edge"].upper(), BODY["edge"].upper()}
+BLUE_LINES = {FEAT["edge"].upper()}
 BLUE_FACES = {
     tone.upper()
-    for material in (FEAT, BODY, TAN, GHOST, AGENT, DRAWS)
+    for material in (FEAT, TAN, GHOST, AGENT, DRAWS)
     for tone in material.values()
 } | {BLUE.upper(), BLUE_FILL.upper(), "#C6DFEE", "#7FB9D9"}
 BLUE_FACES -= BLUE_LINES
@@ -157,10 +154,7 @@ class Icon:
         self.shape([tip, (bx - uy * half, by + ux * half), (bx + uy * half, by - ux * half)], color)
         return (bx + ux * 0.8, by + uy * 0.8)
 
-    def arrow(self, start, tip, color=BLUE, width=1.6, length=4.4, half=2.5, halo=False):
-        """`halo`: a shaft that crosses the blue body, ringed in the panel's color so it still reads."""
-        if halo:
-            self.stroke([start, tip], LINE, width + 1.6)
+    def arrow(self, start, tip, color=BLUE, width=1.6, length=4.4, half=2.5):
         self.stroke([start, self.head(tip, start, color, length, half)], color, width)
 
     def clip(self, pts):
@@ -201,10 +195,17 @@ class Icon:
         self.raw(f'<ellipse cx="{num(cx)}" cy="{T}" rx="{num(r)}" ry="{num(ry)}" fill="{m["top"]}"/>')
         self.raw(f'<path d="M{L} {T} L{L} {B} A{rr} 0 0 0 {R} {B} L{R} {T} A{rr} 0 0 0 {L} {T}" {edge(m["edge"])}/>')
 
-    def hole(self, x, y, z, r):
-        """An opening down into the face at z: empty, in the panel's color."""
+    def hole(self, x, y, z, r, depth, wall=FEAT["right"], rim=FEAT["edge"]):
         cx, cy = self.P(x, y, z)
-        self.raw(f'<ellipse cx="{num(cx)}" cy="{num(cy)}" rx="{num(r)}" ry="{num(r / 2)}" fill="{LINE}"/>')
+        e = f'cx="{num(cx)}" cy="{num(cy)}" rx="{num(r)}" ry="{num(r / 2)}"'
+        cid = f"{self.id}-c{len(self.defs)}"
+        self.defs.append(f'<clipPath id="{cid}"><ellipse {e}/></clipPath>')
+        self.raw(f'<ellipse {e} fill="{wall}"/>')
+        self.raw(
+            f'<ellipse cx="{num(cx)}" cy="{num(cy + depth)}" rx="{num(r)}" ry="{num(r / 2)}" '
+            f'fill="{DARK}" clip-path="url(#{cid})"/>'
+        )
+        self.raw(f'<ellipse {e} {edge(rim)}/>')
 
     def pencil(self, tip, length=14.5, width=5.0):
         ux, uy = math.sqrt(0.5), -math.sqrt(0.5)  # from the tip toward the end
@@ -322,60 +323,65 @@ def sketch():
 
 
 def extrude():
-    """A block rising from a plane: material added, opposite `cut`."""
+    """A Boss rising out of the block, an arrow lifting it: material added, opposite `cut`."""
     ic = Icon("extrude")
-    ic.shape(ic.proj([(0, 0, 0), (14, 0, 0), (14, 14, 0), (0, 14, 0)]), FEAT["top"])
-    ic.box(4, 4, 0, 10, 10, 11, FEAT)
+    ic.box(0, 0, 0, 12, 12, 4, BODY)
+    ic.box(3, 3, 4, 9, 9, 10, FEAT)
+    start = ic.P(6, 6, 10)
+    ic.arrow(start, (start[0], start[1] - 7))
     return ic
 
 
 def cut():
-    """A notch taken out of the block's corner, open to its top and its side: material gone,
-    opposite `extrude`."""
+    """A pocket going down into the block, an arrow into it: material taken away, opposite `extrude`."""
     ic = Icon("cut")
-    s, h, a, b, back, floor = 14, 10, 3.5, 10.5, 5.5, 4.5
+    s, h, a, b, floor = 12, 9, 2.5, 9.5, 3
     ic.box(0, 0, 0, s, s, h, BODY)
-    ic.face([(back, a, h), (s, a, h), (s, b, h), (back, b, h)], LINE)
-    ic.face([(s, a, h), (s, b, h), (s, b, floor), (s, a, floor)], LINE)
-    ic.face([(back, a, floor), (s, a, floor), (s, b, floor), (back, b, floor)], BODY["top"])
+    opening = ic.proj([(a, a, h), (b, a, h), (b, b, h), (a, b, h)])
+    ic.raw(f'<g clip-path="url(#{ic.clip(opening)})">')
+    ic.face([(a, a, floor), (b, a, floor), (b, b, floor), (a, b, floor)], FEAT["mid"])
+    ic.face([(a, a, h), (b, a, h), (b, a, floor), (a, a, floor)], FEAT["left"])
+    ic.face([(a, a, h), (a, b, h), (a, b, floor), (a, a, floor)], FEAT["right"])
+    ic.raw("</g>")
+    ic.outline(opening, FEAT["edge"])
+    x, top = ic.P(6, 6, h + 7)
+    ic.arrow((x, top), (x, top + 12.5))
     return ic
 
 
-def turn_about(ic, x, y, rx=5.4, ry=2.7):
-    """The turn around an axis at x, its centre at y: what revolving adds to a shape."""
-    arc = [(x + rx * math.cos(math.radians(a)), y + ry * math.sin(math.radians(a))) for a in range(165, -36, -5)]
-    ic.stroke(arc[:-5], width=1.4)
-    ic.head(arc[-1], arc[-5], length=3.6, half=2.1)
-
-
 def revolve():
-    """A flat profile beside the axis it turns about: nothing solid yet, as `revolve_cut` is."""
     ic = Icon("revolve")
-    ic.face([(2, 0, 0), (13, 0, 0), (13, 0, 4.5), (7, 0, 4.5), (7, 0, 10.5), (2, 0, 10.5)], FEAT["left"])
-    ic.stroke([ic.P(0, 0, -3), ic.P(0, 0, 17)], width=1.4, dash=AXIS)
-    turn_about(ic, 0, -14)
+    ic.cylinder(0, 0, 0, 4, 11)
+    ic.cylinder(0, 0, 4, 9.5, 5.2)
+    top = ic.P(0, 0, 9.5)
+    ic.stroke([top, (0, top[1] - 7.5)], width=1.3, dash=DASH)
+    ic.stroke([(0, 6.5), (0, 9.5)], width=1.3, dash=DASH)
+    # a turn around the axis, above the part
+    cy, rx, ry = top[1] - 5, 6, 3
+    arc = [(rx * math.cos(math.radians(a)), cy + ry * math.sin(math.radians(a))) for a in range(165, -36, -5)]
+    ic.stroke(arc[:-5], width=1.3)
+    ic.head(arc[-1], arc[-5], length=3.6, half=2.1)
     return ic
 
 
 def revolve_cut():
-    """A groove turned out of a round part, biting its silhouette both sides, on its axis:
-    `revolve`'s Subtract."""
+    """A round groove turned out of the block, the turn around its axis: `revolve`'s Subtract."""
     ic = Icon("revolve-cut")
-    r, neck, flat = 9.5, 4.4, FEAT["left"]
-    ic.cylinder(0, 0, 0, 3, r, side=flat)
-    ic.hole(0, 0, 3, r)
-    ic.cylinder(0, 0, 3, 8, neck, side=flat)
-    ic.cylinder(0, 0, 8, 11, r, side=flat)
-    top = ic.P(0, 0, 11)
-    ic.stroke([top, (top[0], top[1] - 11)], width=1.4, dash=AXIS)
-    turn_about(ic, top[0], top[1] - 8)
+    ic.box(0, 0, 0, 12, 12, 7, BODY)
+    ic.hole(6, 6, 7, 7.5, 3.6)
+    top = ic.P(6, 6, 7)
+    ic.stroke([top, (top[0], top[1] - 9)], width=1.3, dash=DASH)
+    cy, rx, ry = top[1] - 7, 6, 3
+    arc = [(top[0] + rx * math.cos(math.radians(a)), cy + ry * math.sin(math.radians(a))) for a in range(165, -36, -5)]
+    ic.stroke(arc[:-5], width=1.3)
+    ic.head(arc[-1], arc[-5], length=3.6, half=2.1)
     return ic
 
 
 def hole():
     ic = Icon("hole")
     ic.box(0, 0, 0, 12, 12, 8, BODY)
-    ic.hole(6, 6, 8, 5.4)
+    ic.hole(6, 6, 8, 5.4, 3.4)
     return ic
 
 
@@ -402,33 +408,54 @@ def rounded(kind):
     ic.face([(s, 0, h), (s, 0, 0), (s, s, 0)] + prof(s)[::-1], BODY["right"])
     ic.outline(sil, BODY["edge"])
     band = prof(0) + prof(s)[::-1]
-    ic.face(band, FEAT["mid"])
+    if kind == "blend":
+        fill = ic.gradient(P(s / 2, s - r, h), P(s / 2, s, h - r), [(0, FEAT["top"]), (1, FEAT["left"])])
+    else:
+        fill = FEAT["mid"]
+    ic.face(band, fill)
     ic.outline(ic.proj(band), FEAT["edge"])
     return ic
 
 
 def shell():
-    """An open-topped box: thin walls round an opening, nothing but the panel inside."""
+    """An open hollow box: thick enough walls, and a dark floor, to read as hollow at 16 px."""
     ic = Icon("shell")
-    s, h, t = 13, 9, 1.9
-    ic.box(0, 0, 0, s, s, h, FEAT)
-    ic.face([(t, t, h), (s - t, t, h), (s - t, s - t, h), (t, s - t, h)], LINE)
+    s, h, t = 13, 9, 2.4
+    sil = ic.box(0, 0, 0, s, s, h, FEAT, outline=False)
+    opening = ic.proj([(t, t, h), (s - t, t, h), (s - t, s - t, h), (t, s - t, h)])
+    ic.raw(f'<g clip-path="url(#{ic.clip(opening)})">')
+    ic.face([(t, t, t), (s - t, t, t), (s - t, s - t, t), (t, s - t, t)], DARK)
+    ic.face([(t, t, h), (s - t, t, h), (s - t, t, t), (t, t, t)], "#62A6CC")
+    ic.face([(t, t, h), (t, s - t, h), (t, s - t, t), (t, t, t)], "#3F87B0")
+    ic.raw("</g>")
+    ic.outline(opening, FEAT["edge"])
+    ic.outline(sil, FEAT["edge"])
     return ic
 
 
 def draft():
-    """A block with one wall tapered in from the pull, the dashed upright beside it."""
     ic = Icon("draft")
-    s, h, lean = 12, 11, 5.5
+    b, a, h = 12, 2.6, 9
     P = ic.P
-    sil = [P(0, 0, h), P(s, 0, h), P(s, 0, 0), P(s, s, 0), P(0, s, 0), P(0, s - lean, h)]
+    sil = [P(a, a, h), P(b - a, a, h), P(b, 0, 0), P(b, b, 0), P(0, b, 0), P(a, b - a, h)]
     ic.shape(sil, FEAT["right"])
-    ic.face([(0, 0, h), (s, 0, h), (s, s - lean, h), (0, s - lean, h)], FEAT["top"])
-    ic.face([(0, s - lean, h), (s, s - lean, h), (s, s, 0), (0, s, 0)], FEAT["slope"])
-    ic.face([(s, 0, h), (s, s - lean, h), (s, s, 0), (s, 0, 0)], FEAT["right"])
+    ic.face([(a, a, h), (b - a, a, h), (b - a, b - a, h), (a, b - a, h)], FEAT["top"])
+    ic.face([(a, b - a, h), (b - a, b - a, h), (b, b, 0), (0, b, 0)], "#8CC4E2")
+    ic.face([(b - a, a, h), (b - a, b - a, h), (b, b, 0), (b, 0, 0)], "#62A6CC")
     ic.outline(sil, FEAT["edge"])
-    foot = P(0, s, 0)
-    ic.stroke([foot, (foot[0], foot[1] - 15)], width=1.4, dash=AXIS)
+    # the pull direction, and the draft angle from it
+    foot = P(b, 0, 0)
+    ic.stroke([foot, (foot[0], foot[1] - 12)], width=1.2, dash=DASH)
+    r = 7.5
+    up = (foot[0], foot[1] - r)
+    tx, ty = P(b - a, a, h)
+    n = math.hypot(tx - foot[0], ty - foot[1])
+    along = (foot[0] + (tx - foot[0]) / n * r, foot[1] + (ty - foot[1]) / n * r)
+    ic.raw(
+        f'<path d="M{num(up[0])} {num(up[1])} A{num(r)} {num(r)} 0 0 0 {num(along[0])} {num(along[1])}" '
+        f'fill="none" stroke="{BLUE}" stroke-width="1.2"/>',
+        [up, along],
+    )
     return ic
 
 
@@ -513,70 +540,74 @@ def csys():
 
 
 def sweep():
-    """A tube along its path, the path drawn down it in the panel's color and its open end a section."""
     ic = Icon("sweep")
     d = "M-11 8 C-4 8 2 -6 11 -6"
-    ic.raw(f'<path d="{d}" fill="none" stroke="{FEAT["left"]}" stroke-width="7.6"/>', [(-11, 4.2), (11, -9.8), (-11, 11.8), (11, -2.2)])
-    ic.raw(f'<path d="{d}" fill="none" stroke="{LINE}" stroke-width="1.4" stroke-dasharray="{AXIS}"/>')
-    ic.raw(f'<ellipse cx="-11" cy="8" rx="2.4" ry="4.6" fill="{LINE}" stroke="{BLUE}" stroke-width="1.5"/>', [(-13.4, 3.4)])
+    ic.raw(f'<path d="{d}" fill="none" stroke="{FEAT["edge"]}" stroke-width="7.6"/>', [(-11, 4.2), (11, -9.8), (-11, 11.8), (11, -2.2)])
+    ic.raw(f'<path d="{d}" fill="none" stroke="{FEAT["left"]}" stroke-width="5.6"/>')
+    ic.raw(f'<path d="{d}" fill="none" stroke="{FEAT["top"]}" stroke-width="2" transform="translate(-.4 -1.5)"/>')
+    ic.raw(f'<path d="{d}" fill="none" stroke="{BLUE}" stroke-width="1.1" stroke-dasharray="{DASH}"/>')
+    ic.raw(f'<path d="M11 -9.8 V-2.2" {edge(FEAT["edge"])}/>')
+    ic.raw(f'<ellipse cx="-11" cy="8" rx="1.9" ry="3.8" fill="{FEAT["top"]}"/>', [(-12.9, 4.2)])
+    ic.raw(f'<ellipse cx="-11" cy="8" rx="1.9" ry="3.8" {edge(FEAT["edge"])}/>')
     return ic
 
 
 def loft():
-    """A solid blended between two different sections, each an opening in the panel's color."""
     ic = Icon("loft")
+    fill = ic.gradient((0, -10), (0, 13), [(0, FEAT["top"]), (1, FEAT["right"])])
     top, bottom = "M-9 -1 C-3 -2.5 3 -9.5 9 -10", "M9 2 C3 2.5 -3 11 -9 13"
-    ic.raw(f'<path d="{top} L9 2 C3 2.5 -3 11 -9 13 Z" fill="{FEAT["left"]}"/>', [(-9, -10), (9, 13)])
+    ic.raw(f'<path d="{top} L9 2 C3 2.5 -3 11 -9 13 Z" fill="{fill}"/>', [(-9, -10), (9, 13)])
     ic.raw(f'<path d="{top} {bottom}" {edge(FEAT["edge"])}/>')
     ic.raw(
-        f'<rect x="6.6" y="-10" width="4.8" height="12" rx="1.6" fill="{LINE}" stroke="{BLUE}" stroke-width="1.5"/>',
+        f'<rect x="6.6" y="-10" width="4.8" height="12" rx="1.6" fill="none" stroke="{BLUE}" stroke-width="1.5"/>',
         [(6.6, -10), (11.4, 2)],
     )
     ic.raw(
-        f'<ellipse cx="-9" cy="6" rx="3.2" ry="7" fill="{LINE}" stroke="{BLUE}" stroke-width="1.5"/>',
+        f'<ellipse cx="-9" cy="6" rx="3.2" ry="7" fill="{BLUE_FILL}" stroke="{BLUE}" stroke-width="1.5"/>',
         [(-12.2, -1), (-5.8, 13)],
     )
     return ic
 
 
 def split():
-    """A block in two, a plane standing in the gap between its halves."""
     ic = Icon("split")
     ic.box(0, 0, 0, 5, 11, 8, BODY)
-    plane = ic.proj([(6.5, -2, -2), (6.5, 13, -2), (6.5, 13, 10), (6.5, -2, 10)])
+    plane = ic.proj([(6, -2, -1), (6, 13, -1), (6, 13, 10), (6, -2, 10)])
+    ic.shape(plane, BLUE_FILL, ' fill-opacity=".85"')
     ic.outline(plane, BLUE)
-    ic.box(8, 0, 0, 13, 11, 8, BODY)
+    ic.box(7, 0, 0, 12, 11, 8, BODY)
     return ic
 
 
-def delete_badge(ic, cx, cy, r=10.4, k=4.2):
-    """Delete's mark: a blue disc with its cross cut out, ringed in the panel's color so it reads on what it takes."""
+def delete_badge(ic, cx, cy, r=5.2, k=2.1):
+    """Delete's mark: a dark disc and its white cross, ringed white so it reads on what it takes."""
     ic.raw(
-        f'<circle cx="{num(cx)}" cy="{num(cy)}" r="{num(r)}" fill="{BLUE}" stroke="{LINE}" stroke-width="1.6"/>',
+        f'<circle cx="{num(cx)}" cy="{num(cy)}" r="{num(r)}" fill="{DARK}" stroke="#fff" stroke-width="1.4"/>',
         [(cx - r, cy - r), (cx + r, cy + r)],
     )
     ic.raw(
         f'<path d="M{num(cx - k)} {num(cy - k)} L{num(cx + k)} {num(cy + k)} M{num(cx + k)} {num(cy - k)} '
-        f'L{num(cx - k)} {num(cy + k)}" stroke="{LINE}" stroke-width="2.8" stroke-linecap="round"/>'
+        f'L{num(cx - k)} {num(cy + k)}" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>'
     )
 
 
 def delete():
     ic = Icon("delete")
     ic.box(0, 0, 0, 11, 11, 8, BODY)
-    delete_badge(ic, 8.5, 7)
+    delete_badge(ic, 7.5, 7)
     return ic
 
 
 def body():
-    """A body with no history, as an imported STEP is: the block alone, no feature on it."""
+    """A body with no history, as an imported STEP is: the body's grey, no feature on it."""
     ic = Icon("body")
     ic.box(0, 0, 0, 12, 12, 9, BODY)
     return ic
 
 
 def offset_face():
-    """NX's Offset Region: a body with no history, its top face offset up and the way it moves."""
+    """NX's Offset Region: a body with no history (grey), its top face offset up (the feature's
+    amber) and the way it moves."""
     ic = Icon("offset-face")
     ic.box(0, 0, 0, 11, 11, 6, BODY)
     ic.box(0, 0, 6, 11, 11, 9, FEAT)
@@ -586,12 +617,12 @@ def offset_face():
 
 
 def delete_face():
-    """Delete Face: a body with no history, one face picked and Delete's mark beside it."""
+    """Delete Face: a body with no history, one face picked (amber) and Delete's mark on it."""
     ic = Icon("delete-face")
     ic.box(0, 0, 0, 11, 11, 8, BODY)
-    ic.face([(0, 11, 8), (11, 11, 8), (11, 11, 0), (0, 11, 0)], PICK["left"])
-    ic.outline(ic.proj([(0, 11, 8), (11, 11, 8), (11, 11, 0), (0, 11, 0)]), PICK["edge"])
-    delete_badge(ic, 8.5, 7)
+    ic.face([(11, 0, 8), (11, 11, 8), (11, 11, 0), (11, 0, 0)], FEAT["right"])
+    ic.outline(ic.proj([(11, 0, 8), (11, 11, 8), (11, 11, 0), (11, 0, 0)]), FEAT["edge"])
+    delete_badge(ic, 7.5, 7)
     return ic
 
 
@@ -917,7 +948,7 @@ def sketch_intersection():
     ic.outline(plane, BLUE)
     ic.box(1, 1, 4.5, 9, 9, 10, BODY)
     loop = ic.proj([(9, 1, 4.5), (9, 9, 4.5), (1, 9, 4.5)])
-    ic.raw(f'<path d="{ic.d(loop, False)}" fill="none" stroke="{LINE}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>', loop)
+    ic.raw(f'<path d="{ic.d(loop, False)}" fill="none" stroke="{BLUE}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>', loop)
     return ic
 
 
@@ -963,7 +994,7 @@ def select(kind):
     if kind == "part":
         # an assembly's part: the block on the plate, picked alone
         ic.box(-1.5, -1.5, 0, s + 1.5, s + 1.5, 2.5, BODY)
-        ic.box(1.5, 1.5, 2.5, s - 1.5, s - 1.5, h + 2.5, PICK)
+        ic.box(1.5, 1.5, 2.5, s - 1.5, s - 1.5, h + 2.5, FEAT)
         ic.pointer((2.5, 0.5))
         return ic
     if kind == "position":
@@ -978,23 +1009,21 @@ def select(kind):
         ic.raw(f'<circle cx="{num(knob[0])}" cy="{num(knob[1])}" r="2.6" {edge(BLUE)}/>')
         ic.pointer((knob[0] + 0.5, knob[1] + 0.5))
         return ic
-    ic.box(0, 0, 0, s, s, h, BODY)
-    if kind == "body":
-        # the whole body, ringed
-        ic.outline(silhouette(ic, -2, -2, -1.5, s + 2, s + 2, h + 1.5), BLUE)
-    elif kind == "face":
+    ic.box(0, 0, 0, s, s, h, FEAT if kind == "body" else BODY)
+    if kind == "face":
         top = ic.proj([(0, 0, h), (s, 0, h), (s, s, h), (0, s, h)])
-        ic.shape(top, PICK["top"])
-        ic.outline(top, PICK["edge"])
+        ic.shape(top, FEAT["top"])
+        ic.outline(top, FEAT["edge"])
     elif kind == "face-group":
-        for pts in ([(0, 0, h), (s, 0, h), (s, s, h), (0, s, h)], [(0, s, h), (s, s, h), (s, s, 0), (0, s, 0)]):
-            ic.face(pts, PICK["top"])
-            ic.outline(ic.proj(pts), PICK["edge"])
+        for pts, tone in (([(0, 0, h), (s, 0, h), (s, s, h), (0, s, h)], FEAT["top"]),
+                          ([(0, s, h), (s, s, h), (s, s, 0), (0, s, 0)], FEAT["left"])):
+            ic.face(pts, tone)
+            ic.outline(ic.proj(pts), FEAT["edge"])
     elif kind == "edge":
-        ic.stroke([ic.P(s, 0, h), ic.P(s, s, h)], LINE, width=2.6)
+        ic.stroke([ic.P(s, 0, h), ic.P(s, s, h)], FEAT["right"], width=2.6)
     elif kind == "edge-group":
         # the chain of edges round its top face
-        ic.stroke(ic.proj([(0, 0, h), (s, 0, h), (s, s, h), (0, s, h), (0, 0, h)]), LINE, width=2.4)
+        ic.stroke(ic.proj([(0, 0, h), (s, 0, h), (s, s, h), (0, s, h), (0, 0, h)]), FEAT["right"], width=2.4)
     tips = {"all": (3.5, 4.5), "face": (1, -1.5), "edge": (4, 2), "face-group": (-4, 3.5), "edge-group": (4, 2), "body": (3.5, 4.5)}
     ic.pointer(tips[kind])
     return ic
@@ -1010,10 +1039,10 @@ def measure(kind):
     ic.box(0, 0, 0, s, s, h, BODY)
     if kind == "face":
         top = ic.proj([(0, 0, h), (s, 0, h), (s, s, h), (0, s, h)])
-        ic.shape(top, PICK["top"])
-        ic.outline(top, PICK["edge"])
+        ic.shape(top, FEAT["top"])
+        ic.outline(top, FEAT["edge"])
     elif kind == "edge":
-        ic.stroke([ic.P(0, s, h), ic.P(s, s, h)], LINE, width=2.6)
+        ic.stroke([ic.P(0, s, h), ic.P(s, s, h)], FEAT["right"], width=2.6)
     # the distance between two of its corners, measured over it
     dimension(ic, -9.5, -12, 12, -1.5)
     for x in (-12, 12):
@@ -1058,14 +1087,14 @@ def section():
     """Edit Section: the part cut on a plane, the half before it gone, what the cut shows hatched."""
     ic = Icon("section")
     s, h, cut = 12, 8, 6
-    ic.outline(silhouette(ic, cut, 0, 0, s, s, h), BLUE, dash="1.6 1.4")
+    ic.outline(silhouette(ic, cut, 0, 0, s, s, h), BODY["edge"], dash="1.6 1.4")
     ic.box(0, 0, 0, cut, s, h, BODY)
     face = ic.proj([(cut, 0, h), (cut, s, h), (cut, s, 0), (cut, 0, 0)])
     ic.shape(face, BLUE_FILL)
     ic.raw(f'<g clip-path="url(#{ic.clip(face)})">')
     for k in range(-2, 5):
         a, b = ic.P(cut, 3 * k, h + 2), ic.P(cut, 3 * k + 10, h - 8)
-        ic.raw(f'<path d="M{num(a[0])} {num(a[1])} L{num(b[0])} {num(b[1])}" stroke="{LINE}" stroke-width=".9"/>')
+        ic.raw(f'<path d="M{num(a[0])} {num(a[1])} L{num(b[0])} {num(b[1])}" stroke="{BLUE}" stroke-width=".9"/>')
     ic.raw("</g>")
     ic.outline(face, BLUE)
     plane = ic.proj([(cut, -2, -1.5), (cut, s + 2, -1.5), (cut, s + 2, h + 1.5), (cut, -2, h + 1.5)])
@@ -1089,7 +1118,7 @@ def interference():
     ic = Icon("interference")
     ic.box(0, 0, 0, 8, 8, 9.5, BODY)
     ic.box(3.5, 3.5, 0, 13, 13, 5, BODY)
-    ic.box(3.5, 3.5, 0, 8, 8, 5, PICK)
+    ic.box(3.5, 3.5, 0, 8, 8, 5, FEAT)
     ic.box(0, 0, 5, 8, 8, 9.5, BODY)
     return ic
 
@@ -1098,7 +1127,7 @@ def compare():
     """Compare: the part as it is, what it gained in the feature's color, what it lost a ghost."""
     ic = Icon("compare")
     ic.box(0, 0, 0, 12, 12, 5, BODY)
-    ic.outline(silhouette(ic, 7, 0.5, 5, 11.5, 5, 10), BLUE, dash="1.6 1.4")
+    ic.outline(silhouette(ic, 7, 0.5, 5, 11.5, 5, 10), BODY["edge"], dash="1.6 1.4")
     ic.box(0.5, 6, 5, 5.5, 11.5, 10, FEAT)
     return ic
 
@@ -1109,7 +1138,7 @@ def appearance():
     r = 10.5
     fill = ic.gradient((-5, -6), (6, 8), [(0, "#FFFFFF"), (0.35, BODY["left"]), (1, BODY["right"])])
     ic.raw(f'<circle cx="0" cy="0" r="{num(r)}" fill="{fill}"/>', [(-r, -r), (r, r)])
-    ic.raw(f'<circle cx="0" cy="0" r="{num(r)}" {edge(BLUE)}/>')
+    ic.raw(f'<circle cx="0" cy="0" r="{num(r)}" {edge(BODY["edge"])}/>')
     # a drop of the color it is given, on it
     drop = "M5.5 -1 C5.5 -1 1.5 3.6 1.5 6.2 A4 4 0 0 0 9.5 6.2 C9.5 3.6 5.5 -1 5.5 -1 Z"
     ic.raw(f'<path d="{drop}" fill="{BLUE}"/>', [(1.5, -1), (9.5, 10.2)])
@@ -1143,7 +1172,7 @@ PAPER = [(-12, -9), (12, -9), (12, 9), (-12, 9)]
 def drawing_sheet(ic):
     """A drawing's sheet and its title block."""
     ic.shape(PAPER, "#fff")
-    ic.outline(PAPER, BLUE)
+    ic.outline(PAPER, BODY["edge"])
     block = [(3, 4), (12, 4), (12, 9), (3, 9)]
     ic.shape(block, BODY["top"])
     ic.outline(block, BODY["edge"])
@@ -1174,7 +1203,7 @@ def assembly_constraints():
     """Assembly Constraints: a part brought to another, its pin on the hole's axis."""
     ic = Icon("assembly-constraints")
     ic.box(0, 0, 0, 12, 12, 5, BODY)
-    ic.hole(6, 6, 5, 3.6)
+    ic.hole(6, 6, 5, 3.6, 2.4, wall=BODY["right"], rim=BODY["edge"])
     x, top = ic.P(6, 6, 5)
     ic.stroke([(x, top), (x, top - 15)], width=1.2, dash=DASH)
     ic.cylinder(6, 6, 10, 15.5, 3.6, BODY, side=f"url(#{BSIDE})")
@@ -1195,7 +1224,7 @@ def part():
     ic.face([(s, 0, t), (s, s, t), (s, s, 0), (s, 0, 0)], BODY["right"])
     ic.face([(0, s, 0), (s, s, 0), (s, s, t), (t, s, t), (t, s, H), (0, s, H)], BODY["left"])
     ic.outline(sil, BODY["edge"])
-    ic.hole(7.5, 6, t, 2.4)
+    ic.hole(7.5, 6, t, 2.4, 1.6, wall=BODY["right"], rim=BODY["edge"])
     return ic
 
 
@@ -1227,7 +1256,7 @@ def expressions():
     ic = Icon("expressions")
     card = [(-11.5, -8), (11.5, -8), (11.5, 8), (-11.5, 8)]
     ic.shape(card, "#fff")
-    ic.outline(card, BLUE)
+    ic.outline(card, BODY["edge"])
     # a name, equal to its value
     ic.stroke([(-8, -3), (-3, 3)], DARK, width=1.5)
     ic.stroke([(-3, -3), (-8, 3)], DARK, width=1.5)
@@ -1268,7 +1297,7 @@ def annotate():
     ic = Icon("annotate")
     drawn_on(ic)
     mark = ic.proj([(1.5, 10.5, 5), (3.5, 7, 5), (6, 8.5, 5), (8, 4.5, 5), (10.5, 5.5, 5)])
-    ic.raw(f'<path d="{smooth(mark)}" fill="none" stroke="{LINE}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>', mark)
+    ic.raw(f'<path d="{smooth(mark)}" fill="none" stroke="{BLUE}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>', mark)
     ic.marker(mark[-1])
     return ic
 
@@ -1283,8 +1312,8 @@ def highlighter():
     ic = Icon("annotate-highlighter")
     drawn_on(ic)
     a, b = ic.P(1.5, 9, 5), ic.P(9.5, 2.5, 5)
-    ic.raw(f'<path d="M{num(a[0])} {num(a[1])} L{num(b[0])} {num(b[1])}" fill="none" stroke="{LINE}" stroke-width="4.4" '
-           f'stroke-opacity=".6" stroke-linecap="butt"/>', [a, b])
+    ic.raw(f'<path d="M{num(a[0])} {num(a[1])} L{num(b[0])} {num(b[1])}" fill="none" stroke="{BLUE}" stroke-width="4.4" '
+           f'stroke-opacity=".45" stroke-linecap="butt"/>', [a, b])
     ic.marker(b, chisel=True)
     return ic
 
@@ -1295,8 +1324,8 @@ def eraser():
     drawn_on(ic)
     mark = ic.proj([(1.5, 10.5, 5), (3.5, 7, 5), (6, 8.5, 5), (8, 4.5, 5), (10.5, 5.5, 5)])
     kept, gone = smooth(mark[:3]), smooth(mark[2:])
-    ic.raw(f'<path d="{kept}" fill="none" stroke="{LINE}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>', mark)
-    ic.raw(f'<path d="{gone}" fill="none" stroke="{LINE}" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="{DASH}" opacity="{num(GHOSTLY)}"/>')
+    ic.raw(f'<path d="{kept}" fill="none" stroke="{BLUE}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>', mark)
+    ic.raw(f'<path d="{gone}" fill="none" stroke="{BLUE}" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="{DASH}" opacity="{num(GHOSTLY)}"/>')
     ic.rubber(mark[-1])
     return ic
 
@@ -1308,22 +1337,21 @@ def shape_mark(kind):
     """Each of Shapes' tools, as its mark on the part."""
     ic = Icon(f"shapes-{kind}")
     drawn_on(ic)
-    stroke = f'fill="none" stroke="{LINE}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"'
+    stroke = f'fill="none" stroke="{BLUE}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"'
     if kind == "rectangle":
         box = ic.proj([(2, 3, 5), (10, 3, 5), (10, 10, 5), (2, 10, 5)])
-        ic.raw(f'<path d="{ic.d(box)}" {stroke}/>', box)
+        ic.raw(f'<path d="{ic.d(box)}" fill="{BLUE_FILL}" stroke="{BLUE}" stroke-width="1.9" stroke-linejoin="round"/>', box)
     elif kind == "line":
         a, b = ic.P(1.5, 9.5, 5), ic.P(10.5, 2.5, 5)
         ic.raw(f'<path d="M{num(a[0])} {num(a[1])} L{num(b[0])} {num(b[1])}" {stroke}/>', [a, b])
     elif kind == "arrow":
-        ic.arrow((11, -10.5), (1.5, 0.5), BLUE, width=1.9, length=4.8, half=2.8, halo=True)
+        ic.arrow((11, -10.5), (1.5, 0.5), BLUE, width=1.9, length=4.8, half=2.8)
     elif kind == "ellipse":
         cx, cy = ic.P(6, 6, 5)
-        ic.raw(f'<ellipse cx="{num(cx)}" cy="{num(cy)}" rx="7.4" ry="3.7" {stroke}/>',
+        ic.raw(f'<ellipse cx="{num(cx)}" cy="{num(cy)}" rx="7.4" ry="3.7" fill="{BLUE_FILL}" stroke="{BLUE}" stroke-width="1.9"/>',
                [(cx - 7.4, cy - 3.7), (cx + 7.4, cy + 3.7)])
     else:
         # a T, as text is set over the part
-        ic.raw(f'<path d="M-5 -9 H5 M0 -9 V3" fill="none" stroke="{LINE}" stroke-width="4.2" stroke-linecap="round"/>')
         ic.raw(f'<path d="M-5 -9 H5 M0 -9 V3" fill="none" stroke="{BLUE}" stroke-width="2.6" stroke-linecap="round"/>', [(-5, -9), (5, 3)])
     return ic
 
@@ -1333,15 +1361,15 @@ def shapes():
     ic = Icon("shapes")
     drawn_on(ic)
     box = ic.proj([(2, 4, 5), (9, 4, 5), (9, 11, 5), (2, 11, 5)])
-    ic.raw(f'<path d="{ic.d(box)}" fill="none" stroke="{LINE}" stroke-width="1.7" stroke-linejoin="round"/>', box)
-    ic.arrow((12.5, -9.5), (5, -1.2), BLUE, width=1.8, length=4.4, half=2.6, halo=True)
+    ic.raw(f'<path d="{ic.d(box)}" fill="{BLUE_FILL}" stroke="{BLUE}" stroke-width="1.7" stroke-linejoin="round"/>', box)
+    ic.arrow((12.5, -9.5), (5, -1.2), BLUE, width=1.8, length=4.4, half=2.6)
     return ic
 
 
-# Every icon, in the sprite's order, by the group the sheet shows it in: the modeling commands, then
-# what the workspace adds to them.
+# Every icon, in the sprite's order, by the group the sheet shows it in: the set Amy approved, then
+# what the workspace adds to it.
 GROUPS = (
-    ("The modeling commands", "The ribbon's commands and the Part Navigator's features; the check is a status mark.", (
+    ("Approved", "The modeling commands and the Part Navigator's features, as Amy approved them; the check is a status mark.", (
         sketch, extrude, cut, revolve, revolve_cut, hole, lambda: rounded("blend"), lambda: rounded("chamfer"), shell, draft, rib,
         pattern, mirror, datum_plane, csys, sweep, loft, split, delete, body, offset_face, delete_face, ask,
     )),
@@ -1355,7 +1383,7 @@ GROUPS = (
         compare, appearance, orient_view, drawing, assembly_constraints, expressions,
         lambda: turn("undo", back=True), lambda: turn("redo", back=False),
     )),
-    ("Select's and Measure's filters", "What each picks alone, the pick in the panel's color on the blue block, and how Select grows a pick.", (
+    ("Select's and Measure's filters", "What each picks alone, the pick in the selection's blue, and how Select grows a pick.", (
         *((lambda kind=kind: select(kind)) for kind in SELECT_KINDS if kind != "all"),
         *((lambda kind=kind: measure(kind)) for kind in MEASURE_KINDS if kind != "all"),
     )),
