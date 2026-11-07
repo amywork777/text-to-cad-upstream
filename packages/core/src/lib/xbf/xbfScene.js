@@ -838,6 +838,7 @@ export function createXbfScene(THREE, document) {
         lastLook.colorPower = worn.colorPower;
         lastLook.brdf = worn.brdf;
         lastLook.leastRoughness = worn.leastRoughness;
+        lastLook.leastDielectricRoughness = worn.leastDielectricRoughness;
         if (worn.finishes === false) lastLook.finishes = false;
         lastLook.materialSettings = { ...next.materialSettings, ...worn.materialSettings };
       }
@@ -873,6 +874,13 @@ export function createXbfScene(THREE, document) {
       const entry = instances[parseXbfElementId(id)?.instance];
       if (!entry) return null;
       return { name: entry.prototype.name || entry.instance.path, path: entry.instance.path, prototype: entry.instance.prototype };
+    },
+    /**
+     * The group that places instance `id` (`i3`), or null: where it stands now, the pose and Explode
+     * included, for what is drawn on the part to follow it.
+     */
+    placedPart(id) {
+      return instances[parseXbfElementId(id)?.instance]?.group || null;
     },
     /**
      * What a chip's card measures of instances (ids `i3`): the box they make where they stand

@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "backdrop": "#f0f4f9",
   "lights": [
     {
@@ -10,6 +10,15 @@
         -1.0
       ],
       "intensity": 2.4
+    },
+    {
+      "name": "fill",
+      "direction": [
+        0.35,
+        -0.55,
+        1.0
+      ],
+      "intensity": 1.2
     }
   ],
   "environment": {
@@ -23,6 +32,7 @@
     "ior": 1.5
   },
   "leastRoughness": 0.15,
+  "leastDielectricRoughness": 0.4,
   "brdf": "occt",
   "tone": "clamp",
   "exposure": 0.0,

@@ -33,15 +33,16 @@ test("the look as served: every field read, frozen; another version or a missing
   const look = parseXbfLook(SERVED);
   assert.equal(Object.isFrozen(look), true);
   assert.deepEqual([look.backdrop, look.colourPower, look.brdf, look.tone, look.exposure], ["#f0f4f9", 2, "occt", "clamp", 0]);
-  assert.deepEqual(look.lights.map(light => [light.name, light.direction, light.intensity]), [["key", [-0.35, 0.55, -1], 2.4]]);
+  assert.deepEqual(look.lights.map(light => [light.name, light.direction, light.intensity]), [["key", [-0.35, 0.55, -1], 2.4], ["fill", [0.35, -0.55, 1], 1.2]]);
   assert.deepEqual(look.environment, { url: "/api/v1/look/environment", intensity: 0.36 });
   assert.deepEqual(look.plain, { metallic: 0, roughness: 0.5, ior: 1.5 });
   assert.equal(look.leastRoughness, 0.15);
+  assert.equal(look.leastDielectricRoughness, 0.4);
   assert.deepEqual(look.modes.xray, { faces: "lit", edges: "all", opacity: 0.22, palette: false });
   assert.deepEqual([look.xray.ambient, look.xray.specular, look.xray.shininess], [0.5, 0.08, 0.35]);
   assert.deepEqual(look.xray.lights.map(light => [light.name, light.direction, light.intensity]),
     [["key", [-0.35, 0.55, -1], 1], ["fill", [0.6, 0.2, -0.3], 1]]);
-  assert.throws(() => parseXbfLook({ ...SERVED, version: 3 }), /version 3; this viewer reads 5/);
+  assert.throws(() => parseXbfLook({ ...SERVED, version: 3 }), /version 3; this viewer reads 6/);
   assert.throws(() => parseXbfLook({ ...SERVED, xray: { ...SERVED.xray, lights: [] } }), /no xray.lights/);
   assert.throws(() => parseXbfLook({ ...SERVED, lights: [] }), /no lights/);
   assert.throws(() => parseXbfLook({ ...SERVED, environment: null }), /no environment/);

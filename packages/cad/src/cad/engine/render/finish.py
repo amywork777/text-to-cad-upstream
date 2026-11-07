@@ -213,7 +213,7 @@ def finish(rgba: Any, material: dict[str, Any] | None, *, preview: bool = False)
     """What a face is drawn as: ``rgba`` its colour (linear, as the structure holds it, or a
     ``#rrggbb`` fill), ``material`` the structure's material for it, or None. Base colour, alpha,
     metallic, roughness, IOR and emission, every approximation applied; outside ``preview`` no
-    smoother than the look draws (``LOOK.least_roughness``)."""
+    smoother than the look draws (``LOOK.least_roughness_of``)."""
     colour = linear(rgba if rgba is not None else LOOK.fill)
     alpha = float(rgba[3]) if isinstance(rgba, (tuple, list)) and len(rgba) > 3 else 1.0
     if material is None:
@@ -229,7 +229,7 @@ def finish(rgba: Any, material: dict[str, Any] | None, *, preview: bool = False)
         target = float(material.get("clearcoatRoughness") or 0.0)
         roughness += (target - roughness) * COAT_ROUGHNESS * coat
     if not preview:
-        roughness = max(roughness, LOOK.least_roughness)
+        roughness = max(roughness, LOOK.least_roughness_of(float(material.get("metalness") or 0.0)))
     transmission = float(material.get("transmission") or 0.0)
     if transmission > 0:
         tint = material.get("attenuationColor") or (1.0, 1.0, 1.0)

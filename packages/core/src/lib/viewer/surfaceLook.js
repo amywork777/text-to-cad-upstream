@@ -24,6 +24,9 @@ import { resolveMaterialFillBaseColor, shapeSourceColor } from "./surfaceMateria
 //     leastRoughness?: number,  no surface kept to its authored finish in a shaded look is
 //                           smoother than this, so a mirror still shows its shape
 //                           (`lib/xbf/xbfLook.js`); an authored look keeps it as written
+//     leastDielectricRoughness?: number,  the same for a dielectric, a metal in proportion to its
+//                           metalness: a smooth plastic mirrors the studio at a grazing
+//                           angle. `leastRoughness` for every surface when absent
 //     brdf?: string,        the surface model the lit surfaces are drawn by (a name of
 //                           `surfaceBrdf.js`'s `SURFACE_BRDFS`); three's own when absent,
 //                           and in an authored look always
@@ -177,7 +180,9 @@ export function createSurfaceLook(THREE, root) {
           // fields and use neutral Physical defaults for the stand-in's other fields.
           plain ||= plainFinish(THREE);
           for (const key of FINISH_KEYS) target[key] = lit[key] ?? plain[key];
-          target.roughness = Math.max(target.roughness, Number(look?.leastRoughness) || 0);
+          const leastMetal = Number(look?.leastRoughness) || 0;
+          const leastDielectric = Number(look?.leastDielectricRoughness ?? leastMetal) || 0;
+          target.roughness = Math.max(target.roughness, leastMetal * target.metalness + leastDielectric * (1 - target.metalness));
           target.attenuationColor.copy(lit.attenuationColor || plain.attenuationColor);
           target.specularIntensity = authoredSpecular(lit);
           target.envMapIntensity = 1;
