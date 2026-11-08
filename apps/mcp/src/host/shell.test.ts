@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { APP_ROUTE, COULD_NOT_OPEN, say, viaEngine, viaTunnel } from './shell';
+import { APP_ROUTE, COULD_NOT_OPEN, loadApp, OPENING, say, viaEngine, viaTunnel } from './shell';
 
 const encode = (text: string) => btoa(text);
 
@@ -55,4 +55,16 @@ it('the shell\'s line wears the host\'s font and muted colour, on its theme, wit
   say(COULD_NOT_OPEN);
   expect(document.querySelector<HTMLElement>('#root p')!.style.fontFamily).toContain('sans-serif');
   expect(document.querySelectorAll('#root p')).toHaveLength(1);
+});
+
+it('the page says it is opening while the app is read, never blank, in the host\'s theme', async () => {
+  document.body.innerHTML = '<div id="root"></div>';
+  let fail!: (error: Error) => void;
+  const reading = new Promise<string>((_resolve, reject) => { fail = reject; });
+  const shell = { bridge: { hostContext: { theme: 'dark' } }, launch: {}, result: { _meta: {} } } as any;
+  const loading = loadApp(shell, { tunnel: () => reading });
+  expect(document.querySelector('#root p')?.textContent).toBe(OPENING);
+  expect(document.documentElement.style.colorScheme).toBe('dark');
+  fail(new Error('gone'));
+  await expect(loading).rejects.toThrow('gone');
 });

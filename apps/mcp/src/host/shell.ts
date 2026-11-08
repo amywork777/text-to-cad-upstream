@@ -107,6 +107,10 @@ export async function viaEngine(launch: Pick<Launch, 'browser' | 'engine'>, fetc
 /** The engine's CAD app, read and imported: its module starts it on `globalThis.__cadShell`. */
 export async function loadApp(shell: Pick<CadShell, 'bridge' | 'launch' | 'result'>,
   read: { tunnel?: typeof viaTunnel; engine?: typeof viaEngine } = {}): Promise<void> {
+  // Reading the app's code and starting it takes seconds, and a tab's view is opened afresh each time
+  // it comes to the front: the page says so meanwhile, in the viewer's word, rather than stay blank.
+  // The app's first render takes the line's place.
+  say(OPENING, shell.bridge.hostContext);
   const token = shell.result._meta?.['dev.texttocad/httpToken'];
   let code: string;
   try {
@@ -120,11 +124,15 @@ export async function loadApp(shell: Pick<CadShell, 'bridge' | 'launch' | 'resul
   await import(/* @vite-ignore */ url);
 }
 
+/** What the page says while the app's code is read and started: the viewer's own word for a file opening. */
+export const OPENING = "Opening…";
+
 /** All a person reads when the app cannot start: what went wrong goes to the console, never onto the page. */
 export const COULD_NOT_OPEN = "The viewer couldn't open this.";
 
 /**
- * One centered muted line on the page, the only thing the shell ever shows. No stylesheet has loaded
+ * One centered muted line on the page, the only thing the shell ever shows: that it is opening, or that
+ * it could not. No stylesheet has loaded
  * here, so the line carries its own look, in the host's font and muted colour where it sent them
  * (`host/hostTheme.ts`' standard names), on the host's theme so a dark window stays dark behind it.
  */
