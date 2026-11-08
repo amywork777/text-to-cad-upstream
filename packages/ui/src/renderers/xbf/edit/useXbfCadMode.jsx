@@ -595,7 +595,8 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
   // there how its parts are edited: isolated (`isolateToEdit`).
   const assemblyEditing = editing && edit.status === "ready" && editTree.assembly;
   const notice = edit.status === "none" && edit.imported && openFile
-    ? <ImportedBody imported={edit.imported} onAdopt={edit.adopt} onOpenPart={edit.importedPart} onOpen={openFile} />
+    ? <ImportedBody imported={edit.imported} onAdopt={edit.adopt} onOpenPart={edit.importedPart} onOpen={openFile}
+      opensOnItsOwn={layout.onScreen && layout.layout === "manual"} />
     : assemblyEditing ? <AssemblyNotice isolated={isolatedPart(editTree, isolatedLabels)} editable={Boolean(openPart)} /> : null;
   // Isolating one part of an assembly in CAD mode opens it to be modeled, the isolation's whole point here; true
   // when it did, and the view leaves the assembly unisolated.
