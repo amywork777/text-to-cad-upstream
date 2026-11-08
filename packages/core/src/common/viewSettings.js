@@ -1,4 +1,5 @@
 import { DEFAULT_PART_COLOR_SETTINGS, normalizeExplodedViewSettings, validateDisplaySettings } from "./displaySettings.js";
+import { WORKBENCH_DARK_CANVAS_COLOR } from "./themeSettings.js";
 import { DEFAULT_STEP_CLIP_SETTINGS, normalizeStepClipSettings } from "../lib/viewer/clipPlane.js";
 
 /** @typedef {"solid" | "shaded" | "parts" | "xray" | "hidden-line" | "wireframe"} ViewMode */
@@ -193,6 +194,9 @@ const EDGE_COLOR = "#253443";
 function lineDrawingEdgeColor(appearance) {
   return appearance === "dark" ? "#c9d3de" : EDGE_COLOR;
 }
+// So do a dark part's in Solid on the dark canvas: the scene gives a part drawn darker than the
+// canvas this light ink. On the light canvas every part keeps the one ink.
+const DARK_PARTS = Object.freeze({ canvas: WORKBENCH_DARK_CANVAS_COLOR, color: lineDrawingEdgeColor("dark") });
 
 /**
  * The measuring grid, the same in every mode that turns it on: plain to see without competing
@@ -331,7 +335,8 @@ export function resolveViewSettings(input = {}, {
   const edges = {
     enabled: edged,
     visibility: mode === "xray" || mode === "wireframe" ? "all" : "visible",
-    color: mode === "hidden-line" || mode === "wireframe" ? lineDrawingEdgeColor(resolvedAppearance) : EDGE_COLOR
+    color: mode === "hidden-line" || mode === "wireframe" ? lineDrawingEdgeColor(resolvedAppearance) : EDGE_COLOR,
+    ...(mode === "solid" && resolvedAppearance === "dark" ? { darkParts: DARK_PARTS } : {})
   };
   const dark = resolvedAppearance === "dark";
   return {

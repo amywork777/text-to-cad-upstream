@@ -43,6 +43,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from cad.engine.ids import canonical
+
 # A document's states, as ``cad status`` lists them (``state``).
 STATES = ("live", "held", "building", "failed", "unsaved", "detached")
 
@@ -397,11 +399,15 @@ class Models:
         return server
 
     def paths(self, worker: Any, model: str | None = None) -> list[str]:
-        """The ids of the documents ``worker`` holds (of model ``model``'s name, when given)."""
+        """The ids of the documents of ``worker``'s script (of model ``model``'s name, when given):
+        those it holds and those a worker before it built, which it is building again. A rebuild on
+        a fresh worker, the warm one retired since, is of the same documents: their failure clears
+        as it starts, and one it fails with is theirs."""
         name = model.rsplit("::", 1)[-1] if model else None
         with self.lock:
-            return [ident for ident, row in self.records.items() if row["worker"] is worker
-                    and (name is None or row["source"]["name"] == name)]
+            return [ident for ident, row in self.records.items()
+                    if (name is None or row["source"]["name"] == name)
+                    and (row["worker"] is worker or canonical(row["source"]["script"]) == worker.label)]
 
     def held(self, ident: str) -> dict[str, Any] | None:
         """The record of the model document ``ident`` while the engine holds it -- a live worker

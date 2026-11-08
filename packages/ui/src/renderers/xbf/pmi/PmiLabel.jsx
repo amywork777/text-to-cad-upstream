@@ -8,9 +8,13 @@ import { PmiGlyph } from "./pmiGlyphs.jsx";
 // frame's cells -- its characteristic, its value (a diameter zone's struck circle first) and the
 // datums it refers to -- each ruled off from the next; a flag note's flag and its number, its words
 // the section's to read (its Notes). Ink on paper, so it reads over any part: the theme's
-// foreground on its background.
+// foreground on its background. At rest a plain dimension has no box, as a drawing's has none: the
+// bare number in a thin halo of the viewport's colour (`--pmi-halo`, `PmiOverlay.jsx`). Basic
+// dimensions, datums and frames keep theirs, where a box means something, and a dimension takes one
+// while it is selected, hovered, moved or its reference has broken.
 
 const BOX = "inline-flex items-stretch rounded-[2px] border bg-background/95 text-tiny leading-4 tabular-nums text-foreground shadow-sm";
+const BARE = "inline-flex items-stretch text-tiny leading-4 tabular-nums text-foreground [filter:drop-shadow(0_0_1.5px_var(--pmi-halo))_drop-shadow(0_0_1.5px_var(--pmi-halo))]";
 // A callout whose reference broke is in its status's colour, the theme's: one that names nothing or
 // a face it cannot stand on in the destructive token, one that names several in amber. Its box's
 // border here, and its leader the overlay reads from the same token (`PMI_STATUS_TOKENS`,
@@ -37,7 +41,8 @@ export default function PmiLabel({ callout, status = "ok", selected = false, hov
     : selected ? "border-(--pmi-selected) ring-2 ring-(--pmi-selected)/35" : hovered ? "border-foreground" : "border-foreground/60";
   const box = cn(BOX, border, moved && "outline-dashed outline-1 outline-offset-2 outline-(--pmi-selected)", className);
   if (callout.kind === "dimension") {
-    return <span className={cn(box, CELL, "gap-px py-px")} data-pmi-callout="dimension">
+    const bare = status === "ok" && !callout.basic && !selected && !hovered && !moved;
+    return <span className={cn(bare ? cn(BARE, className) : box, CELL, "gap-px py-px")} data-pmi-callout="dimension" data-pmi-bare={bare ? "" : undefined}>
       {callout.diameter ? <PmiGlyph name="diameter" className={GLYPH} aria-hidden="true" /> : null}
       {callout.basic ? <span className="border border-current px-0.5 leading-[0.875rem]" data-pmi-basic="">{callout.nominal}</span>
         : callout.nominal === null ? null : <span>{callout.nominal}</span>}

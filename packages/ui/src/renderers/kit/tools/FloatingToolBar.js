@@ -108,7 +108,7 @@ export default function FloatingToolBar({ tools = [], views = [], touch = false 
   // controls end the last section the tools have; with one section only, they are the second.
   const sectioned = tools.some((tool, index) => index > 0 && (tool.group || "") !== (tools[index - 1].group || ""));
   return (<div className="relative z-20 flex max-w-full shrink-0 flex-col items-end gap-1" data-cad-toolbar="tools">
-      <div role="group" aria-label={t("toolbar.tools")} className={cn(GROUP_CLASS, "flex-wrap")}>
+      <div role="group" aria-label={t("toolbar.tools")} className={cn(GROUP_CLASS, "flex-wrap gap-1.5")}>
         {tools.map((tool, index) => <Fragment key={tool.id}>
           {index > 0 && (tool.group || "") !== (tools[index - 1].group || "") ? rule : null}
           {toolButton(tool)}

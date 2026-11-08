@@ -388,6 +388,23 @@ test("display modes: the edges a mode draws, Hidden line's depth-only surfaces a
   document.release();
 });
 
+test("Solid on the dark canvas: a part drawn darker than it takes the light ink, a lighter one keeps the dark", async () => {
+  const structure = structuredClone(STRUCTURE);
+  structure.instances[0].color = [0.09, 0.11, 0.15, 1];
+  structure.instances[1].color = [0.8, 0.8, 0.8, 1];
+  const document = await loadXbfDocument(URL_BASE, { fetch: engine({ structure }).fetch });
+  const scene = createXbfScene(THREE, document);
+  const feature = at => scene.object3D.children[at].children[0].children.find(child => child.name === "feature edges");
+  const darkParts = { canvas: "#36393f", color: "#c9d3de" };
+  scene.setEdgeLook({ enabled: true, visibility: "visible", color: "#253443", darkParts });
+  assert.equal(feature(0).material.color.getHexString(), "c9d3de", "darker than the canvas");
+  assert.equal(feature(1).material.color.getHexString(), "253443", "lighter than the canvas");
+  scene.setEdgeLook({ enabled: true, visibility: "visible", color: "#253443" });
+  assert.equal(feature(0).material.color.getHexString(), "253443", "the light canvas: the one ink");
+  scene.dispose();
+  document.release();
+});
+
 test("X-ray draws an engine document in linear light, through its rig's half-float frame; every other mode as three draws it", async () => {
   const document = await loadXbfDocument(URL_BASE, { fetch: engine().fetch });
   const scene = createXbfScene(THREE, document);
@@ -650,4 +667,42 @@ test("Explode moves each instance's carrier by the document's tree, and puts it 
 test("a read the engine refuses carries its status: a 404 is a document the engine no longer holds", async () => {
   const gone = async () => new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { "content-type": "application/json" } });
   await assert.rejects(waitForXbfVersion(`${URL_BASE}`, "v1", { fetch: gone }), error => error.status === 404 && /answered 404 \(not found\)/.test(error.message));
+});
+
+test("a renderer's own pick colour: a part's tint and edges, a face's fill and outline and an edge drawn in it, null the viewer's again", async () => {
+  // As CAD mode's workspace draws a pick in its orange, and Simple view's ai layout keeps the viewer's own colour.
+  const document = await loadXbfDocument(URL_BASE, { fetch: engine().fetch });
+  const scene = createXbfScene(THREE, document);
+  const [plate, peg] = scene.object3D.children.map(carrier => carrier.children[0]);
+  const colours = () => ({
+    part: [...plate.children.filter(child => child.type === "LineSegments"), ...plate.children[0].children].map(each => each.material.color.getHexString()),
+    elements: ["selected face", "selected edge"].flatMap(name => peg.getObjectByName(name).children.map(child => child.material.color.getHexString())),
+  });
+  scene.setHighlight({ hovered: [], selected: ["i0"] });
+  scene.setElementHighlight({ hovered: null, selected: ["i1/face/1", "i1/edge/1"] });
+  const own = colours();
+  assert.ok([...own.part, ...own.elements].every(colour => colour !== "ff9a2e"));
+  scene.setHighlightColor("#ff9a2e");
+  const workspace = colours();
+  assert.deepEqual([workspace.part.length, workspace.elements.length], [own.part.length, 3]);
+  assert.ok([...workspace.part, ...workspace.elements].every(colour => colour === "ff9a2e"), JSON.stringify(workspace));
+  // What the pointer rests on wears it too.
+  scene.setHighlight({ hovered: ["i0"], selected: [] });
+  assert.ok(plate.children.filter(child => child.type === "LineSegments").every(line => line.material.color.getHexString() === "ff9a2e"));
+  scene.setHighlightColor(null);
+  scene.setHighlight({ hovered: [], selected: ["i0"] });
+  assert.deepEqual(colours(), own);
+  scene.dispose();
+  document.release();
+});
+
+test("a part's faces are counted as its buffer has them, a face left unmeshed among them", async () => {
+  const document = await loadXbfDocument(URL_BASE, { fetch: engine().fetch });
+  const scene = createXbfScene(THREE, document);
+  assert.equal(scene.faceCount(0), document.parts.get(PLATE.key).mesh.faces.length / 3);
+  assert.equal(scene.faceCount(1), document.parts.get(PEG.key).mesh.faces.length / 3);
+  assert.ok(scene.faceCount(0) > 0);
+  assert.equal(scene.faceCount(99), 0);
+  scene.dispose();
+  document.release();
 });

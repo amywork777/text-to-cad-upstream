@@ -334,8 +334,9 @@ a temporary file, then draws a view the ink was drawn in with
 inside the gesture while the files are still being made; its references name their
 files by absolute path, as copied references do (below), and every file is named by
 its path, since text carries no file (without `promptFiles`, a prompt carries none). **Queue** is there where the
-destination is a composer (`destination.kind === "composer"`): `deliver`, the
-context for the person's next message. **Send** is there where the prompt port
+destination is a composer (`canAddToContext`: `destination.kind === "composer"` and available): `deliver`, the
+context for the person's next message. `addToContext` is the same delivery with no note, the view's requested changes
+included; no surface offers it today. **Send** is there where the prompt port
 has `send`. The context is built at the press, from what is live then; a changed
 document or revision never retargets it. A Quick Edit that reached its destination
 (copied, queued or sent: no `failed` or `cancelled` receipt) tells the host once,
@@ -533,6 +534,14 @@ right-click on the name). Right, only what a host or a file adds: the renderer's
 actions first, then the host's actions (`navbarActions`: `CadViewer` hands it the host's
 `fullSize`, the CAD app's Full size), and last, outermost, the host's update button (`update`,
 while its install is behind). The navbar holds no settings and none of the view's controls.
+
+The Kernel menu is `CadViewer`'s, for a model built on other CAD kernels: the kernels skill saves
+each build beside the model's own file (`.kernels/<kernel>/<stem>.step|.stl`) and the client lists
+them (`kernelVariants`, `GET /__cad/kernels`; a client without it offers no menu). It names the
+build on screen, BREP for the model's own, and choosing another shows that file in this view
+through `navigation.openFile`, as the explorer does, so a view that shows its file alone has none.
+It builds nothing: a build is the skill's, run beside the agent, never the viewer's (cadgen's law 12).
+The list is read when the file changes and when the page comes back into focus.
 
 The app menu is FileViewer's, built from the host's `navigation.home`, `links` and
 `environment.platform` and the person's `FileViewerProps.appSettings` (which `CadViewer`

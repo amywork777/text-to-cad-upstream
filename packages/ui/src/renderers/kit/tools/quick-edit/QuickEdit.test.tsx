@@ -102,6 +102,75 @@ it('opens with an annotation while there is ink, taking the keyboard once the pe
   expect(note()).toBe('A boss here.');
 });
 
+it('is the person\'s to open when the host says so: shut until asked, whatever it would carry, and open on the file as a whole when asked with nothing picked', () => {
+  const carrying = { references: [face], annotation: { present: true } };
+  const { update } = mount(testHost(), { asked: false });
+  // Picked and drawn on, and still no box: nothing asked for it.
+  update({ asked: false, ...carrying });
+  expect(box()).toBeNull();
+  // Asked, it carries what there is, and the keyboard is in its note: the person asked for it.
+  update({ asked: true, ...carrying });
+  expect(box()).not.toBeNull();
+  expect(box()!.querySelector('[data-quick-edit-chip="references"]')!.textContent).toBe('1 ref');
+  expect(box()!.querySelector('[data-quick-edit-ref="annotation"]')!.textContent).toBe('Annotation');
+  expect(document.activeElement).toBe(field());
+  // No longer asked, it goes; the file, which it always carries, is not what keeps it open.
+  update({ asked: false, ...carrying });
+  expect(box()).toBeNull();
+  // Asked with nothing picked or drawn, it is the whole part's: no chips, the file as ever, the note to write in.
+  update({ asked: true, references: [], annotation: null });
+  expect(box()).not.toBeNull();
+  expect(box()!.querySelector('[data-quick-edit-chip="references"]')).toBeNull();
+  expect(document.activeElement).toBe(field());
+  expect(buttons()[0]).toBe('Close Quick Edit');
+});
+
+it('keeps a note written after it was asked for, however it is asked about, until the X', () => {
+  const clear = vi.fn();
+  const { update } = mount(testHost(), { asked: true, onClear: clear });
+  write('Cut a window here.');
+  update({ asked: false, onClear: clear });
+  expect(note()).toBe('Cut a window here.');
+  // The X clears it all, the note and, through the renderer, what was asked; nothing is left to keep the box.
+  fireEvent.click(within(box()!).getByRole('button', { name: 'Close Quick Edit' }));
+  expect(clear).toHaveBeenCalledTimes(1);
+  expect(box()).toBeNull();
+});
+
+it('Escape in an empty box it was asked for is the viewer\'s own, whose answer closes it', () => {
+  const escape = vi.fn();
+  mount(testHost(), { asked: true, onEscape: escape });
+  fireEvent.keyDown(field(), { key: 'Escape' });
+  expect(escape).toHaveBeenCalledTimes(1);
+});
+
+it('carries a range of a script as it carries a face: counted by its name, in the context as the reference it is', async () => {
+  const send = vi.fn(async () => ({ status: 'sent' as const, partIds: [] }));
+  const script = { kind: 'workspace-file', path: '/models/parts/bracket.py' } as const;
+  const range = { resource: script, target: { kind: 'text-range', start: { line: 16, character: 0 }, end: { line: 17, character: 0 } }, label: 'Hole (6)' } as const;
+  mount(testHost({ promptContext: { getSnapshot: () => composer, subscribe: () => () => {}, deliver: vi.fn(), send } as never }), { asked: true, references: [range] });
+  // With no chips of the renderer's, the header counts it, and says what it is by its label.
+  expect(box()!.querySelector('[data-quick-edit-chip="references"]')!.textContent).toBe('1 ref');
+  expect(quickEditReferenceIds([range])).toEqual(['Hole (6)']);
+  write('Make it 3.4 mm.');
+  fireEvent.click(within(box()!).getByRole('button', { name: 'Send' }));
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+  const context = (send.mock.calls[0] as unknown[])[0] as any;
+  expect(context.parts.map((part: any) => part.id)).toEqual(['text', 'file', 'reference-0']);
+  expect(context.parts[2].reference).toMatchObject({ resource: script, target: { kind: 'text-range' }, label: 'Hole (6)' });
+  // A range with no label is counted by its place: 17:1–18:1.
+  expect(quickEditReferenceIds([{ ...range, label: undefined }])).toEqual(['17:1–18:1']);
+});
+
+it('follows what it would carry, as it always has, unless the host says otherwise', () => {
+  const { update } = mount(testHost(), { asked: null });
+  expect(box()).toBeNull();
+  update({ asked: null, references: [face] });
+  expect(box()).not.toBeNull();
+  update({ asked: undefined, references: [] });
+  expect(box()).toBeNull();
+});
+
 it('offers the buttons the host can carry out, the rightmost primary and pressed by Enter', async () => {
   const send = vi.fn(async () => ({ status: 'sent' as const, partIds: [] }));
   const deliver = vi.fn(async () => ({ status: 'added' as const, partIds: [] }));

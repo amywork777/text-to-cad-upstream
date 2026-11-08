@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MousePointer2 } from "lucide-react";
 import { scenePartCount, viewFeaturesForKind } from "@cad/core/common/viewSettings.js";
 import { useExportView } from "../../export/context.js";
@@ -13,6 +13,7 @@ import { sceneCopyText, useSceneDescribe, useSceneInspect, useSceneReferences } 
 import { sceneMenuEntries } from "../kit/tools/select/sceneMenu.js";
 import { useSceneSelection } from "../kit/tools/select/useSceneSelection.js";
 import { useDeclinedSelectReference, useWorkspaceDocument, workspaceLoadAlert } from "../workspace/useWorkspaceDocument.js";
+import { useCamChrome, useCamResult, useCamView } from "./cam/useCamResult.jsx";
 import { GLB_DECLINED_LIVE_COMMANDS, GLB_TOOL, GLB_TOOL_MODES } from "./tools.js";
 import { useGlbAnimation } from "./useGlbAnimation.js";
 import { useGlbScene } from "./useGlbScene.js";
@@ -24,20 +25,74 @@ const NO_REFERENCES = Object.freeze([]);
 const EXPLODE_OFF = Object.freeze({ exploded: { enabled: false, amount: 0 } });
 const CLIP_OFF = Object.freeze({ clip: { enabled: false, axis: "x", invert: false } });
 
-function GlbSurface({ view, data }) {
-  const { t } = useI18n();
+/**
+ * Whether a loaded scene carries an FEA result: a mesh `cad fea solve` wrote. Its generator alone says so; what
+ * else the result holds is `feaResult.js`'s to read, and one that does not read is the load's alert, never a plain GLB.
+ */
+function carriesFeaResult(root) {
+  let found = false;
+  root?.traverse?.((object) => {
+    if (!found && object?.isMesh && object.geometry && object.userData?.generator === "cadgen fea") found = true;
+  });
+  return found;
+}
+
+// The FEA result viewer (`feaView.jsx`), once a result has loaded it, for every result after it.
+let feaView = null;
+/** Loads the FEA result viewer: its own chunk, which a plain GLB never fetches. */
+export const loadFeaView = () => import("./feaView.jsx").then((module) => { feaView = module; return module; });
+
+/**
+ * The FEA result viewer for a scene that carries a result, loaded the first time one does; `pending` while it
+ * loads. A plain GLB's is null. Should the chunk fail to load, `error` says so, and the result is not drawn as
+ * the plain GLB it is not.
+ */
+function useFeaView(root) {
+  const wanted = useMemo(() => carriesFeaResult(root), [root]);
+  const [kit, setKit] = useState(feaView);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    if (!wanted || kit || error) return undefined;
+    let live = true;
+    loadFeaView().then((module) => { if (live) setKit(module); }, (failure) => { if (live) setError(failure); });
+    return () => { live = false; };
+  }, [wanted, kit, error]);
+  return { kit: wanted && kit ? kit : null, pending: wanted && !kit && !error, error: wanted ? error : null };
+}
+
+/**
+ * A GLB file: its scene, loaded once, drawn by the FEA result viewer when it carries a result (`FeaSurface.jsx`,
+ * its own surface over the same shell) and by the GLB surface below otherwise. A result waits for its viewer as
+ * the file loading, so it is framed once, as that viewer draws it.
+ */
+function GlbFile({ view, data }) {
   const document = useWorkspaceDocument({ view, data });
   const loaded = useGlbScene({ entry: document.entry, resources: document.client.resources });
-  const scene = loaded.scene;
+  const { kit: fv, pending, error } = useFeaView(loaded.scene?.document?.scene);
+  if (fv) return <fv.FeaSurface view={view} document={document} loaded={loaded} fv={fv} />;
+  return <GlbSurface view={view} document={document} loaded={loaded} pending={pending} feaError={error} />;
+}
+
+function GlbSurface({ view, document, loaded, pending: feaPending, feaError }) {
+  const { t } = useI18n();
+  // A CAM result (cad cam plan) has a viewer of its own (`cam/useCamResult.jsx`), loaded as its own chunk; it waits
+  // for it as the file loading, so it is framed once, as the viewer draws it. A chunk that fails, or a job that is
+  // damaged, is the file failing: drawn as a plain GLB, a result would hide its verdict.
+  const { kit: cv, cam: job, pending: camPending, failed: camFailed } = useCamView(loaded.scene?.document?.scene);
+  const pending = feaPending || camPending;
+  const scene = pending || feaError || camFailed ? null : loaded.scene;
+  const loadError = loaded.error || feaError || camFailed;
   const loadAlert = useMemo(() => workspaceLoadAlert({
-    catalogError: document.catalogError, error: loaded.error, modelKey: document.modelKey, hasScene: Boolean(scene), t
-  }), [document.catalogError, loaded.error, document.modelKey, scene, t]);
+    catalogError: document.catalogError, error: loadError, modelKey: document.modelKey, hasScene: Boolean(scene), t
+  }), [document.catalogError, loadError, document.modelKey, scene, t]);
 
   const shellRef = useRef(null);
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
+  // A CAM result's job, its Show rows and the row chosen in Job; its Simulate routines join the file's own.
+  const camResult = useCamResult({ cv, job, scene, view, shellRef });
   // A routine let go puts its nodes back at rest, under Explode's: Explode puts them back out.
-  const animation = useGlbAnimation(scene?.document || null, () => { sceneRef.current?.syncExplode?.(); shellRef.current?.requestRender(); });
+  const animation = useGlbAnimation(scene?.document || null, () => { sceneRef.current?.syncExplode?.(); shellRef.current?.requestRender(); }, camResult.ownClips);
   const preview = usePreviewState();
   const previewing = preview.previewing;
   // A routine takes the nodes where they were authored: Explode lets go of them before it plays,
@@ -65,34 +120,44 @@ function GlbSurface({ view, data }) {
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   // Parts where the file has several meshes to colour, Explode where it has several rigid nodes that draw (`glbScene.js`).
-  const features = useMemo(() => viewFeaturesForKind("glb", { parts: scenePartCount(scene), explodeParts: scene?.explodeParts || 0 }), [scene]);
+  // A CAM result never explodes: its nodes are the part, the stock and the toolpaths, which mean nothing apart.
+  const features = useMemo(() => viewFeaturesForKind("glb", { parts: scenePartCount(scene), explodeParts: camResult.cam ? 0 : scene?.explodeParts || 0 }),
+    [scene, camResult.cam]);
+  // What is picked: the nodes Select picked, and a CAM result's row chosen in Job.
+  const camResultRef = useRef(camResult);
+  camResultRef.current = camResult;
+  const clearPicked = useCallback(() => { selectionRef.current.clear(); camResultRef.current.clearChoice(); }, []);
   const live = useMemo(() => ({
     declined: GLB_DECLINED_LIVE_COMMANDS,
-    commands: { clearSelection: () => selectionRef.current.clear() },
+    commands: { clearSelection: clearPicked },
     state: () => ({ selectedNodes: [...selectionRef.current.selected] })
-  }), []);
+  }), [clearPicked]);
   const measureRef = useRef(measure);
   measureRef.current = measure;
+  const camChosen = Boolean(camResult.choice);
   const escape = useMemo(() => ({
-    active: selection.active || measure.drafting || measure.selected.length > 0,
+    active: selection.active || camChosen || measure.drafting || measure.selected.length > 0,
     // Escape cancels a measurement in progress, then lets go of what is picked.
     handle: () => {
       const now = measureRef.current;
       if (now.drafting) { now.cancelDraft(); return true; }
       if (now.selected.length) { now.select([]); return true; }
-      if (selectionRef.current.active) { selectionRef.current.clear(); return true; }
+      if (selectionRef.current.active || camResultRef.current.choice) { clearPicked(); return true; }
       return false;
     }
-  }), [selection.active, measure.drafting, measure.selected.length]);
+  }), [selection.active, camChosen, measure.drafting, measure.selected.length, clearPicked]);
 
   const shell = useRendererShell({
     view, services: document.services, resource: document.resource, modelKey: document.modelKey, revisionKey: loaded.revision,
     features, toolModes: GLB_TOOL_MODES, tool: tools.tool, previewable: true, preview, scene, sceneEffects: true,
-    load: { busy: loaded.busy && !scene, updating: loaded.busy && Boolean(scene), progress: loaded.progress, alert: loadAlert },
-    animation: routine, live, escape, deleteSelection: measure.removeSelected
+    load: { busy: (loaded.busy || pending) && !scene, updating: loaded.busy && Boolean(scene), progress: loaded.progress, alert: loadAlert },
+    animation: routine, live, escape, deleteSelection: measure.removeSelected,
+    // A CAM result's Show rows and hidden operations, its slice of the file's view.
+    rendererState: camResult.rendererState
   });
   shellRef.current = shell;
   useDeclinedSelectReference(document);
+  const camChrome = useCamChrome({ result: camResult, scene, animation });
 
   // ---- one motion at a time: Explode, the routine and Clip --------------------------------
   const { view: viewSettings, store } = shell.viewSettings;
@@ -106,6 +171,8 @@ function GlbSurface({ view, data }) {
   });
 
   // ---- Preview: its own scene, the editor's sibling over its geometry, and its own routine ---
+  // A CAM result's drawing (`camView.jsx`) is the tools view's, beside the scene, never in it: Preview shows the part
+  // as the view had it, with the file's own routines (none).
   const previewScene = usePreviewScene(scene, previewing);
   const previewAnimation = useGlbAnimation(previewScene?.document || null, () => shell.frame.previewViewRef.current?.requestRender?.());
   const previewView = useMemo(() => ({ scene: previewScene, animation: previewAnimation }), [previewScene, previewAnimation]);
@@ -120,7 +187,10 @@ function GlbSurface({ view, data }) {
   const sceneTools = useSceneTools({ shell, scene, features, state: tools, measurable: true, clearParts: selection.clear });
   const selectActive = !previewing && Boolean(scene) && shell.toolMode === GLB_TOOL.SELECT;
   const strip = [shell.tools.own({ id: GLB_TOOL.SELECT, label: t("tool.select"), shortcut: TOOL_SHORTCUTS.select, icon: SELECT_ICON }), ...sceneTools.tools];
-  const { references, chips } = useSceneReferences({ scene, selection, resource: shell.frame.resource });
+  const nodes = useSceneReferences({ scene, selection, resource: shell.frame.resource });
+  // A CAM result's row chosen in Job is a chip too: the part the job was planned from, by its faces.
+  const references = useMemo(() => (camChrome ? [...nodes.references, ...camChrome.references] : nodes.references), [nodes.references, camChrome?.references]);
+  const chips = useMemo(() => (camChrome ? [...nodes.chips, ...camChrome.chips] : nodes.chips), [nodes.chips, camChrome?.chips]);
   const resourcePath = shell.frame.resource?.path;
   const nameNode = useCallback(reference => {
     const id = reference?.resource?.path === resourcePath && reference.target?.kind === "cad-selector" ? reference.target.selectors[0] : "";
@@ -129,7 +199,7 @@ function GlbSurface({ view, data }) {
   }, [resourcePath]);
   const handlePick = useCallback((hit, modifiers) => {
     selection.pick(hit, modifiers);
-    if (hit && !modifiers?.multiSelect) measureRef.current.select([]);
+    if (hit && !modifiers?.multiSelect) { measureRef.current.select([]); camResultRef.current.clearChoice(); }
   }, [selection.pick]);
 
   // The view's menu, under Select (`kit/tools/select/sceneMenu.js`): the reference, Select, the framing.
@@ -147,22 +217,23 @@ function GlbSurface({ view, data }) {
     run: () => { const box = scene?.selectionBounds?.(selectionRef.current.selected); if (box) shellRef.current?.frame.viewerRef.current?.zoomToBounds?.(box); }
   };
 
-  // What is picked, as the frame reads it: the hover tip, and the chips' cards' rows. No panel, so no Selected pane.
+  // What is picked, as the frame reads it: the hover tip, and the chips' cards' rows. A plain GLB has no panel, so no Selected pane; a CAM result's is its Job.
   const described = useSceneDescribe(scene);
   const inspect = useSceneInspect({ scene: previewing ? null : scene, selection, describe: described });
 
   return <RendererShell shell={shell} tools={strip} contextMenuItems={contextMenuItems} zoomToSelection={zoomToSelection} subToolbar={sceneTools.subToolbar} previewView={previewView}
-    inspect={inspect}
+    inspect={inspect} sidebar={camChrome?.sidebar ?? null}
     references={previewing ? NO_REFERENCES : references} referenceChips={previewing ? NO_REFERENCES : chips} nameReference={nameNode}
-    onClearReferences={() => { selection.clear(); measure.select([]); }}
+    onClearReferences={() => { clearPicked(); measure.select([]); }}
     onSelectPress={sceneTools.onSelectPress} onSelectHover={sceneTools.onSelectHover}
     viewportOverlay={viewport => { viewportRef.current = viewport; return <>
       {sceneTools.overlay(viewport)}
       <PointerPick viewport={viewport} scene={scene} enabled={selectActive} onPick={handlePick} onHover={selection.hoverHit} />
+      {camChrome?.overlay(viewport)}
     </>; }} />;
 }
 
 export default function GlbRenderer(props) {
   const { data, ...view } = props;
-  return <GlbSurface key={JSON.stringify([view.source.id, view.file.path])} view={view} data={data} />;
+  return <GlbFile key={JSON.stringify([view.source.id, view.file.path])} view={view} data={data} />;
 }

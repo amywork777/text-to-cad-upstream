@@ -38,10 +38,10 @@ the sizes, ``--json``), and what a kind does not offer is
 refused by name before anything renders: ``parts`` and ``exploded`` for a file that places a single
 part, ``--pose`` for a mesh, and every display setting for a drawing. ``--display
 exploded=0.6`` (or ``display.exploded``) moves the parts apart as the viewer's Explode does, by its
-amount (0.5 unless one is given). A document's PMI is drawn as the viewer shows it, on the parts
-as made (``render/pmi.py``); ``pmi=off`` (``display.pmi`` false) draws none, and asking for it
-(``pmi`` or ``pmi=on``, ``display.pmi`` true) of a document that carries none, or exploded, posed or
-in Preview, is refused by name. ``--annotation FILE`` draws the viewer's annotation over the
+amount (0.5 unless one is given). A document's PMI is drawn only when asked for (``pmi`` or
+``pmi=on``, ``display.pmi`` true, or a ``--view``), as the viewer shows it, on the parts as made
+(``render/pmi.py``), the viewer opening a part clean; ``pmi=off`` says so outright, and asking for
+it of a document that carries none, or exploded, posed or in Preview, is refused by name. ``--annotation FILE`` draws the viewer's annotation over the
 model (its ink on the parts it was drawn on, wherever they stand): an annotation file, or the Quick
 Edit packet that carries one (a ``.snapshot.json``). ``--measurements FILE`` draws Measure's
 dimensions. A camera object's lengths (``position``, ``target``, ``orthographicHalfHeight``), a
@@ -804,10 +804,10 @@ def refusals(still: Still, structure: dict[str, Any], name: str) -> None:
 
 def draws_pmi(still: Still, structure: dict[str, Any], name: str) -> bool:
     """Whether the picture draws the document's PMI (``structure["pmi"]``, its manufacturing
-    annotations), as the viewer draws it: by default wherever the document carries any and its parts
-    stand as made -- not exploded, posed or in Preview, where the viewer draws none; ``display.pmi``
-    false draws none. Asked for (``display.pmi`` true, or a view of a document carrying any: its PMI
-    is what a view shows) where it cannot be drawn, it is refused by name, never quietly left out."""
+    annotations), as the viewer draws it: only when asked for (``display.pmi`` true, or a view of a
+    document carrying any: its PMI is what a view shows), the viewer opening a part clean, so a still
+    made for a tile or a page is the model alone. Asked for where it cannot be drawn -- exploded, posed
+    or in Preview, where the viewer draws none -- it is refused by name, never quietly left out."""
     asked = still.display.get("pmi")
     if asked is False:
         return False
@@ -816,12 +816,13 @@ def draws_pmi(still: Still, structure: dict[str, Any], name: str) -> bool:
                                  ("--pose", still.pose is not None), ("--preview", still.preview)) if on]
     if asked is True and not carried:
         raise SnapshotRefused(f"display.pmi draws a document's PMI; {name} carries none. Remove display.pmi.")
-    if (asked is True or (still.view is not None and carried)) and moved:
+    wanted = asked is True or (still.view is not None and carried)
+    if wanted and moved:
         who = "display.pmi draws the PMI" if asked is True else f"--view {still.view} draws its PMI"
         raise SnapshotRefused(f"{who} on the parts as made; {' and '.join(moved)} "
                               f"{'moves or restages' if len(moved) == 1 else 'move or restage'} them. "
                               "Remove one or the other.")
-    return carried and not moved
+    return wanted
 
 
 def view_of(still: Still, structure: dict[str, Any], name: str, hidden: frozenset[int]) -> dict[str, Any] | None:

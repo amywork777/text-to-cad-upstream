@@ -52,7 +52,9 @@ export function xbfViewSignatures(structure, kinematics) {
     (structure.instances || []).map(instance => [instance.path ?? null, instance.prototype ?? null])]));
   const signatures = { tree };
   if (kinematics) signatures.pose = digest(JSON.stringify([kinematics.pairs, kinematics.configurations, kinematics.asBuilt, kinematics.couplings || null]));
-  if (Array.isArray(structure.pmi) && structure.pmi.length) signatures.pmi = digest(JSON.stringify((structure.prototypes || []).map(prototype => prototype?.name ?? null)));
+  // Headed by the default it was written under: a slice from when PMI opened drawn says nothing the
+  // person chose, every open wrote it, so it comes back no more.
+  if (Array.isArray(structure.pmi) && structure.pmi.length) signatures.pmi = digest(JSON.stringify(["opens-clean", ...(structure.prototypes || []).map(prototype => prototype?.name ?? null)]));
   return signatures;
 }
 

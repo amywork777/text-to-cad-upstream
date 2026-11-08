@@ -47,6 +47,11 @@ async function openBracket(t, options = { edit: withPmi }) {
   const controller = 'window.cadHarness.a.controller';
   const loaded = () => page.waitForFunction(`${controller}?.readState().loading === false`);
   await loaded();
+  // A part opens clean: what these drive is the PMI asked for, by the eye of them all in PMI's tab.
+  if (options.revealed !== false) {
+    await showPmi(pane);
+    await pane.getByRole('button', { name: 'Reveal PMI', exact: true }).click();
+  }
   const canvas = pane.locator('canvas').first();
   const label = id => pane.locator(`[data-pmi-label="${id}"]`);
   // Every label of the PMI drawn, laid out where the camera puts it.
@@ -171,7 +176,7 @@ test('PMI is drawn on the model and stays legible as the camera moves; a pick li
   assert.equal(await label('thickness').getAttribute('aria-label'), '9.8\u201310.2');
   assert.equal(await label('mask').innerText(), '3');
   await showPmi(pane);
-  assert.deepEqual(await pane.locator('[data-tool-panel-id="pmi"] h2').allInnerTexts(), ['Views', 'Notes', 'Coverage', 'Annotations']);
+  assert.deepEqual(await pane.locator('[data-tool-panel-id="pmi"] h2').allTextContents(), ['Views', 'Notes', 'Coverage', 'Annotations']);
   const read = () => page.evaluate(`({ state: ${controller}.readState(), camera: window.__cadCamera(), cut: window.__cadStage().cut })`);
   const unpicked = await read();
   const section = pane.getByRole('button', { name: 'A-A', exact: true });
@@ -339,7 +344,7 @@ test('PMI the engine built follows the model through edits: nominals measured an
 // A document with no PMI has no PMI tab. A face's menu offers what it can carry, and a choice
 // opens the PMI tab on that kind's form, the face picked: the first annotation is made there.
 test('a file with no PMI has no tab for it, and a face\'s menu starts the first one', async (t) => {
-  const { page, pane, errors, view, loaded } = await openBracket(t, { fixture: 'bracket' });
+  const { page, pane, errors, view, loaded } = await openBracket(t, { fixture: 'bracket', revealed: false });
   await loaded();
   assert.equal(await pane.locator('[data-tool-panel-id="pmi"]').count(), 0, 'no tab while there is no PMI');
   await pane.locator('[data-select-filter-trigger]').click();

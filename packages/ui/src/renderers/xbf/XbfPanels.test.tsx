@@ -337,6 +337,12 @@ it("Select's menu is a STEP's single choice: All when a file opens, or one kind 
   };
   expect(icons(XbfSelectIcon, XbfMeasureIcon)).toEqual(['select:', 'select:parts', 'select:faces', 'select:edges', 'select:position',
     'measure:', 'measure:points', 'measure:edges', 'measure:faces']);
+  // In Studio's CAD workspace the same buttons are its icon generator's, each mode its own.
+  const { container: cad } = render(<>{['all', 'parts', 'faces', 'edges', 'position'].map(mode => <XbfSelectIcon key={mode} mode={mode} cad />)}
+    {['all', 'vertex', 'edge', 'face'].map(mode => <XbfMeasureIcon key={mode} mode={mode} cad />)}</>);
+  expect([...cad.querySelectorAll('use')].map(use => use.getAttribute('href')!.replace('#nx-', ''))).toEqual(['select', 'select-part',
+    'select-face', 'select-edge', 'select-position', 'measure', 'measure-vertex', 'measure-edge', 'measure-face']);
+  cleanup();
   // The geometry ticked is picked as one mode, which shapes the tree.
   expect(['all', 'parts', 'topology', 'none'].map(mode => treeShape(mode))).toEqual(['all', 'parts', 'faces', 'all']);
   expect(selectGeometryMode(['faces', 'edges'])).toBe('topology');

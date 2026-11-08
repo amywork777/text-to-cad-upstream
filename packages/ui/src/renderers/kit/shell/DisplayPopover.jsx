@@ -14,7 +14,10 @@ const PROJECTIONS = Object.freeze(["orthographic", "perspective"]);
 
 /**
  * Display's choices, one list wherever it is shown (the Display tile's menu, a phone's More
- * submenu): the file's modes, then, after a rule, the Grid switch, which every mode draws. A view
+ * submenu): the file's modes, then, after a rule, the Grid switch, which every mode draws, and the
+ * renderer's own switches on what it draws of the file (`gates`: an FEA result's loads and
+ * fixtures, a CAM job's rapids and stock), each with a muted line under its name saying what it
+ * draws where it has one (`description`). A view
  * whose modes are its own names them (`label`), may show a mode that is a state rather than a choice
  * (`disabled`: what the view's own settings came to by hand), and may have no grid. A view that keeps
  * the camera's projection here, a setting it changes seldom, rather than as a tile of its own
@@ -23,9 +26,10 @@ const PROJECTIONS = Object.freeze(["orthographic", "perspective"]);
  *
  * @param {{ mode: { value: string, options: { value: string, label?: string, Icon?: Function, disabled?: boolean }[], onChange(value: string): void },
  *   grid?: { value: boolean, onChange(value: boolean): void } | null,
+ *   gates?: readonly { id: string, label: string, description?: string, checked: boolean, onChange(value: boolean): void }[],
  *   projection?: { value: string, onChange(value: string): void } | null }} props
  */
-export function DisplayMenuItems({ mode, grid = null, projection = null }) {
+export function DisplayMenuItems({ mode, grid = null, gates = [], projection = null }) {
   const { t } = useI18n();
   return <>
     <DropdownMenuRadioGroup aria-label={t("display.mode")} value={mode.value} onValueChange={mode.onChange}>
@@ -33,13 +37,20 @@ export function DisplayMenuItems({ mode, grid = null, projection = null }) {
         {Icon ? <Icon className="size-4" /> : null}{label ?? t(`mode.${value}`)}
       </DropdownMenuRadioItem>)}
     </DropdownMenuRadioGroup>
-    {grid ? <>
+    {grid || gates.length ? <>
       <DropdownMenuSeparator />
       {/* Ticking it leaves the menu open, as every checkbox row in a menu does: the grid is seen coming and going. */}
-      <DropdownMenuCheckboxItem checked={grid.value} onCheckedChange={value => grid.onChange(value === true)}
+      {grid ? <DropdownMenuCheckboxItem checked={grid.value} onCheckedChange={value => grid.onChange(value === true)}
         onSelect={event => event.preventDefault()} data-display-grid="">
         <GridIcon className="size-4" />{t("display.grid")}
-      </DropdownMenuCheckboxItem>
+      </DropdownMenuCheckboxItem> : null}
+      {gates.map(gate => <DropdownMenuCheckboxItem key={gate.id} checked={gate.checked} onCheckedChange={value => gate.onChange(value === true)}
+        onSelect={event => event.preventDefault()} data-display-gate={gate.id} aria-label={gate.label} aria-description={gate.description || undefined}
+        className={gate.description ? "items-start" : undefined}>
+        <span className="size-4 shrink-0" aria-hidden="true" />
+        <span className="flex min-w-0 flex-col">{gate.label}
+          {gate.description ? <span className="text-micro text-muted-foreground" aria-hidden="true">{gate.description}</span> : null}</span>
+      </DropdownMenuCheckboxItem>)}
     </> : null}
     {projection ? <>
       <DropdownMenuSeparator />
@@ -58,7 +69,7 @@ export function DisplayMenuItems({ mode, grid = null, projection = null }) {
  * projection chosen does; the Grid switch leaves it open. Projection is otherwise a tile of its own that
  * switches on a click (`ProjectionToggle.jsx`); on a phone Display is More's submenu instead (`RendererShell.jsx`).
  */
-export default function DisplayPopover({ disabled = false, boundary = null, tooltipSide = "top", onOpenChange, mode, grid = null, projection = null, icon = null }) {
+export default function DisplayPopover({ disabled = false, boundary = null, tooltipSide = "top", onOpenChange, mode, grid = null, gates = [], projection = null, icon = null }) {
   const { t } = useI18n();
   const tileClass = useStripButtonClass();
   const current = mode.options.find(option => option.value === mode.value) || mode.options[0];
@@ -74,9 +85,9 @@ export default function DisplayPopover({ disabled = false, boundary = null, tool
     </DropdownMenuTrigger>
     {/* Closes with no exit animation, so a quick second press always reaches the tile. */}
     <DropdownMenuContent align="center" sideOffset={6} collisionPadding={8} collisionBoundary={boundary || undefined} aria-label={t("display.label")}
-      className={cn(FLOATING_SURFACE_CLASS, "w-44 data-[state=closed]:animate-none!")}>
+      className={cn(FLOATING_SURFACE_CLASS, gates.some(gate => gate.description) ? "w-64" : "w-44", "data-[state=closed]:animate-none!")}>
       <DropdownMenuLabel className="text-muted-foreground">{t("display.label")}</DropdownMenuLabel>
-      <DisplayMenuItems mode={mode} grid={grid} projection={projection} />
+      <DisplayMenuItems mode={mode} grid={grid} gates={gates} projection={projection} />
     </DropdownMenuContent>
   </DropdownMenu>;
 }

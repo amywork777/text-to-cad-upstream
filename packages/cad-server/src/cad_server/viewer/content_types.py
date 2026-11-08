@@ -35,9 +35,12 @@ _STATIC_CONTENT_TYPES = {
 # CAD files by path (/api/v1/local/files) and a document's source. Unknown -> octet-stream.
 #
 # Exactly the extensions that route can emit: the cataloged formats (scanner.SOURCE_EXTENSIONS,
-# scanner.is_served_cad_asset), each with its document type's MIME type (``cad.registry``).
+# scanner.is_served_cad_asset), each with its document type's MIME type (``cad.registry``), and the
+# pictures Studio's flat view shows (scanner.PICTURE_EXTENSIONS), which are no document type.
 _ASSET_CONTENT_TYPES = {extension: entry.mime for entry in DOCUMENT_TYPES.values() if entry.id != "xbf"
                         for extension in entry.extensions}
+_ASSET_CONTENT_TYPES.update({".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
+                             ".jpeg": "image/jpeg", ".webp": "image/webp"})
 
 
 def extension_of(file_path) -> str:

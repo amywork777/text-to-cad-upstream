@@ -6,6 +6,7 @@ import { createBoardRenderer } from "./board/index.js";
 import { createDxfRenderer } from "./dxf/index.js";
 import { createGlbRenderer } from "./glb/index.js";
 import { createMeshRenderer } from "./mesh/index.js";
+import { createPictureRenderer } from "./picture/index.js";
 import { createRobotRenderer } from "./robot/index.js";
 import { createSchematicRenderer } from "./schematic/index.js";
 import { createXbfRenderer } from "./xbf/index.js";
@@ -15,6 +16,7 @@ vi.mock("./board/BoardRenderer.jsx", () => ({ default: () => null }));
 vi.mock("./dxf/DxfRenderer.jsx", () => ({ default: () => null }));
 vi.mock("./glb/GlbRenderer.jsx", () => ({ default: () => null }));
 vi.mock("./mesh/MeshRenderer.jsx", () => ({ default: () => null }));
+vi.mock("./picture/PictureRenderer.jsx", () => ({ default: () => null }));
 vi.mock("./robot/RobotRenderer.jsx", () => ({ default: () => null }));
 vi.mock("./schematic/SchematicRenderer.jsx", () => ({ default: () => null }));
 vi.mock("./xbf/XbfRenderer.jsx", () => ({ default: () => null }));
@@ -48,6 +50,23 @@ describe("viewer renderer registrations", () => {
     for (const [path, id] of [["plate.dxf", "dxf"], ["blinky.kicad_pcb", "board"], ["divider.kicad_sch", "schematic"], ["arm.glb", "glb"], ["arm.stl", "mesh"], ["bot.urdf", "robot"]]) {
       expect(selectRenderer(renderers, file(path, "cad"))?.id).toBe(id);
     }
+  });
+
+  it("opens a drawing's PDF and a picture in the picture renderer, and no CAD file in it", () => {
+    const renderers = [createDxfRenderer({ client }), createGlbRenderer({ client }), createMeshRenderer({ client }),
+      createPictureRenderer({ client }), createRobotRenderer({ client }), createXbfRenderer({ client })];
+    for (const path of ["drawings/bracket.pdf", "docs/render.PNG", "photo.jpg", "photo.jpeg", "shot.webp"]) {
+      expect(selectRenderer(renderers, file(path, "cad"))?.id).toBe("picture");
+    }
+    for (const path of ["plate.dxf", "part.step", "arm.glb"]) expect(selectRenderer(renderers, file(path, "cad"))?.id).not.toBe("picture");
+  });
+
+  it("opens a CAM result (part.cam.glb) in the GLB renderer, which draws its job", () => {
+    const glb = createGlbRenderer({ client: {} as never });
+    const mesh = createMeshRenderer({ client: {} as never });
+    const xbf = createXbfRenderer({ client: {} as never });
+    expect(selectRenderer([xbf, mesh, glb], file("part.cam.glb", "cad"))).toBe(glb);
+    expect(selectRenderer([xbf, mesh, glb], file("/work/out/Bracket.CAM.GLB", "cad"))).toBe(glb);
   });
 
   it("prepares every workspace file from its catalog entry alone, and its document releases the render session it opened", async () => {

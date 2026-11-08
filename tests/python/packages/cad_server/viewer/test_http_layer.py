@@ -236,7 +236,8 @@ class ServerInfo(HttpLayerTestCase):
         self.assertEqual(json.loads(self.fixture.request("GET", "/api/v1/server")[2])["instance"], info["instance"])
         # Where an update a click started is, and the kinds of documents it reads with what each exports.
         self.assertIn(info["update"]["state"], ("idle", "working", "restarting", "failed"))
-        self.assertEqual(info["kinds"]["reads"], ["model", "xbf", "step", "stl", "glb", "3mf", "dxf", "urdf", "srdf", "sdf", "kicad_pcb", "kicad_sch"])
+        self.assertEqual(info["kinds"]["reads"], ["model", "xbf", "step", "stl", "glb", "3mf", "dxf", "urdf", "srdf", "sdf", "kicad_pcb", "kicad_sch",
+                                                  "pdf", "picture"])
         self.assertEqual(info["kinds"]["exports"]["xbf"], ["step", "stl", "threemf", "glb", "dxf", "original"])
         self.assertEqual(info["kinds"]["exports"]["dxf"], [])
 
@@ -357,6 +358,17 @@ class Documents(HttpLayerTestCase):
         self.assertIn("absolute path", body["error"])
         self.assertIn("hint", body)
 
+    def test_a_drawings_pdf_and_a_picture_are_documents_their_source_their_bytes(self):
+        # Studio's flat view marks them up as it does a DXF (`renderers/picture` in @cad/ui).
+        for name, kind in (("sheet.pdf", "pdf"), ("render.png", "picture"), ("photo.JPG", "picture")):
+            with self.subTest(name):
+                path = Path(self.fixture.tmp.name, name)
+                path.write_bytes(b"%PDF-1.7 or a picture's bytes")
+                [envelope] = self.by_path(path)[1]["documents"]
+                self.assertEqual((envelope["kind"], envelope["exports"]), (kind, []))
+                status, _, body = self.fixture.request("GET", f"{envelope['api']}/source")
+                self.assertEqual((status, body), (200, path.read_bytes()))
+
     def test_a_kind_route_on_a_document_of_another_kind_is_a_404_naming_its_kind(self):
         part = Path(self.fixture.tmp.name, "kinded.stl")
         part.write_bytes(b"solid p\nendsolid p\n")
@@ -369,8 +381,8 @@ class Documents(HttpLayerTestCase):
         status, _, body = self.fixture.request("GET", f"/api/v1/documents/stl/{envelope['id']}/structure")
         self.assertEqual((status, json.loads(body)["hint"]), (404, "a stl's routes are source"))
         # A kind that is none.
-        status, _, body = self.fixture.request("GET", "/api/v1/documents?kind=pdf")
-        self.assertEqual((status, json.loads(body)["error"]), (404, "no kind pdf"))
+        status, _, body = self.fixture.request("GET", "/api/v1/documents?kind=obj")
+        self.assertEqual((status, json.loads(body)["error"]), (404, "no kind obj"))
 
     def test_post_opens_a_file_as_a_document(self):
         part = Path(self.fixture.tmp.name, "opened.stl")

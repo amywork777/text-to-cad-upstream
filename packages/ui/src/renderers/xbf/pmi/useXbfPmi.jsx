@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { pmiCallText, pmiCallout, pmiChangeRequest, pmiChangeSettled, pmiEntryCall, pmiKey, pmiStatusText, readXbfPmi } from "@cad/core/lib/xbf/xbfPmi.js";
 import { pmiConstructions, pmiDrawnOnPart, pmiMovedPlacement, pmiPresentationToPart } from "@cad/core/lib/xbf/xbfPmiLayout.js";
 import { xbfElementId } from "@cad/core/lib/xbf/xbfScene.js";
@@ -7,6 +7,7 @@ import { xbfElementLabel } from "../xbfChips.jsx";
 import { newPmiName } from "./pmiCreate.js";
 import { PmiGlyph } from "./pmiGlyphs.jsx";
 import { createPmiRefResolver, pmiDrawnAt, pmiFeatureIds, resolvePmiEntryRefs } from "./pmiRefs.js";
+import { sameQuestions } from "./pmiReview.js";
 import { pmiViewAt, pmiViewFromHere, pmiViewPlacements, pmiViewShows } from "./pmiViews.js";
 
 // An engine document's PMI in the viewer: what the document carries (`structure.pmi`), found on
@@ -24,6 +25,11 @@ import { pmiViewAt, pmiViewFromHere, pmiViewPlacements, pmiViewShows } from "./p
 // annotation is drawn at the first occurrence of its part that is shown, and about the same faces
 // on each (`pmiRefs.js`); a view is seen from that occurrence (`pmiViews.js`), and while it is
 // picked only what it shows is drawn, where it places it.
+//
+// A part opens clean: nothing is drawn on it until it is asked for (`off`), and every row is listed
+// all the same. The section's eye asks for all of it, a view picked for its own until it is left,
+// a row's eye for that one; and what is made while the document is open is drawn as it lands
+// (`alone`), so a new annotation, asked for here or by the agent, is never out of sight.
 
 const EMPTY = Object.freeze([]);
 const NO_CHANGES = Object.freeze([]);
@@ -70,21 +76,41 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
     return served.notes.map(note => byKey.get(note.key));
   }, [served, entries]);
   // What coverage found of each part: the faces no requirement is on, found on the page on every
-  // occurrence of the part, and the requirements that cannot both hold.
+  // occurrence of the part, the requirements that cannot both hold, and each question it leaves open
+  // once (`sameQuestions`), with the faces it asks about found on the page.
   const coverage = useMemo(() => served.coverage.map(item => ({ ...item, partName: partNameOf(item.part),
-    faceIds: pmiFeatureIds({ part: item.part, refs: [{ ids: item.uncovered.flatMap(ref => resolver.resolve(ref)) }] }, instances) })),
+    faceIds: pmiFeatureIds({ part: item.part, refs: [{ ids: item.uncovered.flatMap(ref => resolver.resolve(ref)) }] }, instances),
+    questions: sameQuestions(item.suggestions).map(line => ({ ...line, key: `${item.part}:${line.said.kind}:${line.said.question}:${line.said.why}`,
+      refs: [{ ids: line.faces.flatMap(ref => resolver.resolve(ref)) }] })) })),
   [served, partNameOf, resolver, instances]);
 
   const [hoveredKey, setHoveredKey] = useState("");
   const [hiddenKeys, setHiddenKeys] = useState(EMPTY);
-  const [off, setOff] = useState(false);
+  const [off, setOff] = useState(true);
+  // What is drawn by itself while the rest are off: a row's eye asked for it, or it was just made.
+  const [alone, setAlone] = useState(EMPTY);
+  // What `off` stood at when a view picked turned the PMI on, given back as the view is left.
+  const [beforeView, setBeforeView] = useState(null);
   const [changes, setChanges] = useState(NO_CHANGES);
   const [datumFocus, setDatumFocus] = useState("");
   useEffect(() => { setDatumFocus(""); }, [selectedKey, structure]);
   const [viewKey, setViewKey] = useState("");
   const [uncoveredShown, setUncoveredShown] = useState(false);
+  // A coverage question under the pointer and the one picked: a pick of an annotation leaves it.
+  const [questionHovered, hoverQuestion] = useState("");
+  const [questionKey, setQuestionKey] = useState("");
+  useEffect(() => { if (selectedKey) setQuestionKey(""); }, [selectedKey]);
+  const pickQuestion = useCallback((key) => { setQuestionKey(now => (now === key ? "" : key)); onSelect(""); }, [onSelect]);
   const restore = useCallback((slice) => { setHiddenKeys(slice?.hidden || EMPTY); setOff(Boolean(slice?.off)); }, []);
   const known = useMemo(() => new Set(entries.map(entry => entry.key)), [entries]);
+  // Every annotation this open has seen, from its first scene: one a later build brings is new.
+  const seen = useRef(null);
+  useEffect(() => {
+    if (!structure) return;
+    const made = seen.current ? entries.filter(entry => !seen.current.has(entry.key)).map(entry => entry.key) : EMPTY;
+    seen.current = new Set([...(seen.current || []), ...known]);
+    if (made.length) setAlone(now => unique([...now, ...made]));
+  }, [structure, entries, known]);
   const selected = known.has(selectedKey) ? selectedKey : "";
   const hovered = known.has(hoveredKey) ? hoveredKey : "";
 
@@ -103,8 +129,17 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
     // The placed view's own values: a new structure that leaves them as they were keeps it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [JSON.stringify([viewed?.key, viewed?.place, viewed?.at, viewedBounds])]);
+  const leaveView = useCallback(() => {
+    setViewKey("");
+    if (beforeView !== null) { setOff(beforeView); setBeforeView(null); }
+  }, [beforeView]);
+  const chooseView = useCallback((key) => {
+    if (key === viewKey) { leaveView(); return; }
+    setViewKey(key);
+    if (beforeView === null) { setBeforeView(off); setOff(false); }
+  }, [viewKey, leaveView, beforeView, off]);
   // A view that can no longer be applied (gone from the document, or its part hidden) is left.
-  useEffect(() => { if (viewKey && !viewed) setViewKey(""); }, [viewKey, viewed]);
+  useEffect(() => { if (viewKey && !viewed) leaveView(); }, [viewKey, viewed, leaveView]);
 
   // A label dragged and not yet written stands where it was let go, until its change goes; in a view,
   // what the view places stands where it places it.
@@ -122,9 +157,18 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
     return pmiConstructions(drawn, { geometry: id => scene.elementGeometry(id, { points: true }), bounds, placements });
   }, [scene, moving, entries, drawnAt, bounds, placements]);
 
-  const shown = useCallback(key => !off && !hiddenKeys.includes(key), [off, hiddenKeys]);
-  // What the file's view keeps of it.
-  const slice = useMemo(() => ({ hidden: hiddenKeys, off }), [hiddenKeys, off]);
+  const shown = useCallback(key => !hiddenKeys.includes(key) && (!off || alone.includes(key)), [off, alone, hiddenKeys]);
+  // What the file's view keeps of it: the person's own choice, not a view's, and never `alone`, so it opens clean.
+  const slice = useMemo(() => ({ hidden: hiddenKeys, off: beforeView ?? off }), [hiddenKeys, beforeView, off]);
+  // The section's eye, the person's word on all of it: what a view or a row's eye had asked for goes with it.
+  const setAllOff = useCallback((next) => { setBeforeView(null); setAlone(EMPTY); setOff(next); }, []);
+  // A row's eye: while the rest are off it shows or lets go of that one alone.
+  const toggleHidden = useCallback((key) => {
+    if (!off) { setHiddenKeys(now => (now.includes(key) ? now.filter(item => item !== key) : [...now, key])); return; }
+    const showing = shown(key);
+    setHiddenKeys(now => (now.includes(key) ? now.filter(item => item !== key) : now));
+    setAlone(now => (showing ? now.filter(item => item !== key) : [...now, key]));
+  }, [off, shown]);
   // In a view, what it shows alone.
   const inView = useCallback(entry => !viewed || pmiViewShows(viewed, entry), [viewed]);
   const items = useMemo(() => (moving ? EMPTY : entries.filter(entry => constructions.has(entry.key) && shown(entry.key) && inView(entry)).map(entry => ({
@@ -146,10 +190,16 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
   const focusedDatum = entries.find(entry => entry.key === datumFocus && entry.kind === "datum" && entry.part === selectedEntry?.part) || null;
   // And, where asked, the faces no requirement is on.
   const uncoveredIds = useMemo(() => (uncoveredShown ? coverage.flatMap(item => item.faceIds) : EMPTY), [uncoveredShown, coverage]);
+  // And a question's faces, every one of them where a note's are, under the pointer or picked.
+  const questionIds = useMemo(() => unique(coverage.flatMap(item => item.questions
+    .filter(line => line.key === questionKey || line.key === questionHovered)
+    .flatMap(line => pmiDrawnAt({ part: item.part, refs: line.refs }, instances, shownParts)?.featureIds || EMPTY))),
+  [coverage, questionKey, questionHovered, instances, shownParts]);
   const highlight = useMemo(() => {
     const picks = drawnFeatureIds((focusedDatum || selectedEntry)?.key);
-    return { selected: uncoveredIds.length ? unique([...picks, ...uncoveredIds]) : picks, hovered: drawnFeatureIds(hovered)[0] || null };
-  }, [drawnFeatureIds, focusedDatum, selectedEntry, hovered, uncoveredIds]);
+    const also = [...uncoveredIds, ...questionIds];
+    return { selected: also.length ? unique([...picks, ...also]) : picks, hovered: drawnFeatureIds(hovered)[0] || null };
+  }, [drawnFeatureIds, focusedDatum, selectedEntry, hovered, uncoveredIds, questionIds]);
 
   // ---- changes: what Quick Edit hands the agent -------------------------------------------------
   const edit = useCallback((key, values, { placementOnly = false } = {}) => setChanges((now) => {
@@ -181,12 +231,14 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
   // where there is one.
   const parts = useMemo(() => unique(instances.map(instance => instance.prototype)).filter(Number.isInteger), [instances]);
   // "View from here": the viewport's camera and Clip now, as a view of `part` seen from its first
-  // occurrence shown (`pmiViewFromHere`), showing what of the part is drawn now.
+  // occurrence shown (`pmiViewFromHere`), showing what of the part is drawn now, or, while it is all
+  // off, what would be: a view made from a clean part is not a view of nothing.
   const viewFromHere = useCallback((part, name) => {
     const { camera, clip } = here();
-    const shows = items.filter(item => item.key === pmiKey(part, item.id)).map(item => item.id);
+    const shows = entries.filter(entry => entry.part === part && constructions.has(entry.key) && inView(entry)
+      && !hiddenKeys.includes(entry.key)).map(entry => entry.id);
     return pmiViewFromHere({ part, name, camera, clip, instances, shown: shownParts, shows, t });
-  }, [here, items, instances, shownParts, t]);
+  }, [here, entries, constructions, inView, hiddenKeys, instances, shownParts, t]);
   const remove = useCallback(key => setChanges(now => now.filter(change => change.key !== key)), []);
   const clearChanges = useCallback(() => setChanges(now => (now.length ? NO_CHANGES : now)), []);
   // Its placement's frame where it is drawn: a placement is written back in its part's frame.
@@ -219,11 +271,10 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, hiddenParts =
     select: onSelect, hover: setHoveredKey, datumFocus,
     // The views, each where it is seen from (`at`, null where its part is not shown); the one picked
     // (`viewKey`) and, placed, what applying it takes (`view`: `usePmiViewApplied`'s); a second pick leaves it.
-    views, viewKey: view ? viewKey : "", view, chooseView: key => setViewKey(now => (now === key ? "" : key)),
-    uncoveredShown, showUncovered: setUncoveredShown,
+    views, viewKey: view ? viewKey : "", view, chooseView,
+    uncoveredShown, showUncovered: setUncoveredShown, questionKey, hoverQuestion, pickQuestion,
     focusDatum: key => setDatumFocus(now => (now === key ? "" : key)),
-    hiddenKeys, off, setOff, restore,
-    toggleHidden: key => setHiddenKeys(now => (now.includes(key) ? now.filter(item => item !== key) : [...now, key])),
+    hiddenKeys, off, alone, setOff: setAllOff, restore, toggleHidden,
     slice,
     editable, placeable, changes, pending, edit, add, remove, clearChanges, move, pin, changeChips,
     parts, viewFromHere

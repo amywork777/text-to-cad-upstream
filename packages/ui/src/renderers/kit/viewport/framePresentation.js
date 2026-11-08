@@ -30,6 +30,18 @@ export function createFramePresentation({ canvas, renderMode, onPresent }) {
   };
 }
 
+/**
+ * The ground the viewport draws a scene on: the theme's, but a flat light canvas runs neutral from
+ * top to bottom, so a grey part's far corners stay on a ground lighter than they are. A viewer's
+ * choice: the dark canvas stays flat, and stills and thumbnails keep their own ground. The stage
+ * strokes a gradient over twice the texture's height (`createSceneBackgroundTexture`), so these
+ * stops show as their middle half, #f3f3f3 down to #dbdbdb.
+ */
+export function viewportGround(background, appearance) {
+  if (appearance !== "light" || background?.type !== "solid") return background;
+  return { ...background, type: "linear", linearStart: "#ffffff", linearEnd: "#cfcfcf", linearAngle: 90 };
+}
+
 export function viewerTransitionBackdrop({ renderMode, renderConfiguration, background, viewerTheme }) {
   const color = (renderMode ? renderConfiguration?.backdrop?.color : background?.solidColor)
     || viewerTheme?.sceneBackground || "#f1f5f9";

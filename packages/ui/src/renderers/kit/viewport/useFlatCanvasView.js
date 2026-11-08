@@ -9,8 +9,9 @@
  * trackpad's two-finger click and drag) and a primary drag with Ctrl, Cmd or Shift held pans, the
  * browser's menu kept off the picture; a press of either that does not travel is no tap. A mouse's
  * wheel zooms, as a pinch and a wheel with Cmd or Ctrl do; a trackpad's two-finger scroll pans, as
- * Figma's does (`wheelGesture.js`). Every flat view (a 2D drawing, a
- * board) is this one hook under its own paint.
+ * Figma's does (`wheelGesture.js`). Read as a page (`scroll`: a drawing's PDF, a picture), the wheel
+ * and a two-finger swipe scroll it instead, and a pinch or Cmd/Ctrl with the wheel zooms
+ * (`pageView.js`). Every flat view (a 2D drawing, a board) is this one hook under its own paint.
  *
  * The renderer brings the picture: `content` (a new one frames itself, unless this file's view is
  * already the person's), the `bounds` the fit frames (`@cad/core`'s plane maths,
@@ -47,8 +48,9 @@ import {
   zoomTransform
 } from "@cad/core/lib/drawing2d/transform.js";
 import { flatViewRecord, readFlatView } from "./flatView.js";
+import { pageFit, scrollPage } from "./pageView.js";
 import { IDLE_PIXEL_RATIO_CAP, getPixelRatioCap } from "./pixelRatio.js";
-import { createWheelGesture } from "./wheelGesture.js";
+import { createWheelGesture, wheelPixels } from "./wheelGesture.js";
 import { doubleClickFits } from "./dom.js";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
 
@@ -90,9 +92,13 @@ const wheelZoomFactor = (pixels, pinch) => Math.exp(-pixels * (pinch ? PINCH_WHE
  *   The fit: drawing2d's by default (a 16px gutter); a board's leaves more (`plot2d`'s `fitBoardBounds`).
  * @param {boolean} [options.clearStrip]  The fit keeps clear of the view's tool strip over its top, as a
  *   drawing's does: the room the frame measures as `--cad-tools-bottom`.
+ * @param {boolean} [options.scroll]  Read as a page is (`pageView.js`): it fits to its width when it
+ *   is much taller than the pane, clear of the tool strip, the wheel and a two-finger swipe scroll
+ *   it, and a pinch or Cmd/Ctrl with the wheel zooms. Without it the wheel is as above.
  */
 export function useFlatCanvasView({ content, bounds, restored = null, colorScheme = "light", onViewMoved, paint: paintFrame,
-  onTap = null, onHover = null, onDrag = null, onDoubleTap = null, middlePan = false, orbitPan = false, fitBox = fitTransform, clearStrip = false }) {
+  onTap = null, onHover = null, onDrag = null, onDoubleTap = null, middlePan = false, orbitPan = false, fitBox = fitTransform, clearStrip = false,
+  scroll = false }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
@@ -111,6 +117,8 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
   fitBoxRef.current = fitBox;
   const clearStripRef = useRef(clearStrip);
   clearStripRef.current = clearStrip;
+  const scrollRef = useRef(scroll);
+  scrollRef.current = scroll;
   const schemeRef = useRef(colorScheme);
   schemeRef.current = colorScheme;
   const onViewMovedRef = useRef(onViewMoved);
@@ -159,12 +167,16 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
     paint();
   }, [paint]);
 
-  /** The fit of the picture on a pane of `width` × `height`, clear of the view's strip where it keeps clear of it. */
-  const fitOn = useCallback((width, height) => {
-    const frame = clearStripRef.current ? containerRef.current?.closest?.("[data-slot=cad-file-view]") : null;
+  /** Where the view's tool strip ends, which the frame measures as `--cad-tools-bottom`, where the view keeps clear of it (a page always does). */
+  const stripBottom = useCallback(() => {
+    const frame = clearStripRef.current || scrollRef.current ? containerRef.current?.closest?.("[data-slot=cad-file-view]") : null;
     const strip = frame ? Number.parseFloat(getComputedStyle(frame).getPropertyValue("--cad-tools-bottom")) : 0;
-    return fitBoxRef.current(boundsRef.current, width, height, { top: Number.isFinite(strip) ? strip : 0 });
+    return Number.isFinite(strip) ? strip : 0;
   }, []);
+
+  /** The fit of the picture on a pane of `width` × `height`, clear of the view's strip where it keeps clear of it; a page's is `pageFit`. */
+  const fitOn = useCallback((width, height) => (scrollRef.current ? pageFit : fitBoxRef.current)(boundsRef.current, width, height,
+    { top: stripBottom() }), [stripBottom]);
 
   /**
    * A stored view (`flatView.js`'s record) on the pane as it is now: on a pane of the size it was framed in,
@@ -416,6 +428,13 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
       // The page must not scroll under a picture being moved, so this listener
       // is registered non-passive and always consumes the event.
       event.preventDefault();
+      // A page scrolls under the wheel and a two-finger swipe, its ends stopping it; a pinch (a ctrl-wheel) or Cmd zooms it.
+      if (scrollRef.current && !event.ctrlKey && !event.metaKey && boundsRef.current) {
+        const delta = wheelPixels(event);
+        const { width, height } = sizeRef.current;
+        moveTo(scrollPage(transform, -delta.x, -delta.y, boundsRef.current, width, height, { top: stripBottom() }));
+        return;
+      }
       const gesture = readWheel(event);
       if (gesture.pan) moveTo(panTransform(transform, gesture.pan.x, gesture.pan.y));
       else zoomBy(wheelZoomFactor(gesture.zoom, gesture.pinch), local(event));
@@ -445,7 +464,7 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("dblclick", onDoubleClick);
     };
-  }, [fit, moveTo, zoomBy]);
+  }, [fit, moveTo, stripBottom, zoomBy]);
 
   /** The framed picture as a PNG, the surface included: it is painted into the canvas. */
   const encode = useCallback((noun) => new Promise((resolve, reject) => {

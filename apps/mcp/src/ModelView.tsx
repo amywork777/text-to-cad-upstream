@@ -35,7 +35,8 @@ export interface ViewReporter {
  * Codex's file handler (`surface: file`, `alone`) shows its file alone (`chrome: "bare"`): the host's
  * own file tree is its navigation, so it has no navbar, no home and no file menu (no Open in › Browser); what the
  * navbar would carry that it still has (the update notice, Full size where the host offers it) is its
- * corner (`CardCorner`) at the viewport's top-right.
+ * corner (`CardCorner`) at the viewport's top-right. Every view of a host that opens files beside the
+ * thread itself (`openFiles`: Studio) is bare in the same way, with the agent's shows still shown.
  */
 export default function ModelView({ launch, sequence, alone = false, bridge, client, tunnel, tabStore, live, links, colorScheme, theme, locale, language, platform, reporter, sync, chat, appSettings, update, fullSize, whatsNew, openInBrowser, engineOrigin }: {
   launch: Launch; sequence: number; bridge: Bridge; tabStore: TabStore; live: LiveRegistry; links: ViewerLinks;
@@ -82,8 +83,11 @@ export default function ModelView({ launch, sequence, alone = false, bridge, cli
   engineOrigin?: string;
 }) {
   // Codex's file handler shows its file alone: the host's own file tree is its navigation, so it
-  // has neither the home nor the explorer (a source that cannot list or search offers none).
-  const homed = !alone;
+  // has neither the home nor the explorer (a source that cannot list or search offers none). So does
+  // every view of a host that opens files beside the thread (Studio): its file list and tabs are how
+  // a person moves between files, and its tab names the file, so a view of it has no navbar either.
+  const ownNavigation = Boolean(bridge.hostCapabilities.openFiles);
+  const homed = !alone && !ownNavigation;
   const source = useMemo(() => {
     const { list, search, ...alone } = createCadFileSource(client);
     return homed ? { ...alone, list, search } : alone;
@@ -162,10 +166,14 @@ export default function ModelView({ launch, sequence, alone = false, bridge, cli
     environment: { colorScheme, locale, platform },
   }), [client, source, fileActions, promptContext, promptFiles, links, colorScheme, locale, platform]);
 
+  // A host that opens files beside the thread (Studio) opens another in a tab of its own, from any of its
+  // views: a part opened from its assembly.
+  const openElsewhere = useMemo(() => (ownNavigation
+    ? (path: string) => void bridge.request('studio/open-file', { path }).catch(() => {}) : undefined), [ownNavigation, bridge]);
   // The navbar carries the host's controls; the file handler, which has none, has its corner: the
   // host's notice at the viewport's top-right, Quick Edit under it.
   // The file on screen joins the library every CAD view shares, with its picture.
-  return <CadViewer client={client} host={host} tabStore={tabStore} live={live} file={file} onShow={navigate} chrome={homed ? 'page' : 'bare'}
+  return <CadViewer client={client} host={host} tabStore={tabStore} live={live} file={file} onShow={navigate} openElsewhere={openElsewhere} chrome={homed ? 'page' : 'bare'}
     onShown={path => { if (path) void client.changeRecents({ action: 'open', path }).catch(() => {}); }}
     library={library} appSettings={appSettings} colorScheme={theme} language={language} history={viewerHistory} whatsNew={whatsNew}
     {...homed ? { update, fullSize } : { notice: <CardCorner fullSize={fullSize} update={update} /> }}

@@ -2,15 +2,16 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import PmiSection from '../../../../dist/renderers/xbf/pmi/PmiSection.js';
+import PmiSection, { coverageLine } from '../../../../dist/renderers/xbf/pmi/PmiSection.js';
 import { useXbfPmi } from '../../../../dist/renderers/xbf/pmi/useXbfPmi.js';
 import { usePmiViewApplied } from '../../../../dist/renderers/xbf/pmi/usePmiView.js';
 import { presentXbfTree } from '../../../../dist/renderers/xbf/xbfTree.js';
 import { createViewSettingsStore } from '../../../../dist/renderers/kit/view-settings/viewSettingsStore.js';
 import FlatPanel from '../../../../dist/renderers/kit/shell/FlatPanel.js';
+import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/floatingSurface.js';
 
 const restores: (() => void)[] = [];
 function override(target: object, key: string, descriptor: PropertyDescriptor) {
@@ -92,6 +93,7 @@ it('says a nominal another system\'s file gives as the file\'s, and one the engi
 const FIXTURES = join(dirname(createRequire(import.meta.url).resolve('@cad/core/lib/xbf/xbfDocument.js')), '__fixtures__');
 const V4 = JSON.parse(readFileSync(join(FIXTURES, 'pmi_plate', 'v4', 'structure.json'), 'utf8'));
 const V4_BOTTOM = 'plate/f:edit_plate.body_make_box1.5;M:edit_plate.body';
+const V4_TOP = 'plate/f:edit_plate.body_make_box1.6;M:edit_plate.body';
 const PLATE = { min: [-50, -30, -5], max: [50, 30, 5] };
 const EIGHTH_Z = [Math.SQRT1_2, Math.SQRT1_2, 0, 0, -Math.SQRT1_2, Math.SQRT1_2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const BEFORE = { position: [100, -100, 100], target: [0, 0, 0], up: [0, 0, 1] };
@@ -132,7 +134,9 @@ it('groups views, notes, coverage and annotations under static headings', () => 
   // The flag note its flag, the general profile its profile, a general note none.
   expect([...document.querySelectorAll('[data-pmi-note]')].map(row => row.querySelector('[data-pmi-glyph]')?.getAttribute('data-pmi-glyph') || ''))
     .toEqual(['surface_profile', '', 'flag']);
-  expect(within(screen.getByRole('region', { name: 'Coverage' })).getByText('Every face has a requirement')).toBeTruthy();
+  // Every face has a requirement, but a question stands: the count is not said beside it as the last word.
+  expect(within(screen.getByRole('region', { name: 'Coverage' })).queryByText('All faces covered, not verified')).toBeNull();
+  expect(within(screen.getByRole('region', { name: 'Coverage' })).getByText('What is the part made of?')).toBeTruthy();
   // The annotations as before, but the notes: limits stacked in words as the callout says them.
   expect([...screen.getByRole('region', { name: 'Annotations' }).querySelectorAll('[data-pmi-pick]')].map(row => row.getAttribute('aria-label')))
     .toEqual(['Datum A', '9.8–10.2', '⌀10.0 +0.1/0', '30 basic', '50 basic', 'Flatness 0.05', 'Position ⌀0.1 | A', 'Surface profile 0.2 | A']);
@@ -179,7 +183,7 @@ it('says there is no PMI yet only where a document has none at all, views includ
 
 it("a view's row applies its camera, section and PMI, and a second pick leaves it", () => {
   const { viewer, store, fit } = openMbd();
-  expect(drawnKeys()).toEqual(ALL_DRAWN);
+  expect(drawnKeys()).toEqual([]);
   const row = () => screen.getByRole('button', { name: 'A-A', exact: true });
   fireEvent.click(row());
   expect(row().getAttribute('aria-pressed')).toBe('true');
@@ -195,8 +199,86 @@ it("a view's row applies its camera, section and PMI, and a second pick leaves i
   expect(row().getAttribute('aria-pressed')).toBe('false');
   expect(viewer.setPerspective).toHaveBeenLastCalledWith(BEFORE);
   expect(store.getSnapshot().display.clip).toBeUndefined();
-  expect(drawnKeys()).toEqual(ALL_DRAWN);
+  expect(drawnKeys()).toEqual([]);
   expect(live.constructions.get('0:hole-diameter').label).toEqual([20, 15, 5]);
+});
+
+// The section's eye, as the line over its rows presses it.
+const pressEye = () => act(() => live.setOff(!live.off));
+
+it('a part opens clean, every row listed, and the eye shows and hides it all', () => {
+  openMbd();
+  expect(drawnKeys()).toEqual([]);
+  expect(rowsOf('Views')).toHaveLength(2);
+  expect(rowsOf('Annotations').length).toBeGreaterThan(0);
+  expect(live.slice).toEqual({ hidden: [], off: true });
+  pressEye();
+  expect(drawnKeys()).toEqual(ALL_DRAWN);
+  expect(live.slice).toEqual({ hidden: [], off: false });
+  pressEye();
+  expect(drawnKeys()).toEqual([]);
+});
+
+it('a saved slice is respected: shown stays shown, what it hid stays hidden', () => {
+  openMbd();
+  act(() => live.restore({ hidden: ['0:thickness'], off: false }));
+  expect(drawnKeys()).toEqual(ALL_DRAWN.filter(key => key !== '0:thickness'));
+  act(() => live.restore({ hidden: [], off: true }));
+  expect(drawnKeys()).toEqual([]);
+});
+
+it("a view picked shows its own, the file's view still saying off; the eye's word there outlasts the view", () => {
+  openMbd();
+  const row = () => screen.getByRole('button', { name: 'A-A', exact: true });
+  fireEvent.click(row());
+  expect(drawnKeys().length).toBeGreaterThan(0);
+  expect(live.slice.off).toBe(true);
+  pressEye();
+  expect(drawnKeys()).toEqual([]);
+  fireEvent.click(row());
+  expect(drawnKeys()).toEqual([]);
+  fireEvent.click(row());
+  fireEvent.click(row());
+  expect(drawnKeys()).toEqual([]);
+  pressEye();
+  expect(drawnKeys()).toEqual(ALL_DRAWN);
+  fireEvent.click(row());
+  fireEvent.click(row());
+  expect(drawnKeys()).toEqual(ALL_DRAWN);
+});
+
+it("a row's eye shows that one alone while the rest are off, and lets it go", () => {
+  openMbd();
+  const rowEye = () => document.querySelector<HTMLElement>('[data-pmi-visibility="thickness"]')!;
+  expect(rowEye().getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(rowEye());
+  expect(drawnKeys()).toEqual(['0:thickness']);
+  expect(rowEye().getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(rowEye());
+  expect(drawnKeys()).toEqual([]);
+});
+
+it('what a build adds while the part is open is drawn, on a clean part, and only that; a reopen is clean', () => {
+  const store = createViewSettingsStore({ mode: 'solid' });
+  const viewer = { getPerspective: () => BEFORE, setPerspective: () => true };
+  const shown = (structure: any) => <Mbd structure={structure} viewer={viewer} store={store} fit={() => null} />;
+  const before = structuredClone(V4);
+  const { rerender, unmount } = render(shown(before));
+  expect(drawnKeys()).toEqual([]);
+  const thickness = before.pmi.find((entry: any) => entry.id === 'thickness');
+  const after = { ...before, pmi: [...before.pmi, { ...thickness, id: 'just-made' }] };
+  rerender(shown(after));
+  expect(drawnKeys()).toEqual(['0:just-made']);
+  // The rollback bar's body and back: nothing it took away is new again.
+  rerender(shown({ ...after, pmi: after.pmi.filter((entry: any) => entry.id !== 'thickness') }));
+  rerender(shown(after));
+  expect(drawnKeys()).toEqual(['0:just-made']);
+  pressEye();
+  pressEye();
+  expect(drawnKeys()).toEqual([]);
+  unmount();
+  render(shown(after));
+  expect(drawnKeys()).toEqual([]);
 });
 
 it('the coverage checkbox lights the faces with no requirement', () => {
@@ -219,17 +301,27 @@ it('the coverage checkbox lights the faces with no requirement', () => {
   expect(live.highlight.selected).toEqual([]);
 });
 
-it('coverage asks what the requirements leave open, with the answer the engine suggests', () => {
+it('coverage asks what the requirements leave open, in plain words, never the call that would answer it', () => {
   // Test-owned: the engine's words, drawn as given; a question, never a warning.
   openMbd(structure => ({ ...structure, pmi_coverage: [{ part: 0, uncovered: [], conflicts: [],
-    suggestions: [{ kind: 'hole', faces: [V4_BOTTOM], question: 'What is the 9 mm hole for?',
-      answer: 'dimensional_size("hole-1-size", ...)', why: "9 mm is ISO 273's medium clearance hole for M8" }] }] }));
+    suggestions: ['hole-1-size', 'hole-2-size'].map(id => ({ kind: 'hole', faces: [`${V4_BOTTOM}:${id}`], question: 'What is the 9 mm hole for?',
+      answer: `dimensional_size("${id}", "${V4_BOTTOM}")`, why: "9 mm is ISO 273's medium clearance hole for M8" })) }] }));
   const coverage = within(screen.getByRole('region', { name: 'Coverage' }));
-  expect(coverage.getByText('What is the 9 mm hole for?')).toBeTruthy();
-  const answer = coverage.getByText('dimensional_size("hole-1-size", ...)');
-  expect(answer.tagName).toBe('CODE');
+  // Two like holes ask one question, once, with its count; why it asks is the line's tooltip.
+  const suggestion = coverage.getByText('What is the 9 mm hole for?');
+  expect(coverage.getByText('×2')).toBeTruthy();
+  expect(coverage.queryByText("9 mm is ISO 273's medium clearance hole for M8")).toBeNull();
   expect(coverage.queryByRole('status')).toBeNull();
-  expect(answer.closest('[data-pmi-suggestion]')?.getAttribute('data-pmi-suggestion')).toBe('hole');
+  expect(suggestion.closest('[data-pmi-suggestion]')?.getAttribute('data-pmi-suggestion')).toBe('hole');
+  expect(screen.queryByText(/dimensional_size/)).toBeNull();
+  expect(document.querySelector('code')).toBeNull();
+});
+
+it('sits on the FeatureManager\'s opaque card in the tool stack', () => {
+  const opaque = (element: Element) => WORKSPACE_SURFACE_CLASS.split(' ').every(name => element.classList.contains(name))
+    && ![...element.classList].some(name => /^(bg-background\/|backdrop-)/.test(name));
+  openMbd();
+  expect(opaque(document.querySelector('[data-tool-panel-id="pmi"]')!)).toBe(true);
 });
 
 it("a view whose section is off the placement's axes says so and applies its camera alone", () => {
@@ -359,4 +451,45 @@ it("a limits dimension's tolerance field reads back as its limits, and limits ty
   await user.clear(field);
   await user.type(field, '9.9 to 10.2{Enter}');
   expect(requests()).toEqual([expect.stringMatching(/^Change the PMI "thickness" .*: tolerance=limits\(9\.9, 10\.2\)\. .*tolerance=limits\(9\.9, 10\.2\)/s)]);
+});
+
+it('a question wraps, and lights every face that asks it under the pointer or picked', () => {
+  const ask = (face: string) => ({ kind: 'hole', faces: [face], question: 'What is the 9 mm hole for?', answer: 'clearance', why: 'a shop reads it' });
+  openMbd(structure => ({ ...structure, pmi_coverage: [{ part: 0, uncovered: [], conflicts: [], suggestions: [V4_BOTTOM, V4_TOP].map(ask) }] }));
+  const faces = ['i0/face/5', 'i0/face/3'];
+  const row = () => screen.getByText('What is the 9 mm hole for?').closest('[data-pmi-suggestion]') as HTMLElement;
+  expect(screen.getByText('What is the 9 mm hole for?').className).not.toContain('truncate');
+  expect(live.highlight.selected).toEqual([]);
+  fireEvent.mouseEnter(row());
+  expect(live.highlight.selected).toEqual(faces);
+  fireEvent.mouseLeave(row());
+  expect(live.highlight.selected).toEqual([]);
+  const pick = () => within(row()).getByRole('button');
+  fireEvent.click(pick());
+  expect(pick().getAttribute('aria-pressed')).toBe('true');
+  expect(live.highlight.selected).toEqual(faces);
+  // An annotation picked leaves it.
+  fireEvent.click(screen.getByRole('button', { name: 'Datum A', exact: true }));
+  expect(pick().getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(pick());
+  fireEvent.click(pick());
+  expect(live.highlight.selected).toEqual([]);
+});
+
+it('a note reads in full, however long', () => {
+  openMbd();
+  const note = screen.getByText('3. Mask these features before coating with primer');
+  expect(note.className).not.toContain('truncate');
+  expect((note.closest('[data-pmi-note]') as HTMLElement).style.height).toBe('auto');
+});
+
+it("says coverage is not verification, and gives no last word while a question stands", () => {
+  const t = (key: string, values?: { count: number }) => `${key}${values ? `:${values.count}` : ''}`;
+  const item = (patch = {}) => ({ partName: 'Clip', uncovered: [], suggestions: [], conflicts: [], ...patch });
+  expect(coverageLine(item(), false, t)).toBe('pmi.coverageAll');
+  expect(coverageLine(item(), true, t)).toBe('Clip: pmi.coverageAll');
+  expect(coverageLine(item({ suggestions: [{ kind: 'datum' }] }), false, t)).toBe('');
+  expect(coverageLine(item({ suggestions: [{ kind: 'datum' }] }), true, t)).toBe('Clip');
+  expect(coverageLine(item({ conflicts: [{ kind: 'overlap' }] }), false, t)).toBe('');
+  expect(coverageLine(item({ uncovered: ['a', 'b'], suggestions: [{ kind: 'datum' }] }), false, t)).toBe('pmi.coverageMany:2');
 });

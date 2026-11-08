@@ -3,7 +3,7 @@ import { ANNOTATION_HIDDEN_OPACITY } from "@cad/core/common/annotation.js";
 import { cn } from "@cad/ui/utils";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
 import PmiLabel, { PMI_STATUS_TOKENS } from "./PmiLabel.jsx";
-import { separateLabels } from "./separateLabels.js";
+import { labelInView, separateLabels } from "./separateLabels.js";
 
 // An engine document's PMI over the viewport: each annotation's label, a few words at the UI's
 // size whatever the zoom, standing where its construction puts it (`xbfPmiLayout.js`) -- set apart
@@ -27,6 +27,18 @@ const ARROW_PX = 7, ARROW_HALF_PX = 2.6, DATUM_PX = 6;
 const FINE_SLOP_PX = 4, COARSE_SLOP_PX = 12;
 // How far a distance's words stand off its dimension line.
 const LABEL_CLEAR_PX = 6;
+// A label's margin from the edge of the view.
+const VIEW_MARGIN_PX = 8;
+// What is drawn over the view, which a label keeps out from under: the tools' strip, the file's panel, the corner's boxes and the cube.
+const OVER_VIEW = "[data-cad-top-controls], aside[data-cad-file-sidebar][data-open], [data-file-sidebar-tools], [data-viewport-notice], [data-quick-edit-box], [data-cad-view-cube]";
+
+// What covers the overlay `root`, each rectangle in its pixels.
+function viewCovers(root) {
+  const within = root.getBoundingClientRect();
+  return [...(root.closest("[data-cad-scene-backdrop]") || root).querySelectorAll(OVER_VIEW)].map(element => element.getBoundingClientRect())
+    .filter(box => box.width > 0 && box.height > 0)
+    .map(box => ({ left: box.left - within.left, right: box.right - within.left, top: box.top - within.top, bottom: box.bottom - within.top }));
+}
 
 const projectWith = (THREE, camera, width, height) => {
   const scratch = new THREE.Vector3();
@@ -69,13 +81,17 @@ function datumTriangle(context, base, from, hollow = false) {
   if (hollow) context.stroke(); else context.fill();
 }
 
-function drawItem(context, item, at, inks) {
-  const color = item.status !== "ok" ? inks[item.status] || inks.ok : item.selected ? SELECTED_COLOR : inks.ok;
+// The canvas's thin halo either side of a line, so a leader survives on any face.
+const HALO_PX = 1;
+
+// `halo`: this pass draws the item's halo in that colour, under the ink's own pass.
+function drawItem(context, item, at, inks, halo = null) {
+  const color = halo || (item.status !== "ok" ? inks[item.status] || inks.ok : item.selected ? SELECTED_COLOR : inks.ok);
   context.strokeStyle = color;
   context.fillStyle = color;
   const alpha = item.hovered || item.selected ? 1 : 0.85;
   context.globalAlpha = alpha;
-  context.lineWidth = item.selected ? 1.5 : 1;
+  context.lineWidth = (item.selected ? 1.5 : 1) + (halo ? HALO_PX * 2 : 0);
   context.setLineDash(item.status !== "ok" ? [4, 3] : []);
   const line = (a, b) => { if (!a || !b) return; context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke(); };
   if (at.dimension) {
@@ -177,6 +193,11 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
       const style = getComputedStyle(root);
       const inks = { ok: style.color || "#888" };
       for (const [status, token] of Object.entries(PMI_STATUS_TOKENS)) inks[status] = style.getPropertyValue(token).trim() || inks.ok;
+      // The viewport's colour, for the halo round leaders and bare dimensions; none on a clear one.
+      const backdrop = root.closest("[data-cad-scene-backdrop]");
+      const ground = backdrop ? getComputedStyle(backdrop).backgroundColor : "";
+      const halo = ground && !/^(transparent|rgba\(.*,\s*0\))$/.test(ground) ? ground : null;
+      root.style.setProperty("--pmi-halo", halo || "transparent");
       const project = projectWith(runtime.THREE, camera, width, height);
       // Where each label falls, then set apart where two would cover one another (a dimension's
       // stays on its line, and a dragged one where the pointer has it).
@@ -208,7 +229,19 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
         Object.assign(entry.box, { x: mid.x + out.x * reach, y: mid.y + out.y * reach });
       }
       const shown = drawn.filter(entry => entry.label);
-      separateLabels(shown.map(entry => entry.box)).forEach((at, index) => Object.assign(shown[index].box, at));
+      // A label whose feature is in the view stands where it can be read, whatever its construction says; with its
+      // feature out of the view it goes with it, as a zoom in means it to. Never the one in the pointer's hand.
+      const area = { left: VIEW_MARGIN_PX, top: VIEW_MARGIN_PX, right: width - VIEW_MARGIN_PX, bottom: height - VIEW_MARGIN_PX };
+      const covers = viewCovers(root);
+      for (const { item, box } of shown) {
+        const feature = project(item.construction?.anchor) || box;
+        if (drag?.key === item.key || feature.x < 0 || feature.x > width || feature.y < 0 || feature.y > height) continue;
+        const at = labelInView(box, area, covers);
+        if (at.x !== box.x || at.y !== box.y) Object.assign(box, at, { movable: true });
+      }
+      separateLabels(shown.map(entry => entry.box), area).forEach((at, index) => Object.assign(shown[index].box, at));
+      // Every halo first, so none is drawn over another item's ink.
+      const inked = [];
       for (const { item, element, label, box } of drawn) {
         if (!element) continue;
         if (!label) { element.style.visibility = "hidden"; continue; }
@@ -221,9 +254,11 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
           extensions: construction.dimension.extensions.map(([a, b]) => [project(a), project(b)]),
           behind: construction.dimension.extensions.map(([a]) => behind(a))
         } : null;
-        drawItem(context, item, { anchor: project(construction?.anchor), box, dimension, broken: Boolean(construction?.broken),
-          behind: !construction?.broken && !construction?.dimension && behind(construction?.anchor) }, inks);
+        inked.push([item, { anchor: project(construction?.anchor), box, dimension, broken: Boolean(construction?.broken),
+          behind: !construction?.broken && !construction?.dimension && behind(construction?.anchor) }]);
       }
+      if (halo) for (const [item, at] of inked) drawItem(context, item, at, inks, halo);
+      for (const [item, at] of inked) drawItem(context, item, at, inks);
       context.globalAlpha = 1;
       context.setLineDash([]);
     };
@@ -285,7 +320,7 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
     element.addEventListener("pointercancel", cancel);
   };
 
-  return <div ref={rootRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden text-foreground" style={{ "--pmi-selected": SELECTED_COLOR }} data-cad-pmi="">
+  return <div ref={rootRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden text-foreground" style={{ "--pmi-selected": SELECTED_COLOR, "--pmi-halo": "transparent" }} data-cad-pmi="">
     <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />
     {items.map(item => <button key={item.key} type="button" ref={node => { if (node) labels.current.set(item.key, node); else labels.current.delete(item.key); }}
       tabIndex={interactive ? 0 : -1} aria-label={`${item.callout.text}${item.problem ? `: ${item.problem}` : ""}`} aria-pressed={item.selected}

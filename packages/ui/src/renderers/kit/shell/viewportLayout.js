@@ -1,5 +1,13 @@
 import { CHROME_INSET_PX, CORNER_INSET_PX } from "../../../lib/chromeInset.js";
 
+// The line a result's readouts centre on at the view's bottom (an FEA result's colour bar, a CAM
+// result's readout). A host whose own control floats over the view's bottom edge (a chat's composer)
+// lines them up with it by setting `--cad-viewport-bottom-center`.
+export const VIEWPORT_BOTTOM_CENTER = "var(--cad-viewport-bottom-center, 1.75rem)";
+// How far those readouts step up in Preview while its playbar is under the model (`PreviewPlaybar.jsx`: 1rem
+// off the bottom, about 2rem tall).
+export const PREVIEW_PLAYBAR_CLEARANCE = "1.75rem";
+
 // The chrome's inset from the viewer's edges: the gap between the tool strip and the stack under
 // it, so the strip sits as far from the corner as the panels sit from the strip.
 export const VIEWPORT_INSET_PX = CHROME_INSET_PX;
@@ -12,7 +20,7 @@ export const VIEWPORT_TOP_BAR_PX = 34;
 // `--cad-viewport-corner-bottom`, the room that control takes from the bottom edge. Hosts can also
 // choose the left corner with `--cad-viewport-corner-left` and `--cad-viewport-corner-right`
 // (ViewPlaneControl), and the corner's pill follows it (`viewCornerLayout`); the default is the right.
-export const VIEWPORT_CUBE_SIZE = "6rem";
+export const VIEWPORT_CUBE_SIZE = "7.5rem";
 export const VIEWPORT_CORNER_INSET_PX = 2;
 export const VIEWPORT_CUBE_BOTTOM_PX = 8;
 export const VIEWPORT_CUBE_BOTTOM = `calc(${VIEWPORT_CUBE_BOTTOM_PX}px + var(--cad-viewport-corner-bottom, 0px))`;

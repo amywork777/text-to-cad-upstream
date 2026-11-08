@@ -96,24 +96,64 @@ KERNEL_NOTICE = "loading the CAD kernel for the first time in this environment, 
 # --- the worker's memory cap ----------------------------------------------------------------------
 
 
-def resident_mb() -> float | None:
-    """This process's resident memory now, in MiB; None where the platform will not say."""
+def footprint_mb(pid: int) -> float | None:
+    """The memory the system charges process ``pid``, in MiB, its compressed and swapped pages with
+    it, as Activity Monitor shows it; None where the platform will not say."""
     try:
         if sys.platform == "darwin":
             import ctypes
 
-            class Info(ctypes.Structure):  # mach_task_basic_info
-                _fields_ = [("virtual_size", ctypes.c_uint64), ("resident_size", ctypes.c_uint64),
-                            ("resident_size_max", ctypes.c_uint64), ("user_time", ctypes.c_uint32 * 2),
-                            ("system_time", ctypes.c_uint32 * 2), ("policy", ctypes.c_int32),
-                            ("suspend_count", ctypes.c_int32)]
+            class Usage(ctypes.Structure):  # rusage_info_v0
+                _fields_ = [("uuid", ctypes.c_uint8 * 16),
+                            *((name, ctypes.c_uint64) for name in (
+                                "user_time", "system_time", "pkg_idle_wkups", "interrupt_wkups", "pageins",
+                                "wired_size", "resident_size", "phys_footprint", "proc_start_abstime",
+                                "proc_exit_abstime"))]
 
-            system = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
-            info, count = Info(), ctypes.c_uint32(ctypes.sizeof(Info) // 4)
-            task = ctypes.c_uint32.in_dll(system, "mach_task_self_")
-            if system.task_info(task, 20, ctypes.byref(info), ctypes.byref(count)) != 0:  # MACH_TASK_BASIC_INFO
+            usage = Usage()
+            if ctypes.CDLL("/usr/lib/libSystem.B.dylib").proc_pid_rusage(pid, 0, ctypes.byref(usage)) != 0:
                 return None
-            return info.resident_size / 2**20
+            return usage.phys_footprint / 2**20
+        if sys.platform.startswith("linux"):
+            with open(f"/proc/{pid}/status", encoding="ascii") as handle:
+                held = [line.split() for line in handle if line.startswith(("VmRSS:", "VmSwap:"))]
+            return sum(int(row[1]) for row in held) / 2**10
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            class Counters(ctypes.Structure):  # PROCESS_MEMORY_COUNTERS
+                _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                            *((name, ctypes.c_size_t) for name in (
+                                "PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
+                                "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage",
+                                "PagefileUsage", "PeakPagefileUsage"))]
+
+            kernel = ctypes.windll.kernel32
+            kernel.OpenProcess.restype = wintypes.HANDLE
+            kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            if not handle:
+                return None
+            try:
+                counters = Counters()
+                counters.cb = ctypes.sizeof(Counters)
+                info = ctypes.windll.psapi.GetProcessMemoryInfo
+                info.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+                info.restype = wintypes.BOOL
+                return counters.PagefileUsage / 2**20 if info(handle, ctypes.byref(counters), counters.cb) else None
+            finally:
+                kernel.CloseHandle(handle)
+    except Exception:  # noqa: BLE001 - a platform that will not say has no ceiling
+        return None
+    return None
+
+
+def resident_mb() -> float | None:
+    """This process's resident memory now, in MiB; None where the platform will not say."""
+    try:
+        if sys.platform == "darwin":
+            return footprint_mb(os.getpid())  # resident alone: macOS compresses a growing process out of it
         if sys.platform.startswith("linux"):
             with open("/proc/self/statm", encoding="ascii") as handle:
                 return int(handle.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 2**20
@@ -191,6 +231,23 @@ def rss_cap_mb() -> float | None:
             return value or None
     physical = _physical_mb()
     return None if physical is None else max(physical / 4, 2048.0)
+
+
+def memory_ceiling_mb() -> float | None:
+    """The memory one busy process may reach before the daemon stops its work (``Supervisor.ceiling``):
+    a build runs in native code, which no check of its own interrupts, and left alone it takes the
+    machine. ``CAD_ENGINE_WORKER_CEILING_MB`` (``0`` for none), else half the machine's memory, at
+    least 4 GiB. None: no ceiling."""
+    given = os.environ.get("CAD_ENGINE_WORKER_CEILING_MB", "").strip()
+    if given:
+        try:
+            value = float(given)
+        except ValueError:
+            value = -1.0
+        if value >= 0:
+            return value or None
+    physical = _physical_mb()
+    return None if physical is None else max(physical / 2, 4096.0)
 
 
 def request_cap(request: dict[str, Any]) -> float | None:

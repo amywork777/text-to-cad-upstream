@@ -20,7 +20,7 @@
 import { resolveLocale } from '@cad/ui/i18n/locale';
 import words from 'virtual:cad-shell-words';
 import { version } from '../../package.json';
-import { createBridge, HostError, type Bridge, type ToolResult } from './bridge';
+import { createBridge, HostError, type Bridge, type HostContext, type ToolResult } from './bridge';
 import { declaresOpenLinks } from './channel';
 import { readPresentation, type Presentation } from './presentation';
 import { readLaunch, toolText, type Launch } from './server';
@@ -130,6 +130,10 @@ export async function viaEngine(launch: Pick<Launch, 'browser' | 'engine'>, fetc
 /** The engine's CAD app, read and imported: its module starts it on `globalThis.__cadShell`. */
 export async function loadApp(shell: Pick<CadShell, 'bridge' | 'launch' | 'result'>,
   read: { tunnel?: typeof viaTunnel; engine?: typeof viaEngine } = {}): Promise<void> {
+  // Reading the app's code and starting it takes seconds, and a tab's view is opened afresh each time
+  // it comes to the front: the page says so meanwhile, in the viewer's word, rather than stay blank.
+  // The app's first render takes the line's place.
+  say(OPENING, shell.bridge.hostContext);
   const token = shell.result._meta?.['dev.texttocad/httpToken'];
   let code: string;
   try {
@@ -143,9 +147,33 @@ export async function loadApp(shell: Pick<CadShell, 'bridge' | 'launch' | 'resul
   await import(/* @vite-ignore */ url);
 }
 
-export function say(message: string) {
+/** What the page says while the app's code is read and started: the viewer's own word for a file opening. */
+export const OPENING = "Opening…";
+
+/** All a person reads when the app cannot start: what went wrong goes to the console, never onto the page. */
+export const COULD_NOT_OPEN = "The viewer couldn't open this.";
+
+/**
+ * One centered muted line on the page, the only thing the shell ever shows: that it is opening, or that
+ * it could not. No stylesheet has loaded
+ * here, so the line carries its own look, in the host's font and muted colour where it sent them
+ * (`host/hostTheme.ts`' standard names), on the host's theme so a dark window stays dark behind it.
+ */
+export function say(message: string, context: HostContext = {}) {
   const root = document.getElementById('root');
-  if (root) root.textContent = message;
+  if (!root) return;
+  const variables = (context.styles as { variables?: Record<string, unknown> } | undefined)?.variables;
+  const token = (name: string, otherwise: string) => {
+    const value = variables?.[name];
+    return typeof value === 'string' && value.trim() ? value.trim() : otherwise;
+  };
+  document.documentElement.style.colorScheme = context.theme ?? 'light dark';
+  const line = document.createElement('p');
+  line.textContent = message;
+  line.style.cssText = 'position:fixed;inset:0;margin:0;padding:0 24px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:13px;line-height:20px';
+  line.style.fontFamily = token('--font-sans', 'system-ui, -apple-system, "Segoe UI", sans-serif');
+  line.style.color = token('--color-text-secondary', 'GrayText');
+  root.replaceChildren(line);
 }
 
 /**
@@ -188,9 +216,19 @@ export function unconnected(bridge: Pick<Bridge, 'hostContext' | 'hostCapabiliti
   if (presentation === 'inline') bridge.notify('ui/notifications/size-changed', { height: NOTICE_HEIGHT });
 }
 
+/** Starts the shell; a start that fails says so plainly, and the console keeps why. */
 export async function start() {
-  const presentation = readPresentation();
   const bridge = createBridge(window.parent);
+  try {
+    await open(bridge);
+  } catch (error) {
+    console.error(error);
+    say(COULD_NOT_OPEN, bridge.hostContext);
+  }
+}
+
+async function open(bridge: CadShell['bridge']) {
+  const presentation = readPresentation();
   // What to show comes as the result of the tool that opened this view.
   const launched = new Promise<{ launch: Launch; result: ToolResult }>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('CAD was given nothing to show.')), 30_000);

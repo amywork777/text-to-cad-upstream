@@ -422,8 +422,9 @@ say "general".
 
 ## Review
 
-`cad model snapshot` draws a document's PMI as the viewer shows it, a broken one in red
-or amber at the place the code gave it; `pmi=off` draws the model alone, and
-`--view NAME` a named view ([snapshots](snapshot-review.md)). In the viewer, picking a callout or its row lights
+`cad model snapshot --display pmi` draws a document's PMI as the viewer shows it, a broken one
+in red or amber at the place the code gave it, and `--view NAME` a named view; without
+either it draws the model alone ([snapshots](snapshot-review.md)). The viewer opens a part
+clean too: its PMI section's eye shows them. In the viewer, picking a callout or its row lights
 its faces and shows its values: a toleranced dimension's limits, a tolerance's datums
 in order, and what uses each datum.

@@ -108,6 +108,9 @@ test("hidden-line and wireframe edges are light on a dark backdrop", () => {
     assert.equal(resolveViewSettings({ mode }).edges.color, "#253443");
   }
   assert.equal(resolveViewSettings({ mode: "solid" }, { appearance: "dark" }).edges.color, "#253443");
+  assert.deepEqual(resolveViewSettings({ mode: "solid" }, { appearance: "dark" }).edges.darkParts, { canvas: "#36393f", color: "#c9d3de" });
+  assert.equal(resolveViewSettings({ mode: "solid" }).edges.darkParts, undefined, "the light canvas: every part the one ink");
+  assert.equal(resolveViewSettings({ mode: "parts" }, { appearance: "dark" }).edges.darkParts, undefined, "Parts: not its authored colours");
 });
 
 test("Preview's custom lighting and background keep CAD edges off", () => {

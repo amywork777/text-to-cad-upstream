@@ -5,6 +5,7 @@ import { version } from '../package.json';
 import Connection from './Connection';
 import Notice, { noticeTranslator } from './Notice';
 import { createBridge, type HostContext, type ToolResult } from './host/bridge';
+import { applyHostTokens } from './host/hostTheme';
 import { createChannel, declaresServerTools } from './host/channel';
 import { readPresentation } from './host/presentation';
 import { createServer, PROTOCOL, readLaunch, toolText, type Launch } from './host/server';
@@ -44,6 +45,9 @@ function applyTheme(context: HostContext) {
   const dark = context.theme === 'dark';
   document.documentElement.classList.toggle('dark', dark);
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  // The host's own colours, where it sends them (`hostTheme.ts`).
+  const styles = context.styles as { variables?: Record<string, unknown> } | undefined;
+  applyHostTokens(document.documentElement.style, styles?.variables);
 }
 
 async function start() {

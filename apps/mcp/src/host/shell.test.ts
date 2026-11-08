@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { HostError } from './bridge';
-import { APP_ROUTE, Unconnected, loadApp, unconnected, viaEngine, viaTunnel } from './shell';
+import { APP_ROUTE, COULD_NOT_OPEN, OPENING, Unconnected, loadApp, say, unconnected, viaEngine, viaTunnel } from './shell';
 
 const encode = (text: string) => btoa(text);
 
@@ -75,4 +75,31 @@ it('a card its host carries no call for, and that cannot read the engine either,
   unconnected({ ...bridge, hostContext: {}, hostCapabilities: {} } as any, { ...launch, browser: undefined }, 'tabs', root);
   expect(root.textContent).toBe("This chat can't connect to CAD's engine. Ask your agent to open the model in your browser instead.");
   expect(root.querySelector('a')).toBeNull();
+});
+
+it('the shell\'s line wears the host\'s font and muted colour, on its theme, with no stylesheet to lean on', () => {
+  document.body.innerHTML = '<div id="root"></div>';
+  say(COULD_NOT_OPEN, { theme: 'dark', styles: { variables: { '--font-sans': 'Studio Sans', '--color-text-secondary': 'rgb(120, 120, 120)' } } });
+  const line = document.querySelector<HTMLElement>('#root p')!;
+  expect(line.textContent).toBe("The viewer couldn't open this.");
+  expect(line.style.fontSize).toBe('13px');
+  expect(line.style.fontFamily).toContain('Studio Sans');
+  expect(line.style.color).toBe('rgb(120, 120, 120)');
+  expect(document.documentElement.style.colorScheme).toBe('dark');
+  // A host that sent none still gets a sans line, never the browser's default serif.
+  say(COULD_NOT_OPEN);
+  expect(document.querySelector<HTMLElement>('#root p')!.style.fontFamily).toContain('sans-serif');
+  expect(document.querySelectorAll('#root p')).toHaveLength(1);
+});
+
+it('the page says it is opening while the app is read, never blank, in the host\'s theme', async () => {
+  document.body.innerHTML = '<div id="root"></div>';
+  let fail!: (error: Error) => void;
+  const reading = new Promise<string>((_resolve, reject) => { fail = reject; });
+  const shell = { bridge: { hostContext: { theme: 'dark' } }, launch: {}, result: { _meta: {} } } as any;
+  const loading = loadApp(shell, { tunnel: () => reading });
+  expect(document.querySelector('#root p')?.textContent).toBe(OPENING);
+  expect(document.documentElement.style.colorScheme).toBe('dark');
+  fail(new Error('gone'));
+  await expect(loading).rejects.toThrow('gone');
 });

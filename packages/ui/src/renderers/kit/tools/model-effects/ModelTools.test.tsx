@@ -12,10 +12,10 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const neutral = () => resolveViewSettings({});
 
 // The strip's tiles, as FloatingToolBar draws a tool with a `tile`, and a click-away target.
-function Strip({ store, settings = ['exploded', 'clip'] }: { store: ReturnType<typeof createViewSettingsStore>; settings?: string[] }) {
+function Strip({ store, settings = ['exploded', 'clip'], icons = null }: { store: ReturnType<typeof createViewSettingsStore>; settings?: string[]; icons?: Record<string, React.ReactNode> | null }) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const tools = useModelTools({ view: snapshot.scene.view, features: { settings }, store,
-    mesh: { bounds: { min: [0, 0, 0], max: [10, 10, 10] } }, disabled: false });
+    mesh: { bounds: { min: [0, 0, 0], max: [10, 10, 10] } }, disabled: false, icons });
   return <><div data-testid="model">model</div>{tools.tools.map(tool => <React.Fragment key={tool.id}>{tool.tile}</React.Fragment>)}</>;
 }
 
@@ -45,6 +45,15 @@ it('Explode and Clip are popovers from their tiles: a press opens the row under 
   // Clip's is its own, one open at a time as any popover.
   await user.click(screen.getByRole('button', { name: 'Clip', exact: true }));
   expect([row(), screen.getByRole('toolbar', { name: 'Clip controls' }) !== null]).toEqual([null, true]);
+});
+
+it('draws its tiles with the icons a renderer hands it, else the kit\'s', () => {
+  const store = createViewSettingsStore();
+  const { rerender } = render(<Strip store={store} />);
+  const glyph = (name: string) => screen.getByRole('button', { name, exact: true }).querySelector('[data-testid]')?.getAttribute('data-testid') ?? 'kit';
+  expect([glyph('Explode'), glyph('Clip')]).toEqual(['kit', 'kit']);
+  rerender(<Strip store={store} icons={{ exploded: <svg data-testid="cad-exploded" />, clip: <svg data-testid="cad-section" /> }} />);
+  expect([glyph('Explode'), glyph('Clip')]).toEqual(['cad-exploded', 'cad-section']);
 });
 
 it('what an effect sets stays on the model once its popover closes, its dot on the tile, until its Reset', async () => {

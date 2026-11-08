@@ -15,3 +15,12 @@ export const GLB_TOOL_MODES = createToolModes({
 export const GLB_DECLINED_LIVE_COMMANDS = Object.freeze({
   select: "A GLB's nodes are picked by a person in the viewport under Select, and Quick Edit names them (model.glb#n12, the file's nodes[12]); a command cannot select one. Control the camera and display settings instead."
 });
+
+/**
+ * What a host command a result's view (an FEA study's, a CAM job's) cannot carry out is told: its
+ * markers, readouts and paths are its own, and nothing in it is selected to clear.
+ */
+export const GLB_RESULT_LIVE = Object.freeze({ declined: Object.freeze({
+  ...GLB_DECLINED_LIVE_COMMANDS,
+  clearSelection: "A result's view selects nothing a command could clear: its markers, readouts and paths are its own. Control the camera and display settings instead."
+}) });

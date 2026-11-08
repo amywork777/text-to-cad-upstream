@@ -262,8 +262,9 @@ it('host commands a flat drawing cannot answer are declined in words', async () 
   expect(controller.setZoom).toBeUndefined();
 
   const fitted = painted.at(-1)!;
-  // A mouse's wheel (in lines, as Firefox's counts: a trackpad's fine pixel steps would pan) zooms.
-  fireEvent.wheel(canvas, { deltaY: -Math.log(0.5) / 0.0015 / 16, deltaMode: 1, clientX: 300, clientY: 300 });
+  // A drawing reads as a page: the plain wheel scrolls it, and ⌘ with a mouse's wheel (in lines, as
+  // Firefox's counts) zooms.
+  fireEvent.wheel(canvas, { deltaY: -Math.log(0.5) / 0.0015 / 16, deltaMode: 1, clientX: 300, clientY: 300, metaKey: true });
   await waitFor(() => expect(painted.at(-1)!.scale).toBeCloseTo(fitted.scale * 0.5, 6));
   await act(async () => { await controller.resetCamera(); });
   expect(painted.at(-1)).toEqual(fitted);
@@ -287,7 +288,10 @@ it('a drawing with layers and blocks has the docked panel and its Layers tab: a 
     .toEqual(['CUT', 'BEND', 'ENGRAVE', 'HARDWARE', 'CENTRE', '0']);
   fireEvent.click(list.querySelector('[data-layer-visibility="CENTRE"]')!);
   await waitFor(() => expect(painted.at(-1)!.hidden).toEqual(['CENTRE']));
-  // HARDWARE holds the two M5_NUT references; a click picks one, as a tap on the drawing would.
+  // HARDWARE holds the two M5_NUT references: a choice, so it opens folded, as every tree does;
+  // opened, a click on one picks it, as a tap on the drawing would.
+  expect(list.querySelectorAll('[data-insert-row]').length).toBe(0);
+  fireEvent.click(within(list).getByRole('button', { name: 'Expand HARDWARE' }));
   const inserts = [...list.querySelectorAll('[data-insert-row]')];
   expect(inserts.map(row => row.getAttribute('data-insert-row'))).toEqual(['99', '9B']);
   // Each its block's name, then its handle marked as one (the payload holds no insertion point).

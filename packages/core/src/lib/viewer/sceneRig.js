@@ -69,6 +69,30 @@ export function sceneRigFor(scene, look) {
   return (typeof scene.rigFor === "function" ? scene.rigFor(look) : scene.rig) || null;
 }
 
+// On the dark canvas a part has to stand out of the ground rather than off a bright page, so the
+// regular modes draw a small step brighter there, enough to lift the walls off the ground and no
+// more, so a part reads alike on both canvases; the theme's own rig takes the same step
+// (`themeSettings.js`). A viewer's choice: the engine's look, its stills and the parity page stay
+// as they are.
+export const DARK_CANVAS_EXPOSURE = 1.08;
+
+const onDarkCanvas = new WeakMap();
+
+/**
+ * The rig as `appearance` shows it: a regular mode's on the dark canvas `DARK_CANVAS_EXPOSURE`
+ * brighter, the one rig each time (a stage tells rigs apart by identity); X-ray's (a rig that
+ * blends) and every rig on the light canvas as it is.
+ */
+export function sceneRigInAppearance(rig, appearance) {
+  if (!rig || appearance !== "dark" || rig.blend) return rig;
+  let lifted = onDarkCanvas.get(rig);
+  if (!lifted) {
+    lifted = Object.freeze({ ...rig, id: `${rig.id}/dark`, exposure: Number(rig.exposure) * DARK_CANVAS_EXPOSURE });
+    onDarkCanvas.set(rig, lifted);
+  }
+  return lifted;
+}
+
 /** Whether a value is a rig a stage can put up: its lights, its exposure, a curve and a blend it knows. */
 export function isSceneRig(rig) {
   const environment = rig?.environment;

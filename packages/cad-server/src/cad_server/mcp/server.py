@@ -92,10 +92,12 @@ PROTOCOL = 9
 _PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 _RESOURCE_NOT_FOUND = -32002
 # The formats every surface opens, as the agent is told them and as a host's file handler offers them: a
-# cadgen engine document (XBF) among them, and a KiCad board and schematic.
+# cadgen engine document (XBF) among them, a KiCad board and schematic, and the drawings and pictures
+# Studio's flat view marks up.
 EXTENSIONS = sorted(set(VIEWER_EXTENSIONS))
 # File formats alone: a model, the one type with no file, is shown by its document id.
-FORMATS = ", ".join(entry.title for entry in DOCUMENT_TYPES.values() if entry.has_file)
+FORMATS = ", ".join([*(entry.title for entry in DOCUMENT_TYPES.values() if entry.has_file),
+                     "PDF", "PNG", "JPG", "WebP"])
 
 # How long a call that reads a view waits for one the agent just opened (a tab from cad_open, a card
 # from an inline cad_show) to sync for the first time: the host loads the page, then the page its

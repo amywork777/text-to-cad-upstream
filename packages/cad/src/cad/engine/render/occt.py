@@ -317,7 +317,7 @@ class Scene:
             if isinstance(rgba, str):  # a fill (Parts) keeps the part's opacity, as the viewer's does
                 part = self.prototypes[index].get("color") or ()
                 rgba = (*linear(rgba), float(part[3]) if len(part) > 3 else 1.0)
-            material, color = face_material(rgba, own)
+            material, color = face_material(rgba, own, preview=look == "pbr")
         source.SetMaterial(material)
         source.SetColor(color)
         aspect = source.Attributes().ShadingAspect().Aspect()

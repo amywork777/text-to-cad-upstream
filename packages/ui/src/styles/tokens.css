@@ -95,6 +95,24 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  /* Edit mode's CAD colors (`renderers/xbf/edit/`): what a feature does, as a CAD tool colors its
+   * commands and previews (material added, material taken away, a sketch), what is picked for a
+   * command, and its OK and Cancel. */
+  --color-cad-solid: var(--cad-solid);
+  --color-cad-solid-edge: var(--cad-solid-edge);
+  --color-cad-cut: var(--cad-cut);
+  --color-cad-sketch: var(--cad-sketch);
+  --color-cad-accent: var(--cad-accent);
+  --color-cad-picked: var(--cad-picked);
+  --color-cad-ok: var(--cad-ok);
+  --color-cad-cancel: var(--cad-cancel);
+  /* The workspace's pale blues (edit mode laid out for modeling by hand): what the pointer rests on
+   * (a toolbar button, a Part Navigator row, a timeline item) and what is pressed or selected. */
+  --color-cad-ws-panel: var(--cad-ws-panel);
+  --color-cad-ws-hover: var(--cad-ws-hover);
+  --color-cad-ws-selected: var(--cad-ws-selected);
+  /* What the agent made, as the timeline marks it with a dot (what you made is the muted foreground). */
+  --color-cad-agent: var(--cad-agent);
 }
 
 :root {
@@ -162,10 +180,10 @@
   --background-warning: oklch(0.962 0.059 95.617);
   --background-warning-hover: oklch(0.94 0.075 95.617);
   --border-warning: oklch(0.85 0.13 85);
-  --foreground-info: oklch(0.488 0.243 264.376);
-  --background-info: oklch(0.95 0.03 264);
-  --background-info-hover: oklch(0.92 0.045 264);
-  --border-info: oklch(0.8 0.1 264);
+  --foreground-info: #2c7197;
+  --background-info: oklch(0.95 0.03 236);
+  --background-info-hover: oklch(0.92 0.045 236);
+  --border-info: oklch(0.8 0.1 236);
   --surface-sunken: var(--secondary);
   --surface-sunken-hover: oklch(0.94 0 0);
   --surface-sunken-selected: var(--border);
@@ -178,6 +196,25 @@
   --surface-paper: var(--background);
   --surface-paper-hover: var(--secondary);
   --surface-paper-selected: oklch(0.94 0 0);
+
+  /* The ground while a file loads, the finished canvas's own (`themeSettings.js`): a host's, else the viewer's. */
+  --ui-loading-overlay: var(--model-ground, #f0f4f9);
+
+  --cad-solid: oklch(0.85 0.15 85);
+  --cad-solid-edge: oklch(0.5 0.11 70);
+  --cad-cut: oklch(0.62 0.2 25);
+  --cad-sketch: #2c7197;
+  --cad-accent: oklch(0.58 0.13 170);
+  --cad-picked: #62b7ec;
+  --cad-ok: oklch(0.58 0.15 150);
+  --cad-cancel: oklch(0.58 0.21 27);
+  /* The CAD workspace's hover and selection, made from the theme's accent so a host's theme reaches them. */
+  --cad-ws-panel: color-mix(in oklab, var(--background), black 5%);
+  --nx-blue: #2c7197;
+  --nx-line: var(--cad-ws-panel);
+  --cad-ws-hover: var(--accent);
+  --cad-ws-selected: color-mix(in oklab, var(--accent), var(--foreground) 8%);
+  --cad-agent: #7c3aed;
 }
 
 .dark {
@@ -210,7 +247,7 @@
   --canvas: oklch(0.235 0 0);
   --sidebar: oklch(0.30 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: #62b7ec;
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.38 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
@@ -240,10 +277,10 @@
   --background-warning: oklch(0.269 0.077 45.635);
   --background-warning-hover: oklch(0.31 0.085 45.635);
   --border-warning: oklch(0.5 0.12 70);
-  --foreground-info: oklch(0.75 0.15 264);
-  --background-info: oklch(0.27 0.06 264);
-  --background-info-hover: oklch(0.31 0.07 264);
-  --border-info: oklch(0.45 0.12 264);
+  --foreground-info: #62b7ec;
+  --background-info: oklch(0.27 0.06 236);
+  --background-info-hover: oklch(0.31 0.07 236);
+  --border-info: oklch(0.45 0.12 236);
   --surface-sunken: var(--background);
   --surface-sunken-hover: var(--card);
   --surface-sunken-selected: var(--secondary);
@@ -256,4 +293,22 @@
   --surface-paper: var(--card);
   --surface-paper-hover: var(--secondary);
   --surface-paper-selected: oklch(0.38 0 0);
+
+  --ui-loading-overlay: var(--model-ground, #36393f);
+
+  --cad-solid: oklch(0.8 0.14 85);
+  --cad-solid-edge: oklch(0.92 0.07 90);
+  --cad-cut: oklch(0.7 0.18 25);
+  --cad-sketch: #62b7ec;
+  --cad-accent: oklch(0.76 0.12 170);
+  --cad-picked: #62b7ec;
+  --cad-ok: oklch(0.74 0.17 150);
+  --cad-cancel: oklch(0.7 0.19 27);
+  /* The CAD workspace's hover and selection, made from the theme's accent so a host's theme reaches them. */
+  --cad-ws-panel: color-mix(in oklab, var(--background), black 32%);
+  --nx-blue: #62b7ec;
+  --nx-line: var(--cad-ws-panel);
+  --cad-ws-hover: var(--accent);
+  --cad-ws-selected: color-mix(in oklab, var(--accent), var(--foreground) 8%);
+  --cad-agent: #a78bfa;
 }

@@ -9,6 +9,7 @@ import {
 import { cn } from "@cad/ui/utils";
 import { useFlatPanel } from "../kit/shell/FlatPanel.jsx";
 import { LayerSwatch } from "../kit/inspector/layerRows.jsx";
+import { openUntilChoice } from "../kit/inspector/treeExpansion.js";
 import VirtualRows from "../kit/inspector/VirtualRows.jsx";
 import { useControlUsage } from "../../usage/controls.js";
 import { drawingReferenceId, layerRows } from "./drawingReferences.js";
@@ -29,6 +30,13 @@ function LayerEye({ name, hidden, onToggle }) {
   </TreeRowActions>;
 }
 
+/** A set of layer names with `name` in it if it was not, out of it if it was. */
+function flip(current, name) {
+  const next = new Set(current);
+  if (!next.delete(name)) next.add(name);
+  return next;
+}
+
 /** The layers a search keeps: a layer whose name matches, with all its block references, or one with a block that does (by
  * its block's name or its handle, `9C` or `#9C`), with those. */
 function searchRows(rows, query) {
@@ -47,9 +55,11 @@ function searchRows(rows, query) {
  * pen, its name, how many entities drew on it, and its eye, which hides or shows it in the view (a
  * hidden layer is not drawn and nothing on it is picked or snapped to) — and under a layer, the
  * block references placed on it, each a row of its block's name that selects it as a click on the
- * drawing does (Shift adds). Every layer row is two glyphs, so none starts with a gap: its slot, 16px
- * in, holds its chevron where blocks hang under it, else a layer's icon, and the box after it its
- * colour. A block reference's row stands in line with its layer's: its slot only the layer's guide
+ * drawing does (Shift adds). The layers open as every tree's nodes do (`kit/inspector/treeExpansion.js`):
+ * a layer with one block reference on it opens on it, one with several stays folded behind its
+ * chevron, and from the first layer the person opens or folds, the shape is theirs. Every layer row
+ * is two glyphs, so none starts with a gap: its slot, 16px in, holds its chevron where blocks hang
+ * under it, else a layer's icon, and the box after it its colour. A block reference's row stands in line with its layer's: its slot only the layer's guide
  * (under the chevron), its box its block's glyph (under the colour), its name under the layer's name.
  * While the panel's search is up, the layers whose names match and the blocks whose names do, opened:
  * the search decides which rows are candidates, and a layer's chevron folds and unfolds the hits under
@@ -68,23 +78,27 @@ export default function LayersSection({ drawing, hiddenLayers, onToggleLayer, se
   const all = useMemo(() => layerRows(drawing), [drawing]);
   const query = useFlatPanel()?.query.trim().toLowerCase() ?? "";
   const rows = useMemo(() => searchRows(all, query), [all, query]);
-  // A layer with block references on it opens on them; the person folds it from there. A search opens every
-  // layer it keeps on its hits, and what its chevrons fold then is the search's own, dropped as it is cleared.
-  const [folded, setFolded] = useState(() => new Set());
+  // The layers open until there is a choice (`openUntilChoice`): a layer with one block reference opens on it,
+  // one with several stays folded; once the person opens or folds one, the shape is theirs (`touched`). A search
+  // opens every layer it keeps on its hits, and what its chevrons fold then is the search's own, dropped as it is cleared.
+  const opened = useMemo(() => {
+    const open = openUntilChoice([{ name: "", inserts: all }], row => row.inserts, row => row.name);
+    open.delete("");
+    return open;
+  }, [all]);
+  const [touched, setTouched] = useState(null);
   const [searchFolded, setSearchFolded] = useState(() => new Set());
   useEffect(() => { if (!query) setSearchFolded(current => (current.size ? new Set() : current)); }, [query]);
   const chosen = useMemo(() => new Set(selection.selected), [selection.selected]);
-  const toggle = useCallback(name => (query ? setSearchFolded : setFolded)(current => {
-    const next = new Set(current);
-    if (!next.delete(name)) next.add(name);
-    return next;
-  }), [query]);
+  const toggle = useCallback(name => (query
+    ? setSearchFolded(current => flip(current, name))
+    : setTouched(current => flip(current || opened, name))), [query, opened]);
   // Each layer's row, then (opened) its block references', one flat list.
-  const shut = query ? searchFolded : folded;
+  const shown = touched || opened;
   const flat = useMemo(() => rows.flatMap(row => {
-    const open = row.inserts.length > 0 && !shut.has(row.name);
+    const open = row.inserts.length > 0 && (query ? !searchFolded.has(row.name) : shown.has(row.name));
     return [{ row, open }, ...(open ? row.inserts.map(insert => ({ row, insert })) : [])];
-  }), [rows, shut]);
+  }), [rows, query, searchFolded, shown]);
   const rowHeight = useTreeRowHeight();
   const renderRow = useCallback(at => {
     const { row, open, insert } = flat[at];

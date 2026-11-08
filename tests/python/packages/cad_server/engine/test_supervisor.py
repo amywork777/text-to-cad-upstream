@@ -61,6 +61,10 @@ class Fake:
         self.said.append(("stop", self.label))
         self.stopped = True
 
+    def kill(self) -> None:
+        self.said.append(("kill", self.label))
+        self.stopped = True
+
     def adopt(self, key: str, label: str, environment: dict, cwd: str | None) -> None:
         self.key, self.label, self.environment, self.cwd = key, label, environment, cwd
 
@@ -180,6 +184,20 @@ class SchedulingTest(unittest.TestCase):
         self.assertEqual(supervisor.shed(), [measured], "the unmeasured one frees nothing countable; the busy one stays")
         self.assertFalse(busy.stopped or unmeasured.stopped)
         self.assertEqual([row["reason"] for row in supervisor.retired], ["RSS", "pressure"])
+
+    def test_a_busy_process_past_the_ceiling_is_stopped_and_says_why(self) -> None:
+        supervisor = self.supervisor(8, memory=None)
+        idle = self.used(supervisor, "worker", "idle.py")[0]
+        busy = supervisor.lease("worker", "busy.py", {})
+        calm = supervisor.lease("worker", "calm.py", {})
+        held = {idle.pid: 90_000.0, busy.pid: 30_000.0, calm.pid: 2_000.0}
+        supervisor.measure = held.get
+        self.assertEqual(supervisor.overrun(), [], "no ceiling: nothing is stopped")
+        supervisor.ceiling = lambda: 24_576.0
+        self.assertEqual(supervisor.overrun(), [busy], "the idle are shed's; the busy under it go on")
+        self.assertIn("stopped at 29 GB of memory, over the 24 GB limit", busy.overran)
+        self.assertTrue(busy.stopped)
+        self.assertFalse(calm.stopped or idle.stopped)
 
     def test_a_count_cap_victim_is_the_lowest_ranked_idle_process(self) -> None:
         kept = Service("kept", ("{python}",), "kernel", "lease", WORDS, rank=4, noted=("script", "builds"))

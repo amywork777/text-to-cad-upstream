@@ -46,6 +46,13 @@ test("a file with clips is framed and lit on the box sampled over every pose", (
   assert.deepEqual([scene.bounds, scene.restBounds], [animatedBounds, animatedBounds]);
 });
 
+test("a renderer that draws the model larger than the file grows restBounds, and the scene's bounds follow at rest", () => {
+  const scene = createGlbScene(THREE, glbDocument().document);
+  const grown = { min: [-500, -500, -900], max: [500, 500, 500] };
+  scene.restBounds = grown;
+  assert.deepEqual(scene.bounds, grown);
+});
+
 test("Inspect wears the viewer's finish and keeps colour, map and opacity; Render restores the authored finish", () => {
   const { document, body, lid, steel, texture } = glbDocument();
   const scene = createGlbScene(THREE, document);
@@ -152,5 +159,9 @@ test("a GLB of two nodes explodes them apart, its box following, and back to whe
   assert.equal(scene.setExplode(1), false, "the same amount moves nothing");
   scene.setExplode(0);
   assert.deepEqual([lit.position.x, unlit.position.x, scene.bounds], [0, 2, document.restBounds]);
+  // A result's view grows the box it is drawn in (a deformation): its rest box, which the bounds read.
+  const grown = { min: [-3000, -500, -500], max: [3000, 500, 500] };
+  scene.restBounds = grown;
+  assert.deepEqual([scene.bounds, scene.restBounds], [grown, grown]);
   scene.dispose();
 });

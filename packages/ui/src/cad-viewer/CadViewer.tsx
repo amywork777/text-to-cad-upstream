@@ -61,6 +61,12 @@ export interface CadViewerProps<Model extends LibraryModel = LibraryModel> {
    */
   library?: ModelLibrarySource<Model>;
   /**
+   * Opens another file (absolute) in a view of the host's own, for a view with no library that
+   * shows its file alone but whose host can open others beside it (Studio's tabs): a renderer's
+   * link, a part opened from its assembly. Absent, such a view opens no other file.
+   */
+  openElsewhere?(file: string): void;
+  /**
    * Keep the library's picture of a model: the file on screen once it has settled, and on the home a
    * card's; `png.dark`, where the view drew one, is its dark theme's, kept beside it.
    */
@@ -109,7 +115,7 @@ const reportError = (error: Error) => console.error(error);
 
 /**
  * The CAD viewer every app shows: the shared FileViewer over one file at a time, by absolute path,
- * with its five renderers (an engine document, which a STEP opens as; DXF; GLB; STL/3MF; URDF/SRDF/SDF), the host's home (the model
+ * with its renderers (an engine document, which a STEP opens as; DXF; a KiCad board or schematic; GLB; STL/3MF; URDF/SRDF/SDF; a PDF or picture), the host's home (the model
  * library) wherever no file is open, and the standard loading and "File does not exist" pages. It
  * follows the catalog of the file on screen and refreshes it when the page is focused or shown
  * again. It keeps a picture of each model it shows for the library (`onThumbnail`), and on the home
@@ -118,7 +124,7 @@ const reportError = (error: Error) => console.error(error);
  * navigates: showing a file, or the home, is the host's `onShow`.
  */
 export function CadViewer<Model extends LibraryModel = LibraryModel>({ client, host, tabStore, live, file, onShow, onShown,
-  library, onThumbnail, colorScheme, language, appSettings, notice, update, fullSize, history, chrome, whatsNew, onError = reportError }: CadViewerProps<Model>) {
+  library, openElsewhere, onThumbnail, colorScheme, language, appSettings, notice, update, fullSize, history, chrome, whatsNew, onError = reportError }: CadViewerProps<Model>) {
   // The language the host names: the pages drawn here (the home, a file that will not open) read in it.
   const locale = host.environment.locale;
   const t = translator(locale);
@@ -206,7 +212,10 @@ export function CadViewer<Model extends LibraryModel = LibraryModel>({ client, h
   const keepExplorerFolder = useCallback((folder: string) => {
     if (preferences.getSnapshot().explorer.folder !== folder) preferences.update({ explorer: { folder } });
   }, [preferences]);
-  const viewerHost = useMemo<ViewerHost>(() => ({ ...host, navigation: homed ? { openFile, home } : {} }), [host, openFile, home, homed]);
+  const viewerHost = useMemo<ViewerHost>(() => ({
+    ...host,
+    navigation: homed ? { openFile, home } : openElsewhere ? { openFile: (next: string) => { if (next) openElsewhere(normalizePath(next)); } } : {},
+  }), [host, openFile, home, homed, openElsewhere]);
 
   // The home's pictures for cards without a current one, drawn out of sight one at a time and kept as
   // the file on screen's are. A STEP or a model's document the engine does not hold is left to

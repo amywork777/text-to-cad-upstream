@@ -227,9 +227,10 @@ _ENGINE_ROUTES = ("structure, parts/<key> (/faces|edges|vertices/<ordinal>, /gro
 # What each kind's collection answers, by how its document type is viewed (``cad.registry``).
 _VIEW_ROUTES = {"document": _ENGINE_ROUTES + ", source", "drawing": "drawing, source",
                 "robot": "structure, parts/<digest>, source", "mesh": "source", "plot": "plot, models, drc, source"}
-# A model's document has no file, so no source.
-_KIND_ROUTES = {entry.wire: _VIEW_ROUTES[entry.view] if entry.has_file else _ENGINE_ROUTES
-                for entry in DOCUMENT_TYPES.values()}
+# A model's document has no file, so no source. A drawing's PDF and a picture, no document type, are
+# their source alone, which Studio's flat view shows (``kinds.PICTURE_KINDS``).
+_KIND_ROUTES = {**{entry.wire: _VIEW_ROUTES[entry.view] if entry.has_file else _ENGINE_ROUTES
+                   for entry in DOCUMENT_TYPES.values()}, "pdf": "source", "picture": "source"}
 # This start of the engine: a page that sees another one (``GET /api/v1/server``'s ``instance``) is
 # served by an engine that restarted since it loaded. One per process, the engine's.
 INSTANCE = secrets.token_hex(8)
@@ -1029,7 +1030,141 @@ class CadApp:
             return self._methods(request, {"GET": lambda: send_json(response, 200, self.issue_link())})
         if rest == ["activity"] and self.analytics is not None:
             return self._methods(request, {"POST": lambda: self._activity(request, response)})
+        if rest == ["models"]:
+            return self._methods(request, {"GET": lambda: send_json(response, 200, self._studio_models(request.query))})
+        if route == "edit" and rest[1:] in (["state"], ["change"], ["face"]):
+            return self._methods(request, {"POST": lambda: self._handle_edit(request, response, rest[1])})
+        if route == "versions" and rest[1:] in ([], ["compare"], ["restore"]):
+            return self._methods(request, {"POST": lambda: self._handle_versions(request, response, rest[1:])})
+        if route == "sizes" and rest[1:] in ([], ["set"], ["add"]):
+            return self._methods(request, {"POST": lambda: self._handle_sizes(request, response, rest[1:])})
         raise ApiError(404, f"no route {request.path}", _ROUTES_HINT)
+
+    # --- Studio: models, edit mode, versions, sizes ----------------------------
+
+    def _studio_models(self, query) -> dict:
+        """``GET /api/v1/local/models?root=A&root=B``: project folders' models, every folder asked in
+        one read of the registry (``folder_models.py``)."""
+        from .folder_models import folders_models
+
+        roots = [value for name, value in query if name == "root"]
+        try:
+            answer = folders_models(self.recents.registry, roots)
+        except ValueError as error:
+            raise ApiError(400, str(error), "name each project folder as ?root=<its absolute path>") from error
+        if len(roots) == 1:
+            answer["models"] = answer["roots"][roots[0]]
+        return answer
+
+    @staticmethod
+    def _studio_payload(request, what: str) -> dict:
+        """A Studio request's JSON object, its body at most 64 KiB (a command names its faces and edges
+        with the geometry the viewer read of each)."""
+        CadApp._limit(request, 65536)
+        payload = json.loads(request.body() or b"{}")
+        if type(payload) is not dict:
+            raise ValueError(f"a {what} request is an object")
+        return payload
+
+    @staticmethod
+    def _studio_service():
+        """The edit service, its processes run in the CAD kernel's environment (``base.ensure``), which
+        this server's own process may not be."""
+        from cad.edit.service import kernel_python, shared_service, use_kernel
+        from cad_server._internal import base
+
+        if kernel_python() == sys.executable:
+            env = base.ensure(told=lambda line: None, engine=True)
+            if env is not None and not env.own:
+                use_kernel(env.python)
+        return shared_service()
+
+    def _handle_edit(self, request, response, action) -> None:
+        """``POST /api/v1/local/edit/{state,change,face}``: edit mode (``cad/edit``) -- the part script
+        read as a design, one number of it changed, the feature that made a face. The work is the edit
+        service's processes, never this one's. Its failures are answered, not reported as crashes:
+        nothing about edit mode goes into analytics."""
+        try:
+            payload = self._studio_payload(request, "an edit")
+            service = self._studio_service()
+            if action == "state" and payload.get("probe"):
+                # Whether the file has a part script to edit, answered without running it.
+                result = service.editable(str(payload.get("file") or ""))
+            elif action == "state":
+                result = service.state(str(payload.get("file") or ""), payload.get("files"), payload.get("bar"))
+            elif action == "face":
+                # The feature that made a face the viewer picked: from the engine's ``made_by``, or the trace's map.
+                result = service.face_feature(payload)
+            else:
+                result = service.change(payload)
+        except ApiError:
+            raise
+        except Exception as error:  # noqa: BLE001
+            result = {"ok": False, "error": str(error) or type(error).__name__}
+        send_json(response, 200, result)
+
+    def _handle_versions(self, request, response, rest) -> None:
+        """``POST /api/v1/local/versions[/compare|/restore]``: a part's versions (``cad/edit/versions.py``)
+        -- the versions of one file in the project's checkpoints, what changed between two of them, and
+        going back to one (what is on disk kept as a version first). Failures are answered, as edit
+        mode's are."""
+        try:
+            payload = self._studio_payload(request, "a versions")
+            from cad.edit import versions
+
+            self._studio_service()  # names the kernel's Python a comparison runs in
+            folder, path = str(payload.get("folder") or ""), str(payload.get("path") or "")
+            if rest == ["compare"]:
+                result = versions.compare(
+                    folder,
+                    path,
+                    str(payload.get("older") or ""),
+                    str(payload.get("newer") or ""),
+                    payload.get("texts") if type(payload.get("texts")) is list else None,
+                    model=str(payload.get("model") or "") or None,
+                    retry=payload.get("retry") is True,
+                )
+            elif rest == ["restore"]:
+                result = versions.restore(folder, path, str(payload.get("version") or ""))
+            else:
+                result = versions.versions(folder, path)
+        except ApiError:
+            raise
+        except Exception as error:  # noqa: BLE001
+            result = {"ok": False, "error": str(error) or type(error).__name__}
+        send_json(response, 200, result)
+
+    def _handle_sizes(self, request, response, rest) -> None:
+        """``POST /api/v1/local/sizes[/set|/add]``: Studio's Sizes (``cad/edit/sizes.py``) -- every named
+        size in a project's scripts, read without running them; one changed where it is written, the
+        parts that use its file then built again in the edit service's processes; a shared one added.
+        Failures are answered, as edit mode's are."""
+        try:
+            payload = self._studio_payload(request, "a sizes")
+            from cad.edit import sizes
+
+            folder = str(payload.get("folder") or "")
+            if rest == ["set"]:
+                result = sizes.set_size(
+                    folder,
+                    str(payload.get("file") or ""),
+                    str(payload.get("name") or ""),
+                    int(payload.get("line") or 0),
+                    str(payload.get("old") or ""),
+                    str(payload.get("text") or ""),
+                )
+                result = {**result, "building": self._studio_service().rebuild(Path(result["root"]), result["file"])}
+            elif rest == ["add"]:
+                result = sizes.add_shared(
+                    folder, str(payload.get("name") or ""), str(payload.get("text") or ""), str(payload.get("note") or "")
+                )
+            else:
+                result = sizes.sizes(folder)
+        except ApiError:
+            raise
+        except Exception as error:  # noqa: BLE001
+            result = {"ok": False, "error": str(error) or type(error).__name__}
+        send_json(response, 200, result)
 
     def _create_prompt_files(self, request, response) -> None:
         from .prompt_files import MAX_BODY_BYTES

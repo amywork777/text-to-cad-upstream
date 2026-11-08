@@ -22,6 +22,7 @@ import {
   getThemePresetById,
   RENDER_ONLY_THEME_PRESETS
 } from "./themeSettings.js";
+import { DARK_CANVAS_EXPOSURE } from "./viewer/sceneRig.js";
 
 const WORKBENCH_FILL_COLORS = Object.freeze([
   "#b6c4ce",
@@ -141,13 +142,14 @@ test("workbench-dark preset uses the workbench dark color treatment", () => {
   assert.equal(resolveThemeFillColor(dark.materials, 3), "#b6c4ce");
   assert.equal(Object.hasOwn(dark, "edges"), false);
   assert.equal(dark.background.type, "solid");
-  assert.equal(dark.background.solidColor, "#272727");
+  assert.equal(dark.background.solidColor, "#36393f");
   assert.equal(dark.background.linearStart, "#2e2e2e");
   assert.equal(dark.background.linearEnd, "#222222");
   assert.equal(dark.background.radialInner, "#2e2e2e");
   assert.equal(dark.background.radialOuter, "#222222");
   assert.equal(dark.floor.color, "#333333");
-  assert.deepEqual(dark.lighting, light.lighting);
+  assert.equal(dark.lighting.toneMappingExposure, light.lighting.toneMappingExposure * DARK_CANVAS_EXPOSURE);
+  assert.deepEqual({ ...dark.lighting, toneMappingExposure: 0 }, { ...light.lighting, toneMappingExposure: 0 });
   assert.equal(getThemePresetIdForSettings(dark), "workbench-dark");
 });
 

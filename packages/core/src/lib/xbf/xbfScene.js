@@ -92,6 +92,12 @@ function linearColor(THREE, rgba) {
   return new THREE.Color().setRGB(Number(rgba[0]) || 0, Number(rgba[1]) || 0, Number(rgba[2]) || 0, THREE.LinearSRGBColorSpace);
 }
 
+/** A linear colour's luminance. */
+const luminance = ({ r, g, b }) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+/** How bright a surface of a linear colour is drawn: its luminance raised to the power its look wears it at. */
+const drawnLuminance = (rgba, power) => luminance({ r: Number(rgba[0]) || 0, g: Number(rgba[1]) || 0, b: Number(rgba[2]) || 0 }) ** power;
+
 const finite = (value, fallback) => (Number.isFinite(Number(value)) && value !== null && value !== "" ? Number(value) : fallback);
 
 /**
@@ -392,7 +398,10 @@ export function createXbfScene(THREE, document) {
   };
   // Edges draw after the surfaces, in the transparent pass (a see-through X-ray surface would
   // otherwise wash out the edges under it), as a STEP's edge pass does.
-  const lineMaterials = Object.fromEntries(XBF_EDGE_LINES.map(line => [line, new THREE.LineBasicMaterial({ color: 0x253443, transparent: true })]));
+  const edgeMaterials = () => Object.fromEntries(XBF_EDGE_LINES.map(line => [line, new THREE.LineBasicMaterial({ color: 0x253443, transparent: true })]));
+  const lineMaterials = edgeMaterials();
+  // The same lines on a part drawn darker than the canvas (`setEdgeLook`'s `darkParts`).
+  const darkPartLineMaterials = edgeMaterials();
   const hiddenDepth = new THREE.MeshBasicMaterial({ colorWrite: false, ...EDGES_WIN });
 
   // A prototype's surface geometry: the part's, or for painted faces one over its buffers with
@@ -478,7 +487,9 @@ export function createXbfScene(THREE, document) {
     carrier.add(group);
     root.add(carrier);
     // `matrix`: where the instance stands now, the structure's placement or the pose's.
-    return { index, instance, prototype, surface, carrier, group, mesh, lines, record: { mesh }, matrix: instance.matrix };
+    return { index, instance, prototype, surface, carrier, group, mesh, lines, record: { mesh }, matrix: instance.matrix,
+      // How dark it is drawn, by its colour as the regular modes wear it; `darkInk`, whether its edges take the light ink.
+      drawnLuminance: rgba ? drawnLuminance(rgba, prototype.material ? 1 : lookSurface?.colorPower ?? 1) : Infinity, darkInk: false };
   });
   root.updateMatrixWorld(true);
 
@@ -508,7 +519,7 @@ export function createXbfScene(THREE, document) {
   const ink = createSceneHighlight(THREE, look);
   let lastLook = null;
   let surfaceStyle = "shaded";
-  let edgeLook = { enabled: true, visibility: "visible", color: null };
+  let edgeLook = { enabled: true, visibility: "visible", color: null, darkParts: null };
   let clipPlanes = [];
   let partInk = { hovered: [], selected: [] };
   const hidden = new Set();
@@ -518,6 +529,8 @@ export function createXbfScene(THREE, document) {
   let disposed = false;
   const overlay = { hovered: null, selected: [] };
   const overlayObjects = new Map();
+  // The colour a pick is drawn in, the viewer's own unless a renderer gives one (`setHighlightColor`).
+  let highlightColor = INK.highlightColor;
   // A lit part's edges, as a STEP part's: in the selection's colour, or the hover's.
   const partLineMaterials = {
     selected: new THREE.LineBasicMaterial({ color: INK.highlightColor, transparent: true }),
@@ -535,20 +548,39 @@ export function createXbfScene(THREE, document) {
   };
   const applyEdgeLook = () => {
     const palette = resolveCadEdgeSettings(edgeLook.color ? { color: edgeLook.color } : null);
+    const darkPalette = edgeLook.darkParts ? resolveCadEdgeSettings({ color: edgeLook.darkParts.color }) : palette;
+    const canvas = edgeLook.darkParts ? luminance(new THREE.Color(edgeLook.darkParts.canvas)) : 0;
+    for (const entry of instances) entry.darkInk = entry.drawnLuminance < canvas;
     const onTop = edgeLook.visibility === "all";
-    for (const target of [...XBF_EDGE_LINES.map(line => lineMaterials[line]), ...Object.values(partLineMaterials)]) {
+    for (const target of [...Object.values(lineMaterials), ...Object.values(darkPartLineMaterials), ...Object.values(partLineMaterials)]) {
       // Hidden edges, where the mode shows them, are drawn through the surfaces.
       if (target.depthTest === onTop) { target.depthTest = !onTop; target.needsUpdate = true; }
       syncMaterialClipPlanes(target, clipPlanes);
     }
-    for (const line of XBF_EDGE_LINES) lineMaterials[line].color.set(palette.classes[line]?.color || palette.color);
+    for (const line of XBF_EDGE_LINES) {
+      lineMaterials[line].color.set(palette.classes[line]?.color || palette.color);
+      darkPartLineMaterials[line].color.set(darkPalette.classes[line]?.color || darkPalette.color);
+    }
+    applyLineInk();
     applyVisibility();
   };
   const recordsFor = ids => ids.map(id => instances[parseXbfElementId(id)?.instance]?.record).filter(Boolean);
   const indicesOf = ids => new Set(ids.map(id => parseXbfElementId(id)?.instance).filter(index => instances[index]));
+  const shownOf = ids => ids.filter(id => !dimmed(parseXbfElementId(id)?.instance));
+  // Each part's edges in their ink: a lit part's the selection's over the hover's.
+  const applyLineInk = () => {
+    const selected = indicesOf(shownOf(partInk.selected)), hovered = indicesOf(shownOf(partInk.hovered));
+    for (const entry of instances) {
+      const state = selected.has(entry.index) ? "selected" : hovered.has(entry.index) ? "hovered" : null;
+      for (const [line, object] of Object.entries(entry.lines)) {
+        object.material = state ? partLineMaterials[state] : (entry.darkInk ? darkPartLineMaterials : lineMaterials)[line];
+        // Over the lit surface, which is drawn after its neighbours (`sceneHighlight.js`).
+        object.renderOrder = state ? 24 : 1;
+      }
+    }
+  };
   const applySurfaces = () => {
-    const visible = ids => ids.filter(id => !dimmed(parseXbfElementId(id)?.instance));
-    ink.apply(lastLook, { hovered: recordsFor(visible(partInk.hovered)), selected: recordsFor(visible(partInk.selected)) }, clipPlanes);
+    ink.apply(lastLook, { hovered: recordsFor(shownOf(partInk.hovered)), selected: recordsFor(shownOf(partInk.selected)) }, clipPlanes);
     // Hidden line: the surfaces only hide what is behind them, in no colour of their own.
     if (surfaceStyle === "hidden") {
       for (const entry of instances) entry.mesh.material = Array.isArray(entry.mesh.material) ? entry.mesh.material.map(() => hiddenDepth) : hiddenDepth;
@@ -564,16 +596,7 @@ export function createXbfScene(THREE, document) {
       }
     }
     syncMaterialClipPlanes(hiddenDepth, clipPlanes);
-    // A lit part's edges in its ink; the selection's over the hover's.
-    const selected = indicesOf(visible(partInk.selected)), hovered = indicesOf(visible(partInk.hovered));
-    for (const entry of instances) {
-      const state = selected.has(entry.index) ? "selected" : hovered.has(entry.index) ? "hovered" : null;
-      for (const [line, object] of Object.entries(entry.lines)) {
-        object.material = state ? partLineMaterials[state] : lineMaterials[line];
-        // Over the lit surface, which is drawn after its neighbours (`sceneHighlight.js`).
-        object.renderOrder = state ? 24 : 1;
-      }
-    }
+    applyLineInk();
     applyVisibility();
   };
 
@@ -661,7 +684,8 @@ export function createXbfScene(THREE, document) {
   };
   const highlightLine = (positions, onTop) => {
     const line = createScreenSpaceLineSegments(lineContext, positions, {
-      color: INK.highlightEdgeColor, opacity: INK.highlightOpacity, lineWidth: EDGE_HIGHLIGHT_PIXELS, renderOrder: HIGHLIGHT_ORDER + 1,
+      color: highlightColor === INK.highlightColor ? INK.highlightEdgeColor : highlightColor,
+      opacity: INK.highlightOpacity, lineWidth: EDGE_HIGHLIGHT_PIXELS, renderOrder: HIGHLIGHT_ORDER + 1,
       depthTest: !onTop, depthWrite: false, depthBias: topologyLineDepthBiasForWidth(EDGE_HIGHLIGHT_PIXELS)
     }, screenSpaceLineMaterials);
     if (!line) return null;
@@ -814,16 +838,22 @@ export function createXbfScene(THREE, document) {
         const worn = xbfLookXray(next) ? xraySurface : lookSurface;
         lastLook.colorPower = worn.colorPower;
         lastLook.brdf = worn.brdf;
+        lastLook.leastRoughness = worn.leastRoughness;
+        lastLook.leastDielectricRoughness = worn.leastDielectricRoughness;
         if (worn.finishes === false) lastLook.finishes = false;
         lastLook.materialSettings = { ...next.materialSettings, ...worn.materialSettings };
       }
       surfaceStyle = next?.surface?.style === "hidden" || next?.surface?.style === "off" ? next.surface.style : "shaded";
       applySurfaces();
     },
-    /** The edges the display mode draws (`resolveViewSettings`'s `edges`): on or off, through the surfaces or not, their ink. */
+    /**
+     * The edges the display mode draws (`resolveViewSettings`'s `edges`): on or off, through the
+     * surfaces or not, their ink, and `darkParts`' ink on a part drawn darker than its canvas.
+     */
     setEdgeLook(next) {
       if (disposed) return;
-      edgeLook = { enabled: next?.enabled !== false, visibility: next?.visibility === "all" ? "all" : "visible", color: next?.color || null };
+      edgeLook = { enabled: next?.enabled !== false, visibility: next?.visibility === "all" ? "all" : "visible", color: next?.color || null,
+        darkParts: next?.darkParts || null };
       applyEdgeLook();
     },
     setClipPlanes(planes) {
@@ -831,7 +861,10 @@ export function createXbfScene(THREE, document) {
       clipPlanes = Array.isArray(planes) ? planes : [];
       look.setClipPlanes(clipPlanes);
       syncMaterialClipPlanes(hiddenDepth, clipPlanes);
-      for (const line of XBF_EDGE_LINES) syncMaterialClipPlanes(lineMaterials[line], clipPlanes);
+      for (const line of XBF_EDGE_LINES) {
+        syncMaterialClipPlanes(lineMaterials[line], clipPlanes);
+        syncMaterialClipPlanes(darkPartLineMaterials[line], clipPlanes);
+      }
       for (const paint of Object.values(partLineMaterials)) syncMaterialClipPlanes(paint, clipPlanes);
       syncOverlayClipPlanes();
     },
@@ -842,6 +875,13 @@ export function createXbfScene(THREE, document) {
       const entry = instances[parseXbfElementId(id)?.instance];
       if (!entry) return null;
       return { name: entry.prototype.name || entry.instance.path, path: entry.instance.path, prototype: entry.instance.prototype };
+    },
+    /**
+     * The group that places instance `id` (`i3`), or null: where it stands now, the pose and Explode
+     * included, for what is drawn on the part to follow it.
+     */
+    placedPart(id) {
+      return instances[parseXbfElementId(id)?.instance]?.group || null;
     },
     /**
      * What a chip's card measures of instances (ids `i3`): the box they make where they stand
@@ -962,6 +1002,31 @@ export function createXbfScene(THREE, document) {
         if (!local.isEmpty()) box.union(local.applyMatrix4(entry.group.matrixWorld));
       }
       return box.isEmpty() ? null : { min: box.min.toArray(), max: box.max.toArray() };
+    },
+    /**
+     * The colour picks and what the pointer rests on are drawn in -- a part's tint and edges, a face's
+     * fill and outline, an edge -- or null for the viewer's own (a part under the pointer then wears
+     * the hover's): a renderer's own way of showing a pick (CAD mode's workspace, its orange).
+     * @param {string | null} color
+     */
+    setHighlightColor(color) {
+      const next = color || INK.highlightColor;
+      if (disposed || next === highlightColor) return;
+      highlightColor = next;
+      fillMaterial.color.set(next);
+      partLineMaterials.selected.color.set(next);
+      partLineMaterials.hovered.color.set(color || REFERENCE_HOVER_COLOR);
+      ink.setColors(color ? { selected: color, hovered: color } : null);
+      // The lines drawn so far are their own colour's: drawn again in this one.
+      for (const object of overlayObjects.values()) dropOverlay(object);
+      overlayObjects.clear();
+      applyOverlays();
+      applySurfaces();
+    },
+    /** How many faces the part of instance `index` has (its buffer's face rows, a face left unmeshed among them); 0 for none. */
+    faceCount(index) {
+      const entry = instances[index];
+      return entry ? entry.surface.part.mesh.faces.length / 3 : 0;
     },
     /** Light instances (ids `i3`): the part under the pointer and the parts picked, as a STEP lights its parts. */
     setHighlight({ hovered = [], selected = [] } = {}) {
@@ -1097,6 +1162,7 @@ export function createXbfScene(THREE, document) {
       look.dispose();
       for (const found of materials.values()) found.dispose();
       for (const found of Object.values(lineMaterials)) found.dispose();
+      for (const found of Object.values(darkPartLineMaterials)) found.dispose();
       for (const found of Object.values(partLineMaterials)) found.dispose();
       hiddenDepth.dispose();
       fillMaterial.dispose();

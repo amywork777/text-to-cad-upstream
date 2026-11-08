@@ -16,6 +16,8 @@ a document of that kind, and the same id under another kind is a 404 that names 
 * ``urdf``, ``srdf``, ``sdf``: ``structure`` (the robot resolved for the page), ``parts/<digest>``
   (a primitive's mesh), ``source``.
 * ``stl``, ``glb``, ``3mf``: ``source``, which the page parses itself.
+* ``pdf``, ``picture`` (a ``.png``, ``.jpg`` or ``.webp``): ``source``, which the page shows on a flat
+  view to mark up (Studio's ``renderers/picture``).
 """
 from __future__ import annotations
 
@@ -28,8 +30,12 @@ API = "/api/v1"
 # A file's kind is its document type as the API spells it (``cad.registry``'s ``wire``: the id, but
 # ``3mf`` for ``threemf``, the spelling released pages read).
 FILE_KINDS = {extension: entry.wire for entry in DOCUMENT_TYPES.values() for extension in entry.extensions}
+# The engineering pictures Studio's flat view shows and marks up as it does a DXF (``renderers/picture``):
+# no document type of ``cad.registry`` (nothing builds, exports or snapshots them), a kind of the API alone.
+PICTURE_KINDS = {".pdf": "pdf", ".png": "picture", ".jpg": "picture", ".jpeg": "picture", ".webp": "picture"}
+FILE_KINDS.update(PICTURE_KINDS)
 # ``model`` is a document type of its own, the one with no file (``cad.registry``): a model's document.
-KINDS = tuple(entry.wire for entry in DOCUMENT_TYPES.values())
+KINDS = (*(entry.wire for entry in DOCUMENT_TYPES.values()), "pdf", "picture")
 # The documents the engine itself serves: their structure, parts and version are its reads.
 ENGINE_KINDS = frozenset(entry.wire for entry in DOCUMENT_TYPES.values() if entry.view == "document")
 ROBOT_KINDS = frozenset(entry.wire for entry in DOCUMENT_TYPES.values() if entry.view == "robot")
@@ -41,7 +47,8 @@ _SOLID = ["step", "stl", "threemf", "glb", "dxf"]
 EXPORTS = {"model": [*_SOLID, "xbf"], "step": [*_SOLID, "xbf"], "xbf": [*_SOLID, "original"],
            "glb": ["stl", "threemf"], "stl": ["threemf", "glb"], "3mf": ["stl", "glb"],
            "dxf": [], "urdf": [], "srdf": [], "sdf": [],
-           "kicad_pcb": ["gerbers", "drill", "pos", "bom", "step", "glb", "odb", "ipc2581", "pdf", "dxf"]}
+           "kicad_pcb": ["gerbers", "drill", "pos", "bom", "step", "glb", "odb", "ipc2581", "pdf", "dxf"],
+           "pdf": [], "picture": []}
 # A KiCad schematic's are KiCad's too (``cad kicad_sch export --to``, ``exports.SCHEMATIC``).
 EXPORTS["kicad_sch"] = ["pdf", "svg", "netlist", "bom"]
 

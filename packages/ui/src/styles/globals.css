@@ -85,7 +85,7 @@
   /* What a file opening shows: the canvas, plain and opaque — no glow, no blur,
    * nothing of what is behind it seen through. */
   .cad-loading-overlay {
-    background: var(--canvas);
+    background: var(--ui-loading-overlay);
   }
 
   ::selection {

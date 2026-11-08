@@ -35,6 +35,8 @@ export const STATUS_VOCABULARY_FILE = 'packages/ui/src/renderers/kit/status/stat
 
 // Test renderers: they draw one triangle for the shell's own specs and ship to no person.
 const SKIPPED_DIRS = ['packages/ui/src/renderers/harness/', 'packages/ui/src/renderers/shell-harness/'];
+// Studio's CAD mode (Edit by hand): English only for now, as Studio ships in English, so not read.
+export const STUDIO_ENGLISH_ONLY = ['packages/ui/src/renderers/xbf/edit/'];
 
 const LANGUAGE_ATTRIBUTES = new Set([
   'aria-label', 'aria-description', 'aria-valuetext', 'aria-roledescription', 'aria-placeholder', 'title', 'placeholder',
@@ -90,7 +92,7 @@ function sourceFiles(dir, repo, out = []) {
     const rel = path.relative(repo, file).split(path.sep).join('/');
     if (item.isDirectory()) {
       if (item.name === 'node_modules' || item.name === '__fixtures__' || item.name === 'locales') continue;
-      if (SKIPPED_DIRS.some(skipped => `${rel}/`.startsWith(skipped))) continue;
+      if ([...SKIPPED_DIRS, ...STUDIO_ENGLISH_ONLY].some(skipped => `${rel}/`.startsWith(skipped))) continue;
       sourceFiles(file, repo, out);
     } else if (/\.(?:[cm]?jsx?|tsx?)$/.test(item.name) && !/\.(?:test|spec)\.|\.d\.ts$/.test(item.name)) out.push(file);
   }
@@ -192,6 +194,7 @@ export async function checkUiStrings(repo, { allowlist = UI_STRINGS_ALLOWLIST, r
 export const UI_STRINGS_ALLOWLIST = [
   ['packages/ui/src/annotation/views.js', 'current view', "a view's name in the prompt the agent reads, not on screen"],
   ['packages/ui/src/renderers/kit/tools/quick-edit/quickEditPrompt.js', 'Snapshot (${})', "a file's label in the prompt the agent reads"],
+  ['packages/ui/src/renderers/kit/tools/quick-edit/quickEditPrompt.js', 'Picture of the view, with the marks drawn on it', "a file's label in the prompt the agent reads"],
   ['packages/ui/src/file-viewer/navigation/NavbarLinks.jsx', 'Feedback:', "the title of the GitHub issue Feedback opens, for the project's own tracker"],
   ['packages/ui/src/export/ExportControls.tsx', 'font-normal! leading-4!', "Sonner's class names for a toast's title, no words"],
   ['packages/ui/src/renderers/kit/camera/viewportCameraKit.js', 'Jump to', "each view's English name; `viewPlaneTitle` says it on screen from its sides"],
@@ -202,6 +205,9 @@ export const UI_STRINGS_ALLOWLIST = [
   ['packages/ui/src/export/formats.ts', 'BOM', "a fabrication file's own name, as KiCad and every assembler write it"],
   ['packages/ui/src/export/formats.ts', 'ODB++', "a fabrication file format's own name"],
   ['packages/ui/src/export/formats.ts', 'IPC-2581', "a fabrication file format's standard's name"],
+  // Studio's lines in Jake's files, English only as its own folder is (`STUDIO_ENGLISH_ONLY`).
+  ['packages/ui/src/renderers/kit/shell/RendererShell.jsx', 'FeatureManager', "Studio's CAD mode's design tree, named as SolidWorks names it"],
+  ['packages/ui/src/renderers/kit/inspector/parameterRow.jsx', 'value', "Studio's names for a size's field and slider, in English"],
 ];
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

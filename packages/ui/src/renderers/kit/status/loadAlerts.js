@@ -123,6 +123,16 @@ export function buildFailedAlert(fileRef, failed, hasModel, t = english) {
   };
 }
 
+/**
+ * A failed update starts put away, its icon in the navbar alone saying it: the last version that
+ * built is still on screen, and an agent's next build usually follows, so a draft that did not
+ * build is no reason to cover the view. A model with no version on screen still says so in the card.
+ * @param {{ kind?: string, blocking?: boolean } | null} alert
+ */
+export function alertStartsPutAway(alert) {
+  return alert?.kind === "build" && alert.blocking === false;
+}
+
 /** The file is listed, loading raised nothing, and nothing came out of it. */
 export function noGeometryAlert(fileRef, t = english) {
   return {

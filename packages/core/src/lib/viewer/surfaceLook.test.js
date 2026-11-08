@@ -221,6 +221,37 @@ test("authored Standard and Physical finishes survive shaded modes, with reversi
 });
 
 
+test("a look's least roughness eases an authored mirror in its regular modes, and Render keeps it as authored", () => {
+  const material = new THREE.MeshPhysicalMaterial({ color: "#c0c0c0", metalness: 1, roughness: 0 });
+  material.userData.cadAuthoredFinish = true;
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(), material), root = new THREE.Group(); root.add(mesh);
+  const surface = createSurfaceLook(THREE, root);
+  const regular = { materialSettings: INSPECT, authored: false, surface: { style: "shaded", opacity: 1 } };
+  surface.apply({ ...regular, leastRoughness: 0.15 });
+  assert.equal(mesh.material.roughness, 0.15);
+  surface.apply(regular);
+  assert.equal(mesh.material.roughness, 0, "no such look, as authored");
+  surface.apply({ ...regular, authored: true, leastRoughness: 0.15 });
+  assert.equal(mesh.material.roughness, 0);
+  surface.dispose(); mesh.geometry.dispose(); material.dispose();
+});
+
+test("a smooth dielectric is eased further than a metal, in proportion, so it does not mirror the studio at a grazing angle", () => {
+  const finish = (metalness, roughness) => {
+    const material = new THREE.MeshPhysicalMaterial({ color: "#ffffff", metalness, roughness });
+    material.userData.cadAuthoredFinish = true;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), material), root = new THREE.Group(); root.add(mesh);
+    const surface = createSurfaceLook(THREE, root);
+    surface.apply({ materialSettings: INSPECT, authored: false, surface: { style: "shaded", opacity: 1 }, leastRoughness: 0.15, leastDielectricRoughness: 0.4 });
+    const drawn = mesh.material.roughness;
+    surface.dispose(); mesh.geometry.dispose(); material.dispose();
+    return drawn;
+  };
+  assert.equal(finish(0, 0.15), 0.4, "a glossy plastic");
+  assert.equal(finish(1, 0.15), 0.15, "a metal keeps its polish");
+  assert.equal(finish(0, 0.7), 0.7, "rougher than the floor, as authored");
+});
+
 test("an emitting authored finish restores its own glow after X-ray without changing the non-emitting Inspect lift", () => {
   const root = new THREE.Group();
   const emitting = new THREE.MeshPhysicalMaterial({ color: "#336699", metalness: 1, roughness: 0.3,

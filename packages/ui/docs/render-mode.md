@@ -207,7 +207,8 @@ tabs of the view's panel (see
 a display setting.
 
 Display and Preview, the view's controls at the strip's end, are offered by a 3D view
-alone, as its renderer declares to the shell (`useRendererShell`'s `previewable`):
+alone, as its renderer declares to the shell (`useRendererShell`'s `previewable`), but for a
+board's Display, which is its own (a choice of layers, not of shading):
 
 | Renderer | Files | Display and Preview |
 | --- | --- | --- |

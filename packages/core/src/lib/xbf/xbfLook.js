@@ -27,7 +27,7 @@ import { SURFACE_BRDFS } from "../viewer/surfaceBrdf.js";
 // Phong one (`xbfLookHighlight`).
 
 const HEX = /^#[0-9a-f]{6}$/i;
-const LOOK_VERSION = 4;
+const LOOK_VERSION = 6;
 // The image's frame to three's: its rows run from +Z down, which three's equirectangular lookup
 // reads as +Y; turning the lookup a quarter about X sends each of the document's directions to its
 // texel (`scene.environmentRotation`).
@@ -149,6 +149,8 @@ export function parseXbfLook(json) {
     colourPower: number(json.colourPower, "colourPower"),
     plain: Object.freeze({ metallic: number(json.plain?.metallic, "plain.metallic"),
       roughness: number(json.plain?.roughness, "plain.roughness"), ior: number(json.plain?.ior, "plain.ior") }),
+    leastRoughness: number(json.leastRoughness, "leastRoughness"),
+    leastDielectricRoughness: number(json.leastDielectricRoughness, "leastDielectricRoughness"),
     brdf: brdf(json.brdf),
     tone: String(json.tone || ""),
     exposure: number(json.exposure, "exposure"),
@@ -267,6 +269,8 @@ export function xbfLookSurface(look) {
   return Object.freeze({
     colorPower: look.colourPower,
     brdf: look.brdf,
+    leastRoughness: look.leastRoughness,
+    leastDielectricRoughness: look.leastDielectricRoughness,
     materialSettings: Object.freeze({
       saturation: 1, contrast: 1, brightness: 1, tintStrength: 0,
       roughness: look.plain.roughness, metalness: look.plain.metallic,

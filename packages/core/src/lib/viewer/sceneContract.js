@@ -41,6 +41,9 @@
  * @property {() => (SceneBounds | null)} [shownBounds]  The box of what is shown now (hidden parts
  *   left out, an isolated part alone, where it stands posed or exploded): what Zoom to fit frames.
  *   Absent, the fit frames `bounds`; 100% is `restBounds`' either way.
+ * @property {SceneBounds} [previewBounds]  What Preview frames instead of `restBounds`, where a routine
+ *   carries the scene far past its rest placement (an FEA drop falling from its height). Absent means
+ *   Preview frames `restBounds` as the tools view does.
  * @property {() => void} dispose  Release everything the scene created.
  * @property {(look: SurfaceLook) => void} [setSurfaceLook]  Wear the look the host resolved.
  *   Called on adoption and whenever it changes; a scene applies it to its own materials.

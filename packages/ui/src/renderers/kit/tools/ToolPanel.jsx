@@ -2,7 +2,7 @@ import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } f
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@cad/ui/utils";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
-import { FLOATING_CHROME_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
+import { FLOATING_CHROME_SURFACE_CLASS, WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
 import ResizeGrip from "./ResizeGrip.jsx";
 import { ToolStackContext } from "./ToolStack.jsx";
@@ -28,10 +28,17 @@ const FIT = Object.freeze({
 const FLOOR = Object.freeze({ tree: 128, details: 96 });
 const KEY_NUDGE_PX = 16;
 /**
- * Every panel's heading text: the size and weight of Display's section headings
- * (`FILE_SHEET_SECTION_HEADING_CLASSES`, 11px), so every heading in the stack reads alike.
+ * Every panel's heading text: Display's section headings' tracked caps
+ * (`FILE_SHEET_SECTION_HEADING_CLASSES`), so every heading in the stack reads alike.
  */
-export const TOOL_PANEL_HEADING_TEXT_CLASS = "text-tiny font-normal leading-4 text-foreground";
+export const TOOL_PANEL_HEADING_TEXT_CLASS = "text-tiny font-medium leading-4 tracking-wide text-muted-foreground uppercase";
+
+/**
+ * The head of a panel of CAD mode's left dock (the FeatureManager, PMI): one 28px row 8px in, the
+ * words as written, a level above the tracked-caps headings inside the panel. The caller ends it:
+ * 8px past a bare chevron, 4px past a 20px button, so the glyphs end on one line.
+ */
+export const DOCK_PANEL_HEAD_CLASS = "flex h-7 w-full shrink-0 items-center gap-1 pl-2 text-left text-xs font-medium leading-4 text-foreground";
 
 /** A panel header's small icon button: the chevron, the X, and a tool's settings menu (`ToolModeMenu.jsx`'s `ToolSettingsMenu`). */
 export const TOOL_PANEL_BUTTON_CLASS = "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
@@ -75,18 +82,21 @@ const REVEAL_CLASS = "animate-in fade-in-0 zoom-in-75 duration-150 motion-reduce
  * `hidden` keeps a panel mounted while its tool is not up, so a tree keeps its expansion, filter
  * and scroll across a trip to another tool. `header` never scrolls; the body under it does, for a
  * panel that gives way. `lead`: the panel of the tool in hand, drawn at the top of the stack above every kept
- * panel, wherever it sits among them.
+ * panel, wherever it sits among them. `solid`: a panel of small text read closely over the model
+ * (PMI), on the workspace's opaque card. Docked in CAD mode's left column (the tool stack's context
+ * says `panelHead`), a panel is that column's section instead: no box, its heading the column's dock
+ * head (`DOCK_PANEL_HEAD_CLASS`), pinned over what it scrolls.
  *
  * @param {{ id: string, title?: import("react").ReactNode, name?: string, label: string, summary?: import("react").ReactNode,
  *   actions?: import("react").ReactNode, header?: import("react").ReactNode, collapsible?: boolean, onClose?: (() => void) | null, closeLabel?: string,
  *   fit?: "fixed" | "tree" | "details", resizable?: boolean, hidden?: boolean, defaultCollapsed?: boolean,
- *   lead?: boolean, children?: import("react").ReactNode }} props
+ *   lead?: boolean, solid?: boolean, children?: import("react").ReactNode }} props
  *   `label` names the panel for assistive technology ("Clip controls"), with a heading or
  *   without; the chevron, the X and the grip take their names from it, unless the X says
  *   what it does itself (`closeLabel`, "Clear selection").
  */
 export default function ToolPanel({ id, title = null, name = "", label, summary = null, actions = null, header = null, collapsible = true, onClose = null, closeLabel = "",
-  fit = "fixed", resizable = false, hidden = false, defaultCollapsed = false, lead = false, children }) {
+  fit = "fixed", resizable = false, hidden = false, defaultCollapsed = false, lead = false, solid = false, children }) {
   const { t } = useI18n();
   const stack = useContext(ToolStackContext);
   const kept = Boolean(stack && id);
@@ -96,6 +106,9 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
   // stands its rows on the panel's lines.
   const tabbed = Boolean(stack?.tabbed);
   if (tabbed) collapsible = false;
+  // Docked in CAD mode's left column (`stack.panelHead`: PMI there), it neither folds nor sizes: the column does.
+  const docked = !tabbed && Boolean(stack?.panelHead);
+  if (docked) { collapsible = false; resizable = false; }
   const registerTab = tabbed ? stack.register : null;
   const tabName = typeof title === "string" && title ? title : name || label;
   useLayoutEffect(() => (registerTab && id && !hidden ? registerTab(id, tabName) : undefined), [registerTab, id, hidden, tabName]);
@@ -206,6 +219,23 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
     </div> : null;
 
   const dragging = draft !== null;
+  if (docked) {
+    return <section ref={section} aria-label={label} hidden={hidden} data-tool-panel={fit} data-tool-panel-id={id || undefined} data-tool-panel-docked=""
+      className="flex min-h-0 min-w-0 flex-col text-tiny">
+      <div className="sticky top-0 z-10 border-b border-border bg-cad-ws-panel" data-tool-panel-heading="">
+        {header ? <div className="flex min-w-0 items-center gap-1 pr-0.5" data-tool-panel-header=""><div className="min-w-0 flex-1">{header}</div>{closeButton}</div>
+          : <div className={cn(DOCK_PANEL_HEAD_CLASS, "pr-1")}>
+            <h3 className="flex min-w-0 flex-1"><span className="min-w-0 truncate">{title || name || label}</span></h3>
+            {summary ? <span className="shrink-0 text-tiny text-muted-foreground">{summary}</span> : null}
+            {actions}
+            {closeButton}
+          </div>}
+      </div>
+      <div ref={body} data-tool-panel-body="" className="min-w-0">
+        <div ref={content} className="flow-root">{children}</div>
+      </div>
+    </section>;
+  }
   if (tabbed) {
     const searching = stack.searching;
     return <section ref={section} aria-label={label} hidden={hidden || !(searching || stack.activeSection === id)} role={stack.single ? "region" : "tabpanel"}
@@ -219,7 +249,7 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
   }
   return <section ref={section} aria-label={label} hidden={hidden} data-tool-panel={fit} data-tool-panel-id={id || undefined}
     data-collapsed={collapsed ? "" : undefined} data-resizable={sized ? "" : undefined} data-tool-panel-lead={lead ? "" : undefined}
-    className={cn("pointer-events-auto relative flex max-w-full flex-col rounded-md text-tiny", FLOATING_CHROME_SURFACE_CLASS, collapsed ? "shrink-0" : FIT[fit])}
+    className={cn("pointer-events-auto relative flex max-w-full flex-col rounded-md text-tiny", solid ? WORKSPACE_SURFACE_CLASS : FLOATING_CHROME_SURFACE_CLASS, collapsed ? "shrink-0" : FIT[fit])}
     style={{ width, maxHeight: collapsed || cap === null ? undefined : `${cap}px`, minHeight, order: lead ? -1 : undefined }}>
     {heading}
     {/* Folded under a heading, the header (a tree's filter) goes with the body. */}
@@ -227,7 +257,7 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
     {/* A panel that gives way scrolls in the chrome's one scroll region; a fixed one never scrolls. */}
     {fit === "fixed" ? <div ref={body} hidden={collapsed} data-tool-panel-body="" className="min-w-0 overflow-x-clip rounded-b-md">
       <div ref={content} className="flow-root">{children}</div>
-    </div> : <ScrollArea hidden={collapsed} className="min-w-0 flex-1 rounded-b-md" viewportRef={body} viewportProps={{ "data-tool-panel-body": "" }}>
+    </div> : <ScrollArea hidden={collapsed} barShown={solid} className="min-w-0 flex-1 rounded-b-md" viewportRef={body} viewportProps={{ "data-tool-panel-body": "" }}>
       <div ref={content} className="flow-root">{children}</div>
     </ScrollArea>}
     {/* The person's to size, from its bottom-right corner alone: Quick Edit's grip, inside the

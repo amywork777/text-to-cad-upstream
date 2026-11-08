@@ -16,7 +16,8 @@ material in every look.
 - **A face's material** is a ``Graphic3d_PBRMaterial`` (a ``PHYSIC`` aspect, so the PBR colour is
   the base colour): a part without a material is the look's plain finish over its colour raised to
   the look's power, as is every fill (Parts); a part with one is its colour as authored, its
-  metallic, roughness, IOR, emission (colour times strength) and alpha. What OCCT's raster has no
+  metallic, roughness (at least the look's ``least_roughness``, Preview's as authored), IOR,
+  emission (colour times strength) and alpha. What OCCT's raster has no
   term for is approximated: a clear coat is drawn as the base's roughness eased toward the coat's
   (``COAT_ROUGHNESS``), anisotropy is dropped, and transmission becomes opacity
   (``1 - TRANSMISSION_OPACITY * transmission``) over the base colour tinted by the transmission
@@ -208,10 +209,11 @@ def linear(value: Any) -> tuple[float, float, float]:
     return tuple(float(c) for c in value[:3])
 
 
-def finish(rgba: Any, material: dict[str, Any] | None) -> dict[str, Any]:
+def finish(rgba: Any, material: dict[str, Any] | None, *, preview: bool = False) -> dict[str, Any]:
     """What a face is drawn as: ``rgba`` its colour (linear, as the structure holds it, or a
     ``#rrggbb`` fill), ``material`` the structure's material for it, or None. Base colour, alpha,
-    metallic, roughness, IOR and emission, every approximation applied."""
+    metallic, roughness, IOR and emission, every approximation applied; outside ``preview`` no
+    smoother than the look draws (``LOOK.least_roughness_of``)."""
     colour = linear(rgba if rgba is not None else LOOK.fill)
     alpha = float(rgba[3]) if isinstance(rgba, (tuple, list)) and len(rgba) > 3 else 1.0
     if material is None:
@@ -226,6 +228,8 @@ def finish(rgba: Any, material: dict[str, Any] | None) -> dict[str, Any]:
     if coat > 0:
         target = float(material.get("clearcoatRoughness") or 0.0)
         roughness += (target - roughness) * COAT_ROUGHNESS * coat
+    if not preview:
+        roughness = max(roughness, LOOK.least_roughness_of(float(material.get("metalness") or 0.0)))
     transmission = float(material.get("transmission") or 0.0)
     if transmission > 0:
         tint = material.get("attenuationColor") or (1.0, 1.0, 1.0)
@@ -262,9 +266,9 @@ def aspect(found: dict[str, Any]) -> Any:
     return material
 
 
-def face_material(rgba: Any, material: dict[str, Any] | None) -> tuple[Any, Any]:
+def face_material(rgba: Any, material: dict[str, Any] | None, *, preview: bool = False) -> tuple[Any, Any]:
     """A face's OCCT material (``aspect``) and its base colour, for ``finish``'s arguments."""
     from OCP.Quantity import Quantity_Color, Quantity_TOC_RGB
 
-    found = finish(rgba, material)
+    found = finish(rgba, material, preview=preview)
     return aspect(found), Quantity_Color(*found["color"], Quantity_TOC_RGB)

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from cad.engine.render.finish import cube_faces, decode_hdr, sample
+from cad.engine.render.finish import cube_faces, decode_hdr, finish, sample
 from cad.engine.render.look import LOOK
 from cad.engine.serve import Server
 from tests.python.support.http_listener import listener
@@ -53,6 +53,11 @@ class LookTest(unittest.TestCase):
         # OCCT reads a cube map's direction c as the document's (c.z, c.x, c.y): its +Y face is up.
         faces = cube_faces(image, 8)
         self.assertGreater(float(faces[:, 16:24].mean()), float(faces[:, 24:32].mean()), "+Y (up) outshines -Y (down)")
+
+    def test_no_finish_is_smoother_than_the_look_draws_but_in_preview(self) -> None:
+        mirror = {"pbr": {"values": {"metalness": 1.0, "roughness": 0.0}}}
+        self.assertEqual(finish((.8, .8, .8, 1), mirror)["roughness"], LOOK.least_roughness)
+        self.assertEqual(finish((.8, .8, .8, 1), mirror, preview=True)["roughness"], 0.0, "Render keeps what was authored")
 
     def test_the_record_names_every_regular_mode_once(self) -> None:
         served = LOOK.json()

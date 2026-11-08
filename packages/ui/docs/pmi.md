@@ -145,7 +145,7 @@ document with no annotation, note or view at all says "No PMI yet" instead):
   Note 1 with its profile glyph, a flag note with its flag, a general note bare), each part's said
   where several parts have notes. A pick opens its words whole under its row; a flag note's lights
   its faces, and its eye hides its flag.
-- **Coverage**: of each part, "N faces have no requirement" or "Every face has a requirement",
+- **Coverage**: of each part, "N faces have no requirement" or "All faces covered, not verified",
   then each conflict the engine found, in the warning colour, by its ids and the engine's words: a
   datum no tolerance's frame names, a flag note linked to nothing, and each requirement that cannot
   hold with another. **Show faces with no requirement**, the checkbox at the heading's right end,
@@ -160,9 +160,12 @@ pick of them is (the renderer's element highlight); its row in the tab opens its
 double-click looks at its feature (`lookAt`). Escape lets it go, and a press on the model does.
 Under any other tool the labels take no pointer.
 
-The tab's eyes hide one annotation, or all of them; what is hidden is the file's view
+A part opens clean: nothing is drawn on it until it is asked for, and the tab lists every view
+and row all the same. The tab's eyes show or hide one annotation, or all of them; a view picked
+shows its own until it is left; what a build adds while the document is open is drawn as it lands,
+so nothing someone just made is out of sight. What is hidden is the file's view
 (`xbfViewSlices.js`'s `pmi` slice, by each annotation's key, kept across a rebuild of the same
-parts), never the document. Turned off, PMI is off in a prompt's views too (`display.pmi` false).
+parts), never the document. Turned on, PMI is on in a prompt's views too (`display.pmi` true).
 
 Where the document is made from code (a model's, by its id, or an `.xbf`), what the person
 changes is asked for, never written (`xbf/pmi/useXbfPmi.jsx`), each a chip in Quick Edit (its `requests`) that carries one

@@ -581,7 +581,7 @@ class Daemon:
         self.unsaid = ""
         self.refusal: PortHeld | None = None  # its named port held by another process: it stops (``serve``)
         from cad.engine.serve import Pressure
-        from cad.engine.worker import rss_cap_mb
+        from cad.engine.worker import footprint_mb, memory_ceiling_mb, rss_cap_mb
 
         # The system's memory-pressure signal, the server's too once it runs (``serve``): under it the
         # supervisor sheds the standby and its least recently used processes (``Supervisor.shed``); as
@@ -592,6 +592,7 @@ class Daemon:
         # watches, the progress that wakes pages, and the cache's ``saved``.
         self.supervisor = Supervisor(cap or worker_cap(), SERVICES, watched=self.connected,
                                      drain=lambda process: self.models.drain(process), memory=rss_cap_mb,
+                                     ceiling=memory_ceiling_mb, measure=footprint_mb,
                                      pressed=self.pressure.under, on_progress=self.progressed,
                                      on_event={"saved": lambda process, header, payload:
                                                self.models.cache.saved(process, header, payload)})
@@ -788,11 +789,13 @@ class Daemon:
                         "model": identity, "error": child.get("error"), "reportable": _reportable(child),
                         "progress": frame}
         if "failed" in answer:
-            frame = worker.progress or {}
             # The worker itself failed -- it died, or answered no report: cadgen's to fix, to report.
+            # A worker gone before its build said a frame names no model: it fails none of them.
+            frame = worker.progress or {}
+            named = self.models.paths(worker, frame["job"]) if frame.get("job") else []
             outcomes = {path: {"model": frame.get("job"), "error": answer["failed"], "reportable": True,
                                "progress": frame}
-                        for path in [*outcomes, *self.models.paths(worker, frame.get("job"))]}
+                        for path in [*outcomes, *named]}
         if outcomes:
             server.built(outcomes)
         if not verb:
@@ -1520,7 +1523,7 @@ class Daemon:
         """What the engine looks after, each ``TEND_SECONDS``: never the process, and nothing by how
         long anything has been idle. A killed client's pipes are swept, and the processes' memory is
         held to its cap and the system's pressure (``Supervisor.shed``: a worker's documents drained
-        first, so they stay held); the memory budget sends unwatched documents out of memory, least recently used
+        first, so they stay held), and a busy one to the ceiling (``Supervisor.overrun``); the memory budget sends unwatched documents out of memory, least recently used
         first, to the cache, as they are loaded (``serve.Server.trim``). The engine stops on ``stop``, a terminate, another installation's
         retiring it (``bind``), and here when its door is gone (its folder removed, a temporary
         folder cleaned up) or another's: no one can reach it, so it stops as ``stop`` does, saving
@@ -1531,6 +1534,7 @@ class Daemon:
         if self.door is not None:
             self.door.sweep()
         self.supervisor.shed(self.pressure.under())
+        self.supervisor.overrun()
         self.models.prune()
         _automatic(self)
 

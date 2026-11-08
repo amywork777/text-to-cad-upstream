@@ -2,17 +2,22 @@ import { PositionIcon } from '../kit/tools/ChangedDot.jsx';
 import { CONNECTED_SELECTION, SELECT_GEOMETRY, connectedSelectionApplies } from './xbfSelectionFilter.js';
 import { DropdownMenuCheckboxItem } from '@cad/ui/primitives/dropdown-menu';
 import SelectFilterMenu from "../kit/tools/select/SelectFilterMenu.jsx";
+import { MEASURE_MODES } from "../kit/tools/measure/MeasureFilterMenu.jsx";
 import { useControlUsage } from "../../usage/controls.js";
 import { useI18n } from "@cad/ui/i18n";
 import { ModeGlyph, ToolModeIcon, modeGlyphIcon } from "../kit/tools/select/modeGlyphs.jsx";
+import { NxIcon } from "../../lib/nxIcons.generated.jsx";
+import { SELECT_GROUP_ICON_NAMES, ToolIcon } from "./edit/cadIcons.jsx";
 
 // Select's button, Measure's and Select's menu, which read on an engine document as the STEP
-// renderer's did. The glyphs are the kit's (`kit/tools/select/modeGlyphs.jsx`).
+// renderer's did. The glyphs are the kit's (`kit/tools/select/modeGlyphs.jsx`); in Studio's CAD
+// workspace (`cad`) they are its icon generator's (`edit/cadIcons.jsx`, NX's set).
 
 const lucideIcon = Icon => <Icon className="size-3.5" strokeWidth={2} aria-hidden="true" />;
 
 /** The Select tool's button icon: the pointer, badged with what it picks alone (`mode`), none for All. */
-export function SelectIcon({ mode = "all", ...props }) {
+export function SelectIcon({ mode = "all", cad = false, ...props }) {
+  if (cad) return <ToolIcon id="select" mode={mode} className={props.className} />;
   return <ToolModeIcon tool="select" mode={mode} {...props} />;
 }
 
@@ -20,11 +25,13 @@ export function SelectIcon({ mode = "all", ...props }) {
 const MEASURE_BADGES = Object.freeze({ vertex: "points", edge: "edges", face: "faces" });
 
 /** The Measure tool's button icon: the ruler, badged with what it picks alone (`mode`), none for All. */
-export function MeasureIcon({ mode = "all", ...props }) {
+export function MeasureIcon({ mode = "all", cad = false, ...props }) {
+  if (cad) return <ToolIcon id="measure" mode={mode} className={props.className} />;
   return <ToolModeIcon tool="measure" mode={MEASURE_BADGES[mode] || mode} {...props} />;
 }
 
 const glyphIcon = modeGlyphIcon;
+const cadIcon = (tool, mode) => <ToolIcon id={tool} mode={mode} className="size-3.5" />;
 // The overlays All picks too, beside the model's geometry: the annotations and measurements,
 // drawn over the model, so a click on one is never mistaken for the face under it.
 const SELECT_OVERLAYS = Object.freeze(['annotation', 'measurement']);
@@ -38,13 +45,16 @@ export const XBF_SELECT_DEFAULT = Object.freeze([...SELECT_GEOMETRY.map(kind => 
  * Position's knobs, the annotations and the measurements), then each alone — Parts (in an
  * assembly), Faces, Edges, and Position (where the file has joints: its knobs, the model picks nothing).
  */
-export function xbfSelectModes({ assembly, posable }) {
+export function xbfSelectModes({ assembly, posable, cad = false }) {
   return [
-    { id: 'all', label: 'All', key: 'pick.all', kinds: XBF_SELECT_DEFAULT, icon: <ModeGlyph tool="select" mode="all" className="size-3.5" aria-hidden="true" /> },
-    ...SELECT_GEOMETRY.filter(item => assembly || !item.assemblyOnly).map(item => ({ id: item.id, label: item.label, key: item.key, kinds: [item.id], icon: glyphIcon(item.id) })),
-    ...(posable ? [{ id: 'position', label: 'Position', key: 'pick.position', kinds: ['position'], icon: lucideIcon(PositionIcon) }] : []),
+    { id: 'all', label: 'All', key: 'pick.all', kinds: XBF_SELECT_DEFAULT, icon: cad ? cadIcon('select', 'all') : <ModeGlyph tool="select" mode="all" className="size-3.5" aria-hidden="true" /> },
+    ...SELECT_GEOMETRY.filter(item => assembly || !item.assemblyOnly).map(item => ({ id: item.id, label: item.label, key: item.key, kinds: [item.id], icon: cad ? cadIcon('select', item.id) : glyphIcon(item.id) })),
+    ...(posable ? [{ id: 'position', label: 'Position', key: 'pick.position', kinds: ['position'], icon: cad ? cadIcon('select', 'position') : lucideIcon(PositionIcon) }] : []),
   ];
 }
+
+/** Measure's modes in Studio's CAD workspace, each row drawn as the strip's Measure shows it there. */
+export const XBF_CAD_MEASURE_MODES = Object.freeze(MEASURE_MODES.map(mode => ({ ...mode, icon: cadIcon('measure', mode.id) })));
 
 /**
  * An engine document's Select menu, a STEP's (`kit/tools/select/SelectFilterMenu.jsx`): its modes
@@ -54,19 +64,19 @@ export function xbfSelectModes({ assembly, posable }) {
  *
  * @param {{ value: readonly string[], onChange(filter: readonly string[]): void, assembly: boolean, posable: boolean,
  *   connected: { edgeChain: boolean, tangentFaces: boolean },
- *   onConnectedChange(id: "edgeChain" | "tangentFaces", checked: boolean): void, disabled?: boolean }} props
+ *   onConnectedChange(id: "edgeChain" | "tangentFaces", checked: boolean): void, disabled?: boolean, cad?: boolean }} props
  */
-export function SelectModeMenu({ value, onChange, assembly, posable, connected, onConnectedChange, disabled = false }) {
+export function SelectModeMenu({ value, onChange, assembly, posable, connected, onConnectedChange, disabled = false, cad = false }) {
   const options = CONNECTED_SELECTION.filter(option => connectedSelectionApplies(option.id, value));
   const controls = useControlUsage();
   const { t } = useI18n();
-  return <SelectFilterMenu value={value} onChange={onChange} modes={xbfSelectModes({ assembly, posable })} disabled={disabled}>
+  return <SelectFilterMenu value={value} onChange={onChange} modes={xbfSelectModes({ assembly, posable, cad })} disabled={disabled}>
     {options.length ? options.map(option => <DropdownMenuCheckboxItem key={option.id} checked={connected[option.id] === true}
       onSelect={event => event.preventDefault()} onCheckedChange={checked => {
         controls.used(option.id === 'tangentFaces' ? 'select_group_faces' : 'select_group_edges');
         onConnectedChange(option.id, checked === true);
       }}>
-      {glyphIcon(GROUP_GLYPHS[option.id])}{t(option.key)}
+      {cad ? <NxIcon name={SELECT_GROUP_ICON_NAMES[option.id]} className="size-3.5" /> : glyphIcon(GROUP_GLYPHS[option.id])}{t(option.key)}
     </DropdownMenuCheckboxItem>) : null}
   </SelectFilterMenu>;
 }

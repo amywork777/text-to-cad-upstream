@@ -1000,7 +1000,7 @@ def suggestions(entries: list[dict[str, Any]], faces: Sequence[dict[str, Any]], 
         say("general", [], "What holds the faces nothing else controls?",
             'general_tolerance("general", "ISO 2768-mK")',
             "ISO 2768-mK (medium sizes, K form) is the usual default for a machined part and holds every size "
-            "and form nothing else tolerances; general_profile(...) says the same in ASME terms")
+            "and form nothing else tolerances; a general profile says the same in ASME terms")
     sized = {ref["ref"] for entry in ok if entry["kind"] == "dimension" and entry["dimension"]["type"] == "diameter"
              for ref in entry["refs"]}
     datums = ", ".join(f'"{letter}"' for letter in frame)

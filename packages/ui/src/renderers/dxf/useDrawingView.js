@@ -30,9 +30,10 @@ const NO_LAYERS = new Set();
  * @param {(point: { x: number, y: number }, event: PointerEvent) => void} [options.onTap]
  * @param {(point: { x: number, y: number } | null, event: PointerEvent | null) => void} [options.onHover]
  *   A pointer resting over the canvas with nothing pressed (null: it left).
+ * @param {boolean} [options.scroll]  Read as a page is: the wheel scrolls and a pinch zooms (`useFlatCanvasView`).
  */
 export function useDrawingView({ drawing, restored = null, colorScheme = "light", onViewMoved, hiddenLayers = NO_LAYERS,
-  overlay = null, onTap = null, onHover = null }) {
+  overlay = null, onTap = null, onHover = null, scroll = false }) {
   const drawingRef = useRef(drawing);
   drawingRef.current = drawing;
   const hiddenRef = useRef(hiddenLayers);
@@ -48,7 +49,7 @@ export function useDrawingView({ drawing, restored = null, colorScheme = "light"
     overlayRef.current?.(ctx, { transform, pixelRatio, width, height });
   }, []);
   const view = useFlatCanvasView({ content: drawing, bounds: drawing?.bounds ?? null, restored, colorScheme, onViewMoved, paint,
-    onTap, onHover, fitBox: fitBoardBounds, clearStrip: true, middlePan: true, orbitPan: true });
+    onTap, onHover, fitBox: fitBoardBounds, clearStrip: true, middlePan: true, orbitPan: true, scroll });
   const { requestPaint, encode } = view;
 
   // A layer shown or hidden: the same view, without it.

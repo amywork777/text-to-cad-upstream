@@ -35,10 +35,12 @@ from cad_server._internal.shared_read import open_shared_for_read
 
 from .content_types import extension_of
 from .encoding import file_version, local_asset_url_for_path
+from .kinds import PICTURE_KINDS
 
 __all__ = [
     "SOURCE_KINDS",
     "CAD_CATALOG_SCHEMA_VERSION",
+    "PICTURE_EXTENSIONS",
     "SOURCE_EXTENSIONS",
     "VIEWER_EXTENSIONS",
     "VIEWER_SKIPPED_DIRECTORIES",
@@ -60,9 +62,15 @@ CAD_CATALOG_SCHEMA_VERSION = 5
 # it serves a STEP (``documents.py``), never as bytes.
 SOURCE_KINDS = {extension: entry.id for entry in DOCUMENT_TYPES.values() if entry.id != "xbf"
                 for extension in entry.extensions}
-SOURCE_EXTENSIONS = frozenset(SOURCE_KINDS)
-# What every CAD view lists and opens: every document type's files.
-VIEWER_EXTENSIONS = frozenset(extension for entry in DOCUMENT_TYPES.values() for extension in entry.extensions)
+# The engineering pictures a flat view shows and marks up as it does a DXF: a drawing's PDF, a
+# render or a photo (`renderers/picture` in @cad/ui). No document type of ``cad.registry``: a kind
+# of the viewer's API alone (``kinds.PICTURE_KINDS``).
+PICTURE_EXTENSIONS = frozenset(PICTURE_KINDS)
+# The files whose bytes the asset route sends: the CAD files, and those pictures.
+SOURCE_EXTENSIONS = frozenset(SOURCE_KINDS) | PICTURE_EXTENSIONS
+# What every CAD view lists and opens: every document type's files, and those pictures.
+VIEWER_EXTENSIONS = frozenset(extension for entry in DOCUMENT_TYPES.values()
+                              for extension in entry.extensions) | PICTURE_EXTENSIONS
 
 # The folders the explorer's search never walks (``folders.py``), beside every hidden one. Matched
 # with EXACT case: ``Dist/`` and ``Build/`` are walked, only the lowercase spellings are skipped.

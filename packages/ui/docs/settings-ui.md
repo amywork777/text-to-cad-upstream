@@ -233,7 +233,7 @@ is `chrome`: the navbar (`"page"`, the default) or the view alone (`"bare"`).
   a tool, Projection and Display, a board's Flip (its side), 2D/3D and Display (its preset), the zoom. What is
   changed now and then goes in the view's panel or behind a menu: a board's layers and layer display are
   its Layers tab's, Grid is Display's menu's and so is a board's projection in 3D, Zoom to selection
-  and Zoom to 100% the zoom's menu's. 24px tiles with 14px icons,
+  and Zoom to 100% the zoom's menu's. 24px tiles with 16px icons,
   an even 4px apart, a tool's chevron touching its button, in a 34px row (`FloatingToolBar`,
   `data-cad-toolbar`). A file with no tools and no 3D view has no strip. On a phone
   ([mobile](#the-views-panel-and-the-tool-stack)) the tiles are 36px with 18px icons, a chevron
@@ -261,9 +261,12 @@ is `chrome`: the navbar (`"page"`, the default) or the view alone (`"bare"`).
   section (a mesh) has none.
 - **Quick Edit** at top-right, 8px in, a STEP's or a robot's: the box of the note a
   person writes to their agent, there only while something is picked, drawn or measured
-  (see [Quick Edit](#quick-edit)), under the host's notice where there is one (the CAD app's
-  file handler's corner: Full size and its update). The rest of the right side of the view is clear.
-- **View cube** at bottom-right, its 6rem box 2px from the right edge and 8px off the bottom
+  (see [Quick Edit](#quick-edit)), under the notices where there are any: the host's (the CAD app's
+  file handler's corner: Full size and its update), then the view's own about its file (a STEP
+  brought in with no part script: *Imported STEP, no history* and **Edit as a part**). Quick Edit
+  steps down under them at every width, so neither covers the other. The rest of the right side of
+  the view is clear.
+- **View cube** at bottom-right, its 7.5rem box 2px from the right edge and 8px off the bottom
   (`VIEWPORT_CORNER_INSET_PX`, `VIEWPORT_CUBE_BOTTOM`), so its axes and their labels stay inside the
   view: enlarged face/edge/corner hit areas and neutral hover and XYZ guides, and nothing beside it
   (**The view's corner**, below). A host whose own
@@ -329,7 +332,7 @@ is `chrome`: the navbar (`"page"`, the default) or the view alone (`"bare"`).
 | --- | --- |
 | STEP | Select, Pencil, Shapes, Measure; Explode (two or more parts), Clip, then Projection, Display and Preview |
 | URDF / SRDF / SDF | Select, Pencil, Shapes, Measure; Clip, then Projection, Display and Preview |
-| GLB | Select, Pencil, Shapes, Measure; Explode (several rigid nodes that draw), Clip, then Projection, Display and Preview |
+| GLB | Select, Pencil, Shapes, Measure; Explode (several rigid nodes that draw; never a [CAM result](#cam-results)), Clip, then Projection, Display and Preview |
 | 3MF | Select, Pencil, Shapes, Measure; Clip, then Projection, Display and Preview |
 | STL | Select (in hand, the view's navigation: an STL picks nothing), Pencil, Shapes; Clip, then Projection, Display and Preview |
 | DXF | Select (in hand, and the view's hand: a drag pans, a tap picks an entity), Pencil, Shapes, Measure; no view controls: a drawing is 2D |
@@ -607,12 +610,12 @@ then **Position**, where the file has joints to move, then **PMI**, where an eng
 PMI or one is being made for it (its manufacturing annotations, read as a drawing is: its Views,
 Notes, Coverage and Annotations under static headings, each a list of the trees' rows,
 [PMI](pmi.md)); a robot's **Links**, an `.sdf`'s **SDF**, then
-**Position**), Position's Reset on its pose row, the Model's Show all and PMI's New and eye on a line
-over their rows, and the trees searched by the panel's search box. A file's routines are no tab:
-they play from the playbar under the model. A mesh, with no section, has no panel, and nor has a
-drawing with nothing for its Layers to say (fewer than four layers drawn on and no block
-reference: a flat pattern's CUT and BEND). The strip is for using tools, the panel for reading the
-file.
+**Position**; a CAM result's **Job**, see [CAM results](#cam-results)), Position's Reset on its pose
+row, the Model's Show all and PMI's New and eye on a line over their rows, and the trees searched by
+the panel's search box. A file's routines are no tab: they play from the playbar under the model. A
+mesh, with no section, has no panel, and nor has a drawing with nothing for its Layers to say (fewer
+than four layers drawn on and no block reference: a flat pattern's CUT and BEND). The strip is for
+using tools, the panel for reading the file.
 
 - **Its head.** The search box filling the row (`TreeFilterInput`, dense, in a 1px border), its
   placeholder "Search" in every file, its accessible name what it searches ("Search the board",
@@ -845,16 +848,20 @@ Its panels follow these rules:
   its width and cap at once, a separator in the tab order named after its panel (Left/Right
   nudge the width and Up/Down the cap by 16px, Home and End take both to their bounds). A folded panel has no grip: there is no height to set.
 - **Never past the viewer.** The column stops 8px above the cube's line
-  (`VIEWPORT_STACK_BOTTOM`, `calc(6rem + 16px)`). When the panels need more, a `"tree"` panel
+  (`VIEWPORT_STACK_BOTTOM`, `calc(7.5rem + 16px)`). When the panels need more, a `"tree"` panel
   gives way first, down to 128px or its content, then the `"details"` panels together, each in
   proportion to its height, down to 96px or its content; a `"fixed"` panel keeps its height.
   If what cannot give way still does not fit, the column itself scrolls — a panel is never cut.
 - **Headings.** A stack panel's heading row (a section of the view's panel has none: its tab names
-  it) reads as the settings form's section headings do (11px, regular, `TOOL_PANEL_HEADING_TEXT_CLASS`,
+  it) reads as the settings form's section headings do (11px tracked caps, `TOOL_PANEL_HEADING_TEXT_CLASS`,
   `FileSheet.js`'s `FILE_SHEET_SECTION_HEADING_CLASSES`), 28px tall, 8px in: a title, a summary where there is one,
   then at its right end its own actions, the chevron where it folds (up while open, down while
   folded) and an X where it has something to remove. Every small button in a heading is 20px,
-  2px apart and 4px from the edge.
+  2px apart and 4px from the edge. In CAD mode's left dock the FeatureManager and PMI share one
+  panel head instead (`DOCK_PANEL_HEAD_CLASS`): 28px, 8px in, the words as written, its glyphs
+  ending 8px from the right edge. The tracked-caps headings inside PMI sit a level below it, and
+  every heading and row of the dock starts on the same 8px edge. The tree takes up to 75% of the
+  column; PMI stays open and scrolls in the rest.
 
 - **Surfaces.** Three, defined once (`lib/floatingSurface.js`), each the popover's colour (a step
   off the app's background, lighter in the dark theme) with one border, nearly opaque, so chrome
@@ -1160,6 +1167,68 @@ a part's name) stays as it was written. The loading and view-update lines are a 
 vocabulary (`kit/status/loadingState.js`), English in the code and said in the view's language
 on screen (`kit/status/statusLabels.js`).
 
+## An FEA result
+
+A GLB that `cad fea solve` wrote is a result: a linear static stress study of a part or a bonded
+assembly, its mesh carrying every field (von Mises stress and the displacement), the true
+displacement, the study it was solved for, the checks cadgen judged and the source face of every
+triangle (`glb/feaResult.js`). The viewer reads the study once there (`result.study`), never the
+file's raw echo. Its layout is the viewer's: a file says what was solved and judged, not how to show it.
+
+The FEA viewer is a chunk of its own (`glb/feaView.jsx`: its surface, `glb/FeaSurface.jsx`, Study, the
+colour bar, the markers, `feaResult.js` and `fea/`), which `GlbRenderer` loads with one `import()` only once
+the scene carries a mesh `cad fea solve` wrote (`generator` in its extras). A plain GLB
+never fetches it; a result whose chunk fails to load says so in the load's alert, never drawn as a plain GLB. Its words are in `glb/fea/`: per check kind one row of `checkKinds.js` (stress and
+displacement), per field one of `fields.js`, Study's setup in `setup.js`, What you see's controls in `controls.js`.
+
+- **Its tools, Parts and Study.** A result has every GLB's tools, Select picking its faces rather than its
+  nodes, then Annotate, Measure and Clip (which cuts it open in the field's colours; it has no X-ray). Study,
+  and an assembly's Parts above it, are tabs of the view's panel (`glb/FeaStudyPanel.jsx`).
+  - **Parts**, only for an assembly of six parts or more (`feaShowsParts`); under six, a face picked on
+    the model names its part. One row per part, its material and "holds 1.5×" (or "yields"), the joints
+    it is in under it ("↔ base", "bonded · 88 mm²"), the weakest part open.
+  - **Study**, always in this order:
+    - **The verdict** (`glb/FeaVerdict.jsx`, `feaVerdict`): a headline in the worst check's status tone
+      ("Too weak", "Moves too much", "Fails 1 of 2 checks", "Passes all checks"), how much of this load
+      the weakest check takes ("OK only to 0.8× this load", "OK up to 1.6× this load"), then each check,
+      worst first, with a meter of how much of its limit it uses and its value against the limit. The
+      checks are the file's (`extras.checks`); at a load of 0 it says **No load**.
+    - **The setup**, as sentences under glyphs that match the markers: **Held at**, **Slides on** (a
+      roller), **Pushed** (each load, its faces under it, shut) and **Made of**.
+    - **What you see** (`feaControls` in `glb/fea/controls.js`, each row `glb/fea/controlRow.jsx`): a
+      Field select (Stress, Displacement), a Deformation slider from 0 to four times the file's own
+      exaggeration, opening at it, and a Load slider from 0.1× to 3× the solved load, opening at 1×;
+      then the **Loads and fixtures** checkbox, on as the file opens, saying what it draws.
+    - **Details**, shut: the mesh size and how it got there.
+
+    A group shows only where the file records something for it. A file missing anything cadgen always
+    writes (its fields, its `checks` or `study`, the safety factor, a check's numbers, status or margin), or
+    with a check of a kind cadgen does not judge, does not read: the viewer says so in the load's alert over
+    the model as the file colours it, and stands no default in for it.
+- **Choosing.** A row of Study or Parts, a check in the verdict, or a face pressed under Select tints
+  what it stands for (two thirds of the way to magenta, which no colour of the ramp is) and carries it
+  into Quick Edit by the STEP the result was solved from, with what it is ("Fixed face 17", "Part
+  'post'", "Tip sag fails: moves 0.62 mm, limit 0.5 mm (OK only to 0.8× this load)"). One face's chip
+  has a card: what the study does to it and, in an assembly, its part.
+- **A load other than the solved one** (the Load slider, k; the study is linear, so it scales exactly):
+  the colour bar's range, every check's value and the displacement drawn are k times the solved ones,
+  every "holds" is divided by k, and the verdict can change its word.
+- **A colour bar** at bottom-centre (`glb/FeaColourBar.jsx`, `glb/feaChrome.js`): the field and its range,
+  no controls. **Findings** stay in the file for the agent: the viewer raises no alert for them.
+- **Loads and fixtures on the model** (`glb/feaMarkers.js`, one row of `MARKER_KINDS` per kind): arrows
+  on each loaded face (one through the middle for a body load) labelled with the amount at the load shown,
+  never on or inside the part (`glb/FeaLoadLabels.jsx`); grey cones into each fixed face, on a plate for a
+  roller. They stand on the deformed shape, a faint ghost where the model hides them.
+- **Its routine, the Load ramp** (`LOAD_RAMP` in `glb/feaView.jsx`, one of `useGlbAnimation`'s own clips),
+  in the playbar under the model and Preview's: the load going on from none to the load chosen over two
+  seconds. Preview frames once on the box the model is drawn in over the ramp (`glb/feaBounds.js`).
+- **Framing.** The camera frames a result right of the view's panel and above the colour bar
+  (`runtime.framingInset`, `framingInset` in `glb/feaChrome.js`, `insetLeft` and `insetBottom` in
+  `kit/camera/viewportCameraFit.js`); Preview frames in the whole width.
+- **The choices are the file's view**: one renderer slice (`fea`: the field, the deformation, the load
+  and the markers' gate), written against the result's fields and scale, so a re-solved result opens at
+  its own defaults.
+
 ## Position and references
 
 **Position** is a tab of the [view's panel](#the-views-panel-and-the-tool-stack), there
@@ -1239,9 +1308,11 @@ and its state kept. It is essential, so no setting turns it off.
 Quick Edit keeps its corner, 8px in, and never reaches under the tool strip or its tool's row:
 the top-right column starts past the strip's right edge (`--cad-top-right-left`), measured by
 the one frame every view mounts (`ViewFrame.jsx`), so the strip is never
-covered. The view's panel is docked beside the canvas, never over it.
+covered. A pane too narrow for that column beside the strip still has Quick Edit on the right,
+starting under the strip (`--cad-top-right-top`): only a phone docks it. The view's panel is
+docked beside the canvas, never over it.
 
-On a phone Quick Edit is a bottom sheet, shadcn's drawer as it ships (`primitives/drawer.jsx`,
+On a phone (a narrow pane on a touch screen) Quick Edit is a bottom sheet, shadcn's drawer as it ships (`primitives/drawer.jsx`,
 vaul): full width, non-modal, never swiped away (its X clears it). It opens at a peek of its
 handle, header (its title, what goes with the note, the X) and chips, and a pick never brings up
 the keyboard. A swipe up, or a tap on its way in (below), takes it to its open stop,
@@ -1489,6 +1560,70 @@ setting. Render's studio code and environment are prepared a moment after a mode
 entering Preview has less to do — on a GPU. On a software renderer (SwiftShader, llvmpipe:
 the viewport's `softwareRendering`), where that compile would hold the page for seconds unasked,
 nothing is prepared ahead: Preview prepares as it is entered, under its cover.
+
+## CAM results
+
+A GLB written by `cad cam plan` carries its job in the scene's extras (`cam`). The GLB
+renderer loads the CAM viewer (`renderers/glb/camView.jsx`, a chunk of its own that a plain
+GLB never fetches) and draws the toolpaths, the tool, the stock box and the part. The plan is
+3-axis milling and drilling (FreeCAD plans it, cad cam checks it): each setup's tool comes from
++Z or -Z. Its strip is a GLB's (Select, Pencil, Shapes, Measure, Clip), with no Explode: the part,
+the stock and the paths mean nothing pulled apart. What there is to read of the job is
+**Job**, a tab of the [view's panel](#the-views-panel-and-the-tool-stack), there whatever tool
+is in hand. The verdict is the status: Job has no findings card. Findings go to the agent,
+through the GLB's extras and the CLI's JSON; the section shows only the errors, as rows under
+the verdict.
+
+- **Verdict.** First, in the theme's status tones: green "Ready to cut · 42 min · 3 tools",
+  or red "2 to fix". Under it, what the job takes: its tool changes ("No tool changes",
+  "1 tool change", "3 tool changes", counted from the operations in program order) and the
+  controller its G-code is for
+  ("grbl controller"); then, muted, whether G-code was written and how many warnings went to
+  the agent; then each error in plain words, a row that chooses the operations it is about.
+- **Setups and operations.** Each setup is a parent row (its name, how many operations, its
+  time), its operations under it in the job's order: a swatch in the operation's own path
+  colour, its plain word, its tool and its time. An operation row's eye floats over its right
+  end as an assembly row's does, on hover and kept while it is on: **Hide** puts that
+  operation's paths away (feed moves and rapids), **Reveal** brings them back. Any number can be
+  hidden; hiding is not choosing.
+- **Tools.** Under a muted **Tools** heading, each tool once, in the order the program first
+  uses it: how the machine names it and what it is ("T1 6 mm flat"), then the spindle speed
+  and feed its operations run it at ("12,000 rpm · 1,440 mm/min"), a range where they differ.
+  Its hint adds the operations that use it.
+- **Show.** Under a muted **Show** heading, a row for each thing the file draws beyond its
+  surfaces, each only where the file has it, its words on hover and its eye as a layer's is
+  (on hover, kept while it is put away): **Toolpaths** (each operation in its own colour),
+  **Rapids** (moves between cuts, dashed), **Tool** (the tool on the path while Simulate
+  plays), **Stock** (the see-through block the part is cut from; put away by default) and
+  **Part**. These were Display's gates; Display is a mode and the grid, and a file's own
+  drawing is its section's. The rows and the hidden operations are the file's view (the
+  renderer's `cam` slice), kept with it as the camera and Display are.
+- **Safety.** At the section's foot, always shown in small muted type, the sentence every
+  result carries (`cam.safety`): what the plan is not, and what to check before cutting.
+- **Choosing.** Every setup, operation, tool and error row is a choice: a press chooses it, a
+  second press, Escape or its chip's X lets go. The choice isolates its operations (the rest
+  of the paths dimmed, not hidden) and is Quick Edit's chip beside any picked nodes, named for
+  its row ("Pocket", "Top setup", "T1 6 mm flat"), a face's glyph where it names faces (in
+  the operation's colour, for an operation), else the part's; its card the row's sentence, the
+  part and how many faces. What Quick Edit carries is the part the job was planned from, the
+  faces the operations name (the whole part where they name none), and the row's sentence. A
+  setup chooses its operations, a tool every operation that runs it, an error the operations
+  it is about. A plain pick of a node lets go of the choice, as it does of a measurement.
+
+**Simulate.** A result's routines are the file's, played from the playbar under the model:
+**Simulate** plays the whole program, and a job with more than one setup adds **Simulate
+<setup>** for each, showing that setup's paths alone. The program plays at one pace for every
+routine, the whole job in at most 30 seconds; the paths are drawn up to the moment and the tool
+rides them, standing along its setup's axis. With reduced motion (the system's `prefers-reduced-motion` or
+the host's `reducedMotion`) nothing sweeps: a routine steps one operation a second, each drawn
+whole with the tool at its end. While one plays, a small readout sits at the view's bottom
+centre (above Quick Edit's sheet on a phone): the operation under way, the program's time over
+its whole ("1:32 / 3:38") and how fast it plays ("12× speed", "Real time", or "One operation a
+second"). It takes no pointer and is not read out as it changes. There is no Time row in Job:
+the Animation section is the one way to move through the program. As every routine, Simulate
+is one motion: playing it puts Clip back, and Clip set lets go of it. Preview draws the part
+as the tools view had it, its stock as shown, with none of the job's drawing and no CAM
+routine: the paths are the tools view's alone.
 
 ## Keyboard
 

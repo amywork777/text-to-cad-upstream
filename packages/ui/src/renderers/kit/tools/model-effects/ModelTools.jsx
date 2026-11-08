@@ -65,9 +65,11 @@ function EffectPopover({ label, icon, changed = false, disabled = false, row, on
  * zero, Clip's axis and settings kept), idle while none is set. (Measure's results are Quick Edit's chips.)
  *
  * Each is offered where the view's features list it (`ViewFeatures`): a renderer decides which of its
- * files have them, and lists Explode only where there are parts to separate.
+ * files have them, and lists Explode only where there are parts to separate. A renderer with icons
+ * of its own for the strip (`icons`, by id: Studio's CAD workspace, as its Select and Measure) draws
+ * the tiles with them; else they are the kit's.
  */
-export function useModelTools({ view, features, store, mesh, disabled }) {
+export function useModelTools({ view, features, store, mesh, disabled, icons = null }) {
   const { t } = useI18n();
   const controls = useControlUsage();
   const applied = [
@@ -103,7 +105,7 @@ export function useModelTools({ view, features, store, mesh, disabled }) {
       // seconds: it is no tool in hand.
       const shared = { label: tool.label, icon, changed, disabled, row, onOpen: () => controls.used(tool.id === "exploded" ? "explode" : "clip") };
       // Their own group on the strip, ruled off from the tools that pick.
-      return { id: tool.id, label: tool.label, group: "model", disabled, changed, icon,
+      return { id: tool.id, label: tool.label, group: "model", disabled, changed, icon, ribbonIcon: icons?.[tool.id] ?? null,
         tile: <EffectPopover {...shared} />,
         popover: ({ anchor, open, onOpenChange }) => <EffectPopover {...shared} anchor={anchor} open={open} onOpenChange={onOpenChange} /> };
     }),

@@ -25,6 +25,9 @@ export function fitRoom(clearTop, height) {
   return Math.max(1 - Number(clearTop) / Number(height), 0.5);
 }
 
+// A covered share past this leaves too little to frame into: the fit then ignores it.
+const MAX_INSET = 0.5;
+
 /** Fit the projected bounding box, including perspective depth, rather than
  * the rotation-invariant sphere that wastes space around long or flat models.
  * Returns a plan; never mutates the camera, controls or saved view. Without a
@@ -33,6 +36,10 @@ export function fitRoom(clearTop, height) {
  * under the view's tool strip (`fitRoom`), the bottom of the viewport: the box is
  * fitted in it and centred in it, as a flat view's fit keeps clear of the strip, so
  * the target stands above the box's centre by half of what the strip takes.
+ * `insetLeft`: the share of the viewport's width that chrome covers at its left (an
+ * FEA result's Study panel); `insetBottom`, the share of its height chrome covers at
+ * its foot (a colour bar): the box is fitted into what they leave of the room too,
+ * and centred in that, orbiting about the point the pan leaves.
  */
 export function interactiveCameraFrameForBounds(THREE, {
   camera, controls, bounds, modelOffset = null, frameAspect = camera?.aspect || 1,
@@ -40,6 +47,8 @@ export function interactiveCameraFrameForBounds(THREE, {
   nearClip = camera?.near,
   padding = null,
   room = 1,
+  insetLeft = 0,
+  insetBottom = 0,
 } = {}) {
   if (!camera || !controls || !bounds?.min?.every(Number.isFinite) || !bounds?.max?.every(Number.isFinite)) return null;
   const frame = boundsCenterAndRadius(THREE, bounds, { offset: modelOffset });
@@ -55,13 +64,20 @@ export function interactiveCameraFrameForBounds(THREE, {
   right.normalize();
   const screenUp = new THREE.Vector3().crossVectors(direction, right).normalize();
   const halfSize = new THREE.Vector3(...bounds.max).sub(new THREE.Vector3(...bounds.min)).multiplyScalar(0.5);
-  const aspect = Math.max(Number.isFinite(frameAspect) ? frameAspect : 1, 1e-3);
+  const fullAspect = Math.max(Number.isFinite(frameAspect) ? frameAspect : 1, 1e-3);
   const share = Number(room) > 0 && Number(room) < 1 ? Math.max(Number(room), 0.5) : 1;
+  const inset = (value) => (Number.isFinite(value) && value > 0 && value < MAX_INSET ? value : 0);
+  // What the chrome at the left and foot cover, past the strip's; a foot that would leave under half the height is left out.
+  const covered = inset(insetLeft);
+  const coveredBelow = share - inset(insetBottom) >= 0.5 ? inset(insetBottom) : 0;
+  // The share of the height the box is fitted into, and its aspect: what the strip and that chrome leave.
+  const tall = share - coveredBelow;
+  const aspect = Math.max(fullAspect * (1 - covered) / tall, 1e-3);
   const roomPadding = Number.isFinite(padding)
     ? { x: Math.max(padding, 1), y: Math.max(padding, 1) }
-    : interactiveFitPadding(aspect / share);
-  // Every height counts against the room's share of the viewport's.
-  const fitPadding = { x: roomPadding.x, y: roomPadding.y / share };
+    : interactiveFitPadding(aspect);
+  // Every extent counts against the room's share of the viewport's height.
+  const fitPadding = { x: roomPadding.x / tall, y: roomPadding.y / tall };
   const verticalSlope = Math.tan((Number(camera.fov) || 48) * Math.PI / 360);
   const horizontalSlope = verticalSlope * aspect;
   const nearMargin = Math.max(Number(nearClip) || 0, 0) * 1.1;
@@ -81,11 +97,13 @@ export function interactiveCameraFrameForBounds(THREE, {
   // Orthographic distance has no effect on screen occupancy; keep enough room
   // for orbit/near planes using the old conservative sphere depth.
   if (camera.isOrthographicCamera) {
-    distance = fitDistanceForRadius(camera, frame.radius, { aspect, minRadius, padding: Math.max(roomPadding.x, roomPadding.y) });
+    distance = fitDistanceForRadius(camera, frame.radius, { aspect: fullAspect, minRadius, padding: Math.max(roomPadding.x, roomPadding.y) });
   }
-  // Centred in the room: the room's middle stands (1 - share) of the half height under the viewport's.
-  const lift = (1 - share) * (camera.isOrthographicCamera ? halfHeight : distance * verticalSlope);
-  const target = frame.center.clone().addScaledVector(screenUp, lift);
+  // Centred in the room: the room's middle stands (1 - share) of the half height under the viewport's, less
+  // what the foot covers; and right of the middle by what the left covers, the camera panned to match.
+  const halfTall = camera.isOrthographicCamera ? halfHeight : distance * verticalSlope;
+  const target = frame.center.clone().addScaledVector(screenUp, (1 - share - coveredBelow) * halfTall)
+    .addScaledVector(right, -covered * halfTall * fullAspect);
   return {
     ...frame, halfHeight, distance, direction, up,
     position: target.clone().addScaledVector(direction, distance),

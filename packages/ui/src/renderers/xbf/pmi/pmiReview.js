@@ -41,3 +41,14 @@ export function datumDependents(entry, entries) {
   if (entry.kind !== "datum") return [];
   return entries.filter(item => item.part === entry.part && item.tolerance?.datums.includes(entry.datum.letter));
 }
+
+/** Coverage's questions, each once with how many ask it and all their faces: six like holes are one line. */
+export function sameQuestions(suggestions) {
+  const lines = new Map();
+  for (const said of suggestions) {
+    const key = `${said.kind}\n${said.question}\n${said.why}`;
+    const line = lines.get(key);
+    lines.set(key, { said: line?.said ?? said, count: (line?.count ?? 0) + 1, faces: [...new Set([...(line?.faces ?? []), ...said.faces])] });
+  }
+  return [...lines.values()];
+}

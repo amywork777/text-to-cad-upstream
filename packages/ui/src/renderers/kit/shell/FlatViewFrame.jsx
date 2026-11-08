@@ -3,7 +3,7 @@ import { MousePointer2 } from "lucide-react";
 import { AnnotationToolbar, DRAWING_TOOLS, annotationToolIcon, drawingToolVariant, drawingToolLabel } from "../../../annotation/toolbar.jsx";
 import { MeasureIcon } from "../tools/measure/SceneMeasure.jsx";
 import { MeasurementsBar } from "../tools/measure/measurementChips.jsx";
-import QuickEdit from "../tools/quick-edit/QuickEdit.jsx";
+import QuickEdit, { quickEditDocked } from "../tools/quick-edit/QuickEdit.jsx";
 import { DRAWING_SHORTCUTS, TOOL_SHORTCUTS } from "../tools/toolShortcuts.js";
 import { FLAT_TOOL } from "./useFlatView.js";
 import ViewFrame from "./ViewFrame.jsx";
@@ -95,7 +95,7 @@ export default function FlatViewFrame({ surface, containerRef, busy, children, f
       tools={tools} views={mobile ? [...(views || []), ...(zoom && shown ? [zoomViewControl(zoom, { t })] : [])] : views || []} toolRow={toolRow} status={status}
       panel={panel?.tabs.length ? panel : null} panelControl={panelControl} layout={toolStack} onLayoutChange={onToolStackChange}
       corner={cornerNode} notice={notice}
-      quickEdit={quickEdit ? <QuickEdit key={file} className="self-stretch" hidden={chromeHidden} docked={mobile} {...quickEdit} /> : null}
+      quickEdit={quickEdit ? <QuickEdit key={file} className="self-stretch" hidden={chromeHidden} docked={quickEditDocked(mobile)} {...quickEdit} /> : null}
       contextMenu={canvasRef && contextMenuItems ? { viewport: { hostRef: containerRef, canvasRef }, items: contextMenuItems } : null}
       loading={{ opening: loading && !alert, progress: { label: loadingLabel } }}
       alert={{ alert: cardAlert, hasContent: shown, dismissed: alertDismissal.dismissed, onDismiss: alertDismissal.dismiss, onReload }}>
