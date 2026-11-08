@@ -227,6 +227,10 @@ class ChangesRunWhatCanBreak(unittest.TestCase):
         self.assertEqual(jobs_for("skills/print3d/scripts/orca_presets.py"), {"skills"})
         self.assertEqual(tests_for("skills/print3d/scripts/orca_presets.py")["skills_tests"], [])
 
+        # The work-instructions template is run by the library's test of the module it drives.
+        self.assertEqual(tests_for("skills/work-instructions/references/instruction-api.md")["cadgen_tests"],
+                         [f"{LIBRARY}/test_work_instruction.py"])
+
     def test_the_manufacturing_check_runs_the_package_suites(self):
         # Its measurements are the library's trimesh integration: no skill suite reads them.
         chosen = tests_for("packages/cad/src/cad/trimesh/_molding.py")

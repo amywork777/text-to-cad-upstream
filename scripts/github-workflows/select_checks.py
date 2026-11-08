@@ -339,6 +339,8 @@ RULES: tuple[Rule, ...] = (
     # commands a skill documents among them; scripts by their skill's suite, each a light one.
     Rule(("skills/**",), NOTHING),
     Rule(("skills/fea/**",), select(skills=[f"{SKILL_SUITES}/fea"])),
+    # The work-instructions template is run by the library's own test of the module it drives.
+    Rule(("skills/work-instructions/**",), select(cadgen=[f"{CADGEN_SUITE}/cad/test_work_instruction.py"])),
 
     # The test runners and the gates each one feeds.
     Rule(("scripts/test/test-python.sh",), select(cadgen=[CADGEN_SUITE], skills=[SKILL_SUITES])),

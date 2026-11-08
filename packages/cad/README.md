@@ -84,7 +84,8 @@ launcher for the engine’s one page, every document at `/<id>`, every file read
 HTTP MCP endpoint, with tools and the app page owned by the engine); the URDF, SDF and SRDF checks; a 3D
 document's manufacturing check (`cad.<type>.dfm(source, process="molding"|"printing")`, measured with
 trimesh); a B-rep document's stress study (`cad.<type>.solve(source, study=..., out=...)`, meshed by netgen
-and solved by CalculiX's ccx, its results a folder of standard files); and engineering drawings (`@eng_drawing`).
+and solved by CalculiX's ccx, its results a folder of standard files); engineering drawings (`@eng_drawing`);
+and work instructions (`@work_instruction`).
 
 **MAY DEPEND ON** — the Python ecosystem it declares (OCP/build123d lazily, never at
 `import cad`), and nothing of the server's or the shim's. Never app code, never JavaScript.
@@ -362,8 +363,8 @@ it is: a board, a schematic, a robot description, a mesh, an opened STEP or xbf)
     first time a command needs it, from uv's cache and the network, and works offline after that; a
     first-need fetch that cannot reach the network says so in a line, and nothing else waits on it.
     A command sends nothing itself: what it counted -- an engine verb's build, export or
-    snapshot (`_internal/engine_telemetry.py`, the server's observer of the engine), a drawing, a
-    crash; a model's own process, where only the library is installed, counts nothing -- is kept
+    snapshot (`_internal/engine_telemetry.py`, the server's observer of the engine), a drawing or a
+    work instruction, a crash; a model's own process, where only the library is installed, counts nothing -- is kept
     in a small file beside the settings (`analytics.spool`), which the CAD app's
     and the viewer's background sends take, and a command that finds it has waited more than a
     window, with no other process sending, starts a sender detached that sends it and exits
@@ -649,6 +650,10 @@ src/cad/
                          #   holes, slots, blends read off the B-rep; assembly:
                          #   parts list, balloons, the set's sheets; gdt: feature
                          #   control frames; profile: stages and Profile)
+  work_instruction.py    # @work_instruction: the steps that build one assembly, one PDF;
+                         #   its pages and figures in _internal/work_instruction_pages.py,
+                         #   a simple one's picture guide in _internal/work_instruction_guide.py
+                         #   and its 3D page in _internal/work_instruction_player.py
   _internal/             # DocumentType (document_type), a 3D type's manufacturing check: its
                          #   signature and options, the trimesh integration's measuring imported
                          #   when it runs (manufacturing), the runner of one operation the server's
