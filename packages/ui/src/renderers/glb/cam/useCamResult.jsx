@@ -2,11 +2,11 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import { readFileView } from "../../kit/shell/fileView.js";
 import { ViewerHostContext } from "../../../host/context.js";
 import { useI18n } from "@cad/ui/i18n";
-import { carriesCamJob } from "./detect.js";
+import { CAM_PLAN_JSON, camResultKind } from "./detect.js";
 
 /**
- * What GlbRenderer needs to show a CAM result (`cad cam plan`): the result's own viewer, loaded as its own chunk
- * (`camView.jsx`), the job read from the file, what the view shows of its paths, stock and tool, the
+ * What GlbRenderer needs to show a CAM result (a 0.11 plan's `result.glb` with its `result.json`, or a 0.10
+ * `.cam.glb`): the result's own viewer, loaded as its own chunk (`camView.jsx`), the job read for the file, what the view shows of its paths, stock and tool, the
  * routines that run the cut, and Job, a section of the file sidebar whose rows are Quick Edit's chips. A GLB that is
  * not a result gets nulls throughout.
  *
@@ -24,14 +24,29 @@ let camView = null;
 /** Loads the CAM result viewer: its own chunk, which a plain GLB never fetches. */
 export const loadCamView = () => import("../camView.jsx").then((module) => { camView = module; return module; });
 
+/** A plan's `result.json`, read through the workspace from beside its `result.glb` (as a glTF's own files are). */
+async function readPlanJson(resources, url, signal) {
+  if (typeof resources?.readJson !== "function" || typeof resources?.resolveDependency !== "function" || !url) {
+    throw new Error("this view has no workspace to read it from");
+  }
+  return resources.readJson(resources.resolveDependency(url, CAM_PLAN_JSON), { signal });
+}
+
+const isAbort = (error) => error?.name === "AbortError";
+
 /**
- * The CAM result viewer for a scene that carries a job (`kit`), loaded the first time one does, and the job read from
- * the scene (`cam`); `pending` while it loads. A plain GLB's `kit` and `cam` are null. Should the chunk fail to load,
- * or the job be damaged (`CamResultError`: something cad cam always writes is missing), `failed` is the error: the
- * result is not drawn as a plain GLB, which would hide its verdict, but refused as a file that failed to load.
+ * The CAM result viewer for a GLB that is a result (`kit`), loaded the first time one is, and the job read for it
+ * (`cam`); `pending` while either loads. `document` is the GLB as core reads it (`buildGlbDocumentFromBuffer`): a
+ * 0.11 plan's `result.glb` (its asset's generator "cad plan") has its job in the `result.json` beside it, read through
+ * `resources` from the GLB's own `url`; a 0.10 `.cam.glb` carries its job in its extras. A plain GLB's `kit` and `cam`
+ * are null. Should the chunk fail to load, the `result.json` not be read, or the job be damaged (`CamResultError`:
+ * something the plan always writes is missing), `failed` is the error: the result is not drawn as a plain GLB, which
+ * would hide its verdict, but refused as a file that failed to load.
  */
-export function useCamView(root) {
-  const wanted = useMemo(() => carriesCamJob(root), [root]);
+export function useCamView(document, { resources = null, url = "" } = {}) {
+  const root = document?.scene || null;
+  const kind = useMemo(() => camResultKind(document), [document]);
+  const wanted = kind !== null;
   const [kit, setKit] = useState(camView);
   const [failed, setFailed] = useState(null);
   useEffect(() => {
@@ -40,17 +55,32 @@ export function useCamView(root) {
     loadCamView().then((module) => { if (live) setKit(module); }, (error) => { if (live) setFailed(error || new Error("the CAM viewer did not load")); });
     return () => { live = false; };
   }, [wanted, kit, failed]);
+  // A plan's job, read once for each GLB document (a new revision of the file is a new document).
+  const [plan, setPlan] = useState({ document: null, json: null, error: null });
+  useEffect(() => {
+    if (kind !== "plan") return undefined;
+    const controller = new AbortController();
+    readPlanJson(resources, url, controller.signal).then(
+      (json) => { if (!controller.signal.aborted) setPlan({ document, json, error: null }); },
+      (error) => { if (!controller.signal.aborted && !isAbort(error)) setPlan({ document, json: null, error: error || new Error("it did not load") }); });
+    return () => controller.abort();
+  }, [kind, document, resources, url]);
+  const planRead = kind === "plan" && plan.document === document ? plan : null;
   const read = useMemo(() => {
-    if (!wanted || !kit) return { cam: null, error: null };
+    if (!wanted || !kit || (kind === "plan" && !planRead)) return { cam: null, error: null };
+    if (planRead?.error) {
+      return { cam: null, error: new kit.CamResultError(CAM_PLAN_JSON, `beside this GLB could not be read (${planRead.error.message || planRead.error})`) };
+    }
     try {
-      return { cam: kit.readCamJob(root), error: null };
+      return { cam: kind === "plan" ? kit.readCamPlan(planRead.json) : kit.readCamJob(root), error: null };
     } catch (error) {
       if (!(error instanceof kit.CamResultError)) throw error;
       return { cam: null, error };
     }
-  }, [wanted, kit, root]);
+  }, [wanted, kind, kit, root, planRead]);
   const refused = wanted ? failed || read.error : null;
-  return { kit: wanted && kit ? kit : null, cam: refused ? null : read.cam, pending: wanted && !kit && !failed, failed: refused };
+  const waiting = wanted && !failed && (!kit || (kind === "plan" && !planRead));
+  return { kit: wanted && kit ? kit : null, cam: refused ? null : read.cam, pending: waiting, failed: refused };
 }
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -78,7 +108,7 @@ export function useReducedMotion() {
  */
 export function useCamResult({ cv, job, scene, view, shellRef }) {
   const { t } = useI18n();
-  // A CAM result carries its job in the file (`useCamView` reads it): its verdict, setups and operations (Job), its
+  // A CAM result's job (`useCamView` reads it): its verdict, setups and operations (Job); the file draws its
   // toolpaths and its stock box. What the view shows of it is this renderer's one slice of the file's view.
   const root = scene?.document?.scene || null;
   const cam = cv && root ? job : null;

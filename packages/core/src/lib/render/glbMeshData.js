@@ -720,7 +720,8 @@ function markGlbNodes(gltf) {
  * clips, the matrix that places it in CAD space, and two boxes in that space.
  * `restBounds` is the file as authored; `animatedBounds` (null without clips)
  * also covers every sampled pose, so a camera framed on it never clips a clip.
- * The document owns its geometry, materials and textures (`disposeGlbDocument`).
+ * `asset` is the file's glTF `asset` (its `generator`: the program that wrote
+ * it), or null for a file without one. The document owns its geometry, materials and textures (`disposeGlbDocument`).
  */
 export async function buildGlbDocumentFromBuffer(buffer, options) {
   const [{ GLTFLoader }, decoder] = await Promise.all([
@@ -742,6 +743,7 @@ export async function buildGlbDocumentFromBuffer(buffer, options) {
       cadRootMatrix: cadRootMatrix.toArray(),
       animatedBounds,
       restBounds,
+      asset: gltf.asset && typeof gltf.asset === "object" ? gltf.asset : null,
     };
   } catch (error) {
     disposeGlbDocument({ scene: gltf.scene });

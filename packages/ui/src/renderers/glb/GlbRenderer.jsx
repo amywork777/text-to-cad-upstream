@@ -15,6 +15,7 @@ import { sceneMenuEntries } from "../kit/tools/select/sceneMenu.js";
 import { useSceneSelection } from "../kit/tools/select/useSceneSelection.js";
 import { useDeclinedSelectReference, useWorkspaceDocument, workspaceLoadAlert } from "../workspace/useWorkspaceDocument.js";
 import { useCamChrome, useCamResult, useCamView } from "./cam/useCamResult.jsx";
+import { entryMeshAssetUrl } from "@cad/core/lib/entryAssets.js";
 import { GLB_DECLINED_LIVE_COMMANDS, GLB_TOOL, GLB_TOOL_MODES } from "./tools.js";
 import { useGlbAnimation } from "./useGlbAnimation.js";
 import { useGlbScene } from "./useGlbScene.js";
@@ -65,10 +66,12 @@ function GlbFile({ view, data }) {
 
 function GlbSurface({ view, document, loaded, pending: feaPending, feaError }) {
   const { t } = useI18n();
-  // A CAM result (cad cam plan) has a viewer of its own (`cam/useCamResult.jsx`), loaded as its own chunk; it waits
-  // for it as the file loading, so it is framed once, as the viewer draws it. A chunk that fails, or a job that is
-  // damaged, is the file failing: drawn as a plain GLB, a result would hide its verdict.
-  const { kit: cv, cam: job, pending: camPending, failed: camFailed } = useCamView(loaded.scene?.document?.scene);
+  // A CAM result (a plan's `result.glb`, its job the `result.json` beside it; or a 0.10 `.cam.glb`) has a viewer of
+  // its own (`cam/useCamResult.jsx`), loaded as its own chunk; it waits for it and for the job as the file loading, so
+  // it is framed once, as the viewer draws it. A chunk that fails, a job that will not read, or one that is damaged, is
+  // the file failing: drawn as a plain GLB, a result would hide its verdict.
+  const { kit: cv, cam: job, pending: camPending, failed: camFailed } = useCamView(loaded.scene?.document,
+    { resources: document.client.resources, url: entryMeshAssetUrl(document.entry) });
   const pending = feaPending || camPending;
   const scene = pending || feaError || camFailed ? null : loaded.scene;
   const loadError = loaded.error || feaError || camFailed;

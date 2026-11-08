@@ -1,9 +1,13 @@
 /**
- * A CAM job's result as `cad cam plan` writes it into `<stem>.cam.glb`: the scene's extras carry
- * `generator: "cad cam"` and `cam` (schema 1), which this reads into the one shape the viewer
- * draws (`detect.js` says whether a scene is one). What cad cam always writes is required: a result
- * missing one, or holding the wrong kind of value, is refused (`CamResultError`, naming where),
- * never drawn with a default in its place. Pure: no three.js, no React.
+ * A CAM job's result, read into the one shape the viewer draws (`detect.js` says whether a GLB is one):
+ *
+ * - `readCamPlan`: a 0.11 plan, from the `result.json` its folder holds beside `result.glb` (`cad <type> plan --out`),
+ *   the whole result `--json` prints. The GLB is the picture alone: "the numbers are result.json's".
+ * - `readCamJob`: a 0.10 `<stem>.cam.glb`, whose scene extras carry `generator: "cad cam"` and the job as `cam`
+ *   (schema 1), which a project may still hold.
+ *
+ * What the plan always writes is required: a result missing one, or holding the wrong kind of value, is refused
+ * (`CamResultError`, naming where), never drawn with a default in its place. Pure: no three.js, no React.
  */
 
 import { english } from "../../../i18n/core.js";
@@ -11,7 +15,7 @@ import { camExtras, carriesCamJob } from "./detect.js";
 
 export { carriesCamJob };
 
-/** A CAM result that is not as `cad cam plan` writes one; its message names the value, as `cam.setups[0].id`. */
+/** A CAM result that is not as the plan writes one; its message names the value, as `cam.setups[0].id` or `result.json.measurements.setups[0].id`. */
 export class CamResultError extends Error {
   constructor(where, what) {
     super(`This CAM result is damaged: ${where} ${what}. Plan the job again to write it anew.`);
@@ -42,7 +46,7 @@ function text(raw, key, where) {
   if (typeof raw[key] !== "string") throw new CamResultError(`${where}.${key}`, "is not text");
   return raw[key];
 }
-/** Text cad cam writes only where there is some (an operation's name, the verdict's G-code line): "" where it is not. */
+/** Text the plan writes only where there is some (an operation's name, the verdict's G-code line): "" where it is not. */
 function optionalText(raw, key, where) {
   return raw[key] === undefined || raw[key] === null ? "" : text(raw, key, where);
 }
@@ -118,7 +122,7 @@ function readFinding(raw, where) {
 }
 
 /**
- * The job a CAM result carries, or null for any other GLB. A result missing what cad cam always writes throws
+ * The job a 0.10 `.cam.glb` carries, or null for any other GLB. A result missing what cad cam always writes throws
  * `CamResultError`.
  *
  * @returns {null | { verdict: { status: "ready" | "fix", headline: string, errors: number, warnings: number, gcode: string },
@@ -163,20 +167,12 @@ export function readCamJob(root) {
   });
   const findings = list(cam, "findings", where).map((raw, k) => readFinding(raw, `${where}.findings[${k}]`))
     .sort((a, b) => (a.level === "error" ? 0 : 1) - (b.level === "error" ? 0 : 1));
-  const rawVerdict = object(cam.verdict, `${where}.verdict`);
-  const posts = list(cam, "posts", where).map((entry, k) => {
-    const at = `${where}.posts[${k}]`;
-    object(entry, at);
-    return { setup: text(entry, "setup", at), file: text(entry, "file", at), post: text(entry, "post", at), tool: optionalText(entry, "tool", at) };
-  });
   return {
     // A plan with errors writes no G-code; its verdict says so ("G-code not written: fix 2 errors first").
-    verdict: { status: oneOf(rawVerdict, "status", `${where}.verdict`, ["ready", "fix"]), headline: text(rawVerdict, "headline", `${where}.verdict`),
-      errors: whole(rawVerdict, "errors", `${where}.verdict`), warnings: whole(rawVerdict, "warnings", `${where}.verdict`),
-      gcode: optionalText(rawVerdict, "gcode", `${where}.verdict`) },
+    verdict: readVerdict(cam.verdict, `${where}.verdict`),
     setups, operations, findings,
     // A setup may post several files (one per tool on a controller without tool changes), each naming its `tool`.
-    posts,
+    posts: list(cam, "posts", where).map((entry, k) => readPost(entry, `${where}.posts[${k}]`)),
     durationS: number(cam, "duration_s", where),
     // The controller the G-code is written for.
     post: text(object(cam.machine, `${where}.machine`), "post", `${where}.machine`),
@@ -187,6 +183,123 @@ export function readCamJob(root) {
     document: text(cam, "document", where),
     // The caveat every result carries: what the plan is not, and what to check before cutting.
     safety: text(cam, "safety", where),
+  };
+}
+
+/** A verdict as the plan writes it: `{ status, headline, errors, warnings, gcode? }`. */
+function readVerdict(raw, where) {
+  object(raw, where);
+  return { status: oneOf(raw, "status", where, ["ready", "fix"]), headline: text(raw, "headline", where),
+    errors: whole(raw, "errors", where), warnings: whole(raw, "warnings", where), gcode: optionalText(raw, "gcode", where) };
+}
+
+/** A posted file as the plan lists it: `{ setup, file, post, tool }`, `tool` its id where the post splits a setup by tool, else none. */
+function readPost(raw, where) {
+  object(raw, where);
+  return { setup: text(raw, "setup", where), file: text(raw, "file", where), post: text(raw, "post", where), tool: optionalText(raw, "tool", where) };
+}
+
+// A tool's plain words as the plan writes them (`Tool.plain`, "6 mm flat"), and the type each kind's word names.
+const TOOL_PLAIN = /^\S+ mm (flat|ball|bull nose|drill)$/;
+const TOOL_TYPE_OF_WORD = Object.freeze({ flat: "flat", ball: "ball", "bull nose": "bull", drill: "drill" });
+
+/**
+ * A 0.11 finding (every check's `CheckFinding`: `{ severity, code, message, location, hint }`) as the viewer shows one.
+ * `location` is the places its items name, joined by ", ": a face's ref, a point "(x, y, z)" or "operation N" (one
+ * more than the operation's `index`). `operations` are the ones it names, by number or as cutting a face it names
+ * (an operation's `faces`), `operation` the first; `at` its first point. Each only where the location has one.
+ */
+function readCheckFinding(raw, where, operations) {
+  object(raw, where);
+  const severity = oneOf(raw, "severity", where, ["error", "warning", "info"]);
+  const location = optionalText(raw, "location", where);
+  const points = [...location.matchAll(/\(([^()]*)\)/g)].map((match) => {
+    const values = match[1].split(",").map((value) => (value.trim() === "" ? Number.NaN : Number(value)));
+    if (values.length !== 3 || !values.every(isNumber)) throw new CamResultError(`${where}.location`, `holds ${match[0]}, which is not a point (x, y, z)`);
+    return values;
+  });
+  const indices = new Set(operations.map((op) => op.index));
+  const named = [];
+  const name = (index) => { if (!named.includes(index)) named.push(index); };
+  for (const place of location.replace(/\([^()]*\)/g, "").split(",").map((part) => part.trim()).filter(Boolean)) {
+    const numbered = /^operation (\d+)$/.exec(place);
+    if (numbered) {
+      const index = Number(numbered[1]) - 1;
+      if (!indices.has(index)) throw new CamResultError(`${where}.location`, `names operation ${numbered[1]}, which the result does not list`);
+      name(index);
+    } else {
+      for (const op of operations) if (op.faces.includes(place)) name(op.index);
+    }
+  }
+  return {
+    check: text(raw, "code", where), level: severity === "error" ? "error" : "warning", message: text(raw, "message", where),
+    operation: named.length ? named[0] : null, operations: named, at: points[0] || null,
+  };
+}
+
+/**
+ * The job of a 0.11 plan, from the `result.json` beside its `result.glb`: the whole result as `cad <type> plan --json`
+ * prints it (`ok`, `path` the part planned, `findings`, `measurements`), in `readCamJob`'s shape. The plan's own
+ * numbers throughout: its setups (`measurements.setups`, each its operations from `measurements.operations`, by
+ * `setup`), its tools (`measurements.tools`, each as the operations that run it say: `tool_plain` and
+ * `tool_diameter_mm`, its type the kind `tool_plain` names), its tool changes (`tool_changes.count`) and its verdict.
+ * A result missing what the plan always writes throws `CamResultError`.
+ */
+export function readCamPlan(raw) {
+  const top = object(raw, "result.json");
+  const where = "result.json.measurements";
+  const numbers = object(top.measurements, where);
+  const toolIds = texts(numbers, "tools", where);
+  const setupRows = list(numbers, "setups", where).map((row, k) => object(row, `${where}.setups[${k}]`));
+  const setupIds = setupRows.map((row, k) => text(row, "id", `${where}.setups[${k}]`));
+  const tools = new Map();
+  const operations = list(numbers, "operations", where).map((rawOp, k) => {
+    const here = `${where}.operations[${k}]`;
+    object(rawOp, here);
+    const tool = text(rawOp, "tool", here);
+    if (!toolIds.includes(tool)) throw new CamResultError(`${here}.tool`, `names ${tool}, a tool the result does not list`);
+    const setup = text(rawOp, "setup", here);
+    if (!setupIds.includes(setup)) throw new CamResultError(`${here}.setup`, `names ${setup}, a setup the result does not list`);
+    const toolPlain = text(rawOp, "tool_plain", here);
+    const kind = TOOL_PLAIN.exec(toolPlain);
+    if (!kind) throw new CamResultError(`${here}.tool_plain`, "names no kind of tool (flat, ball, bull nose or drill)");
+    const toolDiameterMm = number(rawOp, "tool_diameter_mm", here);
+    const known = tools.get(tool);
+    if (!known) tools.set(tool, { id: tool, type: TOOL_TYPE_OF_WORD[kind[1]], diameterMm: toolDiameterMm, plain: toolPlain });
+    else if (known.plain !== toolPlain || known.diameterMm !== toolDiameterMm) {
+      throw new CamResultError(`${here}.tool_plain`, `says ${tool} is a ${toolPlain}, where an earlier operation says a ${known.plain}`);
+    }
+    return {
+      index: whole(rawOp, "index", here), op: text(rawOp, "op", here), plain: text(rawOp, "plain", here),
+      name: optionalText(rawOp, "name", here), tool, toolPlain, toolDiameterMm, toolType: tools.get(tool).type,
+      rpm: number(rawOp, "rpm", here), feedMmMin: number(rawOp, "feed_mm_min", here), timeS: number(rawOp, "time_s", here),
+      t0: number(rawOp, "t0", here), t1: number(rawOp, "t1", here), summary: text(rawOp, "summary", here),
+      faces: texts(rawOp, "faces", here), setup,
+    };
+  });
+  const listed = toolIds.map((id, k) => {
+    if (!tools.has(id)) throw new CamResultError(`${where}.tools[${k}]`, `names ${id}, a tool no operation runs`);
+    return tools.get(id);
+  });
+  const setups = setupRows.map((row, s) => {
+    const at = `${where}.setups[${s}]`;
+    return { id: setupIds[s], plain: text(row, "plain", at), timeS: number(row, "time_s", at),
+      orientation: oneOf(row, "orientation", at, ["+Z", "-Z"]), axis: setupAxis(row, at),
+      operations: operations.filter((op) => op.setup === setupIds[s]) };
+  });
+  const findings = list(top, "findings", "result.json").map((entry, k) => readCheckFinding(entry, `result.json.findings[${k}]`, operations))
+    .sort((a, b) => (a.level === "error" ? 0 : 1) - (b.level === "error" ? 0 : 1));
+  return {
+    verdict: readVerdict(numbers.verdict, `${where}.verdict`),
+    setups, operations, findings,
+    posts: list(numbers, "posts", where).map((entry, k) => readPost(entry, `${where}.posts[${k}]`)),
+    durationS: number(numbers, "duration_s", where),
+    post: text(numbers, "post", where),
+    tools: readTools(listed, operations),
+    toolChanges: whole(object(numbers.tool_changes, `${where}.tool_changes`), "count", `${where}.tool_changes`),
+    assumed: list(numbers, "assumed", where).map((entry, k) => readAssumed(entry, `${where}.assumed[${k}]`)),
+    document: text(top, "path", "result.json"),
+    safety: text(numbers, "safety", where),
   };
 }
 
@@ -204,7 +317,7 @@ function valueWords(value) {
   return String(value);
 }
 
-/** What the plan assumed, as cad cam writes it (`{ key, value, why }`), the value in words. */
+/** What the plan assumed, as it writes it (`{ key, value, why }`), the value in words. */
 function readAssumed(raw, where) {
   object(raw, where);
   if (raw.value === undefined || raw.value === null) throw new CamResultError(`${where}.value`, "is missing");

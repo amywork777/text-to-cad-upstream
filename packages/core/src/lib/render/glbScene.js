@@ -60,7 +60,7 @@ function boundsOf(THREE, root) {
  *
  * @param {typeof import("three")} THREE
  * @param {{ scene: import("three").Object3D, clips: object[], cadRootMatrix: number[],
- *   animatedBounds: object | null, restBounds: object | null }} document  `buildGlbDocumentFromBuffer`.
+ *   animatedBounds: object | null, restBounds: object | null, asset?: object | null }} document  `buildGlbDocumentFromBuffer`.
  * @returns {import("../viewer/sceneContract.js").KitScene & { document: object, meshCount: number }}
  */
 export function createGlbScene(THREE, document, { sibling = false } = {}) {

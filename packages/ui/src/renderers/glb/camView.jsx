@@ -1,5 +1,5 @@
 /**
- * The CAM result viewer GlbRenderer loads only for a GLB that carries a job (`cad cam plan`): one module,
+ * The CAM result viewer GlbRenderer loads only for a CAM result (a 0.11 plan's `result.glb`, or a 0.10 `.cam.glb`): one module,
  * so the bundler makes it a chunk of its own and a plain GLB never fetches it. Everything GlbRenderer uses of
  * the CAM viewer is here, by name.
  */
@@ -15,7 +15,7 @@ import { createCamTool } from "./cam/tool.js";
 
 export { default as CamJobPanel } from "./CamJobPanel.jsx";
 export { camChoices } from "./CamJobPanel.jsx";
-export { CamResultError, camSourcePath, readCamJob } from "./cam/extras.js";
+export { CamResultError, camSourcePath, readCamJob, readCamPlan } from "./cam/extras.js";
 export { camOpColours } from "./cam/colours.js";
 export { camClips, camReadoutWords } from "./cam/playback.js";
 export { camSceneMeshes, showCamMeshes };
