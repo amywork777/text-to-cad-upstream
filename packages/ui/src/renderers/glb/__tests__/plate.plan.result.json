@@ -1,6 +1,6 @@
 {
  "ok": true,
- "path": "/private/tmp/claude-501/-Users-amy-code/789f6c95-1455-45f5-a21b-7b18a04fa2f1/scratchpad/camplan/plate.step",
+ "path": "/work/camplan/plate.step",
  "findings": [],
  "summary": "Ready to cut \u00b7 39 s \u00b7 2 tools",
  "measurements": {
@@ -135,7 +135,7 @@
   "posts": [
    {
     "setup": "top",
-    "file": "/private/tmp/claude-501/-Users-amy-code/789f6c95-1455-45f5-a21b-7b18a04fa2f1/scratchpad/camplan/ready/plate.top.ngc",
+    "file": "/work/camplan/ready/plate.top.ngc",
     "post": "linuxcnc",
     "tool": null
    }
@@ -154,9 +154,9 @@
  },
  "occurrence": "COMPOUND",
  "written": [
-  "/private/tmp/claude-501/-Users-amy-code/789f6c95-1455-45f5-a21b-7b18a04fa2f1/scratchpad/camplan/ready/result.json",
-  "/private/tmp/claude-501/-Users-amy-code/789f6c95-1455-45f5-a21b-7b18a04fa2f1/scratchpad/camplan/ready/result.glb",
-  "/private/tmp/claude-501/-Users-amy-code/789f6c95-1455-45f5-a21b-7b18a04fa2f1/scratchpad/camplan/ready/plate.top.ngc"
+  "/work/camplan/ready/result.json",
+  "/work/camplan/ready/result.glb",
+  "/work/camplan/ready/plate.top.ngc"
  ],
  "faces": [],
  "holes": [],

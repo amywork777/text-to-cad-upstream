@@ -224,6 +224,18 @@ class ReadsNeverBlockDeletion(ScannerTestCase):
 
 
 class ServedAssetGate(unittest.TestCase):
+    def test_a_results_folders_answer_is_sent_only_beside_its_picture(self):
+        with tempfile.TemporaryDirectory() as folder:
+            answer = os.path.join(folder, "result.json")
+            with open(answer, "w", encoding="utf-8") as handle:
+                handle.write("{}")
+            self.assertFalse(is_served_cad_asset(answer))
+            with open(os.path.join(folder, "result.glb"), "wb") as handle:
+                handle.write(b"glTF")
+            self.assertTrue(is_served_cad_asset(answer))
+            self.assertFalse(is_served_cad_asset(os.path.join(folder, "other.json")))
+            self.assertFalse(is_served_cad_asset(os.path.join(folder, "RESULT.JSON")))
+
     def test_the_gate(self):
         self.assertFalse(is_served_cad_asset("/root/.secret.step"))
         # A sidecar is a .json like any other: nothing reads one, and none leaves.

@@ -306,16 +306,25 @@ def _create_single_asset_entry(source_path, extension) -> dict:
     return entry
 
 
+#: A results folder's answer (``cad <type> solve|plan --out DIR``), sent only beside the picture it is the answer of.
+RESULT_JSON, RESULT_GLB = "result.json", "result.glb"
+
+
 def is_served_cad_asset(file_path) -> bool:
     """Whether the asset route may stream this path's bytes: a CAD file, never a hidden one, and
-    nothing else -- never a ``.json``, a config or a key file beside it.
+    nothing else -- never a ``.json``, a config or a key file beside it. The one ``.json`` it sends
+    is a results folder's ``result.json`` while its ``result.glb`` is beside it: the study's or the
+    plan's answer, which the viewer reads to draw that ``result.glb`` (Studio's CAM and FEA panels).
 
     The hidden check is on the BASENAME only: a file is named by its absolute path, and a hidden
     folder on the way to it is no reason to refuse it.
     """
     text = str(file_path or "")
-    if is_hidden_name(node_basename(text)):
+    name = node_basename(text)
+    if is_hidden_name(name):
         return False
+    if name == RESULT_JSON:
+        return os.path.isfile(os.path.join(os.path.dirname(text), RESULT_GLB))
     return extension_of(text) in SOURCE_EXTENSIONS
 
 

@@ -1,6 +1,6 @@
 {
  "ok": false,
- "path": "/private/tmp/claude-501/-Users-amy-code/789f6c95-1455-45f5-a21b-7b18a04fa2f1/scratchpad/camplan/plate.step",
+ "path": "/work/camplan/plate.step",
  "findings": [
   {
    "severity": "error",
@@ -137,8 +137,8 @@
  },
  "occurrence": "COMPOUND",
  "written": [
-  "/private/tmp/claude-501/-Users-amy-code/789f6c95-1455-45f5-a21b-7b18a04fa2f1/scratchpad/camplan/fix/result.json",
-  "/private/tmp/claude-501/-Users-amy-code/789f6c95-1455-45f5-a21b-7b18a04fa2f1/scratchpad/camplan/fix/result.glb"
+  "/work/camplan/fix/result.json",
+  "/work/camplan/fix/result.glb"
  ],
  "faces": [],
  "holes": [],

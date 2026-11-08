@@ -1,6 +1,6 @@
 {
  "ok": true,
- "path": "/tmp/claude-501/fea-real.VbFC/bar.step",
+ "path": "/work/cantilever/bar.step",
  "findings": [],
  "summary": "solved COMPOUND of bar.step: peak 29.3828 MPa, safety factor 9.393",
  "measurements": {
@@ -147,9 +147,9 @@
  },
  "occurrence": "COMPOUND",
  "written": [
-  "/tmp/claude-501/fea-real.VbFC/study/result.json",
-  "/tmp/claude-501/fea-real.VbFC/study/result.glb",
-  "/tmp/claude-501/fea-real.VbFC/study/result.vtu"
+  "/work/cantilever/study/result.json",
+  "/work/cantilever/study/result.glb",
+  "/work/cantilever/study/result.vtu"
  ],
  "contact_tolerance_mm": null,
  "parts": [],
