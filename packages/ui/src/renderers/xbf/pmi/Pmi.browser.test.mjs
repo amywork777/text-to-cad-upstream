@@ -165,7 +165,7 @@ test('PMI is drawn on the model and stays legible as the camera moves; a pick li
   assert.equal(await label('thickness').getAttribute('aria-label'), '9.8\u201310.2');
   assert.equal(await label('mask').innerText(), '3');
   await pane.getByRole('button', { name: 'PMI', exact: true }).click();
-  assert.deepEqual(await pane.locator('[data-tool-panel-id="pmi"] h2').allInnerTexts(), ['Views', 'Notes', 'Coverage', 'Annotations']);
+  assert.deepEqual(await pane.locator('[data-tool-panel-id="pmi"] h2').allTextContents(), ['Views', 'Notes', 'Coverage', 'Annotations']);
   const read = () => page.evaluate(`({ state: ${controller}.readState(), camera: window.__cadCamera(), cut: window.__cadStage().cut })`);
   const unpicked = await read();
   const section = pane.getByRole('button', { name: 'A-A', exact: true });
