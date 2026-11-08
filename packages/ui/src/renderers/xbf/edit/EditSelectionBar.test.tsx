@@ -39,7 +39,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  document.querySelectorAll('[data-cad-scene-backdrop]').forEach(each => each.remove());
+  document.querySelectorAll('[data-cad-canvas]').forEach(each => each.remove());
   vi.useRealTimers();
   vi.unstubAllGlobals();
   Object.defineProperties(HTMLElement.prototype, { offsetWidth: sizeOf.offsetWidth, offsetHeight: sizeOf.offsetHeight });
@@ -153,7 +153,7 @@ it('goes below the pick where there is no room above it, and is nowhere when the
 function workspaceRig() {
   const rig = viewport();
   const backdrop = document.createElement('div');
-  backdrop.setAttribute('data-cad-scene-backdrop', '');
+  backdrop.setAttribute('data-cad-canvas', '');
   backdrop.innerHTML = '<div data-cad-dock="toolbar"></div><aside data-cad-dock="navigator"></aside>';
   backdrop.prepend(rig.host);
   document.body.append(backdrop);

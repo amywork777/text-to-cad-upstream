@@ -25,7 +25,7 @@ const CARDS = '[data-cad-dock="toolbar"], [data-cad-dock="navigator"], [data-cad
 function frameOf(runtime, points, width, height, host) {
   const box = screenBox(runtime, points, width, height);
   if (!box) return null;
-  const view = host?.closest?.("[data-cad-scene-backdrop]");
+  const view = host?.closest?.("[data-cad-canvas]");
   const origin = host?.getBoundingClientRect?.();
   const obstacles = [];
   let top = SELECTION_BAR_EDGE_PX;

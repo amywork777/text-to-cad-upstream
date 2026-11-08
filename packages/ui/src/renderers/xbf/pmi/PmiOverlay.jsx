@@ -35,7 +35,7 @@ const OVER_VIEW = "[data-cad-top-controls], aside[data-cad-file-sidebar][data-op
 // What covers the overlay `root`, each rectangle in its pixels.
 function viewCovers(root) {
   const within = root.getBoundingClientRect();
-  return [...(root.closest("[data-cad-scene-backdrop]") || root).querySelectorAll(OVER_VIEW)].map(element => element.getBoundingClientRect())
+  return [...(root.closest("[data-cad-canvas]") || root).querySelectorAll(OVER_VIEW)].map(element => element.getBoundingClientRect())
     .filter(box => box.width > 0 && box.height > 0)
     .map(box => ({ left: box.left - within.left, right: box.right - within.left, top: box.top - within.top, bottom: box.bottom - within.top }));
 }
@@ -194,7 +194,7 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
       const inks = { ok: style.color || "#888" };
       for (const [status, token] of Object.entries(PMI_STATUS_TOKENS)) inks[status] = style.getPropertyValue(token).trim() || inks.ok;
       // The viewport's colour, for the halo round leaders and bare dimensions; none on a clear one.
-      const backdrop = root.closest("[data-cad-scene-backdrop]");
+      const backdrop = root.closest("[data-cad-canvas]");
       const ground = backdrop ? getComputedStyle(backdrop).backgroundColor : "";
       const halo = ground && !/^(transparent|rgba\(.*,\s*0\))$/.test(ground) ? ground : null;
       root.style.setProperty("--pmi-halo", halo || "transparent");

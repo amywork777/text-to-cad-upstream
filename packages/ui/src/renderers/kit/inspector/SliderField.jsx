@@ -23,13 +23,15 @@ const valueWidth = text => ({ width: `calc(${Math.max(2, String(text ?? "").leng
  *   onValueChange(value: number): void, onValueCommit?(value: number): void,
  *   text: string, onTextCommit(draft: string): void, textLabel: string,
  *   hint?: import("react").ReactNode, disabled?: boolean, inline?: boolean, className?: string,
- *   thumbProps?: object,
+ *   thumbProps?: object, valueClassName?: string,
  * }} props `name` is the slider's accessible name, `textLabel` the value's; `hint` a tooltip on the
- *   slider (a joint's range). Other props (`data-*`) go on the control's root.
+ *   slider (a joint's range). `valueClassName`: a width for the value that holds every value it will
+ *   show, in place of its own text's (rows that keep one width as their values move, an FEA result's
+ *   controls). Other props (`data-*`) go on the control's root.
  */
 export function SliderField({
   label, labelTitle, name, value, min, max, step = 1, origin, onValueChange, onValueCommit,
-  text, onTextCommit, textLabel, hint = null, disabled = false, inline = false, className, thumbProps, ...props
+  text, onTextCommit, textLabel, hint = null, disabled = false, inline = false, className, thumbProps, valueClassName = "", ...props
 }) {
   const slider = <Slider data-slider-field-track="" className={inline ? "h-6 min-w-0 flex-1 px-2" : "h-3 min-w-0"}
     value={[Number(value) || 0]} min={min} max={max} step={step} origin={origin} disabled={disabled}
@@ -40,7 +42,7 @@ export function SliderField({
   // rounded text back over the value it rounds (123.4° as 123).
   const commitText = draft => { if (String(draft ?? "").trim() !== String(text ?? "").trim()) onTextCommit?.(draft); };
   const field = <FileSheetValueInput quiet value={text} onValueCommit={commitText} disabled={disabled} ariaLabel={textLabel}
-    className={inline ? "h-6" : "-my-0.5 -mr-1 h-5"} style={valueWidth(text)} data-slider-field-value="" />;
+    className={cn(inline ? "h-6" : "-my-0.5 -mr-1 h-5", valueClassName)} style={valueClassName ? undefined : valueWidth(text)} data-slider-field-value="" />;
   if (inline) {
     return <div data-slider-field="" data-inline="" className={cn("flex min-w-0 flex-1 items-center gap-1", className)} {...props}>
       {label}

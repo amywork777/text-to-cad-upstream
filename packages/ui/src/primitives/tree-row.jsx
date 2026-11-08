@@ -33,6 +33,8 @@ export const TREE_ROW_NAME_CLASS = 'flex h-full min-w-0 flex-1 items-center gap-
 const PAD = `var(--tree-row-pad, ${TREE_ROW_INSET_PX}px)`;
 const GLYPH = 'var(--tree-row-glyph, 12px)';
 const rowPadding = depth => (depth ? `calc(${PAD} + ${depth * TREE_INDENT_PX}px)` : PAD);
+/** The left padding of a row `depth` levels down, for what stands among a tree's rows on their line (a part's named sizes under their fold). */
+export const treeRowPadding = rowPadding;
 
 /**
  * One row of a list: 24px (36 on a phone), its radius and its hover, selected (`active`) and cursor

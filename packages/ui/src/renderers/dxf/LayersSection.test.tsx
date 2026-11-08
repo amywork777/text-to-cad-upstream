@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import LayersSection from '../../../dist/renderers/dxf/LayersSection.js';
 
@@ -17,6 +17,9 @@ it('mounts a screenful of a drawing with thousands of block references', () => {
   const selection = { selected: [], hover() {}, select() {} };
   const { container } = render(<LayersSection drawing={drawing} hiddenLayers={new Set()} onToggleLayer={() => {}} selection={selection} />);
   expect(container.querySelectorAll('[data-layer-row="HARDWARE"]')).toHaveLength(1);
+  // A layer with several references stays folded behind its chevron (`openUntilChoice`), and mounts none of them.
+  expect(container.querySelectorAll('[data-insert-row]')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Expand HARDWARE' }));
   const mounted = container.querySelectorAll('[data-insert-row]').length;
   expect(mounted).toBeGreaterThan(0);
   expect(mounted).toBeLessThan(200);

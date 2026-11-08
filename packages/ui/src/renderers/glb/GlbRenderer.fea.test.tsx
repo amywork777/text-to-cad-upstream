@@ -105,10 +105,13 @@ function mount(extras: Record<string, unknown> | null, state?: unknown, { action
 // Where the study holds and loads the part, drawn or not: What you see's checkbox.
 const markersGate = (name: string) => screen.getByRole('checkbox', { name });
 const toggleMarkers = (name: string) => act(() => { fireEvent.click(markersGate(name)); });
-const studyPanel = () => screen.queryByRole('region', { name: 'Study' });
+// A section of the view's panel (`FlatPanel`): the panel's only one a region, else a tab's page, there while its tab is not open.
+const panelSection = (id: string) => document.querySelector<HTMLElement>(`aside[aria-label="Model panel"] [data-flat-panel-section="${id}"]`);
+const studyPanel = () => panelSection('study');
+const openTab = (name: string) => act(() => { fireEvent.click(screen.getByRole('tab', { name })); });
 const rowTexts = (panel: HTMLElement) => Array.from(panel.querySelectorAll('[data-study-row]')).map(row => row.textContent);
 
-it('puts the field and deformation in Study, the file sidebar\'s, and on the view a colour bar that is only the scale', () => {
+it('puts the field and deformation in Study, the view panel\'s, and on the view a colour bar that is only the scale', () => {
   const { container } = mount(RESULT);
   const bar = container.querySelector('[role="group"][aria-label="von Mises stress colour bar"]')!;
   // The field in Show's words and its range; what it means for the part is the verdict's.
@@ -120,9 +123,9 @@ it('puts the field and deformation in Study, the file sidebar\'s, and on the vie
   // The field in plain words: the file's own name is the colour bar's.
   expect(study.querySelector('[role="combobox"][aria-label="Result field"]')!.textContent).toBe('Stress');
   expect(study.querySelector('[role="slider"][aria-label="Deformation scale"]')).toBeTruthy();
-  // A section of the file sidebar, its tile named for it; one field select, Study's.
-  expect(study.hasAttribute('data-sidebar-section')).toBe(true);
-  expect(screen.getByRole('group', { name: 'File sidebar' }).querySelector('button[aria-label="Study"]')).toBeTruthy();
+  // The view panel's one section, so no tabs: a region named for it; one field select, Study's.
+  expect(screen.getByRole('region', { name: 'Study' })).toBe(study);
+  expect(screen.queryAllByRole('tab')).toEqual([]);
   expect(screen.getAllByRole('combobox', { name: 'Result field' })).toHaveLength(1);
 });
 
@@ -195,15 +198,16 @@ it('lays the deformation slider out as Display\'s sliders are: under its label, 
   const label = screen.getByText('Deformation');
   const thumb = screen.getByRole('slider', { name: 'Deformation scale' });
   const slider = thumb.closest('[data-slot="slider"]')!;
-  const column = label.closest('[data-position-control] > div')!;
-  // Same silhouette as FileSheetSliderField's other uses: label and slider are separate blocks in one column ...
+  const field = label.closest<HTMLElement>('[data-slider-field]')!;
+  // The kit's one slider control (`SliderField`), stacked: label and slider are separate blocks in one column ...
+  expect(field.hasAttribute('data-inline')).toBe(false);
   expect(slider.contains(label) || label.contains(slider)).toBe(false);
-  expect(column.contains(slider)).toBe(true);
-  expect(label.parentElement).toBe(column);
-  expect(slider.parentElement!.parentElement).toBe(column);
-  expect(slider.parentElement!.previousElementSibling).toBe(label);
-  // ... and the slider carries the precision-slider height (h-4), so it is no taller than the gap pulled up under the label.
-  expect(slider.classList.contains('h-4')).toBe(true);
+  expect(field.contains(slider)).toBe(true);
+  // ... the label's row first, its value box at the row's end, and the slider under that row.
+  const row = Array.from(field.children).find(child => child.contains(label))!;
+  expect(row.contains(screen.getByRole('textbox', { name: 'Deformation scale value' }))).toBe(true);
+  expect(row.contains(slider)).toBe(false);
+  expect(row.compareDocumentPosition(slider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 // The study's faces, and the face each vertex lies on.
@@ -221,8 +225,9 @@ const clipboardHost = (copied: string[]) => testHost({ clipboard: { writeText: a
 it('Study reads in plain words: where it is held, what pushes it and what it is made of, then What you see, then Details, shut', () => {
   mount(STUDIED, undefined, { faces: FACES });
   const study = studyPanel()!;
-  expect(study.querySelector('h3')!.textContent).toBe('Study');
-  expect(study.querySelector('button[aria-label="Close study"]')).toBeTruthy();
+  // The view panel names it; the section draws no heading of its own.
+  expect(study.getAttribute('aria-label')).toBe('Study');
+  expect(study.querySelector('h3')).toBeNull();
   // Each heading with the glyph its marker is drawn as, each face by name under it, a load as how much and
   // which way with its faces shut under it, the material's name; the mesh is Details', shut.
   const plain = () => rowTexts(study).map(text => text!.replace(/\u2011/g, '-'));
@@ -239,7 +244,7 @@ it('Study reads in plain words: where it is held, what pushes it and what it is 
   expect(screen.getByRole('button', { name: 'Expand Details' }).getAttribute('aria-expanded')).toBe('false');
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Expand Details' })); });
   expect(plain().slice(-2)).toEqual(['Details', 'Mesh1.9 mm elements']);
-  // In the sidebar's one scroll, in order: no foot of its own.
+  // In the panel's one scroll, in order: no foot of its own.
   expect(study.querySelector('[data-study-foot]')).toBeNull();
   expect(study.querySelector('[data-tool-panel-body] [role="combobox"][aria-label="Result field"]')).toBeTruthy();
 });
@@ -355,14 +360,16 @@ function mountAssembly(copied: string[], extras: Record<string, unknown> = { par
   return mount({ ...ASSEMBLED, ...extras }, undefined, { faces: [0, 0, 2, 1], host: clipboardHost(copied) });
 }
 
-const partsPanel = () => screen.queryByRole('region', { name: 'Parts' });
+const partsPanel = () => panelSection('parts');
 
 it('an assembly has a Parts panel above Study, each part with its joints, the weakest open, and Study holds only the study', () => {
   mountAssembly([]);
   const parts = partsPanel()!;
   const study = studyPanel()!;
-  expect(parts.querySelector('h3')!.textContent).toBe('Parts');
-  expect(parts.querySelector('button[aria-label="Close parts"]')).toBeTruthy();
+  // Parts is the first tab, open; Study's is after it.
+  const partsTab = screen.getByRole('tab', { name: 'Parts', selected: true });
+  expect(partsTab.compareDocumentPosition(screen.getByRole('tab', { name: 'Study', selected: false })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole('tabpanel', { name: 'Parts' })).toBe(parts);
   expect(parts.compareDocumentPosition(study) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   // The weakest part (post) opens with its joint under it, naming only the other part; base starts shut.
   const plain = (panel: HTMLElement) => rowTexts(panel).map(text => text!.replace(/\u2011/g, '-').replace(/\u00a0/g, ' '));
@@ -377,12 +384,14 @@ it('an assembly has a Parts panel above Study, each part with its joints, the we
   expect(study.querySelector('[data-study-row^="part:"], [data-study-row^="joint:"], [data-study-row="parts"], [data-study-row="connections"]')).toBeNull();
 });
 
-it('an assembly\'s Parts and Study are two sections of the file sidebar, each with its own tile', () => {
+it('an assembly\'s Parts and Study are two sections of the view panel, each with its own tab', () => {
   mountAssembly([]);
-  const tiles = Array.from(screen.getByRole('group', { name: 'File sidebar' }).querySelectorAll('button')).map(tile => tile.getAttribute('aria-label'));
-  expect(tiles).toEqual(expect.arrayContaining(['Parts', 'Study']));
-  expect(partsPanel()!.hasAttribute('data-sidebar-section')).toBe(true);
-  expect(studyPanel()!.hasAttribute('data-sidebar-section')).toBe(true);
+  expect(screen.getByRole('tablist', { name: 'Model panel' })).toBeTruthy();
+  expect(screen.queryByRole('tabpanel', { name: 'Study' })).toBeNull();
+  openTab('Study');
+  expect(screen.getByRole('tabpanel', { name: 'Study' })).toBe(studyPanel());
+  expect(screen.queryByRole('tabpanel', { name: 'Parts' })).toBeNull();
+  expect(partsPanel()!.hidden).toBe(true);
 });
 
 it('an assembly shows Parts from six parts up', () => {
@@ -448,7 +457,7 @@ it('a joint chosen under either of its parts is the same choice: both copies pre
   expect(await copiedPrompt(copied)).toBe("move it\n\nFile: /models/part.glb\nReferences:\nBonded joint between 'post' and 'base' · /models/part.step#part1/face 1,part2/face 1");
 });
 
-const resultRows = () => Array.from(studyPanel()!.querySelectorAll('[data-study-result] [data-position-control], [data-study-result] [role="combobox"]'));
+const resultRows = () => Array.from(studyPanel()!.querySelectorAll('[data-study-result] [data-slider-field], [data-study-result] [role="combobox"]'));
 const setValue = (name: string, value: string) => act(() => {
   const box = screen.getByRole('textbox', { name });
   fireEvent.change(box, { target: { value } });
@@ -525,8 +534,10 @@ it('at twice the load, the bar and the deformation are twice the solved ones, wh
   const { container, mesh } = mount({ ...RESULT, parts: [...parts, ...pins], weakest_part: 'base' });
   const colours = colourBytes(mesh);
   const tip = mesh.geometry.getAttribute('position').getZ(2);
-  const partDetails = () => Array.from(screen.getByRole('region', { name: 'Parts' }).querySelectorAll('[data-study-detail]')).map(detail => detail.textContent!.replace(/\u00a0/g, ' ')).slice(0, 2);
+  const partDetails = () => Array.from(partsPanel()!.querySelectorAll('[data-study-detail]')).map(detail => detail.textContent!.replace(/\u00a0/g, ' ')).slice(0, 2);
   expect(partDetails()).toEqual(['Steel · holds 5.8×', 'Steel · holds 1.5×']);
+  // The load is Study's, under its tab.
+  openTab('Study');
   setValue('Load value', '2');
   expect(container.querySelector('[data-fea-max]')!.textContent).toBe('94.6 MPa');
   expect(partDetails()).toEqual(['Steel · holds 2.9×', 'Steel · yields']);
@@ -665,6 +676,7 @@ it('the verdict follows the load control, and can change its word', () => {
 
 it('an assembly\'s verdict numbers are its weakest part\'s', () => {
   mountAssembly([]);
+  openTab('Study');
   expect(verdictOf()).toMatchObject({ status: 'close', rows: [['close', 'Strength', '180 MPa, limit 276 MPa']] });
 });
 

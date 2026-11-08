@@ -17,7 +17,7 @@ import { useFlatCanvasView } from "../kit/viewport/useFlatCanvasView.js";
 import { TOUCH_HIT_PX } from "../kit/viewport/dom.js";
 import { useWorkspaceDocument } from "../workspace/useWorkspaceDocument.js";
 import { drawingAnnotationDocument, drawingAnnotationSurface } from "../dxf/drawingAnnotation.js";
-import { drawingTransformCamera, readDrawingTransform } from "../dxf/drawingTransform.js";
+import { readFlatView } from "../kit/viewport/flatView.js";
 import { DRAWING_THEME_FALLBACK, readDrawingThemeColors } from "../dxf/themeColors.js";
 import { paintSheets, readSheets } from "./pictureSheets.js";
 import { PICTURE_DECLINED_LIVE_COMMANDS, PICTURE_NO_CAMERA, PICTURE_NO_DISPLAY, PICTURE_TOOL_MODES } from "./tools.js";
@@ -67,13 +67,13 @@ function PictureSurface({ view, data }) {
   const colorScheme = view.appearance?.colorScheme === "dark" ? "dark" : "light";
 
   // ---- the view this file was left at, as a drawing's is ------------------------
-  const [restored] = useState(() => readDrawingTransform(readFileView(view.state).camera));
-  const storedRef = useRef(JSON.stringify(writeFileView({ camera: drawingTransformCamera(restored, Boolean(restored)) })));
+  const [restored] = useState(() => readFlatView(readFileView(view.state).camera));
+  const storedRef = useRef(JSON.stringify(writeFileView({ camera: restored })));
   const saveTimer = useRef(0);
   const stateChangeRef = useRef(onStateChange);
   stateChangeRef.current = onStateChange;
   const rememberView = useCallback((transform) => {
-    const record = writeFileView({ camera: drawingTransformCamera(transform, Boolean(transform)) });
+    const record = writeFileView({ camera: readFlatView(transform) });
     const serialized = JSON.stringify(record);
     if (serialized === storedRef.current) return;
     storedRef.current = serialized;

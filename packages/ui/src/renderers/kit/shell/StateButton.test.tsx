@@ -26,9 +26,9 @@ it('shows the state on screen and names it; its tooltip says what a press does, 
   expect(button.hasAttribute('aria-pressed')).toBe(false);
   expect([button.getAttribute('aria-keyshortcuts'), button.getAttribute('data-variant'), button.getAttribute('data-view-state')]).toEqual(['3', 'ghost', '2d']);
   expect(button.hasAttribute('data-state-button')).toBe(true);
-  // A strip tile: 24px, its icon 14px.
+  // A strip tile: 24px, its icon 16px (Studio's, readable on the CAD workspace).
   expect(button.className).toContain('size-6');
-  expect(button.className).toContain('[&>svg]:size-3.5!');
+  expect(button.className).toContain('[&>svg]:size-4!');
   hover(button);
   expect(tip()!.textContent).toBe('Switch to 3D3');
   expect(document.querySelector('[data-slot=tooltip-content] [data-tooltip-shortcut]')!.textContent).toBe('3');
@@ -40,7 +40,7 @@ it('shows the state on screen and names it; its tooltip says what a press does, 
 it('a word is an icon: drawn as the tile draws a Lucide icon, in its colour, hidden from the name, its figures tabular', () => {
   render(<StateButton icon={textGlyphIcon('2D')} label="View: 2D" tooltip="Switch to 3D" onPress={() => {}} />);
   const glyph = screen.getByRole('button', { name: 'View: 2D' }).firstElementChild as SVGSVGElement;
-  // The tile's own child svg on Lucide's 24-unit grid, so the tile sizes it as it sizes theirs (`[&>svg]:size-3.5!`).
+  // The tile's own child svg on Lucide's 24-unit grid, so the tile sizes it as it sizes theirs (`[&>svg]:size-4!`).
   expect([glyph.tagName, glyph.getAttribute('viewBox'), glyph.getAttribute('aria-hidden'), glyph.getAttribute('fill'), glyph.dataset.textGlyph])
     .toEqual(['svg', '0 0 24 24', 'true', 'currentColor', '2D']);
   const text = glyph.querySelector('text')!;

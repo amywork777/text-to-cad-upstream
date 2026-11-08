@@ -20,7 +20,7 @@ export const FEA_BOTTOM_LINE = "1rem";
  * @param {{ strip?: boolean }} [options]
  */
 export function chromeCovers(host, { strip = true } = {}) {
-  const viewer = host?.closest?.("[data-cad-scene-backdrop]");
+  const viewer = host?.closest?.("[data-cad-canvas]");
   const groups = viewer?.querySelector?.("[data-cad-tool-groups]");
   if (!groups) return [];
   const base = host.getBoundingClientRect();
@@ -37,7 +37,7 @@ export function chromeCovers(host, { strip = true } = {}) {
  * @param {HTMLElement | null | undefined} host
  */
 export function colourBarCover(host) {
-  const viewer = host?.closest?.("[data-cad-scene-backdrop]");
+  const viewer = host?.closest?.("[data-cad-canvas]");
   const bar = viewer?.querySelector?.('[aria-label$="colour bar"]');
   if (!bar || bar.closest("[hidden]")) return null;
   const box = bar.getBoundingClientRect();

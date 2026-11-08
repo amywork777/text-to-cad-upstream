@@ -8,6 +8,7 @@ import {
   resolveViewSceneSettings
 } from "./sceneSettings.js";
 import { PHOTOGRAPHIC_STUDIO_MATERIAL_SETTINGS } from "./photographicStudioRig.js";
+import { DARK_CANVAS_EXPOSURE } from "../lib/viewer/sceneRig.js";
 
 test("normal CAD stays an orthographic responsive inspection scene", () => {
   const light = resolveViewSceneSettings({ appearance: "light" });
@@ -24,7 +25,12 @@ test("normal CAD stays an orthographic responsive inspection scene", () => {
   assert.equal(light.theme.background.solidColor, "#f0f4f9");
   assert.equal(dark.theme.background.solidColor, "#36393f");
   assert.deepEqual(dark.theme.materials, light.theme.materials);
-  assert.deepEqual(dark.theme.lighting, light.theme.lighting);
+  // The same rig on both canvases, the dark one a step brighter (`DARK_CANVAS_EXPOSURE`).
+  assert.deepEqual(
+    { ...dark.theme.lighting, toneMappingExposure: light.theme.lighting.toneMappingExposure },
+    light.theme.lighting
+  );
+  assert.equal(dark.theme.lighting.toneMappingExposure, light.theme.lighting.toneMappingExposure * DARK_CANVAS_EXPOSURE);
   assert.deepEqual(dark.theme.environment, light.theme.environment);
 });
 

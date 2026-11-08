@@ -38,8 +38,9 @@ import { VIEWPORT_INSET_PX, VIEWPORT_STACK_BOTTOM, VIEWPORT_TOP_BAR_PX } from ".
  *   (Preview, a compact host, a load) at the top centre in the strip's row; none while the alert card
  *   says why the view's chrome is gone.
  * - **One measure** of that column, onto the frame's root: `--cad-tools-bottom` (what a flat canvas's
- *   fit keeps clear of) and `--cad-top-right-left` (where the top-right column starts, clear of the
- *   strip), again whenever the column, the stage or what stands in the top-right corner changes.
+ *   fit keeps clear of), `--cad-top-right-left` (where the top-right column starts, clear of the
+ *   strip) and, in a pane too narrow for a column beside the strip, `--cad-top-right-top` (the
+ *   top-right column starts under the strip instead), again whenever the column, the stage or what stands in the top-right corner changes.
  * - **The top-right** (`ViewportTopRight`): the host's notice once the view is up, and `quickEdit`.
  * - **The corner** (`corner`, the view's bottom-right, or its bottom-left where the host anchors the
  *   cube there: the side read off the root with the measure, `viewCornerSide`, and said to everything in
@@ -65,6 +66,8 @@ import { VIEWPORT_INSET_PX, VIEWPORT_STACK_BOTTOM, VIEWPORT_TOP_BAR_PX } from ".
  *
  * @param {object} props
  * @param {{ current: HTMLElement | null }} [props.rootRef]  The frame's root, where the caller keeps one.
+ * @param {{ current: (() => void) | null }} [props.measureRef]  Given the column's measure while it is up, for a
+ *   caller that moves the column itself (the workspace's shift past its folded design tree) to measure it again after.
  * @param {Record<string, string>} [props.surface]  Data attributes on the root, which say what is drawn.
  * @param {string} [props.className]  The root's own classes past the frame's (a cursor).
  * @param {object} [props.rootHandlers]  Pointer handlers on the root (capture or not), past the frame's own.
@@ -82,7 +85,7 @@ import { VIEWPORT_INSET_PX, VIEWPORT_STACK_BOTTOM, VIEWPORT_TOP_BAR_PX } from ".
  * @param {{ kind: string, label: string, searchLabel: string, tabs?: object[], sections?: import("react").ReactNode } | null} [props.panel]
  * @param {import("../inspector/inspect.js").Inspect | null} [props.inspect]
  */
-export default function ViewFrame({ rootRef = null, surface = null, className = "", rootHandlers = null, stageColor = undefined,
+export default function ViewFrame({ rootRef = null, measureRef = null, surface = null, className = "", rootHandlers = null, stageColor = undefined,
   canvasBoxRef = null, busy = undefined, children, underlay = null, overlays = null, file, mobile, compact, chromeHidden, previewing = false, selecting = false,
   preview = null, tools, views = [], toolRow = null, toolStack = null, status = null, panel = null, panelControl = null,
   layout, onLayoutChange, corner = null, notice = null, quickEdit = null, bottomCentre = null, loading = null, alert = null,
@@ -134,18 +137,25 @@ export default function ViewFrame({ rootRef = null, surface = null, className = 
       const strip = controls.firstElementChild?.getBoundingClientRect();
       const reach = !mobile && strip?.width > 0 ? Math.round(strip.left - frame.getBoundingClientRect().left) : null;
       setStripReach(current => (current === reach ? current : reach));
-      frame.style.setProperty("--cad-tools-bottom", `${Math.round(VIEWPORT_INSET_PX * 2 + Math.max(top, ...rows.map(box => box.bottom)) - top)}px`);
+      const below = `${Math.round(VIEWPORT_INSET_PX * 2 + Math.max(top, ...rows.map(box => box.bottom)) - top)}px`;
+      frame.style.setProperty("--cad-tools-bottom", below);
       if (mobile || !rows.length) {
         frame.style.removeProperty("--cad-top-right-left");
+        // Too narrow for Quick Edit beside the strip (a narrow pane, a phone): it stays on the right, under it.
+        if (rows.length) frame.style.setProperty("--cad-top-right-top", below);
+        else frame.style.removeProperty("--cad-top-right-top");
         return;
       }
+      frame.style.removeProperty("--cad-top-right-top");
       // The column's right side, the widest of its rows, from the stage's left: the top-right
       // corner (Quick Edit) starts past it, an inset away, so it never reaches under the strip.
       const right = Math.max(...rows.map(row => row.right)) - stage.getBoundingClientRect().left;
       frame.style.setProperty("--cad-top-right-left", `${Math.round(right + VIEWPORT_INSET_PX)}px`);
     };
     measure();
-    if (typeof ResizeObserver === "undefined") return () => { for (const name of MEASURED) frame.style.removeProperty(name); };
+    if (measureRef) measureRef.current = measure;
+    const forget = () => { if (measureRef?.current === measure) measureRef.current = null; };
+    if (typeof ResizeObserver === "undefined") return () => { forget(); for (const name of MEASURED) frame.style.removeProperty(name); };
     // What moves them: the controls, the stage, and what comes and goes in the top-right corner
     // (Quick Edit opening, closing, resized).
     const resized = new ResizeObserver(measure);
@@ -158,10 +168,10 @@ export default function ViewFrame({ rootRef = null, surface = null, className = 
       changed?.observe(element, { attributes: true, attributeFilter: ["data-open"], childList: true, subtree: true });
     }
     return () => {
-      resized.disconnect(); changed?.disconnect();
+      forget(); resized.disconnect(); changed?.disconnect();
       for (const name of MEASURED) frame.style.removeProperty(name);
     };
-  }, [root, toolsHidden, mobile, sided, flat.open, hasQuickEdit]);
+  }, [root, measureRef, toolsHidden, mobile, sided, flat.open, hasQuickEdit]);
 
   return (
     <InspectContext.Provider value={inspect}>
@@ -226,6 +236,6 @@ const INSET = `${VIEWPORT_INSET_PX}px`;
 const TOOLBAR_POSITION = Object.freeze({ top: INSET, left: INSET, right: INSET, bottom: VIEWPORT_STACK_BOTTOM });
 // What stands in the top-right corner: the host's notice and Quick Edit's box (not its column).
 const CORNER_BOXES = "[data-viewport-top-right] :is([data-viewport-notice], [data-quick-edit-box])";
-const MEASURED = ["--cad-tools-bottom", "--cad-top-right-left"];
+const MEASURED = ["--cad-tools-bottom", "--cad-top-right-left", "--cad-top-right-top"];
 // Nothing to say: the status draws nothing.
 const IDLE_STATUS = Object.freeze({ pending: false });

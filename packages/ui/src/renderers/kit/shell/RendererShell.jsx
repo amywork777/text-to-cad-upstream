@@ -112,28 +112,35 @@ function useWorkspaceChrome(chrome, up) {
  * only as far as what it holds (its rows, and the tool stack's panels under them) runs under the title, and an
  * inset past it, and only as far as it has room: one measure, one shift, by its margins, which the frame's style
  * leaves alone. What clears the navigator already stays put. A view too narrow for the navigator hides it, and
- * nothing moves.
+ * nothing moves. The frame's measure of the column (`ViewFrame.jsx`'s, `remeasure`) runs again after a shift,
+ * so the top-right column (Quick Edit) starts past where the rows now end.
  */
-function usePastNavigator(rootRef, up, deps) {
+function usePastNavigator(rootRef, up, deps, remeasure) {
   useLayoutEffect(() => {
     const root = rootRef.current;
     const column = root?.querySelector("[data-cad-tool-groups]");
     if (!up || !column) return undefined;
-    const place = () => {
-      column.style.removeProperty("margin-left");
-      column.style.removeProperty("margin-right");
+    const shiftFor = () => {
       const edge = root.querySelector('[data-cad-dock="navigator"]')?.getBoundingClientRect();
-      if (!edge?.width) return;
+      if (!edge?.width) return 0;
       const controls = column.querySelector("[data-cad-top-controls]");
       const rows = controls ? [...controls.children].map(row => row.getBoundingClientRect()) : [];
       const panels = [...column.querySelectorAll("[data-cad-tool-stack] [data-tool-panel]")].map(panel => panel.getBoundingClientRect());
       const held = [...rows, ...panels].filter(box => box.width > 0 && box.height > 0);
-      if (!held.length) return;
+      if (!held.length) return 0;
       const overlap = edge.right + VIEWPORT_INSET_PX - Math.min(...held.map(box => box.left));
-      const shift = Math.min(overlap, column.getBoundingClientRect().right - Math.max(...held.map(box => box.right)));
-      if (shift <= 0) return;
-      column.style.marginLeft = `${shift}px`;
-      column.style.marginRight = `${-shift}px`;
+      return Math.max(0, Math.min(overlap, column.getBoundingClientRect().right - Math.max(...held.map(box => box.right))));
+    };
+    const place = () => {
+      const before = column.style.marginLeft;
+      column.style.removeProperty("margin-left");
+      column.style.removeProperty("margin-right");
+      const shift = shiftFor();
+      if (shift > 0) {
+        column.style.marginLeft = `${shift}px`;
+        column.style.marginRight = `${-shift}px`;
+      }
+      if (column.style.marginLeft !== before) remeasure?.current?.();
     };
     place();
     const resized = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
@@ -518,7 +525,8 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
     resized?.observe(toolbar);
     return () => { resized?.disconnect(); stage.style.removeProperty("--cad-workspace-top"); };
   }, [toolbarUp]);
-  usePastNavigator(frame.hostRef, navigatorUp && !mobile, [toolbarUp, navigatorFolded, pastNavigator, Boolean(references)]);
+  const measureColumn = useRef(null);
+  usePastNavigator(frame.hostRef, navigatorUp && !mobile, [toolbarUp, navigatorFolded, pastNavigator, Boolean(references)], measureColumn);
   // The view's panel (`FlatPanel.jsx`, placed by the frame): docked at the left, its tabs the renderer's
   // sections, one state with every view's; none on a phone; Preview keeps it mounted out of sight. While the
   // workspace's design tree is docked it stands in for the panel.
@@ -682,7 +690,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
     </div> : null}
   </div> : null;
   const body = (
-    <ViewFrame rootRef={frame.hostRef} className={cn(pointing && "cursor-pointer", columnClass)} rootHandlers={rootHandlers} onCanvasPress={pressCanvas} selecting={frame.selecting}
+    <ViewFrame rootRef={frame.hostRef} measureRef={measureColumn} className={cn(pointing && "cursor-pointer", columnClass)} rootHandlers={rootHandlers} onCanvasPress={pressCanvas} selecting={frame.selecting}
       inspect={inspect}
       stageColor={frame.stageColor} file={frame.modelKey} mobile={mobile} compact={compact} chromeHidden={chromeHidden} previewing={previewing}
       preview={preview} tools={tools} views={views} toolRow={toolRow} status={updateStatus}
@@ -728,7 +736,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
           workspace up it starts past the design tree's column and under the toolbar, so a fit centres
           in the room the model really has. */}
       <div className={cn("pointer-events-auto absolute inset-0 z-0 overflow-hidden", pastNavigator && PAST_NAVIGATOR_CLASS)}
-        style={toolbarUp ? CANVAS_UNDER_TOOLBAR : undefined}>
+        style={toolbarUp ? CANVAS_UNDER_TOOLBAR : undefined} data-cad-scene-canvas="">
         <div className="absolute inset-0">
           <ShellViewport
             ref={frame.viewerRef}

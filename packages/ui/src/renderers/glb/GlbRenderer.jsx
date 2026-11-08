@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { carriesFeaResult } from "./fea/generator.js";
 import { MousePointer2 } from "lucide-react";
 import { scenePartCount, viewFeaturesForKind } from "@cad/core/common/viewSettings.js";
 import { useExportView } from "../../export/context.js";
@@ -25,17 +26,6 @@ const NO_REFERENCES = Object.freeze([]);
 const EXPLODE_OFF = Object.freeze({ exploded: { enabled: false, amount: 0 } });
 const CLIP_OFF = Object.freeze({ clip: { enabled: false, axis: "x", invert: false } });
 
-/**
- * Whether a loaded scene carries an FEA result: a mesh `cad fea solve` wrote. Its generator alone says so; what
- * else the result holds is `feaResult.js`'s to read, and one that does not read is the load's alert, never a plain GLB.
- */
-function carriesFeaResult(root) {
-  let found = false;
-  root?.traverse?.((object) => {
-    if (!found && object?.isMesh && object.geometry && object.userData?.generator === "cadgen fea") found = true;
-  });
-  return found;
-}
 
 // The FEA result viewer (`feaView.jsx`), once a result has loaded it, for every result after it.
 let feaView = null;

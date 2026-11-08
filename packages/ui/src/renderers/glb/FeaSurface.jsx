@@ -285,8 +285,8 @@ export default function FeaSurface({ view, document, loaded, fv }) {
     const face = single ? { ref: single, role: faces.summary && !faces.picked ? faces.summary : fv.faceRole(fea, single),
       part: fv.facePartDetail(fea, single, loadScale) } : null;
     return [{ key: `fea:${faces.id}`, label: faces.summary && !faces.picked ? faces.summary : single ? fv.faceTitle(fea, single) : faces.summary || faces.id, glyph: "face", id: single || faces.id,
-      copy: formatPromptReference(references[0]), card: face ? <fv.FaceCard face={face} /> : null, onRemove: clearChoice }];
-  }, [fea, references, single, faces, loadScale, clearChoice]);
+      copy: formatPromptReference(references[0]), ...(face ? { detail: fv.faceDetail(face, t) } : {}), onRemove: clearChoice }];
+  }, [fea, references, single, faces, loadScale, clearChoice, t]);
   const nameReference = useCallback((reference) => {
     const selector = reference?.resource?.path === source && reference.target?.kind === "cad-selector" ? reference.target.selectors[0] : "";
     const ref = selector ? `#${selector.replace(/^#/, "")}` : "";

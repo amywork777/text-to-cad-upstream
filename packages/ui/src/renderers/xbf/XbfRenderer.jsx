@@ -82,7 +82,8 @@ const MENU_CONTROLS = Object.freeze({
 // modeling it by hand, a CAD tool's toolbar and design tree over the same view and picks.
 
 // CAD mode's PMI, a section docked under the FeatureManager and always open: nothing sits on the model.
-const PMI_DOCKED = Object.freeze({ sidebar: true, openSection: "pmi", panelHead: true });
+// `panelHead` draws it as the column's section (`ToolPanel`'s docked mode): no box, the dock's head pinned over it.
+const PMI_DOCKED = Object.freeze({ panelHead: true });
 const NO_REFERENCES = Object.freeze([]);
 const EMPTY = Object.freeze([]);
 const NO_HOVER = Object.freeze({ parts: EMPTY, element: null });

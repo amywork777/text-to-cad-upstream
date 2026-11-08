@@ -8,7 +8,7 @@ import { clamp } from "@cad/core/common/numbers.js";
 import { framingInset } from "./feaChrome.js";
 
 export { default as FeaSurface } from "./FeaSurface.jsx";
-export { default as FeaStudyPanel, FaceCard } from "./FeaStudyPanel.jsx";
+export { default as FeaStudyPanel, faceDetail } from "./FeaStudyPanel.jsx";
 export { default as FeaColourBar } from "./FeaColourBar.jsx";
 export { default as FeaLoadLabels } from "./FeaLoadLabels.jsx";
 export {

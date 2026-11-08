@@ -61,7 +61,9 @@ function shell(workspace: object = {}) {
 const WITH_VIEW = Object.freeze({ ...WORKSPACE,
   ribbon: (_tools: unknown[], view: { controls?: React.ReactNode, status?: React.ReactNode } | null) =>
     <div role="toolbar" aria-label="Design">{view?.controls}{view?.status}</div> });
-const backdrop = () => document.querySelector<HTMLElement>('[data-cad-scene-backdrop]')!;
+// The stage (`ViewFrame.jsx`'s `data-cad-canvas`): what the docked panel leaves of the view, the frame's root its parent.
+const backdrop = () => document.querySelector<HTMLElement>('[data-cad-canvas]')!;
+const frameRoot = () => document.querySelector<HTMLElement>('[data-slot="cad-file-view"]')!;
 const column = () => document.querySelector<HTMLElement>('[data-cad-tool-groups]')!;
 const dock = (name: string) => document.querySelector<HTMLElement>(`[data-cad-dock="${name}"]`);
 const workspaceLayer = () => document.querySelector<HTMLElement>('[data-cad-workspace]');
@@ -71,11 +73,12 @@ it("keeps the render pane when the workspace shows, and starts the canvas at the
   const view = shell();
   const box = backdrop();
   const frame = box.parentElement;
-  // Nothing stands beside the render pane in the frame, in either layout: the chrome is over it.
-  const beside = () => [backdrop().previousElementSibling, backdrop().nextElementSibling];
-  const canvas = () => document.querySelector<HTMLElement>('[data-cad-canvas]')!;
+  // Nothing stands beside the render pane in the frame but Simple view's docked panel: the workspace's chrome is over it,
+  // its design tree in the panel's place.
+  const beside = () => [backdrop().previousElementSibling?.getAttribute('aria-label') ?? null, backdrop().nextElementSibling];
+  const canvas = () => document.querySelector<HTMLElement>('[data-cad-scene-canvas]')!;
   const pastTree = /\bleft-\[16rem\] @max-xl\/cad-viewport:left-0/;
-  expect(beside()).toEqual([null, null]);
+  expect(beside()).toEqual(['Model panel', null]);
   expect(canvas().className).not.toMatch(pastTree);
   view.show(WORKSPACE);
   // The canvas has the room past the column, and the whole view again where the view hides it.
@@ -93,7 +96,7 @@ it("keeps the render pane when the workspace shows, and starts the canvas at the
   fireEvent.click(within(dock('navigator')!).getByRole('button', { name: 'FeatureManager' }));
   // Simple view again: the same pane, the whole of it the canvas's, and the canvas was never mounted again.
   view.show({});
-  expect([backdrop(), backdrop().parentElement, beside()]).toEqual([box, frame, [null, null]]);
+  expect([backdrop(), backdrop().parentElement, beside()]).toEqual([box, frame, ['Model panel', null]]);
   expect(canvas().className).not.toMatch(pastTree);
   await waitFor(() => expect(dock('navigator')).toBeNull());
   expect([screen.queryByRole('toolbar', { name: 'Design' }), screen.queryByRole('toolbar', { name: 'Timeline' }), viewport.mounts]).toEqual([null, null, 1]);
@@ -187,25 +190,33 @@ it("puts Projection, Display and Preview, and the view catching up, in the toolb
 
 it("moves the column beside an open dialog, so a tool's own row and its panels never hide under it", () => {
   const view = shell({ ...WORKSPACE, dialogOpen: false });
+  // The frame places the column (its left an inline style, reaching back over the docked panel); the workspace sets
+  // its left over that from the frame's root, for the view's width decides it.
+  const framed = 'calc(8px - var(--cad-stage-left, 0px))';
+  const over = (left: string) => `[&_[data-cad-tool-groups]]:left-${left}!`;
   // No dialog: the column spans the canvas, an inset past the design tree, and centres what it holds.
-  const pastTree = /\bleft-\[calc\(16rem\+8px\)\] @max-xl\/cad-viewport:left-2/;
-  expect([column().style.left, column().className]).toEqual(['', expect.stringMatching(pastTree)]);
+  const pastTree = [over('[calc(16rem+8px)]'), `@max-xl/cad-viewport:${over('2')}`];
+  const rootClasses = () => frameRoot().className.split(/\s+/);
+  expect(column().style.left).toBe(framed);
+  expect(rootClasses()).toEqual(expect.arrayContaining(pastTree));
   // A dialog beside the design tree: the column is the room past the dialog, or past the dialog alone in a
   // view too narrow for the navigator.
   view.show({ ...WORKSPACE, dialogOpen: true });
-  expect(column().style.left).toBe('');
-  expect(column().className).toMatch(/\bleft-\[calc\(31\.75rem\+16px\)\] @max-xl\/cad-viewport:left-\[calc\(18rem\+16px\)\]/);
+  expect(column().style.left).toBe(framed);
+  expect(rootClasses()).toEqual(expect.arrayContaining([over('[calc(31.75rem+16px)]'), `@max-xl/cad-viewport:${over('[calc(18rem+16px)]')}`]));
   view.show({ ...WORKSPACE, dialogOpen: false });
-  expect(column().className).toMatch(pastTree);
-  // Simple view has no dialog's place to keep clear of.
+  expect(rootClasses()).toEqual(expect.arrayContaining(pastTree));
+  // Simple view has no dialog's place to keep clear of: the frame's place alone.
   view.show({ dialogOpen: true });
-  expect(column().style.left).toBe('8px');
+  expect(column().style.left).toBe(framed);
+  expect(frameRoot().className).not.toMatch(/data-cad-tool-groups/);
 });
 
 // A toolbar that holds the strip's tools as buttons, as EditRibbon does: the Pencil taken up from it brings the drawing
 // tools' row under it, the column's one row, and Keep (`panel.harness`'s) a panel to the tool stack under that.
 const controls = () => document.querySelector<HTMLElement>('[data-cad-top-controls]')!;
-const topRightLeft = () => backdrop().style.getPropertyValue('--cad-top-right-left');
+// The frame measures its column onto its root (`ViewFrame.jsx`).
+const topRightLeft = () => frameRoot().style.getPropertyValue('--cad-top-right-left');
 /** How far the column is moved right: its margins, the one shift. */
 const shifted = () => [column().style.marginLeft, column().style.marginRight];
 
@@ -222,7 +233,7 @@ function layOut({ view, row = 0, panel = 0, navigator = 'open' }:
     const shift = parseFloat(document.querySelector<HTMLElement>('[data-cad-tool-groups]')?.style.marginLeft ?? '') || 0;
     const centred = (width: number) => 8 + (view - 16 - width) / 2 + shift;
     if (this.matches('[data-cad-dock="toolbar"]')) return box(0, 0, view, TOOLBAR_HEIGHT);
-    if (this.matches('[data-cad-scene-backdrop]')) return box(0, 0, view, 700);
+    if (this.matches('[data-cad-canvas]')) return box(0, 0, view, 700);
     if (this.matches('[data-cad-tool-groups]')) return box(8 + shift, TOOLBAR_HEIGHT + 8, view - 16, 500);
     if (this.matches('[data-cad-dock="navigator"]')) {
       return navigator === 'hidden' ? box(0, 0, 0, 0) : box(0, TOOLBAR_HEIGHT, 220, navigator === 'folded' ? 28 : 400);
@@ -301,7 +312,7 @@ it("does not move the column while a narrow view hides the design tree or a dial
   view.show({ ...WORKSPACE, dialogOpen: true });
   resize();
   expect(shifted()).toEqual(['', '']);
-  expect(column().className).toMatch(/\bleft-\[calc\(31\.75rem\+16px\)\]/);
+  expect(frameRoot().className.split(/\s+/)).toContain('[&_[data-cad-tool-groups]]:left-[calc(31.75rem+16px)]!');
 });
 
 it("moves the tool stack's panels with the rows, one shift for the column, so a panel never runs under the folded design tree", () => {

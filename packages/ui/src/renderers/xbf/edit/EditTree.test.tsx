@@ -168,8 +168,9 @@ it("marks who made a feature with a dot at its row's right, said on hover, its s
   const dot = (title: string) => row(title).querySelector('[data-cad-edit-tree-author]');
   expect(['Outline', 'Boss-Extrude1', 'Fillet1', 'Hole1'].map(title => dot(title)?.getAttribute('data-cad-edit-tree-author') ?? null))
     .toEqual(['agent', 'agent', 'you', null]);
-  // At the row's right, past its variable's name, and named for a screen reader.
-  expect(row('Fillet1').lastElementChild?.contains(dot('Fillet1'))).toBe(true);
+  // At the row's right, past its variable's name (the faint guides the row hangs from are drawn after it), and named for a screen reader.
+  const drawn = Array.from(row('Fillet1').children).filter(child => !child.hasAttribute('data-tree-guide'));
+  expect(drawn.at(-1)?.contains(dot('Fillet1'))).toBe(true);
   expect(within(row('Boss-Extrude1')).getByRole('img', { name: 'Made by the agent' })).toBeTruthy();
   fireEvent.pointerMove(dot('Fillet1')!.parentElement!, { pointerType: 'mouse' });
   act(() => { vi.advanceTimersByTime(450); });

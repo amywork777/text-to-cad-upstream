@@ -359,9 +359,9 @@ function QuestionRow({ line, pmi }) {
     <div>{said.question}</div>
     <div className="text-micro first-letter:uppercase [overflow-wrap:anywhere]">{said.why}</div>
   </>}>
-    <TreeRowSurface active={picked} className={cn("-mx-1 w-auto gap-0 pr-0", !picked && "text-foreground")} style={{ height: "auto", minHeight: rowHeight }}
+    <TreeRowSurface depth={0} active={picked} className={cn("-mx-1 w-auto gap-0", !picked && "text-foreground")} style={{ height: "auto", minHeight: rowHeight }}
       data-pmi-suggestion={said.kind} onMouseEnter={() => pmi.hoverQuestion(key)} onMouseLeave={() => pmi.hoverQuestion("")}>
-      <button type="button" aria-pressed={lights ? picked : undefined} disabled={!lights} onClick={() => pmi.pickQuestion(key)} className={cn(TREE_ROW_NAME_CLASS, WRAPPED_ROW_NAME, "pl-1")}>
+      <button type="button" aria-pressed={lights ? picked : undefined} disabled={!lights} onClick={() => pmi.pickQuestion(key)} className={cn(TREE_ROW_NAME_CLASS, WRAPPED_ROW_NAME)}>
         <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{said.question}</span>
         {count > 1 ? <span className="shrink-0 tabular-nums text-muted-foreground">{`×${count}`}</span> : null}
       </button>

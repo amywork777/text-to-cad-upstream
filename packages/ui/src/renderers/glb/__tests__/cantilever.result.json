@@ -1,0 +1,158 @@
+{
+ "ok": true,
+ "path": "/tmp/claude-501/fea-real.VbFC/bar.step",
+ "findings": [],
+ "summary": "solved COMPOUND of bar.step: peak 29.3828 MPa, safety factor 9.393",
+ "measurements": {
+  "max_von_mises_MPa": 29.3828,
+  "max_von_mises_gauss_MPa": 25.2953,
+  "max_von_mises_at_mm": [
+   5.882,
+   -5.0,
+   -5.0
+  ],
+  "yield_MPa": 276.0,
+  "max_displacement_mm": 0.288783,
+  "max_displacement_at_mm": [
+   100.0,
+   2.5,
+   -5.0
+  ],
+  "applied_force_N": [
+   0.0,
+   0.0,
+   -50.0
+  ],
+  "reaction_force_N": [
+   -0.0001,
+   -0.0,
+   50.0
+  ],
+  "deformation_scale": 17.0,
+  "safety_factor": 9.393,
+  "checks": [
+   {
+    "kind": "stress",
+    "label": "Strength",
+    "value": 29.3828,
+    "limit": 276.0,
+    "unit": "MPa",
+    "ratio": 0.106462,
+    "close_at": 0.5,
+    "margin": 2.0,
+    "status": "passes",
+    "where": {
+     "ref": "COMPOUND/face 3",
+     "at": [
+      5.882,
+      -5.0,
+      -5.0
+     ]
+    }
+   }
+  ],
+  "mesh": {
+   "elements": 360,
+   "straightened": 0,
+   "nodes": 785,
+   "dofs": 2355,
+   "size_mm": 6.0,
+   "order": 2,
+   "mesher": "netgen",
+   "solver": "calculix 2.23 (C3D10)"
+  },
+  "timings": {
+   "mesh_s": 0.4,
+   "solve_s": 0.075,
+   "stress_s": 0.001
+  },
+  "study": {
+   "material": {
+    "name": "Aluminum 6061-T6",
+    "E_MPa": 68900.0,
+    "nu": 0.33,
+    "yield_MPa": 276.0,
+    "density_t_per_mm3": 2.7e-09
+   },
+   "fixtures": [
+    {
+     "faces": [
+      "COMPOUND/face 1"
+     ]
+    }
+   ],
+   "loads": [
+    {
+     "faces": [
+      "COMPOUND/face 2"
+     ],
+     "type": "force",
+     "vector_N": [
+      0,
+      0,
+      -50
+     ]
+    }
+   ],
+   "mesh": {
+    "size_mm": 6
+   }
+  },
+  "material": {
+   "name": "Aluminum 6061-T6",
+   "E_MPa": 68900.0,
+   "nu": 0.33,
+   "yield_MPa": 276.0,
+   "density_t_per_mm3": 2.7e-09,
+   "source": "study"
+  },
+  "fixtures": [
+   {
+    "faces": [
+     "COMPOUND/face 1"
+    ],
+    "type": "fixed",
+    "reaction_N": [
+     -0.0001,
+     -0.0,
+     50.0
+    ]
+   }
+  ],
+  "connections": [],
+  "overlaps": [],
+  "refined": null,
+  "named_faces": {
+   "COMPOUND/face 1": {
+    "ref": "COMPOUND/face 1",
+    "ordinal": 1,
+    "area": 99.99999999999999,
+    "center": [
+     0.0,
+     -1.5543122344752198e-16,
+     -6.93889390390723e-18
+    ]
+   },
+   "COMPOUND/face 2": {
+    "ref": "COMPOUND/face 2",
+    "ordinal": 2,
+    "area": 99.99999999999999,
+    "center": [
+     100.0,
+     -1.5543122344752198e-16,
+     -6.93889390390723e-18
+    ]
+   }
+  }
+ },
+ "occurrence": "COMPOUND",
+ "written": [
+  "/tmp/claude-501/fea-real.VbFC/study/result.json",
+  "/tmp/claude-501/fea-real.VbFC/study/result.glb",
+  "/tmp/claude-501/fea-real.VbFC/study/result.vtu"
+ ],
+ "contact_tolerance_mm": null,
+ "parts": [],
+ "pairs": [],
+ "faces": []
+}

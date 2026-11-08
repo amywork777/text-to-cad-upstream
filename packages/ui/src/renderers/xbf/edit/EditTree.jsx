@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, CircleAlert, LoaderCircle } from "lucide-react";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@cad/ui/primitives/context-menu";
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
-import { TREE_INDENT_PX, TreeRowChevron, TreeRowSurface } from "@cad/ui/primitives/tree-row";
+import { TreeRowGlyph, TreeRowSurface, TreeRowToggle, treeRowPadding } from "@cad/ui/primitives/tree-row";
 import { FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
 import { AUTHOR_DOT_CLASS, AUTHOR_WORDS, authorOf } from "./authors.js";
 import { ORIGIN_PLANES, barIndex, planeDetail, rolledBack, sizeName, treeFeatures } from "./editMode.js";
@@ -56,18 +56,18 @@ function RenameInput({ value, onDone }) {
 function Row({ id, depth, icon, title, detail = "", hint = "", expanded = null, onToggle = null, onActivate = null, selected, onSelect, onHover, muted = false, menu = null,
   slot = null, renaming = null, onRename = null, check = null, warn = null, author = null, role = "treeitem", drag = null }) {
   const active = Boolean(id) && selected === id;
-  const row = <TreeRowSurface as="div" active={active} role={role} aria-selected={role === "treeitem" ? active : undefined}
+  const row = <TreeRowSurface as="div" depth={depth} active={active} role={role} aria-selected={role === "treeitem" ? active : undefined}
     aria-expanded={expanded === null ? undefined : expanded} tabIndex={-1}
     title={warn ? `${BUILD_FAILED}: ${warn}` : hint || (detail ? `${title}: ${detail}` : title.length < LONG_NAME ? undefined : title)}
-    className={`cursor-default select-none ${active ? ROW_SELECTED_CLASS : `text-foreground ${ROW_HOVER_CLASS}`}`} style={{ paddingLeft: 4 + depth * (TREE_INDENT_PX + 2) }}
+    className={`cursor-default select-none ${active ? ROW_SELECTED_CLASS : `text-foreground ${ROW_HOVER_CLASS}`}`}
     data-cad-edit-tree-row={id || title} data-cad-edit-bar-slot={slot ?? undefined}
     onClick={() => { if (id) onSelect(id); else onToggle?.(); }}
     onContextMenu={() => { if (id && menu?.length) onSelect(id); }}
     onDoubleClick={() => (onActivate ? onActivate() : onToggle?.())}
     onPointerEnter={() => onHover(id || null)} onPointerLeave={() => onHover(null)} {...(drag || {})}>
-    <span className="flex w-3 shrink-0 justify-center" onClick={event => { if (onToggle) { event.stopPropagation(); onToggle(); } }}>
-      <TreeRowChevron expanded={Boolean(expanded)} branch={expanded !== null} />
-    </span>
+    {/* A branch's chevron opens and shuts it under the pointer; the row is the tree's keyboard stop. A leaf keeps the slot, empty. */}
+    {expanded === null ? <TreeRowGlyph /> : <TreeRowToggle mark open={Boolean(expanded)}
+      onToggle={event => { if (onToggle) { event.stopPropagation(); onToggle(); } }} />}
     {/* A thin outline and its tick, lighter than the row's name. */}
     {check ? <span className="relative flex size-3 shrink-0">
       <input type="checkbox" checked={check.checked} disabled={check.disabled} aria-label={check.label}
@@ -153,10 +153,10 @@ function RollbackBar({ index, count, label, disabled, slotAt, onPreview, onMove 
  * Expressions, which NX lists above the model's history. A button, as the tree's rows are not.
  */
 function HeadFold({ depth, icon, title, expanded, onToggle }) {
-  return <TreeRowSurface as="button" type="button" aria-expanded={expanded} data-cad-edit-tree-row={title} onClick={onToggle}
-    className={`cursor-default select-none text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 ${ROW_HOVER_CLASS}`}
-    style={{ paddingLeft: 4 + depth * (TREE_INDENT_PX + 2) }}>
-    <span className="flex w-3 shrink-0 justify-center"><TreeRowChevron expanded={expanded} /></span>
+  return <TreeRowSurface as="button" type="button" depth={depth} aria-expanded={expanded} data-cad-edit-tree-row={title} onClick={onToggle}
+    className={`cursor-default select-none text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 ${ROW_HOVER_CLASS}`}>
+    {/* The row is the button: its chevron only a mark. */}
+    <TreeRowToggle mark open={expanded} />
     {icon}<span className="truncate">{title}</span>
   </TreeRowSurface>;
 }
@@ -446,7 +446,7 @@ export default function EditTree({ edit, tree, onEditSketch = () => {}, onOpenPa
         { id: "mass", label: "Mass Properties", disabled: busy, onSelect: () => edit.inspect("mass") }]} />
     {/* The part's named sizes, as NX's User Expressions holds them: folded, above the tree. */}
     <HeadFold depth={1} icon={<ParametersIcon />} title="Equations" expanded={open.has("expressions")} onToggle={toggle("expressions")} />
-    {open.has("expressions") ? <div role="group" aria-label="Equations" className="flex flex-col pb-1" style={{ paddingLeft: 4 + 2 * (TREE_INDENT_PX + 2) }}>
+    {open.has("expressions") ? <div role="group" aria-label="Equations" className="flex flex-col pb-1" style={{ paddingLeft: treeRowPadding(2) }}>
       <ExpressionRows edit={edit} />
     </div> : null}
     <div role="tree" aria-label="FeatureManager design tree" className="flex flex-col">

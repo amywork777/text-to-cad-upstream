@@ -60,7 +60,7 @@ describe('a load\'s label on screen', () => {
   });
 
   it('reads the strip and the shown panels from the page, each its own box in the view\'s own pixels; nothing while they are put away', () => {
-    document.body.innerHTML = `<div data-cad-scene-backdrop><div id="host"></div>
+    document.body.innerHTML = `<div data-cad-canvas><div id="host"></div>
       <div data-cad-tool-groups><div id="strip"></div><div data-cad-tool-stack><section id="study" data-tool-panel="tree"></section>
       <section id="clip" data-tool-panel="fixed" hidden></section></div></div></div>`;
     const box = (id: string, left: number, top: number, width: number, height: number) => {

@@ -57,7 +57,7 @@ test("a pick's lengths are in the unit its drawing declares, as Measure reads th
   assert.equal(diameter({ insunits: 4, name: "Millimeters" }), "12.00 mm");
   assert.equal(diameter({ insunits: 6, name: "Meters" }), "12.00 m");
   assert.equal(diameter({ insunits: 0, name: "Unitless" }), "12.00 units");
-  assert.equal(describeDrawingPick(drawing, "h90", drawingUnits({ insunits: 1 }).unit).tip, "Ø 12.00 in");
+  assert.equal(describeDrawingPick(drawing, "h90", drawingUnits({ insunits: 1 }).unit).tip, "Ø 12.000 in");
   // The hover tip's own words: the name and the headline measure, from the entity alone.
   assert.equal(drawingPickTip(drawing, "h90", "mm"), "Circle on CUT · Ø 12.00 mm");
   assert.equal(drawingPickTip(drawing, "h99", "mm"), "Block M5_NUT on HARDWARE");

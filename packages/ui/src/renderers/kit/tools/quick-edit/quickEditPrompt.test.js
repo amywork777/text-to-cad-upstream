@@ -64,7 +64,7 @@ test("carries the snapshot of the views a Queue would, and makes no picture of i
   assert.deepEqual(parts(context), [["file", "reference"], ["reference-0", "reference"], ["snapshot", "attachment"]]);
   const snapshot = context.parts.at(-1);
   assert.deepEqual([snapshot.name, snapshot.mimeType, snapshot.about], ["bracket.snapshot.json", "application/json", ["file"]]);
-  assert.match(await resolvePromptMessage(context), /Snapshot JSON \(cad snapshot --annotation\):[\s\S]*"current view"/);
+  assert.match(await resolvePromptMessage(context), /Snapshot JSON \(cad step snapshot --annotation\):[\s\S]*"current view"/);
   // Views the host made no file of (it makes none, or there is nothing to draw) leave nothing to attach.
   const bare = chatHost();
   await addToContext(bare, { resource: STEP, references: [FACE], files });

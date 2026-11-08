@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { cn } from "@cad/ui/utils";
 import { useI18n } from "@cad/ui/i18n";
-import { TREE_INDENT_PX, TreeRowChevron, TreeRowGuides, TreeRowLabel, TreeRowSurface } from "@cad/ui/primitives/tree-row";
+import { TREE_ROW_NAME_CLASS, TreeRowGlyph, TreeRowLabel, TreeRowSurface, TreeRowToggle } from "@cad/ui/primitives/tree-row";
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
 import { Checkbox } from "@cad/ui/primitives/checkbox";
-import { InfoRow } from "../kit/inspector/referenceRows.jsx";
+import { english } from "../../i18n/core.js";
 import { controlRow } from "./fea/controlRow.jsx";
 import ToolPanel from "../kit/tools/ToolPanel.jsx";
 import { formatValue } from "./feaResult.js";
@@ -82,9 +82,8 @@ function WrappedRowText({ row }) {
 function StudyFactRow({ row, depth }) {
   const hint = row.hint || [row.label, row.detail].filter(Boolean).join(" ");
   return <li className="min-w-0">
-    <TreeRowSurface dense className="h-auto min-h-6 gap-0 pr-0 hover:bg-transparent" style={{ height: "auto", paddingLeft: depth * TREE_INDENT_PX }} data-study-row={row.id}>
-      <TreeRowGuides depth={depth} column={16} />
-      <span className="w-4 shrink-0" />
+    <TreeRowSurface dense depth={depth} className="h-auto min-h-6 hover:bg-transparent" style={{ height: "auto" }} data-study-row={row.id}>
+      <TreeRowGlyph />
       <TooltipHint content={hint} overflowOnly={!row.hint}>
         <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5 py-1 pr-2">
           <span className={cn("min-w-0 max-w-full", row.wrap ? "[overflow-wrap:break-word]" : "truncate")}>{row.wrap ? unbroken(row.label) : row.label}</span>
@@ -104,17 +103,17 @@ function StudyHeadingRow({ row, depth, ...rest }) {
   const Glyph = STUDY_GLYPHS[row.glyph];
   // A little air above each heading after the first, so the setup reads as separate sentences.
   return <li className="min-w-0 [&:not(:first-child)]:pt-1">
-    <div className="relative flex h-6 min-w-0 items-center text-tiny text-muted-foreground" style={{ paddingLeft: depth * TREE_INDENT_PX }} data-study-row={row.id} data-study-heading="">
-      <span className="grid w-4 shrink-0 place-items-center">{Glyph ? <Glyph /> : null}</span>
-      <span className="min-w-0 truncate pl-1.5">{row.label}</span>
-    </div>
+    <TreeRowSurface dense depth={depth} className="text-muted-foreground hover:bg-transparent" data-study-row={row.id} data-study-heading="">
+      <TreeRowGlyph>{Glyph ? <Glyph /> : null}</TreeRowGlyph>
+      <span className="min-w-0 truncate">{row.label}</span>
+    </TreeRowSurface>
     <ul>{row.children.map((child) => <StudyRow key={child.id} row={child} depth={depth + 1} {...rest} />)}</ul>
   </li>;
 }
 
 /**
- * One of a tree's rows (Parts', Study's), the Links tree's: a 16px disclosure column, then its name
- * and detail. A row that stands for faces (a fixed face, a load, a load's face) or for parts (an
+ * One of a tree's rows (Parts', Study's), the Links tree's: its glyph slot (a branch's chevron), then its name
+ * and detail, padded by the row itself (`primitives/tree-row.jsx`). A row that stands for faces (a fixed face, a load, a load's face) or for parts (an
  * assembly's part or joint) is a button that chooses them; a group (What you see, Details) only opens
  * and closes, and a heading of the setup (Held at, Pushed, Made of) does neither (`StudyHeadingRow`). `contents`: what an open row shows in place of child rows, by id (What you see's controls).
  */
@@ -128,19 +127,16 @@ function StudyRow({ row, depth, chosen, collapsed, toggle, onChoose, contents })
   const open = branch && !collapsed.has(row.id);
   const active = chosen === row.id;
   return <li className={cn("min-w-0", depth === 0 && "[&:not(:first-child)]:pt-1")}>
-    <TreeRowSurface dense active={active} className={cn("gap-0 pr-0", row.wrap && "h-auto min-h-6")}
-      style={{ paddingLeft: depth * TREE_INDENT_PX, ...(row.wrap ? { height: "auto" } : {}) }} data-study-row={row.id}>
-      <TreeRowGuides depth={depth} column={16} />
-      {branch ? <button type="button" aria-label={t(open ? "tree.collapse" : "tree.expand", { name: row.label })} aria-expanded={open}
-        className="grid h-6 w-4 shrink-0 place-items-center self-start rounded focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => toggle(row.id)}><TreeRowChevron expanded={open} /></button> : <span className="w-4 shrink-0" />}
+    <TreeRowSurface dense depth={depth} active={active} className={cn(row.wrap && "h-auto min-h-6")}
+      style={row.wrap ? { height: "auto" } : undefined} data-study-row={row.id}>
+      {branch ? <TreeRowToggle open={open} label={t(open ? "tree.collapse" : "tree.expand", { name: row.label })} onToggle={() => toggle(row.id)} />
+        : <TreeRowGlyph />}
       {choosable ? <TooltipHint content={row.hint || (row.wrap ? null : [row.label, row.detail].filter(Boolean).join(" "))} overflowOnly={!row.hint}>
         <button type="button" aria-label={t("tree.select", { name: row.name || row.label })} aria-pressed={active} onClick={() => onChoose(row)}
-          className={cn("flex min-w-0 flex-1 gap-1.5 rounded pr-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            row.wrap ? "flex-wrap items-baseline py-1" : "h-full items-center")}>
+          className={cn(TREE_ROW_NAME_CLASS, "gap-1.5", row.wrap ? "h-auto flex-wrap items-baseline py-1" : "")}>
           {row.wrap ? <WrappedRowText row={row} /> : <RowText row={row} />}
         </button>
-      </TooltipHint> : <span className="flex h-full min-w-0 flex-1 items-center gap-1.5 pr-2"><RowText row={row} /></span>}
+      </TooltipHint> : <span className={cn(TREE_ROW_NAME_CLASS, "gap-1.5")}><RowText row={row} /></span>}
     </TreeRowSurface>
     {open && row.children ? <ul>{row.children.map((child) => <StudyRow key={child.id} row={child} depth={depth + 1}
       {...{ chosen, collapsed, toggle, onChoose, contents }} />)}</ul> : null}
@@ -162,7 +158,7 @@ function StudyTreePanel({ id, title, blocks, startsCollapsed, fit, chosen, onCho
   });
   return <ToolPanel id={id} title={title} label={title} fit={fit} collapsible={false}>
     {blocks.map((block, index) => (block.rows
-      ? <ul key={index} className="flex flex-col px-1 pb-1 text-tiny" aria-label={title}>
+      ? <ul key={index} className="flex flex-col pb-1 text-tiny" aria-label={title}>
         {block.rows.map((row) => <StudyRow key={row.id} row={row} depth={0} {...{ chosen, collapsed, toggle, onChoose, contents }} />)}
       </ul>
       : <div key={index} className={index ? "pt-1" : undefined}>{block.element}</div>))}
@@ -189,7 +185,7 @@ export const FEA_STUDY_PANEL_ID = "study";
  * What you see: the field, deformation and load controls and the markers' gate (`result`: `FeaResultControls`'
  * props), and Details (`details`), shut. Choosing a row that stands for faces or parts is `onChoose(row)`;
  * `chosen` is the row (or picked face) chosen. A face picked on the result is Quick Edit's chip, its card
- * `FaceCard`.
+ * `faceDetail`.
  *
  * @param {{ parts?: object[], openPart?: number, setup: object[], details: object[],
  *   verdict?: object | null, chosen: string, onChoose(row: object): void,
@@ -212,11 +208,13 @@ export default function FeaStudyPanel({ parts = NONE, openPart = -1, setup, deta
   return <>{panels.map((panel) => <StudyTreePanel key={panel.id} {...panel} chosen={chosen} onChoose={onChoose} contents={contents} />)}</>;
 }
 
-/** A face picked on the result, as its Quick Edit chip's card under the ref the chip names: what the study does to it, and its part. */
-export function FaceCard({ face }) {
-  const { t } = useI18n();
-  return <>
-    <InfoRow label={t("fea.study")}>{face.role}</InfoRow>
-    {face.part ? <InfoRow label={t("fea.part")}>{unbroken(face.part)}</InfoRow> : null}
-  </>;
+/**
+ * A face picked on the result, as its Quick Edit chip's card describes it under the ref the chip names (the view's
+ * one description of a pick, `kit/inspector/inspect.js`'s `DetailItem`): what the study does to it, and its part.
+ */
+export function faceDetail(face, t = english) {
+  return { facts: [
+    { label: t("fea.study"), value: face.role },
+    ...(face.part ? [{ label: t("fea.part"), value: unbroken(face.part) }] : NONE),
+  ] };
 }

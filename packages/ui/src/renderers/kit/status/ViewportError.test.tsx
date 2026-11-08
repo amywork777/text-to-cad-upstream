@@ -76,7 +76,7 @@ it('a card that starts put away shows its icon at once, brings the card back fro
 });
 
 it('a card saying what a design has against it offers no Report Issue', () => {
-  const alert = { severity: 'warning', blocking: false, title: '1 suggestion', message: '', report: false };
+  const alert = { severity: 'warning', blocking: false, title: '1 suggestion', message: '', reportable: false };
   render(<ViewerHostContext.Provider value={testHost({ links: viewerLinks({ version: '0.7.5' }) }) as any}>
     <ViewerAlertCard alert={alert} hasContent onReload={() => {}} body={<p>A row</p>} />
   </ViewerHostContext.Provider>);

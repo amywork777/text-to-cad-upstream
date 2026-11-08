@@ -9,8 +9,6 @@ import { formatPromptReference } from "@cad/core/prompt";
 import { cn } from "@cad/ui/utils";
 import { FLOATING_CHROME_SURFACE_CLASS } from "../../lib/floatingSurface.js";
 import { english } from "../../i18n/core.js";
-import { useI18n } from "@cad/ui/i18n";
-import { InfoRow } from "../kit/inspector/referenceRows.jsx";
 import { camToolpathObjects, createCamPaths } from "./cam/lines.js";
 import { camSceneMeshes, showCamMeshes } from "./cam/playback.js";
 import { createCamTool } from "./cam/tool.js";
@@ -78,21 +76,25 @@ export function camReferences(source, choice) {
 
 const fileName = (path) => String(path || "").split(/[\\/]/).filter(Boolean).at(-1) || String(path || "");
 
-/** A choice's card in Quick Edit: its sentence, then the part it names and how many of its faces. */
-function CamChoiceCard({ choice, reference }) {
-  const { t } = useI18n();
+/**
+ * A choice's card in Quick Edit, as the view's panel describes a pick (`kit/inspector/inspect.js`'s `DetailItem`):
+ * its sentence in words, then the part it names (a click copies its path) and how many of its faces.
+ */
+function camChoiceDetail(choice, reference, t) {
   const faces = reference.target.kind === "cad-selector" ? reference.target.selectors.length : 0;
-  return <>
-    {choice.summary ? <p className="py-0.5 text-tiny text-muted-foreground [overflow-wrap:break-word]" data-cam-chip-summary="">{choice.summary}</p> : null}
-    <InfoRow label={t("cam.gate.part")} copy={reference.resource.path}>{fileName(reference.resource.path)}</InfoRow>
-    <InfoRow label={t("cam.faces")}>{faces ? faces.toLocaleString("en-US") : t("cam.wholePart")}</InfoRow>
-  </>;
+  return {
+    ...(choice.summary ? { what: choice.summary } : {}),
+    facts: [
+      { label: t("cam.gate.part"), value: fileName(reference.resource.path), copy: reference.resource.path },
+      { label: t("cam.faces"), value: faces ? faces.toLocaleString("en-US") : t("cam.wholePart") },
+    ],
+  };
 }
 
 /**
  * What Quick Edit shows of a choice (`camReferences`' one reference): one chip named for its row ("Pocket",
  * "Top setup", "T1 6 mm flat", an error's words), a face's glyph where it names faces (in the operation's colour, for
- * an operation's), else the whole part's, its card the row's sentence. A click copies the reference; its X lets go of
+ * an operation's), else the whole part's, its card the row's sentence (`detail`). A click copies the reference; its X lets go of
  * the choice (`onRemove`). None without a reference.
  */
 export function camChips(choice, references, { colours = {}, onRemove, t = english } = {}) {
@@ -102,7 +104,7 @@ export function camChips(choice, references, { colours = {}, onRemove, t = engli
   return [{
     key: `cam:${choice.id}`, label: choice.label || choice.summary || t("cam.job"), glyph: reference.target.kind === "cad-selector" ? "face" : "solid",
     ...(op !== null && colours[op] ? { glyphColor: colours[op] } : {}),
-    copy: formatPromptReference(reference), card: <CamChoiceCard choice={choice} reference={reference} />, onRemove,
+    copy: formatPromptReference(reference), detail: camChoiceDetail(choice, reference, t), onRemove,
   }];
 }
 

@@ -1,9 +1,9 @@
 /**
- * An FEA result inside a GLB, as `cad fea solve` writes it, and what the
+ * An FEA result inside a GLB, as `cad <type> solve --out DIR` writes `result.glb`, and what the
  * viewer can do with it without a second file.
  *
- * The writer (cadgen `_internal/fea/outputs.py`) stores the raw fields as
- * custom vertex attributes beside the baked colour: `_VON_MISES` (float, MPa)
+ * The writer (cad `_internal/fea/outputs.py`) stores the raw fields as
+ * custom vertex attributes beside the colour: `_VON_MISES` (float, MPa)
  * and `_DISPLACEMENT` (vec3, glTF units, i.e. metres, unscaled), and puts in
  * the mesh extras a `fields` list describing each one (`attribute`, `name`,
  * `units`, `min`, `max`, `attribute_scale`), `deformation_scale` (the
@@ -23,13 +23,16 @@
  * GLTFLoader lower-cases custom attribute names and copies extras into
  * `userData`, which is what is read here.
  *
+ * The colour is the ramp's texture read at each vertex's ramp coordinate (`TEXCOORD_0`, 0.11's
+ * `result.glb`), or baked vertex colours (`COLOR_0`, the 0.10 line's `.fea.glb`).
+ *
  * Everything is in-place on the loaded geometry: recolouring rewrites the
- * `color` bytes, re-scaling the deformation rewrites `position` from the
+ * `color` bytes (a textured result trades its texture for them on its first recolouring), re-scaling the deformation rewrites `position` from the
  * file's own positions and displacement vector. The originals are kept on
  * the mesh so any scale or field can be chosen in any order, and a request
  * for what is already shown does nothing.
  */
-import { Raycaster } from "three";
+import { BufferAttribute, Raycaster } from "three";
 import { clamp } from "@cad/core/common/numbers.js";
 import { FEA_CHECK_KINDS, checkLabel, checkLine, checkTitle, loadCaption } from "./fea/checkKinds.js";
 import { flooredFactor, plainNumber } from "./fea/numbers.js";
@@ -40,8 +43,8 @@ export { deformationRange, feaControls } from "./fea/controls.js";
 import { english } from "../../i18n/core.js";
 export { FIELD_WORDS } from "./fea/fields.js";
 export { faceLabel, faceTitle, forceDirection } from "./fea/setup.js";
+import { isFeaGenerator } from "./fea/generator.js";
 
-const GENERATOR = "cadgen fea";
 
 /** The deformation's own attribute: the displacement the file baked into its positions. */
 export const DISPLACEMENT = "_displacement";
@@ -252,7 +255,7 @@ export function readFeaResult(root) {
       return;
     }
     const extras = object.userData || {};
-    if (extras.generator !== GENERATOR) {
+    if (!isFeaGenerator(extras.generator)) {
       return;
     }
     if (!(Array.isArray(extras.fields) && extras.fields.length)) throw new Error("The FEA result has no fields in its extras.");
@@ -273,7 +276,9 @@ export function readFeaResult(root) {
     // What cadgen writes on every vertex: the colours the ramp rewrites, the displacement the view scales,
     // the face each vertex lies on (`_face`); and, for an assembly, the part it belongs to (`_part`).
     const attribute = (name, sizes) => sizes.includes(object.geometry.getAttribute(name)?.itemSize);
-    if (!attribute("color", [3, 4])) throw new Error("The FEA result has no vertex colours.");
+    if (!attribute("color", [3, 4]) && !(attribute("uv", [2]) && rampTextured(object.material))) {
+      throw new Error("The FEA result has no vertex colours and no ramp texture.");
+    }
     if (!attribute(DISPLACEMENT, [3])) throw new Error("The FEA result's displacement is not a vector per vertex.");
     if (!attribute("_face", [1])) throw new Error("The FEA result has no face per vertex.");
     if (!(Number.isFinite(extras.deformation_scale) && extras.deformation_scale > 0)) {
@@ -306,6 +311,22 @@ export function readFeaResult(root) {
     };
   });
   return found;
+}
+
+/** A material the writer coloured by its ramp's texture: one material, its colour map set. */
+const rampTextured = (material) => Boolean(material && !Array.isArray(material) && material.map);
+
+/**
+ * The vertex colours a result coloured by its ramp's texture is drawn in from here on: a texture read at one ramp
+ * coordinate per vertex cannot tint a chosen face, so its material's texture gives way to colours the view writes.
+ */
+function ownColours(mesh) {
+  const color = new BufferAttribute(new Uint8Array(mesh.geometry.getAttribute("position").count * 4), 4, true);
+  mesh.geometry.setAttribute("color", color);
+  mesh.material.map = null;
+  mesh.material.vertexColors = true;
+  mesh.material.needsUpdate = true;
+  return color;
 }
 
 /** The file's own positions, each field's values once read, and what is currently shown, kept on the mesh. */
@@ -372,7 +393,7 @@ function vertexIndex(mesh, name) {
  */
 export function recolorByField(mesh, field, ramp, highlight = null, parts = null, softParts = null,
   { valueScale = 1, rangeScale = 1 } = {}) {
-  const color = mesh.geometry.getAttribute("color");
+  const color = mesh.geometry.getAttribute("color") ?? ownColours(mesh);
   const values = keptValues(mesh, field);
   const kept = shown(mesh);
   const faces = vertexIndex(mesh, "_face");

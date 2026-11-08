@@ -47,13 +47,20 @@ it('Explode and Clip are popovers from their tiles: a press opens the row under 
   expect([row(), screen.getByRole('toolbar', { name: 'Clip controls' }) !== null]).toEqual([null, true]);
 });
 
-it('draws its tiles with the icons a renderer hands it, else the kit\'s', () => {
+it('keeps the kit\'s glyphs on its tiles, and hands the icons a renderer gives it to the ribbon', () => {
   const store = createViewSettingsStore();
+  const icons = { exploded: <svg data-testid="cad-exploded" />, clip: <svg data-testid="cad-section" /> };
   const { rerender } = render(<Strip store={store} />);
   const glyph = (name: string) => screen.getByRole('button', { name, exact: true }).querySelector('[data-testid]')?.getAttribute('data-testid') ?? 'kit';
   expect([glyph('Explode'), glyph('Clip')]).toEqual(['kit', 'kit']);
-  rerender(<Strip store={store} icons={{ exploded: <svg data-testid="cad-exploded" />, clip: <svg data-testid="cad-section" /> }} />);
-  expect([glyph('Explode'), glyph('Clip')]).toEqual(['cad-exploded', 'cad-section']);
+  // The strip keeps plain glyphs; CAD mode's ribbon wears the renderer's (`ribbonIcon`, `EditRibbon.jsx`).
+  rerender(<Strip store={store} icons={icons} />);
+  expect([glyph('Explode'), glyph('Clip')]).toEqual(['kit', 'kit']);
+  const ribbonIcons = (handed: typeof icons | null) => renderHook(() => useModelTools({ view: store.getSnapshot().scene.view, features: { settings: ['exploded', 'clip'] },
+    store, mesh: { bounds: { min: [0, 0, 0], max: [10, 10, 10] } }, disabled: false, icons: handed }))
+    .result.current.tools.map((tool: { ribbonIcon: React.ReactElement | null }) => tool.ribbonIcon?.props['data-testid'] ?? null);
+  expect(ribbonIcons(icons)).toEqual(['cad-exploded', 'cad-section']);
+  expect(ribbonIcons(null)).toEqual([null, null]);
 });
 
 it('what an effect sets stays on the model once its popover closes, its dot on the tile, until its Reset', async () => {
