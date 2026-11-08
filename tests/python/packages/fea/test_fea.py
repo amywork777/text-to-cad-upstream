@@ -221,6 +221,34 @@ class Mesher(unittest.TestCase):
         self.assertEqual(NETGEN_PLATFORMS, "macOS, Linux x86_64 and Windows x86_64")
 
 
+class StudyHandCheck(unittest.TestCase):
+    """The study's optional ``hand_check``: the sum as written, with nothing filled in."""
+
+    def test_it_parses_as_written_and_a_study_without_one_has_none(self):
+        hand = {"stress_MPa": 70, "method": " Bending stress (M c / I) ", "about": "120 N at 90 mm"}
+        self.assertEqual(parse_study({**BASE, "hand_check": hand}).hand_check,
+                         {"stress_MPa": 70.0, "method": "Bending stress (M c / I)", "about": "120 N at 90 mm"})
+        self.assertEqual(parse_study({**BASE, "hand_check": {"stress_MPa": 70, "method": "Bending"}}).hand_check,
+                         {"stress_MPa": 70.0, "method": "Bending"})
+        self.assertIsNone(parse_study(BASE).hand_check)
+
+    def test_a_bad_one_is_refused_naming_the_field(self):
+        for hand, said in (
+            ({"method": "Bending"}, "study.hand_check: needs stress_MPa"),
+            ({"stress_MPa": 70}, "study.hand_check: needs method"),
+            ({}, "study.hand_check: needs stress_MPa and method"),
+            ({"stress_MPa": 0, "method": "Bending"}, "hand_check.stress_MPa: must be > 0"),
+            ({"stress_MPa": "70", "method": "Bending"}, "hand_check.stress_MPa: expected a number"),
+            ({"stress_MPa": 70, "method": " "}, "hand_check.method: expected a short piece of text"),
+            ({"stress_MPa": 70, "method": "Bending", "note": "x"}, "study.hand_check: unknown keys ['note']"),
+            (70, "study.hand_check: expected an object"),
+        ):
+            with self.subTest(said=said):
+                message = value_error(self, parse_study, {**BASE, "hand_check": hand})
+                self.assertIn(said, message)
+                self.assertNotIn("\u2014", message)
+
+
 class StudyChecks(unittest.TestCase):
     """The study's optional ``checks``: checked like the rest of the study, before any heavy import."""
 
@@ -305,6 +333,8 @@ class Cantilever(unittest.TestCase):
                 {"kind": "displacement", "limit_mm": 1.05 * TIP, "faces": [cls.load_ref], "label": "Tip sag"},
                 {"kind": "displacement", "limit_mm": TIP, "faces": [cls.fixed_ref], "label": "Clamp"},
             ],
+            # The beam's own sum at its root, which the peak lands near.
+            "hand_check": {"stress_MPa": round(_bending_stress(0.0), 3), "method": "Bending stress (M c / I)"},
         }
         cls.out = directory / "results" / "cantilever"
         cls.solver = _CountingSolve()
@@ -522,6 +552,31 @@ class Cantilever(unittest.TestCase):
         self.assertIsNone(written["measurements"]["refined"])
         self.assertEqual(glb_extras(self.result.glb)["findings"], [])
         self.assertEqual(self.result.measurements["mesh"]["size_mm"], 2.0)
+
+    def test_the_hand_figure_comes_back_beside_the_peak_in_the_result_the_glb_and_the_lines(self):
+        from cad._internal.fea.checks import HAND_CHECK_WITHIN
+
+        peak = self.result.measurements["max_von_mises_MPa"]
+        reading = self.result.measurements["hand_check"]
+        self.assertEqual({key: reading[key] for key in ("stress_MPa", "method")}, self.study["hand_check"])
+        self.assertNotIn("about", reading)  # nothing fills in what the study left out
+        self.assertAlmostEqual(reading["peak_MPa"], peak, places=3)
+        self.assertAlmostEqual(reading["times"], peak / reading["stress_MPa"], places=3)
+        self.assertEqual((reading["within"], reading["agrees"]), (HAND_CHECK_WITHIN, True))
+        # The viewer reads it from the GLB's extras (feaResult.js readHandCheck), beside the checks.
+        self.assertEqual(glb_extras(self.result.glb)["hand_check"], reading)
+        self.assertEqual(reported(self.result)["measurements"]["hand_check"], reading)
+        self.assertIn(f"hand check: {reading['stress_MPa']:g} MPa (Bending stress (M c / I)), "
+                      f"the peak is {reading['times']:.2g}× it, they agree", self.result.human_lines())
+
+    def test_a_hand_figure_far_from_the_peak_warns_and_changes_no_verdict(self):
+        far = solve(self.step, self.out.with_name("far"), {**self.study, "hand_check": {"stress_MPa": 1, "method": "A wrong sum"}})
+        self.assertFalse(far.measurements["hand_check"]["agrees"])
+        self.assertEqual([(found.severity, found.code) for found in far.findings], [("warning", "hand_check_far")])
+        self.assertEqual([found["type"] for found in glb_extras(far.glb)["findings"]], ["hand_check_far"])
+        self.assertTrue(far.ok)
+        self.assertEqual(far.measurements["checks"], self.result.measurements["checks"])
+        self.assertTrue(any(line.endswith("far apart") for line in far.human_lines()))
 
     def test_a_face_on_a_different_part_or_a_non_face_is_refused(self):
         self.assertIn("faces", value_error(self, solve, self.step, self.out, {
@@ -753,6 +808,12 @@ class Yielding(unittest.TestCase):
         self.assertEqual(drawn[0]["check"], "fea")
         self.assertEqual([dataclasses.asdict(f) for f in self.result.findings], self.said["findings"])
         self.assertIn(self.result.findings[0].human_line(), self.result.human_lines())
+
+    def test_a_study_with_no_hand_figure_has_no_reading(self):
+        self.assertNotIn("hand_check", self.result.measurements)
+        self.assertNotIn("hand_check", glb_extras(self.result.glb))
+        self.assertFalse(any(line.startswith("hand check: ") for line in self.result.human_lines()))
+        self.assertNotIn("hand_check_far", [f.code for f in self.result.findings])
 
     def test_a_part_that_yields_is_not_ok_and_its_glb_is_written_all_the_same(self):
         # ok is the validators' rule, an error blocks (the command exits 1); the GLB shows where it fails.

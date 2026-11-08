@@ -190,6 +190,15 @@ def _check_lines(s: dict) -> list[str]:
     return [line(check) for check in s.get("checks", [])]
 
 
+def _hand_check_lines(s: dict) -> list[str]:
+    """The study's hand figure against the peak, when it gave one."""
+    hand = s.get("hand_check")
+    if hand is None:
+        return []
+    reading = "they agree" if hand["agrees"] else "far apart"
+    return [f"hand check: {hand['stress_MPa']:g} MPa ({hand['method']}), the peak is {hand['times']:.2g}× it, {reading}"]
+
+
 @dataclass(frozen=True)
 class FeaResult(CheckResult):
     """The outcome of a stress study (``cad.<type>.solve``, ``cad <type> solve``; ``result.json`` in the folder a solve
@@ -203,7 +212,9 @@ class FeaResult(CheckResult):
     With a study it is the solve: ``written`` the files it wrote into its folder (``result.json``, ``result.glb``,
     ``result.vtu``, the pictures where they could be drawn, ``ccx.inp`` where asked), and ``measurements`` the numbers -- an engineer's first answer (the peak von Mises stress, nodal and at
     the integration points, the safety factor, the largest displacement, the applied force against the reactions,
-    an assembly's weakest part and each part's own), each check the study asked for judged (``checks``), and what
+    an assembly's weakest part and each part's own), each check the study asked for judged (``checks``), the study's
+    hand figure against the peak when it gave one (``hand_check``: as given, with ``peak_MPa``, ``times``, ``within``
+    and ``agrees``), and what
     the file's fields do not carry under its own key (``mesh``, ``timings``, the ``study`` as given, its ``material``, each
     named face in ``named_faces``, each fixture's reaction, an assembly's ``connections`` and ``overlaps``, the
     first solve when a finer one was written in ``refined``). ``ok`` is the validators' rule: false when any
@@ -338,6 +349,7 @@ class FeaResult(CheckResult):
             f"solved {self.occurrence} of {_display(self.path)}: {size}{solver}",
             *_stress_lines(s, safety_factor_text),
             *_check_lines(s),
+            *_hand_check_lines(s),
             f"max displacement {s.get('max_displacement_mm')} mm at {s.get('max_displacement_at_mm')}",
             f"applied {s.get('applied_force_N')} N, reactions {s.get('reaction_force_N')} N",
             f"wrote {', '.join(Path(path).name for path in self.written)} into {_display(self.folder)} "

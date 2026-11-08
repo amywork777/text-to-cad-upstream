@@ -9,8 +9,8 @@ from tests.python.support.paths import add_repo_path
 add_repo_path("packages/cad/src")
 
 from cad._internal.fea.checks import (  # noqa: E402
-    Solved, assembly_findings, check_findings, displacement_check, findings, gap_closed, needs_finer, safety_factor,
-    safety_factor_text, stress_check,
+    HAND_CHECK_WITHIN, Solved, as_check_finding, assembly_findings, check_findings, displacement_check, findings, gap_closed, hand_check,
+    hand_check_finding, needs_finer, safety_factor, safety_factor_text, stress_check,
 )
 
 
@@ -300,6 +300,40 @@ class StudyChecksTest(unittest.TestCase):
         self.assertEqual(faces, "The checked faces move 2.1 mm, more than the 0.5 mm allowed")
         self.assertEqual(check_findings([displacement_check(0.48, 0.5, at=at, ref=None)]), [])
 
+
+class HandCheckTest(unittest.TestCase):
+    HAND = {"stress_MPa": 40.0, "method": "Bending stress (M c / I)", "about": "120 N at 90 mm"}
+
+    def test_it_echoes_the_sum_with_the_peak_beside_it(self):
+        self.assertEqual(hand_check(self.HAND, solved(peak_MPa=50.0)), {
+            **self.HAND, "peak_MPa": 50.0, "times": 1.25, "within": 2.0, "agrees": True,
+        })
+        self.assertEqual(HAND_CHECK_WITHIN, 2.0)
+
+    def test_the_two_agree_within_a_factor_of_two_either_way(self):
+        for peak, agrees in ((80.0, True), (20.0, True), (80.1, False), (19.9, False)):
+            with self.subTest(peak=peak):
+                self.assertEqual(hand_check(self.HAND, solved(peak_MPa=peak))["agrees"], agrees)
+
+    def test_an_assemblys_reading_is_its_weakest_parts_peak(self):
+        reading = hand_check(self.HAND, solved(peak_MPa=60.0, part="post", assembly=True))
+        self.assertEqual((reading["peak_MPa"], reading["times"]), (60.0, 1.5))
+
+    def test_far_apart_is_a_warning_that_says_how_far_and_blames_neither(self):
+        found = hand_check_finding(hand_check(self.HAND, solved(peak_MPa=128.0)))
+        self.assertEqual((found["check"], found["severity"], found["type"], found["items"]),
+                         ("fea", "warning", "hand_check_far", []))
+        self.assertEqual(found["summary"], "Simulation's peak of 128 MPa is 3.2 times the hand figure of 40 MPa")
+        self.assertIn("look closer before trusting either", found["description"])
+        self.assertNotIn("\u2014", found["summary"] + found["description"])
+        said = as_check_finding(found)
+        self.assertEqual((said.severity, said.code, said.location), ("warning", "hand_check_far", None))
+
+    def test_it_judges_nothing(self):
+        before = stress_check(solved(peak_MPa=128.0))
+        hand_check(self.HAND, solved(peak_MPa=128.0))
+        self.assertEqual(stress_check(solved(peak_MPa=128.0)), before)
+        self.assertEqual(check_findings([before]), [])
 
 
 class FieldMaxOver(unittest.TestCase):

@@ -34,10 +34,11 @@ at once with a sentence naming the field.
 | `output` | how the result is drawn ([`output`](#output)) |
 | `margin` | the safety factor to keep ([`margin`](#margin)) |
 | `checks` | what the result is judged by ([`checks`](#checks)) |
+| `hand_check` | the sum you did by hand before solving, read against the peak ([`hand_check`](#hand_check)) |
 | `parts`, `connections`, `contact_tolerance_mm` | an assembly ([Assemblies](#assemblies)) |
 
 Any other key is refused with a sentence naming the keys a study takes, and so is an unknown key
-inside `material`, `mesh` or `output`.
+inside `material`, `mesh`, `output` or `hand_check`.
 
 ## Units
 
@@ -211,6 +212,29 @@ alone), and so is an unknown `kind` or key. A failing displacement check is a
 `displacement_over_limit` error finding ("'Tip sag' moves 2.1 mm, more than the 0.5 mm allowed");
 the stress check's findings are the `yields` and `low_margin` findings already made.
 
+## `hand_check`
+
+The stress you worked out by hand before solving, so the first thing the result does is meet a
+number from outside the solver. Optional, and it judges nothing: the verdict stays the checks'.
+
+```json
+"hand_check": {"stress_MPa": 70, "method": "Bending stress (M c / I)", "about": "120 N at 90 mm on a 3 by 20 mm strip"}
+```
+
+| key | meaning |
+| --- | --- |
+| `stress_MPa` | your figure at the study's full load; required, above zero |
+| `method` | how you got it, plain words first and the formula in parentheses; required |
+| `about` | the section and load the sum was done on; optional |
+
+Only write a figure you actually worked out: nothing fills one in, and a study without a hand check
+says nothing about one. The result carries it as given with the peak beside it (`peak_MPa`, the
+nodal peak of the part the stress check judges: an assembly's weakest part's), `times`, the peak
+over your figure, `within`, the factor the two must stay within (2), and `agrees`, in the
+measurements' `hand_check`, the GLB's `extras.hand_check` and a CLI line. Far apart it is also a
+`hand_check_far` warning finding. How to pick the section:
+[Judging the answer](linear-static.md#judging-the-answer).
+
 ## What comes out
 
 `cad step solve part.step --study study.json --out DIR` writes into the folder `DIR` (made when missing;
@@ -235,7 +259,8 @@ The result (`--json`) is a check's: `ok`, the document (`path`), `findings` (eac
 (`named_faces`), the summary's figures at its top level (max von Mises nodal and at the integration
 points, safety factor, max displacement and its location, applied and reaction forces; for an
 assembly also `parts`, one entry per part with its material, peak stress, safety factor and
-displacement, and the weakest part's name and peak; and `checks`, each check judged), per-fixture
+displacement, and the weakest part's name and peak; `checks`, each check judged; and `hand_check`, the
+study's hand figure against the peak, when it gave one), per-fixture
 reactions, `mesh` (elements, nodes, degrees of freedom, size, the mesher, `"solver": "calculix 2.23
 (C3D10)"`, and `straightened`, the elements made straight so CalculiX could solve them:
 [Mesh](linear-static.md#mesh)), `timings`, and `refined`: the first and the finer solve's element

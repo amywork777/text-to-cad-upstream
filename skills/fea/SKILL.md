@@ -26,7 +26,8 @@ drop or a braking load can be estimated as a steady g-load
 | **Check an assembly** | `cad step solve assembly.step` lists the parts and the pairs that touch. | [Assemblies](#assemblies) |
 | **Write or edit a study** | One JSON object: fixtures and loads, then material, mesh, margin and checks; parts and connections for an assembly. | [Study file](references/study-file.md) |
 | **Choose a material** | The model's own (solve the model or its `.xbf`), or the E, ν and yield the user gives. | [Materials](references/materials.md) |
-| **Judge the answer** | `result.json` and its findings, against a hand estimate. | [Findings](#findings), [Judging the answer](references/linear-static.md#judging-the-answer) |
+| **Judge the answer** | A hand figure worked out before the solve, in the study's `hand_check`; then `result.json` and its findings. | [Findings](#findings), [Judging the answer](references/linear-static.md#judging-the-answer) |
+| **Make a part that falls short pass** | The smallest change aimed at where it falls short, each choice estimated, offered until it passes. | [Workflow](#workflow) step 5, [Estimating a fix](references/linear-static.md#estimating-a-fix) |
 | **Answer a question the summary does not** | `result.vtu`, read with meshio. | [Your own questions](#your-own-questions) |
 | **Compare variants of a design** | The same study on each, faces mapped, mesh size held. | [Compare variants](#compare-variants) |
 
@@ -98,6 +99,11 @@ g (9.81 m/s²) for gravity and acceleration. Restate every load in them before y
    stiffness spec; left out, the stress check alone judges the part. Leave `mesh` out on the first
    run.
 
+   Before you solve, work out the stress by hand at the section you expect to carry it, and add it
+   as [`hand_check`](references/study-file.md#hand_check): `{"stress_MPa": 70, "method": "Bending
+   stress (M c / I)", "about": "120 N at 90 mm on a 3 by 20 mm strip"}`. Do the sum for real, and
+   leave the key out when no section suits a sum: never write a figure you did not work out.
+
 3. **Solve into a folder.**
 
    ```bash
@@ -124,7 +130,8 @@ g (9.81 m/s²) for gravity and acceleration. Restate every load in them before y
    named (`named_faces`), the summary's figures (`max_von_mises_MPa` and `max_von_mises_at_mm`,
    `max_von_mises_gauss_MPa`, `yield_MPa`, `safety_factor`, `max_displacement_mm` and
    `max_displacement_at_mm`, `applied_force_N`, `reaction_force_N`, `deformation_scale`, `checks`;
-   an assembly's `weakest_part` and `parts`), each fixture's reaction, `mesh` (size, elements,
+   an assembly's `weakest_part` and `parts`; `hand_check`, the study's hand figure with the peak
+   beside it, when it gave one), each fixture's reaction, `mesh` (size, elements,
    degrees of freedom, `straightened`, `solver`), `timings`, and `refined`, the first solve's size
    and peak when the run solved twice. Without `--json` the same prints as lines.
 
@@ -143,9 +150,26 @@ g (9.81 m/s²) for gravity and acceleration. Restate every load in them before y
 
 4. **Report** with units: the peak von Mises and which feature it is near, the safety factor and
    the yield it is against (the low end of the model material's range), the max displacement and
-   where, the applied load against the reaction, the mesh size and whether a finer re-solve ran;
-   then the findings, what the model assumes, and what would change the answer most. Show
-   `stress.png`, saying the deformation is exaggerated by `deformation_scale`.
+   where, the applied load against the reaction, your hand figure and how many times the peak is
+   of it (`hand_check_far` means they are far apart: find out why before reporting a verdict), the
+   mesh size and whether a finer re-solve ran; then the findings, what the model assumes, and what
+   would change the answer most. Show `stress.png`, saying the deformation is exaggerated by `deformation_scale`.
+
+5. **When it falls short** (a `yields` or `low_margin` finding: the stress check `fails`, or is
+   `close` under the study's `margin`, 2 when the user gave none; or a displacement check fails),
+   end with the smallest change you would make and what you expect it to give, from a hand
+   estimate ([Estimating a fix](references/linear-static.md#estimating-a-fix)): in bending the
+   stress falls with the square of the thickness (stress scales with 1 / t²), so 3 mm to 4 mm
+   sheet takes a 1.5 safety factor to about 2.7. Aim it at where the part falls short, the face
+   and point the finding names (an assembly's part): a peak at the screw holes is the joint (more
+   or wider-spaced screws, a washer, a thicker leg), not the arm. Give every choice its estimated
+   result, and recommend the one the estimates favour; a change you cannot estimate is not the
+   recommended one. Offer it as a choice: that change first, one or two others, and leaving the
+   part as it is last (your host's question tool, if it has one), each with its estimate, never a
+   bare "shall I go ahead?". Do not change the part until the user picks; then change it, solve
+   the same study again into a new folder to confirm ([Compare variants](#compare-variants)), and
+   report the new numbers beside the old. If it still falls short, offer the next change the same
+   way, until it passes or the user stops.
 
 ## Your own questions
 
@@ -230,9 +254,10 @@ it under 10 %); above the margin they would not change the answer.
 
 | Finding | Severity | What it means | What to do |
 | --- | --- | --- | --- |
-| `yields` | error | The nodal peak is above the material's yield. | Strengthen the part where the peak is, change the material, or confirm the load; a `peak_at_fixture` or `peak_concentration` beside it comes first: the peak may be the model's, not the part's. |
+| `yields` | error | The nodal peak is above the material's yield. | Offer a fix aimed at the peak, each choice estimated ([Workflow](#workflow) step 5): a thicker section there, a stronger material, or confirm the load; a `peak_at_fixture` or `peak_concentration` beside it comes first: the peak may be the model's, not the part's. |
 | `low_margin` | warning | It holds, but under the study's `margin`. | As for `yields`, or report the margin it has; never lower `margin` to clear the finding. |
-| `displacement_over_limit` | error | A `displacement` check's largest displacement (over its faces, else the whole model) is past its `limit_mm`. | Stiffen the part, or confirm the limit with the user. |
+| `displacement_over_limit` | error | A `displacement` check's largest displacement (over its faces, else the whole model) is past its `limit_mm`. | Offer a stiffer part the same way ([Workflow](#workflow) step 5), or confirm the limit with the user. |
+| `hand_check_far` | warning | The study's `hand_check` figure and the peak are more than a factor of 2 apart, either way. It changes no check. | One of the two is wrong, and nothing says which: check the reactions, the faces, the units, the mesh at the peak, then the section the sum was done on, before reporting a verdict. Never change the figure to fit the peak ([Judging the answer](references/linear-static.md#judging-the-answer)). |
 | `peak_at_fixture` | warning | The peak sits on a fixed face or its edge, where a rigid clamp exaggerates stress, and a finer solve did not settle it. | Read the stress a little away from the face (the colours, or a probe in the VTU) before redesigning; if that is still high, the finding beside it stands. |
 | `peak_concentration` | warning | The integration-point peak is well above the nodal one: a sharp corner or a concentrated load the mesh cannot resolve. | Under a safety factor of 3 the run already solved finer, so refining the whole part again is not the next step: fillet the corner or spread the load over a larger face. Above 3 (a high `margin`), refine once and compare ([Mesh](references/linear-static.md#mesh)). |
 | `mesh_not_converged` | warning | The automatic finer solve moved the peak by more than 10 %. In an assembly, only for a part whose safety factor is under 3. | A peak that kept rising sits on a singularity: fillet it or judge the stress away from it. Otherwise set a smaller `mesh.size_mm` before trusting the safety factor. |

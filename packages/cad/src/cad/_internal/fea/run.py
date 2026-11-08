@@ -768,6 +768,10 @@ def _solved(document: Path, folder: Path, staging: Path, parsed, deck: bool, log
 
     if check_found := checks.check_findings(check_results, assembly=plan is not None):
         findings = sorted(findings + check_found, key=lambda finding: finding["severity"] != "error")
+    # The sum done by hand, read against the written solve's peak; it never touches a check.
+    hand_check = None if parsed.hand_check is None else checks.hand_check(parsed.hand_check, static.weakest(result))
+    if hand_check is not None and not hand_check["agrees"]:
+        findings.append(checks.hand_check_finding(hand_check))
     material = parsed.material
     magnitude = np.linalg.norm(outcome.displacement, axis=1)
     scale = parsed.deformation_scale if parsed.deformation_scale is not None else auto_deformation_scale(
@@ -776,6 +780,8 @@ def _solved(document: Path, folder: Path, staging: Path, parsed, deck: bool, log
     # (the file's extras, the result) is derived from it.
     summary = static.summary(result, check_results, scale=scale,
                              part_refs=None if plan is None else [part.ref for part in plan.parts])
+    if hand_check is not None:
+        summary["hand_check"] = hand_check
 
     warnings = list(outcome.warnings)
     if finer_failure:
@@ -800,6 +806,10 @@ def _solved(document: Path, folder: Path, staging: Path, parsed, deck: bool, log
         # Each check judged (`kind`, `label`, `value`, `limit`, `unit`, `ratio`, `close_at`, `status`, `where`): the verdict's.
         "checks": check_results,
     }
+    if hand_check is not None:
+        # The study's hand figure against the peak (`stress_MPa`, `method`, `about`, `peak_MPa`, `times`, `within`,
+        # `agrees`): a reading beside the verdict, never part of it.
+        extras["hand_check"] = hand_check
     if plan is not None:
         # What the viewer reads for an assembly (`_PART` indexes `parts`): the weakest part's line.
         extras.update({

@@ -85,7 +85,8 @@ def solve_for(document_type: str) -> Any:
           solve), or the handle its call returns.
         study: the study: a JSON file path, inline JSON, or (a library caller) a dict: the fixed faces, the
           loads (forces, pressures, gravity, acceleration), a material where the model has none, an
-          assembly's parts and connections and the checks to judge. Without it, the setup.
+          assembly's parts and connections, the checks to judge and a ``hand_check`` when a sum was done
+          by hand. Without it, the setup.
         out: the folder a solve writes its results into, made when missing; a study's alone.
         occurrence: the part whose faces the setup lists, by its name or ref, where the document holds several.
         deck: also write ccx.inp, the input CalculiX solved (the finer solve's when there were two); a study's alone.

@@ -17,7 +17,7 @@ import math
 import re
 from dataclasses import dataclass
 
-__all__ = ["as_check_finding", "CLOSE_WITHIN", "CONVERGED_WITHIN", "GAUSS_RATIO", "MATERIALLY_FINER", "LARGE_DISPLACEMENT", "RESOLVE_BELOW", "Solved", "assembly_findings", "check_findings", "check_status", "displacement_check", "finding", "findings", "floored_factor", "gap_closed", "needs_finer", "safety_factor", "safety_factor_text", "stress_check"]
+__all__ = ["as_check_finding", "CLOSE_WITHIN", "CONVERGED_WITHIN", "GAUSS_RATIO", "HAND_CHECK_WITHIN", "MATERIALLY_FINER", "LARGE_DISPLACEMENT", "RESOLVE_BELOW", "Solved", "assembly_findings", "check_findings", "check_status", "displacement_check", "finding", "findings", "floored_factor", "gap_closed", "hand_check", "hand_check_finding", "needs_finer", "safety_factor", "safety_factor_text", "stress_check"]
 
 #: Re-solve finer only when the safety factor is this close to failing.
 RESOLVE_BELOW = 3.0
@@ -33,6 +33,9 @@ GAUSS_RATIO = 1.5
 #: A check with no margin of its own (a displacement) is close to failing within this share of its
 #: limit: the model's own accuracy, the share a finer mesh may still move a number.
 CLOSE_WITHIN = CONVERGED_WITHIN
+#: A hand figure and the peak agree within this factor, either way: a sum on a nominal section is an
+#: estimate, and a peak at a corner sits above it (the fea skill's linear-static.md says why).
+HAND_CHECK_WITHIN = 2.0
 
 
 def as_check_finding(found: dict):
@@ -317,6 +320,26 @@ def displacement_check(
         "where": _where(ref, at),
         **({"faces": list(faces)} if faces else {}),
     }
+
+
+def hand_check(hand: dict, solved: Solved) -> dict:
+    """The study's ``hand_check`` as given, with the peak beside it (the part the stress check judges, an assembly's
+    weakest) and one reading: ``times``, the peak over the hand figure, and whether the two agree. It reads the
+    result and judges nothing: the checks stay the verdict."""
+    times = solved.peak_MPa / hand["stress_MPa"]
+    return {**hand, "peak_MPa": round(solved.peak_MPa, 4), "times": round(times, 4),
+            "within": HAND_CHECK_WITHIN, "agrees": 1 / HAND_CHECK_WITHIN <= times <= HAND_CHECK_WITHIN}
+
+
+def hand_check_finding(reading: dict) -> dict:
+    """A warning for a hand figure far from the peak: one of the two is wrong, and nothing here says which."""
+    return finding(
+        "warning", "hand_check_far",
+        f"Simulation's peak of {_number(reading['peak_MPa'])} MPa is {_number(reading['times'])} times the hand figure "
+        f"of {_number(reading['stress_MPa'])} MPa",
+        "The two are far apart, so look closer before trusting either: the load, the fixture, the units, the mesh at "
+        "the peak, and the section the sum was done on.",
+    )
 
 
 def check_findings(results: list[dict], *, assembly: bool = False) -> list[dict]:
