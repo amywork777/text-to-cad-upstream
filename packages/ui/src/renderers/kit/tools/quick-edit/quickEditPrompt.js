@@ -1,5 +1,5 @@
 import { DOCUMENT_TYPE_REGISTRY } from "@cad/core/lib/documentTypes.generated.js";
-import { createPromptContext, formatPromptReference, parsePromptReference, referencePart, resolvePromptMessage, textPart } from "@cad/core/prompt";
+import { createPromptContext, displayPath, formatPromptReference, parsePromptReference, referencePart, resolvePromptMessage, textPart } from "@cad/core/prompt";
 
 const stem = path => String(path || "").split("/").pop().replace(/\.[^.]+$/, "") || "view";
 const pathOf = resource => resource.kind === "url" ? new URL(resource.url).pathname : resource.path;
@@ -61,13 +61,16 @@ export const quickEditSelection = references => references.filter(reference => r
  * agent draws them again. A view nothing can draw again (a picture marked up as it is) attaches
  * itself instead, with its marks, as a PNG (`picture`), named in the message by the path the host
  * saved it at, as a snapshot is, where the host saves it. Built at the press.
+ * `folders` (the host's promise of `{ start, home }`): the message names every file by them — relative to
+ * the workspace, else `~/` — the inline packet's `input` too, so no message carries the person's home.
  *
  * @param {{ resource: object, references?: object[], text?: string, views?: { label: string }[],
  *   files?: Promise<{ snapshot?: string, inline?: string }> | null,
  *   read?: (path: string) => Promise<Blob>, marks?: string,
- *   picture?: { png: Promise<Blob>, path: Promise<string> | null } | null }} quickEdit
+ *   picture?: { png: Promise<Blob>, path: Promise<string> | null } | null,
+ *   folders?: Promise<{ start?: string, home?: string }> | null }} quickEdit
  */
-export function createQuickEditContext({ resource, references = [], text, views = [], files = null, read = null, marks = "", viewUnavailable = "", requests = [], picture = null }) {
+export function createQuickEditContext({ resource, references = [], text, views = [], files = null, read = null, marks = "", viewUnavailable = "", requests = [], picture = null, folders = null }) {
   const note = String(text || "").trim();
   const parts = [
     ...(note ? [textPart(note, "text")] : []),
@@ -82,8 +85,9 @@ export function createQuickEditContext({ resource, references = [], text, views 
     const name = stemOf(resource);
     const made = pick => { const path = files.then(pick); path.catch(() => {}); return path; };
     const path = made(result => result.snapshot || "");
+    const known = Promise.resolve(folders).catch(() => null);
     const inlineText = made(result => typeof result.inline === "string"
-      ? `Snapshot JSON (${snapshotCommand(resource)}):\n\`\`\`json\n${result.inline}\n\`\`\`` : null);
+      ? known.then(where => `Snapshot JSON (${snapshotCommand(resource)}):\n\`\`\`json\n${shownPacket(result.inline, where)}\n\`\`\``) : null);
     parts.push({ id: "snapshot", kind: "attachment", label: `Snapshot (${snapshotCommand(resource)})`,
       name: `${name}.snapshot.json`, mimeType: "application/json", path, inlineText,
       content: lazy(() => files.then(result => typeof result.inline === "string"
@@ -94,11 +98,22 @@ export function createQuickEditContext({ resource, references = [], text, views 
       name: `${stemOf(resource)}-view.png`, mimeType: "image/png", content: picture.png,
       ...(picture.path ? { path: picture.path } : {}), about: ["file"] });
   }
-  return createPromptContext(parts);
+  return createPromptContext(parts, undefined, folders ? { folders } : {});
+}
+
+// The inline packet as the message shows it: its `input` named as the message names files (`displayPath`),
+// which `cad <type> snapshot --job` reads from the agent's workspace or `~` as it read the absolute path.
+function shownPacket(inline, folders) {
+  if (!folders) return inline;
+  try {
+    const packet = JSON.parse(inline);
+    if (!packet || typeof packet !== "object" || typeof packet.input !== "string") return inline;
+    return JSON.stringify({ ...packet, input: displayPath(packet.input, folders) });
+  } catch { return inline; }
 }
 
 /**
- * A Quick Edit as the person copies it: its references by their files' absolute paths, and its
+ * A Quick Edit as the person copies it: its references by their files' paths (from the workspace, else `~/`), and its
  * snapshot as inline JSON or the path it was saved at.
  * @returns {Promise<string>}
  */

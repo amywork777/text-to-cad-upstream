@@ -30,6 +30,8 @@ export interface PromptFiles {
   read(path: string): Promise<Blob>;
   /** Saves a view's picture as the page drew it (a picture marked up as it is), and answers its path. */
   picture?(request: { name: string; png: Blob }): Promise<string>;
+  /** The folders a Quick Edit's message names its files by (`displayPath`): the workspace and the home. */
+  folders?(): Promise<{ start?: string; home?: string }>;
 }
 /**
  * What the app menu links to — the running version (its release notes), the source and the

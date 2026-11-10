@@ -2,10 +2,11 @@
 
 POST /api/v1/local/prompt-files validates a snapshot packet in memory, then returns 200
 with compact inline JSON up to 1024 UTF-8 bytes, or writes one .snapshot.json and
-returns its path. A view nothing draws again (a picture marked up as it is) sends the PNG of
-what is on screen instead (``{name, picture}``, base64, and ``{picture, append}`` for each next part
-of a picture longer than a host carries in one message): it is saved here and its path returned.
-Shared input and inline annotation are stored once (Measure's
+returns its path, in a scratch directory of this process's under ``/tmp`` (``_directory``): a path
+a message names without the person's home or the per-user temporary folder in it. A view nothing draws again
+(a picture marked up as it is) sends the PNG of what is on screen instead (``{name, picture}``, base64, and
+``{picture, append}`` for each next part of a picture longer than a host carries in one message): it is saved
+here and its path returned. Shared input and inline annotation are stored once (Measure's
 measurements are the person's alone: a prompt carries none);
 jobs reserve output names for an agent to render later (``cad <type> snapshot --job`` draws
 every one of them; ``cad <type> snapshot`` reads the packet as ``--annotation``, and ``--camera
@@ -66,8 +67,22 @@ def _stem(name: str) -> str:
     return _slug(base, "model")
 
 
+# Where the scratch directory is made first: ``/tmp`` on POSIX, whose paths a message can name without the
+# per-user temporary folder's (``/var/folders/<hash>/T`` on macOS) and which an agent app's sandbox lets a
+# command write (``/tmp`` among the folders it may write), so ``--job`` writes its pictures where the packet names them. The
+# directory is ``mkdtemp``'s: this user's alone (0700), its name unguessable.
+SHORT_TEMP = "/tmp"
+
+
 def _directory() -> Path:
-    return Path(tempfile.mkdtemp(prefix="cad-prompt-files-"))
+    """This process's scratch directory: in ``SHORT_TEMP`` where one can be made there, else in the
+    system's temporary folder (Windows, or a ``/tmp`` this process may not write)."""
+    if os.name == "posix":
+        try:
+            return Path(tempfile.mkdtemp(prefix="cad-quick-edit-", dir=SHORT_TEMP))
+        except OSError:
+            pass
+    return Path(tempfile.mkdtemp(prefix="cad-quick-edit-"))
 
 
 class PromptFiles:
