@@ -1112,6 +1112,7 @@ def _written(document: Path, out: Path, data: bytes, report: dict[str, Any], sta
     _warn(report.get("unmeshed") or {})
     shown = Path(named).name if named else "the document"
     _warn_left_out(shown, report.get("pmiLeftOut") or [])
+    _warn_untextured(report.get("untextured") or {})
     for warning in report.get("warnings") or []:
         print(f"warning: {shown}: {warning}", file=sys.stderr)
     write_png(out, data)
@@ -1409,4 +1410,12 @@ def _warn_left_out(document: str, left: list[dict[str, Any]]) -> None:
         status = "" if item["status"] == "ok" else f" ({item['status']})"
         print(f"warning: {item['part'] or document}: the picture does not draw PMI {item['id']}{status}: "
               f"{item['reason']}", file=sys.stderr)
+
+
+def _warn_untextured(untextured: dict[str, dict[str, list[str]]]) -> None:
+    """A warning for each part whose material's texture maps the picture leaves out (``untextured``)."""
+    from cad.engine.document import untextured_said
+
+    for name, materials in untextured.items():
+        print(f"warning: {untextured_said(name, materials)}", file=sys.stderr)
 

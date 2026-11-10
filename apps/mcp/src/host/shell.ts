@@ -20,11 +20,13 @@
 import { resolveLocale } from '@cad/ui/i18n/locale';
 import words from 'virtual:cad-shell-words';
 import { version } from '../../package.json';
-import { createBridge, HostError, type Bridge, type HostContext, type ToolResult } from './bridge';
+import { createBridge, HostError, type Bridge, type ToolResult } from './bridge';
 import { declaresOpenLinks } from './channel';
 import { readPresentation, type Presentation } from './presentation';
-import { readLaunch, toolText, type Launch } from './server';
-import { NOTICE_HEIGHT, OPEN_IN_VIEWER, unreachableKey, viewerPage } from './unreachable.js';
+import { readLaunch, toolText, type Launch, type Refusal } from './server';
+import noticeCss from '../notice.css?inline';
+import { appCapability } from './capability';
+import { OPEN_IN_VIEWER, noticeHeight, refusalOf, unreachableKey, viewerPage } from './unreachable.js';
 
 /** The engine's route that serves the CAD app's code (`cad_server/viewer/http_app.py`). */
 export const APP_ROUTE = '/app';
@@ -72,6 +74,9 @@ export async function viaTunnel(bridge: Pick<CadShell['bridge'], 'callTool'>, to
     const headers: Record<string, string> = { 'x-cad-app': token, range, ...(etag ? { 'if-range': etag } : {}) };
     const result = await bridge.callTool('cad_http', { method: 'GET', url: `${TUNNEL_ORIGIN}${APP_ROUTE}`, headers, body: '' },
       { timeoutMs: 120_000 });
+    // CAD's server refused the shell's capability (none, or one from before CAD restarted): it cannot connect.
+    const refused = refusalOf(result);
+    if (refused) throw new Unconnected(refused);
     if (result.isError) throw new Error(toolText(result, 'CAD could not load its app.'));
     return result.structuredContent as unknown as Reply;
   };
@@ -101,7 +106,13 @@ export async function viaTunnel(bridge: Pick<CadShell['bridge'], 'callTool'>, to
  * access refused the request, or the engine refused the link. The shell then says so (`unconnected`).
  */
 export class Unconnected extends Error {
-  constructor() { super('This chat cannot connect to CAD\'s engine.'); this.name = 'Unconnected'; }
+  /** Where CAD's server answered and refused the card's capability, why (`host/unreachable.js`'s `refusalOf`). */
+  readonly refused: Refusal | null;
+  constructor(refused: Refusal | null = null) {
+    super('This chat cannot connect to CAD\'s engine.');
+    this.name = 'Unconnected';
+    this.refused = refused;
+  }
 }
 
 /** The CAD app's code from the engine directly, with the launch's link: a host that carries no call. */
@@ -133,11 +144,11 @@ export async function loadApp(shell: Pick<CadShell, 'bridge' | 'launch' | 'resul
   // Reading the app's code and starting it takes seconds, and a tab's view is opened afresh each time
   // it comes to the front: the page says so meanwhile, in the viewer's word, rather than stay blank.
   // The app's first render takes the line's place.
-  say(OPENING, shell.bridge.hostContext);
-  const token = shell.result._meta?.['dev.texttocad/httpToken'];
+  say(OPENING);
+  const token = appCapability(shell.result, shell.bridge.hostContext);
   let code: string;
   try {
-    code = await (read.tunnel ?? viaTunnel)(shell.bridge, typeof token === 'string' ? token : '');
+    code = await (read.tunnel ?? viaTunnel)(shell.bridge, token ?? '');
   } catch (error) {
     // A host that refuses the call itself carries none: the engine directly, as the app does then.
     if (!(error instanceof HostError && error.kind === 'refused')) throw error;
@@ -153,27 +164,47 @@ export const OPENING = "Opening…";
 /** All a person reads when the app cannot start: what went wrong goes to the console, never onto the page. */
 export const COULD_NOT_OPEN = "The viewer couldn't open this.";
 
+/** The notice's look (`notice.css`), once in the page: the shell has no stylesheet of its own. */
+function styleNotices(): void {
+  if (document.getElementById('cad-notice-style')) return;
+  const style = document.createElement('style');
+  style.id = 'cad-notice-style';
+  style.textContent = noticeCss;
+  document.head.append(style);
+}
+
 /**
- * One centered muted line on the page, the only thing the shell ever shows: that it is opening, or that
- * it could not. No stylesheet has loaded
- * here, so the line carries its own look, in the host's font and muted colour where it sent them
- * (`host/hostTheme.ts`' standard names), on the host's theme so a dark window stays dark behind it.
+ * Show `notice` (a `.cad-notice`, `notice.css`) as the whole card: inline, the card as tall as it is at
+ * the card's width, told to the host again whenever its words reflow.
  */
-export function say(message: string, context: HostContext = {}) {
-  const root = document.getElementById('root');
+function showNotice(notice: HTMLElement, presentation: Presentation | null, bridge?: Pick<Bridge, 'notify'>,
+  root: HTMLElement | null = document.getElementById('root')): void {
   if (!root) return;
-  const variables = (context.styles as { variables?: Record<string, unknown> } | undefined)?.variables;
-  const token = (name: string, otherwise: string) => {
-    const value = variables?.[name];
-    return typeof value === 'string' && value.trim() ? value.trim() : otherwise;
+  styleNotices();
+  root.replaceChildren(notice);
+  if (presentation !== 'inline' || !bridge) return;
+  let told = 0;
+  const tell = () => {
+    const height = noticeHeight(notice);
+    if (height !== told) bridge.notify('ui/notifications/size-changed', { height: told = height });
   };
-  document.documentElement.style.colorScheme = context.theme ?? 'light dark';
+  tell();
+  if (typeof ResizeObserver === 'function') new ResizeObserver(tell).observe(notice.firstElementChild ?? notice);
+}
+
+/** A notice of one line: the shell's own words, or why the app could not be loaded. */
+export function say(message: string, bridge?: Pick<Bridge, 'notify'>, presentation: Presentation | null = null) {
+  const notice = document.createElement('div');
+  notice.className = 'cad-notice';
+  notice.setAttribute('role', 'alert');
+  const body = document.createElement('div');
+  body.className = 'cad-notice-body';
   const line = document.createElement('p');
+  line.className = 'cad-notice-line';
   line.textContent = message;
-  line.style.cssText = 'position:fixed;inset:0;margin:0;padding:0 24px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:13px;line-height:20px';
-  line.style.fontFamily = token('--font-sans', 'system-ui, -apple-system, "Segoe UI", sans-serif');
-  line.style.color = token('--color-text-secondary', 'GrayText');
-  root.replaceChildren(line);
+  body.append(line);
+  notice.append(body);
+  showNotice(notice, presentation, bridge);
 }
 
 /**
@@ -184,36 +215,37 @@ export function say(message: string, context: HostContext = {}) {
  * notice's height.
  */
 export function unconnected(bridge: Pick<Bridge, 'hostContext' | 'hostCapabilities' | 'request' | 'notify'>, launch: Launch,
-  presentation: Presentation, root: HTMLElement | null = document.getElementById('root')): void {
+  presentation: Presentation, root: HTMLElement | null = document.getElementById('root'), refused: Refusal | null = null): void {
   if (!root) return;
   const languages = typeof navigator === 'undefined' ? [] : (navigator.languages ?? [navigator.language]);
   const said = words[resolveLocale([bridge.hostContext.locale, ...languages])] ?? words.en;
   const t = (key: string) => said[key] ?? words.en[key] ?? key;
   const page = viewerPage(launch);
   document.documentElement.style.colorScheme = bridge.hostContext.theme === 'dark' ? 'dark' : 'light';
+  // The app's notice (`Notice.tsx`'s `Unreachable`), element for element, in the same look (`notice.css`).
   const notice = document.createElement('div');
+  notice.className = 'cad-notice';
   notice.setAttribute('role', 'alert');
   notice.dataset.cadUnreachable = '';
-  notice.style.cssText = 'box-sizing:border-box;max-width:28rem;padding:16px;font:13px/1.5 system-ui,sans-serif;color:CanvasText';
+  const body = document.createElement('div');
+  body.className = 'cad-notice-body';
   const line = document.createElement('p');
-  line.style.margin = '0 0 12px';
-  line.textContent = t(unreachableKey(Boolean(page), launch.page === 'viewer'));
-  notice.append(line);
+  line.className = 'cad-notice-line';
+  line.textContent = t(unreachableKey(Boolean(page), launch.page === 'viewer', refused));
+  body.append(line);
   if (page) {
     const open = document.createElement('a');
-    Object.assign(open, { href: page, target: '_blank', rel: 'noopener noreferrer', textContent: t(OPEN_IN_VIEWER) });
-    open.style.cssText = 'display:inline-block;padding:6px 12px;border:1px solid color-mix(in srgb,CanvasText 20%,transparent);'
-      + 'border-radius:6px;color:inherit;font-size:12px;font-weight:500;text-decoration:none';
+    Object.assign(open, { href: page, target: '_blank', rel: 'noopener noreferrer', textContent: t(OPEN_IN_VIEWER), className: 'cad-notice-button' });
     if (declaresOpenLinks(bridge.hostCapabilities)) {
       open.addEventListener('click', event => {
         event.preventDefault();
         void bridge.request('ui/open-link', { url: page }).catch(() => { window.open(page, '_blank', 'noopener,noreferrer'); });
       });
     }
-    notice.append(open);
+    body.append(open);
   }
-  root.replaceChildren(notice);
-  if (presentation === 'inline') bridge.notify('ui/notifications/size-changed', { height: NOTICE_HEIGHT });
+  notice.append(body);
+  showNotice(notice, presentation, bridge, root);
 }
 
 /** Starts the shell; a start that fails says so plainly, and the console keeps why. */
@@ -223,7 +255,7 @@ export async function start() {
     await open(bridge);
   } catch (error) {
     console.error(error);
-    say(COULD_NOT_OPEN, bridge.hostContext);
+    say(COULD_NOT_OPEN, bridge, readPresentation());
   }
 }
 
@@ -241,7 +273,14 @@ async function open(bridge: CadShell['bridge']) {
     });
   });
   await bridge.initialize({ name: 'CAD', version }, presentation === 'inline' ? { displayModes: ['inline', 'fullscreen'] } : undefined);
-  const { launch, result } = await launched;
+  let opened: { launch: Launch; result: ToolResult };
+  try {
+    opened = await launched;
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), bridge, presentation); // the tool's own failure, said in the notice
+    return;
+  }
+  const { launch, result } = opened;
   const shell: CadShell = {
     bridge, presentation, launch, result,
     async reload() {
@@ -255,8 +294,11 @@ async function open(bridge: CadShell['bridge']) {
   try {
     await loadApp(shell);
   } catch (error) {
-    if (!(error instanceof Unconnected)) throw error;
-    unconnected(bridge, launch, presentation);
+    if (!(error instanceof Unconnected)) {
+      say(error instanceof Error ? error.message : String(error), bridge, presentation);
+      return;
+    }
+    unconnected(bridge, launch, presentation, undefined, error.refused);
   }
 }
 

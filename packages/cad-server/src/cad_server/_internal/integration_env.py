@@ -77,7 +77,7 @@ def found(integration: Integrations) -> tuple[str, str, str]:
     if integration == base.EXTRA:  # the kernel's: the installation's base
         made = base.ensure(installation, make=False) is not None
         return ("made" if made else "not made"), str(base.where(installation)), installation.release
-    spec = extras.Spec(integrations=_names(integration))
+    spec = extras.integration_spec(installation, _names(integration))
     folder = extras.where(installation, spec)
     return ("made" if extras._complete(folder, spec) is not None else "not made"), str(folder), installation.release
 
@@ -94,8 +94,9 @@ def environment(integration: Integrations, told: Callable[[str], None], *, engin
             found = base.ensure(told=told, engine=engine)
             assert found is not None  # made, or refused
         else:
-            found = extras.ensure(base.Installation.here(), extras.Spec(integrations=_names(integration)), told=told,
-                                  engine=engine)
+            installation = base.Installation.here()
+            found = extras.ensure(installation, extras.integration_spec(installation, _names(integration)),
+                                  told=told, engine=engine)
     except (base.Refused, OSError) as error:
         raise Failed(str(error) if isinstance(error, base.Refused) else f"{error.strerror or error}") from None
     return found.python

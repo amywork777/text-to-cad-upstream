@@ -486,7 +486,9 @@ class HeldTest(unittest.TestCase):
         self.assertGreater(filled.sum(), 1000)
         self.assertGreater((filled & only_block).sum(), 0.8 * only_block.sum(), "the block, where it alone stands")
         self.assertEqual(int((filled & ~(np.abs(tinted - plain).max(-1) > 0)).sum()), 0, "and nothing else")
-        self.assertLess((np.abs(tinted - plain).max(-1) > 24)[~only_block].mean(), 0.02, "the rest as it was")
+        # Outside the block's own outline nothing changes, whatever else is drawn over it or how see-through it is.
+        outline = np.abs(alone - corner).max(-1) > 24
+        self.assertLess((np.abs(tinted - plain).max(-1) > 24)[~outline].mean(), 0.02, "the rest as it was")
         for display, refusal in (({"tint": {"parts": ["block"]}}, "display.tint is {parts, color}"),
                                  ({"tint": {"parts": [], "color": "#ff0000"}}, "display.tint.parts is a list"),
                                  ({"tint": {"parts": ["block"], "color": "red"}}, "display.tint.color is #rrggbb"),

@@ -427,11 +427,14 @@ class Held:
         timings["drawMs"] = round((time.perf_counter() - clock) * 1000)
         timings["renderMs"] = round((time.perf_counter() - started) * 1000)
         unmeshed = {p.get("name") or p["key"]: p["unmeshed"] for p in self.structure["prototypes"] if p.get("unmeshed")}
+        untextured = {p.get("name") or p["key"]: p["untextured"] for p in self.structure["prototypes"]
+                      if p.get("untextured")}
         return data, {"width": still.size[0], "height": still.size[1], **finished(still), "camera": name,
                       "projection": projection,
                       "displayMode": display.get("mode", "solid"), "preview": still.preview,
                       "parts": len(self.structure["prototypes"]), "instances": len(shown["instances"]),
-                      "unmeshed": unmeshed, "pose": posed, "exploded": exploded_amount(display) or None,
+                      "unmeshed": unmeshed, **({"untextured": untextured} if untextured else {}),
+                      "pose": posed, "exploded": exploded_amount(display) or None,
                       **({"view": viewed["view"]["name"]} if viewed else {}),
                       **({"pmi": len(scene.pmi_drawn), "pmiLeftOut": scene.pmi_left_out} if pmi else {}),
                       "renderer": "occt", **({"font": ", ".join(sorted(scene.fonts))} if scene.fonts else {}),

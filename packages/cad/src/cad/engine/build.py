@@ -958,7 +958,8 @@ def _outputs(plan: list, report: dict[str, Any], log: Callable[[str], None],
                 fresh, size = save(target.path)
             else:
                 check = (lambda staged: verified.update(pmi.checked(source(), carried, staged, log))) if carried else None
-                size = export.translate(source(), target.kind, target.path, target.tolerance, log, check=check)
+                size = export.translate(source(), target.kind, target.path, target.tolerance, log, target.angle,
+                                        check=check)
             seconds = time.perf_counter() - clock
             timings[target.kind] = round(seconds, 4)
             written[str(target.path)] = {"kind": target.kind, "written": fresh, "seconds": round(seconds, 4),

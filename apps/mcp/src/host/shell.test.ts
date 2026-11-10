@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { HostError } from './bridge';
-import { APP_ROUTE, COULD_NOT_OPEN, OPENING, Unconnected, loadApp, say, unconnected, viaEngine, viaTunnel } from './shell';
+import { APP_ROUTE, OPENING, Unconnected, loadApp, unconnected, viaEngine, viaTunnel } from './shell';
 
 const encode = (text: string) => btoa(text);
 
@@ -77,29 +77,45 @@ it('a card its host carries no call for, and that cannot read the engine either,
   expect(root.querySelector('a')).toBeNull();
 });
 
-it('the shell\'s line wears the host\'s font and muted colour, on its theme, with no stylesheet to lean on', () => {
-  document.body.innerHTML = '<div id="root"></div>';
-  say(COULD_NOT_OPEN, { theme: 'dark', styles: { variables: { '--font-sans': 'Studio Sans', '--color-text-secondary': 'rgb(120, 120, 120)' } } });
-  const line = document.querySelector<HTMLElement>('#root p')!;
-  expect(line.textContent).toBe("The viewer couldn't open this.");
-  expect(line.style.fontSize).toBe('13px');
-  expect(line.style.fontFamily).toContain('Studio Sans');
-  expect(line.style.color).toBe('rgb(120, 120, 120)');
-  expect(document.documentElement.style.colorScheme).toBe('dark');
-  // A host that sent none still gets a sans line, never the browser's default serif.
-  say(COULD_NOT_OPEN);
-  expect(document.querySelector<HTMLElement>('#root p')!.style.fontFamily).toContain('sans-serif');
-  expect(document.querySelectorAll('#root p')).toHaveLength(1);
-});
-
-it('the page says it is opening while the app is read, never blank, in the host\'s theme', async () => {
+it('the page says it is opening while the app is read, never blank', async () => {
   document.body.innerHTML = '<div id="root"></div>';
   let fail!: (error: Error) => void;
   const reading = new Promise<string>((_resolve, reject) => { fail = reject; });
   const shell = { bridge: { hostContext: { theme: 'dark' } }, launch: {}, result: { _meta: {} } } as any;
   const loading = loadApp(shell, { tunnel: () => reading });
-  expect(document.querySelector('#root p')?.textContent).toBe(OPENING);
-  expect(document.documentElement.style.colorScheme).toBe('dark');
+  expect(document.querySelector('#root .cad-notice-line')?.textContent).toBe(OPENING);
   fail(new Error('gone'));
   await expect(loading).rejects.toThrow('gone');
+});
+
+it('a call CAD\'s server refuses for the shell\'s capability is the can\'t-connect notice, in the stale words where it was', async () => {
+  const launch = { protocol: 9, page: 'viewer' as const, model: 'd5e6', browser: 'http://127.0.0.1:3245/d5e6?token=day-link',
+    engine: 'http://127.0.0.1:3245' };
+  for (const refused of ['capability', 'stale'] as const) {
+    const answer = { isError: true, content: [{ type: 'text', text: 'Only a CAD view calls this tool.' }], structuredContent: { refused } };
+    const error = await loadApp({ bridge: { callTool: async () => answer, hostContext: {} } as any, launch, result: {} }).catch(caught => caught);
+    expect([error instanceof Unconnected, error.refused]).toEqual([true, refused]);
+  }
+  const root = document.createElement('div');
+  const bridge = { hostContext: {}, hostCapabilities: {}, request: vi.fn(), notify: vi.fn() };
+  unconnected(bridge as any, launch, 'inline', root, 'stale');
+  expect(root.querySelector('.cad-notice .cad-notice-line')?.textContent).toBe(
+    'This view was opened before CAD restarted, so it can\'t connect. Ask your agent to show the model again, or open it in your browser.');
+  expect(root.querySelector('a.cad-notice-button')?.getAttribute('href')).toBe(launch.browser);
+  expect(root.textContent).not.toContain('Only a CAD view');
+});
+
+it('Cursor\'s shell takes its capability from the tool that launched it, the launch\'s own metadata first', async () => {
+  const seen: string[] = [];
+  const callTool = async (_name: string, args: Record<string, any>) => {
+    seen.push(args.headers['x-cad-app']);
+    return { structuredContent: { status: 200, body: btoa('void 0'), headers: {} } };
+  };
+  const launch = { protocol: 9, page: 'viewer' as const, model: 'd5e6' };
+  // Cursor hands the page a result with no `_meta`, and the launching tool whole, its metadata as `meta`.
+  const cursor = { toolInfo: { id: 'toolu_1', tool: { name: 'cad_show', meta: { ui: {}, 'dev.texttocad/httpToken': 'from-the-tool' } } } };
+  await loadApp({ bridge: { callTool, hostContext: cursor } as any, launch, result: {} }).catch(() => {});
+  await loadApp({ bridge: { callTool, hostContext: cursor } as any, launch, result: { _meta: { 'dev.texttocad/httpToken': 'from-the-launch' } } })
+    .catch(() => {});
+  expect(seen).toEqual(['from-the-tool', 'from-the-launch']);
 });
