@@ -212,8 +212,8 @@ const TOOL_TYPE_OF_WORD = Object.freeze({ flat: "flat", ball: "ball", "bull nose
 function readCheckFinding(raw, where, operations) {
   object(raw, where);
   const severity = oneOf(raw, "severity", where, ["error", "warning", "info"]);
-  const location = optionalText(raw, "location", where);
-  const points = [...location.matchAll(/\(([^()]*)\)/g)].map((match) => {
+  const places = optionalText(raw, "location", where);
+  const points = [...places.matchAll(/\(([^()]*)\)/g)].map((match) => {
     const values = match[1].split(",").map((value) => (value.trim() === "" ? Number.NaN : Number(value)));
     if (values.length !== 3 || !values.every(isNumber)) throw new CamResultError(`${where}.location`, `holds ${match[0]}, which is not a point (x, y, z)`);
     return values;
@@ -221,7 +221,7 @@ function readCheckFinding(raw, where, operations) {
   const indices = new Set(operations.map((op) => op.index));
   const named = [];
   const name = (index) => { if (!named.includes(index)) named.push(index); };
-  for (const place of location.replace(/\([^()]*\)/g, "").split(",").map((part) => part.trim()).filter(Boolean)) {
+  for (const place of places.replace(/\([^()]*\)/g, "").split(",").map((part) => part.trim()).filter(Boolean)) {
     const numbered = /^operation (\d+)$/.exec(place);
     if (numbered) {
       const index = Number(numbered[1]) - 1;
