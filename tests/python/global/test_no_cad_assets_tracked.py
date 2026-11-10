@@ -49,6 +49,12 @@ ALLOWED: tuple[tuple[str, int, str], ...] = (
     ("packages/ui/src/renderers/glb/__tests__/fix.cam.glb", 16 * KIB,
      "a real `cad cam plan` result refused by a reach check, the CAM viewer's JS tests read; a JS test cannot run "
      "FreeCAD"),
+    ("packages/ui/src/renderers/glb/__tests__/plate.*.result.glb", TINY,
+     "real `cad step plan` results as 0.11 writes them, one ready to cut and one a check refused (19-22 KB "
+     "each), the CAM viewer's JS tests read beside their result.json; a JS test cannot run FreeCAD"),
+    ("packages/ui/src/renderers/glb/__tests__/cantilever.result.glb", TINY,
+     "a real `cad step solve` result (the deformed cantilever with its stress field, 51 KB) the results "
+     "viewer's JS tests read beside its result.json; a JS test cannot run the solver"),
     ("packages/ui/src/renderers/dxf/__fixtures__/*.dxf", TINY,
      "the DXF renderer's test drawings; make_fixture.py writes them, and the JS tests that open them "
      "need neither Python nor ezdxf"),
