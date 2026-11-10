@@ -30,6 +30,7 @@ import {
   isolatedPart,
   assemblyRowParts,
   deleteRefusal,
+  errorWords,
   editingValues,
   planeDetail,
   planeMode,
@@ -155,6 +156,19 @@ test("a delete the server refuses names the features that use what it makes", ()
   const moved = { kind: "reorder", title: "Hole1", place: "above Boss-Extrude2", file: "tray.py", line: 11 };
   assert.equal(reorderNote(moved), "In edit mode I moved Hole1 above Boss-Extrude2 in the design tree (tray.py, line 11).");
   assert.equal(reorderNote(moved, { undo: true }), "In edit mode I put Hole1 back where it was in the design tree (tray.py, line 11).");
+});
+
+test("a script that stopped says what was raised, and keeps its traceback whole for Details", () => {
+  const traceback = ["Traceback (most recent call last):", '  File "/work/tray/parts/tray.py", line 14, in tray',
+    "    hole = Cylinder(hole_d / 2, HEIGHT)", "                    ^^^^^^", "NameError: name 'hole_d' is not defined"].join("\n");
+  // As the engine sends it, a line's end after the last.
+  assert.deepEqual(errorWords(`${traceback}\n`), { why: "NameError: name 'hole_d' is not defined", details: traceback });
+  // The engine's own words before a traceback are what a person reads.
+  const moved = "This part was written for cadgen 0.7. Ask the AI to move it to 0.8.";
+  assert.deepEqual(errorWords(`${moved}\n\n${traceback}\n`), { why: moved, details: traceback });
+  // An error in words already is said whole, with nothing kept back.
+  assert.deepEqual(errorWords("The fillet could not be built."), { why: "The fillet could not be built.", details: "" });
+  assert.deepEqual(errorWords(""), { why: "", details: "" });
 });
 
 test("the rollback bar greys what is below it, and sits past the last item when rolled forward", () => {

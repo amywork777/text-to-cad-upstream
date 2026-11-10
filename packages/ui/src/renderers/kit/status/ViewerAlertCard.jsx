@@ -133,6 +133,21 @@ function AlertDetails({ details, clipboard }) {
 }
 
 /**
+ * Details, shut until it is pressed: the whole diagnostic (`AlertDetails`) under the card's word for
+ * it. The card's own, and the same wherever else a diagnostic is kept out of the way of the line
+ * that says what went wrong: a stopped script's traceback in CAD mode (`xbf/edit/ErrorWords.jsx`).
+ */
+export function AlertDisclosure({ details, className }) {
+  const host = useContext(ViewerHostContext);
+  const { t } = useI18n();
+  return <details className={className}>
+    <summary className="w-fit cursor-pointer rounded-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">{t("alert.details")}</summary>
+    {/* New details start afresh: a tick or a refusal belongs to the details it copied. */}
+    <AlertDetails key={details} details={details} clipboard={host?.clipboard} />
+  </details>;
+}
+
+/**
  * The card over the viewport for the alert it shows. One the model survives can be put
  * away (`onDismiss`, while it stands: `useAlertDismissal`) — the previous version is there to
  * inspect and to pick from — and is brought back from its icon in the navbar. Long compiler
@@ -181,13 +196,7 @@ export default function ViewerAlertCard({ alert: shown, hasContent, onReload, fi
             {readableReason ? <p className="break-words text-foreground">{readableReason}</p> : null}
             {shown.recovery ? <p className="break-words">{shown.recovery}</p> : null}
             {body}
-            {shown.details ? (
-              <details>
-                <summary className="w-fit cursor-pointer rounded-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">{t("alert.details")}</summary>
-                {/* New details start afresh: a tick or a refusal belongs to the details it copied. */}
-                <AlertDetails key={shown.details} details={shown.details} clipboard={host?.clipboard} />
-              </details>
-            ) : null}
+            {shown.details ? <AlertDisclosure details={shown.details} /> : null}
             {shown.reload || report ? (
               <div className="flex flex-wrap gap-2 pt-0.5">
                 {shown.reload ? (

@@ -2,6 +2,7 @@ import { FILE_SHEET_STATUS_TEXT_CLASSES, FileSheetControlRow, FileSheetSettingsS
 import { InterferenceIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { interferenceRows } from "./editMode.js";
+import ErrorWords from "./ErrorWords.jsx";
 
 /**
  * Interference Detection, as SolidWorks' Evaluate tab runs it on an assembly: each two parts (or a
@@ -21,7 +22,7 @@ export default function InterferencePanel({ edit }) {
       <h2 className="min-w-0 flex-1 truncate text-xs font-normal leading-4 text-foreground">Simple Interference</h2>
     </div>
     <FileSheetSettingsSection title="Results" sectionId="interference-results">
-      {found?.status === "failed" ? <p className="px-2 pb-1 text-tiny leading-4 text-destructive" aria-live="polite">{found.error}</p>
+      {found?.status === "failed" ? <ErrorWords error={found.error} className="px-2 pb-1 leading-4" aria-live="polite" />
         : !found || found.status === "updating" ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">Checking every two parts</p>
           : rows.length ? rows.map(row => <FileSheetControlRow key={row.key} label={row.label} value={row.value} />)
             : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">

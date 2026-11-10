@@ -1198,6 +1198,26 @@ export function deleteRefusal(reply, tree, title, verb = "Delete") {
   return `${title} is used by ${listWords(users)}. ${verb} ${users.length > 1 ? "them" : "it"} first, or ask the agent.`;
 }
 
+// How Python heads a traceback: what a part's script that stopped is said with (`cad/edit/tracer.py`).
+const TRACEBACK = "Traceback (most recent call last):";
+
+/**
+ * What went wrong, as a person reads it. A script that stopped is said as its traceback, which the
+ * agent and the CLI read whole to correct it; a person reads `why`: what was raised, the traceback's
+ * last line ("NameError: name 'hole_d' is not defined"), or the engine's own words before the
+ * traceback where it has some ("This part was written for cadgen 0.7. ..."). `details` is the
+ * traceback, its lines kept. An error in words already is `why` whole, with no details.
+ * @param {string} error
+ * @returns {{ why: string, details: string }}
+ */
+export function errorWords(error) {
+  const said = String(error || "").trim();
+  const at = said.indexOf(TRACEBACK);
+  if (at < 0) return { why: said, details: "" };
+  const details = said.slice(at);
+  return { why: said.slice(0, at).trim() || details.split("\n").at(-1).trim(), details };
+}
+
 /** What a feature dragged to another place in the design tree tells the agent, and its Undo and Redo. */
 export function reorderNote(change, { undo = false, redo = false } = {}) {
   const where = `(${change.file}, line ${change.line})`;

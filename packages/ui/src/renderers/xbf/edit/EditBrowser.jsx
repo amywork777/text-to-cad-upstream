@@ -16,6 +16,7 @@ import { WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
 import { TOOL_PANEL_BUTTON_CLASS } from "../../kit/tools/ToolPanel.jsx";
 import EditCommand from "./EditCommand.jsx";
 import EditTree from "./EditTree.jsx";
+import ErrorWords from "./ErrorWords.jsx";
 import SketchPanel from "./SketchPanel.jsx";
 import DraftAnalysis from "./DraftAnalysis.jsx";
 import InterferencePanel from "./InterferencePanel.jsx";
@@ -129,11 +130,10 @@ export default function EditBrowser({ edit, names, tree, references = [], onEdit
                   : null;
   // What went wrong, over what follows it (`ruled`): the open panel, or the tree where there is no card.
   const error = ruled => edit.error ? <div className={cn("flex items-start gap-1 px-2 py-1.5 text-tiny text-destructive", ruled && "border-b border-border")} role="alert">
-    <span className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
-      {edit.error}
+    <ErrorWords error={edit.error} className="flex-1">
       {edit.redraw ? <Button type="button" variant="outline" size="sm" className={FILE_SHEET_COMPACT_BUTTON_CLASSES}
         onClick={edit.askRedraw}>Redraw it as a sketch</Button> : null}
-    </span>
+    </ErrorWords>
     <button type="button" aria-label="Dismiss" className={TOOL_PANEL_BUTTON_CLASS} onClick={edit.dismissError}><X className="size-3" aria-hidden="true" /></button>
   </div> : null;
   // SolidWorks' Confirm Delete: the feature's child features named, deleted with it on Delete All.

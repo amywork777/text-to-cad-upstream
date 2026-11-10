@@ -45,6 +45,7 @@ import {
 import { COMMAND_ICONS } from "./cadIcons.jsx";
 import { HOLE_STANDARDS, defaultSize, holeFill, holeFits, holeSizeOptions } from "./holeSizes.js";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
+import ErrorWords from "./ErrorWords.jsx";
 import { booleanOf, nxCommand } from "./nx.js";
 import { sketchGeometry } from "./sketchMode.js";
 import { isEdgeItem, isFaceItem } from "./selectors.js";
@@ -770,7 +771,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
       onEnabledChange={on => edit.setPreviewOn?.(on)}>
       {sweeps ? <PreviewKey added={kind === "boss"} removed={kind === "cut"} />
         : shown?.status === "updating" ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">Updating the preview</p>
-          : shown?.status === "failed" ? <p className="px-2 pb-1 text-tiny leading-4 text-destructive" aria-live="polite">{shown.error}</p>
+          : shown?.status === "failed" ? <ErrorWords error={shown.error} className="px-2 pb-1 leading-4" aria-live="polite" />
             : shown?.status === "ready" ? (shown.added || shown.removed ? <PreviewKey added={Boolean(shown.added)} removed={Boolean(shown.removed)} />
               : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>{command.id === "split" && values.keep === "both"
                 ? "It splits the body in two, along the plane drawn." : "It changes nothing on the body."}</p>)

@@ -6,7 +6,7 @@
  * Boss or Cut. What the screen says only: the script, and the notes the agent reads with the person's
  * next message, keep their own names. The file and its exports keep the name they were made with.
  */
-import { treeFeatures } from "./editMode.js";
+import { errorWords, treeFeatures } from "./editMode.js";
 
 /** A modeling command as SolidWorks' CommandManager names it. A Boss/Base's dialog switches to its
  * Cut, carrying what was typed (`booleanOf`). */
@@ -156,11 +156,11 @@ const slashed = path => String(path).replace(/\\/g, "/");
  * helper, which makes no row, the next is the call the feature's row stands at. So the walk goes outwards
  * from the deepest frame and stops at the first one a feature's line agrees with: the same file, the same
  * number and the same words. A line that moved, was rewritten or is new is no row of this tree, and neither
- * is the neighbour now at its number: nothing is marked that is not known. `{ id, why }`, `why` the
- * error's last line; null when no frame agrees with a feature, or the first that does agrees with two.
+ * is the neighbour now at its number: nothing is marked that is not known. `{ id, why }`, `why` what
+ * was raised (`errorWords`); null when no frame agrees with a feature, or the first that does agrees with two.
  */
 export function buildFailure(tree, error, failure) {
-  const why = String(error || "").trim().split("\n").at(-1).trim();
+  const { why } = errorWords(error);
   if (!why) return null;
   const features = treeFeatures(tree);
   for (const { file, line, text } of failure?.frames || []) {

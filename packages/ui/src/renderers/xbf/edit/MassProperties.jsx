@@ -8,6 +8,7 @@ import {
 import { MassPropertiesIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { inertiaRows, massRows } from "./editMode.js";
+import ErrorWords from "./ErrorWords.jsx";
 
 const NONE = "none";
 
@@ -50,7 +51,7 @@ export default function MassProperties({ edit }) {
       </div> : null}
     </FileSheetSettingsSection>
     <FileSheetSettingsSection title="Properties" sectionId="mass-properties">
-      {mass?.status === "failed" ? <p className="px-2 pb-1 text-tiny leading-4 text-destructive" aria-live="polite">{mass.error}</p>
+      {mass?.status === "failed" ? <ErrorWords error={mass.error} className="px-2 pb-1 leading-4" aria-live="polite" />
         : rows.length ? rows.map(row => <FileSheetControlRow key={row.label} label={row.label} value={row.value} />)
           : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">Working out the mass properties</p>}
     </FileSheetSettingsSection>

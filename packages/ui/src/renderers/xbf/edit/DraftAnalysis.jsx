@@ -9,6 +9,7 @@ import {
 import { DraftAnalysisIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { DRAFT_CLASSES, draftRows, PULL_PLANES } from "./editMode.js";
+import ErrorWords from "./ErrorWords.jsx";
 
 /**
  * Draft Analysis, as SolidWorks' Evaluate tab checks a molded part: the direction of pull (an
@@ -41,7 +42,7 @@ export default function DraftAnalysis({ edit }) {
       </span>} />
     </FileSheetSettingsSection>
     <FileSheetSettingsSection title="Color Settings" sectionId="draft-colors">
-      {check?.status === "failed" ? <p className="px-2 pb-1 text-tiny leading-4 text-destructive" aria-live="polite">{check.error}</p>
+      {check?.status === "failed" ? <ErrorWords error={check.error} className="px-2 pb-1 leading-4" aria-live="polite" />
         : rows.length ? rows.map(row => <FileSheetControlRow key={row.key} label={<span className="flex items-center gap-1.5">
           <span aria-hidden="true" className="size-2.5 shrink-0 rounded-sm" style={{ background: DRAFT_CLASSES[row.key].css }} />{row.label}
         </span>} value={row.value} />)

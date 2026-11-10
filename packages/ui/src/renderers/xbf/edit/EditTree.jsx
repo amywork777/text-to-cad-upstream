@@ -6,6 +6,7 @@ import { TreeRowGlyph, TreeRowSurface, TreeRowToggle, treeRowPadding } from "@ca
 import { FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
 import { AUTHOR_DOT_CLASS, AUTHOR_WORDS, authorOf } from "./authors.js";
 import { ORIGIN_PLANES, barIndex, planeDetail, rolledBack, sizeName, treeFeatures } from "./editMode.js";
+import ErrorWords from "./ErrorWords.jsx";
 import { AssemblyIcon, FeatureIcon, MateTreeIcon, OriginIcon, ParametersIcon, PartIcon, PlaneIcon, SketchIcon } from "./featureIcons.jsx";
 import { buildFailure, nxPlane, repeatedNames, treeTitles } from "./nx.js";
 import { MassPropertiesIcon } from "./cadIcons.jsx";
@@ -192,7 +193,7 @@ function AddParameter({ edit, disabled }) {
       <input value={value} onChange={event => { setValue(event.target.value); setError(""); }} placeholder="Value" aria-label="Parameter value" inputMode="decimal"
         className="h-6 w-16 rounded border border-border bg-background px-1.5 text-tiny tabular-nums text-foreground outline-none focus:border-ring" />
     </div>
-    {error ? <span className="text-tiny leading-4 text-destructive" aria-live="polite">{error}</span> : null}
+    {error ? <ErrorWords error={error} className="leading-4" aria-live="polite" /> : null}
     <div className="flex justify-end gap-1">
       <button type="button" onClick={() => { setOpen(false); setError(""); }} className="rounded px-1.5 py-0.5 text-tiny text-muted-foreground hover:bg-sidebar-accent">Cancel</button>
       <button type="submit" disabled={disabled} className="rounded bg-primary px-1.5 py-0.5 text-tiny text-primary-foreground disabled:opacity-50">Add</button>

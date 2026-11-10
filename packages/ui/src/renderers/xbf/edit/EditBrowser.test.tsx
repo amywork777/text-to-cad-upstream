@@ -41,6 +41,23 @@ it("says what went wrong in the card beside the design tree, so the tree folded 
   expect(screen.getByRole('alert').closest('[data-cad-edit-browser]')).not.toBeNull();
 });
 
+it("says what a script that stopped raised, its traceback under Details with its lines kept", () => {
+  const traceback = ['Traceback (most recent call last):', '  File "/work/tray/parts/tray.py", line 14, in tray',
+    '    hole = Cylinder(hole_d / 2, HEIGHT)', "NameError: name 'hole_d' is not defined"].join('\n');
+  render(<EditBrowser edit={edit({ error: `${traceback}\n` }) as never} names={[]} tree={featureTree(STATE)} />);
+  const alert = screen.getByRole('alert');
+  const details = alert.querySelector('details')!;
+  expect([alert.firstElementChild!.firstChild!.textContent, details.open, details.querySelector('summary')!.textContent])
+    .toEqual(["NameError: name 'hole_d' is not defined", false, 'Details']);
+  expect(details.querySelector('pre')!.textContent).toBe(traceback);
+  // The line is the failure's red; the traceback, which is code, is not.
+  expect([alert.firstElementChild!.className, details.className]).toEqual([expect.stringMatching(/\btext-destructive\b/), expect.stringMatching(/\btext-muted-foreground\b/)]);
+  cleanup();
+  // An error in words already has no Details.
+  render(<EditBrowser edit={edit() as never} names={[]} tree={featureTree(STATE)} />);
+  expect(screen.getByRole('alert').querySelector('details')).toBeNull();
+});
+
 it("says whether it floats a card in the dialog's place, as the frame keeps the column clear of one", () => {
   const card = place();
   const panel = { change: vi.fn(), addParameter: vi.fn(), stopInspecting: vi.fn() };
