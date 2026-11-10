@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
 
-import { stepCameraTransition, transitionCameraToPerspectiveSnapshot } from './runtimeCamera.js';
+import {
+  captureRuntimeViewportFitScale,
+  stepCameraTransition,
+  syncRuntimeViewportFraming,
+  transitionCameraToPerspectiveSnapshot,
+  zoomRuntimeToBounds,
+} from './runtimeCamera.js';
 import { viewPlaneCameraBasis, WORLD_UP } from './viewportCameraKit.js';
 
 /**
@@ -91,3 +97,77 @@ test("a camera that comes up from under the board to Home's tilt from below stay
   assertTurns(frames, 'from below');
   for (const frame of frames) assert.ok(frame.look.z > 0, 'the camera looks up at the board the whole way');
 });
+
+// readStripClearance reads the strip's reach off the frame's computed style.
+globalThis.getComputedStyle ??= element => ({ getPropertyValue: () => `${element.toolsBottom}px` });
+
+/**
+ * A fit stands the model in the room under the view's strip, and that room is the viewport's. Fitted while
+ * the box was short (a pane opening) or not laid out at all, then grown past the open fit's settle, the model
+ * must come out where a fit at the new size puts it: it stayed low and ran off the bottom edge (Studio 0.1.7).
+ */
+function stripRuntime(width, height, orthographic) {
+  const frame = { toolsBottom: 52 };
+  const canvas = { clientWidth: width, clientHeight: height, closest: selector => (selector.includes('preview') ? null : frame) };
+  const perspectiveCamera = new THREE.PerspectiveCamera(48, 1, 0.1, 1e5);
+  const orthographicCamera = new THREE.OrthographicCamera(-120, 120, 120, -120, 0.1, 1e5);
+  orthographicCamera.userData.cadHalfHeight = 120;
+  for (const camera of [perspectiveCamera, orthographicCamera]) {
+    camera.up.set(...WORLD_UP);
+    camera.position.set(180, -180, 120);
+  }
+  return {
+    THREE,
+    perspectiveCamera,
+    orthographicCamera,
+    camera: orthographic ? orthographicCamera : perspectiveCamera,
+    renderer: { domElement: canvas },
+    controls: { target: new THREE.Vector3(), update() {}, dispatchEvent() {}, minDistance: 0.01, maxDistance: 1e6 },
+    requestRender() {},
+    syncCameraViewport(camera, w, h) {
+      const aspect = Math.max(w, 1) / Math.max(h, 1);
+      if (camera.isPerspectiveCamera) camera.aspect = aspect;
+      else {
+        const half = camera.userData.cadHalfHeight;
+        Object.assign(camera, { left: -half * aspect, right: half * aspect, top: half, bottom: -half });
+      }
+      camera.updateProjectionMatrix();
+    },
+  };
+}
+
+function framedBox(runtime, bounds) {
+  const { camera } = runtime;
+  camera.updateMatrixWorld();
+  camera.updateProjectionMatrix();
+  const points = [];
+  for (const x of [bounds.min[0], bounds.max[0]]) {
+    for (const y of [bounds.min[1], bounds.max[1]]) {
+      for (const z of [bounds.min[2], bounds.max[2]]) points.push(new THREE.Vector3(x, y, z).project(camera));
+    }
+  }
+  return { low: Math.min(...points.map(point => point.y)), high: Math.max(...points.map(point => point.y)) };
+}
+
+for (const orthographic of [true, false]) {
+  test(`a ${orthographic ? 'orthographic' : 'perspective'} fit taken in a short or unmeasured box keeps the model in the room once the box grows`, () => {
+    const bounds = { min: [-55, -28, -48], max: [55, 28, 20] };
+    const fitIn = (width, height) => {
+      const runtime = stripRuntime(width, height, orthographic);
+      zoomRuntimeToBounds(runtime, bounds, 'auto', { animate: false, viewDirection: [2.1, -1.65, 1.08], viewUp: WORLD_UP });
+      captureRuntimeViewportFitScale(runtime);
+      return runtime;
+    };
+    const fresh = framedBox(fitIn(900, 700), bounds);
+    for (const [width, height] of [[900, 200], [0, 0]]) {
+      const runtime = fitIn(width, height);
+      Object.assign(runtime.renderer.domElement, { clientWidth: 900, clientHeight: 700 });
+      for (const camera of [runtime.perspectiveCamera, runtime.orthographicCamera]) runtime.syncCameraViewport(camera, 900, 700);
+      syncRuntimeViewportFraming(runtime);
+      const grown = framedBox(runtime, bounds);
+      assert.ok(grown.low > -1 && grown.high < 1, `${width}x${height}: on screen, ${grown.low}..${grown.high}`);
+      assert.ok(Math.abs(grown.low - fresh.low) < 1e-6 && Math.abs(grown.high - fresh.high) < 1e-6,
+        `${width}x${height}: where a fit at the new size puts it, ${grown.low}..${grown.high} for ${fresh.low}..${fresh.high}`);
+    }
+  });
+}

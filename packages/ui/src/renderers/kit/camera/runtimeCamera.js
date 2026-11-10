@@ -205,9 +205,12 @@ export function setRuntimeZoomPercent(runtime, percent) {
 // frames in the whole of it, less the strip over its top (`readStripClearance`).
 export function getViewportMetrics(runtime) {
   const canvas = runtime?.renderer?.domElement;
-  const width = Math.max(1, canvas?.clientWidth || canvas?.parentElement?.clientWidth || 1);
-  const height = Math.max(1, canvas?.clientHeight || canvas?.parentElement?.clientHeight || 1);
-  return { width, height, aspect: width / height };
+  const measuredWidth = canvas?.clientWidth || canvas?.parentElement?.clientWidth || 0;
+  const measuredHeight = canvas?.clientHeight || canvas?.parentElement?.clientHeight || 0;
+  const width = Math.max(1, measuredWidth);
+  const height = Math.max(1, measuredHeight);
+  // Not laid out yet (or hidden): a box of no size, which the strip's room is no share of.
+  return { width, height, aspect: width / height, measured: measuredWidth > 0 && measuredHeight > 0 };
 }
 
 /**
@@ -227,7 +230,7 @@ export function readStripClearance(runtime) {
 // The share of the viewport a fit frames in, for the strip's reach the last fit measured: the 100%
 // ruler and a resize's rescale read the same, so neither moves with what comes and goes under the strip.
 function runtimeFitRoom(runtime, metrics) {
-  return fitRoom(runtime?.stripClearance, metrics.height);
+  return metrics.measured === false ? 1 : fitRoom(runtime?.stripClearance, metrics.height);
 }
 
 export function runtimeCameraProjection(runtime) {
@@ -291,6 +294,7 @@ export function captureRuntimeViewportFitScale(runtime, frameMetrics = null) {
   }
   const metrics = frameMetrics || getViewportMetrics(runtime);
   runtime.viewportFitScale = runtimeViewportFitScale(runtime, metrics);
+  runtime.viewportFitRoom = runtimeFitRoom(runtime, metrics);
 }
 
 // A viewport change -- the window resizing, or a side sheet opening, closing or
@@ -314,6 +318,9 @@ export function syncRuntimeViewportFraming(runtime, frameMetrics = null) {
   // no state to be reframed. Carrying a stale reference forward would just save
   // the move up for whichever later resize does find a usable camera.
   runtime.viewportFitScale = nextFitScale;
+  const previousRoom = Number(runtime.viewportFitRoom);
+  const nextRoom = runtimeFitRoom(runtime, metrics);
+  runtime.viewportFitRoom = nextRoom;
   if (
     !Number.isFinite(previousFitScale) || previousFitScale <= 1e-6 ||
     !Number.isFinite(nextFitScale) || nextFitScale <= 1e-6
@@ -321,10 +328,34 @@ export function syncRuntimeViewportFraming(runtime, frameMetrics = null) {
     return false;
   }
   const requestedRatio = nextFitScale / previousFitScale;
-  if (Math.abs(requestedRatio - 1) < 1e-6) {
-    return false;
-  }
   const camera = runtime.camera;
+  // A fit stands the model in the room under the strip: its target above the box's centre by the share
+  // the strip takes of the fit's half height (`interactiveCameraFrameForBounds`). That share and that
+  // height are the viewport's, so the target moves by what they change, camera and all: the model stays
+  // centred in the room, and a pan or zoom of the person's stays as it was relative to it.
+  const framing = runtime.interactiveFraming;
+  const halfTall = (fitScale) => camera.isOrthographicCamera
+    ? fitScale : fitScale * Math.tan((Number(camera.fov) || 48) * Math.PI / 360);
+  const lift = framing?.direction && framing?.up && Number.isFinite(previousRoom)
+    ? (1 - nextRoom) * halfTall(nextFitScale) - (1 - previousRoom) * halfTall(previousFitScale) : 0;
+  if (Math.abs(lift) > 1e-9 && runtime.controls?.target) {
+    const direction = new runtime.THREE.Vector3(...framing.direction).normalize();
+    const right = new runtime.THREE.Vector3(...framing.up).cross(direction).normalize();
+    const shift = new runtime.THREE.Vector3().crossVectors(direction, right).normalize().multiplyScalar(lift);
+    runtime.controls.target.add(shift);
+    camera.position.add(shift);
+  }
+  if (Math.abs(requestedRatio - 1) < 1e-6) {
+    if (Math.abs(lift) <= 1e-9) return false;
+    // The pan alone; as below, without a tick of a preview orbit's auto-rotate.
+    camera.lookAt(runtime.controls.target);
+    const autoRotateBeforeLift = runtime.controls.autoRotate;
+    runtime.controls.autoRotate = false;
+    runtime.controls.update?.();
+    runtime.controls.autoRotate = autoRotateBeforeLift;
+    requestSceneFrame(runtime, false);
+    return true;
+  }
   let appliedRatio = requestedRatio;
   if (camera.isOrthographicCamera) {
     const halfHeight = readOrthographicHalfHeight(runtime);
