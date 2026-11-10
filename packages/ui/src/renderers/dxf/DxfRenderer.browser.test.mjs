@@ -6,6 +6,7 @@ import { harnessBundle } from '../harness/bundle.mjs';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
 import { APP_THEME_COLORS } from '@cad/core/lib/appTheme.js';
+import { DRAWING_FIT_MARGIN } from '@cad/core/lib/drawing2d/transform.js';
 
 // The drawing under test is a COMMITTED payload: exactly what
 // a DXF document's `drawing` answered for `__fixtures__/sample.dxf`, so this test
@@ -176,8 +177,8 @@ const wheelAt = async (page, box, point, deltaY) => {
 const deltaForFactor = factor => -Math.log(factor) / 0.0015;
 
 // The room the view measures for its tool strip at the pane's top, which a fit keeps clear of.
-// Both margins of a fit: every flat view's, 6% of the pane's shorter side and at least 16px (`fitBoardBounds`).
-const margins = shot => 2 * Math.max(16, 0.06 * Math.min(shot.width, shot.height));
+// Both margins of a fit. A drawing is read as a page, so its fit is a page's (`pageFit`): the same margin at every size.
+const margins = () => 2 * DRAWING_FIT_MARGIN;
 const stripRoom = page => page.evaluate(() => Number.parseFloat(getComputedStyle(document.querySelector('[data-slot="cad-file-view"]')).getPropertyValue('--cad-tools-bottom')) || 0);
 
 test('a drawing opens fitted and centred, in the theme’s ink, and flips with the theme', async (t) => {
