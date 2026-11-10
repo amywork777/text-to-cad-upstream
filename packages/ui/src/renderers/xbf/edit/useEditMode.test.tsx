@@ -380,3 +380,96 @@ it("a build a change starts is counted once it ends, and one that fails is not",
   await new Promise(resolve => setTimeout(resolve, 3400));
   expect(result.current.builds).toBe(1);
 }, 10000);
+
+const HOOK = '/project/parts/hook.step';
+const HOOK_RESOURCE = { kind: 'workspace-file', path: HOOK };
+const AS_READ = 'a1';
+const SLIP = 'b2';
+const slipTrace = 'Traceback (most recent call last):\n  File "/project/parts/hook.py", line 12, in hook\n'
+  + "NameError: name 'WIDHT' is not defined. Did you mean: 'WIDTH'?";
+const slipAt = { frames: [{ file: 'parts/hook.py', line: 12, text: 'amount=WIDHT)' }] };
+
+/**
+ * The edit service's read (`cad/edit/service.py`, `state`), for a script whose text an outside editor
+ * changes: the hashes a page holds answered `unchanged` when the file reads as they say, the script
+ * run otherwise, and a script that stops answered with its error and no hashes.
+ */
+function outsideEditor() {
+  let onDisk = AS_READ;
+  const hook = {
+    ok: true, units: 'mm', files: { 'parts/hook.py': AS_READ }, params: [],
+    rows: [{ key: 'r1', name: 'hook', kind: 'Extrude', inputs: [] }], dimensions: [],
+    building: { scripts: [], done: 0, error: null },
+  };
+  const editState = vi.fn(async (_file: string, files: Record<string, string> | null, options?: { probe?: boolean }) => {
+    if (options?.probe) return { ok: true, editable: true };
+    if (files && Object.keys(files).length && Object.values(files).every(digest => digest === onDisk)) {
+      return { ok: true, unchanged: true, building: hook.building };
+    }
+    return onDisk === AS_READ ? hook : { ok: false, error: slipTrace, failure: slipAt };
+  });
+  return { client: { editState, editChange: vi.fn() }, save: (text: string) => { onDisk = text; } };
+}
+
+it('a script saved with a slip and then put back as it was stops saying the slip', async () => {
+  vi.useFakeTimers();
+  try {
+    const viewer = outsideEditor();
+    const { result } = renderHook(() => useEditMode({ client: viewer.client, file: HOOK, resource: HOOK_RESOURCE, active: true }),
+      { wrapper: hostWith(() => Promise.resolve()) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.status).toBe('ready');
+    expect(result.current.error).toBe('');
+
+    // Saved from an outside editor with a name misspelt: the next read runs the script, which stops.
+    viewer.save(SLIP);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(result.current.error).toBe(slipTrace);
+    expect(result.current.failure).toEqual(slipAt);
+
+    // The spelling put back: the file reads as the page last read it, so the service says only "unchanged".
+    viewer.save(AS_READ);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(await viewer.client.editState.mock.results.at(-1)!.value).toMatchObject({ unchanged: true });
+    expect(result.current.error).toBe('');
+    expect(result.current.failure).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('a change that was refused stays said while the part reads as it did', async () => {
+  vi.useFakeTimers();
+  try {
+    const viewer = outsideEditor();
+    const refusal = 'That number is no longer in the source. Look again.';
+    viewer.client.editChange.mockResolvedValueOnce({ ok: false, error: refusal });
+    const { result } = renderHook(() => useEditMode({ client: viewer.client, file: HOOK, resource: HOOK_RESOURCE, active: true }),
+      { wrapper: hostWith(() => Promise.resolve()) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await result.current.change({ literal: 'parts/hook.py:2:8', text: '25' }); });
+    expect(result.current.error).toBe(refusal);
+    // The reads that follow find the part as it was: the refusal is not theirs to take away.
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(result.current.error).toBe(refusal);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('a read that did not come back stops being said once the next one does', async () => {
+  vi.useFakeTimers();
+  try {
+    const viewer = outsideEditor();
+    const { result } = renderHook(() => useEditMode({ client: viewer.client, file: HOOK, resource: HOOK_RESOURCE, active: true }),
+      { wrapper: hostWith(() => Promise.resolve()) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    viewer.client.editState.mockRejectedValueOnce(new Error('The CAD tools did not answer.'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(result.current.error).toBe('The CAD tools did not answer.');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(result.current.error).toBe('');
+  } finally {
+    vi.useRealTimers();
+  }
+});

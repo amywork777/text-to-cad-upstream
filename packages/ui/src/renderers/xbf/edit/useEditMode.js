@@ -90,6 +90,9 @@ export function useEditMode({ client, file, active, reading = true }) {
   const [status, setStatus] = useState(supported && file ? "probing" : "none");
   const [state, setState] = useState(null);
   const [error, setError] = useState("");
+  // The error a read of the part last said (its script stopped, or the read did not come back), which the next read that
+  // comes back without one takes away. An error that is not a read's (a change refused) is not a read's to take away.
+  const readError = useRef("");
   // A STEP brought in, with no part script (`status` none): it can be made a part to edit, as
   // SolidWorks makes a part of a STEP it opens. `{ part }`: the part made of it before, if any.
   const [imported, setImported] = useState(null);
@@ -192,6 +195,7 @@ export function useEditMode({ client, file, active, reading = true }) {
   // Another file is another part: everything starts again.
   useEffect(() => {
     files.current = null;
+    readError.current = "";
     setState(null); setError(""); setChoice(null); setSelected(null); setHistory(emptyHistory()); setCommand(null); setEditing(null);
     setConfirming(null);
     setPreview(null);
@@ -217,9 +221,16 @@ export function useEditMode({ client, file, active, reading = true }) {
     if (!building.error) setBuilds(count => count + 1);
   }, []);
 
+  const failRead = useCallback(message => { readError.current = message; setError(message); }, []);
+
   const take = useCallback(reply => {
     watchBuild(reply?.building);
     if (reply.unchanged) {
+      // The files are as the page last read them, so the page shows the part as it is and what a read between said is
+      // over: a script saved with a slip, then put back as it was, is never read whole again to say so.
+      const over = readError.current;
+      readError.current = "";
+      if (over) setError(current => (current === over ? "" : current));
       // The part reads as it did, but who made its features moves on as a turn of the agent's ends
       // (`cad/edit/authors.py`): the read says it as it is now.
       setState(current => (current ? { ...current, building: reply.building, ...("authors" in reply ? { authors: reply.authors } : {}) } : current));
@@ -231,7 +242,7 @@ export function useEditMode({ client, file, active, reading = true }) {
       if (reply.reason === "no-script") { setStatus("none"); return; }
       setStatus(current => (current === "ready" ? current : "error"));
       const message = reply.error || "The part could not be read.";
-      setError(message);
+      failRead(message);
       setStoppedAt(current => stoppedAtOf(current, message, reply.failure));
       return;
     }
@@ -252,6 +263,7 @@ export function useEditMode({ client, file, active, reading = true }) {
     setState(reply);
     if ("bar" in reply) setBar(reply.bar);
     setStatus("ready");
+    readError.current = "";
     setError("");
     // As a CAD tool opens a part: nothing selected until the person picks a feature. A selection
     // the part no longer has (its line removed) is let go.
@@ -262,7 +274,7 @@ export function useEditMode({ client, file, active, reading = true }) {
       const found = (reply.sketches || []).find(view => view.file === current.file && view.name === current.name);
       return found ? { ...current, ...found } : current;
     });
-  }, [watchBuild]);
+  }, [watchBuild, failRead]);
 
   useEffect(() => {
     if (!supported || !file || !active) return undefined;
@@ -316,13 +328,13 @@ export function useEditMode({ client, file, active, reading = true }) {
         try {
           const reply = await read();
           if (fileRef.current === file) take(reply);
-        } catch (failure) { if (!stopped) { setError(describe(failure)); setStatus(current => (current === "ready" ? current : "error")); } }
+        } catch (failure) { if (!stopped) { failRead(describe(failure)); setStatus(current => (current === "ready" ? current : "error")); } }
       }
       if (!stopped) timer = setTimeout(ask, POLL_MS);
     };
     void ask();
     return () => { stopped = true; clearTimeout(timer); };
-  }, [client, file, active, reading, supported, take]);
+  }, [client, file, active, reading, supported, take, failRead]);
 
   // The note the agent reads with the person's next message.
   const tell = useCallback(note => {
