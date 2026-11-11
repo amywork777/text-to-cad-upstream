@@ -244,10 +244,12 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   // A new annotation, of a face picked: the bottom, as a second datum would be. The menu says why
   // a kind the pick cannot make is off.
   await pane.getByRole('button', { name: 'Close Quick Edit', exact: true }).click();
+  // Select's Filter with Parts unticked, so a press takes a face; Escape puts the menu away.
   await pane.locator('[data-select-filter-trigger]').click();
-  const filter = page.locator('[role=menu][aria-label="Selection filter"]');
-  await filter.locator('[data-select-filter="faces"]').click();
-  await filter.waitFor({ state: 'detached' });
+  await page.locator('[data-select-filter-row]').click();
+  await page.locator('[data-select-filter="parts"]').click();
+  await page.keyboard.press('Escape');
+  await page.locator('[role=menu]').first().waitFor({ state: 'detached' });
   const under = await view({ position: [0, 0, -100], target: [0, 0, 0], up: [0, 1, 0], orthographicHalfHeight: 20 });
   const bottom = under([10, 6, -2]);
   await page.mouse.click(bottom.x, bottom.y);
@@ -347,10 +349,12 @@ test('a file with no PMI has no tab for it, and a face\'s menu starts the first 
   const { page, pane, errors, view, loaded } = await openBracket(t, { fixture: 'bracket', revealed: false });
   await loaded();
   assert.equal(await pane.locator('[data-tool-panel-id="pmi"]').count(), 0, 'no tab while there is no PMI');
+  // Select's Filter with Parts unticked, so a press takes a face; Escape puts the menu away.
   await pane.locator('[data-select-filter-trigger]').click();
-  const filter = page.locator('[role=menu][aria-label="Selection filter"]');
-  await filter.locator('[data-select-filter="faces"]').click();
-  await filter.waitFor({ state: 'detached' });
+  await page.locator('[data-select-filter-row]').click();
+  await page.locator('[data-select-filter="parts"]').click();
+  await page.keyboard.press('Escape');
+  await page.locator('[role=menu]').first().waitFor({ state: 'detached' });
   const down = await view({ position: [0, 0, 100], target: [0, 0, 0], up: [0, 1, 0], orthographicHalfHeight: 20 });
   const top = down([10, 6, 2]);
   await page.mouse.click(top.x, top.y, { button: 'right' });
