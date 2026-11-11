@@ -6,6 +6,7 @@ import { lightText } from "./sketchDrawing.js";
 import {
   alignTo,
   chainOf,
+  chains,
   countChange,
   dimensionFor,
   dimensionLayout,
@@ -89,6 +90,9 @@ test("a line drawn near level or plumb is drawn so, and kept so", () => {
 test("each tool sends what it drew, sharing the points it landed on", () => {
   const line = drawOp("line", [{ point: "Point3", at: [40, 20] }, { at: [60, 20.5] }], STATE);
   assert.deepEqual(line, { kind: "draw", entity: "line", start: { point: "Point3" }, end: { at: [60, 20] }, relations: [{ kind: "horizontal" }] });
+  // Profile's pieces are lines (its arcs go as Tangent Arc's), and it chains as Line does.
+  assert.deepEqual(drawOp("profile", [{ point: "Point3", at: [40, 20] }, { at: [60, 20.5] }], STATE), line);
+  assert.ok(chains("profile") && chains("line") && chains("centerline") && !chains("spline"));
   const onCurve = drawOp("line", [{ at: [50, 0] }, { at: [40, 10], on: "Line2" }], STATE);
   assert.deepEqual(onCurve.end, { at: [40, 10], on: "Line2" });
   assert.deepEqual(onCurve.relations, []);

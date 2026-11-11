@@ -196,7 +196,7 @@ it("brings the Sketch tab to the front while a sketch is open, and Exit Sketch r
   expect(tabNames()).toEqual(['Sketch']);
   expect(frontTab()).toBe('Sketch');
   expect(Object.keys(layout())).toEqual(['Sketch', 'Curve', 'Edit Curve', 'Constraints', 'Feature']);
-  expect(commandsIn('Sketch')).toEqual(['Exit Sketch', 'Normal To']);
+  expect(commandsIn('Sketch')).toEqual(['Exit Sketch', 'Smart Dimension', 'Normal To']);
   await user.click(command('Sketch', 'Exit Sketch'));
   expect(sketching.exitSketch).toHaveBeenCalledTimes(1);
   // It ends: Features, not the tab it was opened from.
@@ -490,7 +490,7 @@ it("lists a sketch's own tools and the features made of it while a sketch is ope
   const exitSketch = vi.fn().mockResolvedValue({ ok: true });
   const first = openSearch({ sketch: SKETCH, exitSketch }, { onCommand });
   const names = foundNames();
-  expect(names.slice(0, 2)).toEqual(['Exit Sketch', 'Normal To']);
+  expect(names.slice(0, 3)).toEqual(['Exit Sketch', 'Smart Dimension', 'Normal To']);
   expect(names).toEqual(expect.arrayContaining(['Line', 'Corner Rectangle', 'Center Rectangle', 'Perimeter Circle', 'Tangent Arc',
     'Centerpoint Straight Slot', 'Spline', 'Smart Dimension', 'Construction Geometry', 'Trim Entities', 'Copy Entities', 'Circular Sketch Pattern']));
   // The features it is made into, but not what the sketch environment does not have.

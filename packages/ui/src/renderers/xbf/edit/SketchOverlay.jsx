@@ -6,6 +6,7 @@ import { arrowHead, boxSelect, circlePoints, colorsFor, curvePoints, drawGlyph, 
 import {
   alignTo,
   chainOf,
+  chains,
   CORNER_TOOLS,
   dimensionFor,
   dimensionLayout,
@@ -126,6 +127,11 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
   const live = useRef(null);
   live.current = { sketch, tool: edit.sketchTool, selection: edit.sketchSelection, construction: edit.construction, units, edit, box,
     settings: edit.sketchSettings, modelEdgeAt, place };
+  // A switch to another tool lets go of an arc asked for the next piece of a chain.
+  useEffect(() => {
+    if (edit.sketchSettings?.arcNext) edit.setSketchSettings({ arcNext: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit.sketchTool]);
   // Bumped whenever something not in the camera changed, so the next frame paints again.
   const version = useRef(0);
   version.current += 1;
@@ -148,6 +154,18 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit.normalTo, viewport.viewerReadyTick, sketch?.file, sketch?.line]);
 
+  // While a sketch is open a left press is the sketch's, so the middle button turns the view, as in SolidWorks and NX
+  // (Alt with the left button does too: `handlePointerDown` leaves both to the camera). The wheel still zooms.
+  const open = Boolean(sketch?.state);
+  useEffect(() => {
+    const runtime = viewport.runtimeRef?.current;
+    const controls = runtime?.controls;
+    if (!open || !controls?.mouseButtons || !runtime.THREE?.MOUSE) return undefined;
+    const before = controls.mouseButtons.MIDDLE;
+    controls.mouseButtons.MIDDLE = runtime.THREE.MOUSE.ROTATE;
+    return () => { controls.mouseButtons.MIDDLE = before; };
+  }, [open, viewport.runtimeRef, viewport.viewerReadyTick]);
+
   useEffect(() => {
     const host = viewport.hostRef?.current;
     const canvas = canvasRef.current;
@@ -159,12 +177,16 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
     let picks = [];
     // Where a line's chain began, so the chain ends when it closes on it.
     let chainStart = null;
-    // A, pressed while a line's chain goes on, as SolidWorks' A: its next piece a tangent arc, then lines again.
-    let arcNext = false;
+    // Arc, in Profile's panel, or A pressed while a chain goes on, as SolidWorks' A and NX's Profile have it:
+    // its next piece a tangent arc, then lines again. Kept in the sketch's settings, so the panel shows it.
+    const arcNext = () => Boolean(live.current.settings?.arcNext);
+    const askArc = value => { if (arcNext() !== value) live.current.edit.setSketchSettings({ arcNext: value }); };
     // A box dragged across empty space, as SolidWorks selects: left to right a window (what is wholly in
     // it), right to left a crossing (what it touches too). `{ from, to, add, pointerId, controls, ... }`.
     let boxing = null;
-    const drawing = tool => (arcNext && (tool === "line" || tool === "centerline") && picks.length === 1 ? "tangent_arc" : tool);
+    // An arc goes on tangent from a piece already drawn; a chain's first point has none, so its first piece is a line.
+    const drawing = tool => (arcNext() && chains(tool) && picks.length === 1 && tangentStart(live.current.sketch?.state, picks[0])
+      ? "tangent_arc" : tool);
     let pickedTool = null;
     let pointer = null; // { screen: [x, y], local: [u, v] }
     let hover = null;
@@ -274,21 +296,31 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
       }
 
       // The curves, then their points: each end and center, and each point of its own.
+      // Each over its halo (`colors.halo`), so blue on the model's grey stays easy to see.
       for (const curve of geometry.curves) {
-        context.strokeStyle = colorOf(curve.id, curve.defined);
-        context.lineWidth = selection.has(curve.id) || lit(curve.id) ? 2.6 : 1.6;
+        const width = selection.has(curve.id) || lit(curve.id) ? 2.6 : 1.6;
+        const points = curvePoints(curve);
         context.setLineDash(curve.construction ? [9, 4, 2, 4] : []);
-        path(curvePoints(curve));
+        context.strokeStyle = colors.halo;
+        context.lineWidth = width + 2.5;
+        path(points);
+        context.strokeStyle = colorOf(curve.id, curve.defined);
+        context.lineWidth = width;
+        path(points);
       }
       context.setLineDash([]);
       for (const point of geometry.points.values()) {
         if (point.id === "Origin") continue;
         const screen = toScreen([point.x, point.y]);
         if (!screen) continue;
-        const marked = selection.has(point.id) || hover === point.id;
+        const radius = selection.has(point.id) || hover === point.id ? 4 : 2.5;
+        context.fillStyle = colors.halo;
+        context.beginPath();
+        context.arc(screen[0], screen[1], radius + 1.25, 0, 2 * Math.PI);
+        context.fill();
         context.fillStyle = colorOf(point.id, point.defined);
         context.beginPath();
-        context.arc(screen[0], screen[1], marked ? 4 : 2.5, 0, 2 * Math.PI);
+        context.arc(screen[0], screen[1], radius, 0, 2 * Math.PI);
         context.fill();
       }
 
@@ -498,7 +530,7 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
         path(splineThrough([...placed, cursor]));
         return null;
       }
-      if (tool === "line" || tool === "centerline") {
+      if (chains(tool)) {
         const inferred = landing.point || landing.on ? { end: cursor, relation: null }
           : inferLine(first, cursor, INFER_DEGREES, inferenceLines(live.current.sketch?.state, picks[0]));
         path([first, inferred.end]);
@@ -623,13 +655,13 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
       const last = picks.length ? refAt(state, picks[picks.length - 1]) : null;
       const here = refAt(state, ref);
       if (last && here && Math.hypot(here[0] - last[0], here[1] - last[1]) <= SNAP_PX / (mapping?.perUnit || 1)) {
-        if (tool === "line" || tool === "centerline") { picks = []; chainStart = null; report(); }
+        if (chains(tool)) { picks = []; chainStart = null; report(); }
         return;
       }
-      if (!picks.length && (tool === "line" || tool === "centerline")) chainStart = here;
+      if (!picks.length && chains(tool)) chainStart = here;
       // The tangent arc A asked for, from where the chain is, and the chain goes on from its end.
       if (drawing(tool) === "tangent_arc" && tool !== "tangent_arc") {
-        arcNext = false;
+        askArc(false);
         const from = picks[0];
         picks = [];
         report();
@@ -661,7 +693,7 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
       const state = live.current.sketch.state;
       const op = drawOp(tool, clicks, state, { construction: live.current.construction, clockwise: turning < 0,
         sides: live.current.settings?.polygonSides });
-      const chain = tool === "line" || tool === "centerline";
+      const chain = chains(tool);
       picks = [];
       turning = 0;
       lastAngle = null;
@@ -1095,7 +1127,7 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
       const current = live.current;
       // A double-click ends a line's chain where it is, as SolidWorks' does: its first press placed
       // the last point, and a chain still on its way to going on from there is let go (`epoch`).
-      if ((current.tool === "line" || current.tool === "centerline") && (picks.length || busy)) {
+      if (chains(current.tool) && (picks.length || busy)) {
         event.preventDefault();
         event.stopPropagation();
         epoch += 1;
@@ -1157,16 +1189,16 @@ export default function SketchOverlay({ viewport, edit, units, modelEdgeAt = nul
         return;
       }
       // A, while a line's chain goes on: its next piece a tangent arc (A again: a line after all).
-      if (event.key.toLowerCase() === "a" && (current.tool === "line" || current.tool === "centerline") && picks.length === 1
+      if (event.key.toLowerCase() === "a" && chains(current.tool) && picks.length === 1
         && !event.metaKey && !event.ctrlKey && !event.altKey && !busy) {
         event.preventDefault();
-        arcNext = !arcNext;
+        askArc(!arcNext());
         version.current += 1;
         return;
       }
       if (event.key === "Escape") {
         epoch += 1;
-        arcNext = false;
+        askArc(false);
         if (picks.length || pending) { picks = []; pending = null; turning = 0; lastAngle = null; report(); }
         else if (current.tool) current.edit.setSketchTool(null);
         else if (current.selection.length) current.edit.selectInSketch([]);

@@ -5,6 +5,7 @@ import {
   FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetCheckboxRow,
   FileSheetControlRow,
+  FileSheetSelectRow,
   FileSheetSettingsSection,
   FileSheetValueInput
 } from "../../kit/inspector/FileSheet.js";
@@ -158,6 +159,8 @@ function IntersectionCurve({ edit }) {
  * @param {{ edit: ReturnType<typeof import("./useEditMode.js").useEditMode>, onPlane(plane: string): void, references?: object[] }} props
  *   `references`: the faces and edges selected on the model, for Convert Entities.
  */
+const PROFILE_PIECES = [{ value: "line", label: "Line" }, { value: "arc", label: "Tangent arc" }];
+
 export default function SketchPanel({ edit, onPlane, references = [] }) {
   if (!edit.sketch) return edit.picking ? <PlanePicker edit={edit} onPlane={onPlane} /> : null;
   const { sketch } = edit;
@@ -202,6 +205,9 @@ export default function SketchPanel({ edit, onPlane, references = [] }) {
         <FileSheetCheckboxRow label="Base geometry" checked={Boolean(settings.offsetBase)} onCheckedChange={value => edit.setSketchSettings({ offsetBase: Boolean(value) })} />
         <FileSheetCheckboxRow label="Offset geometry" checked={Boolean(settings.offsetConstruction)} onCheckedChange={value => edit.setSketchSettings({ offsetConstruction: Boolean(value) })} />
       </> : null}
+      {/* Profile's Object Type, as NX's has it: the next piece a line, or an arc tangent to the last (A flips it). */}
+      {tool.id === "profile" ? <FileSheetSelectRow label="Next piece" value={settings.arcNext ? "arc" : "line"}
+        options={PROFILE_PIECES} onValueChange={value => edit.setSketchSettings({ arcNext: value === "arc" })} /> : null}
       {/* Polygon's Parameters: how many sides it is drawn with. */}
       {tool.id === "polygon" ? <SizeRow label="Sides" value={String(polygonSides(settings.polygonSides))} unit="" disabled={disabled}
         onCommit={text => edit.setSketchSettings({ polygonSides: text })} /> : null}
@@ -218,7 +224,7 @@ export default function SketchPanel({ edit, onPlane, references = [] }) {
         onCheckedChange={value => edit.setConstruction(Boolean(value))} /> : null}
     </FileSheetSettingsSection> : null}
     {!tool && !selection.length && state ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`}>
-      Pick a tool in the ribbon to draw, or select the sketch's lines and points to relate or dimension them. Drag what is blue to move it. Click a relation's glyph to pick it; Delete takes it off.
+      Pick a tool in the ribbon to draw, or select the sketch's lines and points to relate or dimension them; Smart Dimension sizes them. Drag what is blue to move it. Click a relation's glyph to pick it; Delete takes it off. To look around the part, drag with the middle button or Alt; Normal To faces the sketch again.
     </p> : null}
     {/* SolidWorks' View, Sketch Relations: each relation's glyph beside what it holds, a click on one picks it. */}
     {!tool && state ? <FileSheetCheckboxRow label="Show relations" checked={settings.relations !== false}

@@ -7,7 +7,7 @@ import { generatedIcon } from "./cadIcons.jsx";
 
 /** The generator's icon of each sketch tool, by its id in `SKETCH_TOOLS`. */
 export const SKETCH_TOOL_ICON_NAMES = Object.freeze({
-  line: "sketch-line", rectangle: "sketch-rectangle", center_rectangle: "sketch-center-rectangle",
+  profile: "sketch-profile", line: "sketch-line", rectangle: "sketch-rectangle", center_rectangle: "sketch-center-rectangle",
   three_point_rectangle: "sketch-three-point-rectangle", circle: "sketch-circle", perimeter_circle: "sketch-three-point-circle",
   arc: "sketch-arc", three_point_arc: "sketch-three-point-arc", tangent_arc: "sketch-tangent-arc", slot: "sketch-slot",
   centerpoint_slot: "sketch-center-slot", polygon: "sketch-polygon", spline: "sketch-spline", centerline: "sketch-reference-line",

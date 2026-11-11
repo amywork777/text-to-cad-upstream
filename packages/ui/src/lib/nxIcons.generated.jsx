@@ -69,6 +69,7 @@ export const NX_ICON_NAMES = Object.freeze([
   "assembly",
   "move",
   "finish-sketch",
+  "sketch-profile",
   "sketch-line",
   "sketch-rectangle",
   "sketch-center-rectangle",
@@ -1001,6 +1002,20 @@ const SPRITE = (
         <path d="M0 3 L6 6 L3 7.5 L2.12 7.84 L1.1 8.05 L0 8.12 L-1.1 8.05 L-2.12 7.84 L-3 7.5 L-3.67 7.06 L-4.1 6.55 L-4.24 6 L-4.1 5.45 L-3.67 4.94 L-3 4.5 L0 3" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M2.5 -4.5 L6 -1 L12.5 -9" fill="none" stroke="#fff" strokeWidth="4.6" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M2.5 -4.5 L6 -1 L12.5 -9" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+    </symbol>
+    <symbol id="nx-sketch-profile" viewBox="0 0 32 32">
+      <g transform="translate(17.5 16)">
+        <path d="M-11 -7 L-11 7 L-2 7" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M-2 7 A10 10 0 0 0 8 -3" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M-13 -9 L-9 -9 L-9 -5 L-13 -5 Z" fill="#fff" />
+        <path d="M-13 -9 L-9 -9 L-9 -5 L-13 -5 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-13 5 L-9 5 L-9 9 L-13 9 Z" fill="#fff" />
+        <path d="M-13 5 L-9 5 L-9 9 L-13 9 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M-4 5 L0 5 L0 9 L-4 9 Z" fill="#fff" />
+        <path d="M-4 5 L0 5 L0 9 L-4 9 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d="M6 -5 L10 -5 L10 -1 L6 -1 Z" fill="#fff" />
+        <path d="M6 -5 L10 -5 L10 -1 L6 -1 Z" fill="none" stroke="var(--nx-blue, #2C7197)" strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </g>
     </symbol>
     <symbol id="nx-sketch-line" viewBox="0 0 32 32">

@@ -103,6 +103,11 @@ export default function EditBrowser({ edit, names, tree, references = [], onEdit
     ? selectionDimensions(state, tree, selected).map(dimension => ({ key: dimension.id, label: sizeName(dimension.name), value: dimension.display,
       unit: state?.units, formula: dimension.formula, request: text => ({ dimension: dimension.id, text }) }))
     : featureInputs(feature));
+  // A feature selected in the tree that a double-click edits (Edit Feature: the command that made it,
+  // or its sizes) shows no values of its own below the tree: as in SolidWorks and Fusion, a click
+  // selects it, and it is changed in the one box that made it, never in a second box with other words.
+  const opensItsCommand = Boolean(feature) && !sketchSelected && feature.kind !== "Sketch" && !feature.suppressed
+    && Boolean(feature.edit) && !tree.assembly;
   // The open command's or sketch's panel, in a card of its own over the model's top-right corner, as
   // a CAD tool's command dialog floats apart from its tree; here, above the tree, where the view
   // keeps no card for it.
@@ -161,7 +166,7 @@ export default function EditBrowser({ edit, names, tree, references = [], onEdit
             onClick={() => onOpenPart(component)}>Isolate to edit</Button>
         </FileSheetButtonRow></div> : null}
       </FileSheetSettingsSection> : null}
-      {feature && !edit.command && !edit.sketch ? <FileSheetSettingsSection title={title} sectionId="edit-feature" open={open} onOpenChange={setOpen}>
+      {feature && !opensItsCommand && !edit.command && !edit.sketch ? <FileSheetSettingsSection title={title} sectionId="edit-feature" open={open} onOpenChange={setOpen}>
         {feature.kind === "Sketch" ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`}>
           Double-click it to edit the sketch, or make a solid of it with an extrude or a revolve.</p>
           : feature.suppressed ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`}>

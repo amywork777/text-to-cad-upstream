@@ -14,10 +14,10 @@ const SOLID = ["sketch", "extrude", "cut", "revolve", "revolve_cut", "sweep", "s
   "offset_face", "fillet", "chamfer", "shell", "draft", "split", "delete_face", "delete_body", "plane"];
 const OTHER_TABS = ["measure", "mass", "draft-analysis", "interference", "compare", "clip", "normal-to", "appearance", "expressions", "insert-components", "mate", "exploded",
   "drawing", "make-drawing"];
-const SKETCH = ["exit", "normal", "line", "rectangle", "center_rectangle", "three_point_rectangle", "circle", "perimeter_circle", "arc",
+const SKETCH = ["exit", "dimension", "normal", "profile", "line", "rectangle", "center_rectangle", "three_point_rectangle", "circle", "perimeter_circle", "arc",
   "three_point_arc", "tangent_arc", "slot", "centerpoint_slot", "polygon", "spline", "centerline", "point", "fillet", "chamfer", "trim", "extend",
   "convert", "intersection", "offset", "mirror", "move_entities", "copy_entities", "rotate_entities", "scale_entities", "linear_pattern",
-  "circular_pattern", "dimension", "construction"];
+  "circular_pattern", "construction"];
 
 test("finds Fillet by SolidWorks' name for it, or by another tool's word for it, NX's Edge Blend too", () => {
   assert.deepEqual(findCommands("fillet")[0], { id: "fillet", label: "Fillet", detail: null });

@@ -727,6 +727,17 @@ def sketch_three_point_arc():
     return ic
 
 
+def sketch_profile():
+    """NX's Profile: one chain of lines and arcs, each piece starting where the last ended."""
+    ic = sketch_tool("profile")
+    ic.stroke([(-11, -7), (-11, 7), (-2, 7)], width=CURVE)
+    _, end = ic.arc(-2, -3, 10, 270, 360)
+    for x, y in ((-11, -7), (-11, 7), (-2, 7)):
+        ic.handle(x, y)
+    ic.handle(*end)
+    return ic
+
+
 def sketch_tangent_arc():
     ic = sketch_tool("tangent-arc")
     ic.stroke([(-11, 7), (-2, 7)], width=CURVE)
@@ -1389,7 +1400,7 @@ GROUPS = (
     )),
     ("The Part Navigator's rows", "A part, an assembly, and Move Object.", (part, assembly, move)),
     ("The sketch tools", "Finish Sketch, each tool of the sketch task environment in its order, and Convert To/From Reference.", (
-        finish_sketch, sketch_line, sketch_rectangle, sketch_center_rectangle, sketch_three_point_rectangle, sketch_circle,
+        finish_sketch, sketch_profile, sketch_line, sketch_rectangle, sketch_center_rectangle, sketch_three_point_rectangle, sketch_circle,
         sketch_three_point_circle, sketch_arc, sketch_three_point_arc, sketch_tangent_arc, sketch_slot, sketch_center_slot,
         sketch_polygon, sketch_spline, sketch_reference_line, sketch_point, sketch_dimension, lambda: corner("fillet"),
         lambda: corner("chamfer"), sketch_trim, sketch_extend, sketch_offset, sketch_mirror, sketch_move, sketch_copy,

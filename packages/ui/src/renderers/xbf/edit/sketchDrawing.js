@@ -26,6 +26,8 @@ export function colorsFor(host) {
     defined: text, under: dark ? "#62b7ec" : "#2c7197", over: "#ef4444", selected: "#06b6d4", hover: "#f97316",
     origin: "#dc2626", preview: dark ? "#62b7ec" : "#2c7197", relation: dark ? "#4ade80" : "#15803d", label: dark ? "rgba(24, 24, 27, 0.9)" : "rgba(255, 255, 255, 0.92)",
     quiet: dark ? "rgba(226, 232, 240, 0.75)" : "rgba(30, 41, 59, 0.75)", font: style.fontFamily || "system-ui, sans-serif",
+    // Drawn under each curve and point, so a sketch reads as well on the model's grey faces as on the empty view.
+    halo: dark ? "rgba(9, 9, 11, 0.72)" : "rgba(255, 255, 255, 0.85)",
   };
 }
 

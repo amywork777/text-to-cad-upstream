@@ -75,12 +75,12 @@ function workspaceEntries() {
   return entries;
 }
 
-// A sketch's toolbar: Exit Sketch, the curves to draw and edit (a family's flyout after its first tool), Smart Dimension and
-// Construction Geometry, as `EditRibbon.jsx` lays them out.
+// A sketch's toolbar: Exit Sketch, Smart Dimension, Normal To, the curves to draw and edit (a family's flyout after its
+// first tool) and Construction Geometry, as `EditRibbon.jsx` lays them out.
 function sketchEntries() {
   const tools = ids => ids.flatMap(id => SKETCH_FAMILIES[id] || [id]).map(id => entry(id, sketchTool(id).label));
-  return [entry("exit", "Exit Sketch"), entry("normal", "Normal To"), ...tools(SKETCH_ENTITIES), ...tools(SKETCH_MODIFY),
-    ...tools(["dimension"]), entry("construction", "Construction Geometry")];
+  return [entry("exit", "Exit Sketch"), ...tools(["dimension"]), entry("normal", "Normal To"), ...tools(SKETCH_ENTITIES),
+    ...tools(SKETCH_MODIFY), entry("construction", "Construction Geometry")];
 }
 
 const WORKSPACE = Object.freeze(workspaceEntries());

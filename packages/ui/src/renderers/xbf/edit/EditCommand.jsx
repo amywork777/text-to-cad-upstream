@@ -244,6 +244,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
     });
   }, [selectedSketch?.file, selectedSketch?.line]); // eslint-disable-line react-hooks/exhaustive-deps
   const extruding = edit.command === "extrude" || edit.command === "cut";
+  const extrudeLength = edit.command === "cut" ? "Depth" : "Distance";
   // A revolve turns about a line of its sketch: its centerline, as it opens, when it has one.
   const revolving = edit.command === "revolve" || edit.command === "revolve_cut";
   const axes = useMemo(() => (revolving && sketch ? revolveAxes(sketchView(edit.state, sketch)) : []), [revolving, sketch, edit.state]);
@@ -615,8 +616,9 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
               : <SelectionBox items={[]} prompt={values.end === "surface" ? "Select a flat face on the model to end on."
                 : "Click near the end of an edge on the model: that vertex ends it."} />}
         </> : null}
+        {/* A cut goes in to a Depth; a boss adds material out to a Distance, as NX names it. */}
         {NO_DEPTH.has(values.end) ? null
-          : <NumberRow label="Depth" value={values.depth} unit={units} disabled={disabled} onChange={set("depth")} />}
+          : <NumberRow label={extrudeLength} value={values.depth} unit={units} disabled={disabled} onChange={set("depth")} />}
         {values.end === "mid" || values.end === "next" || upTo ? null
           : <FileSheetCheckboxRow label="Reverse direction" checked={values.reverse} disabled={disabled} onCheckedChange={set("reverse")} />}
         {/* Draft, as SolidWorks' Draft On/Off: the sides lean in by the angle, or out. */}
@@ -745,7 +747,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
       enabled={Boolean(values.direction2)} onEnabledChange={set("direction2")}>
       <FileSheetSelectRow label="End condition" value={values.end2 || "blind"} options={command.id === "cut" ? CUT_ENDS2 : BOSS_ENDS2}
         onValueChange={set("end2")} />
-      {values.end2 === "through" ? null : <NumberRow label="Depth" value={values.depth2} unit={units} disabled={disabled} onChange={set("depth2")} />}
+      {values.end2 === "through" ? null : <NumberRow label={extrudeLength} value={values.depth2} unit={units} disabled={disabled} onChange={set("depth2")} />}
       <FileSheetCheckboxRow label="Draft" checked={Boolean(values.draft2)} disabled={disabled} onCheckedChange={set("draft2")} />
       {values.draft2 ? <>
         <NumberRow label="Draft angle" value={values.draft_angle2} unit="deg" disabled={disabled} onChange={set("draft_angle2")} />

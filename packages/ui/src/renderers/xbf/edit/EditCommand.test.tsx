@@ -109,7 +109,7 @@ it("Direction 2 switched on goes the other way by its own depth, its arrow a han
   const extrude = edit('extrude', 'block.py:9');
   render(<EditCommand edit={extrude as never} names={NAMES} references={[]} tree={tree} />);
   await user.click(screen.getByRole('checkbox', { name: 'Direction 2' }));
-  const depths = screen.getAllByRole('textbox', { name: 'Depth' });
+  const depths = screen.getAllByRole('textbox', { name: 'Distance' });
   expect(depths).toHaveLength(2);
   await user.clear(depths[1]);
   await user.type(depths[1], '3{Enter}');

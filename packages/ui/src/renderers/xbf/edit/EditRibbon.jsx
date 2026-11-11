@@ -71,12 +71,16 @@ function RibbonButton({ label, icon, active, disabled = false, description, onCl
   </TooltipHint>;
 }
 
-/** A group: its buttons over its title, which is its menu (`menu`) where the group has one; `end`, at the row's right end. */
-function RibbonGroup({ title, folded = false, end = false, menu = null, children }) {
+/**
+ * A group: its buttons over its title, which is its menu (`menu`) where the group has one; `end`, at the row's right end.
+ * The title band sits at the group's foot whatever its buttons' height, on the row's rule, never under it. A group
+ * shown only in part (`partly`) starts its title under its first button, where it is seen, not under buttons past the edge.
+ */
+function RibbonGroup({ title, folded = false, partly = false, end = false, menu = null, children }) {
   return <div role="group" aria-label={title} aria-hidden={folded || undefined} data-cad-ribbon-group=""
     className={cn("flex shrink-0 flex-col border-r border-border last:border-r-0", end && "ml-auto", folded && "invisible")}>
     <div className="flex items-center gap-0.5 px-1 pt-1" data-cad-ribbon-items="">{children}</div>
-    <div className={TITLE_BAND_CLASS}>{menu || <span className={TITLE_CLASS}>{title}</span>}</div>
+    <div className={cn(TITLE_BAND_CLASS, "mt-auto", partly && "justify-start")}>{menu || <span className={TITLE_CLASS}>{title}</span>}</div>
   </div>;
 }
 
@@ -239,7 +243,7 @@ function RibbonGroups({ groups }) {
     <div ref={rowRef} data-compact={fit.compact ? "true" : "false"} className={cn("relative flex min-w-0 flex-1 items-stretch overflow-hidden", TITLE_RULE_CLASS)}>
       {groups.map((group, index) => {
         const partly = fit.partial > 0 && index === fit.count;
-        return <RibbonGroup key={group.title} title={group.title} folded={index >= fit.count && !partly} end={group.end}
+        return <RibbonGroup key={group.title} title={group.title} folded={index >= fit.count && !partly} partly={partly} end={group.end}
           menu={group.shown === undefined && !partly ? null : <GroupMenu title={group.title} items={group.items} />}>
           {/* A tool's settings (Select's filter) are its chevron after its button, as on the strip. */}
           {shownItems(group).map(({ id, menu, ...item }, at) => <span key={id} className={cn("contents", partly && at >= fit.partial && "invisible")}>
@@ -428,14 +432,15 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
       onClick: async () => { const reply = await edit.exitSketch(); if (reply?.ok) onCommand(command.id); } });
     const isSubtract = command => booleanOf(command.id)?.value === "subtract";
     const groups = [
+      // Smart Dimension beside Exit Sketch, where SolidWorks' Sketch tab has it: in the first group, never folded away.
       { title: "Sketch", items: [
         { id: "exit", label: "Exit Sketch", icon: <ExitSketchIcon />, disabled: edit.saving, onClick: () => void edit.exitSketch() },
+        sketchItem(tool("dimension")),
         { id: "normal", label: "Normal To", icon: <NormalToIcon />, onClick: edit.lookNormalTo },
       ] },
       { title: "Curve", items: SKETCH_ENTITIES.map(id => familyItem(id)) },
       { title: "Edit Curve", items: SKETCH_MODIFY.map(id => familyItem(id)) },
       { title: "Constraints", items: [
-        sketchItem(tool("dimension")),
         { id: "construction", label: "Construction Geometry", hint: "Construction Geometry (X)", icon: <ConstructionIcon />,
           active: chosen.length ? allConstruction : edit.construction,
           disabled: !sketch.state || edit.saving,

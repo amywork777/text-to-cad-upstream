@@ -9,6 +9,9 @@ import { isFaceItem } from "./selectors.js";
 
 /** The sketch tools, as SolidWorks' Sketch tab names them, and what each asks for, click by click. */
 export const SKETCH_TOOLS = Object.freeze([
+  // NX's Profile: Line's chain with its arc in view, a Line or Arc switch for the next piece (A flips it, as in NX).
+  { id: "profile", label: "Profile", prompts: ["Click where the profile starts.",
+    "Click where each piece ends. Arc (or A) makes the next piece an arc tangent to the last, then lines again; Escape stops."] },
   { id: "line", label: "Line", prompts: ["Click where the line starts.", "Click where it ends. Keep clicking to chain lines; Escape stops."] },
   { id: "rectangle", label: "Corner Rectangle", prompts: ["Click a corner of the rectangle.", "Click the opposite corner."] },
   { id: "center_rectangle", label: "Center Rectangle", prompts: ["Click the center of the rectangle.", "Click a corner."] },
@@ -76,8 +79,11 @@ export const SKETCH_KEYS = Object.freeze({ l: "line", r: "rectangle", c: "circle
 /** The key that picks up a sketch tool, for its tooltip, or null. */
 export const sketchKey = id => (Object.entries(SKETCH_KEYS).find(([, tool]) => tool === id)?.[0] || "").toUpperCase() || null;
 
+/** The tools whose strokes chain, each piece going on from the last one's end: Profile, Line and Centerline. */
+export const chains = tool => tool === "profile" || tool === "line" || tool === "centerline";
+
 /** How many clicks a drawing tool takes; a line chains, so its count restarts from its end. */
-export const TOOL_CLICKS = Object.freeze({ line: 2, centerline: 2, rectangle: 2, center_rectangle: 2, three_point_rectangle: 3, circle: 2,
+export const TOOL_CLICKS = Object.freeze({ profile: 2, line: 2, centerline: 2, rectangle: 2, center_rectangle: 2, three_point_rectangle: 3, circle: 2,
   perimeter_circle: 3, arc: 3, three_point_arc: 3, tangent_arc: 2, slot: 3, centerpoint_slot: 3, polygon: 2, point: 1, spline: Infinity });
 
 /**
@@ -97,7 +103,7 @@ export const SKETCH_FAMILIES = Object.freeze({
  * what is drawn (Edit Curve), each a button by its first tool's id, and a family's (`SKETCH_FAMILIES`) the first
  * of its flyout. Rapid Dimension and Convert To/From Reference stand in the Constraints group after them.
  */
-export const SKETCH_ENTITIES = Object.freeze(["line", "rectangle", "circle", "arc", "slot", "polygon", "spline", "centerline", "point"]);
+export const SKETCH_ENTITIES = Object.freeze(["profile", "line", "rectangle", "circle", "arc", "slot", "polygon", "spline", "centerline", "point"]);
 export const SKETCH_MODIFY = Object.freeze(["fillet", "chamfer", "trim", "extend", "convert", "intersection", "offset", "mirror", "move_entities",
   "linear_pattern", "circular_pattern"]);
 
@@ -351,7 +357,7 @@ export function alignTo(state, place, tolerance, { exclude = [] } = {}) {
 }
 
 /** The sketch tools whose size can be typed after their first click, as a CAD sketcher's numeric input takes it. */
-export const TYPED_TOOLS = Object.freeze(["line", "centerline", "rectangle", "center_rectangle", "circle"]);
+export const TYPED_TOOLS = Object.freeze(["profile", "line", "centerline", "rectangle", "center_rectangle", "circle"]);
 
 /**
  * A stroke's size typed after its first click: a line's length, the way the pointer points (level
@@ -366,7 +372,7 @@ export function typedStroke(tool, state, first, cursor, text) {
   if (!numbers.length || numbers.length > 2 || numbers.some(n => !Number.isFinite(n) || n <= 0)) return null;
   const start = refAt(state, first);
   const toward = sub(cursor || start, start);
-  if (tool === "line" || tool === "centerline") {
+  if (chains(tool)) {
     let way = Math.hypot(toward[0], toward[1]) ? unit(toward) : [1, 0];
     const inferred = inferLine([0, 0], way);
     if (inferred.relation === "horizontal") way = [Math.sign(way[0]) || 1, 0];
@@ -521,13 +527,14 @@ export function drawOp(tool, picks, state, { construction = false, clockwise = f
   const built = construction ? { construction: true } : {};
   const [first, second, third] = picks;
   switch (tool) {
+    case "profile":
     case "line":
     case "centerline": {
       const start = refAt(state, first);
       const inferred = second.point || second.on ? { end: refAt(state, second), relation: null }
         : inferLine(start, second.at, INFER_DEGREES, inferenceLines(state, first));
       const end = second.point || second.on ? plain(second) : { at: inferred.end };
-      return { kind: "draw", entity: tool, start: plain(first), end, ...built,
+      return { kind: "draw", entity: tool === "profile" ? "line" : tool, start: plain(first), end, ...built,
         relations: inferred.relation ? [{ kind: inferred.relation, ...(inferred.to ? { to: inferred.to } : {}) }] : [] };
     }
     case "rectangle":
