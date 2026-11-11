@@ -8,6 +8,12 @@ and the helpers a model calls with build123d objects:
 
 * ``memo``: a function worth replaying on a later build (the engine's **Memo functions**);
 * ``paint(shape, faces, material)``: a material or colour on some faces;
+* what a part declares for a robot description, each a fact of the machine:
+  ``frame(part, name, location)``, a named frame in its own frame (a robot description's sites),
+  ``body(part, name=)``, a body of its own fixed to its link, ``limits(assembly, joint, effort=,
+  velocity=)``, a joint's drive limits, ``mass(shape, grams)``, what a part or an assembly weighs in
+  all, ``point_mass(part, grams, at, name=, inertia=)``, a lump its solids leave out, ``free(shape)``, a
+  base not bolted to the world, and ``link(shape, name)``, the name of the link its parts make;
 * the mechanism, as ISO 10303-242 (AP242) names its entities: ``mechanism_state``
   (``mechanism_state_representation``), ``configuration_sequence``
   (``interpolated_configuration_sequence``), ``gear_pair``, ``rack_and_pinion_pair``, ``screw_pair``,
@@ -18,12 +24,19 @@ and the helpers a model calls with build123d objects:
   result types;
 * flat patterns, exact 2D geometry from a solid's planar faces: ``flat_pattern``, ``planar_faces``,
   ``flatten_face``, ``flatten_faces``, ``union_faces``, ``offset_profile``;
+* ``leaves(tree)``: every leaf of a tree (``step.read``'s, ``xbf.read``'s, a model's ``.shape``) placed where
+  it stands, out of the tree, on the same B-rep: what ``located`` gives without copying the tree;
+* the manufacturing check of exact geometry, a ``CheckResult`` with its findings at refs (``plate/face 7``):
+  ``dfm(shape, process=...)`` -- what ``cad.step.dfm`` and ``cad.xbf.dfm`` run on a file's or a document's
+  B-rep (``_dfm_check``; the measurements ``_dfm_brep`` and ``_dfm_<process>``) -- with ``cnc``,
+  ``sheet_metal``, ``molding`` and ``printing`` its four processes by name;
+  and ``unfold(shape, k_factor=)``, a bent sheet's flat pattern, its bends unrolled by their bend allowance;
 * semantic PMI on a part's faces, as AP242 names its entities (the engine's **PMI**):
   ``annotate(part, ...)`` gives it; ``datum``, ``dimensional_size``, ``dimensional_location``,
   ``plus_minus_tolerance``, ``flatness_tolerance``, ``position_tolerance`` and
-  ``surface_profile_tolerance`` write theirs; ``limits``, ``general_profile``, ``general_tolerance`` and
+  ``surface_profile_tolerance`` write theirs; ``limits(lower, upper)``, ``general_profile``, ``general_tolerance`` and
   ``place`` write none of their own, and ``note`` and ``view`` (with ``camera`` and ``section``) are
-  XCAF's, in the xbf and in no STEP.
+  XCAF's, in the xbf and in no STEP;
 * ``materials``, a submodule: named looks for what bd_materials' catalogue lacks (solder mask, ENIG,
   moulding compound, anodized, powder coat, ...), each a native ``bd_materials.FinishedMaterial``.
 
@@ -38,6 +51,12 @@ from typing import TYPE_CHECKING, Any
 _NAMES = {
     "memo": "cad.engine.model",
     "paint": "cad.engine.model",
+    "body": "cad.engine.declarations",
+    "frame": "cad.engine.declarations",
+    "free": "cad.engine.declarations",
+    "link": "cad.engine.declarations",
+    "mass": "cad.engine.declarations",
+    "point_mass": "cad.engine.declarations",
     "mechanism_state": "cad.engine.model",
     "configuration_sequence": "cad.engine.model",
     "animation": "cad.engine.model",
@@ -47,19 +66,36 @@ _NAMES = {
     "posed": "cad.engine.mechanism",
     **{name: "cad.engine.pmi" for name in (
         "annotate", "camera", "datum", "dimensional_location", "dimensional_size", "flatness_tolerance",
-        "general_profile", "general_tolerance", "limits", "note", "place", "plus_minus_tolerance",
+        "general_profile", "general_tolerance", "note", "place", "plus_minus_tolerance",
         "position_tolerance", "section", "surface_profile_tolerance", "view")},
     **{name: "cad.build123d._geometry" for name in (
         "GeometryError", "GeometryIssue", "ClosestPoints", "MassProperties", "closest_points", "overlap_volume",
         "is_sound", "topology_errors", "boundary_edges", "self_intersections", "mass_properties")},
+    "leaves": "cad.build123d._leaves",
     **{name: "cad.build123d._flatten" for name in (
         "flat_pattern", "planar_faces", "flatten_face", "flatten_faces", "union_faces", "offset_profile")},
+    **{name: "cad.build123d._dfm_check" for name in ("dfm", "cnc", "sheet_metal", "molding", "printing")},
+    "unfold": "cad.build123d._dfm_sheet",
 }
 
 # Its public submodules, each imported on first use (``cad.build123d.materials``), offered with its names.
 _SUBMODULES = ("materials",)
 
-__all__ = sorted([*_NAMES, *_SUBMODULES])
+__all__ = sorted([*_NAMES, "limits", *_SUBMODULES])
+
+
+def limits(*args: Any, **kwargs: Any) -> Any:
+    """Two helpers by one name, told apart by what they are given: ``limits(assembly, joint, effort=,
+    velocity=)``, a joint's drive limits (``cad.engine.declarations.limits``), and ``limits(lower, upper)``,
+    a dimension's least and greatest size in millimetres for its PMI (``cad.engine.pmi.limits``), whose
+    first value is a number where the other's is a shape."""
+    import importlib
+    from numbers import Real
+
+    first = args[0] if args else None
+    sizes = (isinstance(first, Real) and not isinstance(first, bool)) or "lower" in kwargs or "upper" in kwargs
+    module = importlib.import_module("cad.engine.pmi" if sizes else "cad.engine.declarations")
+    return module.limits(*args, **kwargs)
 
 
 def __getattr__(name: str) -> Any:
@@ -81,13 +117,17 @@ def __dir__() -> list[str]:
 
 if TYPE_CHECKING:
     from cad.build123d import materials
+    from cad.build123d._dfm_check import cnc, dfm, molding, printing, sheet_metal
+    from cad.build123d._dfm_sheet import unfold
     from cad.build123d._flatten import (flat_pattern, flatten_face, flatten_faces, offset_profile, planar_faces,
                                         union_faces)
     from cad.build123d._geometry import (ClosestPoints, GeometryError, GeometryIssue, MassProperties,
                                          boundary_edges, closest_points, is_sound, mass_properties, overlap_volume,
                                          self_intersections, topology_errors)
+    from cad.build123d._leaves import leaves
+    from cad.engine.declarations import body, frame, free, link, mass, point_mass
     from cad.engine.mechanism import gear_pair, posed, rack_and_pinion_pair, screw_pair
     from cad.engine.model import animation, configuration_sequence, mechanism_state, memo, paint
     from cad.engine.pmi import (annotate, camera, datum, dimensional_location, dimensional_size, flatness_tolerance,
-                                general_profile, general_tolerance, limits, note, place, plus_minus_tolerance,
+                                general_profile, general_tolerance, note, place, plus_minus_tolerance,
                                 position_tolerance, section, surface_profile_tolerance, view)

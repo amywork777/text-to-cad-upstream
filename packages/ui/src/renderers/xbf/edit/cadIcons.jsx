@@ -77,8 +77,6 @@ export const EFFECT_ICONS = Object.freeze({
 /** Select's icon by its filter's mode. */
 export const SELECT_ICON_NAMES = Object.freeze({ all: "select", faces: "select-face", edges: "select-edge", parts: "select-part",
   position: "select-position" });
-/** How Select's menu grows a pick (`CONNECTED_SELECTION`): Group faces, Group edges. */
-export const SELECT_GROUP_ICON_NAMES = Object.freeze({ tangentFaces: "select-face-group", edgeChain: "select-edge-group" });
 /** Measure's icon by its filter's mode. */
 export const MEASURE_ICON_NAMES = Object.freeze({ all: "measure", vertex: "measure-vertex", edge: "measure-edge", face: "measure-face" });
 const IN_HAND = Object.freeze({ select: SELECT_ICON_NAMES, measure: MEASURE_ICON_NAMES });

@@ -24,7 +24,7 @@ ENGINE = ("model", "xbf", "step", "glb", "stl", "threemf", "dxf", "memo", "paint
 TYPES = ("model", "xbf", "step", "stl", "glb", "threemf", "dxf", "urdf", "srdf", "sdf", "kicad_pcb", "kicad_sch")
 ROOT = ("__version__", "CadDeprecationWarning", *TYPES)
 # PMI's names, after the AP242 entities they write, and those that write none (limits, the general
-# profile and tolerance, notes, views and placements) plainly.
+# profile and tolerance, notes, views and placements) plainly. ``limits`` is also a joint's drive limits.
 PMI = ("annotate", "datum", "dimensional_size", "dimensional_location", "plus_minus_tolerance", "limits",
        "flatness_tolerance", "position_tolerance", "surface_profile_tolerance", "general_profile", "general_tolerance",
        "note", "view", "camera", "section", "place")
@@ -34,7 +34,9 @@ NAMESPACES = {
                       "posed", "animation", "memo", "paint", "GeometryError", "GeometryIssue", "ClosestPoints",
                       "MassProperties", "closest_points", "overlap_volume", "is_sound", "topology_errors",
                       "boundary_edges", "self_intersections", "mass_properties", "flat_pattern", "planar_faces",
-                      "flatten_face", "flatten_faces", "union_faces", "offset_profile", "materials", *PMI),
+                      "flatten_face", "flatten_faces", "union_faces", "offset_profile", "dfm", "cnc",
+                      "sheet_metal", "molding", "printing", "unfold", "frame", "leaves", "body", "mass", "point_mass",
+                      "free", "link", "materials", *PMI),
 }
 # The namespaces' public submodules, offered with their names and imported on first use.
 SUBMODULES = {"cad.build123d": ("materials",)}
@@ -107,16 +109,23 @@ class RootExports(unittest.TestCase):
     def test_each_namespace_is_exactly_its_declared_names(self):
         import importlib
 
-        from cad.build123d import _flatten, _geometry
-        from cad.engine import mechanism, model
+        from cad.build123d import _dfm_check, _dfm_sheet, _flatten, _geometry, _leaves
+        from cad.engine import declarations, mechanism, model
         from cad.engine.formats.kicad import board_index, geometry, summary
 
         pmi = importlib.import_module("cad.engine.pmi")  # the engine's own module, exported by cad.build123d
         defined = {"mechanism_state": model, "configuration_sequence": model, "animation": model, "memo": model,
                    "paint": model, "gear_pair": mechanism, "rack_and_pinion_pair": mechanism,
-                   "screw_pair": mechanism, "posed": mechanism, **{name: pmi for name in PMI},
+                   "screw_pair": mechanism, "posed": mechanism, "frame": declarations, "leaves": _leaves,
+                   "body": declarations, "mass": declarations, "point_mass": declarations,
+                   "free": declarations, "link": declarations, **{name: pmi for name in PMI},
+                   # One name, two helpers: cad.build123d's own dispatcher sends a joint's drive limits to
+                   # declarations.limits and a dimension's lower and upper to pmi.limits.
+                   "limits": importlib.import_module("cad.build123d"),
                    **{name: _geometry for name in _geometry.__all__},
-                   **{name: _flatten for name in NAMESPACES["cad.build123d"] if hasattr(_flatten, name)}}
+                   **{name: _flatten for name in NAMESPACES["cad.build123d"] if hasattr(_flatten, name)},
+                   **{name: _dfm_check for name in ("dfm", "cnc", "sheet_metal", "molding", "printing")},
+                   "unfold": _dfm_sheet}
         for namespace, names in NAMESPACES.items():
             module = importlib.import_module(namespace)
             self.assertEqual(sorted(names), sorted(module.__all__))

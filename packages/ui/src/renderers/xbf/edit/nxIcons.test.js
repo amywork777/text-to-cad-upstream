@@ -6,12 +6,12 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import * as cad from "./cadIcons.jsx";
-import { COMMAND_ICON_NAMES, COMMAND_ICONS, SELECT_GROUP_ICON_NAMES, TOOL_ICON_NAMES, ToolIcon } from "./cadIcons.jsx";
+import { COMMAND_ICON_NAMES, COMMAND_ICONS, TOOL_ICON_NAMES, ToolIcon } from "./cadIcons.jsx";
 import { EDIT_COMMANDS } from "./editMode.js";
 import { NX_KINDS, booleanOf, featureIconName } from "./nx.js";
 import { SKETCH_TOOLS } from "./sketchMode.js";
 import { ConstructionIcon, NormalToIcon, SKETCH_TOOL_ICON_NAMES, SKETCH_TOOL_ICONS, SmartDimensionIcon } from "./sketchIcons.jsx";
-import { CONNECTED_SELECTION, SELECT_GEOMETRY } from "../xbfSelectionFilter.js";
+import { SELECT_GEOMETRY } from "../xbfSelectionFilter.js";
 import { MEASURE_SNAP_KINDS } from "../../kit/tools/measure/measureFilter.js";
 import { NX_ICON_NAMES, NxIcon, NxIconSprite } from "../../../lib/nxIcons.generated.jsx";
 
@@ -82,10 +82,6 @@ test("draws Select and Measure as the workspace shows them, each showing what it
   }
   assert.equal(ToolIcon({ id: "select", mode: "all" }).props.name, TOOL_ICON_NAMES.select);
   assert.equal(ToolIcon({ id: "measure", mode: "all" }).props.name, TOOL_ICON_NAMES.measure);
-  // Select's menu also grows a pick (Group faces, Group edges), each drawn its own way.
-  const grows = CONNECTED_SELECTION.map(({ id }) => SELECT_GROUP_ICON_NAMES[id]);
-  for (const name of grows) assert.ok(NX_ICON_NAMES.includes(name), name);
-  assert.equal(new Set([...grows, ...inHand.select.map(mode => ToolIcon({ id: "select", mode }).props.name)]).size, grows.length + inHand.select.length);
 });
 
 test("draws the toolbar's other buttons and their panels from the generator, each its own", () => {

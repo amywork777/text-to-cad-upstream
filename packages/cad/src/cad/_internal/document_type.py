@@ -11,7 +11,7 @@ step`` is one object that is
   ``.snapshot``, shared by every type that has them, ``.inspect``, and those named for what they do
   (a 3D type's ``.dfm``, the manufacturing check, ``cad._internal.manufacturing``; a B-rep type's ``.solve``,
   the stress study, ``cad._internal.fea.operation``, and its ``.plan``, the CAM job, ``cad._internal.cam.operation``;
-  a board's ``.drc``, a
+  ``.ranges``, its mechanism's joint stops, ``cad._internal.ranges``; a board's ``.drc``, a
   schematic's ``.erc``, a robot description's ``.validate``, each the type's own function), each where
   the type implements it;
 * the vocabulary its own standard defines, where that takes no third-party objects.
@@ -33,7 +33,7 @@ from typing import Any
 __all__ = ["DocumentType", "ModelType", "bind", "refuse_other"]
 
 # An operation a type does not implement, read as one that needs no integration.
-_NONE = types.SimpleNamespace(integration=None)
+_NONE = types.SimpleNamespace(integration=None, family=None)
 # A type's reader, by id: the function that reads a file of it into a model.
 _READERS = {"step": "cad.engine.model.read_step", "xbf": "cad.engine.model.read_xbf",
             "stl": "cad.engine.reader.read_mesh"}
@@ -83,11 +83,18 @@ class DocumentType(types.ModuleType):
             value = plan_for(entry.id)
             self.__dict__[name] = value
             return value
-        if name == "dfm" and (entry.operation("dfm") or _NONE).integration == "trimesh":
+        if name == "dfm" and (entry.operation("dfm") or _NONE).family == "manufacturing":
             # The manufacturing check every 3D type shares (``cad._internal.manufacturing``).
             from cad._internal.manufacturing import dfm_for
 
             value = dfm_for(entry.id)
+            self.__dict__[name] = value
+            return value
+        if name == "interference" and name in entry.operation_names:
+            # The interference check every B-rep type shares (``cad._internal.interference``).
+            from cad._internal.interference import interference_for
+
+            value = interference_for(entry.id)
             self.__dict__[name] = value
             return value
         if name == "solve" and (entry.operation("solve") or _NONE).integration == "calculix":
@@ -95,6 +102,13 @@ class DocumentType(types.ModuleType):
             from cad._internal.fea.operation import solve_for
 
             value = solve_for(entry.id)
+            self.__dict__[name] = value
+            return value
+        if name == "ranges" and "ranges" in entry.operation_names:
+            # The joint stops every type with a mechanism shares (``cad._internal.ranges``).
+            from cad._internal.ranges import ranges_for
+
+            value = ranges_for(entry.id)
             self.__dict__[name] = value
             return value
         if name.startswith("__"):
@@ -172,7 +186,8 @@ class ModelType(DocumentType):
 
 def _operation(owner: DocumentType, name: str) -> Any:
     """``owner.<name>``: the engine's operation of that name (``cad.engine.api``), for a source of this type.
-    An export of a mesh to the other mesh kinds takes no ``tolerance`` or ``angle``: only a document is meshed by it."""
+    An export of a mesh to the other mesh kinds takes no ``tolerance``, ``angle`` or ``zero``: only a document is
+    meshed or described as a robot."""
     from cad.engine import api
 
     verb = getattr(api, name)
@@ -180,7 +195,7 @@ def _operation(owner: DocumentType, name: str) -> Any:
 
     if name == "export" and not meshed:
         def operation(source: Any, *destinations: Any, **options: Any) -> Any:
-            for option in ("tolerance", "angle"):
+            for option in ("tolerance", "angle", "zero"):  # a document's alone: a mesh is meshed by none, nor described
                 if option in options:
                     raise TypeError(f"cad.{owner.entry.id}.export() got an unexpected keyword argument '{option}'")
             owner._own(source)

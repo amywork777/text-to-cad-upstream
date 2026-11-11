@@ -175,6 +175,21 @@ def frame_camera(scene: Any, spec: dict[str, Any], projection: str, focal_length
     return scene.camera
 
 
+def view_of(scene: Any) -> dict[str, Any]:
+    """The camera a picture was drawn from, where its fit settled, as a job's view holds one
+    (``position``, ``target``, ``up`` and, orthographic, ``orthographicHalfHeight``, in the viewer's
+    scene coordinates: ``camera_in_millimetres``): given back as a job's ``camera`` with
+    ``output.tightFrame`` false it is drawn exactly so, with no fit, which is how several pictures
+    share one frame whatever each shows."""
+    camera, factor = scene.camera, scene.millimetres_per_scene_unit
+    view = {"position": [float(value) / factor for value in camera["eye"]],
+            "target": [float(value) / factor for value in camera["target"]],
+            "up": [float(value) for value in camera["up"]]}
+    if camera.get("scale") is not None:
+        view["orthographicHalfHeight"] = float(camera["scale"]) / 2 / factor
+    return view
+
+
 # --- the picture -------------------------------------------------------------------------------
 
 
@@ -209,8 +224,10 @@ def matte(canvas: Any, paint: Callable[[np.ndarray], None] | None,
 
 
 def finished(still: Any) -> dict[str, Any]:
-    """How a picture was finished, for its report: on nothing, supersampled; nothing when neither."""
+    """How a picture was finished, for its report: on nothing, on a colour of its own, supersampled; nothing
+    when none of them."""
     return {**({"transparent": True} if still.transparent else {}),
+            **({"background": still.background} if still.background else {}),
             **({"renderScale": still.scale} if still.scale != 1 else {})}
 
 
@@ -347,7 +364,8 @@ class Held:
         from cad.engine.mechanism import posed_structure
         from cad.engine.render.occt import FOCAL_LENGTH
         from cad.engine.snapshot import (SnapshotRefused, draws_pmi, exploded_amount, hidden_instances, refusals,
-                                         tinted_instances, view_of)
+                                         tinted_instances)
+        from cad.engine.snapshot import view_of as named_view
 
         if self.structure is None:
             raise RuntimeError("the renderer holds no document")
@@ -367,12 +385,15 @@ class Held:
         hidden = hidden_instances(shown, still.display, self.name)
         tinted = tinted_instances(shown, still.display)
         # A part's named view: seen from where the picture shows its part, cut by its section.
-        viewed = view_of(still, shown, self.name, hidden)
+        viewed = named_view(still, shown, self.name, hidden)
         clock = time.perf_counter()
         scene, fresh = self._scene(still.preview, still.drawn)
         if fresh:
             timings["sceneMs"] = round((time.perf_counter() - clock) * 1000)
         scene.canvas.width, scene.canvas.height = still.drawn  # supersampled, brought down after (``picture``)
+        if scene.background != still.background:  # the colour it stands on: this picture's, never the last one's
+            scene.background = still.background
+            scene.backdrop(None)
         # The pose moves the instances: the structure and matrices the scene places them by.
         scene.structure, scene.matrices = shown, [_matrix(instance["matrix"]) for instance in shown["instances"]]
         scene.hidden = hidden  # hidden and isolated parts: every look leaves them out
@@ -430,7 +451,7 @@ class Held:
         untextured = {p.get("name") or p["key"]: p["untextured"] for p in self.structure["prototypes"]
                       if p.get("untextured")}
         return data, {"width": still.size[0], "height": still.size[1], **finished(still), "camera": name,
-                      "projection": projection,
+                      "settledCamera": view_of(scene), "projection": projection,
                       "displayMode": display.get("mode", "solid"), "preview": still.preview,
                       "parts": len(self.structure["prototypes"]), "instances": len(shown["instances"]),
                       "unmeshed": unmeshed, **({"untextured": untextured} if untextured else {}),
