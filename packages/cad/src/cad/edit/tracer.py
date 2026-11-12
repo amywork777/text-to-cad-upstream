@@ -1616,8 +1616,14 @@ def _editable(features, rows, steps, sketches, units):
         held = commands._innermost(statement, row["line"])
         if held.lineno == row["line"]:
             feature["end"] = held.end_lineno
+        numbers = commands.recorded_numbers([steps[index] for index in row["steps"]])
         if statement.lineno != row["line"]:
-            continue
+            # An extrude made in a loop (`for side in (-1, 1):`) opens as one too, its own line in the
+            # loop written again; any other feature there is the agent's to change.
+            read = commands.read_feature(held, text, numbers, units) if held.lineno == row["line"] else None
+            if read is None or read.command not in ("extrude", "cut"):
+                continue
+            statement = held
         # A name given in the design tree: the comment at the end of the feature's line (a hole's
         # Hole Wizard callout reads as one too, as SolidWorks names a hole by its size); a remark
         # there is no name, and the tree's own stands.
@@ -1627,10 +1633,13 @@ def _editable(features, rows, steps, sketches, units):
         elif feature.get("kind") == "Imported":
             # An imported body is named by the file it came from, as SolidWorks' Imported1 says its source.
             feature["named"] = next((steps[index].get("source") for index in row["steps"] if steps[index].get("source")), "")
-        read = commands.read_feature(statement, text, commands.recorded_numbers([steps[index] for index in row["steps"]]), units)
+        read = commands.read_feature(statement, text, numbers, units)
         if read is None:
             continue
-        edit = {"command": read.command, "values": read.values, "keeps": read.keeps}
+        # An extrude made in a name of its own (`pocket = extrude(...)`) and cut from the body after
+        # is a Cut-Extrude in the tree: it opens as one, as the ribbon's Extruded Cut makes one.
+        command = "cut" if read.command == "extrude" and read.operator == "=" and feature.get("kind") == "Cut-Extrude" else read.command
+        edit = {"command": command, "values": read.values, "keeps": read.keeps}
         if read.operator == "=" and read.command in ("extrude", "revolve"):
             # The part's first solid: nothing comes before it to roll back to.
             edit["first"] = True
@@ -1643,17 +1652,32 @@ def _editable(features, rows, steps, sketches, units):
             edit["axes"] = [axis.lower() for axis in axes]
             edit["values"] = {**{axis: "0" for axis in edit["axes"]}, **read.values}
         var = read.parts.get("sketch")
+        # An extrude's profile kept as the code writes it: no sketch of the part's to show or take
+        # again (`profile`), what it keeps said in words.
+        extruded = edit["command"] in ("extrude", "cut")
+        if extruded and not var:
+            edit["profile"] = True
         if var:
-            # The sketch is the last one made under that name before the feature's line.
+            # The sketch is the last one made under that name before the feature's line, written
+            # `sketch1 = Sketch(...)` or, as agents write it, `eye=Sketch(...)`.
             lines = text.splitlines()
 
             def named(name):
+                made = re.compile(rf"{re.escape(name)}\s*=(?!=)")
                 return max((each for each in sketches if each["file"] == rel and 0 < each["line"] < statement.lineno
-                            and lines[each["line"] - 1].strip().startswith(f"{name} = ")), key=lambda each: each["line"], default=None)
+                            and made.match(lines[each["line"] - 1].strip())), key=lambda each: each["line"], default=None)
 
             view = named(var)
-            if view is None or view.get("state") is None:
+            if (view is None or view.get("state") is None) and extruded:
+                # A sketch made where edit mode cannot reach it: the profile is kept as written.
+                edit["profile"] = True
+                var = None
+            elif view is None or view.get("state") is None:
                 continue
+        if edit.get("profile") and (feature.get("sketch") or {}).get("name"):
+            # Said by the name of the sketch it was drawn in, where the tree has one (`rounded_profile('Open device pocket', ...)`).
+            edit["keeps"] = feature["sketch"]["name"]
+        if var:
             edit["sketch"] = {"file": view["file"], "line": view["line"], "name": view["name"]}
             # A sweep's profile and path, a loft's profiles: each, in order.
             if read.parts.get("sketches"):

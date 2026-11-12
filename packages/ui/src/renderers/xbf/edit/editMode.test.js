@@ -217,6 +217,13 @@ test("Edit Feature opens a command with the feature's values and writes its line
   assert.equal(commandBlocked("fillet", [], null, {}, editing), "");
   const [face] = selectionItems([FACE]);
   assert.equal(commandBlocked("hole", [face, { ...face, selector: "f2" }], null, {}, { ...editing, command: "hole" }), "Select one face.");
+  // A reopened extrude whose profile the code makes waits on no sketch, and is written again with none.
+  const asWritten = { ...editing, command: "cut", profile: true, keeps: "Pocket" };
+  assert.equal(commandBlocked("cut", [], null, { end: "blind" }, asWritten), "");
+  assert.equal(commandBlocked("cut", [], null, { end: "blind" }, { ...asWritten, profile: false }), "Select a sketch in the design tree.");
+  assert.equal(commandBlocked("revolve", [], null, {}, { ...asWritten, command: "revolve" }), "Select a sketch in the design tree.");
+  assert.deepEqual(commandRequest("cut", { end: "blind", depth: "6", reverse: false }, [], null, null, asWritten),
+    { command: "cut", sketch: null, inputs: { end: "blind", depth: "6", reverse: false }, replace: { row: "a.py:9" } });
   const sketch = { file: "a.py", line: 4, title: "Sketch1", constrained: true };
   assert.deepEqual(commandRequest("extrude", { end: "mid", depth: "8", reverse: false }, [], null, sketch, { ...editing, command: "extrude" }), {
     command: "extrude", sketch: { file: "a.py", line: 4, name: "Sketch1" }, inputs: { end: "mid", depth: "8", reverse: false },
@@ -297,6 +304,8 @@ test("Choose names the pick still wanted, in order, and none once each is made",
   // An extrude takes its sketch first, then what an Up To Surface ends on.
   const sketch = { title: "Sketch1" };
   assert.equal(line("extrude", { values: { end: "surface" } }), "1 of 2: Select a sketch");
+  // A reopened extrude whose profile the code makes has its profile already.
+  assert.equal(line("cut", { profile: true, values: { end: "blind" } }), null);
   assert.equal(line("extrude", { sketch, values: { end: "surface" } }), "2 of 2: Select a flat face to end on");
   assert.equal(line("extrude", { sketch, values: { end: "surface" }, ending: face }), null);
   assert.equal(line("extrude", { sketch, values: { end: "blind" } }), null);

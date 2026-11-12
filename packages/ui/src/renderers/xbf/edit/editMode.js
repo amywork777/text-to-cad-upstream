@@ -1059,9 +1059,11 @@ export function commandBlocked(id, items, sketch = null, values = {}, editing = 
     return sketch.constrained ? "" : `${sketch.title} isn't an editable sketch yet. Ask the agent to make the rib.`;
   }
   if (id === "extrude" || id === "cut" || id === "revolve" || id === "revolve_cut") {
-    if (!sketch) return "Select a sketch in the design tree.";
+    // A reopened extrude whose profile the code makes its own way keeps it: no sketch to wait on.
+    const asWritten = Boolean(editing?.profile) && (id === "extrude" || id === "cut");
+    if (!sketch && !asWritten) return "Select a sketch in the design tree.";
     const making = id.startsWith("revolve") ? "revolve" : "extrude";
-    if (!sketch.constrained) return `${sketch.title} isn't an editable sketch yet. Ask the agent to ${making} it.`;
+    if (sketch && !sketch.constrained) return `${sketch.title} isn't an editable sketch yet. Ask the agent to ${making} it.`;
     if (making === "revolve" && !values.axis) return `Draw a centerline in ${sketch.title} to revolve about.`;
     // Up To Surface and Up To Vertex wait for what they end on; Edit Feature keeps its own.
     const keeps = editing && editing.values?.end === values.end;
@@ -1102,7 +1104,7 @@ export function commandBlocked(id, items, sketch = null, values = {}, editing = 
  * Surface or Up To Vertex ends on, and `kept` whether a reopened feature keeps what it acts on.
  * Mirror and Pattern have what they need as they open (a plane, a direction, the whole body).
  */
-export function chooseSteps(id, { listed = [], sketch = null, values = {}, ending = null, kept = false, sketches = [] } = {}) {
+export function chooseSteps(id, { listed = [], sketch = null, values = {}, ending = null, kept = false, sketches = [], profile = false } = {}) {
   const takes = editCommand(id)?.sketches;
   if (takes === "many") {
     return [{ input: "the first profile sketch", done: sketches.length >= 1 || kept }, { input: "the next profile sketch", done: sketches.length >= 2 || kept }];
@@ -1110,7 +1112,8 @@ export function chooseSteps(id, { listed = [], sketch = null, values = {}, endin
   if (takes) return [{ input: "the profile sketch", done: Boolean(sketches[0]) || kept }, { input: "the path sketch", done: Boolean(sketches[1]) || kept }];
   if (id === "rib") return [{ input: "a sketch of the rib's line", done: Boolean(sketch) }];
   if (editCommand(id)?.sketch) {
-    const steps = [{ input: "a sketch", done: Boolean(sketch) }];
+    // A reopened extrude whose profile the code makes (`profile`) has it already.
+    const steps = [{ input: "a sketch", done: Boolean(sketch) || profile }];
     if (id === "revolve" || id === "revolve_cut") steps.push({ input: "a centerline to revolve about", done: Boolean(values.axis) });
     else if (values.end === "surface") steps.push({ input: "a flat face to end on", done: Boolean(ending) || kept });
     else if (values.end === "vertex") steps.push({ input: "a vertex to end at", done: Boolean(ending && values.vertex_at) || kept });

@@ -905,9 +905,20 @@ def _feature_line(body: Body, replacing: dict, command: str, units: str, steps: 
     statement = _top_statement(body.function, int(line))
     feature = (read_feature(statement, body.text, recorded_numbers(made), units)
                if statement is not None and statement.lineno == int(line) else None)
+    if feature is None and statement is not None:
+        # An extrude made in a loop (`for side in (-1, 1):`): its own line, written again in the
+        # loop, each time round.
+        inner = _innermost(statement, int(line))
+        read = read_feature(inner, body.text, recorded_numbers(made), units) if inner is not statement and inner.lineno == int(line) else None
+        if read is not None and read.command in ("extrude", "cut"):
+            statement, feature = inner, read
     if feature is None:
         raise CommandError("That feature is not written as one of edit mode's commands, so edit mode cannot open it. "
                            "Change its sizes in the design tree, or ask the agent.")
+    if feature.operator == "=" and {feature.command, command} <= {"extrude", "cut"}:
+        # An extrude made in a name of its own (`pocket = extrude(...)`) is a boss or a cut by what
+        # is done with it after: the line is the same either way.
+        feature.command = command
     if feature.command != command:
         raise CommandError(f"That feature is a {FEATURE_WORDS[feature.command]}, not a {FEATURE_WORDS[command]}.")
     return statement, feature
@@ -1420,7 +1431,21 @@ def plan(spec: dict, *, steps: list[dict], shape, level: int, units: str, litera
         # face, along its plane's normal (Reverse direction the other way), joined to the body or
         # cut from it. Its line goes after the sketch's lines and the body's.
         drawn = spec.get("sketch") or {}
-        block = _sketch_block(drawn, body, bar, replacing, "extrude")
+        # A reopened extrude whose profile is the code's own (a helper's face, a face in a name),
+        # or a sketch made where edit mode cannot reach it, keeps its profile as written: no
+        # sketch to take a wall of, or to measure up to a face from.
+        block = None
+        if kept is None:
+            block = _sketch_block(drawn, body, bar, replacing, "extrude")
+        elif kept.parts.get("sketch") and drawn.get("file"):
+            try:
+                block = _sketch_block(drawn, body, bar, replacing, "extrude")
+            except CommandError:
+                block = None
+            if block is not None and block.var != kept.parts["sketch"]:
+                block = None
+        moves = kept.parts.get("placed", "") if kept else ""
+        others = kept.parts.get("others", "") if kept else ""
         end = str(inputs.get("end") or "blind").lower()
         through = command == "cut" and end == "through"
         # Up To Next: as far as the next face of the body along the sketch's normal (build123d's
@@ -1435,6 +1460,15 @@ def plan(spec: dict, *, steps: list[dict], shape, level: int, units: str, litera
         # Thin Feature, as SolidWorks' is: the outline as a wall of a thickness (inside it, outside
         # it, or astride it), made a solid of as the face would be.
         thin = inputs.get("thin") in (True, "true", "1", 1)
+        if block is None and (thin or kept.values.get("thin")):
+            raise CommandError("Thin Feature needs a sketch of this part, and this extrude's profile is made in the code. "
+                               "Ask the agent to change its wall.")
+        if block is None and up_to:
+            raise CommandError("Up To Surface and Up To Vertex measure from a sketch's plane, and this extrude's profile is made "
+                               "in the code. Pick another end condition.")
+        if moves and up_to_next:
+            raise CommandError("This extrude is moved into place after it is made, so Up To Next would look for the next face "
+                               "from where it starts. Pick another end condition.")
         if thin:
             wall = _value(inputs, "thin_thickness", "Thickness", parse)
             side = str(inputs.get("thin_side") or "inside").lower()
@@ -1450,6 +1484,9 @@ def plan(spec: dict, *, steps: list[dict], shape, level: int, units: str, litera
         first_solid = kept is not None and kept.operator == "="
         if first_solid and (up_to_next or up_to):
             raise CommandError("The first extrude has no body before it to go up to. Pick Blind or Mid Plane.")
+        if first_solid and through:
+            raise CommandError("This cut is made on its own before it is taken from the body, so it has no body to go "
+                               "through. Pick Blind or Mid Plane.")
         sign = "=" if first_solid else "+=" if command == "extrude" else "-="
         # Draft, as SolidWorks' Draft On/Off: the sides lean in by the angle (build123d's `taper`),
         # out with Draft outward. Not with Up To Next, whose length is the body's to say.
@@ -1462,10 +1499,10 @@ def plan(spec: dict, *, steps: list[dict], shape, level: int, units: str, litera
             outward = inputs.get("outward") in (True, "true", "1", 1)
             taper = f", taper={'-' if outward else ''}{same('taper', angle, writer.number(angle))}"
         if up_to_next:
-            code = f"{var} {sign} {names('extrude')}({profile}, until={names('Until')}.NEXT, target={var})"
+            code = f"{var} {sign} {names('extrude')}({profile}, until={names('Until')}.NEXT, target={var}{others})"
         elif up_to:
             ending = _extrude_target(end, selection, selections, scale, inputs, kept)
-            code = f"{var} {sign} {names('extrude')}({profile}, amount={block.var}.depth_to({ending}){taper})"
+            code = f"{var} {sign} {names('extrude')}({profile}, amount={block.var}.depth_to({ending}){taper}{others})"
         else:
             amount = f"{var}.bounding_box().diagonal" if through else writer.length(depth / 2 if both else depth)
             reverse = inputs.get("reverse") in (True, "true", "1", 1) and not both
@@ -1473,13 +1510,16 @@ def plan(spec: dict, *, steps: list[dict], shape, level: int, units: str, litera
                 amount = f"-{amount}"
             if not through:
                 amount = same("amount", (-1 if reverse else 1) * (depth / 2 if both else depth), amount)
-            code = f"{var} {sign} {names('extrude')}({profile}, amount={amount}{both}{taper})"
+            code = f"{var} {sign} {names('extrude')}({profile}, amount={amount}{both}{taper}{others})"
         # Direction 2, as SolidWorks' extrude goes both ways from its sketch: a second extrude of
         # the same profile the other way, added to the first, Blind (or Through All for a cut), its
         # own draft. Not at Mid Plane, nor where a pick ends Direction 1, whose way the pick says.
         second = inputs.get("direction2") in (True, "true", "1", 1)
         if second and end == "mid":
             raise CommandError("Direction 2 goes with every end but Mid Plane, which goes both ways already.")
+        if second and block is None and not kept.values.get("direction2") and not _made_once(profile):
+            raise CommandError("Direction 2 makes this extrude's profile a second time, and its profile is made by a call in "
+                               "the code. Ask the agent to make it go both ways.")
         if second:
             end2 = str(inputs.get("end2") or "blind").lower()
             if end2 not in ("blind", "through") or (end2 == "through" and command != "cut"):
@@ -1509,16 +1549,22 @@ def plan(spec: dict, *, steps: list[dict], shape, level: int, units: str, litera
                 outward2 = inputs.get("outward2") in (True, "true", "1", 1)
                 taper2 = f", taper={'-' if outward2 else ''}{same('taper2', angle2, writer.number(angle2))}"
             first = code.split(f" {sign} ", 1)[1]
-            code = f"{var} {sign} {first} + {names('extrude')}({profile}, amount={amount2}{taper2})"
-        at = max(at, block.last_line)
+            code = f"{var} {sign} {first} + {names('extrude')}({profile}, amount={amount2}{taper2}{others})"
+            if moves:
+                code = f"{var} {sign} ({code.split(f' {sign} ', 1)[1]})"
+        # Moved into place as it was, after it is made.
+        code += moves
+        if block is not None:
+            at = max(at, block.last_line)
         shown = [] if through or up_to_next or up_to else [("Depth", depth, units_word)]
         if drafted:
             shown.append(("Draft", angle, "deg"))
         if second and end2 == "blind":
             shown.append(("Depth 2", depth2, units_word))
-        what = f"from {drawn.get('name') or 'the sketch'}" + (", through all" if through else ", up to next" if up_to_next
-                                                              else ", up to a vertex" if end == "vertex" else ", up to a face" if end == "surface"
-                                                              else ", mid plane" if end == "mid" else "")
+        source = f"from {drawn.get('name') or 'the sketch'}" if block is not None or kept is None else "from its profile, as written"
+        what = source + (", through all" if through else ", up to next" if up_to_next
+                         else ", up to a vertex" if end == "vertex" else ", up to a face" if end == "surface"
+                         else ", mid plane" if end == "mid" else "")
         if drafted:
             what += f", drafted {'out' if outward else 'in'} {_number(angle, False)} degrees"
         if second:
@@ -1881,6 +1927,12 @@ def _through_all(node) -> bool:
     return isinstance(node, ast.Attribute) and node.attr == "diagonal" and _call_name(node.value) == "bounding_box"
 
 
+# The moves an extrude may be placed with once it is made, kept as written when it is written again.
+_PLACEMENTS = ("translate", "rotate", "moved", "locate")
+# What an extrude keeps when its profile is not a sketch's face: the code's own.
+_PROFILE_WORDS = "Its profile, as written"
+
+
 def _sketch_of(profile, made=("face", "faces", "thin")) -> str | None:
     """The sketch a profile is taken from, by its name: ``sketch2`` of ``sketch2.face()`` (or of
     its thin wall, ``sketch2.thin(...)``; of its path, ``sketch2.path()``, with ``made``), turned or not
@@ -1891,6 +1943,17 @@ def _sketch_of(profile, made=("face", "faces", "thin")) -> str | None:
             and isinstance(profile.func.value, ast.Name)):
         return profile.func.value.id
     return None
+
+
+def _made_once(profile: str) -> bool:
+    """Whether a profile's code can be written twice and make the same thing: a name, or a sketch's
+    face (``sketch2.face()``); not a call of the code's own (``rounded_profile(...)``), which may
+    make a sketch each time it runs."""
+    try:
+        node = ast.parse(profile, mode="eval").body
+    except SyntaxError:
+        return False
+    return isinstance(node, (ast.Name, ast.Attribute)) or _sketch_of(node) is not None
 
 
 def read_feature(statement: ast.stmt, text: str, numbers: dict, units: str) -> Feature | None:
@@ -2194,11 +2257,26 @@ def _read_feature(statement: ast.stmt, text: str, numbers: dict, units: str) -> 
     # The part's first solid, `part = extrude(...)` (or a revolve), is an extrude like any other:
     # Extruded Boss/Base, as SolidWorks names it, written again with `=`.
     solid_ops = ("+=", "-=", "=")
+    # An extrude moved into place once it is made (`tab = extrude(eye.face(), amount=4).translate(...)`,
+    # as agents write one): the moves are kept as written, after it, when it is written again.
+    placed, moved = "", value
+    while isinstance(moved, ast.Call) and isinstance(moved.func, ast.Attribute) and moved.func.attr in _PLACEMENTS:
+        moved = moved.func.value
+    extrudes = (_call_name(moved) == "extrude" or (isinstance(moved, ast.BinOp) and isinstance(moved.op, ast.Add)
+                                                    and _call_name(moved.left) == "extrude"))
+    if moved is not value and operator in solid_ops and extrudes:
+        links, link = [], value
+        while link is not moved:
+            links.insert(0, f".{link.func.attr}{code(link)[len(code(link.func)):]}")
+            link = link.func.value
+        placed, value, name = "".join(links), moved, _call_name(moved)
     if (operator in solid_ops and isinstance(value, ast.BinOp) and isinstance(value.op, ast.Add)
             and _call_name(value.left) == "extrude" and _call_name(value.right) == "extrude" and value.left.args and value.right.args
             and code(value.left.args[0]) == code(value.right.args[0])):
         value, second, name = value.left, value.right, "extrude"
-    if (operator in solid_ops and name in ("extrude", "revolve") and value.args and _sketch_of(value.args[0])
+    # An extrude takes any profile: a sketch's face, or one the code makes its own way (a helper's
+    # `rounded_profile(...)`, a face held in a name), kept as written. A revolve turns a sketch's.
+    if (operator in solid_ops and name in ("extrude", "revolve") and value.args and (name == "extrude" or _sketch_of(value.args[0]))
             and not (operator == "=" and _keyword_value(value, "target") is not None)):
         profile, sketch = value.args[0], _sketch_of(value.args[0])
         if name == "extrude":
@@ -2247,7 +2325,15 @@ def _read_feature(statement: ast.stmt, text: str, numbers: dict, units: str) -> 
                     shown2 = taper2.operand if outward2 and isinstance(taper2, ast.UnaryOp) and isinstance(taper2.op, ast.USub) else taper2
                     held("taper2", shown2, abs(drafted2), _tight(shown2, text))
             parts = {"profile": code(profile), "sketch": sketch, **({"target": code(ending), "toward": "-" if amount < 0 else ""} if up_to else {})}
-            return Feature("cut" if operator == "-=" else "extrude", values, sketch, parts, target, operator, codes)
+            # What the box does not set is kept as written: the moves after it, and any other
+            # argument of build123d's extrude (`dir=...`).
+            others = [f"{each.arg}={code(each.value)}" if each.arg else f"**{code(each.value)}" for each in value.keywords
+                      if each.arg not in ("amount", "both", "taper", "until", "target")]
+            if placed:
+                parts["placed"] = placed
+            if others:
+                parts["others"] = ", " + ", ".join(others)
+            return Feature("cut" if operator == "-=" else "extrude", values, sketch or _PROFILE_WORDS, parts, target, operator, codes)
         axis = _keyword_value(value, "axis")
         line = code(axis.args[0]) if isinstance(axis, ast.Call) and _call_name(axis) == "axis" and axis.args else None
         if name == "revolve" and line:

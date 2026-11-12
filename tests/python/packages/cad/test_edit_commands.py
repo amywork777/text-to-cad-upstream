@@ -1346,6 +1346,170 @@ class TwoDirections(Commands):
         self.assertIn("Mid Plane, which goes both ways already", refused["error"])
 
 
+# A holder as agents write one (Amy's macro pad holder, cut down): a tab extruded from a sketch
+# written `eye=Sketch(...)` and moved into place, a hole cut from the tab, a pocket extruded from a
+# helper's face into a name of its own and moved, then cut from the body, and an access notch cut in
+# a loop from a face held in a name and turned. build123d reached through `bd`.
+HOLDER = {
+    "holder.py": """
+        import build123d as bd
+        from cad import model
+        from cad.sketch import Sketch
+
+        TAB = 4.0
+        HEIGHT = 10.0
+
+
+        def rounded_profile(name, l, w, z=0):
+            s = Sketch(name, plane="Top", offset=z)
+            s.rectangle((0, 0), (l, w))
+            return s.face().translate((-l / 2, -w / 2, 0))
+
+
+        @model
+        def holder():
+            p = bd.Box(40, 30, HEIGHT, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
+            eye=Sketch('Eye',plane='Top')
+            eye.rectangle((0, 0), (10, 8))
+            tab=bd.extrude(eye.face(),amount=TAB).translate((20,-4,0))
+            hole = Sketch("Hole", plane="Top", offset=-1)
+            hole.circle((25, 0), 1.5)
+            tab-=bd.extrude(hole.face(),amount=TAB+2)
+            p += tab
+            pocket=bd.extrude(rounded_profile('Pocket',30,20,2),amount=HEIGHT).translate((-1,0,0))
+            p -= pocket
+            for across, turn in ((50, 0),):
+                profile = rounded_profile('Access', 10, 4).rotate(bd.Axis.X, 90).translate((0, across / 2, 5))
+                cutter=bd.extrude(profile,amount=across).rotate(bd.Axis.Z,turn)
+                p -= cutter
+            return p
+    """,
+}
+
+
+class AgentsExtrudes(Commands):
+    """Edit Feature on an extrude as agents write one opens the ribbon's Extrude, never Edit
+    Parameters: moved into place after it is made, its profile a helper's face or one held in a name,
+    made in a name of its own, or in a loop. Written again, it keeps its profile and its moves as
+    written and changes only what the dialog changed."""
+
+    def reopened(self, state: dict) -> dict:
+        return {feature["line"]: feature for feature in state["features"] if feature.get("file") == "holder.py" and feature["kind"] != "Sketch"}
+
+    def again(self, file: str, files: dict, feature: dict, inputs: dict, sketch_name: str | None = None) -> dict:
+        spec = {"command": feature["edit"]["command"], "inputs": {**feature["edit"]["values"], **inputs}, "replace": {"row": feature["key"]},
+                **({"sketch": {**feature["edit"]["sketch"]}} if feature["edit"].get("sketch") else {})}
+        return self.service.change({"file": file, "files": files, "command": spec})
+
+    def test_each_extrude_opens_as_an_extrude_or_a_cut_with_its_values(self):
+        root, file, state = self.open(HOLDER, "holder.step")
+        features = self.reopened(state)
+        # Its sketch shown, its depth the size's value; moved into place, in a name of its own.
+        tab = features[20]["edit"]
+        self.assertEqual((tab["command"], tab["sketch"]["name"], tab["values"]["depth"], tab.get("first")), ("extrude", "Eye", "4", True))
+        self.assertNotIn("profile", tab)
+        cut = features[23]["edit"]
+        self.assertEqual((cut["command"], cut["sketch"]["name"], cut["values"]["depth"]), ("cut", "Hole", "6"))
+        # A helper's face, kept as written and said by its sketch's name; cut from the body after,
+        # so a cut, as the tree has it.
+        pocket = features[25]["edit"]
+        self.assertEqual((features[25]["kind"], pocket["command"], pocket["keeps"], pocket["profile"], pocket["values"]["depth"]),
+                         ("Cut-Extrude", "cut", "Pocket", True, "10"))
+        self.assertNotIn("sketch", pocket)
+        # A face held in a name, made in a loop and turned after.
+        cutter = features[29]["edit"]
+        self.assertEqual((cutter["command"], cutter["keeps"], cutter["profile"], cutter["values"]["end"], cutter["values"]["depth"]),
+                         ("cut", "Access", True, "blind", "50"))
+        # Not one of them opens Edit Parameters, which they did before: only the block, a Box, does.
+        self.assertEqual({line: feature["edit"]["command"] for line, feature in features.items() if feature["kind"].endswith("-Extrude")},
+                         {17: "sizes", 20: "extrude", 23: "cut", 25: "cut", 29: "cut"})
+
+    def test_written_again_each_keeps_its_profile_its_moves_and_its_named_depth(self):
+        root, file, state = self.open(HOLDER, "holder.step")
+        script = root / "holder.py"
+        features = self.reopened(state)
+        # A new depth: the helper's face and the move after it kept as written.
+        deeper = self.again(file, state["files"], features[25], {"depth": "6"})
+        self.assertTrue(deeper["ok"], deeper.get("error"))
+        self.assertIn("\n    pocket = bd.extrude(rounded_profile('Pocket',30,20,2), amount=6).translate((-1,0,0))\n", script.read_text(encoding="utf-8"))
+        features = self.reopened(deeper)
+        self.assertEqual((features[25]["edit"]["command"], features[25]["edit"]["values"]["depth"]), ("cut", "6"))
+        # Its depth left as it was, drafted: the size's name stays, the move after it too.
+        drafted = self.again(file, deeper["files"], features[20], {"draft": True, "draft_angle": "2"})
+        self.assertTrue(drafted["ok"], drafted.get("error"))
+        self.assertIn("\n    tab = bd.extrude(eye.face(), amount=TAB, taper=2).translate((20,-4,0))\n", script.read_text(encoding="utf-8"))
+        # The hole cut from the tab at Mid Plane: its formula goes, as its value does.
+        features = self.reopened(drafted)
+        flipped = self.again(file, drafted["files"], features[23], {"end": "mid", "depth": "4"})
+        self.assertTrue(flipped["ok"], flipped.get("error"))
+        self.assertIn("\n    tab -= bd.extrude(hole.face(), amount=2, both=True)\n", script.read_text(encoding="utf-8"))
+        # In its loop, its own line written again there, turned as it was; Mid Plane.
+        features = self.reopened(flipped)
+        mid = self.again(file, flipped["files"], features[29], {"end": "mid", "depth": "60"})
+        self.assertTrue(mid["ok"], mid.get("error"))
+        self.assertIn("\n        cutter = bd.extrude(profile, amount=30, both=True).rotate(bd.Axis.Z,turn)\n", script.read_text(encoding="utf-8"))
+        self.assertEqual(self.reopened(mid)[29]["edit"]["values"]["end"], "mid")
+
+    def test_what_needs_a_sketch_or_its_own_place_is_refused_in_plain_words(self):
+        root, file, state = self.open(HOLDER, "holder.step")
+        before = (root / "holder.py").read_text(encoding="utf-8")
+        pocket = self.reopened(state)[25]
+        refusals = {
+            "surface": ({"end": "surface"}, "measure from a sketch's plane"),
+            "next": ({"end": "next"}, "moved into place after it is made"),
+            "thin": ({"thin": True, "thin_thickness": "1"}, "Thin Feature needs a sketch"),
+            "through": ({"end": "through"}, "no body to go"),
+            "direction2": ({"direction2": True, "end2": "blind", "depth2": "3"}, "made by a call in the code"),
+        }
+        for name, (inputs, words) in refusals.items():
+            with self.subTest(name):
+                refused = self.again(file, state["files"], pocket, inputs)
+                self.assertFalse(refused["ok"])
+                self.assertIn(words, refused["error"])
+        self.assertEqual((root / "holder.py").read_text(encoding="utf-8"), before)
+
+
+class ReadingAgentsExtrudes(unittest.TestCase):
+    """The reader alone (`commands.read_feature`) on each way agents write an extrude."""
+
+    def read(self, line: str, numbers=None):
+        import ast
+
+        from cad.edit import commands
+
+        statement = ast.parse(line).body[0]
+        return commands.read_feature(statement, line, numbers or {("extrude", "amount"): 4.0}, "mm")
+
+    def test_each_form_reads_as_an_extrude_or_a_cut(self):
+        moved = self.read("tab=bd.extrude(eye.face(),amount=TAB_THICKNESS).translate((root,-EYE_ROOT_WIDTH/2,0))")
+        self.assertEqual((moved.command, moved.operator, moved.target, moved.keeps), ("extrude", "=", "tab", "eye"))
+        self.assertEqual(moved.parts, {"profile": "eye.face()", "sketch": "eye", "placed": ".translate((root,-EYE_ROOT_WIDTH/2,0))"})
+        self.assertEqual((moved.values["depth"], moved.codes["amount"]), ("4", ("TAB_THICKNESS", 4.0)))
+        cut = self.read("tab-=bd.extrude(hole.face(),amount=TAB_THICKNESS+2)", {("extrude", "amount"): 6.0})
+        self.assertEqual((cut.command, cut.operator, cut.values["depth"], cut.codes["amount"]), ("cut", "-=", "6", ("TAB_THICKNESS+2", 6.0)))
+        helper = self.read("pocket=bd.extrude(rounded_profile('Open device pocket',INNER_L,INNER_W,INNER_RADIUS,FLOOR),amount=HEIGHT)"
+                           ".translate((-KNOB_END_TAKEUP/2,0,0))", {("extrude", "amount"): 12.0})
+        self.assertEqual((helper.command, helper.keeps, helper.parts["sketch"], helper.values["depth"]), ("extrude", "Its profile, as written", None, "12"))
+        self.assertEqual((helper.parts["profile"], helper.parts["placed"]),
+                         ("rounded_profile('Open device pocket',INNER_L,INNER_W,INNER_RADIUS,FLOOR)", ".translate((-KNOB_END_TAKEUP/2,0,0))"))
+        turned = self.read("cutter=bd.extrude(profile,amount=across).rotate(bd.Axis.Z,turn)", {("extrude", "amount"): 86.9})
+        self.assertEqual((turned.command, turned.parts["profile"], turned.parts["placed"], turned.values["depth"], turned.codes["amount"]),
+                         ("extrude", "profile", ".rotate(bd.Axis.Z,turn)", "86.9", ("across", 86.9)))
+
+    def test_several_moves_both_ways_and_other_arguments_are_kept(self):
+        both = self.read("part += (extrude(sketch1.face(), amount=6) + extrude(sketch1.face(), amount=-2)).rotate(Axis.Z, 90).moved(at)",
+                         {("extrude", "amount"): 6.0, ("extrude", "amount", 2): -2.0})
+        self.assertEqual((both.values["direction2"], both.values["depth2"], both.parts["placed"]), (True, "2", ".rotate(Axis.Z, 90).moved(at)"))
+        aimed = self.read("part -= extrude(face, amount=3, dir=(0, 0, -1))", {("extrude", "amount"): 3.0})
+        self.assertEqual((aimed.command, aimed.parts["others"]), ("cut", ", dir=(0, 0, -1)"))
+
+    def test_a_sketchs_extrude_reads_as_it_did(self):
+        plain = self.read("part += extrude(sketch1.face(), amount=HEIGHT)")
+        self.assertEqual((plain.command, plain.keeps, plain.parts), ("extrude", "sketch1", {"profile": "sketch1.face()", "sketch": "sketch1"}))
+        # A move that is not after an extrude is no extrude's.
+        self.assertIsNone(self.read("part = Box(1, 2, 3).translate((1, 0, 0))"))
+
+
 # The block's four sides and its bottom face, as the viewer reads them.
 BLOCK_SIDES =[face("f2", (10, 0, 0), 40), face("f3", (-10, 0, 0), 40), face("f4", (0, 5, 0), 80), face("f5", (0, -5, 0), 80)]
 BLOCK_BOTTOM = face("f6", (0, 0, -2), 200)

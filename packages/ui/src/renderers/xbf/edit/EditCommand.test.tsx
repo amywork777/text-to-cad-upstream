@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import EditCommand from '../../../../dist/renderers/xbf/edit/EditCommand.js';
 import MassProperties from '../../../../dist/renderers/xbf/edit/MassProperties.js';
 import Appearance from '../../../../dist/renderers/xbf/edit/Appearance.js';
@@ -307,4 +307,53 @@ it("puts a fillet's radius on the model by its first edge, typed over there as i
   expect({ at: callout.at, label: callout.label, text: callout.text }).toEqual({ at: [0, -5, 2], label: 'Radius', text: '1' });
   act(() => callout.onCommit('2'));
   expect(screen.getByRole('textbox', { name: 'Radius' }) as HTMLInputElement).toHaveProperty('value', '2');
+});
+
+it("an extrude whose profile the code makes reopens in the ribbon's Extrude, keeping its profile as written", async () => {
+  // What Radix's Select asks of the page as it opens, which jsdom has not.
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  const restores: (() => void)[] = [];
+  for (const [name, value] of Object.entries({ scrollIntoView() {}, hasPointerCapture: () => false, setPointerCapture() {}, releasePointerCapture() {} })) {
+    const previous = Object.getOwnPropertyDescriptor(Element.prototype, name);
+    Object.defineProperty(Element.prototype, name, { configurable: true, value });
+    restores.push(() => (previous ? Object.defineProperty(Element.prototype, name, previous) : delete (Element.prototype as never)[name]));
+  }
+  onTestFinished(() => { vi.unstubAllGlobals(); while (restores.length) restores.pop()!(); });
+  const user = userEvent.setup();
+  // The tree's sketch for it is a helper's, outside the part's function: not one to take again.
+  const helper = { id: 'sketch:holder.py:25', title: 'Pocket', plane: 'Top', file: 'holder.py', line: 10, constrained: true };
+  const reopened = (profile: boolean) => ({ ...edit('cut', 'holder.py:25'), editing: { command: 'cut', id: 'holder.py:25', title: 'Cut-Extrude1',
+    values: { end: 'blind', depth: '10', reverse: false }, keeps: 'Pocket', first: true, sketch: helper, ...(profile ? { profile: true } : {}) } });
+  const headings = () => ['Section', 'Direction 1', 'Direction 2', 'Thin Feature', 'Preview'].filter(title => screen.queryAllByText(title).length);
+  const cut = reopened(true);
+  render(<EditCommand edit={cut as never} names={NAMES} references={[]} />);
+  const shown = headings();
+  // Its profile kept as written, named by its sketch: no empty box asking for a sketch, and OK can go.
+  expect(screen.getByText('Pocket')).toBeTruthy();
+  expect(screen.getByText('An extrude of a profile made in the code keeps it as written.')).toBeTruthy();
+  expect(screen.queryByText('Select a sketch on the model or in the design tree.')).toBeNull();
+  expect(screen.queryByText(/Select a sketch/)).toBeNull();
+  expect((screen.getByRole('button', { name: 'OK' }) as HTMLButtonElement).disabled).toBe(false);
+  // Up To Surface and Up To Vertex measure from a sketch's plane: not offered.
+  await user.click(screen.getByRole('combobox', { name: 'End condition' }));
+  expect(screen.queryByRole('option', { name: 'Up To Surface' })).toBeNull();
+  expect(screen.queryByRole('option', { name: 'Up To Vertex' })).toBeNull();
+  expect(screen.getByRole('option', { name: 'Through All' })).toBeTruthy();
+  await user.keyboard('{Escape}');
+  const depth = screen.getByRole('textbox', { name: 'Depth' });
+  await user.clear(depth);
+  await user.type(depth, '6{Enter}');
+  await user.click(screen.getByRole('button', { name: 'OK' }));
+  // Its own line written again, with no sketch to make it from.
+  expect(cut.run).toHaveBeenCalledWith({ command: 'cut', sketch: null, inputs: { end: 'blind', depth: '6', reverse: false },
+    replace: { row: 'holder.py:25' } });
+  const title = screen.getByRole('dialog').getAttribute('aria-label');
+  cleanup();
+  // The same dialog as a reopened extrude of a sketch: its title and its sections.
+  const sketched = reopened(false);
+  render(<EditCommand edit={sketched as never} names={NAMES} references={[]} />);
+  expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe(title);
+  expect(headings()).toEqual(shown);
+  expect(shown).toEqual(['Section', 'Direction 1', 'Direction 2', 'Thin Feature', 'Preview']);
+  expect(screen.getByText('Pocket, Top Plane')).toBeTruthy();
 });

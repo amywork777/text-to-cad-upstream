@@ -74,13 +74,27 @@ function RibbonButton({ label, icon, active, disabled = false, description, onCl
 /**
  * A group: its buttons over its title, which is its menu (`menu`) where the group has one; `end`, at the row's right end.
  * The title band sits at the group's foot whatever its buttons' height, on the row's rule, never under it. A group
- * shown only in part (`partly`) starts its title under its first button, where it is seen, not under buttons past the edge.
+ * shown only in part (`partly`, its first `partly` buttons seen) centres its title under those buttons, as every
+ * other group's is under all of its own, not under buttons past the edge.
  */
-function RibbonGroup({ title, folded = false, partly = false, end = false, menu = null, children }) {
-  return <div role="group" aria-label={title} aria-hidden={folded || undefined} data-cad-ribbon-group=""
+function RibbonGroup({ title, folded = false, partly = 0, end = false, menu = null, children }) {
+  const groupRef = useRef(null);
+  const [seen, setSeen] = useState(null);
+  useLayoutEffect(() => {
+    if (!partly || !groupRef.current) { setSeen(null); return; }
+    // From the group's left edge to where the first button past the seen ones starts (both measured from the row).
+    const row = groupRef.current.querySelector("[data-cad-ribbon-items]");
+    const next = row?.children[partly]?.firstElementChild;
+    setSeen(next ? next.offsetLeft - groupRef.current.offsetLeft : null);
+  }, [partly]);
+  return <div ref={groupRef} role="group" aria-label={title} aria-hidden={folded || undefined} data-cad-ribbon-group=""
     className={cn("flex shrink-0 flex-col border-r border-border last:border-r-0", end && "ml-auto", folded && "invisible")}>
     <div className="flex items-center gap-0.5 px-1 pt-1" data-cad-ribbon-items="">{children}</div>
-    <div className={cn(TITLE_BAND_CLASS, "mt-auto", partly && "justify-start")}>{menu || <span className={TITLE_CLASS}>{title}</span>}</div>
+    <div className={cn(TITLE_BAND_CLASS, "mt-auto", partly && "justify-start px-0")}>
+      {partly ? <div className="flex justify-center" style={seen ? { width: seen } : undefined} data-cad-ribbon-title="">
+        {menu || <span className={TITLE_CLASS}>{title}</span>}</div>
+        : menu || <span className={TITLE_CLASS}>{title}</span>}
+    </div>
   </div>;
 }
 
@@ -243,7 +257,7 @@ function RibbonGroups({ groups }) {
     <div ref={rowRef} data-compact={fit.compact ? "true" : "false"} className={cn("relative flex min-w-0 flex-1 items-stretch overflow-hidden", TITLE_RULE_CLASS)}>
       {groups.map((group, index) => {
         const partly = fit.partial > 0 && index === fit.count;
-        return <RibbonGroup key={group.title} title={group.title} folded={index >= fit.count && !partly} partly={partly} end={group.end}
+        return <RibbonGroup key={group.title} title={group.title} folded={index >= fit.count && !partly} partly={partly ? fit.partial : 0} end={group.end}
           menu={group.shown === undefined && !partly ? null : <GroupMenu title={group.title} items={group.items} />}>
           {/* A tool's settings (Select's filter) are its chevron after its button, as on the strip. */}
           {shownItems(group).map(({ id, menu, ...item }, at) => <span key={id} className={cn("contents", partly && at >= fit.partial && "invisible")}>

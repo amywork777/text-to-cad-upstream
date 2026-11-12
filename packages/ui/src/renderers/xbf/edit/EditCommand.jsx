@@ -69,6 +69,8 @@ const BOSS_ENDS2 = ends(["blind"]);
 const CUT_ENDS2 = ends(["blind", "through"]);
 // The end conditions with no depth of their own: the body or what is picked says how far.
 const NO_DEPTH = new Set(["through", "next", "vertex", "surface"]);
+// The end conditions measured from a sketch's plane: not for an extrude whose profile the code makes.
+const FROM_SKETCH = new Set(["vertex", "surface"]);
 // Hole Wizard's types: a plain hole, one with a counterbore or a countersink for a screw's head, or
 // one drilled for a tap.
 const HOLE_TYPES = Object.freeze([{ value: "simple", label: "Hole" }, { value: "counterbore", label: "Counterbore" },
@@ -219,7 +221,10 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
   useEffect(() => { setValues(opened); }, [opened]);
   // The sketch an extrude makes a solid of: the one selected in the design tree, or the feature's
   // own when it is reopened. One on a face of the part cuts into it, as SolidWorks' Extruded Cut does.
-  const sketch = command?.sketch ? (editing ? editing.sketch : treeSketch(tree, edit.selected)) : null;
+  // A reopened extrude whose profile the code makes its own way (a helper's face, a face held in a
+  // name) has none: it keeps its profile as written (`editing.profile`).
+  const asWritten = Boolean(editing?.profile) && (edit.command === "extrude" || edit.command === "cut");
+  const sketch = command?.sketch ? (editing ? (asWritten ? null : editing.sketch) : treeSketch(tree, edit.selected)) : null;
   // A cut goes into the part: reversed when the part lies behind the sketch's plane (a sketch on a
   // face of it, or on a plane over it), as a cut from a face goes in.
   const side = sketch ? partSide(sketchView(edit.state, sketch), edit.state?.bounds) : 0;
@@ -493,7 +498,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
   // feature keeps what it acts on, and an extrude its end while the end condition is its own.
   // A reopened draft keeps its faces until others are picked, whatever becomes of its neutral plane.
   const kept = Boolean(editing) && (command.sketch || takes ? editing.values?.end === values.end : drafting || !repicked);
-  const step = chooseLine(chooseSteps(command.id, { listed, sketch, values, ending, kept, sketches: picked }));
+  const step = chooseLine(chooseSteps(command.id, { listed, sketch, values, ending, kept, sketches: picked, profile: asWritten }));
   const next = step || (blocked ? "" : previewOn ? "Review the preview, then press OK." : "Press OK to make it.");
   // A pick listed, taken out by its X as a click on it on the model takes it out.
   const removePick = onDeselect ? selector => {
@@ -567,10 +572,11 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
     </FileSheetSettingsSection> : null}
     {command.sketch ? <FileSheetSettingsSection title="Section" sectionId="edit-command-sketch">
       {/* The sketch it takes, picked on the model or in the design tree and shaded there; a
-          reopened feature keeps its own. */}
-      <SelectionBox items={sketch ? [{ key: `${sketch.file}:${sketch.line}`, label: sketchLabel }] : []}
-        prompt="Select a sketch on the model or in the design tree." clearLabel="Deselect"
-        onClear={editing ? null : () => edit.select(null)} />
+          reopened feature keeps its own, and one whose profile the code makes keeps that. */}
+      {asWritten ? <KeptList text={editing.keeps} hint="An extrude of a profile made in the code keeps it as written." />
+        : <SelectionBox items={sketch ? [{ key: `${sketch.file}:${sketch.line}`, label: sketchLabel }] : []}
+          prompt="Select a sketch on the model or in the design tree." clearLabel="Deselect"
+          onClear={editing ? null : () => edit.select(null)} />}
     </FileSheetSettingsSection> : null}
     {copies ? <FileSheetSettingsSection title={command.id === "mirror" ? "Mirror" : "Copies"} sectionId="edit-command-copies">
       {editing ? <FileSheetControlRow label="Of" value={sizeName(editing.keeps)} /> : <>
@@ -605,7 +611,8 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
         {values.end === "mid" ? null
           : <FileSheetCheckboxRow label="Reverse direction" checked={values.reverse} disabled={disabled} onCheckedChange={set("reverse")} />}
       </> : extruding ? <>
-        <FileSheetSelectRow label="End condition" value={values.end} options={command.id === "cut" ? CUT_ENDS : BOSS_ENDS} onValueChange={set("end")} />
+        <FileSheetSelectRow label="End condition" value={values.end} onValueChange={set("end")}
+          options={(command.id === "cut" ? CUT_ENDS : BOSS_ENDS).filter(each => !asWritten || !FROM_SKETCH.has(each.value))} />
         {upTo ? <>
           {/* What it ends on, picked on the model: a flat face, or an edge clicked near the vertex. */}
           <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>{values.end === "surface" ? "Face" : "Vertex"}</p>

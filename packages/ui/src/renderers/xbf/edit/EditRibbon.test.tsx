@@ -247,6 +247,8 @@ it("shows as much of the next group as fits, its title the menu of all of it, an
     const buttons = [...modify.querySelectorAll('[data-cad-ribbon-items] > *')];
     expect(buttons.filter(button => !button.className.includes('invisible'))).toHaveLength(1);
     expect(within(modify).getByRole('button', { name: 'Modify commands' })).toBeTruthy();
+    // Its title centred under the one button seen (50px), as a whole group's is under all of its own.
+    expect(modify.querySelector<HTMLElement>('[data-cad-ribbon-title]')!.style.width).toBe('50px');
   } finally {
     restore();
   }
