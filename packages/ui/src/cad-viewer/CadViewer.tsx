@@ -246,6 +246,9 @@ export function CadViewer<Model extends LibraryModel = LibraryModel>({ client, h
   const layout = settings.library.layout;
   const changeLayout = useCallback((next: LibraryLayout) => preferences.update({ library: { layout: next } }), [preferences]);
   // A file that will not open says why, with the way home where the host has one.
+  // Whether the engine knows the document on screen now (its envelope answers), asked without opening it.
+  const recheck = useMemo(() => (client.engineHolds && path
+    ? () => client.engineHolds!(path).then(() => true, () => false) : undefined), [client, path]);
   const goHome = useMemo(() => homed ? <Button size="sm" variant="outline" onClick={home}>{t("file.goHome")}</Button> : null, [homed, home, t]);
   const presentation = useMemo(() => ({
     home: library ? <ModelLibrary library={library} layout={layout} onLayoutChange={changeLayout} picture={picture}
@@ -255,11 +258,11 @@ export function CadViewer<Model extends LibraryModel = LibraryModel>({ client, h
     // builds it again (the engine's words), under a title of the state the engine names; a file
     // that is not there, its path.
     error: ({ message, missing, error, reload }: { message: string; missing: boolean; error?: unknown; reload?: () => void }) => missing
-      ? <MissingCadFile file={path} entry={entry} reload={reload} action={goHome}
+      ? <MissingCadFile file={path} entry={entry} reload={reload} action={goHome} recheck={isDocumentId(path) ? recheck : undefined}
         title={isDocumentId(path) ? t(NOT_HELD_TITLES[String((error as { state?: unknown } | null)?.state)] ?? "file.notHeld") : t("file.missing")}
         description={isDocumentId(path) ? message : undefined} />
       : <EmptyState icon={FileWarning} title={t("file.openFailed")} description={message} tone="warn" action={goHome} />,
-  }), [library, layout, changeLayout, path, picture, host.fileActions, entry, goHome, t]);
+  }), [library, layout, changeLayout, path, picture, host.fileActions, entry, goHome, recheck, t]);
   // What a person does on the screen is counted for the host (`usage/controls.js`); never what a picture drawn
   // out of sight does, which is outside it.
   return <I18nProvider locale={locale}>
