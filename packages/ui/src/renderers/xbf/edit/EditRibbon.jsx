@@ -42,10 +42,6 @@ const PRESSED_CLASS = "bg-cad-ws-selected text-info hover:bg-cad-ws-selected hov
 const LABEL_CLASS = "w-full whitespace-normal text-center leading-[1.1]";
 // The tab row's icon buttons: a 28px target round a 16px icon.
 const TAB_ROW_BUTTON_CLASS = "size-7 hover:bg-cad-ws-hover";
-// The view's own controls the frame hands over (Projection, Display, Preview: the strip's small tiles), sized as
-// Search is beside them (the layout switch keeps its segments) and lit as the toolbar's buttons are: the workspace's
-// pale blue under the pointer, its deeper one while a menu is open.
-const VIEW_CONTROLS_CLASS = "flex shrink-0 items-center gap-0.5 [&_button:not([role=radio])]:size-7 [&_button:hover]:bg-cad-ws-hover [&_button[aria-expanded=true]]:bg-cad-ws-selected";
 // A tab: its name as it is written, the one in front underlined.
 const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-tiny leading-none text-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
 // A group's title under its buttons; where it is the group's menu it is a button too.
@@ -303,9 +299,9 @@ function searchable(groups, extras = []) {
  * does: Finish Sketch (back to Solid), the curves to draw and edit (Quick Trim, Offset Curve...),
  * Rapid Dimension, and the features to make of it. A narrow view shows as much of the groups as fits, folds the whole ones past it
  * into a More menu and keeps the buttons' names; they go only where one named group cannot fit.
- * At the tab row's right end, before where the part stands, the view's own (`view`, the frame's:
- * `RendererShell`'s `ribbon(tools, view)`): its controls, Projection, Display and Preview, and the
- * view catching up.
+ * At the tab row's right end, before where the part stands, the view catching up (`view`, the frame's:
+ * `RendererShell`'s `ribbon(tools, view)`). The view's own controls, Projection, Display and Preview,
+ * stay on the strip, as they are with the CAD tools hidden.
  *
  * S asks for the command search (`edit.findAsked` counts the asks, `useEditShortcuts.js`): a box under
  * the toolbar (`CommandSearchBox.jsx`) that finds any button of the toolbar by name, on whichever tab, and
@@ -314,7 +310,7 @@ function searchable(groups, extras = []) {
  * @param {{ tools: import("../../kit/tools/FloatingToolBar.js").ViewportTool[],
  *   edit: ReturnType<typeof import("./useEditMode.js").useEditMode>, onCommand?: (id: string) => void,
  *   onSketch?: () => void, sketchLabel?: string, onNormalTo?: (() => void) | null,
- *   view?: { controls?: import("react").ReactNode, status?: import("react").ReactNode } | null }} props
+ *   view?: { status?: import("react").ReactNode } | null }} props
  *   `onCommand` opens a command (the surface turns Select to what it picks); `onSketch` is the
  *   Sketch button (`sketchLabel`: "Edit Sketch" while a sketch is selected). The workspace has no agent, so
  *   the toolbar has no Ask, Add to context or Annotate.
@@ -379,7 +375,6 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
       {/* The command search, as NX's Command Finder is: an icon, S its key (its tooltip says so). */}
       <ToolbarButton label="Search commands" shortcut="S" data-cad-command-finder="" aria-haspopup="dialog" aria-expanded={finding}
         className={TAB_ROW_BUTTON_CLASS} onClick={() => setFinding(true)}><Search className="size-4" /></ToolbarButton>
-      {view?.controls ? <div className={VIEW_CONTROLS_CLASS} data-cad-ribbon-view="">{view.controls}</div> : null}
       {view?.status || null}
       {/* Where the part stands, one quiet group behind a thin rule. */}
       <div className="flex min-w-0 items-center gap-2 border-l border-border pl-2 text-tiny leading-4 text-muted-foreground empty:hidden" aria-live="polite">{end}</div>

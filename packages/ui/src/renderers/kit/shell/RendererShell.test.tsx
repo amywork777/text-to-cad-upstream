@@ -56,11 +56,11 @@ function shell(workspace: object = {}) {
   const view = render(element(workspace));
   return { ...view, show: (handed: object) => view.rerender(element(handed)) };
 }
-// A toolbar that draws what the frame hands it of the view (its own controls, its catching-up), as EditRibbon
-// draws them at its tab row's right end.
+// A toolbar that draws what the frame hands it of the view (its catching-up), as EditRibbon draws it at its tab
+// row's right end.
 const WITH_VIEW = Object.freeze({ ...WORKSPACE,
-  ribbon: (_tools: unknown[], view: { controls?: React.ReactNode, status?: React.ReactNode } | null) =>
-    <div role="toolbar" aria-label="Design">{view?.controls}{view?.status}</div> });
+  ribbon: (_tools: unknown[], view: { status?: React.ReactNode } | null) =>
+    <div role="toolbar" aria-label="Design">{view?.status}</div> });
 // The stage (`ViewFrame.jsx`'s `data-cad-canvas`): what the docked panel leaves of the view, the frame's root its parent.
 const backdrop = () => document.querySelector<HTMLElement>('[data-cad-canvas]')!;
 const frameRoot = () => document.querySelector<HTMLElement>('[data-slot="cad-file-view"]')!;
@@ -168,14 +168,15 @@ it("fades the workspace out as Simple view takes its place, taking no presses wh
   expect(workspaceLayer()).not.toBeNull();
 });
 
-it("puts Projection, Display and Preview, and the view catching up, in the toolbar while the workspace is up, and leaves them on the strip in Simple view", async () => {
+it("keeps Projection, Display and Preview on the strip with the workspace up, as in Simple view, and says the view catching up in the toolbar", async () => {
   const view = shell(WITH_VIEW);
   const toolbar = screen.getByRole('toolbar', { name: 'Design' });
   const controls = ['Projection', 'Display mode', 'Preview'];
   // A control by its name, whatever it says it is set to ("Projection: Orthographic" is Projection).
   const named = (root: Element) => [...root.querySelectorAll('button')].map(button => (button.getAttribute('aria-label') || '').split(':')[0])
     .filter(name => controls.includes(name));
-  expect([named(toolbar), named(column())]).toEqual([controls, []]);
+  // One strip in both: the toolbar holds the modeling, the strip the view's own controls.
+  expect([named(toolbar), named(column())]).toEqual([[], controls]);
   // The tools stay on the strip, in the column, as in Simple view: the toolbar holds the modeling.
   expect(within(column()).getByRole('group', { name: 'Interaction tools' })).toBeTruthy();
   // A newer revision loading behind the model is said with the part's build status, at the toolbar's end.

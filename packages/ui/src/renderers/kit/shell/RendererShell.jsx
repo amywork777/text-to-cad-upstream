@@ -1,5 +1,5 @@
 import { VIEWPORT_CORNER_INSET_PX, VIEWPORT_CUBE_SIZE, VIEWPORT_INSET_PX, VIEWPORT_STACK_BOTTOM } from "./viewportLayout.js";
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, LoaderCircle, Play, SlidersHorizontal, X } from "lucide-react";
 import { WORKSPACE_DOCK_CLASS } from "../../../lib/floatingSurface.js";
 import { Button } from "@cad/ui/primitives/button";
@@ -298,9 +298,8 @@ const DOUBLE_PRESS_MS = 600;
  *   does). It fades in as the layout turns to it and out as Simple view takes its place, in one
  *   transition; it is put away at once with the rest of the tools (loading, Preview, a compact view),
  *   and the design tree in a view too narrow for it and the model, which then has the whole view. While the toolbar is up the
- *   view's own controls (Projection, Display, Preview) and the view catching up are its, not the
- *   strip's: `ribbon(tools, view)` is handed them (`view.controls`, small tiles for its tab row's right
- *   end, and `view.status`; null while it fades). `dialogOpen`: the dialog's place holds something,
+ *   view catching up is its, not the strip's: `ribbon(tools, view)` is handed it (`view.status`; null
+ *   while it fades); the view's own controls (Projection, Display, Preview) stay on the strip. `dialogOpen`: the dialog's place holds something,
  *   and the top column, a tool's own row and its panels, keeps to the room past it.
  *   `notice`: a notice of the renderer's own about its file (one brought in, offered to model on),
  *   in the top-right corner under the host's (`view.notice`): Quick Edit opens under both, so
@@ -598,9 +597,9 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
     resource={frame.resource} references={references} chips={referenceChips} nameReference={nameReference} annotation={annotation} requests={requests} prompt={frame.quickEditPrompt}
     asked={quickEditAsked} onCopy={copyAction} onEscape={frame.escape} onClear={clearQuickEdit} disabled={viewerLoading || !scene} /> : null;
   // The view's own controls: the renderer's layout (`layoutControl`), Projection (the state button), Display (its
-  // menu), then Preview. They end the strip, after its rule, or, while the workspace's toolbar is up, are its small
-  // tiles at its tab row's right end, their names below them. A phone has no room for them on its strip: they are
-  // rows of its More, with the zoom.
+  // menu), then Preview. They end the strip, after its rule, with the workspace's toolbar up or not, so the strip is
+  // the same in both, as SolidWorks keeps its view's controls on its Heads-up View toolbar in every mode. A phone has
+  // no room for them on its strip: they are rows of its More, with the zoom.
   const viewControls = tooltipSide => (shell.previewable && !previewing ? [
     ...(layoutControl ? [layoutControl] : []),
     { id: "projection", label: t("projection.label"), icon: <ProjectionIcon value={frame.projection.value} />, disabled: shell.idle,
@@ -617,10 +616,9 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
     { id: "preview", label: t("preview.label"), icon: <Play aria-hidden="true" />, disabled: shell.idle, onSelect: enterPreview,
       tile: <ViewControl label={t("preview.label")} tooltipSide={tooltipSide} disabled={shell.idle} onClick={enterPreview}><Play aria-hidden="true" /></ViewControl> }
   ] : []);
-  const views = toolbarUp ? [] : viewControls("top");
-  // What the toolbar is handed of the view while it is up.
+  const views = viewControls("top");
+  // What the toolbar is handed of the view while it is up: the view catching up, said beside the part's build status.
   const toolbarView = toolbarUp ? {
-    controls: viewControls("bottom").map(control => <Fragment key={control.id}>{control.tile}</Fragment>),
     status: failed ? null : <ViewUpdateStatus status={viewUpdateStatus} onRetry={frame.viewUpdate.retry} className="text-tiny" />
   } : null;
   // Under Select a press on the canvas picks, front to back: the renderer's own overlays (a

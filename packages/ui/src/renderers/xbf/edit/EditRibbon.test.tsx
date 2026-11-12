@@ -279,22 +279,22 @@ it("drops the names only where not even one named group fits beside More", () =>
   }
 });
 
-it("holds the view's own controls and its catching-up at the tab row's right end, before the build status and units", () => {
-  // What the frame hands the toolbar of the view (`RendererShell`'s `ribbon(tools, view)`): Projection, Display and
-  // Preview as small tiles, and the view catching up.
-  const view = { controls: <button type="button" aria-label="Display mode: Solid" />, status: <span>Updating model…</span> };
+it("holds the view catching up at the tab row's right end, before the build status and units", () => {
+  // What the frame hands the toolbar of the view (`RendererShell`'s `ribbon(tools, view)`): the view catching up.
+  // Projection, Display and Preview stay on the strip.
+  const view = { status: <span>Updating model…</span> };
   const { rerender } = render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} view={view} />);
   const after = (first: Element, second: Element) => Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
   const order = () => {
     const row = screen.getByRole('tablist').parentElement!;
-    const display = within(row).getByRole('button', { name: 'Display mode: Solid' }), status = within(row).getByText('Updating model…');
+    const status = within(row).getByText('Updating model…');
     const build = within(row).getByText(/^(Saved|Editing Sketch1)$/), units = within(row).queryByText('Millimeters') || build;
-    return [after(screen.getAllByRole('tab').at(-1)!, display), after(display, status), after(status, build), build === units || after(build, units)];
+    return [after(screen.getAllByRole('tab').at(-1)!, status), after(status, build), build === units || after(build, units)];
   };
-  expect(order()).toEqual([true, true, true, true]);
+  expect(order()).toEqual([true, true, true]);
   // A sketch's tab row has them too.
   rerender(<EditRibbon tools={PART_TOOLS} edit={edit({ sketch: SKETCH }) as never} view={view} />);
-  expect(order()).toEqual([true, true, true, true]);
+  expect(order()).toEqual([true, true, true]);
 });
 
 // ---- command search: the box S opens (`CommandSearchBox.jsx`), under the toolbar, listing what the toolbar has ----
