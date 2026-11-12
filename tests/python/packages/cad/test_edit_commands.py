@@ -2247,6 +2247,103 @@ PRIMITIVES = {
 }
 
 
+# Extrudes a function of the part's file makes, as agents write a repeated tab: `tab(...)` called
+# three times (two of them taking its default height), and `post()` holding its height inside.
+HELPED = {
+    "bracket.py": """
+        import build123d as bd
+        from cad import model
+
+
+        def tab(width, height=3):
+            return bd.extrude(bd.Rectangle(width, 4), amount=height)
+
+
+        def post():
+            solid = bd.extrude(bd.Circle(2), amount=8)
+            return solid
+
+
+        @model
+        def bracket():
+            body = bd.Box(40, 20, 4)
+            body += bd.Pos(-10, 0, 2) * tab(10)
+            body += bd.Pos(10, 0, 2) * tab(6, 5)
+            body += bd.Pos(0, -6, 2) * tab(4)
+            body += bd.Pos(0, 5, 2) * post()
+            return body
+    """,
+}
+
+
+class HelperExtrudes(Commands):
+    """Edit Feature on an extrude a function makes opens the Extrude box, and its Depth is written
+    where Edit Parameters writes it: the call's argument, the function's default, or its number."""
+
+    def extrude(self, file, state, feature, **inputs):
+        return self.service.change({"file": file, "files": state["files"], "command": {
+            "command": "extrude", "inputs": {"end": "blind", "reverse": False, **inputs}, "selection": [],
+            "replace": {"row": feature["key"]}}})
+
+    def test_each_opens_in_the_extrude_box_with_its_depth_and_says_what_it_shares(self):
+        root, file, state = self.open(HELPED, "bracket.step")
+        made = {feature["key"]: feature["edit"] for feature in state["features"]}
+        self.assertEqual(made["bracket.py:16"]["command"], "sizes")  # the Box
+        for key, depth in (("bracket.py:17", "3"), ("bracket.py:18", "5"), ("bracket.py:19", "3"), ("bracket.py:20", "8")):
+            self.assertEqual((made[key]["command"], made[key]["values"], made[key]["profile"]), ("extrude", {"depth": depth}, True), key)
+        self.assertEqual(made["bracket.py:17"]["keeps"], "Made in tab(), as written. A new Depth changes 1 other feature too")
+        self.assertEqual(made["bracket.py:18"]["keeps"], "Made in tab(), as written")
+        self.assertEqual(made["bracket.py:20"]["helper"]["function"], "post")
+
+    def test_a_new_depth_is_written_where_its_number_is_and_undoes(self):
+        root, file, state = self.open(HELPED, "bracket.step")
+        features = {feature["key"]: feature for feature in state["features"]}
+        before = (root / "bracket.py").read_text(encoding="utf-8")
+        reply = self.extrude(file, state, features["bracket.py:18"], depth="7")
+        self.assertTrue(reply["ok"], reply.get("error"))
+        self.assertEqual(reply["change"]["kind"], "sizes")
+        self.assertIn("    body += bd.Pos(10, 0, 2) * tab(6, 7)\n", (root / "bracket.py").read_text(encoding="utf-8"))
+        undone = self.service.change({"file": file, "splice": reply["change"]["undo"], "files": reply["files"]})
+        self.assertTrue(undone["ok"], undone.get("error"))
+        self.assertEqual((root / "bracket.py").read_text(encoding="utf-8"), before)
+        reply = self.extrude(file, undone, features["bracket.py:20"], depth="9")
+        self.assertTrue(reply["ok"], reply.get("error"))
+        self.assertIn("    solid = bd.extrude(bd.Circle(2), amount=9)\n", (root / "bracket.py").read_text(encoding="utf-8"))
+
+    def test_one_called_in_a_loop_or_through_another_function_opens_as_one_said_by_the_function_called(self):
+        files = {"bracket.py": HELPED["bracket.py"].replace("            body += bd.Pos(0, 5, 2) * post()\n", (
+            "            body += bd.Pos(0, 5, 2) * pin()\n"
+            "            for x in (-15, 15):\n"
+            "                body += bd.Pos(x, 6, 2) * tab(3, 2)\n")).replace("        @model\n", (
+            "        def pin():\n"
+            "            return post()\n\n\n"
+            "        @model\n"))}
+        root, file, state = self.open(files, "bracket.step")
+        made = {feature["key"]: feature for feature in state["features"]}
+        pin, looped = made["bracket.py:24"], made["bracket.py:26"]
+        self.assertEqual((pin["edit"]["command"], pin["edit"]["keeps"]), ("extrude", "Made in pin(), as written"))
+        self.assertEqual((looped["edit"]["command"], looped["edit"]["values"]), ("extrude", {"depth": "2"}))
+        reply = self.extrude(file, state, looped, depth="4")
+        self.assertTrue(reply["ok"], reply.get("error"))
+        self.assertIn("        body += bd.Pos(x, 6, 2) * tab(3, 4)\n", (root / "bracket.py").read_text(encoding="utf-8"))
+
+    def test_what_is_the_functions_is_refused_in_plain_words_and_previews_its_depth(self):
+        root, file, state = self.open(HELPED, "bracket.step")
+        tab = next(feature for feature in state["features"] if feature["key"] == "bracket.py:18")
+        before = (root / "bracket.py").read_bytes()
+        refused = self.extrude(file, state, tab, depth="7", reverse=True)
+        self.assertFalse(refused["ok"])
+        self.assertEqual(refused["error"], "This extrude is made in tab(), so only its Depth changes here. Ask the agent to change the rest of it.")
+        self.assertFalse(self.extrude(file, state, tab, depth="7", end="mid")["ok"])
+        self.assertEqual((root / "bracket.py").read_bytes(), before)
+        shown = self.service.change({"file": file, "files": state["files"], "preview": {
+            "command": "extrude", "inputs": {"end": "blind", "reverse": False, "depth": "7"}, "selection": [], "replace": {"row": tab["key"]}}})
+        self.assertTrue(shown["ok"], shown.get("error"))
+        self.assertIsNotNone(shown["preview"]["added"])
+        self.assertIsNone(shown["preview"].get("error"))
+        self.assertEqual((root / "bracket.py").read_bytes(), before)
+
+
 class EditingSizes(Commands):
     """Edit Parameters on what no command writes: its sizes typed at once, undone at once."""
 

@@ -1622,6 +1622,10 @@ def _editable(features, rows, steps, sketches, units):
             # loop written again; any other feature there is the agent's to change.
             read = commands.read_feature(held, text, numbers, units) if held.lineno == row["line"] else None
             if read is None or read.command not in ("extrude", "cut"):
+                # A function's extrude called in the loop (`for x in (-1, 1): p += block(...)`) opens as one too.
+                helped = _helper_extrude(feature, row, steps, rows) if held.lineno == row["line"] else None
+                if helped is not None:
+                    feature["edit"] = helped
                 continue
             statement = held
         # A name given in the design tree: the comment at the end of the feature's line (a hole's
@@ -1635,6 +1639,9 @@ def _editable(features, rows, steps, sketches, units):
             feature["named"] = next((steps[index].get("source") for index in row["steps"] if steps[index].get("source")), "")
         read = commands.read_feature(statement, text, numbers, units)
         if read is None:
+            helped = _helper_extrude(feature, row, steps, rows)
+            if helped is not None:
+                feature["edit"] = helped
             continue
         # An extrude made in a name of its own (`pocket = extrude(...)`) and cut from the body after
         # is a Cut-Extrude in the tree: it opens as one, as the ribbon's Extruded Cut makes one.
@@ -1707,6 +1714,70 @@ def _editable(features, rows, steps, sketches, units):
         feature["edit"] = {"command": "sizes", "row": row["key"],
                            "values": {str(index): each["display"] for index, each in enumerate(row["inputs"])}}
     return features
+
+
+def _helper_extrude(feature, row, steps, rows):
+    """An extrude a function of the project makes, where the feature's line calls it (``tab(10)``,
+    whose body is ``return extrude(...)``): opened in the Extrude box as any extrude is, its profile
+    and its moves the function's, kept as written, and its Depth the number behind the extrude's
+    ``amount`` (the call's argument, the function's default, or a number in it), written where Edit
+    Parameters writes it (``sizes_change``; ``_helper_sizes``). A depth one of the row's sizes does not
+    hold, or an extrude made both ways, drafted or up to something, keeps Edit Parameters."""
+    if feature.get("kind") not in ("Boss-Extrude", "Cut-Extrude"):
+        return None
+    # One extrude, made once or once each time round a loop, on one line of the function.
+    made = [steps[index] for index in row["steps"] if steps[index]["op"] == "extrude"]
+    where = {(each["frames"][-1]["file"], each["frames"][-1]["line"]) for each in made if each.get("frames")}
+    if not made or len(where) != 1 or len(made) != sum(1 for each in made if each.get("frames")):
+        return None
+    frames = made[0]["frames"]
+    calling = next((index for index, frame in enumerate(frames) if (frame["file"], frame["line"]) == (row["file"], row["line"])), None)
+    if calling is None or calling == len(frames) - 1:
+        return None
+    held = None
+    for each in made:
+        args = dict(each["args"])
+        amount = args.get("amount")
+        if not isinstance(amount, (TFloat, TInt)) or float(amount) <= 0 or any(args.get(key) for key in ("both", "taper", "until")):
+            return None
+        these = [leaf for leaf in leaves(amount._e) if not _is_unit(("lit", leaf))]
+        if held is not None and these != held:
+            return None
+        held = these
+    inputs = row.get("inputs") or []
+    found = [index for index, each in enumerate(inputs) if each["leaves"] == held]
+    if len(found) != 1 or not held:
+        return None
+    # Said by the function the feature's line calls, which may call another that extrudes.
+    function = frames[calling + 1]["function"]
+    # The other features whose size is this same number: a new Depth changes them too.
+    shared = sum(1 for other in rows if other["key"] != row["key"] and any(each["leaves"] == held for each in other.get("inputs") or []))
+    keeps = f"Made in {function}(), as written"
+    if shared:
+        keeps += f". A new Depth changes {shared} other feature{'s' if shared > 1 else ''} too"
+    return {"command": "cut" if feature["kind"] == "Cut-Extrude" else "extrude", "values": {"depth": inputs[found[0]]["display"]},
+            "keeps": keeps, "profile": True, "helper": {"row": row["key"], "depth": found[0], "function": function}}
+
+
+def _helper_sizes(request, spec):
+    """Edit Feature on an extrude a function of the project makes (``_helper_extrude``), as Edit
+    Parameters' sizes: None for any other command; else the sizes (``{"row", "values"}``) and no
+    words, or no sizes and the words of why not. Only its Depth is the box's to change."""
+    replace = spec.get("replace") or {}
+    state = STATE.get(str(Path(request["script"]).resolve())) or {}
+    feature = next((each for each in state.get("features") or [] if each.get("key") == replace.get("row")), None)
+    helper = ((feature or {}).get("edit") or {}).get("helper")
+    if not helper:
+        return None
+    inputs = spec.get("inputs") or {}
+    chosen = [key for key in ("reverse", "draft", "thin", "direction2") if inputs.get(key) in (True, "true", "1", 1)]
+    if spec.get("command") != feature["edit"]["command"] or str(inputs.get("end") or "blind").lower() != "blind" or chosen:
+        return None, (f"This extrude is made in {helper['function']}(), so only its Depth changes here. "
+                      "Ask the agent to change the rest of it.")
+    depth = str(inputs.get("depth") or "").strip()
+    if not depth:
+        return None, "Type a Depth."
+    return {"row": helper["row"], "values": [{"index": helper["depth"], "text": depth}]}, None
 
 
 def _is_flat(step):
@@ -2326,6 +2397,12 @@ def command(request):
         return refused
     state = STATE[script]
     spec = request["command"]
+    routed = _helper_sizes(request, spec)
+    if routed is not None:
+        sized, why = routed
+        if sized is None:
+            return {"ok": False, "error": why}
+        return sizes_change({**{key: value for key, value in request.items() if key != "command"}, "sizes": sized})
     plan, why = _planned(request, spec)
     if plan is None:
         return {"ok": False, "error": why}
@@ -2474,6 +2551,12 @@ def preview(request):
     if refused:
         return refused
     state = STATE[str(script)]
+    routed = _helper_sizes(request, request["preview"])
+    if routed is not None:
+        sized, why = routed
+        if sized is None:
+            return {"ok": True, "preview": {"error": why}}
+        return sizes_preview({**{key: value for key, value in request.items() if key != "preview"}, "preview_sizes": sized})
     plan, why = _planned(request, request["preview"])
     if plan is None:
         return {"ok": True, "preview": {"error": why}}

@@ -299,6 +299,38 @@ it("a reference plane clicked in the design tree is a draft's neutral plane, by 
   expect(draft.run).toHaveBeenCalledWith({ command: 'draft', selection: [SIDE_ITEM], inputs: { angle: '1', neutral: 'named:plane1', reverse: true } });
 });
 
+it("an extrude a function makes reopens in the Extrude box with only its Depth to change, the rest the function's", async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  const restores: (() => void)[] = [];
+  for (const [name, value] of Object.entries({ scrollIntoView() {}, hasPointerCapture: () => false, setPointerCapture() {}, releasePointerCapture() {} })) {
+    const previous = Object.getOwnPropertyDescriptor(Element.prototype, name);
+    Object.defineProperty(Element.prototype, name, { configurable: true, value });
+    restores.push(() => (previous ? Object.defineProperty(Element.prototype, name, previous) : delete (Element.prototype as never)[name]));
+  }
+  onTestFinished(() => { vi.unstubAllGlobals(); while (restores.length) restores.pop()!(); });
+  const user = userEvent.setup();
+  const tab = { ...edit('extrude', 'bracket.py:18'), editing: { command: 'extrude', id: 'bracket.py:18', title: 'Boss-Extrude3',
+    values: { depth: '5' }, keeps: 'Made in tab(), as written', profile: true,
+    helper: { row: 'bracket.py:18', depth: 2, function: 'tab' } } };
+  render(<EditCommand edit={tab as never} names={NAMES} references={[]} />);
+  expect(screen.getByText('Made in tab(), as written')).toBeTruthy();
+  expect(screen.getByText('Its profile and the rest of it are in tab(): only its Depth changes here.')).toBeTruthy();
+  // Nothing offered that the function would have to change: Direction 2, Thin Feature, another end.
+  expect(screen.queryByText('Direction 2')).toBeNull();
+  expect(screen.queryByText('Thin Feature')).toBeNull();
+  expect((screen.getByRole('checkbox', { name: 'Reverse direction' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('checkbox', { name: 'Draft' }) as HTMLButtonElement).disabled).toBe(true);
+  await user.click(screen.getByRole('combobox', { name: 'End condition' }));
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Blind']);
+  await user.keyboard('{Escape}');
+  const depth = screen.getByRole('textbox', { name: 'Distance' });
+  await user.clear(depth);
+  await user.type(depth, '7{Enter}');
+  await user.click(screen.getByRole('button', { name: 'OK' }));
+  expect(tab.run).toHaveBeenCalledWith({ command: 'extrude', sketch: null, inputs: { end: 'blind', depth: '7', reverse: false },
+    replace: { row: 'bracket.py:18' } });
+});
+
 it("puts a fillet's radius on the model by its first edge, typed over there as in the dialog, as SolidWorks' callout is", () => {
   const fillet = { ...edit('fillet'), setCallout: vi.fn() };
   const EDGE = { id: 'ref-e1', selectorType: 'edge', displaySelector: 'e1', pickData: { center: [0, -5, 2] } };

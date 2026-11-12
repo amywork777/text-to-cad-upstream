@@ -224,6 +224,9 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
   // A reopened extrude whose profile the code makes its own way (a helper's face, a face held in a
   // name) has none: it keeps its profile as written (`editing.profile`).
   const asWritten = Boolean(editing?.profile) && (edit.command === "extrude" || edit.command === "cut");
+  // One a function of the project makes (`tab(10)`): only its Depth is the box's, written where
+  // Edit Parameters writes it; the rest is the function's, as written (`editing.helper`).
+  const helped = asWritten && Boolean(editing?.helper);
   const sketch = command?.sketch ? (editing ? (asWritten ? null : editing.sketch) : treeSketch(tree, edit.selected)) : null;
   // A cut goes into the part: reversed when the part lies behind the sketch's plane (a sketch on a
   // face of it, or on a plane over it), as a cut from a face goes in.
@@ -573,7 +576,8 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
     {command.sketch ? <FileSheetSettingsSection title="Section" sectionId="edit-command-sketch">
       {/* The sketch it takes, picked on the model or in the design tree and shaded there; a
           reopened feature keeps its own, and one whose profile the code makes keeps that. */}
-      {asWritten ? <KeptList text={editing.keeps} hint="An extrude of a profile made in the code keeps it as written." />
+      {asWritten ? <KeptList text={editing.keeps} hint={helped ? `Its profile and the rest of it are in ${editing.helper.function}(): only its Depth changes here.`
+        : "An extrude of a profile made in the code keeps it as written."} />
         : <SelectionBox items={sketch ? [{ key: `${sketch.file}:${sketch.line}`, label: sketchLabel }] : []}
           prompt="Select a sketch on the model or in the design tree." clearLabel="Deselect"
           onClear={editing ? null : () => edit.select(null)} />}
@@ -612,7 +616,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
           : <FileSheetCheckboxRow label="Reverse direction" checked={values.reverse} disabled={disabled} onCheckedChange={set("reverse")} />}
       </> : extruding ? <>
         <FileSheetSelectRow label="End condition" value={values.end} onValueChange={set("end")}
-          options={(command.id === "cut" ? CUT_ENDS : BOSS_ENDS).filter(each => !asWritten || !FROM_SKETCH.has(each.value))} />
+          options={(command.id === "cut" ? CUT_ENDS : BOSS_ENDS).filter(each => (!asWritten || !FROM_SKETCH.has(each.value)) && (!helped || each.value === "blind"))} />
         {upTo ? <>
           {/* What it ends on, picked on the model: a flat face, or an edge clicked near the vertex. */}
           <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>{values.end === "surface" ? "Face" : "Vertex"}</p>
@@ -627,10 +631,10 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
         {NO_DEPTH.has(values.end) ? null
           : <NumberRow label={extrudeLength} value={values.depth} unit={units} disabled={disabled} onChange={set("depth")} />}
         {values.end === "mid" || values.end === "next" || upTo ? null
-          : <FileSheetCheckboxRow label="Reverse direction" checked={values.reverse} disabled={disabled} onCheckedChange={set("reverse")} />}
+          : <FileSheetCheckboxRow label="Reverse direction" checked={values.reverse} disabled={disabled || helped} onCheckedChange={set("reverse")} />}
         {/* Draft, as SolidWorks' Draft On/Off: the sides lean in by the angle, or out. */}
         {values.end === "next" ? null : <>
-          <FileSheetCheckboxRow label="Draft" checked={values.draft} disabled={disabled} onCheckedChange={set("draft")} />
+          <FileSheetCheckboxRow label="Draft" checked={values.draft} disabled={disabled || helped} onCheckedChange={set("draft")} />
           {values.draft ? <>
             <NumberRow label="Draft angle" value={values.draft_angle} unit="deg" disabled={disabled} onChange={set("draft_angle")} />
             <FileSheetCheckboxRow label="Draft outward" checked={values.outward} disabled={disabled} onCheckedChange={set("outward")} />
@@ -750,7 +754,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
       enabled={Boolean(values.direction2)} onEnabledChange={set("direction2")}>
       <NumberRow label="Angle" value={values.angle2} unit="deg" disabled={disabled} onChange={set("angle2")} />
     </FileSheetSettingsSection> : null}
-    {extruding && values.end !== "mid" ? <FileSheetSettingsSection title="Direction 2" sectionId="edit-command-direction2"
+    {extruding && values.end !== "mid" && !helped ? <FileSheetSettingsSection title="Direction 2" sectionId="edit-command-direction2"
       enabled={Boolean(values.direction2)} onEnabledChange={set("direction2")}>
       <FileSheetSelectRow label="End condition" value={values.end2 || "blind"} options={command.id === "cut" ? CUT_ENDS2 : BOSS_ENDS2}
         onValueChange={set("end2")} />
@@ -768,7 +772,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
     {bool ? <FileSheetSettingsSection title="Boolean" sectionId="edit-command-boolean">
       <FileSheetSelectRow label="Boolean" value={bool.value} options={BOOLEAN_OPTIONS} onValueChange={switchBoolean} />
     </FileSheetSettingsSection> : null}
-    {extruding ? <FileSheetSettingsSection title="Thin Feature" sectionId="edit-command-thin" enabled={Boolean(values.thin)}
+    {extruding && !helped ? <FileSheetSettingsSection title="Thin Feature" sectionId="edit-command-thin" enabled={Boolean(values.thin)}
       onEnabledChange={set("thin")}>
       <NumberRow label="Thickness" value={values.thin_thickness} unit={units} disabled={disabled} onChange={set("thin_thickness")} />
       <FileSheetSelectRow label="Wall" value={values.thin_side || "inside"} options={THIN_SIDES} onValueChange={set("thin_side")} />

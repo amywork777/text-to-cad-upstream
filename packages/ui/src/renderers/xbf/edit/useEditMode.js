@@ -485,7 +485,9 @@ export function useEditMode({ client, file, active, reading = true }) {
     const rolled = editingRef.current?.rolled;
     const placed = rolled ? { bar: barRef.current ? { before: barRef.current.before } : null, bar_after: editingRef.current.previousBar } : {};
     const reply = await send({ command: request, ...placed }, { record: false,
-      note: answer => commandNote(answer.change, titleOf(answer, answer.change.row)) });
+      // Edit Feature on an extrude a function makes is written as its sizes are (`_helper_sizes`), and said so.
+      note: answer => answer.change.kind === "sizes" ? sizesNote(answer.change, titleOf(answer, answer.change.row), [])
+        : commandNote(answer.change, titleOf(answer, answer.change.row)) });
     if (reply?.ok && reply.change) {
       const title = titleOf(reply, reply.change.row);
       setHistory(current => recordChange(current, { ...reply.change, title }));
