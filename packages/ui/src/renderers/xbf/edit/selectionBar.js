@@ -50,20 +50,12 @@ export function selectionBarActions({ editing, picks, commandOpen = false, sketc
 }
 
 /**
- * The drawing tools (Pencil, Shapes) the strip shows. They are Annotate's tools, which write to the agent, so the CAD workspace
- * chosen (`cad`, `cadChosen`) has none, even while the engine is still asked whether the part can be edited; the AI layout has
- * them as the viewer ships.
+ * What the shell is told of Quick Edit (its `quickEditAsked`): the workspace's own answer (`asked`: shut until the bar's
+ * Quick Edit asks, `false`) gives way, once Pencil or Shapes has drawn on the model (`inked`), to the box following what
+ * it carries (null), as the AI layout's does: ink is for the agent, and the box is where it goes.
  */
-export function stripDrawingTools({ cad, drawing }) {
-  return cad ? [] : drawing;
-}
-
-/**
- * Whether the tool in hand must be put down for Select: Pencil or Shapes (`toolMode`) when the CAD workspace is chosen (`cad`,
- * `cadChosen`), whose strip has neither (`stripDrawingTools`), or a click would draw instead of select.
- */
-export function mustPutDownTool({ cad, toolMode }) {
-  return Boolean(cad) && (toolMode === "pencil" || toolMode === "shapes");
+export function quickEditOpening({ asked, inked }) {
+  return asked === false && inked ? null : asked;
 }
 
 /**

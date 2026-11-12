@@ -38,6 +38,7 @@ import XbfPositionSection, { useXbfPose, writeXbfPosition, xbfPoseGiven, xbfPosi
 import { MeasureIcon, SelectIcon, SelectMenu, XBF_SELECT_DEFAULT, xbfSelectBadge } from "./XbfSelectionModes.jsx";
 import { WORKSPACE_SELECTION_COLOR } from "./edit/editLayout.js";
 import { rollbackExport } from "./edit/rollbackExport.js";
+import { quickEditOpening } from "./edit/selectionBar.js";
 import { useXbfCadMode } from "./edit/useXbfCadMode.jsx";
 import { EFFECT_ICONS } from "./edit/cadIcons.jsx";
 import { useXbfElementFacts, useXbfSelectionChips, xbfCopyText, xbfDescriber, xbfNodeRefs, xbfTipper } from "./xbfChips.jsx";
@@ -864,8 +865,8 @@ function XbfSurface({ view, data }) {
     shell.tools.own({ id: XBF_TOOL.SELECT, label: t(selectTool === "box" ? "select.boxSelect" : "tool.select"), shortcut: TOOL_SHORTCUTS.select, menu: selectModeMenu,
       icon: <SelectIcon tool={selectTool} mode={selectBadge} className="size-3.5" aria-hidden="true" />,
       ribbonIcon: cadIcons ? <SelectIcon tool={selectTool} mode={selectBadge} cad className="size-3.5" /> : null }),
-    // Pencil and Shapes write to the agent: CAD mode's workspace, which has none, has neither.
-    ...cad.drawingTools(shell.tools.drawing).map(tool => ({ ...tool, disabled: shell.idle })),
+    // Pencil and Shapes mark the model up for the agent, with the CAD tools shown or hidden: one strip in both.
+    ...shell.tools.drawing.map(tool => ({ ...tool, disabled: shell.idle })),
     shell.tools.own({ id: XBF_TOOL.MEASURE, label: t("tool.measure"), shortcut: TOOL_SHORTCUTS.measure, menu: measureFilterMenu,
       icon: <MeasureIcon mode={measureMode} className="size-3.5" aria-hidden="true" />, ribbonIcon: cadIcons ? <MeasureIcon mode={measureMode} cad className="size-3.5" /> : null,
       onSelect: () => { if (shell.toolMode !== XBF_TOOL.MEASURE) shell.selectTool(XBF_TOOL.MEASURE); } }),
@@ -969,6 +970,8 @@ function XbfSurface({ view, data }) {
 
   return <RendererShell shell={shell} tools={strip} subToolbar={measuring ? <MeasurementsBar measure={measure} /> : null} sidebar={sidebar} previewView={previewView}
     inspect={inspect} notice={cad.notice} {...cad.frame} leftDock={leftDock} alertStartsDismissed={alertStartsPutAway(loadAlert)}
+    // Ink on the model opens Quick Edit in the workspace as in the AI layout: what Pencil and Shapes draw is for it.
+    quickEditAsked={quickEditOpening({ asked: cad.frame.quickEditAsked, inked: shell.frame.annotation.hasAnnotation })}
     references={quickEdit.references} referenceChips={quickEdit.chips} nameReference={nameReference}
     requests={previewing ? NO_REFERENCES : pmi.changeChips} onClearRequests={pmi.clearChanges}
     onClearReferences={() => { setChosen(EMPTY); measure.select([]); cad.letGoAsked(); }} copySelection={copySelection}

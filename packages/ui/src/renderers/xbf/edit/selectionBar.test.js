@@ -5,10 +5,9 @@ import * as THREE from "three";
 
 import { formatPromptMessage, formatPromptReference } from "@cad/core/prompt";
 import { createQuickEditContext } from "../../kit/tools/quick-edit/quickEditPrompt.js";
-import { cadChosen } from "./editLayout.js";
 import { featureTree } from "./editMode.js";
 import {
-  boundsCorners, facePick, featurePick, featureReference, pickedReferences, placeBar, projectRoot, quickEditLetsGo, mustPutDownTool, rowLabel, screenBox, selectionBarActions, stripDrawingTools
+  boundsCorners, facePick, featurePick, featureReference, pickedReferences, placeBar, projectRoot, quickEditLetsGo, quickEditOpening, rowLabel, screenBox, selectionBarActions
 } from "./selectionBar.js";
 
 // The workspace with Select in hand and nothing open: what the bar is offered under.
@@ -345,31 +344,9 @@ test("Quick Edit's X or a send lets go of everything picked, but only of the box
   assert.equal(quickEditLetsGo({ held: true }), "box");
 });
 
-test("the strip has Pencil and Shapes in the AI layout and none in the CAD workspace", () => {
-  const drawing = [{ id: "pencil" }, { id: "shapes" }];
-  assert.deepEqual(stripDrawingTools({ cad: false, drawing }), drawing);
-  assert.deepEqual(stripDrawingTools({ cad: true, drawing }), []);
-});
-
-test("Pencil or Shapes in hand is put down when the CAD workspace is up, and left alone in the AI layout", () => {
-  for (const toolMode of ["pencil", "shapes"]) {
-    assert.equal(mustPutDownTool({ cad: true, toolMode }), true);
-    assert.equal(mustPutDownTool({ cad: false, toolMode }), false);
-  }
-  for (const toolMode of ["select", "measure", ""]) assert.equal(mustPutDownTool({ cad: true, toolMode }), false);
-});
-
-test("no Pencil or Shapes shows with CAD chosen while the engine is still asked about the part script", () => {
-  const drawing = [{ id: "pencil" }, { id: "shapes" }];
-  // Chosen, not yet editable: the workspace is not up, and still no Pencil or Shapes.
-  const cad = cadChosen("manual", { status: "probing" });
-  assert.equal(cad, true);
-  assert.deepEqual(stripDrawingTools({ cad, drawing }), []);
-  assert.equal(mustPutDownTool({ cad, toolMode: "pencil" }), true);
-  // A model with no part script is the viewer as it is, CAD chosen or not; the AI layout always has them.
-  for (const [layout, status] of [["manual", "none"], ["ai", "probing"], ["ai", "ready"]]) {
-    const other = cadChosen(layout, { status });
-    assert.deepEqual(stripDrawingTools({ cad: other, drawing }), drawing, `${layout} ${status}`);
-  }
-  for (const status of ["reading", "idle", "ready", "error"]) assert.equal(cadChosen("manual", { status }), true, status);
+test("ink on the model opens Quick Edit in the workspace, as the AI layout's opens", () => {
+  assert.equal(quickEditOpening({ asked: false, inked: false }), false, "shut until asked");
+  assert.equal(quickEditOpening({ asked: false, inked: true }), null, "Pencil or Shapes drew: it follows what it carries");
+  assert.equal(quickEditOpening({ asked: true, inked: false }), true, "asked: open");
+  assert.equal(quickEditOpening({ asked: null, inked: true }), null, "the AI layout's, as it always was");
 });

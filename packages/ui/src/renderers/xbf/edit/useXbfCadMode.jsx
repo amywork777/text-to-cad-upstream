@@ -26,7 +26,7 @@ import {
 } from "./editMode.js";
 import { faceChipName, faceNumber, faceReference, shownFaces } from "./faceChips.js";
 import { openedFrom, rememberOpenedFrom } from "./openedFrom.js";
-import { boundsCorners, facePick, featurePick, mustPutDownTool, selectionBarActions, stripDrawingTools } from "./selectionBar.js";
+import { boundsCorners, facePick, featurePick, selectionBarActions } from "./selectionBar.js";
 import { chosenThrough, useAsked, useChosenFeature } from "./selectionBarState.js";
 import { isFaceItem, xbfEditReference } from "./selectors.js";
 import { useEditMode } from "./useEditMode.js";
@@ -101,9 +101,9 @@ export function useXbfEditLayout({ client, file, services, active, compact = fal
  * renderer's picks as the panels and commands read them (`selectors.js`'s `xbfEditReference`: the
  * engine's refs by number), names a face picked by the feature that made it (`useFaceFeatures`: its
  * chip, the selection bar's Edit, a double-click selecting the feature, the face's menu), and turns
- * Select to what a command picks. Pencil and Shapes, and so Annotate, are the AI layout's alone; Quick Edit is both's, the
- * same box: the AI layout shows it for any pick, and the workspace, where a pick is mostly for a command, once the selection
- * bar's Quick Edit asks for it (`useAsked`).
+ * Select to what a command picks. The strip is the same in both layouts, Pencil and Shapes with it; Quick Edit is both's,
+ * the same box: the AI layout shows it for any pick, and the workspace, where a pick is mostly for a command, once the
+ * selection bar's Quick Edit asks for it (`useAsked`) or Pencil or Shapes has drawn (the renderer's `quickEditAsked`).
  *
  * Over the viewport (`overlay`) it draws on the shell's runtime, whose model group holds the xbf scene:
  * the sketches, an open sketch, a feature's preview, the draft and mass marks, a command's value
@@ -487,11 +487,6 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
   }, [edit.selected, edit.hovered, edit.picking, edit.sketch, edit.state?.bounds, edit.command, edit.preview, editTree]);
   const origin = !edit.sketch && (edit.selected === "origin" || edit.hovered === "origin") ? originAxis(edit.state?.bounds) : null;
 
-  /** The strip as CAD mode has it: the CAD workspace chosen draws with its own commands, so no Pencil or Shapes. */
-  const drawingTools = useCallback(drawing => stripDrawingTools({ cad, drawing }), [cad]);
-  // Pencil or Shapes in hand when the CAD workspace is chosen is put down for Select.
-  const putDown = mustPutDownTool({ cad, toolMode });
-  useEffect(() => { if (putDown) ensureSelect(); }, [putDown, ensureSelect]);
   /** What Quick Edit is handed: what is picked, a feature chosen in the design tree as its statement in the script. */
   const quickEdit = ({ references: carried, chips }) => (featureCarried ? { references: [featureCarried.reference], chips: [featureCarried.chip] }
     : { references: carried, chips });
@@ -608,7 +603,7 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
   };
 
   return {
-    edit, editing, cad, editable, frame, overlay, notice, isolateToEdit, references, faces, litFaces, litParts, nameChips, drawingTools, quickEdit, letGoAsked,
+    edit, editing, cad, editable, frame, overlay, notice, isolateToEdit, references, faces, litFaces, litParts, nameChips, quickEdit, letGoAsked,
     beforePick, modelPicks, doubleClickFace, doubleClickEmpty, faceMenu, escape, escapeActive: editing && (asked || featureBarShown || commandHeld),
     rollback, rollbackGone,
     // The units the part reads in, which Measure reads in too, as SolidWorks' does.
