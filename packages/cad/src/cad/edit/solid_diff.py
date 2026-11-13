@@ -5,7 +5,7 @@ Run as ``python -m cad.edit.solid_diff OLDER.step NEWER.step OUT_DIR``, or, for 
 NAME REPOSITORY SCRIPT OLDER NEWER OUT_DIR``: the model is built at each version (a commit, or
 ``now``) into ``OUT_DIR/older.step`` and ``OUT_DIR/newer.step``, then those are compared. Ported from Fixture's
 ``apps/server/py/diff_revision.py``. The two STEP files are compared as solids and the material is
-split into unchanged (grey, see-through), added (green) and removed (red), written as
+split into unchanged (grey, see-through), added (blue) and removed (magenta), written as
 ``OUT_DIR/what-changed.step`` (the viewer's tab reads "What changed") with each kind a labelled child of its own, so the viewer and the model
 pictures show the three colours. ``OUT_DIR/result.json`` gets the volumes, each version's size and
 body count, and whether the part is the same or only moved: a part that is the same, or only moved
@@ -33,8 +33,9 @@ __all__ = ["build", "compare", "main"]
 
 EPS_MM3 = 1e-6
 UNCHANGED = (0.5, 0.5, 0.5, 0.3)
-ADDED = (0.0, 0.8, 0.0, 1.0)
-REMOVED = (0.9, 0.0, 0.0, 1.0)
+# Never green and red: in Studio those say passed and failed. Added is Studio's blue (#62b7ec).
+ADDED = (0.384, 0.718, 0.925, 1.0)
+REMOVED = (0.8, 0.3, 0.55, 1.0)
 
 
 def _load(path: Path):
