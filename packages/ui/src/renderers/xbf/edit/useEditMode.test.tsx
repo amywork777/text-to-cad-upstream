@@ -172,6 +172,30 @@ it('a server without edit mode leaves the view as it was', async () => {
   expect(result.current.status).toBe('none');
 });
 
+it('an engine still starting is asked again, and the part opens for editing once it answers', async () => {
+  vi.useFakeTimers();
+  try {
+    let calls = 0;
+    const starting = Object.assign(new Error('Timed out'), { failure: { kind: 'timeout' } });
+    const client = {
+      editState: vi.fn(async (_file: string, _files: unknown, options?: { probe?: boolean }) => {
+        if (options?.probe && calls++ === 0) throw starting;
+        return options?.probe ? { ok: true, editable: true } : { ok: true, files: {}, rows: [] };
+      }),
+      editChange: vi.fn(),
+    };
+    const { result } = renderHook(() => useEditMode({ client, file: FILE, resource: RESOURCE, active: true }),
+      { wrapper: hostWith(() => Promise.resolve()) });
+    await act(async () => {});
+    expect(result.current.status).toBe('probing');
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(result.current.status).not.toBe('none');
+    expect(calls).toBe(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('a client without edit mode has nothing to edit', () => {
   const { result } = renderHook(() => useEditMode({ client: {}, file: FILE, resource: RESOURCE, active: true }),
     { wrapper: hostWith(() => Promise.resolve()) });

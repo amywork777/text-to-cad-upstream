@@ -306,8 +306,13 @@ export function useEditMode({ client, file, active, reading = true }) {
           if (!reply?.editable) { setImported(importedOf(reply)); setStatus("none"); return; }
           setModel(modelOf(reply));
           setStatus(current => (current === "probing" ? (reading ? "reading" : "idle") : current));
-        } catch {
-          if (!stopped) setStatus("none");
+        } catch (failure) {
+          if (stopped) return;
+          // An engine still starting (no answer yet, or busy) is asked again; one that answered
+          // without edit mode keeps the view as it was.
+          const kind = failure?.failure?.kind;
+          if (kind === "timeout" || kind === "network" || failure?.failure?.status >= 500) timer = setTimeout(ask, POLL_MS);
+          else setStatus("none");
           return;
         }
       }
