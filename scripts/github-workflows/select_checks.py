@@ -236,7 +236,8 @@ FEA_SUITE = "tests/python/packages/fea"
 # A CAM job (cad <type> plan): its operation and orchestration, the freecad integration, its result type, the
 # binding of the types that answer it, and the server's command and the environment it runs a job in. Each also reaches what its
 # package reaches; the cam job, which installs FreeCAD, runs on these, its own suite and runner, and a full run.
-CAM_CODE = (f"{LIBRARY_SRC}/_internal/cam/**", f"{LIBRARY_SRC}/freecad/**", f"{LIBRARY_SRC}/results.py",
+CAM_CODE = (f"{LIBRARY_SRC}/_internal/cam/**", f"{LIBRARY_SRC}/freecad/**", f"{LIBRARY_SRC}/camlib/**",
+            f"{LIBRARY_SRC}/results.py",
             f"{LIBRARY_SRC}/_internal/document_type.py",
             f"{LIBRARY_SRC}/_internal/operation.py", f"{LIBRARY_SRC}/_internal/programs.py",
             f"{LIBRARY_SRC}/_internal/integrations.py", f"{LIBRARY_SRC}/_internal/refused.py", f"{LIBRARY_SRC}/registry.py",
@@ -329,7 +330,7 @@ RULES: tuple[Rule, ...] = (
          select(skills=[f"{SKILL_SUITES}/fea"])),
     # CAM's code runs what its package runs, and the cam job, which installs FreeCAD.
     Rule(CAM_CODE, select(flags=["cam"])),
-    Rule((f"{LIBRARY_SRC}/_internal/cam/**", f"{LIBRARY_SRC}/freecad/**"), select(skills=[f"{SKILL_SUITES}/cam"])),
+    Rule((f"{LIBRARY_SRC}/_internal/cam/**", f"{LIBRARY_SRC}/freecad/**", f"{LIBRARY_SRC}/camlib/**"), select(skills=[f"{SKILL_SUITES}/cam"])),
 
     # The shared UI and the apps. The snapshot runtime is built from core alone, so ui
     # reaches the two hosts and the wheel, not cadgen's suites.

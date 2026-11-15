@@ -365,6 +365,13 @@ INTEGRATIONS: Mapping[str, Integration] = MappingProxyType({
                                          "the .dmg into Applications; Windows: the installer; Linux: the AppImage, "
                                          "unpacked with --appimage-extract, its squashfs-root/usr/bin/freecadcmd named by "
                                          "CAD_FREECAD), or set CAD_FREECAD to a freecadcmd program", "CAD_FREECAD")),
+    "camlib": Integration(
+        "camlib", "camlib's native CAM engine (SPIKE), imported where the job runs: a CAM plan that names "
+                  "\"planner\": \"camlib\" (plan) has it plan, simulate and post each setup, and reads back its G-code",
+        # Its extra pins camlib to one commit, built from source (no release yet); imported as camlib, its
+        # distribution cam-engine. It runs in the job's own process, beside the kernel that read the part.
+        extra="camlib", process="in-process", modules=("camlib",), distributions=("cam-engine", "shapely"),
+        identity=("cam-engine",), alongside=("build123d",), holds="camlib's CAM engine"),
 })
 
 _BY_EXTENSION = MappingProxyType({extension: entry for entry in _TYPES for extension in entry.extensions})

@@ -115,6 +115,14 @@ trimesh = [
   "scipy>=1.14,<2",
   "networkx>=3.2,<4",
 ]
+# SPIKE. The camlib integration's extra: camlib (github.com/stevecad/camlib, MIT) plans, simulates and posts a CAM job
+# that names "planner": "camlib". It has no release, so it is pinned to one commit and built from source (a Rust
+# toolchain: its wheels are Linux and Windows only, once published). A direct reference keeps this build off PyPI:
+# the integration ships once camlib publishes `cam-engine`. shapely makes the regions it is handed.
+camlib = [
+  "cam-engine @ git+https://github.com/stevecad/camlib@1e14b626d5a2b4bc485fcd6e973b1479b659ef77",
+  "shapely",
+]
 
 [project.urls]
 Homepage = "https://github.com/earthtojake/text-to-cad"

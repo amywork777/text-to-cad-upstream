@@ -155,6 +155,7 @@ EXTRA_MODULES = {"build123d": {"build123d", "OCP", "bd_materials", "threejs_mate
                  "kicad": {"kicode"},
                  "netgen": {"netgen"},
                  "calculix": {"cad_ccx"},
+                 "camlib": {"camlib", "shapely"},
                  "trimesh": {"trimesh", "rtree", "scipy", "networkx"}}
 # The library's required dependencies, as modules, which any of its code may import.
 REQUIRED = {"numpy"}

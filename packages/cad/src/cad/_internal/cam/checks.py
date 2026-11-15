@@ -34,7 +34,7 @@ __all__ = ["CHECKS", "Target", "by_severity", "check_moves", "face_edges", "face
 
 #: Each check and the finding types it raises.
 CHECKS = {
-    "job": ("job", "freecad", "internal_error"),
+    "job": ("job", "freecad", "camlib", "internal_error"),
     "reach": ("unreachable", "too_deep", "not_facing", "drill_size", "drill_point"),
     "gouge": ("gouge",),
     "rapid_into_stock": ("rapid_into_stock",),
@@ -42,7 +42,7 @@ CHECKS = {
     "coverage": ("uncut",),
     "travel": ("travel",),
     "limits": ("clamped",),
-    "post": ("overridden", "posted"),
+    "post": ("overridden", "posted", "camlib_refused", "camlib_uncertain", "camlib_warning"),
 }
 _SEVERITY = {"error": 0, "warning": 1, "info": 2}
 #: How far a move may come into the part before it is a gouge (mm): the tessellation's own error (part.py's

@@ -57,7 +57,9 @@ OP_COMMON_KEYS = ("op", "tool", "faces", "feed", "speed", "plunge_mm_min", "cool
 _TOOLS_FOR = {"drill": ("drill",)}
 _MILLING = ("flat", "ball", "bull")
 
-JOB_KEYS = ("name", "machine", "material", "stock", "tools", "setups", "tolerance_mm", "coolant")
+JOB_KEYS = ("name", "machine", "material", "stock", "tools", "setups", "tolerance_mm", "coolant", "planner")
+#: Who plans and posts the toolpaths (SPIKE: camlib beside FreeCAD).
+PLANNERS = ("freecad", "camlib")
 MACHINE_KEYS = ("post", "name", "travel_mm", "min_rpm", "max_rpm", "max_feed_mm_min", "rapid_mm_min",
                 "work_offset")
 MATERIAL_KEYS = ("name", "surface_m_min", "chipload_mm", "drill_mm_per_rev", "stepdown_fraction")
@@ -135,6 +137,8 @@ class Job:
     setups: tuple[Setup, ...]
     tolerance_mm: float
     coolant: str
+    #: Who plans and posts: :data:`PLANNERS`.
+    planner: str = "freecad"
     #: What the plan took that the job does not state: ``{"key", "value", "why"}``.
     assumed: tuple[dict, ...] = ()
 
@@ -207,7 +211,8 @@ def parse_job(job: str | dict | None) -> Job:
     return Job(name=name.strip(), machine=machine, material=material, stock=_stock(raw["stock"]), tools=tools,
                setups=tuple(setups), tolerance_mm=read_number(raw, "tolerance_mm", "the job", default=0.01,
                                                               minimum=0.01, maximum=1.0),
-               coolant=coolant, assumed=tuple(assumed))
+               coolant=coolant, planner=choice(raw.get("planner", "freecad"), PLANNERS, "planner"),
+               assumed=tuple(assumed))
 
 
 def _machine(raw: object) -> tuple[Machine, list[dict]]:
