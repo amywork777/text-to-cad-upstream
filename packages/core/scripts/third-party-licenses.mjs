@@ -1,7 +1,8 @@
 /**
  * The third-party notice a page's build ships beside it: every package of `node_modules` whose code
  * is in the build's chunks (its own and its workers'), by name and version, with the licence its
- * package.json declares and the licence text it ships (LICENSE, LICENCE or COPYING). The list
+ * package.json declares and the licence text it ships (LICENSE, LICENCE or COPYING), and its NOTICE
+ * file after it where it ships one (Apache-2.0 asks that a NOTICE travel with the work). The list
  * comes from what the bundler put in the chunks, so it is the build's and nobody keeps it.
  *
  * `thirdPartyLicenses()` returns `plugin()`, for the page's build, which writes the notice into the
@@ -16,6 +17,7 @@ import path from 'node:path';
 
 export const NOTICE_FILE = 'THIRD_PARTY_LICENSES.txt';
 const LICENSE_FILE = /^(?:licen[cs]e|copying)(?:[.-].*)?$/i;
+const NOTICE = /^notice(?:\.(?:md|txt))?$/i;
 
 /** The package folder a bundled module is in, or null for one of this repository's own. */
 export function packageDirOf(moduleId) {
@@ -51,10 +53,13 @@ export function bundledPackages(moduleIds) {
     const dir = packageDirOf(id);
     if (!dir || found.has(dir)) continue;
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-    const file = fs.readdirSync(dir).filter(name => LICENSE_FILE.test(name)).sort()[0];
+    const names = fs.readdirSync(dir);
+    const file = names.filter(name => LICENSE_FILE.test(name)).sort()[0];
+    const notice = names.filter(name => NOTICE.test(name)).sort()[0];
+    const text = file ? fs.readFileSync(path.join(dir, file), 'utf8').trim() : shippedNone(manifest);
     found.set(dir, {
       name: manifest.name, version: manifest.version, license: licenseOf(manifest),
-      text: file ? fs.readFileSync(path.join(dir, file), 'utf8').trim() : shippedNone(manifest),
+      text: notice ? `${text}\n\n${fs.readFileSync(path.join(dir, notice), 'utf8').trim()}` : text,
     });
   }
   const unique = new Map([...found.values()].map(entry => [`${entry.name}@${entry.version}`, entry]));

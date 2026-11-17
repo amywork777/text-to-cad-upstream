@@ -19,6 +19,7 @@ function tree(t) {
   write('node_modules/plain/lib/b.js', '');
   write('node_modules/@scope/pkg/package.json', JSON.stringify({ name: '@scope/pkg', version: '2.0.0', license: { type: 'BSD-3-Clause' } }));
   write('node_modules/@scope/pkg/LICENCE.md', 'BSD text');
+  write('node_modules/@scope/pkg/NOTICE', 'Copyright the authors\n');
   write('node_modules/@scope/pkg/index.js', '');
   write('node_modules/bare/package.json', JSON.stringify({ name: 'bare', version: '3.0.0', license: 'ISC', author: 'A. Author', repository: { url: 'https://example.test/bare' } }));
   write('node_modules/bare/index.js', '');
@@ -45,6 +46,8 @@ test('each bundled package once, with its declared licence and the text it ships
   assert.deepEqual(found.map(entry => [entry.name, entry.version, entry.license]),
     [['@scope/pkg', '2.0.0', 'BSD-3-Clause'], ['bare', '3.0.0', 'ISC'], ['plain', '1.0.0', 'MIT']]);
   assert.equal(found[2].text, 'MIT text');
+  // A NOTICE (Apache-2.0's) follows the licence text.
+  assert.equal(found[0].text, 'BSD text\n\nCopyright the authors');
   assert.match(found[1].text, /ships no licence text; its package\.json declares ISC\.\nAuthor: A\. Author\nRepository: https:\/\/example\.test\/bare/);
   assert.throws(() => bundledPackages([`${root}/node_modules/none/index.js`]), /declare no licence: none@4\.0\.0/);
 });
