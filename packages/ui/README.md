@@ -87,6 +87,7 @@ src/
   host/              explicit host ports, prompt actions and React binding
   annotation/        the drawing tools' (Pencil and Shapes) session, toolbar and ink geometry (its 3D ink is renderers/kit/tools/annotate)
   cad-viewer/        CadViewer (FileViewer + the six CAD renderers + the home), and a CAD client as a FileSource
+  compare/           Compare with: two revisions of a STEP compared by Specify (@draftwright/specify-ui)
   file-viewer/       FileViewer, typed source/renderer contracts, the document lifecycle hook
     navigation/     the navbar, the app menu and its links, the folder explorer, the file menu
   library/           a host's home: the models opened before, to open again, and their pictures
@@ -145,7 +146,7 @@ const renderers = [createDxfRenderer({ client, preferences }), createGlbRenderer
 
 Public entry points include `/host`, `/file-viewer`, `/tab-store`, `/navigation`,
 `/renderers/dxf`, `/renderers/glb`, `/renderers/mesh`, `/renderers/robot`, `/renderers/xbf`, `/renderers/workspace`, `/file-viewer/presentation`,
-`/cad-viewer`, `/catalog`, `/links`, `/library`, `/consent` (the app menu's Telemetry row and its state), `/update` (the update button), `/whats-new` (the What's new dialog, its notes and when it shows), `/i18n` (the locales and the translation hook), `/i18n/locale` (which locale a person reads in, with no dictionary: for a page that says a few words before anything else loads), `/build-id` (what a Vite config names the build with), `/loading-icon`, `/utils`, `/primitives/*`,
+`/cad-viewer`, `/compare` (Compare's view: Specify's STEP diff, which a host that can serve its WebAssembly engine imports lazily and hands to `CadViewer`'s `stepCompare`), `/catalog`, `/links`, `/library`, `/consent` (the app menu's Telemetry row and its state), `/update` (the update button), `/whats-new` (the What's new dialog, its notes and when it shows), `/i18n` (the locales and the translation hook), `/i18n/locale` (which locale a person reads in, with no dictionary: for a page that says a few words before anything else loads), `/build-id` (what a Vite config names the build with), `/loading-icon`, `/utils`, `/primitives/*`,
 `/tokens.css`, and `/styles.css`. `/catalog` (a CAD client as a `FileSource`, the file menu's
 Copy path and Reveal, and the one spelling of an absolute path: `normalizePath`, `baseName`,
 `joinPath`) and `/links` (the navbar's link defaults) are pure modules, with no React, for a

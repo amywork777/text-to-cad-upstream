@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { ExportControls } from '../export/ExportControls.js';
+import { CompareControls, type StepCompareLoader } from '../compare/CompareControls.js';
 import { FileWarning } from 'lucide-react';
 import type { CadWorkspaceService } from '@cad/core/client';
 import { FileViewer } from '../file-viewer/FileViewer.js';
@@ -108,6 +109,12 @@ export interface CadViewerProps<Model extends LibraryModel = LibraryModel> {
    * A host leaves it out where a dialog has no room, or while a notice of its own covers the view.
    */
   whatsNew?: { entry: string | null; onDismiss(): void };
+  /**
+   * Compare's view, where the host can serve Specify's engine (`() => import('@cad/ui/compare')`): a
+   * STEP's file menu then offers Compare with, the other STEP files in its folder, each compared with
+   * the one on screen. It needs the client's `fileBytes`. Absent, there is no Compare.
+   */
+  stepCompare?: StepCompareLoader;
   onError?(error: Error): void;
 }
 
@@ -124,7 +131,7 @@ const reportError = (error: Error) => console.error(error);
  * navigates: showing a file, or the home, is the host's `onShow`.
  */
 export function CadViewer<Model extends LibraryModel = LibraryModel>({ client, host, tabStore, live, file, onShow, onShown,
-  library, openElsewhere, onThumbnail, colorScheme, language, appSettings, notice, update, fullSize, history, chrome, whatsNew, onError = reportError }: CadViewerProps<Model>) {
+  library, openElsewhere, onThumbnail, colorScheme, language, appSettings, notice, update, fullSize, history, chrome, whatsNew, stepCompare, onError = reportError }: CadViewerProps<Model>) {
   // The language the host names: the pages drawn here (the home, a file that will not open) read in it.
   const locale = host.environment.locale;
   const t = translator(locale);
@@ -267,8 +274,9 @@ export function CadViewer<Model extends LibraryModel = LibraryModel>({ client, h
   // out of sight does, which is outside it.
   return <I18nProvider locale={locale}>
     <ControlUsageProvider report={host.usage?.controls}>
-    <ExportControls service={client.exports} downloads={host.downloads} file={shown ?? path}>{({ menu, overlay }) => <FileViewer navbarActions={fullSize} fileMenuItems={menu} overlay={overlay} file={path || null} host={viewerHost} renderers={renderers} state={state} onStateChange={onStateChange}
-      colorScheme={colorScheme} language={language} appSettings={appSettings} update={update} history={history} recent={recent} explorerFolder={explorerFolder} onExplorerFolderChange={homed ? keepExplorerFolder : undefined} notice={notice} chrome={chrome} onError={onError} presentation={presentation} />}</ExportControls>
+    <ExportControls service={client.exports} downloads={host.downloads} file={shown ?? path}>{exports => <CompareControls file={shown ?? ''} files={host.files} readFile={client.fileBytes} load={stepCompare}>{compare => <FileViewer navbarActions={fullSize}
+      fileMenuItems={exports.menu || compare.menu ? <>{exports.menu}{compare.menu}</> : null} overlay={<>{exports.overlay}{compare.overlay}</>} file={path || null} host={viewerHost} renderers={renderers} state={state} onStateChange={onStateChange}
+      colorScheme={colorScheme} language={language} appSettings={appSettings} update={update} history={history} recent={recent} explorerFolder={explorerFolder} onExplorerFolderChange={homed ? keepExplorerFolder : undefined} notice={notice} chrome={chrome} onError={onError} presentation={presentation} />}</CompareControls>}</ExportControls>
     </ControlUsageProvider>
     {whatsNew && onScreen ? <WhatsNewDialog entry={whatsNew.entry} onDismiss={whatsNew.onDismiss} /> : null}
     {drawing && !path ? <OffscreenPicture key={drawing.source.file} source={drawing.source} host={host} preferences={preferences} onDone={drawn} /> : null}
