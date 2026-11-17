@@ -40,13 +40,19 @@ by hand" below.
   `cavity = ...`, `tray = outer - cavity`): each line is a feature of the history, with its
   variable's name beside it.
 - **Make a feature used more than once a custom feature**, Onshape's FeatureScript for build123d: a
-  function of the project's own (`features.py` beside the parts, imported by name) decorated with
-  `@feature("Bolt Circle", diameter=Length(min=0), count=Count(min=1))` (`from cad.build123d import
-  feature, Length, Angle, Count, Number`), that takes the body and returns it changed. Each call is one
-  row of the history by that name, whatever it makes inside, with the declared parameters as its
-  inputs (a `label=` names one), changed with Edit Parameters where they are written; a value outside
-  a spec stops the build with the feature's and the parameter's names. Call it with the sizes by
-  keyword (`body = bolt_circle(body, diameter=BOLT_CIRCLE, count=6)`).
+  function of the project's own (`features.py` beside the parts, imported by name) that takes the body
+  first and returns it changed, decorated with `@feature("Bolt Circle", diameter=Length(min=0),
+  count=Count(min=1), ...)` (`from cad.build123d import feature, Length, Angle, Count, Number, Bool, Enum,
+  Faces, Edges`). Give every parameter a spec: a number's bounds, an `Enum({"through": "Through All", ...})`'s
+  choices with their labels, a `Bool()` switch, and the `Faces()` or `Edges()` it acts on (`max=1` for
+  one). `group="Options"` puts a parameter in a group of the dialog, `collapsed=("Options",)` folds it; a
+  default is the signature's own, and a parameter with none is required. Each call is one row of the
+  history by the feature's name, whatever it makes inside; Edit Feature opens its dialog with those
+  controls, and the toolbar's Custom group (and the command search) offers each feature the project
+  declares, writing a new call. A value outside a spec stops the build with the feature's and the
+  parameter's names, said first and marked in the dialog. Call it with its values by keyword
+  (`body = bolt_circle(body, diameter=BOLT_CIRCLE, count=6)`), faces and edges as selectors by where
+  they are (`edges=body.edges().group_by(Axis.Z)[-1]`).
 - **Keep the body in one name and return it** (`tray = ...`, then `return tray`), in build123d's
   algebra style. A command writes its line right after the last statement that makes the body,
   before `label` and `color` are set. A body returned outright (`return bd.Box(...)`) is first
