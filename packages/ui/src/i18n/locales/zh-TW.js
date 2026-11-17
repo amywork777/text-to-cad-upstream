@@ -649,6 +649,8 @@ export default {
   "position.title": "位置",
   "position.controls": "位置控制項",
   "field.parameters.title": "參數",
+  "field.graph.title": "圖",
+  "field.graph.label": "模型中各名稱之間的構成關係",
   "field.parameters.controls": "參數控制項",
   "field.parameter.value": "{name} 的值",
   "field.parameter.range": "{min} 至 {max}",

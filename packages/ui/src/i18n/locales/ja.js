@@ -648,6 +648,8 @@ export default {
   "position.title": "位置",
   "position.controls": "位置のコントロール",
   "field.parameters.title": "パラメーター",
+  "field.graph.title": "グラフ",
+  "field.graph.label": "モデルの名前どうしのつながり",
   "field.parameters.controls": "パラメーターのコントロール",
   "field.parameter.value": "{name} の値",
   "field.parameter.range": "{min}〜{max}",

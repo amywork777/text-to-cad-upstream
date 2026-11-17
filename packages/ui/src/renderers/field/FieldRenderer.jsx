@@ -8,6 +8,7 @@ import { failureAlert } from "../kit/status/loadAlerts.js";
 import { useSceneToolState } from "../kit/tools/sceneTools.jsx";
 import { TOOL_SHORTCUTS } from "../kit/tools/toolShortcuts.js";
 import { useDeclinedSelectReference, useWorkspaceDocument, workspaceLoadAlert } from "../workspace/useWorkspaceDocument.js";
+import GraphSection from "./GraphSection.jsx";
 import ParametersSection from "./ParametersSection.jsx";
 import { FIELD_DECLINED_LIVE_COMMANDS, FIELD_TOOL, FIELD_TOOL_MODES } from "./tools.js";
 import { useFieldScene } from "./useFieldScene.js";
@@ -44,8 +45,10 @@ function FieldSurface({ view, data }) {
   const redraw = useCallback(() => shellRef.current?.requestFrame?.(), []);
 
   const strip = [shell.tools.own({ id: FIELD_TOOL.SELECT, label: t("tool.select"), shortcut: TOOL_SHORTCUTS.select, icon: SELECT_ICON })];
-  const sidebar = scene?.parameters.length
+  const parameters = scene?.parameters.length
     ? <ParametersSection key={document.modelKey} scene={scene} revision={loaded.revision} onChange={redraw} /> : null;
+  const graph = loaded.graph?.nodes?.length ? <GraphSection key={`graph:${document.modelKey}`} graph={loaded.graph} /> : null;
+  const sidebar = parameters || graph ? <>{parameters}{graph}</> : null;
   return <RendererShell shell={shell} tools={strip} sidebar={sidebar} references={NO_REFERENCES} referenceChips={NO_REFERENCES} />;
 }
 

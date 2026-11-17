@@ -14,7 +14,7 @@ const COMPILING = Object.freeze({ phase: "read", label: "Compiling field", done:
  * @returns {{ scene: object | null, revision: string, busy: boolean, progress: object | null, error: unknown }}
  */
 export function useFieldScene({ client, file, revision = "" }) {
-  const [state, setState] = useState({ scene: null, file: "", revision: "", busy: true, progress: COMPILING, error: null });
+  const [state, setState] = useState({ scene: null, graph: null, file: "", revision: "", busy: true, progress: COMPILING, error: null });
   const sceneRef = useRef(null);
   const adopt = (scene) => {
     const previous = sceneRef.current;
@@ -38,11 +38,13 @@ export function useFieldScene({ client, file, revision = "" }) {
       if (signal.aborted) return;
       const scene = buildFieldScene(THREE, payload, textures);
       adopt(scene);
-      setState({ scene, file, revision, busy: false, progress: null, error: null });
+      // The model's names as a graph, read from its source with the field (`GraphSection.jsx`).
+      setState({ scene, graph: payload.graph || null, file, revision, busy: false, progress: null, error: null });
     })().catch((error) => {
       if (signal.aborted) return;
       // A revision that does not compile leaves the one on screen there, the error beside it.
-      setState(current => ({ scene: current.file === file ? current.scene : null, file, revision, busy: false, progress: null, error }));
+      setState(current => ({ scene: current.file === file ? current.scene : null, graph: current.file === file ? current.graph : null, file, revision,
+        busy: false, progress: null, error }));
     });
     return () => controller.abort();
   }, [client, file, revision]);

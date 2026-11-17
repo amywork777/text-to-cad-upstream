@@ -648,6 +648,8 @@ export default {
   "position.title": "위치",
   "position.controls": "위치 컨트롤",
   "field.parameters.title": "매개변수",
+  "field.graph.title": "그래프",
+  "field.graph.label": "모델 이름들이 서로 만들어지는 방식",
   "field.parameters.controls": "매개변수 컨트롤",
   "field.parameter.value": "{name} 값",
   "field.parameter.range": "{min}~{max}",

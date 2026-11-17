@@ -674,6 +674,8 @@ export default {
   "position.title": "Position",
   "position.controls": "Position controls",
   "field.parameters.title": "Parameters",
+  "field.graph.title": "Graph",
+  "field.graph.label": "How the model's names are made from one another",
   "field.parameters.controls": "Parameter controls",
   "field.parameter.value": "{name} value",
   "field.parameter.range": "{min} to {max}",

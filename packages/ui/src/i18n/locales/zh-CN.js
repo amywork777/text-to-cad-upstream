@@ -649,6 +649,8 @@ export default {
   "position.title": "位置",
   "position.controls": "位置控件",
   "field.parameters.title": "参数",
+  "field.graph.title": "图",
+  "field.graph.label": "模型中各名称之间的构成关系",
   "field.parameters.controls": "参数控件",
   "field.parameter.value": "{name} 的值",
   "field.parameter.range": "{min} 至 {max}",
