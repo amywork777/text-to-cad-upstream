@@ -207,6 +207,9 @@ export default defineConfig(async ({ command }) => (refuseClientTokens(), {
     licenses.plugin(),
   ],
   resolve: { alias: { "@": viewerClientRoot }, dedupe: ["react", "react-dom", "three", "lucide-react"] },
+  // Specify's STEP diff starts its engine's worker by a URL beside its own module, which dependency
+  // pre-bundling would move (development only; @draftwright/specify-ui's README).
+  optimizeDeps: { exclude: ["@draftwright/specify-ui"] },
   build: {
     chunkSizeWarningLimit: 800,
     // Maps beside the chunks, named by no chunk (`hidden`), each chunk's debug id in it and in its map.

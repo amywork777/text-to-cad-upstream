@@ -38,6 +38,9 @@ export function useTabAppearance(tabStore: TabStore): { preference: Appearance; 
   return { preference: settings.appearance, colorScheme: resolveColorSchemeMode(settings.appearance, { prefersDark }) as 'light' | 'dark' };
 }
 
+// Compare (a STEP's file menu, Compare with): Specify's STEP diff, its engine served beside the
+// page. Loaded only when a comparison opens.
+const loadStepCompare = () => import('@cad/ui/compare');
 const DOCUMENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
@@ -198,6 +201,7 @@ export default function App({ client, server, tabStore, notice = null, language:
       library={library} onThumbnail={client.keepThumbnail} appSettings={appSettings}
       update={updater.notice || updater.phase.phase !== 'idle' ? <UpdateButton notice={updater.notice} phase={updater.phase} onUpdate={updater.update} /> : null}
       colorScheme={colorScheme} language={language}
-      whatsNew={engineGone || restarting ? undefined : { entry: whatsNew.entry, onDismiss: whatsNew.dismiss }} />
+      whatsNew={engineGone || restarting ? undefined : { entry: whatsNew.entry, onDismiss: whatsNew.dismiss }}
+      stepCompare={loadStepCompare} />
   </div></div>;
 }
