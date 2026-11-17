@@ -39,6 +39,14 @@ by hand" below.
 - **One feature per line** in the function that designs the part (`outer = ...`,
   `cavity = ...`, `tray = outer - cavity`): each line is a feature of the history, with its
   variable's name beside it.
+- **Make a feature used more than once a custom feature**, Onshape's FeatureScript for build123d: a
+  function of the project's own (`features.py` beside the parts, imported by name) decorated with
+  `@feature("Bolt Circle", diameter=Length(min=0), count=Count(min=1))` (`from cad.build123d import
+  feature, Length, Angle, Count, Number`), that takes the body and returns it changed. Each call is one
+  row of the history by that name, whatever it makes inside, with the declared parameters as its
+  inputs (a `label=` names one), changed with Edit Parameters where they are written; a value outside
+  a spec stops the build with the feature's and the parameter's names. Call it with the sizes by
+  keyword (`body = bolt_circle(body, diameter=BOLT_CIRCLE, count=6)`).
 - **Keep the body in one name and return it** (`tray = ...`, then `return tray`), in build123d's
   algebra style. A command writes its line right after the last statement that makes the body,
   before `label` and `color` are set. A body returned outright (`return bd.Box(...)`) is first
