@@ -125,7 +125,8 @@ export default function EditCustomFeature({ edit, references = [] }) {
     </div>
     {activeParam ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>
       Select {activeParam.kind} on the model for {activeParam.label}.</p> : null}
-    {shown?.status === "failed" ? <ErrorWords error={shown.error} className="px-2 pb-1 leading-4" aria-live="polite" /> : null}
+    {/* The preview's refusal, unless OK's own already says it above the dialog (`edit.error`): the words once. */}
+    {shown?.status === "failed" && !edit.error ? <ErrorWords error={shown.error} className="px-2 pb-1 leading-4" aria-live="polite" /> : null}
     {edit.saving ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`} aria-live="polite">Applying</p> : null}
     <ConfirmButtons onOk={() => void ok()} onCancel={edit.close} busy={edit.saving} className="border-t border-border px-2 py-2" />
   </div>;
