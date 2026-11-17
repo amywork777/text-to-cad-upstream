@@ -717,17 +717,20 @@ def splice(text: str, changes: list[dict]) -> str:
 # The commands.
 
 COMMANDS = ("fillet", "chamfer", "hole", "shell", "draft", "mirror", "pattern", "extrude", "cut", "revolve", "revolve_cut", "sweep",
-            "sweep_cut", "loft", "loft_cut", "rib", "plane", "split", "delete_body", "offset_face", "delete_face")
+            "sweep_cut", "loft", "loft_cut", "rib", "plane", "split", "delete_body", "offset_face", "delete_face", "custom")
 FEATURE_WORDS = {"fillet": "Fillet", "chamfer": "Chamfer", "hole": "Hole", "shell": "Shell", "draft": "Draft", "mirror": "Mirror",
                  "pattern": "Pattern", "extrude": "Boss-Extrude", "cut": "Cut-Extrude", "revolve": "Boss-Revolve", "revolve_cut": "Cut-Revolve",
                  "sweep": "Boss-Sweep", "sweep_cut": "Cut-Sweep", "loft": "Boss-Loft", "loft_cut": "Cut-Loft", "rib": "Rib", "plane": "Plane",
-                 "split": "Split", "delete_body": "Delete/Keep Body", "offset_face": "Offset Face", "delete_face": "Delete Face"}
+                 "split": "Split", "delete_body": "Delete/Keep Body", "offset_face": "Offset Face", "delete_face": "Delete Face",
+                 "custom": "Custom feature"}
 # The operation each command's line records in the tracer.
 RECORDS = {"fillet": ("fillet",), "chamfer": ("chamfer",), "hole": ("cut",), "shell": ("offset",), "draft": ("draft",),
            "mirror": ("mirror",), "pattern": ("GridLocations", "PolarLocations"), "extrude": ("extrude",), "cut": ("extrude",),
            "revolve": ("revolve",), "revolve_cut": ("revolve",), "sweep": ("sweep",), "sweep_cut": ("sweep",), "loft": ("loft",),
            "loft_cut": ("loft",), "rib": ("rib",), "plane": ("plane",), "split": ("split",), "delete_body": ("cut", "add"),
-           "offset_face": ("offset_faces",), "delete_face": ("delete_faces",)}
+           "offset_face": ("offset_faces",), "delete_face": ("delete_faces",),
+           # A custom feature records whatever it makes: its line is checked by the feature its row reads as.
+           "custom": ()}
 # Direct editing's functions, which a line reaches by `from cad.direct import ...` (`_direct_imports`).
 DIRECT = {"offset_face": "offset_faces", "delete_face": "delete_faces"}
 # The origin's planes as the design tree names them, and as build123d does.
@@ -982,7 +985,16 @@ def plan(spec: dict, *, steps: list[dict], shape, level: int, units: str, litera
         statement = _top_statement(body.function, bar)
         if (statement is None or statement.lineno != bar) and suppressed_span(body.lines, bar) is None:
             raise CommandError("The rollback bar is no longer between two features. Move it again.")
-    if replacing:
+    if replacing and command == "custom":
+        old, kept = _custom_line(body, replacing, spec), None
+        var, returned = _assigned(old), []
+        if var is None:
+            raise CommandError("Edit mode cannot tell which name holds the body this feature changes. Ask the agent to change it.")
+        if any(spec.get("picks") or {}):
+            # Picked again on the body as it was before the feature, as a CAD tool rolls back to it.
+            picked_on, before = body_at(steps, shape, level, root, body.rel, old.lineno)
+            picked_var = before.name
+    elif replacing:
         old, kept = _feature_line(body, replacing, command, units, steps, level)
         var, returned = kept.target, []
         if (selection or neutral) and command in ("fillet", "chamfer", "hole", "shell", "draft", "extrude", "cut", "offset_face", "delete_face"):
@@ -1068,7 +1080,11 @@ def plan(spec: dict, *, steps: list[dict], shape, level: int, units: str, litera
                     numbers.append(number)
         return numbers, selections.write("edge", numbers)
 
-    if command in ("fillet", "chamfer"):
+    custom_lines = 0
+    if command == "custom":
+        code, what, shown, custom_lines = _custom_code(spec, body, edits, old, var, selections, writer, parse, scale, units_word)
+        records = RECORDS["custom"]
+    elif command in ("fillet", "chamfer"):
         numbers, edges = ([], fixed.parts["edges"]) if fixed else chosen_edges()
         if command == "fillet":
             radius = _value(inputs, "radius", "Radius", parse)
@@ -1710,19 +1726,124 @@ def plan(spec: dict, *, steps: list[dict], shape, level: int, units: str, litera
         if named and "  # " not in code and not _SIZED.match(named):
             code = f"{code}  # {named}"
         edits.swap(old.lineno, old.end_lineno, [f"{source[:len(source) - len(source.lstrip())]}{code}"])
-        added_lines = _imports(edits, body, module, named_import, names) + _direct_imports(edits, body, command)
+        added_lines = _imports(edits, body, module, named_import, names) + _direct_imports(edits, body, command) + custom_lines
         new = edits.apply()
         line = old.lineno + added_lines
     else:
         edits.after(at, [f"{body.indent}{code}", *returned])
-        added_lines = _imports(edits, body, module, named_import, names) + _direct_imports(edits, body, command)
+        added_lines = _imports(edits, body, module, named_import, names) + _direct_imports(edits, body, command) + custom_lines
         new = edits.apply()
         line = at + 1 + added_lines
     return Plan(command=command, path=body.path, rel=body.rel, old=body.text, new=new, line=line, code=code,
                 records=records, selected=selected,
-                summary={"feature": FEATURE_WORDS[command], "what": what,
+                summary={"feature": spec["definition"]["name"] if command == "custom" else FEATURE_WORDS[command], "what": what,
+                         **({"function": spec["definition"]["function"]} if command == "custom" else {}),
                          "inputs": [{"label": label, "display": writer.number(value) if isinstance(value, float) else str(value),
                                      "unit": unit} for label, value, unit in shown]})
+
+
+def _custom_line(body: Body, replacing: dict, spec: dict) -> ast.stmt:
+    """The line Edit Feature writes again for a custom feature: the design's own statement that calls it."""
+    file, _, line = str(replacing.get("row") or "").rpartition(":")
+    if file != body.rel or not line.isdigit():
+        raise CommandError("That feature is not made where this part's body is. Ask the agent to change it.")
+    statement = _top_statement(body.function, int(line))
+    name = spec["definition"]["function"].rpartition(".")[2]
+    if statement is None or statement.lineno != int(line) or _call_of(statement, name) is None:
+        raise CommandError(f"That line no longer calls {spec['definition']['name']}. Look again and retry.")
+    return statement
+
+
+def _call_of(statement: ast.stmt, name: str) -> ast.Call | None:
+    """The call of ``name`` a statement makes, as the design writes a feature: ``body = name(body, ...)``."""
+    value = getattr(statement, "value", None)
+    if isinstance(value, ast.Call) and _call_name(value) == name:
+        return value
+    return None
+
+
+def _custom_code(spec: dict, body: Body, edits: Edits, old: ast.stmt | None, var: str, selections: Selections,
+                 writer: _Writer, parse, scale: float, units_word: str) -> tuple[str, str, list, int]:
+    """A custom feature's call (FeatureScript's feature instance), from its dialog: each declared
+    parameter typed (``inputs``), picked on the model (``picks``: its faces or edges, written as
+    selectors by where they are), kept as the call wrote it (Edit Feature), or left to the function's
+    default (a new call). The function is imported from the file that declares it where this file does
+    not have it. Returns the line, what it does in words, its values and the lines added above it."""
+    definition = spec["definition"]
+    function = definition["function"].rpartition(".")[2]
+    inputs = spec.get("inputs") or {}
+    picks = {name: [item for item in items if isinstance(item, dict)] for name, items in (spec.get("picks") or {}).items()}
+    written: dict[str, str] = {}
+    if old is not None:
+        call = _call_of(old, function)
+        names = [param["name"] for param in definition["params"]]
+        # The call's own arguments, as written: a positional one (after the body) by its place.
+        positional = [each for each in call.args[1:]]
+        written = {name: ast.get_source_segment(body.text, node) for name, node in zip(names, positional)}
+        written.update({keyword.arg: ast.get_source_segment(body.text, keyword.value) for keyword in call.keywords if keyword.arg})
+    args, shown = [], []
+    for param in definition["params"]:
+        name, kind, label = param["name"], param["kind"], param["label"]
+        if kind in ("faces", "edges") and picks.get(name):
+            one = kind[:-1]
+            numbers = resolve(selections.topology[one], picks[name], scale)
+            if param.get("max") is not None and len(numbers) > param["max"]:
+                raise CommandError(f"{label} takes at most {_number(param['max'], False)} {kind}.")
+            code = selections.write(one, numbers, one=param.get("max") == 1)
+            shown.append((label, counted(len(numbers), one), ""))
+        elif name in inputs:
+            code = _custom_value(param, inputs[name], writer, parse)
+            if old is None and "default" in param and _same_value(param, inputs[name], parse):
+                continue  # a new call leaves a default as the function has it
+            shown.append((label, str(inputs[name]).strip() if kind != "bool" else ("Yes" if code == "True" else "No"),
+                          units_word if kind == "length" else "deg" if kind == "angle" else ""))
+        elif name in written:
+            code = written[name]
+        elif param.get("required"):
+            raise CommandError(f"Select {kind} on the model for {label}." if kind in ("faces", "edges") else f"{label} needs a value.")
+        else:
+            continue
+        args.append(f"{name}={code}")
+    # What the call was given beyond its declared parameters stays as written.
+    declared = {param["name"] for param in definition["params"]}
+    args += [f"{name}={code}" for name, code in written.items() if name not in declared]
+    code = f"{var} = {function}({var}{''.join(f', {each}' for each in args)})"
+    added = 0
+    if definition.get("file") != body.rel and function not in _names_in(body.tree):
+        last = max((node.end_lineno for node in body.tree.body if isinstance(node, (ast.Import, ast.ImportFrom))), default=0)
+        edits.after(last, [f"from {definition['module']} import {function}"])
+        added = 1
+    return code, definition["name"], shown, added
+
+
+def _custom_value(param: dict, value, writer: _Writer, parse) -> str:
+    """A custom feature's parameter as code, from what its dialog gave: a number in the part's units, a
+    switch, one of its choices (bounds are the feature's to check, in its own words)."""
+    kind, label = param["kind"], param["label"]
+    if kind == "bool":
+        return "True" if value in (True, "true", "True", "1", 1) else "False"
+    if kind == "enum":
+        allowed = [choice["value"] for choice in param.get("choices") or []]
+        if str(value) not in allowed:
+            raise CommandError(f"{label} is one of {', '.join(allowed)}.")
+        return repr(str(value))
+    number = _value({"v": value}, "v", label, parse, positive=False, integer=kind == "count")
+    if kind == "length":
+        return writer.length(number)
+    return str(number) if kind == "count" else writer.number(number)
+
+
+def _same_value(param: dict, value, parse) -> bool:
+    """Whether a value a dialog gave is the parameter's default."""
+    default = param["default"]
+    if param["kind"] == "bool":
+        return (value in (True, "true", "True", "1", 1)) == bool(default)
+    if param["kind"] == "enum":
+        return str(value) == default
+    try:
+        return math.isclose(float(parse(str(value).strip())), float(default), rel_tol=1e-9, abs_tol=1e-12)
+    except Exception:  # noqa: BLE001 - a value that is no number is not the default
+        return False
 
 
 def _target_side(end: str, selection: list[dict], selections: Selections, scale: float, inputs: dict, frame: dict | None) -> float | None:
@@ -1858,6 +1979,10 @@ def failure_words(command: str, error: str) -> str:
     """Why a command's line did not run, in words."""
     feature = FEATURE_WORDS.get(command, "change").lower()
     last = error.strip().splitlines()[-1] if error.strip() else ""
+    # A custom feature's own refusal is its words, said as it raised them (`FeatureError`).
+    refused = re.match(r"^(?:[\w.]+\.)?FeatureError: (.+)$", last)
+    if refused:
+        return f"{refused.group(1)}. Nothing changed."
     # A sketch's own refusal is said in the engineer's words already (`depth_to`'s, a sketch's).
     said = re.match(r"^(?:[\w.]+\.)?SketchError: (.+)$", last)
     if said:
