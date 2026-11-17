@@ -176,6 +176,7 @@ RULES: tuple[Rule, ...] = (
     Rule((
         "VERSION",                       # a release is tested whole
         "package.json", "package-lock.json", "requirements-dev.txt",
+        "vendor/**",                     # npm packages installed from a file, as the lockfile names them
         ".github/workflows/test.yml", ".github/actions/**",
         "scripts/github-workflows/select_checks.py", "scripts/github-workflows/tested_tree.py",
         "scripts/github-workflows/ci_gate.py",
