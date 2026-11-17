@@ -111,7 +111,9 @@
     "tailwind-merge": "^3.7.0",
     "perfect-freehand": "1.2.3",
     "sonner": "2.0.8",
-    "vaul": "1.1.2"
+    "vaul": "1.1.2",
+    "@draftwright/specify-ui": "file:../../vendor/draftwright-specify-ui-0.1.0.tgz",
+    "three-cad-viewer": "5.1.3"
   },
   "devDependencies": {
     "@types/react": "19.3.0",

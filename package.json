@@ -21,7 +21,10 @@
     "build:mcp": "npm run build:packages && npm run build -w @cad/mcp"
   },
   "overrides": {
-    "postcss": "^8.5.14"
+    "postcss": "^8.5.14",
+    "three-cad-viewer": {
+      "three": "0.187.0"
+    }
   },
   "allowScripts": {
     "esbuild@0.28.2": true,
