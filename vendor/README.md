@@ -15,8 +15,9 @@ built package is kept here.
 - One change to its `package.json`: the `three` peer range is `>=0.184.0 <0.188.0` (the release says
   `<0.187.0`), since text-to-cad is on three 0.187.0 and npm cannot override a peer range. Nothing
   else in it is changed.
-- The root `package.json` overrides `three-cad-viewer`'s exact `three` 0.184.0 with 0.187.0, so a page
-  has one three.js.
+- The root `package.json` overrides `three-cad-viewer`'s exact `three` 0.184.0 with 0.187.0, so the
+  install has one `three`. three-cad-viewer's own build inlines three r184 all the same, so Compare's
+  chunk carries that copy (three warns of two instances once it loads); only Compare loads it.
 - sha256 `6edb8dc8fd37074a504aab3fc4ee09989ab8df651309988e99fd484420874322`.
 
 Once the package is on npm with a range that takes three 0.187, depend on it by version
