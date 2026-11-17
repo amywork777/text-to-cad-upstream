@@ -68,28 +68,75 @@ class Declaration(unittest.TestCase):
         self.assertEqual(seen, ["Outer Thing", "Inner"])
         self.assertIsNone(_features.active())
 
-    def test_a_library_describes_its_features_in_order(self):
+    def test_a_library_describes_its_own_features_in_order_with_their_defaults_and_groups(self):
         import types
 
-        from cad.build123d import Angle, Count, feature
+        from cad.build123d import Angle, Bool, Count, Enum, feature
         from cad.build123d._features import library
 
         module = types.ModuleType("parts_library")
+        source = (
+            "from cad.build123d import Angle, Bool, Count, Enum, feature\n"
+            "@feature('Spokes', collapsed=('Options',), count=Count(min=1), twist=Angle(label='Twist'),\n"
+            "         style=Enum({'round': 'Round', 'flat': 'Flat'}, group='Options'), mirrored=Bool(group='Options'))\n"
+            "def spokes(body, count, twist=0, style='round', mirrored=False):\n"
+            "    \"\"\"Spokes from hub to rim.\"\"\"\n"
+            "    return body\n"
+        )
+        exec(compile(source, "parts_library.py", "exec"), module.__dict__)
 
-        @feature("Spokes", count=Count(min=1), twist=Angle(label="Twist"))
-        def spokes(body, count, twist=0):
-            """Spokes from hub to rim."""
+        @feature("Elsewhere", count=Count())
+        def elsewhere(body, count):
             return body
 
-        module.spokes = spokes
+        module.elsewhere = elsewhere  # imported from another module: not this library's
         module.plain = lambda body: body
         self.assertEqual(library(module), [{
             "name": "Spokes",
-            "function": f"{__name__}.Declaration.test_a_library_describes_its_features_in_order.<locals>.spokes",
+            "function": "parts_library.spokes",
             "doc": "Spokes from hub to rim.",
-            "params": [{"name": "count", "kind": "count", "label": "Count", "min": 1, "max": None},
-                       {"name": "twist", "kind": "angle", "label": "Twist", "min": None, "max": None}],
+            "params": [
+                {"name": "count", "kind": "count", "label": "Count", "min": 1, "max": None, "group": None},
+                {"name": "twist", "kind": "angle", "label": "Twist", "min": None, "max": None, "group": None, "default": 0},
+                {"name": "style", "kind": "enum", "label": "Style", "min": None, "max": None, "group": "Options",
+                 "choices": [{"value": "round", "label": "Round"}, {"value": "flat", "label": "Flat"}], "default": "round"},
+                {"name": "mirrored", "kind": "bool", "label": "Mirrored", "min": None, "max": None, "group": "Options",
+                 "default": False},
+            ],
+            "collapsed": ["Options"],
         }])
+
+    def test_switches_choices_and_picks_are_checked_and_name_the_parameter(self):
+        from build123d import Box
+
+        from cad.build123d import Bool, Edges, Enum, Faces, FeatureError, feature
+
+        @feature("Lip", side=Enum(["inside", "outside"]), rounded=Bool(), faces=Faces(max=1), edges=Edges())
+        def lip(body, faces=None, edges=None, side="inside", rounded=False):
+            return body
+
+        box = Box(10, 10, 10)
+        self.assertIs(lip(box, faces=box.faces()[0], edges=box.edges()[:2]), box)
+        for kwargs, param, words in (
+                ({"faces": box.faces()[0], "edges": box.edges(), "side": "across"}, "side",
+                 "Lip: side must be one of 'inside', 'outside' (was 'across')"),
+                ({"faces": box.faces()[0], "edges": box.edges(), "rounded": 1}, "rounded", "Lip: rounded must be True or False (was 1)"),
+                ({"faces": box.faces()[:2], "edges": box.edges()}, "faces", "Lip: faces takes at most 1 faces (was 2)"),
+                ({"faces": box.faces()[0], "edges": box.faces()}, "edges", "Lip: edges must be edges of the body (was ShapeList)"),
+                ({"faces": box.faces()[0], "edges": []}, "edges", "Lip: edges needs at least one of the body's edges")):
+            with self.subTest(param=param), self.assertRaises(FeatureError) as raised:
+                lip(box, **kwargs)
+            self.assertEqual((str(raised.exception), raised.exception.feature, raised.exception.param), (words, "Lip", param))
+
+    def test_a_declaration_that_cannot_be_a_feature_is_refused(self):
+        from cad.build123d import Enum, Length, feature
+
+        # The body as a parameter, a group no parameter is in, an enum with no choices.
+        for make in (lambda: feature(body=Length())(lambda body: body),
+                     lambda: feature(collapsed=("Advanced",), depth=Length())(lambda body, depth: body),
+                     lambda: Enum([])):
+            with self.assertRaises(TypeError):
+                make()
 
 
 FLANGE = {
