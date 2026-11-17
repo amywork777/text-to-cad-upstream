@@ -526,6 +526,18 @@ export function createCadClient({ origin = '', fetch: fetchImpl = globalThis.fet
       return request('/api/v1/local/edit/face', { body: { file, face, ...(files ? { files } : {}) }, signal, method: 'POST', timeoutMs: 200_000,
         operation: 'edit', headers: JSON_POST });
     },
+    async fileBytes(path, { signal } = {}) {
+      // A CAD file's own bytes, by its absolute path (`GET /api/v1/local/files`): what a page that
+      // reads the file itself is handed (Compare's STEP diff), with no engine read. A refusal is
+      // the server's own sentence (the file was moved, or is not a CAD file).
+      if (!path || isDocumentId(path)) throw new Error('Missing file');
+      const response = await fetchImpl(cadApiUrl(`${API}/local/files`, { origin, params: { path } }), { signal, cache: 'no-store' });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null);
+        throw new Error(detail?.error || `Could not read ${path}.`);
+      }
+      return new Uint8Array(await response.arrayBuffer());
+    },
     async engineHolds(file, { signal } = {}) {
       // Whether the engine holds a read of the document now (its envelope's `held`), asked without starting one.
       if (!file) throw new Error('Missing file');

@@ -305,6 +305,12 @@ export interface CadWorkspaceService {
   engineDocument?(file: string, options?: CadRequestOptions & { onProgress?(frame: Record<string, unknown>): void }): Promise<CadEngineDocument>;
   /** Whether the engine holds a read of the document now (its envelope's `held`), asked without starting one. */
   engineHolds?(file: string, options?: CadRequestOptions): Promise<boolean>;
+  /**
+   * A CAD file's own bytes, by its absolute path (`GET /api/v1/local/files`), with no engine read: for
+   * a view that reads the file itself (Compare's STEP diff). A host that cannot hand them leaves it out,
+   * and nothing that needs them is offered.
+   */
+  fileBytes?(path: string, options?: CadRequestOptions): Promise<Uint8Array>;
   readonly resources: CadResourceProvider;
   createRenderSession(options?: { file?: string }): CadRenderSession;
   dispose(): void;

@@ -575,3 +575,20 @@ test('an id deleted while it is on screen leaves the catalog: asked again, it is
   assert.deepEqual([isMissingFileError(failure), failure.state], [true, 'unsaved']);
   client.dispose();
 });
+
+test("a file's bytes are one GET of the local files route by its path, and a refusal is the server's sentence", async () => {
+  const asked = [];
+  const client = createCadClient({ origin: 'http://one.test', pollIntervalMs: 0, fetch: async (url) => {
+    asked.push(String(url));
+    return String(url).includes('gone')
+      ? { ok: false, status: 404, json: async () => ({ error: 'No file at /m/gone.step', hint: 'open it from where it is now' }) }
+      : { ok: true, arrayBuffer: async () => new Uint8Array([73, 83, 79]).buffer };
+  } });
+  assert.deepEqual([...await client.fileBytes('/m/a b.step')], [73, 83, 79]);
+  assert.equal(asked[0], 'http://one.test/api/v1/local/files?path=%2Fm%2Fa+b.step');
+  await assert.rejects(client.fileBytes('/m/gone.step'), /No file at \/m\/gone\.step/);
+  // A model's document has no file of its own to read.
+  await assert.rejects(client.fileBytes('0f8e5a3c-1b2d-4e6f-8a9b-0c1d2e3f4a5b'), /Missing file/);
+  assert.equal(asked.length, 2);
+  client.dispose();
+});
