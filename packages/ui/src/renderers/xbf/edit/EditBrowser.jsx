@@ -28,6 +28,8 @@ import ComparePanel from "./ComparePanel.jsx";
 import ExpressionsPanel from "./ExpressionsPanel.jsx";
 import Appearance from "./Appearance.jsx";
 import EditSizes from "./EditSizes.jsx";
+import EditCustomFeature from "./EditCustomFeature.jsx";
+import { isCustomCommand } from "./customFeature.js";
 import { formulaWords, restates, selectionDimensions, sizeName, treeFeatures } from "./editMode.js";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { nxPlane, treeTitles } from "./nx.js";
@@ -113,6 +115,8 @@ export default function EditBrowser({ edit, names, tree, references = [], onEdit
   // keeps no card for it.
   const panel = edit.sketch || edit.picking ? <SketchPanel edit={edit} onPlane={onPlane} references={references} />
     : edit.command === "sizes" ? <EditSizes key={`sizes:${edit.editing?.id || ""}`} edit={edit} />
+    // A custom feature's own dialog, built from its declaration: a new call from the Custom group, or Edit Feature on one.
+    : isCustomCommand(edit.command) ? <EditCustomFeature key={`${edit.command}:${edit.editing?.id || ""}`} edit={edit} references={references} />
     : edit.command ? <EditCommand key={`${edit.command}:${edit.editing?.id || ""}`} edit={edit} names={names} references={references} tree={tree}
       onDeselect={onDeselect} />
       // Mass Properties, from the ribbon's Inspect group, in the same card.
