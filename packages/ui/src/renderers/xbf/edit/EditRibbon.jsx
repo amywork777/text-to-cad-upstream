@@ -20,6 +20,8 @@ import { SKETCH_ENTITIES, SKETCH_FAMILIES, SKETCH_MODIFY, SKETCH_TOOLS, sketchKe
 import { ConstructionIcon, NormalToIcon, SKETCH_TOOL_ICONS } from "./sketchIcons.jsx";
 import { SOLID_GROUPS, booleanOf, nxCommand, workspaceTabs } from "./nx.js";
 import CommandSearchBox from "./CommandSearchBox.jsx";
+import { customCommandId } from "./customFeature.js";
+import { FeatureIcon } from "./featureIcons.jsx";
 
 // The viewer's tools, by id, under SolidWorks' names (Clip is its Section View). They stay on the view's own strip,
 // in CAD mode as in AI, as SolidWorks keeps its view tools on the Heads-up View toolbar: the ribbon never repeats
@@ -485,6 +487,15 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   // What a SOLID_GROUPS item is, drawn: the Sketch command or a modeling command.
   const solidItems = id => (id === "sketch" ? [sketchCommand] : EDIT_COMMANDS.filter(each => each.id === id).map(commandItem));
   const stripTools = ["select", "measure", "clip", "exploded"].flatMap(viewerTool);
+  // The project's own features, as Onshape's toolbar holds the custom features added to it: each a button
+  // that opens its dialog for a new call, found by the command search as any other (`searchable`).
+  const customItems = placing ? [] : (state?.customFeatures || []).map(declared => {
+    const id = customCommandId(declared.function);
+    const open = edit.command === id;
+    return { id, label: declared.name, icon: <FeatureIcon kind={declared.name} />, active: open, disabled: modelingOff,
+      description: declared.doc || `A custom feature, declared in ${declared.file}.`,
+      run: () => { if (!open) edit.open(id); }, onClick: () => (open ? edit.close() : edit.open(id)) };
+  });
   const drawing = placing ? [] : state?.drawing ? [panelItem("drawing", "Drawing", <DrawingIcon />, "drawing")]
     : [{ id: "make-drawing", label: "Make Drawing", icon: <DrawingIcon />, disabled: edit.status !== "ready" || edit.saving,
       onClick: async () => { const reply = await edit.drawing({ make: true }); if (reply?.ok) edit.inspect("drawing"); } }];
@@ -495,7 +506,8 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   // enough to show every one (`whole`). Every group's title is its menu all the same.
   const whole = (title, items) => ({ title, items, shown: items.length });
   const groupsOf = {
-    solid: () => SOLID_GROUPS.map(group => ({ title: group.title, items: group.items.flatMap(solidItems), shown: group.shown, end: group.end })),
+    solid: () => [...SOLID_GROUPS.map(group => ({ title: group.title, items: group.items.flatMap(solidItems), shown: group.shown, end: group.end })),
+      ...(customItems.length ? [whole("Custom", customItems)] : [])],
     sketch: () => [whole("Direct Sketch", [sketchCommand])],
     // Evaluate: what measures and checks the part, how it is seen, and the part's named sizes.
     inspect: () => [
