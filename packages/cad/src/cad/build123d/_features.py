@@ -111,7 +111,7 @@ class Param:
 
     def describe(self, name: str, default: Any = inspect.Parameter.empty) -> dict:
         described = {"name": name, "kind": self.kind, "label": self.label or _label(name), "min": self.min, "max": self.max,
-                     "group": self.group}
+                     "group": self.group, "required": default is inspect.Parameter.empty}
         if self.choices:
             described["choices"] = [{"value": value, "label": label} for value, label in self.choices]
         if default is not inspect.Parameter.empty and isinstance(default, (bool, int, float, str)):

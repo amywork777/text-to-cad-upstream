@@ -1326,13 +1326,42 @@ def _feature_input(kind, step, name, value, units, nth=1):
     return item
 
 
-def _custom_inputs(call, units):
-    """A custom feature's inputs: its declared parameters, in its function's order, by their labels
-    (every number it was given, where it declares none), each the number as written where it was."""
+def _call_sources(rel, line, fn):
+    """The source of each argument of the call of ``fn`` the design's line ``line`` of ``rel`` makes, by
+    the function's parameter names (a positional one by its place): what the feature was given as
+    written, which its dialog shows and Edit Feature keeps."""
+    import inspect as _inspect
+
+    try:
+        text = _read(ROOT / rel)
+        tree = ast.parse(text)
+    except (OSError, SyntaxError):
+        return {}
+    names = list(_inspect.signature(fn).parameters)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.lineno <= line <= (node.end_lineno or node.lineno):
+            continue
+        called = node.func.id if isinstance(node.func, ast.Name) else node.func.attr if isinstance(node.func, ast.Attribute) else None
+        if called != fn.__name__:
+            continue
+        sources = {names[index]: ast.get_source_segment(text, arg) for index, arg in enumerate(node.args) if index < len(names)}
+        sources.update({keyword.arg: ast.get_source_segment(text, keyword.value) for keyword in node.keywords if keyword.arg})
+        return sources
+    return {}
+
+
+def _custom_inputs(call, sources, units):
+    """A custom feature's sized inputs: the declared numbers its call was given (``sources``), in its
+    function's order, by their labels (every number it was given, where it declares none), each the
+    number as written where it was. A default the call leaves to the function is no input: it is
+    written in the feature's file, and changing it there would change every call. With them, the
+    input each declared number is, by its parameter's name."""
     definition = call.definition
     specs = definition.params or {name: None for name in call.arguments}
-    inputs, seen = [], set()
+    inputs, seen, index_of = [], set(), {}
     for name, spec in specs.items():
+        if spec is not None and (spec.kind not in _feature_calls.NUMBERS or name not in sources):
+            continue
         value = call.arguments.get(name)
         item = _input(name, value, units)
         if item is None or not item["leaves"] or tuple(item["leaves"]) in seen:
@@ -1343,14 +1372,41 @@ def _custom_inputs(call, units):
             item = {**item, "label": spec.label or item["label"], "length": length,
                     "display": display(float(value), units) if length else _number_text(_plain(value)),
                     "unit": units if length else "deg" if spec.kind == "angle" else ""}
+        index_of[name] = len(inputs)
         inputs.append(item)
-    return inputs
+    return inputs, index_of
+
+
+def _custom_params(call, sources, index_of, units):
+    """Every declared parameter of a custom feature's call, as its dialog shows it (FeatureScript's
+    precondition read back): what it is, its label, group, bounds and choices, its value now (a number
+    as the part's units show it, a switch, a choice, how many faces or edges it picks), the code it was
+    given as (None where the function's default stands) and the sized input a number is."""
+    import inspect as _inspect
+
+    signature = _inspect.signature(call.definition.fn)
+    params = []
+    for name, spec in call.definition.params.items():
+        value = call.arguments.get(name)
+        described = spec.describe(name, signature.parameters[name].default)
+        if spec.kind in _feature_calls.PICKS:
+            shown = _feature_calls._picked(value, spec.kind) or 0
+        elif spec.kind in _feature_calls.NUMBERS and isinstance(value, (int, float)) and not isinstance(value, bool):
+            shown = display(float(value), units) if spec.kind == "length" else _number_text(_plain(value))
+        else:
+            shown = value if isinstance(value, (bool, str)) else None
+        params.append({**described, "value": shown, "code": sources.get(name), "input": index_of.get(name),
+                       "unit": units if spec.kind == "length" else "deg" if spec.kind == "angle" else ""})
+    return params
 
 
 def _custom_summary(row, calls, text, target, units):
     """A row the design's line made by calling a custom feature: the feature by its name, its inputs
-    its parameters, counted once for each call (a loop's), whatever operations it made inside."""
+    its numbers, its parameters all of them as its dialog shows them, counted once for each call (a
+    loop's), whatever operations it made inside."""
     call = calls[0]
+    sources = _call_sources(row["file"], row["line"], call.definition.fn)
+    inputs, index_of = _custom_inputs(call, sources, units)
     return {
         "key": row["key"],
         "file": row["file"],
@@ -1360,10 +1416,37 @@ def _custom_summary(row, calls, text, target, units):
         "code": text,
         "count": len({each.id for each in calls if each.definition is call.definition}),
         "steps": [step["index"] for step in row["steps"]],
-        "inputs": _custom_inputs(call, units),
-        "custom": {"name": call.definition.name,
-                   "function": f"{call.definition.fn.__module__}.{call.definition.fn.__qualname__}"},
+        "inputs": inputs,
+        "custom": {"name": call.definition.name, "function": call.definition.function,
+                   "params": _custom_params(call, sources, index_of, units), "collapsed": list(call.definition.collapsed)},
     }
+
+
+def _project_features():
+    """Every custom feature the project's own files declare, for the toolbar to offer and the agent to
+    call: each described (``library``), with the file and the module it is imported from."""
+    found = []
+    for module in list(sys.modules.values()):
+        path = getattr(module, "__file__", None)
+        if not path or not _inside(path):
+            continue
+        try:
+            described = _feature_calls.library(module)
+        except Exception:  # noqa: BLE001 - a module that cannot be listed offers nothing
+            continue
+        found += [{**each, "file": _relative(path), "module": module.__name__} for each in described]
+    return sorted(found, key=lambda each: each["file"])
+
+
+def _feature_error(error):
+    """The custom feature's own words a failed build stopped on (``FeatureError``, raised anywhere in
+    the chain of what was raised), or None."""
+    seen, depth = error, 0
+    while seen is not None and depth < 8:
+        if isinstance(seen, _feature_calls.FeatureError):
+            return {"message": str(seen), "feature": seen.feature, "param": seen.param}
+        seen, depth = seen.__cause__ or seen.__context__, depth + 1
+    return None
 
 
 def _row_summary(row, units):
@@ -1665,11 +1748,15 @@ def _editable(features, rows, steps, sketches, units):
             feature["end"] = held.end_lineno
         numbers = commands.recorded_numbers([steps[index] for index in row["steps"]])
         if feature.get("custom"):
-            # A custom feature opens Edit Parameters on its declared parameters (below), never a
-            # ribbon command's box for what it happens to make inside.
+            # A custom feature opens its own dialog, never a ribbon command's box for what it happens
+            # to make inside.
             named = commands.trailing_comment(text, statement) if statement.lineno == row["line"] else ""
             if commands.reads_as_name(named):
                 feature["named"] = named
+            # Edit Feature opens the feature's own dialog, its parameters as declared (`commands.plan`'s
+            # custom command), where its call is a statement of the design's own line.
+            if statement.lineno == row["line"]:
+                feature["edit"] = {"command": "custom", "function": feature["custom"]["function"], "row": row["key"]}
             continue
         if statement.lineno != row["line"]:
             # An extrude made in a loop (`for side in (-1, 1):`) opens as one too, its own line in the
@@ -2067,6 +2154,10 @@ def trace(request):
         if isinstance(error, FileNotFoundError) and str(error).startswith(GONE):
             return {"ok": False, "error": str(error), "failure": _stopped_at(error)}
         said = traceback.format_exc(limit=6)
+        refused = _feature_error(error)
+        if refused:
+            # A custom feature's own words first, as its dialog's headline; the traceback under them.
+            return {"ok": False, "error": f"{refused['message']}\n\n{said}", "failure": _stopped_at(error), "featureError": refused}
         return {"ok": False, "error": f"{WRITTEN_FOR_07}\n\n{said}" if _written_for_07(error) else said,
                 "failure": _stopped_at(error)}
     finally:
@@ -2169,6 +2260,8 @@ def trace(request):
         "materialName": "" if components else _material_name(part_material(script, shape)),
         "faceCount": 0 if components else face_count(shape),
         "sketches": sketches,
+        # The custom features the project's files declare, for the toolbar's Custom group (`_project_features`).
+        "customFeatures": _project_features(),
         "components": [{"name": c["function"], "file": c["file"], "features": c["features"], "step": _component_step(c),
                         "document": _component_document(c), "label": _component_label(c, shape)} for c in components],
         # Who made each feature, by its key: "you" or "agent", none where it is not known (`authors.py`).
@@ -2384,6 +2477,11 @@ def _check(script, traced, plan, scale):
         return commands.failure_words(plan.command, traced.get("error") or "")
     key = f"{plan.rel}:{plan.line}"
     row = next((row for row in traced["rows"] if row["key"] == key), None)
+    if plan.command == "custom":
+        # The new line reads as the feature it calls, whatever that makes inside.
+        if row is None or (row.get("custom") or {}).get("function") != plan.summary.get("function"):
+            return f"The new line did not make {plan.summary['feature']}, so nothing changed. Ask the agent to make it."
+        return None
     made = [STATE[script]["steps"][index] for index in row["steps"]] if row else []
     step = next((step for step in made if step["op"] in plan.records), None)
     if step is None:
@@ -2417,6 +2515,12 @@ def _planned(request, spec):
         return path, entry, {**drawn, "name": entry["sketch"].name, "regions": regions, "frame": entry["sketch"].frame()}
 
     command = spec.get("command")
+    if command == "custom":
+        # A custom feature as the project declares it now, by its function's full name.
+        definition = next((each for each in _project_features() if each["function"] == spec.get("function")), None)
+        if definition is None:
+            return None, "That feature is no longer declared in the project's files. Look again and retry."
+        spec = {**spec, "definition": definition}
     try:
         if command in ("extrude", "cut", "revolve", "revolve_cut", "rib") and isinstance(spec.get("sketch"), dict):
             path, entry, drawn = resolved(spec["sketch"])
@@ -2476,9 +2580,11 @@ def command(request):
             failure = (f"{words} does not reach the part, so nothing changed. "
                        f"{'Move it onto the part' if plan.command == 'hole' else 'Reverse its direction, or check where its sketch is'}.")
     if failure:
+        refused = after.get("featureError")
         _write(plan.path, plan.old)
         trace(request)
-        return {"ok": False, "error": failure}
+        # A custom feature's refusal names the parameter its dialog marks (FeatureScript's faulty parameter).
+        return {"ok": False, "error": failure, **({"featureError": refused} if refused else {})}
     after["change"] = {
         "kind": "command",
         "command": plan.command,
@@ -2623,7 +2729,8 @@ def preview(request):
         after = trace({**request, "mesh": False})
         failure = _check(str(script), after, plan, scale)
         if failure:
-            return {"ok": True, "preview": {"error": failure}}
+            refused = after.get("featureError")
+            return {"ok": True, "preview": {"error": failure, **({"featureError": refused} if refused else {})}}
         made = STATE[str(script)]
         # The body the new line works on, and the body it makes: the body just before its line
         # and just after it.
@@ -3599,6 +3706,10 @@ def sizes_change(request):
         for path_text, (before, _) in texts.items():
             _write(Path(path_text), before)
         trace(request)
+        refused = traced.get("featureError")
+        if refused:
+            said = traced["error"].split("\n\n", 1)[1]
+            return {"ok": False, "error": f"{refused['message']}. Nothing changed.\n\n{said}", "featureError": refused}
         return {"ok": False, "error": f"The part does not build with those sizes, so nothing changed. {traced.get('error') or ''}".strip()}
     files = [(Path(path_text).resolve().relative_to(ROOT).as_posix(), before, after) for path_text, (before, after) in texts.items()]
     (rel, old, new), rest = files[0], files[1:]
@@ -3648,7 +3759,9 @@ def sizes_preview(request):
     try:
         after = trace({**request, "mesh": False})
         if not after.get("ok"):
-            return {"ok": True, "preview": {"error": "The part does not build with those sizes."}}
+            refused = after.get("featureError")
+            return {"ok": True, "preview": {"error": f"{refused['message']}." if refused else "The part does not build with those sizes.",
+                                            **({"featureError": refused} if refused else {})}}
         return {"ok": True, "preview": _change_drawn(before, STATE[script]["shape"], scale)}
     finally:
         UNSAVED.clear()

@@ -7,6 +7,7 @@ service end to end, as ``test_edit`` reads it.
 
 from __future__ import annotations
 
+import math
 import shutil
 import unittest
 
@@ -96,12 +97,12 @@ class Declaration(unittest.TestCase):
             "function": "parts_library.spokes",
             "doc": "Spokes from hub to rim.",
             "params": [
-                {"name": "count", "kind": "count", "label": "Count", "min": 1, "max": None, "group": None},
-                {"name": "twist", "kind": "angle", "label": "Twist", "min": None, "max": None, "group": None, "default": 0},
+                {"name": "count", "kind": "count", "label": "Count", "min": 1, "max": None, "group": None, "required": True},
+                {"name": "twist", "kind": "angle", "label": "Twist", "min": None, "max": None, "group": None, "required": False, "default": 0},
                 {"name": "style", "kind": "enum", "label": "Style", "min": None, "max": None, "group": "Options",
-                 "choices": [{"value": "round", "label": "Round"}, {"value": "flat", "label": "Flat"}], "default": "round"},
+                 "required": False, "choices": [{"value": "round", "label": "Round"}, {"value": "flat", "label": "Flat"}], "default": "round"},
                 {"name": "mirrored", "kind": "bool", "label": "Mirrored", "min": None, "max": None, "group": "Options",
-                 "default": False},
+                 "required": False, "default": False},
             ],
             "collapsed": ["Options"],
         }])
@@ -141,15 +142,28 @@ class Declaration(unittest.TestCase):
 
 FLANGE = {
     "flange_features.py": """
-        from build123d import Cylinder, PolarLocations
-        from cad.build123d import Count, Length, feature
+        from build123d import Cylinder, PolarLocations, chamfer, fillet
+        from cad.build123d import Angle, Bool, Count, Edges, Enum, Length, feature
 
 
-        @feature("Bolt Circle", diameter=Length(min=0), count=Count(min=1), hole=Length(label="Hole Diameter", min=0))
-        def bolt_circle(body, diameter, count, hole, depth=20):
-            for place in PolarLocations(diameter / 2, count):
-                body = body - place * Cylinder(hole / 2, depth)
+        @feature("Bolt Circle", collapsed=("Options",), diameter=Length(min=0), count=Count(min=1, max=24),
+                 hole=Length(label="Hole Diameter", min=0),
+                 spread=Enum({"full": "Full circle", "half": "Half circle"}, group="Options"),
+                 start=Angle(label="Start Angle", group="Options"), staggered=Bool(group="Options"))
+        def bolt_circle(body, diameter, count, hole, spread="full", start=0, staggered=False, depth=20):
+            \"\"\"Through holes spaced on a circle about the part's axis.\"\"\"
+            full = spread == "full"
+            places = PolarLocations(diameter / 2, count, start_angle=start, angular_range=360 if full else 180, endpoint=not full)
+            for index, place in enumerate(places):
+                small = staggered and index % 2
+                body = body - place * Cylinder(hole / 2 * (0.75 if small else 1), depth)
             return body
+
+
+        @feature("Edge Break", edges=Edges(), size=Length(min=0), style=Enum({"round": "Round", "chamfer": "Chamfer"}))
+        def edge_break(body, edges, size=1, style="round"):
+            \"\"\"Breaks sharp edges: a round or a chamfer of one size.\"\"\"
+            return fillet(edges, radius=size) if style == "round" else chamfer(edges, length=size)
     """,
     "flange.py": """
         from build123d import Cylinder
@@ -166,6 +180,9 @@ FLANGE = {
             return body
     """,
 }
+
+# The flange's top outer edge, as the viewer reads a pick of it.
+TOP_RIM = {"selector": "e1", "type": "circle", "center": [0.0, 0.0, 4.0], "size": 2 * math.pi * 40}
 
 
 class InTheTree(unittest.TestCase):
@@ -184,8 +201,14 @@ class InTheTree(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.file = str(self.root / "flange.step")
 
-    def row(self, state):
-        return next(row for row in state["rows"] if row.get("custom"))
+    def row(self, state, name="Bolt Circle"):
+        return next(row for row in state["rows"] if (row.get("custom") or {}).get("name") == name)
+
+    def command(self, state, function, inputs=None, picks=None, row=None):
+        spec = {"command": "custom", "function": function, "inputs": inputs or {}, "picks": picks or {}}
+        if row:
+            spec["replace"] = {"row": row}
+        return self.service.change({"file": self.file, "command": spec, "files": state["files"]})
 
     def test_a_call_reads_as_one_feature_by_its_name_with_its_parameters_as_inputs(self):
         state = self.service.state(self.file)
@@ -194,13 +217,29 @@ class InTheTree(unittest.TestCase):
         # Six holes cut in the feature's loop are one row, not six cuts.
         self.assertEqual(kinds, ["Boss-Extrude", "Bolt Circle"])
         bolts = next(feature for feature in state["features"] if feature["kind"] == "Bolt Circle")
-        self.assertEqual(bolts["custom"], {"name": "Bolt Circle", "function": "flange_features.bolt_circle"})
+        self.assertEqual((bolts["custom"]["name"], bolts["custom"]["function"]), ("Bolt Circle", "flange_features.bolt_circle"))
         self.assertEqual(bolts["count"], 1)
         row = self.row(state)
         self.assertEqual([(item["label"], item["formula"], item["unit"]) for item in row["inputs"]],
                          [("Diameter", "BOLT_CIRCLE", "mm"), ("Count", "6", ""), ("Hole Diameter", "6.6", "mm")])
-        # Edit Feature opens Edit Parameters on them, not a box for what the feature made inside.
-        self.assertEqual(bolts["edit"]["command"], "sizes")
+        # Edit Feature opens the feature's own dialog, not a box for what the feature made inside.
+        self.assertEqual(bolts["edit"], {"command": "custom", "function": "flange_features.bolt_circle", "row": row["key"]})
+
+    def test_its_dialog_reads_every_parameter_with_its_value_its_code_and_its_group(self):
+        state = self.service.state(self.file)
+        params = self.row(state)["custom"]["params"]
+        self.assertEqual([(each["name"], each["kind"], each["label"], each["group"], each["value"], each["code"], each["input"])
+                          for each in params],
+                         [("diameter", "length", "Diameter", None, "60", "BOLT_CIRCLE", 0),
+                          ("count", "count", "Count", None, "6", "6", 1),
+                          ("hole", "length", "Hole Diameter", None, "6.6", "6.6", 2),
+                          ("spread", "enum", "Spread", "Options", "full", None, None),
+                          ("start", "angle", "Start Angle", "Options", "0", None, None),
+                          ("staggered", "bool", "Staggered", "Options", False, None, None)])
+        self.assertEqual(self.row(state)["custom"]["collapsed"], ["Options"])
+        # The toolbar's Custom group: every feature the project's files declare, where it is imported from.
+        self.assertEqual([(each["name"], each["module"], each["file"]) for each in state["customFeatures"]],
+                         [("Bolt Circle", "flange_features", "flange_features.py"), ("Edge Break", "flange_features", "flange_features.py")])
 
     def test_an_input_changes_the_number_where_it_is_written(self):
         state = self.service.state(self.file)
@@ -216,12 +255,62 @@ class InTheTree(unittest.TestCase):
         self.assertTrue(changed["ok"], changed.get("error"))
         self.assertIn("BOLT_CIRCLE = 64\n", (self.root / "flange.py").read_text(encoding="utf-8"))
 
-    def test_a_value_its_spec_refuses_stops_the_build_with_the_feature_s_words(self):
+    def test_edit_feature_writes_the_call_again_keeping_what_was_not_changed(self):
+        state = self.service.state(self.file)
+        reply = self.command(state, "flange_features.bolt_circle", {"count": "8", "spread": "half", "staggered": True},
+                             row=self.row(state)["key"])
+        self.assertTrue(reply["ok"], reply.get("error"))
+        # A size written by name stays that name; the switch and the choice are written as values.
+        self.assertIn("    body = bolt_circle(body, diameter=BOLT_CIRCLE, count=8, hole=6.6, spread='half', staggered=True)\n",
+                      (self.root / "flange.py").read_text(encoding="utf-8"))
+        params = {each["name"]: each["value"] for each in self.row(reply)["custom"]["params"]}
+        self.assertEqual((params["count"], params["spread"], params["staggered"]), ("8", "half", True))
+        self.assertEqual((reply["change"]["feature"], reply["change"]["edited"]), ("Bolt Circle", True))
+
+    def test_a_feature_from_the_toolbar_is_a_new_call_imported_and_its_edges_picked_on_the_model(self):
+        state = self.service.state(self.file)
+        reply = self.command(state, "flange_features.edge_break", {"size": "1", "style": "chamfer"}, picks={"edges": [TOP_RIM]})
+        self.assertTrue(reply["ok"], reply.get("error"))
+        text = (self.root / "flange.py").read_text(encoding="utf-8")
+        # Imported beside what the file imports; its edges written by where they are; a default left out.
+        self.assertIn("from flange_features import bolt_circle\nfrom flange_features import edge_break\n", text)
+        line = next(each.strip() for each in text.splitlines() if "edge_break(" in each and "import" not in each)
+        self.assertTrue(line.startswith("body = edge_break(body, edges=body.edges()"), line)
+        self.assertTrue(line.endswith(", style='chamfer')"), line)
+        self.assertNotIn("size=", line)
+        made = self.row(reply, "Edge Break")
+        self.assertEqual({each["name"]: each["value"] for each in made["custom"]["params"]}, {"edges": 1, "size": "1", "style": "chamfer"})
+
+    def test_a_required_pick_left_out_is_asked_for(self):
+        state = self.service.state(self.file)
+        reply = self.command(state, "flange_features.edge_break", {"size": "1"})
+        self.assertFalse(reply["ok"])
+        self.assertEqual(reply["error"], "Select edges on the model for Edges.")
+
+    def test_a_value_its_spec_refuses_is_the_dialog_s_headline_and_names_its_parameter(self):
+        state = self.service.state(self.file)
+        before = (self.root / "flange.py").read_text(encoding="utf-8")
+        reply = self.command(state, "flange_features.bolt_circle", {"count": "0"}, row=self.row(state)["key"])
+        self.assertFalse(reply["ok"])
+        self.assertEqual(reply["error"], "Bolt Circle: count must be at least 1 (was 0). Nothing changed.")
+        self.assertEqual(reply["featureError"], {"message": "Bolt Circle: count must be at least 1 (was 0)", "feature": "Bolt Circle",
+                                                 "param": "count"})
+        self.assertEqual((self.root / "flange.py").read_text(encoding="utf-8"), before)
+        # A size changed on the model says the same words first, its traceback under them.
+        count = [item["label"] for item in self.row(state)["inputs"]].index("Count")
+        sized = self.service.change({"file": self.file, "input": {"row": self.row(state)["key"], "index": count}, "text": "0",
+                                     "files": state["files"]})
+        self.assertFalse(sized["ok"])
+        self.assertTrue(sized["error"].startswith("Bolt Circle: count must be at least 1 (was 0)\n\nTraceback"), sized["error"][:200])
+        self.assertEqual(sized["featureError"]["param"], "count")
+
+    def test_a_script_that_stops_on_a_feature_says_its_words_first(self):
         flange = self.root / "flange.py"
         flange.write_text(flange.read_text(encoding="utf-8").replace("count=6", "count=0"), encoding="utf-8")
         bad = self.service.state(self.file)
         self.assertFalse(bad["ok"])
-        self.assertIn("Bolt Circle: count must be at least 1 (was 0)", bad["error"])
+        self.assertTrue(bad["error"].startswith("Bolt Circle: count must be at least 1 (was 0)\n\nTraceback"), bad["error"][:200])
+        self.assertEqual(bad["featureError"]["param"], "count")
 
 
 if __name__ == "__main__":
