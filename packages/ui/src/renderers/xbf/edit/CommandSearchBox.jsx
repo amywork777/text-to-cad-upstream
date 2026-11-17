@@ -3,6 +3,7 @@ import { ScrollArea } from "@cad/ui/primitives/scroll-area";
 import { cn } from "@cad/ui/utils";
 import { WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
 import { findCommands } from "./commandSearch.js";
+import { isCustomCommand } from "./customFeature.js";
 
 // A result, as a toolbar button's colors are: the workspace's pale blue under the pointer, its deeper one for the one chosen.
 // A command the toolbar shows dimmed is dimmed, and the pointer passes over it as over the toolbar's dimmed button.
@@ -36,8 +37,8 @@ export default function CommandSearchBox({ items, sketching = false, onClose }) 
 
   const byId = new Map(items.map(item => [item.id, item]));
   const labels = Object.fromEntries(items.map(item => [item.id, item.label]));
-  // The toolbar's buttons the search's own list does not know (a project's custom features) are found by their names too.
-  const rows = findCommands(query, { sketching, labels, extra: items }).flatMap(result => (byId.has(result.id) ? [{ ...result, item: byId.get(result.id) }] : []));
+  // A project's custom features, which the search's own list does not know, are found by their names too.
+  const rows = findCommands(query, { sketching, labels, extra: items.filter(item => isCustomCommand(item.id)) }).flatMap(result => (byId.has(result.id) ? [{ ...result, item: byId.get(result.id) }] : []));
   // The choice stays on the list as the list changes under it.
   const at = Math.min(chosen, Math.max(rows.length - 1, 0));
   const row = rows[at] || null;
