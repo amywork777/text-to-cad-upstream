@@ -1795,8 +1795,10 @@ def _custom_code(spec: dict, body: Body, edits: Edits, old: ast.stmt | None, var
             code = _custom_value(param, inputs[name], writer, parse)
             if old is None and "default" in param and _same_value(param, inputs[name], parse):
                 continue  # a new call leaves a default as the function has it
-            shown.append((label, str(inputs[name]).strip() if kind != "bool" else ("Yes" if code == "True" else "No"),
-                          units_word if kind == "length" else "deg" if kind == "angle" else ""))
+            words = ("on" if code == "True" else "off") if kind == "bool" else next(
+                (choice["label"].lower() for choice in param.get("choices") or [] if choice["value"] == str(inputs[name])),
+                str(inputs[name]).strip())
+            shown.append((label, words, units_word if kind == "length" else "deg" if kind == "angle" else ""))
         elif name in written:
             code = written[name]
         elif param.get("required"):
@@ -1813,7 +1815,8 @@ def _custom_code(spec: dict, body: Body, edits: Edits, old: ast.stmt | None, var
         last = max((node.end_lineno for node in body.tree.body if isinstance(node, (ast.Import, ast.ImportFrom))), default=0)
         edits.after(last, [f"from {definition['module']} import {function}"])
         added = 1
-    return code, definition["name"], shown, added
+    # The feature is named by its title in what the agent is told; its values say what changed.
+    return code, "", shown, added
 
 
 def _custom_value(param: dict, value, writer: _Writer, parse) -> str:

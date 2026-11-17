@@ -266,6 +266,9 @@ class InTheTree(unittest.TestCase):
         params = {each["name"]: each["value"] for each in self.row(reply)["custom"]["params"]}
         self.assertEqual((params["count"], params["spread"], params["staggered"]), ("8", "half", True))
         self.assertEqual((reply["change"]["feature"], reply["change"]["edited"]), ("Bolt Circle", True))
+        # What the agent is told: each value changed, a choice by its label and a switch on or off.
+        self.assertEqual([(each["label"], each["display"]) for each in reply["change"]["inputs"]],
+                         [("Count", "8"), ("Spread", "half circle"), ("Staggered", "on")])
 
     def test_a_feature_from_the_toolbar_is_a_new_call_imported_and_its_edges_picked_on_the_model(self):
         state = self.service.state(self.file)
