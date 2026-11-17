@@ -610,7 +610,7 @@ it("opens a model effect's row under the toolbar when the search runs it, for a 
   expect(asked.anchor.current.contains(screen.getByRole('toolbar'))).toBe(true);
 });
 
-it("holds the project's custom features in a Custom group, each opening its dialog, and the search finds them", async () => {
+it("holds the project's custom features in a Custom group, each opening its dialog", async () => {
   const user = userEvent.setup();
   const customFeatures = [{ name: 'Bolt Circle', function: 'flange_features.bolt_circle', file: 'flange_features.py', doc: 'Holes on a circle.', params: [] },
     { name: 'Edge Break', function: 'flange_features.edge_break', file: 'flange_features.py', doc: '', params: [] }];

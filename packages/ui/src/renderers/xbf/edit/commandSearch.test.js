@@ -192,3 +192,11 @@ test("hands back results that are the caller's own", () => {
   assert.equal(findCommands("")[0].label, "Sketch");
   assert.deepEqual(Object.keys(findCommands("fillet")[0]), ["id", "label", "detail"]);
 });
+
+test("finds a button the toolbar has that it does not know, a project's custom feature, by its name or its description, after the rest", () => {
+  const extra = [{ id: "custom:flange_features.bolt_circle", label: "Bolt Circle", description: "Through holes spaced on a circle." }];
+  assert.deepEqual(findCommands("bolt", { extra }).map(each => each.label), ["Bolt Circle"]);
+  assert.deepEqual(findCommands("spaced", { extra }).map(each => each.id), ["custom:flange_features.bolt_circle"]);
+  assert.equal(findCommands("", { extra }).at(-1).label, "Bolt Circle");
+  assert.deepEqual(findCommands("bolt").map(each => each.label), []);
+});

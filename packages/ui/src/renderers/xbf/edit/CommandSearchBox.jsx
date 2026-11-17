@@ -36,7 +36,8 @@ export default function CommandSearchBox({ items, sketching = false, onClose }) 
 
   const byId = new Map(items.map(item => [item.id, item]));
   const labels = Object.fromEntries(items.map(item => [item.id, item.label]));
-  const rows = findCommands(query, { sketching, labels }).flatMap(result => (byId.has(result.id) ? [{ ...result, item: byId.get(result.id) }] : []));
+  // The toolbar's buttons the search's own list does not know (a project's custom features) are found by their names too.
+  const rows = findCommands(query, { sketching, labels, extra: items }).flatMap(result => (byId.has(result.id) ? [{ ...result, item: byId.get(result.id) }] : []));
   // The choice stays on the list as the list changes under it.
   const at = Math.min(chosen, Math.max(rows.length - 1, 0));
   const row = rows[at] || null;
