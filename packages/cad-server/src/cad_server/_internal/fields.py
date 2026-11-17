@@ -64,6 +64,16 @@ def shader(model: Path, out_dir: Path) -> dict[str, Any]:
     return json.loads(done.stdout.strip().splitlines()[-1])
 
 
+def _graph_of(model: Path) -> dict | None:
+    """The model's names as a graph (``cad.omega._graph``), read from its source: the field view's Graph."""
+    from cad.omega._graph import graph
+
+    try:
+        return graph(model.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def made(model: Path, field_key: str, write=None) -> bytes:
     """The field's payload as the route answers it (JSON, UTF-8): what is kept under ``field_key``, else made
     now with ``write`` (``shader``, or a test's stand-in) and kept. Each texture is named by its file in
@@ -79,7 +89,7 @@ def made(model: Path, field_key: str, write=None) -> bytes:
     textures = [{key: value for key, value in texture.items() if key != "file"} | {"name": texture["file"]}
                 for texture in found.get("textures") or ()]
     body = json.dumps({"schema": SCHEMA, "key": field_key, **{k: v for k, v in found.items() if k != "textures"},
-                       "textures": textures}, separators=(",", ":")).encode("utf-8")
+                       "textures": textures, "graph": _graph_of(Path(model))}, separators=(",", ":")).encode("utf-8")
     # The record last: one that is there names textures that are.
     making = kept / "payload.json.making"
     making.write_bytes(body)

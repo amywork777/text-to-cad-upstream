@@ -77,6 +77,8 @@ class FieldRules(unittest.TestCase):
         self.assertEqual((field["schema"], field["key"], field["target"]), (1, key, "glsl-es300"))
         self.assertEqual(field["entry"], {"field": "gsl_field", "march": "gsl_march"})
         self.assertEqual(field["sliders"][0]["name"], "r")
+        # The model's names as a graph, read from its source for the view's Graph (`cad.omega._graph`).
+        self.assertEqual(field["graph"]["edges"], [["r", "ball"], ["ball", "return"]])
         # A texture is named, never a path on this computer: the page reads it from the route beside this one.
         self.assertEqual(field["textures"], [{"uniform": "_group_0_binding_1_fs", "kind": "noise3d",
                                               "format": "rgba8unorm", "filter": "nearest", "size": [16, 16, 4],
