@@ -317,6 +317,8 @@ sys.meta_path.insert(0, _ProjectFinder())
 
 import build123d as B  # noqa: E402
 
+from cad.build123d import _features as _feature_calls  # noqa: E402
+
 STEPS: list[dict] = []
 RECORDING = False
 
@@ -429,6 +431,8 @@ def _record(op, label, fn, args, kwargs, result, extra=None):
         ],
         "result": result,
         "brep": _brep_of(result),
+        # The custom feature (`cad.build123d.feature`) whose call made it, when one did.
+        "feature": _feature_calls.active(),
         **(extra or {}),
     }
     STEPS.append(step)
@@ -1322,9 +1326,52 @@ def _feature_input(kind, step, name, value, units, nth=1):
     return item
 
 
+def _custom_inputs(call, units):
+    """A custom feature's inputs: its declared parameters, in its function's order, by their labels
+    (every number it was given, where it declares none), each the number as written where it was."""
+    definition = call.definition
+    specs = definition.params or {name: None for name in call.arguments}
+    inputs, seen = [], set()
+    for name, spec in specs.items():
+        value = call.arguments.get(name)
+        item = _input(name, value, units)
+        if item is None or not item["leaves"] or tuple(item["leaves"]) in seen:
+            continue
+        seen.add(tuple(item["leaves"]))
+        if spec is not None:
+            length = spec.kind == "length"
+            item = {**item, "label": spec.label or item["label"], "length": length,
+                    "display": display(float(value), units) if length else _number_text(_plain(value)),
+                    "unit": units if length else "deg" if spec.kind == "angle" else ""}
+        inputs.append(item)
+    return inputs
+
+
+def _custom_summary(row, calls, text, target, units):
+    """A row the design's line made by calling a custom feature: the feature by its name, its inputs
+    its parameters, counted once for each call (a loop's), whatever operations it made inside."""
+    call = calls[0]
+    return {
+        "key": row["key"],
+        "file": row["file"],
+        "line": row["line"],
+        "name": target.group(1) if target else None,
+        "kind": call.definition.name,
+        "code": text,
+        "count": len({each.id for each in calls if each.definition is call.definition}),
+        "steps": [step["index"] for step in row["steps"]],
+        "inputs": _custom_inputs(call, units),
+        "custom": {"name": call.definition.name,
+                   "function": f"{call.definition.fn.__module__}.{call.definition.fn.__qualname__}"},
+    }
+
+
 def _row_summary(row, units):
     text = _source_line(row["file"], row["line"])
     target = re.match(r"^([A-Za-z_]\w*)\s*(?:[-+*]?=)", text)
+    calls = [step["feature"] for step in row["steps"] if step.get("feature") is not None]
+    if calls:
+        return _custom_summary(row, calls, text, target, units)
     kind = _row_kind(row["steps"], text)
     inputs, seen, made = [], set(), {}
     for step in row["steps"]:
@@ -1617,6 +1664,13 @@ def _editable(features, rows, steps, sketches, units):
         if held.lineno == row["line"]:
             feature["end"] = held.end_lineno
         numbers = commands.recorded_numbers([steps[index] for index in row["steps"]])
+        if feature.get("custom"):
+            # A custom feature opens Edit Parameters on its declared parameters (below), never a
+            # ribbon command's box for what it happens to make inside.
+            named = commands.trailing_comment(text, statement) if statement.lineno == row["line"] else ""
+            if commands.reads_as_name(named):
+                feature["named"] = named
+            continue
         if statement.lineno != row["line"]:
             # An extrude made in a loop (`for side in (-1, 1):`) opens as one too, its own line in the
             # loop written again; any other feature there is the agent's to change.
@@ -1842,6 +1896,8 @@ def _features(summaries, timeline):
             "kind": (f"{kind}-{base}" if inline else f"Boss-{base}") if solid else {"Move": "Move/Copy"}.get(kind, kind),
             "base": base, "solid": solid and not inline, "folded": bool(inline), "flat": flat,
         }
+        if summary.get("custom"):
+            feature["custom"] = summary["custom"]
         if sketch and sketch.get("rows"):
             feature["rows"] = sketch["rows"] + feature["rows"]
         # A reference plane: where it is, for the view to draw it and a sketch to go on it.
