@@ -1,0 +1,60 @@
+/*
+ * Specify's STEP diff (@draftwright/specify-ui) in the viewer's look: its page, report and lists in
+ * the viewer's type, colours and borders, light and dark, filling the room under Compare's bar.
+ * Loaded after the package's stylesheet, so each rule here wins over its own.
+ */
+
+/* The package's stylesheet, and three-cad-viewer's under it, paint the page's body (Specify's page
+   is a page of its own): the host's own background comes back. */
+html body { background-color: var(--background); }
+
+.cad-step-diff.diff-page {
+  flex: 1; min-height: 0; height: auto; max-width: none; margin: 0; padding: 8px 12px 12px;
+  font: inherit; font-size: var(--text-xs, 0.75rem); line-height: 1.5; color: var(--foreground);
+}
+.cad-step-diff > header:empty { display: none; }
+.cad-step-diff .diff-body { gap: 12px; min-height: 0; grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); }
+.cad-step-diff .diff-summary { font-size: var(--text-sm, 0.8125rem); font-weight: 500; margin: 0 0 6px; }
+.cad-step-diff .diff-hint, .cad-step-diff .diff-status, .cad-step-diff .diff-pmi-on, .cad-step-diff .diff-pmi-old,
+.cad-step-diff .diff-from { color: var(--muted-foreground); font-size: var(--text-tiny, 0.6875rem); }
+.cad-step-diff .diff-error { color: var(--destructive); }
+.cad-step-diff .diff-legend { font-size: var(--text-tiny, 0.6875rem); color: var(--muted-foreground); margin-bottom: 6px; }
+.cad-step-diff .diff-legend input { accent-color: var(--primary); }
+.cad-step-diff .diff-stage { border-color: var(--border); border-radius: calc(var(--radius) + 2px); background: var(--canvas); }
+.cad-step-diff .diff-panel { padding-right: 6px; }
+
+/* The report: Specify's Markdown, headings and tables at the panel's scale. */
+.cad-step-diff .diff-report h2, .cad-step-diff .diff-report h3, .cad-step-diff .diff-pmi h3 {
+  font-size: var(--text-xs, 0.75rem); font-weight: 500; margin: 12px 0 4px; color: var(--foreground);
+}
+.cad-step-diff .diff-report p, .cad-step-diff .diff-report ul { margin: 4px 0; }
+.cad-step-diff .diff-report ul { padding-left: 18px; }
+.cad-step-diff .diff-report th, .cad-step-diff .diff-report td { border-color: var(--border); font-size: var(--text-tiny, 0.6875rem); padding: 3px 8px; }
+.cad-step-diff .diff-report th { font-weight: 500; color: var(--muted-foreground); }
+.cad-step-diff .diff-report code { background: var(--muted); }
+.cad-step-diff .diff-report li.is-current, .cad-step-diff .diff-pmi li.is-current { background: var(--accent); }
+.cad-step-diff .diff-report li.is-picked, .cad-step-diff .diff-pmi li.is-picked { background: var(--accent); border-left-color: var(--primary); }
+.cad-step-diff .diff-report li[data-change]:focus-visible, .cad-step-diff .diff-pmi li:focus-visible { outline-color: var(--ring); }
+.cad-step-diff .diff-pmi li { font-size: var(--text-xs, 0.75rem); }
+.cad-step-diff .diff-pmi-number, .cad-step-diff .diff-pmi-class { font-weight: 500; }
+.cad-step-diff .diff-pmi-show summary { color: var(--muted-foreground); }
+.cad-step-diff .diff-pmi-show > div { background: var(--popover); color: var(--popover-foreground); border-color: var(--border); }
+
+/* An assembly's parts list, and the way back to it. */
+.cad-step-diff .diff-parts { background: transparent; border-color: var(--border); font-size: var(--text-xs, 0.75rem); }
+.cad-step-diff .diff-parts th, .cad-step-diff .diff-parts td { border-bottom-color: var(--border); font-size: var(--text-xs, 0.75rem); height: 24px; padding: 3px 8px; }
+.cad-step-diff .diff-parts th { background: var(--muted); color: var(--muted-foreground); font-weight: 500; }
+.cad-step-diff .diff-parts tbody tr:hover td { background: var(--accent); }
+.cad-step-diff .diff-parts tr.is-unchanged td { color: var(--muted-foreground); }
+.cad-step-diff .diff-button {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--background); color: var(--foreground); font-size: var(--text-tiny, 0.6875rem); cursor: pointer;
+}
+.cad-step-diff .diff-button:hover { border-color: var(--border); background: var(--accent); }
+.cad-step-diff .diff-part { margin: 0 0 8px; font-size: var(--text-xs, 0.75rem); }
+.cad-step-diff .diff-part strong { font-weight: 500; }
+
+@media (max-width: 900px) {
+  .cad-step-diff.diff-page { overflow-y: auto; }
+  .cad-step-diff .diff-stage { height: 50vh; }
+}

@@ -81,6 +81,10 @@
       "types": "./dist/cad-viewer/index.d.ts",
       "import": "./dist/cad-viewer/index.js"
     },
+    "./compare": {
+      "types": "./dist/compare/index.d.ts",
+      "import": "./dist/compare/index.js"
+    },
     "./catalog": {
       "types": "./dist/cad-viewer/catalog.d.ts",
       "import": "./dist/cad-viewer/catalog.js"
