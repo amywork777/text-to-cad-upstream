@@ -96,6 +96,9 @@ export function useEditMode({ client, file, active, reading = true }) {
   // A STEP brought in, with no part script (`status` none): it can be made a part to edit, as
   // SolidWorks makes a part of a STEP it opens. `{ part }`: the part made of it before, if any.
   const [imported, setImported] = useState(null);
+  // A project whose custom features are code it carries, not yet trusted: none of it ran (`cad/edit/trust.py`). Its
+  // files and features, and the digest to trust them by, as the server said.
+  const [trust, setTrust] = useState(null);
   // Where the script stopped, when the error is a part that did not build.
   const [stoppedAt, setStoppedAt] = useState(null);
   // The part's document, as the probe named it (`modelOf`): a part opened as its STEP is shown by it (`builtModel`).
@@ -203,6 +206,7 @@ export function useEditMode({ client, file, active, reading = true }) {
     setBar(null);
     setSketch(null); setSketchTool(null); setSketchSelection([]); setPicking(false);
     setImported(null);
+    setTrust(null);
     setModel(null);
     buildRunning.current = false;
     probed.current = "";
@@ -240,6 +244,13 @@ export function useEditMode({ client, file, active, reading = true }) {
     }
     if (!reply.ok) {
       if (reply.reason === "no-script") { setStatus("none"); return; }
+      if (reply.reason === "untrusted") {
+        // The part was not run: the project's custom code waits for the person to trust it. A prompt already
+        // turned down stays down while the code is the same.
+        setTrust(current => ({ ...(reply.trust || {}), declined: Boolean(current?.declined && current.digest === reply.trust?.digest) }));
+        setStatus("untrusted");
+        return;
+      }
       setStatus(current => (current === "ready" ? current : "error"));
       const message = reply.error || "The part could not be read.";
       failRead(message);
@@ -260,6 +271,7 @@ export function useEditMode({ client, file, active, reading = true }) {
       return;
     }
     files.current = reply.files || null;
+    setTrust(null);
     setState(reply);
     if ("bar" in reply) setBar(reply.bar);
     setStatus("ready");
@@ -366,6 +378,7 @@ export function useEditMode({ client, file, active, reading = true }) {
       const placed = "bar" in request || !barRef.current ? request : { ...request, bar: { before: barRef.current.before } };
       const reply = await client.editChange({ ...placed, file, files: files.current || undefined });
       if (reply.choose) { setChoice({ request, options: reply.choose }); return reply; }
+      if (!reply.ok && reply.reason === "untrusted") { take(reply); return reply; }
       if (!reply.ok) {
         const message = reply.error || "The change could not be made.";
         setError(message);
@@ -910,6 +923,17 @@ export function useEditMode({ client, file, active, reading = true }) {
   // The STEP brought in made a part beside it (`cad/edit/service.py` `adopt`), built, and named by its document's id, to
   // open; null where it could not be made or did not build. Either way the chip learns of the part made, so a second press
   // opens it rather than making another.
+  // Trust and run: the project's custom code trusted as the prompt showed it (its digest), then the part read. Code
+  // changed since the prompt is asked about again.
+  const trustProject = useCallback(async () => {
+    if (!supported || !file || !trust?.digest) return false;
+    const reply = await client.editChange({ file, trust: { digest: trust.digest } });
+    if (fileRef.current !== file) return false;
+    if (!reply?.ok && reply?.reason !== "untrusted") { failRead(reply?.error || "The project could not be trusted."); return false; }
+    take(reply);
+    return Boolean(reply?.ok);
+  }, [client, file, supported, trust, take, failRead]);
+
   const adopt = useCallback(async () => {
     if (!supported || !file) return null;
     const reply = await client.editChange({ file, adopt: {} });
@@ -920,6 +944,8 @@ export function useEditMode({ client, file, active, reading = true }) {
 
   return {
     status, state, error, choice, saving, selected, hovered, command, editing, bar, imported, adopt, importedPart, model, builtModel, builds,
+    trust, trustProject, declineTrust: () => setTrust(current => (current ? { ...current, declined: true } : current)),
+    reviewTrust: () => setTrust(current => (current ? { ...current, declined: false } : current)),
     // The bar's body could not be shown (`message` says why): the bar goes to the end, as a roll to it does.
     dropBar: message => { setBar(null); setError(message); },
     // The bar moved in the tree, the body there still on its way.

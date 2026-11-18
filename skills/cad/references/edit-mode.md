@@ -53,6 +53,9 @@ by hand" below.
   parameter's names, said first and marked in the dialog. Call it with its values by keyword
   (`body = bolt_circle(body, diameter=BOLT_CIRCLE, count=6)`), faces and edges as selectors by where
   they are (`edges=body.edges().group_by(Axis.Z)[-1]`).
+  A project that declares custom features is not run in Studio's edit mode until the person trusts its
+  custom code ("This project contains custom code features. Trust and run?"), and is asked again whenever a
+  file that declares one changes: say so when you add or change a feature, so the prompt is expected.
 - **Keep the body in one name and return it** (`tray = ...`, then `return tray`), in build123d's
   algebra style. A command writes its line right after the last statement that makes the body,
   before `label` and `color` are set. A body returned outright (`return bd.Box(...)`) is first

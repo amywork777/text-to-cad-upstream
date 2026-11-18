@@ -109,6 +109,17 @@ names at most 512 distinct models, each STEP at most 64 MiB and all of them at m
 `cad sdf validate` runs `gz sdf --check` on a document that names a remote
 reference only when asked (`--gz-remote`).
 
+**A project's custom features.** A custom feature (`cad.build123d.feature`) is Python a project
+carries, often a `features.py` copied from another project, as a document carries its macros. Studio's edit
+mode runs none of a project's code while the project declares custom features you have not trusted: it reads
+the project's files as text, names each file and the features it declares, and asks "This project contains
+custom code features. Trust and run?". Your answer is kept in your state folder (never in the project, which
+could otherwise trust itself), for that project and that code as it is, by a hash of each file that declares
+a feature: a change to one asks again. Ribbon commands and the library's own functions are never asked about.
+This is a trust gate, not a sandbox: trusted code runs as you, as any script you run does. Confining it (a
+subprocess with restricted permissions, or a restricted Python) is planned, not done. A part script that
+declares no feature is run as before, as your own code.
+
 **The install command.** `curl -fsSL https://texttocad.dev/install.sh | sh` (on
 Windows `irm https://www.texttocad.dev/install.ps1 | iex`) runs the script the docs
 site serves over HTTPS, as you, with no sudo and nothing asked: it installs uv with

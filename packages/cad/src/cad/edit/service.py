@@ -32,7 +32,7 @@ import threading
 import time
 from pathlib import Path
 
-from cad.edit import authors
+from cad.edit import authors, trust
 
 __all__ = ["EditService", "dependents", "project_root", "script_for", "shared_service"]
 
@@ -621,7 +621,7 @@ class EditService:
     def rebuild(self, root: Path, changed: str) -> dict:
         """Every part that uses ``changed`` (a file relative to ``root``) built again, as after a
         change here: for a size changed from Studio's Sizes (``sizes.py``)."""
-        if self._builds is not None:
+        if self._builds is not None and trust.gate(root) is None:
             self._builds.start(dependents(root, changed))
         return self.building()
 
@@ -696,6 +696,10 @@ def {function}():
         if script is None:
             return {"ok": False, "reason": "no-script", "error": "This model has no part script beside it."}
         root = project_root(script)
+        # A project's custom features are code the document carries: none of its code runs until they are trusted (`trust.py`).
+        refused = trust.gate(root)
+        if refused is not None:
+            return {**refused, "root": str(root), "building": self.building()}
         if isinstance(files, dict) and files and all(_hash_inside(root, rel) == digest for rel, digest in files.items()):
             # The part reads as it did, but who made its features may have moved on: a turn ended.
             kept = self._read.get(str(script))
@@ -719,6 +723,15 @@ def {function}():
         if script is None:
             return {"ok": False, "error": "This model has no part script to change."}
         root = project_root(script)
+        if isinstance(payload.get("trust"), dict):
+            # The person trusts the project's custom code as the prompt showed it; the part is then read.
+            granted = trust.grant(root, str(payload["trust"].get("digest") or ""))
+            if not granted.get("ok"):
+                return {**granted, "root": str(root), "building": self.building()}
+            return self.state(str(payload.get("file") or ""))
+        refused = trust.gate(root)
+        if refused is not None:
+            return {**refused, "root": str(root), "building": self.building()}
         if payload.get("build") is True and not any(key in payload for key in _CHANGE_KEYS):
             return {"ok": True, "document": document_of(script), "root": str(root),
                     "building": self.rebuild(root, _relative(root, script))}
@@ -813,6 +826,9 @@ def {function}():
         if script is None:
             return {"ok": False, "reason": "no-script", "error": "This model has no part script beside it."}
         root = project_root(script)
+        refused = trust.gate(root)
+        if refused is not None:
+            return {**refused, "faceFeature": None}
         files = payload.get("files")
         if (self._builds is not None and self._builds.pending(script)) or \
                 (isinstance(files, dict) and files and not all(_hash_inside(root, rel) == digest for rel, digest in files.items())):
