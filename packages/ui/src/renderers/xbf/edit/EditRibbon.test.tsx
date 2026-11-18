@@ -610,15 +610,26 @@ it("opens a model effect's row under the toolbar when the search runs it, for a 
   expect(asked.anchor.current.contains(screen.getByRole('toolbar'))).toBe(true);
 });
 
-it("holds the project's custom features in a Custom group, each opening its dialog", async () => {
+it("holds every custom feature in one Custom flyout, the project's own first, each opening its dialog", async () => {
   const user = userEvent.setup();
   const customFeatures = [{ name: 'Bolt Circle', function: 'flange_features.bolt_circle', file: 'flange_features.py', doc: 'Holes on a circle.', params: [] },
-    { name: 'Edge Break', function: 'flange_features.edge_break', file: 'flange_features.py', doc: '', params: [] }];
+    { name: 'Edge Break', function: 'flange_features.edge_break', file: 'flange_features.py', doc: '', params: [] },
+    { name: 'Clearance Hole', function: 'cad.build123d.standard_features.clearance_hole', file: null, standard: true,
+      doc: 'A through hole a metric screw passes.', params: [] }];
   const opened = edit({ state: { units: 'mm', components: [], drawing: null, customFeatures } });
   render(<EditRibbon tools={PART_TOOLS} edit={opened as never} />);
-  expect(commandsIn('Custom')).toEqual(['Bolt Circle', 'Edge Break']);
-  await user.click(command('Custom', 'Edge Break'));
-  expect(opened.open).toHaveBeenCalledWith('custom:flange_features.edge_break');
+  // One button, however many features: the first until another is picked.
+  expect(commandsIn('Custom')).toEqual(['Bolt Circle']);
+  expect(await menuOf(user, screen.getByRole('button', { name: 'Custom features' }))).toEqual(['Bolt Circle', 'Edge Break', 'Clearance Hole']);
+  await user.click(screen.getByRole('button', { name: 'Custom features' }));
+  const menu = screen.getByRole('menu');
+  expect(within(menu).getAllByText(/This project|Standard/).map(each => each.textContent)).toEqual(['This project', 'Standard']);
+  await user.click(within(menu).getByRole('menuitemcheckbox', { name: /Clearance Hole/ }));
+  expect(opened.open).toHaveBeenCalledWith('custom:cad.build123d.standard_features.clearance_hole');
+  // The button is now the feature last picked, as a SolidWorks flyout's is.
+  expect(commandsIn('Custom')).toEqual(['Clearance Hole']);
+  await user.click(command('Custom', 'Clearance Hole'));
+  expect(opened.open).toHaveBeenLastCalledWith('custom:cad.build123d.standard_features.clearance_hole');
 });
 
 it("has no Custom group where the project declares no feature", () => {

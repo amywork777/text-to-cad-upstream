@@ -166,21 +166,30 @@ function useRibbonFit(rowRef, moreRef, key) {
   return fit;
 }
 
-/** A sketch tool family's flyout, as SolidWorks' Sketch tab has them: a chevron after its button, its tools in a menu. */
-function FamilyMenu({ label, items, onPick }) {
+/**
+ * A family's flyout, as SolidWorks' flyout buttons have them: a chevron after its button, its tools in a menu (a
+ * sketch tool family's, and the Custom features'). Items with a `section` are listed under it, each section once.
+ */
+function FamilyMenu({ label, items, onPick, noun = "tools" }) {
   return <DropdownMenu modal={false}>
-    <TooltipHint content={`${label} tools`}>
+    <TooltipHint content={`${label} ${noun}`}>
       <DropdownMenuTrigger asChild>
-        <button type="button" aria-label={`${label} tools`}
+        <button type="button" aria-label={`${label} ${noun}`}
           className="-ml-1 flex h-[3.875rem] w-3.5 shrink-0 items-start justify-center rounded-md pt-3 text-sidebar-foreground/60 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground aria-expanded:bg-cad-ws-selected [&_svg]:size-3">
           <ChevronDown aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
     </TooltipHint>
-    <DropdownMenuContent align="start" sideOffset={4} collisionPadding={8} aria-label={`${label} tools`}
+    <DropdownMenuContent align="start" sideOffset={4} collisionPadding={8} aria-label={`${label} ${noun}`}
       className={cn(FLOATING_SURFACE_CLASS, "w-60 data-[state=closed]:animate-none!")}>
-      {items.map(item => <DropdownMenuCheckboxItem key={item.id} checked={item.active} disabled={item.disabled}
-        onSelect={() => { onPick(item.id); item.onClick(); }}>{item.icon}{item.hint || item.label}</DropdownMenuCheckboxItem>)}
+      {items.map((item, index) => <Fragment key={item.id}>
+        {item.section && item.section !== items[index - 1]?.section ? <>
+          {index ? <DropdownMenuSeparator /> : null}
+          <DropdownMenuLabel className="text-tiny text-muted-foreground">{item.section}</DropdownMenuLabel>
+        </> : null}
+        <DropdownMenuCheckboxItem checked={item.active} disabled={item.disabled}
+          onSelect={() => { onPick(item.id); item.onClick(); }}>{item.icon}{item.hint || item.label}</DropdownMenuCheckboxItem>
+      </Fragment>)}
     </DropdownMenuContent>
   </DropdownMenu>;
 }
@@ -487,15 +496,22 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   // What a SOLID_GROUPS item is, drawn: the Sketch command or a modeling command.
   const solidItems = id => (id === "sketch" ? [sketchCommand] : EDIT_COMMANDS.filter(each => each.id === id).map(commandItem));
   const stripTools = ["select", "measure", "clip", "exploded"].flatMap(viewerTool);
-  // The project's own features, as Onshape's toolbar holds the custom features added to it: each a button
-  // that opens its dialog for a new call, found by the command search as any other (`searchable`).
+  // The custom features: the project's own, then Studio's standard ones (`cad.build123d.standard_features`). Each
+  // opens its dialog for a new call and is found by the command search as any other (`searchable`).
   const customItems = placing ? [] : (state?.customFeatures || []).map(declared => {
     const id = customCommandId(declared.function);
     const open = edit.command === id;
     return { id, label: declared.name, icon: <FeatureIcon kind={declared.name} />, active: open, disabled: modelingOff,
+      section: declared.standard ? "Standard" : "This project",
       description: declared.doc || `A custom feature, declared in ${declared.file}.`,
       run: () => { if (!open) edit.open(id); }, onClick: () => (open ? edit.close() : edit.open(id)) };
   });
+  // One button for them all, so they never crowd the toolbar: a SolidWorks flyout, its button the feature open or
+  // last picked (else the first), its chevron every one of them.
+  const customShown = customItems.find(each => each.active) || customItems.find(each => each.id === lastOfFamily.custom) || customItems[0];
+  const customFlyout = customShown ? { ...customShown, id: "custom-features", variants: customItems,
+    menu: <FamilyMenu label="Custom" noun="features" items={customItems}
+      onPick={each => setLastOfFamily(current => ({ ...current, custom: each }))} /> } : null;
   const drawing = placing ? [] : state?.drawing ? [panelItem("drawing", "Drawing", <DrawingIcon />, "drawing")]
     : [{ id: "make-drawing", label: "Make Drawing", icon: <DrawingIcon />, disabled: edit.status !== "ready" || edit.saving,
       onClick: async () => { const reply = await edit.drawing({ make: true }); if (reply?.ok) edit.inspect("drawing"); } }];
@@ -507,7 +523,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   const whole = (title, items) => ({ title, items, shown: items.length });
   const groupsOf = {
     solid: () => [...SOLID_GROUPS.map(group => ({ title: group.title, items: group.items.flatMap(solidItems), shown: group.shown, end: group.end })),
-      ...(customItems.length ? [whole("Custom", customItems)] : [])],
+      ...(customFlyout ? [whole("Custom", [customFlyout])] : [])],
     sketch: () => [whole("Direct Sketch", [sketchCommand])],
     // Evaluate: what measures and checks the part, how it is seen, and the part's named sizes.
     inspect: () => [
