@@ -1,0 +1,20 @@
+# Studio's own: Jake's Test workflow on studio-base, the branch Studio pins. Test itself runs only
+# for main, and its file is Jake's, so this calls it rather than editing it; what a change touches
+# still decides what runs (select_checks.py), and `CI` is the one check to read.
+name: Studio base test
+
+on:
+  pull_request:
+    branches:
+      - studio-base
+  push:
+    branches:
+      - studio-base
+
+concurrency:
+  group: studio-base-test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml

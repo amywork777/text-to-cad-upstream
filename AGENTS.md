@@ -371,3 +371,13 @@ allowlist, a reason and a size cap each. KiCad files a sample's scripts write ar
 too, gitignored and made by its `cad run build.py`; a board no script makes is source
 (`tests/python/global/test_generated_kicad_files_untracked.py`). Local hooks live in
 `.githooks` and delegate build checks through `scripts/git-hooks/pre-commit`.
+
+## On studio-base
+
+`studio-base` is Studio's copy of this repository (amywork777/text-to-cad-upstream); Jake's `main`
+is upstream. Keep the two easy to tell apart:
+
+- Put Studio-only code in new files (a module, a component, a test file) and keep the edit to
+  Jake's file to the one line that calls it, as `cad/build123d/standard_features.py` does.
+- A change every text-to-cad user would want goes to Jake as a pull request instead.
+- Pull requests here run Jake's Test through `.github/workflows/studio-base-test.yml`; read `CI`.
