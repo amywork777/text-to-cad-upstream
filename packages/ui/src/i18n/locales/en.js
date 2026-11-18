@@ -676,6 +676,7 @@ export default {
   "field.parameters.title": "Parameters",
   "field.graph.title": "Graph",
   "field.graph.label": "How the model's names are made from one another",
+  "field.graph.node": "{name}: {op}, line {line}",
   "field.parameters.controls": "Parameter controls",
   "field.parameter.value": "{name} value",
   "field.parameter.range": "{min} to {max}",

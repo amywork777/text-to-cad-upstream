@@ -22,6 +22,20 @@ infill = max(abs(g) - 0.4, solid + 1);
 return min(skin, infill);
 """
 
+# A function with several outputs (`metal.aluminum` returns a material and a colour) and properties of the
+# shape: its gradient read (`plate.dp`, a property read like a function), a swizzle of that, and its
+# material and colour set.
+PROPERTIES = """@scene(120)
+@range(3, 12) t = 6.0;
+plate = boxCentered([0, 0, t / 2], [80, 40, t]);
+up = plate.dp.z;
+lean = max(plate, 0.5 - up, plate.dp.x);
+mat, col = metal.aluminum();
+lean.material = mat;
+lean.color = col;
+return lean;
+"""
+
 
 class Graph(unittest.TestCase):
     def test_each_name_is_a_node_made_from_the_names_its_expression_uses(self):
@@ -48,6 +62,29 @@ class Graph(unittest.TestCase):
         self.assertEqual(made["nodes"][0]["op"], "f")
         self.assertEqual(made["nodes"][1]["op"], "expression")
         self.assertEqual(made["edges"], [["a", "b"], ["b", "return"], ["a", "return"]])
+
+    def test_a_call_with_several_outputs_is_one_node_with_a_port_per_output(self):
+        made = graph(PROPERTIES)
+        call = next(node for node in made["nodes"] if node["id"] == "mat, col")
+        self.assertEqual((call["kind"], call["op"], call["outputs"], call["line"]), ("block", "metal.aluminum", ["mat", "col"], 6))
+        # Each name used is wired from its own output: the edge's third element.
+        self.assertIn(["mat, col", "lean.material =", "mat"], made["edges"])
+        self.assertIn(["mat, col", "lean.color =", "col"], made["edges"])
+        self.assertFalse([edge for edge in made["edges"] if edge[0] in ("mat", "col")])
+
+    def test_a_property_is_a_node_of_its_own_off_the_value_it_is_of(self):
+        made = graph(PROPERTIES)
+        self.assertEqual([(node["id"], node["kind"]) for node in made["nodes"]], [
+            ("t", "input"), ("plate", "block"), ("plate.dp", "property"), ("up", "block"), ("lean", "block"),
+            ("mat, col", "block"), ("lean.material =", "property"), ("lean.color =", "property"), ("return", "output")])
+        read = made["nodes"][2]
+        self.assertEqual((read["op"], read["of"], read.get("set")), ("dp", "plate", None))
+        self.assertEqual({key: made["nodes"][7][key] for key in ("op", "of", "set")}, {"op": "color", "of": "lean", "set": True})
+        # The gradient is read twice (`up`, and in `lean` itself), one node; `lean` uses `plate` itself as well.
+        self.assertEqual(made["edges"], [
+            ["t", "plate"], ["plate", "plate.dp"], ["plate.dp", "up"], ["plate", "lean"], ["up", "lean"], ["plate.dp", "lean"],
+            ["lean", "lean.material ="], ["mat, col", "lean.material =", "mat"], ["lean", "lean.color ="],
+            ["mat, col", "lean.color =", "col"], ["lean", "return"]])
 
 
 if __name__ == "__main__":

@@ -650,6 +650,7 @@ export default {
   "field.parameters.title": "パラメーター",
   "field.graph.title": "グラフ",
   "field.graph.label": "モデルの名前どうしのつながり",
+  "field.graph.node": "{name}: {op}、{line} 行目",
   "field.parameters.controls": "パラメーターのコントロール",
   "field.parameter.value": "{name} の値",
   "field.parameter.range": "{min}〜{max}",

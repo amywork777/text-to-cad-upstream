@@ -651,6 +651,7 @@ export default {
   "field.parameters.title": "參數",
   "field.graph.title": "圖",
   "field.graph.label": "模型中各名稱之間的構成關係",
+  "field.graph.node": "{name}：{op}，第 {line} 行",
   "field.parameters.controls": "參數控制項",
   "field.parameter.value": "{name} 的值",
   "field.parameter.range": "{min} 至 {max}",
