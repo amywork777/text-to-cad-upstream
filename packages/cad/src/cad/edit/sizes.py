@@ -17,6 +17,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from cad.edit import line_endings
 from cad.edit.service import _project_units, _python_files, dependents, is_part
 from cad._internal.atomic_replace import replace_atomic
 
@@ -158,10 +159,11 @@ def sizes(folder: str) -> dict:
     }
 
 
-def _write(path: Path, text: str) -> None:
-    """The file rewritten whole, so a build never reads it half written."""
+def _write(path: Path, text: str, like: str) -> None:
+    """The file rewritten whole, so a build never reads it half written, with the line endings it
+    had (``like``, as read)."""
     temporary = path.with_name(f".{path.name}.sizes")
-    temporary.write_text(text, encoding="utf-8")
+    line_endings.write(temporary, text, like)
     replace_atomic(temporary, path)
 
 
@@ -173,7 +175,7 @@ def set_size(folder: str, rel: str, name: str, line: int, old: str, text: str) -
     typed = text.strip()
     if not _NUMBER.match(typed):
         raise SizesError(f"{name} is a number here, like 12.5.")
-    source = path.read_text(encoding="utf-8")
+    source = line_endings.read(path)
     for statement in ast.parse(source).body:
         named = _named(statement)
         if named is None or named[0] != name or statement.lineno != line:
@@ -187,7 +189,7 @@ def set_size(folder: str, rel: str, name: str, line: int, old: str, text: str) -
         lines = source.splitlines(keepends=True)
         raw = lines[value.lineno - 1].encode("utf-8")
         lines[value.lineno - 1] = (raw[: value.col_offset] + typed.encode("utf-8") + raw[value.end_col_offset :]).decode("utf-8")
-        _write(path, "".join(lines))
+        _write(path, "".join(lines), source)
         return {"ok": True, "root": str(root), "file": rel, "name": name, "text": typed,
                 "parts": [part.stem for part in dependents(root, rel)]}
     raise SizesError(f"{name} is no longer on line {line} of {rel}. Open Sizes again to read it.")
@@ -203,9 +205,9 @@ def add_shared(folder: str, name: str, text: str, note: str = "") -> dict:
     if not _NUMBER.match(typed):
         raise SizesError(f"{named} is a number here, like 12.5.")
     path = shared_folder(root) / SHARED_FILE
-    source = path.read_text(encoding="utf-8") if path.is_file() else _SHARED_HEADER
+    source = line_endings.read(path) if path.is_file() else _SHARED_HEADER
     if any(size["name"] == named for size in _sizes_in(source)):
         raise SizesError(f"{named} is already a shared size.")
     entry = f"{named} = {typed}" + (f"  # {said}" if said else "")
-    _write(path, source + ("" if source.endswith("\n") else "\n") + ("\n" if source == _SHARED_HEADER else "") + entry + "\n")
+    _write(path, source + ("" if source.endswith("\n") else "\n") + ("\n" if source == _SHARED_HEADER else "") + entry + "\n", source)
     return {"ok": True, "root": str(root), "file": _relative(root, path), "name": named, "text": typed}

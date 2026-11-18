@@ -32,7 +32,7 @@ import threading
 import time
 from pathlib import Path
 
-from cad.edit import authors
+from cad.edit import authors, line_endings
 
 __all__ = ["EditService", "dependents", "project_root", "script_for", "shared_service"]
 
@@ -780,14 +780,14 @@ def {function}():
             else:
                 if found is None:
                     return {"ok": False, "error": f"{step.stem} has no drawing yet. Make one first."}
-                old = found.read_text(encoding="utf-8")
+                old = line_endings.read(found)
                 made, said = drawings.change(old, spec.get("sheet") or {})
-                found.write_text(made, encoding="utf-8")
+                line_endings.write(found, made, old)
                 words = f"changed its drawing's sheet: {said}"
             pdf = drawings.build(found)
         except drawings.DrawingError as error:
             if old is not None:
-                found.write_text(old, encoding="utf-8")
+                line_endings.write(found, old, old)
             return {"ok": False, "error": str(error), **({"drawing": _drawing_of(root, step)} if found else {})}
         return {"ok": True, "drawingOnly": True, "drawing": _drawing_of(root, step),
                 "change": {"kind": "drawing", "file": _relative(root, found), "line": 1, "words": words, "pdf": _relative(root, pdf), "build": False}}
