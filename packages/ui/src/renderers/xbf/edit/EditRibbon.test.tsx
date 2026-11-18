@@ -609,3 +609,19 @@ it("opens a model effect's row under the toolbar when the search runs it, for a 
   expect(asked.open).toBe(true);
   expect(asked.anchor.current.contains(screen.getByRole('toolbar'))).toBe(true);
 });
+
+it("holds the project's custom features in a Custom group, each opening its dialog", async () => {
+  const user = userEvent.setup();
+  const customFeatures = [{ name: 'Bolt Circle', function: 'flange_features.bolt_circle', file: 'flange_features.py', doc: 'Holes on a circle.', params: [] },
+    { name: 'Edge Break', function: 'flange_features.edge_break', file: 'flange_features.py', doc: '', params: [] }];
+  const opened = edit({ state: { units: 'mm', components: [], drawing: null, customFeatures } });
+  render(<EditRibbon tools={PART_TOOLS} edit={opened as never} />);
+  expect(commandsIn('Custom')).toEqual(['Bolt Circle', 'Edge Break']);
+  await user.click(command('Custom', 'Edge Break'));
+  expect(opened.open).toHaveBeenCalledWith('custom:flange_features.edge_break');
+});
+
+it("has no Custom group where the project declares no feature", () => {
+  render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} />);
+  expect(screen.queryByRole('group', { name: 'Custom' })).toBeNull();
+});

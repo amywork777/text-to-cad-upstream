@@ -98,14 +98,19 @@ const begins = (text, queried) => { const words = wordsOf(text); return queried.
  * in the toolbar's order: the Solid tab's, then what Evaluate, Assemble and Drafting add. With a sketch open
  * (`sketching`) its tools come first, then the same, a sketch's Fillet, Chamfer and Mirror standing in for the
  * modeling commands of those ids. `labels` is the toolbar's name for a button where it varies (`{ sketch: "Edit Sketch" }`
- * while a sketch is selected), and is what is found and shown for it.
+ * while a sketch is selected), and is what is found and shown for it. `extra`: the toolbar's buttons this list does not
+ * know (`{ id, label, description? }`: a project's custom features), found by their names and their descriptions'
+ * words, after the rest.
  *
  * @param {string} query
- * @param {{ sketching?: boolean, labels?: Record<string, string> }} [options]
+ * @param {{ sketching?: boolean, labels?: Record<string, string>, extra?: { id: string, label: string, description?: string }[] }} [options]
  * @returns {{ id: string, label: string, detail: string | null }[]}
  */
-export function findCommands(query, { sketching = false, labels = {} } = {}) {
-  const entries = sketching ? WHILE_SKETCHING : WORKSPACE;
+export function findCommands(query, { sketching = false, labels = {}, extra = [] } = {}) {
+  const known = sketching ? WHILE_SKETCHING : WORKSPACE;
+  const ids = new Set(known.map(each => each.id));
+  const entries = [...known, ...extra.filter(each => !ids.has(each.id))
+    .map(each => ({ id: each.id, label: each.label, detail: null, words: each.description ? [String(each.description)] : [] }))];
   const shown = each => ({ id: each.id, label: labels[each.id] ?? each.label, detail: each.detail });
   const text = String(query ?? "").trim();
   if (!text) return entries.map(shown);

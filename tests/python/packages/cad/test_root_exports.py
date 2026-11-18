@@ -29,6 +29,8 @@ PMI = ("annotate", "datum", "dimensional_size", "dimensional_location", "plus_mi
        "flatness_tolerance", "position_tolerance", "surface_profile_tolerance", "general_profile", "general_tolerance",
        "note", "view", "camera", "section", "place")
 # The build123d integration's names: our helpers that take build123d's objects.
+# Custom features (`cad.build123d._features`): the decorator and its parameters' specs.
+FEATURES = ("feature", "Length", "Angle", "Count", "Number", "Bool", "Enum", "Faces", "Edges", "FeatureError")
 NAMESPACES = {
     "cad.build123d": ("mechanism_state", "configuration_sequence", "gear_pair", "rack_and_pinion_pair", "screw_pair",
                       "posed", "animation", "memo", "paint", "GeometryError", "GeometryIssue", "ClosestPoints",
@@ -36,7 +38,7 @@ NAMESPACES = {
                       "boundary_edges", "self_intersections", "mass_properties", "flat_pattern", "planar_faces",
                       "flatten_face", "flatten_faces", "union_faces", "offset_profile", "dfm", "cnc",
                       "sheet_metal", "molding", "printing", "unfold", "frame", "leaves", "body", "mass", "point_mass",
-                      "free", "link", "materials", *PMI),
+                      "free", "link", "materials", *PMI, *FEATURES),
 }
 # The namespaces' public submodules, offered with their names and imported on first use.
 SUBMODULES = {"cad.build123d": ("materials",)}
@@ -109,7 +111,7 @@ class RootExports(unittest.TestCase):
     def test_each_namespace_is_exactly_its_declared_names(self):
         import importlib
 
-        from cad.build123d import _dfm_check, _dfm_sheet, _flatten, _geometry, _leaves
+        from cad.build123d import _dfm_check, _dfm_sheet, _features, _flatten, _geometry, _leaves
         from cad.engine import declarations, mechanism, model
         from cad.engine.formats.kicad import board_index, geometry, summary
 
@@ -125,7 +127,7 @@ class RootExports(unittest.TestCase):
                    **{name: _geometry for name in _geometry.__all__},
                    **{name: _flatten for name in NAMESPACES["cad.build123d"] if hasattr(_flatten, name)},
                    **{name: _dfm_check for name in ("dfm", "cnc", "sheet_metal", "molding", "printing")},
-                   "unfold": _dfm_sheet}
+                   "unfold": _dfm_sheet, **{name: _features for name in FEATURES}}
         for namespace, names in NAMESPACES.items():
             module = importlib.import_module(namespace)
             self.assertEqual(sorted(names), sorted(module.__all__))

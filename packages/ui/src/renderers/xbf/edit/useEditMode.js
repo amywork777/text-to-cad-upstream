@@ -409,7 +409,7 @@ export function useEditMode({ client, file, active, reading = true }) {
         try {
           const reply = await wanted.client.editChange({ [wanted.kind]: wanted.request, ...wanted.bar, file: wanted.file, files: wanted.files });
           const made = reply?.ok ? reply.preview || {} : { error: reply?.error || "The preview could not be made." };
-          shown = made.error ? { status: "failed", added: null, removed: null, error: made.error }
+          shown = made.error ? { status: "failed", added: null, removed: null, error: made.error, featureError: made.featureError || null }
             : { status: "ready", added: made.added || null, removed: made.removed || null, error: "" };
         } catch (failure) {
           shown = { status: "failed", added: null, removed: null, error: describe(failure) };

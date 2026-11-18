@@ -7,6 +7,10 @@ that make the document types from a build123d shape (``_producers``, registered 
 and the helpers a model calls with build123d objects:
 
 * ``memo``: a function worth replaying on a later build (the engine's **Memo functions**);
+* ``feature``: a function of the project's own declared one feature of the design tree, by a name, with
+  its parameters' specs (``Length``, ``Angle``, ``Count``, ``Number``, ``Bool``, ``Enum``, and the ``Faces`` or
+  ``Edges`` it acts on) checked on each call (``FeatureError``) and shown as its dialog's: Onshape's
+  FeatureScript, for build123d (``_features``);
 * ``paint(shape, faces, material)``: a material or colour on some faces;
 * what a part declares for a robot description, each a fact of the machine:
   ``frame(part, name, location)``, a named frame in its own frame (a robot description's sites),
@@ -50,6 +54,7 @@ from typing import TYPE_CHECKING, Any
 # Each name and the module that defines it.
 _NAMES = {
     "memo": "cad.engine.model",
+    **{name: "cad.build123d._features" for name in ("feature", "Length", "Angle", "Count", "Number", "Bool", "Enum", "Faces", "Edges", "FeatureError")},
     "paint": "cad.engine.model",
     "body": "cad.engine.declarations",
     "frame": "cad.engine.declarations",
@@ -119,6 +124,7 @@ if TYPE_CHECKING:
     from cad.build123d import materials
     from cad.build123d._dfm_check import cnc, dfm, molding, printing, sheet_metal
     from cad.build123d._dfm_sheet import unfold
+    from cad.build123d._features import Angle, Bool, Count, Edges, Enum, Faces, FeatureError, Length, Number, feature
     from cad.build123d._flatten import (flat_pattern, flatten_face, flatten_faces, offset_profile, planar_faces,
                                         union_faces)
     from cad.build123d._geometry import (ClosestPoints, GeometryError, GeometryIssue, MassProperties,
