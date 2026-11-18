@@ -255,6 +255,7 @@ RULES: tuple[Rule, ...] = (
         "scripts/git-hooks/**", "scripts/bench/**", "scripts/README.md",
         ".github/workflows/release-publish.yml", ".github/workflows/release-prepare.yml",
         ".github/workflows/deploy-docs.yml", ".github/workflows/deploy-api.yml",
+        ".github/workflows/studio-base-test.yml",  # Studio's fork: calls test.yml on studio-base
         ".github/dependabot.yml", ".github/release.yml", ".github/FUNDING.yml", ".githooks/**",
         ".claude-plugin/**", ".codex-plugin/**", ".cursor-plugin/**", ".grok-plugin/**", "gemini-extension.json",
         "*.mcp.json", "plugin.json", "mcp.json", "skills.sh.json",
