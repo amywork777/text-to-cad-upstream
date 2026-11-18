@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { GLB_DECLINED_LIVE_COMMANDS, GLB_RESULT_LIVE } from '../../../dist/renderers/glb/tools.js';
+import { GLB_DECLINED_LIVE_COMMANDS } from '../../../dist/renderers/glb/tools.js';
+import { GLB_RESULT_LIVE } from '../../../dist/renderers/glb/resultLive.js';
 import { HOST_LIVE_COMMANDS } from '../../../dist/renderers/kit/shell/liveBinding.js';
 
 it("a result's view answers every host command, carrying it out or saying why not", () => {

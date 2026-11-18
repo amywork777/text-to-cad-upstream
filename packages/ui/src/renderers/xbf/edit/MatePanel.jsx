@@ -1,12 +1,14 @@
 import { useState } from "react";
 import {
   FILE_SHEET_STATUS_TEXT_CLASSES,
-  FileSheetCheckboxRow,
   FileSheetControlRow,
-  FileSheetSelectRow,
   FileSheetSettingsSection,
   FileSheetValueInput
 } from "../../kit/inspector/FileSheet.js";
+import {
+  FileSheetCheckboxRow,
+  FileSheetSelectRow
+} from "../../kit/inspector/FileSheetRows.js";
 import { MateIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { SelectionBox } from "./EditCommand.jsx";
