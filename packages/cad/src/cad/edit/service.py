@@ -30,6 +30,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 from cad.edit import authors, line_endings
@@ -336,7 +337,7 @@ def _judged(reply: dict) -> list[dict] | None:
 class _Tracer:
     """The warm tracer: one process, one request at a time."""
 
-    def __init__(self, python: str) -> None:
+    def __init__(self, python: tuple[str, ...]) -> None:
         self.python = python
         self._lock = threading.Lock()
         self._process: subprocess.Popen | None = None
@@ -345,7 +346,7 @@ class _Tracer:
 
     def _start(self) -> None:
         self._process = subprocess.Popen(
-            [self.python, "-P", "-m", "cad.edit.tracer", "--serve"],
+            [*self.python, "-P", "-m", "cad.edit.tracer", "--serve"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -500,7 +501,7 @@ class _Builds:
     process tracked by its handle, so closing the service ends the one running (``stop``). The
     status says each batch's scripts by name and their documents by id (``document_of``)."""
 
-    def __init__(self, python: str) -> None:
+    def __init__(self, python: tuple[str, ...]) -> None:
         self.python = python
         self._lock = threading.Lock()
         self._batches: queue.Queue[tuple[int, list[Path]]] = queue.Queue()
@@ -544,7 +545,7 @@ class _Builds:
                 return "the edit service stopped"
             try:
                 process = subprocess.Popen(
-                    [self.python, "-c", _BUILD, str(script)],
+                    [*self.python, "-c", _BUILD, str(script)],
                     cwd=script.parent,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
@@ -605,8 +606,10 @@ def _end(process: subprocess.Popen | None) -> None:
 class EditService:
     """Edit mode for one viewer server: its tracer, and the builds its changes start."""
 
-    def __init__(self, python: str | None = None, *, build: bool = True) -> None:
-        self.python = python or sys.executable
+    def __init__(self, python: str | Sequence[str] | None = None, *, build: bool = True) -> None:
+        # The Python its traces and builds run in: an executable, or a command that starts one (a
+        # script run by `sys.executable`, as a test's stand-in is on every OS: Windows runs no `#!`).
+        self.python = (python,) if isinstance(python, str) else tuple(python) if python else (sys.executable,)
         self._tracer = _Tracer(self.python)
         self._builds = _Builds(self.python) if build else None
         # Each part script's features as last read (`_judged`), with the files' hashes they were read

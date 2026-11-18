@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import tempfile
 import textwrap
 import time
@@ -100,6 +101,14 @@ STACK = {
             return Compound(children=[plate().shape, pin().shape], label="stack")
     """,
 }
+
+
+def stand_in(folder: Path, code: str, name: str = "python.py") -> list[str]:
+    """A python for the edit service that only runs ``code``, whatever it is asked: a script this one
+    runs, so Windows can start it too (it runs no ``#!`` script, amywork777/studio#13)."""
+    script = folder / name
+    script.write_text(code, encoding="utf-8")
+    return [sys.executable, str(script)]
 
 
 def project(files: dict[str, str], hidden: bool = False, git: bool = True) -> Path:
@@ -916,17 +925,15 @@ class ModelsOfTheEngine(unittest.TestCase):
         # A build of it queued or running (one that never ends, by the python it is started with).
         folder = Path(tempfile.mkdtemp(prefix="edit-slow-"))
         self.addCleanup(shutil.rmtree, folder, True)
-        python = folder / "python"
-        python.write_text("#!/bin/sh\nexec sleep 600\n", encoding="utf-8")
-        python.chmod(0o755)
-        building = edit.EditService(str(python))
+        python = stand_in(folder, "import time\ntime.sleep(600)\n")
+        building = edit.EditService(python)
         self.addCleanup(building.close)
         status = building.rebuild(self.root, "plate.py")
         self.assertEqual(status["documents"][status["scripts"].index("plate.py")], edit.document_of(self.root / "plate.py"))
         self.assertTrue(building.face_feature({"file": str(self.root / "plate.py"), "face": 1})["faceFeature"]["stale"])
 
     def test_the_bar_and_a_build_never_start_an_engine(self):
-        engine = Path(tempfile.mkdtemp(prefix="eng-none-", dir="/tmp"))
+        engine = Path(tempfile.mkdtemp(prefix="eng-none-"))
         self.addCleanup(shutil.rmtree, engine, True)
         environment = mock.patch.dict(os.environ, {"CAD_ENGINE_DIR": str(engine)})
         environment.start()
@@ -972,20 +979,16 @@ class ModelsOfTheEngine(unittest.TestCase):
         # A build that never ends, by the python it is started with: the part is made and building, not yet built.
         folder = Path(tempfile.mkdtemp(prefix="edit-slow-"))
         self.addCleanup(shutil.rmtree, folder, True)
-        python = folder / "python"
-        python.write_text("#!/bin/sh\nexec sleep 600\n", encoding="utf-8")
-        python.chmod(0o755)
-        slow = edit.EditService(str(python))
+        python = stand_in(folder, "import time\ntime.sleep(600)\n")
+        slow = edit.EditService(python)
         self.addCleanup(slow.close)
         adopted = slow.change({"file": str(source), "adopt": {}})
         self.assertTrue(adopted["ok"], adopted.get("error"))
         probe = slow.editable(str(source))
         self.assertEqual((probe["part"], probe["partBuilt"], probe["partBuilding"]), (adopted["part"], False, True))
         # One whose build fails: made, neither built nor building, so there is nothing to wait for.
-        failing = folder / "fails"
-        failing.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-        failing.chmod(0o755)
-        broken = edit.EditService(str(failing))
+        failing = stand_in(folder, "raise SystemExit(1)\n", "fails.py")
+        broken = edit.EditService(failing)
         self.addCleanup(broken.close)
         other = root / "other.step"
         bd.export_step(bd.Box(5, 5, 5), str(other))
@@ -1032,12 +1035,10 @@ class ModelsOfTheEngine(unittest.TestCase):
         # A build that fails as Python 3.13 says a NameError: the line, the marker line under it, the error.
         folder = Path(tempfile.mkdtemp(prefix="edit-marked-"))
         self.addCleanup(shutil.rmtree, folder, True)
-        python = folder / "python"
-        python.write_text("#!/bin/sh\ncat >&2 <<'SAID'\n  File \"plate.py\", line 7, in plate\n"
-                          "    return Box(40, 20, HEIGHTT)\n                       ^^^^^^^\n"
-                          "NameError: name 'HEIGHTT' is not defined\n   \nSAID\nexit 1\n", encoding="utf-8")
-        python.chmod(0o755)
-        service = edit.EditService(str(python))
+        said = ("  File \"plate.py\", line 7, in plate\n    return Box(40, 20, HEIGHTT)\n                       ^^^^^^^\n"
+                "NameError: name 'HEIGHTT' is not defined\n   \n")
+        python = stand_in(folder, f"import sys\nsys.stderr.write({said!r})\nraise SystemExit(1)\n")
+        service = edit.EditService(python)
         self.addCleanup(service.close)
         service.rebuild(self.root, "plate.py")
         deadline = time.monotonic() + 60
@@ -1051,10 +1052,8 @@ class ModelsOfTheEngine(unittest.TestCase):
         # A build that never ends: the service's python stands in for one, by the process it starts.
         folder = Path(tempfile.mkdtemp(prefix="edit-slow-"))
         self.addCleanup(shutil.rmtree, folder, True)
-        python = folder / "python"
-        python.write_text("#!/bin/sh\nexec sleep 600\n", encoding="utf-8")
-        python.chmod(0o755)
-        service = edit.EditService(str(python))
+        python = stand_in(folder, "import time\ntime.sleep(600)\n")
+        service = edit.EditService(python)
         self.addCleanup(service.close)
         service.rebuild(self.root, "plate.py")
         deadline = time.monotonic() + 60
