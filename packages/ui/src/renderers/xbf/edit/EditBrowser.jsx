@@ -12,7 +12,7 @@ import {
   FileSheetSettingsSection,
   FileSheetValueInput
 } from "../../kit/inspector/FileSheet.js";
-import { WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
+import { WORKSPACE_SURFACE_CLASS } from "../../../lib/workspaceSurface.js";
 import { TOOL_PANEL_BUTTON_CLASS } from "../../kit/tools/ToolPanel.jsx";
 import EditCommand from "./EditCommand.jsx";
 import EditTree from "./EditTree.jsx";

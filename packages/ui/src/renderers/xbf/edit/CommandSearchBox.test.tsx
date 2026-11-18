@@ -6,7 +6,7 @@ import CommandSearchBox from '../../../../dist/renderers/xbf/edit/CommandSearchB
 import EditRibbon from '../../../../dist/renderers/xbf/edit/EditRibbon.js';
 import { useEditShortcuts } from '../../../../dist/renderers/xbf/edit/useEditShortcuts.js';
 import { ViewerElementContext } from '../../../../dist/host/context.js';
-import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/floatingSurface.js';
+import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/workspaceSurface.js';
 
 beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });

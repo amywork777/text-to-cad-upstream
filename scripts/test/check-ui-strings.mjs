@@ -206,7 +206,7 @@ export const UI_STRINGS_ALLOWLIST = [
   ['packages/ui/src/export/formats.ts', 'ODB++', "a fabrication file format's own name"],
   ['packages/ui/src/export/formats.ts', 'IPC-2581', "a fabrication file format's standard's name"],
   // Studio's lines in Jake's files, English only as its own folder is (`STUDIO_ENGLISH_ONLY`).
-  ['packages/ui/src/renderers/kit/shell/RendererShell.jsx', 'FeatureManager', "Studio's CAD mode's design tree, named as SolidWorks names it"],
+  ['packages/ui/src/renderers/kit/shell/studioWorkspace.jsx', 'FeatureManager', "Studio's CAD mode's design tree, named as SolidWorks names it"],
 ];
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
