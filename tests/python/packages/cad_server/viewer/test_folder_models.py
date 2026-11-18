@@ -32,8 +32,8 @@ def _record(kind, root, home, name, built=None, parts=None):
 
 class FolderModels(unittest.TestCase):
     def setUp(self):
-        # Under /tmp, which macOS spells /private/tmp once resolved: the registry's paths are resolved ones.
-        self.tmp = Path(tempfile.mkdtemp(prefix="folder-models-", dir="/tmp"))
+        # The system's temp folder, which macOS spells otherwise once resolved: the registry's paths are resolved ones.
+        self.tmp = Path(tempfile.mkdtemp(prefix="folder-models-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.state = self.tmp / "state"
         environment = mock.patch.dict(os.environ, {"CAD_STATE_DIR": str(self.state)})

@@ -535,7 +535,7 @@ def find_body(steps: list[dict], shape, level: int, root: Path) -> Body:
         raise CommandError("Edit mode cannot find the line that makes this part's body. Ask the agent to make the change.")
     frame = step["frames"][min(level, len(step["frames"]) - 1)]
     path = (root / frame["file"]).resolve()
-    text = path.read_text(encoding="utf-8")
+    text = path.read_bytes().decode("utf-8")  # its own line endings kept, as tracer._read reads it
     tree = ast.parse(text, str(path))
     function = _function(tree, frame["function"], frame["line"])
     statement = _top_statement(function, frame["line"]) if function is not None else None
