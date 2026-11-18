@@ -48,11 +48,22 @@ by hand" below.
   one). `group="Options"` puts a parameter in a group of the dialog, `collapsed=("Options",)` folds it; a
   default is the signature's own, and a parameter with none is required. Each call is one row of the
   history by the feature's name, whatever it makes inside; Edit Feature opens its dialog with those
-  controls, and the toolbar's Custom group (and the command search) offers each feature the project
+  controls, and the toolbar's Custom menu (and the command search) offers each feature the project
   declares, writing a new call. A value outside a spec stops the build with the feature's and the
   parameter's names, said first and marked in the dialog. Call it with its values by keyword
   (`body = bolt_circle(body, diameter=BOLT_CIRCLE, count=6)`), faces and edges as selectors by where
   they are (`edges=body.edges().group_by(Axis.Z)[-1]`).
+- **When to make one:** the third time a part, or the parts of a project, build the same thing (a boss, a
+  hole pattern, a lip, a rib), or the person names a house standard ("our M3 boss", "the usual vent").
+  Make it then, move the earlier copies onto it, and say so in a line. A one-off shape stays a plain line:
+  a feature is for what repeats, not for tidying.
+- **Use Studio's standard features before writing one** (`from cad.build123d.standard_features import
+  ...`), in every project's Custom menu after the project's own, each on one flat face picked on the
+  model and placed from its centre: `bolt_circle` (holes on a circle), `vent_slots` (rounded slots in
+  rows), `clearance_hole` (a metric screw's through hole, ISO 273's fine, medium or coarse series) and
+  `heat_set_insert_boss` (a boss with the hole a CNC Kitchen standard insert takes, at least its
+  minimum wall). Their sizes are those tables', so a screw or insert size is named, never a diameter
+  worked out (`clearance_hole(body, top, size="M3")`).
 - **Keep the body in one name and return it** (`tray = ...`, then `return tray`), in build123d's
   algebra style. A command writes its line right after the last statement that makes the body,
   before `label` and `color` are set. A body returned outright (`return bd.Box(...)`) is first
