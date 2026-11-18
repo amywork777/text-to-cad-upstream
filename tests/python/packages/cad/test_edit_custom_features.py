@@ -200,10 +200,6 @@ class InTheTree(unittest.TestCase):
         self.root = project(FLANGE)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.file = str(self.root / "flange.step")
-        # The project's custom code trusted, as the person does at its prompt (`Trust`, below).
-        from cad.edit import trust
-
-        self.assertTrue(trust.grant(self.root, trust.gate(self.root)["trust"]["digest"])["ok"])
 
     def row(self, state, name="Bolt Circle"):
         return next(row for row in state["rows"] if (row.get("custom") or {}).get("name") == name)
@@ -318,86 +314,6 @@ class InTheTree(unittest.TestCase):
         self.assertFalse(bad["ok"])
         self.assertTrue(bad["error"].startswith("Bolt Circle: count must be at least 1 (was 0)\n\nTraceback"), bad["error"][:200])
         self.assertEqual(bad["featureError"]["param"], "count")
-
-
-class Trust(unittest.TestCase):
-    """A project's custom features are code it carries: none of the project runs in edit mode until the person
-    trusts that code as it is (``cad.edit.trust``), as a document's macros do not run as it opens."""
-
-    @classmethod
-    def setUpClass(cls):
-        from cad.edit import service as edit
-
-        cls.service = edit.EditService(build=False)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.service.close()
-
-    def setUp(self):
-        # A part script that would leave a mark if it ran: the gate is judged by what it did not do.
-        self.root = project({**FLANGE, "flange.py": FLANGE["flange.py"].replace(
-            "BOLT_CIRCLE = 60",
-            "BOLT_CIRCLE = 60\n        from pathlib import Path as _P\n        _P(__file__).with_name('ran').write_text('yes')")})
-        self.addCleanup(shutil.rmtree, self.root, True)
-        self.file = str(self.root / "flange.step")
-
-    def test_an_untrusted_project_runs_none_of_its_code_and_says_which_features_it_carries(self):
-        state = self.service.state(self.file)
-        self.assertEqual((state["ok"], state["reason"]), (False, "untrusted"))
-        self.assertEqual(state["trust"]["files"], [{"file": "flange_features.py", "features": ["Bolt Circle", "Edge Break"]}])
-        self.assertFalse(state["trust"]["changed"])
-        self.assertIn("custom code features", state["error"])
-        # Nothing of it ran: not the part script, not its features; nor does a change, or a face's question.
-        self.assertFalse((self.root / "ran").exists())
-        changed = self.service.change({"file": self.file, "literal": {"id": "x", "value": "1"}})
-        self.assertEqual(changed["reason"], "untrusted")
-        self.assertEqual(self.service.face_feature({"file": self.file, "face": 1})["reason"], "untrusted")
-        self.assertFalse((self.root / "ran").exists())
-
-    def test_trust_and_run_reads_the_part_and_is_remembered_until_the_code_changes(self):
-        digest = self.service.state(self.file)["trust"]["digest"]
-        trusted = self.service.change({"file": self.file, "trust": {"digest": digest}})
-        self.assertTrue(trusted["ok"], trusted.get("error"))
-        self.assertTrue(any((row.get("custom") or {}).get("name") == "Bolt Circle" for row in trusted["rows"]))
-        self.assertTrue((self.root / "ran").exists())
-        # Remembered: the next read runs it without asking.
-        self.assertTrue(self.service.state(self.file)["ok"])
-        # The feature's code changed: asked again, said as a change, and the old digest no longer trusts it.
-        features = self.root / "flange_features.py"
-        features.write_text(features.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
-        again = self.service.state(self.file)
-        self.assertEqual(again["reason"], "untrusted")
-        self.assertTrue(again["trust"]["changed"])
-        stale = self.service.change({"file": self.file, "trust": {"digest": digest}})
-        self.assertEqual(stale["reason"], "untrusted")
-        self.assertIn("changed since you were asked", stale["error"])
-
-    def test_a_project_without_custom_features_and_cadgen_s_own_are_never_asked_about(self):
-        from cad.edit import trust
-        from tests.python.packages.cad.test_edit import PLATE
-
-        plain = project(PLATE)
-        self.addCleanup(shutil.rmtree, plain, True)
-        self.assertIsNone(trust.gate(plain))
-        self.assertEqual(trust.custom_code(plain), [])
-
-    def test_a_feature_is_found_by_reading_the_file_under_any_name_it_is_imported_as(self):
-        from cad.edit.trust import _features_in
-
-        self.assertEqual(_features_in("from cad.build123d import feature as f\n@f('Rim')\ndef rim(body):\n  return body\n"), ["Rim"])
-        self.assertEqual(_features_in("import cad.build123d as b\n@b.feature()\ndef boss(body):\n  return body\n"), ["boss"])
-        self.assertEqual(_features_in("from cad import build123d\n@build123d.feature\ndef web(body):\n  return body\n"), ["web"])
-        # A decorator of the same name from elsewhere is not one, and a file that does not parse declares none.
-        self.assertEqual(_features_in("from mylib import feature\n@feature()\ndef rim(body):\n  return body\n"), [])
-        self.assertEqual(_features_in("def (:"), [])
-
-    def test_trust_is_kept_in_the_user_s_state_never_in_the_project(self):
-        from cad.edit import trust
-
-        trust.grant(self.root, trust.gate(self.root)["trust"]["digest"])
-        self.assertFalse(str(trust.store_path().resolve()).startswith(str(self.root.resolve())))
-        self.assertTrue(trust.store_path().is_file())
 
 
 if __name__ == "__main__":

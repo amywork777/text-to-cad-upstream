@@ -15,7 +15,6 @@ import EditSelectionBar from "./EditSelectionBar.jsx";
 import { featureAsk } from "./featureAsk.jsx";
 import ImportedBody from "./ImportedBody.jsx";
 import AssemblyNotice from "./AssemblyNotice.jsx";
-import TrustPrompt from "./TrustPrompt.jsx";
 import PreviewLayer from "./PreviewLayer.jsx";
 import SketchOverlay from "./SketchOverlay.jsx";
 import SketchesLayer from "./SketchesLayer.jsx";
@@ -590,10 +589,7 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
   // A STEP brought in, with no part script: offered as a part, in the top-right corner's notice. An assembly says
   // there how its parts are edited: isolated (`isolateToEdit`).
   const assemblyEditing = editing && edit.status === "ready" && editTree.assembly;
-  // A project's custom code features, not yet trusted, never ran: the prompt to trust them comes first (`TrustPrompt`).
-  const notice = edit.status === "untrusted" && edit.trust
-    ? <TrustPrompt trust={edit.trust} onTrust={edit.trustProject} onDecline={edit.declineTrust} onReview={edit.reviewTrust} />
-    : edit.status === "none" && edit.imported && openFile
+  const notice = edit.status === "none" && edit.imported && openFile
     ? <ImportedBody imported={edit.imported} onAdopt={edit.adopt} onOpenPart={edit.importedPart} onOpen={openFile}
       opensOnItsOwn={layout.onScreen && layout.layout === "manual"} />
     : assemblyEditing ? <AssemblyNotice isolated={isolatedPart(editTree, isolatedLabels)} editable={Boolean(openPart)} /> : null;
