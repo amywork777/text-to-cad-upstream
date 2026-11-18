@@ -318,6 +318,10 @@ sys.meta_path.insert(0, _ProjectFinder())
 import build123d as B  # noqa: E402
 
 from cad.build123d import _features as _feature_calls  # noqa: E402
+from cad.build123d import standard_features as _standard_features  # noqa: E402
+
+# The file of Studio's standard features, whose operations are recorded as a project's own feature's are.
+_STANDARD_FEATURES = _standard_features.__file__
 
 STEPS: list[dict] = []
 RECORDING = False
@@ -391,7 +395,8 @@ def _called_from_project():
         frame = frame.f_back
     if frame is None:
         return False
-    if _inside(frame.f_code.co_filename):
+    # Studio's standard features make what a project's line asks of them, as the project's own do.
+    if _inside(frame.f_code.co_filename) or frame.f_code.co_filename == _STANDARD_FEATURES:
         return True
     if _outside_design(frame.f_code.co_filename):
         OUTSIDE.add(frame.f_code.co_filename)
@@ -1424,7 +1429,9 @@ def _custom_summary(row, calls, text, target, units):
 
 def _project_features():
     """Every custom feature the project's own files declare, for the toolbar to offer and the agent to
-    call: each described (``library``), with the file and the module it is imported from."""
+    call: each described (``library``), with the file and the module it is imported from. Studio's
+    standard features follow them, in every project (``standard``, with no file: a new call imports
+    them from their module)."""
     found = []
     for module in list(sys.modules.values()):
         path = getattr(module, "__file__", None)
@@ -1435,7 +1442,9 @@ def _project_features():
         except Exception:  # noqa: BLE001 - a module that cannot be listed offers nothing
             continue
         found += [{**each, "file": _relative(path), "module": module.__name__} for each in described]
-    return sorted(found, key=lambda each: each["file"])
+    standard = [{**each, "file": None, "module": _standard_features.__name__, "standard": True}
+                for each in _feature_calls.library(_standard_features)]
+    return sorted(found, key=lambda each: each["file"]) + standard
 
 
 def _feature_error(error):

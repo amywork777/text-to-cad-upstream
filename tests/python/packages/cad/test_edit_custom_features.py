@@ -237,9 +237,11 @@ class InTheTree(unittest.TestCase):
                           ("start", "angle", "Start Angle", "Options", "0", None, None),
                           ("staggered", "bool", "Staggered", "Options", False, None, None)])
         self.assertEqual(self.row(state)["custom"]["collapsed"], ["Options"])
-        # The toolbar's Custom group: every feature the project's files declare, where it is imported from.
-        self.assertEqual([(each["name"], each["module"], each["file"]) for each in state["customFeatures"]],
+        # The toolbar's Custom menu: every feature the project's files declare, where it is imported from, then
+        # Studio's standard ones (`test_standard_features.py`).
+        self.assertEqual([(each["name"], each["module"], each["file"]) for each in state["customFeatures"] if not each.get("standard")],
                          [("Bolt Circle", "flange_features", "flange_features.py"), ("Edge Break", "flange_features", "flange_features.py")])
+        self.assertEqual(state["customFeatures"][2]["module"], "cad.build123d.standard_features")
 
     def test_an_input_changes_the_number_where_it_is_written(self):
         state = self.service.state(self.file)
