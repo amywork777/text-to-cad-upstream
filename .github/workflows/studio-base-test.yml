@@ -17,4 +17,8 @@ concurrency:
 
 jobs:
   test:
+    # What Test's jobs ask for: a push looks up the run that already tested its tree.
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/test.yml
