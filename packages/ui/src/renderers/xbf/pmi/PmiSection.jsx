@@ -21,11 +21,7 @@ import { PMI_SECTION_OFF, pmiViewShowsText } from "./pmiViews.js";
 // folding, its **Views** -- each part's named views, a row each, its name and what it shows; a pick
 // applies one (`usePmiViewApplied`: its camera and section, and only its PMI drawn, where it
 // places it) and a second leaves it --, its **Notes** in their numbers (the general profile Note
-// 1, a flag note with its flag, lit on its faces when picked), its **Coverage** (how many faces no
-// requirement is on, which a checkbox lights, each requirement that cannot hold with another, a
-// warning, and each question the requirements leave open, with what the engine suggests in words:
-// asked, never applied; the call that would say it is the agent's, never shown; a question lights
-// its faces under the pointer or picked), then its **Annotations**: every one, a row each -- its glyph and what its callout
+// 1, a flag note with its flag, lit on its faces when picked), then its **Annotations**: every one, a row each -- its glyph and what its callout
 // says, and its eye -- in the document's order. The one picked opens under its row, its values
 // read out with their units and where each came from (a nominal measured on the geometry or as
 // another system's file gives it, a tolerance as the code gave it, or none given), its references
@@ -44,8 +40,6 @@ const STATUS_KEYS = Object.freeze({ missing: "pmi.status.missing", ambiguous: "p
 // A frame's datums in their order (`datumRelationships`'s `role`).
 const DATUM_ROLE_KEYS = Object.freeze({ Primary: "pmi.datumRole.primary", Secondary: "pmi.datumRole.secondary", Tertiary: "pmi.datumRole.tertiary" });
 const STATUS_TEXT = Object.freeze({ missing: "text-destructive", invalid: "text-destructive", ambiguous: "text-amber-500" });
-// A requirement that cannot hold with another: in a warning's colour, as an ambiguous reference is.
-const WARNING_TEXT = STATUS_TEXT.ambiguous;
 // Where a nominal came from: measured on the geometry by the engine, or as another system's file gives it.
 const NOMINAL_SOURCE = Object.freeze({ geometry: { said: "pmi.nominal.measured", about: "pmi.nominal.measuredHint" },
   file: { said: "pmi.nominal.fromFile", about: "pmi.nominal.fromFileHint" } });
@@ -65,13 +59,6 @@ const WRAPPED_ROW_GLYPH = "h-6 self-start";
 // A row's name ends where its eye's column begins (`TreeRowSurface`'s `actions`), so a value at the
 // row's right end is never under it.
 const NAME_BEFORE_ACTIONS = "pr-[var(--row-actions)]";
-
-/** A requirement that cannot hold with another: in a warning's colour. */
-function Warning({ children, ...props }) {
-  return <p className={cn("flex items-start gap-1 py-0.5 text-tiny", WARNING_TEXT)} role="status" data-pmi-warning="" {...props}>
-    <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" /><span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
-  </p>;
-}
 
 function RowEye({ entry, hidden, kept, onToggle }) {
   const { t } = useI18n();
@@ -331,44 +318,6 @@ function ViewRow({ view, pmi, ofParts }) {
 // them where there are any; its general profile; a view from here), in one place whatever is picked.
 const FIRST_OF_PART = "note";
 
-// What coverage found of a part, in words: how many of its faces no requirement is on.
-const uncoveredText = (count, t) => (!count ? t("pmi.coverageAll") : t(count === 1 ? "pmi.coverageOne" : "pmi.coverageMany", { count }));
-
-/**
- * What to say of a part's coverage: its name among several, and how many of its faces no requirement is on.
- * With every face covered and a question or conflict still standing there is no count to say: it would read as the last word.
- */
-export function coverageLine(item, ofParts, t) {
-  const name = ofParts && item.partName ? item.partName : "";
-  const open = !item.uncovered.length && item.suggestions.length + item.conflicts.length > 0;
-  const said = open ? "" : uncoveredText(item.uncovered.length, t);
-  return name && said ? `${name}: ${said}` : name || said;
-}
-
-/**
- * A question coverage leaves open, each once with how many ask it (`sameQuestions`): all its words,
- * over as many lines as they take, and why in its tooltip. Under the pointer or picked, its faces
- * light on the model, every one, as a picked note's do; one about the whole part has none to light.
- */
-function QuestionRow({ line, pmi }) {
-  const { said, count, key } = line;
-  const picked = key === pmi.questionKey;
-  const rowHeight = useTreeRowHeight();
-  const lights = line.faces.length > 0;
-  return <TooltipHint side="right" content={<>
-    <div>{said.question}</div>
-    <div className="text-micro first-letter:uppercase [overflow-wrap:anywhere]">{said.why}</div>
-  </>}>
-    <TreeRowSurface depth={0} active={picked} className={cn("-mx-1 w-auto gap-0", !picked && "text-foreground")} style={{ height: "auto", minHeight: rowHeight }}
-      data-pmi-suggestion={said.kind} onMouseEnter={() => pmi.hoverQuestion(key)} onMouseLeave={() => pmi.hoverQuestion("")}>
-      <button type="button" aria-pressed={lights ? picked : undefined} disabled={!lights} onClick={() => pmi.pickQuestion(key)} className={cn(TREE_ROW_NAME_CLASS, WRAPPED_ROW_NAME)}>
-        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{said.question}</span>
-        {count > 1 ? <span className="shrink-0 tabular-nums text-muted-foreground">{`×${count}`}</span> : null}
-      </button>
-    </TreeRowSurface>
-  </TooltipHint>;
-}
-
 /**
  * @param {{ pmi: ReturnType<typeof import("./useXbfPmi.jsx").useXbfPmi>, picked: Parameters<typeof pmiCreateOptions>[0]["picked"],
  *   selectedFeatureIds?: readonly string[], moving: boolean, request?: { kind: string, key: number } | null,
@@ -398,7 +347,6 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
   // The notes are listed in their numbers, under Notes; the annotations are the rest.
   const views = pmi.views || EMPTY;
   const notes = pmi.notes || EMPTY;
-  const coverage = pmi.coverage || EMPTY;
   const annotations = useMemo(() => {
     const said = new Set(notes.map(note => note.key));
     return pmi.entries.filter(entry => !said.has(entry.key));
@@ -407,7 +355,6 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
   // Notes of several parts each number from 1, and views of several may share a name: each says its part.
   const notesOfParts = new Set(notes.map(note => note.part)).size > 1;
   const viewsOfParts = new Set(views.map(view => view.part)).size > 1;
-  const coverageOfParts = coverage.length > 1;
   // A related annotation picked from another's values: the whole list, for the selection it makes.
   const selectRelated = (entry) => { setShowAllFor(selectionKeyOf(entry.featureIds)); pmi.select(entry.key); };
   // A kind asked for from a face's menu: its form, the section open on it.
@@ -468,15 +415,6 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
             </EntryRow>;
           })}
         </ul>
-      </FileSheetSettingsSection> : null}
-      {coverage.length ? <FileSheetSettingsSection title={t("pmi.coverage")} sectionId="pmi-coverage" switchLabel={t("pmi.showUncovered")}
-        enabled={Boolean(pmi.uncoveredShown)} onEnabledChange={shown => pmi.showUncovered(shown)}>
-        {coverage.map(item => <div key={item.part ?? "none"} className="px-2" data-pmi-coverage={item.part ?? ""}>
-          {coverageLine(item, coverageOfParts, t) ? <p className="py-0.5 text-xs text-foreground">{coverageLine(item, coverageOfParts, t)}</p> : null}
-          {item.conflicts.map(conflict => <Warning key={`${conflict.kind}:${conflict.ids.join(",")}`} data-pmi-conflict={conflict.kind}>
-            {`${conflict.ids.join(", ")}: ${conflict.problem}`}</Warning>)}
-          {item.questions.map(line => <QuestionRow key={line.key} line={line} pmi={pmi} />)}
-        </div>)}
       </FileSheetSettingsSection> : null}
       {annotations.length ? <FileSheetSettingsSection title={t("pmi.annotations")} sectionId="pmi-annotations">
         {featureIds.length ? <div className="flex flex-wrap items-center justify-between gap-1 border-b border-border/60 px-2 py-1 text-tiny">
