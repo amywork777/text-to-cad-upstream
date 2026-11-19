@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import EditTimeline from '../../../../dist/renderers/xbf/edit/EditTimeline.js';
 import { featureTree, sketchTreeId } from '../../../../dist/renderers/xbf/edit/editMode.js';
-import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/floatingSurface.js';
+import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/workspaceSurface.js';
 
 const sketched = (name: string, line: number) => ({ name, plane: 'Top', file: 'bracket.py', line, status: 'Fully defined' });
 const command = { command: 'extrude', values: {}, keeps: '' };

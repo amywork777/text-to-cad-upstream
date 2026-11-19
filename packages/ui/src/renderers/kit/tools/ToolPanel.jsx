@@ -2,7 +2,9 @@ import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } f
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@cad/ui/utils";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
-import { FLOATING_CHROME_SURFACE_CLASS, WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
+import { FLOATING_CHROME_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
+import { WORKSPACE_SURFACE_CLASS } from "../../../lib/workspaceSurface.js";
+import DockedToolPanel from "./DockedToolPanel.jsx";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
 import ResizeGrip from "./ResizeGrip.jsx";
 import { ToolStackContext } from "./ToolStack.jsx";
@@ -32,13 +34,6 @@ const KEY_NUDGE_PX = 16;
  * (`FILE_SHEET_SECTION_HEADING_CLASSES`), so every heading in the stack reads alike.
  */
 export const TOOL_PANEL_HEADING_TEXT_CLASS = "text-tiny font-medium leading-4 tracking-wide text-muted-foreground uppercase";
-
-/**
- * The head of a panel of CAD mode's left dock (the FeatureManager, PMI): one 28px row 8px in, the
- * words as written, a level above the tracked-caps headings inside the panel. The caller ends it:
- * 8px past a bare chevron, 4px past a 20px button, so the glyphs end on one line.
- */
-export const DOCK_PANEL_HEAD_CLASS = "flex h-7 w-full shrink-0 items-center gap-1 pl-2 text-left text-xs font-medium leading-4 text-foreground";
 
 /** A panel header's small icon button: the chevron, the X, and a tool's settings menu (`ToolModeMenu.jsx`'s `ToolSettingsMenu`). */
 export const TOOL_PANEL_BUTTON_CLASS = "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
@@ -82,10 +77,7 @@ const REVEAL_CLASS = "animate-in fade-in-0 zoom-in-75 duration-150 motion-reduce
  * `hidden` keeps a panel mounted while its tool is not up, so a tree keeps its expansion, filter
  * and scroll across a trip to another tool. `header` never scrolls; the body under it does, for a
  * panel that gives way. `lead`: the panel of the tool in hand, drawn at the top of the stack above every kept
- * panel, wherever it sits among them. `solid`: a panel of small text read closely over the model
- * (PMI), on the workspace's opaque card. Docked in CAD mode's left column (the tool stack's context
- * says `panelHead`), a panel is that column's section instead: no box, its heading the column's dock
- * head (`DOCK_PANEL_HEAD_CLASS`), pinned over what it scrolls.
+ * panel, wherever it sits among them. `solid` and a panel docked (`panelHead`): Studio's workspace (`DockedToolPanel.jsx`).
  *
  * @param {{ id: string, title?: import("react").ReactNode, name?: string, label: string, summary?: import("react").ReactNode,
  *   actions?: import("react").ReactNode, header?: import("react").ReactNode, collapsible?: boolean, onClose?: (() => void) | null, closeLabel?: string,
@@ -219,23 +211,8 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
     </div> : null;
 
   const dragging = draft !== null;
-  if (docked) {
-    return <section ref={section} aria-label={label} hidden={hidden} data-tool-panel={fit} data-tool-panel-id={id || undefined} data-tool-panel-docked=""
-      className="flex min-h-0 min-w-0 flex-col text-tiny">
-      <div className="sticky top-0 z-10 border-b border-border bg-cad-ws-panel" data-tool-panel-heading="">
-        {header ? <div className="flex min-w-0 items-center gap-1 pr-0.5" data-tool-panel-header=""><div className="min-w-0 flex-1">{header}</div>{closeButton}</div>
-          : <div className={cn(DOCK_PANEL_HEAD_CLASS, "pr-1")}>
-            <h3 className="flex min-w-0 flex-1"><span className="min-w-0 truncate">{title || name || label}</span></h3>
-            {summary ? <span className="shrink-0 text-tiny text-muted-foreground">{summary}</span> : null}
-            {actions}
-            {closeButton}
-          </div>}
-      </div>
-      <div ref={body} data-tool-panel-body="" className="min-w-0">
-        <div ref={content} className="flow-root">{children}</div>
-      </div>
-    </section>;
-  }
+  // Docked in CAD mode's left column: Studio's (`DockedToolPanel.jsx`).
+  if (docked) return <DockedToolPanel {...{ sectionRef: section, bodyRef: body, contentRef: content, id, fit, label, title, name, summary, actions, header, closeButton, hidden }}>{children}</DockedToolPanel>;
   if (tabbed) {
     const searching = stack.searching;
     return <section ref={section} aria-label={label} hidden={hidden || !(searching || stack.activeSection === id)} role={stack.single ? "region" : "tabpanel"}

@@ -2,7 +2,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import EditBrowser, { floatsCard } from '../../../../dist/renderers/xbf/edit/EditBrowser.js';
 import { featureTree } from '../../../../dist/renderers/xbf/edit/editMode.js';
-import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/floatingSurface.js';
+import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/workspaceSurface.js';
 
 beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); document.querySelectorAll('[data-test-card]').forEach(node => node.remove()); });

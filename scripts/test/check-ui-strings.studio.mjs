@@ -6,5 +6,5 @@ export const STUDIO_ENGLISH_ONLY = ['packages/ui/src/renderers/xbf/edit/'];
 
 // Studio's lines in Jake's files, English only as its own folder is (`STUDIO_ENGLISH_ONLY`).
 export const STUDIO_ALLOWLIST = [
-  ['packages/ui/src/renderers/kit/shell/RendererShell.jsx', 'FeatureManager', "Studio's CAD mode's design tree, named as SolidWorks names it"],
+  ['packages/ui/src/renderers/kit/shell/studioWorkspace.jsx', 'FeatureManager', "Studio's CAD mode's design tree, named as SolidWorks names it"],
 ];
