@@ -388,3 +388,7 @@ is upstream. Keep the two easy to tell apart:
   Jake's file to the one line that calls it, as `cad/build123d/standard_features.py` does.
 - A change every text-to-cad user would want goes to Jake as a pull request instead.
 - Pull requests here run Jake's Test through `.github/workflows/studio-base-test.yml`; read `CI`.
+- `scripts/studio-jake-edits.txt` lists every file of Jake's that studio-base changes or removes, and
+  the `Jake's files` check fails when that set changes. Moving Studio code out takes a file off the
+  list; adding one to it is a decision, not a side effect. After merging a release of Jake's, run
+  `scripts/studio-jake-edits.sh --write` (with `jake/main` fetched) so the list's base moves too.

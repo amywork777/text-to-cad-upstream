@@ -270,6 +270,8 @@ RULES: tuple[Rule, ...] = (
         ".github/workflows/release-publish.yml", ".github/workflows/release-prepare.yml",
         ".github/workflows/deploy-docs.yml", ".github/workflows/deploy-api.yml",
         ".github/workflows/studio-base-test.yml",  # Studio's fork: calls test.yml on studio-base
+        "scripts/studio-jake-edits.sh",  # Studio's fork: lists the files of Jake's studio-base changes
+        "scripts/studio-jake-edits.txt",
         ".github/dependabot.yml", ".github/release.yml", ".github/FUNDING.yml", ".githooks/**",
         ".claude-plugin/**", ".codex-plugin/**", ".cursor-plugin/**", ".grok-plugin/**", "gemini-extension.json",
         ".antigravity-plugin/**", ".kimi-plugin/**", ".devin-plugin/**", ".muse-plugin/**",
