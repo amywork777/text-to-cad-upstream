@@ -1,8 +1,9 @@
 # Jake's files that studio-base changes or removes (AGENTS.md, On studio-base). Checked by
 # scripts/studio-jake-edits.sh; add a line only on purpose, and take one off when its change
 # moves into Studio's own files or lands in Jake's repository.
-# Jake base: f34aeafc99cf3b0b51e2f71caaffd7579756b887
+# Jake base: 44d0973482e50ccf6c35036355bf9124203ca4c0
 .github/workflows/test.yml
+.muse-plugin/plugin.json
 AGENTS.md
 apps/api/README.md
 apps/api/src/events.mjs
@@ -18,37 +19,35 @@ apps/mcp/src/ModelView.tsx
 apps/mcp/src/shell.ts
 docs/contributing/adding-an-integration.md
 docs/contributing/testing.md
-docs/install.md
 models/assemblies/.gitignore
 models/assemblies/src/motorcycle_shock_absorber/motorcycle_shock_absorber.py
 models/assemblies/src/README.md
 models/examples/src/electronics_enclosure_base_drawing.py
 models/examples/src/README.md
 package-lock.json
-packages/cad-server/README.md
-packages/cad-server/src/cad_server/_internal/integration_env.py
-packages/cad-server/src/cad_server/_internal/providers.py
-packages/cad-server/src/cad_server/analytics.py
-packages/cad-server/src/cad_server/cli/document_types.py
-packages/cad-server/src/cad_server/cli/model.py
-packages/cad-server/src/cad_server/cli/step.py
-packages/cad-server/src/cad_server/cli/xbf.py
-packages/cad-server/src/cad_server/engine/cli.py
-packages/cad-server/src/cad_server/engine/daemon.py
-packages/cad-server/src/cad_server/engine/models.py
-packages/cad-server/src/cad_server/engine/README.md
-packages/cad-server/src/cad_server/engine/supervisor.py
-packages/cad-server/src/cad_server/mcp/server.py
-packages/cad-server/src/cad_server/viewer/content_types.py
-packages/cad-server/src/cad_server/viewer/engine_app.py
-packages/cad-server/src/cad_server/viewer/exports.py
-packages/cad-server/src/cad_server/viewer/http_app.py
-packages/cad-server/src/cad_server/viewer/kinds.py
-packages/cad-server/src/cad_server/viewer/prompt_files.py
-packages/cad-server/src/cad_server/viewer/recents.py
-packages/cad-server/src/cad_server/viewer/scanner.py
 packages/cad/pyproject.toml
 packages/cad/README.md
+packages/cad/src/cad_server/_internal/integration_env.py
+packages/cad/src/cad_server/analytics.py
+packages/cad/src/cad_server/cli/document_types.py
+packages/cad/src/cad_server/cli/model.py
+packages/cad/src/cad_server/cli/step.py
+packages/cad/src/cad_server/cli/xbf.py
+packages/cad/src/cad_server/engine/cli.py
+packages/cad/src/cad_server/engine/daemon.py
+packages/cad/src/cad_server/engine/models.py
+packages/cad/src/cad_server/engine/README.md
+packages/cad/src/cad_server/engine/supervisor.py
+packages/cad/src/cad_server/mcp/server.py
+packages/cad/src/cad_server/README.md
+packages/cad/src/cad_server/viewer/content_types.py
+packages/cad/src/cad_server/viewer/engine_app.py
+packages/cad/src/cad_server/viewer/exports.py
+packages/cad/src/cad_server/viewer/http_app.py
+packages/cad/src/cad_server/viewer/kinds.py
+packages/cad/src/cad_server/viewer/prompt_files.py
+packages/cad/src/cad_server/viewer/recents.py
+packages/cad/src/cad_server/viewer/scanner.py
 packages/cad/src/cad/__init__.py
 packages/cad/src/cad/_internal/counts.py
 packages/cad/src/cad/_internal/document_type.py
@@ -226,7 +225,6 @@ scripts/github-workflows/select_checks.py
 scripts/README.md
 scripts/test/check-kit-boundaries.mjs
 scripts/test/check-ui-strings.mjs
-skills.sh.json
 skills/cad/references/build123d-modeling.md
 skills/cad/references/exports.md
 skills/cad/references/inspection-and-validation.md
