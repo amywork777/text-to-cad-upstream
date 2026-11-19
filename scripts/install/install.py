@@ -90,8 +90,7 @@ LOCAL_CATALOG = "text-to-cad"    # the folder catalog 0.10.0-0.11.11's installer
 OUR_CATALOGS = (LOCAL_CATALOG, CATALOG, DEV_CATALOG)
 # The plugin names we ever used: `cad` until 0.7.6, `text-to-cad` since.
 OUR_PLUGINS = ("text-to-cad", "cad")
-SKILLS = ("cad", "cam", "engineering-drawing", "fea", "pcb", "print3d", "render", "robot-simulation", "sendcutsend",
-          "work-instructions")
+SKILLS = ("cad", "engineering-drawing", "fea", "pcb", "print3d", "render", "robot-simulation", "sendcutsend")
 # Skills an earlier release shipped and this one does not (implicit-cad: releases before 0.5).
 RETIRED_SKILLS = ("bambu-labs", "dfam-check", "dfm", "dxf", "gcode", "pcb-dfm", "sdf", "simulation", "srdf",
                   "step-parts", "urdf", "cad-viewer", "cad-mcp-setup", "implicit-cad")
