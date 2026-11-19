@@ -22,3 +22,18 @@ jobs:
       contents: read
       actions: read
     uses: ./.github/workflows/test.yml
+
+  jake-edits:
+    # Studio's own: the files of Jake's that studio-base changes are exactly those in
+    # scripts/studio-jake-edits.txt (AGENTS.md, On studio-base).
+    name: Jake's files
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: Check Jake's files studio-base changes
+        run: bash scripts/studio-jake-edits.sh
