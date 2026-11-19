@@ -26,7 +26,7 @@ class DeadVersionsStayDeadTest(unittest.TestCase):
     def test_viewer_server_info_schema_version_is_gone(self) -> None:
         self.assertNotIn(
             "VIEWER_SERVER_INFO_SCHEMA_VERSION",
-            (ROOT / "packages/cad-server/src/cad_server/viewer/http_app.py").read_text(encoding="utf-8"),
+            (ROOT / "packages/cad/src/cad_server/viewer/http_app.py").read_text(encoding="utf-8"),
         )
 
     def test_the_glb_container_is_declared_once(self) -> None:
@@ -37,7 +37,7 @@ class DeadVersionsStayDeadTest(unittest.TestCase):
         # by law (it imports nothing of the packages outside itself) and writes its own GLB, so it
         # declares the container once more, in its GLB writer, which the library's other GLB (a CAM plan's
         # result) is framed by.
-        sources = [ROOT / "packages" / project / "src" for project in ("cad", "cad-server", "cad-mcp")]
+        sources = [ROOT / "packages" / project / "src" for project in ("cad",)]
         magic = re.compile(r"0x46546c67|b[\"']glTF[\"']", re.IGNORECASE)
         declarations = sorted(
             path.relative_to(source).as_posix()

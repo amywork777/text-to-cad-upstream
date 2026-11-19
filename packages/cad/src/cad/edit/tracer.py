@@ -369,13 +369,18 @@ CLASSES = {
 PATTERNS = {"GridLocations", "PolarLocations"}
 
 
+# Before Python 3.12 (PEP 709) a comprehension runs in a frame of its own: it is its function's line,
+# as from 3.12, and no function of the project's.
+_COMPREHENSIONS = {"<listcomp>", "<dictcomp>", "<setcomp>"}
+
+
 def _project_frames():
     """The project's own frames calling into build123d, outermost first."""
     frames = []
     frame = sys._getframe(2)
     while frame is not None:
         filename = frame.f_code.co_filename
-        if filename != __file__ and _inside(filename):
+        if filename != __file__ and _inside(filename) and frame.f_code.co_name not in _COMPREHENSIONS:
             frames.append(
                 {"file": _relative(filename), "line": frame.f_lineno, "function": frame.f_code.co_name}
             )

@@ -481,13 +481,16 @@ if failed:
     raise SystemExit(1)
 """
 
-NO_ENGINE = "the engine is not running"
+# The client's own line for no server (``cad.engine.client.NOT_RUNNING``): from text-to-cad 0.11.12 a client never
+# starts a server, and says this.
+NO_ENGINE = "the cad server is not running: run `cad server start`"
 
 
 def never_start_engine() -> None:
-    """This process reaches the engine that runs, and never starts one (``client._start`` refused):
-    the edit service's children ask the engine their server is part of, and with it gone, say so
-    (``NO_ENGINE``) rather than leave an engine of their own behind."""
+    """This process reaches the engine that runs, and never starts one: the edit service's children ask the
+    engine their server is part of, and with it gone, say so (``NO_ENGINE``) rather than leave an engine of
+    their own behind. From text-to-cad 0.11.12 no client starts one (``cad.engine.client.connect``), so this
+    only holds the older ``client._start`` off where a release still has it."""
     from cad.engine import client
 
     def refused(*_args, **_kwargs):
