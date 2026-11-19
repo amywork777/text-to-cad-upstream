@@ -15,6 +15,10 @@
         "path": "skills/cad/SKILL.md"
       },
       {
+        "id": "cam",
+        "path": "skills/cam/SKILL.md"
+      },
+      {
         "id": "engineering-drawing",
         "path": "skills/engineering-drawing/SKILL.md"
       },
@@ -41,6 +45,10 @@
       {
         "id": "sendcutsend",
         "path": "skills/sendcutsend/SKILL.md"
+      },
+      {
+        "id": "work-instructions",
+        "path": "skills/work-instructions/SKILL.md"
       }
     ],
     "commands": [],

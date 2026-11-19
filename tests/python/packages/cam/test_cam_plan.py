@@ -190,7 +190,7 @@ class Grbl(unittest.TestCase):
                 result = plan(step, {**job, "name": "bracket (rev B)"})
                 self.assertEqual("ready", result.measurements["verdict"].get("status"), result.findings)
                 text = Path(result.measurements["posts"][0]["file"]).read_text(encoding="utf-8")
-                self.assertTrue(text.startswith("(text-to-cad: bracket [rev B], from block [1].step, setup top,"), text[:80])
+                self.assertTrue(text.startswith("(cad: bracket [rev B], from block [1].step, setup top,"), text[:80])
                 nested = [line for line in text.splitlines() if not re.fullmatch(r"[^()]*(?:\([^()]*\)[^()]*)*", line)]
                 self.assertEqual([], nested)
                 self.assertIn("G55", text)

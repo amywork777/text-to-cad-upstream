@@ -334,7 +334,7 @@ class ReadBack(unittest.TestCase):
         self.assertIn("FreeCAD holds a peck of 3.75 mm where CAM set 1.5", found["summary"])
 
     def test_a_posted_speed_feed_or_peck_cad_cam_did_not_set_is_refused(self):
-        program = ("(text-to-cad: S1 F2 Q3)\nG54\nM3 S9000\nG0 X1 Y2\nG83 X1 Y2 Z-4.000 R3.000 Q1.500 F200.000 ; F7\n"
+        program = ("(cad: S1 F2 Q3)\nG54\nM3 S9000\nG0 X1 Y2\nG83 X1 Y2 Z-4.000 R3.000 Q1.500 F200.000 ; F7\n"
                    "G1 X5 F600.0\n")
         self.assertEqual([], checks.posted("top", "part.top.ngc", program, [self.SPEC], "G54"))
         found = checks.posted("top", "part.top.ngc", program.replace("S9000", "S12000").replace("Q1.500", "Q3.750"),
