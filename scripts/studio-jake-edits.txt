@@ -27,6 +27,7 @@ models/examples/src/README.md
 package-lock.json
 packages/cad/pyproject.toml
 packages/cad/README.md
+packages/cad/src/cad_mcp/shim.py
 packages/cad/src/cad_server/_internal/integration_env.py
 packages/cad/src/cad_server/analytics.py
 packages/cad/src/cad_server/cli/document_types.py
