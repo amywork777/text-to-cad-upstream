@@ -19,7 +19,8 @@ vi.mock('../../../dist/renderers/kit/shell/ShellViewport.js', () => ({
 vi.mock('../../../dist/renderers/glb/useGlbScene.js', () => ({
   useGlbScene: () => ({ scene: loaded.scene, revision: 'one', busy: false, error: null, progress: null })
 }));
-import GlbRenderer, { loadFeaView } from '../../../dist/renderers/glb/GlbRenderer.js';
+import GlbRenderer from '../../../dist/renderers/glb/GlbRenderer.js';
+import { loadFeaView } from '../../../dist/renderers/glb/resultFile.js';
 import { ViewerElementContext, ViewerHostContext } from '../../../dist/host/context.js';
 import { testHost } from '../../../dist/host/testing/host.js';
 

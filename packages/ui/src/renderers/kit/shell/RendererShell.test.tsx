@@ -19,7 +19,7 @@ import HarnessRenderer from '../../../../dist/renderers/shell-harness/HarnessRen
 import { ViewerHostContext } from '../../../../dist/host/context.js';
 import { testHost } from '../../../../dist/host/testing/host.js';
 import { ViewerMobileContext } from '../../../../dist/file-viewer/responsive.js';
-import { WORKSPACE_DOCK_CLASS, WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/floatingSurface.js';
+import { WORKSPACE_DOCK_CLASS, WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/workspaceSurface.js';
 
 // jsdom lays nothing out: the toolbar is given the height it has in the app.
 const TOOLBAR_HEIGHT = 114;
@@ -331,4 +331,16 @@ it("moves the tool stack's panels with the rows, one shift for the column, so a 
   layOut({ view: 700, row: 300, panel: 400, navigator: 'folded' });
   resize();
   expect([...shifted(), topRightLeft()]).toEqual(['78px', '-78px', `${200 + 78 + 300 + 8}px`]);
+});
+
+it("mounts the renderer's icon sprite once in the frame, with the workspace up and in Simple view's ai layout", () => {
+  // Every generated icon of the chrome draws from it (`<use href="#…">`): were it lost, they would all blank.
+  const tool = (name: string) => within(screen.getByRole('group', { name: 'Interaction tools' })).getByRole('button', { name });
+  const sprite = <svg data-icon-sprite="" aria-hidden="true"><symbol id="harness-icon" viewBox="0 0 32 32" /></svg>;
+  const workspace = { ribbon: () => <div role="toolbar" aria-label="Design" />, leftDock: <div role="tree" aria-label="Features" /> };
+  const { show } = shell({ iconSprite: sprite, ...workspace });
+  const sprites = () => [...document.querySelectorAll('[data-icon-sprite]')].map(node => Boolean(node.closest('[data-slot="cad-file-view"]')));
+  expect([sprites(), Boolean(screen.getByRole('toolbar', { name: 'Design' }))]).toEqual([[true], true]);
+  show({ iconSprite: sprite });
+  expect([sprites(), tool('Select').getAttribute('aria-pressed')]).toEqual([[true], 'true']);
 });

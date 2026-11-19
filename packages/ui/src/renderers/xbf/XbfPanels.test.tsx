@@ -414,16 +414,6 @@ it("each of the earlier single choices is its kind ticked alone, picking as it d
   };
   expect(icons(XbfSelectIcon, XbfMeasureIcon)).toEqual(['select:', 'select:parts', 'select:faces', 'select:edges', 'select:position', 'select:filter',
     'measure:', 'measure:points', 'measure:edges', 'measure:faces', 'measure:filter', 'measure:filter']);
-  // In Studio's CAD workspace the same buttons are its icon generator's, each badge its own (the funnel the plain icon);
-  // Box select, which that set draws no icon for, keeps the kit's.
-  const { container: cad } = render(<>{['all', 'parts', 'faces', 'edges', 'position', 'filter'].map(mode => <XbfSelectIcon key={mode} mode={mode} cad />)}
-    {[MEASURE_FILTER_DEFAULT, ['vertex'], ['edge'], ['face'], ['vertex', 'face']].map(filter => <XbfMeasureIcon key={filter.join()} mode={measureBadge(filter)} cad />)}
-    <XbfSelectIcon tool="box" mode="all" cad /></>);
-  expect([...cad.querySelectorAll('use')].map(use => use.getAttribute('href')!.replace('#nx-', ''))).toEqual(['select', 'select-part',
-    'select-face', 'select-edge', 'select-position', 'select', 'measure', 'measure-vertex', 'measure-edge', 'measure-face', 'measure']);
-  expect([...cad.querySelectorAll('svg[data-tool-icon-base]')].map(icon => icon.getAttribute('data-tool-icon-base'))).toEqual(['boxSelect']);
-  cleanup();
-  // The geometry ticked is picked as one mode, which shapes the tree.
   expect(['all', 'parts', 'topology', 'none'].map(mode => treeShape(mode))).toEqual(['all', 'parts', 'faces', 'all']);
   expect(selectGeometryMode(['faces', 'edges'])).toBe('topology');
 });

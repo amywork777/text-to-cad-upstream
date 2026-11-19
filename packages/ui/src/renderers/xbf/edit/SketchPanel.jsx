@@ -3,12 +3,14 @@ import { TREE_GLYPH_STROKE } from "@cad/ui/primitives/tree-row";
 import { cn } from "@cad/ui/utils";
 import {
   FILE_SHEET_STATUS_TEXT_CLASSES,
-  FileSheetCheckboxRow,
   FileSheetControlRow,
-  FileSheetSelectRow,
   FileSheetSettingsSection,
   FileSheetValueInput
 } from "../../kit/inspector/FileSheet.js";
+import {
+  FileSheetCheckboxRow,
+  FileSheetSelectRow
+} from "../../kit/inspector/FileSheetRows.js";
 import { Button } from "@cad/ui/primitives/button";
 import { TOOL_PANEL_BUTTON_CLASS } from "../../kit/tools/ToolPanel.jsx";
 import { SketchIcon } from "./cadIcons.jsx";

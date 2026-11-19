@@ -26,6 +26,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from '@babel/parser';
 import traverseModule from '@babel/traverse';
+import { STUDIO_ALLOWLIST, STUDIO_ENGLISH_ONLY } from './check-ui-strings.studio.mjs';
 
 const traverse = traverseModule.default ?? traverseModule;
 
@@ -35,8 +36,6 @@ export const STATUS_VOCABULARY_FILE = 'packages/ui/src/renderers/kit/status/stat
 
 // Test renderers: they draw one triangle for the shell's own specs and ship to no person.
 const SKIPPED_DIRS = ['packages/ui/src/renderers/harness/', 'packages/ui/src/renderers/shell-harness/'];
-// Studio's CAD mode (Edit by hand): English only for now, as Studio ships in English, so not read.
-export const STUDIO_ENGLISH_ONLY = ['packages/ui/src/renderers/xbf/edit/'];
 
 const LANGUAGE_ATTRIBUTES = new Set([
   'aria-label', 'aria-description', 'aria-valuetext', 'aria-roledescription', 'aria-placeholder', 'title', 'placeholder',
@@ -205,8 +204,7 @@ export const UI_STRINGS_ALLOWLIST = [
   ['packages/ui/src/export/formats.ts', 'BOM', "a fabrication file's own name, as KiCad and every assembler write it"],
   ['packages/ui/src/export/formats.ts', 'ODB++', "a fabrication file format's own name"],
   ['packages/ui/src/export/formats.ts', 'IPC-2581', "a fabrication file format's standard's name"],
-  // Studio's lines in Jake's files, English only as its own folder is (`STUDIO_ENGLISH_ONLY`).
-  ['packages/ui/src/renderers/kit/shell/RendererShell.jsx', 'FeatureManager', "Studio's CAD mode's design tree, named as SolidWorks names it"],
+  ...STUDIO_ALLOWLIST,
 ];
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

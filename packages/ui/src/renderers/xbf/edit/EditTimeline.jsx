@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
 import { cn } from "@cad/ui/utils";
-import { WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
+import { WORKSPACE_SURFACE_CLASS } from "../../../lib/workspaceSurface.js";
 import { VIEWPORT_CUBE_BOTTOM } from "../../kit/shell/viewportLayout.js";
 import { AUTHOR_DOT_CLASS, AUTHOR_WORDS } from "./authors.js";
 import { FeatureIcon } from "./featureIcons.jsx";

@@ -9,6 +9,7 @@ import { SHELL_TOOL, useRendererShell } from "../kit/shell/useRendererShell.js";
 import { usePreviewScene } from "../kit/shell/usePreviewScene.js";
 import { createToolModes } from "../kit/tools/toolModes.js";
 import ToolPanel from "../kit/tools/ToolPanel.jsx";
+import { harnessWorkspaceProps } from "../kit/shell/studioWorkspace.jsx";
 import { TreeFilterInput } from "@cad/ui/primitives/tree-filter";
 
 // TEST SCAFFOLDING. This renderer is never registered in a product: it exists so
@@ -229,11 +230,8 @@ function HarnessSurface({ view, data }) {
     [previewScene, data.previewAnimation, onCameraSettled]);
 
   // Its test controls sit at the bottom centre, clear of the view cube (bottom-right) and the view's panel (down the left).
-  // A test's icon sprite and workspace (`data.iconSprite`, `data.ribbon`, `data.leftDock`, `data.bottomDock`,
-  // `data.dialogPlace`, `data.dialogOpen` and `data.quickEditAsked`) go to the frame as a renderer hands its own.
   return <RendererShell shell={shell} tools={withPanel ? [selectTool, ...shell.tools.drawing, keepTool, poseTool] : shell.tools.drawing}
-    iconSprite={data.iconSprite ?? null} ribbon={data.ribbon ?? null} leftDock={data.leftDock ?? null} bottomDock={data.bottomDock ?? null}
-    dialogPlace={data.dialogPlace ?? null} dialogOpen={data.dialogOpen ?? false} quickEditAsked={data.quickEditAsked ?? null}
+    {...harnessWorkspaceProps(data)}
     previewView={previewView}
     toolPanels={toolPanels} sidebar={sidebar} references={references} onClearReferences={() => setPicked("")}
     contextMenuItems={contextMenuItems} onContextMenuOpenChange={setMenuUp}

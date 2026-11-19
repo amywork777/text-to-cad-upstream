@@ -11,7 +11,7 @@ import { usePmiViewApplied } from '../../../../dist/renderers/xbf/pmi/usePmiView
 import { presentXbfTree } from '../../../../dist/renderers/xbf/xbfTree.js';
 import { createViewSettingsStore } from '../../../../dist/renderers/kit/view-settings/viewSettingsStore.js';
 import FlatPanel from '../../../../dist/renderers/kit/shell/FlatPanel.js';
-import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/floatingSurface.js';
+import { WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/workspaceSurface.js';
 
 const restores: (() => void)[] = [];
 function override(target: object, key: string, descriptor: PropertyDescriptor) {

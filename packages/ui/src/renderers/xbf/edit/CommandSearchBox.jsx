@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
 import { cn } from "@cad/ui/utils";
-import { WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
+import { WORKSPACE_SURFACE_CLASS } from "../../../lib/workspaceSurface.js";
 import { findCommands } from "./commandSearch.js";
 import { isCustomCommand } from "./customFeature.js";
 

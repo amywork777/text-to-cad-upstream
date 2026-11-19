@@ -81,13 +81,12 @@ function tabSettings(initial: object = {}) {
 type Settings = ReturnType<typeof tabSettings>;
 function frame({ name = 'panel.harness', preferences = tabSettings(), state = undefined as unknown, mobile = false, onStateChange = (_: unknown) => {}, appearance = { colorScheme: 'light' } as object, notice = null as React.ReactNode, viewer = false, data = {} as object,
   usage = null as ((counts: { control: string; count: number; seconds: number }[]) => void) | null } = {}) {
-  // `data`: what else the renderer hands the frame (its icon sprite, a workspace); `rehand` hands it something else.
-  const props = (handed: object) => ({ source: { id: 'one' }, file: { path: `/models/${name}`, name, kind: 'file' }, document: null, notice,
-    onReady() {}, onOpenFile() {}, appearance, state, onStateChange, reload() {}, data: { services: { preferences }, ...handed } });
+  const props = { source: { id: 'one' }, file: { path: `/models/${name}`, name, kind: 'file' }, document: null, notice,
+    onReady() {}, onOpenFile() {}, appearance, state, onStateChange, reload() {}, data: { services: { preferences }, ...data } };
   // `viewer`: inside a viewer's element, as FileViewer draws it, where the viewer's keys are its own.
-  const element = (handed = data) => {
+  const element = () => {
     const shell = <ViewerHostContext.Provider value={testHost()}><ViewerMobileContext.Provider value={mobile}>
-      <HarnessRenderer {...(props(handed) as any)} /></ViewerMobileContext.Provider></ViewerHostContext.Provider>;
+      <HarnessRenderer {...(props as any)} /></ViewerMobileContext.Provider></ViewerHostContext.Provider>;
     // `usage`: the host's count of the controls a person used (`usage/controls.js`).
     const counted = usage ? <ControlUsageProvider report={usage}>{shell}</ControlUsageProvider> : shell;
     if (!viewer) return counted;
@@ -95,7 +94,7 @@ function frame({ name = 'panel.harness', preferences = tabSettings(), state = un
     return <ViewerElementContext.Provider value={ref}><div ref={node => { ref.current = node; }}>{counted}</div></ViewerElementContext.Provider>;
   };
   const view = render(element());
-  return { ...view, preferences, remount: () => { view.unmount(); return render(element()); }, rehand: (handed: object) => view.rerender(element(handed)) };
+  return { ...view, preferences, remount: () => { view.unmount(); return render(element()); } };
 }
 const panel = (label: string) => document.querySelector<HTMLElement>(`section[data-tool-panel][aria-label="${label}"]`);
 const shown = () => [...document.querySelectorAll<HTMLElement>('[data-cad-tool-stack] section[data-tool-panel]')].filter(node => !node.hidden).map(node => node.getAttribute('aria-label'));
@@ -671,17 +670,6 @@ it('Escape closes the Display menu and gives its tile the focus back, the tool i
   await waitFor(() => expect([displayMenu(), displayLit()]).toEqual([null, false]));
   await waitFor(() => expect(document.activeElement).toBe(displayButton()));
   expect(tool('Select').getAttribute('aria-pressed')).toBe('true');
-});
-
-it("mounts the renderer's icon sprite once in the frame, with the workspace up and in Simple view's ai layout", () => {
-  // Every generated icon of the chrome draws from it (`<use href="#…">`): were it lost, they would all blank.
-  const sprite = <svg data-icon-sprite="" aria-hidden="true"><symbol id="harness-icon" viewBox="0 0 32 32" /></svg>;
-  const workspace = { ribbon: () => <div role="toolbar" aria-label="Design" />, leftDock: <div role="tree" aria-label="Features" /> };
-  const { rehand } = frame({ data: { iconSprite: sprite, ...workspace } });
-  const sprites = () => [...document.querySelectorAll('[data-icon-sprite]')].map(node => Boolean(node.closest('[data-slot="cad-file-view"]')));
-  expect([sprites(), Boolean(screen.getByRole('toolbar', { name: 'Design' }))]).toEqual([[true], true]);
-  rehand({ iconSprite: sprite });
-  expect([sprites(), tool('Select').getAttribute('aria-pressed')]).toEqual([[true], 'true']);
 });
 
 it("what a person uses is counted for the host by name: a tool taken up and how long it was up, Display's Grid, Preview and its seconds, never the tool the file opened in or its return from Preview", async () => {
