@@ -237,9 +237,20 @@ def _inside(path: str) -> bool:
     """A file of the project's own: under its folder, not in a hidden folder or an environment
     inside it (`.venv`), and not cadgen's own. The project itself may sit in a hidden folder
     (Studio's state folder)."""
+    return _inside_of(str(path), ROOT)
+
+
+# Kept by the file and the project's folder: each trace asks it of every loaded module twice (the
+# modules read afresh, and the project's features) and of every frame that makes a build123d
+# operation, some thousands of times a request, and the answer resolves the file on disk. Asked
+# afresh each time, that was most of a request (Windows' realpath opens the file: seconds a
+# request, and the edit service's tests ran into their per-file guard). A file's place in or out of
+# a project is taken as fixed while this process runs (a link retargeted under it reads as before).
+@functools.lru_cache(maxsize=1 << 16)
+def _inside_of(path: str, root: Path) -> bool:
     try:
         resolved = Path(path).resolve()
-        parts = resolved.relative_to(ROOT).parts
+        parts = resolved.relative_to(root).parts
     except ValueError:
         return False
     if resolved == _RUNTIME or _RUNTIME in resolved.parents:
