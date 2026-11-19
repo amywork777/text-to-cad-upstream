@@ -1,11 +1,13 @@
 import {
   FILE_SHEET_STATUS_TEXT_CLASSES,
-  FileSheetCheckboxRow,
   FileSheetControlRow,
-  FileSheetSelectRow,
   FileSheetSettingsSection,
   FileSheetValueInput
 } from "../../kit/inspector/FileSheet.js";
+import {
+  FileSheetCheckboxRow,
+  FileSheetSelectRow
+} from "../../kit/inspector/FileSheetRows.js";
 import { DraftAnalysisIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { DRAFT_CLASSES, draftRows, PULL_PLANES } from "./editMode.js";

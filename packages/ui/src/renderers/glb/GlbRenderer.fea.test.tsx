@@ -18,7 +18,8 @@ vi.mock('../../../dist/renderers/glb/useGlbScene.js', () => ({
 }));
 // The renderer's own clip (the Load ramp) is kept to be played by hand.
 vi.mock('../../../dist/renderers/glb/useGlbAnimation.js', () => ({ useGlbAnimation: (_document: any, _render: any, own: any) => { loaded.own = own; return loaded.animation; } }));
-import GlbRenderer, { loadFeaView } from '../../../dist/renderers/glb/GlbRenderer.js';
+import GlbRenderer from '../../../dist/renderers/glb/GlbRenderer.js';
+import { loadFeaView } from '../../../dist/renderers/glb/resultFile.js';
 import { writeFileView } from '../../../dist/renderers/kit/shell/fileView.js';
 import { ViewerElementContext, ViewerHostContext } from '../../../dist/host/context.js';
 import { testHost } from '../../../dist/host/testing/host.js';

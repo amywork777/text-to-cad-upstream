@@ -3,11 +3,9 @@ import SelectFilterMenu from "../kit/tools/select/SelectFilterMenu.jsx";
 import { filterBadge } from "../kit/tools/select/selectFilter.js";
 import { useI18n } from "@cad/ui/i18n";
 import { ModeGlyph, ToolModeIcon } from "../kit/tools/select/modeGlyphs.jsx";
-import { ToolIcon } from "./edit/cadIcons.jsx";
 
 // Select's button, Measure's and Select's menu, which read on an engine document as the STEP
-// renderer's did. The glyphs are the kit's (`kit/tools/select/modeGlyphs.jsx`); in Studio's CAD
-// workspace (`cad`) they are its icon generator's (`edit/cadIcons.jsx`, NX's set).
+// renderer's did. The glyphs are the kit's (`kit/tools/select/modeGlyphs.jsx`).
 
 /**
  * Select's two tools, how a pick is made: Select, a click picks what is under it and a drag turns the
@@ -22,24 +20,14 @@ export const SELECT_TOOLS = Object.freeze([
 
 /**
  * The Select tool's button icon: the pointer, or Box select's pointer in a square (`tool`), badged
- * with what its filter ticks (`mode`, `xbfSelectBadge`), none for All. In Studio's CAD workspace
- * (`cad`) Select is the icon generator's (`edit/cadIcons.jsx`'s `ToolIcon`, by the badge's kind; the
- * funnel its plain icon); Box select, which NX's set draws no icon for, keeps the kit's.
+ * with what its filter ticks (`mode`, `xbfSelectBadge`), none for All.
  */
-export function SelectIcon({ tool = "select", mode = "all", cad = false, ...props }) {
-  if (cad && tool !== 'box') return <ToolIcon id="select" mode={mode} className={props.className} />;
+export function SelectIcon({ tool = "select", mode = "all", ...props }) {
   return <ToolModeIcon tool={tool === 'box' ? 'boxSelect' : 'select'} mode={mode} {...props} />;
 }
 
-// Measure's badge (`measureBadge`, Select's glyphs) as the CAD workspace's Measure icons name its kinds.
-const CAD_MEASURE_MODES = Object.freeze({ points: "vertex", edges: "edge", faces: "face" });
-
-/**
- * The Measure tool's button icon: the ruler, badged with what its filter ticks (`mode`, `MeasureFilterMenu.jsx`'s
- * `measureBadge`), none for All; in Studio's CAD workspace (`cad`) the icon generator's, as Select's is.
- */
-export function MeasureIcon({ mode = "all", cad = false, ...props }) {
-  if (cad) return <ToolIcon id="measure" mode={CAD_MEASURE_MODES[mode] || mode} className={props.className} />;
+/** The Measure tool's button icon: the ruler, badged with what its filter ticks (`mode`, `MeasureFilterMenu.jsx`'s `measureBadge`), none for All. */
+export function MeasureIcon({ mode = "all", ...props }) {
   return <ToolModeIcon tool="measure" mode={mode} {...props} />;
 }
 
@@ -81,16 +69,14 @@ export function xbfSelectBadge(filter, { assembly, posable }) {
  * tangent edges), never a setting here.
  *
  * @param {{ value: readonly string[], onChange(filter: readonly string[]): void, assembly: boolean, posable: boolean,
- *   tool?: "select" | "box", onToolChange?(tool: "select" | "box"): void, disabled?: boolean, cad?: boolean }} props
- *   `cad`: Studio's CAD workspace, where Select's row wears the icon generator's Select, as its ribbon does.
+ *   tool?: "select" | "box", onToolChange?(tool: "select" | "box"): void, disabled?: boolean,
+ *   toolIcon?: ((tool: { id: string }) => import("react").ReactNode) | null }} props `toolIcon`: a tool's icon of the host's, the kit's where it gives none.
  */
-export function SelectMenu({ value, onChange, assembly, posable, tool = 'select', onToolChange = null, disabled = false, cad = false }) {
+export function SelectMenu({ value, onChange, assembly, posable, tool = 'select', onToolChange = null, disabled = false, toolIcon = null }) {
   const { t } = useI18n();
-  const toolIcon = item => (cad && item.id === 'select' ? <ToolIcon id="select" className="size-3.5" />
-    : <ModeGlyph tool={item.glyph} mode="all" className="size-3.5" aria-hidden="true" />);
   const tools = onToolChange ? {
     value: tool, onChange: onToolChange,
-    items: SELECT_TOOLS.map(item => ({ id: item.id, label: t(item.key), icon: toolIcon(item) })),
+    items: SELECT_TOOLS.map(item => ({ id: item.id, label: t(item.key), icon: toolIcon?.(item) || <ModeGlyph tool={item.glyph} mode="all" className="size-3.5" aria-hidden="true" /> })),
   } : null;
   const named = items => items.map(item => ({ id: item.id, label: t(item.key) }));
   return <SelectFilterMenu value={value} onChange={onChange} disabled={disabled} tools={tools} order={XBF_SELECT_DEFAULT}

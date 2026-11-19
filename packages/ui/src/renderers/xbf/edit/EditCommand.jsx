@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import {
   FILE_SHEET_STATUS_TEXT_CLASSES,
-  FileSheetCheckboxRow,
   FileSheetControlRow,
-  FileSheetSelectRow,
   FileSheetSettingsSection,
   FileSheetValueInput
 } from "../../kit/inspector/FileSheet.js";
+import {
+  FileSheetCheckboxRow,
+  FileSheetSelectRow
+} from "../../kit/inspector/FileSheetRows.js";
 import {
   chooseLine,
   chooseSteps,

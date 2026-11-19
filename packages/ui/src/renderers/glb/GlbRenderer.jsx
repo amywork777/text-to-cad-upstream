@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { carriesFeaResult } from "./fea/generator.js";
+import { useCallback, useMemo, useRef } from "react";
 import { MousePointer2 } from "lucide-react";
 import { scenePartCount, viewFeaturesForKind } from "@cad/core/common/viewSettings.js";
 import { useExportView } from "../../export/context.js";
@@ -13,12 +12,11 @@ import { PointerPick } from "../kit/tools/select/usePointerPick.js";
 import { sceneCopyText, useSceneDescribe, useSceneInspect, useSceneReferences } from "../kit/tools/select/sceneReferences.jsx";
 import { sceneMenuEntries } from "../kit/tools/select/sceneMenu.js";
 import { useSceneSelection } from "../kit/tools/select/useSceneSelection.js";
-import { useDeclinedSelectReference, useWorkspaceDocument, workspaceLoadAlert } from "../workspace/useWorkspaceDocument.js";
-import { useCamChrome, useCamResult, useCamView } from "./cam/useCamResult.jsx";
-import { entryMeshAssetUrl } from "@cad/core/lib/entryAssets.js";
+import { useDeclinedSelectReference, workspaceLoadAlert } from "../workspace/useWorkspaceDocument.js";
+import { useCamChrome, useCamResult } from "./cam/useCamResult.jsx";
+import { GlbResultFile } from "./resultFile.jsx";
 import { GLB_DECLINED_LIVE_COMMANDS, GLB_TOOL, GLB_TOOL_MODES } from "./tools.js";
 import { useGlbAnimation } from "./useGlbAnimation.js";
-import { useGlbScene } from "./useGlbScene.js";
 import { TOOL_SHORTCUTS } from "../kit/tools/toolShortcuts.js";
 import { useI18n } from "@cad/ui/i18n";
 
@@ -27,57 +25,12 @@ const NO_REFERENCES = Object.freeze([]);
 const EXPLODE_OFF = Object.freeze({ exploded: { enabled: false, amount: 0 } });
 const CLIP_OFF = Object.freeze({ clip: { enabled: false, axis: "x", invert: false } });
 
-
-// The FEA result viewer (`feaView.jsx`), once a result has loaded it, for every result after it.
-let feaView = null;
-/** Loads the FEA result viewer: its own chunk, which a plain GLB never fetches. */
-export const loadFeaView = () => import("./feaView.jsx").then((module) => { feaView = module; return module; });
-
-/**
- * The FEA result viewer for a scene that carries a result, loaded the first time one does; `pending` while it
- * loads. A plain GLB's is null. Should the chunk fail to load, `error` says so, and the result is not drawn as
- * the plain GLB it is not.
- */
-function useFeaView(root) {
-  const wanted = useMemo(() => carriesFeaResult(root), [root]);
-  const [kit, setKit] = useState(feaView);
-  const [error, setError] = useState(null);
-  useEffect(() => {
-    if (!wanted || kit || error) return undefined;
-    let live = true;
-    loadFeaView().then((module) => { if (live) setKit(module); }, (failure) => { if (live) setError(failure); });
-    return () => { live = false; };
-  }, [wanted, kit, error]);
-  return { kit: wanted && kit ? kit : null, pending: wanted && !kit && !error, error: wanted ? error : null };
-}
-
-/**
- * A GLB file: its scene, loaded once, drawn by the FEA result viewer when it carries a result (`FeaSurface.jsx`,
- * its own surface over the same shell) and by the GLB surface below otherwise. A result waits for its viewer as
- * the file loading, so it is framed once, as that viewer draws it.
- */
-function GlbFile({ view, data }) {
-  const document = useWorkspaceDocument({ view, data });
-  const loaded = useGlbScene({ entry: document.entry, resources: document.client.resources });
-  const { kit: fv, pending, error } = useFeaView(loaded.scene?.document?.scene);
-  if (fv) return <fv.FeaSurface view={view} document={document} loaded={loaded} fv={fv} />;
-  return <GlbSurface view={view} document={document} loaded={loaded} pending={pending} feaError={error} />;
-}
-
-function GlbSurface({ view, document, loaded, pending: feaPending, feaError }) {
+function GlbSurface({ view, document, loaded, cam: { cv, job } }) {
   const { t } = useI18n();
-  // A CAM result (a plan's `result.glb`, its job the `result.json` beside it; or a 0.10 `.cam.glb`) has a viewer of
-  // its own (`cam/useCamResult.jsx`), loaded as its own chunk; it waits for it and for the job as the file loading, so
-  // it is framed once, as the viewer draws it. A chunk that fails, a job that will not read, or one that is damaged, is
-  // the file failing: drawn as a plain GLB, a result would hide its verdict.
-  const { kit: cv, cam: job, pending: camPending, failed: camFailed } = useCamView(loaded.scene?.document,
-    { resources: document.client.resources, url: entryMeshAssetUrl(document.entry) });
-  const pending = feaPending || camPending;
-  const scene = pending || feaError || camFailed ? null : loaded.scene;
-  const loadError = loaded.error || feaError || camFailed;
+  const scene = loaded.scene;
   const loadAlert = useMemo(() => workspaceLoadAlert({
-    catalogError: document.catalogError, error: loadError, modelKey: document.modelKey, hasScene: Boolean(scene), t
-  }), [document.catalogError, loadError, document.modelKey, scene, t]);
+    catalogError: document.catalogError, error: loaded.error, modelKey: document.modelKey, hasScene: Boolean(scene), t
+  }), [document.catalogError, loaded.error, document.modelKey, scene, t]);
 
   const shellRef = useRef(null);
   const sceneRef = useRef(scene);
@@ -143,7 +96,7 @@ function GlbSurface({ view, document, loaded, pending: feaPending, feaError }) {
   const shell = useRendererShell({
     view, services: document.services, resource: document.resource, modelKey: document.modelKey, revisionKey: loaded.revision,
     features, toolModes: GLB_TOOL_MODES, tool: tools.tool, previewable: true, preview, scene, sceneEffects: true,
-    load: { busy: (loaded.busy || pending) && !scene, updating: loaded.busy && Boolean(scene), progress: loaded.progress, alert: loadAlert },
+    load: { busy: loaded.busy && !scene, updating: loaded.busy && Boolean(scene), progress: loaded.progress, alert: loadAlert },
     animation: routine, live, escape, deleteSelection: measure.removeSelected,
     // A CAM result's Show rows and hidden operations, its slice of the file's view.
     rendererState: camResult.rendererState
@@ -228,5 +181,5 @@ function GlbSurface({ view, document, loaded, pending: feaPending, feaError }) {
 
 export default function GlbRenderer(props) {
   const { data, ...view } = props;
-  return <GlbFile key={JSON.stringify([view.source.id, view.file.path])} view={view} data={data} />;
+  return <GlbResultFile surface={GlbSurface} key={JSON.stringify([view.source.id, view.file.path])} view={view} data={data} />;
 }
