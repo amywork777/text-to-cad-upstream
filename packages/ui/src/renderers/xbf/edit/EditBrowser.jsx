@@ -5,13 +5,15 @@ import { cn } from "@cad/ui/utils";
 import { Button } from "@cad/ui/primitives/button";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
 import {
-  FILE_SHEET_COMPACT_BUTTON_CLASSES,
   FILE_SHEET_STATUS_TEXT_CLASSES,
-  FileSheetButtonRow,
   FileSheetControlRow,
   FileSheetSettingsSection,
   FileSheetValueInput
 } from "../../kit/inspector/FileSheet.js";
+import {
+  FILE_SHEET_COMPACT_BUTTON_CLASSES,
+  FileSheetButtonRow
+} from "../../kit/inspector/FileSheetRows.js";
 import { WORKSPACE_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
 import { TOOL_PANEL_BUTTON_CLASS } from "../../kit/tools/ToolPanel.jsx";
 import EditCommand from "./EditCommand.jsx";

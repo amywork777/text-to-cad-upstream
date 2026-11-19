@@ -3,12 +3,14 @@ import { X } from "lucide-react";
 import { cn } from "@cad/ui/utils";
 import {
   FILE_SHEET_STATUS_TEXT_CLASSES,
-  FileSheetCheckboxRow,
   FileSheetControlRow,
-  FileSheetSelectRow,
   FileSheetSettingsSection,
   FileSheetValueInput
 } from "../../kit/inspector/FileSheet.js";
+import {
+  FileSheetCheckboxRow,
+  FileSheetSelectRow
+} from "../../kit/inspector/FileSheetRows.js";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import ErrorWords from "./ErrorWords.jsx";
 import { FeatureIcon } from "./featureIcons.jsx";

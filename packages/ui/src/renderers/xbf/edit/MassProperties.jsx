@@ -2,9 +2,9 @@ import { useState } from "react";
 import {
   FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetControlRow,
-  FileSheetSelectRow,
   FileSheetSettingsSection
 } from "../../kit/inspector/FileSheet.js";
+import { FileSheetSelectRow } from "../../kit/inspector/FileSheetRows.js";
 import { MassPropertiesIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { inertiaRows, massRows } from "./editMode.js";
