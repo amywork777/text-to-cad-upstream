@@ -50,6 +50,7 @@ from urllib.parse import urlsplit
 
 from cad.engine import client
 from cad.engine.previous import version
+from cad_mcp import studio
 from cad_mcp.browser import OPENED, deliver, transport_browser
 from cad_mcp.host import family, launcher
 from cad_mcp.protocol import Connection, RequestContext, RpcError, claim_stdin, claim_stdout
@@ -102,6 +103,8 @@ def start_server() -> str:
     one that finds none is (``client.NotRunning``), and nothing is started again. What the start did, in one line;
     ``ConnectionError`` in one line where it could not."""
     client.AT_LEAST = version()
+    if studio.own_engine():  # Studio's own pinned engine, never a global cad's (cad_mcp/studio.py)
+        return client.start()
     tool = installed_tool()
     if tool is None and from_uv_cache():
         tool = install()
