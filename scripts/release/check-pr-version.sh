@@ -21,6 +21,9 @@ source "$SCRIPT_DIR/release-tags.sh"
 
 head_repo="${1:?Usage: check-pr-version.sh HEAD_REPO}"
 repository="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must name this repository}"
+# Studio's own (AGENTS.md, On studio-base): studio-base never publishes, and each release of Jake's
+# merged into it changes VERSION and hundreds of files.
+[ "${GITHUB_BASE_REF:-}" != studio-base ] || { echo "studio-base: a merge of a release, not a release."; exit 0; }
 
 git rev-parse --verify --quiet "HEAD^2" >/dev/null || {
   echo "HEAD is not a merge commit; run this on the pull request's merge commit." >&2

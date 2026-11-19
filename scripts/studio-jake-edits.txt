@@ -223,6 +223,7 @@ packages/ui/src/tab-store/tabStore.test.ts
 README.md
 scripts/github-workflows/select_checks.py
 scripts/README.md
+scripts/release/check-pr-version.sh
 scripts/test/check-kit-boundaries.mjs
 scripts/test/check-ui-strings.mjs
 skills/cad/references/build123d-modeling.md
