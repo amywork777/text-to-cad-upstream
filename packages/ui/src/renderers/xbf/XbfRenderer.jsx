@@ -53,6 +53,7 @@ import { useXbfMotion } from "./useXbfMotion.js";
 import PmiOverlay from "./pmi/PmiOverlay.jsx";
 import PmiSection from "./pmi/PmiSection.jsx";
 import { useXbfPmi } from "./pmi/useXbfPmi.jsx";
+import { useUntolerancedFaces } from "./pmi/studioUntolerancedFaces.jsx"; // Studio: PMI's untoleranced faces
 import { usePmiViewApplied } from "./pmi/usePmiView.js";
 import { pmiCreateOptions } from "./pmi/pmiCreate.js";
 import { createHiddenTest } from "./pmi/pmiHidden.js";
@@ -380,6 +381,7 @@ function XbfSurface({ view, data }) {
   }, [store, scene]);
   const pmi = useXbfPmi({ scene, tree, bounds: restBounds || null, moving, editable: madeFromCode(view.file.path),
     hiddenParts: hiddenIds, isolatedParts, selectedKey: pmiPicked, onSelect: setPmiPicked, here: pmiHere });
+  const untoleranced = useUntolerancedFaces({ structure: scene?.structure || null, tree }); // Studio: lit by PMI's switch
   const pmiRef = useRef(pmi);
   pmiRef.current = pmi;
   pmiViewRef.current = { restore: pmi.restore, slice: pmi.slice, drawn: !pmi.off && pmi.items.length > 0 };
@@ -679,11 +681,11 @@ function XbfSurface({ view, data }) {
   useEffect(() => {
     if (!scene) return;
     scene.setHighlight({ hovered: [...hover.parts, ...cadParts.hovered], selected: [...leavesOf(selectedNodeIds), ...cadParts.selected] });
-    const extra = [...pmiLit.selected, ...cadLit];
+    const extra = [...pmiLit.selected, ...untoleranced.faceIds, ...cadLit];
     scene.setElementHighlight({ hovered: hover.element || pmiLit.hovered,
       selected: extra.length ? [...new Set([...selectedElementIds, ...extra])] : selectedElementIds });
     requestFrame();
-  }, [scene, hover, selectedNodeIds, selectedElementIds, leavesOf, requestFrame, pmiLit, cadLit, cadParts]);
+  }, [scene, hover, selectedNodeIds, selectedElementIds, leavesOf, requestFrame, pmiLit, untoleranced.faceIds, cadLit, cadParts]);
   useEffect(() => { scene?.setHighlightColor(cad.highlightColor); requestFrame(); }, [scene, cad.highlightColor, requestFrame]);
   // The rollback bar's body is not the file: its faces and edges are named to nothing, copied or sent.
   promptReferencesRef.current = previewing || rollback ? NO_REFERENCES : references;
@@ -858,7 +860,7 @@ function XbfSurface({ view, data }) {
   const pmiPickedFaces = useMemo(() => (scene ? selected.map(pmiFaceOf) : EMPTY), [scene, selected, pmiFaceOf]);
 
   const pmiSection = pmiShown ? <PmiSection pmi={pmi} picked={pmiPickedFaces} selectedFeatureIds={selectedElementIds} moving={moving}
-    request={pmiRequest} onRequestDone={() => setPmiRequest(null)} quickEditAway={cad.editing} /> : null;
+    request={pmiRequest} onRequestDone={() => setPmiRequest(null)} quickEditAway={cad.editing} untoleranced={untoleranced} /> : null;
   // CAD mode's design tree stands in for the file sidebar (`leftDock`): its PMI docks under the tree there.
   const pmiInSidebar = pmiShown && !cad.editing;
   const sidebar = scene && (assembly || kinematics || pmiInSidebar) ? <>

@@ -1,5 +1,6 @@
 /**
- * Studio's own English strings (studio-base): its FEA and CAM result viewers (`renderers/glb`).
+ * Studio's own English strings (studio-base): its FEA and CAM result viewers (`renderers/glb`), and
+ * PMI's untoleranced faces' switch.
  * Spread into `../en.js`, so every reader of the locale (the lookup, the parity test, the ui-strings
  * check) sees them as its own and Jake's file carries one line for them. Keys, braces and fallbacks
  * are `../en.js`'s; every key here is also in each locale's Studio file (the parity test).
@@ -74,4 +75,6 @@ export default {
   "fea.partSummary": "Part '{name}'",
   "fea.noLoad": "No load",
   "fea.loadIsZero": "The load is set to 0",
+  // PMI's switch lighting the faces no tolerance holds (`renderers/xbf/pmi/studioUntolerancedFaces.jsx`).
+  "pmi.untoleranced": "Untoleranced faces",
 };

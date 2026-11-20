@@ -53,6 +53,14 @@ kept apart so Jake's pages merge as he writes them.
   right edge. The tracked-caps headings inside PMI sit a level below it, and every heading and row of
   the dock starts on the same 8px edge. The tree takes up to 75% of the column; PMI stays open and
   scrolls in the rest.
+- **PMI's untoleranced faces.** Between Notes and Annotations, where some face of a part holds no
+  tolerance (`pmi_coverage`'s `uncovered`: no toleranced dimension, geometric tolerance or general
+  tolerance is on it), PMI has one heading of its own, **Untoleranced faces**, its checkbox at the
+  right end as a switchable section's is (`FileSheetSettingsSection`), and no rows. On, it lights
+  those faces in the pick's colour, on every occurrence of their part
+  (`xbf/pmi/studioUntolerancedFaces.jsx`, lit by `XbfRenderer.jsx`). Nothing else of coverage is
+  listed: the count, the conflicts and the questions are the agent's, asked in the chat
+  ([PMI](pmi.md)). Where every face holds a tolerance there is no switch.
 
 ## An FEA result
 
