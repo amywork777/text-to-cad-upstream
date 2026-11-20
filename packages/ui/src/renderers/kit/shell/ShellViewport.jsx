@@ -45,6 +45,7 @@ import { CONTACT_SHADOW_HEIGHT_INTERVAL_MS, stageFitCurrent, stageFitInputs } fr
 import { studioEnvironmentCacheFor } from "../look/studioEnvironmentCache.js";
 import { isKitScene } from "../scene.js";
 import LoadingIndicator from "../status/LoadingIndicator.js";
+import { useStudioViewerControls } from "../viewport/studioViewerControls.js";
 import AnnotationOverlay from "../tools/annotate/AnnotationOverlay.jsx";
 import { useSceneEffects } from "../tools/model-effects/useSceneEffects.js";
 import { TOUCH_HIT_PX, prefersCoarsePointer } from "../viewport/dom.js";
@@ -750,6 +751,7 @@ const ShellViewport = forwardRef(function ShellViewport({
     presentationRequestRef, onContextLost: handleRuntimeContextLost, onContextRestored: handleRuntimeContextRestored,
     preserveInteractionPixelRatio, runtimeResetToken
   });
+  useStudioViewerControls(runtimeRef, viewerReadyTick);
 
   // Lens.
   useEffect(() => {

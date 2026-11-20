@@ -2,7 +2,7 @@
 // of a CAD view and hears from it, over the `studio/*` methods and host-context keys. Jake's files
 // call it from one place each: `App.tsx` (`useStudioHost`) and `ModelView.tsx` (`useStudioFiles`).
 import { useEffect, useMemo } from 'react';
-import { editLayoutHost, focusHost, type TabStore } from '@cad/ui/tab-store';
+import { editLayoutHost, focusHost, viewerControlsHost, type TabStore } from '@cad/ui/tab-store';
 import type { Bridge, HostContext } from './bridge';
 
 /** The view's bridging of Studio's workspace: its layout, what the part on screen allows, and a script line to select. */
@@ -33,6 +33,9 @@ export function useStudioHost(bridge: Bridge, context: HostContext, tabStore: Ta
   // A host that opens a part at a line of its script (Studio's References, `studio/focus`) has the part on screen select
   // the feature there (`focusHost`), and the host that asks to (`studioFocus`) hears when the view has taken it, and
   // whether a feature held the line.
+  // The mouse a host's Settings set (`studio/viewerControls`): every 3D view takes it (`viewerControlsHost`).
+  const hostControls = (context as Record<string, unknown>)['studio/viewerControls'];
+  useEffect(() => { viewerControlsHost.set(hostControls); }, [hostControls]);
   const hostFocus = (context as Record<string, unknown>)['studio/focus'];
   useEffect(() => { focusHost.set(hostFocus); }, [hostFocus]);
   useEffect(() => {
