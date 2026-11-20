@@ -68,4 +68,6 @@ export default {
   "fea.partSummary": "零件「{name}」",
   "fea.noLoad": "無載荷",
   "fea.loadIsZero": "載荷設為 0",
+  // PMI's switch lighting the faces no tolerance holds (`renderers/xbf/pmi/studioUntolerancedFaces.jsx`).
+  "pmi.untoleranced": "無公差的面",
 };

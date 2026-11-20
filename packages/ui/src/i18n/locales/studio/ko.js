@@ -68,4 +68,6 @@ export default {
   "fea.partSummary": "부품 '{name}'",
   "fea.noLoad": "하중 없음",
   "fea.loadIsZero": "하중이 0으로 설정됨",
+  // PMI's switch lighting the faces no tolerance holds (`renderers/xbf/pmi/studioUntolerancedFaces.jsx`).
+  "pmi.untoleranced": "공차가 없는 면",
 };

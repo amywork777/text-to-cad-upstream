@@ -15,6 +15,7 @@ import { PmiGlyph } from "./pmiGlyphs.jsx";
 import { MAX_DATUMS, datumLetters, newPmiName, parseToleranceInput, pmiCreateOptions, toggleDatum } from "./pmiCreate.js";
 import { datumDependents, datumRelationships, dimensionLimits, featureRequirements } from "./pmiReview.js";
 import { PMI_SECTION_OFF, pmiViewShowsText } from "./pmiViews.js";
+import { UntolerancedFacesSwitch } from "./studioUntolerancedFaces.jsx"; // Studio: the untoleranced faces' switch
 
 // An engine document's **PMI**, a tab of the view's panel for a document that carries any, read
 // as a machinist reads a drawing (its model-based definition): under static headings, nothing
@@ -328,7 +329,7 @@ const FIRST_OF_PART = "note";
  *   `request`: a kind asked for from a face's menu ("Add datum"), which opens the section on its
  *   form; `onRequestDone`: the form has gone (added or cancelled).
  */
-export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, moving, request = null, onRequestDone }) {
+export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, moving, request = null, onRequestDone, untoleranced = null }) {
   const { t } = useI18n();
   // What is already asked for counts as taken: a second new one never reuses a pending id, letter or name.
   const options = useMemo(() => pmiCreateOptions({ picked, entries: pmi.entries, pending: pmi.pending, parts: pmi.parts, views: pmi.views,
@@ -416,6 +417,7 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
           })}
         </ul>
       </FileSheetSettingsSection> : null}
+      <UntolerancedFacesSwitch untoleranced={untoleranced} />
       {annotations.length ? <FileSheetSettingsSection title={t("pmi.annotations")} sectionId="pmi-annotations">
         {featureIds.length ? <div className="flex flex-wrap items-center justify-between gap-1 border-b border-border/60 px-2 py-1 text-tiny">
           <span className="text-muted-foreground">{filtered ? t(visible.length === 1 ? "pmi.forSelectionOne" : "pmi.forSelectionMany", { count: visible.length }) : t("pmi.allPmi")}</span>
