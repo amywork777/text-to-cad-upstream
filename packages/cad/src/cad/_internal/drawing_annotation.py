@@ -16,7 +16,8 @@ from cad._internal.drawing_assembly import _BALLOON_AIR, _BALLOON_LEAD, _BALLOON
 from cad._internal.drawing_base import (
     _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _DIM_ROW, _FLAG_SIDE, _LABEL_ROOM, _OPPOSITE, _SECTION_LETTERS,
     _SAME_PLACE, _SIDES,
-    _dot, _exact, _fmt, _ink_width, _look, _looks_down, _near, _places, _shown, _spans, _text_width, _where,
+    _decimal, _dot, _exact, _fmt, _ink_width, _length, _look, _looks_down, _mm, _near, _places, _said, _shown, _spans,
+    _text_width, _where,
 )
 from cad._internal.drawing_features import Slot
 from cad._internal.drawing_gdt import _DATUM_REACH, _datum_toward, _side_of, frame_size, mark_width
@@ -259,27 +260,32 @@ def _fit(value, *, hole: bool = False) -> str | None:
                      "or \"g6\", or a hole's class over a shaft's, as \"H7/g6\"")
 
 
-def _tol_suffix(tol) -> str:
+def _tol_suffix(tol, units: str = "mm") -> str:
     if not tol:
         return ""
     plus, minus = tol
     if abs(plus - minus) < 1e-9:
-        return f" ±{_exact(plus)}"
+        return f" ±{_decimal(_exact(plus), units)}"
     places = _places(plus, minus)  # plus and minus to one precision, as given
-    return f" +{plus:.{places}f}/-{minus:.{places}f}"
+    return f" +{_decimal(f'{plus:.{places}f}', units)}/-{_decimal(f'{minus:.{places}f}', units)}"
 
 
-def hole_callout_text(spec: dict, *, tol=None, fit: str | None = None) -> str:
-    """The text of a hole callout, in the ISO/ASME symbols a shop reads."""
+def hole_callout_text(spec: dict, *, tol=None, fit: str | None = None, units: str = "mm") -> str:
+    """The text of a hole callout, in the ISO/ASME symbols a shop reads, its sizes
+    in ``units``."""
+
+    def size(value: float) -> str:
+        return _length(value, units)
+
     parts = []
     # One hole is not "1×": a count prints only when there is something to count.
     lead = f"{spec['count']}× " if (spec.get("count") or 1) > 1 else ""
     if spec.get("slot"):
-        text = f"{lead}{_fmt(spec['width'])} × {_fmt(spec['length'])} SLOT"
-        text += " THRU" if spec.get("thru") else (f" \u21a7{_fmt(spec['depth'])}" if spec.get("depth") else "")
+        text = f"{lead}{size(spec['width'])} × {size(spec['length'])} SLOT"
+        text += " THRU" if spec.get("thru") else (f" \u21a7{size(spec['depth'])}" if spec.get("depth") else "")
         if spec.get("cbore"):
             width, length, depth = spec["cbore"]
-            text += f"   \u2334 {_fmt(width)} × {_fmt(length)} \u21a7{_fmt(depth)}"
+            text += f"   \u2334 {size(width)} × {size(length)} \u21a7{size(depth)}"
         return text + (f"   {spec['label']}" if spec.get("label") else "")
     thread, drilled = spec.get("thread"), spec.get("tap_drill")
     thread_depth = spec.get("thread_depth")
@@ -288,27 +294,27 @@ def hole_callout_text(spec: dict, *, tol=None, fit: str | None = None) -> str:
     # right through states the thread alone. A bore modelled at the thread's
     # size is the thread.
     both = bool(thread and drilled and (thread_depth is not None or not spec.get("thru")))
-    size = thread if thread and not both else f"%%c{_fmt(spec['diameter'])}"
-    size += _tol_suffix(tol) + (f" {fit}" if fit else "")
+    bore = thread if thread and not both else f"%%c{size(spec['diameter'])}"
+    bore += _tol_suffix(tol, units) + (f" {fit}" if fit else "")
     if spec.get("thru"):
-        size += " THRU"
+        bore += " THRU"
     elif spec.get("depth") is not None:
-        size += f" \u21a7{_fmt(spec['depth'])}"
+        bore += f" \u21a7{size(spec['depth'])}"
     if spec.get("pcd"):
         # The bolt circle: equally spaced on a circle of this diameter.
-        size += f" EQ SP ON %%c{_fmt(spec['pcd'])}"
-    parts.append(lead + size)
+        bore += f" EQ SP ON %%c{size(spec['pcd'])}"
+    parts.append(lead + bore)
     if both:
-        parts.append(f"{thread} \u21a7{_fmt(thread_depth)}")  # a blind tapped hole always gives it
+        parts.append(f"{thread} \u21a7{size(thread_depth)}")  # a blind tapped hole always gives it
 
     def same(a, b) -> bool:
         return a is not None and b is not None and all(abs(x - y) < 1e-3 for x, y in zip(a, b))
 
     def cbore(pair) -> str:
-        return f"\u2334 %%c{_fmt(pair[0])} \u21a7{_fmt(pair[1])}"
+        return f"\u2334 %%c{size(pair[0])} \u21a7{size(pair[1])}"
 
     def csk(pair) -> str:
-        return f"\u2335 %%c{_fmt(pair[0])} × {_fmt(pair[1])}°"
+        return f"\u2335 %%c{size(pair[0])} × {_fmt(pair[1])}°"
 
     # A through hole can be opened out at both ends: the same at each is stated
     # once, BOTH ENDS; something different at the far end is stated FAR SIDE.
@@ -454,24 +460,24 @@ _CALLOUT_WRAP = 60.0
 _CALLOUT_LINE = 1.5
 
 
-def _callout_lines(dim: "_Dim", th: float) -> list[str]:
+def _callout_lines(dim: "_Dim", th: float, units: str = "mm") -> list[str]:
     """A callout's text as the lines it is drawn in: its stages a line each where
     the whole is wider than ``_CALLOUT_WRAP``, else one line. A basic callout,
     boxed as one value, is never broken."""
-    value = _callout_value(dim)
+    value = _callout_value(dim, units)
     stages = value.split("   ")
     if dim.basic or len(stages) == 1 or _ink_width(value, th) <= _CALLOUT_WRAP:
         return [value]
     return stages
 
 
-def _callout_value(dim: "_Dim") -> str:
+def _callout_value(dim: "_Dim", units: str = "mm") -> str:
     if dim.kind in ("hole", "slot"):
-        return hole_callout_text(dim.hole, tol=dim.tol, fit=dim.fit)
+        return hole_callout_text(dim.hole, tol=dim.tol, fit=dim.fit, units=units)
     if dim.text:
         value = dim.text
     else:
-        value = f"%%c{_fmt(2 * dim.radius)}" if dim.kind == "diameter" else f"R{_fmt(dim.radius)}"
+        value = f"%%c{_length(2 * dim.radius, units)}" if dim.kind == "diameter" else f"R{_length(dim.radius, units)}"
     return f"({value})" if dim.reference else value
 
 
@@ -554,6 +560,7 @@ def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None
 
 def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features: _Features, slots) -> "_Dim":
     given, thread, label = dim.hole["given"], dim.hole["thread"], dim.hole["label"]
+    units = view.sheet.units
     call = f"{view.name}.hole({_where(dim.p1)})"
     target = proj.point(dim.p1)
     here = [h for h in seen if _near(proj.point(h.mouth), target)]
@@ -573,17 +580,17 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features: _Features
     if not _faces_viewer(hole, look):
         raise _far_side(call, "hole", view)
     same = [h for h in seen if h.signature() == hole.signature() and _faces_viewer(h, look)]
-    reads = _shown(hole_callout_text(_hole_spec(hole, len(same))))
+    reads = _shown(hole_callout_text(_hole_spec(hole, len(same)), units=units))
     if thread is not None:
         return _resolve_tapped(view, call, dim, hole, same, reads, thread, features)
     problems = []
-    if given["diameter"] is not None and abs(given["diameter"] - hole.diameter) > 0.01:
-        problems.append(f"diameter={_fmt(given['diameter'])}")
+    if given["diameter"] is not None and abs(_mm(given["diameter"], units) - hole.diameter) > 0.01:
+        problems.append(f"diameter={_said(given['diameter'], units)}")
     if given["thru"] is not None and given["thru"] != hole.thru:
         problems.append(f"thru={given['thru']}")
-    if given["depth"] is not None and (hole.thru or abs(given["depth"] - hole.depth) > 0.01):
-        problems.append(f"depth={_fmt(given['depth'])}")
-    problems += _sunk_problems(given, hole)
+    if given["depth"] is not None and (hole.thru or abs(_mm(given["depth"], units) - hole.depth) > 0.01):
+        problems.append(f"depth={_said(given['depth'], units)}")
+    problems += _sunk_problems(given, hole, units)
     if given["count"] is not None and given["count"] != len(same):
         problems.append(f"count={given['count']}")
     if problems:
@@ -596,15 +603,17 @@ def _resolve_hole(view: View, proj, dim: "_Dim", seen, look, features: _Features
     return replace(dim, hole=spec, radius=_outer_radius(spec), feature=hole, covers=tuple(same))
 
 
-def _sunk_problems(given: dict, hole) -> list[str]:
-    """The counterbore or countersink a callout was given that the hole does not have."""
+def _sunk_problems(given: dict, hole, units: str = "mm") -> list[str]:
+    """The counterbore or countersink a callout was given that the hole does not
+    have. Its diameters and depth are in the sheet's ``units``, a countersink's
+    angle in degrees."""
     problems = []
     if given["cbore"] is not None and (hole.cbore is None or any(
-            abs(a - b) > 0.01 for a, b in zip(given["cbore"], hole.cbore))):
-        problems.append(f"cbore=({_fmt(given['cbore'][0])}, {_fmt(given['cbore'][1])})")
-    if given["csk"] is not None and (hole.csk is None or abs(given["csk"][0] - hole.csk[0]) > 0.01
+            abs(_mm(a, units) - b) > 0.01 for a, b in zip(given["cbore"], hole.cbore))):
+        problems.append(f"cbore=({_said(given['cbore'][0], units)}, {_said(given['cbore'][1], units)})")
+    if given["csk"] is not None and (hole.csk is None or abs(_mm(given["csk"][0], units) - hole.csk[0]) > 0.01
                                      or abs(given["csk"][1] - hole.csk[1]) > 0.5):
-        problems.append(f"csk=({_fmt(given['csk'][0])}, {_fmt(given['csk'][1])})")
+        problems.append(f"csk=({_said(given['csk'][0], units)}, {_fmt(given['csk'][1])})")
     return problems
 
 
@@ -616,6 +625,7 @@ def _resolve_tapped(view: View, call: str, dim: "_Dim", hole, same: list, reads:
     assumed: a bore one of several identical ones, or a blind tap drill, needs
     them said."""
     given, label = dim.hole["given"], dim.hole["label"]
+    units = view.sheet.units
     bore = thread.fits(hole.diameter)
     if bore is None:
         raise ValueError(
@@ -628,7 +638,7 @@ def _resolve_tapped(view: View, call: str, dim: "_Dim", hole, same: list, reads:
     problems = []
     if given["thru"] is not None and given["thru"] != hole.thru:
         problems.append(f"thru={given['thru']}")
-    problems += _sunk_problems(given, hole)
+    problems += _sunk_problems(given, hole, units)
     if problems:
         raise ValueError(f"{call}: the part's hole reads {reads}, but the callout was given {', '.join(problems)}. "
                          f"Leave {'it' if len(problems) == 1 else 'them'} unset so the drawing states the part, "
@@ -636,7 +646,8 @@ def _resolve_tapped(view: View, call: str, dim: "_Dim", hole, same: list, reads:
     count = given["count"]
     if count is None and len(same) > 1:
         raise ValueError(
-            f"{call}: the part has {len(same)} holes that read {_shown(hole_callout_text(_hole_spec(hole, 1)))}, "
+            f"{call}: the part has {len(same)} holes that read "
+            f"{_shown(hole_callout_text(_hole_spec(hole, 1), units=units))}, "
             f"and nothing in it says which are tapped. Pass count={len(same)} if every one is, or count=1 for "
             "this one alone.")
     count = count or 1
@@ -646,23 +657,23 @@ def _resolve_tapped(view: View, call: str, dim: "_Dim", hole, same: list, reads:
             f"which. Call each tapped hole out with count=1, or model the tapped ones as their own bores.")
     covers = tuple(same) if count == len(same) else (hole,)
     length = hole.length if hole.thru else hole.depth
-    depth = given["depth"]
+    depth = None if given["depth"] is None else _mm(given["depth"], units)
     if depth is not None and hole.thru and abs(depth - length) <= 0.01:
         depth = None  # threaded the whole way through
     if depth is not None and depth > length + 0.01:
-        raise ValueError(f"{call}: depth={_fmt(depth)} is the thread's depth, and the hole, which reads {reads}, "
-                         f"is {_fmt(length)} deep; a thread runs no deeper than its bore.")
+        raise ValueError(f"{call}: depth={_said(given['depth'], units)} is the thread's depth, and the hole, which "
+                         f"reads {reads}, is {_length(length, units)} deep; a thread runs no deeper than its bore.")
     if bore == "major":
         # The bore is modelled at the thread's size: its depth is the thread's.
         if depth is not None and (hole.thru or abs(depth - hole.depth) > 0.01):
             raise ValueError(f"{call}: the hole is modelled at the thread's size and reads {reads}, so it is the "
-                             f"thread, and depth={_fmt(depth)} contradicts it. Leave depth unset, or model the "
-                             "tap drill.")
+                             f"thread, and depth={_said(given['depth'], units)} contradicts it. Leave depth unset, "
+                             "or model the tap drill.")
         depth = None
     elif depth is None and not hole.thru:
         raise ValueError(
-            f"{call}: a blind tapped hole is threaded short of its tap drill's {_fmt(hole.depth)}, and nothing in "
-            "the part says how far; pass depth= for the thread's depth.")
+            f"{call}: a blind tapped hole is threaded short of its tap drill's {_length(hole.depth, units)}, and "
+            "nothing in the part says how far; pass depth= for the thread's depth.")
     pcd = features.pcd(covers) if len(covers) > 1 else None
     spec = _hole_spec(hole, len(covers), thread.text, label, pcd, tap_drill=bore == "drill", thread_depth=depth)
     return replace(dim, hole=spec, radius=_outer_radius(spec), feature=hole, covers=covers)
@@ -678,6 +689,7 @@ def _slot_end(proj, bounds, slot) -> tuple:
 
 def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
     given, label = dim.hole["given"], dim.hole["label"]
+    units = view.sheet.units
     call = f"{view.name}.slot({_where(dim.p1)})"
     target = proj.point(dim.p1)
     here = [sl for sl in seen if any(_near(proj.point(p), target) for p in (sl.mouth, *sl.ends))]
@@ -692,18 +704,18 @@ def _resolve_slot(view: View, proj, bounds, dim: "_Dim", seen, look) -> "_Dim":
     same = [sl for sl in seen if sl.signature() == slot.signature() and _faces_viewer(sl, look)]
     problems = []
     for name, value in (("width", slot.width), ("length", slot.length)):
-        if given[name] is not None and abs(given[name] - value) > 0.01:
-            problems.append(f"{name}={_fmt(given[name])}")
+        if given[name] is not None and abs(_mm(given[name], units) - value) > 0.01:
+            problems.append(f"{name}={_said(given[name], units)}")
     if given["thru"] is not None and given["thru"] != slot.thru:
         problems.append(f"thru={given['thru']}")
-    if given["depth"] is not None and (slot.thru or abs(given["depth"] - slot.depth) > 0.01):
-        problems.append(f"depth={_fmt(given['depth'])}")
+    if given["depth"] is not None and (slot.thru or abs(_mm(given["depth"], units) - slot.depth) > 0.01):
+        problems.append(f"depth={_said(given['depth'], units)}")
     if given["count"] is not None and given["count"] != len(same):
         problems.append(f"count={given['count']}")
     if problems:
         raise ValueError(
-            f"{call}: the part's slot reads {_shown(hole_callout_text(_slot_spec(slot, len(same))))}, but the "
-            f"callout was given {', '.join(problems)}. Leave {'it' if len(problems) == 1 else 'them'} unset so "
+            f"{call}: the part's slot reads {_shown(hole_callout_text(_slot_spec(slot, len(same)), units=units))}, "
+            f"but the callout was given {', '.join(problems)}. Leave {'it' if len(problems) == 1 else 'them'} unset so "
             "the drawing states the part, or change the model."
         )
     spec = _slot_spec(slot, len(same), label)
@@ -761,14 +773,15 @@ def _resolve_round(view: View, proj, dim: "_Dim") -> "_Dim":
     what = "circle" if closed else "arc"
     target = proj.point(dim.p1)
     radii = _radii_at(proj, target, closed_only=closed)
-    stated = "" if not dim.radius else f", size={_fmt(2 * dim.radius if closed else dim.radius)}"
+    units = view.sheet.units
+    stated = "" if not dim.radius else f", size={_said(2 * dim.radius if closed else dim.radius, units)}"
     call = f"{view.name}.{dim.kind}({_where(dim.p1)}{stated})"
-    shown = ", ".join(("⌀" + _fmt(2 * r)) if closed else ("R" + _fmt(r)) for r in radii)
+    shown = ", ".join(("⌀" + _length(2 * r, units)) if closed else ("R" + _length(r, units)) for r in radii)
     if dim.radius:
-        if not any(abs(r - dim.radius) <= 0.01 for r in radii):
+        radius = _mm(dim.radius, units)
+        if not any(abs(r - radius) <= 0.01 for r in radii):
             raise ValueError(f"{call}: no {what} of that size is centred there in the {view.name} view"
                              f"{f'; it shows {shown}' if radii else ''}.")
-        radius = dim.radius
     elif len(radii) == 1:
         radius = radii[0]
     elif not radii:
@@ -780,7 +793,7 @@ def _resolve_round(view: View, proj, dim: "_Dim") -> "_Dim":
     return replace(dim, radius=radius)
 
 
-def _rows_beyond(dim: "_Dim", horizontal: bool, th: float, mark: str) -> int:
+def _rows_beyond(dim: "_Dim", horizontal: bool, th: float, mark: str, units: str = "mm") -> int:
     """The dimension rows a dimension's frame, datum symbol and key mark take
     beyond its own. Over a level dimension the frame takes the next row and the
     datum symbol the one after; beside an upright one's value they all run
@@ -788,7 +801,7 @@ def _rows_beyond(dim: "_Dim", horizontal: bool, th: float, mark: str) -> int:
     if horizontal:
         return (dim.frame is not None) + (dim.datum is not None)
     width = ((mark_width(mark, th) + th * 0.5 if dim.key else 0.0)
-             + (frame_size(dim.frame, th)[0] + th * 0.5 if dim.frame is not None else 0.0)
+             + (frame_size(dim.frame, th, units)[0] + th * 0.5 if dim.frame is not None else 0.0)
              + (_DATUM_REACH * th if dim.datum is not None else 0.0))
     return max(0, math.ceil((th * 1.5 + width + 2.0) / _DIM_ROW) - 1) if width else 0
 
@@ -807,7 +820,7 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
     """
     bx0, bx1, by0, by1 = bounds
     cx, cy = (bx0 + bx1) / 2, (by0 + by1) / 2
-    th = sheet.text_height
+    th, units = sheet.text_height, sheet.units
     sv = view.scale or sheet._scale()
     explicit = dict.fromkeys(_SIDES, 0)
     # A datum feature symbol stands on its face, in the first rows out of its side.
@@ -837,7 +850,7 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
         for _span, _order, dim, horizontal in sorted(pending[side], key=lambda t: (t[0], t[1])):
             row += 1
             dim.side, dim.row = side, row
-            row += _rows_beyond(dim, horizontal, th, mark)
+            row += _rows_beyond(dim, horizontal, th, mark, units)
         rows[side] = row
     overall = {}
     if "width" in view._overall:
@@ -854,7 +867,7 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
             a, b = proj.point(dim.p1), proj.point(dim.p2)
             horizontal = (dim.orientation or _spans(a, b)) == "h"
             span = abs(b[0] - a[0]) if horizontal else abs(b[1] - a[1])
-            width = _ink_width(dim.text.replace("<>", _fmt(span)), th)
+            width = _ink_width(dim.text.replace("<>", _length(span, units)), th)
             if width + 1.0 > span * sv:
                 end = (max(a[0], b[0]) - bx1) if horizontal else (max(a[1], b[1]) - by1)
                 side = "right" if horizontal else "top"
@@ -863,9 +876,9 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
             # The side a callout prefers is its hole's own half of the view, the
             # short way out, past every dimension row on that side.
             side = "right" if proj.point(dim.p1)[0] > cx + 1e-6 else "left"
-            width = max(_ink_width(line, th) for line in _callout_lines(dim, th))
+            width = max(_ink_width(line, th) for line in _callout_lines(dim, th, units))
             if dim.frame is not None:
-                width = max(width, frame_size(dim.frame, th)[0])
+                width = max(width, frame_size(dim.frame, th, units)[0])
             room[side] = max(room[side], rowed[side] + _CALLOUT_CLEAR + _CALLOUT_LANDING + _CALLOUT_GAP
                              + width + _CALLOUT_GAP)
         elif dim.kind == "flag" and dim.p1 is not None and dim.offset is None:
@@ -875,7 +888,7 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
         elif dim.kind in ("note", "frame", "flag") and dim.p1 is not None:
             p = proj.point(dim.p1)
             width = 4.0 + (_text_width(dim.text, th) if dim.kind == "note" else
-                           frame_size(dim.frame, th)[0] if dim.kind == "frame" else _FLAG_SIDE * th)
+                           frame_size(dim.frame, th, units)[0] if dim.kind == "frame" else _FLAG_SIDE * th)
             if dim.radius >= 0:
                 room["right"] = max(room["right"], (p[0] - bx1) * sv + dim.radius + width)
             else:
@@ -978,7 +991,7 @@ def _hole_table(view: View, proj, features, cut, items) -> _HoleTable:
         is_slot = isinstance(members[0], Slot)
         spec = (_slot_spec(members[0], 1) if is_slot else _hole_spec(members[0], 1) if tap is None
                 else dict(tap.hole, count=1, pcd=None))
-        size = hole_callout_text(spec)
+        size = hole_callout_text(spec, units=view.sheet.units)
         radius = members[0].width / 2 if is_slot else _outer_radius(spec)
         measured = []
         for feature in members:
@@ -1030,8 +1043,8 @@ def _draw_hole_tags(msp, table: _HoleTable, proj, to_sheet, sv: float, th: float
     text("0,0", o[0] - 1.0, o[1] - 1.0, 2.5, A.TOP_RIGHT, "DIM")
 
 
-def _draw_hole_table(msp, table: _HoleTable, text) -> None:
-    """The table itself, header on top: TAG, X, Y, SIZE."""
+def _draw_hole_table(msp, table: _HoleTable, text, units: str = "mm") -> None:
+    """The table itself, header on top: TAG, X, Y, SIZE, its X and Y in ``units``."""
     from ezdxf.enums import TextEntityAlignment as A
 
     x0, y1 = table.corner
@@ -1047,7 +1060,7 @@ def _draw_hole_table(msp, table: _HoleTable, text) -> None:
             msp.add_line((x, y1), (x, y1 - h), dxfattribs={"layer": "TITLE"})
         text(name, x + width / 2, y1 - _TABLE_ROW / 2, _CAPTION_HEIGHT, A.MIDDLE_CENTER, fit=width - 2)
         for r, row in enumerate(table.rows, start=1):
-            value = (row.tag, _fmt(row.x), _fmt(row.y), row.size)[c]
+            value = (row.tag, _length(row.x, units), _length(row.y, units), row.size)[c]
             mid = y1 - (r + 0.5) * _TABLE_ROW
             if c == 3:
                 text(value, x + 2.0, mid, 2.5, A.MIDDLE_LEFT, "NOTES")

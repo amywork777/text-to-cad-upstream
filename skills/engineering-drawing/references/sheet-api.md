@@ -87,10 +87,11 @@ build123d shape works: a drawing takes geometry, not a file.
 
 ## `Sheet(size="A3", scale=1.0, title=..., part_number="", material="", spec="", finish="", revision="A", author="", date="", units="mm", projection="THIRD ANGLE", notes=(), ink="mono", text_height=3.5, general_tolerance="", general_profile=None, revisions=(), stage=None, profile=None, category="", company="", fields={})`
 
-- `size`: `A4`, `A3`, `A2`, `A1`, `A0`, landscape, with an ISO 5457 zone grid.
-  `None` lets `three_views` choose: the smallest of A4 to A2 that draws the
-  part at 1:1 or larger, else A3 at a reduced scale; with `scale` fixed, the
-  smallest sheet that holds the views at it.
+- `size`: ISO 216's `A4`, `A3`, `A2`, `A1`, `A0`, or ASME Y14.1's `A` (11 × 8.5
+  in), `B`, `C`, `D`, `E`, landscape, with a zone grid.
+  `None` lets `three_views` choose: the smallest of A4 to A2 (A to C on an inch
+  sheet) that draws the part at 1:1 or larger, else A3 (B) at a reduced scale;
+  with `scale` fixed, the smallest sheet of that series that holds the views at it.
 - `scale`: 1 = 1:1, 0.5 = 1:2, 2 = 2:1. Values stay true size at any scale.
   `None` lets `three_views` choose the largest standard scale, up to 10:1, that
   fits. A chosen scale is chosen again when the sheet renders, from the
@@ -105,7 +106,18 @@ build123d shape works: a drawing takes geometry, not a file.
   refused. A field left empty prints as an empty,
   captioned cell. Nothing is stamped from the clock. The drawing function's
   name prints small under the title, so a print leads back to its script.
-- `units`: `"mm"`, the unit every value is measured in; anything else is refused.
+- `units`: `"mm"` or `"in"`; anything else is refused. The model is in
+  millimetres either way. On an inch sheet what the sheet measures (dimension
+  values, callout sizes and depths, a hole table's X and Y) prints in inches as
+  ASME Y14.5 writes them: three places, trailing zeros kept, no zero before the
+  point (`.250`, `1.375`). What you state is in inches too, as a drafter writes
+  it on that sheet: `tol`, `limits`, a `Frame`'s tolerance and the sizes a
+  callout is checked against (`hole(diameter=, depth=, cbore=, csk=)`, a
+  thread's `depth`, `slot(width=, length=, depth=)`, `diameter(size=)`,
+  `radius(size=)`); a tolerance or limit prints as given (`tol=0.005` reads
+  `±.005`). Model points stay model millimetres, and `at`, `offset` and
+  `text_height` sheet millimetres. Angles, scales and thread designations read
+  the same on either sheet. The title block's UNITS cell reads `MM` or `IN`.
 - `projection`: `"THIRD ANGLE"` or `"FIRST ANGLE"`. It sets the arrangement
   `three_views` makes and the projection symbol the title block draws.
 - `general_tolerance="ISO 2768-m"`: a note, "TOLERANCES PER ISO 2768-m UNLESS
@@ -305,9 +317,10 @@ sheet millimetres.
 ## `Frame(characteristic, tolerance, datums=(), diameter=False, modifier=None)`
 
 A feature control frame, `Frame("position", 0.1, ("A", "B"), diameter=True,
-modifier="M")`. The characteristics and their rules (form names no datum,
-orientation and runout need one, a diameter zone and a material condition only
-where they apply) are in [intent and GD&T](intent-and-gdt.md#frames-and-datums).
+modifier="M")`, its tolerance in the sheet's unit. The characteristics and
+their rules (form names no datum, orientation and runout need one, a diameter
+zone and a material condition only where they apply) are in
+[intent and GD&T](intent-and-gdt.md#frames-and-datums).
 A frame naming a datum no view of its sheet defines is refused.
 
 ## `part_sheet(part, **fields)`
@@ -363,7 +376,7 @@ A hole callout wider than 60 mm on the sheet stacks a stage a line (the bore,
 then its counterbore or countersink), as drafters write one, so one long callout
 no longer pushes every view after it onto a larger sheet.
 
-## `geometry_notes(part)`
+## `geometry_notes(part, units="mm")`
 
 The general notes the part's own geometry makes true, for `Sheet(notes=...)`.
 A note such as `FILLETS R2 UNLESS OTHERWISE SPECIFIED.` tells the shop how to
@@ -372,7 +385,8 @@ when the part leaves no such edge sharp: `FILLETS` when every inside corner is
 filleted, and `ROUNDS` or `CHAMFERS 1 × 45°` (whichever is commoner) when every
 outside edge is rounded or chamfered. Each gives the commonest size. A part
 with sharp edges of both kinds gets no notes; an empty list is the right
-answer for it.
+answer for it. For an inch sheet, `geometry_notes(part, units="in")` writes
+the sizes in inches (`FILLETS R.125`).
 
 A blend is a part-cylinder or torus face tangent to the two faces it joins; a
 chamfer is a narrow flat strip bevelling a square edge, or a short cone

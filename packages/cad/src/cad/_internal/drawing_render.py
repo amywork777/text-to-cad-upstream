@@ -31,8 +31,9 @@ from cad._internal.drawing_base import (
     _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _CALLOUT_STACK, _CENTRE_OVERSHOOT, _DIM_ROW, _FLAG_SIDE,
     _HATCH_SCALE, HATCHES, _LABEL_GAP, _LABEL_HEIGHT, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE,
     SHEET_SIZES, _SIDES, _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_W, _box_dimension_value, _box_text, _cross,
-    _dimstyle, _dirs, _dot, _draw_dimension_symbols, _draw_flag, _draw_symbol, _exact, _fmt, _ink_width, _look,
-    _looks_down, _mtext_extent, _places, _runs, _scale_label, _shown, _spans, _text_box, _text_width, _where,
+    _MM_PER_INCH, _decimal, _dimstyle, _dirs, _dot, _draw_dimension_symbols, _draw_flag, _draw_symbol, _exact, _fmt,
+    _ink_width, _length, _look, _looks_down, _mm, _mtext_extent, _places, _runs, _said, _scale_label, _shown, _spans,
+    _text_box, _text_width, _where,
 )
 from cad._internal.drawing_gdt import (
     _DATUM_REACH, _FRAME_HEIGHT, _check_datums, _check_standard, _datum_toward, _draw_datum, _draw_frame, _draw_mark,
@@ -40,7 +41,7 @@ from cad._internal.drawing_gdt import (
 )
 from cad._internal.drawing_report import _Facts, _member_key, _merge_facts, _tally
 from cad._internal.drawing_sheet import (
-    _AIR, _LARGEST_SCALE, _SIZES_CHOSEN, _SIZES_SMALLEST_FIRST, _Crowded, _OffFrame, _arrange_three_views, _assert_views_fit,
+    _AIR, _CHOSEN, _LARGEST_SCALE, _Crowded, _OffFrame, _arrange_three_views, _assert_views_fit, _sizes,
     _SheetTable, _choose_for_breaks, _choose_size_and_scale, _draw_furniture, _draw_sheet_table, _furniture,
     _list_height, _next_smaller,
     _notes_box, _place_box, _place_detail, _require_settled, _settle, _within,
@@ -400,8 +401,8 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                               facts=tried_facts, continued=continued, floor=floor, ceiling=ceiling)
         except _Crowded:
             attempt = (sheet._size(), sheet._scale())
-            index_now = _SIZES_SMALLEST_FIRST.index(attempt[0])
-            if sheet.size is not None or attempt in tried or index_now == len(_SIZES_SMALLEST_FIRST) - 1:
+            index_now = _sizes(sheet).index(attempt[0])
+            if sheet.size is not None or attempt in tried or index_now == len(_sizes(sheet)) - 1:
                 raise
             tried.add(attempt)
             # Room between the features: the larger sheet draws them as large as it fits.
@@ -412,14 +413,14 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             if not sheet._chooses() or attempt in tried:
                 raise
             tried.add(attempt)
-            index_now = _SIZES_SMALLEST_FIRST.index(attempt[0])
+            index_now = _sizes(sheet).index(attempt[0])
             if sheet.scale is None and attempt[1] > 1.0 + 1e-9:
                 # Enlarged and out of paper: a smaller scale on this sheet, before a
                 # larger sheet that would leave most of itself empty.
                 ceiling = max(1.0, _next_smaller(attempt[1]) or 1.0)
                 floor = 0  # the smaller drawing may fit a smaller sheet
                 continue
-            if sheet.size is None and index_now < len(_SIZES_CHOSEN) - 1:
+            if sheet.size is None and index_now < _CHOSEN - 1:
                 # A larger sheet is for room, not for a larger scale.
                 floor = index_now + 1
                 if sheet.scale is None:
@@ -463,6 +464,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         doc.layers.add(name, color=aci, linetype=linetype, lineweight=int(round(weight * 100)))
     dimstyle = _dimstyle(doc, sheet.text_height)
     W, H, th = sheet.width, sheet.height, sheet.text_height
+    units = sheet.units
 
     def text(value, x, y, height, align, layer="TITLE", fit: float | None = None):
         # ``fit`` is the width the text may occupy; longer text is set smaller
@@ -773,8 +775,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             def roomy(scale: float) -> bool:
                 return max(_arrange_three_views(sheet, size, None, scale, iso, room, names=names)[1]) <= 0
 
-            roomier = next((name for name in sorted(SHEET_SIZES, key=lambda n: SHEET_SIZES[n][0])
-                            if SHEET_SIZES[name][0] > sheet.width), None)
+            roomier = next((name for name in _sizes(sheet) if SHEET_SIZES[name][0] > sheet.width), None)
             smaller = next((c for c in _STANDARD_SCALES if c < s and roomy(c)), None)
             remedies = [f'Sheet("{roomier}")' if roomier else None,
                         f"Sheet(scale={smaller:g}) ({_scale_label(smaller)})" if smaller else None]
@@ -903,7 +904,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                                                        "axes": set(), "referenced": set(), "views": [],
                                                        "sheet": (index, sheet.title),
                                                        "assembly": id(view.shape) in assemblies,
-                                                       "notes": set(), "radii": set(), "spans": [],
+                                                       "notes": set(), "units": set(), "radii": set(), "spans": [],
                                                        "anchors": [], "datums": [], "symmetric": set(),
                                                        "angles": [], "aligned": []})
             # Where the view says things are: the centre lines it states the part
@@ -915,6 +916,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # What the sheet's notes and this view's notes say, for the blends and
             # chamfers a general note states.
             record["notes"].update(sheet.drawn_notes())
+            record["units"].add(units)
             record["notes"].update(d.text for d in view._dims if d.kind == "note" and d.text)
             if view.name != "iso":
                 record["views"].append((view.name, _look(view)))
@@ -1245,6 +1247,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # at 1:1. dimlfac scales what the dimension prints back to true size, per
             # view, so a view drawn at its own scale still reads the part.
             style_override = {"dimlfac": 1.0 / sv}
+            if units == "in":
+                # And on to inches, printed as ASME Y14.5 prints them: three places,
+                # the trailing zeros kept and no zero before the point (.250).
+                style_override |= {"dimlfac": 1.0 / (sv * _MM_PER_INCH), "dimdec": 3, "dimzin": 4}
             # A dimension to a hole's or a boss's centre runs its extension line as a
             # centre line, the way a drafter extends the centre mark to the dimension.
             for point, key in ((a, "dimltex1"), (b, "dimltex2")):
@@ -1255,29 +1261,31 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 # as given -- dimlfac scales the measurement, not the tolerance.
                 style_override |= {"dimtol": 1, "dimtp": tol[0], "dimtm": tol[1],
                                    "dimtdec": _places(*tol), "dimtfac": 0.7}
+                if units == "in":
+                    style_override["dimtzin"] = 4  # .005, as the inch writes it
             span = length if aligned else abs(b[0] - a[0]) if horizontal else abs(b[1] - a[1])
             measured = span / sv
             if true is not None and abs(true - measured) > 1e-6:
                 # The paper's length is the broken view's; the value is the part's.
                 measured = true
-                label = label.replace("<>", _fmt(true))
+                label = label.replace("<>", _length(true, units))
             # What prints stacked, one half over the other: unequal deviations after
             # the value, or the two limits in its place.
             stack = None
             if tol and abs(tol[0] - tol[1]) > 1e-9:
-                stack = (f"+{_exact(tol[0])}", f"-{_exact(tol[1])}")
-            printed = label.replace("<>", _fmt(measured))
+                stack = (f"+{_decimal(_exact(tol[0]), units)}", f"-{_decimal(_exact(tol[1]), units)}")
+            printed = label.replace("<>", _length(measured, units))
             if limits is not None:
                 low, high = limits
-                if not low - 1e-6 <= measured <= high + 1e-6:
-                    raise ValueError(f"{view.name} {name}: limits=({_fmt(low)}, {_fmt(high)}) do not hold the part, "
-                                     f"which measures {_fmt(measured)} there. Give the limits the design requires, "
-                                     "or change the model.")
+                if not _mm(low, units) - 1e-6 <= measured <= _mm(high, units) + 1e-6:
+                    raise ValueError(f"{view.name} {name}: limits=({_said(low, units)}, {_said(high, units)}) do not "
+                                     f"hold the part, which measures {_length(measured, units)} there. Give the limits "
+                                     "the design requires, or change the model.")
                 # The two limits, stacked where the value would print, its prefix and
                 # suffix kept: ezdxf's own limits (dimlim) print the stack alone, and a
                 # bore's ⌀12.000-12.025 read as a width of 12.
                 places = _places(low, high)
-                stack = (f"{high:.{places}f}", f"{low:.{places}f}")
+                stack = (_decimal(f"{high:.{places}f}", units), _decimal(f"{low:.{places}f}", units))
                 printed = label.replace("<>", "")
                 label = label.replace("<>", f"{{\\H0.70x;\\S{stack[0]}^ {stack[1]};}}")
             if basic:
@@ -1288,7 +1296,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # One that fits stays centred and only its arrows go outside.
             width = _ink_width(printed, th)
             if tol and abs(tol[0] - tol[1]) < 1e-9:
-                width += _text_width(_tol_suffix(tol), th * 0.7)
+                width += _text_width(_tol_suffix(tol, units), th * 0.7)
             if stack is not None:
                 # A stack is as wide as its wider half.
                 width += (th * 0.35 if printed.strip() else 0.0) + max(_text_width(v, th * 0.7) for v in stack)
@@ -1368,11 +1376,11 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                         tip = (box[2] + th * 0.5 if out > 0 else box[0] - th * 0.5, vy)
                     claim(f"{name} key mark", box)
                 if frame is not None:
-                    width, cell = frame_size(frame, th)
+                    width, cell = frame_size(frame, th, units)
                     if horizontal:
-                        box = _draw_frame(msp, frame, vx - width / 2, vy + out * _DIM_ROW, th)
+                        box = _draw_frame(msp, frame, vx - width / 2, vy + out * _DIM_ROW, th, units=units)
                     else:
-                        box = _draw_frame(msp, frame, tip[0] if out > 0 else tip[0] - width, vy, th)
+                        box = _draw_frame(msp, frame, tip[0] if out > 0 else tip[0] - width, vy, th, units=units)
                     claim(f"frame {frame.characteristic}", box)
                     tip = (((box[0] + box[2]) / 2, box[3] if out > 0 else box[1]) if horizontal
                            else (box[2] if out > 0 else box[0], (box[1] + box[3]) / 2))
@@ -1498,8 +1506,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             centre = model_to_sheet(dim.p1)
             check(dim.kind, dim.index, centre)
             r = dim.radius * sv
-            value = _callout_value(dim)
-            lines = _callout_lines(dim, th)
+            value = _callout_value(dim, units)
+            lines = _callout_lines(dim, th, units)
             wide = max(_ink_width(line, th) for line in lines)
             pitch = _CALLOUT_LINE * th
             # Exit on the hole's own side of the view (the short way out), unless the
@@ -1518,12 +1526,13 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             near = "top" if centre[1] >= (vy0 + vy1) / 2 else "bottom"
             exit_angle = math.radians(dim.angle if dim.angle is not None else 45.0)
             # What hangs under the callout's text: its frame, its datum symbol.
-            under_width = frame_size(dim.frame, th)[0] if dim.frame is not None else 0.0
+            under_width = frame_size(dim.frame, th, units)[0] if dim.frame is not None else 0.0
             # A key characteristic's mark at the text's outer end.
             beside = mark_width(key_mark, th) + th * 0.5 if dim.key else 0.0
             # How far the callout's line reaches down: its text, or a key mark's box.
             head = _FRAME_HEIGHT * th / 2 if dim.key else th * 0.6
-            under_depth = (head - th * 0.6 + (frame_size(dim.frame, th)[1] + 1.0 if dim.frame is not None else 0.0)
+            under_depth = (head - th * 0.6
+                           + (frame_size(dim.frame, th, units)[1] + 1.0 if dim.frame is not None else 0.0)
                            + (_DATUM_REACH * th if dim.datum is not None else 0.0) + (len(lines) - 1) * pitch)
 
             def past(vertical: str, step: int) -> float:
@@ -1624,8 +1633,9 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 attach, under = landing[0] + sign * _CALLOUT_GAP, landing[1] - head - 1.0 - (len(lines) - 1) * pitch
                 box = (attach, under, attach, under)
                 if dim.frame is not None:
-                    width, cell = frame_size(dim.frame, th)
-                    box = _draw_frame(msp, dim.frame, attach if sign > 0 else attach - width, under - cell / 2, th)
+                    width, cell = frame_size(dim.frame, th, units)
+                    box = _draw_frame(msp, dim.frame, attach if sign > 0 else attach - width, under - cell / 2, th,
+                                      units=units)
                     claim(f"frame {dim.frame.characteristic}", box)
                 if dim.datum is not None:
                     claim(f"datum {dim.datum}", _draw_datum(msp, dim.datum, ((box[0] + box[2]) / 2, box[1]),
@@ -1699,8 +1709,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 right = dim.radius >= 0
                 msp.add_leader([p, q, (q[0] + (3 if right else -3), q[1])], dxfattribs={"layer": "DIM"},
                                override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
-                width, cell = frame_size(dim.frame, th)
-                box = _draw_frame(msp, dim.frame, q[0] + 3 if right else q[0] - 3 - width, q[1], th)
+                width, cell = frame_size(dim.frame, th, units)
+                box = _draw_frame(msp, dim.frame, q[0] + 3 if right else q[0] - 3 - width, q[1], th, units=units)
                 claim(f"frame {dim.frame.characteristic}", box)
                 reach["bottom"] = max(reach["bottom"], vy0 - box[1] + 1.0)
             elif dim.kind == "note":
@@ -1853,7 +1863,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
              TextEntityAlignment.TOP_CENTER, "NOTES")
 
     for table in tables.values():
-        _draw_hole_table(msp, table, text)
+        _draw_hole_table(msp, table, text, units)
     from ezdxf import const
 
     for table, corner in zip(keyed, keyed_at):

@@ -95,7 +95,10 @@ https://github.com/earthtojake/text-to-cad/tree/main/docs/migrations
    the handoff; `holes()` and `overall()` need none.
 3. **Choose the sheet and the views.** `Sheet(size=None, scale=None)` lets the
    sheet choose: the smallest of A4 to A2 that draws the part at 1:1 or larger,
-   else A3 reduced; give either to fix it. `sheet.three_views(part, iso=True)`
+   else A3 reduced; give either to fix it. `units="in"` makes an inch drawing of
+   the millimetre model, on ASME Y14.1's A to E: what it measures prints as `.250`,
+   and what you state on it (`tol`, `limits`, a frame's tolerance, a callout's
+   `diameter=`) is in inches. `sheet.three_views(part, iso=True)`
    returns top, front, right and an isometric, in the projection the sheet
    names. A turned or symmetric part shows the same picture from two sides:
    draw the ones that differ, `three_views(part, views=("front", "right"))`;
@@ -365,7 +368,8 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
   such an axis that touch square to it, a repeated joint once with its number
   of places. Splines, keys, threads modelled as plain bores and faces that
   touch away from a turned joint are not found: ask about them.
-- Millimetres only; one part per arrangement.
+- The model is in millimetres; a sheet prints millimetres or inches. One part
+  per arrangement.
 - Assembly sheets: balloons go on whole views and on sections cut part by
   part, not on details; parts are drawn in their model frame. Say which part
   sheets are still a first pass.

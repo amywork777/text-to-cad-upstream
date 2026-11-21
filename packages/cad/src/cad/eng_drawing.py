@@ -72,8 +72,8 @@ from cad._internal.drawing_assembly import (
 )
 from cad._internal.drawing_base import (
     _BAND_H, _DETAIL_SIZE, _MARGIN, _NOTE_HEIGHT, _NOTE_INSET, PROJECTIONS, _SAME_PLACE, _SECTION_LETTERS,
-    SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, _TITLE_W, UNITS, VIEW_DIRECTIONS, _cross, _dirs, _dot, _fmt, _look, _p3,
-    _places, _scale_label, _text_width, _view_axes, _where,
+    SHEET_SIZES, _STANDARD_SCALES, _TITLE_H, _TITLE_W, UNITS, VIEW_DIRECTIONS, _cross, _dirs, _dot, _fmt, _length,
+    _look, _p3, _places, _scale_label, _text_width, _view_axes, _where,
 )
 from cad._internal.drawing_gdt import Frame, frame_size
 from cad._internal.drawing_profile import (
@@ -798,6 +798,21 @@ class Sheet:
     picks the smallest sheet and the largest standard scale its views and their
     annotation fit at, and a scale the sheet chose steps down when it renders,
     should the annotation added afterwards need more paper.
+
+    ``units="in"`` makes an inch drawing of the same millimetre model. What the
+    sheet measures off the part -- dimension values, callout sizes and depths, a
+    hole table's X and Y -- prints in inches, as ASME Y14.5 writes them: three
+    places, trailing zeros kept, no zero before the point (``.250``,
+    ``1.375``). What the author states is in inches too, as a drafter writes it
+    on that sheet: ``tol``, ``limits``, a frame's tolerance, and the sizes a
+    callout is checked against (``hole(diameter=, depth=, cbore=, csk=)``, the
+    thread's ``depth``, ``slot(width=, length=, depth=)``, ``diameter(size=)``
+    and ``radius(size=)``). A tolerance or limit prints as given, never rounded.
+    Model points stay model millimetres, and ``at``, ``offset`` and the text
+    height sheet millimetres: they place things, and print nowhere. Angles,
+    scales and thread designations read the same on either sheet. Left to choose
+    its size, an inch sheet takes one of ASME Y14.1's A to E; a millimetre one,
+    ISO 216's A4 to A0.
     """
 
     size: str | None = "A3"
@@ -868,9 +883,8 @@ class Sheet:
                              f"{self.scale!r}")
         if self.units not in UNITS:
             raise ValueError(
-                f"units={self.units!r}: a sheet prints millimetres, the unit every value on it is measured "
-                "in. An inch drawing would need every measured value converted, and nothing here does that "
-                "yet; labelling millimetre values IN would make each one wrong by 25.4."
+                f"units={self.units!r}: a sheet prints millimetres (\"mm\") or inches (\"in\"). The model is in "
+                "millimetres either way; an inch sheet converts what it measures."
             )
         # The title block prints this label and `three_views` lays the views out to
         # match it. Accepting any string would print "FIRST ANGLE" over a third-angle
@@ -1018,7 +1032,7 @@ class Sheet:
         last = max(r for r, other in enumerate(rows) if other[2] == k)
         if (self.drawn_notes()[k] == _GENERAL_PROFILE and self.general_profile is not None
                 and rows[last] is row):
-            width += _NOTE_HEIGHT + frame_size(self.general_profile, _NOTE_HEIGHT)[0]
+            width += _NOTE_HEIGHT + frame_size(self.general_profile, _NOTE_HEIGHT, self.units)[0]
         return width
 
     def drawn_notes(self) -> list[str]:
@@ -1742,7 +1756,8 @@ def _state_edges(sheet: Sheet, shape) -> None:
     leaves, with how many edges are that size."""
     from cad._internal.drawing_features import blends, chamfers
 
-    notes = [*sheet.notes, *(n for n in geometry_notes(shape) if n not in sheet.notes)]
+    units = sheet.units
+    notes = [*sheet.notes, *(n for n in geometry_notes(shape, units=units) if n not in sheet.notes)]
     said = " ".join(notes).upper()
     sizes: dict[tuple, int] = {}
     for blend in blends(shape):
@@ -1754,15 +1769,17 @@ def _state_edges(sheet: Sheet, shape) -> None:
     for key, count in sorted(sizes.items()):
         if key[0] == "CHAMFER":
             a, b = key[1:]
-            size = f"{_fmt(a)} × 45°" if abs(a - b) < 1e-3 else f"{_fmt(a)} × {_fmt(b)}"
+            size = (f"{_length(a, units)} × 45°" if abs(a - b) < 1e-3
+                    else f"{_length(a, units)} × {_length(b, units)}")
             if size.upper() in said:
                 continue
             notes.append(f"{count}× CHAMFER {size}." if count > 1 else f"CHAMFER {size}.")
         else:
             word, radius = key
-            if f"R{_fmt(radius)} " in said + " " and (word in said or "RADII" in said):
+            if f"R{_length(radius, units)} " in said + " " and (word in said or "RADII" in said):
                 continue
-            notes.append(f"{count}× {word}S R{_fmt(radius)}." if count > 1 else f"{word} R{_fmt(radius)}.")
+            notes.append(f"{count}× {word}S R{_length(radius, units)}." if count > 1
+                         else f"{word} R{_length(radius, units)}.")
     sheet.notes = notes
 
 

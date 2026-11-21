@@ -20,7 +20,8 @@ from pathlib import Path
 
 # The title block's fields the panel edits, in the order a Sheet is written with them.
 FIELDS = ("title", "part_number", "material", "revision", "author")
-SIZES = ("A4", "A3", "A2", "A1", "A0")
+# ISO 216 sizes, then ASME Y14.1's lettered inch sizes, as `cad.eng_drawing.SHEET_SIZES` names them.
+SIZES = ("A4", "A3", "A2", "A1", "A0", "A", "B", "C", "D", "E")
 _SKIPPED = {".venv", "venv", "node_modules", "tmp", ".git", "__pycache__", "_runtime", "dist", "build"}
 
 

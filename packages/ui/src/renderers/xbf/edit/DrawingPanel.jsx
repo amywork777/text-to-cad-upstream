@@ -14,7 +14,10 @@ import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { sameValues } from "./editMode.js";
 
 // The ISO sheets a drawing goes on, as SolidWorks' Sheet Properties lists its sheet formats.
-const SIZES = Object.freeze(["A4", "A3", "A2", "A1", "A0"].map(size => ({ value: size, label: size })));
+const SIZES = Object.freeze([
+  ...["A4", "A3", "A2", "A1", "A0"].map(size => ({ value: size, label: size })),
+  ...["A", "B", "C", "D", "E"].map(size => ({ value: size, label: `${size} (ANSI)` }))
+]);
 // The title block's fields, as its cells name them.
 const FIELDS = Object.freeze([["title", "Title"], ["part_number", "Part number"], ["material", "Material"], ["revision", "Revision"],
   ["author", "Drawn by"]]);
