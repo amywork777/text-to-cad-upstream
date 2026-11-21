@@ -23,7 +23,7 @@ it("the drawing's sheet opens as its script has it, and OK sends the title block
   await user.type(scale, '1:2{Enter}');
   await user.click(screen.getByRole('checkbox', { name: 'Isometric view' }));
   await user.click(screen.getByRole('button', { name: 'OK' }));
-  expect(edit.drawing).toHaveBeenCalledWith({ sheet: { size: 'A3', scale: '1:2', iso: false, title: 'BLOCK', part_number: 'BLOCK', material: '',
+  expect(edit.drawing).toHaveBeenCalledWith({ sheet: { size: 'A3', scale: '1:2', units: 'mm', iso: false, title: 'BLOCK', part_number: 'BLOCK', material: '',
     revision: 'B', author: '' } });
   expect(edit.stopInspecting).toHaveBeenCalled();
 });
