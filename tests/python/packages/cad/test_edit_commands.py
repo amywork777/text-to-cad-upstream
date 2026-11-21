@@ -2032,6 +2032,31 @@ class Drawings(Commands):
         self.assertEqual(drawings.find(root, root / "block.py"), drawing)
         self.assertEqual(drawings.read(text)["out"], "block_drawing.pdf")
 
+    def test_units_change_only_where_nothing_is_stated_in_the_old_unit(self):
+        from cad.edit import drawings
+
+        def script(sheet_args: str, body: str = "") -> str:
+            return (f'sheet = Sheet("A3", title="BLOCK"{sheet_args})\n'
+                    f'top, front, right = sheet.three_views(part)\n{body}')
+
+        # A class of ISO 2768 is no length: the unit changes.
+        made, words = drawings.change(script(', general_tolerance="ISO 2768-m"'), {"units": "in"})
+        self.assertIn('units="in"', made)
+        self.assertEqual(words, "units in")
+        # A tolerance, a limit or a numeric general tolerance would be read in the new unit: refused.
+        for sheet_args, body, named in ((", general_tolerance=\"±0.1\"", "", "general_tolerance"),
+                                        ("", "front.width(tol=0.1)\n", "tol"),
+                                        ("", "front.hole(h, diameter=6)\n", "diameter")):
+            with self.assertRaises(drawings.DrawingError) as refused:
+                drawings.change(script(sheet_args, body), {"units": "in"})
+            self.assertIn(named, str(refused.exception))
+            self.assertIn("Ask the agent", str(refused.exception))
+        # The same drawing, its unit untouched, still takes other changes.
+        made, _ = drawings.change(script("", "front.width(tol=0.1)\n"), {"revision": "B"})
+        self.assertIn('revision="B"', made)
+        with self.assertRaises(drawings.DrawingError):
+            drawings.change(script(""), {"units": "cm"})
+
     def test_make_drawing_writes_a_script_beside_the_part_that_draws_it_and_its_sheet_changes(self):
         import build123d as B
 
@@ -2057,6 +2082,15 @@ class Drawings(Commands):
         self.assertIn('    sheet = Sheet("A4", title="BLOCK", part_number="BLOCK", revision="B", scale=0.5)\n', text)
         self.assertIn("    top, front, right = sheet.three_views(part)\n", text)
         self.assertIn("size A4, scale 1:2, revision B, the isometric taken off", changed["change"]["words"])
+        # Its units: inches, and back. The units go in the Sheet as `units=`; mm is the default, unwritten.
+        inch = self.service.change({"file": file, "files": state["files"], "drawing": {"sheet": {"units": "in"}}})
+        self.assertTrue(inch["ok"], inch.get("error"))
+        self.assertIn('Sheet("A4", title="BLOCK", part_number="BLOCK", revision="B", units="in", scale=0.5)', script.read_text(encoding="utf-8"))
+        self.assertIn("units in", inch["change"]["words"])
+        self.assertEqual(self.service.state(file)["drawing"]["units"], "in")
+        back = self.service.change({"file": file, "files": state["files"], "drawing": {"sheet": {"units": "mm"}}})
+        self.assertTrue(back["ok"], back.get("error"))
+        self.assertNotIn("units=", script.read_text(encoding="utf-8"))
         # The part's state names its drawing; a second one is refused.
         self.assertEqual(self.service.state(file)["drawing"]["revision"], "B")
         again = self.service.change({"file": file, "files": state["files"], "drawing": {"make": True}})
