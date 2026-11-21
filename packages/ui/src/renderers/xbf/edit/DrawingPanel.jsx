@@ -18,6 +18,8 @@ const SIZES = Object.freeze([
   ...["A4", "A3", "A2", "A1", "A0"].map(size => ({ value: size, label: size })),
   ...["A", "B", "C", "D", "E"].map(size => ({ value: size, label: `${size} (ANSI)` }))
 ]);
+// What the sheet prints its sizes in. An inch sheet prints decimal inches (.250), measured off the part.
+const UNITS = Object.freeze([{ value: "mm", label: "Millimetres" }, { value: "in", label: "Inches" }]);
 // The title block's fields, as its cells name them.
 const FIELDS = Object.freeze([["title", "Title"], ["part_number", "Part number"], ["material", "Material"], ["revision", "Revision"],
   ["author", "Drawn by"]]);
@@ -37,7 +39,7 @@ function FieldRow({ label, value, onChange }) {
  */
 export default function DrawingPanel({ edit }) {
   const drawing = edit.state?.drawing || {};
-  const opened = { size: drawing.size || "A3", scale: drawing.scale || "1:1", iso: Boolean(drawing.iso),
+  const opened = { size: drawing.size || "A3", scale: drawing.scale || "1:1", units: drawing.units || "mm", iso: Boolean(drawing.iso),
     ...Object.fromEntries(FIELDS.map(([key]) => [key, drawing[key] || ""])) };
   const [values, setValues] = useState(opened);
   const set = key => value => setValues(current => ({ ...current, [key]: value }));
@@ -59,6 +61,7 @@ export default function DrawingPanel({ edit }) {
       <FileSheetSelectRow label="Size" value={values.size} options={SIZES} onValueChange={set("size")} />
       <FileSheetControlRow label="Scale" trailing={<FileSheetValueInput value={values.scale} ariaLabel="Scale" inputMode="text"
         onValueCommit={draft => set("scale")(String(draft).trim())} />} />
+      <FileSheetSelectRow label="Units" value={values.units} options={UNITS} onValueChange={set("units")} />
     </FileSheetSettingsSection>
     <FileSheetSettingsSection title="Title Block" sectionId="drawing-title">
       {FIELDS.map(([key, label]) => <FieldRow key={key} label={label} value={values[key]} onChange={set(key)} />)}

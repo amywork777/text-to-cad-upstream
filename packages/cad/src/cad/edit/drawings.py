@@ -22,6 +22,11 @@ from pathlib import Path
 FIELDS = ("title", "part_number", "material", "revision", "author")
 # ISO 216 sizes, then ASME Y14.1's lettered inch sizes, as `cad.eng_drawing.SHEET_SIZES` names them.
 SIZES = ("A4", "A3", "A2", "A1", "A0", "A", "B", "C", "D", "E")
+# The units a sheet prints, as `cad.eng_drawing.UNITS` names them; a script that names none prints mm.
+UNITS = ("mm", "in")
+# Keywords whose numbers a drafter states in the sheet's unit (tolerances, limits, the sizes a callout
+# is checked against): an inch sheet reads them as inches, so the unit cannot change under them.
+_STATED_LENGTHS = frozenset({"tol", "limits", "tolerance", "diameter", "size", "depth", "cbore", "csk", "width", "length"})
 _SKIPPED = {".venv", "venv", "node_modules", "tmp", ".git", "__pycache__", "_runtime", "dist", "build"}
 
 
@@ -136,11 +141,11 @@ def read(text: str) -> dict:
     whether the isometric is drawn; and the PDF it writes (``out``)."""
     tree = ast.parse(text)
     call = _sheet_call(tree)
-    values = {"size": "A3", "scale": "1:1", **dict.fromkeys(FIELDS, "")}
+    values = {"size": "A3", "scale": "1:1", "units": "mm", **dict.fromkeys(FIELDS, "")}
     if call.args and isinstance(call.args[0], ast.Constant):
         values["size"] = str(call.args[0].value)
     for keyword in call.keywords:
-        if keyword.arg in ("size", *FIELDS) and isinstance(keyword.value, ast.Constant):
+        if keyword.arg in ("size", "units", *FIELDS) and isinstance(keyword.value, ast.Constant):
             values[keyword.arg] = str(keyword.value.value)
         elif keyword.arg == "scale" and isinstance(keyword.value, ast.Constant):
             values["scale"] = _ratio(float(keyword.value.value))
@@ -172,16 +177,35 @@ def _scale(typed: str) -> float:
     return value
 
 
+def _stated_lengths(tree: ast.Module, sheet: ast.Call) -> list[str]:
+    """What the script states in the sheet's unit, as ``keyword=`` names: a general tolerance in
+    numbers (``"±0.1"``, not a standard's class such as ``"ISO 2768-m"``), and every tolerance,
+    limit or callout size given to the sheet's views."""
+    stated = [keyword.arg for keyword in sheet.keywords if keyword.arg == "general_tolerance"
+              and isinstance(keyword.value, ast.Constant) and re.search(r"\d", str(keyword.value.value))
+              and not str(keyword.value.value).strip().upper().startswith(("ISO", "ASME"))]
+    stated += [keyword.arg for node in ast.walk(tree) if isinstance(node, ast.Call) and node is not sheet
+               for keyword in node.keywords if keyword.arg in _STATED_LENGTHS]
+    return sorted(set(stated))
+
+
 def change(text: str, sheet: dict) -> tuple[str, str]:
-    """The script with its sheet set as ``sheet`` says (any of size, scale, the title block's
-    fields, ``iso``), and what changed, in words."""
+    """The script with its sheet set as ``sheet`` says (any of size, scale, units, the title
+    block's fields, ``iso``), and what changed, in words."""
     tree = ast.parse(text)
     call = _sheet_call(tree)
     was = read(text)
     size = str(sheet.get("size") or was["size"]).upper()
     if size not in SIZES:
         raise DrawingError(f"A sheet is {', '.join(SIZES)}.")
-    kept = [keyword for keyword in call.keywords if keyword.arg not in ("size", "scale", *FIELDS)]
+    units = str(sheet.get("units") or was["units"]).lower()
+    if units not in UNITS:
+        raise DrawingError(f"A sheet prints {' or '.join(UNITS)}.")
+    stated = _stated_lengths(tree, call) if units != was["units"] else []
+    if stated:
+        raise DrawingError(f"The drawing states {', '.join(stated)} in {was['units']}, and an {units} sheet would read them as {units}. "
+                           f"Ask the agent to change the drawing to {units}, restating them.")
+    kept = [keyword for keyword in call.keywords if keyword.arg not in ("size", "scale", "units", *FIELDS)]
     written = [f'"{size}"']
     for field in FIELDS:
         value = str(sheet.get(field, was[field]) or "").strip()
@@ -189,6 +213,8 @@ def change(text: str, sheet: dict) -> tuple[str, str]:
             raise DrawingError("A title block field is one line, without double quotes.")
         if value:
             written.append(f'{field}="{value}"')
+    if units != "mm":
+        written.append(f'units="{units}"')
     scale = _scale(sheet.get("scale") or was["scale"])
     if abs(scale - 1) > 1e-12:
         written.append(f"scale={_number(round(scale, 6))}")
@@ -212,7 +238,7 @@ def change(text: str, sheet: dict) -> tuple[str, str]:
         lines[first - 1:last] = [line]
     made = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
     now = read(made)
-    said = [f"{key.replace('_', ' ')} {now[key]}" for key in ("size", "scale", *FIELDS) if now[key] != was[key]]
+    said = [f"{key.replace('_', ' ')} {now[key]}" for key in ("size", "scale", "units", *FIELDS) if now[key] != was[key]]
     if now["iso"] != was["iso"]:
         said.append("the isometric drawn" if now["iso"] else "the isometric taken off")
     return made, ", ".join(said) or "nothing"
