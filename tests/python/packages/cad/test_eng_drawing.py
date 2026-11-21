@@ -1971,11 +1971,12 @@ class SheetFurnitureTests(unittest.TestCase):
                   if x0 <= e.dxf.insert.x <= x0 + w and y0 <= e.dxf.insert.y <= y0 + h]
         self.assertEqual(inside, ["MATERIAL"])
 
-    def test_a_unit_the_sheet_does_not_measure_in_is_refused(self) -> None:
+    def test_a_unit_the_sheet_does_not_print_in_is_refused(self) -> None:
         from cad.eng_drawing import Sheet
 
-        with self.assertRaisesRegex(ValueError, "25.4"):
-            Sheet("A3", units="in")
+        for units in ("cm", "IN", "inch"):
+            with self.subTest(units=units), self.assertRaisesRegex(ValueError, r'millimetres \("mm"\) or inches'):
+                Sheet("A3", units=units)
 
 
 class UnstatedTests(unittest.TestCase):
@@ -5785,6 +5786,158 @@ class PartSheetTests(unittest.TestCase):
         one_end = holes(_joining_plate(((30, 30),), ends=1))[0]
         self.assertEqual((one_end.csk, one_end.far_csk), ((6.5, 90.0), None))
         self.assertFalse(_looks_into(one_end, one_end.axis), "a chamfer at one end alone is not what the far view shows")
+
+
+def _inch_plate():
+    """4 × 3 × .5 in, built in millimetres as every model is, with a ⌀.250 hole
+    through it at (1, .5) in."""
+    from build123d import Align, Box, Cylinder, Pos
+
+    align = (Align.CENTER, Align.CENTER, Align.MIN)
+    return Box(101.6, 76.2, 12.7, align=align) - Pos(25.4, 12.7, 0) * Cylinder(3.175, 12.7, align=align)
+
+
+class InchSheetTests(unittest.TestCase):
+    """Sheet(units="in"): the model stays in millimetres, and what the sheet
+    measures prints in inches, as ASME Y14.5 writes them; what the author states
+    on it is in inches, and prints as given."""
+
+    def _sheet(self, units: str = "in", **fields):
+        from cad.eng_drawing import Sheet
+
+        sheet = Sheet("B", 1.0, units=units, **fields)
+        top, front, right = sheet.three_views(_inch_plate())
+        return sheet, top, front, right
+
+    def _title(self, doc) -> dict:
+        """Each title block caption's value: the text standing in its cell."""
+        from cad._internal.drawing_base import _MARGIN, _TITLE_W
+        from cad._internal.drawing_sheet import _TITLE_CELLS
+
+        msp = doc.modelspace()
+        width = max(p[0] for e in msp.query("LWPOLYLINE[layer=='SHEET']") for p in e.get_points("xy")) + _MARGIN
+        cells = {}
+        for name, (x, y, w, h) in _TITLE_CELLS.items():
+            x0, y0 = width - _MARGIN - _TITLE_W + x, _MARGIN + y
+            cells[name] = [e.dxf.text for e in msp.query("TEXT")
+                           if x0 <= e.dxf.insert.x <= x0 + w and y0 <= e.dxf.insert.y <= y0 + h and e.dxf.text != name]
+        return cells
+
+    def test_what_the_sheet_measures_prints_in_inches(self) -> None:
+        from cad._internal.drawing_render import _render_sheet
+
+        sheet, top, front, _right = self._sheet()
+        top.overall()
+        top.hole((25.4, 12.7, 12.7))
+        front.dim((-50.8, -38.1, 0), (-50.8, -38.1, 12.7))
+        doc = _render_sheet(sheet, index=1, count=1, label="inch")
+        self.assertEqual(sorted(_dim_texts(doc)), [".500", "3.000", "4.000"],
+                         "three places, trailing zeros kept, no zero before the point")
+        self.assertEqual(_callouts(doc), ["%%c.250 THRU"])
+        self.assertEqual(self._title(doc)["UNITS"], ["IN"])
+        # The same part on a millimetre sheet reads as it always has.
+        sheet, top, front, _right = self._sheet("mm")
+        top.overall()
+        top.hole((25.4, 12.7, 12.7))
+        front.dim((-50.8, -38.1, 0), (-50.8, -38.1, 12.7))
+        doc = _render_sheet(sheet, index=1, count=1, label="mm")
+        self.assertEqual(sorted(_dim_texts(doc)), ["101.6", "12.7", "76.2"])
+        self.assertEqual(_callouts(doc), ["%%c6.35 THRU"])
+        self.assertEqual(self._title(doc)["UNITS"], ["MM"])
+
+    def test_a_hole_table_gives_x_y_and_size_in_inches(self) -> None:
+        from cad._internal.drawing_render import _render_sheet
+
+        sheet, top, _front, _right = self._sheet()
+        top.hole_table()
+        doc = _render_sheet(sheet, index=1, count=1, label="table")
+        texts = {e.dxf.text for e in doc.modelspace().query("TEXT")}
+        self.assertTrue({"3.000", "2.000", ".250 THRU"} <= texts, texts)
+
+    def test_a_stated_tolerance_is_in_inches_and_prints_as_given(self) -> None:
+        from cad._internal.drawing_render import _render_sheet
+        from cad.eng_drawing import Frame, Profile
+
+        sheet, top, front, right = self._sheet(profile=Profile("ASME", "ASME Y14.5-2018"))
+        front.dim((-50.8, -38.1, 0), (-50.8, -38.1, 12.7), tol=0.005)
+        right.dim((50.8, -38.1, 0), (50.8, 38.1, 0), tol=(0.002, 0.0015))
+        top.hole((25.4, 12.7, 12.7), tol=0.001)
+        top.frame((0, 20, 12.7), Frame("flatness", 0.002))
+        doc = _render_sheet(sheet, index=1, count=1, label="tol")
+        texts = " ".join(_dim_texts(doc))
+        self.assertIn(".500{\\H0.70x;±.005}", texts, "the tolerance as given, its zero before the point left off")
+        self.assertIn("+.0020", texts, "unequal deviations print to one precision, as given")
+        self.assertIn("-.0015", texts)
+        self.assertNotIn("0.0", texts)
+        callouts = _callouts(doc)
+        self.assertIn("%%c.250 ±.001 THRU", callouts)
+        self.assertIn(".002", callouts, "the frame's tolerance")
+
+    def test_limits_are_inches_checked_against_the_millimetre_model(self) -> None:
+        from cad._internal.drawing_render import _render_sheet
+
+        sheet, _top, _front, right = self._sheet()
+        right.dim((50.8, -38.1, 0), (50.8, 38.1, 0), limits=(2.995, 3.005))
+        doc = _render_sheet(sheet, index=1, count=1, label="limits")
+        (dim,) = doc.modelspace().query("DIMENSION")
+        self.assertIn("\\S3.005^ 2.995;", dim.dxf.text)
+        sheet, _top, _front, right = self._sheet()
+        right.dim((50.8, -38.1, 0), (50.8, 38.1, 0), limits=(0.995, 1.005))
+        with self.assertRaisesRegex(ValueError, r"limits=\(0.995, 1.005\) do not hold the part, which measures 3.000"):
+            _render_sheet(sheet, index=1, count=1, label="outside")
+
+    def test_a_callout_is_checked_against_sizes_stated_in_inches(self) -> None:
+        from cad._internal.drawing_render import _render_sheet
+
+        sheet, top, _front, _right = self._sheet()
+        top.hole((25.4, 12.7, 12.7), diameter=0.25, thru=True)
+        top.diameter((25.4, 12.7, 12.7), size=0.25)
+        doc = _render_sheet(sheet, index=1, count=1, label="stated")
+        self.assertEqual(sorted(_callouts(doc)), ["%%c.250", "%%c.250 THRU"])
+        sheet, top, _front, _right = self._sheet()
+        top.hole((25.4, 12.7, 12.7), diameter=6.35)
+        with self.assertRaisesRegex(ValueError, r"reads ⌀.250 THRU, but the callout was given diameter=6.35"):
+            _render_sheet(sheet, index=1, count=1, label="millimetres")
+
+    def test_an_inch_sheet_chooses_from_the_lettered_sizes(self) -> None:
+        from build123d import Box, Cylinder
+
+        from cad.eng_drawing import Sheet
+
+        for part, size, at_least in ((Cylinder(7, 11), "A", 1.0), (Box(600, 40, 40), "B", 0.0)):
+            for units, expected in (("in", size), ("mm", {"A": "A4", "B": "A3"}[size])):
+                sheet = Sheet(None, None, units=units)
+                sheet.three_views(part, iso=True)
+                self.assertEqual(sheet._size(), expected, units)
+                self.assertGreaterEqual(sheet._scale(), at_least)
+        full = Sheet(None, 1.0, units="in")
+        full.three_views(Box(600, 40, 40), iso=True)
+        self.assertEqual(full._size(), "D", "a given scale takes the smallest lettered sheet that fits it")
+        metric = Sheet("A3", None, units="in")
+        metric.three_views(Cylinder(7, 11), iso=True)
+        self.assertEqual(metric._size(), "A3", "a size given is kept, whichever series it is from")
+
+    def test_edge_notes_are_written_and_read_in_inches(self) -> None:
+        from build123d import Align, Box, Pos, fillet
+
+        from cad._internal.drawing_render import _render_sheet
+        from cad._internal.drawing_report import _unstated
+        from cad.eng_drawing import Sheet, geometry_notes
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        pocket = Box(80, 50, 15, align=up) - Pos(0, 0, 5) * Box(40, 20, 10, align=up)
+        inside = [e for e in pocket.edges() if abs(e.center().X) <= 20 + 1e-6 and abs(e.center().Y) <= 10 + 1e-6
+                  and 5 - 1e-6 <= e.center().Z < 15 - 1e-6]
+        part = fillet(inside, 3.175)
+        notes = geometry_notes(part, units="in")
+        self.assertEqual(notes, ["FILLETS R.125 UNLESS OTHERWISE SPECIFIED."])
+        for units, given, expected in (("in", notes, 0), ("in", geometry_notes(part), 1), ("mm", notes, 1)):
+            sheet = Sheet("B", units=units, notes=given)
+            sheet.three_views(part)
+            facts = _facts()
+            _render_sheet(sheet, index=1, count=1, label="edges", facts=facts)
+            lines = [line for line in _unstated(facts) if "fillet" in line]
+            self.assertEqual(len(lines), expected, (units, given, lines))
 
 
 class CrowdedSheetTests(unittest.TestCase):

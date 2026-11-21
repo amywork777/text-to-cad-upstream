@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from cad._internal.drawing_base import _SECTION_LETTERS, _exact, _places, _symbol, _text_width
+from cad._internal.drawing_base import _SECTION_LETTERS, _decimal, _exact, _places, _symbol, _text_width
 
 #: Form tolerances relate a feature to itself, so they name no datum.
 FORM = ("straightness", "flatness", "circularity", "cylindricity")
@@ -47,7 +47,9 @@ _FRAME_PAD = 0.35
 class Frame:
     """A feature control frame: ``Frame("position", 0.1, ("A", "B"), diameter=True,
     modifier="M")`` reads ``⌖ ⌀0.1 Ⓜ A B``. Datums are the letters
-    :meth:`~cad.eng_drawing.View.datum` defines, primary first."""
+    :meth:`~cad.eng_drawing.View.datum` defines, primary first. The tolerance
+    is in the sheet's unit: ``Frame("flatness", 0.002)`` on an inch sheet reads
+    ``⏥ .002``."""
 
     characteristic: str
     tolerance: float
@@ -59,7 +61,7 @@ class Frame:
         if self.characteristic not in CHARACTERISTICS:
             raise ValueError(f"unknown characteristic {self.characteristic!r}; one of {', '.join(CHARACTERISTICS)}")
         if isinstance(self.tolerance, bool) or not isinstance(self.tolerance, (int, float)) or not self.tolerance > 0:
-            raise ValueError(f"a frame's tolerance is a positive number of millimetres, got {self.tolerance!r}")
+            raise ValueError(f"a frame's tolerance is a positive number in the sheet's unit, got {self.tolerance!r}")
         _places(self.tolerance)
         if isinstance(self.datums, str):
             raise TypeError(f"datums is a sequence of letters, datums=({self.datums!r},) for one")
@@ -148,13 +150,14 @@ def _draw_pieces(layout, pieces: list[tuple], h: float, layer: str) -> None:
             layout.add_lwpolyline(piece[1], dxfattribs=attribs)
 
 
-def _tolerance_text(frame: Frame) -> str:
-    return _exact(frame.tolerance)
+def _tolerance_text(frame: Frame, units: str = "mm") -> str:
+    """The tolerance as stated, in the sheet's unit: as given, never rounded."""
+    return _decimal(_exact(frame.tolerance), units)
 
 
-def _tolerance_width(frame: Frame, th: float) -> float:
+def _tolerance_width(frame: Frame, th: float, units: str = "mm") -> float:
     """The tolerance cell's width: its ⌀, the value and its material condition."""
-    width = _text_width(_tolerance_text(frame), th) + 2 * _FRAME_PAD * th
+    width = _text_width(_tolerance_text(frame, units), th) + 2 * _FRAME_PAD * th
     if frame.diameter:
         width += th
     if frame.modifier:
@@ -162,10 +165,10 @@ def _tolerance_width(frame: Frame, th: float) -> float:
     return width
 
 
-def frame_size(frame: Frame, th: float) -> tuple[float, float]:
-    """A frame's (width, height) at text height ``th``."""
+def frame_size(frame: Frame, th: float, units: str = "mm") -> tuple[float, float]:
+    """A frame's (width, height) at text height ``th``, on a sheet in ``units``."""
     cell = _FRAME_HEIGHT * th
-    return cell + _tolerance_width(frame, th) + cell * len(frame.datums), cell
+    return cell + _tolerance_width(frame, th, units) + cell * len(frame.datums), cell
 
 
 def _put(layout, value: str, x: float, y: float, h: float, align, layer: str) -> None:
@@ -174,12 +177,12 @@ def _put(layout, value: str, x: float, y: float, h: float, align, layer: str) ->
 
 
 def _draw_frame(layout, frame: Frame, x: float, mid: float, th: float,
-                layer: str = "DIM") -> tuple[float, float, float, float]:
+                layer: str = "DIM", units: str = "mm") -> tuple[float, float, float, float]:
     """Draw ``frame`` with its left edge at ``x``, centred on ``mid``. Returns its
     box as (x0, y0, x1, y1), for the caller to keep other annotation off."""
     from ezdxf.enums import TextEntityAlignment as A
 
-    width, cell = frame_size(frame, th)
+    width, cell = frame_size(frame, th, units)
     y0, y1 = mid - cell / 2, mid + cell / 2
     layout.add_lwpolyline([(x, y0), (x + width, y0), (x + width, y1), (x, y1)], close=True,
                           dxfattribs={"layer": layer})
@@ -190,14 +193,14 @@ def _draw_frame(layout, frame: Frame, x: float, mid: float, th: float,
     if frame.diameter:
         _draw_pieces(layout, _symbol("diameter", cursor, mid, th), th, layer)
         cursor += th
-    _put(layout, _tolerance_text(frame), cursor, mid, th, A.MIDDLE_LEFT, layer)
-    cursor += _text_width(_tolerance_text(frame), th)
+    _put(layout, _tolerance_text(frame, units), cursor, mid, th, A.MIDDLE_LEFT, layer)
+    cursor += _text_width(_tolerance_text(frame, units), th)
     if frame.modifier:
         r = 0.45 * th
         centre = (cursor + 0.15 * th + r, mid)
         layout.add_circle(centre, r, dxfattribs={"layer": layer})
         _put(layout, frame.modifier, centre[0], mid, 0.6 * th, A.MIDDLE_CENTER, layer)
-    edge += _tolerance_width(frame, th)
+    edge += _tolerance_width(frame, th, units)
     for letter in frame.datums:
         layout.add_line((edge, y0), (edge, y1), dxfattribs={"layer": layer})
         _put(layout, letter, edge + cell / 2, mid, th, A.MIDDLE_CENTER, layer)

@@ -520,7 +520,7 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
             # Note 1's frame follows its words: every surface within this profile.
             _draw_frame(msp, sheet.general_profile,
                         m + _NOTE_INSET + dx + _text_width(line, _NOTE_HEIGHT) + _NOTE_HEIGHT,
-                        y + _NOTE_HEIGHT / 2, _NOTE_HEIGHT, "NOTES")
+                        y + _NOTE_HEIGHT / 2, _NOTE_HEIGHT, "NOTES", units=sheet.units)
     revisions = _revisions_box(sheet)
     if revisions is not None:
         rx, rx1, _ry0, ry1 = revisions
@@ -742,8 +742,8 @@ def _within(sheet: Sheet, floor: int, ceiling: float | None) -> tuple[str, float
     """The sheet's current size and scale, held within a retry's bounds: no smaller
     than the ``floor``-th size, no larger than ``ceiling``."""
     paper, scale = sheet._size(), sheet._scale()
-    if sheet.size is None and _SIZES_SMALLEST_FIRST.index(paper) < floor:
-        paper = _SIZES_SMALLEST_FIRST[floor]
+    if sheet.size is None and _sizes(sheet).index(paper) < floor:
+        paper = _sizes(sheet)[floor]
     if sheet.scale is None and ceiling is not None and scale > ceiling + 1e-12:
         scale = next(c for c in _STANDARD_SCALES if c <= ceiling + 1e-12)
     return paper, scale
@@ -753,12 +753,22 @@ def _within(sheet: Sheet, floor: int, ceiling: float | None) -> tuple[str, float
 _LARGEST_SCALE = 10.0
 
 
-#: The sheets a sheet choosing its own size tries, smallest first, for a part it
-#: can draw at full size or larger; a part bigger than that goes on A3, reduced.
-#: A1 and A0 are tried only at a scale the author fixed.
-_SIZES_SMALLEST_FIRST = ("A4", "A3", "A2", "A1", "A0")
-_SIZES_CHOSEN = ("A4", "A3", "A2")
-_SIZE_REDUCED = "A3"
+#: The sizes a sheet choosing its own size steps through, smallest first: ISO
+#: 216's on a millimetre sheet, ASME Y14.1's lettered ones on an inch sheet.
+_ISO_SIZES = ("A4", "A3", "A2", "A1", "A0")
+_INCH_SIZES = ("A", "B", "C", "D", "E")
+#: Of those, the first three are the ones tried for a part the sheet can draw at
+#: full size or larger; a part bigger than that goes on the second (A3, B),
+#: reduced. The two largest are tried only at a scale the author fixed.
+_CHOSEN = 3
+
+
+def _sizes(sheet: Sheet) -> tuple[str, ...]:
+    """The sizes a sheet steps through, smallest first: the series of the size it
+    was given, else its unit's."""
+    if sheet.size in _INCH_SIZES or (sheet.size is None and sheet.units == "in"):
+        return _INCH_SIZES
+    return _ISO_SIZES
 
 
 def _choose_size_and_scale(sheet: Sheet, extent, iso, room: dict, gap: float | None = None, *, floor: int = 0,
@@ -768,13 +778,13 @@ def _choose_size_and_scale(sheet: Sheet, extent, iso, room: dict, gap: float | N
     extent or False), each view with ``room`` for its annotation.
 
     A chosen scale is the largest standard one, up to 10:1 and no larger than
-    ``ceiling``, that fits. A chosen size is the smallest of A4 to A2, from the
-    ``floor``-th size up, that draws the part at 1:1 or larger, else A3 (or the
-    floor's size, if larger) reduced, or the next size up where no standard scale
-    fits A3 (scale before sheet); given a fixed scale, it is the smallest
-    sheet from the floor up that fits it. A fixed size or scale is kept. A part
-    too big for a fixed scale takes the largest sheet, and the render refuses it,
-    naming the scale that fits."""
+    ``ceiling``, that fits. A chosen size is the smallest of A4 to A2 (A to C on
+    an inch sheet), from the ``floor``-th size up, that draws the part at 1:1 or
+    larger, else A3 or B (or the floor's size, if larger) reduced, or the next size
+    up where no standard scale fits that (scale before sheet); given a fixed
+    scale, it is the smallest sheet from the floor up that fits it. A fixed size
+    or scale is kept. A part too big for a fixed scale takes the largest sheet,
+    and the render refuses it, naming the scale that fits."""
     scales = ([c for c in _STANDARD_SCALES if c <= (ceiling or _LARGEST_SCALE) + 1e-9] if sheet.scale is None
               else [sheet.scale])
 
@@ -793,25 +803,25 @@ def _choose_size_and_scale(sheet: Sheet, extent, iso, room: dict, gap: float | N
         paper, fit = sheet.size, largest(sheet.size)
     elif sheet.scale is not None:
         # A fixed scale: the smallest sheet it fits.
-        paper, fit = _SIZES_SMALLEST_FIRST[-1], None
-        for name in _SIZES_SMALLEST_FIRST[floor:]:
+        paper, fit = _sizes(sheet)[-1], None
+        for name in _sizes(sheet)[floor:]:
             fit = largest(name)
             if fit is not None:
                 paper = name
                 break
     else:
         # Both chosen: the smallest sheet that draws the part full size or larger,
-        # else A3 (or the floor's size, if larger) reduced.
+        # else A3 or B (or the floor's size, if larger) reduced.
         paper, fit = None, None
-        for name in _SIZES_CHOSEN[floor:]:
+        for name in _sizes(sheet)[:_CHOSEN][floor:]:
             fit = largest(name)
             if fit is not None and fit >= 1.0 - 1e-9:
                 paper = name
                 break
         if paper is None:
-            # Reduced on A3 (or the floor's size); where no standard scale fits it,
-            # the next sheet up that one does, scale before sheet.
-            for paper in _SIZES_SMALLEST_FIRST[max(floor, _SIZES_SMALLEST_FIRST.index(_SIZE_REDUCED)):]:
+            # Reduced on A3 or B (or the floor's size); where no standard scale fits
+            # it, the next sheet up that one does, scale before sheet.
+            for paper in _sizes(sheet)[max(floor, 1):]:
                 fit = largest(paper)
                 if fit is not None:
                     break

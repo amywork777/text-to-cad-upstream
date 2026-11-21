@@ -12,13 +12,19 @@ import re
 from functools import lru_cache
 
 
-#: ISO 216 sheet sizes, landscape, in millimetres.
+#: Sheet sizes, landscape, in millimetres: ISO 216's A4 to A0, and ASME Y14.1's
+#: lettered inch sizes A (11 x 8.5 in) to E (44 x 34 in).
 SHEET_SIZES = {
     "A4": (297.0, 210.0),
     "A3": (420.0, 297.0),
     "A2": (594.0, 420.0),
     "A1": (841.0, 594.0),
     "A0": (1189.0, 841.0),
+    "A": (279.4, 215.9),
+    "B": (431.8, 279.4),
+    "C": (558.8, 431.8),
+    "D": (863.6, 558.8),
+    "E": (1117.6, 863.6),
 }
 
 #: Standard view names -> (view direction: where the viewer STANDS relative to the
@@ -109,15 +115,43 @@ _MIN_TEXT_MM = 1.6
 #: refused with the first of these that fits rather than an arbitrary ratio.
 _STANDARD_SCALES = (50.0, 20.0, 10.0, 5.0, 2.0, 1.0, 1 / 2, 1 / 2.5, 1 / 5, 1 / 10, 1 / 20, 1 / 50, 1 / 100,
                     1 / 200, 1 / 500, 1 / 1000)
-#: The only unit a sheet prints. Every value on it is measured off the model, whose
-#: unit is the millimetre; a title block reading IN over millimetre values is a
-#: drawing that is wrong by 25.4 everywhere and looks right.
-UNITS = ("mm",)
+#: The units a sheet prints. The model's unit is the millimetre whatever the sheet
+#: prints: an inch sheet divides every length it measures by 25.4, and reads every
+#: length its author states in inches. A title block reading IN over millimetre
+#: values is a drawing that is wrong by 25.4 everywhere and looks right.
+UNITS = ("mm", "in")
+_MM_PER_INCH = 25.4
 
 
 def _fmt(value: float) -> str:
     text = f"{value:.2f}".rstrip("0").rstrip(".")
     return text or "0"
+
+
+def _length(value: float, units: str = "mm") -> str:
+    """A length measured off the model, in millimetres, as a sheet in ``units``
+    prints it: millimetres to two places, trailing zeros dropped (``12.5``);
+    inches as ASME Y14.5 writes them, to three places, trailing zeros kept
+    (``.250``, ``1.375``)."""
+    if units == "mm":
+        return _fmt(value)
+    return _decimal(f"{value / _MM_PER_INCH:.3f}", units)
+
+
+def _decimal(text: str, units: str) -> str:
+    """A number as the sheet's unit writes it: ISO 129-1's millimetre keeps its
+    zero before the point (0.05), ASME Y14.5's inch leaves it off (.005)."""
+    return re.sub(r"^([+-]?)0\.", r"\1.", text) if units == "in" else text
+
+
+def _mm(value: float, units: str) -> float:
+    """A length the author stated on a sheet in ``units``, in the model's millimetres."""
+    return value * _MM_PER_INCH if units == "in" else value
+
+
+def _said(value: float, units: str) -> str:
+    """A length the author stated, as a message quotes it back: as they gave it."""
+    return f"{value:g}" if units == "in" else _fmt(value)
 
 
 #: The most decimal places a stated tolerance or limit prints to. A value is printed
