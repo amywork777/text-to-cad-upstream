@@ -84,10 +84,10 @@ function host(initial: HostContext, hostCapabilities: Record<string, unknown> = 
 // The home, as the server launches it: the library, with Open on a computer that has a chooser.
 const home: Launch = { protocol: 9, page: 'home', model: null, pick: true };
 
-it("a host that opens files beside the thread (Studio) moves between them itself: every view of it is bare, with no home, Back or Forward, and opens another file in the host", async () => {
+it("a host that opens files beside the thread (Studio) moves between them itself: every view of it has the navbar (Display, Preview, the panel) with no home, Back or Forward, and opens another file in the host", async () => {
   const { bridge, server } = host({ displayMode: 'fullscreen' }, { openFiles: {} });
   render(<App bridge={bridge as any} server={server as any} launch={{ protocol: 7, page: 'viewer', model: '/work/a.step' }} />);
-  expect([viewer.props!.chrome, viewer.props!.history, viewer.props!.library]).toEqual(['bare', undefined, undefined]);
+  expect([viewer.props!.chrome, viewer.props!.history, viewer.props!.library]).toEqual(['page', undefined, undefined]);
   // A part opened from its assembly opens in a tab of the host's own.
   act(() => viewer.props!.openElsewhere!('/work/b.step'));
   expect(bridge.request).toHaveBeenCalledWith('studio/open-file', { path: '/work/b.step' });
