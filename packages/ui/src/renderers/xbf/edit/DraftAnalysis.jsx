@@ -40,7 +40,7 @@ export default function DraftAnalysis({ edit }) {
       <FileSheetControlRow label="Draft angle" trailing={<span className="flex shrink-0 items-center gap-1">
         <FileSheetValueInput value={String(settings.angle)} ariaLabel="Draft angle"
           onValueCommit={draft => { const angle = Number(String(draft).trim()); if (Number.isFinite(angle) && angle >= 0 && angle < 90) edit.setDraftSettings({ angle }); }} />
-        <span className="w-6 text-micro text-muted-foreground">deg</span>
+        <span className="w-6 text-tiny text-muted-foreground">deg</span>
       </span>} />
     </FileSheetSettingsSection>
     <FileSheetSettingsSection title="Color Settings" sectionId="draft-colors">

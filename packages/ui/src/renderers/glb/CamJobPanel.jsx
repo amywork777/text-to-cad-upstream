@@ -139,7 +139,7 @@ function JobRow({ id, label, detail, hint, swatch = null, depth, chosen, onChoos
         <Choosable id={id} label={label} chosen={chosen} onChoose={onChoose}
           className={cn(TREE_ROW_NAME_CLASS, onToggleHidden && (hidden ? ROW_NAME_UNDER_ACTIONS.shown : ROW_NAME_UNDER_ACTIONS.hover), hidden && "text-muted-foreground")}>
           <TreeRowLabel className={detail ? "max-w-full shrink-0" : "flex-1"}>{label}</TreeRowLabel>
-          {detail ? <TreeRowLabel className="flex-1 text-micro text-muted-foreground tabular-nums">{detail}</TreeRowLabel> : null}
+          {detail ? <TreeRowLabel className="flex-1 text-tiny text-muted-foreground tabular-nums">{detail}</TreeRowLabel> : null}
         </Choosable>
       </TooltipHint>
       {onToggleHidden ? <RowEye name={label} away={hidden} onToggle={onToggleHidden} /> : null}
@@ -229,6 +229,6 @@ export default function CamJobPanel({ job, colours, chosen, onChoose, hidden = n
     </ul>
     <JobTools job={job} chosen={chosen} onChoose={onChoose} />
     <JobShow gates={gates} onToggleGate={onToggleGate} />
-    <p className="px-2.5 pb-2 pt-1 text-micro leading-4 text-muted-foreground [overflow-wrap:break-word]" data-cam-safety="">{job.safety}</p>
+    <p className="px-2.5 pb-2 pt-1 text-tiny leading-4 text-muted-foreground [overflow-wrap:break-word]" data-cam-safety="">{job.safety}</p>
   </ToolPanel>;
 }

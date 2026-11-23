@@ -221,7 +221,7 @@ export function CamReadout({ readoutRef }) {
   // Put away until a clip writes to it: React never draws it shown, so a render never undoes what the playback wrote.
   return <div ref={boxRef} className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-3" aria-hidden="true" data-cam-readout=""
     style={{ bottom: READOUT_BOTTOM, display: "none" }}>
-    <div className={cn("flex max-w-full items-center gap-2 rounded-md px-2.5 py-1 text-micro tabular-nums text-muted-foreground", FLOATING_CHROME_SURFACE_CLASS)}>
+    <div className={cn("flex max-w-full items-center gap-2 rounded-md px-2.5 py-1 text-tiny tabular-nums text-muted-foreground", FLOATING_CHROME_SURFACE_CLASS)}>
       <span ref={operationRef} className="min-w-0 truncate text-tiny text-foreground" data-cam-readout-operation="" />
       <span ref={timeRef} className="shrink-0" data-cam-readout-time="" />
       <span ref={speedRef} className="shrink-0" data-cam-readout-speed="" />

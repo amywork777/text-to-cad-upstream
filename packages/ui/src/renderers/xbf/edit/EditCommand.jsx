@@ -114,7 +114,7 @@ function OtherHoles({ places, axes, units, disabled, onChange, onRemove }) {
     return <FileSheetControlRow key={index} label={name} trailing={<span className="flex shrink-0 items-center gap-1">
       {axes.map(axis => <FileSheetValueInput key={axis} value={place[axis] ?? "0"} ariaLabel={`${name} ${axis.toUpperCase()}`} disabled={disabled}
         className="w-14" onValueCommit={draft => onChange(index, axis, String(draft).trim())} />)}
-      <span className="w-6 text-micro text-muted-foreground">{units}</span>
+      <span className="w-6 text-tiny text-muted-foreground">{units}</span>
       <button type="button" aria-label={`Remove ${name}`} disabled={disabled}
         className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent/70 hover:text-foreground"
         onClick={() => onRemove(index)}><X className="size-3" aria-hidden="true" /></button>
@@ -126,7 +126,7 @@ function OtherHoles({ places, axes, units, disabled, onChange, onRemove }) {
 function NumberRow({ label, value, unit = "", disabled, onChange }) {
   return <FileSheetControlRow label={label} trailing={<span className="flex shrink-0 items-center gap-1">
     <FileSheetValueInput value={value} ariaLabel={label} disabled={disabled} onValueCommit={draft => onChange(String(draft).trim())} />
-    <span className="w-4 text-micro text-muted-foreground">{UNIT_MARKS[unit] || unit}</span>
+    <span className="w-4 text-tiny text-muted-foreground">{UNIT_MARKS[unit] || unit}</span>
   </span>} />;
 }
 

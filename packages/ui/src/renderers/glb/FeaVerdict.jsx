@@ -65,7 +65,7 @@ function CheckRow({ row, chosen, onChoose }) {
         <span className="min-w-0 [overflow-wrap:break-word]" data-fea-check-label="">{row.label}</span>
       </div>
       <WorkBar use={row.use} margin={row.margin} tone={tone} label={t("fea.limitBar", { check: row.label })} />
-      <p className="min-w-0 text-micro leading-3.5 text-muted-foreground tabular-nums [overflow-wrap:break-word]" data-fea-check-line="">{row.line}</p>
+      <p className="min-w-0 text-tiny leading-3.5 text-muted-foreground tabular-nums [overflow-wrap:break-word]" data-fea-check-line="">{row.line}</p>
     </Choosable>
   </li>;
 }
@@ -75,7 +75,7 @@ function CheckRow({ row, chosen, onChoose }) {
  * peak takes the warning tone, as it is one: look closer before trusting either.
  */
 function HandCheck({ row }) {
-  return <div className="min-w-0 border-t border-foreground/10 py-1 text-micro leading-3.5 tabular-nums [overflow-wrap:break-word]"
+  return <div className="min-w-0 border-t border-foreground/10 py-1 text-tiny leading-3.5 tabular-nums [overflow-wrap:break-word]"
     title={row.about || undefined} data-fea-hand-check={row.agrees ? "agrees" : "far"}>
     <p className="text-muted-foreground" data-fea-hand-check-line="">{row.line}</p>
     <p className={row.agrees ? "text-muted-foreground" : "text-warning"} data-fea-hand-check-reading="">{row.reading}</p>

@@ -7,7 +7,7 @@ import { useSceneRendered } from "./sceneRendered.js";
 
 const ARROW_PX = 7;
 const EMPTY = Object.freeze([]);
-const CHIP_CLASS = "pointer-events-auto absolute left-0 top-0 z-10 whitespace-nowrap rounded-md border bg-background px-1.5 py-0.5 text-micro tabular-nums text-foreground shadow-sm";
+const CHIP_CLASS = "pointer-events-auto absolute left-0 top-0 z-10 whitespace-nowrap rounded-md border bg-background px-1.5 py-0.5 text-tiny tabular-nums text-foreground shadow-sm";
 
 /** One dimension's lines on the canvas: its witness lines, and the dimension line with an arrow at each end. */
 function drawDimension(context, segments, color, active) {
@@ -55,7 +55,7 @@ function DimensionChip({ dimension, units, editing, active, disabled, onEdit, on
     onPointerEnter={() => onHover(dimension.id)} onPointerLeave={() => onHover(null)}>
     {editing ? <form className="flex items-center gap-1" onSubmit={event => { event.preventDefault(); onCommit(draft); }}>
       <input ref={inputRef} value={draft} aria-label={`${sizeName(dimension.name)} value`} inputMode="decimal"
-        className="w-16 bg-transparent text-micro tabular-nums text-foreground outline-none"
+        className="w-16 bg-transparent text-tiny tabular-nums text-foreground outline-none"
         onChange={event => setDraft(event.target.value)}
         onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); onEdit(null); } }}
         onBlur={() => onEdit(null)} />

@@ -44,7 +44,7 @@ function FeaResultControls({ controls, values, onChange, markers = null }) {
       {markers ? <div className="flex min-w-0 items-center gap-2 px-2 text-tiny" data-fea-markers="">
         <Checkbox checked={markers.on} onCheckedChange={(on) => markers.onChange(on === true)} aria-label={markers.title} />
         <span className="shrink-0" aria-hidden="true">{markers.title}</span>
-        <TooltipHint content={markers.text} overflowOnly><span className="min-w-0 truncate text-micro text-muted-foreground">{markers.text}</span></TooltipHint>
+        <TooltipHint content={markers.text} overflowOnly><span className="min-w-0 truncate text-tiny text-muted-foreground">{markers.text}</span></TooltipHint>
       </div> : null}
     </div>
   );
@@ -57,7 +57,7 @@ function FeaResultControls({ controls, values, onChange, markers = null }) {
 function RowText({ row }) {
   return <>
     <TreeRowLabel className={row.detail ? "max-w-full shrink-0" : "flex-1"}>{row.label}</TreeRowLabel>
-    {row.detail ? <TreeRowLabel className="flex-1 text-micro text-muted-foreground">{row.detail}</TreeRowLabel> : null}
+    {row.detail ? <TreeRowLabel className="flex-1 text-tiny text-muted-foreground">{row.detail}</TreeRowLabel> : null}
   </>;
 }
 
@@ -69,7 +69,7 @@ const unbroken = (text) => String(text).replace(/(\S)-(?=\S)/g, "$1\u2011").repl
 function WrappedRowText({ row }) {
   return <>
     <span className="min-w-0 [overflow-wrap:anywhere]">{row.label}</span>
-    {row.detail ? <span className="min-w-0 text-micro text-muted-foreground [overflow-wrap:break-word]" data-study-detail="">{unbroken(row.detail)}</span> : null}
+    {row.detail ? <span className="min-w-0 text-tiny text-muted-foreground [overflow-wrap:break-word]" data-study-detail="">{unbroken(row.detail)}</span> : null}
   </>;
 }
 
@@ -87,7 +87,7 @@ function StudyFactRow({ row, depth }) {
       <TooltipHint content={hint} overflowOnly={!row.hint}>
         <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5 py-1 pr-2">
           <span className={cn("min-w-0 max-w-full", row.wrap ? "[overflow-wrap:break-word]" : "truncate")}>{row.wrap ? unbroken(row.label) : row.label}</span>
-          {row.detail ? <span className="min-w-0 max-w-full truncate text-micro text-muted-foreground" data-study-detail="">{row.detail}</span> : null}
+          {row.detail ? <span className="min-w-0 max-w-full truncate text-tiny text-muted-foreground" data-study-detail="">{row.detail}</span> : null}
         </span>
       </TooltipHint>
     </TreeRowSurface>

@@ -98,7 +98,7 @@ export default function EditCustomFeature({ edit, references = [] }) {
       <FileSheetValueInput value={values[param.name] ?? ""} ariaLabel={param.label} disabled={edit.saving}
         aria-invalid={invalid || undefined} className={cn(invalid && "border-destructive")}
         onValueCommit={draft => set(param.name)(String(draft).trim())} />
-      <span className="w-4 text-micro text-muted-foreground">{param.unit || (param.kind === "angle" ? "deg" : "")}</span>
+      <span className="w-4 text-tiny text-muted-foreground">{param.unit || (param.kind === "angle" ? "deg" : "")}</span>
     </span>} />;
   };
   const sections = customGroups(definition);

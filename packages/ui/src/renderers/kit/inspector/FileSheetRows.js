@@ -106,7 +106,7 @@ export function FileSheetSelectRow({
               {ungrouped.map(renderItem)}
               {groupNames.map((groupName) => (
                 <SelectGroup key={groupName}>
-                  <SelectLabel className="text-micro uppercase tracking-wide text-muted-foreground">
+                  <SelectLabel className="text-tiny uppercase tracking-wide text-muted-foreground">
                     {groupName}
                   </SelectLabel>
                   {options.filter((option) => option.group === groupName).map(renderItem)}

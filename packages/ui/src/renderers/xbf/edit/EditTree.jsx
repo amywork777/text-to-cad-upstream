@@ -218,7 +218,7 @@ export function ExpressionRows({ edit }) {
           <span className="flex shrink-0 items-center gap-1">
             <FileSheetValueInput value={param.text} ariaLabel={`${sizeName(param.name)} value`} disabled={disabled}
               onValueCommit={draft => { const text = String(draft).trim(); if (text && text !== String(param.text)) edit.change({ literal: param.id, text }); }} />
-            <span className="w-4 text-micro text-muted-foreground">{UNIT_MARKS[param.unit] || param.unit || ""}</span>
+            <span className="w-4 text-tiny text-muted-foreground">{UNIT_MARKS[param.unit] || param.unit || ""}</span>
           </span>
         </div>)}
     {edit.status === "reading" || !edit.addParameter ? null : <AddParameter edit={edit} disabled={disabled} />}

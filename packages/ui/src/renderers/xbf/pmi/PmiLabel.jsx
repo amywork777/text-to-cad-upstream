@@ -28,7 +28,7 @@ const GLYPH = "size-3 shrink-0";
 function Tolerance({ tolerance }) {
   if (!tolerance) return null;
   if (tolerance.symmetric) return <span className="pl-0.5">{tolerance.text}</span>;
-  return <span className={cn("inline-flex flex-col justify-center text-micro leading-[0.7rem]", !tolerance.limits && "ml-0.5")}
+  return <span className={cn("inline-flex flex-col justify-center text-tiny leading-[0.7rem]", !tolerance.limits && "ml-0.5")}
     data-pmi-tolerance="limits" data-pmi-limits={tolerance.limits ? "" : undefined}>
     <span>{tolerance.upper}</span><span>{tolerance.lower}</span>
   </span>;

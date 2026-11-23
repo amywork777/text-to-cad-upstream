@@ -30,7 +30,7 @@ export default function FeaColourBar({ result, field, loadScale = 1, raised = fa
   return (
     <div className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-3" style={{ bottom: raised ? `calc(${FEA_BOTTOM_LINE} + ${PLAYBAR_CLEARANCE})` : FEA_BOTTOM_LINE }}>
       <div
-        className={cn("flex w-80 max-w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-micro tabular-nums text-muted-foreground", FLOATING_CHROME_SURFACE_CLASS)}
+        className={cn("flex w-80 max-w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-tiny tabular-nums text-muted-foreground", FLOATING_CHROME_SURFACE_CLASS)}
         role="group"
         aria-label={t("fea.colourBar", { field: field.name })}
       >

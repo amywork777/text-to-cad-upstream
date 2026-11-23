@@ -386,7 +386,7 @@ export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, mo
             <DropdownMenuItem disabled={!option.available} data-pmi-new-kind={option.kind} onSelect={() => begin(option)}>
               <PmiGlyph name={optionGlyph(option.kind)} className="size-3.5" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{option.label}</span>
-              {!option.available ? <span className="truncate text-micro text-muted-foreground">{option.need}</span> : null}
+              {!option.available ? <span className="truncate text-tiny text-muted-foreground">{option.need}</span> : null}
             </DropdownMenuItem>
           </Fragment>)}
         </DropdownMenuContent>

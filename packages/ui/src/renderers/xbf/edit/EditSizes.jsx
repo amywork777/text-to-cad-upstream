@@ -81,7 +81,7 @@ export default function EditSizes({ edit }) {
       {rows.map(each => <FileSheetControlRow key={each.index} label={each.label} trailing={<span className="flex shrink-0 items-center gap-1">
         <FileSheetValueInput value={values[each.index] ?? ""} ariaLabel={each.label} disabled={edit.saving}
           onValueCommit={draft => setValues(current => ({ ...current, [each.index]: String(draft).trim() }))} />
-        <span className="w-4 text-micro text-muted-foreground">{each.unit}</span>
+        <span className="w-4 text-tiny text-muted-foreground">{each.unit}</span>
       </span>} />)}
     </div>
     {edit.saving ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`} aria-live="polite">Applying</p> : null}

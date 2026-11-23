@@ -91,8 +91,8 @@ function ModifyBox({ box, onDone }) {
       className="w-20 bg-transparent text-tiny tabular-nums text-foreground outline-none"
       onChange={event => setDraft(event.target.value)}
       onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onDone(null); } }} />
-    {box.unit ? <span className="text-micro text-muted-foreground">{box.unit}</span> : null}
-    {box.hint ? <span className="text-micro text-muted-foreground">{box.hint}</span> : null}
+    {box.unit ? <span className="text-tiny text-muted-foreground">{box.unit}</span> : null}
+    {box.hint ? <span className="text-tiny text-muted-foreground">{box.hint}</span> : null}
     <button type="submit" aria-label="OK" className="flex size-5 items-center justify-center rounded text-foreground hover:bg-accent"><Check className="size-3" aria-hidden="true" /></button>
     <button type="button" aria-label="Cancel" className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent" onClick={() => onDone(null)}>
       <X className="size-3" aria-hidden="true" />

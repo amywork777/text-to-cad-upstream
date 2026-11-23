@@ -78,11 +78,11 @@ export default function MatePanel({ edit, references, components = [], onDeselec
       <FileSheetSelectRow label="Mate" value={type} options={MATE_TYPES} onValueChange={setType} />
       {type === "distance" ? <FileSheetControlRow label="Distance" trailing={<span className="flex shrink-0 items-center gap-1">
         <FileSheetValueInput value={distance} ariaLabel="Distance" onValueCommit={draft => setDistance(String(draft).trim())} />
-        <span className="w-6 text-micro text-muted-foreground">{edit.state?.units || ""}</span>
+        <span className="w-6 text-tiny text-muted-foreground">{edit.state?.units || ""}</span>
       </span>} /> : null}
       {type === "angle" ? <FileSheetControlRow label="Angle" trailing={<span className="flex shrink-0 items-center gap-1">
         <FileSheetValueInput value={angle} ariaLabel="Angle" onValueCommit={draft => setAngle(String(draft).trim())} />
-        <span className="w-6 text-micro text-muted-foreground">deg</span>
+        <span className="w-6 text-tiny text-muted-foreground">deg</span>
       </span>} /> : null}
       {FLIPS.has(type) ? <FileSheetCheckboxRow label="Flip alignment" checked={flip} onCheckedChange={value => setFlip(Boolean(value))} /> : null}
     </FileSheetSettingsSection>

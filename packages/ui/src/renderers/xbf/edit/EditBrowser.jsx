@@ -54,7 +54,7 @@ function ValueField({ value, unit, label, disabled, onCommit }) {
   return <span className="flex shrink-0 items-center gap-1">
     <FileSheetValueInput value={value} ariaLabel={`${label} value`} disabled={disabled}
       onValueCommit={draft => { const text = String(draft).trim(); if (text && text !== String(value)) onCommit(text); }} />
-    <span className="w-4 text-micro text-muted-foreground">{UNIT_MARKS[unit] || unit || ""}</span>
+    <span className="w-4 text-tiny text-muted-foreground">{UNIT_MARKS[unit] || unit || ""}</span>
   </span>;
 }
 
@@ -181,7 +181,7 @@ export default function EditBrowser({ edit, names, tree, references = [], onEdit
           : inputs.map(input => <FileSheetControlRow key={input.key} label={input.label}
             trailing={<ValueField value={input.value} unit={input.unit} label={input.label} disabled={disabled}
               onCommit={text => edit.change(input.request(text))} />}>
-            {restates(input.formula, input.value) ? null : <span className="block truncate text-micro text-muted-foreground">{`= ${formulaWords(input.formula)}`}</span>}
+            {restates(input.formula, input.value) ? null : <span className="block truncate text-tiny text-muted-foreground">{`= ${formulaWords(input.formula)}`}</span>}
           </FileSheetControlRow>)}
         {feature.file ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2 pt-1`}>{`${feature.file.split("/").pop()}, line ${feature.line}`}</p> : null}
       </FileSheetSettingsSection> : null}

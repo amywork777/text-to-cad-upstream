@@ -30,7 +30,7 @@ function SizeRow({ label, value, unit, disabled, onCommit }) {
   return <FileSheetControlRow label={label} trailing={<span className="flex shrink-0 items-center gap-1">
     <FileSheetValueInput value={value} ariaLabel={label} disabled={disabled}
       onValueCommit={draft => { const text = String(draft).trim(); if (text) onCommit(text); }} />
-    <span className="w-6 text-micro text-muted-foreground">{unit}</span>
+    <span className="w-6 text-tiny text-muted-foreground">{unit}</span>
   </span>} />;
 }
 
@@ -235,7 +235,7 @@ export default function SketchPanel({ edit, onPlane, references = [] }) {
       <FileSheetControlRow label={dimension.named ? dimension.formula : filletArc || dimension.kind === "fillet" ? "Radius" : "Value"} trailing={<span className="flex shrink-0 items-center gap-1">
         <FileSheetValueInput value={formatValue(dimension.value, units, "plain")} ariaLabel={`${dimension.id} value`} disabled={disabled || dimension.driven}
           onValueCommit={draft => { const text = String(draft).trim(); if (text) void edit.sketchOp({ kind: "value", dimension: dimension.id, text }); }} />
-        <span className="w-6 text-micro text-muted-foreground">{dimension.kind === "angle" ? "deg" : units}</span>
+        <span className="w-6 text-tiny text-muted-foreground">{dimension.kind === "angle" ? "deg" : units}</span>
       </span>} />
       {/* SolidWorks' Driven option: a dimension that measures, holding nothing, shown in parentheses. */}
       {filletArc || dimension.kind === "fillet" || dimension.kind === "chamfer" ? null
