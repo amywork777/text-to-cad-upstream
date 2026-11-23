@@ -23,6 +23,20 @@ test("a reference names the document on screen by its id, its path, or the path'
   assert.equal(namesDocument("", DOC), false);
 });
 
+test("a part's picks, written against the part's own document, select its instances in the assembly on screen", () => {
+  const ARM = JSON.parse(readFileSync(join(FIXTURES, "arm", "structure.json"), "utf8"));
+  const armTree = presentXbfTree(ARM);
+  const PART = "29ae9a38-16fc-587c-b9ea-7a4fc571762e";  // the link part's own document, not the assembly's
+  const references = [
+    `${PART}#link/e:arm.link.1`,   // an edge, by the name the assembly's prototype keeps for it
+    `${PART}#link`,                // the part named alone
+    `${PART}#link/e:arm.link.gone`, // an edge no part on screen has
+  ];
+  const { ids, found, missing } = hostSelectIds({ references, documentPath: "arm-assembly-id", tree: armTree, structure: ARM });
+  assert.deepEqual(ids, ["i1/edge/1", "i1"]);
+  assert.deepEqual([found, missing], [2, 1]);
+});
+
 test("a message's picks select the faces and parts they name, and say how many are no longer in the model", () => {
   const plateRef = tree.refOf("i0");
   assert.ok(plateRef, "the fixture's first part has an occurrence ref");
