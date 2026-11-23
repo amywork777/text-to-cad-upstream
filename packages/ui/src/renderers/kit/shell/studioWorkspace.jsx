@@ -39,6 +39,9 @@ const BESIDE_DIALOG_CLASS = Object.freeze({
   navigator: "[&_[data-cad-tool-groups]]:left-[calc(31.75rem+16px)]! @max-xl/cad-viewport:[&_[data-cad-tool-groups]]:left-[calc(18rem+16px)]!",
   alone: "[&_[data-cad-tool-groups]]:left-[calc(18rem+16px)]!" });
 const PAST_NAVIGATOR_COLUMN_CLASS = "[&_[data-cad-tool-groups]]:left-[calc(16rem+8px)]! @max-xl/cad-viewport:[&_[data-cad-tool-groups]]:left-2!";
+// The strip's column and the Display card stand in the frame's top layer (`data-view-top-layer`), over the stage, so
+// they start an inset under the toolbar by its height, written on the frame's root, never over the ribbon.
+const UNDER_TOOLBAR_CLASS = "[&_[data-cad-tool-groups]]:top-[calc(var(--cad-workspace-top,0px)+8px)]! [&_[data-display-settings-dock]]:top-[calc(var(--cad-workspace-top,0px)+8px)]!";
 // The timeline runs along the whole bottom edge: the cube stands in the view's top-right corner, under the toolbar
 // (`--cad-viewport-corner-top`, set with `--cad-workspace-top` while the toolbar is up).
 // The workspace fades in as the layout turns to it and out as Simple view takes its place: one opacity
@@ -160,18 +163,26 @@ export function useStudioWorkspace({ ribbon, leftDock, bottomDock, dialogPlace, 
   useLayoutEffect(() => {
     const toolbar = workspaceToolbar.current;
     const stage = toolbar?.closest("[data-cad-canvas]");
+    const root = frame.hostRef.current;
     if (!toolbarUp || !toolbar || !stage) return undefined;
-    // The cube, in the top-right corner, stands under the toolbar as the rest at the top does.
+    // The cube, in the top-right corner, stands under the toolbar as the rest at the top does; the frame's top layer
+    // (the strip, the Display card) reads the height from the root.
     const measure = () => {
       const top = `${Math.round(toolbar.getBoundingClientRect().height)}px`;
       stage.style.setProperty("--cad-workspace-top", top);
       stage.style.setProperty("--cad-viewport-corner-top", top);
+      root?.style.setProperty("--cad-workspace-top", top);
     };
     measure();
     const resized = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     resized?.observe(toolbar);
-    return () => { resized?.disconnect(); stage.style.removeProperty("--cad-workspace-top"); stage.style.removeProperty("--cad-viewport-corner-top"); };
-  }, [toolbarUp]);
+    return () => {
+      resized?.disconnect();
+      stage.style.removeProperty("--cad-workspace-top");
+      stage.style.removeProperty("--cad-viewport-corner-top");
+      root?.style.removeProperty("--cad-workspace-top");
+    };
+  }, [toolbarUp, frame.hostRef]);
   const measureColumn = useRef(null);
   usePastNavigator(frame.hostRef, navigatorUp && !mobile, [toolbarUp, navigatorFolded, pastNavigator, Boolean(references)], measureColumn);
   // What the toolbar is handed of the view while it is up: the view catching up, said beside the part's build status.
@@ -214,7 +225,7 @@ export function useStudioWorkspace({ ribbon, leftDock, bottomDock, dialogPlace, 
     holdsPanel: Boolean(leftDock && editFrame),
     // Under the workspace's toolbar, the strip, the top-right and Preview's bar start below it.
     top: toolbarUp ? WORKSPACE_TOP : undefined,
-    frameClass: columnClass,
+    frameClass: cn(columnClass, toolbarUp && UNDER_TOOLBAR_CLASS),
     measureRef: measureColumn,
     layer,
     canvasClass: pastNavigator && PAST_NAVIGATOR_CLASS,

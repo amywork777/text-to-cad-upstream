@@ -132,8 +132,15 @@ it("keeps the strip, its panels and Quick Edit under the toolbar, and where they
   const chrome = () => document.querySelector<HTMLElement>('[data-preview-chrome]')!;
   expect(backdrop().style.getPropertyValue('--cad-workspace-top')).toBe(`${TOOLBAR_HEIGHT}px`);
   expect(chrome().style.top).toBe('var(--cad-workspace-top, 0px)');
+  // The strip stands in the frame's top layer, over the stage: it reads the toolbar's height from the frame's root, and
+  // starts an inset under the ribbon, never over it.
+  const strip = document.querySelector<HTMLElement>('[data-cad-tool-groups]')!;
+  expect([frameRoot().style.getPropertyValue('--cad-workspace-top'), frameRoot().contains(strip), backdrop().contains(strip),
+    frameRoot().className.includes('[&_[data-cad-tool-groups]]:top-[calc(var(--cad-workspace-top,0px)+8px)]!')])
+    .toEqual([`${TOOLBAR_HEIGHT}px`, true, false, true]);
   view.show({});
   expect([backdrop().style.getPropertyValue('--cad-workspace-top'), chrome().style.top]).toEqual(['', '']);
+  expect([frameRoot().style.getPropertyValue('--cad-workspace-top'), frameRoot().className.includes('data-cad-tool-groups]]:top-')]).toEqual(['', false]);
 });
 
 it("keeps Quick Edit's bar where the renderer does not say, opens it when the renderer says it was asked for, and shuts it when it says not", () => {
