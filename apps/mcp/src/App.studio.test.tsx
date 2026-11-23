@@ -91,6 +91,8 @@ it("a host that opens files beside the thread (Studio) moves between them itself
   // Its chat is a column beside the view, not a composer over it: the cube keeps the top-right, as SolidWorks has it.
   const frame = container.firstElementChild as HTMLElement;
   expect([frame.style.getPropertyValue('--cad-viewport-corner-left'), frame.style.getPropertyValue('--cad-host-bottom-inset')]).toEqual(['', '']);
+  // The cube a chrome inset in from the right edge, and the strip and Quick Edit centred on the model's area past a panel.
+  expect([frame.style.getPropertyValue('--cad-viewport-corner-right'), frame.hasAttribute('data-cad-centre-on-model')]).toEqual(['8px', true]);
   // A part opened from its assembly opens in a tab of the host's own.
   act(() => viewer.props!.openElsewhere!('/work/b.step'));
   expect(bridge.request).toHaveBeenCalledWith('studio/open-file', { path: '/work/b.step' });

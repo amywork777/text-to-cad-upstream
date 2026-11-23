@@ -176,6 +176,31 @@ it("centres Quick Edit's bar on the room past the design tree docked full height
   expect(bar()).toEqual(['150px', '400px']);
 });
 
+it("in Studio centres the strip and Quick Edit's bar on the model's area past a docked panel, on one centre line, even where the bar would clear it", () => {
+  // A 700px view with a 60px panel docked at its left: Jake's rule keeps the bar on the whole view, as it clears the panel.
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    if (this.matches('[data-cad-dock="toolbar"]')) return DOMRect.fromRect({ x: 0, y: 0, width: 700, height: TOOLBAR_HEIGHT });
+    if (this.matches('[data-slot="cad-file-view"]')) return DOMRect.fromRect({ x: 0, y: 0, width: 700, height: 600 });
+    if (this.matches('[data-cad-dock="navigator"]')) return DOMRect.fromRect({ x: 0, y: TOOLBAR_HEIGHT, width: 60, height: 600 - TOOLBAR_HEIGHT });
+    return boxOf.call(this);
+  };
+  const read = () => ['--cad-quick-edit-left', '--cad-quick-edit-width', '--cad-tools-left'].map(name => frameRoot().style.getPropertyValue(name));
+  const first = shell({ ...WORKSPACE, quickEditAsked: false });
+  expect(read()).toEqual(['150px', '400px', '']);
+  first.unmount();
+  // Studio's host asks for the model's area: the bar centres on the 640px past the panel, and the strip's column
+  // starts an inset past it and ends an inset from the right, so both stand on the line at 380px.
+  document.body.setAttribute('data-cad-centre-on-model', '');
+  try {
+    shell({ ...WORKSPACE, quickEditAsked: false });
+    expect(read()).toEqual(['180px', '400px', '68px']);
+    expect(document.querySelector<HTMLElement>('[data-cad-tool-groups]')!.style.left).toBe('var(--cad-tools-left, 8px)');
+    expect([180 + 400 / 2, (68 + (700 - 8)) / 2]).toEqual([380, 380]);
+  } finally {
+    document.body.removeAttribute('data-cad-centre-on-model');
+  }
+});
+
 it("fades the workspace out as Simple view takes its place, taking no presses while it goes, and puts it away at once with the rest of the tools", async () => {
   const view = shell();
   view.show(WORKSPACE);
@@ -221,7 +246,7 @@ it("moves the column beside an open dialog, so a tool's own row and its panels n
   const view = shell({ ...WORKSPACE, dialogOpen: false });
   // The frame places the column (its left an inline style, the stage's inset: the docked panel is beside the stage,
   // never under it); the workspace sets its left over that from the frame's root, for the view's width decides it.
-  const framed = '8px';
+  const framed = 'var(--cad-tools-left, 8px)';
   const over = (left: string) => `[&_[data-cad-tool-groups]]:left-${left}!`;
   // No dialog: the column spans the canvas, an inset past the design tree, and centres what it holds.
   const pastTree = [over('[calc(16rem+8px)]'), `@max-xl/cad-viewport:${over('2')}`];

@@ -65,12 +65,17 @@ export function inlineHeight(width: number, maxHeight?: number): number {
  * told. The one element either way, so going full size keeps the view (and its model) as it is.
  */
 function Frame({ bridge, context, insets, inline = false, floatingComposer = false, overlay = null, children }: { bridge: Bridge; context: HostContext; insets: NonNullable<HostContext['safeAreaInsets']>; inline?: boolean; floatingComposer?: boolean; overlay?: ReactNode; children: ReactNode }) {
+  // Studio (studio-base): a host that opens files beside its chat (`openFiles`) centres the strip and Quick Edit on the
+  // model's area, past a docked panel (`ViewFrame.jsx`, `data-cad-centre-on-model`).
+  const studio = !inline && Boolean(bridge.hostCapabilities.openFiles);
   // Where the host's composer floats over the page instead of taking room from it: the room it
   // covers, which lists scroll clear of. Keep the cube on the opposite side (its top-left) so a tab's
   // composer or sidebar chat button never covers it.
   const floating = {
     ...(floatingComposer ? { '--cad-host-bottom-inset': `${context.safeAreaInsets?.bottom || 0}px`,
       '--cad-viewport-corner-left': '2px', '--cad-viewport-corner-right': 'auto' } : {}),
+    // Studio (studio-base): the cube a chrome inset in from the right edge, clear of the window's.
+    ...(studio ? { '--cad-viewport-corner-right': '8px' } : {}),
   } as CSSProperties;
   const [width, setWidth] = useState(() => window.innerWidth);
   useEffect(() => {
@@ -82,7 +87,8 @@ function Frame({ bridge, context, insets, inline = false, floatingComposer = fal
   const height = inlineHeight(width, context.containerDimensions?.maxHeight);
   useEffect(() => { if (inline) bridge.notify('ui/notifications/size-changed', { height }); }, [bridge, inline, height]);
   if (!inline) {
-    return <div className="flex h-svh flex-col overflow-hidden" style={{ paddingTop: insets.top || 0, paddingRight: insets.right || 0, paddingBottom: insets.bottom || 0, paddingLeft: insets.left || 0, ...floating }}>
+    return <div className="flex h-svh flex-col overflow-hidden" style={{ paddingTop: insets.top || 0, paddingRight: insets.right || 0, paddingBottom: insets.bottom || 0, paddingLeft: insets.left || 0, ...floating }}
+      data-cad-centre-on-model={studio ? '' : undefined}>
       <div className="relative min-h-0 flex-1">{children}{overlay}</div>
     </div>;
   }

@@ -60,3 +60,16 @@
   --cad-agent: #a78bfa;
   --cad-info: #62b7ec;
 }
+
+/* Studio: a menu stands a little clear of its button and its rows have room to hover (Amy's notes on the viewer's
+ * projects, #934): 4px more than the menu's own offset, and 2px more inside it and on each row's sides. */
+[data-slot="dropdown-menu-content"] { padding: 0.375rem; }
+[data-slot="dropdown-menu-content"][data-side="bottom"] { margin-top: 0.25rem; }
+[data-slot="dropdown-menu-content"][data-side="top"] { margin-bottom: 0.25rem; }
+[data-slot="dropdown-menu-content"][data-side="left"] { margin-right: 0.25rem; }
+[data-slot="dropdown-menu-content"][data-side="right"] { margin-left: 0.25rem; }
+/* The left side only where a row keeps its tick on the right (a checkbox, a radio) or an inset for one on the left. */
+[data-slot="dropdown-menu-content"] :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]):not([data-inset]) {
+  padding-left: calc(var(--cad-pad) + 2px);
+}
+[data-slot="dropdown-menu-content"] [role="menuitem"]:not([data-inset]) { padding-right: calc(var(--cad-pad) + 2px); }

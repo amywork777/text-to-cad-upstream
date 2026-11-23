@@ -261,7 +261,11 @@ export default function ViewFrame({ rootRef = null, measureRef = null, surface =
       // Studio (studio-base): edit mode's design tree, docked down the view's left (`studioWorkspace.jsx`), is one too.
       const pinned = mobile ? null : frame.querySelector(":scope > aside[data-flat-panel]:not([hidden]):not([data-panel-peek]), [data-cad-dock=navigator][data-cad-dock-full]");
       const panelRight = pinned ? pinned.getBoundingClientRect().right - frame.getBoundingClientRect().left : 0;
-      if (panelRight > barLeft - margin) { barWidth = fit(viewWidth - panelRight); barLeft = panelRight + (viewWidth - panelRight - barWidth) / 2; }
+      // Studio: a host that asks (`data-cad-centre-on-model`) has the bar and the strip on the model's area past any panel.
+      const onModel = Boolean(pinned && frame.closest("[data-cad-centre-on-model]"));
+      if (onModel || panelRight > barLeft - margin) { barWidth = fit(viewWidth - panelRight); barLeft = panelRight + (viewWidth - panelRight - barWidth) / 2; }
+      if (onModel) frame.style.setProperty("--cad-tools-left", `${Math.round(panelRight + VIEWPORT_INSET_PX)}px`);
+      else frame.style.removeProperty("--cad-tools-left");
       frame.style.setProperty("--cad-quick-edit-left", `${Math.round(barLeft)}px`);
       frame.style.setProperty("--cad-quick-edit-width", `${Math.round(barWidth)}px`);
       // What the bar takes of the view's bottom (its height, its 16px off the bottom, and 8px): the tool stack's column
@@ -396,12 +400,12 @@ export default function ViewFrame({ rootRef = null, measureRef = null, surface =
 // inset and centres what it holds: positioned from the centre (`left: 50%`) it would shrink to the half right of it,
 // and the strip would wrap at half the view. No panel moves it; it stands over them.
 const INSET = `${VIEWPORT_INSET_PX}px`;
-const TOOLBAR_POSITION = Object.freeze({ top: INSET, left: INSET, right: INSET, bottom: `max(${VIEWPORT_STACK_BOTTOM}, var(--cad-quick-edit-reserve, 0px))` });
+const TOOLBAR_POSITION = Object.freeze({ top: INSET, left: `var(--cad-tools-left, ${INSET})`, right: INSET, bottom: `max(${VIEWPORT_STACK_BOTTOM}, var(--cad-quick-edit-reserve, 0px))` });
 // What stands in the top-right corner: the corner's control (the cube, or a flat view's zoom), and the host's notice
 // under it (not its column).
 const CORNER_CONTROLS = "[data-view-cube], [data-zoom-pill]";
 const CORNER_BOXES = `[data-viewport-top-right] [data-viewport-notice], ${CORNER_CONTROLS}`;
-const MEASURED = ["--cad-tools-bottom", "--cad-top-right-left", "--cad-corner-below", "--cad-quick-edit-left", "--cad-quick-edit-width", "--cad-quick-edit-reserve"];
+const MEASURED = ["--cad-tools-left", "--cad-tools-bottom", "--cad-top-right-left", "--cad-corner-below", "--cad-quick-edit-left", "--cad-quick-edit-width", "--cad-quick-edit-reserve"];
 // Quick Edit's bar: 400px at most, centred on the whole view (or the model's area beside a pinned panel); narrower only
 // with the view, 16px in from each side.
 const QUICK_EDIT_MAX_PX = 400;

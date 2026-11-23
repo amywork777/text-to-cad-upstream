@@ -42,8 +42,8 @@ const PAST_NAVIGATOR_COLUMN_CLASS = "[&_[data-cad-tool-groups]]:left-[calc(16rem
 // The strip's column and the Display card stand in the frame's top layer (`data-view-top-layer`), over the stage, so
 // they start an inset under the toolbar by its height, written on the frame's root, never over the ribbon.
 const UNDER_TOOLBAR_CLASS = "[&_[data-cad-tool-groups]]:top-[calc(var(--cad-workspace-top,0px)+8px)]! [&_[data-display-settings-dock]]:top-[calc(var(--cad-workspace-top,0px)+8px)]!";
-// The timeline runs along the whole bottom edge: the cube stands in the view's top-right corner, under the toolbar
-// (`--cad-viewport-corner-top`, set with `--cad-workspace-top` while the toolbar is up).
+// The cube stands in the canvas's top-right corner, and the canvas already starts under the toolbar
+// (`CANVAS_UNDER_TOOLBAR`), so the corner needs no lowering of its own (`--cad-viewport-corner-top` stays unset).
 // The workspace fades in as the layout turns to it and out as Simple view takes its place: one opacity
 // transition this long (`duration-150`).
 const WORKSPACE_FADE_MS = 150;
@@ -165,12 +165,11 @@ export function useStudioWorkspace({ ribbon, leftDock, bottomDock, dialogPlace, 
     const stage = toolbar?.closest("[data-cad-canvas]");
     const root = frame.hostRef.current;
     if (!toolbarUp || !toolbar || !stage) return undefined;
-    // The cube, in the top-right corner, stands under the toolbar as the rest at the top does; the frame's top layer
-    // (the strip, the Display card) reads the height from the root.
+    // What stands at the top keeps under the toolbar; the frame's top layer (the strip, the Display card) reads the
+    // height from the root.
     const measure = () => {
       const top = `${Math.round(toolbar.getBoundingClientRect().height)}px`;
       stage.style.setProperty("--cad-workspace-top", top);
-      stage.style.setProperty("--cad-viewport-corner-top", top);
       root?.style.setProperty("--cad-workspace-top", top);
     };
     measure();
@@ -179,7 +178,6 @@ export function useStudioWorkspace({ ribbon, leftDock, bottomDock, dialogPlace, 
     return () => {
       resized?.disconnect();
       stage.style.removeProperty("--cad-workspace-top");
-      stage.style.removeProperty("--cad-viewport-corner-top");
       root?.style.removeProperty("--cad-workspace-top");
     };
   }, [toolbarUp, frame.hostRef]);

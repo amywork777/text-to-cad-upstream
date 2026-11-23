@@ -145,7 +145,8 @@ function RollbackBar({ index, count, label, disabled, slotAt, onPreview, onMove 
       event.stopPropagation();
       if (place(target) !== index) onMove(place(target));
     }}>
-    <span className="h-0.5 w-full rounded-full bg-primary/60 group-hover:bg-primary group-active:bg-info group-focus-visible:bg-info" />
+    {/* Quiet at rest, a hairline in the tree's own rule colour; edit mode's blue while it is taken in hand. */}
+    <span className="h-px w-full rounded-full bg-border group-hover:h-0.5 group-hover:bg-info/60 group-active:h-0.5 group-active:bg-info group-focus-visible:h-0.5 group-focus-visible:bg-info" />
   </div>;
 }
 
@@ -404,7 +405,7 @@ export default function EditTree({ edit, tree, onEditSketch = () => {}, onOpenPa
   </div>;
   // Where a dragged feature would go, drawn as the bar's preview is, in the selection's color.
   const dropLine = <div key="reorder-preview" aria-hidden="true" className="relative h-0 shrink-0" data-cad-edit-drop="">
-    <span className="absolute inset-x-2 -top-px h-0.5 rounded-full bg-primary" />
+    <span className="absolute inset-x-2 -top-px h-0.5 rounded-full bg-info" />
   </div>;
   // The part's features, the rollback bar among them where it is.
   const partRows = () => {
