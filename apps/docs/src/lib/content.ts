@@ -179,6 +179,7 @@ export const features = [
     path: "skills/cam/SKILL.md",
     summary: "3-axis milling and drilling toolpaths and G-code, planned with FreeCAD and checked against the part.",
     file: "bracket.top.nc",
+    page: "/docs/cam",
   },
   {
     id: "renders",

@@ -76,7 +76,7 @@ export const docSections: DocSection[] = [
     // how it works and where it stops. The homepage's feature tiles (`features` in
     // src/lib/content.ts) link these pages.
     title: "Skills",
-    pages: ["cad", "pcb", "fea", "engineering-drawing", "render", "print3d", "sendcutsend", "robot-simulation"].map(skill),
+    pages: ["cad", "pcb", "fea", "engineering-drawing", "render", "print3d", "sendcutsend", "robot-simulation", "cam", "work-instructions"].map(skill),
   },
   {
     // Generated from the command line's and the library's own descriptions of themselves

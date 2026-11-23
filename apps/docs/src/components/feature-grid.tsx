@@ -102,18 +102,13 @@ export function FeatureGrid() {
             </p>
             <div className="flex-1 space-y-1 px-4 pt-3 pb-4">
               <h3 className="text-sm font-medium text-foreground">
-                {/* Studio: a feature with no docs page of its own (CAM) is named, not linked. */}
-                {feature.page ? (
-                  <Link
-                    href={feature.page}
-                    className="inline-flex items-center gap-1.5 rounded-sm underline-offset-4 hover:underline"
-                  >
-                    {feature.name}
-                    <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  </Link>
-                ) : (
-                  feature.name
-                )}
+                <Link
+                  href={feature.page}
+                  className="inline-flex items-center gap-1.5 rounded-sm underline-offset-4 hover:underline"
+                >
+                  {feature.name}
+                  <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                </Link>
               </h3>
               <p className="text-sm leading-6 text-muted-foreground"><Summary text={feature.summary} /></p>
             </div>
