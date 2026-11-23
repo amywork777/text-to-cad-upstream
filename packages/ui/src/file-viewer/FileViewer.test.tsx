@@ -8,6 +8,7 @@ import { FileViewer, defineFileRenderer } from '../../dist/file-viewer/index.js'
 import { DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from '../../dist/primitives/dropdown-menu.js';
 import { viewerLinks } from '../../dist/file-viewer/navigation/links.js';
 import { usePanelToggles } from '../../dist/file-viewer/panelToggles.js';
+import { useNavbarShown } from '../../dist/file-viewer/navbarSlots.js';
 import { PANEL_PEEK_DELAY_MS } from '../../dist/file-viewer/panelPeek.js';
 import { ModelLibrary } from '../../dist/library/ModelLibrary.js';
 import { readFileSync } from 'node:fs';
@@ -271,6 +272,19 @@ it('draws no navbar where the host asks for the view alone (`chrome: "bare"`): o
   open({ ...everything, chrome: undefined });
   await screen.findByText('shown');
   expect(labels()).toEqual(['Menu', 'Back', 'Forward', 'Full size']);
+  cleanup();
+  // The view hears which (`useNavbarShown`), so with none it ends its strip with what the navbar would hold (Studio).
+  const told: unknown[] = [];
+  const telling = defineFileRenderer({ id: 'telling', priority: 3, matches: () => true, prepare: async () => ({ data: null }),
+    load: async () => ({ default: () => { told.push(useNavbarShown()); return <p>told</p>; } }) });
+  const files = { ...host, files: { id: 'told', stat: async (path: string) => ({ path, name: 'a', kind: 'file', extension: 'xbf', size: 1, navigationPath: null }) } };
+  render(<FileViewer file="/work/a.xbf" host={files as any} renderers={[telling]} state={{}} onStateChange={() => {}} chrome="bare" />);
+  await screen.findByText('told');
+  expect(told.at(-1)).toBe(false);
+  cleanup();
+  render(<FileViewer file="/work/a.xbf" host={files as any} renderers={[telling]} state={{}} onStateChange={() => {}} />);
+  await screen.findByText('told');
+  expect(told.at(-1)).toBe(true);
 });
 
 it('keeps the right of the navbar for the host\'s actions (Full size) alone, and hides the navbar while the renderer says its Preview is up', async () => {

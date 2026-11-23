@@ -158,8 +158,10 @@ export default function ModelView({ launch, sequence, alone = false, bridge, cli
   }), [client, source, fileActions, promptContext, promptFiles, links, colorScheme, locale, platform]);
 
   // Every view is under the navbar, the file handler's too: it carries the host's controls and the panels' toggles.
+  // Studio (studio-base) names the file in its own tab and keeps its menu there, so its views have no navbar: the view
+  // ends its strip with Display, Preview and the panel's toggle instead.
   // The file on screen joins the library every CAD view shares, with its picture.
-  return <CadViewer client={client} host={host} tabStore={tabStore} live={live} file={file} onShow={navigate} openElsewhere={openElsewhere} chrome="page"
+  return <CadViewer client={client} host={host} tabStore={tabStore} live={live} file={file} onShow={navigate} openElsewhere={openElsewhere} chrome={ownNavigation ? 'bare' : 'page'}
     onShown={path => { if (path) void client.changeRecents({ action: 'open', path }).catch(() => {}); }}
     library={library} appSettings={appSettings} colorScheme={theme} language={language} history={viewerHistory} whatsNew={whatsNew}
     fullSize={fullSize}

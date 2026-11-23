@@ -25,3 +25,14 @@ export const NavbarViewSlotContext = createContext(/** @type {HTMLElement | null
 
 /** The navbar's view slot, or null where there is none. */
 export const useNavbarViewSlot = () => useContext(NavbarViewSlotContext);
+
+/**
+ * Whether the file viewer draws the file's navbar: true under it, false where the host asks for the view alone
+ * (`chrome: "bare"`, Studio's), and null outside a file viewer. A view the viewer draws with no navbar ends its strip
+ * with what the navbar would hold: Display and Preview (`useNavbarViewControls`), and the panel's toggle (`ViewFrame.jsx`).
+ * @type {import("react").Context<boolean | null>}
+ */
+export const NavbarShownContext = createContext(/** @type {boolean | null} */ (null));
+
+/** Whether the file's navbar is drawn: true, false (the view alone), or null outside a file viewer. */
+export const useNavbarShown = () => useContext(NavbarShownContext);

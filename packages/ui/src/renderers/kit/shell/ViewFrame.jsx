@@ -12,6 +12,8 @@ import { InspectContext } from "../inspector/inspect.js";
 import FlatPanel, { flatPanelShortcut, useFlatPanelState } from "./FlatPanel.jsx";
 import HoverTip, { useFrameHoverTip } from "./HoverTip.jsx";
 import { usePanelToggles } from "../../../file-viewer/panelToggles.js";
+import { useNavbarShown } from "../../../file-viewer/navbarSlots.js";
+import { withStripPanelToggle } from "./stripPanelToggle.jsx";
 import { ViewerElementContext, ViewerHostContext } from "../../../host/context.js";
 import { Sheet, SheetContent, SheetTitle } from "@cad/ui/primitives/sheet";
 import { usePhoneSheetPlace } from "./usePhoneSheetPlace.js";
@@ -239,6 +241,9 @@ export default function ViewFrame({ rootRef = null, measureRef = null, surface =
   // Leaving a phone's width (or Preview) puts its sheet away.
   useLayoutEffect(() => { if (!mobile || previewing) setSheetOpen(false); }, [mobile, previewing]);
   usePanelToggles(toggles);
+  // Studio: with no navbar to hold it, the toggle leads the strip's view controls (`stripPanelToggle.jsx`).
+  const navbarShown = useNavbarShown();
+  const stripViews = useMemo(() => withStripPanelToggle(views, toggles, navbarShown), [views, toggles, navbarShown]);
 
   // ---- the strip's column and Quick Edit: centred on the whole view, over the panels -------------
   const hasQuickEdit = Boolean(quickEdit);
@@ -373,7 +378,7 @@ export default function ViewFrame({ rootRef = null, measureRef = null, surface =
             style={TOOLBAR_POSITION} data-mobile={mobile ? "" : undefined} data-cad-tool-groups="">
             <StripTouchProvider value={mobile}>
               <div ref={topControls} className="relative flex max-w-full shrink-0 flex-col items-center gap-2" data-cad-top-controls="">
-                <FloatingToolBar tools={tools} views={views} touch={mobile} />
+                <FloatingToolBar tools={tools} views={stripViews} touch={mobile} />
                 {previewing ? null : toolRow}
                 {previewing ? null : statusNode}
               </div>
