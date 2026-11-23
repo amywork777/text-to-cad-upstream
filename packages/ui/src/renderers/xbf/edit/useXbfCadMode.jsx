@@ -79,8 +79,18 @@ export function useXbfEditLayout({ client, file, services, active, compact = fal
   const openFile = useViewerHost()?.navigation?.openFile;
   const openRef = useRef(openFile);
   openRef.current = openFile;
-  const { builtModel } = edit;
+  const { builtModel, warmModel } = edit;
   const swap = onScreen && layout === "manual" && Boolean(openFile) && Boolean(edit.model?.id) && OPENED_AS_FILE.test(file);
+  // Studio: in the AI's layout, the part's document is built ahead once the view is idle (`warmModel`), so Show CAD tools
+  // swaps to it at once instead of waiting on a build.
+  const warm = onScreen && layout !== "manual" && Boolean(openFile) && Boolean(edit.model?.id) && OPENED_AS_FILE.test(file);
+  useEffect(() => {
+    if (!warm) return undefined;
+    const idle = typeof requestIdleCallback === "function"
+      ? requestIdleCallback(() => void warmModel(), { timeout: 3000 })
+      : setTimeout(() => void warmModel(), 1500);
+    return () => (typeof cancelIdleCallback === "function" && typeof requestIdleCallback === "function" ? cancelIdleCallback(idle) : clearTimeout(idle));
+  }, [warm, warmModel]);
   useEffect(() => {
     if (!swap) return undefined;
     let gone = false;

@@ -371,6 +371,31 @@ it("a part opened as its STEP names its document, builds it as New part does whe
   await waitFor(() => expect(result.current.builds).toBe(1));
 });
 
+it("builds a part opened as its STEP ahead, once and quietly, so Show CAD tools finds it built; a built one is left", async () => {
+  const DOCUMENT = '7c1e2d3f-4a5b-5c6d-8e7f-9a0b1c2d3e4f';
+  const never = { ok: true, editable: true, document: DOCUMENT, partBuilt: false, partBuilding: false };
+  const client = {
+    editState: vi.fn(async (_file: string, _files: unknown, options?: { probe?: boolean }) => (options?.probe ? never : read('20'))),
+    editChange: vi.fn(async () => ({ ok: true, document: DOCUMENT })),
+  };
+  const { result } = renderHook(() => useEditMode({ client, file: FILE, active: true, reading: false }), { wrapper: hostWith(() => {}) });
+  await waitFor(() => expect(result.current.model).toEqual({ id: DOCUMENT, built: false, building: false }));
+  await act(async () => { await result.current.warmModel(); await result.current.warmModel(); });
+  expect(client.editChange).toHaveBeenCalledTimes(1);
+  expect(client.editChange).toHaveBeenCalledWith({ file: FILE, build: true });
+  // Nothing said of it: no build counted, no error.
+  expect([result.current.builds, result.current.error]).toEqual([0, '']);
+
+  const built = { ok: true, editable: true, document: DOCUMENT, partBuilt: true, partBuilding: false };
+  const ready = {
+    editState: vi.fn(async (_file: string, _files: unknown, options?: { probe?: boolean }) => (options?.probe ? built : read('20'))),
+    editChange: vi.fn(async () => ({ ok: true })),
+  };
+  const again = renderHook(() => useEditMode({ client: ready, file: FILE, active: true, reading: false }), { wrapper: hostWith(() => {}) });
+  await act(async () => { await again.result.current.warmModel(); });
+  expect(ready.editChange).not.toHaveBeenCalled();
+});
+
 it("a part opened as its STEP whose build fails says why in the one phrase, and names nothing to open", async () => {
   const DOCUMENT = '7c1e2d3f-4a5b-5c6d-8e7f-9a0b1c2d3e4f';
   let asked = false;

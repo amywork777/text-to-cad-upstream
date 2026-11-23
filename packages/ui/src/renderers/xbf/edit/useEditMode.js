@@ -907,6 +907,20 @@ export function useEditMode({ client, file, active, reading = true }) {
     }
     return null;
   }, [client, file, supported]);
+  // Studio: the part's document built ahead, quietly, while the viewer is laid out for the AI, so
+  // Show CAD tools finds it built (`builtModel` then answers at its first probe). Asked once per
+  // file; nothing waits on it, nothing is said of it, and a build that fails is Edit by hand's to say.
+  const warmed = useRef(null);
+  const warmModel = useCallback(async () => {
+    if (!supported || !file || warmed.current === file) return;
+    warmed.current = file;
+    try {
+      const probe = await client.editState(file, null, { probe: true });
+      const found = probe?.editable ? modelOf(probe) : null;
+      if (!mounted.current || fileRef.current !== file || !found || found.built || found.building) return;
+      await client.editChange({ file, build: true });
+    } catch { /* Show CAD tools builds it, and says what went wrong. */ }
+  }, [client, file, supported]);
   // The STEP brought in made a part beside it (`cad/edit/service.py` `adopt`), built, and named by its document's id, to
   // open; null where it could not be made or did not build. Either way the chip learns of the part made, so a second press
   // opens it rather than making another.
@@ -919,7 +933,7 @@ export function useEditMode({ client, file, active, reading = true }) {
   }, [client, file, supported, importedPart, probeImported]);
 
   return {
-    status, state, error, choice, saving, selected, hovered, command, editing, bar, imported, adopt, importedPart, model, builtModel, builds,
+    status, state, error, choice, saving, selected, hovered, command, editing, bar, imported, adopt, importedPart, model, builtModel, warmModel, builds,
     // The bar's body could not be shown (`message` says why): the bar goes to the end, as a roll to it does.
     dropBar: message => { setBar(null); setError(message); },
     // The bar moved in the tree, the body there still on its way.
