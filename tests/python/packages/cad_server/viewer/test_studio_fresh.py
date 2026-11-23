@@ -21,7 +21,7 @@ class StaleModelTest(unittest.TestCase):
         studio_fresh.forget()
         self.folder = Path(tempfile.mkdtemp())
         self.script = self.folder / "part.py"
-        self.script.write_text("HEIGHT = 10.0\n", encoding="utf-8")
+        self.script.write_bytes("HEIGHT = 10.0\n".encode("utf-8"))
         # The engine's build read the script as it was then (v1): its fingerprint is those bytes.
         self.model = {"version": "v1", "source": {"script": str(self.script), "fingerprint": _digest("HEIGHT = 10.0\n")}}
         self.built: list[Path] = []
@@ -35,7 +35,7 @@ class StaleModelTest(unittest.TestCase):
     def test_a_script_changed_since_its_build_is_built_again_once_for_those_bytes(self) -> None:
         with mock.patch.dict(os.environ, {"CAD_STUDIO_ENGINE": "1"}):
             self.assertFalse(self.refresh(), "a script as its build read it builds nothing")
-            self.script.write_text("HEIGHT = 15.0\n", encoding="utf-8")  # an agent's edit, no build of its own
+            self.script.write_bytes("HEIGHT = 15.0\n".encode("utf-8"))  # an agent's edit, no build of its own
             self.assertTrue(self.refresh())
             self.assertFalse(self.refresh(), "the same bytes are asked for once, however often the page waits")
             self.assertEqual(self.built, [self.script])
@@ -43,12 +43,12 @@ class StaleModelTest(unittest.TestCase):
             self.model = {"version": "v2", "source": {"script": str(self.script), "fingerprint": _digest("HEIGHT = 15.0\n")}}
             self.assertFalse(self.refresh())
             # Changed again: asked again.
-            self.script.write_text("HEIGHT = 20.0\n", encoding="utf-8")
+            self.script.write_bytes("HEIGHT = 20.0\n".encode("utf-8"))
             self.assertTrue(self.refresh())
             self.assertEqual(self.built, [self.script, self.script])
 
     def test_only_studios_engine_builds_and_nothing_is_asked_of_a_model_with_no_script(self) -> None:
-        self.script.write_text("HEIGHT = 15.0\n", encoding="utf-8")
+        self.script.write_bytes("HEIGHT = 15.0\n".encode("utf-8"))
         with mock.patch.dict(os.environ, {"CAD_STUDIO_ENGINE": ""}):
             self.assertFalse(self.refresh(), "Jake's viewer builds when its agent runs the part")
         with mock.patch.dict(os.environ, {"CAD_STUDIO_ENGINE": "1"}):
