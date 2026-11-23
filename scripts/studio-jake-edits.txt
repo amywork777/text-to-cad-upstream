@@ -179,6 +179,7 @@ packages/ui/src/renderers/kit/camera/runtimeCamera.test.js
 packages/ui/src/renderers/kit/camera/viewportCameraFit.js
 packages/ui/src/renderers/kit/camera/viewportCameraFit.test.js
 packages/ui/src/renderers/kit/inspector/FileSheet.js
+packages/ui/src/renderers/kit/inspector/SceneTreeSection.jsx
 packages/ui/src/renderers/kit/inspector/SliderField.jsx
 packages/ui/src/renderers/kit/inspector/referenceRows.jsx
 packages/ui/src/renderers/kit/shell/FlatPanel.jsx
@@ -219,6 +220,7 @@ packages/ui/src/renderers/robot/LinksSection.jsx
 packages/ui/src/renderers/robot/LinksSection.test.tsx
 packages/ui/src/renderers/shell-harness/HarnessRenderer.jsx
 packages/ui/src/renderers/unboundIdentifiers.test.js
+packages/ui/src/renderers/xbf/XbfModelTree.jsx
 packages/ui/src/renderers/xbf/XbfRenderer.jsx
 packages/ui/src/renderers/xbf/XbfSelectionModes.jsx
 packages/ui/src/renderers/xbf/xbfChips.jsx
