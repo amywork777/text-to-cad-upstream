@@ -50,8 +50,8 @@ export function selectionBarActions({ editing, picks, commandOpen = false, sketc
 }
 
 /**
- * What the shell is told of Quick Edit (its `quickEditAsked`): the workspace's own answer (`asked`: shut until the bar's
- * Quick Edit asks, `false`) gives way, once Pencil or Shapes has drawn on the model (`inked`), to the box following what
+ * What the shell is told of Quick Edit (its `quickEditAsked`): the workspace's own answer (`asked`: empty of the picks
+ * until the bar's Quick Edit asks, `false`) gives way, once Pencil or Shapes has drawn on the model (`inked`), to the box following what
  * it carries (null), as the AI layout's does: ink is for the agent, and the box is where it goes.
  */
 export function quickEditOpening({ asked, inked }) {

@@ -85,8 +85,8 @@ export function quickEditReferenceIds(selection) {
  *   requests?: ReadonlyArray<import("./ReferenceChips.jsx").ReferenceChip & { request: string }> | null,
  *   asked?: boolean | null, hidden?: boolean, docked?: boolean, className?: string, style?: import("react").CSSProperties }} props
  *   `asked`: where the host leaves it to the person to ask for it (a boolean). Asked for (`true`) it takes the keyboard,
- *   on the file as a whole where nothing is picked; not asked (`false`) the bar is put away, but for a note already
- *   written. Without `asked` (null) it is the view's bar, as always.
+ *   on the file as a whole where nothing is picked; not asked (`false`) the bar stays, empty of the picks (they are
+ *   a command's, edit mode's), a note on the file as a whole. Without `asked` (null) it is the view's bar, as always.
  *   `docked`: a phone's: the same bar across the view (its sizes the scale's, `globals.css`), the keyboard left down.
  *   `nameReference`: what the renderer calls a reference into the file on screen, for its chip in
  *   the note ("cam"); "" where it has no name for it, which then reads as its file and ids.
@@ -101,9 +101,13 @@ export function quickEditReferenceIds(selection) {
  *   with a note keeps it, and Escape only hands the keyboard back to the view. `hidden`: out of
  *   sight with all it holds (the view is loading).
  */
-export default function QuickEdit({ resource, references = EMPTY, chips = null, annotation = null, requests = null, prompt = null, nameReference = null, notes = null, onCopy, onEscape, onClear, disabled = false,
+export default function QuickEdit({ resource, references: offered = EMPTY, chips: offeredChips = null, annotation: offeredAnnotation = null, requests = null, prompt = null, nameReference = null, notes = null, onCopy, onEscape, onClear, disabled = false,
   asked = null, hidden: hiddenByView = false, docked = false, className, style }) {
   const { t } = useI18n();
+  // Not asked for, the picks are a command's: the bar carries none of them.
+  const references = asked === false ? EMPTY : offered;
+  const chips = asked === false ? null : offeredChips;
+  const annotation = asked === false ? null : offeredAnnotation;
   const host = useViewerHost();
   const controls = useControlUsage();
   const destination = usePromptDestination();
@@ -119,8 +123,7 @@ export default function QuickEdit({ resource, references = EMPTY, chips = null, 
   const requested = Boolean(requests?.length);
   const attached = referenceIds.length > 0 || annotated || requested;
   const written = Boolean(text.trim());
-  // Not asked for, the bar is away but for a note already written.
-  const hidden = hiddenByView || (asked === false && !written);
+  const hidden = hiddenByView;
   const replayUnavailable = prompt?.unavailable?.() || "";
   // Counted as its attachments come (`quick_edit_shown`): how often it has something to carry.
   const shownBefore = useRef(false);
@@ -387,8 +390,6 @@ export default function QuickEdit({ resource, references = EMPTY, chips = null, 
       </div>
       {error ? <p role="alert" className="px-1 text-xs text-destructive">{error}</p> : null}
     </section>;
-    // Not asked for (`asked: false`) and with nothing written, there is no bar.
-  if (asked === false && !written) return null;
   return <div ref={root} className={cn("pointer-events-none w-full shrink-0 flex-col items-center", hiddenByView ? "hidden" : "flex", className)} style={style} data-quick-edit="">
     {section}
   </div>;

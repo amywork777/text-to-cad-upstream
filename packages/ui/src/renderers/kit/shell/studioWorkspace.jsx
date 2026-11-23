@@ -185,6 +185,9 @@ export function useStudioWorkspace({ ribbon, leftDock, bottomDock, dialogPlace, 
   }, [toolbarUp, frame.hostRef]);
   const measureColumn = useRef(null);
   usePastNavigator(frame.hostRef, navigatorUp && !mobile, [toolbarUp, navigatorFolded, pastNavigator, Boolean(references)], measureColumn);
+  // Quick Edit's bar centres on the room past the design tree docked full height (`data-cad-dock-full`, which the
+  // frame's measure keeps it clear of, `ViewFrame.jsx`): measured again as the tree comes, goes or folds.
+  useLayoutEffect(() => { measureColumn.current?.(); }, [navigatorUp, navigatorFolded, toolbarUp]);
   // What the toolbar is handed of the view while it is up: the view catching up, said beside the part's build status.
   const viewUpdateStatus = frame.loading.updating && !frame.viewUpdate.status.error ? modelUpdateStatus(frame.loading.progress) : frame.viewUpdate.status;
   const toolbarView = toolbarUp ? {
@@ -203,6 +206,7 @@ export function useStudioWorkspace({ ribbon, leftDock, bottomDock, dialogPlace, 
       {workspace.chrome.ribbon(tools, toolbarView)}
     </div> : null}
     {workspace.chrome.leftDock ? <aside aria-label="FeatureManager design tree" data-cad-dock="navigator" style={NAVIGATOR_POSITION}
+      data-cad-dock-full={navigatorFolded ? undefined : ""}
       className={cn(WORKSPACE_DOCK_CLASS, NAVIGATOR_QUIET_CHECKS_CLASS, "pointer-events-auto absolute left-0 flex w-[16rem] flex-col overflow-hidden @max-xl/cad-viewport:hidden",
         navigatorFolded ? "border-b" : "bottom-0")}>
       <button type="button" aria-expanded={!navigatorFolded} onClick={() => setNavigatorFolded(folded => !folded)}

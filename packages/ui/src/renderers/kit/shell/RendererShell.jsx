@@ -156,8 +156,8 @@ const DOUBLE_PRESS_MS = 600;
  *   or at the toolbar's tab row's right end while the workspace is up (edit mode's switch between
  *   modeling by hand and asking the AI, `xbf/edit/EditLayoutSwitch.jsx`).
  *   `quickEditAsked`: for a renderer with a button of its own to ask for Quick Edit (the workspace's Ask). `true`:
- *   it is open, whatever is picked or drawn, and with nothing picked on the file as a whole; `false`: it is shut
- *   until asked, a written note excepted; null (the default): it follows what it would carry (`references`).
+ *   it carries what is picked or drawn, and with nothing picked takes the file as a whole; `false`: the bar stays,
+ *   empty of the picks (a command's) until asked; null (the default): it follows what it would carry (`references`).
  */
 // The update status with nothing to say (`ViewUpdateStatus`'s).
 const NO_UPDATE = Object.freeze({ pending: false, error: null });

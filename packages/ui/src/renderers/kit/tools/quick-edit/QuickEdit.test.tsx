@@ -98,20 +98,23 @@ it('carries the annotation while there is ink, taking the keyboard once the pen 
   expect(note()).toBe('A boss here.');
 });
 
-it('is the person\'s to ask for when the host says so: away until asked, whatever it would carry, and on the file as a whole when asked with nothing picked', () => {
+it('is the person\'s to ask for when the host says so: there but empty until asked, whatever it would carry, and on the file as a whole when asked with nothing picked', () => {
   const carrying = { references: [face], annotation: { present: true } };
   const { update } = mount(testHost(), { asked: false });
-  // Picked and drawn on, and still no box: nothing asked for it.
+  // Picked and drawn on, and the bar is there but carries none of it: nothing asked for it (the picks are a command's).
   update({ asked: false, ...carrying });
-  expect(box()).toBeNull();
+  expect(box()).not.toBeNull();
+  expect(box()!.querySelector('[data-quick-edit-context]')).toBeNull();
+  expect(document.activeElement).not.toBe(field());
   // Asked, it carries what there is, and the keyboard is in its note: the person asked for it.
   update({ asked: true, ...carrying });
   expect(box()).not.toBeNull();
   expect(box()!.querySelector('[data-quick-edit-ref="annotation"]')!.textContent).toBe('Annotation');
   expect(document.activeElement).toBe(field());
-  // No longer asked, it goes; the file, which it always carries, is not what keeps it open.
+  // No longer asked, it lets what it carried go; the bar stays.
   update({ asked: false, ...carrying });
-  expect(box()).toBeNull();
+  expect(box()).not.toBeNull();
+  expect(box()!.querySelector('[data-quick-edit-context]')).toBeNull();
   // Asked with nothing picked or drawn, it is the whole part's: no chips, the file as ever, the note to write in.
   update({ asked: true, references: [], annotation: null });
   expect(box()).not.toBeNull();

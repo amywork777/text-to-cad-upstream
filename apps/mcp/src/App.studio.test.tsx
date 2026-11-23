@@ -86,8 +86,11 @@ const home: Launch = { protocol: 9, page: 'home', model: null, pick: true };
 
 it("a host that opens files beside the thread (Studio) moves between them itself: every view of it has the navbar (Display, Preview, the panel) with no home, Back or Forward, and opens another file in the host", async () => {
   const { bridge, server } = host({ displayMode: 'fullscreen' }, { openFiles: {} });
-  render(<App bridge={bridge as any} server={server as any} launch={{ protocol: 7, page: 'viewer', model: '/work/a.step' }} />);
+  const { container } = render(<App bridge={bridge as any} server={server as any} launch={{ protocol: 7, page: 'viewer', model: '/work/a.step' }} />);
   expect([viewer.props!.chrome, viewer.props!.history, viewer.props!.library]).toEqual(['page', undefined, undefined]);
+  // Its chat is a column beside the view, not a composer over it: the cube keeps the top-right, as SolidWorks has it.
+  const frame = container.firstElementChild as HTMLElement;
+  expect([frame.style.getPropertyValue('--cad-viewport-corner-left'), frame.style.getPropertyValue('--cad-host-bottom-inset')]).toEqual(['', '']);
   // A part opened from its assembly opens in a tab of the host's own.
   act(() => viewer.props!.openElsewhere!('/work/b.step'));
   expect(bridge.request).toHaveBeenCalledWith('studio/open-file', { path: '/work/b.step' });

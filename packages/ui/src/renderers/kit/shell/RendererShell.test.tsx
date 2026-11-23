@@ -143,18 +143,37 @@ it("keeps the strip, its panels and Quick Edit under the toolbar, and where they
   expect([frameRoot().style.getPropertyValue('--cad-workspace-top'), frameRoot().className.includes('data-cad-tool-groups]]:top-')]).toEqual(['', false]);
 });
 
-it("keeps Quick Edit's bar where the renderer does not say, opens it when the renderer says it was asked for, and shuts it when it says not", () => {
+it("keeps Quick Edit's bar where the renderer does not say, carries what is picked when the renderer says it was asked for, and keeps the bar, empty, when it says not", () => {
   const quickEdit = () => screen.queryByRole('region', { name: 'Quick Edit' });
   // A renderer that does not say leaves it the view's always-there bar at the bottom.
   const view = shell();
   expect(quickEdit()).not.toBeNull();
   view.show({ quickEditAsked: true });
   expect(quickEdit()).not.toBeNull();
-  // The workspace asks for it with Ask, and puts it away again with the answer.
+  // Not asked for (edit mode's picks are a command's) the bar stays, as in Simple view, a note on the file as a whole.
   view.show({ quickEditAsked: false });
-  expect(quickEdit()).toBeNull();
+  expect(quickEdit()).not.toBeNull();
+  view.show({ quickEditAsked: false, ...WORKSPACE });
+  expect(quickEdit()).not.toBeNull();
   view.show({ quickEditAsked: true, ...WORKSPACE });
   expect(quickEdit()).not.toBeNull();
+});
+
+it("centres Quick Edit's bar on the room past the design tree docked full height, and on the whole view once it folds", () => {
+  // A 700px view, the design tree's 256px column down its left (jsdom lays nothing out).
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    if (this.matches('[data-cad-dock="toolbar"]')) return DOMRect.fromRect({ x: 0, y: 0, width: 700, height: TOOLBAR_HEIGHT });
+    if (this.matches('[data-slot="cad-file-view"]')) return DOMRect.fromRect({ x: 0, y: 0, width: 700, height: 600 });
+    if (this.matches('[data-cad-dock="navigator"]')) return DOMRect.fromRect({ x: 0, y: TOOLBAR_HEIGHT, width: 256, height: 600 - TOOLBAR_HEIGHT });
+    return boxOf.call(this);
+  };
+  shell({ ...WORKSPACE, quickEditAsked: false });
+  const bar = () => [frameRoot().style.getPropertyValue('--cad-quick-edit-left'), frameRoot().style.getPropertyValue('--cad-quick-edit-width')];
+  // Centred on the 444px past the tree, 400px wide: never over it.
+  expect(bar()).toEqual(['278px', '400px']);
+  // Folded to its title, the tree leaves the view's foot: the bar is centred on the whole view again.
+  fireEvent.click(within(screen.getByRole('complementary', { name: 'FeatureManager design tree' })).getByRole('button', { name: 'FeatureManager' }));
+  expect(bar()).toEqual(['150px', '400px']);
 });
 
 it("fades the workspace out as Simple view takes its place, taking no presses while it goes, and puts it away at once with the rest of the tools", async () => {

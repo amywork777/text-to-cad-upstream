@@ -258,7 +258,8 @@ export default function ViewFrame({ rootRef = null, measureRef = null, surface =
       const margin = mobile ? VIEWPORT_INSET_PX : QUICK_EDIT_MARGIN_PX;
       const fit = room => Math.max(0, mobile ? room - 2 * margin : Math.min(QUICK_EDIT_MAX_PX, room - 2 * margin));
       let barWidth = fit(viewWidth), barLeft = (viewWidth - barWidth) / 2;
-      const pinned = mobile ? null : frame.querySelector(":scope > aside[data-flat-panel]:not([hidden]):not([data-panel-peek])");
+      // Studio (studio-base): edit mode's design tree, docked down the view's left (`studioWorkspace.jsx`), is one too.
+      const pinned = mobile ? null : frame.querySelector(":scope > aside[data-flat-panel]:not([hidden]):not([data-panel-peek]), [data-cad-dock=navigator][data-cad-dock-full]");
       const panelRight = pinned ? pinned.getBoundingClientRect().right - frame.getBoundingClientRect().left : 0;
       if (panelRight > barLeft - margin) { barWidth = fit(viewWidth - panelRight); barLeft = panelRight + (viewWidth - panelRight - barWidth) / 2; }
       frame.style.setProperty("--cad-quick-edit-left", `${Math.round(barLeft)}px`);

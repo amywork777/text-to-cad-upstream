@@ -206,7 +206,8 @@ export default function App({ bridge, server, launch: initial, presentation = 't
   // across the bottom of a full-size view, so that view keeps clear of it.
   const insets = presentation === 'inline' ? context.safeAreaInsets || {} : { ...context.safeAreaInsets, bottom: 0 };
   const chat = useMemo(() => chatReach(bridge.hostCapabilities, presentation), [bridge, presentation]);
-  const floatingComposer = presentation === 'tabs';
+  // Studio (studio-base): its chat is a column beside the view, not a composer over it, so the corner stays top-right.
+  const floatingComposer = presentation === 'tabs' && !bridge.hostCapabilities.openFiles;
   // Once a newer view of this chat is up: this one's last frame (or null), and nothing else.
   const [still, setStill] = useState<string | null | undefined>(undefined);
   const superseded = still !== undefined;
