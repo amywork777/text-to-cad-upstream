@@ -5,7 +5,6 @@ import { cn } from "@cad/ui/utils";
 import { Button } from "@cad/ui/primitives/button";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
 import {
-  FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetControlRow,
   FileSheetSettingsSection,
   FileSheetValueInput
@@ -35,6 +34,7 @@ import { isCustomCommand } from "./customFeature.js";
 import { formulaWords, restates, selectionDimensions, sizeName, treeFeatures } from "./editMode.js";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { nxPlane, treeTitles } from "./nx.js";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 const UNIT_MARKS = Object.freeze({ mm: "mm", in: "in" });
 
@@ -164,7 +164,7 @@ export default function EditBrowser({ edit, names, tree, references = [], onEdit
     <ScrollArea className="min-h-0 flex-1">
       <EditTree edit={edit} tree={tree} onEditSketch={onEditSketch} onOpenPart={onOpenPart} backTo={backTo} />
       {component && !edit.command && !edit.sketch ? <FileSheetSettingsSection title={component.title} sectionId="edit-component">
-        <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`}>
+        <p className={`${EDIT_TEXT_CLASSES} pb-2`}>
           {(component.document || component.step) && onOpenPart ? "A part of this assembly. Isolate it to edit its features, sketch on it and add new ones."
             : "A part of this assembly. Ask the agent to change it."}</p>
         {(component.document || component.step) && onOpenPart ? <div className="pb-2"><FileSheetButtonRow>
@@ -173,17 +173,17 @@ export default function EditBrowser({ edit, names, tree, references = [], onEdit
         </FileSheetButtonRow></div> : null}
       </FileSheetSettingsSection> : null}
       {feature && !opensItsCommand && !edit.command && !edit.sketch ? <FileSheetSettingsSection title={title} sectionId="edit-feature" open={open} onOpenChange={setOpen}>
-        {feature.kind === "Sketch" ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`}>
+        {feature.kind === "Sketch" ? <p className={`${EDIT_TEXT_CLASSES} pb-2`}>
           Double-click it to edit the sketch, or make a solid of it with an extrude or a revolve.</p>
-          : feature.suppressed ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`}>
+          : feature.suppressed ? <p className={`${EDIT_TEXT_CLASSES} pb-2`}>
             Suppressed: its lines are comments in the script. Tick its box in the design tree to put it back.</p>
-          : inputs.length === 0 ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`}>Nothing to set here.</p>
+          : inputs.length === 0 ? <p className={`${EDIT_TEXT_CLASSES} pb-2`}>Nothing to set here.</p>
           : inputs.map(input => <FileSheetControlRow key={input.key} label={input.label}
             trailing={<ValueField value={input.value} unit={input.unit} label={input.label} disabled={disabled}
               onCommit={text => edit.change(input.request(text))} />}>
             {restates(input.formula, input.value) ? null : <span className="block truncate text-tiny text-muted-foreground">{`= ${formulaWords(input.formula)}`}</span>}
           </FileSheetControlRow>)}
-        {feature.file ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2 pt-1`}>{`${feature.file.split("/").pop()}, line ${feature.line}`}</p> : null}
+        {feature.file ? <p className={`${EDIT_TEXT_CLASSES} pb-2 pt-1`}>{`${feature.file.split("/").pop()}, line ${feature.line}`}</p> : null}
       </FileSheetSettingsSection> : null}
     </ScrollArea>
   </div>;

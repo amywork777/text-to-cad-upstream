@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetControlRow,
   FileSheetSettingsSection
 } from "../../kit/inspector/FileSheet.js";
@@ -10,6 +9,7 @@ import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { inertiaRows, massRows } from "./editMode.js";
 import ErrorWords from "./ErrorWords.jsx";
 import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 const NONE = "none";
 
@@ -43,7 +43,7 @@ export default function MassProperties({ edit }) {
       <FileSheetSelectRow label="Material" value={key} onValueChange={setPicked}
         options={[{ value: NONE, label: "None" }, ...(mass?.materials || []).map(each => ({ value: each.key, label: each.name }))]} />
       {material ? <FileSheetControlRow label="Density" value={`${material.density} g/cm³`} />
-        : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Pick a material to weigh the part.</p>}
+        : <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Pick a material to weigh the part.</p>}
       {/* Edit Material, as SolidWorks applies one: kept in the part (its script's MATERIAL), weighed in from then on. */}
       {typeof edit.setMaterial === "function" && key !== (own || NONE) ? <div className="flex justify-end px-2 pb-1.5">
         <button type="button" data-cad-apply-material="" disabled={edit.saving}
@@ -54,7 +54,7 @@ export default function MassProperties({ edit }) {
     <FileSheetSettingsSection title="Properties" sectionId="mass-properties">
       {mass?.status === "failed" ? <ErrorWords error={mass.error} className="px-2 pb-1 leading-4" aria-live="polite" />
         : rows.length ? rows.map(row => <FileSheetControlRow key={row.label} label={row.label} value={row.value} />)
-          : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">Working out the mass properties</p>}
+          : <p className={`${EDIT_TEXT_CLASSES} pb-1`} aria-live="polite">Working out the mass properties</p>}
     </FileSheetSettingsSection>
     {/* Moments of inertia, about the center of mass: they need the material's density. */}
     {inertia.length ? <FileSheetSettingsSection title="Moments of Inertia" sectionId="mass-inertia">

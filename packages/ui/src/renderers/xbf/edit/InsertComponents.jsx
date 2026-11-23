@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { FILE_SHEET_STATUS_TEXT_CLASSES, FileSheetSettingsSection } from "../../kit/inspector/FileSheet.js";
+import { FileSheetSettingsSection } from "../../kit/inspector/FileSheet.js";
 import { InsertComponentIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 /**
  * Insert Components, as SolidWorks' adds a part to an assembly: the project's part scripts listed
@@ -32,8 +33,8 @@ export default function InsertComponents({ edit }) {
       <h2 className="min-w-0 flex-1 truncate text-xs font-normal leading-4 text-foreground">Insert Components</h2>
     </div>
     <FileSheetSettingsSection title="Part to Insert" sectionId="insert-part">
-      {parts === null ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Finding the project's parts</p>
-        : parts.length === 0 ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>No other part scripts in this project.</p>
+      {parts === null ? <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Finding the project's parts</p>
+        : parts.length === 0 ? <p className={`${EDIT_TEXT_CLASSES} pb-1`}>No other part scripts in this project.</p>
           : <div role="listbox" aria-label="Parts" className="flex flex-col pb-1">
             {parts.map(part => <button key={part} type="button" role="option" aria-selected={picked === part}
               className={`truncate rounded px-1.5 py-1 text-left text-tiny ${WORKSPACE_PRESS_CLASS} ${picked === part ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"}`}

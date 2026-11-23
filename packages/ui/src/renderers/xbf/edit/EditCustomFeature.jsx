@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { cn } from "@cad/ui/utils";
 import {
-  FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetControlRow,
   FileSheetSettingsSection,
   FileSheetValueInput
@@ -18,6 +17,7 @@ import { customChanged, customDefinition, customGroups, customRequest, customVal
 import { selectionItems } from "./editMode.js";
 import { isEdgeItem, isFaceItem } from "./selectors.js";
 import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 const PREVIEW_WAIT_MS = 250;
 
@@ -118,7 +118,7 @@ export default function EditCustomFeature({ edit, references = [] }) {
         <X aria-hidden="true" />
       </button>
     </div>
-    {definition.doc ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pt-1.5`}>{definition.doc}</p> : null}
+    {definition.doc ? <p className={`${EDIT_TEXT_CLASSES} pt-1.5`}>{definition.doc}</p> : null}
     <div className="py-1">
       {sections.map(section => section.title === null
         ? <div key="" className="space-y-1">{section.params.map(control)}</div>
@@ -126,11 +126,11 @@ export default function EditCustomFeature({ edit, references = [] }) {
           {section.params.map(control)}
         </FoldedSection>)}
     </div>
-    {activeParam ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>
+    {activeParam ? <p className={`${EDIT_TEXT_CLASSES} pb-1`}>
       Select {activeParam.kind} on the model for {activeParam.label}.</p> : null}
     {/* The preview's refusal, unless OK's own already says it above the dialog (`edit.error`): the words once. */}
     {shown?.status === "failed" && !edit.error ? <ErrorWords error={shown.error} className="px-2 pb-1 leading-4" aria-live="polite" /> : null}
-    {edit.saving ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`} aria-live="polite">Applying</p> : null}
+    {edit.saving ? <p className={`${EDIT_TEXT_CLASSES} pb-2`} aria-live="polite">Applying</p> : null}
     <ConfirmButtons onOk={() => void ok()} onCancel={edit.close} busy={edit.saving} className="border-t border-border px-2 py-2" />
   </div>;
 }

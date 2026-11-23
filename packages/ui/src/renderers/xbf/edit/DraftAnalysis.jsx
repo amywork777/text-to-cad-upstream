@@ -1,5 +1,4 @@
 import {
-  FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetControlRow,
   FileSheetSettingsSection,
   FileSheetValueInput
@@ -12,6 +11,7 @@ import { DraftAnalysisIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { DRAFT_CLASSES, draftRows, PULL_PLANES } from "./editMode.js";
 import ErrorWords from "./ErrorWords.jsx";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 /**
  * Draft Analysis, as SolidWorks' Evaluate tab checks a molded part: the direction of pull (an
@@ -48,7 +48,7 @@ export default function DraftAnalysis({ edit }) {
         : rows.length ? rows.map(row => <FileSheetControlRow key={row.key} label={<span className="flex items-center gap-1.5">
           <span aria-hidden="true" className="size-2.5 shrink-0 rounded-sm" style={{ background: DRAFT_CLASSES[row.key].css }} />{row.label}
         </span>} value={row.value} />)
-          : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">Checking the draft</p>}
+          : <p className={`${EDIT_TEXT_CLASSES} pb-1`} aria-live="polite">Checking the draft</p>}
     </FileSheetSettingsSection>
     <ConfirmButtons className="border-t border-border px-2 py-2" onCancel={edit.stopInspecting} cancelLabel="Close" />
   </div>;

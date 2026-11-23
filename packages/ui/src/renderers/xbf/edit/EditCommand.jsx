@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import {
-  FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetControlRow,
   FileSheetSettingsSection,
   FileSheetValueInput
@@ -52,6 +51,7 @@ import { booleanOf, nxCommand } from "./nx.js";
 import { sketchGeometry } from "./sketchMode.js";
 import { isEdgeItem, isFaceItem } from "./selectors.js";
 import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 // An extrude's end conditions, as SolidWorks' Direction 1 names them and in its order; a cut can go through all.
 // The end conditions as SolidWorks names them.
 const END = Object.freeze({ blind: "Blind", through: "Through All", next: "Up To Next", vertex: "Up To Vertex", surface: "Up To Surface",
@@ -166,7 +166,7 @@ export function SelectionList({ items, prompt, onRemove = null }) {
 function PreviewKey({ added, removed }) {
   const swatch = (tone, text) => <span className="flex items-center gap-1.5">
     <span className={`size-2 shrink-0 rounded-sm ${tone}`} aria-hidden="true" />{text}</span>;
-  return <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} flex flex-col gap-0.5 pb-1`}>
+  return <p className={`${EDIT_TEXT_CLASSES} flex flex-col gap-0.5 pb-1`}>
     {added ? swatch("bg-cad-solid", "Material it adds") : null}
     {removed ? swatch("bg-cad-cut", "Material it takes away") : null}
   </p>;
@@ -176,7 +176,7 @@ function PreviewKey({ added, removed }) {
 function KeptList({ text, hint }) {
   return <>
     <SelectionBox items={[{ key: "kept", label: text }]} prompt="" />
-    <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>{hint}</p>
+    <p className={`${EDIT_TEXT_CLASSES} pb-1`}>{hint}</p>
   </>;
 }
 
@@ -545,7 +545,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
       <SelectionBox items={values.neutral ? [{ key: "neutral", label: ORIGIN_PLANE_NAMES.has(values.neutral) ? `${values.neutral} Plane`
         : namedPlane(values.neutral)?.label || (neutralFace ? selectionLabel(neutralFace.item) : "Its face, as written") }] : []}
         prompt="Select a flat face on the model, or a plane in the design tree." onClear={clearNeutral} clearLabel="Clear" />
-      {neutralNote ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">{neutralNote}</p> : null}
+      {neutralNote ? <p className={`${EDIT_TEXT_CLASSES} pb-1`} aria-live="polite">{neutralNote}</p> : null}
       <FileSheetCheckboxRow label="Reverse direction" checked={Boolean(values.reverse)} disabled={disabled || !values.neutral}
         onCheckedChange={set("reverse")} />
     </FileSheetSettingsSection> : null}
@@ -555,7 +555,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
       {planeRefs.length ? <SelectionList items={planeRefs} prompt="" onRemove={removePick} />
         : <KeptList text={editing?.keeps || ""} hint="Pick faces or an edge on the model to place it again." />}
       {planeKind === "mid"
-        ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Midway between the two faces, and kept there as the part changes.</p>
+        ? <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Midway between the two faces, and kept there as the part changes.</p>
         : <FileSheetSelectRow label="At" value={values.end === "end" ? "end" : "start"} options={CURVE_ENDS} onValueChange={set("end")} />}
     </FileSheetSettingsSection> : null}
     {planing && planeKind === "offset" ? <FileSheetSettingsSection title="First Reference" sectionId="edit-command-reference">
@@ -589,12 +589,12 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
       {editing ? <FileSheetControlRow label="Of" value={sizeName(editing.keeps)} /> : <>
         <FileSheetSelectRow label="Of" value={feature ? "feature" : "body"} onValueChange={value => setWholeBody(value === "body")}
           options={[...(featureIndex > 0 ? [{ value: "feature", label: names[featureIndex]?.title || "Feature" }] : []), { value: "body", label: "Whole body" }]} />
-        <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Pick a feature in the history to copy it.</p>
+        <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Pick a feature in the history to copy it.</p>
       </>}
     </FileSheetSettingsSection> : null}
     {revolving ? <FileSheetSettingsSection title="Axis of Revolution" sectionId="edit-command-axis">
       {axes.length ? <FileSheetSelectRow label="About" value={values.axis} options={axes} onValueChange={set("axis")} />
-        : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>{sketch ? "Draw a centerline in the sketch to revolve about." : command.prompt}</p>}
+        : <p className={`${EDIT_TEXT_CLASSES} pb-1`}>{sketch ? "Draw a centerline in the sketch to revolve about." : command.prompt}</p>}
     </FileSheetSettingsSection> : null}
     {takes ? <FileSheetSettingsSection title={takes === "many" ? "Profiles" : "Profile and Path"} sectionId="edit-command-sketches">
       {/* Each sketch it is made from, picked on the model or in the design tree and shaded there,
@@ -603,10 +603,10 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
         : takes === "many" ? <SelectionBox items={picked.map((each, index) => sketchItem(each, `${index + 1}. `))} prompt={command.prompt}
           onClear={unpick} clearLabel="Remove" />
           : <>
-            <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Profile</p>
+            <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Profile</p>
             <SelectionBox items={picked[0] ? [sketchItem(picked[0])] : []} prompt="Select the profile sketch: the closed outline it runs."
               onClear={unpick} clearLabel="Remove" />
-            <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Path</p>
+            <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Path</p>
             <SelectionBox items={picked[1] ? [sketchItem(picked[1])] : []} prompt="Select the path sketch: the curves it runs along."
               onClear={unpick} clearLabel="Remove" />
           </>}
@@ -622,7 +622,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
           options={(command.id === "cut" ? CUT_ENDS : BOSS_ENDS).filter(each => (!asWritten || !FROM_SKETCH.has(each.value)) && (!helped || each.value === "blind"))} />
         {upTo ? <>
           {/* What it ends on, picked on the model: a flat face, or an edge clicked near the vertex. */}
-          <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>{values.end === "surface" ? "Face" : "Vertex"}</p>
+          <p className={`${EDIT_TEXT_CLASSES} pb-1`}>{values.end === "surface" ? "Face" : "Vertex"}</p>
           {ending ? <SelectionBox items={[{ key: ending.selector, label: values.end === "surface" ? selectionLabel(ending)
             : `${selectionLabel(ending)}, the end nearest the click` }]} prompt="" />
             : editing?.values?.end === values.end ? <KeptList text={values.end === "surface" ? "Its face, as written" : "Its vertex, as written"}
@@ -703,16 +703,16 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
           onRemove={index => setValues(current => ({ ...current, more: (current.more || []).filter((_, at) => at !== index) }))} />
         {/* A face picked before Hole opened holds its hole at its center until it is clicked, which on a rim is
             over the opening: the first click puts the hole there, and each after it adds one. */}
-        {offsets.length ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>{editing || facePoint
+        {offsets.length ? <p className={`${EDIT_TEXT_CLASSES} pb-1`}>{editing || facePoint
           ? "Click the face again to add a hole there." : "Click the face where the hole goes."}</p> : null}
       </> : null}
-      {command.id === "mirror" ? faces.length && !editing ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>About the selected face.</p>
+      {command.id === "mirror" ? faces.length && !editing ? <p className={`${EDIT_TEXT_CLASSES} pb-1`}>About the selected face.</p>
         : <FileSheetSelectRow label="About" value={values.plane} onValueChange={set("plane")}
           options={[...PLANES, ...planes.map(each => ({ value: each.value, label: each.label })), ...(editing?.values?.plane === "face" ? [SAME_FACE] : [])]} />
         : null}
       {/* Split, as SolidWorks splits a part into bodies: by a face picked, or a plane; both bodies kept, or one side. */}
       {command.id === "split" ? <>
-        {faces.length ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>By the selected face's plane.</p>
+        {faces.length ? <p className={`${EDIT_TEXT_CLASSES} pb-1`}>By the selected face's plane.</p>
           : <FileSheetSelectRow label="Splitting plane" value={values.plane} onValueChange={set("plane")}
             options={[...PLANES, ...planes.map(each => ({ value: each.value, label: each.label }))]} />}
         <FileSheetSelectRow label="Keep" value={values.keep} options={SPLIT_KEEPS} onValueChange={set("keep")} />
@@ -722,13 +722,13 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
         <FileSheetSelectRow label="Type" value={values.type} options={PATTERNS} onValueChange={set("type")} />
         {values.type === "linear" ? <>
           <FileSheetSelectRow label="Direction" value={values.direction} options={DIRECTIONS} onValueChange={set("direction")} />
-          <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Or pick a straight edge along X, Y or Z on the model.</p>
+          <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Or pick a straight edge along X, Y or Z on the model.</p>
           <NumberRow label="Spacing" value={values.spacing} unit={units} disabled={disabled} onChange={set("spacing")} />
           <FileSheetCheckboxRow label="Reverse direction" checked={values.reverse} disabled={disabled} onCheckedChange={set("reverse")} />
         </> : <>
           {/* The axis it turns about: a round face or a straight edge picked on the model, else the
               Z axis through the origin. */}
-          <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Axis</p>
+          <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Axis</p>
           {turnsAbout ? <SelectionBox items={[{ key: turnsAbout.selector, label: `${selectionLabel(turnsAbout)}, ${turnsAbout.type === "line" ? "straight edge" : "round face"}` }]} prompt="" />
             : editing?.values?.axis ? <KeptList text={`${editing.values.axis.charAt(0).toUpperCase()}${editing.values.axis.slice(1)}`}
               hint="Pick a round face or a straight edge on the model to turn about it instead." />
@@ -744,7 +744,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
     {command.id === "pattern" && values.type === "linear" && (values.direction === "X" || values.direction === "Y")
       ? <FileSheetSettingsSection title="Direction 2" sectionId="edit-command-pattern-direction2"
         enabled={Boolean(values.direction2)} onEnabledChange={set("direction2")}>
-        <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Along {values.direction === "X" ? "Y" : "X"}</p>
+        <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Along {values.direction === "X" ? "Y" : "X"}</p>
         <NumberRow label="Spacing" value={values.spacing2} unit={units} disabled={disabled} onChange={set("spacing2")} />
         <FileSheetCheckboxRow label="Reverse direction" checked={Boolean(values.reverse2)} disabled={disabled} onCheckedChange={set("reverse2")} />
         <NumberRow label="Instances" value={values.count2} disabled={disabled} onChange={set("count2")} />
@@ -786,16 +786,16 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
     <FileSheetSettingsSection title="Preview" sectionId="edit-command-preview" enabled={previewOn}
       onEnabledChange={on => edit.setPreviewOn?.(on)}>
       {sweeps ? <PreviewKey added={kind === "boss"} removed={kind === "cut"} />
-        : shown?.status === "updating" ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">Updating the preview</p>
+        : shown?.status === "updating" ? <p className={`${EDIT_TEXT_CLASSES} pb-1`} aria-live="polite">Updating the preview</p>
           : shown?.status === "failed" ? <ErrorWords error={shown.error} className="px-2 pb-1 leading-4" aria-live="polite" />
             : shown?.status === "ready" ? (shown.added || shown.removed ? <PreviewKey added={Boolean(shown.added)} removed={Boolean(shown.removed)} />
-              : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>{command.id === "split" && values.keep === "both"
+              : <p className={`${EDIT_TEXT_CLASSES} pb-1`}>{command.id === "split" && values.keep === "both"
                 ? "It splits the body in two, along the plane drawn." : "It changes nothing on the body."}</p>)
               : null}
     </FileSheetSettingsSection>
     {/* Why OK waits, where the list does not already say: two faces for one hole. */}
-    {blocked && (listed.length || !command.picks) && !(command.sketch && !sketch) && !takes ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`}>{blocked}</p> : null}
-    {edit.saving ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`} aria-live="polite">Applying</p> : null}
+    {blocked && (listed.length || !command.picks) && !(command.sketch && !sketch) && !takes ? <p className={`${EDIT_TEXT_CLASSES} pb-2`}>{blocked}</p> : null}
+    {edit.saving ? <p className={`${EDIT_TEXT_CLASSES} pb-2`} aria-live="polite">Applying</p> : null}
     <ConfirmButtons {...confirm} className="border-t border-border px-2 py-2" />
   </div>;
 }

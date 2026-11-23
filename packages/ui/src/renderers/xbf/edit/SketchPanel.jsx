@@ -2,7 +2,6 @@ import { X } from "lucide-react";
 import { TREE_GLYPH_STROKE } from "@cad/ui/primitives/tree-row";
 import { cn } from "@cad/ui/utils";
 import {
-  FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetControlRow,
   FileSheetSettingsSection,
   FileSheetValueInput
@@ -21,6 +20,7 @@ import { nxPlane } from "./nx.js";
 import { formatValue, MODEL_TOOLS, MODIFY_TOOLS, newCurves, PATTERN_TOOLS, patternOp, patternSettings, polygonSides, relationsFor, relationsOn, sketchTool,
   toolSize } from "./sketchMode.js";
 import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-info",
   "Over defined": "text-destructive" });
@@ -59,10 +59,10 @@ function PatternSettings({ edit, tool, units, disabled }) {
     if (reply?.ok) edit.selectInSketch([]);
   };
   return <>
-    <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Entities to pattern</p>
+    <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Entities to pattern</p>
     {pattern.items.length ? <ul aria-label="Entities to pattern" className="mx-2 mb-1.5 flex flex-col rounded-md border border-border px-2 py-1 text-tiny leading-5 text-foreground">
       {pattern.items.map(id => <li key={id} className="truncate">{id}</li>)}
-    </ul> : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1.5`}>None selected yet.</p>}
+    </ul> : <p className={`${EDIT_TEXT_CLASSES} pb-1.5`}>None selected yet.</p>}
     {pattern.type === "linear" ? <>
       <SizeRow label="Spacing" value={pattern.spacing} unit={units} disabled={disabled} onCommit={set("linearSpacing")} />
       <SizeRow label="Instances" value={String(pattern.count)} unit="" disabled={disabled} onCommit={set("linearCount")} />
@@ -83,7 +83,7 @@ function PlanePicker({ edit, onPlane }) {
   return <div role="dialog" aria-label="Sketch" className="flex shrink-0 flex-col" data-cad-sketch-picker=""
     onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); edit.stopPicking(); } }}>
     <Header title="Sketch" />
-    <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} py-2`}>Select a plane to sketch on: one of these, a plane in the design tree, or a flat face of the model.</p>
+    <p className={`${EDIT_TEXT_CLASSES} py-2`}>Select a plane to sketch on: one of these, a plane in the design tree, or a flat face of the model.</p>
     {/* An offset plane, as SolidWorks' Plane at an Offset distance: the one picked, moved along its normal. */}
     <SizeRow label="Offset distance" value={edit.planeOffset || "0"} unit={edit.state?.units || ""} disabled={edit.saving}
       onCommit={text => edit.setPlaneOffset(text === "0" ? "" : text)} />
@@ -118,7 +118,7 @@ function ConvertEntities({ edit, references }) {
     edit.setSketchTool(null);
   };
   return <>
-    <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Entities to Convert</p>
+    <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Entities to Convert</p>
     <SelectionList items={items} prompt="Select edges or a face on the model." />
     <FileSheetCheckboxRow label="For construction" checked={construction} disabled={Boolean(offset)}
       onCheckedChange={value => edit.setSketchSettings({ convertConstruction: Boolean(value) })} />
@@ -190,10 +190,10 @@ export default function SketchPanel({ edit, onPlane, references = [] }) {
   return <div role="dialog" aria-label={sketch.name} className="flex shrink-0 flex-col" data-cad-sketch-panel=""
     onKeyDown={event => { if (event.key === "Escape" && edit.sketchTool) { event.stopPropagation(); edit.setSketchTool(null); } }}>
     <Header title={`Editing ${sketch.name}`} detail={sketch.plane && sketch.plane !== "Plane" ? nxPlane(sketch.plane) : ""} />
-    <p className={cn(FILE_SHEET_STATUS_TEXT_CLASSES, "py-1.5", STATUS_CLASSES[status])} aria-live="polite">{edit.saving ? "Solving" : statusText}</p>
-    {sketch.error && !state ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2 text-destructive`}>{sketch.error}</p> : null}
+    <p className={cn(EDIT_TEXT_CLASSES, "py-1.5", STATUS_CLASSES[status])} aria-live="polite">{edit.saving ? "Solving" : statusText}</p>
+    {sketch.error && !state ? <p className={`${EDIT_TEXT_CLASSES} pb-2 text-destructive`}>{sketch.error}</p> : null}
     {tool ? <FileSheetSettingsSection title={tool.label} sectionId="sketch-tool">
-      <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">{tool.prompts[Math.min(edit.sketchStep, tool.prompts.length - 1)]}</p>
+      <p className={`${EDIT_TEXT_CLASSES} pb-1`} aria-live="polite">{tool.prompts[Math.min(edit.sketchStep, tool.prompts.length - 1)]}</p>
       {tool.id === "fillet" ? <SizeRow label="Fillet radius" value={toolSize(settings.filletRadius, units, "fillet")} unit={units}
         disabled={disabled} onCommit={text => edit.setSketchSettings({ filletRadius: text })} /> : null}
       {tool.id === "chamfer" ? <SizeRow label="Distance" value={toolSize(settings.chamferDistance, units, "chamfer")} unit={units}
@@ -204,7 +204,7 @@ export default function SketchPanel({ edit, onPlane, references = [] }) {
         <FileSheetCheckboxRow label="Reverse direction" checked={settings.offsetReverse} onCheckedChange={value => edit.setSketchSettings({ offsetReverse: Boolean(value) })} />
         <FileSheetCheckboxRow label="Select chain" checked={settings.offsetChain} onCheckedChange={value => edit.setSketchSettings({ offsetChain: Boolean(value) })} />
         {/* Construction geometry, as SolidWorks' Offset Entities sets it: the picked base dashed, or the offset. */}
-        <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pt-1`}>Construction geometry</p>
+        <p className={`${EDIT_TEXT_CLASSES} pt-1`}>Construction geometry</p>
         <FileSheetCheckboxRow label="Base geometry" checked={Boolean(settings.offsetBase)} onCheckedChange={value => edit.setSketchSettings({ offsetBase: Boolean(value) })} />
         <FileSheetCheckboxRow label="Offset geometry" checked={Boolean(settings.offsetConstruction)} onCheckedChange={value => edit.setSketchSettings({ offsetConstruction: Boolean(value) })} />
       </> : null}
@@ -218,7 +218,7 @@ export default function SketchPanel({ edit, onPlane, references = [] }) {
       {tool.id === "convert" ? <ConvertEntities edit={edit} references={references} /> : null}
       {tool.id === "intersection" ? <IntersectionCurve edit={edit} /> : null}
       {tool.id === "mirror" && selection.length ? <>
-        <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Entities to mirror</p>
+        <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Entities to mirror</p>
         <ul aria-label="Entities to mirror" className="mx-2 mb-1.5 flex flex-col rounded-md border border-border px-2 py-1 text-tiny leading-5 text-foreground">
           {selection.map(id => <li key={id} className="truncate">{id}</li>)}
         </ul>
@@ -226,7 +226,7 @@ export default function SketchPanel({ edit, onPlane, references = [] }) {
       {tool.id !== "dimension" && tool.id !== "centerline" && !MODIFY_TOOLS.includes(tool.id) && !MODEL_TOOLS.includes(tool.id) ? <FileSheetCheckboxRow label="For construction" checked={edit.construction}
         onCheckedChange={value => edit.setConstruction(Boolean(value))} /> : null}
     </FileSheetSettingsSection> : null}
-    {!tool && !selection.length && state ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`}>
+    {!tool && !selection.length && state ? <p className={`${EDIT_TEXT_CLASSES} pb-2`}>
       Pick a tool in the ribbon to draw, or select the sketch's lines and points to relate or dimension them; Smart Dimension sizes them. Drag what is blue to move it. Click a relation's glyph to pick it; Delete takes it off. To look around the part, drag with the middle button or Alt; Normal To faces the sketch again.
     </p> : null}
     {/* SolidWorks' View, Sketch Relations: each relation's glyph beside what it holds, a click on one picks it. */}
@@ -242,7 +242,7 @@ export default function SketchPanel({ edit, onPlane, references = [] }) {
       {filletArc || dimension.kind === "fillet" || dimension.kind === "chamfer" ? null
         : <FileSheetCheckboxRow label="Driven" checked={Boolean(dimension.driven)} disabled={disabled}
           onCheckedChange={value => void edit.sketchOp({ kind: "driven", dimension: dimension.id, on: Boolean(value) })} />}
-      <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>{dimension.driven
+      <p className={`${EDIT_TEXT_CLASSES} pb-1`}>{dimension.driven
         ? "Driven: it measures what the sketch sets. Untick Driven to size with it."
         : "Type a number, or a size of the part by its name."}</p>
     </FileSheetSettingsSection> : null}
@@ -251,14 +251,14 @@ export default function SketchPanel({ edit, onPlane, references = [] }) {
         {selection.map(id => <li key={id} className="truncate">{id}</li>)}
       </ul>
       {relations.length ? <>
-        <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Add Relations</p>
+        <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Add Relations</p>
         <div className="flex flex-wrap gap-1 px-2 pb-1.5">
           {relations.map(({ relation, label }) => <button key={relation} type="button" className={CHIP_CLASS} disabled={disabled}
             onClick={() => void edit.sketchOp({ kind: "relate", relation, refs: selection })}>{label}</button>)}
         </div>
       </> : null}
       {existing.length ? <>
-        <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Existing Relations</p>
+        <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Existing Relations</p>
         <ul className="mx-2 mb-1.5 flex flex-col">
           {existing.map(item => <li key={item.id} className="flex min-h-6 items-center gap-1 text-tiny text-foreground">
             <span className={cn("min-w-0 flex-1 truncate", item.redundant && "text-destructive")}>

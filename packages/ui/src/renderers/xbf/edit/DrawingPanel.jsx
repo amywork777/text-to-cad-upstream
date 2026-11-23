@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetControlRow,
   FileSheetSettingsSection,
   FileSheetValueInput
@@ -12,6 +11,7 @@ import {
 import { DrawingIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { sameValues } from "./editMode.js";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 // The ISO sheets a drawing goes on, as SolidWorks' Sheet Properties lists its sheet formats.
 const SIZES = Object.freeze([
@@ -53,7 +53,7 @@ export default function DrawingPanel({ edit }) {
       <DrawingIcon className="size-5 shrink-0" />
       <h2 className="min-w-0 flex-1 truncate text-xs font-normal leading-4 text-foreground">Drawing</h2>
     </div>
-    <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} py-1.5`}>
+    <p className={`${EDIT_TEXT_CLASSES} py-1.5`}>
       {drawing.drawn ? `Drawn to ${drawing.pdf} by ${drawing.script}. Its views and dimensions follow the part.`
         : `${drawing.script} has not drawn ${drawing.pdf} yet. OK draws it.`}
     </p>
@@ -67,7 +67,7 @@ export default function DrawingPanel({ edit }) {
       {FIELDS.map(([key, label]) => <FieldRow key={key} label={label} value={values[key]} onChange={set(key)} />)}
     </FileSheetSettingsSection>
     <FileSheetSettingsSection title="Views" sectionId="drawing-views">
-      <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>Top, front and right, in third angle.</p>
+      <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Top, front and right, in third angle.</p>
       <FileSheetCheckboxRow label="Isometric view" checked={values.iso} onCheckedChange={value => set("iso")(Boolean(value))} />
     </FileSheetSettingsSection>
     <ConfirmButtons className="border-t border-border px-2 py-2" onOk={() => void ok()} onCancel={edit.stopInspecting} okDisabled={sameValues(values, opened) || edit.saving} busy={edit.saving} />

@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@cad/ui/utils";
-import { FILE_SHEET_STATUS_TEXT_CLASSES, FileSheetSettingsSection } from "../../kit/inspector/FileSheet.js";
+import { FileSheetSettingsSection } from "../../kit/inspector/FileSheet.js";
 import { CompareIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { compareVolume, timeAgo } from "./editMode.js";
 import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 // A version as the list names it: before the files that changed after it.
 const changedWords = version => (version.changed.length ? `before ${version.changed.join(", ")} changed` : "before a change");
@@ -44,12 +45,12 @@ export default function ComparePanel({ edit }) {
             <span className="min-w-0 flex-1 truncate">{changedWords(version)}</span>
           </button>
         </li>)}
-      </ul> : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1.5`}>
+      </ul> : <p className={`${EDIT_TEXT_CLASSES} pb-1.5`}>
         Edit mode has read this part once so far. Each change from here, the agent's or yours, can be compared with it.</p>}
     </FileSheetSettingsSection>
     {comparison?.version ? <FileSheetSettingsSection title="What changed" sectionId="compare-changed">
       {comparison.error ? <p className="px-2 pb-1 text-tiny leading-4 text-destructive">{comparison.error}</p> : null}
-      <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} flex flex-col gap-0.5 pb-1.5`} aria-live="polite">
+      <p className={`${EDIT_TEXT_CLASSES} flex flex-col gap-0.5 pb-1.5`} aria-live="polite">
         <span className="flex items-center gap-1.5"><span className="size-2 shrink-0 rounded-sm bg-cad-solid" aria-hidden="true" />
           {`Material it gained: ${compareVolume(comparison.addedVolume, units)}`}</span>
         <span className="flex items-center gap-1.5"><span className="size-2 shrink-0 rounded-sm bg-cad-cut" aria-hidden="true" />

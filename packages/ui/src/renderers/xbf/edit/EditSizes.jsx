@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { FILE_SHEET_STATUS_TEXT_CLASSES, FileSheetControlRow, FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
+import { FileSheetControlRow, FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { withUnit } from "./editMode.js";
 import { FeatureIcon } from "./featureIcons.jsx";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 /**
  * The sizes of a feature's row, labelled as the row has them: two of one label told apart by
@@ -75,7 +76,7 @@ export default function EditSizes({ edit }) {
         <X aria-hidden="true" />
       </button>
     </div>
-    {shared.length ? <p role="note" className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pt-1.5`}>
+    {shared.length ? <p role="note" className={`${EDIT_TEXT_CLASSES} pt-1.5`}>
       Some sizes are in {shared.join(" and ")}. Changing them changes every part that uses {shared.length > 1 ? "those files" : "it"}.</p> : null}
     <div className="py-1">
       {rows.map(each => <FileSheetControlRow key={each.index} label={each.label} trailing={<span className="flex shrink-0 items-center gap-1">
@@ -84,7 +85,7 @@ export default function EditSizes({ edit }) {
         <span className="w-4 text-tiny text-muted-foreground">{each.unit}</span>
       </span>} />)}
     </div>
-    {edit.saving ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-2`} aria-live="polite">Applying</p> : null}
+    {edit.saving ? <p className={`${EDIT_TEXT_CLASSES} pb-2`} aria-live="polite">Applying</p> : null}
     <ConfirmButtons onOk={() => void ok()} onCancel={edit.close} busy={edit.saving} className="border-t border-border px-2 py-2" />
   </div>;
 }

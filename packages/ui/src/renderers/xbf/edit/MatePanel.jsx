@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  FILE_SHEET_STATUS_TEXT_CLASSES,
   FileSheetControlRow,
   FileSheetSettingsSection,
   FileSheetValueInput
@@ -14,6 +13,7 @@ import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { SelectionBox } from "./EditCommand.jsx";
 import { selectionItems, selectionLabel, sizeName } from "./editMode.js";
 import { elementOf } from "./selectors.js";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 // SolidWorks' Standard Mates this places a part by.
 const MATE_TYPES = Object.freeze([{ value: "coincident", label: "Coincident" }, { value: "concentric", label: "Concentric" },
@@ -72,7 +72,7 @@ export default function MatePanel({ edit, references, components = [], onDeselec
     </div>
     <FileSheetSettingsSection title="Mate Selections" sectionId="mate-selections">
       <SelectionBox items={listed} prompt={blocked} onClear={onDeselect ? item => onDeselect(item.key) : null} clearLabel="Remove" />
-      {items.length === 2 ? null : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">{blocked}</p>}
+      {items.length === 2 ? null : <p className={`${EDIT_TEXT_CLASSES} pb-1`} aria-live="polite">{blocked}</p>}
     </FileSheetSettingsSection>
     <FileSheetSettingsSection title="Standard Mates" sectionId="mate-type">
       <FileSheetSelectRow label="Mate" value={type} options={MATE_TYPES} onValueChange={setType} />

@@ -1,8 +1,9 @@
-import { FILE_SHEET_STATUS_TEXT_CLASSES, FileSheetControlRow, FileSheetSettingsSection } from "../../kit/inspector/FileSheet.js";
+import { FileSheetControlRow, FileSheetSettingsSection } from "../../kit/inspector/FileSheet.js";
 import { InterferenceIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { interferenceRows } from "./editMode.js";
 import ErrorWords from "./ErrorWords.jsx";
+import { EDIT_TEXT_CLASSES } from "./editText.js";
 
 /**
  * Interference Detection, as SolidWorks' Evaluate tab runs it on an assembly: each two parts (or a
@@ -23,9 +24,9 @@ export default function InterferencePanel({ edit }) {
     </div>
     <FileSheetSettingsSection title="Results" sectionId="interference-results">
       {found?.status === "failed" ? <ErrorWords error={found.error} className="px-2 pb-1 leading-4" aria-live="polite" />
-        : !found || found.status === "updating" ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">Checking every two parts</p>
+        : !found || found.status === "updating" ? <p className={`${EDIT_TEXT_CLASSES} pb-1`} aria-live="polite">Checking every two parts</p>
           : rows.length ? rows.map(row => <FileSheetControlRow key={row.key} label={row.label} value={row.value} />)
-            : <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`} aria-live="polite">
+            : <p className={`${EDIT_TEXT_CLASSES} pb-1`} aria-live="polite">
               {found.parts > 1 ? `No interferences: none of the ${found.parts} parts overlap.` : "There is only one part or body to check."}
             </p>}
     </FileSheetSettingsSection>
