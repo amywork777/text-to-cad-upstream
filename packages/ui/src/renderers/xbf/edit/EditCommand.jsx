@@ -127,7 +127,7 @@ function OtherHoles({ places, axes, units, disabled, onChange, onRemove }) {
 function NumberRow({ label, value, unit = "", disabled, onChange }) {
   return <FileSheetControlRow label={label} trailing={<span className="flex shrink-0 items-center gap-1">
     <FileSheetValueInput value={value} ariaLabel={label} disabled={disabled} onValueCommit={draft => onChange(String(draft).trim())} />
-    <span className="w-4 text-tiny text-muted-foreground">{UNIT_MARKS[unit] || unit}</span>
+    <span className="min-w-4 text-tiny text-muted-foreground">{UNIT_MARKS[unit] || unit}</span>
   </span>} />;
 }
 

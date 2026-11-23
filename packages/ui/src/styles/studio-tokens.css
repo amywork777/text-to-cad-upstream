@@ -89,3 +89,9 @@
   padding-left: calc(var(--cad-pad) + 2px);
 }
 [data-slot="dropdown-menu-content"] [role="menuitem"]:not([data-inset]) { padding-right: calc(var(--cad-pad) + 2px); }
+
+/* Studio: edit mode's command card (`EditBrowser.jsx`) insets its sheet rows as their section headings are (8px): the
+ * kit's rows leave the inset to the panel that holds them, and the card is Studio's. */
+[data-cad-command-card] [data-file-sheet-row] {
+  padding-inline: 0.5rem;
+}

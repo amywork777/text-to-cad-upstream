@@ -129,7 +129,7 @@ export function FileSheetControlRow({ label, value, trailing, children, classNam
   // taller than every switch row beside them.
   const hasContent = Children.toArray(children).length > 0;
   return (
-    <div className={cn(FILE_SHEET_CONTROL_ROW_CLASSES, className)}>
+    <div className={cn(FILE_SHEET_CONTROL_ROW_CLASSES, className)} data-file-sheet-row="">
       {label != null || value != null || trailing != null ? (
         <div
           className={cn(
