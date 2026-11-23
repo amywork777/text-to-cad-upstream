@@ -694,8 +694,10 @@ class CadApp:
                                            "DELETE": lambda: self._forget(response, ident)})
         if rest[1:] == ["version"]:
             # Waited on by a page: answered as soon as the document's version is not ``after``.
-            return self._methods(request, {"GET": lambda: self._relay(request, response, f"/api/doc/{ident}/version",
-                                                                      request.query)})
+            # Studio: a model whose script changed since its build is built again first (``studio_fresh``).
+            from .studio_fresh import refresh as studio_refresh
+            return self._methods(request, {"GET": lambda: (studio_refresh(ident), self._relay(
+                request, response, f"/api/doc/{ident}/version", request.query))[1]})
         if rest[1:] == ["thumbnail"]:
             return self._methods(request, {"GET": lambda: self._thumbnail(response, ident)})
         if rest[1:] == ["exports"]:
