@@ -13,7 +13,12 @@ import {
   SelectTrigger,
   SelectValue
 } from "@cad/ui/primitives/select";
-import { FILE_SHEET_FIELD_LABEL_CLASSES, FILE_SHEET_SELECT_TRIGGER_CLASSES } from "./FileSheet.js";
+
+// A field's label and a select's trigger, as FileSheet.js drew them before 0.11.16 took its select away: the trigger
+// clips and ellipsizes its own value (the Radix trigger only sets whitespace-nowrap, so a long option would push its
+// chevron out through the border).
+export const FILE_SHEET_FIELD_LABEL_CLASSES = "block min-w-0 truncate text-xs leading-(--cad-leading-xs) text-muted-foreground";
+export const FILE_SHEET_SELECT_TRIGGER_CLASSES = "!h-control w-full overflow-hidden px-2 !text-xs [&_svg]:size-3.5 [&>span]:min-w-0 [&>span]:truncate";
 
 // A select sized to what it says (the row's own label beside it) rather than the row's width: FileSheet's trigger
 // less its full width.

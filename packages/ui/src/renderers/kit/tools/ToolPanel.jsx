@@ -2,6 +2,7 @@ import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } f
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@cad/ui/utils";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
+import { FlatPanelRowsLoading, FlatPanelSectionScope } from "../shell/FlatPanel.jsx";
 import { FLOATING_CHROME_SURFACE_CLASS } from "../../../lib/floatingSurface.js";
 import { WORKSPACE_SURFACE_CLASS } from "../../../lib/workspaceSurface.js";
 import DockedToolPanel from "./DockedToolPanel.jsx";
@@ -30,13 +31,12 @@ const FIT = Object.freeze({
 const FLOOR = Object.freeze({ tree: 128, details: 96 });
 const KEY_NUDGE_PX = 16;
 /**
- * Every panel's heading text: Display's section headings' tracked caps
- * (`FILE_SHEET_SECTION_HEADING_CLASSES`), so every heading in the stack reads alike.
+ * Every panel's heading text: the type scale's xs step, regular, the foreground, so every heading in the stack reads alike.
  */
-export const TOOL_PANEL_HEADING_TEXT_CLASS = "text-tiny font-medium leading-4 tracking-wide text-muted-foreground uppercase";
+export const TOOL_PANEL_HEADING_TEXT_CLASS = "text-xs font-normal leading-(--cad-leading-xs) text-foreground";
 
 /** A panel header's small icon button: the chevron, the X, and a tool's settings menu (`ToolModeMenu.jsx`'s `ToolSettingsMenu`). */
-export const TOOL_PANEL_BUTTON_CLASS = "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
+export const TOOL_PANEL_BUTTON_CLASS = "cad-hit flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
 
 function CollapseButton({ panel, className = "" }) {
   const { t } = useI18n();
@@ -196,7 +196,7 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
 
   const closeButton = onClose ? <button type="button" aria-label={closeLabel || t("panel.close", { name: label.toLowerCase() })}
     className={cn(TOOL_PANEL_BUTTON_CLASS, REVEAL_CLASS)} onClick={onClose}><X className="size-3" aria-hidden="true" /></button> : null;
-  const heading = title ? <div {...foldRow} className={cn("flex min-h-7 shrink-0 items-center justify-end gap-0.5 pl-2 pr-1", foldRow?.className)} data-tool-panel-heading="">
+  const heading = title ? <div {...foldRow} className={cn("flex min-h-control shrink-0 items-center justify-end gap-0.5 pl-2 pr-1", foldRow?.className)} data-tool-panel-heading="">
     <h3 className={cn("min-w-0 truncate", TOOL_PANEL_HEADING_TEXT_CLASS)}>{title}</h3>
     {summary ? <span className="ml-2 shrink-0 text-tiny text-muted-foreground">{summary}</span> : null}
     <span className="min-w-0 flex-1" aria-hidden="true" />
@@ -205,7 +205,7 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
     {closeButton}
   </div>
     // No heading of its own: a folding panel's name stands in for one, beside its chevron.
-    : folding ? <div {...foldRow} className={cn("flex min-h-7 shrink-0 items-center gap-0.5 pl-2 pr-1", foldRow.className)} data-tool-panel-heading="">
+    : folding ? <div {...foldRow} className={cn("flex min-h-control shrink-0 items-center gap-0.5 pl-2 pr-1", foldRow.className)} data-tool-panel-heading="">
       <h3 className={cn("min-w-0 flex-1 truncate", TOOL_PANEL_HEADING_TEXT_CLASS)}>{name || label}</h3>
       <CollapseButton panel={folding} className="hover:bg-transparent" />
     </div> : null;
@@ -214,19 +214,21 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
   // Docked in CAD mode's left column: Studio's (`DockedToolPanel.jsx`).
   if (docked) return <DockedToolPanel {...{ sectionRef: section, bodyRef: body, contentRef: content, id, fit, label, title, name, summary, actions, header, closeButton, hidden }}>{children}</DockedToolPanel>;
   if (tabbed) {
-    const searching = stack.searching;
-    return <section ref={section} aria-label={label} hidden={hidden || !(searching || stack.activeSection === id)} role={stack.single ? "region" : "tabpanel"}
-      id={`flat-panel-body-${id}`} aria-labelledby={stack.single ? undefined : `flat-panel-tab-${id}`} data-flat-panel-section={id} data-tool-panel-id={id || undefined} data-tool-panel={fit}
-      className={cn("min-w-0 text-tiny", searching && "not-has-[[data-flat-panel-hit]]:hidden")}>
-      {searching && !stack.single ? <h3 className="flex h-6 items-center px-2 text-tiny text-muted-foreground">{tabName}</h3> : null}
+    // One tab shows at a time, a search's too (it filters each tab the panel's search covers: `FlatPanel.jsx`). A
+    // structure tab with no row yet while its file loads shows the panel's placeholder rows, busy.
+    const loadingRows = Boolean(id && stack.loadingTabs?.has(id));
+    return <section ref={section} aria-label={label} hidden={hidden || stack.activeSection !== id} role="tabpanel"
+      id={`flat-panel-body-${id}`} aria-labelledby={`flat-panel-tab-${id}`} data-flat-panel-section={id} data-tool-panel-id={id || undefined} data-tool-panel={fit}
+      aria-busy={loadingRows || undefined} className="min-w-0 text-ui">
       <div ref={body} data-tool-panel-body="" className="min-w-0">
-        <div ref={content} className="flow-root">{children}</div>
+        <div ref={content} className="flow-root"><FlatPanelSectionScope id={id}>{children}</FlatPanelSectionScope></div>
+        {loadingRows ? <FlatPanelRowsLoading /> : null}
       </div>
     </section>;
   }
   return <section ref={section} aria-label={label} hidden={hidden} data-tool-panel={fit} data-tool-panel-id={id || undefined}
     data-collapsed={collapsed ? "" : undefined} data-resizable={sized ? "" : undefined} data-tool-panel-lead={lead ? "" : undefined}
-    className={cn("pointer-events-auto relative flex max-w-full flex-col rounded-md text-tiny", solid ? WORKSPACE_SURFACE_CLASS : FLOATING_CHROME_SURFACE_CLASS, collapsed ? "shrink-0" : FIT[fit])}
+    className={cn("pointer-events-auto relative flex max-w-full flex-col rounded-md text-xs", solid ? WORKSPACE_SURFACE_CLASS : FLOATING_CHROME_SURFACE_CLASS, collapsed ? "shrink-0" : FIT[fit])}
     style={{ width, maxHeight: collapsed || cap === null ? undefined : `${cap}px`, minHeight, order: lead ? -1 : undefined }}>
     {heading}
     {/* Folded under a heading, the header (a tree's filter) goes with the body. */}

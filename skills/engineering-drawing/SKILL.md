@@ -19,9 +19,18 @@ the drawing script, and every view and value moves with it.
 CLI: the script is the interface. Cut layouts and flat patterns are toolpaths,
 not documents, and a different job.
 
+## Start with the task
+
+| Task | Start with | Reference |
+| --- | --- | --- |
+| Draw a part | Ask first ([Workflow](#workflow), step 0), then `<name>_drawing.py` beside the model | [Sheet API](references/sheet-api.md) |
+| Draw an assembly | `assembly_sheets` and `parts_list` ([Assemblies](#assemblies)) | [Assemblies](references/assemblies.md) |
+| Tolerances, GD&T, datums, stages | What the person confirms, never assumed | [Intent and GD&T](references/intent-and-gdt.md) |
+| Check the drawing | What the run prints, then the PDF itself | [Check each change](#check-each-change) |
+
 ## Setup
 
-Written for `cad==0.11.13`. Before first use in a chat, run `cad --version`. If `cad` is missing or older than
+Written for `cad==0.11.16`. Before first use in a chat, run `cad --version`. If `cad` is missing or older than
 0.11.12, run `uv tool install cad`, adding `--force` if uv says `cad` already exists.
 
 If cad is a major or minor version newer than this skill, tell the person to update the text-to-cad plugin:
@@ -245,6 +254,13 @@ https://github.com/earthtojake/text-to-cad/tree/main/docs/migrations
 
 Steps 3 and 5 stand on their own: a sheet of views with no dimensions is a
 drawing too, and writes its PDF with a list of everything it leaves unstated.
+
+## Check each change
+
+Every change is steps 5 and 6 again: run the script, read what it prints (`incomplete:`, `redundant:`,
+`requirements:`, `interface:` and any refusal) before the PDF, then read the PDF itself. The sheet keeps
+annotation clear of annotation and of the views it knows about, but only the PDF shows text on line work:
+fix the script, rerun, and read both again.
 
 ## Assemblies
 

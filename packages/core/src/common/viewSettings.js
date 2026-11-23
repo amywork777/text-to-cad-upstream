@@ -1,6 +1,7 @@
 import { DEFAULT_PART_COLOR_SETTINGS, normalizeExplodedViewSettings, validateDisplaySettings } from "./displaySettings.js";
 import { WORKBENCH_DARK_CANVAS_COLOR } from "./themeSettings.js";
 import { DEFAULT_STEP_CLIP_SETTINGS, normalizeStepClipSettings } from "../lib/viewer/clipPlane.js";
+import { AXIS_COLORS, GRID_COLORS } from "../lib/viewportTheme.js";
 
 /** @typedef {"solid" | "shaded" | "parts" | "xray" | "hidden-line" | "wireframe"} ViewMode */
 /** @typedef {ViewMode | "render"} ViewLook */
@@ -203,8 +204,7 @@ const DARK_PARTS = Object.freeze({ canvas: WORKBENCH_DARK_CANVAS_COLOR, color: l
  * with the model's edges. @param {"light" | "dark"} appearance
  */
 export function viewGridDefaults(appearance = "light") {
-  const dark = appearance === "dark";
-  return { color: dark ? "#5d9ac0" : "#4ea8cc", opacity: dark ? 0.35 : 0.45, density: 1 };
+  return { ...GRID_COLORS[appearance === "dark" ? "dark" : "light"], density: 1 };
 }
 
 /**
@@ -354,7 +354,7 @@ export function resolveViewSettings(input = {}, {
     floor: { ...studio.floor, enabled: lit && studio.floor.enabled },
     grid: { enabled: !lit && saved.grid === true, ...viewGridDefaults(resolvedAppearance) },
     // The scene still has an axis guide; no view turns it on.
-    axes: { enabled: false, color: dark ? "#5b8cff" : "#3d6fe8", opacity: 0.85 },
+    axes: { enabled: false, color: AXIS_COLORS[dark ? "dark" : "light"].z, opacity: 0.85 },
     clip: normalizeStepClipSettings(offers("clip") ? saved.clip ?? DEFAULT_STEP_CLIP_SETTINGS : DEFAULT_STEP_CLIP_SETTINGS),
     exploded: normalizeExplodedViewSettings(offers("exploded") ? saved.exploded : null)
   };

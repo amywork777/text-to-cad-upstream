@@ -199,7 +199,8 @@ test('PMI is drawn on the model and stays legible as the camera moves; a pick li
   const asked = await prompt();
   assert.ok(asked.includes('\nview("view", camera=camera((0, -1, 0), (0, 0, 1)), shows=["hole-diameter", "hole-position", "hole-profile", "mask"], '
     + 'section=section("y", 0, invert=True))\n'), asked);
-  await pane.getByRole('button', { name: 'Close Quick Edit', exact: true }).click();
+  // Quick Edit has no X (0.11.16's bar): the request's chip's X drops it.
+  await pane.getByRole('button', { name: 'Remove Add view', exact: true }).click();
   await section.click();
   await page.waitForFunction(count => document.querySelectorAll('[data-pmi-label]').length === count && window.__cadStage().cut === 0, every.length);
   const left = await read();
@@ -242,8 +243,8 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   assert.equal(await label('thickness').getAttribute('aria-label'), '4.0 ±0.2');
 
   // A new annotation, of a face picked: the bottom, as a second datum would be. The menu says why
-  // a kind the pick cannot make is off.
-  await pane.getByRole('button', { name: 'Close Quick Edit', exact: true }).click();
+  // a kind the pick cannot make is off. The change asked for goes by its chip's X.
+  await pane.getByRole('button', { name: 'Remove Change thickness', exact: true }).click();
   // Select's Filter with Parts unticked, so a press takes a face; Escape puts the menu away.
   await pane.locator('[data-select-filter-trigger]').click();
   await page.locator('[data-select-filter-row]').click();

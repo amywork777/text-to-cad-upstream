@@ -17,6 +17,15 @@ that any viewer opens, and, when nothing is an error, the G-code.
 This skill reads a `.step`, `.stp` or `.xbf`, or a model the engine holds: build or fix the model first. It plans how a
 part is cut, not whether the design machines well, and it does not slice for a 3D printer.
 
+## Start with the task
+
+| Task | Start with | Reference |
+| --- | --- | --- |
+| Plan toolpaths and G-code for a part | `cad step plan part.step` lists what a job can name | [Workflow](#workflow) |
+| Write or edit a job | `part.cam.json`: machine, material, stock, tools, setups | [Job file](references/job-file.md) |
+| Choose operations | Facing, pockets, profiles, drilling | [The operations](#the-operations) |
+| Read the verdict | `result.json`'s findings, then `result.glb` | [The checks](#the-checks), [Report](#report) |
+
 ## What it does not do
 
 3-axis milling and drilling only, the tool always coming straight down Z, from the top (`+Z`) or
@@ -28,7 +37,7 @@ operation below in for it without saying what it leaves uncut.
 
 ## Setup
 
-Written for `cad==0.11.13`. Before first use in a chat, run `cad --version`. If `cad` is missing or older than
+Written for `cad==0.11.16`. Before first use in a chat, run `cad --version`. If `cad` is missing or older than
 0.11.12, run `uv tool install cad`, adding `--force` if uv says `cad` already exists.
 
 If cad is a major or minor version newer than this skill, tell the person to update the text-to-cad plugin:

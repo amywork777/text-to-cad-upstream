@@ -138,6 +138,7 @@ class SummaryTest(unittest.TestCase):
             "  cycle  2.5 s",
             "animations  none",
             "pmi         none",
+            "parameters  none",
             "declared files none",
             "closure",
         ])

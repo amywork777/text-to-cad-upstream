@@ -33,9 +33,17 @@ for it, or leave it visibly blank. General knowledge ("that adhesive usually
 cures in five days") is not a source, and the template's values are
 placeholders, never defaults.
 
+## Start with the task
+
+| Task | Start with | Reference |
+| --- | --- | --- |
+| A picture guide for a hobbyist or a kit | The picture guide's script | [The picture guide](#the-picture-guide) |
+| A shop work instruction with sign-offs | `@work_instruction` from the template | [Workflow](#workflow), [Instruction API](references/instruction-api.md) |
+| Check the PDF | What the run prints, then the PDF itself | [What fails loudly](#what-fails-loudly) |
+
 ## Setup
 
-Written for `cad==0.11.13`. Before first use in a chat, run `cad --version`. If `cad` is missing or older than
+Written for `cad==0.11.16`. Before first use in a chat, run `cad --version`. If `cad` is missing or older than
 0.11.12, run `uv tool install cad`, adding `--force` if uv says `cad` already exists.
 
 If cad is a major or minor version newer than this skill, tell the person to update the text-to-cad plugin:

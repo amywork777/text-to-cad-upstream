@@ -2,7 +2,7 @@
 
 Studio's own part of the viewer (studio-base, not Jake's text-to-cad): the FEA and CAM result
 viewers, which the GLB renderer loads for a file `cad fea solve` or `cad cam plan` wrote, and CAD
-mode's workspace over an engine document. [`settings-ui.md`](settings-ui.md) and
+mode's workspace over an engine document. [`viewer-ux.md`](viewer-ux.md), [`design-system.md`](design-system.md) and
 [`cad-renderer.md`](cad-renderer.md) are the viewer's contract; this page is what Studio adds to it,
 kept apart so Jake's pages merge as he writes them.
 
@@ -132,7 +132,7 @@ GLB never fetches) and draws the toolpaths, the tool, the stock box and the part
 3-axis milling and drilling (FreeCAD plans it, cad cam checks it): each setup's tool comes from
 +Z or -Z. Its strip is a GLB's (Select, Pencil, Shapes, Measure, Clip), with no Explode: the part,
 the stock and the paths mean nothing pulled apart. What there is to read of the job is
-**Job**, a tab of the [view's panel](settings-ui.md#the-views-panel-and-the-tool-stack), there whatever tool
+**Job**, a tab of the [view's panel](viewer-ux.md#the-panel), there whatever tool
 is in hand. The verdict is the status: Job has no findings card. Findings go to the agent,
 through the GLB's extras and the CLI's JSON; the section shows only the errors, as rows under
 the verdict.

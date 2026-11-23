@@ -7,7 +7,9 @@ own here, each component placed in its parent's frame. A part read from a STEP t
 did not write takes the geometry key a build would give it, so an xbf of it caches like any,
 and its GD&T is copied into the xbf as read (``pmi.copy``).
 The mechanism is the document's, whole, and so are its animations (``animations.record``): the
-tree's occurrences are the view's, so their paths are the ones the tracks name.
+tree's occurrences are the view's, so their paths are the ones the tracks name; and so is the record of
+the parameters its script declared (``parameters.record``), so an xbf exported from a model lists them as
+the model's own declared xbf does.
 """
 
 from __future__ import annotations
@@ -117,6 +119,10 @@ def tree_of(view: Any) -> Any:
     if source.foreign and source.structure.get("pmi"):
         # A STEP another system wrote: its GD&T copied as read (``pmi.copy``).
         tree.pmi_source = (document.load(source.path), parts)
+    # The parameters the document records (``parameters.record``), read-only wherever the xbf is opened.
+    from cad.engine.parameters import record
+
+    tree.parameters = record(source.structure.get("parameters"))
     return tree
 
 

@@ -56,7 +56,7 @@ from cad.engine.render.shapes import LINES, FaceGroup, prototype_shapes
 
 MODES = ("solid", "shaded", "parts", "xray", "hidden-line", "wireframe")
 #: The robot descriptions (``formats.robot``): their link meshes draw no edges where the faces are lit.
-ROBOTS = frozenset({"urdf", "srdf", "sdf"})
+ROBOTS = frozenset({"urdf", "srdf"})
 # The regular modes' numbers are the look's (``look.py``), which the viewer draws by too, its
 # backdrop among them: every snapshot of a 3D document stands on BACKGROUND, flat.
 BACKGROUND = LOOK.backdrop

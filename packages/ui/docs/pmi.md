@@ -122,7 +122,7 @@ built: while Explode or a pose moves the parts they are not drawn, and the tab s
 
 The PMI tab (`xbf/pmi/PmiSection.jsx`) is read as a machinist reads a drawing: under a line of New
 and the eye of them all, four groups, each under a static heading with a rule above all but the
-first, none folding ([settings UI](settings-ui.md)), each there only where it has something (a
+first, none folding ([viewer UX](viewer-ux.md#the-panels-tabs)), each there only where it has something (a
 document with no annotation, note or view at all says "No PMI yet" instead):
 
 - **Views**: a row per view, its glyph, its name and what it shows ("4 annotations", or "All" for

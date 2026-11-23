@@ -11,8 +11,10 @@ a shape over), with no file of its own; the files it declares are the other type
 integration (``cad._internal.manufacturing``), and
 ``model.solve(handle_or_id, study=..., out="results/")``, a stress study of it (``cad._internal.fea.operation``), and
 ``model.plan(handle_or_id, job=..., out="cam/")``, a CAM job on its part (``cad._internal.cam.operation``), each of
-which reads an ``.xbf`` the engine writes of it in a temporary folder. A file is
-refused by name: ``arm.xbf`` is an xbf's (``cad.xbf``). Everything loads on first use: ``import cad.model``
+which reads an ``.xbf`` the engine writes of it in a temporary folder. Its script declares its parameters with
+it at a module's top level, ``WALL = model.param("wall", 2.0, min=1, max=5)`` (``cad.engine.parameters.param``,
+the standard library alone); a value changes in the script, by an edit and a run or the CAD Viewer's Save. A
+file is refused by name: ``arm.xbf`` is an xbf's (``cad.xbf``). Everything loads on first use: ``import cad.model``
 imports no CAD kernel (``cad._internal.document_type``).
 """
 

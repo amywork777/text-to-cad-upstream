@@ -1,5 +1,4 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { FileX } from 'lucide-react';
 import type { CadEntry } from '@cad/core/client';
 import { EmptyState } from '../file-viewer/navigation/index.js';
 import { useI18n } from '../i18n/index.js';
@@ -48,5 +47,5 @@ export function MissingCadFile({ file, entry, reload, recheck, action, title, de
     ask(0);
     return () => { stopped = true; clearTimeout(timer); };
   }, [file, recheck, reload]);
-  return <EmptyState icon={FileX} title={title ?? t("file.missing")} description={description ?? file} tone="warn" action={action} />;
+  return <EmptyState title={title ?? t("file.missing")} description={description ?? file} action={action} />;
 }

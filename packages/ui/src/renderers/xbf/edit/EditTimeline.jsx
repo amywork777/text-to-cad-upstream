@@ -3,7 +3,7 @@ import { ScrollArea } from "@cad/ui/primitives/scroll-area";
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
 import { cn } from "@cad/ui/utils";
 import { WORKSPACE_SURFACE_CLASS } from "../../../lib/workspaceSurface.js";
-import { VIEWPORT_CUBE_BOTTOM } from "../../kit/shell/viewportLayout.js";
+import { VIEWPORT_INSET_PX } from "../../kit/shell/viewportLayout.js";
 import { AUTHOR_DOT_CLASS, AUTHOR_WORDS } from "./authors.js";
 import { FeatureIcon } from "./featureIcons.jsx";
 import { slotAtX, timelineItems } from "./timeline.js";
@@ -147,7 +147,7 @@ export default function EditTimeline({ edit, tree, onEditSketch = () => {} }) {
   // The card is a box of its own around the ScrollArea: the ScrollArea's root sets its position inline, so it
   // cannot be placed by a class.
   return <div role="group" aria-label="Timeline" data-cad-edit-timeline=""
-    className={cn(WORKSPACE_SURFACE_CLASS, "pointer-events-auto absolute inset-x-2 flex select-none overflow-hidden")} style={{ bottom: VIEWPORT_CUBE_BOTTOM }}>
+    className={cn(WORKSPACE_SURFACE_CLASS, "pointer-events-auto absolute inset-x-2 flex select-none overflow-hidden")} style={{ bottom: VIEWPORT_INSET_PX }}>
     <ScrollArea orientation="horizontal" className="min-w-0 flex-1">
       <div ref={listRef} className="relative flex items-start gap-(--tl-gap) px-(--tl-pad) pb-2 pt-1.5" style={MEASURES}>
         {items.map((item, index) => {

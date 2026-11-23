@@ -14,6 +14,11 @@
  * and a two-finger swipe scroll it instead, and a pinch or Cmd/Ctrl with the wheel zooms
  * (`pageView.js`). Every flat view (a 2D drawing, a board) is this one hook under its own paint.
  *
+ * A tap reaches the tool at once, but for one that would take something out of the selection
+ * (`takesAway`), which waits the double-click window and which the double-click drops before it fits, as
+ * a 3D view's pick does (`kit/tools/select/usePointerPick.js`): a double-click never shows the selection
+ * going and coming back.
+ *
  * The renderer brings the picture: `content` (a new one frames itself, unless this file's view is
  * already the person's), the `bounds` the fit frames (`@cad/core`'s plane maths,
  * `lib/drawing2d/transform.js`: model space, y up) and `paint(ctx, frame)`, which draws one whole
@@ -53,6 +58,7 @@ import { pageFit, scrollPage } from "./pageView.js";
 import { IDLE_PIXEL_RATIO_CAP, getPixelRatioCap } from "./pixelRatio.js";
 import { createWheelGesture, wheelPixels } from "./wheelGesture.js";
 import { doubleClickFits } from "./dom.js";
+import { DOUBLE_CLICK_WAIT_MS, DOUBLE_TAP_MS } from "./touchGestures.js";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
 
 /** Wheel notches to zoom factor. A notch is ~100 px of delta on most mice. */
@@ -79,6 +85,12 @@ const wheelZoomFactor = (pixels, pinch) => Math.exp(-pixels * (pinch ? PINCH_WHE
  * @param {(ctx: CanvasRenderingContext2D, frame: { width: number, height: number, pixelRatio: number,
  *   transform: object|null, element: Element|null, colorScheme: "light"|"dark" }) => void} options.paint  One whole frame.
  * @param {(point: { x: number, y: number }, event: PointerEvent) => void} [options.onTap]
+ * @param {(point: { x: number, y: number }, event: PointerEvent) => string | null} [options.takesAway]  What a tap would take
+ *   out of the selection, by a key the renderer names it with (null: nothing). Such a tap waits the double-click window
+ *   (`DOUBLE_CLICK_WAIT_MS`, a finger's `DOUBLE_TAP_MS`) before `onTap` hears it, and a double-click drops it. A second
+ *   tap taking the same key is that double-click's second click, and waits in its place; a tap on anything else lets
+ *   the waiting one act first. A lone one acts once the window has passed, if it would still take the same thing: a
+ *   tool put down, or a view moved off what it was made on, drops it.
  * @param {(point: { x: number, y: number } | null, event: PointerEvent | null) => void} [options.onHover]
  *   A pointer resting over the canvas with nothing pressed (null: it left).
  * @param {(point: { x: number, y: number }, event: MouseEvent) => boolean | void} [options.onDoubleTap]  Asked first what a
@@ -92,10 +104,13 @@ const wheelZoomFactor = (pixels, pinch) => Math.exp(-pixels * (pinch ? PINCH_WHE
  * @param {boolean} [options.scroll]  Read as a page is (`pageView.js`): it fits to its width when it
  *   is much taller than the pane, clear of the tool strip, the wheel and a two-finger swipe scroll
  *   it, and a pinch or Cmd/Ctrl with the wheel zooms. Without it the wheel is as above.
+ * @param {boolean} [options.suspended]  The view is covered by another that took the whole page (Preview), the frame's
+ *   chrome put away with it: the canvas keeps its size, its view and its fit as they were, whatever the pane and the
+ *   strip do meanwhile, so it is uncovered exactly as it was left; a pane that really changed size is taken up after.
  */
 export function useFlatCanvasView({ content, bounds, restored = null, colorScheme = "light", onViewMoved, paint: paintFrame,
-  onTap = null, onHover = null, onDoubleTap = null, middlePan = false, orbitPan = false, fitBox = fitTransform, clearStrip = false,
-  scroll = false }) {
+  onTap = null, takesAway = null, onHover = null, onDoubleTap = null, middlePan = false, orbitPan = false, fitBox = fitTransform,
+  clearStrip = false, scroll = false, suspended = false }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
@@ -116,6 +131,10 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
   clearStripRef.current = clearStrip;
   const scrollRef = useRef(scroll);
   scrollRef.current = scroll;
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
+  // The strip's room as last read while the view was its own: what a fit keeps clear of while it is suspended.
+  const stripRef = useRef(0);
   const schemeRef = useRef(colorScheme);
   schemeRef.current = colorScheme;
   const onViewMovedRef = useRef(onViewMoved);
@@ -124,6 +143,8 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
   paintFrameRef.current = paintFrame;
   const tapRef = useRef(onTap);
   tapRef.current = onTap;
+  const takesAwayRef = useRef(takesAway);
+  takesAwayRef.current = takesAway;
   const hoverRef = useRef(onHover);
   hoverRef.current = onHover;
   // The pan, as a 3D view's OrbitControls are to its Box select: `enabled` false while a press is
@@ -168,8 +189,11 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
   /** Where the view's tool strip ends, which the frame measures as `--cad-tools-bottom`, where the view keeps clear of it (a page always does). */
   const stripBottom = useCallback(() => {
     const frame = clearStripRef.current || scrollRef.current ? containerRef.current?.closest?.("[data-slot=cad-file-view]") : null;
-    const strip = frame ? Number.parseFloat(getComputedStyle(frame).getPropertyValue("--cad-tools-bottom")) : 0;
-    return Number.isFinite(strip) ? strip : 0;
+    // Suspended, the strip is put away and measures nothing: the room it had stands.
+    const read = frame && !suspendedRef.current ? Number.parseFloat(getComputedStyle(frame).getPropertyValue("--cad-tools-bottom")) : NaN;
+    const strip = !frame ? 0 : suspendedRef.current ? stripRef.current : Number.isFinite(read) ? read : 0;
+    stripRef.current = strip;
+    return strip;
   }, []);
 
   /** The fit of the picture on a pane of `width` × `height`, clear of the view's strip where it keeps clear of it; a page's is `pageFit`. */
@@ -253,11 +277,14 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
   }, [moveTo]);
 
   // ---- the pane's size -------------------------------------------------------
+  const measureRef = useRef(null);
   useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
     if (!container || !canvas || typeof ResizeObserver === "undefined") return undefined;
     const measure = () => {
+      // Suspended, the pane's size is another view's doing (the page's chrome gone with it): nothing follows it.
+      if (suspendedRef.current) return;
       const rect = container.getBoundingClientRect();
       const width = Math.max(0, Math.round(rect.width));
       const height = Math.max(0, Math.round(rect.height));
@@ -297,10 +324,21 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
       paintNow();
     };
     measure();
+    measureRef.current = measure;
     const observer = new ResizeObserver(measure);
     observer.observe(container);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); measureRef.current = null; };
   }, [moveTo, paintNow, refit]);
+  // Uncovered: the pane is the view's again once the page's chrome is back (the observer says nothing of a size it
+  // reached while suspended), so it is measured two frames on; the same size as it was left at changes nothing.
+  const wasSuspended = useRef(suspended);
+  useEffect(() => {
+    if (suspended || !wasSuspended.current) { wasSuspended.current = suspended; return undefined; }
+    wasSuspended.current = false;
+    let second = 0;
+    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => measureRef.current?.()); });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [suspended]);
 
   // A new picture frames itself, unless this file's view is already the person's.
   useEffect(() => {
@@ -350,6 +388,27 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
     // The press that may still be a tap: where it went down, until it travels or a second finger lands.
     // `pan`: a middle press, a pan from the start.
     let press = null;
+    // A tap that would take something out of the selection, waiting the double-click window: `{ point, event, key, timer }`.
+    let held = null;
+    const dropHeld = () => { if (held) window.clearTimeout(held.timer); held = null; };
+    // It is a point, not what was under it: it acts only if it still takes the same thing, so a tool put down or a view
+    // moved meanwhile never turns it into a tap on something else.
+    const commitHeld = () => {
+      const waiting = held;
+      dropHeld();
+      if (waiting && takesAwayRef.current?.(waiting.point, waiting.event) === waiting.key) tapRef.current?.(waiting.point, waiting.event);
+    };
+    const tap = (point, event) => {
+      const key = takesAwayRef.current?.(point, event) || null;
+      // A second tap on what is waiting is a double-click's second click: the first is dropped, and this one waits in
+      // its place for the double-click that drops it. A tap on anything else lets the waiting one act first.
+      if (held) { if (key && key === held.key) dropHeld(); else commitHeld(); }
+      if (key) {
+        held = { point, event, key, timer: window.setTimeout(commitHeld, event.pointerType === "touch" ? DOUBLE_TAP_MS : DOUBLE_CLICK_WAIT_MS) };
+        return;
+      }
+      tapRef.current?.(point, event);
+    };
     const onPointerDown = (event) => {
       // Primary press only: a secondary or middle press belongs to whatever the
       // host puts on them, not to panning — but a view whose tool takes its drags pans with the middle.
@@ -408,7 +467,7 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
       if (pointers.size === 0) setDragging(false);
       const tapped = press && press.id === event.pointerId && !press.moved && !press.tapless && event.type === "pointerup";
       press = null;
-      if (tapped && at) tapRef.current?.(at, event);
+      if (tapped && at) tap(at, event);
     };
     const onPointerLeave = () => { if (!pointers.size) hoverRef.current?.(null, null); };
     // The right button is a pan: the browser's own menu stays off the picture, as OrbitControls keeps it off a 3D view.
@@ -432,10 +491,12 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
       if (gesture.pan) moveTo(panTransform(transform, gesture.pan.x, gesture.pan.y));
       else zoomBy(wheelZoomFactor(gesture.zoom, gesture.pinch), local(event));
     };
+    // The double-click (a finger's double tap says it too, `touchGestures.js`): the tap waiting for it is dropped first.
     const onDoubleClick = (event) => {
       event.preventDefault();
+      dropHeld();
       if (doubleTapRef.current?.(local(event), event) === true) return;
-      // A fit is Select's double-click, as in every view: under Pencil, Shapes or Measure it is theirs.
+      // A fit is Select's double-click, as in every view: under Draw or Measure it is theirs.
       if (doubleClickFits(canvas)) fit();
     };
 
@@ -456,6 +517,8 @@ export function useFlatCanvasView({ content, bounds, restored = null, colorSchem
       canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("dblclick", onDoubleClick);
+      // A tap still waiting goes with the canvas it was made on.
+      dropHeld();
     };
   }, [fit, moveTo, stripBottom, zoomBy]);
 

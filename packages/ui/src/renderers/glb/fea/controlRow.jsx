@@ -2,7 +2,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
 import { cn } from "@cad/ui/utils";
 import { english } from "../../../i18n/core.js";
-import { FILE_SHEET_SELECT_TRIGGER_CLASSES, FileSheetSettingRow, parseFileSheetNumberInput } from "../../kit/inspector/FileSheet.js";
+import { FileSheetSettingRow, parseFileSheetNumberInput } from "../../kit/inspector/FileSheet.js";
+import { FILE_SHEET_SELECT_TRIGGER_CLASSES } from "../../kit/inspector/FileSheetRows.js";
 import { SliderField } from "../../kit/inspector/SliderField.jsx";
 
 const TARGET_SLIDER_STEPS = 1000;
@@ -30,7 +31,7 @@ export function controlStep(control) {
 }
 
 /**
- * One of Study's What you see controls (`feaControls`: a number or a choice) as its settings-ui.md row: a
+ * One of Study's What you see controls (`feaControls`: a number or a choice) as its panel row (`docs/viewer-ux.md`): a
  * number is the slider control (`SliderField`: its label and value, the slider under them), a choice a select (as Preview's
  * settings draw one), full width with no label where its options say what it is (`hideLabel`).
  * A plain function, not a component: the panel's rows are its own elements, in its own order.

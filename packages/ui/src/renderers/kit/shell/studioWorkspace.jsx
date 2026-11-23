@@ -8,7 +8,7 @@ import { cn } from "@cad/ui/utils";
 import { WORKSPACE_DOCK_CLASS } from "../../../lib/workspaceSurface.js";
 import { DOCK_PANEL_HEAD_CLASS } from "../tools/DockedToolPanel.jsx";
 import { modelUpdateStatus, ViewUpdateStatus } from "../status/ViewUpdateStatus.jsx";
-import { VIEWPORT_CORNER_INSET_PX, VIEWPORT_CUBE_SIZE, VIEWPORT_INSET_PX, VIEWPORT_STACK_BOTTOM } from "./viewportLayout.js";
+import { VIEWPORT_INSET_PX, VIEWPORT_STACK_BOTTOM } from "./viewportLayout.js";
 
 const INSET = `${VIEWPORT_INSET_PX}px`;
 // The workspace (edit mode's frame) stands over the view. Its toolbar's height, measured onto the stage
@@ -39,11 +39,8 @@ const BESIDE_DIALOG_CLASS = Object.freeze({
   navigator: "[&_[data-cad-tool-groups]]:left-[calc(31.75rem+16px)]! @max-xl/cad-viewport:[&_[data-cad-tool-groups]]:left-[calc(18rem+16px)]!",
   alone: "[&_[data-cad-tool-groups]]:left-[calc(18rem+16px)]!" });
 const PAST_NAVIGATOR_COLUMN_CLASS = "[&_[data-cad-tool-groups]]:left-[calc(16rem+8px)]! @max-xl/cad-viewport:[&_[data-cad-tool-groups]]:left-2!";
-// The timeline runs along the bottom edge up to the cube, its corner's room (the cube's box and an inset) kept
-// on the cube's side. A corner a host leaves to the default reads `auto` (`ViewPlaneControl`), which makes the
-// margin on that side invalid, and an invalid margin is none: the timeline reaches the edge where the cube is not.
-const cubeRoom = (side, fallback) => `calc(var(--cad-viewport-corner-${side}, ${fallback}) + ${VIEWPORT_CUBE_SIZE} + ${INSET})`;
-const TIMELINE_POSITION = Object.freeze({ marginLeft: cubeRoom("left", "auto"), marginRight: cubeRoom("right", `${VIEWPORT_CORNER_INSET_PX}px`) });
+// The timeline runs along the whole bottom edge: the cube stands in the view's top-right corner, under the toolbar
+// (`--cad-viewport-corner-top`, set with `--cad-workspace-top` while the toolbar is up).
 // The workspace fades in as the layout turns to it and out as Simple view takes its place: one opacity
 // transition this long (`duration-150`).
 const WORKSPACE_FADE_MS = 150;
@@ -164,11 +161,16 @@ export function useStudioWorkspace({ ribbon, leftDock, bottomDock, dialogPlace, 
     const toolbar = workspaceToolbar.current;
     const stage = toolbar?.closest("[data-cad-canvas]");
     if (!toolbarUp || !toolbar || !stage) return undefined;
-    const measure = () => stage.style.setProperty("--cad-workspace-top", `${Math.round(toolbar.getBoundingClientRect().height)}px`);
+    // The cube, in the top-right corner, stands under the toolbar as the rest at the top does.
+    const measure = () => {
+      const top = `${Math.round(toolbar.getBoundingClientRect().height)}px`;
+      stage.style.setProperty("--cad-workspace-top", top);
+      stage.style.setProperty("--cad-viewport-corner-top", top);
+    };
     measure();
     const resized = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     resized?.observe(toolbar);
-    return () => { resized?.disconnect(); stage.style.removeProperty("--cad-workspace-top"); };
+    return () => { resized?.disconnect(); stage.style.removeProperty("--cad-workspace-top"); stage.style.removeProperty("--cad-viewport-corner-top"); };
   }, [toolbarUp]);
   const measureColumn = useRef(null);
   usePastNavigator(frame.hostRef, navigatorUp && !mobile, [toolbarUp, navigatorFolded, pastNavigator, Boolean(references)], measureColumn);
@@ -202,7 +204,7 @@ export function useStudioWorkspace({ ribbon, leftDock, bottomDock, dialogPlace, 
     {workspace.chrome.dialogPlace ? <div ref={workspace.chrome.dialogPlace} data-cad-command-card-place="" style={DIALOG_PLACE_POSITION}
       className={cn("pointer-events-none absolute flex w-72 max-w-[calc(100%-1rem)] flex-col items-stretch",
         workspace.chrome.leftDock ? "left-[calc(16rem+0.5rem)] @max-xl/cad-viewport:left-2" : "left-2")} /> : null}
-    {workspace.chrome.bottomDock ? <div className={cn("pointer-events-auto absolute inset-x-0 bottom-0", pastNavigator && PAST_NAVIGATOR_CLASS)} data-cad-dock="timeline" style={TIMELINE_POSITION}>
+    {workspace.chrome.bottomDock ? <div className={cn("pointer-events-auto absolute inset-x-0 bottom-0", pastNavigator && PAST_NAVIGATOR_CLASS)} data-cad-dock="timeline" >
       {workspace.chrome.bottomDock}
     </div> : null}
   </div> : null;
