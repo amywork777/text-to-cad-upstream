@@ -52,8 +52,8 @@ const TITLE_CLASS = "py-0.5 text-tiny leading-3 text-muted-foreground";
 const TITLE_BAND_CLASS = "flex w-full justify-center border-t border-border px-1.5 py-0.5";
 // The same rule on across the row past the last group, 20px up being the band under it, so it never stops short.
 const TITLE_RULE_CLASS = "after:pointer-events-none after:absolute after:inset-x-0 after:bottom-5 after:border-t after:border-border";
-const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-blue-600 dark:text-blue-400",
-  "Over defined": "text-red-600 dark:text-red-400" });
+const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-info",
+  "Over defined": "text-destructive" });
 // The More button's box, before it is first laid out.
 const MORE_WIDTH_PX = 46;
 const ALL_NAMED = Object.freeze({ compact: false, count: Infinity, partial: 0 });

@@ -21,8 +21,8 @@ import { nxPlane } from "./nx.js";
 import { formatValue, MODEL_TOOLS, MODIFY_TOOLS, newCurves, PATTERN_TOOLS, patternOp, patternSettings, polygonSides, relationsFor, relationsOn, sketchTool,
   toolSize } from "./sketchMode.js";
 
-const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-blue-600 dark:text-blue-400",
-  "Over defined": "text-red-600 dark:text-red-400" });
+const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-info",
+  "Over defined": "text-destructive" });
 const CHIP_CLASS = "rounded-md border border-border px-2 py-0.5 text-tiny text-foreground hover:bg-accent/70 disabled:opacity-50";
 
 /** A sketch tool's size, typed over as SolidWorks' PropertyManager takes it: a number, or a size's name. */

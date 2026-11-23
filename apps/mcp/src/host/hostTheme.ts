@@ -9,7 +9,9 @@
 const HOST_TOKENS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   ['--color-background-primary', ['--background', '--sidebar']],
   ['--color-background-secondary', ['--card', '--popover']],
-  ['--color-background-tertiary', ['--muted', '--secondary', '--accent', '--sidebar-accent']],
+  // Studio (studio-base): a host's tertiary is its muted fill, paler than the hover and pressed fill the viewer's
+  // `--accent` is drawn for, so the accents keep the viewer's own.
+  ['--color-background-tertiary', ['--muted', '--secondary']],
   ['--color-text-primary', ['--foreground', '--card-foreground', '--popover-foreground', '--secondary-foreground',
     '--accent-foreground', '--sidebar-foreground', '--sidebar-accent-foreground', '--primary']],
   ['--color-text-inverse', ['--primary-foreground']],

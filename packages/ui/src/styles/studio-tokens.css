@@ -21,6 +21,13 @@
   --color-cad-agent: var(--cad-agent);
   /* Edit mode's blue for what is in hand (a pressed command, a ribbon's tab, a drop line): a kind, never a status. */
   --color-info: var(--cad-info);
+  /* A check's verdict (FEA's and CAM's, law 7): green passed, amber a warning, red failed, each with a
+   * pale ground for its card. The kit has the warning's and the error's ink; these add the pass and the
+   * grounds. */
+  --color-success: var(--cad-success);
+  --color-success-bg: var(--cad-success-bg);
+  --color-warning-bg: var(--cad-warning-bg);
+  --color-error-bg: var(--cad-error-bg);
 }
 
 :root {
@@ -40,6 +47,10 @@
   --cad-ws-selected: color-mix(in oklab, var(--accent), var(--foreground) 8%);
   --cad-agent: #7c3aed;
   --cad-info: #2c7197;
+  --cad-success: oklch(0.527 0.154 150.069);
+  --cad-success-bg: oklch(0.962 0.044 156.743);
+  --cad-warning-bg: oklch(0.987 0.022 95.277);
+  --cad-error-bg: oklch(0.971 0.013 17.38);
 }
 
 .dark {
@@ -59,6 +70,10 @@
   --cad-ws-selected: color-mix(in oklab, var(--accent), var(--foreground) 8%);
   --cad-agent: #a78bfa;
   --cad-info: #62b7ec;
+  --cad-success: oklch(0.792 0.209 151.711);
+  --cad-success-bg: oklch(0.266 0.065 152.934);
+  --cad-warning-bg: oklch(0.279 0.077 45.635);
+  --cad-error-bg: oklch(0.258 0.092 26.042);
 }
 
 /* Studio: a menu stands a little clear of its button and its rows have room to hover (Amy's notes on the viewer's

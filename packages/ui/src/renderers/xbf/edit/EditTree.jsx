@@ -81,7 +81,7 @@ function Row({ id, depth, icon, title, detail = "", hint = "", expanded = null, 
     {renaming !== null && onRename ? <RenameInput value={renaming} onDone={onRename} />
       : <RowName text={title} className={muted ? "text-muted-foreground" : ""} />}
     {/* The alert card's warning icon, amber as the card draws a warning. */}
-    {warn && renaming === null ? <CircleAlert role="img" aria-label={BUILD_FAILED} className="size-3.5 shrink-0 text-amber-500" /> : null}
+    {warn && renaming === null ? <CircleAlert role="img" aria-label={BUILD_FAILED} className="size-3.5 shrink-0 text-warning" /> : null}
     {/* The timeline's 6px dot; the box around it takes no room of its own, so the pointer finds it more easily. */}
     {author ? <TooltipHint content={AUTHOR_WORDS[author]} side="top">
       <span className="-m-1 ml-auto flex shrink-0 p-1">

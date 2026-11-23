@@ -337,7 +337,7 @@ it("marks the feature whose build failed with the viewer's warning, and says why
   // The row the engine's file, line and words name, beside its title, in the alert card's amber.
   const marked = row('Fillet1');
   const mark = within(marked).getByRole('img', { name: 'Did not build' });
-  expect(mark.getAttribute('class')).toMatch(/\btext-amber-500\b/);
+  expect(mark.getAttribute('class')).toMatch(/\btext-warning\b/);
   expect(marked.getAttribute('title')).toBe(`Did not build: ${WHY}`);
   expect(marked.textContent).toBe('Fillet1');
   // No other row says it.

@@ -11,6 +11,9 @@ describe("the host's theme", () => {
     expect(tokens['--radius']).toBe('0.5rem');
     // Nothing sent, or sent empty, leaves the viewer's own.
     expect('--border' in tokens).toBe(false);
+    // Studio: a host's tertiary is its muted fill; the hover and pressed accents stay the viewer's.
+    const tertiary = hostTokens({ '--color-background-tertiary': 'oklch(0.97 0 0)' });
+    expect([tertiary['--muted'], '--accent' in tertiary, '--sidebar-accent' in tertiary]).toEqual(['oklch(0.97 0 0)', false, false]);
     expect(hostTokens(undefined)).toEqual({});
   });
 
