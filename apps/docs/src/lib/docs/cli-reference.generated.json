@@ -97,6 +97,13 @@
       },
       {
        "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
         "--width"
        ],
        "metavar": "WIDTH"
@@ -128,34 +135,34 @@
        "flags": [
         "--preview"
        ],
-       "help": 12
+       "help": 13
       },
       {
        "flags": [
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 13
+       "help": 14
       },
       {
        "flags": [
         "--annotation"
        ],
        "metavar": "FILE",
-       "help": 14
+       "help": 15
       },
       {
        "flags": [
         "--measurements"
        ],
        "metavar": "FILE",
-       "help": 15
+       "help": 16
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 16
+       "help": 17
       }
      ]
     },
@@ -170,7 +177,7 @@
       },
       {
        "name": "ref",
-       "help": 17,
+       "help": 18,
        "optional": true
       }
      ],
@@ -180,7 +187,7 @@
         "--query"
        ],
        "metavar": "{summary,structure,closure,geometry,build}",
-       "help": 18,
+       "help": 19,
        "choices": [
         "summary",
         "structure",
@@ -193,7 +200,7 @@
        "flags": [
         "--json"
        ],
-       "help": 19
+       "help": 20
       }
      ]
     },
@@ -201,11 +208,11 @@
      "command": "cad model dfm",
      "summary": "check it can be made: CNC machining (--process cnc), sheet metal (sheet), injection molding (molding) or 3D printing (printing), measured and judged against general, cited rules, each finding at a face's or an edge's ref",
      "usage": "cad model dfm [--process {cnc,sheet,molding,printing}] [--material MATERIAL] [--axes AXES] [--turning] [--tools TOOLS] [--stock STOCK] [--thickness THICKNESS] [--k-factor FACTOR] [--bend-radius RADIUS] [--kerf KERF] [--sheet-size SIZE] [--pull PULL] [--wall-limit WALL_LIMIT] [--zero-tol TOL] [--cavities CAVITIES] [--technology {fdm,sls,sla,mjf,pbf}] [--build-volume VOLUME] [--angle-limit ANGLE_LIMIT] [--samples SAMPLES] [--layer-height HEIGHT] [--nozzle NOZZLE] [--printer PRINTER] [--candidates] [--strict] [--json] SOURCE",
-     "description": 20,
+     "description": 21,
      "arguments": [
       {
        "name": "SOURCE",
-       "help": 21
+       "help": 22
       }
      ],
      "options": [
@@ -214,7 +221,7 @@
         "--process"
        ],
        "metavar": "{cnc,sheet,molding,printing}",
-       "help": 22,
+       "help": 23,
        "choices": [
         "cnc",
         "sheet",
@@ -227,104 +234,104 @@
         "--material"
        ],
        "metavar": "MATERIAL",
-       "help": 23
+       "help": 24
       },
       {
        "flags": [
         "--axes"
        ],
        "metavar": "AXES",
-       "help": 24
+       "help": 25
       },
       {
        "flags": [
         "--turning"
        ],
-       "help": 25
+       "help": 26
       },
       {
        "flags": [
         "--tools"
        ],
        "metavar": "TOOLS",
-       "help": 26
+       "help": 27
       },
       {
        "flags": [
         "--stock"
        ],
        "metavar": "STOCK",
-       "help": 27
+       "help": 28
       },
       {
        "flags": [
         "--thickness"
        ],
        "metavar": "THICKNESS",
-       "help": 28
+       "help": 29
       },
       {
        "flags": [
         "--k-factor"
        ],
        "metavar": "FACTOR",
-       "help": 29
+       "help": 30
       },
       {
        "flags": [
         "--bend-radius"
        ],
        "metavar": "RADIUS",
-       "help": 30
+       "help": 31
       },
       {
        "flags": [
         "--kerf"
        ],
        "metavar": "KERF",
-       "help": 31
+       "help": 32
       },
       {
        "flags": [
         "--sheet-size"
        ],
        "metavar": "SIZE",
-       "help": 32
+       "help": 33
       },
       {
        "flags": [
         "--pull"
        ],
        "metavar": "PULL",
-       "help": 33
+       "help": 34
       },
       {
        "flags": [
         "--wall-limit"
        ],
        "metavar": "WALL_LIMIT",
-       "help": 34
+       "help": 35
       },
       {
        "flags": [
         "--zero-tol"
        ],
        "metavar": "TOL",
-       "help": 35
+       "help": 36
       },
       {
        "flags": [
         "--cavities"
        ],
        "metavar": "CAVITIES",
-       "help": 36
+       "help": 37
       },
       {
        "flags": [
         "--technology"
        ],
        "metavar": "{fdm,sls,sla,mjf,pbf}",
-       "help": 37,
+       "help": 38,
        "choices": [
         "fdm",
         "sls",
@@ -338,60 +345,60 @@
         "--build-volume"
        ],
        "metavar": "VOLUME",
-       "help": 38
+       "help": 39
       },
       {
        "flags": [
         "--angle-limit"
        ],
        "metavar": "ANGLE_LIMIT",
-       "help": 39
+       "help": 40
       },
       {
        "flags": [
         "--samples"
        ],
        "metavar": "SAMPLES",
-       "help": 40
+       "help": 41
       },
       {
        "flags": [
         "--layer-height"
        ],
        "metavar": "HEIGHT",
-       "help": 41
+       "help": 42
       },
       {
        "flags": [
         "--nozzle"
        ],
        "metavar": "NOZZLE",
-       "help": 42
+       "help": 43
       },
       {
        "flags": [
         "--printer"
        ],
        "metavar": "PRINTER",
-       "help": 43
+       "help": 44
       },
       {
        "flags": [
         "--candidates"
        ],
-       "help": 44
+       "help": 45
       },
       {
        "flags": [
         "--strict"
        ],
-       "help": 45
+       "help": 46
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     },
@@ -402,7 +409,7 @@
      "arguments": [
       {
        "name": "ID",
-       "help": 47
+       "help": 48
       }
      ],
      "options": [
@@ -411,7 +418,7 @@
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 48,
+       "help": 49,
        "repeatable": true
       },
       {
@@ -419,7 +426,7 @@
         "--fit"
        ],
        "metavar": "A B A B",
-       "help": 49,
+       "help": 50,
        "repeatable": true
       },
       {
@@ -427,13 +434,13 @@
         "--min-volume"
        ],
        "metavar": "MM3",
-       "help": 50
+       "help": 51
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     },
@@ -441,11 +448,11 @@
      "command": "cad model solve",
      "summary": "a linear static stress study of a part or a bonded assembly: with --study and --out DIR, the solve, its results written into DIR (result.json, result.glb, result.vtu, stress.png, displacement.png), each part's peak stress and safety factor, and a part that yields failing it; with no --study, the parts, the pairs that touch and a part's faces a study names",
      "usage": "cad model solve [--study STUDY] [--out OUT] [--occurrence OCCURRENCE] [--deck] [--verbose] [--json] SOURCE",
-     "description": 51,
+     "description": 52,
      "arguments": [
       {
        "name": "SOURCE",
-       "help": 52
+       "help": 53
       }
      ],
      "options": [
@@ -454,39 +461,86 @@
         "--study"
        ],
        "metavar": "STUDY",
-       "help": 53
+       "help": 54
       },
       {
        "flags": [
         "--out"
        ],
        "metavar": "OUT",
-       "help": 54
+       "help": 55
       },
       {
        "flags": [
         "--occurrence"
        ],
        "metavar": "OCCURRENCE",
-       "help": 55
+       "help": 56
       },
       {
        "flags": [
         "--deck"
        ],
-       "help": 56
+       "help": 57
       },
       {
        "flags": [
         "--verbose"
        ],
-       "help": 57
+       "help": 58
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
+      }
+     ]
+    },
+    {
+     "command": "cad model plan",
+     "summary": "toolpaths and G-code for a part: with --job and --out DIR, FreeCAD plans and posts each setup, every path checked against the part, its results written into DIR (result.json, result.glb and, when nothing fails, the G-code) and a plan with an error failing it; with no --job, the faces, holes and floors a job names",
+     "usage": "cad model plan [--job JOB] [--out OUT] [--occurrence OCCURRENCE] [--verbose] [--json] SOURCE",
+     "description": 59,
+     "arguments": [
+      {
+       "name": "SOURCE",
+       "help": 60
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--job"
+       ],
+       "metavar": "JOB",
+       "help": 61
+      },
+      {
+       "flags": [
+        "--out"
+       ],
+       "metavar": "OUT",
+       "help": 62
+      },
+      {
+       "flags": [
+        "--occurrence"
+       ],
+       "metavar": "OCCURRENCE",
+       "help": 63
+      },
+      {
+       "flags": [
+        "--verbose"
+       ],
+       "help": 64
+      },
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 47
       }
      ]
     },
@@ -494,11 +548,11 @@
      "command": "cad model ranges",
      "summary": "each joint's stops found from the geometry: the joint turned or slid alone, a step at a time each way, until its parts meet another part; the stops and which parts meet, nothing written",
      "usage": "cad model ranges [--step STEP] [--clearance CLEARANCE] [--joint JOINT] [--verbose] [--json] SOURCE",
-     "description": 58,
+     "description": 65,
      "arguments": [
       {
        "name": "SOURCE",
-       "help": 59
+       "help": 66
       }
      ],
      "options": [
@@ -507,7 +561,7 @@
         "--step"
        ],
        "metavar": "STEP",
-       "help": 60,
+       "help": 67,
        "default": 1.0
       },
       {
@@ -515,7 +569,7 @@
         "--clearance"
        ],
        "metavar": "CLEARANCE",
-       "help": 61,
+       "help": 68,
        "default": 0.3
       },
       {
@@ -523,20 +577,20 @@
         "--joint"
        ],
        "metavar": "JOINT",
-       "help": 62,
+       "help": 69,
        "repeatable": true
       },
       {
        "flags": [
         "--verbose"
        ],
-       "help": 63
+       "help": 70
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     }
@@ -554,7 +608,7 @@
      "arguments": [
       {
        "name": "SRC",
-       "help": 64
+       "help": 71
       },
       {
        "name": "DST",
@@ -599,7 +653,7 @@
      "arguments": [
       {
        "name": "SRC",
-       "help": 65,
+       "help": 72,
        "optional": true
       },
       {
@@ -638,6 +692,13 @@
       },
       {
        "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
         "--width"
        ],
        "metavar": "WIDTH"
@@ -669,34 +730,34 @@
        "flags": [
         "--preview"
        ],
-       "help": 12
+       "help": 13
       },
       {
        "flags": [
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 13
+       "help": 14
       },
       {
        "flags": [
         "--annotation"
        ],
        "metavar": "FILE",
-       "help": 14
+       "help": 15
       },
       {
        "flags": [
         "--measurements"
        ],
        "metavar": "FILE",
-       "help": 15
+       "help": 16
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 16
+       "help": 17
       }
      ]
     },
@@ -707,11 +768,11 @@
      "arguments": [
       {
        "name": "document",
-       "help": 64
+       "help": 71
       },
       {
        "name": "ref",
-       "help": 17,
+       "help": 18,
        "optional": true
       }
      ],
@@ -721,7 +782,7 @@
         "--query"
        ],
        "metavar": "{summary,structure,closure,geometry,build}",
-       "help": 18,
+       "help": 19,
        "choices": [
         "summary",
         "structure",
@@ -734,7 +795,7 @@
        "flags": [
         "--json"
        ],
-       "help": 19
+       "help": 20
       }
      ]
     },
@@ -742,11 +803,11 @@
      "command": "cad xbf dfm",
      "summary": "check it can be made: CNC machining (--process cnc), sheet metal (sheet), injection molding (molding) or 3D printing (printing), measured and judged against general, cited rules, each finding at a face's or an edge's ref",
      "usage": "cad xbf dfm [--process {cnc,sheet,molding,printing}] [--material MATERIAL] [--axes AXES] [--turning] [--tools TOOLS] [--stock STOCK] [--thickness THICKNESS] [--k-factor FACTOR] [--bend-radius RADIUS] [--kerf KERF] [--sheet-size SIZE] [--pull PULL] [--wall-limit WALL_LIMIT] [--zero-tol TOL] [--cavities CAVITIES] [--technology {fdm,sls,sla,mjf,pbf}] [--build-volume VOLUME] [--angle-limit ANGLE_LIMIT] [--samples SAMPLES] [--layer-height HEIGHT] [--nozzle NOZZLE] [--printer PRINTER] [--candidates] [--strict] [--json] SOURCE",
-     "description": 20,
+     "description": 21,
      "arguments": [
       {
        "name": "SOURCE",
-       "help": 66
+       "help": 73
       }
      ],
      "options": [
@@ -755,7 +816,7 @@
         "--process"
        ],
        "metavar": "{cnc,sheet,molding,printing}",
-       "help": 22,
+       "help": 23,
        "choices": [
         "cnc",
         "sheet",
@@ -768,104 +829,104 @@
         "--material"
        ],
        "metavar": "MATERIAL",
-       "help": 23
+       "help": 24
       },
       {
        "flags": [
         "--axes"
        ],
        "metavar": "AXES",
-       "help": 24
+       "help": 25
       },
       {
        "flags": [
         "--turning"
        ],
-       "help": 25
+       "help": 26
       },
       {
        "flags": [
         "--tools"
        ],
        "metavar": "TOOLS",
-       "help": 26
+       "help": 27
       },
       {
        "flags": [
         "--stock"
        ],
        "metavar": "STOCK",
-       "help": 27
+       "help": 28
       },
       {
        "flags": [
         "--thickness"
        ],
        "metavar": "THICKNESS",
-       "help": 28
+       "help": 29
       },
       {
        "flags": [
         "--k-factor"
        ],
        "metavar": "FACTOR",
-       "help": 29
+       "help": 30
       },
       {
        "flags": [
         "--bend-radius"
        ],
        "metavar": "RADIUS",
-       "help": 30
+       "help": 31
       },
       {
        "flags": [
         "--kerf"
        ],
        "metavar": "KERF",
-       "help": 31
+       "help": 32
       },
       {
        "flags": [
         "--sheet-size"
        ],
        "metavar": "SIZE",
-       "help": 32
+       "help": 33
       },
       {
        "flags": [
         "--pull"
        ],
        "metavar": "PULL",
-       "help": 33
+       "help": 34
       },
       {
        "flags": [
         "--wall-limit"
        ],
        "metavar": "WALL_LIMIT",
-       "help": 34
+       "help": 35
       },
       {
        "flags": [
         "--zero-tol"
        ],
        "metavar": "TOL",
-       "help": 35
+       "help": 36
       },
       {
        "flags": [
         "--cavities"
        ],
        "metavar": "CAVITIES",
-       "help": 36
+       "help": 37
       },
       {
        "flags": [
         "--technology"
        ],
        "metavar": "{fdm,sls,sla,mjf,pbf}",
-       "help": 37,
+       "help": 38,
        "choices": [
         "fdm",
         "sls",
@@ -879,60 +940,60 @@
         "--build-volume"
        ],
        "metavar": "VOLUME",
-       "help": 38
+       "help": 39
       },
       {
        "flags": [
         "--angle-limit"
        ],
        "metavar": "ANGLE_LIMIT",
-       "help": 39
+       "help": 40
       },
       {
        "flags": [
         "--samples"
        ],
        "metavar": "SAMPLES",
-       "help": 40
+       "help": 41
       },
       {
        "flags": [
         "--layer-height"
        ],
        "metavar": "HEIGHT",
-       "help": 41
+       "help": 42
       },
       {
        "flags": [
         "--nozzle"
        ],
        "metavar": "NOZZLE",
-       "help": 42
+       "help": 43
       },
       {
        "flags": [
         "--printer"
        ],
        "metavar": "PRINTER",
-       "help": 43
+       "help": 44
       },
       {
        "flags": [
         "--candidates"
        ],
-       "help": 44
+       "help": 45
       },
       {
        "flags": [
         "--strict"
        ],
-       "help": 45
+       "help": 46
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     },
@@ -943,7 +1004,7 @@
      "arguments": [
       {
        "name": "FILE",
-       "help": 64
+       "help": 71
       }
      ],
      "options": [
@@ -952,7 +1013,7 @@
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 48,
+       "help": 49,
        "repeatable": true
       },
       {
@@ -960,7 +1021,7 @@
         "--fit"
        ],
        "metavar": "A B A B",
-       "help": 49,
+       "help": 50,
        "repeatable": true
       },
       {
@@ -968,13 +1029,13 @@
         "--min-volume"
        ],
        "metavar": "MM3",
-       "help": 50
+       "help": 51
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     },
@@ -982,11 +1043,11 @@
      "command": "cad xbf solve",
      "summary": "a linear static stress study of a part or a bonded assembly: with --study and --out DIR, the solve, its results written into DIR (result.json, result.glb, result.vtu, stress.png, displacement.png), each part's peak stress and safety factor, and a part that yields failing it; with no --study, the parts, the pairs that touch and a part's faces a study names",
      "usage": "cad xbf solve [--study STUDY] [--out OUT] [--occurrence OCCURRENCE] [--deck] [--verbose] [--json] SOURCE",
-     "description": 51,
+     "description": 52,
      "arguments": [
       {
        "name": "SOURCE",
-       "help": 52
+       "help": 53
       }
      ],
      "options": [
@@ -995,39 +1056,86 @@
         "--study"
        ],
        "metavar": "STUDY",
-       "help": 53
+       "help": 54
       },
       {
        "flags": [
         "--out"
        ],
        "metavar": "OUT",
-       "help": 54
+       "help": 55
       },
       {
        "flags": [
         "--occurrence"
        ],
        "metavar": "OCCURRENCE",
-       "help": 55
+       "help": 56
       },
       {
        "flags": [
         "--deck"
        ],
-       "help": 56
+       "help": 57
       },
       {
        "flags": [
         "--verbose"
        ],
-       "help": 57
+       "help": 58
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
+      }
+     ]
+    },
+    {
+     "command": "cad xbf plan",
+     "summary": "toolpaths and G-code for a part: with --job and --out DIR, FreeCAD plans and posts each setup, every path checked against the part, its results written into DIR (result.json, result.glb and, when nothing fails, the G-code) and a plan with an error failing it; with no --job, the faces, holes and floors a job names",
+     "usage": "cad xbf plan [--job JOB] [--out OUT] [--occurrence OCCURRENCE] [--verbose] [--json] SOURCE",
+     "description": 59,
+     "arguments": [
+      {
+       "name": "SOURCE",
+       "help": 60
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--job"
+       ],
+       "metavar": "JOB",
+       "help": 61
+      },
+      {
+       "flags": [
+        "--out"
+       ],
+       "metavar": "OUT",
+       "help": 62
+      },
+      {
+       "flags": [
+        "--occurrence"
+       ],
+       "metavar": "OCCURRENCE",
+       "help": 63
+      },
+      {
+       "flags": [
+        "--verbose"
+       ],
+       "help": 64
+      },
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 47
       }
      ]
     },
@@ -1035,11 +1143,11 @@
      "command": "cad xbf ranges",
      "summary": "each joint's stops found from the geometry: the joint turned or slid alone, a step at a time each way, until its parts meet another part; the stops and which parts meet, nothing written",
      "usage": "cad xbf ranges [--step STEP] [--clearance CLEARANCE] [--joint JOINT] [--verbose] [--json] SOURCE",
-     "description": 58,
+     "description": 65,
      "arguments": [
       {
        "name": "SOURCE",
-       "help": 59
+       "help": 66
       }
      ],
      "options": [
@@ -1048,7 +1156,7 @@
         "--step"
        ],
        "metavar": "STEP",
-       "help": 60,
+       "help": 67,
        "default": 1.0
       },
       {
@@ -1056,7 +1164,7 @@
         "--clearance"
        ],
        "metavar": "CLEARANCE",
-       "help": 61,
+       "help": 68,
        "default": 0.3
       },
       {
@@ -1064,20 +1172,20 @@
         "--joint"
        ],
        "metavar": "JOINT",
-       "help": 62,
+       "help": 69,
        "repeatable": true
       },
       {
        "flags": [
         "--verbose"
        ],
-       "help": 63
+       "help": 70
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     }
@@ -1095,7 +1203,7 @@
      "arguments": [
       {
        "name": "SRC",
-       "help": 67
+       "help": 74
       },
       {
        "name": "DST",
@@ -1140,526 +1248,6 @@
      "arguments": [
       {
        "name": "SRC",
-       "help": 68,
-       "optional": true
-      },
-      {
-       "name": "OUT.png",
-       "help": 7,
-       "optional": true
-      }
-     ],
-     "options": [
-      {
-       "flags": [
-        "--job"
-       ],
-       "metavar": "PACKET",
-       "help": 8
-      },
-      {
-       "flags": [
-        "--display"
-       ],
-       "metavar": "DISPLAY",
-       "help": 9
-      },
-      {
-       "flags": [
-        "--grid"
-       ],
-       "help": 10
-      },
-      {
-       "flags": [
-        "--camera"
-       ],
-       "metavar": "CAMERA",
-       "help": 11
-      },
-      {
-       "flags": [
-        "--width"
-       ],
-       "metavar": "WIDTH"
-      },
-      {
-       "flags": [
-        "--height"
-       ],
-       "metavar": "HEIGHT"
-      },
-      {
-       "flags": [
-        "--size-profile"
-       ],
-       "metavar": "{assembly,assembly-large,contact-sheet,diagnostic,labeled,presentation,presentation-large,simple,simple-square}",
-       "choices": [
-        "assembly",
-        "assembly-large",
-        "contact-sheet",
-        "diagnostic",
-        "labeled",
-        "presentation",
-        "presentation-large",
-        "simple",
-        "simple-square"
-       ]
-      },
-      {
-       "flags": [
-        "--preview"
-       ],
-       "help": 12
-      },
-      {
-       "flags": [
-        "--pose"
-       ],
-       "metavar": "POSE",
-       "help": 13
-      },
-      {
-       "flags": [
-        "--annotation"
-       ],
-       "metavar": "FILE",
-       "help": 14
-      },
-      {
-       "flags": [
-        "--measurements"
-       ],
-       "metavar": "FILE",
-       "help": 15
-      },
-      {
-       "flags": [
-        "--json"
-       ],
-       "help": 16
-      }
-     ]
-    },
-    {
-     "command": "cad step inspect",
-     "summary": "what the document holds, then its build closure; with a ref, what one element or part is and what made it",
-     "usage": "cad step inspect [--query {summary,structure,closure,geometry,build}] [--json] document [ref]",
-     "arguments": [
-      {
-       "name": "document",
-       "help": 67
-      },
-      {
-       "name": "ref",
-       "help": 17,
-       "optional": true
-      }
-     ],
-     "options": [
-      {
-       "flags": [
-        "--query"
-       ],
-       "metavar": "{summary,structure,closure,geometry,build}",
-       "help": 18,
-       "choices": [
-        "summary",
-        "structure",
-        "closure",
-        "geometry",
-        "build"
-       ]
-      },
-      {
-       "flags": [
-        "--json"
-       ],
-       "help": 19
-      }
-     ]
-    },
-    {
-     "command": "cad step dfm",
-     "summary": "check it can be made: CNC machining (--process cnc), sheet metal (sheet), injection molding (molding) or 3D printing (printing), measured and judged against general, cited rules, each finding at a face's or an edge's ref",
-     "usage": "cad step dfm [--process {cnc,sheet,molding,printing}] [--material MATERIAL] [--axes AXES] [--turning] [--tools TOOLS] [--stock STOCK] [--thickness THICKNESS] [--k-factor FACTOR] [--bend-radius RADIUS] [--kerf KERF] [--sheet-size SIZE] [--pull PULL] [--wall-limit WALL_LIMIT] [--zero-tol TOL] [--cavities CAVITIES] [--technology {fdm,sls,sla,mjf,pbf}] [--build-volume VOLUME] [--angle-limit ANGLE_LIMIT] [--samples SAMPLES] [--layer-height HEIGHT] [--nozzle NOZZLE] [--printer PRINTER] [--candidates] [--strict] [--json] SOURCE",
-     "description": 20,
-     "arguments": [
-      {
-       "name": "SOURCE",
-       "help": 69
-      }
-     ],
-     "options": [
-      {
-       "flags": [
-        "--process"
-       ],
-       "metavar": "{cnc,sheet,molding,printing}",
-       "help": 70,
-       "choices": [
-        "cnc",
-        "sheet",
-        "molding",
-        "printing"
-       ]
-      },
-      {
-       "flags": [
-        "--material"
-       ],
-       "metavar": "MATERIAL",
-       "help": 23
-      },
-      {
-       "flags": [
-        "--axes"
-       ],
-       "metavar": "AXES",
-       "help": 24
-      },
-      {
-       "flags": [
-        "--turning"
-       ],
-       "help": 25
-      },
-      {
-       "flags": [
-        "--tools"
-       ],
-       "metavar": "TOOLS",
-       "help": 26
-      },
-      {
-       "flags": [
-        "--stock"
-       ],
-       "metavar": "STOCK",
-       "help": 27
-      },
-      {
-       "flags": [
-        "--thickness"
-       ],
-       "metavar": "THICKNESS",
-       "help": 28
-      },
-      {
-       "flags": [
-        "--k-factor"
-       ],
-       "metavar": "FACTOR",
-       "help": 29
-      },
-      {
-       "flags": [
-        "--bend-radius"
-       ],
-       "metavar": "RADIUS",
-       "help": 30
-      },
-      {
-       "flags": [
-        "--kerf"
-       ],
-       "metavar": "KERF",
-       "help": 31
-      },
-      {
-       "flags": [
-        "--sheet-size"
-       ],
-       "metavar": "SIZE",
-       "help": 32
-      },
-      {
-       "flags": [
-        "--pull"
-       ],
-       "metavar": "PULL",
-       "help": 33
-      },
-      {
-       "flags": [
-        "--wall-limit"
-       ],
-       "metavar": "WALL_LIMIT",
-       "help": 34
-      },
-      {
-       "flags": [
-        "--zero-tol"
-       ],
-       "metavar": "TOL",
-       "help": 35
-      },
-      {
-       "flags": [
-        "--cavities"
-       ],
-       "metavar": "CAVITIES",
-       "help": 36
-      },
-      {
-       "flags": [
-        "--technology"
-       ],
-       "metavar": "{fdm,sls,sla,mjf,pbf}",
-       "help": 37,
-       "choices": [
-        "fdm",
-        "sls",
-        "sla",
-        "mjf",
-        "pbf"
-       ]
-      },
-      {
-       "flags": [
-        "--build-volume"
-       ],
-       "metavar": "VOLUME",
-       "help": 38
-      },
-      {
-       "flags": [
-        "--angle-limit"
-       ],
-       "metavar": "ANGLE_LIMIT",
-       "help": 39
-      },
-      {
-       "flags": [
-        "--samples"
-       ],
-       "metavar": "SAMPLES",
-       "help": 40
-      },
-      {
-       "flags": [
-        "--layer-height"
-       ],
-       "metavar": "HEIGHT",
-       "help": 41
-      },
-      {
-       "flags": [
-        "--nozzle"
-       ],
-       "metavar": "NOZZLE",
-       "help": 42
-      },
-      {
-       "flags": [
-        "--printer"
-       ],
-       "metavar": "PRINTER",
-       "help": 43
-      },
-      {
-       "flags": [
-        "--candidates"
-       ],
-       "help": 44
-      },
-      {
-       "flags": [
-        "--strict"
-       ],
-       "help": 45
-      },
-      {
-       "flags": [
-        "--json"
-       ],
-       "help": 46
-      }
-     ]
-    },
-    {
-     "command": "cad step interference",
-     "summary": "which parts share volume, as built and at each pose asked (--pose: a mechanism state, a configuration sequence at a time, or joint values): a pair with air between its parts ruled out on their meshes, every other measured exactly on the parts' own solids, the fits named on purpose (--fit A B) listed apart, and each pair it could not measure said",
-     "usage": "cad step interference [--pose POSE] [--fit A B A B] [--min-volume MM3] [--json] FILE",
-     "arguments": [
-      {
-       "name": "FILE",
-       "help": 71
-      }
-     ],
-     "options": [
-      {
-       "flags": [
-        "--pose"
-       ],
-       "metavar": "POSE",
-       "help": 48,
-       "repeatable": true
-      },
-      {
-       "flags": [
-        "--fit"
-       ],
-       "metavar": "A B A B",
-       "help": 49,
-       "repeatable": true
-      },
-      {
-       "flags": [
-        "--min-volume"
-       ],
-       "metavar": "MM3",
-       "help": 50
-      },
-      {
-       "flags": [
-        "--json"
-       ],
-       "help": 46
-      }
-     ]
-    },
-    {
-     "command": "cad step solve",
-     "summary": "a linear static stress study of a part or a bonded assembly: with --study and --out DIR, the solve, its results written into DIR (result.json, result.glb, result.vtu, stress.png, displacement.png), each part's peak stress and safety factor, and a part that yields failing it; with no --study, the parts, the pairs that touch and a part's faces a study names",
-     "usage": "cad step solve [--study STUDY] [--out OUT] [--occurrence OCCURRENCE] [--deck] [--verbose] [--json] SOURCE",
-     "description": 51,
-     "arguments": [
-      {
-       "name": "SOURCE",
-       "help": 52
-      }
-     ],
-     "options": [
-      {
-       "flags": [
-        "--study"
-       ],
-       "metavar": "STUDY",
-       "help": 53
-      },
-      {
-       "flags": [
-        "--out"
-       ],
-       "metavar": "OUT",
-       "help": 54
-      },
-      {
-       "flags": [
-        "--occurrence"
-       ],
-       "metavar": "OCCURRENCE",
-       "help": 55
-      },
-      {
-       "flags": [
-        "--deck"
-       ],
-       "help": 56
-      },
-      {
-       "flags": [
-        "--verbose"
-       ],
-       "help": 57
-      },
-      {
-       "flags": [
-        "--json"
-       ],
-       "help": 46
-      }
-     ]
-    },
-    {
-     "command": "cad step ranges",
-     "summary": "each joint's stops found from the geometry: the joint turned or slid alone, a step at a time each way, until its parts meet another part; the stops and which parts meet, nothing written",
-     "usage": "cad step ranges [--step STEP] [--clearance CLEARANCE] [--joint JOINT] [--verbose] [--json] SOURCE",
-     "description": 58,
-     "arguments": [
-      {
-       "name": "SOURCE",
-       "help": 59
-      }
-     ],
-     "options": [
-      {
-       "flags": [
-        "--step"
-       ],
-       "metavar": "STEP",
-       "help": 60,
-       "default": 1.0
-      },
-      {
-       "flags": [
-        "--clearance"
-       ],
-       "metavar": "CLEARANCE",
-       "help": 61,
-       "default": 0.3
-      },
-      {
-       "flags": [
-        "--joint"
-       ],
-       "metavar": "JOINT",
-       "help": 62,
-       "repeatable": true
-      },
-      {
-       "flags": [
-        "--verbose"
-       ],
-       "help": 63
-      },
-      {
-       "flags": [
-        "--json"
-       ],
-       "help": 46
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "name": "stl",
-   "summary": "STL",
-   "usage": "cad stl <operation> FILE [options]",
-   "operations": [
-    {
-     "command": "cad stl export",
-     "summary": "write the mesh to the other mesh kinds (.glb, .stl, .3mf)",
-     "usage": "cad stl export [--json] SRC DST [DST ...]",
-     "arguments": [
-      {
-       "name": "SRC",
-       "help": 72
-      },
-      {
-       "name": "DST",
-       "help": 73,
-       "repeatable": true
-      }
-     ],
-     "options": [
-      {
-       "flags": [
-        "--json"
-       ],
-       "help": 74
-      }
-     ]
-    },
-    {
-     "command": "cad stl snapshot",
-     "summary": "draw it as the viewer does, into a PNG",
-     "usage": "cad stl snapshot SRC OUT.png [options] | --job PACKET [SRC] [options]",
-     "arguments": [
-      {
-       "name": "SRC",
        "help": 75,
        "optional": true
       },
@@ -1699,6 +1287,13 @@
       },
       {
        "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
         "--width"
        ],
        "metavar": "WIDTH"
@@ -1730,46 +1325,84 @@
        "flags": [
         "--preview"
        ],
-       "help": 12
+       "help": 13
       },
       {
        "flags": [
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 13
+       "help": 14
       },
       {
        "flags": [
         "--annotation"
        ],
        "metavar": "FILE",
-       "help": 14
+       "help": 15
       },
       {
        "flags": [
         "--measurements"
        ],
        "metavar": "FILE",
-       "help": 15
+       "help": 16
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 16
+       "help": 17
       }
      ]
     },
     {
-     "command": "cad stl dfm",
-     "summary": "check it can be 3D printed (--process printing), measured as a mesh and judged against general, cited rules",
-     "usage": "cad stl dfm [--process {cnc,sheet,molding,printing}] [--material MATERIAL] [--units {mm,cm,m,in,ft}] [--technology {fdm,sls,sla,mjf,pbf}] [--build-volume VOLUME] [--angle-limit LIMIT] [--samples SAMPLES] [--layer-height HEIGHT] [--nozzle NOZZLE] [--printer PRINTER] [--candidates] [--strict] [--json] SOURCE",
-     "description": 76,
+     "command": "cad step inspect",
+     "summary": "what the document holds, then its build closure; with a ref, what one element or part is and what made it",
+     "usage": "cad step inspect [--query {summary,structure,closure,geometry,build}] [--json] document [ref]",
+     "arguments": [
+      {
+       "name": "document",
+       "help": 74
+      },
+      {
+       "name": "ref",
+       "help": 18,
+       "optional": true
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--query"
+       ],
+       "metavar": "{summary,structure,closure,geometry,build}",
+       "help": 19,
+       "choices": [
+        "summary",
+        "structure",
+        "closure",
+        "geometry",
+        "build"
+       ]
+      },
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 20
+      }
+     ]
+    },
+    {
+     "command": "cad step dfm",
+     "summary": "check it can be made: CNC machining (--process cnc), sheet metal (sheet), injection molding (molding) or 3D printing (printing), measured and judged against general, cited rules, each finding at a face's or an edge's ref",
+     "usage": "cad step dfm [--process {cnc,sheet,molding,printing}] [--material MATERIAL] [--axes AXES] [--turning] [--tools TOOLS] [--stock STOCK] [--thickness THICKNESS] [--k-factor FACTOR] [--bend-radius RADIUS] [--kerf KERF] [--sheet-size SIZE] [--pull PULL] [--wall-limit WALL_LIMIT] [--zero-tol TOL] [--cavities CAVITIES] [--technology {fdm,sls,sla,mjf,pbf}] [--build-volume VOLUME] [--angle-limit ANGLE_LIMIT] [--samples SAMPLES] [--layer-height HEIGHT] [--nozzle NOZZLE] [--printer PRINTER] [--candidates] [--strict] [--json] SOURCE",
+     "description": 21,
      "arguments": [
       {
        "name": "SOURCE",
-       "help": 77
+       "help": 76
       }
      ],
      "options": [
@@ -1778,42 +1411,117 @@
         "--process"
        ],
        "metavar": "{cnc,sheet,molding,printing}",
-       "help": 78,
+       "help": 77,
        "choices": [
         "cnc",
         "sheet",
         "molding",
         "printing"
-       ],
-       "default": "printing"
+       ]
       },
       {
        "flags": [
         "--material"
        ],
        "metavar": "MATERIAL",
-       "help": 23
+       "help": 24
       },
       {
        "flags": [
-        "--units"
+        "--axes"
        ],
-       "metavar": "{mm,cm,m,in,ft}",
-       "help": 79,
-       "choices": [
-        "mm",
-        "cm",
-        "m",
-        "in",
-        "ft"
-       ]
+       "metavar": "AXES",
+       "help": 25
+      },
+      {
+       "flags": [
+        "--turning"
+       ],
+       "help": 26
+      },
+      {
+       "flags": [
+        "--tools"
+       ],
+       "metavar": "TOOLS",
+       "help": 27
+      },
+      {
+       "flags": [
+        "--stock"
+       ],
+       "metavar": "STOCK",
+       "help": 28
+      },
+      {
+       "flags": [
+        "--thickness"
+       ],
+       "metavar": "THICKNESS",
+       "help": 29
+      },
+      {
+       "flags": [
+        "--k-factor"
+       ],
+       "metavar": "FACTOR",
+       "help": 30
+      },
+      {
+       "flags": [
+        "--bend-radius"
+       ],
+       "metavar": "RADIUS",
+       "help": 31
+      },
+      {
+       "flags": [
+        "--kerf"
+       ],
+       "metavar": "KERF",
+       "help": 32
+      },
+      {
+       "flags": [
+        "--sheet-size"
+       ],
+       "metavar": "SIZE",
+       "help": 33
+      },
+      {
+       "flags": [
+        "--pull"
+       ],
+       "metavar": "PULL",
+       "help": 34
+      },
+      {
+       "flags": [
+        "--wall-limit"
+       ],
+       "metavar": "WALL_LIMIT",
+       "help": 35
+      },
+      {
+       "flags": [
+        "--zero-tol"
+       ],
+       "metavar": "TOL",
+       "help": 36
+      },
+      {
+       "flags": [
+        "--cavities"
+       ],
+       "metavar": "CAVITIES",
+       "help": 37
       },
       {
        "flags": [
         "--technology"
        ],
        "metavar": "{fdm,sls,sla,mjf,pbf}",
-       "help": 37,
+       "help": 38,
        "choices": [
         "fdm",
         "sls",
@@ -1827,82 +1535,274 @@
         "--build-volume"
        ],
        "metavar": "VOLUME",
-       "help": 38
+       "help": 39
       },
       {
        "flags": [
         "--angle-limit"
        ],
-       "metavar": "LIMIT",
-       "help": 39
+       "metavar": "ANGLE_LIMIT",
+       "help": 40
       },
       {
        "flags": [
         "--samples"
        ],
        "metavar": "SAMPLES",
-       "help": 40
+       "help": 41
       },
       {
        "flags": [
         "--layer-height"
        ],
        "metavar": "HEIGHT",
-       "help": 41
+       "help": 42
       },
       {
        "flags": [
         "--nozzle"
        ],
        "metavar": "NOZZLE",
-       "help": 42
+       "help": 43
       },
       {
        "flags": [
         "--printer"
        ],
        "metavar": "PRINTER",
-       "help": 43
+       "help": 44
       },
       {
        "flags": [
         "--candidates"
        ],
-       "help": 80
+       "help": 45
       },
       {
        "flags": [
         "--strict"
        ],
-       "help": 45
+       "help": 46
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
+      }
+     ]
+    },
+    {
+     "command": "cad step interference",
+     "summary": "which parts share volume, as built and at each pose asked (--pose: a mechanism state, a configuration sequence at a time, or joint values): a pair with air between its parts ruled out on their meshes, every other measured exactly on the parts' own solids, the fits named on purpose (--fit A B) listed apart, and each pair it could not measure said",
+     "usage": "cad step interference [--pose POSE] [--fit A B A B] [--min-volume MM3] [--json] FILE",
+     "arguments": [
+      {
+       "name": "FILE",
+       "help": 78
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--pose"
+       ],
+       "metavar": "POSE",
+       "help": 49,
+       "repeatable": true
+      },
+      {
+       "flags": [
+        "--fit"
+       ],
+       "metavar": "A B A B",
+       "help": 50,
+       "repeatable": true
+      },
+      {
+       "flags": [
+        "--min-volume"
+       ],
+       "metavar": "MM3",
+       "help": 51
+      },
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 47
+      }
+     ]
+    },
+    {
+     "command": "cad step solve",
+     "summary": "a linear static stress study of a part or a bonded assembly: with --study and --out DIR, the solve, its results written into DIR (result.json, result.glb, result.vtu, stress.png, displacement.png), each part's peak stress and safety factor, and a part that yields failing it; with no --study, the parts, the pairs that touch and a part's faces a study names",
+     "usage": "cad step solve [--study STUDY] [--out OUT] [--occurrence OCCURRENCE] [--deck] [--verbose] [--json] SOURCE",
+     "description": 52,
+     "arguments": [
+      {
+       "name": "SOURCE",
+       "help": 53
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--study"
+       ],
+       "metavar": "STUDY",
+       "help": 54
+      },
+      {
+       "flags": [
+        "--out"
+       ],
+       "metavar": "OUT",
+       "help": 55
+      },
+      {
+       "flags": [
+        "--occurrence"
+       ],
+       "metavar": "OCCURRENCE",
+       "help": 56
+      },
+      {
+       "flags": [
+        "--deck"
+       ],
+       "help": 57
+      },
+      {
+       "flags": [
+        "--verbose"
+       ],
+       "help": 58
+      },
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 47
+      }
+     ]
+    },
+    {
+     "command": "cad step plan",
+     "summary": "toolpaths and G-code for a part: with --job and --out DIR, FreeCAD plans and posts each setup, every path checked against the part, its results written into DIR (result.json, result.glb and, when nothing fails, the G-code) and a plan with an error failing it; with no --job, the faces, holes and floors a job names",
+     "usage": "cad step plan [--job JOB] [--out OUT] [--occurrence OCCURRENCE] [--verbose] [--json] SOURCE",
+     "description": 59,
+     "arguments": [
+      {
+       "name": "SOURCE",
+       "help": 60
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--job"
+       ],
+       "metavar": "JOB",
+       "help": 61
+      },
+      {
+       "flags": [
+        "--out"
+       ],
+       "metavar": "OUT",
+       "help": 62
+      },
+      {
+       "flags": [
+        "--occurrence"
+       ],
+       "metavar": "OCCURRENCE",
+       "help": 63
+      },
+      {
+       "flags": [
+        "--verbose"
+       ],
+       "help": 64
+      },
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 47
+      }
+     ]
+    },
+    {
+     "command": "cad step ranges",
+     "summary": "each joint's stops found from the geometry: the joint turned or slid alone, a step at a time each way, until its parts meet another part; the stops and which parts meet, nothing written",
+     "usage": "cad step ranges [--step STEP] [--clearance CLEARANCE] [--joint JOINT] [--verbose] [--json] SOURCE",
+     "description": 65,
+     "arguments": [
+      {
+       "name": "SOURCE",
+       "help": 66
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--step"
+       ],
+       "metavar": "STEP",
+       "help": 67,
+       "default": 1.0
+      },
+      {
+       "flags": [
+        "--clearance"
+       ],
+       "metavar": "CLEARANCE",
+       "help": 68,
+       "default": 0.3
+      },
+      {
+       "flags": [
+        "--joint"
+       ],
+       "metavar": "JOINT",
+       "help": 69,
+       "repeatable": true
+      },
+      {
+       "flags": [
+        "--verbose"
+       ],
+       "help": 70
+      },
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 47
       }
      ]
     }
    ]
   },
   {
-   "name": "glb",
-   "summary": "GLB",
-   "usage": "cad glb <operation> FILE [options]",
+   "name": "stl",
+   "summary": "STL",
+   "usage": "cad stl <operation> FILE [options]",
    "operations": [
     {
-     "command": "cad glb export",
+     "command": "cad stl export",
      "summary": "write the mesh to the other mesh kinds (.glb, .stl, .3mf)",
-     "usage": "cad glb export [--json] SRC DST [DST ...]",
+     "usage": "cad stl export [--json] SRC DST [DST ...]",
      "arguments": [
       {
        "name": "SRC",
-       "help": 81
+       "help": 79
       },
       {
        "name": "DST",
-       "help": 73,
+       "help": 80,
        "repeatable": true
       }
      ],
@@ -1911,14 +1811,14 @@
        "flags": [
         "--json"
        ],
-       "help": 74
+       "help": 81
       }
      ]
     },
     {
-     "command": "cad glb snapshot",
+     "command": "cad stl snapshot",
      "summary": "draw it as the viewer does, into a PNG",
-     "usage": "cad glb snapshot SRC OUT.png [options] | --job PACKET [SRC] [options]",
+     "usage": "cad stl snapshot SRC OUT.png [options] | --job PACKET [SRC] [options]",
      "arguments": [
       {
        "name": "SRC",
@@ -1961,6 +1861,13 @@
       },
       {
        "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
         "--width"
        ],
        "metavar": "WIDTH"
@@ -1992,84 +1899,46 @@
        "flags": [
         "--preview"
        ],
-       "help": 12
+       "help": 13
       },
       {
        "flags": [
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 13
+       "help": 14
       },
       {
        "flags": [
         "--annotation"
        ],
        "metavar": "FILE",
-       "help": 14
+       "help": 15
       },
       {
        "flags": [
         "--measurements"
        ],
        "metavar": "FILE",
-       "help": 15
-      },
-      {
-       "flags": [
-        "--json"
-       ],
        "help": 16
-      }
-     ]
-    },
-    {
-     "command": "cad glb inspect",
-     "summary": "its nodes, meshes and animations",
-     "usage": "cad glb inspect [--query {summary,structure,closure,geometry,build}] [--json] document [ref]",
-     "arguments": [
-      {
-       "name": "document",
-       "help": 81
-      },
-      {
-       "name": "ref",
-       "help": 17,
-       "optional": true
-      }
-     ],
-     "options": [
-      {
-       "flags": [
-        "--query"
-       ],
-       "metavar": "{summary,structure,closure,geometry,build}",
-       "help": 18,
-       "choices": [
-        "summary",
-        "structure",
-        "closure",
-        "geometry",
-        "build"
-       ]
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 19
+       "help": 17
       }
      ]
     },
     {
-     "command": "cad glb dfm",
+     "command": "cad stl dfm",
      "summary": "check it can be 3D printed (--process printing), measured as a mesh and judged against general, cited rules",
-     "usage": "cad glb dfm [--process {cnc,sheet,molding,printing}] [--material MATERIAL] [--technology {fdm,sls,sla,mjf,pbf}] [--build-volume VOLUME] [--angle-limit LIMIT] [--samples SAMPLES] [--layer-height HEIGHT] [--nozzle NOZZLE] [--printer PRINTER] [--candidates] [--strict] [--json] SOURCE",
-     "description": 76,
+     "usage": "cad stl dfm [--process {cnc,sheet,molding,printing}] [--material MATERIAL] [--units {mm,cm,m,in,ft}] [--technology {fdm,sls,sla,mjf,pbf}] [--build-volume VOLUME] [--angle-limit LIMIT] [--samples SAMPLES] [--layer-height HEIGHT] [--nozzle NOZZLE] [--printer PRINTER] [--candidates] [--strict] [--json] SOURCE",
+     "description": 83,
      "arguments": [
       {
        "name": "SOURCE",
-       "help": 83
+       "help": 84
       }
      ],
      "options": [
@@ -2078,7 +1947,7 @@
         "--process"
        ],
        "metavar": "{cnc,sheet,molding,printing}",
-       "help": 78,
+       "help": 85,
        "choices": [
         "cnc",
         "sheet",
@@ -2092,14 +1961,28 @@
         "--material"
        ],
        "metavar": "MATERIAL",
-       "help": 23
+       "help": 24
+      },
+      {
+       "flags": [
+        "--units"
+       ],
+       "metavar": "{mm,cm,m,in,ft}",
+       "help": 86,
+       "choices": [
+        "mm",
+        "cm",
+        "m",
+        "in",
+        "ft"
+       ]
       },
       {
        "flags": [
         "--technology"
        ],
        "metavar": "{fdm,sls,sla,mjf,pbf}",
-       "help": 37,
+       "help": 38,
        "choices": [
         "fdm",
         "sls",
@@ -2113,60 +1996,353 @@
         "--build-volume"
        ],
        "metavar": "VOLUME",
-       "help": 38
+       "help": 39
       },
       {
        "flags": [
         "--angle-limit"
        ],
        "metavar": "LIMIT",
-       "help": 39
+       "help": 40
       },
       {
        "flags": [
         "--samples"
        ],
        "metavar": "SAMPLES",
-       "help": 40
+       "help": 41
       },
       {
        "flags": [
         "--layer-height"
        ],
        "metavar": "HEIGHT",
-       "help": 41
+       "help": 42
       },
       {
        "flags": [
         "--nozzle"
        ],
        "metavar": "NOZZLE",
-       "help": 42
+       "help": 43
       },
       {
        "flags": [
         "--printer"
        ],
        "metavar": "PRINTER",
-       "help": 43
+       "help": 44
       },
       {
        "flags": [
         "--candidates"
        ],
-       "help": 80
+       "help": 87
       },
       {
        "flags": [
         "--strict"
        ],
-       "help": 45
+       "help": 46
       },
       {
        "flags": [
         "--json"
        ],
+       "help": 47
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "glb",
+   "summary": "GLB",
+   "usage": "cad glb <operation> FILE [options]",
+   "operations": [
+    {
+     "command": "cad glb export",
+     "summary": "write the mesh to the other mesh kinds (.glb, .stl, .3mf)",
+     "usage": "cad glb export [--json] SRC DST [DST ...]",
+     "arguments": [
+      {
+       "name": "SRC",
+       "help": 88
+      },
+      {
+       "name": "DST",
+       "help": 80,
+       "repeatable": true
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 81
+      }
+     ]
+    },
+    {
+     "command": "cad glb snapshot",
+     "summary": "draw it as the viewer does, into a PNG",
+     "usage": "cad glb snapshot SRC OUT.png [options] | --job PACKET [SRC] [options]",
+     "arguments": [
+      {
+       "name": "SRC",
+       "help": 89,
+       "optional": true
+      },
+      {
+       "name": "OUT.png",
+       "help": 7,
+       "optional": true
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--job"
+       ],
+       "metavar": "PACKET",
+       "help": 8
+      },
+      {
+       "flags": [
+        "--display"
+       ],
+       "metavar": "DISPLAY",
+       "help": 9
+      },
+      {
+       "flags": [
+        "--grid"
+       ],
+       "help": 10
+      },
+      {
+       "flags": [
+        "--camera"
+       ],
+       "metavar": "CAMERA",
+       "help": 11
+      },
+      {
+       "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
+        "--width"
+       ],
+       "metavar": "WIDTH"
+      },
+      {
+       "flags": [
+        "--height"
+       ],
+       "metavar": "HEIGHT"
+      },
+      {
+       "flags": [
+        "--size-profile"
+       ],
+       "metavar": "{assembly,assembly-large,contact-sheet,diagnostic,labeled,presentation,presentation-large,simple,simple-square}",
+       "choices": [
+        "assembly",
+        "assembly-large",
+        "contact-sheet",
+        "diagnostic",
+        "labeled",
+        "presentation",
+        "presentation-large",
+        "simple",
+        "simple-square"
+       ]
+      },
+      {
+       "flags": [
+        "--preview"
+       ],
+       "help": 13
+      },
+      {
+       "flags": [
+        "--pose"
+       ],
+       "metavar": "POSE",
+       "help": 14
+      },
+      {
+       "flags": [
+        "--annotation"
+       ],
+       "metavar": "FILE",
+       "help": 15
+      },
+      {
+       "flags": [
+        "--measurements"
+       ],
+       "metavar": "FILE",
+       "help": 16
+      },
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 17
+      }
+     ]
+    },
+    {
+     "command": "cad glb inspect",
+     "summary": "its nodes, meshes and animations",
+     "usage": "cad glb inspect [--query {summary,structure,closure,geometry,build}] [--json] document [ref]",
+     "arguments": [
+      {
+       "name": "document",
+       "help": 88
+      },
+      {
+       "name": "ref",
+       "help": 18,
+       "optional": true
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--query"
+       ],
+       "metavar": "{summary,structure,closure,geometry,build}",
+       "help": 19,
+       "choices": [
+        "summary",
+        "structure",
+        "closure",
+        "geometry",
+        "build"
+       ]
+      },
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 20
+      }
+     ]
+    },
+    {
+     "command": "cad glb dfm",
+     "summary": "check it can be 3D printed (--process printing), measured as a mesh and judged against general, cited rules",
+     "usage": "cad glb dfm [--process {cnc,sheet,molding,printing}] [--material MATERIAL] [--technology {fdm,sls,sla,mjf,pbf}] [--build-volume VOLUME] [--angle-limit LIMIT] [--samples SAMPLES] [--layer-height HEIGHT] [--nozzle NOZZLE] [--printer PRINTER] [--candidates] [--strict] [--json] SOURCE",
+     "description": 83,
+     "arguments": [
+      {
+       "name": "SOURCE",
+       "help": 90
+      }
+     ],
+     "options": [
+      {
+       "flags": [
+        "--process"
+       ],
+       "metavar": "{cnc,sheet,molding,printing}",
+       "help": 85,
+       "choices": [
+        "cnc",
+        "sheet",
+        "molding",
+        "printing"
+       ],
+       "default": "printing"
+      },
+      {
+       "flags": [
+        "--material"
+       ],
+       "metavar": "MATERIAL",
+       "help": 24
+      },
+      {
+       "flags": [
+        "--technology"
+       ],
+       "metavar": "{fdm,sls,sla,mjf,pbf}",
+       "help": 38,
+       "choices": [
+        "fdm",
+        "sls",
+        "sla",
+        "mjf",
+        "pbf"
+       ]
+      },
+      {
+       "flags": [
+        "--build-volume"
+       ],
+       "metavar": "VOLUME",
+       "help": 39
+      },
+      {
+       "flags": [
+        "--angle-limit"
+       ],
+       "metavar": "LIMIT",
+       "help": 40
+      },
+      {
+       "flags": [
+        "--samples"
+       ],
+       "metavar": "SAMPLES",
+       "help": 41
+      },
+      {
+       "flags": [
+        "--layer-height"
+       ],
+       "metavar": "HEIGHT",
+       "help": 42
+      },
+      {
+       "flags": [
+        "--nozzle"
+       ],
+       "metavar": "NOZZLE",
+       "help": 43
+      },
+      {
+       "flags": [
+        "--printer"
+       ],
+       "metavar": "PRINTER",
+       "help": 44
+      },
+      {
+       "flags": [
+        "--candidates"
+       ],
+       "help": 87
+      },
+      {
+       "flags": [
+        "--strict"
+       ],
        "help": 46
+      },
+      {
+       "flags": [
+        "--json"
+       ],
+       "help": 47
       }
      ]
     }
@@ -2184,11 +2360,11 @@
      "arguments": [
       {
        "name": "SRC",
-       "help": 84
+       "help": 91
       },
       {
        "name": "DST",
-       "help": 73,
+       "help": 80,
        "repeatable": true
       }
      ],
@@ -2197,7 +2373,7 @@
        "flags": [
         "--json"
        ],
-       "help": 74
+       "help": 81
       }
      ]
     },
@@ -2208,7 +2384,7 @@
      "arguments": [
       {
        "name": "SRC",
-       "help": 85,
+       "help": 92,
        "optional": true
       },
       {
@@ -2247,6 +2423,13 @@
       },
       {
        "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
         "--width"
        ],
        "metavar": "WIDTH"
@@ -2278,34 +2461,34 @@
        "flags": [
         "--preview"
        ],
-       "help": 12
+       "help": 13
       },
       {
        "flags": [
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 13
+       "help": 14
       },
       {
        "flags": [
         "--annotation"
        ],
        "metavar": "FILE",
-       "help": 14
+       "help": 15
       },
       {
        "flags": [
         "--measurements"
        ],
        "metavar": "FILE",
-       "help": 15
+       "help": 16
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 16
+       "help": 17
       }
      ]
     },
@@ -2313,11 +2496,11 @@
      "command": "cad threemf dfm",
      "summary": "check it can be 3D printed (--process printing), measured as a mesh and judged against general, cited rules",
      "usage": "cad threemf dfm [--process {cnc,sheet,molding,printing}] [--material MATERIAL] [--technology {fdm,sls,sla,mjf,pbf}] [--build-volume VOLUME] [--angle-limit LIMIT] [--samples SAMPLES] [--layer-height HEIGHT] [--nozzle NOZZLE] [--printer PRINTER] [--candidates] [--strict] [--json] SOURCE",
-     "description": 76,
+     "description": 83,
      "arguments": [
       {
        "name": "SOURCE",
-       "help": 86
+       "help": 93
       }
      ],
      "options": [
@@ -2326,7 +2509,7 @@
         "--process"
        ],
        "metavar": "{cnc,sheet,molding,printing}",
-       "help": 78,
+       "help": 85,
        "choices": [
         "cnc",
         "sheet",
@@ -2340,14 +2523,14 @@
         "--material"
        ],
        "metavar": "MATERIAL",
-       "help": 23
+       "help": 24
       },
       {
        "flags": [
         "--technology"
        ],
        "metavar": "{fdm,sls,sla,mjf,pbf}",
-       "help": 37,
+       "help": 38,
        "choices": [
         "fdm",
         "sls",
@@ -2361,60 +2544,60 @@
         "--build-volume"
        ],
        "metavar": "VOLUME",
-       "help": 38
+       "help": 39
       },
       {
        "flags": [
         "--angle-limit"
        ],
        "metavar": "LIMIT",
-       "help": 39
+       "help": 40
       },
       {
        "flags": [
         "--samples"
        ],
        "metavar": "SAMPLES",
-       "help": 40
+       "help": 41
       },
       {
        "flags": [
         "--layer-height"
        ],
        "metavar": "HEIGHT",
-       "help": 41
+       "help": 42
       },
       {
        "flags": [
         "--nozzle"
        ],
        "metavar": "NOZZLE",
-       "help": 42
+       "help": 43
       },
       {
        "flags": [
         "--printer"
        ],
        "metavar": "PRINTER",
-       "help": 43
+       "help": 44
       },
       {
        "flags": [
         "--candidates"
        ],
-       "help": 80
+       "help": 87
       },
       {
        "flags": [
         "--strict"
        ],
-       "help": 45
+       "help": 46
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     }
@@ -2432,7 +2615,7 @@
      "arguments": [
       {
        "name": "SRC",
-       "help": 87,
+       "help": 94,
        "optional": true
       },
       {
@@ -2471,6 +2654,13 @@
       },
       {
        "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
         "--width"
        ],
        "metavar": "WIDTH"
@@ -2502,34 +2692,34 @@
        "flags": [
         "--preview"
        ],
-       "help": 12
+       "help": 13
       },
       {
        "flags": [
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 13
+       "help": 14
       },
       {
        "flags": [
         "--annotation"
        ],
        "metavar": "FILE",
-       "help": 14
+       "help": 15
       },
       {
        "flags": [
         "--measurements"
        ],
        "metavar": "FILE",
-       "help": 15
+       "help": 16
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 16
+       "help": 17
       }
      ]
     },
@@ -2537,11 +2727,11 @@
      "command": "cad dxf dfm",
      "summary": "check it as a sheet's cut file (--process sheet): closed contours, nothing cut twice, features against the kerf and the thickness, the sheet's size",
      "usage": "cad dxf dfm [--process {sheet}] [--material MATERIAL] [--units {mm,cm,m,in,ft}] [--thickness THICKNESS] [--k-factor FACTOR] [--bend-radius RADIUS] [--kerf KERF] [--sheet-size SIZE] [--strict] [--json] SOURCE",
-     "description": 88,
+     "description": 95,
      "arguments": [
       {
        "name": "SOURCE",
-       "help": 89
+       "help": 96
       }
      ],
      "options": [
@@ -2550,7 +2740,7 @@
         "--process"
        ],
        "metavar": "{sheet}",
-       "help": 90,
+       "help": 97,
        "choices": [
         "sheet"
        ],
@@ -2561,14 +2751,14 @@
         "--material"
        ],
        "metavar": "MATERIAL",
-       "help": 23
+       "help": 24
       },
       {
        "flags": [
         "--units"
        ],
        "metavar": "{mm,cm,m,in,ft}",
-       "help": 79,
+       "help": 86,
        "choices": [
         "mm",
         "cm",
@@ -2582,47 +2772,47 @@
         "--thickness"
        ],
        "metavar": "THICKNESS",
-       "help": 28
+       "help": 29
       },
       {
        "flags": [
         "--k-factor"
        ],
        "metavar": "FACTOR",
-       "help": 29
+       "help": 30
       },
       {
        "flags": [
         "--bend-radius"
        ],
        "metavar": "RADIUS",
-       "help": 30
+       "help": 31
       },
       {
        "flags": [
         "--kerf"
        ],
        "metavar": "KERF",
-       "help": 31
+       "help": 32
       },
       {
        "flags": [
         "--sheet-size"
        ],
        "metavar": "SIZE",
-       "help": 32
+       "help": 33
       },
       {
        "flags": [
         "--strict"
        ],
-       "help": 45
+       "help": 46
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     }
@@ -2640,7 +2830,7 @@
      "arguments": [
       {
        "name": "SRC",
-       "help": 91,
+       "help": 98,
        "optional": true
       },
       {
@@ -2679,6 +2869,13 @@
       },
       {
        "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
         "--width"
        ],
        "metavar": "WIDTH"
@@ -2710,34 +2907,34 @@
        "flags": [
         "--preview"
        ],
-       "help": 12
+       "help": 13
       },
       {
        "flags": [
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 13
+       "help": 14
       },
       {
        "flags": [
         "--annotation"
        ],
        "metavar": "FILE",
-       "help": 14
+       "help": 15
       },
       {
        "flags": [
         "--measurements"
        ],
        "metavar": "FILE",
-       "help": 15
+       "help": 16
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 16
+       "help": 17
       }
      ]
     },
@@ -2745,11 +2942,11 @@
      "command": "cad urdf validate",
      "summary": "check it for conformance: structure, joints, inertials, mesh references",
      "usage": "cad urdf validate [--strict] [--packages NAME=PATH] [--verbose] [--json] PATH",
-     "description": 92,
+     "description": 99,
      "arguments": [
       {
        "name": "PATH",
-       "help": 93
+       "help": 100
       }
      ],
      "options": [
@@ -2757,27 +2954,27 @@
        "flags": [
         "--strict"
        ],
-       "help": 94
+       "help": 101
       },
       {
        "flags": [
         "--packages"
        ],
        "metavar": "NAME=PATH",
-       "help": 95,
+       "help": 102,
        "repeatable": true
       },
       {
        "flags": [
         "--verbose"
        ],
-       "help": 96
+       "help": 103
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     }
@@ -2795,7 +2992,7 @@
      "arguments": [
       {
        "name": "SRC",
-       "help": 97,
+       "help": 104,
        "optional": true
       },
       {
@@ -2834,6 +3031,13 @@
       },
       {
        "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
         "--width"
        ],
        "metavar": "WIDTH"
@@ -2865,34 +3069,34 @@
        "flags": [
         "--preview"
        ],
-       "help": 12
+       "help": 13
       },
       {
        "flags": [
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 13
+       "help": 14
       },
       {
        "flags": [
         "--annotation"
        ],
        "metavar": "FILE",
-       "help": 14
+       "help": 15
       },
       {
        "flags": [
         "--measurements"
        ],
        "metavar": "FILE",
-       "help": 15
+       "help": 16
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 16
+       "help": 17
       }
      ]
     },
@@ -2900,11 +3104,11 @@
      "command": "cad srdf validate",
      "summary": "check it against its URDF: every name, chain, state and disabled pair",
      "usage": "cad srdf validate [--strict] [--urdf URDF] [--verbose] [--json] PATH",
-     "description": 98,
+     "description": 105,
      "arguments": [
       {
        "name": "PATH",
-       "help": 99
+       "help": 106
       }
      ],
      "options": [
@@ -2912,26 +3116,26 @@
        "flags": [
         "--strict"
        ],
-       "help": 100
+       "help": 107
       },
       {
        "flags": [
         "--urdf"
        ],
        "metavar": "URDF",
-       "help": 101
+       "help": 108
       },
       {
        "flags": [
         "--verbose"
        ],
-       "help": 102
+       "help": 109
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     }
@@ -2946,11 +3150,11 @@
      "command": "cad kicad_pcb export",
      "summary": "write its fabrication and 3D outputs with KiCad into a folder: gerbers, drill, pos, bom, step, glb, odb, ipc2581, pdf or dxf",
      "usage": "cad kicad_pcb export --to {gerbers,drill,pos,bom,step,glb,odb,ipc2581,pdf,dxf} --out DIR [--json] BOARD",
-     "description": 103,
+     "description": 110,
      "arguments": [
       {
        "name": "BOARD",
-       "help": 104
+       "help": 111
       }
      ],
      "options": [
@@ -2959,7 +3163,7 @@
         "--to"
        ],
        "metavar": "{gerbers,drill,pos,bom,step,glb,odb,ipc2581,pdf,dxf}",
-       "help": 105,
+       "help": 112,
        "choices": [
         "gerbers",
         "drill",
@@ -2980,14 +3184,14 @@
         "--out"
        ],
        "metavar": "DIR",
-       "help": 106,
+       "help": 113,
        "required": true
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 107
+       "help": 114
       }
      ]
     },
@@ -2998,7 +3202,7 @@
      "arguments": [
       {
        "name": "SRC",
-       "help": 108,
+       "help": 115,
        "optional": true
       },
       {
@@ -3037,6 +3241,13 @@
       },
       {
        "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
         "--width"
        ],
        "metavar": "WIDTH"
@@ -3068,41 +3279,41 @@
        "flags": [
         "--preview"
        ],
-       "help": 12
+       "help": 13
       },
       {
        "flags": [
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 13
+       "help": 14
       },
       {
        "flags": [
         "--annotation"
        ],
        "metavar": "FILE",
-       "help": 14
+       "help": 15
       },
       {
        "flags": [
         "--measurements"
        ],
        "metavar": "FILE",
-       "help": 15
+       "help": 16
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 16
+       "help": 17
       },
       {
        "flags": [
         "--window"
        ],
        "metavar": "X0,Y0,X1,Y1",
-       "help": 109
+       "help": 116
       }
      ]
     },
@@ -3110,11 +3321,11 @@
      "command": "cad kicad_pcb inspect",
      "summary": "what the board holds: its format, thickness, size, layers, parts and nets",
      "usage": "cad kicad_pcb inspect [--json] BOARD",
-     "description": 110,
+     "description": 117,
      "arguments": [
       {
        "name": "BOARD",
-       "help": 104
+       "help": 111
       }
      ],
      "options": [
@@ -3122,7 +3333,7 @@
        "flags": [
         "--json"
        ],
-       "help": 107
+       "help": 114
       }
      ]
     },
@@ -3130,11 +3341,11 @@
      "command": "cad kicad_pcb drc",
      "summary": "KiCad's design rule check: errors and unconnected items fail it, warnings are said",
      "usage": "cad kicad_pcb drc [--json] BOARD",
-     "description": 111,
+     "description": 118,
      "arguments": [
       {
        "name": "BOARD",
-       "help": 112
+       "help": 119
       }
      ],
      "options": [
@@ -3142,7 +3353,7 @@
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     }
@@ -3157,11 +3368,11 @@
      "command": "cad kicad_sch export",
      "summary": "write it with KiCad: a pdf, an svg per sheet, the netlist or a BOM, into a folder",
      "usage": "cad kicad_sch export --to {pdf,svg,netlist,bom} --out DIR [--json] SCHEMATIC",
-     "description": 113,
+     "description": 120,
      "arguments": [
       {
        "name": "SCHEMATIC",
-       "help": 114
+       "help": 121
       }
      ],
      "options": [
@@ -3170,7 +3381,7 @@
         "--to"
        ],
        "metavar": "{pdf,svg,netlist,bom}",
-       "help": 115,
+       "help": 122,
        "choices": [
         "pdf",
         "svg",
@@ -3185,14 +3396,14 @@
         "--out"
        ],
        "metavar": "DIR",
-       "help": 106,
+       "help": 113,
        "required": true
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 107
+       "help": 114
       }
      ]
     },
@@ -3200,11 +3411,11 @@
      "command": "cad kicad_sch snapshot",
      "summary": "draw one sheet flat, as KiCad's schematic editor shows it, into a PNG",
      "usage": "cad kicad_sch snapshot SRC OUT.png [options] | --job PACKET [SRC] [options]",
-     "description": 116,
+     "description": 123,
      "arguments": [
       {
        "name": "SRC",
-       "help": 117,
+       "help": 124,
        "optional": true
       },
       {
@@ -3243,6 +3454,13 @@
       },
       {
        "flags": [
+        "--view"
+       ],
+       "metavar": "NAME",
+       "help": 12
+      },
+      {
+       "flags": [
         "--width"
        ],
        "metavar": "WIDTH"
@@ -3274,47 +3492,47 @@
        "flags": [
         "--preview"
        ],
-       "help": 12
+       "help": 13
       },
       {
        "flags": [
         "--pose"
        ],
        "metavar": "POSE",
-       "help": 13
+       "help": 14
       },
       {
        "flags": [
         "--annotation"
        ],
        "metavar": "FILE",
-       "help": 14
+       "help": 15
       },
       {
        "flags": [
         "--measurements"
        ],
        "metavar": "FILE",
-       "help": 15
+       "help": 16
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 16
+       "help": 17
       },
       {
        "flags": [
         "--sheet"
        ],
        "metavar": "PATH",
-       "help": 118
+       "help": 125
       },
       {
        "flags": [
         "--border"
        ],
-       "help": 119
+       "help": 126
       }
      ]
     },
@@ -3322,15 +3540,15 @@
      "command": "cad kicad_sch inspect",
      "summary": "what the schematic holds: its sheets, parts and nets; with a ref, what that names",
      "usage": "cad kicad_sch inspect [--json] SCHEMATIC [REF]",
-     "description": 120,
+     "description": 127,
      "arguments": [
       {
        "name": "SCHEMATIC",
-       "help": 114
+       "help": 121
       },
       {
        "name": "REF",
-       "help": 121,
+       "help": 128,
        "optional": true
       }
      ],
@@ -3339,7 +3557,7 @@
        "flags": [
         "--json"
        ],
-       "help": 107
+       "help": 114
       }
      ]
     },
@@ -3347,11 +3565,11 @@
      "command": "cad kicad_sch erc",
      "summary": "KiCad's electrical rules check: errors fail it, warnings are said",
      "usage": "cad kicad_sch erc [--json] SCHEMATIC",
-     "description": 122,
+     "description": 129,
      "arguments": [
       {
        "name": "SCHEMATIC",
-       "help": 123
+       "help": 130
       }
      ],
      "options": [
@@ -3359,7 +3577,7 @@
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     }
@@ -3376,11 +3594,11 @@
      "command": "cad mujoco check",
      "summary": "compile a MuJoCo model (an MJCF) with MuJoCo and check it: what MuJoCo refuses or warns of, the model-health checks, what collides as what, and the contact excludes",
      "usage": "cad mujoco check [--strict] [--verbose] [--json] PATH",
-     "description": 124,
+     "description": 131,
      "arguments": [
       {
        "name": "PATH",
-       "help": 125
+       "help": 132
       }
      ],
      "options": [
@@ -3388,19 +3606,19 @@
        "flags": [
         "--strict"
        ],
-       "help": 100
+       "help": 107
       },
       {
        "flags": [
         "--verbose"
        ],
-       "help": 102
+       "help": 109
       },
       {
        "flags": [
         "--json"
        ],
-       "help": 46
+       "help": 47
       }
      ]
     }
@@ -3412,7 +3630,7 @@
    "command": "cad cache",
    "summary": "cad's cache: dir, prune (what this release cannot use), clean (all of it)",
    "usage": "cad cache {dir,prune,clean} ...",
-   "description": 126,
+   "description": 133,
    "arguments": [
     {
      "name": "{dir,prune,clean} ...",
@@ -3428,29 +3646,29 @@
    "command": "cad cache dir",
    "summary": "print where cad's cache is",
    "usage": "cad cache dir",
-   "description": 127
+   "description": 134
   },
   {
    "command": "cad cache prune",
    "summary": "remove what this release of cad cannot use",
    "usage": "cad cache prune",
-   "description": 128
+   "description": 135
   },
   {
    "command": "cad cache clean",
    "summary": "remove all of cad's cache; cad makes it again as it needs it",
    "usage": "cad cache clean",
-   "description": 129
+   "description": 136
   },
   {
    "command": "cad delete",
    "summary": "delete documents: record, cached document, the engine's copy",
    "usage": "cad delete [--dry-run] [--yes] [--json] DOC [DOC ...]",
-   "description": 130,
+   "description": 137,
    "arguments": [
     {
      "name": "DOC",
-     "help": 131,
+     "help": 138,
      "repeatable": true
     }
    ],
@@ -3459,20 +3677,20 @@
      "flags": [
       "--dry-run"
      ],
-     "help": 132
+     "help": 139
     },
     {
      "flags": [
       "-y",
       "--yes"
      ],
-     "help": 133
+     "help": 140
     },
     {
      "flags": [
       "--json"
      ],
-     "help": 134
+     "help": 141
     }
    ]
   },
@@ -3480,19 +3698,19 @@
    "command": "cad doctor",
    "summary": "report this cad, its folders, its kernel and the server; it changes nothing",
    "usage": "cad doctor [--check] [--json]",
-   "description": 135,
+   "description": 142,
    "options": [
     {
      "flags": [
       "--check"
      ],
-     "help": 136
+     "help": 143
     },
     {
      "flags": [
       "--json"
      ],
-     "help": 137
+     "help": 144
     }
    ]
   },
@@ -3500,13 +3718,13 @@
    "command": "cad mcp",
    "summary": "serve the CAD app to the agent app that starts it, over MCP on stdin and stdout",
    "usage": "cad mcp",
-   "description": 138
+   "description": 145
   },
   {
    "command": "cad plugin",
    "summary": "the plugin in your agent apps: `install` puts it in or updates it; `update auto`: whether cad's updates update it too",
    "usage": "cad plugin {install} ...",
-   "description": 139,
+   "description": 146,
    "arguments": [
     {
      "name": "{install} ...",
@@ -3521,7 +3739,7 @@
    "command": "cad plugin install",
    "summary": "install the plugin in every agent app found on this computer, or update it there",
    "usage": "cad plugin install",
-   "description": 140
+   "description": 147
   },
   {
    "command": "cad plugin update",
@@ -3540,7 +3758,7 @@
    "command": "cad plugin update auto",
    "summary": "show or change whether cad's updates update the plugin too",
    "usage": "cad plugin update auto [{status,on,off}]",
-   "description": 141,
+   "description": 148,
    "arguments": [
     {
      "name": "{status,on,off}",
@@ -3557,13 +3775,13 @@
    "command": "cad run",
    "summary": "run a script (or -m, -c) as uv run does, cad pinned at this device's release with the integrations its imports use",
    "usage": "cad run [uv run's options] SCRIPT.py [ARGS...] | -m MODULE [ARGS...] | -c CODE [ARGS...] | COMMAND [ARGS...]",
-   "description": 142
+   "description": 149
   },
   {
    "command": "cad server",
    "summary": "the cad server: start, stop, status",
    "usage": "cad server [--rotate-token] [--yes] {start,stop,status} ...",
-   "description": 143,
+   "description": 150,
    "arguments": [
     {
      "name": "{start,stop,status} ...",
@@ -3579,14 +3797,14 @@
      "flags": [
       "--rotate-token"
      ],
-     "help": 144
+     "help": 151
     },
     {
      "flags": [
       "-y",
       "--yes"
      ],
-     "help": 145
+     "help": 152
     }
    ]
   },
@@ -3594,20 +3812,20 @@
    "command": "cad server start",
    "summary": "start the cad server where it is not running",
    "usage": "cad server start [--port PORT] [--foreground]",
-   "description": 146,
+   "description": 153,
    "options": [
     {
      "flags": [
       "--port"
      ],
      "metavar": "PORT",
-     "help": 147
+     "help": 154
     },
     {
      "flags": [
       "--foreground"
      ],
-     "help": 148
+     "help": 155
     }
    ]
   },
@@ -3620,7 +3838,7 @@
      "flags": [
       "--json"
      ],
-     "help": 149
+     "help": 156
     }
    ]
   },
@@ -3633,7 +3851,7 @@
      "flags": [
       "--json"
      ],
-     "help": 150
+     "help": 157
     }
    ]
   },
@@ -3641,7 +3859,7 @@
    "command": "cad telemetry",
    "summary": "show or change the usage stats and crash reports CAD sends: status, on, off",
    "usage": "cad telemetry [{status,on,off}]",
-   "description": 151,
+   "description": 158,
    "arguments": [
     {
      "name": "{status,on,off}",
@@ -3658,7 +3876,7 @@
    "command": "cad update",
    "summary": "update cad now to the newest release of its major version (`--major`: of all); `update auto`: whether it does so itself",
    "usage": "cad update [--major]\ncad update auto [{status,on,off}]",
-   "description": 152,
+   "description": 159,
    "arguments": [
     {
      "name": "{auto} ...",
@@ -3672,7 +3890,7 @@
      "flags": [
       "--major"
      ],
-     "help": 153
+     "help": 160
     }
    ]
   },
@@ -3680,7 +3898,7 @@
    "command": "cad update auto",
    "summary": "show or change whether cad updates itself: status, on, off",
    "usage": "cad update auto [{status,on,off}]",
-   "description": 154,
+   "description": 161,
    "arguments": [
     {
      "name": "{status,on,off}",
@@ -3697,11 +3915,11 @@
    "command": "cad viewer",
    "summary": "open a viewer page on the running cad server",
    "usage": "cad viewer [--host HOST] [--port PORT] [--json] [--no-open] [--dist DIST] [--api-only] [FILE ...]",
-   "description": 155,
+   "description": 162,
    "arguments": [
     {
      "name": "FILE",
-     "help": 156,
+     "help": 163,
      "optional": true,
      "repeatable": true
     }
@@ -3712,39 +3930,39 @@
       "--host"
      ],
      "metavar": "HOST",
-     "help": 157
+     "help": 164
     },
     {
      "flags": [
       "--port"
      ],
      "metavar": "PORT",
-     "help": 158
+     "help": 165
     },
     {
      "flags": [
       "--json"
      ],
-     "help": 159
+     "help": 166
     },
     {
      "flags": [
       "--no-open"
      ],
-     "help": 160
+     "help": 167
     },
     {
      "flags": [
       "--dist"
      ],
      "metavar": "DIST",
-     "help": 161
+     "help": 168
     },
     {
      "flags": [
       "--api-only"
      ],
-     "help": 162
+     "help": 169
     }
    ]
   }
@@ -3759,9 +3977,10 @@
   "a model's document id, which cad run SCRIPT.py prints: the document the engine holds of it, never built; with --job, drawn in place of every job's input",
   "the .png to write, or a folder (one that is there, or a path ending in a separator) to write <SRC's stem>_<UTC time>.png into",
   "a Quick Edit packet (the .snapshot.json the viewer writes), a job or a list of jobs, as JSON or a file of it: every picture its outputs name drawn, each job's view as it was -- its camera, display, hidden and isolated parts, pose -- with the packet's ink and dimensions, at its output settings (padding, tightFrame, transparent, background, renderScale, sizeProfile); the other flags override every job",
-  "a mode (solid, shaded, parts, xray, hidden-line, wireframe), exploded=AMOUNT (the parts moved apart, 0 to 1; with a mode: hidden-line,exploded=0.6), edges=CLASS (the edges of one class alone: feature, tangent or seam; edges=feature draws no line where faces meet smoothly or a face closes on itself), or the display JSON object (mode, grid, camera, clip, exploded, edges, hidden, isolated: part refs the picture leaves out, or alone draws), or a JSON file of it; a drawing takes none; a KiCad board a board mode (board, copper, assembly, placement) or {mode, side, poured, layers, active, others, zones, tracks, window: [x0, y0, x1, y1], the box of the board to frame, in its mm}; a KiCad schematic {sheet, border, title} (title: KiCad's title block, on unless false; border: the page's edge and frame). Every snapshot is drawn light",
+  "a mode (solid, shaded, parts, xray, hidden-line, wireframe), exploded=AMOUNT (the parts moved apart, 0 to 1; with a mode: hidden-line,exploded=0.6), edges=CLASS (the edges of one class alone: feature, tangent or seam; edges=feature draws no line where faces meet smoothly or a face closes on itself), pmi or pmi=on (a document's PMI drawn; none is unless asked, pmi=off says so), or the display JSON object (mode, grid, camera, clip, exploded, edges, pmi, hidden, isolated: part refs the picture leaves out, or alone draws), or a JSON file of it; a drawing takes none; a KiCad board a board mode (board, copper, assembly, placement) or {mode, side, poured, layers, active, others, zones, tracks, window: [x0, y0, x1, y1], the box of the board to frame, in its mm}; a KiCad schematic {sheet, border, title} (title: KiCad's title block, on unless false; border: the page's edge and frame). Every snapshot is drawn light",
   "draw the measuring grid",
   "a preset of the world's axes, Z up (iso, front: seen from -Y, back, left: from -X, right, top, bottom), azimuth:elevation, a camera JSON object (its position, target and orthographicHalfHeight in the viewer's scene coordinates, as a Quick Edit packet carries them: a document's or a GLB's mm, a robot's m, a 3MF's unit), or authored: the view --annotation's ink was drawn in, from its Quick Edit packet, exactly",
+  "a part's named view (cad.build123d's view; PART/NAME where two parts have one): drawn down its camera, cut by its section, its PMI alone at its placements; not with --camera",
   "the viewer's Preview in place of a display mode: the model lit in a studio, in its materials, on a floor with its shadow, in perspective (a job's: \"preview\": true)",
   "a configuration's name (a robot's SRDF group state), a configuration sequence at a time of it (walk@0.6: where the viewer's playbar shows the mechanism then), or joint and coupling values as JSON ('{\"elbow\": 45}', '{\"curl\": 0.6}'; degrees, and a slide in the file's unit: a document's mm, a robot's m): the mechanism posed there; as built without it (a robot where the viewer opens it)",
   "the viewer's annotation file, or the Quick Edit packet (.snapshot.json) that carries it: its ink drawn over the model, on the parts it was drawn on",
@@ -3803,11 +4022,17 @@
   "a shared volume at or below this is none (default 0.001: the rounding along a face where two parts touch)",
   "A linear static stress study of a part or an assembly bonded where its parts touch.",
   "the part or the assembly: a .step or .xbf, or a model's document id the engine holds (cad model solve), or the handle its call returns.",
-  "the study: a JSON file path, inline JSON, or (a library caller) a dict: the fixed faces, the loads (forces, pressures, gravity, acceleration), a material where the model has none, an assembly's parts and connections and the checks to judge. Without it, the setup.",
+  "the study: a JSON file path, inline JSON, or (a library caller) a dict: the fixed faces, the loads (forces, pressures, gravity, acceleration), a material where the model has none, an assembly's parts and connections, the checks to judge and a ``hand_check`` when a sum was done by hand. Without it, the setup.",
   "the folder a solve writes its results into, made when missing; a study's alone.",
   "the part whose faces the setup lists, by its name or ref, where the document holds several.",
   "also write ccx.inp, the input CalculiX solved (the finer solve's when there were two); a study's alone.",
   "say every progress line and the timings on stderr. Without it a long solve still says how far it has got about every 10 s.",
+  "Toolpaths and G-code for a part, planned by FreeCAD and checked against the part.",
+  "the part: a .step or .xbf, or a model's document id the engine holds (cad model plan), or the handle its call returns.",
+  "the job: a JSON file path, inline JSON, or (a library caller) a dict, all lengths in mm, feeds in mm/min, speeds in rpm. \"machine\": {\"post\": grbl, linuxcnc, mach3, fanuc, centroid, uccnc or smoothie, and \"max_rpm\" (both required), and optionally \"travel_mm\", \"min_rpm\", \"max_feed_mm_min\", \"rapid_mm_min\", \"work_offset\", \"name\"}. \"material\": a feeds-table name (aluminum-6061, aluminum-7075, steel-1018, stainless-304, brass, delrin, acrylic, hdpe, mdf, hardwood, plywood) or {\"name\", \"surface_m_min\", \"chipload_mm\", \"drill_mm_per_rev\", \"stepdown_fraction\"}. \"stock\": {\"margin_mm\": [x, y, z]}, the part's box grown by x and y each side and z over the top. \"tools\": [{\"id\", \"type\": flat, ball, bull or drill, \"number\" (the T number), \"diameter_mm\", \"flute_length_mm\", \"stickout_mm\"; a flat, ball or bull's \"flutes\" and \"shank_diameter_mm\", a bull's \"corner_radius_mm\", a drill's \"point_angle\"; all required, and optionally \"name\"}]. \"setups\": [{\"id\", \"orientation\": +Z or -Z, \"origin\", \"operations\": [{\"op\": face, profile, pocket, adaptive or drill, \"tool\", \"faces\", ...}]}]. Face refs are the ones this command prints with no job; a profile with \"side\": \"inside\" names the walls it runs along. Every key set is closed: a key or value the job cannot take is refused with the ones it can. Without it, what a job can name.",
+  "the folder a plan writes its results into, made when missing; the G-code in it is named <part>.<setup><ext> (bracket.top.nc); a job's alone.",
+  "which part occurrence to read (kit/arm, pin.2) when the document is an assembly. Omitted, the document must hold one part.",
+  "show each stage and its time on stderr.",
   "Each joint's stops, found from the geometry: where its parts first meet another part.",
   "the document: a .step or .xbf, or a model's document id the engine holds (cad model ranges), or the handle its call returns.",
   "the sweep's step: degrees for a turning joint, millimetres for a sliding one; default 1.",

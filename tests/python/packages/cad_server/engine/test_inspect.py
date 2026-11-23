@@ -122,7 +122,7 @@ class SummaryTest(unittest.TestCase):
         lines = shown.stdout.splitlines()
         self.assertEqual(lines[0], f"hinge  {ident}")
         self.assertTrue(lines[1].startswith("state       live, "), lines[1])
-        self.assertEqual(lines[2:19], [
+        self.assertEqual(lines[2:20], [
             "parts       2 in hinge",
             "bounds      210 x 60 x 30 mm, from (-50, -30, 0)",
             "volume      144,000 mm^3",
@@ -142,7 +142,7 @@ class SummaryTest(unittest.TestCase):
             "declared files none",
             "closure",
         ])
-        self.assertEqual(json.loads("\n".join(lines[19:]))["source"]["function"], "hinge")
+        self.assertEqual(json.loads("\n".join(lines[20:]))["source"]["function"], "hinge")
 
         data = self.run_("-m", "cad_server.engine", "inspect", ident, "--json")
         self.assertEqual(data.returncode, 0, data.stderr)

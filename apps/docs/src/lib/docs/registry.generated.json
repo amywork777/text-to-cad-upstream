@@ -6,6 +6,7 @@
     "dfm",
     "interference",
     "solve",
+    "plan",
     "ranges",
     "drc",
     "erc",
@@ -79,6 +80,12 @@
           "name": "solve",
           "summary": "a linear static stress study of a part or a bonded assembly: with --study and --out DIR, the solve, its results written into DIR (result.json, result.glb, result.vtu, stress.png, displacement.png), each part's peak stress and safety factor, and a part that yields failing it; with no --study, the parts, the pairs that touch and a part's faces a study names",
           "integration": "calculix",
+          "engine": false
+        },
+        {
+          "name": "plan",
+          "summary": "toolpaths and G-code for a part: with --job and --out DIR, FreeCAD plans and posts each setup, every path checked against the part, its results written into DIR (result.json, result.glb and, when nothing fails, the G-code) and a plan with an error failing it; with no --job, the faces, holes and floors a job names",
+          "integration": "build123d",
           "engine": false
         },
         {
@@ -171,6 +178,12 @@
           "engine": false
         },
         {
+          "name": "plan",
+          "summary": "toolpaths and G-code for a part: with --job and --out DIR, FreeCAD plans and posts each setup, every path checked against the part, its results written into DIR (result.json, result.glb and, when nothing fails, the G-code) and a plan with an error failing it; with no --job, the faces, holes and floors a job names",
+          "integration": "build123d",
+          "engine": false
+        },
+        {
           "name": "ranges",
           "summary": "each joint's stops found from the geometry: the joint turned or slid alone, a step at a time each way, until its parts meet another part; the stops and which parts meet, nothing written",
           "integration": "build123d",
@@ -253,6 +266,12 @@
           "name": "solve",
           "summary": "a linear static stress study of a part or a bonded assembly: with --study and --out DIR, the solve, its results written into DIR (result.json, result.glb, result.vtu, stress.png, displacement.png), each part's peak stress and safety factor, and a part that yields failing it; with no --study, the parts, the pairs that touch and a part's faces a study names",
           "integration": "calculix",
+          "engine": false
+        },
+        {
+          "name": "plan",
+          "summary": "toolpaths and G-code for a part: with --job and --out DIR, FreeCAD plans and posts each setup, every path checked against the part, its results written into DIR (result.json, result.glb and, when nothing fails, the G-code) and a plan with an error failing it; with no --job, the faces, holes and floors a job names",
+          "integration": "build123d",
           "engine": false
         },
         {
@@ -880,6 +899,27 @@
         "name": "ccx",
         "minimum": "2.20",
         "override": "CAD_CCX"
+      }
+    },
+    {
+      "name": "freecad",
+      "summary": "FreeCAD's CAM workbench, run by freecadcmd, a program the person installs: a CAM plan (plan) writes its input, runs it headless in a private folder, and reads back its paths and its posted G-code",
+      "extra": null,
+      "process": "separate",
+      "operations": [],
+      "files": [],
+      "modules": [],
+      "distributions": [],
+      "commands": [],
+      "holds": "",
+      "downloadMb": 0,
+      "alongside": [],
+      "python": null,
+      "platforms": [],
+      "program": {
+        "name": "freecadcmd",
+        "minimum": "1.1",
+        "override": "CAD_FREECAD"
       }
     },
     {
