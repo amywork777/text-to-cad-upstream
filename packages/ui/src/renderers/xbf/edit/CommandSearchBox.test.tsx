@@ -140,7 +140,7 @@ it("lights the result under the pointer, but not one the toolbar shows dimmed, a
   const [, dimmed, enabled] = rows();
   expect(enabled.className).toMatch(/hover:bg-cad-ws-hover/);
   expect(dimmed.className).not.toMatch(/hover:bg-cad-ws-hover/);
-  expect(dimmed.className).toMatch(/aria-disabled:opacity-40/);
+  expect(dimmed.className).toMatch(/aria-disabled:opacity-50/);
 });
 
 it("finds a button by the name the toolbar gives it now", async () => {
