@@ -821,7 +821,7 @@ def _finish(model: Any, result: Any, run: Any, report: dict[str, Any], log: Call
     targets = [(target.kind, target.path) for target in plan]
     _plan_said(model, plan)
     xbf = next((path for kind, path in targets if kind == "xbf"), None)
-    tree, tokens, built = _tree(model, result, run, report, context, xbf)
+    tree, tokens, built = _tree(model, result, run, report, context, xbf, log=log)
     signature = (_signature(tree), tuple(tokens), tree.closure, tree.parameters)
     # What the tree holds at a glance, which the daemon says against the last build (``delta``).
     clock = time.perf_counter()
@@ -835,7 +835,7 @@ def _finish(model: Any, result: Any, run: Any, report: dict[str, Any], log: Call
 
 
 def _tree(model: Any, result: Any, run: Any, report: dict[str, Any], context: Any, xbf: Any,
-          closure: bool = True) -> tuple[Any, list, dict[str, "_Named"]]:
+          closure: bool = True, log: Callable[[str], None] = lambda _line: None) -> tuple[Any, list, dict[str, "_Named"]]:
     """A model's result as the document's tree (``document.collect``): its joints harvested (kept beside the
     body's run), its closure (``closure``: a preview's tree has none) and the parameters its script declares
     recorded, every part named and keyed (``_PARTS``), and parts of one geometry merged. The tree, each
