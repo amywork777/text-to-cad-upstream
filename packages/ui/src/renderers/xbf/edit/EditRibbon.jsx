@@ -372,7 +372,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
       : () => tool.onSelect() });
   const effectTool = effect ? byId.get(effect.id) : null;
   // The tab row: Undo and Redo as small icons at its left, the tabs, and at its right where the part stands.
-  const tabRow = (list, active, onPick, end) => <div data-cad-ribbon-tabs="" className="flex h-7 shrink-0 items-center gap-0.5 border-b border-border px-1.5">
+  const tabRow = (list, active, onPick, end) => <div data-cad-ribbon-tabs="" className="flex h-7 shrink-0 items-center gap-0.5 border-b border-border pl-1.5 pr-2.5">
     <div className="flex shrink-0 items-center gap-0.5 pr-2">
       <ToolbarButton label="Undo" className="hover:bg-cad-ws-hover" disabled={!edit.canUndo} onClick={() => void edit.undo()}><UndoIcon className="size-4" /></ToolbarButton>
       <ToolbarButton label="Redo" className="hover:bg-cad-ws-hover" disabled={!edit.canRedo} onClick={() => void edit.redo()}><RedoIcon className="size-4" /></ToolbarButton>
@@ -382,7 +382,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
         className={cn(TAB_CLASS, each.id === active && "border-info font-medium text-foreground")}
         onClick={() => onPick(each.id)}>{each.title}</button>)}
     </div>
-    <div className="ml-auto flex min-w-0 items-center gap-2 pl-2">
+    <div className="ml-auto flex min-w-0 shrink items-center gap-2 overflow-hidden pl-2">
       {/* The command search, as NX's Command Finder is: an icon, S its key (its tooltip says so). */}
       <ToolbarButton label="Search commands" shortcut="S" data-cad-command-finder="" aria-haspopup="dialog" aria-expanded={finding}
         className={TAB_ROW_BUTTON_CLASS} onClick={() => setFinding(true)}><Search className="size-4" /></ToolbarButton>
@@ -550,7 +550,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   };
   return ribbon("Design", groupsOf[front.id]().filter(group => group.items.length), <>
     {statusLine(status, Boolean(state?.building?.error))}
-    {state?.units ? <span className="shrink-0 text-tiny text-muted-foreground">{unitWord(state.units)}</span> : null}
+    {state?.units ? <span className="min-w-0 truncate text-tiny text-muted-foreground" title={unitWord(state.units)}>{unitWord(state.units)}</span> : null}
   </>, { tabs, active: front.id, onPick: setTab, key: `Design:${front.id}`,
     // Every tab's items, not the one in front; a command's Subtract is the Boolean of the unite command's dialog. An
     // assembly has no Features or Sketch tab, but its search finds their commands all the same, dimmed, saying to
