@@ -69,7 +69,7 @@ export interface CadViewerProps<Model extends LibraryModel = LibraryModel> {
    * shows its file alone but whose host can open others beside it (Studio's tabs): a renderer's
    * link, a part opened from its assembly. Absent, such a view opens no other file.
    */
-  openElsewhere?(file: string): void;
+  openElsewhere?(file: string, options?: { replace?: boolean }): void;
   /**
    * Keep the library's picture of a model: the file on screen once it has settled, and on the home a
    * card's.
@@ -214,7 +214,7 @@ export function CadViewer<Model extends LibraryModel = LibraryModel>({ client, h
   }, [preferences]);
   const viewerHost = useMemo<ViewerHost>(() => ({
     ...host,
-    navigation: homed ? { openFile, home } : openElsewhere ? { openFile: (next: string) => { if (next) openElsewhere(normalizePath(next)); } } : {},
+    navigation: homed ? { openFile, home } : openElsewhere ? { openFile: (next: string, options?: { replace?: boolean }) => { if (next) openElsewhere(normalizePath(next), options); } } : {},
   }), [host, openFile, home, homed, openElsewhere]);
 
   // The home's pictures for cards without a current one, drawn out of sight one at a time and kept as

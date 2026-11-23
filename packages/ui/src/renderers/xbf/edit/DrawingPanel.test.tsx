@@ -27,3 +27,14 @@ it("the drawing's sheet opens as its script has it, and OK sends the title block
     revision: 'B', author: '' } });
   expect(edit.stopInspecting).toHaveBeenCalled();
 });
+
+it("a drawing written its own way opens, says its sheet is set in its script, and only closes", async () => {
+  const user = userEvent.setup();
+  const edit = { saving: false, state: { drawing: { script: 'parts/lamp_drawing.py', pdf: '', drawn: false, readable: false } },
+    drawing: vi.fn(), stopInspecting: vi.fn() };
+  render(<DrawingPanel edit={edit as never} />);
+  expect(screen.getByText(/parts\/lamp_drawing\.py draws this part in its own way/)).toBeTruthy();
+  expect([screen.queryByRole('combobox', { name: 'Size' }), screen.queryByRole('button', { name: 'OK' })]).toEqual([null, null]);
+  await user.click(screen.getByRole('button', { name: 'Close' }));
+  expect([edit.stopInspecting.mock.calls.length, edit.drawing.mock.calls.length]).toEqual([1, 0]);
+});

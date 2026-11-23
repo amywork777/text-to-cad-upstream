@@ -62,11 +62,13 @@ export function useStudioHost(bridge: Bridge, context: HostContext, tabStore: Ta
  * handler's is (`ownNavigation`), with the agent's shows still shown; and it opens another file in a tab of
  * its own, from any of its views (`openElsewhere`): a part opened from its assembly.
  */
-export function useStudioFiles(bridge: Bridge): { ownNavigation: boolean; openElsewhere: ((path: string) => void) | undefined } {
+export function useStudioFiles(bridge: Bridge): { ownNavigation: boolean; openElsewhere: ((path: string, options?: { replace?: boolean }) => void) | undefined } {
   const ownNavigation = Boolean(bridge.hostCapabilities.openFiles);
   // Studio names a scene's nodes as an engineer reads them (`studioNames`).
   useEffect(() => { studioNames.set(ownNavigation); return () => studioNames.set(false); }, [ownNavigation]);
   const openElsewhere = useMemo(() => (ownNavigation
-    ? (path: string) => void bridge.request('studio/open-file', { path }).catch(() => {}) : undefined), [ownNavigation, bridge]);
+    // `replace`: the view's own part, shown by its built document in place of the file (`useXbfCadMode.jsx`).
+    ? (path: string, options?: { replace?: boolean }) => void bridge.request('studio/open-file', options?.replace ? { path, replace: true } : { path })
+      .catch(() => {}) : undefined), [ownNavigation, bridge]);
   return { ownNavigation, openElsewhere };
 }

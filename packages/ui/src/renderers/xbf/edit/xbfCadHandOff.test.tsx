@@ -258,7 +258,7 @@ describe('a part opened as its STEP', () => {
   it("is shown by its document in CAD, built first as New part builds one, and Studio hears of the build", async () => {
     const before = editLayoutHost.builds();
     const { client, openFile } = opening('manual');
-    await waitFor(() => expect(openFile).toHaveBeenCalledWith(DOCUMENT), { timeout: 3000 });
+    await waitFor(() => expect(openFile).toHaveBeenCalledWith(DOCUMENT, { replace: true }), { timeout: 3000 });
     expect(client.editChange).toHaveBeenCalledWith({ file: OPENED, build: true });
     expect(openFile).toHaveBeenCalledTimes(1);
     expect(editLayoutHost.builds()).toBe(before + 1);

@@ -247,11 +247,15 @@ def _drawing_of(root: Path, step: Path) -> dict | None:
 
     try:
         found = drawings.find(root, step)
-        if found is None:
-            return None
+    except OSError:
+        return None
+    if found is None:
+        return None
+    try:
         sheet = drawings.read(found.read_text(encoding="utf-8"))
     except (OSError, SyntaxError, drawings.DrawingError):
-        return None
+        # Studio: a drawing whose sheet is written its own way is still the part's: named, not set in the panel.
+        return {"script": _relative(root, found), "pdf": "", "drawn": False, "readable": False}
     out = sheet.pop("out", None)
     pdf = (found.parent / out).resolve() if out else None
     return {"script": _relative(root, found), "pdf": _relative(root, pdf) if pdf else "", "drawn": bool(pdf and pdf.exists()), **sheet}

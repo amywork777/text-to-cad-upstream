@@ -96,6 +96,9 @@ it("a host that opens files beside the thread (Studio) moves between them itself
   // A part opened from its assembly opens in a tab of the host's own.
   act(() => viewer.props!.openElsewhere!('/work/b.step'));
   expect(bridge.request).toHaveBeenCalledWith('studio/open-file', { path: '/work/b.step' });
+  // A part opened as its STEP and shown by its built document asks for the swap in its own tab.
+  act(() => viewer.props!.openElsewhere!('/work/doc', { replace: true }));
+  expect(bridge.request).toHaveBeenCalledWith('studio/open-file', { path: '/work/doc', replace: true });
 });
 
 it('a host that lays the workspace out hears what the part on screen allows as it changes, until the view goes; a host that does not, nothing', () => {

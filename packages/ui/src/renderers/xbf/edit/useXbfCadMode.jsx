@@ -94,7 +94,8 @@ export function useXbfEditLayout({ client, file, services, active, compact = fal
   useEffect(() => {
     if (!swap) return undefined;
     let gone = false;
-    builtModel().then(id => { if (!gone && id) openRef.current?.(id); }, () => {});
+    // The part's document takes the file's place (`replace`): a host with tabs swaps this one rather than fronting a second.
+    builtModel().then(id => { if (!gone && id) openRef.current?.(id, { replace: true }); }, () => {});
     return () => { gone = true; };
   }, [swap, builtModel]);
   return { edit, layout, setLayout, hosted, editable, busy, editing: editable && layout === "manual", cad: cadChosen(layout, edit), onScreen };

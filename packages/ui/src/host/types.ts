@@ -89,7 +89,7 @@ export interface ViewerHost {
    * neither: it has no explorer, and a renderer's link to another file is plain text there.
    */
   navigation: {
-    openFile?(path: string): void;
+    openFile?(path: string, options?: { replace?: boolean }): void;
     home?(): void;
   };
   /** The navbar's links: the version, X, Discord, GitHub and new issues. A host with none gets none. */

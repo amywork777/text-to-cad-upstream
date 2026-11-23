@@ -2096,6 +2096,11 @@ class Drawings(Commands):
         again = self.service.change({"file": file, "files": state["files"], "drawing": {"make": True}})
         self.assertFalse(again["ok"])
         self.assertIn("has a drawing already", again["error"])
+        # Studio: a drawing written in its own way (its sheet not one the panel reads) is still the part's drawing:
+        # the state names it, not editable in the panel, so the ribbon opens it rather than offer Make Drawing again.
+        script.write_text(script.read_text(encoding="utf-8").replace('sheet = Sheet(', 'sheet = make_sheet(Sheet, '), encoding="utf-8")
+        own = self.service.state(file)["drawing"]
+        self.assertEqual({key: own[key] for key in ("script", "readable")}, {"script": "block_drawing.py", "readable": False})
 
 # A part made on a STEP brought in, as another CAD tool imports one: its script reads it, and models on it.
 IMPORTED = {

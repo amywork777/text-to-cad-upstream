@@ -53,6 +53,13 @@ export default function DrawingPanel({ edit }) {
       <DrawingIcon className="size-5 shrink-0" />
       <h2 className="min-w-0 flex-1 truncate text-xs font-normal leading-4 text-foreground">Drawing</h2>
     </div>
+    {drawing.readable === false ? <>
+      {/* A drawing written its own way: its sheet is set in its script, which the panel does not rewrite. */}
+      <p className={`${EDIT_TEXT_CLASSES} py-1.5`} data-cad-drawing-own="">
+        {`${drawing.script} draws this part in its own way, so its sheet is set in that script. Ask the agent to change it.`}
+      </p>
+      <ConfirmButtons className="border-t border-border px-2 py-2" cancelLabel="Close" onCancel={edit.stopInspecting} />
+    </> : <>
     <p className={`${EDIT_TEXT_CLASSES} py-1.5`}>
       {drawing.drawn ? `Drawn to ${drawing.pdf} by ${drawing.script}. Its views and dimensions follow the part.`
         : `${drawing.script} has not drawn ${drawing.pdf} yet. OK draws it.`}
@@ -71,5 +78,6 @@ export default function DrawingPanel({ edit }) {
       <FileSheetCheckboxRow label="Isometric view" checked={values.iso} onCheckedChange={value => set("iso")(Boolean(value))} />
     </FileSheetSettingsSection>
     <ConfirmButtons className="border-t border-border px-2 py-2" onOk={() => void ok()} onCancel={edit.stopInspecting} okDisabled={sameValues(values, opened) || edit.saving} busy={edit.saving} />
+    </>}
   </div>;
 }
