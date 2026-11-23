@@ -176,12 +176,12 @@ function EntryDetails({ entry, pmi, onSelectRelated }) {
       {datumLinks.map(({ letter, role, entry: datum }) => <button key={letter} type="button"
         aria-label={t("pmi.highlightDatum", { role: t(DATUM_ROLE_KEYS[role]).toLowerCase(), letter })} aria-pressed={Boolean(datum && pmi.datumFocus === datum.key)}
         disabled={!datum || datum.status !== "ok"} onClick={() => pmi.focusDatum(datum.key)}
-        className="flex h-6 w-full items-center justify-between gap-2 rounded px-1 text-tiny hover:bg-accent aria-pressed:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+        className="flex h-6 w-full items-center justify-between gap-2 rounded px-1 text-tiny hover:bg-accent/50 aria-pressed:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
         <span>{t(DATUM_ROLE_KEYS[role])}</span><span>{letter}</span>
       </button>)}
     </div> : null}
     {dependents.length ? <div className="py-1 text-tiny"><p className="pb-1 text-muted-foreground">{t("pmi.usedBy")}</p>
-      {dependents.map(item => <button key={item.key} type="button" className="block w-full rounded px-1 py-1 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      {dependents.map(item => <button key={item.key} type="button" className="block w-full rounded px-1 py-1 text-left hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => onSelectRelated(item)}>{item.callout.text}</button>)}
     </div> : null}
     {entry.refs.map(ref => <InfoRow key={`${ref.role}:${ref.ref}`} label={ROLE_KEYS[ref.role] ? t(ROLE_KEYS[ref.role]) : ref.role} copy={ref.ref}

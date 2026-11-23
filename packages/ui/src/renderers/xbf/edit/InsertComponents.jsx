@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FILE_SHEET_STATUS_TEXT_CLASSES, FileSheetSettingsSection } from "../../kit/inspector/FileSheet.js";
 import { InsertComponentIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
+import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 
 /**
  * Insert Components, as SolidWorks' adds a part to an assembly: the project's part scripts listed
@@ -35,7 +36,7 @@ export default function InsertComponents({ edit }) {
         : parts.length === 0 ? <p className={`${FILE_SHEET_STATUS_TEXT_CLASSES} pb-1`}>No other part scripts in this project.</p>
           : <div role="listbox" aria-label="Parts" className="flex flex-col pb-1">
             {parts.map(part => <button key={part} type="button" role="option" aria-selected={picked === part}
-              className={`truncate rounded px-1.5 py-1 text-left text-tiny ${picked === part ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
+              className={`truncate rounded px-1.5 py-1 text-left text-tiny ${WORKSPACE_PRESS_CLASS} ${picked === part ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"}`}
               onClick={() => setPicked(part)} onDoubleClick={() => { setPicked(part); void edit.mate({ insert: part }).then(reply => { if (reply?.ok) edit.stopInspecting(); }); }}>
               {part}
             </button>)}

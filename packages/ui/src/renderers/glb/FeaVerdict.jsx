@@ -45,7 +45,7 @@ function Choosable({ choice, chosen, onChoose, label, className, children }) {
   const choose = () => onChoose(choice);
   return <div role="button" tabIndex={0} aria-pressed={active} aria-label={t("tree.select", { name: label })} data-fea-choice={choice.id} onClick={choose}
     onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(); } }}
-    className={cn(className, "-mx-1 cursor-pointer rounded px-1 outline-none hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring",
+    className={cn(className, "-mx-1 cursor-pointer rounded px-1 outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring/45",
       active && "bg-foreground/[0.07]")}>{children}</div>;
 }
 

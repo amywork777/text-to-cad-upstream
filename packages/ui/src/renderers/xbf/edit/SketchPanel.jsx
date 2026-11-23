@@ -20,10 +20,11 @@ import { ORIGIN_PLANES, selectionItems } from "./editMode.js";
 import { nxPlane } from "./nx.js";
 import { formatValue, MODEL_TOOLS, MODIFY_TOOLS, newCurves, PATTERN_TOOLS, patternOp, patternSettings, polygonSides, relationsFor, relationsOn, sketchTool,
   toolSize } from "./sketchMode.js";
+import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 
 const STATUS_CLASSES = Object.freeze({ "Fully defined": "text-foreground", "Under defined": "text-info",
   "Over defined": "text-destructive" });
-const CHIP_CLASS = "rounded-md border border-border px-2 py-0.5 text-tiny text-foreground hover:bg-accent/70 disabled:opacity-50";
+const CHIP_CLASS = `rounded-md border border-border px-2 py-0.5 text-tiny text-foreground hover:bg-accent/50 disabled:opacity-50 ${WORKSPACE_PRESS_CLASS}`;
 
 /** A sketch tool's size, typed over as SolidWorks' PropertyManager takes it: a number, or a size's name. */
 function SizeRow({ label, value, unit, disabled, onCommit }) {

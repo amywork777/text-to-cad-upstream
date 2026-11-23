@@ -9,7 +9,7 @@ import { SELECTION_BAR_EDGE_PX, placeBar, screenBox } from "./selectionBar.js";
 
 // A button of the bar: its icon and its name in a row, the workspace's pale blue under the pointer and its deeper one
 // while it is pressed, and nothing that grows, glows or moves.
-const BUTTON_CLASS = "flex h-6 shrink-0 items-center gap-1.5 rounded-sm px-2 text-tiny font-medium leading-none text-foreground transition-colors hover:bg-cad-ws-hover active:bg-cad-ws-selected focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4 [&_svg]:shrink-0";
+const BUTTON_CLASS = "flex h-6 shrink-0 items-center gap-1.5 rounded-sm px-2 text-tiny font-medium leading-none text-foreground transition-colors hover:bg-cad-ws-hover active:bg-cad-ws-selected focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0";
 const AGENT_BUTTONS = Object.freeze({
   // The box it opens is the same Quick Edit the AI layout shows, so it says so.
   ask: { label: "Quick Edit", Icon: AskIcon },

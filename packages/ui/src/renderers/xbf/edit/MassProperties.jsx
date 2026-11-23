@@ -9,6 +9,7 @@ import { MassPropertiesIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { inertiaRows, massRows } from "./editMode.js";
 import ErrorWords from "./ErrorWords.jsx";
+import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 
 const NONE = "none";
 
@@ -46,7 +47,7 @@ export default function MassProperties({ edit }) {
       {/* Edit Material, as SolidWorks applies one: kept in the part (its script's MATERIAL), weighed in from then on. */}
       {typeof edit.setMaterial === "function" && key !== (own || NONE) ? <div className="flex justify-end px-2 pb-1.5">
         <button type="button" data-cad-apply-material="" disabled={edit.saving}
-          className="rounded-md border border-border px-2 py-0.5 text-tiny text-foreground hover:bg-accent disabled:opacity-40"
+          className={`rounded-md border border-border px-2 py-0.5 text-tiny text-foreground hover:bg-accent/50 disabled:opacity-50 ${WORKSPACE_PRESS_CLASS}`}
           onClick={() => void edit.setMaterial(key === NONE ? "" : key)}>{key === NONE ? "Remove from Part" : "Apply to Part"}</button>
       </div> : null}
     </FileSheetSettingsSection>

@@ -13,3 +13,9 @@ export const WORKSPACE_SURFACE_CLASS = "rounded-sm border border-border bg-backg
  * opaque background, one hairline on the side it meets the canvas, and no card's border or corners.
  */
 export const WORKSPACE_DOCK_CLASS = "border-r border-border bg-cad-ws-panel text-foreground";
+/**
+ * `WORKSPACE_PRESS_CLASS`: what every small button of the workspace and Studio's panels does under the pointer and
+ * the keyboard, as the kit's tiles do: its colours ease in 150ms, and a keyboard focus is the kit's ring (2px, the
+ * ring at 45%), drawn outside the button.
+ */
+export const WORKSPACE_PRESS_CLASS = "transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";

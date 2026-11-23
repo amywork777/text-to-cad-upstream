@@ -51,6 +51,7 @@ import ErrorWords from "./ErrorWords.jsx";
 import { booleanOf, nxCommand } from "./nx.js";
 import { sketchGeometry } from "./sketchMode.js";
 import { isEdgeItem, isFaceItem } from "./selectors.js";
+import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 // An extrude's end conditions, as SolidWorks' Direction 1 names them and in its order; a cut can go through all.
 // The end conditions as SolidWorks names them.
 const END = Object.freeze({ blind: "Blind", through: "Through All", next: "Up To Next", vertex: "Up To Vertex", surface: "Up To Surface",
@@ -116,7 +117,7 @@ function OtherHoles({ places, axes, units, disabled, onChange, onRemove }) {
         className="w-14" onValueCommit={draft => onChange(index, axis, String(draft).trim())} />)}
       <span className="w-6 text-tiny text-muted-foreground">{units}</span>
       <button type="button" aria-label={`Remove ${name}`} disabled={disabled}
-        className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+        className={`flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent/50 hover:text-foreground ${WORKSPACE_PRESS_CLASS}`}
         onClick={() => onRemove(index)}><X className="size-3" aria-hidden="true" /></button>
     </span>} />;
   });
@@ -144,7 +145,7 @@ export function SelectionBox({ items, prompt, more = 0, onClear = null, clearLab
     {items.map(item => <li key={item.key} className="flex min-w-0 items-center gap-1.5">
       <span className="size-2 shrink-0 rounded-full bg-cad-picked" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      {onClear ? <button type="button" aria-label={`${clearLabel} ${item.label}`} className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+      {onClear ? <button type="button" aria-label={`${clearLabel} ${item.label}`} className={`flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent/50 hover:text-foreground ${WORKSPACE_PRESS_CLASS}`}
         onClick={() => onClear(item)}><X className="size-3" aria-hidden="true" /></button> : null}
     </li>)}
     {more > 0 ? <li className="pl-3.5 text-muted-foreground">{`and ${more} more`}</li> : null}
@@ -530,7 +531,7 @@ export default function EditCommand({ edit, names, references, tree = null, onDe
       <h2 className="min-w-0 flex-1 truncate text-xs font-normal leading-4 text-foreground">{title}</h2>
       {/* OK, Apply and Cancel are at the dialog's foot, as NX has them; its title row closes it. */}
       <button type="button" aria-label="Close" title="Close" disabled={edit.saving} onClick={edit.close}
-        className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40 [&_svg]:size-3.5">
+        className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-50 [&_svg]:size-3.5">
         <X aria-hidden="true" />
       </button>
     </div>

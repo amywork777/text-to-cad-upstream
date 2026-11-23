@@ -4,6 +4,7 @@ import { FILE_SHEET_STATUS_TEXT_CLASSES, FileSheetSettingsSection } from "../../
 import { CompareIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { compareVolume, timeAgo } from "./editMode.js";
+import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 
 // A version as the list names it: before the files that changed after it.
 const changedWords = version => (version.changed.length ? `before ${version.changed.join(", ")} changed` : "before a change");
@@ -36,7 +37,7 @@ export default function ComparePanel({ edit }) {
       {versions.length ? <ul aria-label="Versions" className="mx-2 mb-1 flex flex-col gap-0.5">
         {versions.map(version => <li key={version.id}>
           <button type="button" aria-pressed={comparison?.version === version.id} aria-label={`${timeAgo(version.time, now)}, ${changedWords(version)}`}
-            className={cn("flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-tiny leading-4 text-foreground hover:bg-accent/70",
+            className={cn("flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-tiny leading-4 text-foreground hover:bg-accent/50", WORKSPACE_PRESS_CLASS,
               "aria-pressed:bg-accent")}
             onClick={() => void compare(version.id)}>
             <span className="shrink-0 tabular-nums text-muted-foreground">{timeAgo(version.time, now)}</span>

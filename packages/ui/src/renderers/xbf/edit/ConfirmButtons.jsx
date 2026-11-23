@@ -1,9 +1,9 @@
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
 import { cn } from "@cad/ui/utils";
 
-const BUTTON_CLASS = "flex h-control min-w-14 items-center justify-center rounded-md border px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40";
+const BUTTON_CLASS = "flex h-control min-w-14 items-center justify-center rounded-md border px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-50";
 const PRIMARY_CLASS = "border-primary bg-primary text-primary-foreground hover:bg-primary/90";
-const SECONDARY_CLASS = "border-border bg-background text-foreground hover:bg-accent";
+const SECONDARY_CLASS = "border-border bg-background text-foreground hover:bg-accent/50";
 
 /**
  * A dialog's buttons as NX lays them along its foot: OK (the default, which makes it and closes

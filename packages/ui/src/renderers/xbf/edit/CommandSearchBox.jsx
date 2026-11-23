@@ -7,7 +7,7 @@ import { isCustomCommand } from "./customFeature.js";
 
 // A result, as a toolbar button's colors are: the workspace's pale blue under the pointer, its deeper one for the one chosen.
 // A command the toolbar shows dimmed is dimmed, and the pointer passes over it as over the toolbar's dimmed button.
-const ROW_CLASS = "flex h-7 w-full min-w-0 cursor-default items-center gap-2 rounded-sm px-2 text-xs text-foreground aria-disabled:opacity-40 [&_svg]:size-5 [&_svg]:shrink-0";
+const ROW_CLASS = "flex h-7 w-full min-w-0 cursor-default items-center gap-2 rounded-sm px-2 text-xs text-foreground aria-disabled:opacity-50 [&_svg]:size-5 [&_svg]:shrink-0";
 const HOVER_CLASS = "hover:bg-cad-ws-hover";
 const CHOSEN_CLASS = "bg-cad-ws-selected hover:bg-cad-ws-selected";
 

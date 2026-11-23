@@ -17,6 +17,7 @@ import { FeatureIcon } from "./featureIcons.jsx";
 import { customChanged, customDefinition, customGroups, customRequest, customValues, pickWords, picksOfKind } from "./customFeature.js";
 import { selectionItems } from "./editMode.js";
 import { isEdgeItem, isFaceItem } from "./selectors.js";
+import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 
 const PREVIEW_WAIT_MS = 250;
 
@@ -88,8 +89,8 @@ export default function EditCustomFeature({ edit, references = [] }) {
       return <FileSheetControlRow key={param.name} label={label(param)} trailing={<button type="button" aria-pressed={on}
         aria-label={`${param.label}: ${pickWords(param, picks[param.name], definition.editing)}`} disabled={edit.saving}
         onClick={() => { setFaulty(null); setActive(on ? null : param.name); }}
-        className={cn("flex h-6 min-w-0 max-w-[10rem] items-center rounded-md border px-2 text-tiny transition-colors",
-          on ? "border-info bg-info/10 text-foreground" : "border-input text-muted-foreground hover:bg-accent",
+        className={cn("flex h-6 min-w-0 max-w-[10rem] items-center rounded-md border px-2 text-tiny", WORKSPACE_PRESS_CLASS,
+          on ? "border-info bg-info/10 text-foreground" : "border-input text-muted-foreground hover:bg-accent/50",
           invalid && "border-destructive")}>
         <span className="truncate">{pickWords(param, picks[param.name], definition.editing)}</span>
       </button>} />;
@@ -113,7 +114,7 @@ export default function EditCustomFeature({ edit, references = [] }) {
       <FeatureIcon kind={definition.name} />
       <h2 className="min-w-0 flex-1 truncate text-xs font-normal leading-4 text-foreground">{title}</h2>
       <button type="button" aria-label="Close" title="Close" disabled={edit.saving} onClick={edit.close}
-        className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40 [&_svg]:size-3.5">
+        className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-50 [&_svg]:size-3.5">
         <X aria-hidden="true" />
       </button>
     </div>

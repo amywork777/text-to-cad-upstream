@@ -48,6 +48,7 @@ import {
   typedDimensions,
   typedStroke
 } from "./sketchMode.js";
+import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 
 // How near, in pixels, a press must land to pick something, and to land on a point or a curve.
 const HIT_PX = 7;
@@ -93,8 +94,8 @@ function ModifyBox({ box, onDone }) {
       onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onDone(null); } }} />
     {box.unit ? <span className="text-tiny text-muted-foreground">{box.unit}</span> : null}
     {box.hint ? <span className="text-tiny text-muted-foreground">{box.hint}</span> : null}
-    <button type="submit" aria-label="OK" className="flex size-5 items-center justify-center rounded text-foreground hover:bg-accent"><Check className="size-3" aria-hidden="true" /></button>
-    <button type="button" aria-label="Cancel" className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent" onClick={() => onDone(null)}>
+    <button type="submit" aria-label="OK" className={`flex size-5 items-center justify-center rounded text-foreground hover:bg-accent/50 ${WORKSPACE_PRESS_CLASS}`}><Check className="size-3" aria-hidden="true" /></button>
+    <button type="button" aria-label="Cancel" className={`flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent/50 ${WORKSPACE_PRESS_CLASS}`} onClick={() => onDone(null)}>
       <X className="size-3" aria-hidden="true" />
     </button>
   </form>;

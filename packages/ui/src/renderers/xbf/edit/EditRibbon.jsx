@@ -22,6 +22,7 @@ import { SOLID_GROUPS, booleanOf, nxCommand, workspaceTabs } from "./nx.js";
 import CommandSearchBox from "./CommandSearchBox.jsx";
 import { customCommandId } from "./customFeature.js";
 import { FeatureIcon } from "./featureIcons.jsx";
+import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 
 // The viewer's tools, by id, under SolidWorks' names (Clip is its Section View). They stay on the view's own strip,
 // in CAD mode as in AI, as SolidWorks keeps its view tools on the Heads-up View toolbar: the ribbon never repeats
@@ -32,10 +33,10 @@ const FAMILY_NAMES = Object.freeze({ rectangle: "Rectangle", circle: "Circle", a
 // Each command a picture large enough to tell apart, as SolidWorks' CommandManager draws its own: every
 // one the icon generator's (`cadIcons.jsx`, `sketchIcons.jsx`), the view's tools too (`ribbonIcon`): the strip keeps plain glyphs.
 // The icons take the button's text color, so the palette is grey: under the pointer the workspace's
-// pale ground (`--cad-ws-hover`), and blue only on the command pressed (`PRESSED_CLASS`).
+// grey under the pointer (`--cad-ws-hover`, the accent at half), and blue only on the command pressed (`PRESSED_CLASS`).
 // What the Features tab has a button for.
 const ON_THE_RIBBON = new Set(SOLID_GROUPS.flatMap(group => group.items));
-const BUTTON_CLASS = "flex h-[3.25rem] w-[4.25rem] shrink-0 flex-col items-center justify-start gap-px rounded-md pt-0.5 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-6 [&_svg]:shrink-0";
+const BUTTON_CLASS = "flex h-[3.25rem] w-[4.25rem] shrink-0 flex-col items-center justify-start gap-px rounded-control pt-0.5 text-tiny leading-none text-sidebar-foreground/85 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-6 [&_svg]:shrink-0";
 const PRESSED_CLASS = "bg-cad-ws-selected text-info hover:bg-cad-ws-selected hover:text-info";
 // Every tool stands on one pitch, its button's width. A long name wraps to two lines under its icon,
 // as SolidWorks' CommandManager sets them, at a space or after a slash and never inside a word: the
@@ -43,7 +44,7 @@ const PRESSED_CLASS = "bg-cad-ws-selected text-info hover:bg-cad-ws-selected hov
 // fits) the buttons narrow to their icons.
 const LABEL_CLASS = "w-full whitespace-normal text-center leading-[1.1]";
 // The tab row's icon buttons: a 28px target round a 16px icon.
-const TAB_ROW_BUTTON_CLASS = "size-7 hover:bg-cad-ws-hover";
+const TAB_ROW_BUTTON_CLASS = "size-7 rounded-control hover:bg-cad-ws-hover";
 // A tab: its name as it is written, the one in front underlined.
 const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-xs leading-none text-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
 // A group's title under its buttons; where it is the group's menu it is a button too.
@@ -87,7 +88,7 @@ function RibbonGroup({ title, folded = false, partly = 0, end = false, menu = nu
   }, [partly]);
   return <div ref={groupRef} role="group" aria-label={title} aria-hidden={folded || undefined} data-cad-ribbon-group=""
     className={cn("flex shrink-0 flex-col border-r border-border last:border-r-0", end && "ml-auto", folded && "invisible")}>
-    <div className="flex items-center gap-0.5 px-1 pt-1" data-cad-ribbon-items="">{children}</div>
+    <div className="flex items-center gap-step px-pad pt-1" data-cad-ribbon-items="">{children}</div>
     <div className={cn(TITLE_BAND_CLASS, "mt-auto", partly && "justify-start px-0")}>
       {partly ? <div className="flex justify-center" style={seen ? { width: seen } : undefined} data-cad-ribbon-title="">
         {menu || <span className={TITLE_CLASS}>{title}</span>}</div>
@@ -175,7 +176,7 @@ function FamilyMenu({ label, items, onPick, noun = "tools" }) {
     <TooltipHint content={`${label} ${noun}`}>
       <DropdownMenuTrigger asChild>
         <button type="button" aria-label={`${label} ${noun}`}
-          className="-ml-1 flex h-[3.875rem] w-3.5 shrink-0 items-start justify-center rounded-md pt-3 text-sidebar-foreground/60 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground aria-expanded:bg-cad-ws-selected [&_svg]:size-3">
+          className={`-ml-1 flex h-[3.875rem] w-3.5 shrink-0 items-start justify-center rounded-md pt-3 text-sidebar-foreground/60 hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground aria-expanded:bg-cad-ws-selected [&_svg]:size-3 ${WORKSPACE_PRESS_CLASS}`}>
           <ChevronDown aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
@@ -211,8 +212,8 @@ function GroupItems({ items }) {
 function GroupMenu({ title, items }) {
   return <DropdownMenu modal={false}>
     <DropdownMenuTrigger asChild>
-      <button type="button" aria-label={`${title} commands`} className={cn(TITLE_CLASS, "flex items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 aria-expanded:bg-cad-ws-selected")}>
-        {title}<ChevronDown className="size-2.5 shrink-0" aria-hidden="true" />
+      <button type="button" aria-label={`${title} commands`} className={cn(TITLE_CLASS, "flex items-center gap-1 rounded-control px-1.5 transition-colors hover:bg-cad-ws-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 aria-expanded:bg-cad-ws-selected")}>
+        {title}<ChevronDown className="size-3 shrink-0" aria-hidden="true" />
       </button>
     </DropdownMenuTrigger>
     {/* Closes with no exit animation, so a quick second press always reaches the title. */}
@@ -274,7 +275,7 @@ function RibbonGroups({ groups }) {
       })}
     </div>
     {folded.length ? <div ref={moreRef} className="flex shrink-0 flex-col border-x border-border" data-cad-ribbon-more="">
-      <div className="flex items-center px-1 pt-1"><MoreMenu groups={folded} /></div>
+      <div className="flex items-center px-pad pt-1"><MoreMenu groups={folded} /></div>
       <div className={TITLE_BAND_CLASS}><span className={TITLE_CLASS}>More</span></div>
     </div> : null}
   </>;
@@ -372,12 +373,12 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
       : () => tool.onSelect() });
   const effectTool = effect ? byId.get(effect.id) : null;
   // The tab row: Undo and Redo as small icons at its left, the tabs, and at its right where the part stands.
-  const tabRow = (list, active, onPick, end) => <div data-cad-ribbon-tabs="" className="flex h-control shrink-0 items-center gap-0.5 border-b border-border pl-1.5 pr-2.5">
-    <div className="flex shrink-0 items-center gap-0.5 pr-2">
+  const tabRow = (list, active, onPick, end) => <div data-cad-ribbon-tabs="" className="flex h-control shrink-0 items-center gap-step border-b border-border px-pad">
+    <div className="flex shrink-0 items-center gap-step pr-2">
       <ToolbarButton label="Undo" className="hover:bg-cad-ws-hover" disabled={!edit.canUndo} onClick={() => void edit.undo()}><UndoIcon className="size-4" /></ToolbarButton>
       <ToolbarButton label="Redo" className="hover:bg-cad-ws-hover" disabled={!edit.canRedo} onClick={() => void edit.redo()}><RedoIcon className="size-4" /></ToolbarButton>
     </div>
-    <div role="tablist" aria-label="Ribbon tabs" className="flex h-full shrink-0 items-stretch gap-0.5">
+    <div role="tablist" aria-label="Ribbon tabs" className="flex h-full shrink-0 items-stretch gap-step">
       {list.map(each => <button key={each.id} type="button" role="tab" aria-selected={each.id === active}
         className={cn(TAB_CLASS, each.id === active && "border-info font-medium text-foreground")}
         onClick={() => onPick(each.id)}>{each.title}</button>)}
@@ -388,7 +389,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
         className={TAB_ROW_BUTTON_CLASS} onClick={() => setFinding(true)}><Search className="size-4" /></ToolbarButton>
       {view?.status || null}
       {/* Where the part stands, one quiet group behind a thin rule. */}
-      <div className="flex min-w-0 items-center gap-2 border-l border-border pl-2 text-tiny leading-4 text-muted-foreground empty:hidden" aria-live="polite">{end}</div>
+      <div className="flex min-w-0 items-center gap-2 border-l border-border pl-2 text-xs leading-4 text-muted-foreground empty:hidden" aria-live="polite">{end}</div>
     </div>
   </div>;
   // `finds`: the items the command search may run, whichever tab each is on (`searchable`); the box is the toolbar's neighbour, for the toolbar clips.
@@ -550,7 +551,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
   };
   return ribbon("Design", groupsOf[front.id]().filter(group => group.items.length), <>
     {statusLine(status, Boolean(state?.building?.error))}
-    {state?.units ? <span className="min-w-0 truncate text-tiny text-muted-foreground" title={unitWord(state.units)}>{unitWord(state.units)}</span> : null}
+    {state?.units ? <span className="min-w-0 truncate text-xs text-muted-foreground" title={unitWord(state.units)}>{unitWord(state.units)}</span> : null}
   </>, { tabs, active: front.id, onPick: setTab, key: `Design:${front.id}`,
     // Every tab's items, not the one in front; a command's Subtract is the Boolean of the unite command's dialog. An
     // assembly has no Features or Sketch tab, but its search finds their commands all the same, dimmed, saying to

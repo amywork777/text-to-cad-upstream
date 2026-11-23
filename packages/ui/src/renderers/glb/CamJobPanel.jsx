@@ -7,6 +7,7 @@ import { english } from "../../i18n/core.js";
 import { useI18n } from "@cad/ui/i18n";
 import ToolPanel from "../kit/tools/ToolPanel.jsx";
 import { assumedWords, formatDuration, jobSummary, operationDetail, toolSpeeds } from "./cam/extras.js";
+import { WORKSPACE_PRESS_CLASS } from "../../lib/workspaceSurface.js";
 
 // The section's id in the file sidebar: its size is its own (`sidebar:job`), not the Model tree's.
 export const CAM_JOB_SECTION_ID = "job";
@@ -67,7 +68,7 @@ function Choosable({ id, label, chosen, onChoose, className, children }) {
   const { t } = useI18n();
   const active = chosen === id;
   return <button type="button" aria-label={t("tree.select", { name: label })} aria-pressed={active} data-cam-choice={id} onClick={() => onChoose(id)}
-    className={cn("flex min-w-0 flex-1 items-center gap-1.5 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", className)}>
+    className={cn("flex min-w-0 flex-1 items-center gap-1.5 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45", className)}>
     {children}
   </button>;
 }
@@ -100,7 +101,7 @@ function CamVerdict({ job, chosen, onChoose }) {
     {errors.length ? <ul className="flex flex-col" aria-label={t("cam.toFix")}>
       {errors.map(({ finding, index }) => <li key={index} className="min-w-0 border-t border-foreground/10" data-cam-finding={finding.check || "error"}>
         <Choosable id={`finding:${index}`} label={finding.message} chosen={chosen} onChoose={onChoose}
-          className={cn("-mx-1 items-start px-1 py-1 text-tiny leading-4 text-error hover:bg-foreground/5", chosen === `finding:${index}` && "bg-foreground/[0.07]")}>
+          className={cn("-mx-1 items-start px-1 py-1 text-tiny leading-4 text-error hover:bg-accent/50", WORKSPACE_PRESS_CLASS, chosen === `finding:${index}` && "bg-foreground/[0.07]")}>
           <CircleX className="mt-0.5 size-3 shrink-0" strokeWidth={2} aria-hidden="true" />
           <span className="min-w-0 [overflow-wrap:break-word]">{finding.message}</span>
         </Choosable>

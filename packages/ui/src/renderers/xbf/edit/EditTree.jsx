@@ -11,6 +11,7 @@ import ErrorWords from "./ErrorWords.jsx";
 import { AssemblyIcon, FeatureIcon, MateTreeIcon, OriginIcon, ParametersIcon, PartIcon, PlaneIcon, SketchIcon } from "./featureIcons.jsx";
 import { buildFailure, nxPlane, repeatedNames, treeTitles } from "./nx.js";
 import { MassPropertiesIcon } from "./cadIcons.jsx";
+import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 
 const UNIT_MARKS = Object.freeze({ mm: "mm", in: "in" });
 // A row under the pointer is the workspace's pale blue, the selected one its deeper blue.
@@ -58,7 +59,7 @@ function RenameInput({ value, onDone }) {
 function Row({ id, depth, icon, title, detail = "", hint = "", expanded = null, onToggle = null, onActivate = null, selected, onSelect, onHover, muted = false, menu = null,
   slot = null, renaming = null, onRename = null, check = null, warn = null, author = null, role = "treeitem", drag = null }) {
   const active = Boolean(id) && selected === id;
-  const row = <TreeRowSurface as="div" depth={depth} active={active} role={role} aria-selected={role === "treeitem" ? active : undefined}
+  const row = <TreeRowSurface as="div" dense depth={depth} active={active} role={role} aria-selected={role === "treeitem" ? active : undefined}
     aria-expanded={expanded === null ? undefined : expanded} tabIndex={-1}
     title={warn ? `${BUILD_FAILED}: ${warn}` : hint || (detail ? `${title}: ${detail}` : title.length < LONG_NAME ? undefined : title)}
     className={`cursor-default select-none ${active ? ROW_SELECTED_CLASS : `text-foreground ${ROW_HOVER_CLASS}`}`}
@@ -73,7 +74,7 @@ function Row({ id, depth, icon, title, detail = "", hint = "", expanded = null, 
     {/* A thin outline and its tick, lighter than the row's name. */}
     {check ? <span className="relative flex size-3 shrink-0">
       <input type="checkbox" checked={check.checked} disabled={check.disabled} aria-label={check.label}
-        className="peer size-3 cursor-pointer appearance-none rounded-[2px] border border-muted-foreground/50 bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default"
+        className="peer size-3 cursor-pointer appearance-none rounded-[2px] border border-muted-foreground/50 bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:cursor-default"
         onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
         onChange={event => check.onChange(event.currentTarget.checked)} />
       <Check aria-hidden="true" strokeWidth={2} className="pointer-events-none absolute inset-0 hidden size-3 p-px text-muted-foreground peer-checked:block" />
@@ -156,7 +157,7 @@ function RollbackBar({ index, count, label, disabled, slotAt, onPreview, onMove 
  * Expressions, which NX lists above the model's history. A button, as the tree's rows are not.
  */
 function HeadFold({ depth, icon, title, expanded, onToggle }) {
-  return <TreeRowSurface as="button" type="button" depth={depth} aria-expanded={expanded} data-cad-edit-tree-row={title} onClick={onToggle}
+  return <TreeRowSurface as="button" type="button" dense depth={depth} aria-expanded={expanded} data-cad-edit-tree-row={title} onClick={onToggle}
     className={`cursor-default select-none text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 ${ROW_HOVER_CLASS}`}>
     {/* The row is the button: its chevron only a mark. */}
     <TreeRowToggle mark open={expanded} />
@@ -183,7 +184,7 @@ function AddParameter({ edit, disabled }) {
   };
   if (!open) {
     return <button type="button" disabled={disabled} onClick={() => setOpen(true)}
-      className="self-start rounded px-1 py-0.5 text-tiny text-muted-foreground hover:bg-sidebar-accent hover:text-foreground disabled:opacity-50">
+      className={`self-start rounded px-1 py-0.5 text-tiny text-muted-foreground hover:bg-accent/50 hover:text-foreground disabled:opacity-50 ${WORKSPACE_PRESS_CLASS}`}>
       + Add expression
     </button>;
   }
@@ -439,7 +440,7 @@ export default function EditTree({ edit, tree, onEditSketch = () => {}, onOpenPa
       menu={[{ id: "delete", label: "Delete", disabled: busy, onSelect: () => void edit.mate({ delete: mate.label }) }]} />) : []),
   ] : []);
   return <div ref={treeRef} className="flex flex-col px-1 py-1" data-cad-edit-tree="" onKeyDown={onKeyDown}>
-    {backTo ? <button type="button" className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1 text-left text-tiny text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
+    {backTo ? <button type="button" className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1 text-left text-tiny text-muted-foreground hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
       onClick={backTo.open} data-cad-edit-back="">
       <AssemblyIcon /><span className="truncate">{`Back to ${backTo.title}`}</span>
     </button> : null}

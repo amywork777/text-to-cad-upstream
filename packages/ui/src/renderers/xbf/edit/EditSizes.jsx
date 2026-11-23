@@ -71,7 +71,7 @@ export default function EditSizes({ edit }) {
       <FeatureIcon kind={editing.kind || "Extrude"} />
       <h2 className="min-w-0 flex-1 truncate text-xs font-normal leading-4 text-foreground">{title}</h2>
       <button type="button" aria-label="Close" title="Close" disabled={edit.saving} onClick={edit.close}
-        className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40 [&_svg]:size-3.5">
+        className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-50 [&_svg]:size-3.5">
         <X aria-hidden="true" />
       </button>
     </div>
