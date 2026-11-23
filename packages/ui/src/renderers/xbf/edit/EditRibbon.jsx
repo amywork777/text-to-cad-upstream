@@ -45,7 +45,7 @@ const LABEL_CLASS = "w-full whitespace-normal text-center leading-[1.1]";
 // The tab row's icon buttons: a 28px target round a 16px icon.
 const TAB_ROW_BUTTON_CLASS = "size-7 hover:bg-cad-ws-hover";
 // A tab: its name as it is written, the one in front underlined.
-const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-tiny leading-none text-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
+const TAB_CLASS = "flex items-center border-b-2 border-transparent px-2.5 text-xs leading-none text-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
 // A group's title under its buttons; where it is the group's menu it is a button too.
 const TITLE_CLASS = "py-0.5 text-tiny leading-3 text-muted-foreground";
 // The title's band: a rule the width of the group, meeting the divider, the title centered under it, so it names the whole group and not the button over it.
@@ -372,7 +372,7 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
       : () => tool.onSelect() });
   const effectTool = effect ? byId.get(effect.id) : null;
   // The tab row: Undo and Redo as small icons at its left, the tabs, and at its right where the part stands.
-  const tabRow = (list, active, onPick, end) => <div data-cad-ribbon-tabs="" className="flex h-7 shrink-0 items-center gap-0.5 border-b border-border pl-1.5 pr-2.5">
+  const tabRow = (list, active, onPick, end) => <div data-cad-ribbon-tabs="" className="flex h-control shrink-0 items-center gap-0.5 border-b border-border pl-1.5 pr-2.5">
     <div className="flex shrink-0 items-center gap-0.5 pr-2">
       <ToolbarButton label="Undo" className="hover:bg-cad-ws-hover" disabled={!edit.canUndo} onClick={() => void edit.undo()}><UndoIcon className="size-4" /></ToolbarButton>
       <ToolbarButton label="Redo" className="hover:bg-cad-ws-hover" disabled={!edit.canRedo} onClick={() => void edit.redo()}><RedoIcon className="size-4" /></ToolbarButton>

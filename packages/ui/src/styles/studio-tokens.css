@@ -40,7 +40,8 @@
   --cad-ok: oklch(0.58 0.15 150);
   --cad-cancel: oklch(0.58 0.21 27);
   /* The CAD workspace's hover and selection, made from the theme's accent so a host's theme reaches them. */
-  --cad-ws-panel: color-mix(in oklab, var(--background), black 5%);
+  /* The ribbon and the FeatureManager stand on the viewer's own chrome, its navbar's and panel's surface. */
+  --cad-ws-panel: var(--sidebar);
   --nx-blue: #2c7197;
   --nx-line: var(--cad-ws-panel);
   --cad-ws-hover: var(--accent);
@@ -63,7 +64,7 @@
   --cad-ok: oklch(0.74 0.17 150);
   --cad-cancel: oklch(0.7 0.19 27);
   /* The CAD workspace's hover and selection, made from the theme's accent so a host's theme reaches them. */
-  --cad-ws-panel: color-mix(in oklab, var(--background), black 32%);
+  --cad-ws-panel: var(--sidebar);
   --nx-blue: #62b7ec;
   --nx-line: var(--cad-ws-panel);
   --cad-ws-hover: var(--accent);

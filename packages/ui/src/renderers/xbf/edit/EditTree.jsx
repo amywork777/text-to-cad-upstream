@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, CircleAlert, LoaderCircle } from "lucide-react";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@cad/ui/primitives/context-menu";
+import { Button } from "@cad/ui/primitives/button";
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
 import { TreeRowGlyph, TreeRowSurface, TreeRowToggle, treeRowPadding } from "@cad/ui/primitives/tree-row";
 import { FileSheetValueInput } from "../../kit/inspector/FileSheet.js";
@@ -196,8 +197,8 @@ function AddParameter({ edit, disabled }) {
     </div>
     {error ? <ErrorWords error={error} className="leading-4" aria-live="polite" /> : null}
     <div className="flex justify-end gap-1">
-      <button type="button" onClick={() => { setOpen(false); setError(""); }} className="rounded px-1.5 py-0.5 text-tiny text-muted-foreground hover:bg-sidebar-accent">Cancel</button>
-      <button type="submit" disabled={disabled} className="rounded bg-primary px-1.5 py-0.5 text-tiny text-primary-foreground disabled:opacity-50">Add</button>
+      <Button type="button" variant="ghost" size="xs" onClick={() => { setOpen(false); setError(""); }}>Cancel</Button>
+      <Button type="submit" size="xs" disabled={disabled}>Add</Button>
     </div>
   </form>;
 }
