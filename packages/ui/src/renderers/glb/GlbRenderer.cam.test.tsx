@@ -55,7 +55,7 @@ it('a plain GLB never requests the CAM viewer', async () => {
   expect(document.querySelector('[data-tool-panel-id="job"]')).toBeNull();
 });
 
-/** Job, the view's panel's one section (`FlatPanel.jsx`), once the result has loaded: the panel opens on it. */
+/** Job, a section of the view's panel (`FlatPanel.jsx`), once the result has loaded: the panel opens on it. */
 async function openJob() {
   const job = await waitFor(() => {
     const found = document.querySelector<HTMLElement>('[data-flat-panel-section="job"]');
@@ -63,7 +63,8 @@ async function openJob() {
     return found;
   }, { timeout: 30000 });
   expect(screen.getByRole('complementary', { name: 'Model panel' }).contains(job)).toBe(true);
-  return screen.getByRole('region', { name: 'Job' });
+  // Job and the result's Animation are the panel's tabs, so Job is a tab's page.
+  return screen.getByRole('tabpanel', { name: 'Job' });
 }
 
 it('a CAM result loads the CAM viewer, then offers Job in the view\'s panel; a row isolates its operation until it is chosen again', async () => {

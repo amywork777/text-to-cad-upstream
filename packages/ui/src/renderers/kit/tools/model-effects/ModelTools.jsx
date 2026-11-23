@@ -31,9 +31,9 @@ function ClipIcon(props) {
  * its tile's dot saying so while it is not in hand. (Measure's results are Quick Edit's chips.)
  *
  * Each is offered where the view's features list it (`ViewFeatures`): a renderer decides which of its
- * files have them, and lists Explode only where there are parts to separate. A renderer with icons
- * of its own for the strip (`icons`, by id: Studio's CAD workspace, as its Select and Measure) draws
- * the tiles with them; else they are the kit's.
+ * files have them, and lists Explode only where there are parts to separate. The strip's tiles keep
+ * the kit's glyphs; a renderer's own icons (`icons`, by id: Studio's CAD workspace) are each tool's
+ * `ribbonIcon`, which CAD mode's ribbon wears.
  */
 export function useModelTools({ view, features, store, mesh, disabled, shell, icons = null }) {
   const { t } = useI18n();

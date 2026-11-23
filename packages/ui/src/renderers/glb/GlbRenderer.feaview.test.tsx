@@ -97,6 +97,8 @@ it('the Load ramp in preview climbs the colours and the deformation from no load
   expect(loaded.scene.restBounds.min[2]).toBeCloseTo(-0.02, 6);
   expect(loaded.scene.bounds).toBe(loaded.scene.restBounds);
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Preview' })); });
+  // The ramp plays from the view panel's Animation tab, as every GLB's clips do.
+  act(() => { fireEvent.click(screen.getByRole('tab', { name: 'Animation' })); });
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Play animation' })); });
   // The ramp starts with no load on: the colours at the ramp's low end, the part at rest.
   expect(vertex2()).toEqual([13, 26, 230]);
@@ -126,5 +128,5 @@ it('a result has a GLB\'s tools, Clip among them, and a cut never recolours it o
   // A cut discards; it never recolours. The colour bar stays the reading it was, and Study stays the sidebar's.
   expect(Array.from(mesh.geometry.getAttribute('color').array as Uint8Array)).toEqual(colours);
   expect(document.querySelector('[aria-label="von Mises stress colour bar"]')).toBeTruthy();
-  expect(screen.getByRole('region', { name: 'Study' })).toBeTruthy();
+  expect(screen.getByRole('tabpanel', { name: 'Study' })).toBeTruthy();
 });

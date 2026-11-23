@@ -9,12 +9,12 @@ import { useModelTools } from '../../../../../dist/renderers/kit/tools/model-eff
 beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-// The strip's tiles, as FloatingToolBar draws a tool with a `tile`.
+// The strip's tiles, as FloatingToolBar draws a tool: its `icon` on a button named for it.
 function Strip({ store, icons = null }: { store: ReturnType<typeof createViewSettingsStore>; icons?: Record<string, React.ReactNode> | null }) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const tools = useModelTools({ view: snapshot.scene.view, features: { settings: ['exploded', 'clip'] }, store,
     mesh: { bounds: { min: [0, 0, 0], max: [10, 10, 10] } }, disabled: false, icons });
-  return <><div data-testid="model">model</div>{tools.tools.map(tool => <React.Fragment key={tool.id}>{tool.tile}</React.Fragment>)}</>;
+  return <><div data-testid="model">model</div>{tools.tools.map(tool => <button key={tool.id} type="button" aria-label={tool.label}>{tool.icon}</button>)}</>;
 }
 
 it('keeps the kit\'s glyphs on its tiles, and hands the icons a renderer gives it to the ribbon', () => {

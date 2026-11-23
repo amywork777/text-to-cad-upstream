@@ -392,10 +392,8 @@ it('a drawing with layers and blocks has the docked panel and its Layers tab: a 
   expect([centre.firstElementChild!.getAttribute('data-layer-glyph'), centre.querySelector('[data-layer-glyph="mark"]')]).toEqual(['swatch', null]);
   const hardwareRow = list.querySelector('[data-layer-row="HARDWARE"]')!;
   expect([slots(hardwareRow)[0].querySelector('button')?.getAttribute('aria-label'), hardwareRow.querySelector('[data-layer-glyph="swatch"]')])
-    .toEqual(['Collapse HARDWARE', null]);
+    .toEqual(['Expand HARDWARE', null]);
   expect(hardwareRow.querySelector('[data-layer-glyph="mark"]')!.previousElementSibling!.textContent).toBe('HARDWARE');
-  const insertRow = list.querySelector('[data-insert-row="99"]')!.closest<HTMLElement>('[data-tree-row]')!;
-  expect([insertRow.style.paddingLeft, insertRow.querySelectorAll('[data-tree-guide]').length]).toEqual(['calc(var(--tree-row-pad, 5px) + 10px)', 1]);
   fireEvent.click(list.querySelector('[data-layer-visibility="CENTRE"]')!);
   await waitFor(() => expect(painted.at(-1)!.hidden).toEqual(['CENTRE']));
   // HARDWARE holds the two M5_NUT references: a choice, so it opens folded, as every tree does;
@@ -404,6 +402,8 @@ it('a drawing with layers and blocks has the docked panel and its Layers tab: a 
   fireEvent.click(within(list).getByRole('button', { name: 'Expand HARDWARE' }));
   const inserts = [...list.querySelectorAll('[data-insert-row]')];
   expect(inserts.map(row => row.getAttribute('data-insert-row'))).toEqual(['99', '9B']);
+  const insertRow = list.querySelector('[data-insert-row="99"]')!.closest<HTMLElement>('[data-tree-row]')!;
+  expect([insertRow.style.paddingLeft, insertRow.querySelectorAll('[data-tree-guide]').length]).toEqual(['calc(var(--tree-row-pad, 5px) + 10px)', 1]);
   // Each its block's name, then its handle marked as one (the payload holds no insertion point).
   expect(inserts.map(row => row.textContent)).toEqual(['M5_NUT#99', 'M5_NUT#9B']);
   fireEvent.click(inserts[0]);

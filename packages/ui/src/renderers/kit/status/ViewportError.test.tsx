@@ -59,7 +59,7 @@ it('a card that starts put away shows its icon at once, brings the card back fro
   const { rerender } = render(<NavbarFrame alert={first} startDismissed />);
   expect(screen.queryByRole('alert')).toBeNull();
   const icon = screen.getByRole('button', { name: '3 suggestions' });
-  expect(icon.querySelector('svg')!.getAttribute('class')).toMatch(/text-amber-500/);
+  expect(icon.querySelector('svg')!.getAttribute('class')).toMatch(/text-warning/);
   fireEvent.click(icon);
   expect(screen.getByRole('alert').textContent).toContain('The body');
   expect(screen.queryByRole('button', { name: '3 suggestions' })).toBeNull();

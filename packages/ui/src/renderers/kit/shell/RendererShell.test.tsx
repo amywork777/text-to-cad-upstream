@@ -73,30 +73,31 @@ it("keeps the render pane when the workspace shows, and starts the canvas at the
   const view = shell();
   const box = backdrop();
   const frame = box.parentElement;
-  // Nothing stands beside the render pane in the frame but Simple view's docked panel: the workspace's chrome is over it,
-  // its design tree in the panel's place.
-  const beside = () => [backdrop().previousElementSibling?.getAttribute('aria-label') ?? null, backdrop().nextElementSibling];
+  // Nothing stands beside the render pane in the frame but Simple view's docked panel and the view's top layer (its
+  // popovers' and cards' place, `ViewFrame.jsx`): the workspace's chrome is over it, its design tree in the panel's place.
+  const beside = () => [backdrop().previousElementSibling?.getAttribute('aria-label') ?? null,
+    backdrop().nextElementSibling?.hasAttribute('data-view-top-layer') ? 'top layer' : backdrop().nextElementSibling];
   const canvas = () => document.querySelector<HTMLElement>('[data-cad-scene-canvas]')!;
   const pastTree = /\bleft-\[16rem\] @max-xl\/cad-viewport:left-0/;
-  expect(beside()).toEqual(['Model panel', null]);
+  expect(beside()).toEqual(['Model panel', 'top layer']);
   expect(canvas().className).not.toMatch(pastTree);
   view.show(WORKSPACE);
   // The canvas has the room past the column, and the whole view again where the view hides it.
   expect(canvas().className).toMatch(pastTree);
   // And starts under the toolbar, so a fit is centred in what can be seen of the view.
   expect(canvas().style.top).toBe('var(--cad-workspace-top, 0px)');
-  expect([backdrop(), backdrop().parentElement, beside()]).toEqual([box, frame, [null, null]]);
+  expect([backdrop(), backdrop().parentElement, beside()]).toEqual([box, frame, [null, 'top layer']]);
   const toolbar = screen.getByRole('toolbar', { name: 'Design' });
   for (const part of [toolbar, dock('navigator'), screen.getByRole('toolbar', { name: 'Timeline' })]) expect(box.contains(part)).toBe(true);
   // The strip's tools are the toolbar's.
-  expect(toolbar.textContent).toBe('select pencil shapes keep pose');
+  expect(toolbar.textContent).toBe('select draw keep pose');
   // Folded to its title, the column gives the canvas its room back.
   fireEvent.click(within(dock('navigator')!).getByRole('button', { name: 'FeatureManager' }));
   expect(canvas().className).not.toMatch(pastTree);
   fireEvent.click(within(dock('navigator')!).getByRole('button', { name: 'FeatureManager' }));
   // Simple view again: the same pane, the whole of it the canvas's, and the canvas was never mounted again.
   view.show({});
-  expect([backdrop(), backdrop().parentElement, beside()]).toEqual([box, frame, ['Model panel', null]]);
+  expect([backdrop(), backdrop().parentElement, beside()]).toEqual([box, frame, ['Model panel', 'top layer']]);
   expect(canvas().className).not.toMatch(pastTree);
   await waitFor(() => expect(dock('navigator')).toBeNull());
   expect([screen.queryByRole('toolbar', { name: 'Design' }), screen.queryByRole('toolbar', { name: 'Timeline' }), viewport.mounts]).toEqual([null, null, 1]);
@@ -135,11 +136,11 @@ it("keeps the strip, its panels and Quick Edit under the toolbar, and where they
   expect([backdrop().style.getPropertyValue('--cad-workspace-top'), chrome().style.top]).toEqual(['', '']);
 });
 
-it("opens Quick Edit on the file as a whole when the renderer says it was asked for, and keeps it shut until then", () => {
+it("keeps Quick Edit's bar where the renderer does not say, opens it when the renderer says it was asked for, and shuts it when it says not", () => {
   const quickEdit = () => screen.queryByRole('region', { name: 'Quick Edit' });
-  // Nothing picked and nothing drawn: the renderer that does not say leaves it to what it would carry, which is nothing.
+  // A renderer that does not say leaves it the view's always-there bar at the bottom.
   const view = shell();
-  expect(quickEdit()).toBeNull();
+  expect(quickEdit()).not.toBeNull();
   view.show({ quickEditAsked: true });
   expect(quickEdit()).not.toBeNull();
   // The workspace asks for it with Ask, and puts it away again with the answer.
@@ -168,10 +169,11 @@ it("fades the workspace out as Simple view takes its place, taking no presses wh
   expect(workspaceLayer()).not.toBeNull();
 });
 
-it("keeps Projection, Display and Preview on the strip with the workspace up, as in Simple view, and says the view catching up in the toolbar", async () => {
+it("keeps Display and Preview on the strip with the workspace up, as in Simple view, and says the view catching up in the toolbar", async () => {
   const view = shell(WITH_VIEW);
   const toolbar = screen.getByRole('toolbar', { name: 'Design' });
-  const controls = ['Projection', 'Display mode', 'Preview'];
+  // Display's card holds the projection too (`DisplaySettings.jsx`), so it is no tile of its own.
+  const controls = ['Display', 'Preview'];
   // A control by its name, whatever it says it is set to ("Projection: Orthographic" is Projection).
   const named = (root: Element) => [...root.querySelectorAll('button')].map(button => (button.getAttribute('aria-label') || '').split(':')[0])
     .filter(name => controls.includes(name));
@@ -191,9 +193,9 @@ it("keeps Projection, Display and Preview on the strip with the workspace up, as
 
 it("moves the column beside an open dialog, so a tool's own row and its panels never hide under it", () => {
   const view = shell({ ...WORKSPACE, dialogOpen: false });
-  // The frame places the column (its left an inline style, reaching back over the docked panel); the workspace sets
-  // its left over that from the frame's root, for the view's width decides it.
-  const framed = 'calc(8px - var(--cad-stage-left, 0px))';
+  // The frame places the column (its left an inline style, the stage's inset: the docked panel is beside the stage,
+  // never under it); the workspace sets its left over that from the frame's root, for the view's width decides it.
+  const framed = '8px';
   const over = (left: string) => `[&_[data-cad-tool-groups]]:left-${left}!`;
   // No dialog: the column spans the canvas, an inset past the design tree, and centres what it holds.
   const pastTree = [over('[calc(16rem+8px)]'), `@max-xl/cad-viewport:${over('2')}`];
@@ -213,7 +215,7 @@ it("moves the column beside an open dialog, so a tool's own row and its panels n
   expect(frameRoot().className).not.toMatch(/data-cad-tool-groups/);
 });
 
-// A toolbar that holds the strip's tools as buttons, as EditRibbon does: the Pencil taken up from it brings the drawing
+// A toolbar that holds the strip's tools as buttons, as EditRibbon does: Draw taken up from it brings the drawing
 // tools' row under it, the column's one row, and Keep (`panel.harness`'s) a panel to the tool stack under that.
 const controls = () => document.querySelector<HTMLElement>('[data-cad-top-controls]')!;
 // The frame measures its column onto its root (`ViewFrame.jsx`).
@@ -257,10 +259,10 @@ function resizing() {
   });
   return () => act(() => { for (const callback of [...live]) callback(); });
 }
-/** The frame with the workspace up and the Pencil taken up from its strip, measured. */
+/** The frame with the workspace up and Draw taken up from its strip, measured. */
 function drawing(resize: () => void, workspace: object = WORKSPACE) {
   const view = shell(workspace);
-  fireEvent.click(screen.getByRole('button', { name: 'Pencil' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Draw' }));
   resize();
   expect(controls().children.length).toBeGreaterThan(0);
   return view;
@@ -327,7 +329,7 @@ it("moves the tool stack's panels with the rows, one shift for the column, so a 
   expect(document.querySelector('[data-cad-tool-stack] [data-tool-panel]')).not.toBeNull();
   expect(shifted()).toEqual(['78px', '-78px']);
   // With the drawing tools' row over it, the panel, further left, decides, and both move as one: the row ends 78px on.
-  fireEvent.click(screen.getByRole('button', { name: 'Pencil' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Draw' }));
   layOut({ view: 700, row: 300, panel: 400, navigator: 'folded' });
   resize();
   expect([...shifted(), topRightLeft()]).toEqual(['78px', '-78px', `${200 + 78 + 300 + 8}px`]);

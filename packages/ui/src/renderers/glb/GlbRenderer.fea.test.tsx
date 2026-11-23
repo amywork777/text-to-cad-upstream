@@ -106,7 +106,7 @@ function mount(extras: Record<string, unknown> | null, state?: unknown, { action
 // Where the study holds and loads the part, drawn or not: What you see's checkbox.
 const markersGate = (name: string) => screen.getByRole('checkbox', { name });
 const toggleMarkers = (name: string) => act(() => { fireEvent.click(markersGate(name)); });
-// A section of the view's panel (`FlatPanel`): the panel's only one a region, else a tab's page, there while its tab is not open.
+// A section of the view's panel (`FlatPanel`): a tab's page, under its one heading where it is the panel's only one, there while its tab is not open.
 const panelSection = (id: string) => document.querySelector<HTMLElement>(`aside[aria-label="Model panel"] [data-flat-panel-section="${id}"]`);
 const studyPanel = () => panelSection('study');
 const openTab = (name: string) => act(() => { fireEvent.click(screen.getByRole('tab', { name })); });
@@ -124,8 +124,9 @@ it('puts the field and deformation in Study, the view panel\'s, and on the view 
   // The field in plain words: the file's own name is the colour bar's.
   expect(study.querySelector('[role="combobox"][aria-label="Result field"]')!.textContent).toBe('Stress');
   expect(study.querySelector('[role="slider"][aria-label="Deformation scale"]')).toBeTruthy();
-  // The view panel's one section, so no tabs: a region named for it; one field select, Study's.
-  expect(screen.getByRole('region', { name: 'Study' })).toBe(study);
+  // The view panel's one section, so no tabs: its title the panel's heading, its page named for it; one field select, Study's.
+  expect(screen.getByRole('tabpanel', { name: 'Study' })).toBe(study);
+  expect(screen.getByRole('heading', { name: 'Study' })).toBeTruthy();
   expect(screen.queryAllByRole('tab')).toEqual([]);
   expect(screen.getAllByRole('combobox', { name: 'Result field' })).toHaveLength(1);
 });
@@ -298,7 +299,7 @@ it('choosing a load tints its face and says how much, on which face', async () =
   expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\n2500 N load on face 2 · /models/part.step#bracket/face 2');
 });
 
-it('a press on the result with Select picks the face under it into Quick Edit\'s chip, its card its ref and its role, and the copy key copies it', async () => {
+it('a press on the result with Select picks the face under it into Quick Edit\'s chip, its card its role, and the copy key copies it', async () => {
   const copied: string[] = [];
   const host = document.createElement('div');
   host.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600, right: 800, bottom: 600, x: 0, y: 0, toJSON() {} });
@@ -317,9 +318,11 @@ it('a press on the result with Select picks the face under it into Quick Edit\'s
     fireEvent.pointerUp(canvas, { button: 0, pointerId: 1, clientX: 400, clientY: 300 });
   });
   const chip = screen.getByRole('button', { name: /^Face 1/ });
-  act(() => { fireEvent.click(chip); });
-  const card = document.querySelector<HTMLElement>('[data-quick-edit-ref-card]')!;
-  expect(Array.from(card.querySelectorAll('[data-info-row]')).map(row => row.textContent)).toEqual(['IDbracket/face 1', 'Studyfixed']);
+  // A touch's press opens its list (a mouse's rests on it): its name, then what the study does to it under it.
+  act(() => { fireEvent.pointerDown(chip, { pointerType: 'touch' }); fireEvent.click(chip); });
+  await act(async () => { await Promise.resolve(); });
+  const card = screen.getByRole('dialog', { name: 'Face 1' });
+  expect(Array.from(card.querySelectorAll('[data-quick-edit-ref-facts] > div')).map(row => row.textContent)).toEqual(['Studyfixed']);
   await act(async () => { fireEvent.keyDown(document.querySelector('[data-slot="cad-file-view"]')!, { key: 'c', metaKey: true, ctrlKey: true }); });
   expect(copied.at(-1)).toBe('/models/part.step#bracket/face 1');
   expect(screen.getByRole('button', { name: 'Select Face 1' }).getAttribute('aria-pressed')).toBe('true');
@@ -411,13 +414,15 @@ it('a single part has no Parts panel', () => {
   expect(studyPanel()).toBeTruthy();
 });
 
-it('with Parts hidden, a face picked on an assembly names its part, and its chip\'s card says the part\'s material and what it holds', () => {
+it('with Parts hidden, a face picked on an assembly names its part, and its chip\'s card says the part\'s material and what it holds', async () => {
   const release = pressOnTheResult(() => { mountAssembly([], {}); });
   expect(partsPanel()).toBeNull();
-  act(() => { fireEvent.click(screen.getByRole('button', { name: /^post · face 1/ })); });
-  const card = document.querySelector<HTMLElement>('[data-quick-edit-ref-card]')!;
-  const rows = Array.from(card.querySelectorAll('[data-info-row]')).map(row => row.textContent!.replace(/\u2011/g, '-').replace(/\u00a0/g, ' '));
-  expect(rows).toEqual(['IDpart1/face 1', 'Studyfree', 'Part6061-T6 · holds 1.4×']);
+  const chip = screen.getByRole('button', { name: /^post · face 1/ });
+  act(() => { fireEvent.pointerDown(chip, { pointerType: 'touch' }); fireEvent.click(chip); });
+  await act(async () => { await Promise.resolve(); });
+  const card = screen.getByRole('dialog');
+  const rows = Array.from(card.querySelectorAll('[data-quick-edit-ref-facts] > div')).map(row => row.textContent!.replace(/\u2011/g, '-').replace(/\u00a0/g, ' '));
+  expect(rows).toEqual(['Studyfree', 'Part6061-T6 · holds 1.4×']);
   release();
 });
 
@@ -504,7 +509,8 @@ it('sizes What you see\'s value boxes to hold the whole value, its padding and i
     mount({ ...RESULT, deformation_scale: scale });
     const box = screen.getByRole('textbox', { name: 'Deformation scale value' });
     const value = box.getAttribute('value')!;
-    const widths = box.className.split(/\s+/).filter(name => name.startsWith('w-'));
+    // The width is the value's field's, its box around the figures and the unit (`SliderValueField.jsx`).
+    const widths = box.closest('[data-slider-field-value-box]')!.className.split(/\s+/).filter(name => name.startsWith('w-'));
     expect(widths, value).toHaveLength(1);
     const [, ch, rem, px] = /^w-\[calc\((\d+)ch\+([\d.]+)rem\+(\d+)px\)\]$/.exec(widths[0]) || [];
     // A figure and the × are 1ch each with tabular figures, a point half of one; half a ch is spare.

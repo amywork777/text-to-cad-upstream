@@ -164,7 +164,8 @@ it('selects a link in the scene graph and reads the payload back', () => {
 
 it('a link\'s card follows its parent: pressing the parent selects it there and in the viewport', () => {
   render(<Harness/>);
-  fireEvent.click(screen.getByRole('button', { name: 'Expand shoulder_link' }));
+  // shoulder_link holds one link, so it opens on elbow_link (the tree opens until there is a choice).
+  expect(screen.getByRole('button', { name: 'Collapse shoulder_link' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Select elbow_link' }));
   const details = within(screen.getByRole('region', { name: 'Reference details' }));
   fireEvent.click(details.getByRole('button', { name: 'shoulder_link' }));
