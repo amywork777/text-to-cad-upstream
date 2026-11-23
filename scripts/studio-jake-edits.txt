@@ -181,6 +181,7 @@ packages/ui/src/renderers/kit/inspector/referenceRows.jsx
 packages/ui/src/renderers/kit/shell/FlatPanel.jsx
 packages/ui/src/renderers/kit/shell/FlatPanel.test.tsx
 packages/ui/src/renderers/kit/shell/FlatViewFrame.jsx
+packages/ui/src/renderers/kit/shell/PanelInset.browser.test.mjs
 packages/ui/src/renderers/kit/shell/RendererShell.jsx
 packages/ui/src/renderers/kit/shell/ShellViewport.jsx
 packages/ui/src/renderers/kit/shell/ViewFrame.jsx
