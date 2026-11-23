@@ -3,7 +3,7 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CadViewerProps } from '@cad/ui/cad-viewer';
-import { editLayoutHost, focusHost } from '@cad/ui/tab-store';
+import { editLayoutHost, focusHost, selectHost, workingHost } from '@cad/ui/tab-store';
 import App from './App';
 import type { HostContext } from './host/bridge';
 import type { Launch } from './host/server';
@@ -171,5 +171,32 @@ it('a host that opens a part at a line of its script hands the part on screen th
     expect(taken(plain.bridge.notify)).toEqual([]);
   } finally {
     focusHost.set(null);
+  }
+});
+
+it("a host whose agent is working says so to the view, and a host that asks for a message's picks again hears what the part on screen found; a host that does not, nothing", () => {
+  const taken = (notify: ReturnType<typeof vi.fn>) => notify.mock.calls
+    .filter(([method]) => method === 'studio/notifications/select-taken').map(([, params]) => params);
+  try {
+    const studio = host({ displayMode: 'fullscreen', 'studio/working': { working: true },
+      'studio/select': { references: ['91fe49be#part/face 1', 'part.step#arm'], nonce: 7 } }, { studioSelect: {} });
+    const { unmount } = render(<App bridge={studio.bridge as any} server={studio.server as any} launch={home} />);
+    expect([workingHost.get(), selectHost.get()]).toEqual([true, { references: ['91fe49be#part/face 1', 'part.step#arm'], nonce: 7 }]);
+    // The part on screen selects one, the other no longer in it.
+    act(() => selectHost.take(7, 1, 1));
+    expect(taken(studio.bridge.notify)).toEqual([{ nonce: 7, found: 1, missing: 1 }]);
+    act(() => studio.bridge.change({ 'studio/working': { working: false }, 'studio/select': null }));
+    expect([workingHost.get(), selectHost.get()]).toEqual([false, null]);
+    unmount();
+    act(() => selectHost.take(8, 1, 0));
+    expect(taken(studio.bridge.notify)).toHaveLength(1);
+
+    const plain = host({ displayMode: 'fullscreen' });
+    render(<App bridge={plain.bridge as any} server={plain.server as any} launch={home} />);
+    act(() => selectHost.take(9, 1, 0));
+    expect(taken(plain.bridge.notify)).toEqual([]);
+  } finally {
+    selectHost.set(null);
+    workingHost.set(null);
   }
 });

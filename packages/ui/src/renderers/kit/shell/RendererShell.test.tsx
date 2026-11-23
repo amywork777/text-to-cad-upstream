@@ -20,6 +20,7 @@ import { ViewerHostContext } from '../../../../dist/host/context.js';
 import { testHost } from '../../../../dist/host/testing/host.js';
 import { ViewerMobileContext } from '../../../../dist/file-viewer/responsive.js';
 import { WORKSPACE_DOCK_CLASS, WORKSPACE_SURFACE_CLASS } from '../../../../dist/lib/workspaceSurface.js';
+import { workingHost } from '../../../../dist/tab-store/workingHost.js';
 
 // jsdom lays nothing out: the toolbar is given the height it has in the app.
 const TOOLBAR_HEIGHT = 114;
@@ -141,6 +142,21 @@ it("keeps the strip, its panels and Quick Edit under the toolbar, and where they
   view.show({});
   expect([backdrop().style.getPropertyValue('--cad-workspace-top'), chrome().style.top]).toEqual(['', '']);
   expect([frameRoot().style.getPropertyValue('--cad-workspace-top'), frameRoot().className.includes('data-cad-tool-groups]]:top-')]).toEqual(['', false]);
+});
+
+it("says the agent is changing the part over the model while the host's turn runs, in the canvas's own box past the design tree, and nothing once it ends", () => {
+  shell(WORKSPACE);
+  const note = () => document.querySelector<HTMLElement>('[data-studio-working]');
+  expect(note()).toBeNull();
+  try {
+    act(() => workingHost.set({ working: true }));
+    expect([note()?.getAttribute('role'), note()?.textContent, Boolean(note()?.closest('[data-cad-scene-canvas]'))])
+      .toEqual(['status', 'Studio is changing this part…', true]);
+    act(() => workingHost.set({ working: false }));
+    expect(note()).toBeNull();
+  } finally {
+    workingHost.set(null);
+  }
 });
 
 it("keeps Quick Edit's bar where the renderer does not say, carries what is picked when the renderer says it was asked for, and keeps the bar, empty, when it says not", () => {

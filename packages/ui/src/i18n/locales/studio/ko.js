@@ -70,4 +70,7 @@ export default {
   "fea.loadIsZero": "하중이 0으로 설정됨",
   // PMI's switch lighting the faces no tolerance holds (`renderers/xbf/pmi/studioUntolerancedFaces.jsx`).
   "pmi.untoleranced": "공차가 없는 면",
+  // While the agent's turn runs, over the model (`kit/shell/StudioWorkingNote.jsx`).
+  "studio.working": "Studio가 이 부품을 변경하는 중…",
+  "studio.workingLabel": "에이전트가 이 프로젝트에서 작업 중입니다",
 };

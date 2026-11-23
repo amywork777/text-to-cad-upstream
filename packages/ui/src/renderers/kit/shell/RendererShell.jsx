@@ -26,6 +26,7 @@ import ViewFrame from "./ViewFrame.jsx";
 import { useControlUsage } from "../../../usage/controls.js";
 import { cn } from "@cad/ui/utils";
 import { useStudioWorkspace } from "./studioWorkspace.jsx";
+import StudioWorkingNote from "./StudioWorkingNote.jsx";
 
 // Two presses on the same ink this close together are one double-click.
 const DOUBLE_PRESS_MS = 600;
@@ -493,6 +494,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
             runtimeLifecycle={frame.runtimeLifecycle}
           >{overlay}</ShellViewport>
         </div>
+        {compact ? null : <StudioWorkingNote />}
       </div>
     </ViewFrame>
   );

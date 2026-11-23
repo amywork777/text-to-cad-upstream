@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Box } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Box, Boxes, Bolt } from "lucide-react";
 import { TREE_GLYPH_STROKE, TREE_ROW_DENSE_ICON_CLASS, TREE_ROW_NAME_CLASS, TreeRowDetail, TreeRowGlyph, TreeRowLabel, TreeRowName, TreeRowSurface, TreeRowToggle } from "@cad/ui/primitives/tree-row";
 import { TreeFilterHighlight, TreeSearchStatus } from "@cad/ui/primitives/tree-filter";
 import ToolPanel from "../tools/ToolPanel.jsx";
@@ -7,6 +7,8 @@ import { useFlatPanel, useFlatPanelSection } from "../shell/FlatPanel.jsx";
 import { useTreeSearch } from "./modelTreeSearch.js";
 import { revealRow } from "./VirtualRows.jsx";
 import { useI18n } from "@cad/ui/i18n";
+import { studioNames } from "../../../tab-store/studioNames.js";
+import { middleTruncate, studioSceneTree } from "./studioSceneNames.js"; // Studio: names as an engineer reads them
 
 // A scene's Model tab: the file's tree of nodes (its scene's `nodeTree`) in the view's panel, drawn with the one row
 // every list of the panel draws (`primitives/tree-row.jsx`), as the assembly tree is. A node that draws is a part, the
@@ -17,6 +19,10 @@ import { useI18n } from "@cad/ui/i18n";
 
 const EMPTY = Object.freeze([]);
 const glyph = Icon => <TreeRowGlyph><Icon className={TREE_ROW_DENSE_ICON_CLASS} strokeWidth={TREE_GLYPH_STROKE} /></TreeRowGlyph>;
+// Studio: a node's name, and its glyph by what it is (an assembly, a fastener, a part), where Studio named it.
+const KIND_ICON = Object.freeze({ assembly: Boxes, fastener: Bolt, part: Box });
+const nodeName = node => (node.studio ? <span title={node.studio.full}>{middleTruncate(node.studio.name)}{node.studio.suffix
+  ? <span className="ml-1 text-muted-foreground">{node.studio.suffix}</span> : null}</span> : node.label);
 
 // Each node's owners, for a pick's reveal.
 function ownersOf(roots) {
@@ -36,10 +42,10 @@ function NodeRow({ node, depth, expanded, toggle, highlighted, choose, hover, ro
       dense depth={depth} active={Boolean(node.part && highlighted.has(node.part))} className="group/row"
       onMouseEnter={() => hover(node.part || "")} onMouseLeave={() => hover("")} data-scene-node={node.id}>
       {branch ? <TreeRowToggle open={open} label={t(open ? "tree.collapse" : "tree.expand", { name: node.label })} onToggle={() => toggle(node)} />
-        : node.part ? glyph(Box) : <TreeRowGlyph />}
+        : node.part ? glyph(KIND_ICON[node.studio?.kind] || Box) : <TreeRowGlyph />}
       <button type="button" aria-label={node.part ? t("tree.select", { name: node.label }) : branch ? t(open ? "tree.collapse" : "tree.expand", { name: node.label }) : node.label}
         aria-pressed={node.part ? highlighted.has(node.part) : undefined} onClick={press} className={TREE_ROW_NAME_CLASS}>
-        <TreeRowLabel>{node.label}</TreeRowLabel>
+        <TreeRowLabel>{nodeName(node)}</TreeRowLabel>
       </button>
     </TreeRowSurface>
     {branch && open ? <ul>{node.children.map(child => <NodeRow key={child.id} {...{ node: child, depth: depth + 1, expanded, toggle, highlighted, choose, hover, rowRefs }} />)}</ul> : null}
@@ -52,7 +58,7 @@ function NodeSearchRow({ match, highlighted, cursor, choose }) {
   const owners = entry.prefix.slice(0, -1);
   return <li className="min-w-0" data-search-row={node.id}>
     <TreeRowSurface dense depth={0} active={Boolean(node.part && highlighted.has(node.part))} cursor={cursor} className="group/row">
-      {node.part ? glyph(Box) : <TreeRowGlyph />}
+      {node.part ? glyph(KIND_ICON[node.studio?.kind] || Box) : <TreeRowGlyph />}
       <button type="button" aria-label={t("tree.select", { name: node.label })} aria-pressed={node.part ? highlighted.has(node.part) : false}
         onClick={event => { if (node.part) choose(node.part, event); }} className={TREE_ROW_NAME_CLASS}>
         <TreeRowName><TreeFilterHighlight indices={indices} text={entry.label} /></TreeRowName>
@@ -70,7 +76,8 @@ function NodeSearchRow({ match, highlighted, cursor, choose }) {
  */
 export default function SceneTreeSection({ tree, selection, onPick = null, active = true }) {
   const { t } = useI18n();
-  const roots = tree || EMPTY;
+  const studio = useSyncExternalStore(studioNames.subscribe, studioNames.get, studioNames.get);
+  const roots = useMemo(() => (studio && tree ? studioSceneTree(tree) : tree || EMPTY), [studio, tree]);
   const owners = useMemo(() => ownersOf(roots), [roots]);
   // Open at first: the roots, and a chain of single groups under them, so a file opens on its parts.
   const initial = useMemo(() => {

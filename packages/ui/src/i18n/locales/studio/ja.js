@@ -70,4 +70,7 @@ export default {
   "fea.loadIsZero": "荷重が 0 に設定されています",
   // PMI's switch lighting the faces no tolerance holds (`renderers/xbf/pmi/studioUntolerancedFaces.jsx`).
   "pmi.untoleranced": "公差のない面",
+  // While the agent's turn runs, over the model (`kit/shell/StudioWorkingNote.jsx`).
+  "studio.working": "Studio がこの部品を変更しています…",
+  "studio.workingLabel": "エージェントがこのプロジェクトで作業中です",
 };

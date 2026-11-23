@@ -56,6 +56,8 @@ import PmiOverlay from "./pmi/PmiOverlay.jsx";
 import PmiSection from "./pmi/PmiSection.jsx";
 import { useXbfPmi } from "./pmi/useXbfPmi.jsx";
 import { useUntolerancedFaces } from "./pmi/studioUntolerancedFaces.jsx"; // Studio: PMI's untoleranced faces
+import { useHostSelect } from "./useHostSelect.js"; // Studio: a chat message's picks selected again
+import { useChangedBodies } from "./useChangedBodies.js"; // Studio: what the agent's turn changed, lit once
 import { usePmiViewApplied } from "./pmi/usePmiView.js";
 import { pmiCreateOptions } from "./pmi/pmiCreate.js";
 import { createHiddenTest } from "./pmi/pmiHidden.js";
@@ -400,6 +402,7 @@ function XbfSurface({ view, data }) {
   const pmi = useXbfPmi({ scene, tree, bounds: restBounds || null, moving, editable: madeFromCode(view.file.path),
     hiddenParts: hiddenIds, isolatedParts, selectedKey: pmiPicked, onSelect: setPmiPicked, here: pmiHere });
   const untoleranced = useUntolerancedFaces({ structure: scene?.structure || null, tree }); // Studio: lit by PMI's switch
+  const changedBodies = useChangedBodies({ structure: scene?.structure || null, tree }); // Studio
   const pmiRef = useRef(pmi);
   pmiRef.current = pmi;
   pmiViewRef.current = { restore: pmi.restore, slice: pmi.slice, drawn: !pmi.off && pmi.items.length > 0 };
@@ -687,6 +690,7 @@ function XbfSurface({ view, data }) {
   const describe = useMemo(() => xbfDescriber({ scene, tree, facts, t }), [scene, tree, facts, t]);
   const { references, chips: ownChips } = useXbfSelectionChips({ scene, tree, resource, selectedIds: selected, facts,
     onRemove: removeFromSelection, onHover: hoverChip, describe });
+  useHostSelect({ onScreen: !host.environment.compact, documentPath: resource?.path || "", tree, structure: scene?.structure || null, select: setChosen }); // Studio
   // A face or an edge looked at, as a double-click looks at one: the view turns square to it (CAD's
   // Normal To, `kit/camera/lookAt.js`) and nothing is picked; navigation only.
   const lookAt = useCallback((id) => {
@@ -710,12 +714,12 @@ function XbfSurface({ view, data }) {
   const cadParts = cad.litParts;
   useEffect(() => {
     if (!scene) return;
-    scene.setHighlight({ hovered: [...hover.parts, ...cadParts.hovered], selected: [...leavesOf(selectedNodeIds), ...cadParts.selected] });
+    scene.setHighlight({ hovered: [...hover.parts, ...cadParts.hovered, ...changedBodies], selected: [...leavesOf(selectedNodeIds), ...cadParts.selected] });
     const extra = [...pmiLit.selected, ...untoleranced.faceIds, ...cadLit];
     scene.setElementHighlight({ hovered: hover.element || pmiLit.hovered,
       selected: extra.length ? [...new Set([...selectedElementIds, ...extra])] : selectedElementIds });
     requestFrame();
-  }, [scene, hover, selectedNodeIds, selectedElementIds, leavesOf, requestFrame, pmiLit, untoleranced.faceIds, cadLit, cadParts]);
+  }, [scene, hover, selectedNodeIds, selectedElementIds, leavesOf, requestFrame, pmiLit, untoleranced.faceIds, cadLit, cadParts, changedBodies]);
   useEffect(() => { scene?.setHighlightColor(cad.highlightColor); requestFrame(); }, [scene, cad.highlightColor, requestFrame]);
   // The rollback bar's body is not the file: its faces and edges are named to nothing, copied or sent.
   promptReferencesRef.current = previewing || rollback ? NO_REFERENCES : references;

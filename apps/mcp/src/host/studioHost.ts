@@ -2,7 +2,7 @@
 // of a CAD view and hears from it, over the `studio/*` methods and host-context keys. Jake's files
 // call it from one place each: `App.tsx` (`useStudioHost`) and `ModelView.tsx` (`useStudioFiles`).
 import { useEffect, useMemo } from 'react';
-import { editLayoutHost, focusHost, viewerControlsHost, type TabStore } from '@cad/ui/tab-store';
+import { editLayoutHost, focusHost, selectHost, studioNames, viewerControlsHost, workingHost, type TabStore } from '@cad/ui/tab-store';
 import type { Bridge, HostContext } from './bridge';
 
 /** The view's bridging of Studio's workspace: its layout, what the part on screen allows, and a script line to select. */
@@ -42,6 +42,18 @@ export function useStudioHost(bridge: Bridge, context: HostContext, tabStore: Ta
     if (!bridge.hostCapabilities.studioFocus) return undefined;
     return focusHost.subscribeTaken(({ nonce, found }) => bridge.notify('studio/notifications/focus-taken', { nonce, found }));
   }, [bridge]);
+  // Whether the host's agent is changing the project (`studio/working`: `{ working: true }` while a turn runs): the view
+  // says so over the model and lights what changed on the next rebuild (`workingHost`).
+  const hostWorking = (context as Record<string, unknown>)['studio/working'];
+  useEffect(() => { workingHost.set(hostWorking); }, [hostWorking]);
+  // A chat message's picks to select again (`studio/select`: `{ references, nonce }`), and the host that asks to
+  // (`studioSelect`) hears what was found (`studio/notifications/select-taken`: `{ nonce, found, missing }`).
+  const hostSelect = (context as Record<string, unknown>)['studio/select'];
+  useEffect(() => { selectHost.set(hostSelect); }, [hostSelect]);
+  useEffect(() => {
+    if (!bridge.hostCapabilities.studioSelect) return undefined;
+    return selectHost.subscribeTaken(({ nonce, found, missing }) => bridge.notify('studio/notifications/select-taken', { nonce, found, missing }));
+  }, [bridge]);
 }
 
 /**
@@ -52,6 +64,8 @@ export function useStudioHost(bridge: Bridge, context: HostContext, tabStore: Ta
  */
 export function useStudioFiles(bridge: Bridge): { ownNavigation: boolean; openElsewhere: ((path: string) => void) | undefined } {
   const ownNavigation = Boolean(bridge.hostCapabilities.openFiles);
+  // Studio names a scene's nodes as an engineer reads them (`studioNames`).
+  useEffect(() => { studioNames.set(ownNavigation); return () => studioNames.set(false); }, [ownNavigation]);
   const openElsewhere = useMemo(() => (ownNavigation
     ? (path: string) => void bridge.request('studio/open-file', { path }).catch(() => {}) : undefined), [ownNavigation, bridge]);
   return { ownNavigation, openElsewhere };

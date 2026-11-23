@@ -1,6 +1,6 @@
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Box, Boxes, EyeOff } from 'lucide-react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Bolt, Box, Boxes, EyeOff } from 'lucide-react';
 import { Button } from '@cad/ui/primitives/button';
 import { ROW_NAME_UNDER_ACTIONS, TREE_GLYPH_STROKE, TREE_ROW_DENSE_ICON_CLASS, TREE_ROW_NAME_CLASS, TreeRowDetail, TreeRowGlyph, TreeRowLabel, TreeRowName, TreeRowSurface, TreeRowToggle, useTreeRowHeight } from '@cad/ui/primitives/tree-row';
 import { TreeFilterHighlight, TreeFilterInput, TreeSearchStatus } from '@cad/ui/primitives/tree-filter';
@@ -14,6 +14,8 @@ import { modelTreeSearchChain, useTreeSearch } from '../kit/inspector/modelTreeS
 import VirtualRows, { revealRow } from '../kit/inspector/VirtualRows.jsx';
 import { implicitXbfRoots, xbfHeldPaths, xbfSelectionPaths } from './xbfTree.js';
 import { useI18n } from "@cad/ui/i18n";
+import { studioNames } from "../../tab-store/studioNames.js";
+import { sceneNodeName } from "../kit/inspector/studioSceneNames.js"; // Studio: names as an engineer reads them
 
 // An engine document's Model tree, as the STEP renderer's was, over the engine's tree as
 // `xbfTree.js` presents it. An engine document's faces and edges are always to hand, so no row asks
@@ -78,16 +80,18 @@ const kindGlyph = Icon => <TreeRowGlyph><Icon className={TREE_ROW_DENSE_ICON_CLA
 function ModelingRow({ node, depth, open, branch, locked, disabled, selected, joinAbove, joinBelow, hiddenByOwner, unavailable, actionsShown, actionCount, partControls, toggle, choose }) {
   const { t } = useI18n();
   const underActions = actionCount && (actionsShown ? ROW_NAME_UNDER_ACTIONS.shown : ROW_NAME_UNDER_ACTIONS.hover);
+  // Studio: the part named as an engineer reads it, a fastener by its size and glyph, the file's own name in the tooltip.
+  const studio = useSyncExternalStore(studioNames.subscribe, studioNames.get, studioNames.get) ? sceneNodeName(node.label, { branch }) : null;
   return <XbfPartMenu node={node} controls={partControls} disabled={disabled}>
     <TreeRowSurface dense depth={depth} actions={actionCount} active={selected} className={cn('group/row', hiddenByOwner && 'opacity-50')}
       onMouseEnter={() => partControls.onHoverTreeNode?.(node.selectionId || '')}
       onMouseLeave={() => partControls.onHoverTreeNode?.('')} style={joinedCorners(joinAbove, joinBelow)}>
-      {branch ? <Disclosure node={node} open={open} locked={locked} toggle={toggle}/> : kindGlyph(Box)}
-      <TooltipHint content={node.label} overflowOnly><button type="button" aria-label={t("tree.select", { name: node.label })} aria-pressed={selected}
+      {branch ? <Disclosure node={node} open={open} locked={locked} toggle={toggle}/> : kindGlyph(studio?.kind === 'fastener' ? Bolt : Box)}
+      <TooltipHint content={node.label} overflowOnly={!studio}><button type="button" aria-label={t("tree.select", { name: node.label })} aria-pressed={selected}
         disabled={disabled || unavailable || !(node.selectionId || node.memberSelectionIds?.length)}
         onClick={event=>{if(event.detail < 2)choose(node,event);}} onDoubleClick={event=>choose(node,event)}
         className={cn(TREE_ROW_NAME_CLASS, 'disabled:opacity-40', underActions)} data-tree-row-name="">
-        <TreeRowLabel className="flex-1">{node.label}</TreeRowLabel>
+        <TreeRowLabel className="flex-1">{studio ? <>{studio.name}{studio.suffix ? <span className="ml-1 text-muted-foreground">{studio.suffix}</span> : null}</> : node.label}</TreeRowLabel>
       </button></TooltipHint>
       {node.selectionId && <XbfPartActions node={node} controls={partControls} disabled={disabled}/>}
     </TreeRowSurface>

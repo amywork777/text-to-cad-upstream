@@ -77,4 +77,7 @@ export default {
   "fea.loadIsZero": "The load is set to 0",
   // PMI's switch lighting the faces no tolerance holds (`renderers/xbf/pmi/studioUntolerancedFaces.jsx`).
   "pmi.untoleranced": "Untoleranced faces",
+  // While the agent's turn runs, over the model (`kit/shell/StudioWorkingNote.jsx`).
+  "studio.working": "Studio is changing this part…",
+  "studio.workingLabel": "The agent is working on this project",
 };
