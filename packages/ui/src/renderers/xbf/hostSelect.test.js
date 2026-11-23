@@ -1,5 +1,5 @@
-// Studio: a chat message's picks selected again on the part on screen (`useHostSelect.js`), and the bodies a turn
-// changed (`useChangedBodies.js`), read from the engine's bracket fixture.
+// Studio: a chat message's picks selected again on the part on screen (`hostSelect.js`), and the bodies a turn
+// changed (`changedBodies.js`), read from the engine's bracket fixture.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -7,8 +7,8 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { presentXbfTree } from "./xbfTree.js";
-import { hostSelectIds, namesDocument } from "./useHostSelect.js";
-import { bodyKeys, changedBodies } from "./useChangedBodies.js";
+import { hostSelectIds, namesDocument } from "./hostSelect.js";
+import { bodyKeys, changedBodies } from "./changedBodies.js";
 
 const FIXTURES = join(dirname(createRequire(import.meta.url).resolve("@cad/core/lib/xbf/xbfDocument.js")), "__fixtures__");
 const STRUCTURE = JSON.parse(readFileSync(join(FIXTURES, "bracket", "structure.json"), "utf8"));
