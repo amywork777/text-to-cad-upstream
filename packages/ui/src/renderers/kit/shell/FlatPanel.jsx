@@ -15,7 +15,7 @@ import { PANEL_SURFACE_PX } from "../../../file-viewer/panelToggles.js";
 
 /**
  * The view's one panel, the sidebar (`ViewFrame.jsx`), docked at the view's left edge the way KiCad's Appearance
- * panel is: one head row, as Figma's Layers panel's — the tabs at its left, pills as Figma's (a model's Model, then
+ * panel is: one head row, as Figma's Layers panel's — the tabs at its left, underlined as the ribbon's (a model's Model, then
  * Parameters, Joints and Animation where the file has them; a board's Parts, Nets and Layers; a schematic's Parts, Nets
  * and Hierarchy), or one tab's plain title — and the open tab's page under it, the panel's full height, scrolling as one. What is picked is read in its Quick Edit chip's list, never here. It is one
  * surface of one text size (12px, `globals.css`'s `--cad-text-panel`) and 28px rows, on its 16px keyline, where every control,
@@ -449,7 +449,8 @@ export default function FlatPanel({ mode, open, onClose, label, searchLabel, tab
       </span>
     </>;
   };
-  const TAB_CLASS = "flex h-control shrink-0 items-center whitespace-nowrap rounded-md px-1.5 text-ui transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
+  // Studio: plain underlined tabs, as edit mode's ribbon draws them (`EditRibbon.jsx`), never pills.
+  const TAB_CLASS = "flex h-control shrink-0 items-center whitespace-nowrap border-b-2 border-transparent px-1.5 text-ui transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
   const ICON_BUTTON_CLASS = "grid size-control shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 aria-expanded:bg-accent aria-expanded:text-foreground [&_svg]:size-3.5";
   const tabButton = entry => {
     const on = entry.id === active;
@@ -464,7 +465,7 @@ export default function FlatPanel({ mode, open, onClose, label, searchLabel, tab
         chooseTab(next.id);
         requestAnimationFrame(() => head.current?.querySelector(`[data-flat-panel-tab="${CSS.escape(next.id)}"]`)?.focus());
       }}
-      className={cn(TAB_CLASS, on ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground")}>
+      className={cn(TAB_CLASS, on ? "border-info text-foreground" : "text-muted-foreground hover:text-foreground")}>
       {tabName(entry, on)}
     </button>;
   };

@@ -26,13 +26,13 @@ const searchIcon = () => screen.queryByRole('button', { name: 'Search the board'
 const box = () => screen.queryByRole('textbox', { name: 'Search the board' }) as HTMLInputElement | null;
 const tabNames = () => screen.getAllByRole('tab').map(tab => tab.textContent!.replace(/^(\D+?)\1/, '$1'));
 
-// The tabs are pills, as Figma's right panel draws them: the open one on the accent's subtle fill, its name the
-// foreground's at medium weight, the others muted on no fill; the head one row, its rule under it: the tabs at its
+// The tabs are underlined, as edit mode's ribbon draws them (Studio): the open one on the info blue's underline, its name
+// the foreground's at medium weight, the others muted with no underline; the head one row, its rule under it: the tabs at its
 // left, the search's icon at its right end, and no ⋯ where every tab fits.
-it('draws its tabs as pills, the open one filled, foreground and medium, the others muted, the search an icon at the row\'s right end', () => {
+it('draws its tabs underlined, the open one underlined, foreground and medium, the others muted, the search an icon at the row\'s right end', () => {
   render(<Panel tabs={[{ id: 'parts', label: 'Parts', content: <p>Parts</p> }, { id: 'nets', label: 'Nets', content: <p>Nets</p> }]} first="nets" />);
   const tabs = screen.getAllByRole('tab');
-  expect(tabs.map(tab => [tab.getAttribute('aria-selected'), tab.classList.contains('bg-accent'), tab.classList.contains('text-foreground'),
+  expect(tabs.map(tab => [tab.getAttribute('aria-selected'), tab.classList.contains('border-info'), tab.classList.contains('text-foreground'),
     tab.classList.contains('text-muted-foreground'), Boolean(tab.querySelector('[data-flat-panel-tab-name].font-medium')), tab.classList.contains('h-control'), tab.classList.contains('px-1.5')]))
     .toEqual([['false', false, false, true, false, true, true], ['true', true, true, false, true, true, true]]);
   // 8px over and under the row; at its sides the inset (`--panel-inset`) less what its first and last boxes hang out by
