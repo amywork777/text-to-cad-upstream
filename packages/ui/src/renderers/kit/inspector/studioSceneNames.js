@@ -1,5 +1,5 @@
 // Studio (studio-base): a scene's Model tab as an engineer reads it. A file whose nodes are named by their place in the
-// assembly ("arm_assembly/head_assembly/led_module", a GLB's or a mesh's flat list) is nested by those places, each name
+// assembly ("arm_assembly/head_assembly/led_module", a scene's flat list of nodes) is nested by those places, each name
 // is written as a name ("LED module"), an instance's tag after a colon kept as a muted suffix ("base hinge"), and a
 // fastener named by its size ("M5×30 screw"). Only in Studio's host (`tab-store/studioNames.ts`); Jake's own viewer
 // shows the file's names as they are. Studio's chat names files the same way (`apps/web/.../workbench/partNames.ts`).
