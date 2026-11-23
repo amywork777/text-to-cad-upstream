@@ -150,6 +150,9 @@ packages/ui/src/export/ExportControls.test.tsx
 packages/ui/src/export/ExportControls.tsx
 packages/ui/src/export/context.ts
 packages/ui/src/export/formats.ts
+packages/ui/src/file-viewer/FileViewer.test.tsx
+packages/ui/src/file-viewer/FileViewer.tsx
+packages/ui/src/file-viewer/navbarSlots.js
 packages/ui/src/host/types.ts
 packages/ui/src/i18n/locales/en.js
 packages/ui/src/i18n/locales/ja.js
