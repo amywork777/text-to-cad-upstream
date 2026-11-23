@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ArrowUp, Check, Copy, ListPlus } from "lucide-react";
 import { Button } from "@cad/ui/primitives/button";
 import { ScrollArea } from "@cad/ui/primitives/scroll-area";
@@ -15,6 +15,7 @@ import { insertAtCaret, markSelectedPills, noteText, pasteNodes, selectPillAt } 
 import ReferenceChips from "./ReferenceChips.jsx";
 import { useControlUsage } from "../../../../usage/controls.js";
 import { useI18n } from "@cad/ui/i18n";
+import { studioNames } from "../../../../tab-store/studioNames.js";
 
 const EMPTY = Object.freeze([]);
 
@@ -104,6 +105,9 @@ export function quickEditReferenceIds(selection) {
 export default function QuickEdit({ resource, references: offered = EMPTY, chips: offeredChips = null, annotation: offeredAnnotation = null, requests = null, prompt = null, nameReference = null, notes = null, onCopy, onEscape, onClear, disabled = false,
   asked = null, hidden: hiddenByView = false, docked = false, className, style }) {
   const { t } = useI18n();
+  // Studio: the bar says where its message goes, the chat beside the model, so the two read as one conversation.
+  const studio = useSyncExternalStore(studioNames.subscribe, studioNames.get, studioNames.get);
+  const describe = t(studio ? "studio.quickEditDescribe" : "quickEdit.describe");
   // Not asked for, the picks are a command's: the bar carries none of them.
   const references = asked === false ? EMPTY : offered;
   const chips = asked === false ? null : offeredChips;
@@ -378,7 +382,7 @@ export default function QuickEdit({ resource, references: offered = EMPTY, chips
       <div className="relative min-w-0" data-quick-edit-compose="">
         <ScrollArea data-quick-edit-note-box="" className="w-full min-w-0" style={{ maxHeight: QUICK_EDIT_NOTE_MAX_PX }} viewportRef={noteViewport}>
           <div ref={field} role="textbox" aria-multiline="true" aria-label={t("quickEdit.describeLabel")} tabIndex={0}
-            contentEditable="plaintext-only" suppressContentEditableWarning data-placeholder={t("quickEdit.describe")} data-quick-edit-note=""
+            contentEditable="plaintext-only" suppressContentEditableWarning data-placeholder={describe} data-quick-edit-note=""
             style={{ paddingRight: reserve }}
             className={cn("w-full whitespace-pre-wrap break-words py-1.5 pl-1.5 text-foreground outline-none empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)]",
               // What a person types (and its placeholder) at the chrome's UI size, as a field's text is, docked or floating;

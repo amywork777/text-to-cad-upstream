@@ -73,4 +73,5 @@ export default {
   // While the agent's turn runs, over the model (`kit/shell/StudioWorkingNote.jsx`).
   "studio.working": "Studio 正在變更此零件…",
   "studio.workingLabel": "代理正在處理此專案",
+  "studio.quickEditDescribe": "描述變更，傳送到此聊天…",
 };

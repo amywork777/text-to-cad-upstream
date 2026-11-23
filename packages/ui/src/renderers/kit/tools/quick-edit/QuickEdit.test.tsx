@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import QuickEdit, { quickEditReferenceIds } from '../../../../../dist/renderers/kit/tools/quick-edit/QuickEdit.js';
 import { ViewerHostContext } from '../../../../../dist/host/context.js';
 import { testHost } from '../../../../../dist/host/testing/host.js';
+import { studioNames } from '../../../../../dist/tab-store/studioNames.js';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -346,6 +347,10 @@ it("is a chat's input at the bottom of the view: its attachments on a row over t
   expect([box()!.querySelector('[data-quick-edit-resize]'), document.querySelector('[data-quick-edit-sheet]')]).toEqual([null, null]);
   expect((box()!.querySelector('[data-quick-edit-note-box]') as HTMLElement).style.maxHeight).toBe('92px');
   expect(field().getAttribute('data-placeholder')).toBe('Describe a change…');
+  // In Studio the bar says where its message goes, the chat beside the model (Jake's own viewer keeps his words).
+  act(() => studioNames.set(true));
+  try { expect(field().getAttribute('data-placeholder')).toBe('Describe a change, sent to this chat…'); }
+  finally { act(() => studioNames.set(false)); }
   // What a person types, and the placeholder, at the chrome's UI size (13/20), not the bar's 12px.
   expect([field().classList.contains('text-ui'), field().classList.contains('text-xs'), field().classList.contains('leading-5')]).toEqual([true, false, true]);
 });

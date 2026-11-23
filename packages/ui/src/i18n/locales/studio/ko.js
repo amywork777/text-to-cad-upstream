@@ -73,4 +73,5 @@ export default {
   // While the agent's turn runs, over the model (`kit/shell/StudioWorkingNote.jsx`).
   "studio.working": "Studio가 이 부품을 변경하는 중…",
   "studio.workingLabel": "에이전트가 이 프로젝트에서 작업 중입니다",
+  "studio.quickEditDescribe": "변경 사항 입력 (이 채팅으로 전송)…",
 };
