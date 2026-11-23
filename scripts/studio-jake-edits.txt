@@ -10,6 +10,7 @@ apps/api/README.md
 apps/api/src/events.mjs
 apps/docs/src/app/privacy-policy/page.tsx
 apps/docs/src/components/feature-art.tsx
+apps/docs/src/components/feature-grid.tsx
 apps/docs/src/lib/content.ts
 apps/docs/src/lib/docs/cli-reference.generated.json
 apps/docs/src/lib/docs/library-reference.generated.json
