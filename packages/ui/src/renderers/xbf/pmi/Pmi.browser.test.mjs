@@ -31,11 +31,11 @@ const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 // PMI's tab in the view's panel, where the panel has others to pick it from: alone it has no tab.
-// The panel opened from its pill first, as `XbfView.browser.test.mjs` opens it (the 800px view
-// starts it collapsed), so a tab that is there is never passed over for being out of sight.
+// The panel opened from the navbar's panel button first, as `GlbRenderer.browser.test.mjs` opens it (a narrow
+// view starts it shut), so a tab that is there is never passed over for being out of sight.
 async function showPmi(pane) {
-  await pane.locator('[data-flat-panel-pill] button, [data-flat-panel][data-open]').first().waitFor();
-  if (await pane.locator('[data-flat-panel-pill] button').count()) await pane.getByRole('button', { name: 'Show panel', exact: true }).click();
+  await pane.locator('[data-navbar-panel="left"], aside[data-flat-panel]:not([hidden])').first().waitFor();
+  if (await pane.locator('[data-navbar-panel="left"][aria-expanded="false"]').count()) await pane.getByRole('button', { name: 'Show panel', exact: true }).click();
   const tab = pane.locator('[data-flat-panel]').getByRole('tab', { name: 'PMI', exact: true });
   if (await tab.count()) await tab.click();
 }
@@ -220,7 +220,8 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   const at = await center(label('top-flat'));
   await page.mouse.move(at.x, at.y); await page.mouse.down(); await page.mouse.move(at.x + 60, at.y + 30, { steps: 4 }); await page.mouse.up();
   await settle();
-  assert.equal(await pane.locator('[data-quick-edit-box]').count(), 0, 'a drag of an unpicked label asks for nothing');
+  // Quick Edit's bar is always there (Jake's 0.11.16): what is asked for is a request chip, and there is none.
+  assert.equal(await pane.getByRole('button', { name: 'Move top-flat', exact: true }).count(), 0, 'a drag of an unpicked label asks for nothing');
   await label('top-flat').click();
   const picked = await center(label('top-flat'));
   await page.mouse.move(picked.x, picked.y); await page.mouse.down(); await page.mouse.move(picked.x + 60, picked.y + 30, { steps: 4 }); await page.mouse.up();
@@ -243,8 +244,9 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   assert.equal(await label('thickness').getAttribute('aria-label'), '4.0 ±0.2');
 
   // A new annotation, of a face picked: the bottom, as a second datum would be. The menu says why
-  // a kind the pick cannot make is off. The change asked for goes by its chip's X.
+  // a kind the pick cannot make is off. The changes asked for go by their chips' X.
   await pane.getByRole('button', { name: 'Remove Change thickness', exact: true }).click();
+  await pane.getByRole('button', { name: 'Remove Move top-flat', exact: true }).click();
   // Select's Filter with Parts unticked, so a press takes a face; Escape puts the menu away.
   await pane.locator('[data-select-filter-trigger]').click();
   await page.locator('[data-select-filter-row]').click();
@@ -269,7 +271,9 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   // The model rebuilt without the top's name: the flatness names nothing now. It is drawn where the
   // code placed it, broken, and its row says why; an annotation the viewer does not draw is listed,
   // saying why in the engine's words.
-  await pane.getByRole('button', { name: 'Close Quick Edit', exact: true }).click();
+  // Quick Edit emptied, as its old Close did: the change asked for and the face picked each go by their chips' X.
+  const chipRemove = pane.locator('[data-quick-edit] button[aria-label^="Remove "]');
+  while (await chipRemove.count()) await chipRemove.first().click();
   await view({ position: [60, -80, 70], target: [0, 0, 2], up: [0, 0, 1], orthographicHalfHeight: 30 });
   await update(structure => ({ ...structure, pmi: [...PMI.slice(0, 2), {
     ...PMI[2], status: 'missing', problem: `${TOP} names nothing in this build`, presentation: { anchor: [0, 6, 2], offset: [0, 0, 10] },
@@ -279,6 +283,7 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
   await page.waitForFunction(() => document.querySelector('[data-pmi-label="top-flat"]')?.getAttribute('data-pmi-status') === 'missing');
   await drawn();
   assert.equal(await label('profile').count(), 0, 'what the viewer does not draw is not drawn');
+  await showPmi(pane);
   await pane.locator('[data-pmi-pick="top-flat"]').click();
   assert.match(await pane.locator('[data-pmi-details="top-flat"]').innerText(), /names nothing in this build/);
   assert.match(await pane.locator('[data-pmi-row="profile"]').innerText(), /not shown/);

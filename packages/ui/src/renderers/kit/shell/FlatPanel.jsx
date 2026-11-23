@@ -449,8 +449,9 @@ export default function FlatPanel({ mode, open, onClose, label, searchLabel, tab
       </span>
     </>;
   };
-  // Studio: plain underlined tabs, as edit mode's ribbon draws them (`EditRibbon.jsx`), never pills.
-  const TAB_CLASS = "flex h-control shrink-0 items-center whitespace-nowrap border-b-2 border-transparent px-1.5 text-ui transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
+  // Studio: plain underlined tabs, as edit mode's ribbon draws them (`EditRibbon.jsx`), never pills; a tab not open
+  // takes a soft fill under the pointer, as Studio's own underline tabs do.
+  const TAB_CLASS = "flex h-control shrink-0 items-center whitespace-nowrap rounded-md border-b-2 border-transparent px-1.5 text-ui transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45";
   const ICON_BUTTON_CLASS = "grid size-control shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 aria-expanded:bg-accent aria-expanded:text-foreground [&_svg]:size-3.5";
   const tabButton = entry => {
     const on = entry.id === active;
@@ -465,7 +466,7 @@ export default function FlatPanel({ mode, open, onClose, label, searchLabel, tab
         chooseTab(next.id);
         requestAnimationFrame(() => head.current?.querySelector(`[data-flat-panel-tab="${CSS.escape(next.id)}"]`)?.focus());
       }}
-      className={cn(TAB_CLASS, on ? "border-info text-foreground" : "text-muted-foreground hover:text-foreground")}>
+      className={cn(TAB_CLASS, on ? "rounded-b-none border-info text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground")}>
       {tabName(entry, on)}
     </button>;
   };

@@ -241,6 +241,8 @@ async function report(page, pane, label) {
     await pane.locator('[data-flat-panel-search-open]').click();
     await pane.locator('[data-flat-panel-search] input').fill('a');
     await settle(page);
+    // Studio: a layer the search opens turns its chevron (a 100ms transition); measured once it stands.
+    await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
     const { width, clientWidth, items } = await page.evaluate(measurePanel);
     all.push({ tab: 'search', width, clientWidth, items });
     await page.keyboard.press('Escape');
