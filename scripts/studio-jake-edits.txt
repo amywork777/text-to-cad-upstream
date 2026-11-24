@@ -1,7 +1,7 @@
 # Jake's files that studio-base changes or removes (AGENTS.md, On studio-base). Checked by
 # scripts/studio-jake-edits.sh; add a line only on purpose, and take one off when its change
 # moves into Studio's own files or lands in Jake's repository.
-# Jake base: 1dba9d3d0bf77b6e74673aa1743a1f0173a13892
+# Jake base: a35df3f4ab8abe86d370fbffb631277a4e170e7b
 .github/workflows/test.yml
 .muse-plugin/plugin.json
 AGENTS.md
@@ -15,6 +15,8 @@ apps/docs/src/lib/docs/cli-reference.generated.json
 apps/docs/src/lib/docs/library-reference.generated.json
 apps/docs/src/lib/docs/nav.ts
 apps/docs/src/lib/docs/registry.generated.json
+apps/mcp/README.md
+apps/mcp/src/App.test.tsx
 apps/mcp/src/App.tsx
 apps/mcp/src/ModelView.tsx
 apps/mcp/src/host/prompt.ts
@@ -22,6 +24,7 @@ apps/mcp/src/host/shell.test.ts
 apps/mcp/src/host/shell.ts
 apps/mcp/src/main.tsx
 apps/mcp/src/shell.ts
+apps/web/README.md
 docs/contributing/adding-an-integration.md
 docs/contributing/testing.md
 models/assemblies/.gitignore
@@ -136,7 +139,10 @@ packages/core/src/prompt/types.ts
 packages/ui/README.md
 packages/ui/docs/annotation.md
 packages/ui/docs/cad-renderer.md
+packages/ui/docs/file-viewer.md
+packages/ui/docs/render-mode.md
 packages/ui/docs/viewer-host.md
+packages/ui/docs/viewer-ux.md
 packages/ui/package.json
 packages/ui/src/annotation/geometry.js
 packages/ui/src/annotation/views.js
@@ -153,6 +159,8 @@ packages/ui/src/export/formats.ts
 packages/ui/src/file-viewer/FileViewer.test.tsx
 packages/ui/src/file-viewer/FileViewer.tsx
 packages/ui/src/file-viewer/navbarSlots.js
+packages/ui/src/file-viewer/navigation/ViewerNavbar.jsx
+packages/ui/src/file-viewer/types.ts
 packages/ui/src/host/types.ts
 packages/ui/src/i18n/locales/en.js
 packages/ui/src/i18n/locales/ja.js
@@ -161,6 +169,8 @@ packages/ui/src/i18n/locales/zh-CN.js
 packages/ui/src/i18n/locales/zh-TW.js
 packages/ui/src/primitives/scroll-area.jsx
 packages/ui/src/primitives/tree-row.jsx
+packages/ui/src/renderers/board/BoardRenderer.test.tsx
+packages/ui/src/renderers/board/index.ts
 packages/ui/src/renderers/dxf/DxfRenderer.browser.test.mjs
 packages/ui/src/renderers/dxf/DxfRenderer.jsx
 packages/ui/src/renderers/dxf/DxfRenderer.test.tsx
@@ -169,9 +179,11 @@ packages/ui/src/renderers/dxf/LayersSection.test.tsx
 packages/ui/src/renderers/dxf/drawingReferences.test.js
 packages/ui/src/renderers/dxf/tools.js
 packages/ui/src/renderers/dxf/useDrawingView.js
+packages/ui/src/renderers/glb/GlbRenderer.browser.test.mjs
 packages/ui/src/renderers/glb/GlbRenderer.jsx
 packages/ui/src/renderers/glb/useGlbAnimation.js
 packages/ui/src/renderers/glb/useGlbAnimation.test.tsx
+packages/ui/src/renderers/harness/index.tsx
 packages/ui/src/renderers/harness/xbfScenario.mjs
 packages/ui/src/renderers/kit/camera/ViewPlaneControl.js
 packages/ui/src/renderers/kit/camera/runtimeCamera.js
@@ -182,25 +194,36 @@ packages/ui/src/renderers/kit/inspector/FileSheet.js
 packages/ui/src/renderers/kit/inspector/SceneTreeSection.jsx
 packages/ui/src/renderers/kit/inspector/SliderField.jsx
 packages/ui/src/renderers/kit/inspector/referenceRows.jsx
+packages/ui/src/renderers/kit/shell/DisplaySettings.jsx
 packages/ui/src/renderers/kit/shell/FlatPanel.jsx
 packages/ui/src/renderers/kit/shell/FlatPanel.test.tsx
 packages/ui/src/renderers/kit/shell/FlatViewFrame.jsx
+packages/ui/src/renderers/kit/shell/NavbarViewControls.jsx
 packages/ui/src/renderers/kit/shell/PanelInset.browser.test.mjs
+packages/ui/src/renderers/kit/shell/RendererShell.browser.test.mjs
 packages/ui/src/renderers/kit/shell/RendererShell.jsx
+packages/ui/src/renderers/kit/shell/RendererSurfaces.test.tsx
 packages/ui/src/renderers/kit/shell/ShellChrome.test.tsx
 packages/ui/src/renderers/kit/shell/ShellViewport.jsx
 packages/ui/src/renderers/kit/shell/ViewFrame.jsx
 packages/ui/src/renderers/kit/shell/ViewportTopRight.jsx
+packages/ui/src/renderers/kit/shell/ZoomControl.jsx
 packages/ui/src/renderers/kit/shell/filePanel.test.tsx
+packages/ui/src/renderers/kit/shell/usePhoneSheetPlace.js
+packages/ui/src/renderers/kit/shell/usePreviewFrame.jsx
 packages/ui/src/renderers/kit/shell/useRendererShell.js
+packages/ui/src/renderers/kit/shell/useStageViewport.js
 packages/ui/src/renderers/kit/shell/viewportLayout.js
 packages/ui/src/renderers/kit/status/ViewerAlertCard.jsx
 packages/ui/src/renderers/kit/status/ViewportError.test.tsx
 packages/ui/src/renderers/kit/status/loadAlerts.js
 packages/ui/src/renderers/kit/status/loadAlerts.test.js
 packages/ui/src/renderers/kit/status/statusLabels.js
+packages/ui/src/renderers/kit/tools/FloatingToolBar.js
+packages/ui/src/renderers/kit/tools/FloatingToolBar.test.js
 packages/ui/src/renderers/kit/tools/PreviewChrome.jsx
 packages/ui/src/renderers/kit/tools/ToolPanel.jsx
+packages/ui/src/renderers/kit/tools/TouchStrip.test.tsx
 packages/ui/src/renderers/kit/tools/annotate/annotation3d.js
 packages/ui/src/renderers/kit/tools/annotate/annotation3d.test.js
 packages/ui/src/renderers/kit/tools/measure/useMeasureSession.js
@@ -212,12 +235,17 @@ packages/ui/src/renderers/kit/tools/quick-edit/ReferenceChips.jsx
 packages/ui/src/renderers/kit/tools/quick-edit/quickEditPrompt.js
 packages/ui/src/renderers/kit/tools/select/usePointerPick.js
 packages/ui/src/renderers/kit/tools/select/usePointerPick.test.tsx
+packages/ui/src/renderers/kit/tools/stripTouch.js
 packages/ui/src/renderers/kit/viewport/framePresentation.js
 packages/ui/src/renderers/kit/viewport/framePresentation.test.js
 packages/ui/src/renderers/kit/viewport/useFlatCanvasView.js
+packages/ui/src/renderers/mesh/MeshRenderer.browser.test.mjs
 packages/ui/src/renderers/registrations.test.ts
 packages/ui/src/renderers/robot/LinksSection.jsx
 packages/ui/src/renderers/robot/LinksSection.test.tsx
+packages/ui/src/renderers/robot/RobotRenderer.browser.test.mjs
+packages/ui/src/renderers/robot/RobotTools.test.tsx
+packages/ui/src/renderers/schematic/SchematicRenderer.test.tsx
 packages/ui/src/renderers/shell-harness/HarnessRenderer.jsx
 packages/ui/src/renderers/unboundIdentifiers.test.js
 packages/ui/src/renderers/xbf/XbfModelTree.jsx
@@ -246,6 +274,7 @@ skills/engineering-drawing/references/sheet-api.md
 skills/fea/SKILL.md
 skills/fea/references/linear-static.md
 skills/fea/references/study-file.md
+tests/browser/viewer-e2e.mjs
 tests/python/global/test_artifact_version_policy.py
 tests/python/global/test_ci_workspace_selection.py
 tests/python/global/test_no_cad_assets_tracked.py
