@@ -11,6 +11,7 @@ import ErrorWords from "./ErrorWords.jsx";
 import { AssemblyIcon, FeatureIcon, MateTreeIcon, OriginIcon, ParametersIcon, PartIcon, PlaneIcon, SketchIcon } from "./featureIcons.jsx";
 import { buildFailure, nxPlane, repeatedNames, treeTitles } from "./nx.js";
 import { MassPropertiesIcon } from "./cadIcons.jsx";
+import { materialWords } from "../../../lib/materialWords.js";
 import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 
 const UNIT_MARKS = Object.freeze({ mm: "mm", in: "in" });
@@ -456,7 +457,7 @@ export default function EditTree({ edit, tree, onEditSketch = () => {}, onOpenPa
     <div role="tree" aria-label="FeatureManager design tree" className="flex flex-col">
       {/* The part's material, as SolidWorks' tree lists it above the planes: Edit Material opens Mass Properties' picker. */}
       {!tree.assembly ? <Row id="material" depth={1} icon={<MassPropertiesIcon className="size-4" />}
-        title={edit.state?.materialName || "Material <not specified>"} onActivate={() => edit.inspect("mass")}
+        title={materialWords(edit.state?.materialName) || "Material <not specified>"} onActivate={() => edit.inspect("mass")}
         menu={[{ id: "edit-material", label: "Edit Material", disabled: busy, onSelect: () => edit.inspect("mass") }]} {...rowProps} /> : null}
       {/* The Origin and its planes, before the features. */}
       <Row id="origin" depth={1} icon={<OriginIcon />} title="Origin" expanded={open.has(datum)} onToggle={toggle(datum)} {...rowProps} />

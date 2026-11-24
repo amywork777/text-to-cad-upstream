@@ -4,6 +4,7 @@
  * they and the Reference share. Pure: no three.js, no React.
  */
 import { plainNumber } from "./numbers.js";
+import { materialWords } from "../../../lib/materialWords.js";
 import { english } from "../../../i18n/core.js";
 
 /** A face ref's own number ("bracket/face 17": 17), or null for a ref that names no face by its number. */
@@ -189,14 +190,16 @@ export const SETUP_GROUPS = Object.freeze([heldRows, pushedRows, madeOfRows]);
 const INLINE_MATERIALS = 3;
 
 export function madeOfRows(result, t = english) {
-  const fallback = result.study.material?.name || "";
-  const each = result.parts.map((part) => part.material || fallback).filter(Boolean);
+  // Studio: each name as an engineer reads it ("Alu_G6061_T6" is Aluminum 6061-T6, `materialWords`).
+  const fallback = materialWords(result.study.material?.name);
+  const materialOf = (part) => materialWords(part.material) || fallback;
+  const each = result.parts.map(materialOf).filter(Boolean);
   const counts = new Map();
   for (const name of each) counts.set(name, (counts.get(name) || 0) + 1);
   // Each material with the parts made of it, in the parts' order.
   const byMaterial = new Map();
   for (const part of result.parts) {
-    const name = part.material || fallback;
+    const name = materialOf(part);
     if (name) byMaterial.set(name, [...(byMaterial.get(name) || []), spaced(part.name || part.ref)]);
   }
   let label = fallback;
