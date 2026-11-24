@@ -8,6 +8,7 @@ import { MassPropertiesIcon } from "./cadIcons.jsx";
 import { ConfirmButtons } from "./ConfirmButtons.jsx";
 import { inertiaRows, massRows } from "./editMode.js";
 import ErrorWords from "./ErrorWords.jsx";
+import { materialWords } from "../../../lib/materialWords.js";
 import { WORKSPACE_PRESS_CLASS } from "../../../lib/workspaceSurface.js";
 import { EDIT_TEXT_CLASSES } from "./editText.js";
 
@@ -41,7 +42,7 @@ export default function MassProperties({ edit }) {
     </div>
     <FileSheetSettingsSection title="Material" sectionId="mass-material">
       <FileSheetSelectRow label="Material" value={key} onValueChange={setPicked}
-        options={[{ value: NONE, label: "None" }, ...(mass?.materials || []).map(each => ({ value: each.key, label: each.name }))]} />
+        options={[{ value: NONE, label: "None" }, ...(mass?.materials || []).map(each => ({ value: each.key, label: materialWords(each.name) }))]} />
       {material ? <FileSheetControlRow label="Density" value={`${material.density} g/cm³`} />
         : <p className={`${EDIT_TEXT_CLASSES} pb-1`}>Pick a material to weigh the part.</p>}
       {/* Edit Material, as SolidWorks applies one: kept in the part (its script's MATERIAL), weighed in from then on. */}

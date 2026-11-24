@@ -2494,6 +2494,18 @@ class EditingMaterial(Commands):
         self.assertTrue(removed["ok"], removed.get("error"))
         self.assertNotIn("MATERIAL", (root / "block.py").read_text(encoding="utf-8"))
 
+    def test_a_finish_the_catalogue_lacks_is_named_by_the_material_it_is_on(self):
+        # zinc_plated() is mild steel under a clear zinc: its look's name is no material of the catalogue's.
+        root, file, state = self.open({**BLOCK, "block.py": BLOCK["block.py"].replace(
+            "            return Box(WIDTH, DEPTH, HEIGHT)",
+            "            part = Box(WIDTH, DEPTH, HEIGHT)\n"
+            "            part.material = materials.zinc_plated()\n"
+            "            return part").replace(
+            "        from cad import model\n", "        from cad import model\n        from cad.build123d import materials\n")},
+            "block.step")
+        self.assertEqual((state["material"], state["materialName"]),
+                         ("zinc_plated_clear", "Mild steel, zinc plated clear"))
+
 
 class TangentAndLock(unittest.TestCase):
     """SolidWorks' Tangent and Lock mates, as the solver holds them."""

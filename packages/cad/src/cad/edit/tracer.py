@@ -2282,7 +2282,7 @@ def trace(request):
         "faceFeatures": made_faces,
         # The part's own material (`part_material`), the design tree's Material row; "" for none.
         "material": "" if components else part_material(script, shape),
-        "materialName": "" if components else _material_name(part_material(script, shape)),
+        "materialName": "" if components else _material_name(part_material(script, shape), shape),
         "faceCount": 0 if components else face_count(shape),
         "sketches": sketches,
         # The custom features the project's files declare, for the toolbar's Custom group (`_project_features`).
@@ -2809,9 +2809,20 @@ def part_material(script, shape=None):
     return catalogue_key(written) or written
 
 
-def _material_name(key):
-    """A material as the catalogue names it ("Alu_G6061_T6"), or as written where it has no such material; "" for none."""
-    return (catalogue_key(key) or key) if key else ""
+def _material_name(key, shape=None):
+    """A material as the catalogue names it ("Alu_G6061_T6"), or as written where it has no such material; "" for none.
+    A finish's look the catalogue does not have (``zinc_plated()``'s ``zinc_plated_clear``) is named by the physical
+    material it is on, then the look: "Mild steel, zinc plated clear"."""
+    if not key:
+        return ""
+    named = catalogue_key(key)
+    if named:
+        return named
+    held = getattr(shape, "material", None) if isinstance(shape, B.Shape) else None
+    family = str(getattr(getattr(held, "material", None), "family", "") or "")
+    if family and str(getattr(held, "name", "")) == key and family != key:
+        return f"{family.replace('_', ' ').capitalize()}, {key.replace('_', ' ')}"
+    return key
 
 
 def _material(request):
