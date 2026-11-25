@@ -624,6 +624,20 @@ def _ready() -> bool:
 
 
 MODES = ("inline", "processes")
+
+
+def mesh_workers() -> int:
+    """How many processes the mesh pool holds: ``CAD_ENGINE_MESH_WORKERS`` (one to the machine's cores),
+    else the machine's cores. Each is a kernel process of its own, kept warm while the server lives, so an
+    app that keeps the engine running on a person's machine holds its pool to a few."""
+    cores = max(1, os.cpu_count() or 2)
+    try:
+        asked = int(os.environ.get("CAD_ENGINE_MESH_WORKERS", "").strip() or 0)
+    except ValueError:
+        asked = 0
+    return min(cores, asked) if asked > 0 else cores
+
+
 # A free process takes a fact before any queued mesh, an inspected document's measurement after its build too.
 # At most one job per process is handed over, so facts can wait for running meshes only.
 FACT, MESH = 0, 1
@@ -642,7 +656,7 @@ class Mesher:
         self.mode = mode or os.environ.get("CAD_ENGINE_MESH", "processes")
         if self.mode not in MODES:
             raise ValueError(f"CAD_ENGINE_MESH is one of {', '.join(MODES)}")
-        self.workers = workers or max(1, (os.cpu_count() or 2))
+        self.workers = workers or mesh_workers()
         # One thread runs inline meshing: the kernel's threads are its parallelism.
         self._inline = concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="mesh")
         self._processes: concurrent.futures.ProcessPoolExecutor | None = None

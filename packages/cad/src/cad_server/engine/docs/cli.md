@@ -294,6 +294,7 @@ from warming the engine at its launch (**The viewer and the snapshot**). `CAD_EN
 picks how parts are meshed. The default, `processes`, uses a warm pool of
 processes started with the first page or view, each handed one part's shape as bytes,
 largest first, a large part meshed with the kernel's face parallelism too.
+`CAD_ENGINE_MESH_WORKERS` holds that pool to so many processes (one to the machine's cores; default: its cores).
 `inline` meshes one part at a time over the kernel's own threads. Python
 threads add nothing, because the kernel's mesher holds the interpreter's lock.
 
