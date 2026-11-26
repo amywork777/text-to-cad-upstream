@@ -87,8 +87,7 @@ export function faceSuggestions({ faces, shared = [], assembly = false, units = 
       { id: "coaxial", kind: "reading", label: `Coaxial, ${sizes}`, hint: "Two round faces on one axis" },
       ...(fits ? [{
         id: "iso-fit", kind: "ask", label: "ISO fit…", hint: "Ask for a hole and shaft fit from ISO 286",
-        request: `Apply an ISO fit between these two round faces with $iso-fits: a Ø${nominal} mm hole and the shaft in it. `
-          + "Pick the fit for what they do and write the limits into the parts and the drawing.",
+        request: `Put an ISO fit on these two faces, a Ø${nominal} mm hole and the shaft in it.`,
       }] : []),
       ...mate("concentric", "Mate concentric"),
       ...corner,

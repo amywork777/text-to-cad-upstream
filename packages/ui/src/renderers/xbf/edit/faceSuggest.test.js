@@ -37,7 +37,9 @@ test("faces meeting at an edge offer Fillet and Chamfer on the edges they share,
 test("a hole and the shaft in it ask for an ISO fit at their nominal size, and two parts' mate concentric", () => {
   const found = faceSuggestions({ faces: faces(cylinder(11), cylinder(10.995, [0, 0, 8]), [0, 1]), assembly: true });
   assert.deepEqual(ids(found), ["reading:coaxial", "ask:iso-fit", "mate:mate"]);
-  assert.match(found[1].request, /\$iso-fits/);
+  // A plain request: the PMI skill takes fits up, with no skill named.
+  assert.match(found[1].request, /^Put an ISO fit on these two faces/);
+  assert.doesNotMatch(found[1].request, /\$/);
   assert.match(found[1].request, /Ø22 mm hole/);
   assert.equal(found[2].mateType, "concentric");
   // Off its axis, or far apart in size, it is no fit.
