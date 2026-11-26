@@ -27,6 +27,9 @@ const ROW_KEYS = new Set(['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Ho
 const icons = {part:Box,assembly:Boxes,group:Boxes};
 // A part that is a GSL concept (no shape of its own, drawn as its field) wears its own glyph.
 const glyphOf = node => (node.concept === 'body' ? Blend : icons[node.kind] || Box);
+// An implicit part's row says, in a word after its name, what is drawn: a concept, its exact body, or both.
+const shownWord = (node, controls) => (node.concept === 'body' ? 'concept'
+  : node.concept === 'baked' ? controls.representationOf?.(node) || 'exact' : null);
 
 // What hides a row or puts it out of reach, as sets: `availabilityOf(partControls)`.
 function availabilityOf(hiddenPartIds, selectableNodeIds) {
@@ -93,7 +96,8 @@ function ModelingRow({ node, depth, open, branch, locked, disabled, selected, jo
         disabled={disabled || unavailable || !(node.selectionId || node.memberSelectionIds?.length)}
         onClick={event=>{if(event.detail < 2)choose(node,event);}} onDoubleClick={event=>choose(node,event)}
         className={cn(TREE_ROW_NAME_CLASS, 'disabled:opacity-40', underActions)} data-tree-row-name="">
-        <TreeRowLabel className="flex-1">{studio ? <>{studio.name}{studio.suffix ? <span className="ml-1 text-muted-foreground">{studio.suffix}</span> : null}</> : node.label}</TreeRowLabel>
+        <TreeRowLabel className="flex-1">{studio ? <>{studio.name}{studio.suffix ? <span className="ml-1 text-muted-foreground">{studio.suffix}</span> : null}</> : node.label}
+          {shownWord(node, partControls) ? <span className="ml-1.5 text-muted-foreground" data-tree-shown-as={shownWord(node, partControls)}>{t(`tree.shownAs.${shownWord(node, partControls)}`)}</span> : null}</TreeRowLabel>
       </button></TooltipHint>
       {node.selectionId && <XbfPartActions node={node} controls={partControls} disabled={disabled}/>}
     </TreeRowSurface>

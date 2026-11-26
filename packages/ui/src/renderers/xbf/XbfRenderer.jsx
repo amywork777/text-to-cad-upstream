@@ -784,7 +784,7 @@ function XbfSurface({ view, data }) {
     setShownAs(now => now + 1);
     shellRef.current?.requestFrame?.();
   }, [scene]);
-  // Display's own switch (`DisplayPopover.jsx`): every part baked from a concept at once, as its exact body or
+  // Display's Show as (`RendererShell.jsx`'s card): every part baked from a concept at once, as its exact body or
   // its concept. Neither is ticked while the parts differ or one is shown as both, which is a row's choice.
   const displayShownAs = useMemo(() => {
     const baked = concepts.filter(concept => concept.role === "baked");
@@ -798,6 +798,14 @@ function XbfSurface({ view, data }) {
       shellRef.current?.requestFrame?.();
     } };
   }, [scene, concepts]);
+  // What the view draws as implicit concepts, said under the model: exports and checks never use a concept.
+  const conceptNote = useMemo(() => {
+    const drawn = concepts.filter(concept => concept.role === "body" || concept.representation !== "exact");
+    if (!drawn.length || previewing) return null;
+    const bodiless = concepts.filter(concept => concept.role === "body").map(concept => concept.name);
+    return [t("concept.note.drawn", { count: drawn.length }), t("concept.note.exports"),
+      ...(bodiless.length ? [t("concept.note.noExact", { names: bodiless.join(", ") })] : [])].join(" · ");
+  }, [concepts, previewing, t]);
   const menuForNode = useCallback(id => xbfPartMenu({ tree, nodeId: id, assembly, hiddenIds, isolatedIds,
     selectedNodeIds, expandedIds, copyText: singleChip([...new Set([...selectedNodeIds, id])]), zoomSelectionAvailable, shape, concepts }),
   [tree, assembly, hiddenIds, isolatedIds, selectedNodeIds, expandedIds, singleChip, zoomSelectionAvailable, shape, concepts]);
@@ -1026,6 +1034,8 @@ function XbfSurface({ view, data }) {
         <XbfPick viewport={viewport} scene={picker} enabled={picking} onPick={handlePick} takesAway={pickTakesAway} onHover={handleHover} onDoublePick={handleDoublePick}
           deferRef={deferPickRef} pointerTypeRef={pointerTypeRef} />
         {cad.overlay(viewport)}
+        {conceptNote ? <div className="pointer-events-none absolute top-16 left-3 max-w-80 rounded-md border border-border bg-background/90 px-2 py-1 text-xs text-muted-foreground shadow-xs"
+          data-concept-note="">{conceptNote}</div> : null}
       </>;
     }} />;
 }
