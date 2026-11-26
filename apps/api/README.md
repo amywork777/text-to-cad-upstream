@@ -117,6 +117,11 @@ schema 12 batch `503` so its sender keeps it until then, and `Deploy API` is che
 The `/v1/install` route is deployed before the install command that posts to it, too: until it is, a report gets a
 `404` and is lost, as any report the receiver does not take.
 
+Schema 13 adds one format, `gsl`: a GSL model, an implicit (signed-distance) field the CAD Viewer draws by
+marching it. A shown, opened or counted `.gsl` uses `kind: gsl`; no field, event or identity is new, and every
+row of schema 12 or earlier keeps its meaning and its key. Deploy this receiver before a schema 13 sender
+reaches anyone, as for schema 12.
+
 Each event of a batch becomes one PostHog event (`src/posthog.mjs`): `tool_used`, `tool_failed`,
 `view_used`, `files_shown`, `models_built`, `build_failed`, `snapshots_rendered`, `snapshot_failed`,
 `feature_used`, `control_used`, `daemon_health`, `version_arrival`, `cad_updated`, `plugin_installed` (`install`), `plugin_app_failed` (`install_failure`) or, for a crash, `$exception`, which PostHog's error tracking groups into

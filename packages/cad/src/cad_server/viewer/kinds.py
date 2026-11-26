@@ -19,6 +19,7 @@ a document of that kind, and the same id under another kind is a 404 that names 
 * ``stl``, ``glb``, ``3mf``: ``source``, which the page parses itself.
 * ``pdf``, ``picture`` (a ``.png``, ``.jpg`` or ``.webp``): ``source``, which the page shows on a flat
   view to mark up (Studio's ``renderers/picture``).
+* ``gsl``: ``source``, the model's text.
 """
 from __future__ import annotations
 
@@ -52,6 +53,8 @@ EXPORTS = {"model": [*_SOLID, "xbf"], "step": [*_SOLID, "xbf"], "xbf": [*_SOLID,
            "pdf": [], "picture": []}
 # A KiCad schematic's are KiCad's too (``cad kicad_sch export --to``, ``exports.SCHEMATIC``).
 EXPORTS["kicad_sch"] = ["pdf", "svg", "netlist", "bom"]
+# A GSL model is a field: a mesh of it is made by its own operation (``cad gsl mesh``), with values for its names.
+EXPORTS["gsl"] = []
 
 
 def file_kind(path) -> str | None:

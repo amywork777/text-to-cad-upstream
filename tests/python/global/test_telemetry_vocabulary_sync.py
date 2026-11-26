@@ -69,7 +69,7 @@ class TheKindsAreOneVocabulary(unittest.TestCase):
         self.assertIn("model", extra)
         self.assertIn("xbf", formats)
         schema = ast.literal_eval(assignments["SCHEMA"])
-        self.assertRegex(RECEIVER.read_text(encoding="utf-8"), rf"\[{schema}, \{{[^\n]*kinds: KINDS_8")
+        self.assertRegex(RECEIVER.read_text(encoding="utf-8"), rf"\[{schema}, \{{[^\n]*kinds: KINDS_13")
 
 
 class TheFeaturesAreOneVocabulary(unittest.TestCase):

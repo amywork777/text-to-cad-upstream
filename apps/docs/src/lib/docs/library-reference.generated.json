@@ -579,6 +579,58 @@
      "doc": 52
     }
    ]
+  },
+  {
+   "name": "gsl",
+   "module": "cad.gsl",
+   "title": "GSL",
+   "doc": 54,
+   "members": [
+    {
+     "name": "validate",
+     "kind": "function",
+     "operation": true,
+     "summary": "mesh it with gsl and check the mesh against the field: it compiles, it is closed and manifold, it points outward, it stops short of the @scene box, and its volume is the field's",
+     "signature": "(path: Path, *, mesh: Path | None = None, strict: bool = False, verbose: bool = False) -> CheckResult",
+     "doc": 55
+    },
+    {
+     "name": "mesh",
+     "kind": "function",
+     "operation": true,
+     "summary": "write it as a GLB, with values for its names, once a mesh is wanted: the mesh is checked against the field as validate does before it is written, and kept, so the same model and values are meshed once",
+     "signature": "(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), depth: int | None = None, strict: bool = False, verbose: bool = False) -> CheckResult",
+     "doc": 56
+    },
+    {
+     "name": "fit",
+     "kind": "function",
+     "operation": true,
+     "summary": "check exact parts against this concept through its field, with no mesh of it: each part's clearance, where one runs into its material, and the contacts the design means",
+     "signature": "(path: Path, exact: str | None = None, *, contact: tuple[str, ...] = (), define: tuple[str, ...] = (), tolerance: float = 0.01, contact_radius: float = 3.0, density: float = 4.0, chord: float = 0.01, strict: bool = False, verbose: bool = False) -> CheckResult",
+     "doc": 57
+    },
+    {
+     "name": "bake",
+     "kind": "function",
+     "operation": true,
+     "summary": "check an exact part baked from this concept against its field, both ways, and keep the concept as baked; --stale says where the concept has moved since",
+     "signature": "(path: Path, exact: str | None = None, *, stale: bool = False, define: tuple[str, ...] = (), max_deviation: float = 0.0, tolerance: float = 0.01, density: float = 4.0, chord: float = 0.01, strict: bool = False, verbose: bool = False) -> CheckResult",
+     "doc": 58
+    },
+    {
+     "name": "baked",
+     "kind": "function",
+     "signature": "(part, path: Path, **values: float)",
+     "doc": 59
+    },
+    {
+     "name": "concept",
+     "kind": "function",
+     "signature": "(path: Path, *, label: str | None = None, **values: float)",
+     "doc": 60
+    }
+   ]
   }
  ],
  "integrations": [

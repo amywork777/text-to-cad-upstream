@@ -15,6 +15,13 @@ Files are exports, written when asked.
 
 ## Start with the task
 
+A new part is an **exact** part, built in build123d, unless the request asks for a concept. A **concept** is a
+shape to see and change quickly while its form is still being settled, roughed out in GSL. Make one only where
+the request asks for it: a concept, a rough or quick look, GSL, omega or an implicit model, work on an existing
+`.gsl`, or a lattice, an infill or a blended organic shape. A request that names none of these gets build123d,
+and no concept is made first. Making a settled concept exact is a bake, checked against the concept's
+field: [From concept to exact geometry](references/omega-gsl.md#from-concept-to-exact-geometry).
+
 | Task | Start with | Reference |
 | --- | --- | --- |
 | Create or edit a part or assembly | A model script ([below](#write-a-model-and-run-it)) | [Models](references/model-contract.md), [build123d](references/build123d-modeling.md), [positioning](references/positioning.md) |
@@ -33,6 +40,7 @@ Files are exports, written when asked.
 | Explode, reveal or showcase a model | `animation()` in the body | [Animation](references/animation.md) |
 | Can it be machined, bent, molded or printed? | `cad model dfm <id> --process ...` | [Can it be made?](#can-it-be-made) |
 | Open an existing CAD file | Show it | [Show the model](#show-the-model) |
+| A lattice, an infill, a graded wall or a blended organic shape, only where the person asks for one (an implicit part: GSL, omega). Every other part is build123d. | A `.gsl` with `@scene(size)`, shown as a concept; after every edit its picture, `bounds` and a few `eval` points (`cad run gsl render`, `cad run gsl eval`); `cad gsl mesh part.gsl part.glb` only when a file is wanted | [GSL](references/omega-gsl.md) |
 
 Whether a part holds under load is the fea skill's; a robot description, the robot-simulation skill's.
 

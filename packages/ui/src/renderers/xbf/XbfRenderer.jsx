@@ -255,7 +255,13 @@ function XbfSurface({ view, data }) {
     if (!values) shellRef.current?.syncSceneBounds?.();
     shellRef.current?.requestRender?.();
   }, []);
-  const motion = useXbfMotion(kinematics, poseFrame);
+  // The concepts' clock (GSL's `time`) runs with the motion; where there is none, by a clip of its own.
+  const conceptClock = useMemo(() => ({
+    timed: scene?.conceptsTimed === true, label: t("playbar.conceptTime"),
+    set: (seconds) => { if (sceneRef.current?.setConceptTime?.(seconds)) shellRef.current?.requestFrame?.(); }
+  }), [scene, t]);
+  const motion = useXbfMotion(kinematics, poseFrame, conceptClock);
+  const motionOwns = Boolean(motion?.enabled);
   // ---- Parameters: the named numbers the model's script declares (`XbfParametersSection.jsx`) ---
   // Kept here, for as long as the file is on screen: the drafts, the preview of them the scene draws, and
   // what was saved, which the next Quick Edit tells the agent (`promptNotes`).
@@ -265,7 +271,6 @@ function XbfSurface({ view, data }) {
   // leave the clip in charge (and Joints showing its frame). Joints and Explode never reset the parameters.
   const releaseMotion = useCallback(() => { if (motionRef.current?.enabled) motionRef.current.onRelease(); }, []);
   const parameters = useXbfParameters({ client: document.client, document: loaded.document, onPreview: setParameterPreview, onEdit: releaseMotion });
-  const motionOwns = Boolean(motion?.enabled);
   useEffect(() => {
     if (!scene || !poseValues || motionRef.current?.enabled) return;
     scene.setPose(poseApplied ? poseValues : null);
@@ -770,9 +775,40 @@ function XbfSurface({ view, data }) {
     const bounds = scene?.selectionBounds(ids);
     if (bounds) shellRef.current?.frame.viewerRef.current?.zoomToBounds?.(bounds);
   }, [scene, leavesOf]);
+  // The GSL concepts the document's parts name (`xbfConcepts.js`), as they are shown now.
+  const [shownAs, setShownAs] = useState(0);
+  const [draft, setDraft] = useState(null);
+  const concepts = useMemo(() => scene?.concepts?.() || EMPTY, [scene, shownAs]);
+  const showAs = useCallback((menu, value) => {
+    if (!scene?.setRepresentation(menu.representationId, value)) return;
+    setShownAs(now => now + 1);
+    shellRef.current?.requestFrame?.();
+  }, [scene]);
+  // Display's Show as (`RendererShell.jsx`'s card): every part baked from a concept at once, as its exact body or
+  // its concept. Neither is ticked while the parts differ or one is shown as both, which is a row's choice.
+  const displayShownAs = useMemo(() => {
+    const baked = concepts.filter(concept => concept.role === "baked");
+    if (!baked.length) return null;
+    const value = ["exact", "concept"].find(way => baked.every(concept => concept.representation === way)) || "";
+    return { value, onChange: way => {
+      let changed = false;
+      for (const concept of baked) changed = scene.setRepresentation(concept.id, way) || changed;
+      if (!changed) return;
+      setShownAs(now => now + 1);
+      shellRef.current?.requestFrame?.();
+    } };
+  }, [scene, concepts]);
+  // What the view draws as implicit concepts, said under the model: exports and checks never use a concept.
+  const conceptNote = useMemo(() => {
+    const drawn = concepts.filter(concept => concept.role === "body" || concept.representation !== "exact");
+    if (!drawn.length || previewing) return null;
+    const bodiless = concepts.filter(concept => concept.role === "body").map(concept => concept.name);
+    return [t("concept.note.drawn", { count: drawn.length }), t("concept.note.exports"),
+      ...(bodiless.length ? [t("concept.note.noExact", { names: bodiless.join(", ") })] : [])].join(" · ");
+  }, [concepts, previewing, t]);
   const menuForNode = useCallback(id => xbfPartMenu({ tree, nodeId: id, assembly, hiddenIds, isolatedIds,
-    selectedNodeIds, expandedIds, copyText: singleChip([...new Set([...selectedNodeIds, id])]), zoomSelectionAvailable, shape }),
-  [tree, assembly, hiddenIds, isolatedIds, selectedNodeIds, expandedIds, singleChip, zoomSelectionAvailable, shape]);
+    selectedNodeIds, expandedIds, copyText: singleChip([...new Set([...selectedNodeIds, id])]), zoomSelectionAvailable, shape, concepts }),
+  [tree, assembly, hiddenIds, isolatedIds, selectedNodeIds, expandedIds, singleChip, zoomSelectionAvailable, shape, concepts]);
   const partMenuActions = useMemo(() => Object.fromEntries(Object.entries({
     onCopyReference: menu => copy(menu.copyText),
     onSelect: (menu) => {
@@ -801,8 +837,18 @@ function XbfSurface({ view, data }) {
     onZoomSelection: zoomToSelection,
     onSelectTangentFaces: menu => selectTangent("face", menu.tangentFaceIds),
     onSelectTangentEdges: menu => selectTangent("edge", menu.tangentEdgeIds)
-  }).map(([name, action]) => [name, (menu) => { usage.used(MENU_CONTROLS[name]); ensureSelect(); return action(menu); }])),
-  [copy, exitSingleIsolate, isolate, exitIsolate, hideOthers, showAll, hideNodes, selectedNodeIds, revealNodes, toggleExpanded,
+  }).map(([name, action]) => [name, (menu) => { usage.used(MENU_CONTROLS[name]); ensureSelect(); return action(menu); }]).concat([
+    // How a baked part is shown: no control of the usage vocabulary, so none is counted.
+    ["onShowExact", menu => showAs(menu, "exact")], ["onShowConcept", menu => showAs(menu, "concept")], ["onShowBoth", menu => showAs(menu, "both")],
+    // A concept handed to the agent to be made exact: the part picked, which opens Quick Edit on it, its note begun.
+    ["onConvertToBrep", (menu) => {
+      ensureSelect();
+      setChosen(() => pickNode(EMPTY, menu.nodeId, false));
+      const concept = scene?.concepts?.().find(found => found.id === tree.nodes.get(menu.nodeId)?.leafPartIds[0]);
+      setDraft({ key: `${menu.nodeId}:${Date.now()}`, text: t("concept.convertPrompt", { name: menu.label, file: concept?.file || "" }) });
+    }]
+  ])),
+  [showAs, scene, tree, t, copy, exitSingleIsolate, isolate, exitIsolate, hideOthers, showAll, hideNodes, selectedNodeIds, revealNodes, toggleExpanded,
     zoomToSelection, selectTangent, ensureSelect, usage]);
   // A pick as PMI's New reads it: each face with its part (the structure's prototype), its canonical
   // ref and its surface; anything else picked (a part, an edge) makes nothing.
@@ -896,8 +942,11 @@ function XbfSurface({ view, data }) {
     onFocusTreeNode: ids => { ensureSelect(); isolate(ids); }, onUnfocusTreeNode: exitSingleIsolate, onExitAllIsolate: exitIsolate,
     onTogglePartVisibility: toggleVisibility, showAllHiddenParts: showAll,
     onHoverTreeNode: id => setHover(id ? { parts: tree.nodes.get(id)?.leafPartIds || EMPTY, element: null } : NO_HOVER),
-    menuForNode, partMenuActions
-  }), [assembly, hiddenIds, isolatedIds, selectableIds, expandedIds, toggleExpanded, revealExpanded, selectTreeNode, ensureSelect, isolate, exitSingleIsolate,
+    menuForNode, partMenuActions,
+    representationOf: node => (node.concept === "baked" && node.leafPartIds?.length === 1
+      ? concepts.find(concept => concept.id === node.leafPartIds[0])?.representation || null : null),
+    onShowAs: (node, value) => showAs({ representationId: node.leafPartIds[0] }, value)
+  }), [concepts, showAs, assembly, hiddenIds, isolatedIds, selectableIds, expandedIds, toggleExpanded, revealExpanded, selectTreeNode, ensureSelect, isolate, exitSingleIsolate,
     exitIsolate, toggleVisibility, showAll, tree, menuForNode, partMenuActions]);
   // PMI's tab: a document's that carries PMI, or one PMI is being made for (a face's "Add datum", a
   // new one waiting in Quick Edit). A file with none has no tab for it.
@@ -961,7 +1010,7 @@ function XbfSurface({ view, data }) {
 
   return <RendererShell shell={shell} tools={strip} subToolbar={effects.subToolbar ?? (measuring ? <MeasurementsBar measure={measure} /> : null)} sidebar={sidebar} previewView={previewView}
     fileSections={fileSections} jointsHoldMotion={Boolean(fileSections) && sections.includes("position")}
-    inspect={inspect} promptNotes={parameters.notes} notice={cad.notice} {...cad.frame} leftDock={cadLeftDock(cad.frame.leftDock, pmiSection)} alertStartsDismissed={alertStartsPutAway(loadAlert)}
+    inspect={inspect} displayShownAs={displayShownAs} quickEditDraft={draft} promptNotes={parameters.notes} notice={cad.notice} {...cad.frame} leftDock={cadLeftDock(cad.frame.leftDock, pmiSection)} alertStartsDismissed={alertStartsPutAway(loadAlert)}
     // Ink on the model opens Quick Edit in the workspace as in the AI layout: what Draw draws is for it.
     quickEditAsked={quickEditOpening({ asked: cad.frame.quickEditAsked, inked: shell.frame.annotation.hasAnnotation })}
     references={quickEdit.references} referenceChips={quickEdit.chips} nameReference={nameReference}
@@ -985,6 +1034,8 @@ function XbfSurface({ view, data }) {
         <XbfPick viewport={viewport} scene={picker} enabled={picking} onPick={handlePick} takesAway={pickTakesAway} onHover={handleHover} onDoublePick={handleDoublePick}
           deferRef={deferPickRef} pointerTypeRef={pointerTypeRef} />
         {cad.overlay(viewport)}
+        {conceptNote ? <div className="pointer-events-none absolute top-16 left-3 max-w-80 rounded-md border border-border bg-background/90 px-2 py-1 text-xs text-muted-foreground shadow-xs"
+          data-concept-note="">{conceptNote}</div> : null}
       </>;
     }} />;
 }

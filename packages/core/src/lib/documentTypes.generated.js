@@ -13,14 +13,18 @@ export const DOCUMENT_TYPE_REGISTRY = Object.freeze({
     "ranges",
     "drc",
     "erc",
-    "validate"
+    "validate",
+    "mesh",
+    "fit",
+    "bake"
   ],
   "views": [
     "document",
     "mesh",
     "drawing",
     "robot",
-    "plot"
+    "plot",
+    "field"
   ],
   "documentTypes": [
     {
@@ -210,6 +214,23 @@ export const DOCUMENT_TYPE_REGISTRY = Object.freeze({
         "snapshot",
         "inspect",
         "erc"
+      ],
+      "decorator": false
+    },
+    {
+      "id": "gsl",
+      "title": "GSL",
+      "wire": "gsl",
+      "extensions": [
+        ".gsl"
+      ],
+      "mime": "text/plain; charset=utf-8",
+      "view": "field",
+      "operations": [
+        "validate",
+        "mesh",
+        "fit",
+        "bake"
       ],
       "decorator": false
     }

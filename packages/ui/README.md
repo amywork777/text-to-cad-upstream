@@ -118,6 +118,7 @@ src/
     xbf/            an engine document (.xbf) and a STEP: model tree, Params, Joints, PMI (pmi/)
     robot/          URDF and SRDF: Links and Joints
     glb/, mesh/     GLB, and STL/3MF triangle meshes
+    field/          a GSL model, drawn as its field: marched in the view, with no mesh of it
     dxf/            2D drawings
     workspace/      a viewer file's catalog entry and document load
     harness/, shell-harness/  surfaces the browser suites drive
