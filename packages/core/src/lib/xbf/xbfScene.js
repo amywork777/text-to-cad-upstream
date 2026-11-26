@@ -1041,6 +1041,20 @@ export function createXbfScene(THREE, document) {
       if (points) placed.points = (xbfFaceNodes(mesh, parsed.ordinal)?.points || []).map(point => placeXbfPoint(matrix, point));
       return placed;
     },
+    /**
+     * The edges two faces of one part share (`i3/edge/4` each), where their outlines meet: the corner a fillet or a chamfer
+     * on both rounds. Empty for faces of two parts, or for an id that is no face.
+     * @param {string} first
+     * @param {string} second
+     */
+    sharedEdges(first, second) {
+      const a = parseXbfElementId(first), b = parseXbfElementId(second);
+      const entry = a && instances[a.instance];
+      if (disposed || !entry || a.kind !== "face" || b?.kind !== "face" || b.instance !== a.instance) return [];
+      const edges = faceEdges(entry.surface.held, entry.surface.part);
+      const theirs = edges.get(b.ordinal);
+      return [...(edges.get(a.ordinal) || [])].filter(edge => theirs?.has(edge)).map(edge => xbfElementId(a.instance, "edge", edge));
+    },
     /** The box, where they stand now, of what is shown: every part but the hidden ones and, while some are isolated, those alone. What Zoom to fit frames. */
     shownBounds() {
       const box = new THREE.Box3();

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@cad/ui/utils";
 import { WORKSPACE_SURFACE_CLASS } from "../../../lib/workspaceSurface.js";
 import { VIEWER_DOUBLE_CLICK_ACTIVATION_DELAY_MS } from "../clickActivation.js";
-import { AddContextIcon, AnnotateIcon, AskIcon } from "./cadIcons.jsx";
+import { AddContextIcon, AnnotateIcon, AskIcon, MateIcon } from "./cadIcons.jsx";
 import { FeatureIcon } from "./featureIcons.jsx";
 import { useSceneRendered } from "./sceneRendered.js";
 import { SELECTION_BAR_EDGE_PX, placeBar, screenBox } from "./selectionBar.js";
@@ -16,6 +16,14 @@ const AGENT_BUTTONS = Object.freeze({
   "add-context": { label: "Add to context", Icon: AddContextIcon },
   annotate: { label: "Annotate", Icon: AnnotateIcon },
 });
+// What each kind of suggestion for two faces shows (`faceSuggest.js`): a command its feature's icon, Mate its own, the agent Ask's.
+const SUGGESTION_ICONS = Object.freeze({
+  command: suggestion => <FeatureIcon kind={suggestion.command === "chamfer" ? "Chamfer" : "Fillet"} />,
+  mate: () => <MateIcon />,
+  ask: () => <AskIcon />,
+  preview: () => null,
+});
+
 // The cards the workspace floats over the view, which the bar keeps clear of: its toolbar (the top of the room the bar
 // has), the design tree, the open command's card, the timeline, and Quick Edit's box.
 const CARDS = '[data-cad-dock="toolbar"], [data-cad-dock="navigator"], [data-cad-command-card], [data-cad-edit-timeline], [data-quick-edit-box]';
@@ -77,14 +85,17 @@ function useFrame(viewport, anchorKey, anchorRef, active) {
  * about, in the part's own units; `anchorKey` changes with the picks. It shows once the double-click window since it
  * came has passed, so a second click of a double-click on the model is the model's, and it takes no press or double-click
  * of its own that the model could hear. Edit draws the picked feature's own icon (`editKind`) and names what it opens
- * (`editHint`: Edit Feature, Edit Sketch).
+ * (`editHint`: Edit Feature, Edit Sketch). Two faces picked add a second row, what they suggest (`faceSuggest.js`): what
+ * they measure, said, and the commands, the mate or the ask that fit them, each pressed through `onSuggest`; one that is not
+ * wired yet says so, "Preview", and takes no press.
  *
  * @param {{ viewport: { runtimeRef: object, hostRef?: object, viewerReadyTick?: number },
  *   actions: { id: string, enabled: boolean, reason?: string }[], anchor: () => number[][], anchorKey: string,
  *   editKind?: string, editHint?: string, onAsk?: () => void, onAddContext?: () => void, onAnnotate?: () => void,
- *   onEdit?: () => void }} props
+ *   onEdit?: () => void, suggestions?: object[], onSuggest?: (suggestion: object) => void }} props
  */
-export default function EditSelectionBar({ viewport, actions, anchor, anchorKey, editKind = "", editHint = "", onAsk, onAddContext, onAnnotate, onEdit }) {
+export default function EditSelectionBar({ viewport, actions, anchor, anchorKey, editKind = "", editHint = "", onAsk, onAddContext, onAnnotate, onEdit,
+  suggestions = [], onSuggest }) {
   const handlers = { ask: onAsk, "add-context": onAddContext, annotate: onAnnotate, edit: onEdit };
   const drawn = actions.filter(action => handlers[action.id]);
   const [ready, setReady] = useState(false);
@@ -108,10 +119,12 @@ export default function EditSelectionBar({ viewport, actions, anchor, anchorKey,
     event.currentTarget.closest("[data-cad-surface]")?.focus({ preventScroll: true });
     handler();
   };
+  const offered = onSuggest ? suggestions : [];
   return <div ref={bar} role="toolbar" aria-label="Selection" data-cad-selection-bar=""
-    className={cn(WORKSPACE_SURFACE_CLASS, "pointer-events-auto absolute z-20 flex items-center gap-0.5 p-0.5", size.width ? null : "invisible")}
+    className={cn(WORKSPACE_SURFACE_CLASS, "pointer-events-auto absolute z-20 flex flex-col p-0.5", size.width ? null : "invisible")}
     style={{ left: Math.round(place.left), top: Math.round(place.top) }}
     onPointerDown={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}>
+    <div className="flex items-center gap-0.5">
     {drawn.map(action => {
       const agent = AGENT_BUTTONS[action.id];
       const label = agent ? agent.label : "Edit";
@@ -122,5 +135,23 @@ export default function EditSelectionBar({ viewport, actions, anchor, anchorKey,
         {label}
       </button>;
     })}
+    </div>
+    {offered.length ? <div role="group" aria-label="Suggested for these faces" data-cad-face-suggestions=""
+      className="mt-0.5 flex items-center gap-0.5 border-t border-border/60 pt-0.5">
+      {offered.map(suggestion => (suggestion.kind === "reading"
+        ? <span key={suggestion.id} title={suggestion.hint} data-suggestion={suggestion.id}
+          className="flex h-6 shrink-0 items-center px-2 text-tiny tabular-nums leading-none text-muted-foreground">{suggestion.label}</span>
+        : <button key={suggestion.id} type="button" data-suggestion={suggestion.id} title={suggestion.hint}
+          className={cn(BUTTON_CLASS, suggestion.kind === "preview" && "cursor-default text-muted-foreground hover:bg-transparent active:bg-transparent")}
+          aria-disabled={suggestion.kind === "preview" || undefined}
+          aria-description={suggestion.kind === "preview" ? "Not wired to a command yet" : suggestion.hint}
+          onClick={suggestion.kind === "preview" ? undefined : press(() => onSuggest(suggestion))}>
+          {SUGGESTION_ICONS[suggestion.kind]?.(suggestion)}
+          {suggestion.label}
+          {suggestion.kind === "preview"
+            ? <span className="rounded-sm border border-border px-1 text-micro font-medium uppercase leading-4 tracking-wide">Preview</span>
+            : null}
+        </button>))}
+    </div> : null}
   </div>;
 }

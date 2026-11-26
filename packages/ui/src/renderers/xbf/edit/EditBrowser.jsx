@@ -79,7 +79,7 @@ function ValueField({ value, unit, label, disabled, onCommit }) {
  *   place beside the design tree where the open command's panel floats;
  *   `onDeselect`: a face or edge the command's panel lists taken out of the selection (its id).
  */
-export default function EditBrowser({ edit, names, tree, references = [], onEditSketch = () => {}, onPlane = () => {}, onOpenPart = null,
+export default function EditBrowser({ edit, names, tree, references = [], onEditSketch = () => {}, onPlane = () => {}, onOpenPart = null, mateType = null,
   backTo = null, card = null, onDeselect = null }) {
   const [open, setOpen] = useState(true);
   const { state, status } = edit;
@@ -129,7 +129,7 @@ export default function EditBrowser({ edit, names, tree, references = [], onEdit
         : edit.inspecting === "interference" ? <InterferencePanel edit={edit} />
         : edit.inspecting === "appearance" ? <Appearance edit={edit} />
           // Mate, from the ribbon's Assemble group: an assembly's part placed by two picks.
-          : edit.inspecting === "mate" ? <MatePanel edit={edit} references={references} components={tree?.components || []} onDeselect={onDeselect} />
+          : edit.inspecting === "mate" ? <MatePanel edit={edit} references={references} components={tree?.components || []} onDeselect={onDeselect} startType={mateType} />
             // Insert Components, from the same group: a part of the project added to the assembly.
             : edit.inspecting === "insert" ? <InsertComponents edit={edit} />
             // The part's drawing, from the ribbon's Drawing group.
