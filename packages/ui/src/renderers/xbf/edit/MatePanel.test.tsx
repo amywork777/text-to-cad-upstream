@@ -61,3 +61,16 @@ it("an Angle mate takes its angle and has no alignment to flip", async () => {
   expect(mating.mate).toHaveBeenCalledWith(expect.objectContaining({ type: 'angle', angle: '30' }));
   expect(mating.mate.mock.calls[0][0]).not.toHaveProperty('flip');
 });
+
+it("opened on two picks, it starts as the selection bar said, else concentric for two round faces", async () => {
+  const user = userEvent.setup();
+  const mating = edit();
+  render(<MatePanel edit={mating as never} references={[TOP, FOOT]} components={COMPONENTS} startType="tangent" />);
+  await user.click(screen.getByRole('button', { name: 'OK' }));
+  expect(mating.mate).toHaveBeenCalledWith(expect.objectContaining({ type: 'tangent' }));
+  cleanup();
+  const round = (ref: typeof TOP) => ({ ...ref, pickData: { ...ref.pickData, surfaceType: 'cylinder' } });
+  render(<MatePanel edit={mating as never} references={[round(TOP), round(FOOT)]} components={COMPONENTS} />);
+  await user.click(screen.getByRole('button', { name: 'OK' }));
+  expect(mating.mate).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'concentric' }));
+});

@@ -217,3 +217,23 @@ it('is not there when nothing is offered, and is gone once the camera loop is: n
   view.unmount();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it('puts what two faces suggest on a row of its own: a reading said, a preview marked and not pressed, the rest pressed', () => {
+  const onSuggest = vi.fn();
+  const suggestions = [
+    { id: 'angle', kind: 'reading', label: 'Square', hint: 'The angle between the two flat faces' },
+    { id: 'fillet', kind: 'command', command: 'fillet', edges: ['i0/edge/7'], label: 'Fillet', hint: 'Round the edge these faces share' },
+    { id: 'set-distance', kind: 'preview', label: 'Set distance', hint: 'Change the size between these faces' },
+  ];
+  bar({ suggestions, onSuggest });
+  wait();
+  const row = within(toolbar()!).getByRole('group', { name: 'Suggested for these faces' });
+  expect(within(row).getByText('Square').tagName).toBe('SPAN');
+  fireEvent.click(within(row).getByRole('button', { name: /Fillet/ }));
+  expect(onSuggest).toHaveBeenCalledWith(suggestions[1]);
+  const preview = within(row).getByRole('button', { name: /Set distance/ });
+  expect(preview.getAttribute('aria-disabled')).toBe('true');
+  expect(preview.textContent).toContain('Preview');
+  fireEvent.click(preview);
+  expect(onSuggest).toHaveBeenCalledTimes(1);
+});

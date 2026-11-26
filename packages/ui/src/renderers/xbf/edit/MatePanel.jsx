@@ -14,6 +14,7 @@ import { SelectionBox } from "./EditCommand.jsx";
 import { selectionItems, selectionLabel, sizeName } from "./editMode.js";
 import { elementOf } from "./selectors.js";
 import { EDIT_TEXT_CLASSES } from "./editText.js";
+import { suggestedMateType } from "./faceSuggest.js";
 
 // SolidWorks' Standard Mates this places a part by.
 const MATE_TYPES = Object.freeze([{ value: "coincident", label: "Coincident" }, { value: "concentric", label: "Concentric" },
@@ -45,8 +46,9 @@ const partOf = (item, components) => {
  * @param {{ edit: ReturnType<typeof import("./useEditMode.js").useEditMode>, references: any[], components: any[],
  *   onDeselect?: (id: string) => void }} props
  */
-export default function MatePanel({ edit, references, components = [], onDeselect }) {
-  const [type, setType] = useState("coincident");
+export default function MatePanel({ edit, references, components = [], onDeselect, startType = null }) {
+  // Opened on two picks already made, it starts as the selection bar said (`startType`), else as they suggest.
+  const [type, setType] = useState(() => (MATE_TYPES.some(mate => mate.value === startType) ? startType : suggestedMateType(selectionItems(references))));
   const [distance, setDistance] = useState("10");
   const [angle, setAngle] = useState("90");
   const [flip, setFlip] = useState(false);

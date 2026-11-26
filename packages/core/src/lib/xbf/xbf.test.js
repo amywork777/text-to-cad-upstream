@@ -770,6 +770,12 @@ test("picking: an edge wins over the face under the pointer only when it is that
   const plate = at(12, 3.05);
   assert.deepEqual([plate.kind, plate.instance], ["face", 0]);
   assert.equal(owners.get(plate.ordinal)?.has(rim.ordinal) && rim.instance === 0, false);
+  // Two faces' shared edges are where their outlines meet: the peg's top and its side share its rim; faces of two parts none.
+  const pegEdges = xbfFaceEdges(document.parts.get(PEG.key).mesh);
+  const side = [...pegEdges.keys()].find(face => face !== top.ordinal && pegEdges.get(face).has(rim.ordinal));
+  assert.ok(scene.sharedEdges(top.id, xbfElementId(1, "face", side)).includes(rim.id));
+  assert.deepEqual(scene.sharedEdges(top.id, plate.id), []);
+  assert.deepEqual(scene.sharedEdges(top.id, rim.id), []);
   // A resting pointer reaches less far than a press: the rim from 6 pixels inside is the press's, not the hover's.
   assert.equal(at(12, 2.35).kind, "edge");
   assert.equal(at(12, 2.35, { hover: true }).kind, "face");

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { parseXbfElementId } from "@cad/core/lib/xbf/xbfScene.js";
 import { useViewerHost } from "../../../host/context.js";
 import { NxIconSprite } from "../../../lib/nxIcons.generated.jsx";
 import { editLayoutHost } from "../../../tab-store/editLayoutHost.js";
 import { transitionCameraToViewPreset } from "../../kit/camera/runtimeCamera.js";
+import { addToContext, deliveryFailure, quickEditSelection } from "../../kit/tools/quick-edit/quickEditPrompt.js";
 import { requestSceneFrame } from "../../kit/viewport/sceneFrames.js";
 import { XBF_TOOL } from "../tools.js";
 import { XBF_SELECT_DEFAULT } from "../XbfSelectionModes.jsx";
@@ -13,6 +15,7 @@ import { editLayoutControl } from "./EditLayoutSwitch.jsx";
 import EditRibbon from "./EditRibbon.jsx";
 import EditSelectionBar from "./EditSelectionBar.jsx";
 import { featureAsk } from "./featureAsk.jsx";
+import { faceSuggestions } from "./faceSuggest.js";
 import ImportedBody from "./ImportedBody.jsx";
 import AssemblyNotice from "./AssemblyNotice.jsx";
 import PreviewLayer from "./PreviewLayer.jsx";
@@ -499,8 +502,14 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
   const origin = !edit.sketch && (edit.selected === "origin" || edit.hovered === "origin") ? originAxis(edit.state?.bounds) : null;
 
   /** What Quick Edit is handed: what is picked, a feature chosen in the design tree as its statement in the script. */
-  const quickEdit = ({ references: carried, chips }) => (featureCarried ? { references: [featureCarried.reference], chips: [featureCarried.chip] }
-    : { references: carried, chips });
+  const carriedRef = useRef(EMPTY);
+  // The mate the bar's Mate opened on, for those picks alone: Mate from the ribbon on other picks starts as they suggest.
+  const [mateStart, setMateStart] = useState(null);
+  const mateType = mateStart && mateStart.picks === references.map(reference => reference.id).join(",") ? mateStart.type : null;
+  const quickEdit = ({ references: carried, chips }) => {
+    carriedRef.current = carried;
+    return featureCarried ? { references: [featureCarried.reference], chips: [featureCarried.chip] } : { references: carried, chips };
+  };
   /** The box's X, or a send: what it carried is let go of, a feature chosen with it. */
   const letGoAsked = () => { clearAsked(); dropFeature(); };
 
@@ -513,7 +522,7 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
     ribbon: editing ? (stripTools, shown) => <EditRibbon tools={stripTools} view={shown} edit={edit} onCommand={startEditCommand} onSketch={startSketchCommand}
       sketchLabel={selectedTreeSketch ? "Edit Sketch" : "Sketch"} canOpenParts={Boolean(openPart)} onNormalTo={normalTarget ? edit.lookNormalTo : null} /> : null,
     leftDock: editing ? <EditBrowser edit={editWithRows} names={editNames} tree={editTree} references={references} onEditSketch={openTreeSketch}
-      onPlane={sketchOnPlane} onOpenPart={openPart} backTo={backTo} card={commandCard} onDeselect={deselect} /> : null,
+      onPlane={sketchOnPlane} onOpenPart={openPart} backTo={backTo} card={commandCard} onDeselect={deselect} mateType={mateType} /> : null,
     dialogPlace: editing ? setCommandCard : null,
     dialogOpen: editing && floatsCard(edit),
   };
@@ -552,6 +561,28 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
   const massCenter = edit.mass?.center;
   const massMark = useMemo(() => (massCenter ? { mark: "center", at: massCenter } : null), [massCenter]);
   const units = edit.state?.units || "";
+  // ---- what two faces picked together suggest (`faceSuggest.js`), on the bar's second row --------
+  const suggestions = useMemo(() => {
+    const two = barModelPicks.length === 2 && barModelPicks.every(pick => pick.kind === "face") ? barModelPicks : null;
+    if (!two || !scene) return EMPTY;
+    const faces = two.map(({ id }) => ({ id, surface: scene.elementGeometry?.(id)?.surface || null, instance: parseXbfElementId(id)?.instance }));
+    return faceSuggestions({ faces, shared: scene.sharedEdges?.(two[0].id, two[1].id) || EMPTY, assembly: Boolean(assembly), units: units || "mm" });
+  }, [barModelPicks, scene, assembly, units]);
+  // A command opens on the edges the faces share, picked in their place; Mate on the two faces; an ask goes to the chat box
+  // with the faces, to read and send, as Add to context puts them there.
+  const suggest = (suggestion) => {
+    if (suggestion.kind === "command") {
+      setChosen(() => suggestion.edges);
+      startEditCommand(suggestion.command);
+    } else if (suggestion.kind === "mate") {
+      setMateStart({ type: suggestion.mateType, picks: references.map(reference => reference.id).join(",") });
+      edit.inspect("mate");
+    } else if (suggestion.kind === "ask") {
+      // Delivered, the picks are let go as Add to context lets them go; refused, they stay for Quick Edit.
+      void addToContext(host, { resource: document.resource, references: quickEditSelection(carriedRef.current), requests: [suggestion.request] })
+        .then(result => { if (!deliveryFailure(result)) clearPicks(); }, () => {});
+    }
+  };
   const colorScheme = view.appearance?.colorScheme === "dark" ? "dark" : "light";
   // The rollback bar's body, a document of its own the renderer opens by its id in the part's place while the bar is up.
   const rollback = editing && typeof edit.bar?.document?.id === "string" ? edit.bar.document.id : "";
@@ -573,7 +604,8 @@ export function useXbfCadMode({ view, document, scene, tree, assembly, loading, 
         anchorKey={barPicks.map(pick => `${pick.kind}:${pick.id}`).join(",")}
         editKind={rowEdited?.sketch ? "Sketch" : rowEdited?.feature.kind} editHint={rowEdited?.sketch ? "Edit Sketch" : "Edit Feature"}
         onAsk={ask}
-        onEdit={rowEdited ? editRow : undefined} /> : null}
+        onEdit={rowEdited ? editRow : undefined}
+        suggestions={suggestions} onSuggest={suggest} /> : null}
       {edit.command && edit.callout ? <ValueCallout viewport={viewport} callout={edit.callout} /> : null}
       {dimensionsShown ? <EditDimensions viewport={viewport} dimensions={dimensions} units={units}
         // Held while a command's dialog is open, as its sizes are the dialog's, which Cancel puts back.
