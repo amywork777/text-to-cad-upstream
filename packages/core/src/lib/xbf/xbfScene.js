@@ -54,6 +54,7 @@ import { xbfLookRig, xbfLookSurface, xbfLookXray, xbfLookXrayRig, xbfLookXraySur
 import { placeXbfPoint, placeXbfSurface, xbfEdgePolyline, xbfFaceNodes, xbfFaceSurface, xbfVertexPoint } from "./xbfEntities.js";
 import { XBF_EDGE_CLASS_NAMES, xbfEdgeLine, xbmFaceRow, xbmEdgeRow, xbmTriangleFaceRows } from "./xbm.js";
 import { xbfKinematics, xbfPosedMatrices } from "./xbfKinematics.js";
+import { createXbfConcepts } from "./xbfConcepts.js";
 
 export const XBF_SCENE_UNITS = Object.freeze({ unit: "mm", perWorld: 1 });
 export const XBF_EDGE_LINES = Object.freeze(["feature", "tangent", "seam"]);
@@ -564,9 +565,15 @@ export function createXbfScene(THREE, document) {
       // How dark it is drawn, by its colour as the regular modes wear it; `darkInk`, whether its edges take the light ink.
       drawnLuminance: rgba ? drawnLuminance(rgba, prototype.material ? 1 : lookSurface?.colorPower ?? 1) : Infinity, darkInk: false };
   });
+  // The GSL concepts the parts name, drawn as their fields beside the exact parts (`xbfConcepts.js`).
+  const concepts = createXbfConcepts(THREE, document, instances);
   root.updateMatrixWorld(true);
 
-  const instanceBox = entry => (entry.surface.held.box.isEmpty() ? null : entry.surface.held.box.clone().applyMatrix4(entry.group.matrixWorld));
+  const instanceBox = (entry) => {
+    const exact = entry.surface.held.box.isEmpty() ? null : entry.surface.held.box.clone().applyMatrix4(entry.group.matrixWorld);
+    const concept = concepts.box(entry.index);
+    return exact && concept ? exact.union(concept) : exact || concept;
+  };
   const measureBounds = () => {
     const box = new THREE.Box3();
     for (const entry of instances) {
@@ -614,9 +621,13 @@ export function createXbfScene(THREE, document) {
     for (const entry of instances) {
       const shown = !hidden.has(entry.index);
       entry.group.visible = shown;
-      entry.mesh.visible = shown && surfaceStyle !== "off";
+      // A baked part shown as its concept draws no exact body; an isolated part's neighbours' concepts
+      // are not drawn at all.
+      const exact = concepts.exactShown(entry.index);
+      concepts.show(entry.index, shown && !dimmed(entry.index));
+      entry.mesh.visible = shown && surfaceStyle !== "off" && exact;
       // An isolated part's neighbours keep no edges, as a STEP's do not.
-      for (const object of Object.values(entry.lines)) object.visible = shown && edgeLook.enabled && !dimmed(entry.index);
+      for (const object of Object.values(entry.lines)) object.visible = shown && exact && edgeLook.enabled && !dimmed(entry.index);
     }
   };
   const applyEdgeLook = () => {
@@ -654,6 +665,8 @@ export function createXbfScene(THREE, document) {
   };
   const applySurfaces = () => {
     ink.apply(lastLook, { hovered: recordsFor(shownOf(partInk.hovered)), selected: recordsFor(shownOf(partInk.selected)) }, clipPlanes);
+    // The concepts wear the look the exact parts were just given.
+    concepts.look(lastLook);
     // Hidden line: the surfaces only hide what is behind them, in no colour of their own.
     if (surfaceStyle === "hidden") {
       for (const entry of instances) entry.mesh.material = Array.isArray(entry.mesh.material) ? entry.mesh.material.map(() => hiddenDepth) : hiddenDepth;
@@ -684,6 +697,15 @@ export function createXbfScene(THREE, document) {
   const surfaceHit = (ray) => {
     raycaster.ray.copy(ray);
     return raycaster.intersectObjects(visibleMeshes(), false).find(hit => kept(hit.point)) || null;
+  };
+  // The concept the ray meets before any triangle (`hit`, a surface's or null), as the hit of its part.
+  const conceptHit = (ray, hit) => {
+    const found = concepts.hit(ray, index => reachable(instances[index]));
+    if (!found || (hit && hit.distance <= found.distance + 1e-3) || !kept(found.point)) return null;
+    const entry = instances[found.index];
+    return { id: xbfElementId(entry.index), kind: null, instance: entry.index, key: String(entry.prototype.key), ordinal: null,
+      name: entry.prototype.name || entry.instance.path, point: found.point.toArray(), path: entry.instance.path,
+      partName: entry.prototype.name || "" };
   };
   const faceOf = (entry, hit) => {
     const rows = triangleFaces(entry.surface.held, entry.surface.part);
@@ -869,6 +891,7 @@ export function createXbfScene(THREE, document) {
         entry.matrix = matrices[entry.index];
         entry.group.matrix.fromArray(entry.matrix);
       }
+      concepts.pose();
       root.updateMatrixWorld(true);
       posedBounds = measureBounds();
     },
@@ -881,6 +904,17 @@ export function createXbfScene(THREE, document) {
       if (value === explodeAmount) return false;
       explodeAmount = value;
       explodedBounds = value > 0 ? explode.set(value) : (explode.set(0), null);
+      return true;
+    },
+    /** The GSL concepts drawn (`xbfConcepts.js`): each `{ id, name, role, representation, parameters }`, by its part's id. */
+    concepts: () => concepts.list().map(({ index, ...rest }) => ({ id: xbfElementId(index), ...rest })),
+    /** Whether a concept reads its clock (GSL's `time`), and the clock itself, in seconds: true when it moved. */
+    conceptsTimed: concepts.timed,
+    setConceptTime: seconds => !disposed && concepts.setTime(seconds),
+    /** Show a baked part as "exact", "concept" or "both"; true when that changed what is drawn. */
+    setRepresentation(id, value) {
+      if (disposed || !concepts.setRepresentation(parseXbfElementId(id)?.instance, value)) return false;
+      applyVisibility();
       return true;
     },
     units: XBF_SCENE_UNITS,
@@ -937,6 +971,7 @@ export function createXbfScene(THREE, document) {
     setClipPlanes(planes) {
       if (disposed) return;
       clipPlanes = Array.isArray(planes) ? planes : [];
+      concepts.setClipPlanes(clipPlanes);
       look.setClipPlanes(clipPlanes);
       syncMaterialClipPlanes(hiddenDepth, clipPlanes);
       for (const line of XBF_EDGE_LINES) {
@@ -1110,6 +1145,7 @@ export function createXbfScene(THREE, document) {
     setHighlight({ hovered = [], selected = [] } = {}) {
       if (disposed) return;
       partInk = { hovered: hovered.filter(id => scene.hasPart(id)), selected: selected.filter(id => scene.hasPart(id)) };
+      concepts.ink(indicesOf(partInk.hovered), indicesOf(partInk.selected));
       applySurfaces();
     },
     /**
@@ -1153,6 +1189,8 @@ export function createXbfScene(THREE, document) {
     pick(ray) {
       if (disposed) return null;
       const hit = surfaceHit(ray);
+      const concept = conceptHit(ray, hit);
+      if (concept) return { id: concept.id, name: concept.name, point: concept.point };
       if (!hit) return null;
       const index = hit.object.userData.xbfInstance;
       return { id: xbfElementId(index), name: instances[index].prototype.name || instances[index].instance.path, point: hit.point.toArray() };
@@ -1175,6 +1213,9 @@ export function createXbfScene(THREE, document) {
     pickElement(ray, view, { faces = true, edges = true, parts = false, elements = null, hover = false, touch = false, pixels: reachPixels = null } = {}) {
       if (disposed || !view?.camera) return null;
       const hit = surfaceHit(ray);
+      // A concept has no face or edge to take: the part it is, whatever the filter picks.
+      const concept = conceptHit(ray, hit);
+      if (concept) return concept;
       const open = entry => !elements || elements.has(entry.index);
       const entry = hit ? instances[hit.object.userData.xbfInstance] : null;
       const faceOrdinal = entry && faces && open(entry) ? faceOf(entry, hit) : null;
@@ -1508,6 +1549,9 @@ export function createXbfScene(THREE, document) {
     createSibling() {
       const sibling = createXbfScene(THREE, document);
       sibling.setHiddenParts(scene.hiddenParts());
+      for (const { id, role, representation } of scene.concepts()) {
+        if (role === "baked") sibling.setRepresentation(id, representation);
+      }
       return sibling;
     },
     dispose() {
@@ -1516,6 +1560,7 @@ export function createXbfScene(THREE, document) {
       root.removeFromParent();
       for (const object of overlayObjects.values()) dropOverlay(object);
       overlayObjects.clear();
+      concepts.dispose();
       for (const found of screenSpaceLineMaterials) lineRegistry?.unregisterScreenSpaceLineMaterial?.(found);
       screenSpaceLineMaterials.clear();
       lineRegistry = null;

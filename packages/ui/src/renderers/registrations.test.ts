@@ -45,9 +45,9 @@ describe("viewer renderer registrations", () => {
 
   it("opens a STEP and an .xbf in the engine document's renderer, and nothing else in it", () => {
     const renderers = [createDxfRenderer({ client }), createBoardRenderer({ client }), createGlbRenderer({ client }), createMeshRenderer({ client }),
-      createRobotRenderer({ client }), createSchematicRenderer({ client }), createXbfRenderer({ client })];
+      createFieldRenderer({ client }), createRobotRenderer({ client }), createSchematicRenderer({ client }), createXbfRenderer({ client })];
     for (const path of ["part.step", "PART.STP", "model.xbf"]) expect(selectRenderer(renderers, file(path, "cad"))?.id).toBe("xbf");
-    for (const [path, id] of [["plate.dxf", "dxf"], ["blinky.kicad_pcb", "board"], ["divider.kicad_sch", "schematic"], ["arm.glb", "glb"], ["arm.stl", "mesh"], ["bot.urdf", "robot"]]) {
+    for (const [path, id] of [["plate.dxf", "dxf"], ["blinky.kicad_pcb", "board"], ["divider.kicad_sch", "schematic"], ["arm.glb", "glb"], ["arm.stl", "mesh"], ["bot.urdf", "robot"], ["bracket.gsl", "field"], ["BRACKET.GSL", "field"]]) {
       expect(selectRenderer(renderers, file(path, "cad"))?.id).toBe(id);
     }
   });

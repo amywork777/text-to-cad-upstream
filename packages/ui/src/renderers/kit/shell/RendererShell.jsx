@@ -163,13 +163,13 @@ const DOUBLE_PRESS_MS = 600;
 // The update status with nothing to say (`ViewUpdateStatus`'s).
 const NO_UPDATE = Object.freeze({ pending: false, error: null });
 
-export default function RendererShell({ shell, tools, toolPanels = null, subToolbar = null, sidebar = null, fileSections = null, jointsHoldMotion = false, references = null, referenceChips = null, nameReference = null, onClearReferences = null,
+export default function RendererShell({ shell, tools, toolPanels = null, subToolbar = null, sidebar = null, fileSections = null, jointsHoldMotion = false, references = null, referenceChips = null, quickEditDraft = null, nameReference = null, onClearReferences = null,
   requests = null, onClearRequests = null, copySelection = null, contextMenuItems = null,
   onContextMenuOpenChange = null, viewportOverlay = null, previewView = null,
   frameProvider = null, iconSprite = null, onCanvasPointerDown = null, onSelectPress = null, onSelectHover = null, selectsAnnotations = true, boxSelect = null, inkTouches = null,
   doubleClickFits = true, zoomToSelection = null, inspect = null, promptNotes = null,
   alertBody = null, alertStartsDismissed = false, ribbon = null, leftDock = null, bottomDock = null, dialogPlace = null, dialogOpen = false,
-  layoutControl = null, quickEditAsked = null, notice = null }) {
+  layoutControl = null, quickEditAsked = null, notice = null, displayShownAs = null }) {
   const { t } = useI18n();
   const frame = shell.frame;
   // What a tool's letter takes up (`useRendererShell`'s `onKey`): the strip as drawn now.
@@ -256,7 +256,11 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
     defaults: DISPLAY_DEFAULTS, t, used: controls.used })
     // The renderer's own switches on what it draws of the file (an FEA result's loads and fixtures, a CAM job's rapids and stock).
     .concat((frame.displayGates || []).map(gate => ({ id: `gate-${gate.id}`, label: gate.label, toggle: true, value: gate.checked,
-      data: "data-display-gate", onChange: gate.onChange })));
+      data: "data-display-gate", onChange: gate.onChange })))
+    // How the parts that are implicit (a GSL concept beside or baked into an exact part) are drawn: Exact or Concept.
+    .concat(displayShownAs ? [{ id: "shown-as", label: t("display.shownAs"), value: displayShownAs.value || "", data: "data-display-shown-as",
+      options: ["exact", "concept"].map(value => ({ value, label: t(`display.shownAs.${value}`) })),
+      onChange: value => { if (value !== displayShownAs.value) displayShownAs.onChange(value); } }] : []);
   // Preview's frame (`usePreviewFrame.jsx`): its cover, entering and leaving it, the host's navbar stepping aside, its
   // bar and settings panel, its view over the editor's (`PreviewView.jsx`) and its button. What moves its picture on
   // purpose is its Orbit, or its routine playing.
@@ -366,7 +370,7 @@ export default function RendererShell({ shell, tools, toolPanels = null, subTool
   const updateStatus = workspace.toolbarUp ? null : { preview: Boolean(frame.loading.preview), onRetry: frame.viewUpdate.retry,
     update: frame.loading.updating && !frame.viewUpdate.status.error ? modelUpdateStatus(frame.loading.progress) : viewUpdateStatus };
   const quickEdit = references ? <QuickEdit key={frame.modelKey} className="self-stretch" hidden={chromeHidden} docked={quickEditDocked(mobile)}
-    resource={frame.resource} references={references} chips={referenceChips} nameReference={nameReference} annotation={annotation} requests={requests} prompt={frame.quickEditPrompt}
+    resource={frame.resource} references={references} chips={referenceChips} nameReference={nameReference} annotation={annotation} requests={requests} prompt={frame.quickEditPrompt} draft={quickEditDraft}
     notes={promptNotes} asked={quickEditAsked} onCopy={copyAction} onEscape={frame.escape} onClear={clearQuickEdit} disabled={viewerLoading || !scene} /> : null;
   // The view's own controls: **Display** (`DisplaySettings.jsx`: its button, and its card docked at the view's right edge)
   // and **Preview**, a play triangle, in that order: the file's navbar's right end, a phone's too; in a host's inline card

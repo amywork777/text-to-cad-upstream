@@ -102,7 +102,7 @@ export function quickEditReferenceIds(selection) {
  *   with a note keeps it, and Escape only hands the keyboard back to the view. `hidden`: out of
  *   sight with all it holds (the view is loading).
  */
-export default function QuickEdit({ resource, references: offered = EMPTY, chips: offeredChips = null, annotation: offeredAnnotation = null, requests = null, prompt = null, nameReference = null, notes = null, onCopy, onEscape, onClear, disabled = false,
+export default function QuickEdit({ resource, references: offered = EMPTY, chips: offeredChips = null, annotation: offeredAnnotation = null, requests = null, prompt = null, draft = null, nameReference = null, notes = null, onCopy, onEscape, onClear, disabled = false,
   asked = null, hidden: hiddenByView = false, docked = false, className, style }) {
   const { t } = useI18n();
   // Studio: the bar says where its message goes, the chat beside the model, so the two read as one conversation.
@@ -292,6 +292,17 @@ export default function QuickEdit({ resource, references: offered = EMPTY, chips
     setText(value);
     setError("");
   };
+  // A note the view starts for the person (`draft`: `{ key, text }`, a command of the view's that hands the agent
+  // a job): written once per key, into an empty note only, so the person's own words are never replaced.
+  const drafted = useRef(null);
+  useEffect(() => {
+    const note = field.current;
+    if (!draft?.key || drafted.current === draft.key || !note) return;
+    drafted.current = draft.key;
+    if (noteText(note).trim()) return;
+    note.textContent = draft.text;
+    readNote(note);
+  });
   // A paste is the note's to place: plain text, and each line that is a reference a chip, at the caret.
   const onPaste = event => {
     event.preventDefault();
