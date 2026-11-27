@@ -177,6 +177,19 @@ class Run(unittest.TestCase):
         self.assertEqual("", report["python"])
         self.assertIn("cad-freecad-", report["home"])
 
+    @POSIX_ONLY
+    def test_a_run_writes_no_bytecode_beside_cads_files(self):
+        # Inside a signed app, a .pyc written beside cad's _job.py breaks the app's seal.
+        with tempfile.TemporaryDirectory() as name:
+            program = _program(Path(name), 'printf \'{"operations": [], "posts": [], "nobytecode": "%s", "script": "%s"}\' '
+                                           '"$PYTHONDONTWRITEBYTECODE" "$1" > "$CAD_CAM_FOLDER/result.json"')
+            with mock.patch.dict(os.environ, {"PYTHONDONTWRITEBYTECODE": ""}):
+                report, _posted = freecad.run(freecad.FreeCAD(program, "1.1.4"), {},
+                                              lambda path: path.write_text("", encoding="utf-8"))
+        self.assertEqual("1", report["nobytecode"])
+        self.assertIn("cad-freecad-", report["script"])
+        self.assertTrue(report["script"].endswith("/_job.py"))
+
 
 if __name__ == "__main__":
     unittest.main()

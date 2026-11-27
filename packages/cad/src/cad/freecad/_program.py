@@ -73,8 +73,11 @@ def _stalled_hint() -> str:
 def _freecad_env(env: dict[str, str]) -> dict[str, str]:
     """``env`` without what would steer FreeCAD's own embedded Python to ours: every ``PYTHON*`` variable (the
     engine's ``PYTHONPATH``, a ``PYTHONHOME``), a venv's ``VIRTUAL_ENV`` and macOS's ``__PYVENV_LAUNCHER__``."""
-    return {key: value for key, value in env.items()
+    kept = {key: value for key, value in env.items()
             if not key.startswith("PYTHON") and key not in ("VIRTUAL_ENV", "__PYVENV_LAUNCHER__")}
+    # FreeCAD's Python must not write bytecode beside our files: inside a signed app that breaks its seal.
+    kept["PYTHONDONTWRITEBYTECODE"] = "1"
+    return kept
 
 
 def _stop(process: subprocess.Popen) -> None:
@@ -194,8 +197,11 @@ def run(freecad: FreeCAD, plan: dict, write_part) -> tuple[dict, dict[str, str]]
         write_part(folder / "part.brep")
         (folder / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
         env["CAD_CAM_FOLDER"] = str(folder)
+        # FreeCAD runs a copy in its own folder, so nothing it writes lands beside cad's installed files.
+        script = folder / _SCRIPT.name
+        script.write_bytes(_SCRIPT.read_bytes())
         try:
-            done = _call([freecad.path, str(_SCRIPT)], cwd=folder, env=env, timeout=TIMEOUT_S)
+            done = _call([freecad.path, str(script)], cwd=folder, env=env, timeout=TIMEOUT_S)
         except subprocess.TimeoutExpired as error:
             raise RuntimeError(f"FreeCAD did not finish planning in {TIMEOUT_S:.0f} s and was stopped: plan fewer "
                                f"operations or setups at a time, or {_stalled_hint()}") from error
