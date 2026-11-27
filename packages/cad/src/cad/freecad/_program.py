@@ -62,8 +62,11 @@ def install_hint() -> str:
 def _stalled_hint() -> str:
     """What to do about a FreeCAD that started and never answered."""
     if sys.platform == "darwin":
-        return ("open FreeCAD once from Applications so macOS finishes checking the new app, then plan again; "
-                "if it still stalls, reinstall FreeCAD 1.1 or newer from https://www.freecad.org/downloads.php")
+        # A new FreeCAD's first run waits on macOS's "downloaded from the Internet" question until someone
+        # answers it, and every later run waits on that same question; reinstalling does not clear it.
+        return ("macOS is waiting for someone to answer whether to open FreeCAD, a newly downloaded app: unlock "
+                "the screen and choose Open in that question (or open FreeCAD from Applications and choose Open), "
+                "then plan again; if no question shows, restart the Mac")
     return "check that FreeCAD opens on this computer, then plan again; if it still stalls, reinstall FreeCAD 1.1 or newer"
 
 

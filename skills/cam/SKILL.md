@@ -58,7 +58,9 @@ job) does not. `cad` downloads no FreeCAD and plans with nothing else. Get it fr
 https://www.freecad.org/downloads.php:
 
 - macOS: drag the `.dmg`'s FreeCAD into Applications (or `~/Applications`). `cad <type> plan` finds
-  `FreeCAD.app/Contents/Resources/bin/freecadcmd` there.
+  `FreeCAD.app/Contents/Resources/bin/freecadcmd` there. Then run `open -a FreeCAD` and ask the person to
+  choose Open in macOS's question about a downloaded app, and to quit FreeCAD: until someone answers it,
+  every FreeCAD run waits, `cad <type> plan` included. Never remove FreeCAD's quarantine to skip it.
 - Windows: run the installer. `cad <type> plan` finds `bin\freecadcmd.exe` in the newest `FreeCAD *` folder
   under Program Files, or under `%LOCALAPPDATA%\Programs` for a one-user install.
 - Linux: a distribution's package (`/usr/bin/freecadcmd`, `/usr/local/bin/freecadcmd`), or the AppImage unpacked with `--appimage-extract` and
@@ -74,7 +76,7 @@ FreeCAD settings.
 
 Never run `freecadcmd` yourself to check an install: a FreeCAD macOS has not finished checking can
 wait without end. `cad <type> plan` asks it its version within a minute and stops it past that, with
-an error that says what to do (on macOS: open FreeCAD once from Applications, then plan again).
+an error that says what to do (on macOS: answer macOS's question about opening FreeCAD, then plan again).
 
 Units are fixed: mm for lengths, mm/min for feeds, rev/min for spindle speed, degrees for angles.
 Restate the user's numbers before you write them down (a 1/4" end mill is 6.35 mm, 30 ipm is 762
