@@ -211,6 +211,8 @@ class _Numbers(ast.NodeTransformer):
 
 
 ROOT: Path = Path.cwd()
+PART_FOLDER: Path | None = None
+"""The traced script's folder, where edit mode's build of it runs (``service._build``)."""
 FILES: dict[str, str] = {}
 """The traced files' hashes by path relative to the project, to refuse an edit to a changed file."""
 UNSAVED: dict[str, str] = {}
@@ -575,6 +577,18 @@ def _written_for_07(error: BaseException) -> bool:
     return False
 
 
+def _read_path(path) -> Path | None:
+    """The file a part's read names, as its builds find it: a relative path in the part's folder (where edit mode
+    builds it), else in its project's (where ``cad build`` run from the project builds it), never in this
+    process's own working folder. None when it is not there."""
+    given = Path(path)
+    folders = [] if given.is_absolute() else [folder for folder in (PART_FOLDER, ROOT) if folder is not None]
+    for candidate in [folder / given for folder in folders] or [given]:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _wrap_import():
     """A file brought in (``read_step``, ``read_xbf``) is one row of the history, as SolidWorks, Fusion
     and NX list an imported body: a solid with no features of its own, which later lines model on.
@@ -587,11 +601,12 @@ def _wrap_import():
         original = getattr(_declarations, name)
 
         def read(path, __reader=reader, __original=original):
-            if not Path(path).is_file():
+            found = _read_path(path)
+            if found is None:
                 raise FileNotFoundError(f"{GONE}{path}")
-            result = __reader(path)
+            result = __reader(found)
             if RECORDING and _called_from_project():
-                _record("import", "Imported", __original, (path,), {}, result, {"source": Path(str(path)).name, "path": str(path)})
+                _record("import", "Imported", __original, (path,), {}, result, {"source": found.name, "path": str(found)})
             return result
 
         setattr(_declarations, name, functools.wraps(original)(read))
@@ -2134,9 +2149,10 @@ def _units():
 
 
 def trace(request):
-    global RECORDING, ROOT
+    global RECORDING, ROOT, PART_FOLDER
     script = Path(request["script"]).resolve()
     ROOT = Path(request.get("root") or script.parent).resolve()
+    PART_FOLDER = script.parent
     # The project's modules are read afresh: this project's, and any an earlier trace loaded. So are
     # the design scripts a trace brought in from outside its project: left loaded, another project's
     # part of the same name would be read as that one.
