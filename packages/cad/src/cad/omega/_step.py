@@ -16,7 +16,7 @@ The mesh as meshed is held first: no reduction is nearer the model than it. Wher
 where that is not either, or a depth was named, nothing is written, and the departure is said. Then each reduction is tried
 from the fewest triangles up, and the first that is closed, manifold and within ``tolerance`` both ways is
 written (the mesh itself where none is). The STEP is read back before it is handed over: one valid solid, its
-volume the mesh's.
+volume the mesh's; where a reduction's does not read back so, the next finer one within ``tolerance`` is tried.
 """
 
 from __future__ import annotations
@@ -210,12 +210,11 @@ def step(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), d
             # The mesh as meshed first: what no reduction can be better than.
             baseline = held(1.0)
             if baseline[3]["closed"] and baseline[3]["departure_mm"] <= tolerance:
-                chosen = baseline
-                for keep in _KEEPS:
-                    found = held(keep)
-                    if found[3]["closed"] and found[3]["departure_mm"] <= tolerance:
-                        chosen = found
-                        break
+                # Every reduction within the tolerance, fewest triangles first, the mesh itself last: the first
+                # whose STEP reads back as a valid solid is written (a reduction can leave a face the kernel
+                # will not accept, which a finer one does not).
+                chosen = [found for found in (held(keep) for keep in _KEEPS if keep < 1.0)
+                          if found[3]["closed"] and found[3]["departure_mm"] <= tolerance] + [baseline]
         if chosen is not None:
             break
     measurements: dict[str, Any] = {"tolerance_mm": tolerance, "meshed_triangles": int(len(faces)),
@@ -232,29 +231,41 @@ def step(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), d
         result = result_from_findings(target, findings.deduplicated(), strict=strict, summary="")
         return CheckResult(ok=False, path=result.path, findings=result.findings, summary=result.summary,
                            measurements=measurements)
-    v, f, shape, said = chosen
-    field, back = said["field_at_step_mm"], said["surface_to_step_mm"]
-
     from cad._internal.step_readback import read_back
 
     written.parent.mkdir(parents=True, exist_ok=True)
     making = written.with_name(f"{written.stem}.{os.getpid()}.making.step")
+    refused = ""
     try:
-        _write_faceted(v, f, target.stem, making)
-        read = read_back(making)
-        if read is None:
-            return failed(target, f"the STEP written does not read back: {display_path(written)}",
-                          code="step_reads_back_wrong")
-        valid, volume = read
-        if not valid or abs(volume - shape["volume_mm3"]) > _VOLUME_READBACK * shape["volume_mm3"]:
-            findings.add("error", "step_reads_back_wrong", f"the STEP read back is {'a valid' if valid else 'no valid'} "
-                         f"solid of {volume:.6g} mm3, from a mesh of {shape['volume_mm3']:.6g} mm3", path=where)
+        for v, f, shape, said in chosen:
+            _write_faceted(v, f, target.stem, making)
+            read = read_back(making)
+            if read is None:
+                refused = "does not read back"
+                continue
+            valid, volume = read
+            if valid and abs(volume - shape["volume_mm3"]) <= _VOLUME_READBACK * shape["volume_mm3"]:
+                replace_atomic(making, written)
+                break
+            refused = (f"reads back as {'a valid' if valid else 'no valid'} solid of {volume:.6g} mm3, from a mesh "
+                       f"of {shape['volume_mm3']:.6g} mm3")
+            said["reads_back"] = False
+        else:
+            if depth is None and measurements["depth"] == DEFAULT_DEPTH:
+                # What gsl meshed at its depth the kernel will not take as a solid; one deeper, as for a fault.
+                deeper = step(target, out, define=define, depth=DEFAULT_DEPTH + 1, tolerance=tolerance, strict=strict,
+                              verbose=verbose)
+                return CheckResult(ok=deeper.ok, path=deeper.path, findings=deeper.findings, summary=deeper.summary,
+                                   measurements={**deeper.measurements, "tried": tried + list(
+                                       deeper.measurements.get("tried", ()))})
+            findings.add("error", "step_reads_back_wrong", f"no STEP of the mesh reads back right: the last {refused}",
+                         path=where)
             result = result_from_findings(target, findings.deduplicated(), strict=strict, summary="")
             return CheckResult(ok=False, path=result.path, findings=result.findings, summary=result.summary,
                                measurements=measurements)
-        replace_atomic(making, written)
     finally:
         making.unlink(missing_ok=True)
+    field, back = said["field_at_step_mm"], said["surface_to_step_mm"]
 
     measurements.update(step=str(written), faces=int(len(f)), volume_mm3=volume,
                         field_volume_mm3=meshed.measurements.get("field_volume_mm3"),

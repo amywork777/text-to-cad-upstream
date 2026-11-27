@@ -398,8 +398,10 @@ says the region again in its own numbers, and build123d joins the two.
 - **Exact features machined into an implicit part.** Subtract exact cylinders and boxes from the STEP that
   `cad gsl step` wrote: re-drill a hole as a true cylinder, face a flat. Do it for every toleranced hole a blend
   reaches: a round blend fills into a hole it meets (an M5 hole came out up to 0.29 mm small in the field itself).
-- **Blends B-rep cannot make.** Where build123d's fillet fails (a boss at 30 degrees into a plate and a rib: no
-  fillet over 1.59 mm, where rib, boss and plate meet), `unionRound` blends it in GSL; then machine the exact features into its STEP as above.
+- **Blends B-rep cannot make.** First find why build123d's fillet fails: often a coincidence it can work round (a
+  rib ending exactly one radius from the plate's edge puts the fillet's toe on that edge; fillet on a longer plate,
+  then trim it back). Where it truly cannot, `unionRound` blends it in GSL; then machine the exact features into its
+  STEP as above.
 - **One STEP for parts of both kinds:** `cad.gsl.assemble(out, [(step_file, label, (x, y, z)), ...])` copies each
   part's file in as it is. A kernel writer (`export_step` of a compound) writes a faceted lattice again at about six
   times the bytes. Fusing a lattice into an exact solid has the same cost: keep the lattice its own body where the
