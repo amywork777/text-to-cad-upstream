@@ -74,4 +74,21 @@ export default {
   "studio.working": "Studio 正在變更此零件…",
   "studio.workingLabel": "代理正在處理此專案",
   "studio.quickEditDescribe": "描述變更，傳送到此聊天…",
+  // Preview's part finish, its studio backdrops, and Save picture.
+  "render.partFinish": "零件表面",
+  "render.partFinish.modelled": "依模型",
+  "render.partFinish.machined": "機械加工金屬",
+  "render.partFinish.polished": "拋光金屬",
+  "render.partFinish.matte-plastic": "霧面塑膠",
+  "render.partFinish.glossy-plastic": "亮面塑膠",
+  "render.partFinish.rubber": "橡膠",
+  "render.backdrop": "攝影棚",
+  "render.backdrop.white": "白色攝影棚",
+  "render.backdrop.grey": "灰色攝影棚",
+  "render.backdrop.warm": "暖色攝影棚",
+  "render.backdrop.dark": "深色攝影棚",
+  "render.backdrop.black": "黑色攝影棚",
+  "render.backdrop.clear": "無背景（透明圖片）",
+  "preview.savePicture": "儲存圖片",
+  "preview.savePictureFailed": "無法儲存圖片。"
 };

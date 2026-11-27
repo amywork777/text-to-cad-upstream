@@ -81,4 +81,21 @@ export default {
   "studio.working": "Studio is changing this part…",
   "studio.workingLabel": "The agent is working on this project",
   "studio.quickEditDescribe": "Describe a change, sent to this chat…",
+  // Preview's part finish, its studio backdrops, and Save picture.
+  "render.partFinish": "Part finish",
+  "render.partFinish.modelled": "As modelled",
+  "render.partFinish.machined": "Machined metal",
+  "render.partFinish.polished": "Polished metal",
+  "render.partFinish.matte-plastic": "Matte plastic",
+  "render.partFinish.glossy-plastic": "Glossy plastic",
+  "render.partFinish.rubber": "Rubber",
+  "render.backdrop": "Studio",
+  "render.backdrop.white": "White studio",
+  "render.backdrop.grey": "Grey studio",
+  "render.backdrop.warm": "Warm studio",
+  "render.backdrop.dark": "Dark studio",
+  "render.backdrop.black": "Black studio",
+  "render.backdrop.clear": "No background (transparent picture)",
+  "preview.savePicture": "Save picture",
+  "preview.savePictureFailed": "The picture could not be saved."
 };

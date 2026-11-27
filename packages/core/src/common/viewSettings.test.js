@@ -50,6 +50,12 @@ test("Preview's settings are sparse, canonical and its own", () => {
   assert.equal(previewSettingsChanged({}), false);
   assert.equal(previewSettingsChanged({ floor: { finish: "matte" } }), false, "a value at its default is no change");
   assert.equal(previewSettingsChanged({ floor: { finish: "glossy" } }), true);
+  // The parts' finish is not the floor's: each group has its own choices under the one field name.
+  assert.deepEqual(normalizePreviewSettings({ parts: { finish: "machined" } }), { parts: { finish: "machined" } });
+  assert.throws(() => normalizePreviewSettings({ parts: { finish: "glossy" } }), /preview\.parts\.finish must be one of: modelled, machined/);
+  assert.throws(() => normalizePreviewSettings({ floor: { finish: "machined" } }), /preview\.floor\.finish must be one of: matte, glossy/);
+  assert.equal(previewSettingsChanged({ parts: { finish: "modelled" } }), false);
+  assert.equal(resolveViewSettings({}, { ...PREVIEW, previewSettings: { parts: { finish: "rubber" } } }).surfaces.finish, "rubber");
 });
 
 test("each mode is its own look at its defaults; Preview, asked for on its own, alone is in perspective, whatever the camera says", () => {

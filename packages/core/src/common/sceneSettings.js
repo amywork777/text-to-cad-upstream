@@ -8,7 +8,7 @@ import {
   normalizePartColorSettings,
   normalizeDisplaySettings
 } from "./displaySettings.js";
-import { PHOTOGRAPHIC_STUDIO_MATERIAL_SETTINGS } from "./photographicStudioRig.js";
+import { PHOTOGRAPHIC_STUDIO_MATERIAL_SETTINGS, PREVIEW_PART_FINISHES } from "./photographicStudioRig.js";
 import {
   cloneThemePresetSettings,
   normalizeThemeSettings
@@ -269,12 +269,17 @@ export function resolveSceneSurfaceLook({ themeSettings = null, displaySettings 
   const display = normalizeDisplaySettings(displaySettings);
   // Grouped view resolution already decided the surface policy; normalization must not undo it.
   const surfaces = displaySettings?.surfaces || display.surfaces;
+  // A finish chosen in Preview (Part colours' Finish) replaces every authored one: the parts keep
+  // their colours and wear that finish instead (`surfaceLook.js`, a look that is not authored).
+  const finish = photographic && Object.hasOwn(PREVIEW_PART_FINISHES, surfaces?.finish ?? "") ? PREVIEW_PART_FINISHES[surfaces.finish] : null;
   return {
     materialSettings: resolveDisplayMaterialSettings(
-      photographic ? PHOTOGRAPHIC_STUDIO_MATERIAL_SETTINGS : normalizeThemeSettings(themeSettings || {}).materials,
+      finish ? { ...PHOTOGRAPHIC_STUDIO_MATERIAL_SETTINGS, ...finish }
+        : photographic ? PHOTOGRAPHIC_STUDIO_MATERIAL_SETTINGS : normalizeThemeSettings(themeSettings || {}).materials,
       display.partColor
     ),
-    authored: photographic,
+    authored: photographic && !finish,
+    ...(finish ? { finishes: false } : {}),
     surface: surfaces ? { style: surfaces.style, opacity: surfaces.opacity } : null
   };
 }

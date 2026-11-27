@@ -74,4 +74,21 @@ export default {
   "studio.working": "Studio がこの部品を変更しています…",
   "studio.workingLabel": "エージェントがこのプロジェクトで作業中です",
   "studio.quickEditDescribe": "変更内容を入力（このチャットに送信）…",
+  // Preview's part finish, its studio backdrops, and Save picture.
+  "render.partFinish": "部品の仕上げ",
+  "render.partFinish.modelled": "モデルのまま",
+  "render.partFinish.machined": "切削金属",
+  "render.partFinish.polished": "鏡面金属",
+  "render.partFinish.matte-plastic": "つや消し樹脂",
+  "render.partFinish.glossy-plastic": "光沢樹脂",
+  "render.partFinish.rubber": "ゴム",
+  "render.backdrop": "スタジオ",
+  "render.backdrop.white": "白のスタジオ",
+  "render.backdrop.grey": "グレーのスタジオ",
+  "render.backdrop.warm": "暖色のスタジオ",
+  "render.backdrop.dark": "ダークのスタジオ",
+  "render.backdrop.black": "黒のスタジオ",
+  "render.backdrop.clear": "背景なし（透明な画像）",
+  "preview.savePicture": "画像を保存",
+  "preview.savePictureFailed": "画像を保存できませんでした。"
 };

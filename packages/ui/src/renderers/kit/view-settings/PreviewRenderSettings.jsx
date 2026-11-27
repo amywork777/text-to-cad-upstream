@@ -1,5 +1,5 @@
 import { Minus, Plus } from "lucide-react";
-import { previewSettingsChanged, resolvePreviewSettings } from "@cad/core/common/viewSettings.js";
+import { PREVIEW_PART_FINISH_VALUES, previewSettingsChanged, resolvePreviewSettings } from "@cad/core/common/viewSettings.js";
 import { Button } from "@cad/ui/primitives/button";
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
 import { english } from "@cad/ui/i18n";
@@ -8,9 +8,9 @@ import { FileSheetColorPicker } from "../inspector/FileSheet.js";
 /**
  * Preview's own settings (Render's part colours, lighting, background and floor) as the sections of its settings card
  * (`kit/shell/PreviewSettings.jsx`, `SettingsCard.jsx`'s rows), every one visible without opening anything: **Part
- * colours** (its Source, then its Colour or By part's palette), **Lighting** (Quality, Exposure, Rotation, Softbox,
- * Fill), **Background** (Colour, Opacity) and **Floor**, a switch heading its rows (Colour, Opacity, Placement, Finish)
- * while it is on.
+ * colours** (its Source, then its Colour or By part's palette, then the Finish every part wears), **Lighting** (Quality,
+ * Exposure, Rotation, Softbox, Fill), **Background** (a studio's backdrop and floor at a press, Colour, Opacity) and
+ * **Floor**, a switch heading its rows (Colour, Opacity, Placement, Finish) while it is on.
  *
  * `render`: `{ settings, display, appearance, lightingQuality, partColours, onPatch, onReset }` — Preview's sparse
  * settings, the file's display (for the appearance it pins), the app's, and the writes. `partColours` false for a view
@@ -50,6 +50,52 @@ function Palette({ colors, onChange, t }) {
   </div>;
 }
 
+/**
+ * Background's studios: a backdrop and its floor, set together at a press. The last is no backdrop at all, so a
+ * saved picture is transparent around the model and its floor's shadow.
+ */
+export const PREVIEW_BACKDROPS = Object.freeze([
+  Object.freeze({ id: "white", background: "#ffffff", floor: "#e7e7e5" }),
+  Object.freeze({ id: "grey", background: "#d5d7da", floor: "#c8cacd" }),
+  Object.freeze({ id: "warm", background: "#efebe5", floor: "#e1dcd4" }),
+  Object.freeze({ id: "dark", background: "#222222", floor: "#222222" }),
+  Object.freeze({ id: "black", background: "#0b0b0c", floor: "#121213" }),
+  Object.freeze({ id: "clear", background: null, floor: null })
+]);
+
+/** The studio `look` (`resolvePreviewSettings`) is in, if it is one of Background's. */
+export function previewBackdropOf(look) {
+  if (look.background.opacity === 0) return "clear";
+  return PREVIEW_BACKDROPS.find(entry => look.background.opacity === 1 && entry.background === look.background.color
+    && entry.floor === look.floor.color)?.id ?? null;
+}
+
+/** The patch that puts Preview in studio `id`. */
+export function previewBackdropPatch(id) {
+  const entry = PREVIEW_BACKDROPS.find(candidate => candidate.id === id);
+  if (!entry) return {};
+  return entry.background === null ? { background: { opacity: 0 } }
+    : { background: { color: entry.background, opacity: 1 }, floor: { color: entry.floor } };
+}
+
+// A transparent backdrop's swatch: a checkerboard, as a picture editor shows nothing.
+const CLEAR_SWATCH = "repeating-conic-gradient(#d4d4d8 0% 25%, #ffffff 0% 50%) 50% / 8px 8px";
+
+/** Background's studios, a swatch each; the one Preview is in pressed. */
+function Backdrops({ look, onPatch, t }) {
+  const current = previewBackdropOf(look);
+  return <div className="flex flex-wrap justify-end gap-1 py-0.5">
+    {PREVIEW_BACKDROPS.map(entry => <TooltipHint key={entry.id} content={t(`render.backdrop.${entry.id}`)}>
+      <Button type="button" variant="ghost" size="icon-xs" aria-label={t(`render.backdrop.${entry.id}`)} aria-pressed={current === entry.id}
+        data-preview-backdrop={entry.id} onClick={() => onPatch(previewBackdropPatch(entry.id))}
+        className="cad-hit size-5 rounded-full p-0 aria-pressed:ring-2 aria-pressed:ring-ring aria-pressed:ring-offset-1">
+        <span aria-hidden="true" className="size-3.5 rounded-full border border-border"
+          style={{ background: entry.background === null ? CLEAR_SWATCH : `linear-gradient(180deg, ${entry.background} 55%, ${entry.floor} 55%)` }} />
+      </Button>
+    </TooltipHint>)}
+  </div>;
+}
+
 /** Preview's Render sections, after Orbit's (`PreviewSettings.jsx`). */
 export function previewRenderSections(render, t = english) {
   const { partColours = true, onPatch } = render;
@@ -70,7 +116,9 @@ export function previewRenderSections(render, t = english) {
         [["original", t("render.source.original")], ["single", t("render.source.single")], ["by-part", t("render.source.byPart")]], colorMode => patch("parts", { colorMode })),
       look.parts.colorMode === "by-part"
         ? { kind: "custom", id: "parts-palette", label: t("render.palette"), node: <Palette colors={look.parts.colors} onChange={colors => patch("parts", { colors })} t={t} /> }
-        : color("parts-colour", t("render.partColour"), "parts", look.parts.colorMode !== "single")
+        : color("parts-colour", t("render.partColour"), "parts", look.parts.colorMode !== "single"),
+      choice("parts-finish", t("render.finish"), t("render.partFinish"), look.parts.finish,
+        PREVIEW_PART_FINISH_VALUES.map(finish => [finish, t(`render.partFinish.${finish}`)]), finish => patch("parts", { finish }))
     ] : [],
     [
       { kind: "heading", id: "lighting", label: t("render.lighting") },
@@ -86,6 +134,7 @@ export function previewRenderSections(render, t = english) {
     ],
     [
       { kind: "heading", id: "background", label: t("render.background") },
+      { kind: "custom", id: "background-studio", label: t("render.backdrop"), node: <Backdrops look={look} onPatch={onPatch} t={t} /> },
       color("background-colour", t("render.backgroundColour"), "background"),
       opacity("background-opacity", t("render.backgroundOpacity"), "background")
     ],

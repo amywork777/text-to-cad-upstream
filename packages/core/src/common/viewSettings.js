@@ -24,12 +24,13 @@ import { AXIS_COLORS, GRID_COLORS } from "../lib/viewportTheme.js";
  * Preview's own settings, sparse: only what the person changed. Preview is no display mode: it is
  * the photographic look (Render) the viewer's Preview draws, kept apart from the display.
  * @typedef {{
- *   parts?: ViewParts,
+ *   parts?: ViewParts & {finish?: PreviewFinish},
  *   lighting?: {quality?: "preview" | "final", exposure?: number, rotation?: number, size?: number, fill?: number},
  *   background?: {color?: string, opacity?: number},
  *   floor?: {enabled?: boolean, placement?: "origin" | "lowest", color?: string, opacity?: number, finish?: "matte" | "glossy"}
  * }} PreviewSettings
  */
+/** @typedef {"modelled" | "machined" | "polished" | "matte-plastic" | "glossy-plastic" | "rubber"} PreviewFinish */
 /** @typedef {{enabled: boolean, projection: "orthographic" | "perspective", focalLength: number}} ViewCamera */
 /** @typedef {{enabled: boolean, style: "shaded" | "hidden" | "off", colorMode: "original" | "single" | "by-part", color: string, colors: string[], opacity: number}} ViewSurfaces */
 /** @typedef {{enabled: boolean, visibility: "visible" | "all", color: string}} ViewEdges */
@@ -64,7 +65,7 @@ export const VIEW_CAMERA_KEYS = Object.freeze(["projection", "focalLength"]);
 // Preview's settings, in the order its panel lists them, and each group's fields.
 export const PREVIEW_SETTING_KEYS = Object.freeze(["parts", "lighting", "background", "floor"]);
 const PREVIEW_GROUP_FIELDS = {
-  parts: ["colorMode", "color", "colors"],
+  parts: ["colorMode", "color", "colors", "finish"],
   lighting: ["quality", "exposure", "rotation", "size", "fill"],
   background: ["color", "opacity"],
   floor: ["enabled", "placement", "color", "opacity", "finish"]
@@ -74,6 +75,9 @@ export const VIEW_COLOR_MODE_VALUES = Object.freeze(["original", "single", "by-p
 export const VIEW_FLOOR_FINISH_VALUES = Object.freeze(["matte", "glossy"]);
 export const VIEW_FLOOR_PLACEMENT_VALUES = Object.freeze(["lowest", "origin"]);
 export const VIEW_LIGHTING_QUALITY_VALUES = Object.freeze(["preview", "final"]);
+// What Preview's parts are made to look made of: as their file authored ("modelled"), or one finish
+// over every part, its colour still the part's (`photographicStudioRig.js`'s `PREVIEW_PART_FINISHES`).
+export const PREVIEW_PART_FINISH_VALUES = Object.freeze(["modelled", "machined", "polished", "matte-plastic", "glossy-plastic", "rubber"]);
 
 const HEX = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
 const object = value => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -101,11 +105,13 @@ function color(value, field) {
   const text = value.trim().toLowerCase();
   return text.length === 4 ? `#${[...text.slice(1)].map(c => c + c).join("")}` : text;
 }
+// A field whose name means another thing in another group: the parts' finish is not the floor's.
+const GROUP_CHOICES = { parts: { finish: PREVIEW_PART_FINISH_VALUES } };
 const CHOICES = {
   projection: ["orthographic", "perspective"], colorMode: VIEW_COLOR_MODE_VALUES, quality: VIEW_LIGHTING_QUALITY_VALUES,
   placement: VIEW_FLOOR_PLACEMENT_VALUES, finish: VIEW_FLOOR_FINISH_VALUES
 };
-function field(key, entry, path) {
+function field(key, entry, path, groupName = "") {
   if (key === "enabled") return boolean(entry, path);
   if (key === "color") return color(entry, path);
   if (key === "colors") {
@@ -117,11 +123,11 @@ function field(key, entry, path) {
   if (key === "exposure") return number(entry, -5, 5, path);
   if (key === "rotation") return number(entry, -180, 180, path);
   if (key === "size") return number(entry, 0.25, 3, path);
-  return choice(entry, CHOICES[key], path);
+  return choice(entry, GROUP_CHOICES[groupName]?.[key] ?? CHOICES[key], path);
 }
-function group(value, allowed, path) {
+function group(value, allowed, path, groupName = "") {
   keys(value, allowed, path);
-  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, field(key, entry, `${path}.${key}`)]));
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, field(key, entry, `${path}.${key}`, groupName)]));
 }
 
 /**
@@ -167,7 +173,7 @@ export function readViewSettings(input) {
  */
 export function normalizePreviewSettings(input = {}) {
   keys(input, PREVIEW_SETTING_KEYS, "preview");
-  return Object.fromEntries(Object.entries(input).map(([key, value]) => [key, group(value, PREVIEW_GROUP_FIELDS[key], `preview.${key}`)]));
+  return Object.fromEntries(Object.entries(input).map(([key, value]) => [key, group(value, PREVIEW_GROUP_FIELDS[key], `preview.${key}`, key)]));
 }
 
 /** Stored Preview settings as far as this build can read them, group by group. @returns {PreviewSettings} */
@@ -214,7 +220,7 @@ export function viewGridDefaults(appearance = "light") {
 export function previewDefaults({ appearance = "light", lightingQuality = "final" } = {}) {
   const dark = appearance === "dark";
   return {
-    parts: { colorMode: "original", color: DEFAULT_PART_COLOR_SETTINGS.color, colors: [...DEFAULT_PART_COLOR_SETTINGS.colors] },
+    parts: { colorMode: "original", color: DEFAULT_PART_COLOR_SETTINGS.color, colors: [...DEFAULT_PART_COLOR_SETTINGS.colors], finish: "modelled" },
     lighting: { quality: choice(lightingQuality, VIEW_LIGHTING_QUALITY_VALUES, "lightingQuality"), exposure: 0, rotation: 0, size: 1, fill: 0.25 },
     background: { color: dark ? "#222222" : "#ffffff", opacity: 1 },
     floor: { enabled: true, placement: RENDER_FLOOR_PLACEMENT, color: dark ? "#222222" : "#e7e7e5", opacity: 0.6, finish: "matte" }
