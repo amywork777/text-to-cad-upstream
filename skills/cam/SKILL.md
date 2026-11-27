@@ -72,6 +72,10 @@ it yourself with their permission, then plan again. Every result names the FreeC
 planned it. FreeCAD runs in a temporary folder of its own, so a plan leaves nothing in the user's
 FreeCAD settings.
 
+Never run `freecadcmd` yourself to check an install: a FreeCAD macOS has not finished checking can
+wait without end. `cad <type> plan` asks it its version within a minute and stops it past that, with
+an error that says what to do (on macOS: open FreeCAD once from Applications, then plan again).
+
 Units are fixed: mm for lengths, mm/min for feeds, rev/min for spindle speed, degrees for angles.
 Restate the user's numbers before you write them down (a 1/4" end mill is 6.35 mm, 30 ipm is 762
 mm/min).

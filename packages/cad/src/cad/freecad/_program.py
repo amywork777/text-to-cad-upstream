@@ -12,7 +12,9 @@ missing, or older than
 :func:`run` hands ``_job.py`` a plan (JSON: the part as a BREP, the stock, the tools, the operations) in a private
 folder with homes of its own (``cad._internal.programs``) and reads back what FreeCAD made: each operation's path
 commands and the posted files. FreeCAD's own settings and caches go in that folder too (``FREECAD_USER_HOME``), so a
-plan leaves nothing in the person's FreeCAD. Stdlib, and the engine's ``executables``.
+plan leaves nothing in the person's FreeCAD. FreeCAD embeds a Python of its own, so no ``PYTHON*`` variable of ours
+(the engine's ``PYTHONPATH``, a venv's) reaches it. Every call is held to a time limit, and one that overruns is
+stopped with every process it started (:func:`_call`). Stdlib, and the engine's ``executables``.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -29,7 +32,7 @@ from cad._internal import programs
 from cad.engine import executables
 from cad.registry import INTEGRATIONS
 
-__all__ = ["FREECADCMD", "FREECAD_ENV", "NAMES", "TIMEOUT_S", "FreeCAD", "FreecadMissingError", "find_freecad",
+__all__ = ["FREECADCMD", "FREECAD_ENV", "NAMES", "TIMEOUT_S", "VERSION_TIMEOUT_S", "FreeCAD", "FreecadMissingError", "find_freecad",
            "install_hint", "run"]
 
 _PROBE = INTEGRATIONS["freecad"].probe
@@ -40,6 +43,9 @@ FREECAD_ENV = _PROBE.override
 NAMES = ("freecadcmd", "FreeCADCmd")
 #: The longest one plan may take (s): past it FreeCAD is stopped and the plan says so.
 TIMEOUT_S = 1800.0
+#: The longest ``freecadcmd --version`` may take (s). A freshly installed FreeCAD answers in seconds once macOS has
+#: checked it; one that never answers is stopped and refused.
+VERSION_TIMEOUT_S = 60.0
 _SCRIPT = Path(__file__).with_name("_job.py")
 #: FreeCAD's own settings and caches, a folder of the private run's.
 _HOMES = {"FREECAD_USER_HOME": "freecad"}
@@ -51,6 +57,53 @@ class FreecadMissingError(programs.ProgramMissing):
 
 def install_hint() -> str:
     return _PROBE.install_hint
+
+
+def _stalled_hint() -> str:
+    """What to do about a FreeCAD that started and never answered."""
+    if sys.platform == "darwin":
+        return ("open FreeCAD once from Applications so macOS finishes checking the new app, then plan again; "
+                "if it still stalls, reinstall FreeCAD 1.1 or newer from https://www.freecad.org/downloads.php")
+    return "check that FreeCAD opens on this computer, then plan again; if it still stalls, reinstall FreeCAD 1.1 or newer"
+
+
+def _freecad_env(env: dict[str, str]) -> dict[str, str]:
+    """``env`` without what would steer FreeCAD's own embedded Python to ours: every ``PYTHON*`` variable (the
+    engine's ``PYTHONPATH``, a ``PYTHONHOME``), a venv's ``VIRTUAL_ENV`` and macOS's ``__PYVENV_LAUNCHER__``."""
+    return {key: value for key, value in env.items()
+            if not key.startswith("PYTHON") and key not in ("VIRTUAL_ENV", "__PYVENV_LAUNCHER__")}
+
+
+def _stop(process: subprocess.Popen) -> None:
+    """``process`` and every process it started, killed: a FreeCAD left running would hold the run's pipes open."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True,
+                           stdin=subprocess.DEVNULL, timeout=30)
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        process.kill()
+    except OSError:
+        pass
+
+
+def _call(args: list[str], *, env: dict[str, str], timeout: float, cwd: Path | None = None
+          ) -> subprocess.CompletedProcess:
+    """``args`` run headless with nothing on its stdin, in a process group of its own, its output read. Past
+    ``timeout`` seconds the group is killed and ``subprocess.TimeoutExpired`` raised."""
+    group = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
+             else {"start_new_session": True})
+    with subprocess.Popen(args, cwd=cwd, env=_freecad_env(env), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, errors="replace", **group) as process:
+        try:
+            out, err = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _stop(process)
+            raise
+        return subprocess.CompletedProcess(args, process.returncode, out, err)
 
 
 @dataclass(frozen=True)
@@ -119,8 +172,10 @@ def _version(path: Path) -> str | None:
     does not fit it. ``None`` when it says no version."""
     with programs.private_run("cad-freecad-", _HOMES) as (_folder, env):
         try:
-            said = subprocess.run([str(path), "--version"], capture_output=True, text=True, errors="replace", timeout=60,
-                                  env=env, stdin=subprocess.DEVNULL).stdout
+            said = _call([str(path), "--version"], env=env, timeout=VERSION_TIMEOUT_S).stdout
+        except subprocess.TimeoutExpired as error:
+            raise programs.ProgramMissing(f"FreeCAD ({path}) did not answer --version in {VERSION_TIMEOUT_S:.0f} s and "
+                                          f"was stopped: {_stalled_hint()}") from error
         except (OSError, subprocess.SubprocessError) as error:
             raise programs.ProgramMissing(f"{path} does not run ({error}): {install_hint()}") from error
     found = re.search(r"FreeCAD\s+(\d+\.\d+(?:\.\d+)?)", said)
@@ -137,10 +192,12 @@ def run(freecad: FreeCAD, plan: dict, write_part) -> tuple[dict, dict[str, str]]
         (folder / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
         env["CAD_CAM_FOLDER"] = str(folder)
         try:
-            done = subprocess.run([freecad.path, str(_SCRIPT)], cwd=folder, capture_output=True, text=True,
-                                  errors="replace", env=env, stdin=subprocess.DEVNULL, timeout=TIMEOUT_S)
+            done = _call([freecad.path, str(_SCRIPT)], cwd=folder, env=env, timeout=TIMEOUT_S)
         except subprocess.TimeoutExpired as error:
-            raise RuntimeError(f"FreeCAD did not finish planning in {TIMEOUT_S:.0f} s and was stopped") from error
+            raise RuntimeError(f"FreeCAD did not finish planning in {TIMEOUT_S:.0f} s and was stopped: plan fewer "
+                               f"operations or setups at a time, or {_stalled_hint()}") from error
+        except OSError as error:
+            raise RuntimeError(f"FreeCAD ({freecad.path}) does not run ({error}): {install_hint()}") from error
         result = folder / "result.json"
         if not result.is_file():
             said = (done.stdout or "") + (done.stderr or "")
