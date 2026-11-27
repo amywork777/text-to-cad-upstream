@@ -48,7 +48,7 @@ build). `cad run gsl ...` installs it on first use and runs it as it is:
 | Ask the field (values, extrema, volume, proofs) | `cad run gsl eval REQUEST.json`, or `omega_core.Session` in a script run with `cad run` |
 | Mesh it, checked, when a file is wanted | `cad gsl mesh part.gsl part.glb` (a value for one of its names: `--define r=6.5`) |
 | The mesh as STL or 3MF | `cad glb export part.glb part.stl` |
-| A STEP solid for another CAD program, held to the field | `cad gsl step part.gsl` (writes `part.step`; `--tolerance 0.1` mm, the default; `--depth 10` where it refuses) |
+| A STEP solid for another CAD program, held to the field | `cad gsl step part.gsl` (writes `part.step`, within 0.2 mm by default; it meshes deeper by itself where it must) |
 | An STL as gsl writes it, and that mesh judged | `cad run gsl compile -t stl -o part.stl part.gsl`, then `cad gsl validate part.gsl --mesh part.stl` |
 | Exact parts around a concept part: clearance, interference, contacts | `cad gsl fit enclosure.gsl "$ID"` (`--contact x,y,z` where a part should touch it), [below](#a-concept-among-exact-parts) |
 | A bake checked against its concept, and the concept kept as baked | `cad gsl bake part.gsl "$ID"`; after the concept changes, `--stale` ([below](#from-concept-to-exact-geometry)) |
@@ -281,9 +281,9 @@ writing, and `--mesh part.stl` judges a mesh made another way.
 
 `cad gsl step part.gsl` writes the mesh as a STEP solid: one closed shell of planar faces (a faceted B-rep), reduced
 to the fewest triangles still within `--tolerance` of the field both ways, and read back before it is written. Say
-the departure and the size it reports. `step_outside_tolerance` means gsl's own mesh is further off than that
-(sharp edges where a lattice meets a flat face, at depth 9): `--depth 10` (about 40 s and 2 GB for a 120 mm lattice
-part), or a looser `--tolerance`. A STEP of a lattice is tens of megabytes; an assembly written with one is several
+the departure and the size it reports. Where depth 9 is further off than the tolerance (sharp edges where a lattice
+meets a flat face) it meshes at 10 by itself: about 40 s and 2-3 GB for a 120 mm lattice part. `step_outside_tolerance`
+means 10 was not near enough either: `--depth 11` (four times again) or a looser `--tolerance`. A STEP of a lattice is tens of megabytes; an assembly written with one is several
 times larger.
 
 | Finding | What to do |

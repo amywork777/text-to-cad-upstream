@@ -3877,15 +3877,15 @@
         "--depth"
        ],
        "metavar": "DEPTH",
-       "help": 138
+       "help": 157
       },
       {
        "flags": [
         "--tolerance"
        ],
        "metavar": "TOLERANCE",
-       "help": 157,
-       "default": 0.1
+       "help": 158,
+       "default": 0.2
       },
       {
        "flags": [
@@ -3897,7 +3897,7 @@
        "flags": [
         "--verbose"
        ],
-       "help": 158
+       "help": 159
       },
       {
        "flags": [
@@ -3920,11 +3920,11 @@
      "command": "cad mujoco check",
      "summary": "compile a MuJoCo model (an MJCF) with MuJoCo and check it: what MuJoCo refuses or warns of, the model-health checks, what collides as what, and the contact excludes",
      "usage": "cad mujoco check [--strict] [--verbose] [--json] PATH",
-     "description": 159,
+     "description": 160,
      "arguments": [
       {
        "name": "PATH",
-       "help": 160
+       "help": 161
       }
      ],
      "options": [
@@ -3956,7 +3956,7 @@
    "command": "cad cache",
    "summary": "cad's cache: dir, prune (what this release cannot use), clean (all of it)",
    "usage": "cad cache {dir,prune,clean} ...",
-   "description": 161,
+   "description": 162,
    "arguments": [
     {
      "name": "{dir,prune,clean} ...",
@@ -3972,29 +3972,29 @@
    "command": "cad cache dir",
    "summary": "print where cad's cache is",
    "usage": "cad cache dir",
-   "description": 162
+   "description": 163
   },
   {
    "command": "cad cache prune",
    "summary": "remove what this release of cad cannot use",
    "usage": "cad cache prune",
-   "description": 163
+   "description": 164
   },
   {
    "command": "cad cache clean",
    "summary": "remove all of cad's cache; cad makes it again as it needs it",
    "usage": "cad cache clean",
-   "description": 164
+   "description": 165
   },
   {
    "command": "cad delete",
    "summary": "delete documents: record, cached document, the engine's copy",
    "usage": "cad delete [--dry-run] [--yes] [--json] DOC [DOC ...]",
-   "description": 165,
+   "description": 166,
    "arguments": [
     {
      "name": "DOC",
-     "help": 166,
+     "help": 167,
      "repeatable": true
     }
    ],
@@ -4003,20 +4003,20 @@
      "flags": [
       "--dry-run"
      ],
-     "help": 167
+     "help": 168
     },
     {
      "flags": [
       "-y",
       "--yes"
      ],
-     "help": 168
+     "help": 169
     },
     {
      "flags": [
       "--json"
      ],
-     "help": 169
+     "help": 170
     }
    ]
   },
@@ -4024,19 +4024,19 @@
    "command": "cad doctor",
    "summary": "report this cad, its folders, its kernel and the server; it changes nothing",
    "usage": "cad doctor [--check] [--json]",
-   "description": 170,
+   "description": 171,
    "options": [
     {
      "flags": [
       "--check"
      ],
-     "help": 171
+     "help": 172
     },
     {
      "flags": [
       "--json"
      ],
-     "help": 172
+     "help": 173
     }
    ]
   },
@@ -4044,13 +4044,13 @@
    "command": "cad mcp",
    "summary": "serve the CAD app to the agent app that starts it, over MCP on stdin and stdout",
    "usage": "cad mcp",
-   "description": 173
+   "description": 174
   },
   {
    "command": "cad plugin",
    "summary": "the plugin in your agent apps: `install` puts it in or updates it; `update auto`: whether cad's updates update it too",
    "usage": "cad plugin {install} ...",
-   "description": 174,
+   "description": 175,
    "arguments": [
     {
      "name": "{install} ...",
@@ -4065,7 +4065,7 @@
    "command": "cad plugin install",
    "summary": "install the plugin in every agent app found on this computer, or update it there",
    "usage": "cad plugin install",
-   "description": 175
+   "description": 176
   },
   {
    "command": "cad plugin update",
@@ -4084,7 +4084,7 @@
    "command": "cad plugin update auto",
    "summary": "show or change whether cad's updates update the plugin too",
    "usage": "cad plugin update auto [{status,on,off}]",
-   "description": 176,
+   "description": 177,
    "arguments": [
     {
      "name": "{status,on,off}",
@@ -4101,13 +4101,13 @@
    "command": "cad run",
    "summary": "run a script (or -m, -c) as uv run does, cad pinned at this device's release with the integrations its imports use",
    "usage": "cad run [uv run's options] SCRIPT.py [ARGS...] | -m MODULE [ARGS...] | -c CODE [ARGS...] | COMMAND [ARGS...]",
-   "description": 177
+   "description": 178
   },
   {
    "command": "cad server",
    "summary": "the cad server: start, stop, status",
    "usage": "cad server [--rotate-token] [--yes] {start,stop,status} ...",
-   "description": 178,
+   "description": 179,
    "arguments": [
     {
      "name": "{start,stop,status} ...",
@@ -4123,14 +4123,14 @@
      "flags": [
       "--rotate-token"
      ],
-     "help": 179
+     "help": 180
     },
     {
      "flags": [
       "-y",
       "--yes"
      ],
-     "help": 180
+     "help": 181
     }
    ]
   },
@@ -4138,20 +4138,20 @@
    "command": "cad server start",
    "summary": "start the cad server where it is not running",
    "usage": "cad server start [--port PORT] [--foreground]",
-   "description": 181,
+   "description": 182,
    "options": [
     {
      "flags": [
       "--port"
      ],
      "metavar": "PORT",
-     "help": 182
+     "help": 183
     },
     {
      "flags": [
       "--foreground"
      ],
-     "help": 183
+     "help": 184
     }
    ]
   },
@@ -4164,7 +4164,7 @@
      "flags": [
       "--json"
      ],
-     "help": 184
+     "help": 185
     }
    ]
   },
@@ -4177,7 +4177,7 @@
      "flags": [
       "--json"
      ],
-     "help": 185
+     "help": 186
     }
    ]
   },
@@ -4185,7 +4185,7 @@
    "command": "cad telemetry",
    "summary": "show or change the usage stats and crash reports CAD sends: status, on, off",
    "usage": "cad telemetry [{status,on,off}]",
-   "description": 186,
+   "description": 187,
    "arguments": [
     {
      "name": "{status,on,off}",
@@ -4202,7 +4202,7 @@
    "command": "cad update",
    "summary": "update cad now to the newest release of its major version (`--major`: of all); `update auto`: whether it does so itself",
    "usage": "cad update [--major]\ncad update auto [{status,on,off}]",
-   "description": 187,
+   "description": 188,
    "arguments": [
     {
      "name": "{auto} ...",
@@ -4216,7 +4216,7 @@
      "flags": [
       "--major"
      ],
-     "help": 188
+     "help": 189
     }
    ]
   },
@@ -4224,7 +4224,7 @@
    "command": "cad update auto",
    "summary": "show or change whether cad updates itself: status, on, off",
    "usage": "cad update auto [{status,on,off}]",
-   "description": 189,
+   "description": 190,
    "arguments": [
     {
      "name": "{status,on,off}",
@@ -4241,11 +4241,11 @@
    "command": "cad viewer",
    "summary": "open a viewer page on the running cad server",
    "usage": "cad viewer [--host HOST] [--port PORT] [--json] [--no-open] [--dist DIST] [--api-only] [FILE ...]",
-   "description": 190,
+   "description": 191,
    "arguments": [
     {
      "name": "FILE",
-     "help": 191,
+     "help": 192,
      "optional": true,
      "repeatable": true
     }
@@ -4256,39 +4256,39 @@
       "--host"
      ],
      "metavar": "HOST",
-     "help": 192
+     "help": 193
     },
     {
      "flags": [
       "--port"
      ],
      "metavar": "PORT",
-     "help": 193
+     "help": 194
     },
     {
      "flags": [
       "--json"
      ],
-     "help": 194
+     "help": 195
     },
     {
      "flags": [
       "--no-open"
      ],
-     "help": 195
+     "help": 196
     },
     {
      "flags": [
       "--dist"
      ],
      "metavar": "DIST",
-     "help": 196
+     "help": 197
     },
     {
      "flags": [
       "--api-only"
      ],
-     "help": 197
+     "help": 198
     }
    ]
   }
@@ -4451,6 +4451,7 @@
   "Write one GSL model as a STEP solid that any CAD program opens, held to the model's field.",
   "the .gsl model to write.",
   "where to write the STEP; beside the model, as <stem>.step, without it.",
+  "the mesher's octree depth; without it gsl's own 9, then 10 where 9 is further off than the tolerance (about four times the time and memory: a 120 mm lattice part, 40 s and 2-3 GB).",
   "mm the STEP's surface may depart from the model's, either way.",
   "narrate each reduction tried on stderr.",
   "Compile one MuJoCo model with MuJoCo and check it.",

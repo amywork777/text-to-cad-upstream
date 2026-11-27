@@ -139,7 +139,7 @@ def _mesh(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), 
 
 
 def step(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), depth: int | None = None,
-         tolerance: float = 0.1, strict: bool = False, verbose: bool = False) -> CheckResult:
+         tolerance: float = 0.2, strict: bool = False, verbose: bool = False) -> CheckResult:
     """Write one GSL model as a STEP solid that any CAD program opens, held to the model's field.
 
     A field has no faces, so the solid is its mesh (meshed as ``mesh`` meshes it, and judged the same way), each
@@ -152,7 +152,8 @@ def step(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), d
     path: the .gsl model to write.
     out: where to write the STEP; beside the model, as <stem>.step, without it.
     define: a value for one of the model's top-level names, as name=number (r=6.5); repeat it for several.
-    depth: the mesher's octree depth (gsl's own is 9); one more halves the cell and takes about four times as long.
+    depth: the mesher's octree depth; without it gsl's own 9, then 10 where 9 is further off than the tolerance
+        (about four times the time and memory: a 120 mm lattice part, 40 s and 2-3 GB).
     tolerance: mm the STEP's surface may depart from the model's, either way.
     strict: treat warnings as blocking.
     verbose: narrate each reduction tried on stderr.

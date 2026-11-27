@@ -28,8 +28,9 @@ other face, hole, thread and mating surface stays build123d; in any other case u
   holes) so powder and resin get out. A part only to be printed, with nothing said of weight, gets none.
 - **A stress result on a printed part that must stay light** (lighter, or no heavier): both, in one change: thicken
   where the stress is high (build123d) and lattice where it is low (GSL), so the added metal is paid for by the
-  lattice. Moving material by hand (a taper, a thinner wall) is the machined part's answer. A machined, cast or
-  sheet part gets no lattice.
+  lattice. Act on the result as given, in words or a study: make the change, then say which check to rerun; do not
+  wait to rerun it first. Moving material by hand (a taper, a thinner wall) is the machined part's answer. A
+  machined, cast or sheet part gets no lattice.
 - **A casting or molding with many intersecting walls, ribs and bosses to blend:** the as-cast body with every
   blend in one pass in GSL, where build123d's fillets fail or would take one per edge; then the machined faces and
   holes exact. A simple turned or extruded casting whose fillets build123d makes stays build123d.

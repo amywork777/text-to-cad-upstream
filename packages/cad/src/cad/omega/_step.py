@@ -7,12 +7,13 @@ thousands of triangles, about 2.5 kB of STEP each, so the mesh is first reduced 
 quadric decimation) to the fewest triangles that stay within ``tolerance`` of the field, and held to it both
 ways, as ``bake`` holds an exact part:
 
-- **the field at the solid's surface**: at every vertex and the middle of every face, the model's field, which
-  is the distance to its surface where the field is a distance;
+- **the field at the solid's surface**: at every vertex and the middle of every face, the model's field over its
+  gradient's length, the distance to its surface to first order (a blend's or a lattice's field alone overstates it);
 - **the model's surface to the solid**: points on the surface (omega's ``surface``) measured to the faces.
 
-The mesh as meshed is held first: no reduction is nearer the model than it, so where it is not within
-``tolerance`` nothing is written, and its departure is said with the depth to raise. Then each reduction is tried
+The mesh as meshed is held first: no reduction is nearer the model than it. Where gsl's own depth (9) is not within
+``tolerance`` (a lattice cut by a flat face leaves vertices off its sharp edges), the model is meshed one deeper;
+where that is not either, or a depth was named, nothing is written, and the departure is said. Then each reduction is tried
 from the fewest triangles up, and the first that is closed, manifold and within ``tolerance`` both ways is
 written (the mesh itself where none is). The STEP is read back before it is handed over: one valid solid, its
 volume the mesh's.
@@ -29,11 +30,35 @@ from cad.results import CheckResult
 __all__ = ["DEFAULT_TOLERANCE", "step"]
 
 #: mm the STEP's surface may depart from the model's, either way, when no tolerance is named.
-DEFAULT_TOLERANCE = 0.1
+DEFAULT_TOLERANCE = 0.2
 #: The fractions of the mesh's triangles tried, fewest first; the mesh itself (1.0) last.
 _KEEPS = (0.02, 0.04, 0.07, 0.12, 0.2, 0.35, 0.6, 1.0)
 #: The relative difference allowed between the STEP read back and the mesh it was made from.
 _VOLUME_READBACK = 1e-3
+
+
+def _distance(session: Any, text: str, points: Any, defs: str) -> Any:
+    """How far each of ``points`` is from the model's surface: the field over its gradient's length, a first-order
+    distance that a blend or a lattice, whose field is no true distance, does not overstate. A gradient under 0.2
+    (a crease of the field) is taken as 0.2, which overstates rather than hides."""
+    import numpy as np
+
+    from cad.omega._check import queryable
+    from cad.omega._fit import _BATCH, _union
+
+    code = queryable(text)
+    shape = _union(session, code, defs)
+    out = np.empty(len(points))
+    for start in range(0, len(points), _BATCH):
+        chunk = points[start:start + _BATCH]
+        request: dict[str, Any] = {"op": "eval", "code": code, "exprs": [shape], "points": chunk.tolist()}
+        if defs:
+            request["defs"] = defs
+        group = session.request(request)["groups"][0]
+        values = np.abs(np.asarray(group["values"][0], np.float64))
+        lengths = np.linalg.norm(np.asarray(group["gradients"][0], np.float64).reshape(-1, 3), axis=1)
+        out[start:start + len(chunk)] = values / np.maximum(lengths, 0.2)
+    return out
 
 
 def _welded(triangles: Any) -> tuple[Any, Any]:
@@ -128,65 +153,74 @@ def step(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), d
     from cad._internal.findings import FindingsReport
     from cad._internal.validation_door import display_path, failed, resolved_target, result_from_findings
     from cad.omega._check import measure
-    from cad.omega._fit import _concept_surface, _field, distance_to_triangles
-    from cad.omega._mesh import mesh, read_glb, statements
+    from cad.omega._fit import _concept_surface, distance_to_triangles
+    from cad.omega._mesh import DEFAULT_DEPTH, mesh, read_glb, statements
     from cad.omega._program import find_gsl
 
     target = resolved_target(path, label="omega")
     if not tolerance > 0:
         return failed(target, f"tolerance is the mm the STEP may depart from the model, above 0, not {tolerance}")
-    meshed = mesh(target, define=define, depth=depth, strict=strict, verbose=verbose)
-    if not meshed.ok:
-        return meshed
     where = display_path(target)
     written = Path(out).expanduser().absolute() if out is not None else target.with_suffix(".step")
     findings = FindingsReport()
     defs = statements(tuple(define))
-    vertices, faces = _welded(read_glb(Path(meshed.measurements["glb"])))
     text = target.read_text(encoding="utf-8", errors="replace")
 
     import omega_core
 
     tried: list[dict[str, Any]] = []
-    with omega_core.Session(source_paths=(target.parent,), program=str(find_gsl())) as session:
-        low, high = vertices.min(axis=0), vertices.max(axis=0)
-        surface = _concept_surface(session, text, defs, (low - 1.0, high + 1.0))
+    # gsl's own depth first; where its mesh is further off than the tolerance (sharp edges where a lattice meets a
+    # flat face), one deeper, which halves the cell. A depth that was asked for is the only one tried.
+    depths = (depth,) if depth is not None else (DEFAULT_DEPTH, DEFAULT_DEPTH + 1)
+    chosen = meshed = vertices = faces = surface = None
+    for each in depths:
+        meshed = mesh(target, define=define, depth=each, strict=strict, verbose=verbose)
+        if not meshed.ok:
+            return meshed
+        vertices, faces = _welded(read_glb(Path(meshed.measurements["glb"])))
+        with omega_core.Session(source_paths=(target.parent,), program=str(find_gsl())) as session:
+            low, high = vertices.min(axis=0), vertices.max(axis=0)
+            surface = _concept_surface(session, text, defs, (low - 1.0, high + 1.0))
 
-        def held(keep: float) -> tuple[Any, Any, dict, dict]:
-            v, f = _reduced(vertices, faces, keep)
-            shape = measure(v[f])
-            said: dict[str, Any] = {"triangles": int(len(f)), "closed": not (shape["open_edges"] or
-                                    shape["non_manifold_edges"] or shape["volume_mm3"] <= 0)}
-            if said["closed"]:
-                field = np.abs(_field(session, text, np.concatenate([v, v[f].mean(axis=1)]), defs))
-                back = distance_to_triangles(surface, v[f]) if len(surface) else np.full(1, np.inf)
-                said.update(field_at_step_mm=float(field.max()), surface_to_step_mm=float(back.max()),
-                            departure_mm=float(max(field.max(), back.max())),
-                            beyond_tolerance=int((field > tolerance).sum() + (back > tolerance).sum()))
-                if verbose:
-                    print(f"[omega] {len(f)} triangles: field {said['field_at_step_mm']:.3f} mm, surface "
-                          f"{said['surface_to_step_mm']:.3f} mm", file=sys.stderr)
-            tried.append(said)
-            return v, f, shape, said
+            def held(keep: float, at: int = each) -> tuple[Any, Any, dict, dict]:
+                v, f = _reduced(vertices, faces, keep)
+                shape = measure(v[f])
+                said: dict[str, Any] = {"depth": at, "triangles": int(len(f)), "closed": not (
+                    shape["open_edges"] or shape["non_manifold_edges"] or shape["volume_mm3"] <= 0)}
+                if said["closed"]:
+                    field = _distance(session, text, np.concatenate([v, v[f].mean(axis=1)]), defs)
+                    back = distance_to_triangles(surface, v[f]) if len(surface) else np.full(1, np.inf)
+                    said.update(field_at_step_mm=float(field.max()), surface_to_step_mm=float(back.max()),
+                                departure_mm=float(max(field.max(), back.max())),
+                                beyond_tolerance=int((field > tolerance).sum() + (back > tolerance).sum()))
+                    if verbose:
+                        print(f"[omega] depth {at}, {len(f)} triangles: field {said['field_at_step_mm']:.3f} mm, "
+                              f"surface {said['surface_to_step_mm']:.3f} mm", file=sys.stderr)
+                tried.append(said)
+                return v, f, shape, said
 
-        # The mesh as meshed first: what no reduction can be better than.
-        chosen = held(1.0)
-        if chosen[3]["closed"] and chosen[3]["departure_mm"] <= tolerance:
-            for keep in _KEEPS:
-                found = held(keep)
-                if found[3]["closed"] and found[3]["departure_mm"] <= tolerance:
-                    chosen = found
-                    break
+            # The mesh as meshed first: what no reduction can be better than.
+            baseline = held(1.0)
+            if baseline[3]["closed"] and baseline[3]["departure_mm"] <= tolerance:
+                chosen = baseline
+                for keep in _KEEPS:
+                    found = held(keep)
+                    if found[3]["closed"] and found[3]["departure_mm"] <= tolerance:
+                        chosen = found
+                        break
+        if chosen is not None:
+            break
     measurements: dict[str, Any] = {"tolerance_mm": tolerance, "meshed_triangles": int(len(faces)),
                                     "depth": meshed.measurements.get("depth"), "tried": tried,
                                     "surface_points": int(len(surface))}
-    meshed_said = tried[0]
-    if not meshed_said["closed"] or meshed_said["departure_mm"] > tolerance:
-        findings.add("error", "step_outside_tolerance", f"gsl's own mesh departs {meshed_said['departure_mm']:.3g} mm "
-                     f"from the model at {meshed_said['beyond_tolerance']} of its points, so no STEP of it is within "
-                     f"{tolerance:g} mm", path=where,
-                     hint=f"raise --depth (it meshed at {measurements['depth']}; one more halves the cell) or "
-                          f"--tolerance to {meshed_said['departure_mm']:.2g} or more")
+    if chosen is None:
+        meshed_said = [each for each in tried if each["triangles"] == len(faces)][-1]
+        departure = meshed_said.get("departure_mm", float("inf"))
+        findings.add("error", "step_outside_tolerance", f"gsl's own mesh at depth {measurements['depth']} departs "
+                     f"{departure:.3g} mm from the model at {meshed_said.get('beyond_tolerance', 0)} of its points, so "
+                     f"no STEP of it is within {tolerance:g} mm", path=where,
+                     hint=f"--depth {measurements['depth'] + 1} (one more halves the cell, about four times the time "
+                          f"and memory) or --tolerance {departure:.2g}")
         result = result_from_findings(target, findings.deduplicated(), strict=strict, summary="")
         return CheckResult(ok=False, path=result.path, findings=result.findings, summary=result.summary,
                            measurements=measurements)

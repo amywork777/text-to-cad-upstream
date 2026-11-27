@@ -115,6 +115,22 @@ class StepTest(unittest.TestCase):
         self.assertLess(measured["faces"], measured["meshed_triangles"])
         self.assertAlmostEqual(4 / 3 * math.pi * 8.0 ** 3, measured["volume_mm3"], delta=0.03 * 2145.0)
 
+    def test_with_no_depth_named_it_meshes_one_deeper_where_the_default_is_too_coarse(self) -> None:
+        from unittest import mock
+
+        from cad.gsl import step
+
+        with tempfile.TemporaryDirectory() as folder:
+            model = Path(folder) / "ball.gsl"
+            model.write_text(BALL)
+            # The default is 9; at 5 a 16 mm ball is 0.07 mm off and at 6 0.02 mm, a test's worth of the same step.
+            with mock.patch("cad.omega._mesh.DEFAULT_DEPTH", 5):
+                result = step(model, tolerance=0.05)
+        self.assertTrue(result.ok, result.findings)
+        self.assertEqual(6, result.measurements["depth"])
+        self.assertEqual(5, result.measurements["tried"][0]["depth"])
+        self.assertGreater(result.measurements["tried"][0]["departure_mm"], 0.05)
+
     def test_a_tolerance_finer_than_the_mesh_writes_nothing_and_says_the_depth_to_raise(self) -> None:
         from cad.gsl import step
 
@@ -125,7 +141,7 @@ class StepTest(unittest.TestCase):
             self.assertFalse(model.with_suffix(".step").exists())
         self.assertFalse(result.ok)
         self.assertEqual(["step_outside_tolerance"], [finding.code for finding in result.findings])
-        self.assertIn("--depth", result.findings[0].hint)
+        self.assertIn("--depth 6", result.findings[0].hint)
 
 
 if __name__ == "__main__":
