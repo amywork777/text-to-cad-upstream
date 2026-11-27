@@ -261,7 +261,8 @@ describe('a part opened as its STEP', () => {
     await waitFor(() => expect(openFile).toHaveBeenCalledWith(DOCUMENT, { replace: true }), { timeout: 3000 });
     expect(client.editChange).toHaveBeenCalledWith({ file: OPENED, build: true });
     expect(openFile).toHaveBeenCalledTimes(1);
-    expect(editLayoutHost.builds()).toBe(before + 1);
+    // The build is counted after the document opens, so await it rather than read it at once.
+    await waitFor(() => expect(editLayoutHost.builds()).toBe(before + 1), { timeout: 3000 });
   });
 
   it("stays the STEP opened in the AI's layout, and in a picture drawn for the library", async () => {
