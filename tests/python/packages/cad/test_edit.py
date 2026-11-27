@@ -807,6 +807,36 @@ class ModelsOfTheEngine(unittest.TestCase):
         self.assertEqual((bought["document"], Path(bought["step"]).resolve(), bought["features"]), (None, screw.resolve(), []))
         self.assertEqual([feature["kind"] for feature in state["components"][1]["features"]], ["Boss-Extrude", "Hole"])
 
+    def test_a_file_read_by_a_relative_path_is_read_from_the_parts_folder_or_its_projects(self):
+        import build123d as bd
+
+        # As its builds read it: edit mode's in the part's folder, `cad build` from the project's.
+        assemblies = self.root / "assemblies"
+        (self.root / "parts").mkdir(exist_ok=True)
+        assemblies.mkdir(exist_ok=True)
+        bd.export_step(bd.Cylinder(1.5, 6), self.root / "parts" / "m8_screw.step")
+        bd.export_step(bd.Cylinder(1, 4), assemblies / "m4_screw.step")
+        (assemblies / "peg.py").write_text(textwrap.dedent(MODELS["post.py"]).replace("post", "peg"), encoding="utf-8")
+        for read, step in (("parts/m8_screw.step", self.root / "parts" / "m8_screw.step"),
+                           ("m4_screw.step", assemblies / "m4_screw.step")):
+            script = assemblies / f"{step.stem}_rig.py"
+            script.write_text(textwrap.dedent(f"""
+                import build123d as bd
+                from cad import model, read_step
+                from peg import peg
+
+                @model
+                def {step.stem}_rig():
+                    screw = read_step("{read}")
+                    screw.label = "fastener"
+                    return bd.Compound(children=[peg().shape, screw])
+            """), encoding="utf-8")
+            with self.subTest(read=read):
+                state = self.service.state(str(script))
+                self.assertTrue(state["ok"], state.get("error"))
+                bought = next(c for c in state["components"] if c["name"] == step.stem)
+                self.assertEqual(Path(bought["step"]).resolve(), step.resolve())
+
     def test_tracing_never_asks_the_engine(self):
         guard = Path(tempfile.mkdtemp(prefix="tracer-guard-"))
         self.addCleanup(shutil.rmtree, guard, True)
