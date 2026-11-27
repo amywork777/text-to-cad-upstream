@@ -15,6 +15,10 @@ both hold the mesh to the field:
 - ``mesh`` (``cad gsl mesh part.gsl part.glb``) meshes it, with values for its names, into a GLB that is written
   only once it has passed the same judgement, and keeps it by what made it (``cad.omega._mesh``).
 
+- ``step`` (``cad gsl step part.gsl part.step``) writes it as a STEP solid any CAD program opens: the mesh as
+  planar faces, reduced to the fewest that stay within a tolerance of the field, held to it both ways and read
+  back before it is written (``cad.omega._step``).
+
 The other two hold exact parts to the concept's field, with no mesh of the concept (``cad.omega._fit``):
 
 - ``fit`` (``cad gsl fit enclosure.gsl ID``): exact parts fitted around a concept part, each part's clearance,
@@ -40,7 +44,7 @@ from pathlib import Path
 from cad._internal.document_type import bind as _bind
 from cad.results import CheckResult
 
-__all__ = ["bake", "baked", "concept", "fit", "mesh", "validate"]
+__all__ = ["bake", "baked", "concept", "fit", "mesh", "step", "validate"]
 
 SUFFIX = ".gsl"
 
@@ -114,6 +118,30 @@ def _mesh(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), 
     from cad.omega._mesh import mesh as made
 
     return made(path, out, define=define, depth=depth, strict=strict, verbose=verbose)
+
+
+def step(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), depth: int | None = None,
+         tolerance: float = 0.1, strict: bool = False, verbose: bool = False) -> CheckResult:
+    """Write one GSL model as a STEP solid that any CAD program opens, held to the model's field.
+
+    A field has no faces, so the solid is its mesh (meshed as ``mesh`` meshes it, and judged the same way), each
+    triangle a planar face of one closed shell, written as a faceted B-rep. The mesh is first reduced to the
+    fewest triangles that stay within ``tolerance`` of the model both ways: the field at every vertex and face
+    of the solid, and points on the model's surface measured to its faces. Where even the mesh as meshed is not
+    within ``tolerance``, nothing is written and the closest is said. The file is read back before it is handed
+    over: one valid solid, its volume the mesh's. The file is ``measurements["step"]``.
+
+    path: the .gsl model to write.
+    out: where to write the STEP; beside the model, as <stem>.step, without it.
+    define: a value for one of the model's top-level names, as name=number (r=6.5); repeat it for several.
+    depth: the mesher's octree depth (gsl's own is 9); one more halves the cell and takes about four times as long.
+    tolerance: mm the STEP's surface may depart from the model's, either way.
+    strict: treat warnings as blocking.
+    verbose: narrate each reduction tried on stderr.
+    """
+    from cad.omega._step import step as written
+
+    return written(path, out, define=define, depth=depth, tolerance=tolerance, strict=strict, verbose=verbose)
 
 
 def fit(path: Path, exact: str | None = None, *, contact: tuple[str, ...] = (), define: tuple[str, ...] = (),

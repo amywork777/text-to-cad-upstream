@@ -13,7 +13,8 @@
     "validate",
     "mesh",
     "fit",
-    "bake"
+    "bake",
+    "step"
   ],
   "integrationOperations": [
     "check",
@@ -743,6 +744,12 @@
           "engine": false
         },
         {
+          "name": "step",
+          "summary": "write it as a STEP solid any CAD program opens: its mesh as planar faces, reduced to the fewest within a tolerance of the field, held to it both ways and read back first",
+          "integration": "omega",
+          "engine": false
+        },
+        {
           "name": "fit",
           "summary": "check exact parts against this concept through its field, with no mesh of it: each part's clearance, where one runs into its material, and the contacts the design means",
           "integration": "omega",
@@ -970,6 +977,40 @@
         "name": "freecadcmd",
         "minimum": "1.1",
         "override": "CAD_FREECAD"
+      }
+    },
+    {
+      "name": "omega",
+      "summary": "omega-core's gsl, the compiler and mesher of GSL, Gradient Control Laboratories' language for implicit (signed-distance) models, and its client for the field's queries: `cad run gsl ...` is gsl as it is, and a GSL model's own operations (`cad gsl validate`, `cad gsl mesh`) run it",
+      "extra": "omega",
+      "process": "separate",
+      "operations": [],
+      "files": [],
+      "modules": [
+        "omega_core",
+        "fast_simplification"
+      ],
+      "distributions": [
+        "omega-core",
+        "fast-simplification"
+      ],
+      "commands": [
+        "gsl"
+      ],
+      "holds": "omega's gsl compiler and mesher",
+      "downloadMb": 13,
+      "alongside": [],
+      "python": null,
+      "platforms": [
+        "macOS arm64",
+        "macOS x86-64",
+        "Linux x86-64",
+        "Linux arm64"
+      ],
+      "program": {
+        "name": "gsl",
+        "minimum": "0.1.1",
+        "override": "CAD_GSL"
       }
     },
     {

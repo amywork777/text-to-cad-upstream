@@ -209,7 +209,7 @@ class Registered(unittest.TestCase):
         from cad.registry import DOCUMENT_TYPES
 
         gsl = DOCUMENT_TYPES["gsl"]
-        self.assertEqual(("validate", "mesh", "fit", "bake"), gsl.operation_names)
+        self.assertEqual(("validate", "mesh", "fit", "bake", "step"), gsl.operation_names)
         self.assertEqual({"omega"}, {gsl.operation(name).integration for name in ("fit", "bake")})
 
 

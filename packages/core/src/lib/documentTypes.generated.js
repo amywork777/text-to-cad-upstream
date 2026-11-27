@@ -16,7 +16,8 @@ export const DOCUMENT_TYPE_REGISTRY = Object.freeze({
     "validate",
     "mesh",
     "fit",
-    "bake"
+    "bake",
+    "step"
   ],
   "views": [
     "document",
@@ -230,7 +231,8 @@ export const DOCUMENT_TYPE_REGISTRY = Object.freeze({
         "validate",
         "mesh",
         "fit",
-        "bake"
+        "bake",
+        "step"
       ],
       "decorator": false
     }

@@ -644,7 +644,7 @@ _AGAINST_EXACT = ("fit", "bake")
 
 
 def _omega_checked(operation: str) -> Callable[[list[str], str], int]:
-    """A GSL model's operation (``validate``, ``mesh``, ``fit``, ``bake``), the omega integration's: its options
+    """A GSL model's operation (``validate``, ``mesh``, ``step``, ``fit``, ``bake``), the omega integration's: its options
     its function's signature, run here where this environment holds omega-core (a checkout's), else in the
     environment of ``cad[omega]``, made on first need, its file refused here first. The exact parts ``fit`` and
     ``bake`` take are meshed into a GLB here first (``cad.omega._fit.as_glb``), where the engine is."""
@@ -1043,6 +1043,7 @@ _OWN: dict[tuple[str, str], Callable[[list[str], str], int]] = {
     ("gsl", "mesh"): _omega_checked("mesh"),
     ("gsl", "fit"): _omega_checked("fit"),
     ("gsl", "bake"): _omega_checked("bake"),
+    ("gsl", "step"): _omega_checked("step"),
 }
 
 

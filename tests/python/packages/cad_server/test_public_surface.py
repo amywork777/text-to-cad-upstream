@@ -44,6 +44,7 @@ MIRRORS: dict[str, tuple[str, str]] = {
     # run here or in cad[omega]'s environment (``cad_server.cli.document_types``).
     "gsl validate": ("cad.gsl", "validate"),
     "gsl mesh": ("cad.gsl", "mesh"),
+    "gsl step": ("cad.gsl", "step"),
     # Exact parts held to a GSL concept's field, the omega integration's too: fitted around it, and baked from it.
     "gsl fit": ("cad.gsl", "fit"),
     "gsl bake": ("cad.gsl", "bake"),

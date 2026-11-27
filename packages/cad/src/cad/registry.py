@@ -44,7 +44,7 @@ __all__ = ["DOCUMENT_TYPES", "FILE_OPERATIONS", "INTEGRATIONS", "INTEGRATION_OPE
 #: The operations, a closed set: ``export`` and ``snapshot`` shared by every type that has them, ``inspect``
 #: where a type has it, and the others named for what they do -- each a type implements where it makes sense.
 OPERATIONS = ("export", "snapshot", "inspect", "dfm", "interference", "solve", "plan", "ranges", "drc", "erc",
-              "validate", "mesh", "fit", "bake")
+              "validate", "mesh", "fit", "bake", "step")
 #: What an integration does to its tool's own files, which are no document type (files we check or write and
 #: never show): a closed set too. ``check`` takes one file and answers findings, as a type's check does
 #: (``cad.results.CheckResult``); ``presets`` lists the presets of one kind the tool's own folders hold, by name,
@@ -393,6 +393,9 @@ _TYPES = (
          Operation("mesh", "write it as a GLB, with values for its names, once a mesh is wanted: the mesh is checked "
                            "against the field as validate does before it is written, and kept, so the same model and "
                            "values are meshed once", "omega"),
+         Operation("step", "write it as a STEP solid any CAD program opens: its mesh as planar faces, reduced to the "
+                           "fewest within a tolerance of the field, held to it both ways and read back first",
+                   "omega"),
          Operation("fit", "check exact parts against this concept through its field, with no mesh of it: each "
                           "part's clearance, where one runs into its material, and the contacts the design means",
                    "omega"),
@@ -498,7 +501,8 @@ INTEGRATIONS: Mapping[str, Integration] = MappingProxyType({
                                     "and Linux), which the cad command installs on first need (a script run with cad "
                                     "run: name cad[omega] in its header); or set CAD_GSL to a gsl of omega-core 0.1.1 "
                                     "or newer", "CAD_GSL"),
-        modules=("omega_core",), distributions=("omega-core",), identity=("omega-core",), commands=("gsl",),
+        modules=("omega_core", "fast_simplification"), distributions=("omega-core", "fast-simplification"),
+        identity=("omega-core",), commands=("gsl",),
         # omega-core publishes wheels for macOS (arm64, x86-64) and Linux with glibc (x86-64, arm64) alone.
         platforms=("macOS arm64", "macOS x86-64", "Linux x86-64", "Linux arm64"),
         holds="omega's gsl compiler and mesher", download_mb=13),

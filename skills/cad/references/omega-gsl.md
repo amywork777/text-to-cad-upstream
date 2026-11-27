@@ -4,8 +4,9 @@ GSL is the language of [omega-core](https://github.com/Gradient-Control-Laborato
 Laboratories' toolchain for implicit (signed-distance) models: a part is a field, negative inside, and booleans,
 blends, lattices, shells and offsets are arithmetic on fields. It is good at what B-rep modelling is bad at:
 smooth blends between any two shapes, gyroid and beam lattices, conformal infill, variable thickness, organic
-forms. Its output is a mesh (STL), never a STEP: a part that has to be machined, toleranced or exported as exact
-geometry is remodelled in build123d once its shape is settled.
+forms. Its output is a mesh, or a STEP of that mesh as planar faces (`cad gsl step`) for a CAD program to place and
+check it: no fitted surfaces, so a part that has to be machined or toleranced is remodelled in build123d once its
+shape is settled. A lattice is the part: its STEP is the faceted solid.
 
 Use it where the request asks for it: a concept, a rough or quick look at a part whose shape is still being
 settled, GSL or omega by name, work on an existing `.gsl`, or a lattice, an infill or a blended organic shape. A
@@ -44,6 +45,7 @@ build). `cad run gsl ...` installs it on first use and runs it as it is:
 | Ask the field (values, extrema, volume, proofs) | `cad run gsl eval REQUEST.json`, or `omega_core.Session` in a script run with `cad run` |
 | Mesh it, checked, when a file is wanted | `cad gsl mesh part.gsl part.glb` (a value for one of its names: `--define r=6.5`) |
 | The mesh as STL or 3MF | `cad glb export part.glb part.stl` |
+| A STEP solid for another CAD program, held to the field | `cad gsl step part.gsl` (writes `part.step`; `--tolerance 0.1` mm, the default; `--depth 10` where it refuses) |
 | An STL as gsl writes it, and that mesh judged | `cad run gsl compile -t stl -o part.stl part.gsl`, then `cad gsl validate part.gsl --mesh part.stl` |
 | Exact parts around a concept part: clearance, interference, contacts | `cad gsl fit enclosure.gsl "$ID"` (`--contact x,y,z` where a part should touch it), [below](#a-concept-among-exact-parts) |
 | A bake checked against its concept, and the concept kept as baked | `cad gsl bake part.gsl "$ID"`; after the concept changes, `--stale` ([below](#from-concept-to-exact-geometry)) |
@@ -273,6 +275,13 @@ same values, over the `@scene` box. A mesh that fails is not written. One that p
 and values are meshed once; the proof takes from a few seconds to half a minute the first time. `--depth 10`
 meshes finer (gsl's own is 9); `--json` gives every measurement. `cad gsl validate part.gsl` judges without
 writing, and `--mesh part.stl` judges a mesh made another way.
+
+`cad gsl step part.gsl` writes the mesh as a STEP solid: one closed shell of planar faces (a faceted B-rep), reduced
+to the fewest triangles still within `--tolerance` of the field both ways, and read back before it is written. Say
+the departure and the size it reports. `step_outside_tolerance` means gsl's own mesh is further off than that
+(sharp edges where a lattice meets a flat face, at depth 9): `--depth 10` (about 40 s and 2 GB for a 120 mm lattice
+part), or a looser `--tolerance`. A STEP of a lattice is tens of megabytes; an assembly written with one is several
+times larger.
 
 | Finding | What to do |
 | --- | --- |
