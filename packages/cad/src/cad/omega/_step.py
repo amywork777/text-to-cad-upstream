@@ -33,6 +33,8 @@ __all__ = ["DEFAULT_TOLERANCE", "step"]
 DEFAULT_TOLERANCE = 0.2
 #: The fractions of the mesh's triangles tried, fewest first; the mesh itself (1.0) last.
 _KEEPS = (0.02, 0.04, 0.07, 0.12, 0.2, 0.35, 0.6, 1.0)
+#: What gsl's mesh at one depth gets wrong that the next depth mends.
+_MESHER_FAULTS = frozenset({"non_manifold", "open_edges", "empty_mesh", "volume_mismatch"})
 #: The relative difference allowed between the STEP read back and the mesh it was made from.
 _VOLUME_READBACK = 1e-3
 
@@ -176,6 +178,12 @@ def step(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), d
     for each in depths:
         meshed = mesh(target, define=define, depth=each, strict=strict, verbose=verbose)
         if not meshed.ok:
+            # A mesher fault (an edge three triangles share, a hole, a wall thinner than a cell) is what one deeper
+            # mends; anything else (the model, its box) is the model's to fix.
+            faults = {finding.code for finding in meshed.findings if finding.severity == "error"}
+            if each != depths[-1] and faults and faults <= _MESHER_FAULTS:
+                tried.append({"depth": each, "triangles": 0, "closed": False, "refused": sorted(faults)})
+                continue
             return meshed
         vertices, faces = _welded(read_glb(Path(meshed.measurements["glb"])))
         with omega_core.Session(source_paths=(target.parent,), program=str(find_gsl())) as session:
@@ -214,7 +222,7 @@ def step(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), d
                                     "depth": meshed.measurements.get("depth"), "tried": tried,
                                     "surface_points": int(len(surface))}
     if chosen is None:
-        meshed_said = [each for each in tried if each["triangles"] == len(faces)][-1]
+        meshed_said = [each for each in tried if each["triangles"] == len(faces)][-1]  # the last depth's mesh
         departure = meshed_said.get("departure_mm", float("inf"))
         findings.add("error", "step_outside_tolerance", f"gsl's own mesh at depth {measurements['depth']} departs "
                      f"{departure:.3g} mm from the model at {meshed_said.get('beyond_tolerance', 0)} of its points, so "
