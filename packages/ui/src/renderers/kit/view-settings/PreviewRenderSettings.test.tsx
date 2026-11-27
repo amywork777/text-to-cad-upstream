@@ -56,11 +56,15 @@ it("puts a studio's backdrop and floor in at a press, a clear one for a transpar
   const pressed = () => [...document.querySelectorAll('[data-preview-backdrop][aria-pressed="true"]')].map(node => node.getAttribute('data-preview-backdrop'));
   expect(pressed()).toEqual(['white']);
   await user.click(screen.getByRole('button', { name: 'Dark studio' }));
-  expect(store.getSnapshot().preview).toEqual({ background: { color: '#222222', opacity: 1 }, floor: { color: '#222222' } });
+  expect(store.getSnapshot().preview).toEqual({ background: { color: '#222222', opacity: 1 }, floor: { enabled: true, color: '#222222' } });
   expect(pressed()).toEqual(['dark']);
   await user.click(screen.getByRole('button', { name: 'No background (transparent picture)' }));
   expect(store.renderScene().render.configuration.backdrop.transparent).toBe(true);
+  expect(store.renderScene().render.configuration.backdrop.ground).toBe(false);
   expect(pressed()).toEqual(['clear']);
+  await user.click(screen.getByRole('button', { name: 'Dark studio' }));
+  expect(store.renderScene().render.configuration.backdrop.ground).toBe(true);
+  await user.click(screen.getByRole('button', { name: 'No background (transparent picture)' }));
   // A colour of the person's own is no studio.
   act(() => store.patchPreview({ background: { color: '#123456', opacity: 1 } }));
   expect(pressed()).toEqual([]);

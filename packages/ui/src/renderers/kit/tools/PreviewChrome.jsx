@@ -130,6 +130,11 @@ export function backdropScheme(background, fallback) {
   return (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) ? "light" : "dark";
 }
 
+/** What a transparent backdrop is shown on, as a picture editor shows nothing: a checkerboard of `size`px squares. */
+export function transparentChecker(size) {
+  return `repeating-conic-gradient(#d4d4d8 0% 25%, #ffffff 0% 50%) 50% / ${size * 2}px ${size * 2}px`;
+}
+
 /** Whether Preview's chrome is up, from its store (`createPreviewIdle`); up where there is none. */
 export function usePreviewShown(idle) {
   const subscribe = useCallback(listener => (idle ? idle.subscribe(listener) : () => {}), [idle]);

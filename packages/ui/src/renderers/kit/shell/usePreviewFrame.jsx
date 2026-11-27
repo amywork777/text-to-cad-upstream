@@ -10,7 +10,7 @@ import { ViewerHostContext } from "../../../host/context.js";
 import { NAVBAR_CONTROL_CLASS } from "../../../lib/navbarRow.js";
 import { useControlUsage } from "../../../usage/controls.js";
 import { useStripButtonClass } from "../tools/FloatingToolBar.js";
-import { backdropScheme, relativeLuminance, usePreviewIdle } from "../tools/PreviewChrome.jsx";
+import { backdropScheme, relativeLuminance, transparentChecker, usePreviewIdle } from "../tools/PreviewChrome.jsx";
 import { PreviewIcon } from "./PreviewIcon.jsx";
 import { DisplayIcon } from "./DisplaySettings.jsx";
 import { NAVBAR_VIEW_PLACE } from "./NavbarViewControls.jsx";
@@ -202,8 +202,12 @@ export function usePreviewFrame({ previewing, setPreviewing, modelKey, fileView,
     panel: <PreviewSettings orbit={orbit} onOrbitChange={onOrbitChange}
       speed={orbitSpeed || 1} onSpeedChange={onOrbitSpeedChange}
       onClose={() => setPanelOpen(false)} render={render} /> };
-  // Preview: a view of its own over the editor's, mounted while it is open.
-  const underlay = previewing && view ? <div className="pointer-events-auto absolute inset-0 z-[1]" data-preview-view="">
+  // Preview: a view of its own over the editor's, mounted while it is open, on the view's canvas, so a
+  // see-through Background never shows the editor's model under it; on a checkerboard where it is clear.
+  const background = desired?.view?.background;
+  const clear = background?.enabled !== false && Number(background?.opacity ?? 1) === 0;
+  const underlay = previewing && view ? <div className="pointer-events-auto absolute inset-0 z-[1]" data-preview-view=""
+    style={{ background: clear ? transparentChecker(8) : stageColor }}>
     <View view={view} desired={desired} modelKey={modelKey}
       sceneScaleMode={sceneScaleMode} viewRef={viewRef} onPresented={setPresented}
       orbit={orbit} orbitSpeed={orbitSpeed ?? 1} />
@@ -211,9 +215,8 @@ export function usePreviewFrame({ previewing, setPreviewing, modelKey, fileView,
   // Preview coming together underneath, covered on what Preview is about to show: its own backdrop (its Background, where
   // it is set and opaque enough to read on), else the view's canvas, as it was; in that backdrop's ink (`scheme`: the
   // Background's, else the viewport's), never the app's.
-  const backdrop = desired?.view?.background;
-  const coverColor = backdrop?.enabled !== false && Number(backdrop?.opacity ?? 1) >= 0.5 && relativeLuminance(backdrop?.color) !== null
-    ? backdrop.color : stageColor;
+  const coverColor = background?.enabled !== false && Number(background?.opacity ?? 1) >= 0.5 && relativeLuminance(background?.color) !== null
+    ? background.color : stageColor;
   const overlays = <div aria-hidden={!covered} data-preview-cover={covered ? "" : undefined} data-scheme={scheme}
     className={cn("absolute inset-0 z-40 flex items-center justify-center", scheme,
       // At once over the press, so nothing of preview shows first; it fades only as it lifts.

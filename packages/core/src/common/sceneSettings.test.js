@@ -59,7 +59,7 @@ test("a Preview finish replaces every authored one over the parts' own colours; 
   assert.equal(modelled.authored, true);
   assert.equal(Object.hasOwn(modelled, "finishes"), false);
   const machined = lookOf({ parts: { finish: "machined" } });
-  assert.deepEqual([machined.authored, machined.finishes], [false, false]);
+  assert.deepEqual([machined.authored, machined.finishes, machined.partFinish], [false, false, "machined"]);
   for (const [channel, value] of Object.entries(PREVIEW_PART_FINISHES.machined)) assert.equal(machined.materialSettings[channel], value, channel);
   assert.equal(machined.materialSettings.overrideSourceColors, false, "each part keeps its colour");
   const rubberBlue = lookOf({ parts: { finish: "rubber", colorMode: "single", color: "#1f3a93" } });

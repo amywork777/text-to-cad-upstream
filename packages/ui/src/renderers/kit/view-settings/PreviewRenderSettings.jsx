@@ -4,6 +4,7 @@ import { Button } from "@cad/ui/primitives/button";
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
 import { english } from "@cad/ui/i18n";
 import { FileSheetColorPicker } from "../inspector/FileSheet.js";
+import { transparentChecker } from "../tools/PreviewChrome.jsx";
 
 /**
  * Preview's own settings (Render's part colours, lighting, background and floor) as the sections of its settings card
@@ -67,19 +68,18 @@ export const PREVIEW_BACKDROPS = Object.freeze([
 export function previewBackdropOf(look) {
   if (look.background.opacity === 0) return "clear";
   return PREVIEW_BACKDROPS.find(entry => look.background.opacity === 1 && entry.background === look.background.color
-    && entry.floor === look.floor.color)?.id ?? null;
+    && look.floor.enabled !== false && entry.floor === look.floor.color)?.id ?? null;
 }
 
 /** The patch that puts Preview in studio `id`. */
 export function previewBackdropPatch(id) {
   const entry = PREVIEW_BACKDROPS.find(candidate => candidate.id === id);
   if (!entry) return {};
-  return entry.background === null ? { background: { opacity: 0 } }
-    : { background: { color: entry.background, opacity: 1 }, floor: { color: entry.floor } };
+  // A transparent picture is the parts alone: a floor on nothing is a grey disc, not a shadow.
+  return entry.background === null ? { background: { opacity: 0 }, floor: { enabled: false } }
+    : { background: { color: entry.background, opacity: 1 }, floor: { enabled: true, color: entry.floor } };
 }
 
-// A transparent backdrop's swatch: a checkerboard, as a picture editor shows nothing.
-const CLEAR_SWATCH = "repeating-conic-gradient(#d4d4d8 0% 25%, #ffffff 0% 50%) 50% / 8px 8px";
 
 /** Background's studios, a swatch each; the one Preview is in pressed. */
 function Backdrops({ look, onPatch, t }) {
@@ -90,7 +90,7 @@ function Backdrops({ look, onPatch, t }) {
         data-preview-backdrop={entry.id} onClick={() => onPatch(previewBackdropPatch(entry.id))}
         className="cad-hit size-5 rounded-full p-0 aria-pressed:ring-2 aria-pressed:ring-ring aria-pressed:ring-offset-1">
         <span aria-hidden="true" className="size-3.5 rounded-full border border-border"
-          style={{ background: entry.background === null ? CLEAR_SWATCH : `linear-gradient(180deg, ${entry.background} 55%, ${entry.floor} 55%)` }} />
+          style={{ background: entry.background === null ? transparentChecker(4) : `linear-gradient(180deg, ${entry.background} 55%, ${entry.floor} 55%)` }} />
       </Button>
     </TooltipHint>)}
   </div>;

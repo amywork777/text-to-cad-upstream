@@ -279,7 +279,7 @@ export function resolveSceneSurfaceLook({ themeSettings = null, displaySettings 
       display.partColor
     ),
     authored: photographic && !finish,
-    ...(finish ? { finishes: false } : {}),
+    ...(finish ? { finishes: false, partFinish: surfaces.finish } : {}),
     surface: surfaces ? { style: surfaces.style, opacity: surfaces.opacity } : null
   };
 }
