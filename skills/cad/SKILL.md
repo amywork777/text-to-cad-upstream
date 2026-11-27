@@ -15,12 +15,29 @@ Files are exports, written when asked.
 
 ## Start with the task
 
-A new part is an **exact** part, built in build123d, unless the request asks for a concept. A **concept** is a
-shape to see and change quickly while its form is still being settled, roughed out in GSL. Make one only where
-the request asks for it: a concept, a rough or quick look, GSL, omega or an implicit model, work on an existing
-`.gsl`, or a lattice, an infill or a blended organic shape. A request that names none of these gets build123d,
-and no concept is made first. Making a settled concept exact is a bake, checked against the concept's
-field: [From concept to exact geometry](references/omega-gsl.md#from-concept-to-exact-geometry).
+A new part is an **exact** part, built in build123d. GSL, an implicit (signed-distance) model, is a second tool
+for what B-rep does badly. In the five cases below it is the tool to use, for the region that needs it, while every
+other face, hole, thread and mating surface stays build123d; in any other case use it only when the person names it
+(a concept, GSL, omega, implicit, lattice, infill). Say in the reply which region is implicit and why.
+
+- **A fillet build123d refuses** (`Failed creating a fillet`, `max_fillet` under the radius asked): build the part
+  with the largest exact fillet that works, say what failed, and ask "Try a smooth blend at R<asked> in GSL?" Make
+  it once they say yes. Fix a geometry fault first (a face poking through another) where that is the cause.
+- **A printed part made lighter:** a gyroid lattice where the material comes out, not pockets: bolt holes, bosses
+  and mounting faces stay solid and exact. For SLS or resin, leave the lattice open to the outside (or add drain
+  holes) so powder and resin get out. A part only to be printed, with nothing said of weight, gets none.
+- **A stress result on a printed part that must stay light** (lighter, or no heavier): both, in one change: thicken
+  where the stress is high (build123d) and lattice where it is low (GSL), so the added metal is paid for by the
+  lattice. Moving material by hand (a taper, a thinner wall) is the machined part's answer. A machined, cast or
+  sheet part gets no lattice.
+- **A casting or molding with many intersecting walls, ribs and bosses to blend:** the as-cast body with every
+  blend in one pass in GSL, where build123d's fillets fail or would take one per edge; then the machined faces and
+  holes exact. A simple turned or extruded casting whose fillets build123d makes stays build123d.
+- **An organic grip, handle or skin shaped to a hand or a body:** its outer shape in GSL from the start; the bore,
+  the mounting and anything that mates stays exact.
+
+The recipes, the STEP it exports and how to join it to exact geometry: [GSL](references/omega-gsl.md),
+[hybrid parts](references/omega-gsl.md#hybrid-parts-exact-features-implicit-regions).
 
 | Task | Start with | Reference |
 | --- | --- | --- |
@@ -40,7 +57,7 @@ field: [From concept to exact geometry](references/omega-gsl.md#from-concept-to-
 | Explode, reveal or showcase a model | `animation()` in the body | [Animation](references/animation.md) |
 | Can it be machined, bent, molded or printed? | `cad model dfm <id> --process ...` | [Can it be made?](#can-it-be-made) |
 | Open an existing CAD file | Show it | [Show the model](#show-the-model) |
-| A lattice, an infill, a graded wall or a blended organic shape, only where the person asks for one (an implicit part: GSL, omega). Every other part is build123d. | A `.gsl` with `@scene(size)`, shown as a concept; after every edit its picture, `bounds` and a few `eval` points (`cad run gsl render`, `cad run gsl eval`); `cad gsl mesh part.gsl part.glb` only when a file is wanted | [GSL](references/omega-gsl.md) |
+| A smooth blend, a lattice or infill, flowing cast walls, or an organic grip ([when](#start-with-the-task)) | A `.gsl` with `@scene(size)` for that region alone; its picture after every edit (`cad run gsl render`); `cad gsl step` for its STEP; joined to the build123d part with OCC | [GSL](references/omega-gsl.md) |
 
 Whether a part holds under load is the fea skill's; a robot description, the robot-simulation skill's.
 

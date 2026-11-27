@@ -8,9 +8,12 @@ forms. Its output is a mesh, or a STEP of that mesh as planar faces (`cad gsl st
 check it: no fitted surfaces, so a part that has to be machined or toleranced is remodelled in build123d once its
 shape is settled. A lattice is the part: its STEP is the faceted solid.
 
-Use it where the request asks for it: a concept, a rough or quick look at a part whose shape is still being
-settled, GSL or omega by name, work on an existing `.gsl`, or a lattice, an infill or a blended organic shape. A
-concept is quick to change, each change a few edited numbers, which is what it is for.
+Use it where the request asks for it (a concept, a rough or quick look, GSL or omega by name, work on an existing
+`.gsl`, a lattice, an infill or a blended organic shape) and where the cad skill's cases call for it: a fillet
+build123d refuses (offer the smooth blend first), a part made lighter, a stress result to thicken and lattice
+around, flowing cast walls, an organic grip. Each for the region that needs it: holes, threads and mating faces stay
+exact ([hybrid parts](#hybrid-parts-exact-features-implicit-regions)). A concept is quick to change, each change a
+few edited numbers, which is what it is for.
 
 Use build123d for every other part. A request for a new part that names none of these is an exact part: build
 it in build123d, and make no concept of it first.
@@ -396,7 +399,7 @@ says the region again in its own numbers, and build123d joins the two.
   `cad gsl step` wrote: re-drill a hole as a true cylinder, face a flat. Do it for every toleranced hole a blend
   reaches: a round blend fills into a hole it meets (an M5 hole came out up to 0.29 mm small in the field itself).
 - **Blends B-rep cannot make.** Where build123d's fillet fails (a boss at 30 degrees into a plate and a rib: no
-  fillet over 0.49 mm), `unionRound` blends it in GSL; then machine the exact features into its STEP as above.
+  fillet over 1.59 mm, where rib, boss and plate meet), `unionRound` blends it in GSL; then machine the exact features into its STEP as above.
 - **One STEP for parts of both kinds:** `cad.gsl.assemble(out, [(step_file, label, (x, y, z)), ...])` copies each
   part's file in as it is. A kernel writer (`export_step` of a compound) writes a faceted lattice again at about six
   times the bytes. Fusing a lattice into an exact solid has the same cost: keep the lattice its own body where the
