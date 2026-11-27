@@ -1,7 +1,7 @@
 # Jake's files that studio-base changes or removes (AGENTS.md, On studio-base). Checked by
 # scripts/studio-jake-edits.sh; add a line only on purpose, and take one off when its change
 # moves into Studio's own files or lands in Jake's repository.
-# Jake base: a35df3f4ab8abe86d370fbffb631277a4e170e7b
+# Jake base: 981d0f87bbd50d88505971654587df1da9fda532
 .github/workflows/test.yml
 .muse-plugin/plugin.json
 AGENTS.md
@@ -67,6 +67,7 @@ packages/cad/src/cad/engine/render/occt.py
 packages/cad/src/cad/engine/render/overlay.py
 packages/cad/src/cad/engine/render/schematic.py
 packages/cad/src/cad/engine/render/service.py
+packages/cad/src/cad/engine/serve.py
 packages/cad/src/cad/engine/snapshot.py
 packages/cad/src/cad/engine/worker.py
 packages/cad/src/cad/model/__init__.py
@@ -305,6 +306,7 @@ tests/python/packages/cad/engine/test_look.py
 tests/python/packages/cad/engine/test_materials.py
 tests/python/packages/cad/engine/test_render.py
 tests/python/packages/cad/engine/test_render_material_transport.py
+tests/python/packages/cad/engine/test_serve.py
 tests/python/packages/cad/engine/test_viewer_exports.py
 tests/python/packages/cad/test_eng_drawing.py
 tests/python/packages/cad/test_lazy_kernel.py
