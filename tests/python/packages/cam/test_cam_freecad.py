@@ -82,6 +82,26 @@ class FindFreecad(unittest.TestCase):
         self.assertEqual((found.path, found.version, found.label), (program, "1.1.4", "freecad 1.1.4"))
 
     @POSIX_ONLY
+    def test_a_freecad_that_never_answers_is_stopped_and_refused_saying_what_to_do(self):
+        # It starts a child that holds the output open too, as a FreeCAD waiting on macOS's first-launch check would.
+        with tempfile.TemporaryDirectory() as name:
+            program = _program(Path(name), "sleep 1000 & wait")
+            with mock.patch.dict(os.environ, {freecad.FREECAD_ENV: program}), \
+                    mock.patch.object(freecad, "VERSION_TIMEOUT_S", 0.5):
+                with self.assertRaisesRegex(freecad.FreecadMissingError,
+                                            r"did not answer --version in 0 s and was stopped: .*then plan again"):
+                    freecad.find_freecad()
+
+    @POSIX_ONLY
+    def test_freecad_is_asked_its_version_with_none_of_our_pythons_settings(self):
+        # FreeCAD's own Python, steered to ours by PYTHONHOME or PYTHONPATH, fails to start or never does.
+        with tempfile.TemporaryDirectory() as name:
+            program = _program(Path(name), '[ -z "$PYTHONHOME$PYTHONPATH$VIRTUAL_ENV" ] && echo "FreeCAD 1.1.4"')
+            leaked = {"PYTHONHOME": "/studio/python", "PYTHONPATH": "/engine", "VIRTUAL_ENV": "/venv"}
+            with mock.patch.dict(os.environ, {freecad.FREECAD_ENV: program, **leaked}):
+                self.assertEqual("1.1.4", freecad.find_freecad().version)
+
+    @POSIX_ONLY
     def test_path_is_searched_as_the_engine_searches_it_never_the_working_folder(self):
         # A freecadcmd in the working folder, or in a relative PATH entry, is never the one run.
         with tempfile.TemporaryDirectory() as name:
@@ -125,6 +145,14 @@ class Run(unittest.TestCase):
                 freecad.run(freecad.FreeCAD(program, "1.1.4"), {}, lambda path: path.write_text("", encoding="utf-8"))
 
     @POSIX_ONLY
+    def test_a_plan_that_overruns_is_stopped_and_says_what_to_do(self):
+        with tempfile.TemporaryDirectory() as name:
+            program = _program(Path(name), "sleep 1000 & wait")
+            with mock.patch.object(freecad, "TIMEOUT_S", 0.5), \
+                    self.assertRaisesRegex(RuntimeError, "did not finish planning in 0 s and was stopped: plan fewer"):
+                freecad.run(freecad.FreeCAD(program, "1.1.4"), {}, lambda path: path.write_text("", encoding="utf-8"))
+
+    @POSIX_ONLY
     def test_freecads_own_settings_stay_in_the_runs_folder(self):
         with tempfile.TemporaryDirectory() as name:
             program = _program(Path(name), 'printf \'{"operations": [], "posts": ["a.nc"], "home": "%s"}\' '
@@ -138,12 +166,15 @@ class Run(unittest.TestCase):
     @POSIX_ONLY
     def test_a_run_reaches_no_display_and_keeps_to_private_homes(self):
         with tempfile.TemporaryDirectory() as name:
-            program = _program(Path(name), 'printf \'{"operations": [], "posts": [], "home": "%s", "display": "%s%s"}\' '
-                                           '"$HOME" "$DISPLAY" "$WAYLAND_DISPLAY" > "$CAD_CAM_FOLDER/result.json"')
-            with mock.patch.dict(os.environ, {"DISPLAY": ":0", "WAYLAND_DISPLAY": "wayland-0"}):
+            program = _program(Path(name), 'printf \'{"operations": [], "posts": [], "home": "%s", "display": "%s%s", '
+                                           '"python": "%s%s"}\' "$HOME" "$DISPLAY" "$WAYLAND_DISPLAY" "$PYTHONHOME" '
+                                           '"$PYTHONPATH" > "$CAD_CAM_FOLDER/result.json"')
+            with mock.patch.dict(os.environ, {"DISPLAY": ":0", "WAYLAND_DISPLAY": "wayland-0",
+                                              "PYTHONHOME": "/studio/python", "PYTHONPATH": "/engine"}):
                 report, _posted = freecad.run(freecad.FreeCAD(program, "1.1.4"), {},
                                               lambda path: path.write_text("", encoding="utf-8"))
         self.assertEqual("", report["display"])
+        self.assertEqual("", report["python"])
         self.assertIn("cad-freecad-", report["home"])
 
 
