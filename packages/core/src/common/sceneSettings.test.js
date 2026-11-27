@@ -5,9 +5,10 @@ import {
   SCENE_QUALITY,
   resolveDisplayMaterialSettings,
   resolveRenderQuality,
+  resolveSceneSurfaceLook,
   resolveViewSceneSettings
 } from "./sceneSettings.js";
-import { PHOTOGRAPHIC_STUDIO_MATERIAL_SETTINGS } from "./photographicStudioRig.js";
+import { PHOTOGRAPHIC_STUDIO_MATERIAL_SETTINGS, PREVIEW_PART_FINISHES } from "./photographicStudioRig.js";
 import { DARK_CANVAS_EXPOSURE } from "../lib/viewer/sceneRig.js";
 
 test("normal CAD stays an orthographic responsive inspection scene", () => {
@@ -46,6 +47,26 @@ test("the studio's finish is a constant of the rig, with no colour grading", () 
   for (const channel of ["saturation", "contrast", "brightness"]) {
     assert.equal(Object.hasOwn(PHOTOGRAPHIC_STUDIO_MATERIAL_SETTINGS, channel), false);
   }
+});
+
+test("a Preview finish replaces every authored one over the parts' own colours; As modelled keeps the file's", () => {
+  const lookOf = (previewSettings, preview = true) => {
+    const scene = resolveViewSceneSettings({ preview, previewSettings });
+    return resolveSceneSurfaceLook({ themeSettings: scene.theme, displaySettings: scene.display,
+      renderMode: scene.render.enabled, renderConfiguration: scene.render.configuration });
+  };
+  const modelled = lookOf({});
+  assert.equal(modelled.authored, true);
+  assert.equal(Object.hasOwn(modelled, "finishes"), false);
+  const machined = lookOf({ parts: { finish: "machined" } });
+  assert.deepEqual([machined.authored, machined.finishes, machined.partFinish], [false, false, "machined"]);
+  for (const [channel, value] of Object.entries(PREVIEW_PART_FINISHES.machined)) assert.equal(machined.materialSettings[channel], value, channel);
+  assert.equal(machined.materialSettings.overrideSourceColors, false, "each part keeps its colour");
+  const rubberBlue = lookOf({ parts: { finish: "rubber", colorMode: "single", color: "#1f3a93" } });
+  assert.deepEqual([rubberBlue.materialSettings.roughness, rubberBlue.materialSettings.defaultColor, rubberBlue.materialSettings.overrideSourceColors],
+    [PREVIEW_PART_FINISHES.rubber.roughness, "#1f3a93", true]);
+  assert.equal(lookOf({ parts: { finish: "machined" } }, false).authored, false, "outside Preview the theme's finish, never Preview's");
+  assert.notEqual(lookOf({ parts: { finish: "machined" } }, false).materialSettings.metalness, 1);
 });
 
 test("part-color policy stays display-owned and preserves its editable palette", () => {

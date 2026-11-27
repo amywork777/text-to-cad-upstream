@@ -875,6 +875,11 @@ test("an engine document's scene brings the engine's rig; its regular modes wear
   const [previewed] = plate.material;
   assert.equal(previewed.color.getHex(), new THREE.Color().setRGB(...PLATE.color.slice(0, 3), THREE.LinearSRGBColorSpace).getHex());
   assert.deepEqual([previewed.roughness, previewed.emissiveIntensity], [0.58, 0.02]);
+  // A finish Preview's Part colours chose: worn over every part, never the engine's plain one.
+  scene.setSurfaceLook({ ...LOOK, partFinish: "polished", finishes: false,
+    materialSettings: { ...LOOK.materialSettings, roughness: 0.1, metalness: 1, clearcoat: 0 } });
+  assert.deepEqual([plate.material[0].roughness, plate.material[0].metalness, peg.material.roughness, peg.material.metalness],
+    [0.1, 1, 0.1, 1]);
   scene.dispose();
   // A document read without the look (none of the engine's pages): the theme's rig, as before.
   const bare = createXbfScene(THREE, { ...document, look: null });

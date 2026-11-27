@@ -906,11 +906,11 @@ export function createXbfScene(THREE, document) {
     // Preview); every other surface wears the look's finish over its colour. In the regular modes
     // that is the engine's look (`xbfLookSurface`): its plain finish, the colour of a surface
     // without a finish raised to its power, nothing graded; X-ray wears the look's colour-only
-    // model (`xbfLookXraySurface`): no finish at all; photographic Render's look (`authored`) is
-    // worn as any scene wears it.
+    // model (`xbfLookXraySurface`): no finish at all; photographic Render's look (`authored`), and a
+    // finish Preview's Part colours chose (`partFinish`), are worn as any scene wears them.
     setSurfaceLook(next) {
       if (disposed) return;
-      const regular = Boolean(next && lookSurface) && next.authored !== true;
+      const regular = Boolean(next && lookSurface) && next.authored !== true && !next.partFinish;
       lastLook = next ? { ...next, authored: false } : null;
       if (regular) {
         const worn = xbfLookXray(next) ? xraySurface : lookSurface;

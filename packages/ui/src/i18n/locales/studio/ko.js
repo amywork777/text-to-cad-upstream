@@ -74,4 +74,21 @@ export default {
   "studio.working": "Studio가 이 부품을 변경하는 중…",
   "studio.workingLabel": "에이전트가 이 프로젝트에서 작업 중입니다",
   "studio.quickEditDescribe": "변경 사항 입력 (이 채팅으로 전송)…",
+  // Preview's part finish, its studio backdrops, and Save picture.
+  "render.partFinish": "부품 마감",
+  "render.partFinish.modelled": "모델 그대로",
+  "render.partFinish.machined": "가공 금속",
+  "render.partFinish.polished": "연마 금속",
+  "render.partFinish.matte-plastic": "무광 플라스틱",
+  "render.partFinish.glossy-plastic": "유광 플라스틱",
+  "render.partFinish.rubber": "고무",
+  "render.backdrop": "스튜디오",
+  "render.backdrop.white": "흰색 스튜디오",
+  "render.backdrop.grey": "회색 스튜디오",
+  "render.backdrop.warm": "따뜻한 스튜디오",
+  "render.backdrop.dark": "어두운 스튜디오",
+  "render.backdrop.black": "검은색 스튜디오",
+  "render.backdrop.clear": "배경 없음(투명 이미지)",
+  "preview.savePicture": "이미지 저장",
+  "preview.savePictureFailed": "이미지를 저장하지 못했습니다."
 };

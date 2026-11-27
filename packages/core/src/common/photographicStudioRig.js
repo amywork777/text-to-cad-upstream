@@ -137,3 +137,17 @@ export const PHOTOGRAPHIC_STUDIO_MATERIAL_SETTINGS = Object.freeze({
   envMapIntensity: 1,
   emissiveIntensity: 0
 });
+
+/**
+ * Preview's part finishes (Part colours' Finish): how every part answers the studio's light when
+ * the person picks one over what the file authored ("modelled", none of these). Each part keeps
+ * its own colour (or the fill Part colours gives it); only the finish is the one chosen. A metal
+ * at roughness 0 is a perfect mirror that shows no shape, so machined metal sits near 0.3.
+ */
+export const PREVIEW_PART_FINISHES = Object.freeze({
+  machined: Object.freeze({ roughness: 0.3, metalness: 1, clearcoat: 0, clearcoatRoughness: 0, specularIntensity: 1 }),
+  polished: Object.freeze({ roughness: 0.1, metalness: 1, clearcoat: 0, clearcoatRoughness: 0, specularIntensity: 1 }),
+  "matte-plastic": Object.freeze({ roughness: 0.62, metalness: 0, clearcoat: 0, clearcoatRoughness: 0, specularIntensity: 0.5 }),
+  "glossy-plastic": Object.freeze({ roughness: 0.28, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.08, specularIntensity: 1 }),
+  rubber: Object.freeze({ roughness: 0.92, metalness: 0, clearcoat: 0, clearcoatRoughness: 0, specularIntensity: 0.25 })
+});

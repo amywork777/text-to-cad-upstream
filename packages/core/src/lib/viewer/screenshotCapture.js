@@ -183,9 +183,12 @@ export function paintScreenshotSourceCanvas(context, sourceCanvas, width, height
 
 // Render the live framebuffer once and immediately copy it into a 2D export
 // canvas, keeping normal interaction free to use `preserveDrawingBuffer: false`.
+// `still`: a studio frame's picture converged (every sample drawn now, `renderStill`),
+// not the one sample a moving view shows.
 export async function buildCompositeScreenshotBlob(runtime, {
   backgroundColor = "",
-  crop = null
+  crop = null,
+  still = false
 } = {}) {
   const renderer = runtime?.renderer;
   const scene = runtime?.scene;
@@ -204,7 +207,8 @@ export async function buildCompositeScreenshotBlob(runtime, {
     }
     renderer.setRenderTarget(null);
     // As the view draws it: through the scene's own rig where it blends in linear light.
-    renderWithSceneRig(runtime.sceneRig, renderer, scene, camera);
+    if (still && runtime.sceneRig?.frame?.renderStill) runtime.sceneRig.frame.renderStill(renderer, scene, camera);
+    else renderWithSceneRig(runtime.sceneRig, renderer, scene, camera);
   } finally {
     renderer.setRenderTarget(previousRenderTarget);
     if (renderer.xr) {

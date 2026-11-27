@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { ImageDown, X } from "lucide-react";
 import LoadingStep from "../../../loading/LoadingStep.jsx";
 import { Button } from "@cad/ui/primitives/button";
 import { ToolbarButton } from "@cad/ui/primitives/toolbar-button";
 import { TooltipHint } from "@cad/ui/primitives/tooltip";
 import { cn } from "@cad/ui/utils";
 import { useI18n } from "@cad/ui/i18n";
+import { ViewerHostContext } from "../../../host/context.js";
 import { NAVBAR_CONTROL_CLASS } from "../../../lib/navbarRow.js";
 import { useControlUsage } from "../../../usage/controls.js";
 import { useStripButtonClass } from "../tools/FloatingToolBar.js";
-import { backdropScheme, relativeLuminance, usePreviewIdle } from "../tools/PreviewChrome.jsx";
+import { backdropScheme, relativeLuminance, transparentChecker, usePreviewIdle } from "../tools/PreviewChrome.jsx";
 import { PreviewIcon } from "./PreviewIcon.jsx";
 import { DisplayIcon } from "./DisplaySettings.jsx";
 import { NAVBAR_VIEW_PLACE } from "./NavbarViewControls.jsx";
@@ -49,9 +50,10 @@ function ViewControl({ label, disabled = false, tooltipSide = "top", onClick, ch
  *   (`previewCover.js`) — unless the view is `moving` (Orbit, a routine playing), which has nothing to wait for — or
  *   at most a few seconds. Then it fades from the finished picture. Leaving needs none.
  * - **The host's navbar** steps aside while Preview is up (`fileView.onPreviewChange`).
- * - **Preview's bar and panel** (`PreviewChrome`'s props): the file's name, Display (a toggle, in Display's cube,
- *   `DisplayIcon`, at its size: how the picture is looked at, in Preview as outside it; the panel Orbit and its speed,
- *   then `render`, Render's own settings) and Exit preview, in the backdrop's ink, gone while the pointer rests
+ * - **Preview's bar and panel** (`PreviewChrome`'s props): the file's name, Save picture (the picture converged, as a
+ *   PNG through the host's downloads, transparent where Background is clear; absent in a host with none), Display (a
+ *   toggle, in Display's cube, `DisplayIcon`, at its size: how the picture is looked at, in Preview as outside it; the
+ *   panel Orbit and its speed, then `render`, Render's own settings) and Exit preview, in the backdrop's ink, gone while the pointer rests
  *   (`usePreviewIdle` over `hostElement`).
  * - **Preview's view**, the frame's underlay: `View` (`PreviewView.jsx`, or a view's own around it) mounted while
  *   Preview is up, handed `view`, the scene to draw (`desired`), `viewRef` and the Orbit.
@@ -85,6 +87,10 @@ export function usePreviewFrame({ previewing, setPreviewing, modelKey, fileView,
   sceneScaleMode, viewRef, moving, orbit, onOrbitChange, orbitSpeed, onOrbitSpeedChange, render, disabled, mobile }) {
   const { t } = useI18n();
   const controls = useControlUsage();
+  // A frame drawn with no host (a test's, a harness's) has no downloads, and so no Save picture.
+  const downloads = useContext(ViewerHostContext)?.downloads ?? null;
+  // Save picture's press: "saving" until the PNG is handed to the browser, "failed" until the next press.
+  const [saving, setSaving] = useState("idle");
   // Preview's settings panel: closed as Preview opens, until its button brings it out.
   const [panelOpen, setPanelOpen] = useState(false);
   // Preview is a view of its own, mounted over the editor's as it opens (`PreviewView.jsx`), and
@@ -172,8 +178,23 @@ export function usePreviewFrame({ previewing, setPreviewing, modelKey, fileView,
   // as it opens, and the way out. The same in every host.
   // Its chrome over the model in the backdrop's ink (Preview's Background, else the viewport's canvas), never the app's.
   const scheme = backdropScheme(desired?.view?.background, viewportScheme);
+  const savePicture = async () => {
+    const view = viewRef.current;
+    if (!downloads || !view?.capturePicture) return;
+    setSaving("saving");
+    try {
+      const url = URL.createObjectURL(await view.capturePicture());
+      downloads.save(url, `${name.replace(/\.[^./]+$/, "") || "picture"}.png`);
+      // The browser has taken the file by the next task; the URL is then the page's to let go.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setSaving("idle");
+    } catch { setSaving("failed"); }
+  };
+  const saveLabel = saving === "failed" ? t("preview.savePictureFailed") : t("preview.savePicture");
   const preview = { active: previewing, name, idle, panelOpen, scheme,
     controls: <>
+      {downloads ? <BarControl label={saveLabel} disabled={disabled || saving === "saving"} onClick={() => { void savePicture(); }}
+        data-preview-save-picture=""><ImageDown className="size-4" aria-hidden="true" /></BarControl> : null}
       <BarControl label={t("preview.settings")} active={panelOpen} disabled={disabled}
         onClick={() => { if (!panelOpen) controls.used("preview_settings"); setPanelOpen(open => !open); }} data-preview-settings=""><DisplayIcon className="size-4" aria-hidden="true" /></BarControl>
       <BarControl label={t("preview.exit")} onClick={leave}><X className="size-3.5" aria-hidden="true" /></BarControl>
@@ -181,8 +202,12 @@ export function usePreviewFrame({ previewing, setPreviewing, modelKey, fileView,
     panel: <PreviewSettings orbit={orbit} onOrbitChange={onOrbitChange}
       speed={orbitSpeed || 1} onSpeedChange={onOrbitSpeedChange}
       onClose={() => setPanelOpen(false)} render={render} /> };
-  // Preview: a view of its own over the editor's, mounted while it is open.
-  const underlay = previewing && view ? <div className="pointer-events-auto absolute inset-0 z-[1]" data-preview-view="">
+  // Preview: a view of its own over the editor's, mounted while it is open, on the view's canvas, so a
+  // see-through Background never shows the editor's model under it; on a checkerboard where it is clear.
+  const background = desired?.view?.background;
+  const clear = background?.enabled !== false && Number(background?.opacity ?? 1) === 0;
+  const underlay = previewing && view ? <div className="pointer-events-auto absolute inset-0 z-[1]" data-preview-view=""
+    style={{ background: clear ? transparentChecker(8) : stageColor }}>
     <View view={view} desired={desired} modelKey={modelKey}
       sceneScaleMode={sceneScaleMode} viewRef={viewRef} onPresented={setPresented}
       orbit={orbit} orbitSpeed={orbitSpeed ?? 1} />
@@ -190,9 +215,8 @@ export function usePreviewFrame({ previewing, setPreviewing, modelKey, fileView,
   // Preview coming together underneath, covered on what Preview is about to show: its own backdrop (its Background, where
   // it is set and opaque enough to read on), else the view's canvas, as it was; in that backdrop's ink (`scheme`: the
   // Background's, else the viewport's), never the app's.
-  const backdrop = desired?.view?.background;
-  const coverColor = backdrop?.enabled !== false && Number(backdrop?.opacity ?? 1) >= 0.5 && relativeLuminance(backdrop?.color) !== null
-    ? backdrop.color : stageColor;
+  const coverColor = background?.enabled !== false && Number(background?.opacity ?? 1) >= 0.5 && relativeLuminance(background?.color) !== null
+    ? background.color : stageColor;
   const overlays = <div aria-hidden={!covered} data-preview-cover={covered ? "" : undefined} data-scheme={scheme}
     className={cn("absolute inset-0 z-40 flex items-center justify-center", scheme,
       // At once over the press, so nothing of preview shows first; it fades only as it lifts.

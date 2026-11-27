@@ -484,6 +484,17 @@ const ShellViewport = forwardRef(function ShellViewport({
         backgroundColor: resolveElementBackgroundColor(runtime.renderer.domElement)
       });
     },
+    // Preview's picture, to save: its studio frame converged, and nothing behind it where its
+    // Background is clear (a transparent PNG), else the view's canvas colour.
+    async capturePicture() {
+      await viewUpdateBindingRef.current?.whenReady();
+      const runtime = runtimeRef.current;
+      if (!runtime?.renderer || !runtime?.scene || !runtime?.camera) throw new Error("The viewer is not ready");
+      return await buildCompositeScreenshotBlob(runtime, {
+        backgroundColor: renderConfigurationRef.current?.backdrop?.transparent ? "" : resolveElementBackgroundColor(runtime.renderer.domElement),
+        still: true
+      });
+    },
     // The model on its own, for a library card: framed whole from the default direction at the
     // card's size, whatever the camera on screen (`kit/viewport/thumbnail.js`).
     async captureThumbnail({ width, height }) {

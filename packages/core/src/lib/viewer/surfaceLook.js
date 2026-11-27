@@ -30,9 +30,11 @@ import { resolveMaterialFillBaseColor, shapeSourceColor } from "./surfaceMateria
 //     brdf?: string,        the surface model the lit surfaces are drawn by (a name of
 //                           `surfaceBrdf.js`'s `SURFACE_BRDFS`); three's own when absent,
 //                           and in an authored look always
-//     finishes?: boolean }  false: no surface keeps a finish or a glow its file authored, and
+//     finishes?: boolean,   false: no surface keeps a finish or a glow its file authored, and
 //                           every colour is raised to `colorPower` (a scene's own look that
 //                           draws none: X-ray's, `lib/xbf/xbfLook.js`)
+//     partFinish?: string } the finish Preview's Part colours chose (`PREVIEW_PART_FINISHES`):
+//                           a scene's own look never replaces it
 //
 // A surface drawn see-through (it writes no depth) steps a hair forward in the depth test, and one that
 // writes depth keeps its family's step (`surfaceOffset`), whatever the look.
