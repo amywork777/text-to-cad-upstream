@@ -660,6 +660,15 @@ class PoolQueueTest(unittest.TestCase):
         self.assertEqual((running.result(1), jobs["fact 1"].result(1), jobs["mesh 3"].result(1)), (1, 2, 5))
 
 
+class MeshWorkersTest(unittest.TestCase):
+    def test_the_pool_holds_as_many_processes_as_asked_within_the_machines_cores(self) -> None:
+        cases = {"": 8, "3": 3, "40": 8, "0": 8, "-2": 8, "four": 8}
+        with mock.patch.object(serve.os, "cpu_count", return_value=8):
+            for given, size in cases.items():
+                with self.subTest(given=given), mock.patch.dict(os.environ, {"CAD_ENGINE_MESH_WORKERS": given}):
+                    self.assertEqual(serve.Mesher("processes").workers, size)
+
+
 class PoolStopTest(unittest.TestCase):
     def test_stop_ends_a_busy_pool_process_rather_than_leave_it_to_notice_its_engine_gone(self) -> None:
         # A process at work when the engine stops -- on Windows, loading the kernel, its watch thread held off
