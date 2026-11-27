@@ -277,6 +277,15 @@ it("lists an assembly's parts and mates in the tree, under the same header", () 
   expect(menuOf('Coincident1 (base, pin)')).toEqual(['Delete']);
 });
 
+it("keeps the space before a long name's last word, where the name is split to truncate", () => {
+  const plate = { ...STATE, name: 'aluminium_flat_plate_assembly' };
+  render(<EditTree edit={part({ state: plate }) as never} tree={featureTree(plate)} />);
+  // The truncated head drops a space at its end, so the tail starts with it.
+  const head = screen.getByText('Aluminium flat plate');
+  expect(head.textContent).toBe('Aluminium flat plate');
+  expect(head.nextSibling?.textContent).toBe(' assembly');
+});
+
 it("keeps one row a part when an assembly's parts are all written in one script, however often they are opened", () => {
   const plotter = {
     units: 'mm', name: 'plotter', params: [], rows: [], mates: [],

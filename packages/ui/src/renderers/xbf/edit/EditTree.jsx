@@ -25,8 +25,11 @@ const NAME_TAIL = 8, LONG_NAME = 24;
 /** A row's name, cut in its middle where it does not fit ("iso4762_socket_h…_M3x12"), so its end still shows. */
 function RowName({ text, className = "" }) {
   if (text.length < LONG_NAME) return <span className={`truncate ${className}`}>{text}</span>;
+  // A space where the two halves meet starts the tail, which keeps it: at the end of the truncated
+  // head it is dropped, and "plate assembly" would read "plateassembly".
+  const head = text.slice(0, -NAME_TAIL).replace(/\s+$/, "");
   return <span className={`flex min-w-0 whitespace-pre ${className}`}>
-    <span className="truncate">{text.slice(0, -NAME_TAIL)}</span><span className="shrink-0">{text.slice(-NAME_TAIL)}</span>
+    <span className="truncate">{head}</span><span className="shrink-0">{text.slice(head.length)}</span>
   </span>;
 }
 
