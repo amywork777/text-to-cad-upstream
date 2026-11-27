@@ -381,6 +381,27 @@ the concept. A lattice or an infill, which has no exact form, stays a mesh.
 
 The check is what tells a faithful bake from a guess: it names every place the two differ.
 
+## Hybrid parts: exact features, implicit regions
+
+A part that needs both (a printed lattice bracket that bolts down, a blended boss with a bored hole) is made on the
+B-rep side: gsl cannot read a B-rep (`importStep` and `importMesh` mesh to nothing in this omega-core), so the GSL
+says the region again in its own numbers, and build123d joins the two.
+
+- **Lattice inside an exact skin.** build123d makes the body with its holes and flats, `core = offset(body, -skin)`
+  less bosses round each hole, and `skin = body - core`. The `.gsl` fills the same core, grown 0.4 mm into the skin
+  (`max(gyroid, core - 0.4)`), and `cad gsl step` writes it. `skin.fuse(lattice)` is one valid solid whose holes
+  stay true cylinders (a 120 mm bracket: 8 s). A closed skin traps powder or resin: give it drain holes for SLS or
+  resin; it prints as infill on FDM.
+- **Exact features machined into an implicit part.** Subtract exact cylinders and boxes from the STEP that
+  `cad gsl step` wrote: re-drill a hole as a true cylinder, face a flat. Do it for every toleranced hole a blend
+  reaches: a round blend fills into a hole it meets (an M5 hole came out up to 0.29 mm small in the field itself).
+- **Blends B-rep cannot make.** Where build123d's fillet fails (a boss at 30 degrees into a plate and a rib: no
+  fillet over 0.49 mm), `unionRound` blends it in GSL; then machine the exact features into its STEP as above.
+- **One STEP for parts of both kinds:** `cad.gsl.assemble(out, [(step_file, label, (x, y, z)), ...])` copies each
+  part's file in as it is. A kernel writer (`export_step` of a compound) writes a faceted lattice again at about six
+  times the bytes. Fusing a lattice into an exact solid has the same cost: keep the lattice its own body where the
+  file size matters, and fuse only for the part that is printed.
+
 ## A concept among exact parts
 
 A concept part is fitted to exact ones (a board, a motor, a bought part's STEP) through its field, with no mesh:

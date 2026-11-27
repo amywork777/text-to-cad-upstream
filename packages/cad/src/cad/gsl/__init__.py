@@ -19,6 +19,9 @@ both hold the mesh to the field:
   planar faces, reduced to the fewest that stay within a tolerance of the field, held to it both ways and read
   back before it is written (``cad.omega._step``).
 
+``assemble(out, parts)`` writes part STEP files, faceted and exact alike, as one STEP assembly as they are, so
+a lattice's faceted solid is not written again in a larger form (``cad._internal.step_assembly``). It is no command.
+
 The other two hold exact parts to the concept's field, with no mesh of the concept (``cad.omega._fit``):
 
 - ``fit`` (``cad gsl fit enclosure.gsl ID``): exact parts fitted around a concept part, each part's clearance,
@@ -44,7 +47,7 @@ from pathlib import Path
 from cad._internal.document_type import bind as _bind
 from cad.results import CheckResult
 
-__all__ = ["bake", "baked", "concept", "fit", "mesh", "step", "validate"]
+__all__ = ["assemble", "bake", "baked", "concept", "fit", "mesh", "step", "validate"]
 
 SUFFIX = ".gsl"
 
@@ -73,6 +76,21 @@ def baked(part, path: Path, **values: float):
     from cad.engine.concepts import baked_part
 
     return baked_part(part, path, values)
+
+
+def assemble(out: Path, parts: list, *, name: str = "assembly") -> Path:
+    """Write part STEP files as one STEP assembly at ``out``, each part's file copied in as it is written: a
+    faceted solid from ``step`` stays faceted and an exact part exact, so the assembly is the size of its parts
+    (a kernel's writer writes a faceted lattice again at about six times the bytes). Returns ``out``.
+
+    out: the assembly's STEP file.
+    parts: ``(step_file, label, placement)`` for each part, the placement ``(x, y, z)`` mm or a build123d
+        ``Location``; a file given twice is copied in once. Each file holds one part, not an assembly.
+    name: the assembly's name.
+    """
+    from cad._internal.step_assembly import assemble as written
+
+    return written(out, parts, name=name)
 
 
 def validate(path: Path, *, mesh: Path | None = None, strict: bool = False, verbose: bool = False) -> CheckResult:

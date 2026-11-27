@@ -584,7 +584,7 @@
    "name": "gsl",
    "module": "cad.gsl",
    "title": "GSL",
-   "doc": 54,
+   "doc": 53,
    "members": [
     {
      "name": "validate",
@@ -592,7 +592,7 @@
      "operation": true,
      "summary": "mesh it with gsl and check the mesh against the field: it compiles, it is closed and manifold, it points outward, it stops short of the @scene box, and its volume is the field's",
      "signature": "(path: Path, *, mesh: Path | None = None, strict: bool = False, verbose: bool = False) -> CheckResult",
-     "doc": 55
+     "doc": 54
     },
     {
      "name": "mesh",
@@ -600,7 +600,7 @@
      "operation": true,
      "summary": "write it as a GLB, with values for its names, once a mesh is wanted: the mesh is checked against the field as validate does before it is written, and kept, so the same model and values are meshed once",
      "signature": "(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), depth: int | None = None, strict: bool = False, verbose: bool = False) -> CheckResult",
-     "doc": 56
+     "doc": 55
     },
     {
      "name": "fit",
@@ -608,7 +608,7 @@
      "operation": true,
      "summary": "check exact parts against this concept through its field, with no mesh of it: each part's clearance, where one runs into its material, and the contacts the design means",
      "signature": "(path: Path, exact: str | None = None, *, contact: tuple[str, ...] = (), define: tuple[str, ...] = (), tolerance: float = 0.01, contact_radius: float = 3.0, density: float = 4.0, chord: float = 0.01, strict: bool = False, verbose: bool = False) -> CheckResult",
-     "doc": 57
+     "doc": 56
     },
     {
      "name": "bake",
@@ -616,19 +616,33 @@
      "operation": true,
      "summary": "check an exact part baked from this concept against its field, both ways, and keep the concept as baked; --stale says where the concept has moved since",
      "signature": "(path: Path, exact: str | None = None, *, stale: bool = False, define: tuple[str, ...] = (), max_deviation: float = 0.0, tolerance: float = 0.01, density: float = 4.0, chord: float = 0.01, strict: bool = False, verbose: bool = False) -> CheckResult",
+     "doc": 57
+    },
+    {
+     "name": "step",
+     "kind": "function",
+     "operation": true,
+     "summary": "write it as a STEP solid any CAD program opens: its mesh as planar faces, reduced to the fewest within a tolerance of the field, held to it both ways and read back first",
+     "signature": "(path: Path, out: Path | None = None, *, define: tuple[str, ...] = (), depth: int | None = None, tolerance: float = 0.1, strict: bool = False, verbose: bool = False) -> CheckResult",
      "doc": 58
+    },
+    {
+     "name": "assemble",
+     "kind": "function",
+     "signature": "(out: Path, parts: list, *, name: str = 'assembly') -> Path",
+     "doc": 59
     },
     {
      "name": "baked",
      "kind": "function",
      "signature": "(part, path: Path, **values: float)",
-     "doc": 59
+     "doc": 60
     },
     {
      "name": "concept",
      "kind": "function",
      "signature": "(path: Path, *, label: str | None = None, **values: float)",
-     "doc": 60
+     "doc": 61
     }
    ]
   }
@@ -637,19 +651,19 @@
   {
    "name": "build123d",
    "module": "cad.build123d",
-   "doc": 53,
+   "doc": 62,
    "members": [
     {
      "name": "Angle",
      "kind": "function",
      "signature": "(*, label: str | None = None, min: float | None = None, max: float | None = None, group: str | None = None) -> Param",
-     "doc": 54
+     "doc": 63
     },
     {
      "name": "Bool",
      "kind": "function",
      "signature": "(*, label: str | None = None, group: str | None = None) -> Param",
-     "doc": 55
+     "doc": 64
     },
     {
      "name": "ClosestPoints",
@@ -660,25 +674,25 @@
      "name": "Count",
      "kind": "function",
      "signature": "(*, label: str | None = None, min: float | None = None, max: float | None = None, group: str | None = None) -> Param",
-     "doc": 56
+     "doc": 65
     },
     {
      "name": "Edges",
      "kind": "function",
      "signature": "(*, label: str | None = None, max: int | None = None, group: str | None = None) -> Param",
-     "doc": 57
+     "doc": 66
     },
     {
      "name": "Enum",
      "kind": "function",
      "signature": "(choices: Mapping[str, str] | list[str] | tuple[str, ...], *, label: str | None = None, group: str | None = None) -> Param",
-     "doc": 58
+     "doc": 67
     },
     {
      "name": "Faces",
      "kind": "function",
      "signature": "(*, label: str | None = None, max: int | None = None, group: str | None = None) -> Param",
-     "doc": 59
+     "doc": 68
     },
     {
      "name": "FeatureError",
@@ -687,7 +701,7 @@
       "ValueError"
      ],
      "signature": "(message: str, *, feature: str | None = None, param: str | None = None)",
-     "doc": 60
+     "doc": 69
     },
     {
      "name": "GeometryError",
@@ -695,7 +709,7 @@
      "bases": [
       "RuntimeError"
      ],
-     "doc": 61
+     "doc": 70
     },
     {
      "name": "GeometryIssue",
@@ -706,7 +720,7 @@
      "name": "Length",
      "kind": "function",
      "signature": "(*, label: str | None = None, min: float | None = None, max: float | None = None, group: str | None = None) -> Param",
-     "doc": 62
+     "doc": 71
     },
     {
      "name": "MassProperties",
@@ -717,289 +731,289 @@
      "name": "Number",
      "kind": "function",
      "signature": "(*, label: str | None = None, min: float | None = None, max: float | None = None, group: str | None = None) -> Param",
-     "doc": 63
+     "doc": 72
     },
     {
      "name": "animation",
      "kind": "function",
      "signature": "(assembly: Any, name: str, *, duration: Any) -> Any",
-     "doc": 64
+     "doc": 73
     },
     {
      "name": "annotate",
      "kind": "function",
      "signature": "(shape: Any, *annotations: dict[str, Any]) -> Any",
-     "doc": 65
+     "doc": 74
     },
     {
      "name": "body",
      "kind": "function",
      "signature": "(part: Any, name: str | None = None) -> Any",
-     "doc": 66
+     "doc": 75
     },
     {
      "name": "boundary_edges",
      "kind": "function",
      "signature": "(shell: Shell) -> tuple[Edge, ...]",
-     "doc": 67
+     "doc": 76
     },
     {
      "name": "camera",
      "kind": "function",
      "signature": "(direction: Iterable[float], up: Iterable[float]) -> dict[str, Any]",
-     "doc": 68
+     "doc": 77
     },
     {
      "name": "closest_points",
      "kind": "function",
      "signature": "(a: Shape, b: Shape) -> ClosestPoints",
-     "doc": 69
+     "doc": 78
     },
     {
      "name": "cnc",
      "kind": "function",
      "signature": "(shape: Any, *, material: str | None = None, axes: int | None = None, turning: bool = False, tools: Any = None, stock: Any = None, strict: bool = False) -> Any",
-     "doc": 70
+     "doc": 79
     },
     {
      "name": "configuration_sequence",
      "kind": "function",
      "signature": "(assembly: Any, name: str, waypoints_or_fn: Any = None, *, sweep: Any = None, duration: Any = None, ease: str = 'cubic', **removed: Any) -> Any",
-     "doc": 71
+     "doc": 80
     },
     {
      "name": "datum",
      "kind": "function",
      "signature": "(letter: str, ref: Any, *, label: str | None = None, presentation: dict | None = None) -> dict[str, Any]",
-     "doc": 72
+     "doc": 81
     },
     {
      "name": "dfm",
      "kind": "function",
      "signature": "(shape: Any, *, process: str | None = None, candidates: bool = False, strict: bool = False, **options: Any) -> Any",
-     "doc": 73
+     "doc": 82
     },
     {
      "name": "dimensional_location",
      "kind": "function",
      "signature": "(id: str, ref_from: Any, ref_to: Any, *, tolerance: dict | None = None, basic: bool = False, label: str | None = None, presentation: dict | None = None) -> dict[str, Any]",
-     "doc": 74
+     "doc": 83
     },
     {
      "name": "dimensional_size",
      "kind": "function",
      "signature": "(id: str, ref: Any, *, tolerance: dict | None = None, label: str | None = None, presentation: dict | None = None) -> dict[str, Any]",
-     "doc": 75
+     "doc": 84
     },
     {
      "name": "feature",
      "kind": "function",
      "signature": "(name: str | None = None, *, collapsed: tuple[str, ...] | list[str] = (), **params: Param) -> Callable[[Callable], Callable]",
-     "doc": 76
+     "doc": 85
     },
     {
      "name": "flatness_tolerance",
      "kind": "function",
      "signature": "(id: str, ref: Any, value: float, *, label: str | None = None, presentation: dict | None = None) -> dict[str, Any]",
-     "doc": 77
+     "doc": 86
     },
     {
      "name": "frame",
      "kind": "function",
      "signature": "(part: Any, name: str, location: Any) -> Any",
-     "doc": 78
+     "doc": 87
     },
     {
      "name": "free",
      "kind": "function",
      "signature": "(shape: Any) -> Any",
-     "doc": 79
+     "doc": 88
     },
     {
      "name": "gear_pair",
      "kind": "function",
      "signature": "(assembly: Any, name: str, **joints: Any) -> Any",
-     "doc": 80
+     "doc": 89
     },
     {
      "name": "general_profile",
      "kind": "function",
      "signature": "(id: str, value: float, *, datums: Iterable[str] = (), label: str | None = None) -> dict[str, Any]",
-     "doc": 81
+     "doc": 90
     },
     {
      "name": "general_tolerance",
      "kind": "function",
      "signature": "(id: str, standard: str, *, label: str | None = None) -> dict[str, Any]",
-     "doc": 82
+     "doc": 91
     },
     {
      "name": "is_sound",
      "kind": "function",
      "signature": "(shape: Shape) -> bool",
-     "doc": 83
+     "doc": 92
     },
     {
      "name": "leaves",
      "kind": "function",
      "signature": "(tree: Any, *, paths: bool = False) -> list[Any]",
-     "doc": 84
+     "doc": 93
     },
     {
      "name": "limits",
      "kind": "function",
      "signature": "(*args: Any, **kwargs: Any) -> Any",
-     "doc": 85
+     "doc": 94
     },
     {
      "name": "link",
      "kind": "function",
      "signature": "(shape: Any, name: str) -> Any",
-     "doc": 86
+     "doc": 95
     },
     {
      "name": "mass",
      "kind": "function",
      "signature": "(shape: Any, grams: float) -> Any",
-     "doc": 87
+     "doc": 96
     },
     {
      "name": "mass_properties",
      "kind": "function",
      "signature": "(bodies: Iterable[tuple[Solid, float]]) -> MassProperties",
-     "doc": 88
+     "doc": 97
     },
     {
      "name": "materials",
      "kind": "module",
      "module": "cad.build123d.materials",
-     "doc": 89,
+     "doc": 98,
      "members": [
       {
        "name": "soldermask",
        "kind": "function",
        "signature": "(color: Color = 'green', finish: Finish = 'glossy') -> FinishedMaterial",
-       "doc": 90
+       "doc": 99
       },
       {
        "name": "soldermask_green",
        "kind": "function",
        "signature": "() -> FinishedMaterial",
-       "doc": 91
+       "doc": 100
       },
       {
        "name": "soldermask_matte_black",
        "kind": "function",
        "signature": "() -> FinishedMaterial",
-       "doc": 92
+       "doc": 101
       },
       {
        "name": "fr4",
        "kind": "function",
        "signature": "() -> FinishedMaterial",
-       "doc": 93
+       "doc": 102
       },
       {
        "name": "silkscreen",
        "kind": "function",
        "signature": "(color: Color = 'white') -> FinishedMaterial",
-       "doc": 94
+       "doc": 103
       },
       {
        "name": "bare_copper",
        "kind": "function",
        "signature": "(oxidized: bool = False) -> FinishedMaterial",
-       "doc": 95
+       "doc": 104
       },
       {
        "name": "enig",
        "kind": "function",
        "signature": "() -> FinishedMaterial",
-       "doc": 96
+       "doc": 105
       },
       {
        "name": "hasl",
        "kind": "function",
        "signature": "(lead_free: bool = True) -> FinishedMaterial",
-       "doc": 97
+       "doc": 106
       },
       {
        "name": "solder",
        "kind": "function",
        "signature": "() -> FinishedMaterial",
-       "doc": 98
+       "doc": 107
       },
       {
        "name": "mold_compound",
        "kind": "function",
        "signature": "() -> FinishedMaterial",
-       "doc": 99
+       "doc": 108
       },
       {
        "name": "ceramic",
        "kind": "function",
        "signature": "(color: Color = 'white') -> FinishedMaterial",
-       "doc": 100
+       "doc": 109
       },
       {
        "name": "led_lens",
        "kind": "function",
        "signature": "(color: Color = 'clear', diffused: bool = False) -> FinishedMaterial",
-       "doc": 101
+       "doc": 110
       },
       {
        "name": "connector_housing",
        "kind": "function",
        "signature": "(color: Color = 'black') -> FinishedMaterial",
-       "doc": 102
+       "doc": 111
       },
       {
        "name": "anodized",
        "kind": "function",
        "signature": "(color: Color = 'clear', substrate: FinishedMaterial | None = None) -> FinishedMaterial",
-       "doc": 103
+       "doc": 112
       },
       {
        "name": "anodized_black",
        "kind": "function",
        "signature": "() -> FinishedMaterial",
-       "doc": 104
+       "doc": 113
       },
       {
        "name": "powder_coat",
        "kind": "function",
        "signature": "(color: Color = 'black', finish: Sheen = 'satin', substrate: FinishedMaterial | None = None) -> FinishedMaterial",
-       "doc": 105
+       "doc": 114
       },
       {
        "name": "powder_coat_black",
        "kind": "function",
        "signature": "() -> FinishedMaterial",
-       "doc": 106
+       "doc": 115
       },
       {
        "name": "bead_blasted",
        "kind": "function",
        "signature": "(substrate: FinishedMaterial | None = None) -> FinishedMaterial",
-       "doc": 107
+       "doc": 116
       },
       {
        "name": "brushed",
        "kind": "function",
        "signature": "(substrate: FinishedMaterial | None = None) -> FinishedMaterial",
-       "doc": 108
+       "doc": 117
       },
       {
        "name": "zinc_plated",
        "kind": "function",
        "signature": "(passivation: str = 'clear', substrate: FinishedMaterial | None = None) -> FinishedMaterial",
-       "doc": 109
+       "doc": 118
       },
       {
        "name": "black_oxide",
        "kind": "function",
        "signature": "(oiled: bool = True, substrate: FinishedMaterial | None = None) -> FinishedMaterial",
-       "doc": 110
+       "doc": 119
       }
      ]
     },
@@ -1007,140 +1021,140 @@
      "name": "mechanism_state",
      "kind": "function",
      "signature": "(assembly: Any, name: str, **values: Any) -> Any",
-     "doc": 111
+     "doc": 120
     },
     {
      "name": "memo",
      "kind": "function",
      "signature": "(function: Any = None, /, **options: Any) -> Any",
-     "doc": 112
+     "doc": 121
     },
     {
      "name": "molding",
      "kind": "function",
      "signature": "(shape: Any, *, material: str | None = None, pull: Any = None, wall_limit: float | None = None, zero_tol: float | None = None, cavities: int | None = None, candidates: bool = False, strict: bool = False) -> Any",
-     "doc": 113
+     "doc": 122
     },
     {
      "name": "note",
      "kind": "function",
      "signature": "(id: str, text: str, *, faces: Any = (), annotations: Iterable[str] = (), label: str | None = None, presentation: dict | None = None) -> dict[str, Any]",
-     "doc": 114
+     "doc": 123
     },
     {
      "name": "overlap_volume",
      "kind": "function",
      "signature": "(a: Solid | Compound, b: Solid | Compound) -> float",
-     "doc": 115
+     "doc": 124
     },
     {
      "name": "paint",
      "kind": "function",
      "signature": "(shape: Any, faces: Any, color: Any) -> Any",
-     "doc": 116
+     "doc": 125
     },
     {
      "name": "place",
      "kind": "function",
      "signature": "(anchor: Iterable[float], offset: Iterable[float] = (0.0, 0.0, 0.0)) -> dict[str, Any]",
-     "doc": 117
+     "doc": 126
     },
     {
      "name": "plus_minus_tolerance",
      "kind": "function",
      "signature": "(upper: float, lower: float | None = None) -> dict[str, Any]",
-     "doc": 118
+     "doc": 127
     },
     {
      "name": "point_mass",
      "kind": "function",
      "signature": "(part: Any, grams: float, at: Any, *, name: str | None = None, inertia: tuple[float, float, float] | None = None) -> Any",
-     "doc": 119
+     "doc": 128
     },
     {
      "name": "posed",
      "kind": "function",
      "signature": "(assembly: Any, state: Any) -> Any",
-     "doc": 120
+     "doc": 129
     },
     {
      "name": "position_tolerance",
      "kind": "function",
      "signature": "(id: str, ref: Any, value: float, *, datums: Iterable[str], diameter_zone: bool = True, label: str | None = None, presentation: dict | None = None) -> dict[str, Any]",
-     "doc": 121
+     "doc": 130
     },
     {
      "name": "printing",
      "kind": "function",
      "signature": "(shape: Any, *, material: str | None = None, technology: str | None = None, build_volume: Any = None, angle_limit: float | None = None, layer_height: float | None = None, nozzle: float | None = None, printer: Any = None, candidates: bool = False, strict: bool = False) -> Any",
-     "doc": 122
+     "doc": 131
     },
     {
      "name": "rack_and_pinion_pair",
      "kind": "function",
      "signature": "(assembly: Any, name: str, **joints: Any) -> Any",
-     "doc": 123
+     "doc": 132
     },
     {
      "name": "screw_pair",
      "kind": "function",
      "signature": "(assembly: Any, name: str, **joints: Any) -> Any",
-     "doc": 124
+     "doc": 133
     },
     {
      "name": "section",
      "kind": "function",
      "signature": "(axis: str, at: float, *, invert: bool = False) -> dict[str, Any]",
-     "doc": 125
+     "doc": 134
     },
     {
      "name": "self_intersections",
      "kind": "function",
      "signature": "(shape: Shape) -> tuple[GeometryIssue, ...]",
-     "doc": 126
+     "doc": 135
     },
     {
      "name": "sheet_metal",
      "kind": "function",
      "signature": "(shape: Any, *, material: str | None = None, thickness: float | None = None, k_factor: float | None = None, bend_radius: float | None = None, kerf: float | None = None, sheet_size: Any = None, strict: bool = False) -> Any",
-     "doc": 127
+     "doc": 136
     },
     {
      "name": "surface_profile_tolerance",
      "kind": "function",
      "signature": "(id: str, refs: Any, value: float, *, datums: Iterable[str] = (), label: str | None = None, presentation: dict | None = None) -> dict[str, Any]",
-     "doc": 128
+     "doc": 137
     },
     {
      "name": "topology_errors",
      "kind": "function",
      "signature": "(shape: Shape) -> tuple[GeometryIssue, ...]",
-     "doc": 129
+     "doc": 138
     },
     {
      "name": "unfold",
      "kind": "function",
      "signature": "(shape: Any, *, thickness: float | None = None, k_factor: float | None = None, material: str | None = None, bend_lines: bool = False) -> Any",
-     "doc": 130
+     "doc": 139
     },
     {
      "name": "view",
      "kind": "function",
      "signature": "(name: str, *, camera: str | dict, shows: Sequence[str] | None = None, section: dict | None = None, place: Mapping[str, dict] | None = None, label: str | None = None) -> dict[str, Any]",
-     "doc": 131
+     "doc": 140
     }
    ]
   },
   {
    "name": "kicad",
    "module": "cad.kicad",
-   "doc": 132,
+   "doc": 141,
    "members": [
     {
      "name": "Routed",
      "kind": "class",
      "signature": "(connections: tuple[Any, ...], tracks: int, vias: int, length: float, seconds: float, warnings: tuple[str, ...] = ())",
-     "doc": 133,
+     "doc": 142,
      "members": [
       {
        "name": "ok",
@@ -1156,7 +1170,7 @@
        "name": "human_lines",
        "kind": "method",
        "signature": "() -> list[str]",
-       "doc": 134
+       "doc": 143
       }
      ]
     },
@@ -1164,114 +1178,119 @@
      "name": "route",
      "kind": "function",
      "signature": "(board: Any, connections: Sequence[Any] | None = None, *, layers: Any = None, width: float | None = None, clearance: float | None = None, vias: int | None = None, via_cost: float | None = None) -> Routed",
-     "doc": 135
+     "doc": 144
     }
    ]
   },
   {
    "name": "trimesh",
    "module": "cad.trimesh",
-   "doc": 136,
+   "doc": 145,
    "members": [
     {
      "name": "orientations",
      "kind": "function",
      "signature": "(mesh: Any, *, units: str = 'mm', angle_limit: float = 45.0) -> dict[str, Any]",
-     "doc": 137
+     "doc": 146
     },
     {
      "name": "printing",
      "kind": "function",
      "signature": "(mesh: Any, *, units: str = 'mm', samples: int = 2000, angle_limit: float = 45.0) -> dict[str, Any]",
-     "doc": 138
+     "doc": 147
     }
    ]
   },
   {
    "name": "mujoco",
    "module": "cad.mujoco",
-   "doc": 139,
+   "doc": 148,
    "members": [
     {
      "name": "check",
      "kind": "function",
      "signature": "(path: Path, *, strict: bool = False, verbose: bool = False) -> CheckResult",
-     "doc": 140
+     "doc": 149
     },
     {
      "name": "collisions",
      "kind": "function",
      "signature": "(spec, part)",
-     "doc": 141
+     "doc": 150
     },
     {
      "name": "decompose",
      "kind": "function",
      "signature": "(spec, part, *, max_hulls=16, threshold=None)",
-     "doc": 142
+     "doc": 151
     },
     {
      "name": "fit",
      "kind": "function",
      "signature": "(spec, part, kind)",
-     "doc": 143
+     "doc": 152
     },
     {
      "name": "parts",
      "kind": "function",
      "signature": "(spec)",
-     "doc": 144
+     "doc": 153
     },
     {
      "name": "save",
      "kind": "function",
      "signature": "(spec, path)",
-     "doc": 145
+     "doc": 154
     },
     {
      "name": "spec",
      "kind": "function",
      "signature": "(thing, *, assets=None, tolerance=None, zero=None)",
-     "doc": 146
+     "doc": 155
     }
    ]
   },
   {
    "name": "coacd",
    "module": "cad.coacd",
-   "doc": 147
+   "doc": 156
   },
   {
    "name": "netgen",
    "module": "cad.netgen",
-   "doc": 148
+   "doc": 157
   },
   {
    "name": "calculix",
    "module": "cad.calculix",
-   "doc": 149
+   "doc": 158
   },
   {
    "name": "freecad",
    "module": "cad.freecad",
-   "doc": 150
+   "doc": 159
+  },
+  {
+   "name": "omega",
+   "module": "cad.omega",
+   "doc": 160
   },
   {
    "name": "blender",
    "module": "cad.blender",
-   "doc": 151,
+   "doc": 161,
    "members": [
     {
      "name": "Clip",
      "kind": "class",
      "signature": "(name: str, kind: str, duration: float)",
-     "doc": 152
+     "doc": 162
     },
     {
      "name": "Model",
      "kind": "class",
      "signature": "(root: bpy.types.Object, roots: list, objects: dict, nodes: dict, clips: dict, box: tuple, fps: int, clip: str | None = None)",
-     "doc": 153,
+     "doc": 163,
      "members": [
       {
        "name": "center",
@@ -1287,13 +1306,13 @@
        "name": "play",
        "kind": "method",
        "signature": "(name: str | None) -> None",
-       "doc": 154
+       "doc": 164
       },
       {
        "name": "bounds",
        "kind": "method",
        "signature": "() -> tuple",
-       "doc": 155
+       "doc": 165
       }
      ]
     },
@@ -1301,13 +1320,13 @@
      "name": "load",
      "kind": "function",
      "signature": "(path: str | Path, clip: str | None = None, fps: int = 24) -> Model",
-     "doc": 156
+     "doc": 166
     }
    ]
   }
  ],
  "texts": [
-  "cad: CAD models as Python, built by its engine (``cad.engine``) into documents and the files they\ndeclare.\n\nThe root holds ``__version__``, ``CadDeprecationWarning`` and the document types, one object each\n(``cad.registry``): ``model`` (a model built from code, held in the engine's memory, with no file), ``xbf``,\n``step``, ``glb``, ``stl``, ``threemf``, ``dxf``, ``urdf``, ``srdf``, ``kicad_pcb`` and\n``kicad_sch``. A type is its decorator where it has one (``@model``, ``@step(\"arm.step\")``), its edit where\nits files are changed in place (``with kicad_pcb.edit(\"board.kicad_pcb\") as board:``), its reader where it\nhas one (``step.read``) and its\noperations, one to one with the ``cad <type> <operation>`` commands: ``.export`` and ``.snapshot``,\n``.inspect``, and those named for what they do (``.dfm``, ``.solve``, ``.plan``, ``.drc``, ``.erc``, ``.validate``). Our helpers that take build123d's objects are\nthe build123d integration's, ``cad.build123d`` (``memo``, ``paint``, the AP242 mechanism, a GLB's\n``animation``, measurements, flat patterns); those that take trimesh's are the trimesh integration's,\n``cad.trimesh`` (a mesh's 3D printing measurements: ``printing``, ``orientations``); those that call MuJoCo\nare the mujoco integration's, ``cad.mujoco`` (a document as a ``mujoco.MjSpec``, a part's collision chosen on\nit, the spec saved, and a MuJoCo model checked by MuJoCo's own compiler: ``spec``, ``fit``, ``save``, ``check``); and those that take Blender's are the blender integration's, ``cad.blender`` (``load``: a\nGLB in Blender's scene, for a render). Process control (``cad serve``, ``status``, ``stop``,\n``server``) is the ``cad`` command's alone. Every name loads on first use: ``import cad`` imports no CAD\nkernel, and ``import build123d`` binds a module the kernel loads into on its first attribute\n(``_internal/lazy_kernel.py``). The earlier spellings (``cad.read_step``, ``cad.export``, ``cad.ap242``,\n...) are aliases of what they name now, each saying so once (``_internal/aliases.py``).",
+  "cad: CAD models as Python, built by its engine (``cad.engine``) into documents and the files they\ndeclare.\n\nThe root holds ``__version__``, ``CadDeprecationWarning`` and the document types, one object each\n(``cad.registry``): ``model`` (a model built from code, held in the engine's memory, with no file), ``xbf``,\n``step``, ``glb``, ``stl``, ``threemf``, ``dxf``, ``urdf``, ``srdf``, ``kicad_pcb``, ``kicad_sch``\nand ``gsl``. A type is its decorator where it has one (``@model``, ``@step(\"arm.step\")``), its edit where\nits files are changed in place (``with kicad_pcb.edit(\"board.kicad_pcb\") as board:``), its reader where it\nhas one (``step.read``) and its\noperations, one to one with the ``cad <type> <operation>`` commands: ``.export`` and ``.snapshot``,\n``.inspect``, and those named for what they do (``.dfm``, ``.solve``, ``.plan``, ``.drc``, ``.erc``, ``.validate``, ``.mesh``). Our helpers that take build123d's objects are\nthe build123d integration's, ``cad.build123d`` (``memo``, ``paint``, the AP242 mechanism, a GLB's\n``animation``, measurements, flat patterns); those that take trimesh's are the trimesh integration's,\n``cad.trimesh`` (a mesh's 3D printing measurements: ``printing``, ``orientations``); those that call MuJoCo\nare the mujoco integration's, ``cad.mujoco`` (a document as a ``mujoco.MjSpec``, a part's collision chosen on\nit, the spec saved, and a MuJoCo model checked by MuJoCo's own compiler: ``spec``, ``fit``, ``save``, ``check``); those that take Blender's are the blender integration's, ``cad.blender`` (``load``: a\nGLB in Blender's scene, for a render); those that run omega-core's gsl are the omega integration's, ``cad.omega``\n(``check``: a GSL model's mesh judged against its field); and OrcaSlicer's presets, written complete for its command\nline, are the orcaslicer integration's, ``cad.orcaslicer`` (``presets``, ``complete``). Process control (``cad serve``, ``status``, ``stop``,\n``server``) is the ``cad`` command's alone. Every name loads on first use: ``import cad`` imports no CAD\nkernel, and ``import build123d`` binds a module the kernel loads into on its first attribute\n(``_internal/lazy_kernel.py``). The earlier spellings (``cad.read_step``, ``cad.export``, ``cad.ap242``,\n...) are aliases of what they name now, each saying so once (``_internal/aliases.py``).",
   "The release of the library this is, as its distribution's metadata says it.",
   "A spelling the library still answers, under the name it has now. A ``FutureWarning``, so Python\nshows it by default: the people who read it are a model's authors, not a library's developers.",
   "``cad.model``: the model document type, a model built from code and held in the engine's memory\n(``cad.registry``).\n\nA model has no file behind it: it is addressed by its document id (``cad run SCRIPT.py`` prints it) or\nthe handle its call returns. ``@model`` declares one (``@model(name=...)``; ``model(shape, name=...)`` hands\na shape over), with no file of its own; the files it declares are the other types' decorators\n(``@xbf(\"XBF/arm.xbf\")``, ``@step(\"arm.step\")``). Its operations are the ``cad model <operation>`` commands':\n``model.export(handle_or_id, *destinations, tolerance=None, angle=None)``, ``model.snapshot(...)``,\n``model.inspect(...)`` and ``model.dfm(handle_or_id, process=\"cnc\")`` (or ``\"sheet\"``, ``\"molding\"``,\n``\"printing\"``), which checks it for manufacturing on its exact geometry, measured by the engine with the build123d\nintegration (``cad._internal.manufacturing``), and\n``model.solve(handle_or_id, study=..., out=\"results/\")``, a stress study of it (``cad._internal.fea.operation``), and\n``model.plan(handle_or_id, job=..., out=\"cam/\")``, a CAM job on its part (``cad._internal.cam.operation``), each of\nwhich reads an ``.xbf`` the engine writes of it in a temporary folder. Its script declares its parameters with\nit at a module's top level, ``WALL = model.param(\"wall\", 2.0, min=1, max=5)`` (``cad.engine.parameters.param``,\nthe standard library alone); a value changes in the script, by an edit and a run or the CAD Viewer's Save. A\nfile is refused by name: ``arm.xbf`` is an xbf's (``cad.xbf``). Everything loads on first use: ``import cad.model``\nimports no CAD kernel (``cad._internal.document_type``).",
@@ -1360,6 +1379,15 @@
   "What the schematic at ``path`` holds, as plain data: ``file``, ``root``, ``format``, ``sheets``,\n``parts``, ``nets`` and ``counts``; with ``ref``, ``resolved``: what that reference names\n(``cad kicad_sch inspect``).",
   "Check the KiCad schematic SCHEMATIC with KiCad's electrical rules check.\n\nRuns ``kicad-cli sch erc`` on the saved hierarchy (from its project's root sheet) with every\nseverity reported, and lists each violation with its sheet and where it is (millimetres on that\nsheet's page). Beside KiCad's, a warning for every pin joined some other way besides, and every wire's\nend, that lies on a wire's span with no junction there (``pin_on_wire_span``, ``wire_end_on_wire_span``):\nKiCad joins them and its ERC passes. A pin whose one connection is a wire's span is KiCad's own straight\nrun through a pin (it saves a rail drawn to each pin as one wire across them), not a finding. The schematic fails when any error-severity violation exists; warnings are reported and\ndo not fail it.\n\nschematic: the .kicad_sch to check (any sheet of its project: the check reads the whole hierarchy).",
   "The schematic at ``schematic`` (its project's root sheet, or any sheet) open in KiCad, for a ``with``\nblock: ``with kicad_sch.edit(\"design.kicad_sch\") as s:`` hands the block KiPy's open schematic (kicode's\n``kicode.schematic.Schematic``), through kicode's headless ``kicad-cli api-server``, its project's symbol\nlibraries (its own ``sym-lib-table``) loaded first; a placement from a library the project does not list\nis refused in one line naming it. At the block's end the schematic is saved when it was changed, so a\nblock that changes nothing leaves the file byte for byte; when the block raises, nothing is saved and the\nexception goes on. A schematic not there yet is made by KiCad, with its project, and saved. A\n``kicad_pcb.edit`` of the same project inside the block shares its KiCad. Needs the kicad extra\n(``cad[kicad]``; ``cad run`` gives a script that calls it the extra).",
+  "``cad.gsl``: the GSL document type (``cad.registry``), an implicit (signed-distance) model in omega-core's\nlanguage.\n\nA ``.gsl`` is a field: negative inside the part, with booleans, blends, lattices and offsets as arithmetic on\nfields. No decorator: a model is authored as text, not made by a script. It is shown as it is, the page marching\nthe field itself, and it is asked about through the field while it is written (``cad run gsl eval``, ``cad run gsl\nrender``: omega's own ``gsl``, the omega integration's, ``cad.omega``).\n\nTwo of its operations are for the mesh, which is a translation of the field for something that needs triangles and\nis made when one is wanted, not on every edit. ``gsl`` writes a mesh it got wrong as readily as a right one, so\nboth hold the mesh to the field:\n\n- ``validate`` (``cad gsl validate part.gsl``) meshes the model as ``gsl`` does by default, or takes the mesh\n  given, and judges it (``cad.omega._check``).\n- ``mesh`` (``cad gsl mesh part.gsl part.glb``) meshes it, with values for its names, into a GLB that is written\n  only once it has passed the same judgement, and keeps it by what made it (``cad.omega._mesh``).\n\n- ``step`` (``cad gsl step part.gsl part.step``) writes it as a STEP solid any CAD program opens: the mesh as\n  planar faces, reduced to the fewest that stay within a tolerance of the field, held to it both ways and read\n  back before it is written (``cad.omega._step``).\n\n``assemble(out, parts)`` writes part STEP files, faceted and exact alike, as one STEP assembly as they are, so\na lattice's faceted solid is not written again in a larger form (``cad._internal.step_assembly``). It is no command.\n\nThe other two hold exact parts to the concept's field, with no mesh of the concept (``cad.omega._fit``):\n\n- ``fit`` (``cad gsl fit enclosure.gsl ID``): exact parts fitted around a concept part, each part's clearance,\n  where one runs into its material, and the contacts the design means.\n- ``bake`` (``cad gsl bake part.gsl ID``): an exact part baked from the concept, checked against its field both\n  ways, the concept kept as baked; ``--stale`` says where the concept has moved since.\n\nA model's script says which of its parts are concepts, so an assembly holds exact parts and concepts together\nand the document carries which is which (``cad.engine.declarations.CONCEPT``); neither is a command:\n\n- ``concept(\"enclosure.gsl\")`` is a part with no shape of its own, placed as any part is: the viewer draws its\n  field among the exact parts, and ``fit`` and ``bake`` given the assembly alone find it there.\n- ``baked(knob, \"knob.gsl\")`` says an exact part was made from a concept, which stays its other representation.\n\nEach command is a generated MIRROR of its function. Everything loads on first use: ``import cad.gsl`` imports no\nomega_core. A function called where the integration's extra is missing says so by name (``cad[omega]``).",
+  "Mesh one GSL model with omega's ``gsl`` and check the mesh against the model's field.\n\n``gsl`` exits 0 on a mesh it got wrong, so each is judged here: it compiles; it has triangles; every\nedge is shared by exactly two of them (no holes, nothing non-manifold); it encloses a positive volume\n(not inside-out); it stops short of the ``@scene`` box (not cut off: a model needs ``@scene``, without\nwhich ``gsl`` guesses the box); and its volume lies within the bracket omega's evaluator proves for the\nfield (nothing thinner than a cell lost). Zero-area triangles are a warning. Errors always block; under\n``strict`` warnings do too.\n\npath: the .gsl model to check.\nmesh: an STL of this model to judge instead of meshing it here (one written by `gsl compile -t stl`).\nstrict: treat warnings as blocking.\nverbose: narrate the target on stderr.",
+  "Mesh one GSL model into a GLB with omega's ``gsl``, checked against the model's field, and keep it.\n\nA model is asked about through its field while it is written (``cad run gsl eval``, ``cad run gsl\nrender``); this is for when a file of triangles is wanted. The mesh is one indexed GLB, a node for each\nof the model's returns, with a normal at every vertex from the field's gradient. It is judged as\n``validate`` judges one -- it has triangles, every edge is shared by exactly two, it encloses a positive\nvolume, it stops short of the ``@scene`` box, and its volume lies within the bracket omega's evaluator\nproves for the field -- and one that fails is not written. One that passes is kept by the model's\nbytes, the files it imports, the values and the depth, so the same question is answered from what is\nkept (``measurements[\"cached\"]``). The file is ``measurements[\"glb\"]``.\n\npath: the .gsl model to mesh.\nout: where to write the GLB; without it the mesh is left where cad keeps it, and named in the result.\ndefine: a value for one of the model's top-level names, as name=number (r=6.5); repeat it for several.\ndepth: the mesher's octree depth (gsl's own is 9); one more halves the cell and takes about four times as long.\nstrict: treat warnings as blocking.\nverbose: narrate the target on stderr.",
+  "Check exact parts against a GSL concept part they must fit with, through its field, with no mesh of it.\n\nThe exact parts' surfaces are sampled by area (every vertex and about ``density`` points a square\nmillimetre) and each point is scored by the concept's field: each part's clearance is the least value over\nits surface, and a part whose surface goes below ``-tolerance`` runs into the concept's material, an error.\nA ``contact`` is a point where the design means a part to touch the concept (a board on a standoff): the\nexact surface within ``contact_radius`` of it must lie on the concept's surface, within ``tolerance``.\nClearance alone never shows a contact is missing. The concept is written in the exact parts' frame. Its own\nfeatures that no exact part comes near are not judged: look at its picture.\n\nGiven an assembly alone (a document id or an .xbf whose model names its concepts, ``cad.gsl.concept``), every\nexact part is held to each part that is a concept, each where the assembly places it and with the values it\ngives it there; a place is then said in that concept's own frame, and no ``contact`` or ``define`` is taken.\n\npath: the .gsl concept; or, alone, the assembly that names its concepts: a document id or an .xbf.\nexact: the exact parts: a document id (cad run prints it), an .xbf, a .step, or a .glb.\ncontact: a point x,y,z (mm) where an exact part should touch the concept; repeat it for several.\ndefine: a value for one of the concept's top-level names, as name=number (r=6.5); repeat it for several.\ntolerance: mm within which a field value is the concept's surface.\ncontact_radius: mm about a contact's point in which the exact surface is looked for.\ndensity: points sampled a square millimetre of exact surface, besides its vertices.\nchord: mm chord tolerance an id, .xbf or .step is meshed at to be sampled.\nstrict: treat warnings as blocking.\nverbose: narrate the target on stderr.",
+  "Check an exact part baked from a GSL concept against the concept's field, both ways, and keep the concept\nas baked; with ``stale``, say where the concept has moved since.\n\nOne way, the exact surface sampled by area is scored by the concept's field: signed, so below zero the\nconcept carries material the exact part does not (a blend's nominal departure is the usual one) and above it\nthe exact part carries more. The other, points on the concept's surface (omega's ``surface``, over both\nshapes' box) are measured to the exact triangles. Each part's largest departure is said, and where; none\nfails the bake unless it passes ``max_deviation``. A bake that passes keeps a copy of the concept, with the\nvalues given, as ``<stem>.baked.gsl`` beside it. ``stale`` instead scores the exact surface with the concept\nas it is now and as it was kept, and fails where the two differ by more than ``tolerance``, saying by how\nmuch and over what region of which part, so the change can be baked. A file the concept imports is not kept.\n\nGiven an assembly alone (a document id or an .xbf whose model says which parts were baked, ``cad.gsl.baked``),\neach such part is held to its own concept, alone, in the part's own frame, with the values the assembly gives;\nno ``define`` is taken.\n\npath: the .gsl concept; or, alone, the assembly that names its baked parts: a document id or an .xbf.\nexact: the exact part: a document id (cad run prints it), an .xbf, a .step, or a .glb.\nstale: hold the concept as it is now to the copy kept at its last bake, instead of baking.\ndefine: a value for one of the concept's top-level names, as name=number (r=6.5); repeat it for several.\nmax_deviation: mm the exact part may depart from the concept, either way, before the bake fails (0: no limit).\ntolerance: mm within which a field value is the concept's surface, and a change is no change.\ndensity: points sampled a square millimetre of exact surface, besides its vertices.\nchord: mm chord tolerance an id, .xbf or .step is meshed at to be sampled.\nstrict: treat warnings as blocking.\nverbose: narrate the target on stderr.",
+  "Write one GSL model as a STEP solid that any CAD program opens, held to the model's field.\n\nA field has no faces, so the solid is its mesh (meshed as ``mesh`` meshes it, and judged the same way), each\ntriangle a planar face of one closed shell, written as a faceted B-rep. The mesh is first reduced to the\nfewest triangles that stay within ``tolerance`` of the model both ways: the field at every vertex and face\nof the solid, and points on the model's surface measured to its faces. Where even the mesh as meshed is not\nwithin ``tolerance``, nothing is written and the closest is said. The file is read back before it is handed\nover: one valid solid, its volume the mesh's. The file is ``measurements[\"step\"]``.\n\npath: the .gsl model to write.\nout: where to write the STEP; beside the model, as <stem>.step, without it.\ndefine: a value for one of the model's top-level names, as name=number (r=6.5); repeat it for several.\ndepth: the mesher's octree depth (gsl's own is 9); one more halves the cell and takes about four times as long.\ntolerance: mm the STEP's surface may depart from the model's, either way.\nstrict: treat warnings as blocking.\nverbose: narrate each reduction tried on stderr.",
+  "Write part STEP files as one STEP assembly at ``out``, each part's file copied in as it is written: a\nfaceted solid from ``step`` stays faceted and an exact part exact, so the assembly is the size of its parts\n(a kernel's writer writes a faceted lattice again at about six times the bytes). Returns ``out``.\n\nout: the assembly's STEP file.\nparts: ``(step_file, label, placement)`` for each part, the placement ``(x, y, z)`` mm or a build123d\n    ``Location``; a file given twice is copied in once. Each file holds one part, not an assembly.\nname: the assembly's name.",
+  "Say an exact part was baked from a GSL concept, which stays its other representation: the viewer shows\neither, and ``bake`` given the assembly holds the part to it. Returns ``part``.\n\npart: the exact part, a build123d shape; not an assembly.\npath: the .gsl concept it was made from, written in the part's own frame.\nvalues: the values of the concept's top-level names it was baked with (``lobes=7``).",
+  "A GSL concept as a part of an assembly: a part with no shape of its own, placed as any part is\n(``.moved(Location(...))``, a child of a ``Compound``). The concept is written in the part's own frame.\n\npath: the .gsl concept.\nlabel: the part's name in the assembly; the file's stem where none is given.\nvalues: a value for one of the concept's top-level names (``wall=2.5``), this placement's.",
   "``cad.build123d``: the build123d integration -- our helpers that take build123d's objects.\n\nbuild123d (and the OCCT kernel under it, OCP) is the integration model code builds with. Its extra\nis ``cad[build123d]``; its code runs in the process that calls it. This namespace holds only what WE\ndefine for it, never build123d itself (``import build123d as bd`` stays build123d's): the producers\nthat make the document types from a build123d shape (``_producers``, registered in ``cad.registry``),\nand the helpers a model calls with build123d objects:\n\n* ``memo``: a function worth replaying on a later build (the engine's **Memo functions**);\n* ``feature``: a function of the project's own declared one feature of the design tree, by a name, with\n  its parameters' specs (``Length``, ``Angle``, ``Count``, ``Number``, ``Bool``, ``Enum``, and the ``Faces`` or\n  ``Edges`` it acts on) checked on each call (``FeatureError``) and shown as its dialog's: Onshape's\n  FeatureScript, for build123d (``_features``);\n* ``paint(shape, faces, material)``: a material or colour on some faces;\n* what a part declares for a robot description, each a fact of the machine:\n  ``frame(part, name, location)``, a named frame in its own frame (a robot description's sites),\n  ``body(part, name=)``, a body of its own fixed to its link, ``limits(assembly, joint, effort=,\n  velocity=)``, a joint's drive limits, ``mass(shape, grams)``, what a part or an assembly weighs in\n  all, ``point_mass(part, grams, at, name=, inertia=)``, a lump its solids leave out, ``free(shape)``, a\n  base not bolted to the world, and ``link(shape, name)``, the name of the link its parts make;\n* the mechanism, as ISO 10303-242 (AP242) names its entities: ``mechanism_state``\n  (``mechanism_state_representation``), ``configuration_sequence``\n  (``interpolated_configuration_sequence``), ``gear_pair``, ``rack_and_pinion_pair``, ``screw_pair``,\n  and ``posed(assembly, state)``, a copy of the assembly at a state;\n* ``animation(assembly, name, duration=)``: a glTF animation, baked into each GLB the model declares;\n* measurements of native geometry: ``closest_points``, ``overlap_volume``, ``is_sound``,\n  ``topology_errors``, ``boundary_edges``, ``self_intersections``, ``mass_properties`` and their\n  result types;\n* ``leaves(tree)``: every leaf of a tree (``step.read``'s, ``xbf.read``'s, a model's ``.shape``) placed where\n  it stands, out of the tree, on the same B-rep: what ``located`` gives without copying the tree;\n* the manufacturing check of exact geometry, a ``CheckResult`` with its findings at refs (``plate/face 7``):\n  ``dfm(shape, process=...)`` -- what ``cad.step.dfm`` and ``cad.xbf.dfm`` run on a file's or a document's\n  B-rep (``_dfm_check``; the measurements ``_dfm_brep`` and ``_dfm_<process>``) -- with ``cnc``,\n  ``sheet_metal``, ``molding`` and ``printing`` its four processes by name;\n  and ``unfold(shape, k_factor=)``, a bent sheet's flat pattern, its bends unrolled by their bend allowance;\n* semantic PMI on a part's faces, as AP242 names its entities (the engine's **PMI**):\n  ``annotate(part, ...)`` gives it; ``datum``, ``dimensional_size``, ``dimensional_location``,\n  ``plus_minus_tolerance``, ``flatness_tolerance``, ``position_tolerance`` and\n  ``surface_profile_tolerance`` write theirs; ``limits(lower, upper)``, ``general_profile``, ``general_tolerance`` and\n  ``place`` write none of their own, and ``note`` and ``view`` (with ``camera`` and ``section``) are\n  XCAF's, in the xbf and in no STEP;\n* ``materials``, a submodule: named looks for what bd_materials' catalogue lacks (solder mask, ENIG,\n  moulding compound, anodized, powder coat, ...), each a native ``bd_materials.FinishedMaterial``.\n\nEvery name loads on first use: ``import cad.build123d`` imports no CAD kernel.",
   "An angle, in degrees (``isAngle``).",
   "A switch, a check box in the dialog (FeatureScript's ``is boolean``).",
@@ -1458,6 +1486,7 @@
   "cad's support for netgen, the mesher a stress study runs: always in a process of its own (:mod:`._mesher`). What\nthe mesh means is ``cad._internal.fea``'s. Nothing of the tool is re-exported.",
   "cad's support for CalculiX, the solver a stress study runs: its ``ccx``, the cad-ccx package's (``cad[calculix]``), found,\nchecked and run headless (:mod:`._program`; ``cad run ccx``, :mod:`._command`), and its input and printed output\n(:mod:`._files`). What the study means is\n``cad._internal.fea``'s. Nothing of the tool is re-exported.",
   "cad's support for FreeCAD, the planner a CAM job runs: a program the person installs, found by its probe and run\nheadless (:mod:`._program`), and the script it runs (:mod:`._job`). What a job means is ``cad._internal.cam``'s.\nNothing of the tool is re-exported.",
+  "``cad.omega``: the omega integration -- our code that runs omega-core's ``gsl``, the compiler and mesher of GSL,\nGradient Control Laboratories' language for implicit (signed-distance) models (its extra, ``cad[omega]``: the\n``omega-core`` wheel, which carries ``gsl`` for macOS and Linux and a standard-library client for its field\nqueries, ``omega_core``).\n\nA GSL model is a document type of its own (``cad.gsl``); this is the tool behind it. What ``gsl`` already does\nstays ``gsl``'s: ``cad run gsl compile -t stl part.gsl`` meshes, ``cad run gsl render part.gsl`` draws the field,\n``cad run gsl eval`` and ``omega_core.Session`` answer field queries (``_command``). The program is found here\n(``_program``: ``CAD_GSL``'s, else the extra's, never one on PATH).\n\nWhat is missing without us is the guarantee: ``gsl`` exits 0 on a mesh that is empty, open, non-manifold,\ninside-out, cut off at its box or missing a wall thinner than a cell. The type's two operations give it, and\ntheir code is here: ``cad.gsl.validate`` judges a mesh against the field itself (``_check``), and ``cad.gsl.mesh``\nwrites one, with values for the model's names, only once it has passed, and keeps it (``_mesh``).\n\nEverything loads on first use: ``import cad.omega`` imports no omega_core. A helper called where the extra is\nmissing says so by name (``cad[omega]``), as every integration's does.",
   "``cad.blender``: the blender integration -- a GLB loaded into Blender's scene for a render, taking and\nanswering Blender's own objects (its extra, ``cad[blender]``: bpy, Blender as a Python module, which has\nbuilds for Python 3.13 alone).\n\n    from cad.blender import load\n\n    model = load(\"scene.glb\", clip=\"explode\", fps=24)\n    model.root, model.box, model.clips      # the root's object, the world box in metres, each clip\n    model.objects[\"arm/head/pin_1\"]         # a node's object, by the node's name\n    model.play(\"cycle\")                     # another clip; model.play(None) stands still\n\n``load`` imports the file with Blender's own glTF importer and answers a ``Model``: each node's object, the\nclips, and the box of the pose the file was written in. It sets the scene's frame rate first (``fps``, with\n``render.fps_base`` 1), which keys the clips' seconds. It undoes what that importer gets wrong with a file\nthat has clips: it leaves a node a clip moves at its first clip's start, so a still shows a pose the file\nnever held, with no error; only that first clip plays, and clearing it leaves its last pose; and it keys\nevery clip from frame 0, wherever the scene's range starts. Here every node a clip moves stands where the\nfile places it, and a clip plays alone (``Model.play``), the scene's range set to its frames, 0 to its\nduration.\n\nIt opens any GLB, cad's or another tool's (build123d's ``export_gltf``, KiCad's board): a node is known by\nits place in the file, never by the name Blender gives its object, so a node with no name, two of one name\nand a name Blender cuts short are each found. A skin's joints are no objects but bones, of the armature Blender\nmakes for the skin (the skinned mesh's parent), found there by name; ``load`` places objects, never a bone.\n\nEverything loads on first use: ``import cad.blender`` imports no bpy, and a script whose environment lacks it\nis told which extra brings it. Nothing of Blender's is re-exported: ``import bpy`` stays Blender's.",
   "One of the GLB's animations: ``kind`` is ``motion`` (a configuration sequence) or ``animation`` (an\n``animation()``), empty for a file cad did not write; ``duration`` in seconds.",
   "The imported model. ``root`` is the object of the scene's first root node (``roots``: of each, in the\nfile's order; for a root that is a skin's joint, the objects nearest it below). ``objects`` is each node's\nobject by the node's name (in a GLB cad wrote, its path below the root, ``arm/head/pin_1``); a node with\nno name by the name Blender gave its object (``Mesh_0``, ``Node_3``); a name given twice, the last.\n``nodes`` is each by its index in the file, which tells two of one name apart. Both hold every node\nBlender made an object of: a skin's joints are bones (the module). ``clips`` by name, ``box`` the world\nbox (low, high corners in metres) of the pose the file was written in, ``fps`` the scene's frame rate\n(``fps_base`` 1), and ``clip`` the one playing.",
