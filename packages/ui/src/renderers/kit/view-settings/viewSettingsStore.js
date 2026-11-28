@@ -2,6 +2,7 @@ import { normalizePreviewSettings, normalizeViewSettings } from "@cad/core/commo
 import { resolveViewSceneSettings } from "@cad/core/common/sceneSettings.js";
 import { mergePreviewSettings, mergeViewerDisplaySettings } from "./viewerDisplaySettings.js";
 import { shareSettingsValue } from "./shareSettingsValue.js";
+import { gridHost } from "./gridHost.js";
 
 // One per mounted file. UI actions, agent commands and session restoration all
 // write here. Resolved defaults are outputs, never written back as new edits.
@@ -18,7 +19,8 @@ export function createViewSettingsStore(initial = {}, defaults = {}, initialPrev
     const next = shareSettingsValue(snapshot, {
       display,
       preview,
-      scene: resolveViewSceneSettings({ ...context, display })
+      // A grid the display leaves unsaid is the host's default (`gridHost`).
+      scene: resolveViewSceneSettings({ ...context, display: { grid: gridHost.get(), ...display } })
     });
     if (next === snapshot) return snapshot;
     snapshot = next;

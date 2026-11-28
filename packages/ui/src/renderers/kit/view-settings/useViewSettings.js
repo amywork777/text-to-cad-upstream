@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { createViewSettingsStore } from "./viewSettingsStore.js";
+import { gridHost } from "./gridHost.js";
 
 const NO_SUBSCRIPTION = () => () => {};
 const NO_SNAPSHOT = () => null;
@@ -12,6 +13,8 @@ const NO_SNAPSHOT = () => null;
 export function useViewSettings(appearance, provided = null, canvas = null) {
   const [store] = useState(() => (provided ? null : createViewSettingsStore({}, { appearance, canvas, lightingQuality: "preview" })));
   useLayoutEffect(() => { store?.configure({ appearance, canvas, lightingQuality: "preview" }); }, [store, appearance, canvas]);
+  // The host's grid default (`gridHost`) is resolved again as it changes.
+  useLayoutEffect(() => (store ? gridHost.subscribe(() => store.configure({})) : undefined), [store]);
   const snapshot = useSyncExternalStore(store ? store.subscribe : NO_SUBSCRIPTION, store ? store.getSnapshot : NO_SNAPSHOT, store ? store.getSnapshot : NO_SNAPSHOT);
   return provided || { ...snapshot, store };
 }
