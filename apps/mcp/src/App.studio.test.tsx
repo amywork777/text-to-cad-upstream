@@ -3,7 +3,7 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CadViewerProps } from '@cad/ui/cad-viewer';
-import { editLayoutHost, focusHost, selectHost, workingHost } from '@cad/ui/tab-store';
+import { editLayoutHost, focusHost, gridHost, selectHost, workingHost } from '@cad/ui/tab-store';
 import App from './App';
 import type { HostContext } from './host/bridge';
 import type { Launch } from './host/server';
@@ -201,5 +201,22 @@ it("a host whose agent is working says so to the view, and a host that asks for 
   } finally {
     selectHost.set(null);
     workingHost.set(null);
+  }
+});
+
+it("a host that sets Show grid's default hands it to every 3D view, as it changes; a host that does not leaves it off", () => {
+  try {
+    const studio = host({ displayMode: 'fullscreen', 'studio/gridDefault': true });
+    const { unmount } = render(<App bridge={studio.bridge as any} server={studio.server as any} launch={home} />);
+    expect(gridHost.get()).toBe(true);
+    act(() => studio.bridge.change({ 'studio/gridDefault': false }));
+    expect(gridHost.get()).toBe(false);
+    unmount();
+
+    const plain = host({ displayMode: 'fullscreen' });
+    render(<App bridge={plain.bridge as any} server={plain.server as any} launch={home} />);
+    expect(gridHost.get()).toBe(false);
+  } finally {
+    gridHost.set(null);
   }
 });

@@ -237,6 +237,9 @@ packages/ui/src/renderers/kit/tools/quick-edit/quickEditPrompt.js
 packages/ui/src/renderers/kit/tools/select/usePointerPick.js
 packages/ui/src/renderers/kit/tools/select/usePointerPick.test.tsx
 packages/ui/src/renderers/kit/tools/stripTouch.js
+packages/ui/src/renderers/kit/view-settings/useViewSettings.js
+packages/ui/src/renderers/kit/view-settings/viewSettingsStore.js
+packages/ui/src/renderers/kit/view-settings/viewerDisplaySettings.js
 packages/ui/src/renderers/kit/viewport/framePresentation.js
 packages/ui/src/renderers/kit/viewport/framePresentation.test.js
 packages/ui/src/renderers/kit/viewport/useFlatCanvasView.js

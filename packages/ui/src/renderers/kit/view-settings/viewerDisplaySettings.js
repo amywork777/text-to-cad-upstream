@@ -1,13 +1,14 @@
 import { normalizePreviewSettings, normalizeViewSettings, resolveViewSettings } from "@cad/core/common/viewSettings.js";
 
 import { buildStepClipPatch } from "@cad/core/lib/viewer/clipPlane.js";
+import { gridHost } from "./gridHost.js";
 
 // A file's display with no saved record, resolved: what Display's Reset puts back (its Style, the grid and the
-// camera's projection; never the Background, the person's).
+// camera's projection; never the Background, the person's). The grid's is the host's (`gridHost`), read as it is now.
 const BLANK = resolveViewSettings({});
-export const DISPLAY_DEFAULTS = Object.freeze({ mode: BLANK.mode, grid: BLANK.grid.enabled, projection: BLANK.camera.projection });
+export const DISPLAY_DEFAULTS = Object.freeze({ mode: BLANK.mode, get grid() { return gridHost.get(); }, projection: BLANK.camera.projection });
 /** The patch that puts a display's Style, grid and projection back to `DISPLAY_DEFAULTS`. */
-export const DISPLAY_RESET_PATCH = Object.freeze({ mode: DISPLAY_DEFAULTS.mode, grid: DISPLAY_DEFAULTS.grid, camera: { projection: DISPLAY_DEFAULTS.projection } });
+export const DISPLAY_RESET_PATCH = Object.freeze({ mode: DISPLAY_DEFAULTS.mode, get grid() { return gridHost.get(); }, camera: { projection: DISPLAY_DEFAULTS.projection } });
 
 // A patch merges into what is there, in the same shape: `mode` picks the mode and `grid` switches
 // the grid; the shared groups merge field by field.
@@ -16,8 +17,9 @@ export function mergeViewerDisplaySettings(current, patch) {
   const base = normalizeViewSettings(current);
   const next = { ...base };
   if (Object.hasOwn(patch, "mode")) next.mode = normalized.mode;
-  // The grid is off unless said: switched off, it is left unsaid, so a display stays sparse.
-  if (Object.hasOwn(patch, "grid")) { if (normalized.grid) next.grid = true; else delete next.grid; }
+  // The grid is at its default unless said (off, or the host's: `gridHost`): switched to it, it is left unsaid, so a
+  // display stays sparse.
+  if (Object.hasOwn(patch, "grid")) { if (normalized.grid !== gridHost.get()) next.grid = normalized.grid; else delete next.grid; }
   if (normalized.appearance) next.appearance = normalized.appearance;
   if (normalized.camera) next.camera = { ...base.camera, ...normalized.camera };
   if (normalized.exploded) next.exploded = { ...base.exploded, ...normalized.exploded };
