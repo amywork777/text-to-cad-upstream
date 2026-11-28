@@ -751,6 +751,30 @@ def line_reading(script: Path, text: str) -> int:
     """The line of ``script`` that holds ``text``, counted from 1."""
     return next(at for at, line in enumerate(script.read_text(encoding="utf-8").splitlines(), 1) if text in line)
 
+    def test_a_model_parameter_reads_with_its_default_written_or_computed(self):
+        # Each literal is a traced number (TFloat, TInt) here, and so is a default computed from one.
+        root = project({
+            "frame.py": """
+                from build123d import Box
+                from cad import model
+
+                ARM = 116.0
+                WHEELBASE = model.param("wheelbase", ARM * 2, min=100, max=400)
+                ARMS = model.param("arms", 2 + 2, min=3)
+                THICKNESS = model.param("thickness", 5.0)
+
+                @model
+                def frame():
+                    return Box(WHEELBASE, 20, THICKNESS * ARMS)
+            """,
+        })
+        self.addCleanup(shutil.rmtree, root, True)
+        service = edit.EditService(build=False)
+        self.addCleanup(service.close)
+        state = service.state(str(root / "frame.step"))
+        self.assertTrue(state["ok"], state.get("error"))
+        self.assertEqual([d["formula"] for d in state["dimensions"]][:3], ["ARM*2", "20", "5.0*(2+2)"])
+
 
 class ModelsOfTheEngine(unittest.TestCase):
     """A part is a model of cadgen's engine: its script is the tree, its document is opened by the id

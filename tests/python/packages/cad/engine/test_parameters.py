@@ -99,6 +99,22 @@ class RecordingTest(unittest.TestCase):
             self.load()
         self.assertRegex(str(caught.exception), r"bracket\.py:5 and .*bracket\.py:9")
 
+    def test_a_default_of_a_numbers_subclass_is_recorded_as_the_plain_number_with_no_bytes(self) -> None:
+        # Edit mode's tracer reads each literal as a number of such a subclass (``TFloat``, ``TInt``).
+        self.script.write_text(textwrap.dedent("""\
+            from cad import model
+
+            class Traced(float): pass
+            class TracedInt(int): pass
+
+            WHEELBASE = model.param("wheelbase", Traced(116.0 * 2), min=TracedInt(100))
+            ARMS = model.param("arms", TracedInt(4), max=TracedInt(8))
+            """), encoding="utf-8")
+        recorded = {row.name: (row.value, type(row.value), row.kind, row.min, type(row.min), row.max,
+                               type(row.max), row.span, row.digest) for row in self.load()}
+        self.assertEqual(recorded, {"wheelbase": (232.0, float, "float", 100, int, None, type(None), None, None),
+                                    "arms": (4, int, "int", None, type(None), 8, int, None, None)})
+
     def test_a_model_lists_its_own_writable_and_the_rest_read_only_and_the_page_serves_them_so(self) -> None:
         rows = {row["name"]: row for row in self.rows()}
         self.assertEqual({name: row["reason"] for name, row in rows.items()},

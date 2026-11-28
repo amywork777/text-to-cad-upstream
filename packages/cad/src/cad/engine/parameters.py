@@ -112,12 +112,14 @@ class Declared:
 
 
 def _number(value: Any, what: str) -> int | float:
-    """``value`` as a declaration's number: a plain ``int`` or ``float`` (never a ``bool``), finite."""
-    if type(value) not in (int, float):
+    """``value`` as a declaration's number, plain: an ``int`` or ``float`` (never a ``bool``), finite. A number
+    of either's subclass is the plain number it is: Edit mode's tracer reads each literal of a script as one
+    (``cad.edit.tracer``'s ``TFloat`` and ``TInt``), and a default computed from them is one too."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"{what} is a number (an int or a float), not {type(value).__name__} {value!r}")
     if not math.isfinite(value):
         raise ValueError(f"{what} is a finite number, not {value!r}")
-    return value
+    return int(value) if isinstance(value, int) else float(value)
 
 
 def param(name: str, default: int | float, *, min: int | float | None = None, max: int | float | None = None,
