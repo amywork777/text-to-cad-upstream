@@ -373,12 +373,13 @@ export default function EditRibbon({ tools, edit, onCommand = id => edit.open(id
       : () => tool.onSelect() });
   const effectTool = effect ? byId.get(effect.id) : null;
   // The tab row: Undo and Redo as small icons at its left, the tabs, and at its right where the part stands.
+  // In a narrow panel the tabs scroll sideways rather than being cut off by the ribbon's edge.
   const tabRow = (list, active, onPick, end) => <div data-cad-ribbon-tabs="" className="flex h-control shrink-0 items-center gap-step border-b border-border px-pad">
     <div className="flex shrink-0 items-center gap-step pr-2">
       <ToolbarButton label="Undo" className="hover:bg-cad-ws-hover" disabled={!edit.canUndo} onClick={() => void edit.undo()}><UndoIcon className="size-4" /></ToolbarButton>
       <ToolbarButton label="Redo" className="hover:bg-cad-ws-hover" disabled={!edit.canRedo} onClick={() => void edit.redo()}><RedoIcon className="size-4" /></ToolbarButton>
     </div>
-    <div role="tablist" aria-label="Ribbon tabs" className="flex h-full shrink-0 items-stretch gap-step">
+    <div role="tablist" aria-label="Ribbon tabs" className="flex h-full min-w-0 shrink items-stretch gap-step overflow-x-auto [scrollbar-width:none]">
       {list.map(each => <button key={each.id} type="button" role="tab" aria-selected={each.id === active}
         className={cn(TAB_CLASS, each.id === active && "border-info font-medium text-foreground")}
         onClick={() => onPick(each.id)}>{each.title}</button>)}

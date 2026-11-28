@@ -172,6 +172,14 @@ it("holds Undo and Redo at the tab row's left, and the build status and units at
   expect(hand.undo).toHaveBeenCalledTimes(1);
 });
 
+it("lets the tabs scroll sideways in a narrow panel, never cut off at the ribbon's edge", () => {
+  render(<EditRibbon tools={PART_TOOLS} edit={edit() as never} />);
+  // The ribbon clips what overflows it, so a tab list that would not shrink lost its last tab at about 390px.
+  const tabs = screen.getByRole('tablist').className.split(/\s+/);
+  expect(tabs).toEqual(expect.arrayContaining(['min-w-0', 'shrink', 'overflow-x-auto']));
+  expect(tabs).not.toContain('shrink-0');
+});
+
 it("holds the Sketch command alone in the Sketch tab while no sketch is open", async () => {
   const user = userEvent.setup();
   const onSketch = vi.fn();
